@@ -1,0 +1,25 @@
+[package]
+name = "carve"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+description = "Reference Rust parser and HTML renderer for the Carve markup language."
+license = "MIT"
+repository = "https://github.com/markup-carve/carve-rs"
+homepage = "https://markup-carve.github.io/carve/"
+documentation = "https://docs.rs/carve"
+readme = "README.md"
+keywords = ["carve", "markup", "parser", "html", "djot"]
+categories = ["parser-implementations", "text-processing"]
+
+[lib]
+name = "carve"
+path = "src/lib.rs"
+
+[[bin]]
+name = "carve"
+path = "src/main.rs"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
