@@ -9,7 +9,9 @@ Rust parser and HTML renderer for the [Carve](https://github.com/markup-carve/ca
 
 ## Status
 
-MVP. The crate currently passes 8 of the 18 pairs in the [spec corpus](https://github.com/markup-carve/carve/tree/master/tests/corpus):
+The crate passes every `.crv` / `.html` pair currently checked into its
+`tests/spec` submodule. The conformance test suite includes an all-pairs gate so
+new corpus pairs fail CI until the parser and renderer support them.
 
 | Pair | Construct | Status |
 |---|---|---|
@@ -21,17 +23,15 @@ MVP. The crate currently passes 8 of the 18 pairs in the [spec corpus](https://g
 | 06-task-lists | `- [ ] todo`, `- [x] done` | passing |
 | 11-fenced-code | ` ``` ` blocks with language tag | passing |
 | 12-inline-code | `` `code` `` | passing |
-| 07-blockquote-with-attribution | `> quote` + `^ Attribution` caption | deferred |
-| 08-image-with-caption | `![…](…)` + `^ caption` | deferred |
-| 09–10 | tables, rowspan/colspan | deferred |
-| 13 | admonitions (`::: note`) | deferred |
-| 14 | abbreviations (`*[ABBR]:`) | deferred |
-| 15 | `@mentions`, `#tags` | deferred |
-| 16 | inline extensions (`:type[…]`) | deferred |
-| 17 | attribute blocks (`{#id .class}`) | deferred |
-| 18 | YAML frontmatter | deferred |
-
-The deferred set is wired into the test suite as `#[ignore]`d tests so progress stays visible — promote a slug into `IMPLEMENTED` in `tests/corpus.rs` when the parser supports it.
+| 07-blockquote-with-attribution | `> quote` + `^ Attribution` caption | passing |
+| 08-image-with-caption | `![…](…)` + `^ caption` | passing |
+| 09–10 | tables, rowspan/colspan | passing |
+| 13 | admonitions (`::: note`) | passing |
+| 14 | abbreviations (`*[ABBR]:`) | passing |
+| 15 | `@mentions`, `#tags` | passing |
+| 16 | inline extensions (`:type[…]`) | passing |
+| 17 | attribute blocks (`{#id .class}`) | passing |
+| 18 | YAML frontmatter | passing |
 
 ## Library use
 
@@ -46,6 +46,40 @@ For lower-level access, `carve::parse` returns a typed `Document` AST and `carve
 let doc = carve::parse(source);
 // inspect or transform doc.children …
 let html = carve::render_html(&doc);
+```
+
+## Extensions
+
+Opt-in extensions implement `CarveExtension` and are passed through `Options`.
+An extension can add inline/block matchers, run `after_parse` and
+`before_render` AST transforms, and override renderers for extension nodes such
+as `:kbd[Ctrl]`.
+
+```rust
+use carve::{CarveExtension, InlineExtension, Options, RenderContext};
+
+struct Kbd;
+
+impl CarveExtension for Kbd {
+    fn name(&self) -> &'static str {
+        "kbd"
+    }
+
+    fn render_inline_extension(
+        &self,
+        node: &InlineExtension,
+        ctx: &RenderContext<'_>,
+    ) -> Option<String> {
+        (node.name == "kbd").then(|| {
+            format!("<kbd>{}</kbd>", ctx.render_inlines(&node.children))
+        })
+    }
+}
+
+let kbd = Kbd;
+let options = Options::new().with_extension(&kbd);
+let html = carve::to_html_with_options("Press :kbd[Ctrl].", &options);
+assert_eq!(html, "<p>Press <kbd>Ctrl</kbd>.</p>");
 ```
 
 ## CLI

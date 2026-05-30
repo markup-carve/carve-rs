@@ -2,11 +2,29 @@
 //!
 //! Mirrors the shape of `markup-carve/carve-js`'s `ast.ts`, but only
 //! covers constructs the MVP parser+renderer produces. Tables,
-//! admonitions, abbreviations, mentions/tags, extensions, attributes,
-//! and frontmatter are deferred to future PRs.
+//! admonitions, abbreviations, mentions/tags, attributes, and
+//! frontmatter are deferred to future PRs.
+
+use std::collections::BTreeMap;
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Attrs {
+    pub id: Option<String>,
+    pub classes: Vec<String>,
+    pub key_values: BTreeMap<String, String>,
+    pub order: Vec<AttrSlot>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AttrSlot {
+    Id,
+    Class,
+    Key(String),
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Document {
+    pub frontmatter: BTreeMap<String, String>,
     pub children: Vec<BlockNode>,
 }
 
@@ -17,35 +35,60 @@ pub enum BlockNode {
     CodeBlock(CodeBlock),
     List(List),
     BlockQuote(BlockQuote),
+    Table(Table),
+    Admonition(Admonition),
+    Div(Div),
+    DefinitionList(DefinitionList),
+    Figure(Figure),
+    AbbreviationDef(AbbreviationDef),
+    RawBlock(RawBlock),
+    Comment(Comment),
+    Extension(BlockExtension),
     BlockImage(Image),
     ThematicBreak,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Heading {
+    pub attrs: Option<Attrs>,
     pub level: u8,
     pub children: Vec<InlineNode>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Paragraph {
+    pub attrs: Option<Attrs>,
     pub children: Vec<InlineNode>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CodeBlock {
+    pub attrs: Option<Attrs>,
     pub lang: Option<String>,
     pub content: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct List {
+    pub attrs: Option<Attrs>,
     pub ordered: bool,
+    pub start: Option<usize>,
+    pub ol_type: Option<OrderedListType>,
+    pub tight: bool,
     pub items: Vec<ListItem>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OrderedListType {
+    LowerAlpha,
+    UpperAlpha,
+    LowerRoman,
+    UpperRoman,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ListItem {
+    pub attrs: Option<Attrs>,
     /// `None` for plain bullets; `Some(checked)` for task-list items.
     pub checked: Option<bool>,
     pub children: Vec<BlockNode>,
@@ -53,6 +96,106 @@ pub struct ListItem {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BlockQuote {
+    pub attrs: Option<Attrs>,
+    pub children: Vec<BlockNode>,
+    pub attribution: Option<Vec<InlineNode>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Table {
+    pub attrs: Option<Attrs>,
+    pub caption: Option<Vec<InlineNode>>,
+    pub rows: Vec<TableRow>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TableRow {
+    pub cells: Vec<TableCell>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TableCell {
+    pub header: bool,
+    pub span: Option<TableCellSpan>,
+    pub align: Option<TableAlign>,
+    pub children: Vec<InlineNode>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TableCellSpan {
+    Rowspan,
+    Colspan,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TableAlign {
+    Left,
+    Right,
+    Center,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Admonition {
+    pub attrs: Option<Attrs>,
+    pub kind: String,
+    pub title: Option<Vec<InlineNode>>,
+    pub children: Vec<BlockNode>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Div {
+    pub attrs: Option<Attrs>,
+    pub children: Vec<BlockNode>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DefinitionItem {
+    pub terms: Vec<Vec<InlineNode>>,
+    pub definitions: Vec<Vec<BlockNode>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DefinitionList {
+    pub attrs: Option<Attrs>,
+    pub items: Vec<DefinitionItem>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Figure {
+    pub attrs: Option<Attrs>,
+    pub target: FigureTarget,
+    pub caption: Vec<InlineNode>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FigureTarget {
+    Image(Image),
+    BlockQuote(BlockQuote),
+    Table(Table),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AbbreviationDef {
+    pub abbr: String,
+    pub expansion: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RawBlock {
+    pub format: String,
+    pub content: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Comment {
+    pub block: bool,
+    pub content: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BlockExtension {
+    pub attrs: Option<Attrs>,
+    pub name: String,
     pub children: Vec<BlockNode>,
 }
 
@@ -63,11 +206,28 @@ pub enum InlineNode {
     Code(String),
     Link(Link),
     Image(Image),
+    Span(Span),
+    Math(Math),
+    RawInline(RawInline),
+    Emoji(Emoji),
+    AutoLink(AutoLink),
+    CrossRef(CrossRef),
+    Mention(Mention),
+    Tag(Tag),
+    Extension(InlineExtension),
+    Abbreviation(Abbreviation),
+    Footnote(Footnote),
     SoftBreak,
+    HardBreak,
+    CriticInsert(CriticInsert),
+    CriticDelete(CriticDelete),
+    CriticSubstitute(CriticSubstitute),
+    CriticComment(CriticComment),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Emphasis {
+    pub attrs: Option<Attrs>,
     pub kind: EmphasisKind,
     pub children: Vec<InlineNode>,
 }
@@ -86,14 +246,105 @@ pub enum EmphasisKind {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Link {
+    pub attrs: Option<Attrs>,
     pub href: String,
     pub title: Option<String>,
     pub children: Vec<InlineNode>,
+    pub ref_label: Option<String>,
+    pub raw_ref: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Image {
+    pub attrs: Option<Attrs>,
     pub src: String,
     pub alt: String,
     pub title: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InlineExtension {
+    pub attrs: Option<Attrs>,
+    pub name: String,
+    pub children: Vec<InlineNode>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Span {
+    pub attrs: Option<Attrs>,
+    pub children: Vec<InlineNode>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Math {
+    pub attrs: Option<Attrs>,
+    pub display: bool,
+    pub content: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RawInline {
+    pub format: String,
+    pub content: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Emoji {
+    pub name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AutoLink {
+    pub attrs: Option<Attrs>,
+    pub href: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CrossRef {
+    pub target: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Mention {
+    pub user: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Tag {
+    pub name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Abbreviation {
+    pub abbr: String,
+    pub expansion: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Footnote {
+    pub id: Option<String>,
+    pub inline: Option<Vec<InlineNode>>,
+    pub number: Option<usize>,
+    pub ref_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CriticInsert {
+    pub children: Vec<InlineNode>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CriticDelete {
+    pub children: Vec<InlineNode>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CriticSubstitute {
+    pub old_text: String,
+    pub new_text: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CriticComment {
+    pub text: String,
 }
