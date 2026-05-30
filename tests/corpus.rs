@@ -5,16 +5,12 @@
 //! `NN-slug.html` and asserting that `carve::to_html` produces
 //! byte-identical output after trimming.
 //!
-//! Pairs listed in `IMPLEMENTED` are checked. Everything else is
-//! emitted as an ignored test so missing constructs stay visible.
-//! Promote a slug into `IMPLEMENTED` once the parser + renderer
-//! support it.
+//! Every checked-in pair is checked by `all_corpus_pairs_match`; named
+//! tests keep representative failures scoped.
 
 use std::fs;
 use std::path::PathBuf;
 
-/// Corpus pairs the MVP parser + renderer can produce byte-identical
-/// HTML for. Grows with each PR.
 const IMPLEMENTED: &[&str] = &[
     "01-emphasis",
     "02-headings",
@@ -22,8 +18,18 @@ const IMPLEMENTED: &[&str] = &[
     "04-images",
     "05-lists",
     "06-task-lists",
+    "07-blockquote-with-attribution",
+    "08-image-with-caption",
+    "09-tables",
+    "10-tables-with-rowspan-and-colspan",
     "11-fenced-code",
     "12-inline-code",
+    "13-admonitions",
+    "14-abbreviations",
+    "15-mentions-and-tags",
+    "16-inline-extensions",
+    "17-attributes",
+    "18-frontmatter",
 ];
 
 fn corpus_dir() -> PathBuf {
@@ -95,6 +101,13 @@ fn all_implemented_pairs_exist() {
     }
 }
 
+#[test]
+fn all_corpus_pairs_match() {
+    for slug in corpus_pairs() {
+        check_pair(&slug);
+    }
+}
+
 // One generated test function per implemented slug — keeps panics
 // scoped so failures point at the responsible pair.
 macro_rules! corpus_test {
@@ -112,34 +125,21 @@ corpus_test!(c03_links, "03-links");
 corpus_test!(c04_images, "04-images");
 corpus_test!(c05_lists, "05-lists");
 corpus_test!(c06_task_lists, "06-task-lists");
-corpus_test!(c11_fenced_code, "11-fenced-code");
-corpus_test!(c12_inline_code, "12-inline-code");
-
-// Pairs the MVP does not yet handle. Marked `#[ignore]` so they stay
-// visible (`cargo test -- --include-ignored`) but don't fail CI.
-macro_rules! corpus_todo {
-    ($name:ident, $slug:literal) => {
-        #[test]
-        #[ignore = "not yet implemented in the MVP parser/renderer"]
-        fn $name() {
-            check_pair($slug);
-        }
-    };
-}
-
-corpus_todo!(
+corpus_test!(
     c07_blockquote_with_attribution,
     "07-blockquote-with-attribution"
 );
-corpus_todo!(c08_image_with_caption, "08-image-with-caption");
-corpus_todo!(c09_tables, "09-tables");
-corpus_todo!(
+corpus_test!(c08_image_with_caption, "08-image-with-caption");
+corpus_test!(c09_tables, "09-tables");
+corpus_test!(
     c10_tables_with_rowspan_and_colspan,
     "10-tables-with-rowspan-and-colspan"
 );
-corpus_todo!(c13_admonitions, "13-admonitions");
-corpus_todo!(c14_abbreviations, "14-abbreviations");
-corpus_todo!(c15_mentions_and_tags, "15-mentions-and-tags");
-corpus_todo!(c16_inline_extensions, "16-inline-extensions");
-corpus_todo!(c17_attributes, "17-attributes");
-corpus_todo!(c18_frontmatter, "18-frontmatter");
+corpus_test!(c11_fenced_code, "11-fenced-code");
+corpus_test!(c12_inline_code, "12-inline-code");
+corpus_test!(c13_admonitions, "13-admonitions");
+corpus_test!(c14_abbreviations, "14-abbreviations");
+corpus_test!(c15_mentions_and_tags, "15-mentions-and-tags");
+corpus_test!(c16_inline_extensions, "16-inline-extensions");
+corpus_test!(c17_attributes, "17-attributes");
+corpus_test!(c18_frontmatter, "18-frontmatter");

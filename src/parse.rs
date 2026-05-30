@@ -3,12 +3,48 @@
 //! Block-level reads line by line; inline does a single linear scan
 //! over each block's text. No backtracking.
 
-use crate::ast::{
-    BlockNode, BlockQuote, CodeBlock, Document, Emphasis, EmphasisKind, Heading, Image, InlineNode,
-    Link, List, ListItem, Paragraph,
-};
+use crate::ast::*;
+use crate::extension::{BlockMatch, InlineMatch, MatcherContext, Options};
+use std::collections::BTreeMap;
 
 pub fn parse(source: &str) -> Document {
+    parse_with_options(source, &Options::default())
+}
+
+pub fn parse_with_options(source: &str, options: &Options<'_>) -> Document {
+    let (frontmatter, body) = split_frontmatter(source);
+    let children = parse_blocks_with_options(body, options);
+    let mut doc = Document {
+        frontmatter,
+        children,
+    };
+    apply_abbreviations(&mut doc);
+    for ext in &options.extensions {
+        doc = ext.after_parse(doc);
+    }
+    doc
+}
+
+fn split_frontmatter(source: &str) -> (BTreeMap<String, String>, &str) {
+    if !source.starts_with("---\n") {
+        return (BTreeMap::new(), source);
+    }
+    let rest = &source[4..];
+    let Some(close) = rest.find("\n---\n") else {
+        return (BTreeMap::new(), source);
+    };
+    let frontmatter_src = &rest[..close];
+    let body = &rest[close + 5..];
+    let mut frontmatter = BTreeMap::new();
+    for line in frontmatter_src.lines() {
+        if let Some((key, value)) = line.split_once(':') {
+            frontmatter.insert(key.trim().to_string(), value.trim().to_string());
+        }
+    }
+    (frontmatter, body)
+}
+
+pub(crate) fn parse_blocks_with_options(source: &str, options: &Options<'_>) -> Vec<BlockNode> {
     let mut lines: Vec<&str> = source.lines().collect();
     // `lines()` already drops a single trailing newline; nothing more to do.
     let _ = &mut lines;
@@ -17,8 +53,7 @@ pub fn parse(source: &str) -> Document {
         lines: &lines,
         pos: 0,
     };
-    let children = parse_blocks(&mut cursor);
-    Document { children }
+    parse_blocks(&mut cursor, options)
 }
 
 struct LineCursor<'a> {
@@ -42,7 +77,7 @@ impl<'a> LineCursor<'a> {
     }
 }
 
-fn parse_blocks(cur: &mut LineCursor) -> Vec<BlockNode> {
+fn parse_blocks(cur: &mut LineCursor, options: &Options<'_>) -> Vec<BlockNode> {
     let mut out = Vec::new();
     while !cur.eof() {
         let line = cur.peek().unwrap();
@@ -50,14 +85,14 @@ fn parse_blocks(cur: &mut LineCursor) -> Vec<BlockNode> {
             cur.consume();
             continue;
         }
-        if let Some(node) = parse_block(cur) {
+        if let Some(node) = parse_block(cur, options) {
             out.push(node);
         }
     }
     out
 }
 
-fn parse_block(cur: &mut LineCursor) -> Option<BlockNode> {
+fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<BlockNode> {
     let line = cur.peek()?;
     if let Some(fence_marker) = detect_fence_open(line) {
         return Some(parse_fence(cur, fence_marker));
@@ -68,22 +103,44 @@ fn parse_block(cur: &mut LineCursor) -> Option<BlockNode> {
     }
     if let Some((level, text)) = detect_heading(line) {
         cur.consume();
+        let (text, attrs) = split_trailing_attrs(text);
         return Some(BlockNode::Heading(Heading {
+            attrs,
             level,
-            children: parse_inline(text),
+            children: parse_inline_with_options(text, options),
         }));
     }
     if line.starts_with('>') {
-        return Some(parse_blockquote(cur));
+        return Some(parse_blockquote(cur, options));
     }
     if is_list_marker(line) {
-        return Some(parse_list(cur));
+        return Some(parse_list(cur, options));
+    }
+    if is_table_start(line) {
+        return Some(parse_table(cur, options));
+    }
+    if let Some(kind) = detect_admonition(line) {
+        return Some(parse_admonition(cur, kind, options));
+    }
+    if let Some(abbr) = detect_abbreviation_def(line) {
+        cur.consume();
+        return Some(BlockNode::AbbreviationDef(abbr));
     }
     if let Some(img) = detect_block_image(line) {
         cur.consume();
+        if let Some(caption) = consume_caption(cur, options) {
+            return Some(BlockNode::Figure(Figure {
+                attrs: None,
+                target: FigureTarget::Image(img),
+                caption,
+            }));
+        }
         return Some(BlockNode::BlockImage(img));
     }
-    Some(parse_paragraph(cur))
+    if let Some(matched) = try_extension_block(cur, options) {
+        return Some(matched);
+    }
+    Some(parse_paragraph(cur, options))
 }
 
 fn detect_heading(line: &str) -> Option<(u8, &str)> {
@@ -190,6 +247,7 @@ fn parse_fence(cur: &mut LineCursor, open: FenceOpen) -> BlockNode {
         content_lines.push(line[strip..].to_string());
     }
     BlockNode::CodeBlock(CodeBlock {
+        attrs: None,
         lang,
         content: content_lines.join("\n"),
     })
@@ -223,7 +281,7 @@ fn leading_ws(line: &str) -> usize {
         .count()
 }
 
-fn parse_blockquote(cur: &mut LineCursor) -> BlockNode {
+fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     let mut inner = Vec::new();
     while let Some(line) = cur.peek() {
         if !line.starts_with('>') {
@@ -240,8 +298,21 @@ fn parse_blockquote(cur: &mut LineCursor) -> BlockNode {
         lines: &sub_lines,
         pos: 0,
     };
-    let children = parse_blocks(&mut sub_cursor);
-    BlockNode::BlockQuote(BlockQuote { children })
+    let children = parse_blocks(&mut sub_cursor, options);
+    let quote = BlockQuote {
+        attrs: None,
+        children,
+        attribution: None,
+    };
+    if let Some(caption) = consume_caption(cur, options) {
+        BlockNode::Figure(Figure {
+            attrs: None,
+            target: FigureTarget::BlockQuote(quote),
+            caption,
+        })
+    } else {
+        BlockNode::BlockQuote(quote)
+    }
 }
 
 fn is_list_marker(line: &str) -> bool {
@@ -320,43 +391,118 @@ fn detect_task(line: &str) -> Option<(bool, &str)> {
     Some((checked, line[i + 4..].trim_end()))
 }
 
-fn parse_list(cur: &mut LineCursor) -> BlockNode {
+fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     let first = cur.peek().unwrap();
-    let is_task = detect_task(first).is_some();
-    let is_ordered = !is_task && detect_ordered(first).is_some();
-    let mut items = Vec::new();
+    let first_marker = detect_list_marker_full(first).unwrap();
+    let base_indent = first_marker.indent;
+    let is_task = first_marker.checked.is_some();
+    let is_ordered = first_marker.ordered;
+    let mut items: Vec<ListItem> = Vec::new();
+    let mut tight = true;
+    let mut pending_blank = false;
     while let Some(line) = cur.peek() {
-        let (checked, content) = if is_task {
-            match detect_task(line) {
-                Some((c, t)) => (Some(c), t),
-                None => break,
-            }
-        } else if is_ordered {
-            match detect_ordered(line) {
-                Some(t) => (None, t),
-                None => break,
-            }
-        } else {
-            if detect_task(line).is_some() || detect_ordered(line).is_some() {
-                break;
-            }
-            match detect_unordered(line) {
-                Some(t) => (None, t),
-                None => break,
-            }
+        if line.trim().is_empty() {
+            tight = false;
+            pending_blank = true;
+            cur.consume();
+            continue;
+        }
+        let Some(marker) = detect_list_marker_full(line) else {
+            break;
         };
+        if marker.indent < base_indent {
+            break;
+        }
+        if marker.indent > base_indent {
+            if let Some(last) = items.last_mut() {
+                let nested = collect_indented_block(cur, base_indent);
+                let nested_children = parse_blocks_with_options(&nested, options);
+                last.children.extend(nested_children);
+                continue;
+            }
+            break;
+        }
+        if marker.ordered != is_ordered || marker.checked.is_some() != is_task {
+            break;
+        }
+        if pending_blank {
+            tight = false;
+            pending_blank = false;
+        }
         cur.consume();
         items.push(ListItem {
-            checked,
+            attrs: None,
+            checked: marker.checked,
             children: vec![BlockNode::Paragraph(Paragraph {
-                children: parse_inline(content),
+                attrs: None,
+                children: parse_inline_with_options(marker.content, options),
             })],
         });
     }
     BlockNode::List(List {
+        attrs: None,
         ordered: is_ordered,
+        start: None,
+        ol_type: None,
+        tight,
         items,
     })
+}
+
+#[derive(Clone, Copy)]
+struct ListMarker<'a> {
+    indent: usize,
+    ordered: bool,
+    checked: Option<bool>,
+    content: &'a str,
+}
+
+fn detect_list_marker_full(line: &str) -> Option<ListMarker<'_>> {
+    let indent = leading_ws(line);
+    if let Some((checked, content)) = detect_task(line) {
+        return Some(ListMarker {
+            indent,
+            ordered: false,
+            checked: Some(checked),
+            content,
+        });
+    }
+    if let Some(content) = detect_ordered(line) {
+        return Some(ListMarker {
+            indent,
+            ordered: true,
+            checked: None,
+            content,
+        });
+    }
+    if let Some(content) = detect_unordered(line) {
+        return Some(ListMarker {
+            indent,
+            ordered: false,
+            checked: None,
+            content,
+        });
+    }
+    None
+}
+
+fn collect_indented_block(cur: &mut LineCursor, parent_indent: usize) -> String {
+    let mut lines = Vec::new();
+    while let Some(line) = cur.peek() {
+        if line.trim().is_empty() {
+            lines.push(String::new());
+            cur.consume();
+            continue;
+        }
+        let indent = leading_ws(line);
+        if indent <= parent_indent {
+            break;
+        }
+        let strip = (parent_indent + 2).min(indent);
+        lines.push(line[strip..].to_string());
+        cur.consume();
+    }
+    lines.join("\n")
 }
 
 fn detect_block_image(line: &str) -> Option<Image> {
@@ -371,7 +517,7 @@ fn detect_block_image(line: &str) -> Option<Image> {
     Some(img)
 }
 
-fn parse_paragraph(cur: &mut LineCursor) -> BlockNode {
+fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     let mut lines = Vec::new();
     while let Some(line) = cur.peek() {
         if line.trim().is_empty() {
@@ -383,8 +529,11 @@ fn parse_paragraph(cur: &mut LineCursor) -> BlockNode {
         cur.consume();
         lines.push(line);
     }
+    let joined = lines.join("\n");
+    let (text, attrs) = split_trailing_attrs(&joined);
     BlockNode::Paragraph(Paragraph {
-        children: parse_inline(&lines.join("\n")),
+        attrs,
+        children: parse_inline_with_options(text, options),
     })
 }
 
@@ -394,14 +543,235 @@ fn is_block_start(line: &str) -> bool {
         || detect_thematic_break(line)
         || line.starts_with('>')
         || is_list_marker(line)
+        || is_table_start(line)
+        || detect_admonition(line).is_some()
+        || detect_abbreviation_def(line).is_some()
         || detect_block_image(line).is_some()
+}
+
+fn consume_caption(cur: &mut LineCursor, options: &Options<'_>) -> Option<Vec<InlineNode>> {
+    let line = cur.peek()?;
+    let text = line.strip_prefix("^ ")?;
+    cur.consume();
+    Some(parse_inline_with_options(text.trim_end(), options))
+}
+
+fn is_table_start(line: &str) -> bool {
+    line.trim_start().starts_with("|=") || line.trim_start().starts_with('|')
+}
+
+fn parse_table(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
+    let mut rows = Vec::new();
+    while let Some(line) = cur.peek() {
+        if !is_table_start(line) {
+            break;
+        }
+        cur.consume();
+        rows.push(parse_table_row(line, options));
+    }
+    let table = Table {
+        attrs: None,
+        caption: consume_caption(cur, options),
+        rows,
+    };
+    if table.caption.is_some() {
+        return BlockNode::Table(table);
+    }
+    BlockNode::Table(table)
+}
+
+fn parse_table_row(line: &str, options: &Options<'_>) -> TableRow {
+    let mut content = line.trim();
+    if let Some(stripped) = content.strip_prefix('|') {
+        content = stripped;
+    }
+    if let Some(stripped) = content.strip_suffix('|') {
+        content = stripped;
+    }
+    let cells = split_table_cells(content)
+        .into_iter()
+        .map(|cell| parse_table_cell(&cell, options))
+        .collect();
+    TableRow { cells }
+}
+
+fn split_table_cells(content: &str) -> Vec<String> {
+    let mut cells = Vec::new();
+    let mut buf = String::new();
+    let mut escaped = false;
+    for ch in content.chars() {
+        if escaped {
+            buf.push(ch);
+            escaped = false;
+            continue;
+        }
+        if ch == '\\' {
+            escaped = true;
+            continue;
+        }
+        if ch == '|' {
+            cells.push(std::mem::take(&mut buf));
+            continue;
+        }
+        buf.push(ch);
+    }
+    cells.push(buf);
+    cells
+}
+
+fn parse_table_cell(cell: &str, options: &Options<'_>) -> TableCell {
+    let trimmed = cell.trim();
+    let header = trimmed.starts_with('=');
+    let text = if header { trimmed[1..].trim() } else { trimmed };
+    let span = match text {
+        "^" => Some(TableCellSpan::Rowspan),
+        "<" => Some(TableCellSpan::Colspan),
+        _ => None,
+    };
+    TableCell {
+        header,
+        span,
+        align: None,
+        children: if span.is_some() {
+            Vec::new()
+        } else {
+            parse_inline_with_options(text, options)
+        },
+    }
+}
+
+fn detect_admonition(line: &str) -> Option<String> {
+    let rest = line.trim().strip_prefix(":::")?.trim();
+    if rest.is_empty() {
+        return None;
+    }
+    Some(rest.split_whitespace().next()?.to_string())
+}
+
+fn parse_admonition(cur: &mut LineCursor, kind: String, options: &Options<'_>) -> BlockNode {
+    cur.consume();
+    let mut inner = Vec::new();
+    while let Some(line) = cur.peek() {
+        if line.trim() == ":::" {
+            cur.consume();
+            break;
+        }
+        inner.push(line.to_string());
+        cur.consume();
+    }
+    let children = parse_blocks_with_options(&inner.join("\n"), options);
+    BlockNode::Admonition(Admonition {
+        attrs: None,
+        kind,
+        title: None,
+        children,
+    })
+}
+
+fn detect_abbreviation_def(line: &str) -> Option<AbbreviationDef> {
+    let rest = line.strip_prefix("*[")?;
+    let (abbr, expansion) = rest.split_once("]:")?;
+    Some(AbbreviationDef {
+        abbr: abbr.to_string(),
+        expansion: expansion.trim().to_string(),
+    })
+}
+
+fn split_trailing_attrs(text: &str) -> (&str, Option<Attrs>) {
+    let trimmed = text.trim_end();
+    if !trimmed.ends_with('}') {
+        return (text, None);
+    }
+    let Some(open) = trimmed.rfind('{') else {
+        return (text, None);
+    };
+    if open == 0 || !trimmed[..open].ends_with(' ') {
+        return (text, None);
+    }
+    let attrs = parse_attrs(&trimmed[open + 1..trimmed.len() - 1]);
+    match attrs {
+        Some(attrs) => (trimmed[..open].trim_end(), Some(attrs)),
+        None => (text, None),
+    }
+}
+
+fn read_attrs_at(bytes: &[u8], start: usize) -> Option<(Attrs, usize)> {
+    if bytes.get(start) != Some(&b'{') {
+        return None;
+    }
+    let mut i = start + 1;
+    while i < bytes.len() && bytes[i] != b'}' {
+        i += 1;
+    }
+    if i >= bytes.len() {
+        return None;
+    }
+    let inner = std::str::from_utf8(&bytes[start + 1..i]).ok()?;
+    Some((parse_attrs(inner)?, i + 1))
+}
+
+fn parse_attrs(src: &str) -> Option<Attrs> {
+    let mut attrs = Attrs::default();
+    for token in src.split_whitespace() {
+        if let Some(id) = token.strip_prefix('#') {
+            if id.is_empty() {
+                return None;
+            }
+            if attrs.id.is_none() {
+                attrs.order.push(AttrSlot::Id);
+            }
+            attrs.id = Some(id.to_string());
+        } else if let Some(class) = token.strip_prefix('.') {
+            if class.is_empty() {
+                return None;
+            }
+            if attrs.classes.is_empty() {
+                attrs.order.push(AttrSlot::Class);
+            }
+            attrs.classes.push(class.to_string());
+        } else if let Some((key, value)) = token.split_once('=') {
+            if key.is_empty() {
+                return None;
+            }
+            if !attrs.key_values.contains_key(key) {
+                attrs.order.push(AttrSlot::Key(key.to_string()));
+            }
+            attrs
+                .key_values
+                .insert(key.to_string(), value.trim_matches('"').to_string());
+        } else {
+            return None;
+        }
+    }
+    Some(attrs)
+}
+
+fn try_extension_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<BlockNode> {
+    if options.extensions.is_empty() {
+        return None;
+    }
+    let ctx = MatcherContext::new(options);
+    for ext in &options.extensions {
+        if let Some(BlockMatch {
+            node,
+            lines_consumed,
+        }) = ext.match_block(cur.lines, cur.pos, &ctx)
+        {
+            if lines_consumed == 0 || cur.pos + lines_consumed > cur.lines.len() {
+                continue;
+            }
+            cur.pos += lines_consumed;
+            return Some(node);
+        }
+    }
+    None
 }
 
 // ============================================================================
 // Inline parsing
 // ============================================================================
 
-pub fn parse_inline(text: &str) -> Vec<InlineNode> {
+pub(crate) fn parse_inline_with_options(text: &str, options: &Options<'_>) -> Vec<InlineNode> {
     let bytes = text.as_bytes();
     let mut out = Vec::new();
     let mut buf = String::new();
@@ -441,7 +811,7 @@ pub fn parse_inline(text: &str) -> Vec<InlineNode> {
 
         // Inline link: [text](href)
         if c == b'[' {
-            if let Some((link, consumed)) = parse_inline_link(bytes, i) {
+            if let Some((link, consumed)) = parse_inline_link_with_options(bytes, i, options) {
                 flush_text(&mut out, &mut buf);
                 out.push(InlineNode::Link(link));
                 i += consumed;
@@ -449,8 +819,45 @@ pub fn parse_inline(text: &str) -> Vec<InlineNode> {
             }
         }
 
+        if c == b'@' {
+            if let Some((mention, consumed)) = parse_mention(text, i) {
+                flush_text(&mut out, &mut buf);
+                out.push(InlineNode::Mention(mention));
+                i += consumed;
+                continue;
+            }
+        }
+
+        if c == b'#' {
+            if let Some((tag, consumed)) = parse_tag(text, i) {
+                flush_text(&mut out, &mut buf);
+                out.push(InlineNode::Tag(tag));
+                i += consumed;
+                continue;
+            }
+        }
+
+        if c == b'<' {
+            if let Some((autolink, consumed)) = parse_autolink(text, i) {
+                flush_text(&mut out, &mut buf);
+                out.push(InlineNode::AutoLink(autolink));
+                i += consumed;
+                continue;
+            }
+        }
+
+        // Inline extension: :name[content]
+        if c == b':' {
+            if let Some((node, consumed)) = parse_inline_extension(bytes, i, options) {
+                flush_text(&mut out, &mut buf);
+                out.push(InlineNode::Extension(node));
+                i += consumed;
+                continue;
+            }
+        }
+
         // Bold-italic, sub, highlight, then single-char emphasis
-        if let Some((node, consumed)) = match_emphasis(bytes, i) {
+        if let Some((node, consumed)) = match_emphasis(bytes, i, options) {
             flush_text(&mut out, &mut buf);
             out.push(node);
             i += consumed;
@@ -465,8 +872,18 @@ pub fn parse_inline(text: &str) -> Vec<InlineNode> {
             continue;
         }
 
-        buf.push(c as char);
-        i += 1;
+        if let Some(InlineMatch { node, end }) = try_extension_inline(text, i, options) {
+            if end > i && end <= text.len() {
+                flush_text(&mut out, &mut buf);
+                out.push(node);
+                i = end;
+                continue;
+            }
+        }
+
+        let ch = text[i..].chars().next().unwrap();
+        buf.push(ch);
+        i += ch.len_utf8();
     }
     flush_text(&mut out, &mut buf);
     out
@@ -556,10 +973,22 @@ fn parse_image_at(bytes: &[u8], start: usize) -> Option<(Image, usize)> {
         return None;
     }
     let (src, title, after_paren) = read_link_target(bytes, after_alt + 1)?;
-    Some((Image { src, alt, title }, after_paren - start))
+    Some((
+        Image {
+            attrs: None,
+            src,
+            alt,
+            title,
+        },
+        after_paren - start,
+    ))
 }
 
-fn parse_inline_link(bytes: &[u8], start: usize) -> Option<(Link, usize)> {
+fn parse_inline_link_with_options(
+    bytes: &[u8],
+    start: usize,
+    options: &Options<'_>,
+) -> Option<(Link, usize)> {
     if bytes.get(start) != Some(&b'[') {
         return None;
     }
@@ -568,14 +997,137 @@ fn parse_inline_link(bytes: &[u8], start: usize) -> Option<(Link, usize)> {
         return None;
     }
     let (href, title, after_paren) = read_link_target(bytes, after_bracket + 1)?;
+    let mut attrs = None;
+    let mut after = after_paren;
+    if bytes.get(after) == Some(&b'{') {
+        if let Some((parsed_attrs, next)) = read_attrs_at(bytes, after) {
+            attrs = Some(parsed_attrs);
+            after = next;
+        }
+    }
     Some((
         Link {
+            attrs,
             href,
             title,
-            children: parse_inline(&text),
+            children: parse_inline_with_options(&text, options),
+            ref_label: None,
+            raw_ref: None,
         },
-        after_paren - start,
+        after - start,
     ))
+}
+
+fn parse_inline_extension(
+    bytes: &[u8],
+    start: usize,
+    options: &Options<'_>,
+) -> Option<(InlineExtension, usize)> {
+    if bytes.get(start) != Some(&b':') {
+        return None;
+    }
+    let mut i = start + 1;
+    let name_start = i;
+    while i < bytes.len()
+        && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'-' || bytes[i] == b'_')
+    {
+        i += 1;
+    }
+    if i == name_start || bytes.get(i) != Some(&b'[') {
+        return None;
+    }
+    let name = std::str::from_utf8(&bytes[name_start..i]).ok()?.to_string();
+    let (content, after_bracket) = read_bracketed(bytes, i)?;
+    let mut attrs = None;
+    let mut after = after_bracket;
+    if bytes.get(after) == Some(&b'{') {
+        if let Some((parsed_attrs, next)) = read_attrs_at(bytes, after) {
+            attrs = Some(parsed_attrs);
+            after = next;
+        }
+    }
+    Some((
+        InlineExtension {
+            attrs,
+            name,
+            children: parse_inline_with_options(&content, options),
+        },
+        after - start,
+    ))
+}
+
+fn parse_mention(text: &str, pos: usize) -> Option<(Mention, usize)> {
+    if pos > 0 {
+        let prev = text.as_bytes()[pos - 1];
+        if prev.is_ascii_alphanumeric() || prev == b'_' {
+            return None;
+        }
+    }
+    let rest = text.get(pos + 1..)?;
+    let len = rest
+        .bytes()
+        .take_while(|b| b.is_ascii_alphanumeric() || *b == b'_' || *b == b'-')
+        .count();
+    if len == 0 {
+        return None;
+    }
+    Some((
+        Mention {
+            user: rest[..len].to_string(),
+        },
+        len + 1,
+    ))
+}
+
+fn parse_tag(text: &str, pos: usize) -> Option<(Tag, usize)> {
+    if pos > 0 {
+        let prev = text.as_bytes()[pos - 1];
+        if prev.is_ascii_alphanumeric() || prev == b'_' {
+            return None;
+        }
+    }
+    let rest = text.get(pos + 1..)?;
+    let mut len = rest
+        .bytes()
+        .take_while(|b| b.is_ascii_alphanumeric() || *b == b'_' || *b == b'-' || *b == b'.')
+        .count();
+    while len > 0 && rest.as_bytes()[len - 1] == b'.' {
+        len -= 1;
+    }
+    if len == 0 {
+        return None;
+    }
+    Some((
+        Tag {
+            name: rest[..len].to_string(),
+        },
+        len + 1,
+    ))
+}
+
+fn parse_autolink(text: &str, pos: usize) -> Option<(AutoLink, usize)> {
+    let rest = text.get(pos..)?;
+    let close = rest.find('>')?;
+    let target = &rest[1..close];
+    if target.starts_with("http://") || target.starts_with("https://") {
+        return Some((
+            AutoLink {
+                attrs: None,
+                href: target.to_string(),
+            },
+            close + 1,
+        ));
+    }
+    if target.contains('@') && !target.contains(' ') {
+        return Some((
+            AutoLink {
+                attrs: None,
+                href: format!("mailto:{target}"),
+            },
+            close + 1,
+        ));
+    }
+    None
 }
 
 /// Read a `[…]` span starting at `start` (which must point to `[`).
@@ -645,7 +1197,7 @@ fn read_link_target(bytes: &[u8], start: usize) -> Option<(String, Option<String
     Some((href, title, i + 1))
 }
 
-fn match_emphasis(bytes: &[u8], i: usize) -> Option<(InlineNode, usize)> {
+fn match_emphasis(bytes: &[u8], i: usize, options: &Options<'_>) -> Option<(InlineNode, usize)> {
     let c = bytes[i];
 
     // /*bold italic*/
@@ -654,8 +1206,9 @@ fn match_emphasis(bytes: &[u8], i: usize) -> Option<(InlineNode, usize)> {
             let inner = std::str::from_utf8(&bytes[i + 2..close]).ok()?;
             return Some((
                 InlineNode::Emphasis(Emphasis {
+                    attrs: None,
                     kind: EmphasisKind::BoldItalic,
-                    children: parse_inline(inner),
+                    children: parse_inline_with_options(inner, options),
                 }),
                 close + 2 - i,
             ));
@@ -673,8 +1226,9 @@ fn match_emphasis(bytes: &[u8], i: usize) -> Option<(InlineNode, usize)> {
                     let inner = std::str::from_utf8(inner_bytes).ok()?;
                     return Some((
                         InlineNode::Emphasis(Emphasis {
+                            attrs: None,
                             kind: EmphasisKind::Sub,
-                            children: parse_inline(inner),
+                            children: parse_inline_with_options(inner, options),
                         }),
                         close + 2 - i,
                     ));
@@ -694,8 +1248,9 @@ fn match_emphasis(bytes: &[u8], i: usize) -> Option<(InlineNode, usize)> {
                     let inner = std::str::from_utf8(inner_bytes).ok()?;
                     return Some((
                         InlineNode::Emphasis(Emphasis {
+                            attrs: None,
                             kind: EmphasisKind::Highlight,
-                            children: parse_inline(inner),
+                            children: parse_inline_with_options(inner, options),
                         }),
                         close + 2 - i,
                     ));
@@ -729,11 +1284,161 @@ fn match_emphasis(bytes: &[u8], i: usize) -> Option<(InlineNode, usize)> {
     let inner = std::str::from_utf8(&bytes[i + 1..close]).ok()?;
     Some((
         InlineNode::Emphasis(Emphasis {
+            attrs: None,
             kind,
-            children: parse_inline(inner),
+            children: parse_inline_with_options(inner, options),
         }),
         close + 1 - i,
     ))
+}
+
+fn try_extension_inline(text: &str, pos: usize, options: &Options<'_>) -> Option<InlineMatch> {
+    if options.extensions.is_empty() {
+        return None;
+    }
+    if !text.is_char_boundary(pos) {
+        return None;
+    }
+    let ctx = MatcherContext::new(options);
+    for ext in &options.extensions {
+        if let Some(matched) = ext.match_inline(text, pos, &ctx) {
+            return Some(matched);
+        }
+    }
+    None
+}
+
+fn apply_abbreviations(doc: &mut Document) {
+    let mut defs = BTreeMap::new();
+    for child in &doc.children {
+        if let BlockNode::AbbreviationDef(def) = child {
+            defs.insert(def.abbr.clone(), def.expansion.clone());
+        }
+    }
+    if defs.is_empty() {
+        return;
+    }
+    doc.children
+        .retain(|node| !matches!(node, BlockNode::AbbreviationDef(_)));
+    for block in &mut doc.children {
+        apply_abbreviations_block(block, &defs);
+    }
+}
+
+fn apply_abbreviations_block(block: &mut BlockNode, defs: &BTreeMap<String, String>) {
+    match block {
+        BlockNode::Heading(h) => apply_abbreviations_inline(&mut h.children, defs),
+        BlockNode::Paragraph(p) => apply_abbreviations_inline(&mut p.children, defs),
+        BlockNode::List(l) => {
+            for item in &mut l.items {
+                for child in &mut item.children {
+                    apply_abbreviations_block(child, defs);
+                }
+            }
+        }
+        BlockNode::BlockQuote(b) => {
+            for child in &mut b.children {
+                apply_abbreviations_block(child, defs);
+            }
+        }
+        BlockNode::Table(t) => {
+            for row in &mut t.rows {
+                for cell in &mut row.cells {
+                    apply_abbreviations_inline(&mut cell.children, defs);
+                }
+            }
+        }
+        BlockNode::Admonition(a) => {
+            for child in &mut a.children {
+                apply_abbreviations_block(child, defs);
+            }
+        }
+        BlockNode::Figure(f) => {
+            apply_abbreviations_inline(&mut f.caption, defs);
+            match &mut f.target {
+                FigureTarget::BlockQuote(b) => {
+                    for child in &mut b.children {
+                        apply_abbreviations_block(child, defs);
+                    }
+                }
+                FigureTarget::Table(t) => {
+                    for row in &mut t.rows {
+                        for cell in &mut row.cells {
+                            apply_abbreviations_inline(&mut cell.children, defs);
+                        }
+                    }
+                }
+                FigureTarget::Image(_) => {}
+            }
+        }
+        _ => {}
+    }
+}
+
+fn apply_abbreviations_inline(nodes: &mut Vec<InlineNode>, defs: &BTreeMap<String, String>) {
+    let mut out = Vec::new();
+    for node in std::mem::take(nodes) {
+        match node {
+            InlineNode::Text(text) => {
+                let mut parts = replace_abbreviations_in_text(&text, defs);
+                out.append(&mut parts);
+            }
+            InlineNode::Emphasis(mut e) => {
+                apply_abbreviations_inline(&mut e.children, defs);
+                out.push(InlineNode::Emphasis(e));
+            }
+            InlineNode::Link(mut l) => {
+                apply_abbreviations_inline(&mut l.children, defs);
+                out.push(InlineNode::Link(l));
+            }
+            InlineNode::Extension(mut e) => {
+                apply_abbreviations_inline(&mut e.children, defs);
+                out.push(InlineNode::Extension(e));
+            }
+            other => out.push(other),
+        }
+    }
+    *nodes = out;
+}
+
+fn replace_abbreviations_in_text(text: &str, defs: &BTreeMap<String, String>) -> Vec<InlineNode> {
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < text.len() {
+        let mut matched: Option<(&str, &str)> = None;
+        for (abbr, expansion) in defs {
+            if text[i..].starts_with(abbr)
+                && is_word_boundary(text, i)
+                && is_word_boundary(text, i + abbr.len())
+            {
+                matched = Some((abbr.as_str(), expansion.as_str()));
+                break;
+            }
+        }
+        if let Some((abbr, expansion)) = matched {
+            out.push(InlineNode::Abbreviation(Abbreviation {
+                abbr: abbr.to_string(),
+                expansion: expansion.to_string(),
+            }));
+            i += abbr.len();
+            continue;
+        }
+        let ch = text[i..].chars().next().unwrap();
+        match out.last_mut() {
+            Some(InlineNode::Text(existing)) => existing.push(ch),
+            _ => out.push(InlineNode::Text(ch.to_string())),
+        }
+        i += ch.len_utf8();
+    }
+    out
+}
+
+fn is_word_boundary(text: &str, pos: usize) -> bool {
+    if pos == 0 || pos >= text.len() {
+        return true;
+    }
+    !text.as_bytes()[pos - 1].is_ascii_alphanumeric()
+        || !text.as_bytes()[pos].is_ascii_alphanumeric()
 }
 
 fn find_seq(bytes: &[u8], from: usize, marker: &[u8]) -> Option<usize> {
