@@ -94,6 +94,21 @@ echo '# Hello' | carve
 carve --help
 ```
 
+## Implementation comparison
+
+Use the comparison helper to check this Rust implementation against sibling
+`../carve-js` and `../carve-php` checkouts on the full spec corpus:
+
+```bash
+node scripts/compare-impls.mjs
+node scripts/compare-impls.mjs --limit=20 --bench
+```
+
+The report includes per-implementation pass counts, cross-implementation diffs,
+rough CLI-level timings, and the opt-in extension hook surface each
+implementation exposes. The current corpus profile is `default/no-opt-in`; a
+true min/max opt-in extension matrix needs per-language adapter fixtures.
+
 ## Building from source
 
 ```bash

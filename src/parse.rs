@@ -13,16 +13,111 @@ pub fn parse(source: &str) -> Document {
 
 pub fn parse_with_options(source: &str, options: &Options<'_>) -> Document {
     let (frontmatter, body) = split_frontmatter(source);
-    let children = parse_blocks_with_options(body, options);
+    let (body, footnote_defs_src) = extract_footnote_defs(body);
+    let (body, link_defs) = extract_link_defs(&body);
+    let footnote_defs = footnote_defs_src
+        .into_iter()
+        .map(|(label, source)| (label, parse_blocks_with_options(&source, options)))
+        .collect();
+    let children = parse_blocks_with_options(&body, options);
     let mut doc = Document {
         frontmatter,
+        footnote_defs,
         children,
     };
+    resolve_reference_links(&mut doc, &link_defs);
     apply_abbreviations(&mut doc);
+    resolve_crossrefs(&mut doc);
     for ext in &options.extensions {
         doc = ext.after_parse(doc);
     }
     doc
+}
+
+fn extract_footnote_defs(source: &str) -> (String, BTreeMap<String, String>) {
+    let lines: Vec<&str> = source.lines().collect();
+    let mut body = Vec::new();
+    let mut defs = BTreeMap::new();
+    let mut i = 0;
+    while i < lines.len() {
+        if let Some((label, first)) = parse_footnote_def_line(lines[i]) {
+            i += 1;
+            let mut def_lines = vec![first.to_string()];
+            while i < lines.len() {
+                let line = lines[i];
+                if parse_footnote_def_line(line).is_some() {
+                    break;
+                }
+                if line.trim().is_empty() {
+                    if i + 1 < lines.len() && leading_ws(lines[i + 1]) >= 4 {
+                        def_lines.push(String::new());
+                        i += 1;
+                        continue;
+                    }
+                    break;
+                }
+                if leading_ws(line) > 0 {
+                    def_lines.push(line.trim_start().to_string());
+                    i += 1;
+                    continue;
+                }
+                break;
+            }
+            defs.insert(label.to_string(), def_lines.join("\n"));
+        } else {
+            body.push(lines[i]);
+            i += 1;
+        }
+    }
+    (body.join("\n"), defs)
+}
+
+fn parse_footnote_def_line(line: &str) -> Option<(&str, &str)> {
+    let rest = line.strip_prefix("[^")?;
+    let (label, body) = rest.split_once("]:")?;
+    Some((label, body.trim_start()))
+}
+
+#[derive(Clone)]
+struct LinkDef {
+    href: String,
+    title: Option<String>,
+}
+
+fn extract_link_defs(source: &str) -> (String, BTreeMap<String, LinkDef>) {
+    let mut body = Vec::new();
+    let mut defs = BTreeMap::new();
+    for line in source.lines() {
+        if let Some((label_part, target_part)) =
+            line.strip_prefix('[').and_then(|s| s.split_once("]:"))
+        {
+            defs.insert(
+                label_part.to_string(),
+                parse_link_def_target(target_part.trim()),
+            );
+        } else {
+            body.push(line);
+        }
+    }
+    (body.join("\n"), defs)
+}
+
+fn parse_link_def_target(target: &str) -> LinkDef {
+    let bytes = target.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() && !bytes[i].is_ascii_whitespace() {
+        i += 1;
+    }
+    let href = target[..i].to_string();
+    let rest = target[i..].trim();
+    let title = if (rest.starts_with('"') && rest.ends_with('"'))
+        || (rest.starts_with('\'') && rest.ends_with('\''))
+    {
+        Some(rest[1..rest.len() - 1].to_string())
+    } else {
+        None
+    };
+    LinkDef { href, title }
 }
 
 fn split_frontmatter(source: &str) -> (BTreeMap<String, String>, &str) {
@@ -79,13 +174,37 @@ impl<'a> LineCursor<'a> {
 
 fn parse_blocks(cur: &mut LineCursor, options: &Options<'_>) -> Vec<BlockNode> {
     let mut out = Vec::new();
+    let mut pending_attrs: Option<Attrs> = None;
     while !cur.eof() {
         let line = cur.peek().unwrap();
         if line.trim().is_empty() {
             cur.consume();
             continue;
         }
+        if line.trim_start().starts_with("%%%") {
+            cur.consume();
+            while let Some(line) = cur.peek() {
+                cur.consume();
+                if line.trim_start().starts_with("%%%") {
+                    break;
+                }
+            }
+            continue;
+        }
+        if line.trim_start().starts_with("%%") {
+            cur.consume();
+            continue;
+        }
+        if let Some(attrs) = parse_standalone_attrs(line) {
+            cur.consume();
+            merge_attrs(&mut pending_attrs, attrs);
+            continue;
+        }
         if let Some(node) = parse_block(cur, options) {
+            let mut node = node;
+            if let Some(attrs) = pending_attrs.take() {
+                apply_attrs_to_block(&mut node, attrs);
+            }
             out.push(node);
         }
     }
@@ -119,8 +238,11 @@ fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<BlockNode>
     if is_table_start(line) {
         return Some(parse_table(cur, options));
     }
-    if let Some(kind) = detect_admonition(line) {
-        return Some(parse_admonition(cur, kind, options));
+    if is_definition_list_start(line) {
+        return Some(parse_definition_list(cur, options));
+    }
+    if detect_container_open(line).is_some() {
+        return Some(parse_container(cur, options));
     }
     if let Some(abbr) = detect_abbreviation_def(line) {
         cur.consume();
@@ -168,6 +290,8 @@ fn detect_thematic_break(line: &str) -> bool {
         return false;
     }
     trimmed.bytes().all(|b| b == b'-')
+        || trimmed.bytes().all(|b| b == b'*')
+        || trimmed.bytes().all(|b| b == b'_')
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -212,6 +336,16 @@ fn detect_fence_open(line: &str) -> Option<FenceOpen> {
         i += 1;
     }
     let lang_end = i;
+    if &line[lang_start..lang_end] == "raw" {
+        while i < bytes.len() && bytes[i] == b' ' {
+            i += 1;
+        }
+        while i < bytes.len()
+            && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_' || bytes[i] == b'-')
+        {
+            i += 1;
+        }
+    }
     // Must be only whitespace after the language token
     while i < bytes.len() && bytes[i] == b' ' {
         i += 1;
@@ -230,7 +364,9 @@ fn detect_fence_open(line: &str) -> Option<FenceOpen> {
 
 fn parse_fence(cur: &mut LineCursor, open: FenceOpen) -> BlockNode {
     let open_line = cur.consume().unwrap();
-    let lang = if open.lang_start < open.lang_end {
+    let open_trim = open_line[open.lang_start..].trim();
+    let raw_format = open_trim.strip_prefix("raw ").map(str::to_string);
+    let lang = if raw_format.is_none() && open.lang_start < open.lang_end {
         Some(open_line[open.lang_start..open.lang_end].to_string())
     } else {
         None
@@ -246,11 +382,18 @@ fn parse_fence(cur: &mut LineCursor, open: FenceOpen) -> BlockNode {
         let strip = leading_ws(line).min(open.indent);
         content_lines.push(line[strip..].to_string());
     }
-    BlockNode::CodeBlock(CodeBlock {
-        attrs: None,
-        lang,
-        content: content_lines.join("\n"),
-    })
+    if let Some(format) = raw_format {
+        BlockNode::RawBlock(RawBlock {
+            format,
+            content: content_lines.join("\n"),
+        })
+    } else {
+        BlockNode::CodeBlock(CodeBlock {
+            attrs: None,
+            lang,
+            content: content_lines.join("\n"),
+        })
+    }
 }
 
 fn is_fence_close(line: &str, open: FenceOpen) -> bool {
@@ -341,22 +484,84 @@ fn detect_unordered(line: &str) -> Option<&str> {
 }
 
 fn detect_ordered(line: &str) -> Option<&str> {
+    detect_ordered_full(line).map(|(content, _, _)| content)
+}
+
+fn detect_ordered_full(line: &str) -> Option<(&str, Option<usize>, Option<OrderedListType>)> {
     let bytes = line.as_bytes();
     let mut i = 0;
     while i < bytes.len() && bytes[i] == b' ' {
         i += 1;
     }
-    let digits_start = i;
-    while i < bytes.len() && bytes[i].is_ascii_digit() {
+    let marker_start = i;
+    while i < bytes.len() && bytes[i].is_ascii_alphanumeric() {
         i += 1;
     }
-    if i == digits_start {
+    if i == marker_start {
         return None;
     }
-    if i + 1 >= bytes.len() || bytes[i] != b'.' || bytes[i + 1] != b' ' {
+    if i + 1 >= bytes.len() || (bytes[i] != b'.' && bytes[i] != b')') || bytes[i + 1] != b' ' {
         return None;
     }
-    Some(line[i + 2..].trim_end())
+    let marker = &line[marker_start..i];
+    if marker.bytes().all(|b| b.is_ascii_digit()) {
+        return Some((
+            line[i + 2..].trim_end(),
+            marker.parse::<usize>().ok().filter(|n| *n != 1),
+            None,
+        ));
+    }
+    if marker.len() == 1 {
+        let b = marker.as_bytes()[0];
+        if b.is_ascii_lowercase() {
+            return Some((
+                line[i + 2..].trim_end(),
+                Some((b - b'a' + 1) as usize).filter(|n| *n != 1),
+                Some(OrderedListType::LowerAlpha),
+            ));
+        }
+        if b.is_ascii_uppercase() {
+            return Some((
+                line[i + 2..].trim_end(),
+                Some((b - b'A' + 1) as usize).filter(|n| *n != 1),
+                Some(OrderedListType::UpperAlpha),
+            ));
+        }
+    }
+    let roman = roman_to_int(marker)?;
+    Some((
+        line[i + 2..].trim_end(),
+        Some(roman).filter(|n| *n != 1),
+        Some(if marker.chars().all(|c| c.is_ascii_uppercase()) {
+            OrderedListType::UpperRoman
+        } else {
+            OrderedListType::LowerRoman
+        }),
+    ))
+}
+
+fn roman_to_int(s: &str) -> Option<usize> {
+    let mut total = 0isize;
+    let mut prev = 0isize;
+    for ch in s.chars().rev() {
+        let val = match ch.to_ascii_lowercase() {
+            'i' => 1,
+            'v' => 5,
+            'x' => 10,
+            'l' => 50,
+            'c' => 100,
+            'd' => 500,
+            'm' => 1000,
+            _ => return None,
+        };
+        if val < prev {
+            total -= val;
+        } else {
+            total += val;
+            prev = val;
+        }
+    }
+    (total > 0).then_some(total as usize)
 }
 
 fn detect_task(line: &str) -> Option<(bool, &str)> {
@@ -383,11 +588,7 @@ fn detect_task(line: &str) -> Option<(bool, &str)> {
     if bytes[i + 2] != b']' || bytes[i + 3] != b' ' {
         return None;
     }
-    let checked = match marker {
-        b' ' => false,
-        b'x' | b'X' => true,
-        _ => return None,
-    };
+    let checked = matches!(marker, b'x' | b'X');
     Some((checked, line[i + 4..].trim_end()))
 }
 
@@ -397,6 +598,8 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     let base_indent = first_marker.indent;
     let is_task = first_marker.checked.is_some();
     let is_ordered = first_marker.ordered;
+    let start = first_marker.start;
+    let ol_type = first_marker.ol_type;
     let mut items: Vec<ListItem> = Vec::new();
     let mut tight = true;
     let mut pending_blank = false;
@@ -408,6 +611,16 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             continue;
         }
         let Some(marker) = detect_list_marker_full(line) else {
+            if leading_ws(line) > base_indent {
+                if let Some(last) = items.last_mut() {
+                    let nested = collect_indented_block(cur, base_indent);
+                    let nested_children = parse_blocks_with_options(&nested, options);
+                    last.children.extend(nested_children);
+                    tight = false;
+                    pending_blank = false;
+                    continue;
+                }
+            }
             break;
         };
         if marker.indent < base_indent {
@@ -442,8 +655,8 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     BlockNode::List(List {
         attrs: None,
         ordered: is_ordered,
-        start: None,
-        ol_type: None,
+        start,
+        ol_type,
         tight,
         items,
     })
@@ -454,6 +667,8 @@ struct ListMarker<'a> {
     indent: usize,
     ordered: bool,
     checked: Option<bool>,
+    start: Option<usize>,
+    ol_type: Option<OrderedListType>,
     content: &'a str,
 }
 
@@ -464,14 +679,18 @@ fn detect_list_marker_full(line: &str) -> Option<ListMarker<'_>> {
             indent,
             ordered: false,
             checked: Some(checked),
+            start: None,
+            ol_type: None,
             content,
         });
     }
-    if let Some(content) = detect_ordered(line) {
+    if let Some((content, start, ol_type)) = detect_ordered_full(line) {
         return Some(ListMarker {
             indent,
             ordered: true,
             checked: None,
+            start,
+            ol_type,
             content,
         });
     }
@@ -480,6 +699,8 @@ fn detect_list_marker_full(line: &str) -> Option<ListMarker<'_>> {
             indent,
             ordered: false,
             checked: None,
+            start: None,
+            ol_type: None,
             content,
         });
     }
@@ -523,7 +744,7 @@ fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         if line.trim().is_empty() {
             break;
         }
-        if is_block_start(line) {
+        if is_block_start(line) && (lines.is_empty() || !is_list_marker(line)) {
             break;
         }
         cur.consume();
@@ -544,20 +765,63 @@ fn is_block_start(line: &str) -> bool {
         || line.starts_with('>')
         || is_list_marker(line)
         || is_table_start(line)
-        || detect_admonition(line).is_some()
+        || is_definition_list_start(line)
+        || detect_container_open(line).is_some()
         || detect_abbreviation_def(line).is_some()
         || detect_block_image(line).is_some()
 }
 
+fn is_definition_list_start(line: &str) -> bool {
+    line.starts_with(":: ") || line.starts_with(":  ")
+}
+
+fn parse_definition_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
+    let mut terms = Vec::new();
+    let mut defs = Vec::new();
+    while let Some(line) = cur.peek() {
+        if let Some(term) = line.strip_prefix(":: ") {
+            terms.push(parse_inline_with_options(term.trim_end(), options));
+            cur.consume();
+        } else if let Some(def) = line.strip_prefix(":  ") {
+            defs.push(vec![BlockNode::Paragraph(Paragraph {
+                attrs: None,
+                children: parse_inline_with_options(def.trim_end(), options),
+            })]);
+            cur.consume();
+        } else {
+            break;
+        }
+    }
+    BlockNode::DefinitionList(DefinitionList {
+        attrs: None,
+        items: vec![DefinitionItem {
+            terms,
+            definitions: defs,
+        }],
+    })
+}
+
 fn consume_caption(cur: &mut LineCursor, options: &Options<'_>) -> Option<Vec<InlineNode>> {
-    let line = cur.peek()?;
-    let text = line.strip_prefix("^ ")?;
+    let saved = cur.pos;
+    while matches!(cur.peek(), Some(line) if line.trim().is_empty()) {
+        cur.consume();
+    }
+    let Some(line) = cur.peek() else {
+        cur.pos = saved;
+        return None;
+    };
+    let Some(text) = line.strip_prefix("^ ") else {
+        cur.pos = saved;
+        return None;
+    };
     cur.consume();
     Some(parse_inline_with_options(text.trim_end(), options))
 }
 
 fn is_table_start(line: &str) -> bool {
-    line.trim_start().starts_with("|=") || line.trim_start().starts_with('|')
+    line.trim_start().starts_with("|=")
+        || line.trim_start().starts_with('|')
+        || line.trim_start().starts_with('+')
 }
 
 fn parse_table(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
@@ -567,7 +831,13 @@ fn parse_table(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             break;
         }
         cur.consume();
-        rows.push(parse_table_row(line, options));
+        if is_table_continuation(line) {
+            if let Some(last) = rows.last_mut() {
+                apply_table_continuation(last, line, options);
+            }
+        } else {
+            rows.push(parse_table_row(line, options));
+        }
     }
     let table = Table {
         attrs: None,
@@ -578,6 +848,34 @@ fn parse_table(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         return BlockNode::Table(table);
     }
     BlockNode::Table(table)
+}
+
+fn is_table_continuation(line: &str) -> bool {
+    line.trim_start().starts_with('+')
+}
+
+fn apply_table_continuation(row: &mut TableRow, line: &str, options: &Options<'_>) {
+    let mut content = line.trim();
+    if let Some(stripped) = content.strip_prefix('+') {
+        content = stripped;
+    }
+    if let Some(stripped) = content.strip_suffix('|') {
+        content = stripped;
+    }
+    for (idx, cell) in split_table_cells(content).into_iter().enumerate() {
+        let text = cell.trim();
+        if text.is_empty() {
+            continue;
+        }
+        if let Some(target) = row.cells.get_mut(idx) {
+            if !target.children.is_empty() {
+                target.children.push(InlineNode::Text(" ".to_string()));
+            }
+            target
+                .children
+                .extend(parse_inline_with_options(text, options));
+        }
+    }
 }
 
 fn parse_table_row(line: &str, options: &Options<'_>) -> TableRow {
@@ -599,6 +897,7 @@ fn split_table_cells(content: &str) -> Vec<String> {
     let mut cells = Vec::new();
     let mut buf = String::new();
     let mut escaped = false;
+    let mut code_ticks = 0usize;
     for ch in content.chars() {
         if escaped {
             buf.push(ch);
@@ -609,7 +908,12 @@ fn split_table_cells(content: &str) -> Vec<String> {
             escaped = true;
             continue;
         }
-        if ch == '|' {
+        if ch == '`' {
+            code_ticks ^= 1;
+            buf.push(ch);
+            continue;
+        }
+        if ch == '|' && code_ticks == 0 {
             cells.push(std::mem::take(&mut buf));
             continue;
         }
@@ -622,7 +926,34 @@ fn split_table_cells(content: &str) -> Vec<String> {
 fn parse_table_cell(cell: &str, options: &Options<'_>) -> TableCell {
     let trimmed = cell.trim();
     let header = trimmed.starts_with('=');
-    let text = if header { trimmed[1..].trim() } else { trimmed };
+    let mut text = if header { trimmed[1..].trim() } else { trimmed };
+    let align = if text.len() > 1 {
+        match text.as_bytes()[0] {
+            b'>' if text.as_bytes()[1] == b' ' => {
+                text = text[1..].trim();
+                Some(TableAlign::Right)
+            }
+            b'<' if text.as_bytes()[1] == b' ' => {
+                text = text[1..].trim();
+                Some(TableAlign::Left)
+            }
+            b'~' if text.as_bytes()[1] == b' ' => {
+                text = text[1..].trim();
+                Some(TableAlign::Center)
+            }
+            b'>' | b'<' | b'~' => {
+                text = text[1..].trim();
+                Some(match trimmed.as_bytes()[if header { 1 } else { 0 }] {
+                    b'>' => TableAlign::Right,
+                    b'<' => TableAlign::Left,
+                    _ => TableAlign::Center,
+                })
+            }
+            _ => None,
+        }
+    } else {
+        None
+    };
     let span = match text {
         "^" => Some(TableCellSpan::Rowspan),
         "<" => Some(TableCellSpan::Colspan),
@@ -631,7 +962,7 @@ fn parse_table_cell(cell: &str, options: &Options<'_>) -> TableCell {
     TableCell {
         header,
         span,
-        align: None,
+        align,
         children: if span.is_some() {
             Vec::new()
         } else {
@@ -640,19 +971,57 @@ fn parse_table_cell(cell: &str, options: &Options<'_>) -> TableCell {
     }
 }
 
-fn detect_admonition(line: &str) -> Option<String> {
-    let rest = line.trim().strip_prefix(":::")?.trim();
-    if rest.is_empty() {
-        return None;
-    }
-    Some(rest.split_whitespace().next()?.to_string())
+struct ContainerOpen {
+    fence_len: usize,
+    kind: Option<String>,
+    title: Option<String>,
+    attrs: Option<Attrs>,
 }
 
-fn parse_admonition(cur: &mut LineCursor, kind: String, options: &Options<'_>) -> BlockNode {
+fn detect_container_open(line: &str) -> Option<ContainerOpen> {
+    let trimmed = line.trim();
+    let fence_len = trimmed.bytes().take_while(|b| *b == b':').count();
+    if fence_len < 3 {
+        return None;
+    }
+    let rest = trimmed[fence_len..].trim();
+    if rest.is_empty() {
+        return Some(ContainerOpen {
+            fence_len,
+            kind: None,
+            title: None,
+            attrs: None,
+        });
+    }
+    if rest.starts_with('{') && rest.ends_with('}') {
+        return Some(ContainerOpen {
+            fence_len,
+            kind: None,
+            title: None,
+            attrs: parse_attrs(&rest[1..rest.len() - 1]),
+        });
+    }
+    let mut parts = rest.splitn(2, char::is_whitespace);
+    let kind = parts.next()?.to_string();
+    let title = parts
+        .next()
+        .map(str::trim)
+        .filter(|s| s.starts_with('"') && s.ends_with('"') && s.len() >= 2)
+        .map(|s| s[1..s.len() - 1].to_string());
+    Some(ContainerOpen {
+        fence_len,
+        kind: Some(kind),
+        title,
+        attrs: None,
+    })
+}
+
+fn parse_container(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
+    let open = detect_container_open(cur.peek().unwrap()).unwrap();
     cur.consume();
     let mut inner = Vec::new();
     while let Some(line) = cur.peek() {
-        if line.trim() == ":::" {
+        if line.trim().bytes().all(|b| b == b':') && line.trim().len() >= open.fence_len {
             cur.consume();
             break;
         }
@@ -660,12 +1029,19 @@ fn parse_admonition(cur: &mut LineCursor, kind: String, options: &Options<'_>) -
         cur.consume();
     }
     let children = parse_blocks_with_options(&inner.join("\n"), options);
-    BlockNode::Admonition(Admonition {
-        attrs: None,
-        kind,
-        title: None,
-        children,
-    })
+    if let Some(kind) = open.kind {
+        BlockNode::Admonition(Admonition {
+            attrs: open.attrs,
+            kind,
+            title: open.title.map(|t| parse_inline_with_options(&t, options)),
+            children,
+        })
+    } else {
+        BlockNode::Div(Div {
+            attrs: open.attrs,
+            children,
+        })
+    }
 }
 
 fn detect_abbreviation_def(line: &str) -> Option<AbbreviationDef> {
@@ -682,7 +1058,7 @@ fn split_trailing_attrs(text: &str) -> (&str, Option<Attrs>) {
     if !trimmed.ends_with('}') {
         return (text, None);
     }
-    let Some(open) = trimmed.rfind('{') else {
+    let Some(open) = find_attr_open(trimmed) else {
         return (text, None);
     };
     if open == 0 || !trimmed[..open].ends_with(' ') {
@@ -695,12 +1071,69 @@ fn split_trailing_attrs(text: &str) -> (&str, Option<Attrs>) {
     }
 }
 
+fn find_attr_open(text: &str) -> Option<usize> {
+    let mut quote: Option<char> = None;
+    let mut escaped = false;
+    let mut last = None;
+    for (idx, ch) in text.char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        if ch == '\\' {
+            escaped = true;
+            continue;
+        }
+        if let Some(q) = quote {
+            if ch == q {
+                quote = None;
+            }
+            continue;
+        }
+        if ch == '"' || ch == '\'' {
+            quote = Some(ch);
+            continue;
+        }
+        if ch == '{' {
+            last = Some(idx);
+        }
+    }
+    last
+}
+
 fn read_attrs_at(bytes: &[u8], start: usize) -> Option<(Attrs, usize)> {
     if bytes.get(start) != Some(&b'{') {
         return None;
     }
     let mut i = start + 1;
-    while i < bytes.len() && bytes[i] != b'}' {
+    let mut quote: Option<u8> = None;
+    let mut escaped = false;
+    while i < bytes.len() {
+        if escaped {
+            escaped = false;
+            i += 1;
+            continue;
+        }
+        if bytes[i] == b'\\' {
+            escaped = true;
+            i += 1;
+            continue;
+        }
+        if let Some(q) = quote {
+            if bytes[i] == q {
+                quote = None;
+            }
+            i += 1;
+            continue;
+        }
+        if bytes[i] == b'"' || bytes[i] == b'\'' {
+            quote = Some(bytes[i]);
+            i += 1;
+            continue;
+        }
+        if bytes[i] == b'}' {
+            break;
+        }
         i += 1;
     }
     if i >= bytes.len() {
@@ -711,8 +1144,11 @@ fn read_attrs_at(bytes: &[u8], start: usize) -> Option<(Attrs, usize)> {
 }
 
 fn parse_attrs(src: &str) -> Option<Attrs> {
+    if src.trim().is_empty() {
+        return None;
+    }
     let mut attrs = Attrs::default();
-    for token in src.split_whitespace() {
+    for token in attr_tokens(src) {
         if let Some(id) = token.strip_prefix('#') {
             if id.is_empty() {
                 return None;
@@ -736,14 +1172,110 @@ fn parse_attrs(src: &str) -> Option<Attrs> {
             if !attrs.key_values.contains_key(key) {
                 attrs.order.push(AttrSlot::Key(key.to_string()));
             }
-            attrs
-                .key_values
-                .insert(key.to_string(), value.trim_matches('"').to_string());
+            let value = value
+                .trim_matches('"')
+                .trim_matches('\'')
+                .replace("\\\"", "\"")
+                .replace("\\'", "'");
+            attrs.key_values.insert(key.to_string(), value);
         } else {
             return None;
         }
     }
     Some(attrs)
+}
+
+fn attr_tokens(src: &str) -> Vec<String> {
+    let mut tokens = Vec::new();
+    let mut buf = String::new();
+    let mut quote: Option<char> = None;
+    let mut escaped = false;
+    for ch in src.chars() {
+        if escaped {
+            buf.push('\\');
+            buf.push(ch);
+            escaped = false;
+            continue;
+        }
+        if ch == '\\' {
+            escaped = true;
+            continue;
+        }
+        if let Some(q) = quote {
+            buf.push(ch);
+            if ch == q {
+                quote = None;
+            }
+            continue;
+        }
+        if ch == '"' || ch == '\'' {
+            quote = Some(ch);
+            buf.push(ch);
+            continue;
+        }
+        if ch.is_whitespace() {
+            if !buf.is_empty() {
+                tokens.push(std::mem::take(&mut buf));
+            }
+        } else {
+            buf.push(ch);
+        }
+    }
+    if !buf.is_empty() {
+        tokens.push(buf);
+    }
+    tokens
+}
+
+fn parse_standalone_attrs(line: &str) -> Option<Attrs> {
+    let trimmed = line.trim();
+    if !trimmed.starts_with('{') || !trimmed.ends_with('}') {
+        return None;
+    }
+    parse_attrs(&trimmed[1..trimmed.len() - 1])
+}
+
+fn merge_attrs(target: &mut Option<Attrs>, incoming: Attrs) {
+    if target.is_none() {
+        *target = Some(incoming);
+        return;
+    }
+    let target = target.as_mut().unwrap();
+    if incoming.id.is_some() {
+        target.id = incoming.id;
+    }
+    target.classes.extend(incoming.classes);
+    target.key_values.extend(incoming.key_values);
+}
+
+fn apply_attrs_to_block(node: &mut BlockNode, attrs: Attrs) {
+    match node {
+        BlockNode::Heading(n) => n.attrs = Some(attrs),
+        BlockNode::Paragraph(n) => n.attrs = Some(attrs),
+        BlockNode::CodeBlock(n) => n.attrs = Some(attrs),
+        BlockNode::List(n) => n.attrs = Some(attrs),
+        BlockNode::BlockQuote(n) => n.attrs = Some(attrs),
+        BlockNode::Table(n) => n.attrs = Some(attrs),
+        BlockNode::Admonition(n) => n.attrs = Some(attrs),
+        BlockNode::Div(n) => n.attrs = Some(attrs),
+        BlockNode::DefinitionList(n) => n.attrs = Some(attrs),
+        BlockNode::Figure(n) => n.attrs = Some(attrs),
+        BlockNode::Extension(n) => n.attrs = Some(attrs),
+        _ => {}
+    }
+}
+
+fn apply_attrs_to_inline(node: &mut InlineNode, attrs: Attrs) {
+    match node {
+        InlineNode::Emphasis(n) => n.attrs = Some(attrs),
+        InlineNode::Link(n) => n.attrs = Some(attrs),
+        InlineNode::Image(n) => n.attrs = Some(attrs),
+        InlineNode::Span(n) => n.attrs = Some(attrs),
+        InlineNode::Math(n) => n.attrs = Some(attrs),
+        InlineNode::AutoLink(n) => n.attrs = Some(attrs),
+        InlineNode::Extension(n) => n.attrs = Some(attrs),
+        _ => {}
+    }
 }
 
 fn try_extension_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<BlockNode> {
@@ -783,6 +1315,7 @@ pub(crate) fn parse_inline_with_options(text: &str, options: &Options<'_>) -> Ve
         if c == b'\\' && i + 1 < bytes.len() {
             let nxt = bytes[i + 1];
             if is_escapable(nxt) {
+                buf.push('\\');
                 buf.push(nxt as char);
                 i += 2;
                 continue;
@@ -792,8 +1325,34 @@ pub(crate) fn parse_inline_with_options(text: &str, options: &Options<'_>) -> Ve
         // Inline code spans
         if c == b'`' {
             if let Some((value, consumed)) = parse_inline_code(bytes, i) {
+                if let Some((raw, raw_consumed)) =
+                    parse_raw_inline_after_code(bytes, i, &value, consumed)
+                {
+                    flush_text(&mut out, &mut buf);
+                    out.push(InlineNode::RawInline(raw));
+                    i += raw_consumed;
+                    continue;
+                }
                 flush_text(&mut out, &mut buf);
                 out.push(InlineNode::Code(value));
+                i += consumed;
+                continue;
+            }
+        }
+
+        if c == b'$' {
+            if let Some((math, consumed)) = parse_math(bytes, i) {
+                flush_text(&mut out, &mut buf);
+                out.push(InlineNode::Math(math));
+                i += consumed;
+                continue;
+            }
+        }
+
+        if c == b'{' {
+            if let Some((critic, consumed)) = parse_critic_markup(bytes, i, options) {
+                flush_text(&mut out, &mut buf);
+                out.push(critic);
                 i += consumed;
                 continue;
             }
@@ -811,9 +1370,36 @@ pub(crate) fn parse_inline_with_options(text: &str, options: &Options<'_>) -> Ve
 
         // Inline link: [text](href)
         if c == b'[' {
+            if let Some((footnote, consumed)) = parse_footnote_ref(bytes, i) {
+                flush_text(&mut out, &mut buf);
+                out.push(InlineNode::Footnote(footnote));
+                i += consumed;
+                continue;
+            }
             if let Some((link, consumed)) = parse_inline_link_with_options(bytes, i, options) {
                 flush_text(&mut out, &mut buf);
                 out.push(InlineNode::Link(link));
+                i += consumed;
+                continue;
+            }
+            if let Some((link, consumed)) = parse_reference_link(bytes, i, options) {
+                flush_text(&mut out, &mut buf);
+                out.push(InlineNode::Link(link));
+                i += consumed;
+                continue;
+            }
+            if let Some((span, consumed)) = parse_span(bytes, i, options) {
+                flush_text(&mut out, &mut buf);
+                out.push(InlineNode::Span(span));
+                i += consumed;
+                continue;
+            }
+        }
+
+        if c == b'<' {
+            if let Some((crossref, consumed)) = parse_crossref(text, i) {
+                flush_text(&mut out, &mut buf);
+                out.push(InlineNode::CrossRef(crossref));
                 i += consumed;
                 continue;
             }
@@ -857,7 +1443,14 @@ pub(crate) fn parse_inline_with_options(text: &str, options: &Options<'_>) -> Ve
         }
 
         // Bold-italic, sub, highlight, then single-char emphasis
-        if let Some((node, consumed)) = match_emphasis(bytes, i, options) {
+        if let Some((mut node, consumed)) = match_emphasis(bytes, i, options) {
+            let mut consumed = consumed;
+            if bytes.get(i + consumed) == Some(&b'{') {
+                if let Some((attrs, next)) = read_attrs_at(bytes, i + consumed) {
+                    apply_attrs_to_inline(&mut node, attrs);
+                    consumed = next - i;
+                }
+            }
             flush_text(&mut out, &mut buf);
             out.push(node);
             i += consumed;
@@ -866,6 +1459,13 @@ pub(crate) fn parse_inline_with_options(text: &str, options: &Options<'_>) -> Ve
 
         // Soft break
         if c == b'\n' {
+            if buf.ends_with('\\') {
+                buf.pop();
+                flush_text(&mut out, &mut buf);
+                out.push(InlineNode::HardBreak);
+                i += 1;
+                continue;
+            }
             flush_text(&mut out, &mut buf);
             out.push(InlineNode::SoftBreak);
             i += 1;
@@ -889,6 +1489,155 @@ pub(crate) fn parse_inline_with_options(text: &str, options: &Options<'_>) -> Ve
     out
 }
 
+fn parse_critic_markup(
+    bytes: &[u8],
+    start: usize,
+    options: &Options<'_>,
+) -> Option<(InlineNode, usize)> {
+    let rest = std::str::from_utf8(&bytes[start..]).ok()?;
+    if let Some(inner) = rest.strip_prefix("{+") {
+        let end = inner.find("+}")?;
+        return Some((
+            InlineNode::CriticInsert(CriticInsert {
+                children: parse_inline_with_options(&inner[..end], options),
+            }),
+            end + 4,
+        ));
+    }
+    if let Some(inner) = rest.strip_prefix("{-") {
+        let end = inner.find("-}")?;
+        return Some((
+            InlineNode::CriticDelete(CriticDelete {
+                children: parse_inline_with_options(&inner[..end], options),
+            }),
+            end + 4,
+        ));
+    }
+    if let Some(inner) = rest.strip_prefix("{~") {
+        let sep = inner.find("~>")?;
+        let end = inner.find("~}")?;
+        return Some((
+            InlineNode::CriticSubstitute(CriticSubstitute {
+                old_text: inner[..sep].to_string(),
+                new_text: inner[sep + 2..end].to_string(),
+            }),
+            end + 4,
+        ));
+    }
+    if let Some(inner) = rest.strip_prefix("{#") {
+        let end = inner.find("#}")?;
+        return Some((
+            InlineNode::CriticComment(CriticComment {
+                text: inner[..end].to_string(),
+            }),
+            end + 4,
+        ));
+    }
+    None
+}
+
+fn parse_footnote_ref(bytes: &[u8], start: usize) -> Option<(Footnote, usize)> {
+    if bytes.get(start) != Some(&b'[') || bytes.get(start + 1) != Some(&b'^') {
+        return None;
+    }
+    let mut i = start + 2;
+    while i < bytes.len() && bytes[i] != b']' {
+        i += 1;
+    }
+    if i >= bytes.len() {
+        return None;
+    }
+    let id = std::str::from_utf8(&bytes[start + 2..i]).ok()?.to_string();
+    Some((
+        Footnote {
+            id: Some(id),
+            inline: None,
+            number: None,
+            ref_id: None,
+        },
+        i + 1 - start,
+    ))
+}
+
+fn parse_raw_inline_after_code(
+    bytes: &[u8],
+    start: usize,
+    value: &str,
+    code_consumed: usize,
+) -> Option<(RawInline, usize)> {
+    let attr_start = start + code_consumed;
+    if bytes.get(attr_start) != Some(&b'{') || bytes.get(attr_start + 1) != Some(&b'=') {
+        return None;
+    }
+    let mut i = attr_start + 2;
+    let format_start = i;
+    while i < bytes.len() && bytes[i] != b'}' {
+        i += 1;
+    }
+    if i >= bytes.len() {
+        return None;
+    }
+    Some((
+        RawInline {
+            format: std::str::from_utf8(&bytes[format_start..i])
+                .ok()?
+                .to_string(),
+            content: value.to_string(),
+        },
+        i + 1 - start,
+    ))
+}
+
+fn parse_math(bytes: &[u8], start: usize) -> Option<(Math, usize)> {
+    let display = bytes.get(start + 1) == Some(&b'$');
+    let tick = if display { start + 2 } else { start + 1 };
+    if bytes.get(tick) != Some(&b'`') {
+        return None;
+    }
+    let rest = std::str::from_utf8(&bytes[tick + 1..]).ok()?;
+    let close = rest.find('`')?;
+    Some((
+        Math {
+            attrs: None,
+            display,
+            content: rest[..close].to_string(),
+        },
+        tick + 1 + close + 1 - start,
+    ))
+}
+
+fn parse_reference_link(
+    bytes: &[u8],
+    start: usize,
+    options: &Options<'_>,
+) -> Option<(Link, usize)> {
+    let (text, after_text) = read_bracketed(bytes, start)?;
+    if bytes.get(after_text) != Some(&b'[') {
+        return None;
+    }
+    let (label, after_label) = read_bracketed(bytes, after_text)?;
+    let ref_label = if label.is_empty() {
+        text.clone()
+    } else {
+        label
+    };
+    Some((
+        Link {
+            attrs: None,
+            href: String::new(),
+            title: None,
+            children: parse_inline_with_options(&text, options),
+            ref_label: Some(ref_label),
+            raw_ref: Some(
+                std::str::from_utf8(&bytes[start..after_label])
+                    .ok()?
+                    .to_string(),
+            ),
+        },
+        after_label - start,
+    ))
+}
+
 fn flush_text(out: &mut Vec<InlineNode>, buf: &mut String) {
     if !buf.is_empty() {
         out.push(InlineNode::Text(std::mem::take(buf)));
@@ -908,6 +1657,8 @@ fn is_escapable(b: u8) -> bool {
             | b']'
             | b'('
             | b')'
+            | b'"'
+            | b'\''
             | b'#'
             | b'+'
             | b'-'
@@ -973,14 +1724,22 @@ fn parse_image_at(bytes: &[u8], start: usize) -> Option<(Image, usize)> {
         return None;
     }
     let (src, title, after_paren) = read_link_target(bytes, after_alt + 1)?;
+    let mut attrs = None;
+    let mut after = after_paren;
+    if bytes.get(after) == Some(&b'{') {
+        if let Some((parsed_attrs, next)) = read_attrs_at(bytes, after) {
+            attrs = Some(parsed_attrs);
+            after = next;
+        }
+    }
     Some((
         Image {
-            attrs: None,
+            attrs,
             src,
             alt,
             title,
         },
-        after_paren - start,
+        after - start,
     ))
 }
 
@@ -1056,6 +1815,37 @@ fn parse_inline_extension(
     ))
 }
 
+fn parse_span(bytes: &[u8], start: usize, options: &Options<'_>) -> Option<(Span, usize)> {
+    let (content, after_bracket) = read_bracketed(bytes, start)?;
+    if bytes.get(after_bracket) != Some(&b'{') {
+        return None;
+    }
+    let (attrs, after_attrs) = read_attrs_at(bytes, after_bracket)
+        .or_else(|| read_empty_attrs_at(bytes, after_bracket))?;
+    Some((
+        Span {
+            attrs: Some(attrs),
+            children: parse_inline_with_options(&content, options),
+        },
+        after_attrs - start,
+    ))
+}
+
+fn read_empty_attrs_at(bytes: &[u8], start: usize) -> Option<(Attrs, usize)> {
+    if bytes.get(start) != Some(&b'{') {
+        return None;
+    }
+    let mut i = start + 1;
+    while i < bytes.len() && bytes[i].is_ascii_whitespace() {
+        i += 1;
+    }
+    if bytes.get(i) == Some(&b'}') {
+        Some((Attrs::default(), i + 1))
+    } else {
+        None
+    }
+}
+
 fn parse_mention(text: &str, pos: usize) -> Option<(Mention, usize)> {
     if pos > 0 {
         let prev = text.as_bytes()[pos - 1];
@@ -1109,25 +1899,46 @@ fn parse_autolink(text: &str, pos: usize) -> Option<(AutoLink, usize)> {
     let rest = text.get(pos..)?;
     let close = rest.find('>')?;
     let target = &rest[1..close];
+    let mut attrs = None;
+    let mut consumed = close + 1;
+    let bytes = text.as_bytes();
+    if bytes.get(pos + consumed) == Some(&b'{') {
+        if let Some((parsed_attrs, next)) = read_attrs_at(bytes, pos + consumed) {
+            attrs = Some(parsed_attrs);
+            consumed = next - pos;
+        }
+    }
     if target.starts_with("http://") || target.starts_with("https://") {
         return Some((
             AutoLink {
-                attrs: None,
+                attrs,
                 href: target.to_string(),
             },
-            close + 1,
+            consumed,
         ));
     }
     if target.contains('@') && !target.contains(' ') {
         return Some((
             AutoLink {
-                attrs: None,
+                attrs,
                 href: format!("mailto:{target}"),
             },
-            close + 1,
+            consumed,
         ));
     }
     None
+}
+
+fn parse_crossref(text: &str, pos: usize) -> Option<(CrossRef, usize)> {
+    let rest = text.get(pos..)?;
+    let inner = rest.strip_prefix("</#")?;
+    let close = inner.find('>')?;
+    Some((
+        CrossRef {
+            target: inner[..close].to_string(),
+        },
+        close + 4,
+    ))
 }
 
 /// Read a `[…]` span starting at `start` (which must point to `[`).
@@ -1138,9 +1949,18 @@ fn read_bracketed(bytes: &[u8], start: usize) -> Option<(String, usize)> {
     }
     let mut i = start + 1;
     let content_start = i;
+    let mut depth = 0usize;
     while i < bytes.len() {
         match bytes[i] {
             b'\\' if i + 1 < bytes.len() => i += 2,
+            b'[' => {
+                depth += 1;
+                i += 1;
+            }
+            b']' if depth > 0 => {
+                depth -= 1;
+                i += 1;
+            }
             b']' => {
                 let text = std::str::from_utf8(&bytes[content_start..i])
                     .ok()?
@@ -1172,10 +1992,11 @@ fn read_link_target(bytes: &[u8], start: usize) -> Option<(String, Option<String
         i += 1;
     }
     let mut title: Option<String> = None;
-    if bytes.get(i) == Some(&b'"') {
+    if bytes.get(i) == Some(&b'"') || bytes.get(i) == Some(&b'\'') {
+        let quote = bytes[i];
         i += 1;
         let title_start = i;
-        while i < bytes.len() && bytes[i] != b'"' {
+        while i < bytes.len() && bytes[i] != quote {
             i += 1;
         }
         if i >= bytes.len() {
@@ -1216,7 +2037,13 @@ fn match_emphasis(bytes: &[u8], i: usize, options: &Options<'_>) -> Option<(Inli
     }
     // ,,sub,,
     if c == b',' && bytes.get(i + 1) == Some(&b',') {
+        if bytes.get(i + 2) == Some(&b',') {
+            return None;
+        }
         if let Some(close) = find_seq(bytes, i + 2, b",,") {
+            if bytes.get(close + 2) == Some(&b',') {
+                return None;
+            }
             if close > i + 2 {
                 let inner_bytes = &bytes[i + 2..close];
                 if !inner_bytes.is_empty()
@@ -1238,7 +2065,13 @@ fn match_emphasis(bytes: &[u8], i: usize, options: &Options<'_>) -> Option<(Inli
     }
     // ==highlight==
     if c == b'=' && bytes.get(i + 1) == Some(&b'=') {
+        if bytes.get(i + 2) == Some(&b'=') {
+            return None;
+        }
         if let Some(close) = find_seq(bytes, i + 2, b"==") {
+            if bytes.get(close + 2) == Some(&b'=') {
+                return None;
+            }
             if close > i + 2 {
                 let inner_bytes = &bytes[i + 2..close];
                 if !inner_bytes.is_empty()
@@ -1271,6 +2104,9 @@ fn match_emphasis(bytes: &[u8], i: usize, options: &Options<'_>) -> Option<(Inli
     // Opener: next char must exist and not be space/newline/delim
     let after = bytes.get(i + 1).copied()?;
     if after == b' ' || after == b'\n' || after == delim {
+        return None;
+    }
+    if i > 0 && bytes[i - 1] == delim {
         return None;
     }
     // For / and _, the previous char must not be alphanumeric (avoid mid-word)
@@ -1439,6 +2275,243 @@ fn is_word_boundary(text: &str, pos: usize) -> bool {
     }
     !text.as_bytes()[pos - 1].is_ascii_alphanumeric()
         || !text.as_bytes()[pos].is_ascii_alphanumeric()
+}
+
+fn resolve_crossrefs(doc: &mut Document) {
+    let mut counts = BTreeMap::new();
+    let mut titles = BTreeMap::new();
+    collect_heading_titles(&doc.children, &mut counts, &mut titles);
+    for block in &mut doc.children {
+        resolve_crossrefs_block(block, &titles);
+    }
+}
+
+fn resolve_reference_links(doc: &mut Document, defs: &BTreeMap<String, LinkDef>) {
+    for block in &mut doc.children {
+        resolve_reference_links_block(block, defs);
+    }
+}
+
+fn resolve_reference_links_block(block: &mut BlockNode, defs: &BTreeMap<String, LinkDef>) {
+    match block {
+        BlockNode::Heading(h) => resolve_reference_links_inline(&mut h.children, defs),
+        BlockNode::Paragraph(p) => resolve_reference_links_inline(&mut p.children, defs),
+        BlockNode::List(l) => {
+            for item in &mut l.items {
+                for child in &mut item.children {
+                    resolve_reference_links_block(child, defs);
+                }
+            }
+        }
+        BlockNode::BlockQuote(b) => {
+            for child in &mut b.children {
+                resolve_reference_links_block(child, defs);
+            }
+        }
+        BlockNode::Table(t) => {
+            for row in &mut t.rows {
+                for cell in &mut row.cells {
+                    resolve_reference_links_inline(&mut cell.children, defs);
+                }
+            }
+        }
+        BlockNode::Admonition(a) => {
+            for child in &mut a.children {
+                resolve_reference_links_block(child, defs);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn resolve_reference_links_inline(nodes: &mut Vec<InlineNode>, defs: &BTreeMap<String, LinkDef>) {
+    let mut out = Vec::new();
+    for mut node in std::mem::take(nodes) {
+        match &mut node {
+            InlineNode::Link(l) => {
+                if let Some(label) = &l.ref_label {
+                    if let Some(def) = defs.get(label) {
+                        l.href = def.href.clone();
+                        l.title = def.title.clone();
+                        l.ref_label = None;
+                        l.raw_ref = None;
+                        out.push(node);
+                    } else {
+                        out.push(InlineNode::Text(l.raw_ref.clone().unwrap_or_default()));
+                    }
+                } else {
+                    resolve_reference_links_inline(&mut l.children, defs);
+                    out.push(node);
+                }
+            }
+            InlineNode::Emphasis(e) => {
+                resolve_reference_links_inline(&mut e.children, defs);
+                out.push(node);
+            }
+            InlineNode::Span(s) => {
+                resolve_reference_links_inline(&mut s.children, defs);
+                out.push(node);
+            }
+            InlineNode::Extension(e) => {
+                resolve_reference_links_inline(&mut e.children, defs);
+                out.push(node);
+            }
+            _ => out.push(node),
+        }
+    }
+    *nodes = out;
+}
+
+fn collect_heading_titles(
+    blocks: &[BlockNode],
+    counts: &mut BTreeMap<String, usize>,
+    titles: &mut BTreeMap<String, String>,
+) {
+    for block in blocks {
+        match block {
+            BlockNode::Heading(h) => {
+                let title = plain_inlines_parse(&h.children);
+                let base = h
+                    .attrs
+                    .as_ref()
+                    .and_then(|attrs| attrs.id.clone())
+                    .unwrap_or_else(|| slugify_parse(&title));
+                let count = counts.entry(base.clone()).or_insert(0);
+                *count += 1;
+                let id = if *count == 1 {
+                    base
+                } else {
+                    format!("{base}-{count}")
+                };
+                titles.insert(id, title);
+            }
+            BlockNode::List(l) => {
+                for item in &l.items {
+                    collect_heading_titles(&item.children, counts, titles);
+                }
+            }
+            BlockNode::BlockQuote(b) => collect_heading_titles(&b.children, counts, titles),
+            BlockNode::Admonition(a) => collect_heading_titles(&a.children, counts, titles),
+            _ => {}
+        }
+    }
+}
+
+fn resolve_crossrefs_block(block: &mut BlockNode, titles: &BTreeMap<String, String>) {
+    match block {
+        BlockNode::Heading(h) => resolve_crossrefs_inline(&mut h.children, titles),
+        BlockNode::Paragraph(p) => resolve_crossrefs_inline(&mut p.children, titles),
+        BlockNode::List(l) => {
+            for item in &mut l.items {
+                for child in &mut item.children {
+                    resolve_crossrefs_block(child, titles);
+                }
+            }
+        }
+        BlockNode::BlockQuote(b) => {
+            for child in &mut b.children {
+                resolve_crossrefs_block(child, titles);
+            }
+        }
+        BlockNode::Admonition(a) => {
+            for child in &mut a.children {
+                resolve_crossrefs_block(child, titles);
+            }
+        }
+        BlockNode::Table(t) => {
+            for row in &mut t.rows {
+                for cell in &mut row.cells {
+                    resolve_crossrefs_inline(&mut cell.children, titles);
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+fn resolve_crossrefs_inline(nodes: &mut Vec<InlineNode>, titles: &BTreeMap<String, String>) {
+    for node in nodes {
+        match node {
+            InlineNode::CrossRef(c) => {
+                if let Some(title) = titles.get(&c.target) {
+                    *node = InlineNode::Link(Link {
+                        attrs: None,
+                        href: format!("#{}", c.target),
+                        title: None,
+                        children: vec![InlineNode::Text(title.clone())],
+                        ref_label: None,
+                        raw_ref: None,
+                    });
+                }
+            }
+            InlineNode::Emphasis(e) => resolve_crossrefs_inline(&mut e.children, titles),
+            InlineNode::Link(l) => resolve_crossrefs_inline(&mut l.children, titles),
+            InlineNode::Span(s) => resolve_crossrefs_inline(&mut s.children, titles),
+            InlineNode::Extension(e) => resolve_crossrefs_inline(&mut e.children, titles),
+            _ => {}
+        }
+    }
+}
+
+fn plain_inlines_parse(nodes: &[InlineNode]) -> String {
+    let mut out = String::new();
+    for node in nodes {
+        match node {
+            InlineNode::Text(s) => out.push_str(s),
+            InlineNode::Emphasis(e) => out.push_str(&plain_inlines_parse(&e.children)),
+            InlineNode::Code(s) => out.push_str(s),
+            InlineNode::Link(l) => out.push_str(&plain_inlines_parse(&l.children)),
+            InlineNode::Image(i) => out.push_str(&i.alt),
+            InlineNode::Extension(e) => out.push_str(&plain_inlines_parse(&e.children)),
+            InlineNode::Abbreviation(a) => out.push_str(&a.abbr),
+            InlineNode::Mention(m) => out.push_str(&m.user),
+            InlineNode::Tag(t) => out.push_str(&t.name),
+            _ => {}
+        }
+    }
+    out
+}
+
+fn slugify_parse(text: &str) -> String {
+    let mut out = String::new();
+    let mut last_dash = false;
+    for ch in text.chars() {
+        let mapped = match ch {
+            'À' | 'Á' | 'Â' | 'Ã' | 'Ä' | 'Å' | 'à' | 'á' | 'â' | 'ã' | 'ä' | 'å' => {
+                'a'
+            }
+            'Ç' | 'ç' => 'c',
+            'È' | 'É' | 'Ê' | 'Ë' | 'è' | 'é' | 'ê' | 'ë' => 'e',
+            'Ì' | 'Í' | 'Î' | 'Ï' | 'ì' | 'í' | 'î' | 'ï' => 'i',
+            'Ñ' | 'ñ' => 'n',
+            'Ò' | 'Ó' | 'Ô' | 'Õ' | 'Ö' | 'ò' | 'ó' | 'ô' | 'õ' | 'ö' => 'o',
+            'Ù' | 'Ú' | 'Û' | 'Ü' | 'ù' | 'ú' | 'û' | 'ü' => 'u',
+            'Ý' | 'Ÿ' | 'ý' | 'ÿ' => 'y',
+            'ß' => 's',
+            c if c.is_ascii_alphanumeric() => c.to_ascii_lowercase(),
+            _ => '-',
+        };
+        if mapped == '-' {
+            if !last_dash && !out.is_empty() {
+                out.push('-');
+                last_dash = true;
+            }
+        } else {
+            out.push(mapped);
+            last_dash = false;
+        }
+    }
+    while out.ends_with('-') {
+        out.pop();
+    }
+    if out.chars().next().is_some_and(|c| c.is_ascii_digit()) {
+        out = format!("section-{out}");
+    }
+    if out.is_empty() {
+        "section".to_string()
+    } else {
+        out
+    }
 }
 
 fn find_seq(bytes: &[u8], from: usize, marker: &[u8]) -> Option<usize> {

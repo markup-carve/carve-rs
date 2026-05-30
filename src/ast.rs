@@ -25,6 +25,7 @@ pub enum AttrSlot {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Document {
     pub frontmatter: BTreeMap<String, String>,
+    pub footnote_defs: BTreeMap<String, Vec<BlockNode>>,
     pub children: Vec<BlockNode>,
 }
 
