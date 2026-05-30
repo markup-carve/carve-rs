@@ -23,6 +23,7 @@ pub fn escape_attr(input: &str) -> String {
             '<' => out.push_str("&lt;"),
             '>' => out.push_str("&gt;"),
             '"' => out.push_str("&quot;"),
+            '\'' => out.push_str("&apos;"),
             other => out.push(other),
         }
     }
