@@ -841,7 +841,13 @@ fn render_inline(out: &mut String, node: &InlineNode, options: &Options<'_>) {
                 out.push_str(&r.content);
             }
         }
-        InlineNode::Emoji(e) => out.push_str(&format!(":{}:", escape_text(&e.name))),
+        InlineNode::Emoji(e) => {
+            if let Some(value) = options.emoji.get(&e.name) {
+                out.push_str(&escape_text(value));
+            } else {
+                out.push_str(&format!(":{}:", escape_text(&e.name)));
+            }
+        }
         InlineNode::AutoLink(a) => {
             let display = if let Some(stripped) = a.href.strip_prefix("mailto:") {
                 stripped
@@ -860,14 +866,40 @@ fn render_inline(out: &mut String, node: &InlineNode, options: &Options<'_>) {
             escape_attr(&c.target),
             escape_text(&c.target)
         )),
-        InlineNode::Mention(m) => out.push_str(&format!(
-            "<span class=\"mention\"><strong>@{}</strong></span>",
-            escape_text(&m.user)
-        )),
-        InlineNode::Tag(t) => out.push_str(&format!(
-            "<span class=\"tag\"><strong>#{}</strong></span>",
-            escape_text(&t.name)
-        )),
+        InlineNode::Mention(m) => {
+            if let Some(template) = &options.mention_url {
+                let encoded = percent_encode(&m.user);
+                let href = template
+                    .replace("{name}", &encoded)
+                    .replace("{user}", &encoded);
+                out.push_str(&format!(
+                    "<a class=\"mention\" href=\"{}\">@{}</a>",
+                    escape_attr(&href),
+                    escape_text(&m.user)
+                ));
+            } else {
+                out.push_str(&format!(
+                    "<span class=\"mention\"><strong>@{}</strong></span>",
+                    escape_text(&m.user)
+                ));
+            }
+        }
+        InlineNode::Tag(t) => {
+            if let Some(template) = &options.tag_url {
+                let encoded = percent_encode(&t.name);
+                let href = template.replace("{name}", &encoded);
+                out.push_str(&format!(
+                    "<a class=\"tag\" href=\"{}\">#{}</a>",
+                    escape_attr(&href),
+                    escape_text(&t.name)
+                ));
+            } else {
+                out.push_str(&format!(
+                    "<span class=\"tag\"><strong>#{}</strong></span>",
+                    escape_text(&t.name)
+                ));
+            }
+        }
         InlineNode::Extension(e) => render_inline_extension(out, e, options),
         InlineNode::Abbreviation(a) => out.push_str(&format!(
             "<abbr title=\"{}\">{}</abbr>",
@@ -910,6 +942,18 @@ fn render_inline(out: &mut String, node: &InlineNode, options: &Options<'_>) {
             escape_text(&c.text)
         )),
     }
+}
+
+fn percent_encode(input: &str) -> String {
+    let mut out = String::new();
+    for byte in input.bytes() {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~') {
+            out.push(byte as char);
+        } else {
+            out.push_str(&format!("%{byte:02X}"));
+        }
+    }
+    out
 }
 
 fn render_emphasis(out: &mut String, e: &Emphasis, options: &Options<'_>) {

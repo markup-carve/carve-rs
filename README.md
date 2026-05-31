@@ -91,6 +91,8 @@ cargo install --path .
 
 carve README.crv > README.html
 echo '# Hello' | carve
+carve --mention-url '/users/{name}' --tag-url '/topics/{name}' social.crv
+carve --emoji 'rocket=🚀' --emoji 'tada=🎉' emoji.crv
 carve --help
 ```
 

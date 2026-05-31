@@ -1434,6 +1434,12 @@ pub(crate) fn parse_inline_with_options(text: &str, options: &Options<'_>) -> Ve
 
         // Inline extension: :name[content]
         if c == b':' {
+            if let Some((emoji, consumed)) = parse_emoji(text, i) {
+                flush_text(&mut out, &mut buf);
+                out.push(InlineNode::Emoji(emoji));
+                i += consumed;
+                continue;
+            }
             if let Some((node, consumed)) = parse_inline_extension(bytes, i, options) {
                 flush_text(&mut out, &mut buf);
                 out.push(InlineNode::Extension(node));
@@ -1892,6 +1898,27 @@ fn parse_tag(text: &str, pos: usize) -> Option<(Tag, usize)> {
             name: rest[..len].to_string(),
         },
         len + 1,
+    ))
+}
+
+fn parse_emoji(text: &str, pos: usize) -> Option<(Emoji, usize)> {
+    let bytes = text.as_bytes();
+    if bytes.get(pos) != Some(&b':') {
+        return None;
+    }
+    let rest = text.get(pos + 1..)?;
+    let len = rest
+        .bytes()
+        .take_while(|b| b.is_ascii_alphanumeric() || *b == b'_' || *b == b'+' || *b == b'-')
+        .count();
+    if len == 0 || bytes.get(pos + 1 + len) != Some(&b':') {
+        return None;
+    }
+    Some((
+        Emoji {
+            name: rest[..len].to_string(),
+        },
+        len + 2,
     ))
 }
 

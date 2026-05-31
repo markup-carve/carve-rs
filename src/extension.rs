@@ -4,6 +4,8 @@
 //! parse matchers, `after_parse`, `before_render`, then renderer hooks.
 //! Implementations register extensions through [`Options`].
 
+use std::collections::BTreeMap;
+
 use crate::ast::{BlockExtension, BlockNode, Document, InlineExtension, InlineNode};
 use crate::escape::{escape_attr, escape_text};
 use crate::parse::{parse_blocks_with_options, parse_inline_with_options};
@@ -11,6 +13,9 @@ use crate::parse::{parse_blocks_with_options, parse_inline_with_options};
 #[derive(Default)]
 pub struct Options<'a> {
     pub extensions: Vec<&'a dyn CarveExtension>,
+    pub mention_url: Option<String>,
+    pub tag_url: Option<String>,
+    pub emoji: BTreeMap<String, String>,
 }
 
 impl<'a> Options<'a> {
@@ -20,6 +25,21 @@ impl<'a> Options<'a> {
 
     pub fn with_extension(mut self, extension: &'a dyn CarveExtension) -> Self {
         self.extensions.push(extension);
+        self
+    }
+
+    pub fn with_mention_url(mut self, template: impl Into<String>) -> Self {
+        self.mention_url = Some(template.into());
+        self
+    }
+
+    pub fn with_tag_url(mut self, template: impl Into<String>) -> Self {
+        self.tag_url = Some(template.into());
+        self
+    }
+
+    pub fn with_emoji(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
+        self.emoji.insert(name.into(), value.into());
         self
     }
 }
