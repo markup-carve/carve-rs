@@ -643,12 +643,31 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             pending_blank = false;
         }
         cur.consume();
+        // The item's first paragraph is the marker content plus any
+        // immediately-following indented prose lines (lazy continuation).
+        // It stops at a blank line or a list marker: a nested sublist still
+        // interrupts (the one Carve deviation, grammar §10), while every other
+        // block opener -- heading, fence, etc. -- stays paragraph text.
+        let mut para_lines = vec![marker.content.to_string()];
+        while let Some(next) = cur.peek() {
+            if next.trim().is_empty() || detect_list_marker_full(next).is_some() {
+                break;
+            }
+            let indent = leading_ws(next);
+            if indent <= base_indent {
+                break;
+            }
+            let strip = (base_indent + 2).min(indent);
+            para_lines.push(next[strip..].to_string());
+            cur.consume();
+        }
+        let para_text = para_lines.join("\n");
         items.push(ListItem {
             attrs: None,
             checked: marker.checked,
             children: vec![BlockNode::Paragraph(Paragraph {
                 attrs: None,
-                children: parse_inline_with_options(marker.content, options),
+                children: parse_inline_with_options(&para_text, options),
             })],
         });
     }
@@ -744,7 +763,7 @@ fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         if line.trim().is_empty() {
             break;
         }
-        if is_block_start(line) && (lines.is_empty() || !is_list_marker(line)) {
+        if paragraph_interrupted(line) {
             break;
         }
         cur.consume();
@@ -758,17 +777,25 @@ fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     })
 }
 
-fn is_block_start(line: &str) -> bool {
-    detect_heading(line).is_some()
-        || detect_fence_open(line).is_some()
-        || detect_thematic_break(line)
-        || line.starts_with('>')
-        || is_list_marker(line)
-        || is_table_start(line)
-        || is_definition_list_start(line)
-        || detect_container_open(line).is_some()
-        || detect_abbreviation_def(line).is_some()
-        || detect_block_image(line).is_some()
+/// Whether `line`, seen while accumulating a paragraph, ends it and starts a
+/// new block (grammar §10).
+///
+/// At the document TOP LEVEL a VISIBLE block does NOT interrupt: a hard-wrapped
+/// prose line that happens to begin with a marker stays paragraph text
+/// (Design Principle 7). Only INVISIBLE constructs interrupt there; link and
+/// footnote definitions plus comments are stripped before block parsing, so
+/// the only one reaching here is an abbreviation definition.
+///
+/// In NESTED content (list item, block quote, admonition body) a marker still
+/// interrupts, except a lone list marker mid-paragraph stays prose.
+fn paragraph_interrupted(line: &str) -> bool {
+    // A paragraph is interrupted only by INVISIBLE constructs (grammar §10):
+    // comments (`%%`, `%%%`) and abbreviation definitions, in any context.
+    // Reference definitions are stripped before block parsing. No VISIBLE
+    // block interrupts without a blank line, at the top level or nested
+    // (matching djot). The one Carve deviation -- a nested sublist with no
+    // blank line -- is handled by the list parser's indentation, not here.
+    line.trim_start().starts_with("%%") || detect_abbreviation_def(line).is_some()
 }
 
 fn is_definition_list_start(line: &str) -> bool {
