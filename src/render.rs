@@ -294,6 +294,9 @@ fn plain_inlines(nodes: &[InlineNode]) -> String {
             InlineNode::Abbreviation(a) => out.push_str(&a.abbr),
             InlineNode::Mention(m) => out.push_str(&m.user),
             InlineNode::Tag(t) => out.push_str(&t.name),
+            // A soft/hard break (e.g. a multi-line heading) is a word
+            // separator for slug/plain-text purposes, not a join.
+            InlineNode::SoftBreak | InlineNode::HardBreak => out.push(' '),
             _ => {}
         }
     }
