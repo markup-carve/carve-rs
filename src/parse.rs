@@ -64,6 +64,10 @@ fn extract_footnote_defs(source: &str) -> (String, BTreeMap<String, String>) {
                 break;
             }
             defs.insert(label.to_string(), def_lines.join("\n"));
+            // Leave a blank line where the (invisible) definition was, so it
+            // still acts as a block boundary — a following paragraph or a
+            // lazy blockquote continuation does not absorb across it.
+            body.push("");
         } else {
             body.push(lines[i]);
             i += 1;
@@ -95,6 +99,10 @@ fn extract_link_defs(source: &str) -> (String, BTreeMap<String, LinkDef>) {
                 label_part.to_string(),
                 parse_link_def_target(target_part.trim()),
             );
+            // Leave a blank line in place of the (invisible) definition so it
+            // still acts as a block boundary (matches carve-js, where a
+            // definition interrupts a paragraph / ends a lazy blockquote).
+            body.push("");
         } else {
             body.push(line);
         }
@@ -220,9 +228,33 @@ fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<BlockNode>
         cur.consume();
         return Some(BlockNode::ThematicBreak);
     }
-    if let Some((level, text)) = detect_heading(line) {
+    if let Some((level, first_text)) = detect_heading(line) {
         cur.consume();
-        let (text, attrs) = split_trailing_attrs(text);
+        // Headings are multi-line (like Djot, and like blockquotes): the text
+        // spills onto following lines until a blank line. A continuation line
+        // may carry the same-or-lower number of `#` (stripped) or none; a
+        // higher/other heading marker starts a new heading, and a caption or a
+        // fenced comment (`%%%`) ends it. Per §10 nothing else interrupts.
+        let mut joined = first_text.to_string();
+        while let Some(next) = cur.peek() {
+            if next.trim().is_empty() {
+                break;
+            }
+            if let Some(cont) = heading_continuation_same_or_lower(next, level) {
+                joined.push('\n');
+                joined.push_str(cont);
+                cur.consume();
+                continue;
+            }
+            if is_heading_marker_line(next) || next.starts_with("^ ") || is_comment_fence_line(next)
+            {
+                break;
+            }
+            joined.push('\n');
+            joined.push_str(next);
+            cur.consume();
+        }
+        let (text, attrs) = split_trailing_attrs(&joined);
         return Some(BlockNode::Heading(Heading {
             attrs,
             level,
@@ -277,11 +309,61 @@ fn detect_heading(line: &str) -> Option<(u8, &str)> {
     if hashes >= bytes.len() || bytes[hashes] != b' ' {
         return None;
     }
-    let rest = line[hashes + 1..].trim_end();
+    // Skip all spaces after the marker (the delimiter is one-or-more spaces;
+    // per the Carve grammar it is a space, not a tab).
+    let mut start = hashes;
+    while start < bytes.len() && bytes[start] == b' ' {
+        start += 1;
+    }
+    let rest = line[start..].trim_end();
     if rest.is_empty() {
         return None;
     }
     Some((hashes as u8, rest))
+}
+
+/// A heading continuation line carrying 1..=`level` `#` markers, a space, then
+/// non-empty text. Returns the text after the markers (markers stripped), as
+/// in Djot ("may be preceded by the same number of `#` characters").
+fn heading_continuation_same_or_lower(line: &str, level: u8) -> Option<&str> {
+    let bytes = line.as_bytes();
+    let mut hashes = 0usize;
+    while hashes < bytes.len() && bytes[hashes] == b'#' {
+        hashes += 1;
+    }
+    if hashes == 0 || hashes > level as usize {
+        return None;
+    }
+    if hashes >= bytes.len() || bytes[hashes] != b' ' {
+        return None;
+    }
+    // Skip all spaces after the marker, mirroring detect_heading.
+    let mut start = hashes;
+    while start < bytes.len() && bytes[start] == b' ' {
+        start += 1;
+    }
+    let rest = line[start..].trim_end();
+    if rest.is_empty() {
+        return None;
+    }
+    Some(rest)
+}
+
+/// Any ATX heading marker line (`#`..`######` followed by a space or EOL) —
+/// such a line starts a NEW heading rather than continuing the current one.
+fn is_heading_marker_line(line: &str) -> bool {
+    let bytes = line.as_bytes();
+    let mut hashes = 0usize;
+    while hashes < bytes.len() && bytes[hashes] == b'#' {
+        hashes += 1;
+    }
+    (1..=6).contains(&hashes) && (hashes == bytes.len() || bytes[hashes] == b' ')
+}
+
+/// A fenced-comment opener line (a run of 3+ `%`, nothing else) — ends a heading.
+fn is_comment_fence_line(line: &str) -> bool {
+    let t = line.trim();
+    t.len() >= 3 && t.bytes().all(|b| b == b'%')
 }
 
 fn detect_thematic_break(line: &str) -> bool {
@@ -330,8 +412,16 @@ fn detect_fence_open(line: &str) -> Option<FenceOpen> {
         i += 1;
     }
     let lang_start = i;
+    // Language token charset covers real-world tags with punctuation
+    // (c++, c#, f#, asp.net); the token is still anchored (no whitespace),
+    // so a multiword/quoted info string is not a fence.
     while i < bytes.len()
-        && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_' || bytes[i] == b'-')
+        && (bytes[i].is_ascii_alphanumeric()
+            || bytes[i] == b'_'
+            || bytes[i] == b'-'
+            || bytes[i] == b'+'
+            || bytes[i] == b'#'
+            || bytes[i] == b'.')
     {
         i += 1;
     }
@@ -427,13 +517,21 @@ fn leading_ws(line: &str) -> usize {
 fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     let mut inner = Vec::new();
     while let Some(line) = cur.peek() {
-        if !line.starts_with('>') {
+        if let Some(rest) = line.strip_prefix('>') {
+            cur.consume();
+            let stripped = rest.strip_prefix(' ').unwrap_or(rest);
+            inner.push(stripped.to_string());
+            continue;
+        }
+        // Lazy continuation (CommonMark-style, like Djot): a non-`>` line that
+        // is not blank, not an invisible interrupter (comment / abbreviation
+        // definition; link & footnote defs are stripped upstream), and not a
+        // caption continues the quote, as if it carried `>`.
+        if line.trim().is_empty() || paragraph_interrupted(line) || line.starts_with("^ ") {
             break;
         }
         cur.consume();
-        let stripped = &line[1..];
-        let stripped = stripped.strip_prefix(' ').unwrap_or(stripped);
-        inner.push(stripped.to_string());
+        inner.push(line.to_string());
     }
     let joined = inner.join("\n");
     let sub_lines: Vec<&str> = joined.lines().collect();
@@ -1088,7 +1186,11 @@ fn split_trailing_attrs(text: &str) -> (&str, Option<Attrs>) {
     let Some(open) = find_attr_open(trimmed) else {
         return (text, None);
     };
-    if open == 0 || !trimmed[..open].ends_with(' ') {
+    // The attribute block must be separated from the preceding text by
+    // whitespace (a space/tab, or a newline when it trails a multi-line
+    // heading/paragraph) — so `foo{#id}` stays literal but `foo {#id}` and a
+    // final `{#id}` line do not.
+    if open == 0 || !trimmed[..open].ends_with([' ', '\t', '\n']) {
         return (text, None);
     }
     let attrs = parse_attrs(&trimmed[open + 1..trimmed.len() - 1]);
@@ -2520,6 +2622,9 @@ fn plain_inlines_parse(nodes: &[InlineNode]) -> String {
             InlineNode::Abbreviation(a) => out.push_str(&a.abbr),
             InlineNode::Mention(m) => out.push_str(&m.user),
             InlineNode::Tag(t) => out.push_str(&t.name),
+            // A soft/hard break (multi-line heading) is a word separator, so
+            // parse-time cross-reference slugs match the rendered heading id.
+            InlineNode::SoftBreak | InlineNode::HardBreak => out.push(' '),
             _ => {}
         }
     }
