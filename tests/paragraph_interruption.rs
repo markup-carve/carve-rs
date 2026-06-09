@@ -1,39 +1,73 @@
-//! Paragraph interruption (grammar §10): at the document TOP LEVEL a visible
-//! block does NOT interrupt a paragraph without a blank line. Only invisible
-//! constructs (ref-defs, comments) and nested markers interrupt. A blank line
-//! ends the paragraph and the block parses fresh.
+//! Paragraph interruption (grammar §10, post-Markdown default): a VISIBLE block
+//! interrupts an open paragraph with no blank line, at the top level and nested.
+//! Ordered lists do not interrupt, `+` is the continuation marker not a bullet,
+//! and a bare image stays inline. Invisible constructs (comments, abbreviation
+//! definitions) interrupt as before.
 
 fn html(src: &str) -> String {
     carve::to_html(src).trim().to_string()
 }
 
-// --- Top level: visible blocks do NOT interrupt (one paragraph) ---
+// --- Top level: visible blocks interrupt ---
 
 #[test]
-fn fence_does_not_interrupt() {
-    // The fence run is prose -> inline code span, not a code block.
+fn fence_interrupts() {
     assert_eq!(
         html("text\n```\ncode\n```"),
-        "<p>text\n<code>\ncode\n</code></p>"
+        "<p>text</p>\n<pre><code>code\n</code></pre>"
     );
 }
 
 #[test]
-fn heading_does_not_interrupt() {
-    assert_eq!(html("text\n# H"), "<p>text\n# H</p>");
+fn heading_interrupts() {
+    assert_eq!(
+        html("text\n# H"),
+        "<p>text</p>\n<section id=\"h\">\n  <h1>H</h1>\n</section>"
+    );
 }
 
 #[test]
-fn thematic_break_does_not_interrupt() {
-    assert_eq!(html("text\n---\nmore"), "<p>text\n—\nmore</p>");
+fn thematic_break_interrupts() {
+    assert_eq!(html("text\n---\nmore"), "<p>text</p>\n<hr>\n<p>more</p>");
 }
 
 #[test]
-fn admonition_does_not_interrupt() {
+fn admonition_interrupts() {
     assert_eq!(
         html("text\n:::note\nb\n:::"),
-        "<p>text\n:::note\nb\n:::</p>"
+        "<p>text</p>\n<aside class=\"admonition note\">\n  <p>b</p>\n</aside>"
     );
+}
+
+#[test]
+fn blockquote_interrupts() {
+    assert_eq!(
+        html("text\n> q"),
+        "<p>text</p>\n<blockquote><p>q</p></blockquote>"
+    );
+}
+
+#[test]
+fn table_interrupts() {
+    assert_eq!(
+        html("text\n| a | b |"),
+        "<p>text</p>\n<table>\n  <tbody>\n    <tr><td>a</td><td>b</td></tr>\n  </tbody>\n</table>"
+    );
+}
+
+#[test]
+fn unordered_list_interrupts() {
+    assert_eq!(
+        html("text\n- a\n- b"),
+        "<p>text</p>\n<ul>\n  <li>a</li>\n  <li>b</li>\n</ul>"
+    );
+}
+
+// --- Top level: these do NOT interrupt ---
+
+#[test]
+fn ordered_list_does_not_interrupt() {
+    assert_eq!(html("text\n1. x\n2. y"), "<p>text\n1. x\n2. y</p>");
 }
 
 #[test]
@@ -44,37 +78,15 @@ fn block_image_does_not_interrupt() {
     );
 }
 
-#[test]
-fn blockquote_does_not_interrupt() {
-    assert_eq!(html("text\n> q"), "<p>text\n&gt; q</p>");
-}
-
-#[test]
-fn table_does_not_interrupt() {
-    assert_eq!(html("text\n| a | b |"), "<p>text\n| a | b |</p>");
-}
-
-#[test]
-fn ordered_list_does_not_interrupt() {
-    assert_eq!(html("text\n1. x\n2. y"), "<p>text\n1. x\n2. y</p>");
-}
-
-#[test]
-fn unordered_list_does_not_interrupt() {
-    assert_eq!(html("text\n- a\n- b"), "<p>text\n- a\n- b</p>");
-}
-
-// --- Top level: invisible constructs DO interrupt ---
+// --- Invisible constructs interrupt ---
 
 #[test]
 fn abbreviation_def_interrupts() {
-    // The abbreviation def is collected, leaving only the paragraph.
     assert_eq!(html("text\n*[HT]: Hyper"), "<p>text</p>");
 }
 
 #[test]
 fn comment_interrupts() {
-    // A `%%` comment line is consumed, leaving only the paragraph.
     assert_eq!(html("para\n%% c"), "<p>para</p>");
 }
 
@@ -96,12 +108,10 @@ fn blank_line_starts_fence() {
     );
 }
 
-// --- Nested context: only LIST MARKERS interrupt (grammar §10 SCOPING).
-//     Other visible blocks do NOT interrupt nested either, matching djot. ---
+// --- Nested context: interruption applies inside containers too ---
 
 #[test]
 fn nested_sublist_interrupts() {
-    // The one Carve deviation: a list marker nests a sublist with no blank line.
     assert_eq!(
         html("- a\n   - b"),
         "<ul>\n  <li>a\n    <ul>\n      <li>b</li>\n    </ul>\n  </li>\n</ul>"
@@ -109,22 +119,17 @@ fn nested_sublist_interrupts() {
 }
 
 #[test]
-fn heading_does_not_interrupt_inside_blockquote() {
+fn heading_interrupts_inside_blockquote() {
     assert_eq!(
         html("> text\n> # H"),
-        "<blockquote><p>text\n# H</p></blockquote>"
+        "<blockquote>\n  <p>text</p>\n  <h1>H</h1>\n</blockquote>"
     );
 }
 
 #[test]
-fn heading_does_not_interrupt_inside_list_item() {
-    assert_eq!(html("- text\n  # H"), "<ul>\n  <li>text\n# H</li>\n</ul>");
-}
-
-#[test]
-fn fence_does_not_interrupt_inside_admonition() {
+fn fence_interrupts_inside_admonition() {
     assert_eq!(
         html(":::note\ntext\n```\ncode\n```\n:::"),
-        "<aside class=\"admonition note\">\n  <p>text\n<code>\ncode\n</code></p>\n</aside>"
+        "<aside class=\"admonition note\">\n  <p>text</p>\n  <pre><code>code\n</code></pre>\n</aside>"
     );
 }

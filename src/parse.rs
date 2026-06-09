@@ -129,19 +129,32 @@ fn parse_link_def_target(target: &str) -> LinkDef {
 }
 
 fn split_frontmatter(source: &str) -> (BTreeMap<String, String>, &str) {
-    if !source.starts_with("---\n") {
+    // Opening fence: `---` optionally followed by a type token (`---yaml`,
+    // `---json`, `---toml`, ...; canonical has no space). Closer is a bare `---`.
+    if !source.starts_with("---") {
         return (BTreeMap::new(), source);
     }
-    let rest = &source[4..];
+    let Some(first_nl) = source.find('\n') else {
+        return (BTreeMap::new(), source);
+    };
+    let kind = source[3..first_nl].trim();
+    if !kind.is_empty() && !kind.chars().all(|c| c.is_ascii_alphanumeric()) {
+        return (BTreeMap::new(), source);
+    }
+    let rest = &source[first_nl + 1..];
     let Some(close) = rest.find("\n---\n") else {
         return (BTreeMap::new(), source);
     };
     let frontmatter_src = &rest[..close];
     let body = &rest[close + 5..];
     let mut frontmatter = BTreeMap::new();
-    for line in frontmatter_src.lines() {
-        if let Some((key, value)) = line.split_once(':') {
-            frontmatter.insert(key.trim().to_string(), value.trim().to_string());
+    // Only the bare / yaml form is key:value; typed blocks (json/toml) are
+    // structured and just stripped.
+    if kind.is_empty() || kind.eq_ignore_ascii_case("yaml") {
+        for line in frontmatter_src.lines() {
+            if let Some((key, value)) = line.split_once(':') {
+                frontmatter.insert(key.trim().to_string(), value.trim().to_string());
+            }
         }
     }
     (frontmatter, body)
@@ -435,8 +448,24 @@ fn detect_fence_open(line: &str) -> Option<FenceOpen> {
         {
             i += 1;
         }
+    } else {
+        // Optional bracketed [label] after the language token (info string =
+        // language token + optional [label]); the label is metadata and does
+        // not affect the language class.
+        let mut j = i;
+        while j < bytes.len() && bytes[j] == b' ' {
+            j += 1;
+        }
+        if j < bytes.len() && bytes[j] == b'[' {
+            while j < bytes.len() && bytes[j] != b']' {
+                j += 1;
+            }
+            if j < bytes.len() && bytes[j] == b']' {
+                i = j + 1;
+            }
+        }
     }
-    // Must be only whitespace after the language token
+    // Must be only whitespace after the info string
     while i < bytes.len() && bytes[i] == b' ' {
         i += 1;
     }
@@ -516,18 +545,52 @@ fn leading_ws(line: &str) -> usize {
 
 fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     let mut inner = Vec::new();
+    let mut para_open = false;
+    let mut in_fence: Option<FenceOpen> = None;
     while let Some(line) = cur.peek() {
         if let Some(rest) = line.strip_prefix('>') {
             cur.consume();
             let stripped = rest.strip_prefix(' ').unwrap_or(rest);
+            if let Some(open) = in_fence {
+                if is_fence_close(stripped, open) {
+                    in_fence = None;
+                }
+                para_open = false;
+            } else if let Some(open) = detect_fence_open(stripped) {
+                if !para_open {
+                    // Fence at block start opens (unterminated renders to end).
+                    in_fence = Some(open);
+                    para_open = false;
+                } else {
+                    // After an open paragraph a fence interrupts only with a
+                    // matching closer ahead (§10); else it is inline verbatim.
+                    let has_closer = cur.lines[cur.pos..]
+                        .iter()
+                        .take_while(|l| l.starts_with('>'))
+                        .any(|l| {
+                            let s = l.strip_prefix('>').unwrap_or(l);
+                            is_fence_close(s.strip_prefix(' ').unwrap_or(s), open)
+                        });
+                    if has_closer {
+                        in_fence = Some(open);
+                        para_open = false;
+                    }
+                }
+            } else {
+                para_open = !stripped.trim().is_empty()
+                    && detect_container_open(stripped).is_none()
+                    && !stripped.trim_start().starts_with("%%");
+            }
             inner.push(stripped.to_string());
             continue;
         }
-        // Lazy continuation (CommonMark-style, like Djot): a non-`>` line that
-        // is not blank, not an invisible interrupter (comment / abbreviation
-        // definition; link & footnote defs are stripped upstream), and not a
-        // caption continues the quote, as if it carried `>`.
-        if line.trim().is_empty() || paragraph_interrupted(line) || line.starts_with("^ ") {
+        // Lazy continuation: a non-`>` line folds into an OPEN paragraph. A
+        // blank line, a caption, or a line that starts a block ends the quote.
+        if !para_open
+            || line.trim().is_empty()
+            || line.starts_with("^ ")
+            || interrupts_paragraph(line, &cur.lines[cur.pos + 1..])
+        {
             break;
         }
         cur.consume();
@@ -572,7 +635,8 @@ fn detect_unordered(line: &str) -> Option<&str> {
         return None;
     }
     let c = bytes[i];
-    if c != b'-' && c != b'*' && c != b'+' {
+    // `+` is the list continuation marker, not a bullet (#80).
+    if c != b'-' && c != b'*' {
         return None;
     }
     if i + 1 >= bytes.len() || bytes[i + 1] != b' ' {
@@ -672,7 +736,8 @@ fn detect_task(line: &str) -> Option<(bool, &str)> {
         return None;
     }
     let c = bytes[i];
-    if c != b'-' && c != b'*' && c != b'+' {
+    // `+` is the list continuation marker, not a bullet (#80).
+    if c != b'-' && c != b'*' {
         return None;
     }
     if i + 1 >= bytes.len() || bytes[i + 1] != b' ' {
@@ -703,9 +768,24 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     let mut pending_blank = false;
     while let Some(line) = cur.peek() {
         if line.trim().is_empty() {
-            tight = false;
+            // A blank alone does not loosen the list; it loosens only when the
+            // next line is a sibling item (handled at the marker branch via
+            // pending_blank) or an indented second paragraph (below). A blank
+            // before any other indented block keeps it compact (#74).
             pending_blank = true;
             cur.consume();
+            continue;
+        }
+        // Lone `+` continuation marker (Carve): attaches the next flush-left
+        // block to the current item without indentation.
+        if line.trim() == "+" && leading_ws(line) == base_indent {
+            cur.consume();
+            pending_blank = false;
+            if let Some(block) = parse_block(cur, options) {
+                if let Some(last) = items.last_mut() {
+                    last.children.push(block);
+                }
+            }
             continue;
         }
         let Some(marker) = detect_list_marker_full(line) else {
@@ -713,9 +793,15 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 if let Some(last) = items.last_mut() {
                     let nested = collect_indented_block(cur, base_indent);
                     let nested_children = parse_blocks_with_options(&nested, options);
-                    last.children.extend(nested_children);
-                    tight = false;
+                    // A blank before an indented sub-block loosens only when it
+                    // is a genuine second paragraph (#74 compact list blocks).
+                    if pending_blank
+                        && matches!(nested_children.first(), Some(BlockNode::Paragraph(_)))
+                    {
+                        tight = false;
+                    }
                     pending_blank = false;
+                    last.children.extend(nested_children);
                     continue;
                 }
             }
@@ -741,6 +827,21 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             pending_blank = false;
         }
         cur.consume();
+        // First-block form `- +` (grammar §17): a lone `+` as the marker
+        // content means the item's first block is the following flush-left
+        // block (no inline paragraph).
+        if marker.content.trim() == "+" {
+            let mut item = ListItem {
+                attrs: None,
+                checked: marker.checked,
+                children: Vec::new(),
+            };
+            if let Some(block) = parse_block(cur, options) {
+                item.children.push(block);
+            }
+            items.push(item);
+            continue;
+        }
         // The item's first paragraph is the marker content plus any
         // immediately-following indented prose lines (lazy continuation).
         // It stops at a blank line or a list marker: a nested sublist still
@@ -748,12 +849,22 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         // block opener -- heading, fence, etc. -- stays paragraph text.
         let mut para_lines = vec![marker.content.to_string()];
         while let Some(next) = cur.peek() {
-            if next.trim().is_empty() || detect_list_marker_full(next).is_some() {
+            if next.trim().is_empty()
+                || next.trim() == "+"
+                || detect_list_marker_full(next).is_some()
+            {
                 break;
             }
             let indent = leading_ws(next);
             if indent <= base_indent {
-                break;
+                // Lazy continuation: a non-indented line that does not start a
+                // block folds into the item's open paragraph (djot/CommonMark).
+                if interrupts_paragraph(next, &cur.lines[cur.pos + 1..]) {
+                    break;
+                }
+                para_lines.push(next.trim_start().to_string());
+                cur.consume();
+                continue;
             }
             let strip = (base_indent + 2).min(indent);
             para_lines.push(next[strip..].to_string());
@@ -856,12 +967,14 @@ fn detect_block_image(line: &str) -> Option<Image> {
 }
 
 fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
-    let mut lines = Vec::new();
+    let mut lines: Vec<&str> = Vec::new();
     while let Some(line) = cur.peek() {
         if line.trim().is_empty() {
             break;
         }
-        if paragraph_interrupted(line) {
+        // First line is always part of the paragraph; from the second on, a
+        // visible block opener interrupts (§10).
+        if !lines.is_empty() && interrupts_paragraph(line, &cur.lines[cur.pos + 1..]) {
             break;
         }
         cur.consume();
@@ -886,14 +999,52 @@ fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
 ///
 /// In NESTED content (list item, block quote, admonition body) a marker still
 /// interrupts, except a lone list marker mid-paragraph stays prose.
-fn paragraph_interrupted(line: &str) -> bool {
-    // A paragraph is interrupted only by INVISIBLE constructs (grammar §10):
-    // comments (`%%`, `%%%`) and abbreviation definitions, in any context.
-    // Reference definitions are stripped before block parsing. No VISIBLE
-    // block interrupts without a blank line, at the top level or nested
-    // (matching djot). The one Carve deviation -- a nested sublist with no
-    // blank line -- is handled by the list parser's indentation, not here.
-    line.trim_start().starts_with("%%") || detect_abbreviation_def(line).is_some()
+fn interrupts_paragraph(line: &str, rest: &[&str]) -> bool {
+    // §10 (post-Markdown default): a VISIBLE block interrupts an open paragraph
+    // with no blank line. Invisible constructs (comments, abbreviation defs)
+    // interrupt too. Ordered lists do NOT interrupt, `+` is the continuation
+    // marker not a bullet, and a bare image stays inline.
+    if line.trim_start().starts_with("%%") || detect_abbreviation_def(line).is_some() {
+        return true;
+    }
+    if detect_heading(line).is_some()
+        || detect_thematic_break(line)
+        || line.starts_with('>')
+        || detect_task(line).is_some()
+        || is_interrupting_bullet(line)
+        || is_table_start(line)
+    {
+        return true;
+    }
+    // Fenced code / `:::` interrupt only with a matching closer ahead.
+    if let Some(open) = detect_fence_open(line) {
+        if rest.iter().any(|l| is_fence_close(l, open)) {
+            return true;
+        }
+    }
+    if let Some(open) = detect_container_open(line) {
+        let len = open.fence_len;
+        if rest.iter().any(|l| {
+            let t = l.trim();
+            !t.is_empty() && t.bytes().all(|b| b == b':') && t.len() >= len
+        }) {
+            return true;
+        }
+    }
+    false
+}
+
+/// A `- ` or `* ` bullet (NOT `+`, the continuation marker; not ordered).
+fn is_interrupting_bullet(line: &str) -> bool {
+    let bytes = line.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() && bytes[i] == b' ' {
+        i += 1;
+    }
+    i < bytes.len()
+        && (bytes[i] == b'-' || bytes[i] == b'*')
+        && i + 1 < bytes.len()
+        && bytes[i + 1] == b' '
 }
 
 fn is_definition_list_start(line: &str) -> bool {
@@ -944,15 +1095,16 @@ fn consume_caption(cur: &mut LineCursor, options: &Options<'_>) -> Option<Vec<In
 }
 
 fn is_table_start(line: &str) -> bool {
-    line.trim_start().starts_with("|=")
-        || line.trim_start().starts_with('|')
-        || line.trim_start().starts_with('+')
+    // A table STARTS on a `|` row. `+` continuation cells are consumed inside
+    // parse_table from that first row; a `+` line never starts a table (#80).
+    line.trim_start().starts_with("|=") || line.trim_start().starts_with('|')
 }
 
 fn parse_table(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     let mut rows = Vec::new();
     while let Some(line) = cur.peek() {
-        if !is_table_start(line) {
+        // Continue on a `|` row or a `+` multi-line-cell continuation.
+        if !is_table_start(line) && !is_table_continuation(line) {
             break;
         }
         cur.consume();
@@ -1451,6 +1603,22 @@ pub(crate) fn parse_inline_with_options(text: &str, options: &Options<'_>) -> Ve
             }
         }
 
+        // Trailing line comment: `%%` at start of line or after whitespace runs
+        // to end of line and is dropped (`text %% comment`).
+        if c == b'%'
+            && bytes.get(i + 1) == Some(&b'%')
+            && (i == 0 || bytes[i - 1] == b' ' || bytes[i - 1] == b'\t' || bytes[i - 1] == b'\n')
+        {
+            while buf.ends_with(' ') || buf.ends_with('\t') {
+                buf.pop();
+            }
+            match bytes[i..].iter().position(|&b| b == b'\n') {
+                Some(p) => i += p,
+                None => i = bytes.len(),
+            }
+            continue;
+        }
+
         // Inline code spans
         if c == b'`' {
             if let Some((value, consumed)) = parse_inline_code(bytes, i) {
@@ -1847,7 +2015,15 @@ fn parse_inline_code(bytes: &[u8], start: usize) -> Option<(String, usize)> {
         }
         // Different length closer — keep scanning past it
     }
-    None
+    // No matching closer: an unclosed verbatim opener is opaque to the end of
+    // the text (matches djot / carve-php / carve-js).
+    let raw = std::str::from_utf8(&bytes[content_start..]).ok()?;
+    let trimmed = if raw.starts_with(' ') && raw.ends_with(' ') && raw.trim().len() < raw.len() {
+        &raw[1..raw.len() - 1]
+    } else {
+        raw
+    };
+    Some((trimmed.to_string(), bytes.len() - start))
 }
 
 fn parse_image_at(bytes: &[u8], start: usize) -> Option<(Image, usize)> {
@@ -2598,6 +2774,9 @@ fn resolve_crossrefs_inline(nodes: &mut Vec<InlineNode>, titles: &BTreeMap<Strin
                         ref_label: None,
                         raw_ref: None,
                     });
+                } else {
+                    // Unknown heading id: the cross-reference stays literal text.
+                    *node = InlineNode::Text(format!("</#{}>", c.target));
                 }
             }
             InlineNode::Emphasis(e) => resolve_crossrefs_inline(&mut e.children, titles),
@@ -2635,36 +2814,21 @@ fn slugify_parse(text: &str) -> String {
     let mut out = String::new();
     let mut last_dash = false;
     for ch in text.chars() {
-        let mapped = match ch {
-            'À' | 'Á' | 'Â' | 'Ã' | 'Ä' | 'Å' | 'à' | 'á' | 'â' | 'ã' | 'ä' | 'å' => {
-                'a'
+        if ch.is_alphanumeric() {
+            for lc in ch.to_lowercase() {
+                out.push(lc);
             }
-            'Ç' | 'ç' => 'c',
-            'È' | 'É' | 'Ê' | 'Ë' | 'è' | 'é' | 'ê' | 'ë' => 'e',
-            'Ì' | 'Í' | 'Î' | 'Ï' | 'ì' | 'í' | 'î' | 'ï' => 'i',
-            'Ñ' | 'ñ' => 'n',
-            'Ò' | 'Ó' | 'Ô' | 'Õ' | 'Ö' | 'ò' | 'ó' | 'ô' | 'õ' | 'ö' => 'o',
-            'Ù' | 'Ú' | 'Û' | 'Ü' | 'ù' | 'ú' | 'û' | 'ü' => 'u',
-            'Ý' | 'Ÿ' | 'ý' | 'ÿ' => 'y',
-            'ß' => 's',
-            c if c.is_ascii_alphanumeric() => c.to_ascii_lowercase(),
-            _ => '-',
-        };
-        if mapped == '-' {
-            if !last_dash && !out.is_empty() {
-                out.push('-');
-                last_dash = true;
-            }
-        } else {
-            out.push(mapped);
             last_dash = false;
+        } else if !last_dash && !out.is_empty() {
+            out.push('-');
+            last_dash = true;
         }
     }
     while out.ends_with('-') {
         out.pop();
     }
     if out.chars().next().is_some_and(|c| c.is_ascii_digit()) {
-        out = format!("section-{out}");
+        out = format!("s-{out}");
     }
     if out.is_empty() {
         "section".to_string()
@@ -2696,11 +2860,33 @@ fn find_emphasis_close(bytes: &[u8], from: usize, delim: u8) -> Option<usize> {
             continue;
         }
         if ch == b'`' {
-            // Skip past code span
-            if let Some(close) = bytes[j + 1..].iter().position(|&b| b == b'`') {
-                j = j + 1 + close + 1;
-                continue;
+            // Skip a verbatim span: opener run of N backticks closes on a run
+            // of exactly N. An unclosed run is opaque to end of text, so no
+            // emphasis closer can follow it.
+            let open_start = j;
+            while j < bytes.len() && bytes[j] == b'`' {
+                j += 1;
             }
+            let open_len = j - open_start;
+            let mut found = false;
+            while j < bytes.len() {
+                if bytes[j] == b'`' {
+                    let close_start = j;
+                    while j < bytes.len() && bytes[j] == b'`' {
+                        j += 1;
+                    }
+                    if j - close_start == open_len {
+                        found = true;
+                        break;
+                    }
+                } else {
+                    j += 1;
+                }
+            }
+            if !found {
+                return None;
+            }
+            continue;
         }
         if ch == delim {
             let prev = bytes.get(j.wrapping_sub(1)).copied().unwrap_or(b' ');
