@@ -307,36 +307,23 @@ fn slugify(text: &str) -> String {
     let mut out = String::new();
     let mut last_dash = false;
     for ch in text.chars() {
-        let mapped = match ch {
-            'À' | 'Á' | 'Â' | 'Ã' | 'Ä' | 'Å' | 'à' | 'á' | 'â' | 'ã' | 'ä' | 'å' => {
-                'a'
+        if ch.is_alphanumeric() {
+            // Unicode-preserving, lowercased (GitHub-style): `Café` -> `café`,
+            // `Über` -> `über`. ASCII-folding is opt-in, not the default.
+            for lc in ch.to_lowercase() {
+                out.push(lc);
             }
-            'Ç' | 'ç' => 'c',
-            'È' | 'É' | 'Ê' | 'Ë' | 'è' | 'é' | 'ê' | 'ë' => 'e',
-            'Ì' | 'Í' | 'Î' | 'Ï' | 'ì' | 'í' | 'î' | 'ï' => 'i',
-            'Ñ' | 'ñ' => 'n',
-            'Ò' | 'Ó' | 'Ô' | 'Õ' | 'Ö' | 'ò' | 'ó' | 'ô' | 'õ' | 'ö' => 'o',
-            'Ù' | 'Ú' | 'Û' | 'Ü' | 'ù' | 'ú' | 'û' | 'ü' => 'u',
-            'Ý' | 'Ÿ' | 'ý' | 'ÿ' => 'y',
-            'ß' => 's',
-            c if c.is_ascii_alphanumeric() => c.to_ascii_lowercase(),
-            _ => '-',
-        };
-        if mapped == '-' {
-            if !last_dash && !out.is_empty() {
-                out.push('-');
-                last_dash = true;
-            }
-        } else {
-            out.push(mapped);
             last_dash = false;
+        } else if !last_dash && !out.is_empty() {
+            out.push('-');
+            last_dash = true;
         }
     }
     while out.ends_with('-') {
         out.pop();
     }
     if out.chars().next().is_some_and(|c| c.is_ascii_digit()) {
-        out = format!("section-{out}");
+        out = format!("s-{out}");
     }
     if out.is_empty() {
         "section".to_string()
