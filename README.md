@@ -5,7 +5,7 @@
 
 Rust parser and HTML renderer for the [Carve](https://github.com/markup-carve/carve) markup language.
 
-> Carve is a post-Djot lightweight markup language with visual mnemonics and human-centered design. See the [language site](https://markup-carve.github.io/carve/) for the spec.
+> Carve is a post-Markdown lightweight markup language with visual mnemonics and human-centered design. See the [language site](https://markup-carve.github.io/carve/) for the spec.
 
 ## Status
 
