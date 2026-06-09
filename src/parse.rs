@@ -989,16 +989,15 @@ fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
 }
 
 /// Whether `line`, seen while accumulating a paragraph, ends it and starts a
-/// new block (grammar §10).
+/// new block (grammar §10, post-Markdown default).
 ///
-/// At the document TOP LEVEL a VISIBLE block does NOT interrupt: a hard-wrapped
-/// prose line that happens to begin with a marker stays paragraph text
-/// (Design Principle 7). Only INVISIBLE constructs interrupt there; link and
-/// footnote definitions plus comments are stripped before block parsing, so
-/// the only one reaching here is an abbreviation definition.
-///
-/// In NESTED content (list item, block quote, admonition body) a marker still
-/// interrupts, except a lone list marker mid-paragraph stays prose.
+/// A VISIBLE block interrupts an open paragraph with no blank line, at the top
+/// level and nested: heading, thematic break, block quote, bullet/task list, a
+/// valid table row, and a fenced code / `:::` block that has a matching closer
+/// ahead (`rest` is the lines after the current one). INVISIBLE constructs
+/// (comments, abbreviation definitions) interrupt too. ORDERED lists do NOT
+/// interrupt, `+` is the continuation marker not a bullet, and a bare image
+/// stays inline.
 fn interrupts_paragraph(line: &str, rest: &[&str]) -> bool {
     // §10 (post-Markdown default): a VISIBLE block interrupts an open paragraph
     // with no blank line. Invisible constructs (comments, abbreviation defs)
