@@ -1670,8 +1670,15 @@ pub(crate) fn parse_inline_with_options(text: &str, options: &Options<'_>) -> Ve
                     continue;
                 }
                 flush_text(&mut out, &mut buf);
-                out.push(InlineNode::Code(value));
-                i += consumed;
+                // An inline attribute block right after the code span attaches
+                // to it (`` `code`{.cls} `` -> <code class="cls">), matching the
+                // general "attributes attach to the preceding inline" rule.
+                let (attrs, code_consumed) = match read_attrs_at(bytes, i + consumed) {
+                    Some((parsed, next)) => (Some(parsed), next - i),
+                    None => (None, consumed),
+                };
+                out.push(InlineNode::Code(value, attrs));
+                i += code_consumed;
                 continue;
             }
         }
@@ -2835,7 +2842,7 @@ fn plain_inlines_parse(nodes: &[InlineNode]) -> String {
         match node {
             InlineNode::Text(s) => out.push_str(s),
             InlineNode::Emphasis(e) => out.push_str(&plain_inlines_parse(&e.children)),
-            InlineNode::Code(s) => out.push_str(s),
+            InlineNode::Code(s, _) => out.push_str(s),
             InlineNode::Link(l) => out.push_str(&plain_inlines_parse(&l.children)),
             InlineNode::Image(i) => out.push_str(&i.alt),
             InlineNode::Extension(e) => out.push_str(&plain_inlines_parse(&e.children)),

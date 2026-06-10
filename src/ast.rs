@@ -204,7 +204,7 @@ pub struct BlockExtension {
 pub enum InlineNode {
     Text(String),
     Emphasis(Emphasis),
-    Code(String),
+    Code(String, Option<Attrs>),
     Link(Link),
     Image(Image),
     Span(Span),
