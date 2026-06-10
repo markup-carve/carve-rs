@@ -287,7 +287,7 @@ fn plain_inlines(nodes: &[InlineNode]) -> String {
         match node {
             InlineNode::Text(s) => out.push_str(s),
             InlineNode::Emphasis(e) => out.push_str(&plain_inlines(&e.children)),
-            InlineNode::Code(s) => out.push_str(s),
+            InlineNode::Code(s, _) => out.push_str(s),
             InlineNode::Link(l) => out.push_str(&plain_inlines(&l.children)),
             InlineNode::Image(i) => out.push_str(&i.alt),
             InlineNode::Extension(e) => out.push_str(&plain_inlines(&e.children)),
@@ -796,8 +796,8 @@ fn render_inline(out: &mut String, node: &InlineNode, options: &Options<'_>) {
             out.push_str(&escape_text(&smart_text(s)).replace('\u{00a0}', "&nbsp;"))
         }
         InlineNode::Emphasis(e) => render_emphasis(out, e, options),
-        InlineNode::Code(s) => {
-            out.push_str("<code>");
+        InlineNode::Code(s, attrs) => {
+            out.push_str(&format!("<code{}>", render_attrs(attrs)));
             out.push_str(&escape_text(s));
             out.push_str("</code>");
         }
