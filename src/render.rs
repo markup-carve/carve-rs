@@ -543,7 +543,7 @@ fn render_table_body_row(
     out: &mut String,
     row: &TableRow,
     source_row_idx: usize,
-    rowspan_cols: &[(usize, usize, usize)],
+    rowspan_cols: &BTreeMap<(usize, usize), usize>,
     table: &Table,
     options: &Options<'_>,
 ) {
@@ -555,10 +555,7 @@ fn render_table_body_row(
             continue;
         }
         let mut attrs = String::new();
-        if let Some((_, _, span)) = rowspan_cols
-            .iter()
-            .find(|(r, c, _)| *r == source_row_idx && *c == col)
-        {
+        if let Some(span) = rowspan_cols.get(&(source_row_idx, col)) {
             attrs.push_str(&format!(" rowspan=\"{}\"", span));
         }
         if cell.span == Some(TableCellSpan::Colspan) {
@@ -613,28 +610,28 @@ fn following_colspans(row: &TableRow, start: usize) -> usize {
     span
 }
 
-fn compute_rowspans(t: &Table) -> Vec<(usize, usize, usize)> {
-    let mut out = Vec::new();
-    for row_idx in 1..t.rows.len() {
-        for col in 0..t.rows[row_idx].cells.len() {
-            if t.rows[row_idx].cells[col].span == Some(TableCellSpan::Rowspan) {
-                let mut base = row_idx;
-                while base > 0
-                    && t.rows[base].cells.get(col).and_then(|c| c.span)
-                        == Some(TableCellSpan::Rowspan)
-                {
-                    base -= 1;
+/// Maps the origin cell `(row, col)` of each rowspan to its span count. Resolved
+/// by carrying the current chain origin down per column, so an all-`^` table is
+/// O(cells) rather than O(rows^2) (each `^` previously walked up every prior row
+/// and the result list was scanned linearly per marker).
+fn compute_rowspans(t: &Table) -> BTreeMap<(usize, usize), usize> {
+    let mut spans: BTreeMap<(usize, usize), usize> = BTreeMap::new();
+    // Per column: the origin row of the current rowspan chain (the most recent
+    // non-`^` cell above). A `^` extends that origin; a real cell starts a new
+    // chain.
+    let mut base_for_col: BTreeMap<usize, usize> = BTreeMap::new();
+    for (row_idx, row) in t.rows.iter().enumerate() {
+        for (col, cell) in row.cells.iter().enumerate() {
+            if cell.span == Some(TableCellSpan::Rowspan) {
+                if let Some(&base) = base_for_col.get(&col) {
+                    *spans.entry((base, col)).or_insert(1) += 1;
                 }
-                let span = out.iter_mut().find(|(r, c, _)| *r == base && *c == col);
-                if let Some((_, _, existing)) = span {
-                    *existing += 1;
-                } else {
-                    out.push((base, col, 2));
-                }
+            } else {
+                base_for_col.insert(col, row_idx);
             }
         }
     }
-    out
+    spans
 }
 
 fn render_admonition(out: &mut String, a: &Admonition, level: usize, options: &Options<'_>) {
