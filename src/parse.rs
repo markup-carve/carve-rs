@@ -1619,6 +1619,12 @@ fn try_extension_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<Bl
 
 pub(crate) fn parse_inline_with_options(text: &str, options: &Options<'_>) -> Vec<InlineNode> {
     let bytes = text.as_bytes();
+    // A `[` only opens an inline link, reference link, or span when a `](`,
+    // `][`, or `]{` follows (there is no bare shortcut-reference form). If none
+    // occur, those attempts -- each an O(n) bracket scan -- can be skipped, so a
+    // deeply nested run like `[[[[x]]]]` stays O(n) instead of O(n^2). Footnotes
+    // (`[^...]`) are handled separately and cheaply gated on `[^`.
+    let has_link_trigger = text.contains("](") || text.contains("][") || text.contains("]{");
     let mut out = Vec::new();
     let mut buf = String::new();
     let mut i = 0;
@@ -1706,23 +1712,25 @@ pub(crate) fn parse_inline_with_options(text: &str, options: &Options<'_>) -> Ve
                 i += consumed;
                 continue;
             }
-            if let Some((link, consumed)) = parse_inline_link_with_options(bytes, i, options) {
-                flush_text(&mut out, &mut buf);
-                out.push(InlineNode::Link(link));
-                i += consumed;
-                continue;
-            }
-            if let Some((link, consumed)) = parse_reference_link(bytes, i, options) {
-                flush_text(&mut out, &mut buf);
-                out.push(InlineNode::Link(link));
-                i += consumed;
-                continue;
-            }
-            if let Some((span, consumed)) = parse_span(bytes, i, options) {
-                flush_text(&mut out, &mut buf);
-                out.push(InlineNode::Span(span));
-                i += consumed;
-                continue;
+            if has_link_trigger {
+                if let Some((link, consumed)) = parse_inline_link_with_options(bytes, i, options) {
+                    flush_text(&mut out, &mut buf);
+                    out.push(InlineNode::Link(link));
+                    i += consumed;
+                    continue;
+                }
+                if let Some((link, consumed)) = parse_reference_link(bytes, i, options) {
+                    flush_text(&mut out, &mut buf);
+                    out.push(InlineNode::Link(link));
+                    i += consumed;
+                    continue;
+                }
+                if let Some((span, consumed)) = parse_span(bytes, i, options) {
+                    flush_text(&mut out, &mut buf);
+                    out.push(InlineNode::Span(span));
+                    i += consumed;
+                    continue;
+                }
             }
         }
 
