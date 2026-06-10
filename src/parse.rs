@@ -766,6 +766,9 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     let mut items: Vec<ListItem> = Vec::new();
     let mut tight = true;
     let mut pending_blank = false;
+    // Content column of the most recently opened item (where its marker's content
+    // begins). A child nests only when indented to at least this column (Model A).
+    let mut last_content_col = base_indent + 2;
     while let Some(line) = cur.peek() {
         if line.trim().is_empty() {
             // A blank alone does not loosen the list; it loosens only when the
@@ -817,17 +820,17 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             break;
         }
         if marker.indent > base_indent {
-            // After a blank, a marker below the item's content column does not
-            // nest into it (lazy continuation does not cross a blank); end the
-            // list so the dedented marker starts a fresh block.
-            if pending_blank && marker.indent < base_indent + 2 {
-                break;
-            }
-            if let Some(last) = items.last_mut() {
-                let nested = collect_indented_block(cur, base_indent);
-                let nested_children = parse_blocks_with_options(&nested, options);
-                last.children.extend(nested_children);
-                continue;
+            // Nest only when indented to at least the parent item's content
+            // column (Model A). Below it, an ordered marker has already folded
+            // into the item paragraph (§10, in the per-item loop below); an
+            // unordered/task marker interrupts -- so end the list either way.
+            if marker.indent >= last_content_col {
+                if let Some(last) = items.last_mut() {
+                    let nested = collect_indented_block(cur, base_indent);
+                    let nested_children = parse_blocks_with_options(&nested, options);
+                    last.children.extend(nested_children);
+                    continue;
+                }
             }
             break;
         }
@@ -838,6 +841,13 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             tight = false;
             pending_blank = false;
         }
+        // This item's content column = the byte offset where its marker content
+        // begins (the marker content is a subslice of the current line).
+        let content_col = {
+            let l = cur.peek().unwrap();
+            (marker.content.as_ptr() as usize).saturating_sub(l.as_ptr() as usize)
+        };
+        last_content_col = content_col;
         cur.consume();
         // First-block form `- +` (grammar §17): a lone `+` as the marker
         // content means the item's first block is the following flush-left
@@ -861,11 +871,21 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         // block opener -- heading, fence, etc. -- stays paragraph text.
         let mut para_lines = vec![marker.content.to_string()];
         while let Some(next) = cur.peek() {
-            if next.trim().is_empty()
-                || next.trim() == "+"
-                || detect_list_marker_full(next).is_some()
-            {
+            if next.trim().is_empty() || next.trim() == "+" {
                 break;
+            }
+            if let Some(nm) = detect_list_marker_full(next) {
+                // An ordered marker indented past the base but below this item's
+                // content column is lazy continuation, not a sub-list: ordered
+                // markers do not interrupt a paragraph (§10). Fold it. Any other
+                // marker (or one at/above the content column) ends the paragraph.
+                let folds = nm.ordered
+                    && nm.checked.is_none()
+                    && nm.indent > base_indent
+                    && nm.indent < content_col;
+                if !folds {
+                    break;
+                }
             }
             let indent = leading_ws(next);
             if indent <= base_indent {
