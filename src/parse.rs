@@ -790,6 +790,12 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         }
         let Some(marker) = detect_list_marker_full(line) else {
             if leading_ws(line) > base_indent {
+                // After a blank line, lazy continuation no longer applies: a line
+                // must be indented to the item's content column to keep belonging
+                // to it. A shallower line ends the list (corpus 81-list-lazy-5).
+                if pending_blank && leading_ws(line) < base_indent + 2 {
+                    break;
+                }
                 if let Some(last) = items.last_mut() {
                     let nested = collect_indented_block(cur, base_indent);
                     let nested_children = parse_blocks_with_options(&nested, options);
@@ -811,6 +817,12 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             break;
         }
         if marker.indent > base_indent {
+            // After a blank, a marker below the item's content column does not
+            // nest into it (lazy continuation does not cross a blank); end the
+            // list so the dedented marker starts a fresh block.
+            if pending_blank && marker.indent < base_indent + 2 {
+                break;
+            }
             if let Some(last) = items.last_mut() {
                 let nested = collect_indented_block(cur, base_indent);
                 let nested_children = parse_blocks_with_options(&nested, options);
@@ -937,8 +949,24 @@ fn detect_list_marker_full(line: &str) -> Option<ListMarker<'_>> {
 
 fn collect_indented_block(cur: &mut LineCursor, parent_indent: usize) -> String {
     let mut lines = Vec::new();
+    let mut block_indent: Option<usize> = None;
     while let Some(line) = cur.peek() {
         if line.trim().is_empty() {
+            // Lazy continuation does not cross a blank line: after a blank, only
+            // keep collecting if the next non-blank line is still indented to the
+            // block's own level. A shallower line (e.g. a dedent landing below a
+            // sublist) ends the block and is left for the caller, so it can close
+            // the list rather than fold in (grammar §10, corpus 81-list-lazy-5).
+            if let Some(bi) = block_indent {
+                let mut k = cur.pos + 1;
+                while k < cur.lines.len() && cur.lines[k].trim().is_empty() {
+                    k += 1;
+                }
+                let continues = k < cur.lines.len() && leading_ws(cur.lines[k]) >= bi;
+                if !continues {
+                    break;
+                }
+            }
             lines.push(String::new());
             cur.consume();
             continue;
@@ -946,6 +974,9 @@ fn collect_indented_block(cur: &mut LineCursor, parent_indent: usize) -> String 
         let indent = leading_ws(line);
         if indent <= parent_indent {
             break;
+        }
+        if block_indent.is_none() {
+            block_indent = Some(indent);
         }
         let strip = (parent_indent + 2).min(indent);
         lines.push(line[strip..].to_string());
@@ -978,7 +1009,10 @@ fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             break;
         }
         cur.consume();
-        lines.push(line);
+        // Leading indentation is not significant in a paragraph (djot has no
+        // indented code blocks); strip it so an indented line like ` c` renders
+        // as `<p>c</p>`, matching list-item continuation handling.
+        lines.push(line.trim_start());
     }
     let joined = lines.join("\n");
     let (text, attrs) = split_trailing_attrs(&joined);
