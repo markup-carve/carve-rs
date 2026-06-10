@@ -766,9 +766,6 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     let mut items: Vec<ListItem> = Vec::new();
     let mut tight = true;
     let mut pending_blank = false;
-    // Content column of the most recently opened item (where its marker's content
-    // begins). A child nests only when indented to at least this column (Model A).
-    let mut last_content_col = base_indent + 2;
     while let Some(line) = cur.peek() {
         if line.trim().is_empty() {
             // A blank alone does not loosen the list; it loosens only when the
@@ -820,17 +817,18 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             break;
         }
         if marker.indent > base_indent {
-            // Nest only when indented to at least the parent item's content
-            // column (Model A). Below it, an ordered marker has already folded
-            // into the item paragraph (§10, in the per-item loop below); an
-            // unordered/task marker interrupts -- so end the list either way.
-            if marker.indent >= last_content_col {
-                if let Some(last) = items.last_mut() {
-                    let nested = collect_indented_block(cur, base_indent);
-                    let nested_children = parse_blocks_with_options(&nested, options);
-                    last.children.extend(nested_children);
-                    continue;
-                }
+            // A marker indented past the base nests as a sub-list. (An ordered
+            // marker BELOW the content column never reaches here -- it folds
+            // into the item paragraph in the per-item loop below, §10. Unordered
+            // and task markers always interrupt, so they nest at any indent.)
+            if pending_blank && marker.indent < base_indent + 2 {
+                break;
+            }
+            if let Some(last) = items.last_mut() {
+                let nested = collect_indented_block(cur, base_indent);
+                let nested_children = parse_blocks_with_options(&nested, options);
+                last.children.extend(nested_children);
+                continue;
             }
             break;
         }
@@ -841,13 +839,17 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             tight = false;
             pending_blank = false;
         }
-        // This item's content column = the byte offset where its marker content
-        // begins (the marker content is a subslice of the current line).
-        let content_col = {
+        // This item's content column. For ordered/unordered it is where the
+        // marker content begins (`- `=2, `1. `=3, `10. `=4). For a TASK the
+        // checkbox is content, not marker, so the column is the bullet width
+        // (`- `/`* ` = 2) -- a child indented to 2 nests, matching the spec's
+        // task attribute/continuation convention (`- [x] x` / `  {.c}`).
+        let content_col = if marker.checked.is_some() {
+            base_indent + 2
+        } else {
             let l = cur.peek().unwrap();
             (marker.content.as_ptr() as usize).saturating_sub(l.as_ptr() as usize)
         };
-        last_content_col = content_col;
         cur.consume();
         // First-block form `- +` (grammar §17): a lone `+` as the marker
         // content means the item's first block is the following flush-left
