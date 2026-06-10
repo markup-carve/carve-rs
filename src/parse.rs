@@ -817,9 +817,10 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             break;
         }
         if marker.indent > base_indent {
-            // After a blank, a marker below the item's content column does not
-            // nest into it (lazy continuation does not cross a blank); end the
-            // list so the dedented marker starts a fresh block.
+            // A marker indented past the base nests as a sub-list. (An ordered
+            // marker BELOW the content column never reaches here -- it folds
+            // into the item paragraph in the per-item loop below, §10. Unordered
+            // and task markers always interrupt, so they nest at any indent.)
             if pending_blank && marker.indent < base_indent + 2 {
                 break;
             }
@@ -838,6 +839,17 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             tight = false;
             pending_blank = false;
         }
+        // This item's content column. For ordered/unordered it is where the
+        // marker content begins (`- `=2, `1. `=3, `10. `=4). For a TASK the
+        // checkbox is content, not marker, so the column is the bullet width
+        // (`- `/`* ` = 2) -- a child indented to 2 nests, matching the spec's
+        // task attribute/continuation convention (`- [x] x` / `  {.c}`).
+        let content_col = if marker.checked.is_some() {
+            base_indent + 2
+        } else {
+            let l = cur.peek().unwrap();
+            (marker.content.as_ptr() as usize).saturating_sub(l.as_ptr() as usize)
+        };
         cur.consume();
         // First-block form `- +` (grammar §17): a lone `+` as the marker
         // content means the item's first block is the following flush-left
@@ -861,11 +873,21 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         // block opener -- heading, fence, etc. -- stays paragraph text.
         let mut para_lines = vec![marker.content.to_string()];
         while let Some(next) = cur.peek() {
-            if next.trim().is_empty()
-                || next.trim() == "+"
-                || detect_list_marker_full(next).is_some()
-            {
+            if next.trim().is_empty() || next.trim() == "+" {
                 break;
+            }
+            if let Some(nm) = detect_list_marker_full(next) {
+                // An ordered marker indented past the base but below this item's
+                // content column is lazy continuation, not a sub-list: ordered
+                // markers do not interrupt a paragraph (§10). Fold it. Any other
+                // marker (or one at/above the content column) ends the paragraph.
+                let folds = nm.ordered
+                    && nm.checked.is_none()
+                    && nm.indent > base_indent
+                    && nm.indent < content_col;
+                if !folds {
+                    break;
+                }
             }
             let indent = leading_ws(next);
             if indent <= base_indent {
