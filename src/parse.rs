@@ -216,8 +216,7 @@ fn parse_blocks(cur: &mut LineCursor, options: &Options<'_>) -> Vec<BlockNode> {
             cur.consume();
             continue;
         }
-        if let Some(attrs) = parse_standalone_attrs(line) {
-            cur.consume();
+        if let Some(attrs) = parse_standalone_attrs_block(cur) {
             merge_attrs(&mut pending_attrs, attrs);
             continue;
         }
@@ -1549,6 +1548,47 @@ fn parse_standalone_attrs(line: &str) -> Option<Attrs> {
     parse_attrs(&trimmed[1..trimmed.len() - 1])
 }
 
+/// A standalone block-attribute block, possibly spanning several contiguous
+/// (non-blank) lines: it opens with `{` and closes with `}` on a later line
+/// (`{#id` / ` .foo}`). Consumes the lines and returns the parsed attributes,
+/// or leaves the cursor untouched if it is not a valid attribute block.
+fn parse_standalone_attrs_block(cur: &mut LineCursor) -> Option<Attrs> {
+    let first = cur.peek()?;
+    if !first.trim_start().starts_with('{') {
+        return None;
+    }
+    if let Some(attrs) = parse_standalone_attrs(first) {
+        cur.consume();
+        return Some(attrs);
+    }
+    // Multi-line: join contiguous lines until one closes with `}`.
+    let mut joined = String::new();
+    let mut count = 0usize;
+    while let Some(line) = cur.lines.get(cur.pos + count).copied() {
+        if line.trim().is_empty() {
+            return None;
+        }
+        if !joined.is_empty() {
+            joined.push(' ');
+        }
+        joined.push_str(line.trim());
+        count += 1;
+        if line.trim_end().ends_with('}') {
+            let inner = joined.trim();
+            if inner.starts_with('{') && inner.ends_with('}') {
+                if let Some(attrs) = parse_attrs(&inner[1..inner.len() - 1]) {
+                    for _ in 0..count {
+                        cur.consume();
+                    }
+                    return Some(attrs);
+                }
+            }
+            return None;
+        }
+    }
+    None
+}
+
 fn merge_attrs(target: &mut Option<Attrs>, incoming: Attrs) {
     if target.is_none() {
         *target = Some(incoming);
@@ -1560,6 +1600,15 @@ fn merge_attrs(target: &mut Option<Attrs>, incoming: Attrs) {
     }
     target.classes.extend(incoming.classes);
     target.key_values.extend(incoming.key_values);
+    // Merge the render order too: a later id/key overrides the value but keeps
+    // its original slot position, so consecutive attribute lines emit in
+    // first-appearance order (`{#a}` / `{k=v}` / `{.c}` -> id, then k, then
+    // class). Without this only the last line's slots were rendered.
+    for slot in incoming.order {
+        if !target.order.contains(&slot) {
+            target.order.push(slot);
+        }
+    }
 }
 
 fn apply_attrs_to_block(node: &mut BlockNode, attrs: Attrs) {
