@@ -799,14 +799,30 @@ fn render_admonition(out: &mut String, a: &Admonition, level: usize, options: &O
         "note" | "tip" | "warning" | "danger" | "info" | "success" | "example" | "quote"
     );
     indent(out, level);
-    if canonical {
-        out.push_str(&format!(
-            "<aside class=\"admonition {}\">",
-            escape_attr(&a.kind)
-        ));
+    // The type class is structural (`admonition {kind}` for Tier 1, the bare
+    // `{kind}` for a Tier-2 div) and emitted first; the opener's own
+    // attribute block merges its classes into it and contributes id /
+    // key-values after (never a second class).
+    let base = if canonical {
+        format!("admonition {}", a.kind)
     } else {
-        out.push_str(&format!("<div class=\"{}\">", escape_attr(&a.kind)));
-    }
+        a.kind.clone()
+    };
+    let (class, rest) = match &a.attrs {
+        Some(at) if !at.classes.is_empty() => (
+            format!("{} {}", base, at.classes.join(" ")),
+            render_attrs_after_class(at),
+        ),
+        Some(at) => (base, render_attrs_after_class(at)),
+        None => (base, String::new()),
+    };
+    let tag = if canonical { "aside" } else { "div" };
+    out.push_str(&format!(
+        "<{} class=\"{}\"{}>",
+        tag,
+        escape_attr(&class),
+        rest
+    ));
     if let Some(title) = &a.title {
         out.push('\n');
         indent(out, level + 1);
@@ -968,16 +984,28 @@ fn render_inline(out: &mut String, node: &InlineNode, options: &Options<'_>) {
             out.push_str("</span>");
         }
         InlineNode::Math(m) => {
-            let class = if m.display {
+            let base = if m.display {
                 "math display"
             } else {
                 "math inline"
             };
             let open = if m.display { "\\[" } else { "\\(" };
             let close = if m.display { "\\]" } else { "\\)" };
+            // The `math {inline,display}` class is structural and emitted
+            // first; a trailing attribute block merges its classes into it
+            // and contributes id / key-values after (never a second class).
+            let (class, rest) = match &m.attrs {
+                Some(a) if !a.classes.is_empty() => (
+                    format!("{} {}", base, a.classes.join(" ")),
+                    render_attrs_after_class(a),
+                ),
+                Some(a) => (base.to_string(), render_attrs_after_class(a)),
+                None => (base.to_string(), String::new()),
+            };
             out.push_str(&format!(
-                "<span class=\"{}\">{}{}</span>",
-                class,
+                "<span class=\"{}\"{}>{}{}</span>",
+                escape_attr(&class),
+                rest,
                 open,
                 escape_text(&m.content) + close
             ));
@@ -1200,6 +1228,38 @@ fn render_attrs(attrs: &Option<Attrs>) -> String {
                     ));
                 }
             }
+            AttrSlot::Key(key) => {
+                if let Some(value) = attrs.key_values.get(key) {
+                    out.push_str(&format!(" {}=\"{}\"", key, escape_attr(value)));
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Render an attribute block's id and key-values in source order, omitting
+/// the class slot. Used by a node whose class is structural and merged
+/// separately (the math span: `class="math inline {extra}"`).
+fn render_attrs_after_class(attrs: &Attrs) -> String {
+    let mut out = String::new();
+    if attrs.order.is_empty() {
+        if let Some(id) = &attrs.id {
+            out.push_str(&format!(" id=\"{}\"", escape_attr(id)));
+        }
+        for (key, value) in &attrs.key_values {
+            out.push_str(&format!(" {}=\"{}\"", key, escape_attr(value)));
+        }
+        return out;
+    }
+    for slot in &attrs.order {
+        match slot {
+            AttrSlot::Id => {
+                if let Some(id) = &attrs.id {
+                    out.push_str(&format!(" id=\"{}\"", escape_attr(id)));
+                }
+            }
+            AttrSlot::Class => {}
             AttrSlot::Key(key) => {
                 if let Some(value) = attrs.key_values.get(key) {
                     out.push_str(&format!(" {}=\"{}\"", key, escape_attr(value)));

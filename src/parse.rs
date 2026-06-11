@@ -1487,18 +1487,43 @@ fn detect_container_open(line: &str) -> Option<ContainerOpen> {
             attrs: parse_attrs(&rest[1..rest.len() - 1]),
         });
     }
-    let mut parts = rest.splitn(2, char::is_whitespace);
-    let kind = parts.next()?.to_string();
-    let title = parts
-        .next()
-        .map(str::trim)
-        .filter(|s| s.starts_with('"') && s.ends_with('"') && s.len() >= 2)
-        .map(|s| s[1..s.len() - 1].to_string());
+    // Typed opener: `kind`, then an optional quoted title and an optional
+    // trailing attribute block (grammar admonition_open: type,
+    // [quoted_title], [attributes]). The attribute block needs no leading
+    // space, so it may abut the type or the title (`::: note{.x}`,
+    // `::: note "T"{.x}`); a quoted title may itself contain braces, so the
+    // block is only the `{...}` after the closing quote.
+    let id_end = rest
+        .char_indices()
+        .find(|(_, c)| !(c.is_ascii_alphanumeric() || *c == '-' || *c == '_'))
+        .map(|(i, _)| i)
+        .unwrap_or(rest.len());
+    let (kind, mut tail) = if id_end == 0 {
+        let mut parts = rest.splitn(2, char::is_whitespace);
+        (
+            parts.next().unwrap_or("").to_string(),
+            parts.next().unwrap_or("").trim(),
+        )
+    } else {
+        (rest[..id_end].to_string(), rest[id_end..].trim())
+    };
+    let mut title = None;
+    if let Some(after_open) = tail.strip_prefix('"') {
+        if let Some(close) = after_open.find('"') {
+            title = Some(after_open[..close].to_string());
+            tail = after_open[close + 1..].trim();
+        }
+    }
+    let attrs = if tail.starts_with('{') && tail.ends_with('}') && tail.len() >= 2 {
+        parse_attrs(&tail[1..tail.len() - 1])
+    } else {
+        None
+    };
     Some(ContainerOpen {
         fence_len,
         kind: Some(kind),
         title,
-        attrs: None,
+        attrs,
     })
 }
 
@@ -1788,6 +1813,19 @@ fn merge_attrs(target: &mut Option<Attrs>, incoming: Attrs) {
     }
 }
 
+/// Merge a leading block-attribute line onto a node that may already carry
+/// its own opener attributes. Leading attrs are earlier in source, so their
+/// classes precede the opener's and the opener wins on id/key conflict (§15).
+fn merge_leading_attrs(target: &mut Option<Attrs>, leading: Attrs) {
+    match target.take() {
+        None => *target = Some(leading),
+        Some(own) => {
+            *target = Some(leading);
+            merge_attrs(target, own);
+        }
+    }
+}
+
 fn apply_attrs_to_block(node: &mut BlockNode, attrs: Attrs) {
     match node {
         BlockNode::Heading(n) => n.attrs = Some(attrs),
@@ -1796,8 +1834,12 @@ fn apply_attrs_to_block(node: &mut BlockNode, attrs: Attrs) {
         BlockNode::List(n) => n.attrs = Some(attrs),
         BlockNode::BlockQuote(n) => n.attrs = Some(attrs),
         BlockNode::Table(n) => n.attrs = Some(attrs),
-        BlockNode::Admonition(n) => n.attrs = Some(attrs),
-        BlockNode::Div(n) => n.attrs = Some(attrs),
+        // A typed colon-fence opener may already carry its own attribute
+        // block (`::: note {.x}`); a leading block-attribute line is earlier
+        // in source, so its classes come first and the opener's win on
+        // id/key conflict (§15) -- merge instead of clobbering.
+        BlockNode::Admonition(n) => merge_leading_attrs(&mut n.attrs, attrs),
+        BlockNode::Div(n) => merge_leading_attrs(&mut n.attrs, attrs),
         BlockNode::DefinitionList(n) => n.attrs = Some(attrs),
         BlockNode::Figure(n) => n.attrs = Some(attrs),
         BlockNode::Extension(n) => n.attrs = Some(attrs),
@@ -2259,13 +2301,25 @@ fn parse_math(bytes: &[u8], start: usize) -> Option<(Math, usize)> {
     }
     let rest = std::str::from_utf8(&bytes[tick + 1..]).ok()?;
     let close = rest.find('`')?;
+    let end = tick + 1 + close + 1;
+    // A trailing attribute block attaches to the math span (math reuses the
+    // code-span attribute slot), EXCEPT `{=format}`, the raw-inline form,
+    // which is code-span-only and not inherited by math -- leave it literal.
+    let mut attrs = None;
+    let mut after = end;
+    if bytes.get(end) == Some(&b'{') && bytes.get(end + 1) != Some(&b'=') {
+        if let Some((parsed, next)) = read_attrs_at(bytes, end) {
+            attrs = Some(parsed);
+            after = next;
+        }
+    }
     Some((
         Math {
-            attrs: None,
+            attrs,
             display,
             content: rest[..close].to_string(),
         },
-        tick + 1 + close + 1 - start,
+        after - start,
     ))
 }
 
@@ -2285,20 +2339,31 @@ fn parse_reference_link(
     } else {
         label
     };
+    // A trailing attribute block attaches to the resolved link, the same
+    // slot an inline link uses (`[t][x]{.c}`).
+    let mut attrs = None;
+    let mut after = after_label;
+    if bytes.get(after) == Some(&b'{') {
+        if let Some((parsed_attrs, next)) = read_attrs_at(bytes, after) {
+            attrs = Some(parsed_attrs);
+            after = next;
+        }
+    }
     Some((
         Link {
-            attrs: None,
+            attrs,
             href: String::new(),
             title: None,
             children: parse_inline_context(&text, options, false, in_footnote),
             ref_label: Some(ref_label),
-            raw_ref: Some(
-                std::str::from_utf8(&bytes[start..after_label])
-                    .ok()?
-                    .to_string(),
-            ),
+            // `raw_ref` is the literal source emitted only when the
+            // reference does not resolve; it must include the consumed
+            // attribute block so an unresolved `[t][x]{.c}` stays fully
+            // literal rather than silently dropping the `{.c}`. A resolved
+            // reference ignores `raw_ref` and applies `attrs` instead.
+            raw_ref: Some(std::str::from_utf8(&bytes[start..after]).ok()?.to_string()),
         },
-        after_label - start,
+        after - start,
     ))
 }
 
