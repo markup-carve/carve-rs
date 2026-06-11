@@ -543,6 +543,46 @@ fn leading_ws(line: &str) -> usize {
         .count()
 }
 
+// Visual column of the leading whitespace, expanding tabs to the next
+// CommonMark tab stop (a multiple of 4). For space-only indentation this
+// equals leading_ws(). Used for list-nesting comparisons.
+fn indent_columns(line: &str) -> usize {
+    let mut col = 0;
+    for b in line.bytes() {
+        match b {
+            b' ' => col += 1,
+            b'\t' => col += 4 - (col % 4),
+            _ => break,
+        }
+    }
+    col
+}
+
+// Drop leading whitespace up to `cols` columns (tab-stop aware) and return the
+// remainder. A tab straddling the boundary is consumed whole (no residual
+// spaces): Carve has no indent-sensitive block where the leftover column would
+// change meaning, and indent_columns re-measures on each nested parse. For
+// space-only indentation this equals &line[cols..] when cols <= leading spaces.
+fn slice_columns(line: &str, cols: usize) -> &str {
+    let bytes = line.as_bytes();
+    let mut col = 0;
+    let mut i = 0;
+    while i < bytes.len() && col < cols {
+        match bytes[i] {
+            b' ' => {
+                col += 1;
+                i += 1;
+            }
+            b'\t' => {
+                col += 4 - (col % 4);
+                i += 1;
+            }
+            _ => break,
+        }
+    }
+    &line[i..]
+}
+
 fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     let mut inner = Vec::new();
     let mut para_open = false;
@@ -628,7 +668,7 @@ fn is_list_marker(line: &str) -> bool {
 fn detect_unordered(line: &str) -> Option<&str> {
     let bytes = line.as_bytes();
     let mut i = 0;
-    while i < bytes.len() && bytes[i] == b' ' {
+    while i < bytes.len() && (bytes[i] == b' ' || bytes[i] == b'\t') {
         i += 1;
     }
     if i >= bytes.len() {
@@ -652,7 +692,7 @@ fn detect_ordered(line: &str) -> Option<&str> {
 fn detect_ordered_full(line: &str) -> Option<(&str, Option<usize>, Option<OrderedListType>)> {
     let bytes = line.as_bytes();
     let mut i = 0;
-    while i < bytes.len() && bytes[i] == b' ' {
+    while i < bytes.len() && (bytes[i] == b' ' || bytes[i] == b'\t') {
         i += 1;
     }
     let marker_start = i;
@@ -729,7 +769,7 @@ fn roman_to_int(s: &str) -> Option<usize> {
 fn detect_task(line: &str) -> Option<(bool, &str)> {
     let bytes = line.as_bytes();
     let mut i = 0;
-    while i < bytes.len() && bytes[i] == b' ' {
+    while i < bytes.len() && (bytes[i] == b' ' || bytes[i] == b'\t') {
         i += 1;
     }
     if i >= bytes.len() {
@@ -778,7 +818,7 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         }
         // Lone `+` continuation marker (Carve): attaches the next flush-left
         // block to the current item without indentation.
-        if line.trim() == "+" && leading_ws(line) == base_indent {
+        if line.trim() == "+" && indent_columns(line) == base_indent {
             cur.consume();
             pending_blank = false;
             if let Some(block) = parse_block(cur, options) {
@@ -789,11 +829,12 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             continue;
         }
         let Some(marker) = detect_list_marker_full(line) else {
-            if leading_ws(line) > base_indent {
+            let indent = indent_columns(line);
+            if indent > base_indent {
                 // After a blank line, lazy continuation no longer applies: a line
                 // must be indented to the item's content column to keep belonging
                 // to it. A shallower line ends the list (corpus 81-list-lazy-5).
-                if pending_blank && leading_ws(line) < base_indent + 2 {
+                if pending_blank && indent < base_indent + 2 {
                     break;
                 }
                 if let Some(last) = items.last_mut() {
@@ -848,7 +889,8 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             base_indent + 2
         } else {
             let l = cur.peek().unwrap();
-            (marker.content.as_ptr() as usize).saturating_sub(l.as_ptr() as usize)
+            let byte_off = (marker.content.as_ptr() as usize).saturating_sub(l.as_ptr() as usize);
+            indent_columns(l) + byte_off.saturating_sub(leading_ws(l))
         };
         cur.consume();
         // First-block form `- +` (grammar §17): a lone `+` as the marker
@@ -889,7 +931,7 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                     break;
                 }
             }
-            let indent = leading_ws(next);
+            let indent = indent_columns(next);
             if indent <= base_indent {
                 // Lazy continuation: a non-indented line that does not start a
                 // block folds into the item's open paragraph (djot/CommonMark).
@@ -900,8 +942,7 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 cur.consume();
                 continue;
             }
-            let strip = (base_indent + 2).min(indent);
-            para_lines.push(next[strip..].to_string());
+            para_lines.push(slice_columns(next, (base_indent + 2).min(indent)).to_string());
             cur.consume();
         }
         let para_text = para_lines.join("\n");
@@ -935,7 +976,7 @@ struct ListMarker<'a> {
 }
 
 fn detect_list_marker_full(line: &str) -> Option<ListMarker<'_>> {
-    let indent = leading_ws(line);
+    let indent = indent_columns(line);
     if let Some((checked, content)) = detect_task(line) {
         return Some(ListMarker {
             indent,
@@ -984,7 +1025,7 @@ fn collect_indented_block(cur: &mut LineCursor, parent_indent: usize) -> String 
                 while k < cur.lines.len() && cur.lines[k].trim().is_empty() {
                     k += 1;
                 }
-                let continues = k < cur.lines.len() && leading_ws(cur.lines[k]) >= bi;
+                let continues = k < cur.lines.len() && indent_columns(cur.lines[k]) >= bi;
                 if !continues {
                     break;
                 }
@@ -993,15 +1034,14 @@ fn collect_indented_block(cur: &mut LineCursor, parent_indent: usize) -> String 
             cur.consume();
             continue;
         }
-        let indent = leading_ws(line);
+        let indent = indent_columns(line);
         if indent <= parent_indent {
             break;
         }
         if block_indent.is_none() {
             block_indent = Some(indent);
         }
-        let strip = (parent_indent + 2).min(indent);
-        lines.push(line[strip..].to_string());
+        lines.push(slice_columns(line, (parent_indent + 2).min(indent)).to_string());
         cur.consume();
     }
     lines.join("\n")
