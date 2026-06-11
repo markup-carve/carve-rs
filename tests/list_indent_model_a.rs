@@ -13,6 +13,16 @@ fn ordered_child_below_content_column_folds() {
 }
 
 #[test]
+fn unordered_child_below_content_column_still_nests() {
+    // Unordered markers interrupt (§10), so any indent past the parent base
+    // column nests even below the parent content column.
+    assert_eq!(
+        carve::to_html("- a\n - b"),
+        "<ul>\n  <li>a\n    <ul>\n      <li>b</li>\n    </ul>\n  </li>\n</ul>"
+    );
+}
+
+#[test]
 fn ordered_child_at_content_column_nests() {
     assert_eq!(
         carve::to_html("1. a\n   1. b"),
@@ -21,9 +31,25 @@ fn ordered_child_at_content_column_nests() {
 }
 
 #[test]
+fn tab_indented_ordered_child_reaches_content_column() {
+    assert_eq!(
+        carve::to_html("1. a\n\t1. b"),
+        "<ol>\n  <li>a\n    <ol>\n      <li>b</li>\n    </ol>\n  </li>\n</ol>"
+    );
+}
+
+#[test]
 fn unordered_child_at_content_column_nests() {
     assert_eq!(
         carve::to_html("- a\n  - b"),
+        "<ul>\n  <li>a\n    <ul>\n      <li>b</li>\n    </ul>\n  </li>\n</ul>"
+    );
+}
+
+#[test]
+fn tab_indented_unordered_child_nests() {
+    assert_eq!(
+        carve::to_html("- a\n\t- b"),
         "<ul>\n  <li>a\n    <ul>\n      <li>b</li>\n    </ul>\n  </li>\n</ul>"
     );
 }
