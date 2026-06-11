@@ -658,18 +658,22 @@ fn render_table(out: &mut String, t: &Table, level: usize, options: &Options<'_>
         render_table_row(out, header, true, options);
         out.push_str("</thead>");
     }
-    out.push('\n');
-    indent(out, level + 1);
-    out.push_str("<tbody>");
-    let rowspan_cols = compute_rowspans(t);
-    for (row_idx, row) in t.rows.iter().enumerate().skip(body_start) {
+    // A header-only table (e.g. a GFM `| x |` + `|---|` with no body rows) emits
+    // no <tbody>, matching carve-php.
+    if body_start < t.rows.len() {
         out.push('\n');
-        indent(out, level + 2);
-        render_table_body_row(out, row, row_idx, &rowspan_cols, t, options);
+        indent(out, level + 1);
+        out.push_str("<tbody>");
+        let rowspan_cols = compute_rowspans(t);
+        for (row_idx, row) in t.rows.iter().enumerate().skip(body_start) {
+            out.push('\n');
+            indent(out, level + 2);
+            render_table_body_row(out, row, row_idx, &rowspan_cols, t, options);
+        }
+        out.push('\n');
+        indent(out, level + 1);
+        out.push_str("</tbody>");
     }
-    out.push('\n');
-    indent(out, level + 1);
-    out.push_str("</tbody>");
     out.push('\n');
     indent(out, level);
     out.push_str("</table>");

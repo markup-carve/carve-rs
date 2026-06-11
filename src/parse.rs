@@ -1227,6 +1227,13 @@ fn is_table_start(line: &str) -> bool {
 
 fn parse_table(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     let mut rows = Vec::new();
+    // GFM-style header separator: a delimiter row directly after the first row
+    // turns that row into a header and sets per-column alignment for the whole
+    // column. The colons are read here and applied to every body row that
+    // follows. The first row must not itself be a delimiter row.
+    let mut first_is_delim = false;
+    let mut column_aligns: Vec<Option<TableAlign>> = Vec::new();
+    let mut saw_separator = false;
     while let Some(line) = cur.peek() {
         // Continue on a `|` row or a `+` multi-line-cell continuation.
         if !is_table_start(line) && !is_table_continuation(line) {
@@ -1237,9 +1244,25 @@ fn parse_table(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             if let Some(last) = rows.last_mut() {
                 apply_table_continuation(last, line, options);
             }
-        } else {
-            rows.push(parse_table_row(line, options));
+            continue;
         }
+        if rows.is_empty() {
+            first_is_delim = is_delim_row(line);
+        } else if rows.len() == 1 && !saw_separator && !first_is_delim && is_delim_row(line) {
+            // The separator row: make the first row the header, drop the row.
+            saw_separator = true;
+            column_aligns = parse_delim_aligns(line);
+            for cell in &mut rows[0].cells {
+                cell.header = true;
+            }
+            apply_column_aligns(&mut rows[0], &column_aligns);
+            continue;
+        }
+        let mut row = parse_table_row(line, options);
+        if saw_separator {
+            apply_column_aligns(&mut row, &column_aligns);
+        }
+        rows.push(row);
     }
     let table = Table {
         attrs: None,
@@ -1254,6 +1277,67 @@ fn parse_table(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
 
 fn is_table_continuation(line: &str) -> bool {
     line.trim_start().starts_with('+')
+}
+
+/// A GFM delimiter cell: an optional leading colon, one or more dashes, an
+/// optional trailing colon, and nothing else.
+fn is_delim_cell(s: &str) -> bool {
+    let b = s.as_bytes();
+    let mut i = 0;
+    if i < b.len() && b[i] == b':' {
+        i += 1;
+    }
+    let dash_start = i;
+    while i < b.len() && b[i] == b'-' {
+        i += 1;
+    }
+    if i == dash_start {
+        return false; // need at least one dash
+    }
+    if i < b.len() && b[i] == b':' {
+        i += 1;
+    }
+    i == b.len()
+}
+
+/// A delimiter row: every cell is a delimiter cell (and there is at least one).
+fn is_delim_row(line: &str) -> bool {
+    let mut content = line.trim();
+    content = content.strip_prefix('|').unwrap_or(content);
+    content = content.strip_suffix('|').unwrap_or(content);
+    let cells = split_table_cells(content);
+    !cells.is_empty() && cells.iter().all(|c| is_delim_cell(c.trim()))
+}
+
+/// Per-column alignment from a delimiter row's colons.
+fn parse_delim_aligns(line: &str) -> Vec<Option<TableAlign>> {
+    let mut content = line.trim();
+    content = content.strip_prefix('|').unwrap_or(content);
+    content = content.strip_suffix('|').unwrap_or(content);
+    split_table_cells(content)
+        .iter()
+        .map(|c| {
+            let t = c.trim();
+            match (t.starts_with(':'), t.ends_with(':')) {
+                (true, true) => Some(TableAlign::Center),
+                (false, true) => Some(TableAlign::Right),
+                (true, false) => Some(TableAlign::Left),
+                (false, false) => None,
+            }
+        })
+        .collect()
+}
+
+/// Apply a column default alignment to each cell that has no alignment of its
+/// own (a native `|<` marker wins over the column default).
+fn apply_column_aligns(row: &mut TableRow, aligns: &[Option<TableAlign>]) {
+    for (i, cell) in row.cells.iter_mut().enumerate() {
+        if cell.align.is_none() {
+            if let Some(a) = aligns.get(i).copied().flatten() {
+                cell.align = Some(a);
+            }
+        }
+    }
 }
 
 fn apply_table_continuation(row: &mut TableRow, line: &str, options: &Options<'_>) {
