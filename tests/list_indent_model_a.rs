@@ -73,3 +73,23 @@ fn unordered_child_nests_regardless_of_the_ordered_content_column() {
         "<ol start=\"10\">\n  <li>a\n    <ul>\n      <li>b</li>\n    </ul>\n  </li>\n</ol>"
     );
 }
+
+#[test]
+fn tab_space_aligned_ordered_subitems_are_siblings() {
+    // `\t  1. b` (tab to col 4, +2 = col 6) and `      2. c` (6 spaces) sit at the
+    // same visual column, so they are siblings. A sub-list marker line is dedented
+    // residual-aware so the partially-consumed tab keeps them aligned (matches
+    // carve-php).
+    assert_eq!(
+        carve::to_html("1. a\n\t  1. b\n      2. c"),
+        "<ol>\n  <li>a\n    <ol>\n      <li>b</li>\n      <li>c</li>\n    </ol>\n  </li>\n</ol>"
+    );
+}
+
+#[test]
+fn tab_space_aligned_unordered_subitems_are_siblings() {
+    assert_eq!(
+        carve::to_html("- a\n\t  - b\n      - c"),
+        "<ul>\n  <li>a\n    <ul>\n      <li>b</li>\n      <li>c</li>\n    </ul>\n  </li>\n</ul>"
+    );
+}

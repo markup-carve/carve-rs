@@ -558,11 +558,14 @@ fn indent_columns(line: &str) -> usize {
 }
 
 // Drop leading whitespace up to `cols` columns (tab-stop aware) and return the
-// remainder. A tab straddling the boundary is consumed whole (no residual
-// spaces): Carve has no indent-sensitive block where the leftover column would
-// change meaning, and indent_columns re-measures on each nested parse. For
-// space-only indentation this equals &line[cols..] when cols <= leading spaces.
-fn slice_columns(line: &str, cols: usize) -> &str {
+// remainder. By default a tab straddling the boundary is consumed whole, so a
+// block opener (quote, heading) dedents flush to column 0 and parses -- Carve
+// has no indent-sensitive block where the leftover column would change meaning.
+// With keep_residual (used only for sub-list marker lines), the unconsumed
+// columns of a straddling tab are re-emitted as spaces so tab+space-aligned
+// sibling markers keep the same visual column and the recursive parse re-derives
+// the child base from it. For space-only indentation there is never a residual.
+fn slice_columns(line: &str, cols: usize, keep_residual: bool) -> String {
     let bytes = line.as_bytes();
     let mut col = 0;
     let mut i = 0;
@@ -579,7 +582,13 @@ fn slice_columns(line: &str, cols: usize) -> &str {
             _ => break,
         }
     }
-    &line[i..]
+    if keep_residual && col > cols {
+        let mut s = " ".repeat(col - cols);
+        s.push_str(&line[i..]);
+        s
+    } else {
+        line[i..].to_string()
+    }
 }
 
 fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
@@ -941,7 +950,7 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 cur.consume();
                 continue;
             }
-            para_lines.push(slice_columns(next, (base_indent + 2).min(indent)).to_string());
+            para_lines.push(slice_columns(next, (base_indent + 2).min(indent), false));
             cur.consume();
         }
         let para_text = para_lines.join("\n");
@@ -1040,7 +1049,16 @@ fn collect_indented_block(cur: &mut LineCursor, parent_indent: usize) -> String 
         if block_indent.is_none() {
             block_indent = Some(indent);
         }
-        lines.push(slice_columns(line, (parent_indent + 2).min(indent)).to_string());
+        // A sub-list marker line is dedented residual-aware so tab+space-aligned
+        // siblings keep the same visual column (the recursive parse re-derives
+        // the child base); other lines (lead text, block openers) use whole-tab
+        // dedent so they reach column 0 and parse.
+        let is_marker = detect_list_marker_full(line).is_some();
+        lines.push(slice_columns(
+            line,
+            (parent_indent + 2).min(indent),
+            is_marker,
+        ));
         cur.consume();
     }
     lines.join("\n")
