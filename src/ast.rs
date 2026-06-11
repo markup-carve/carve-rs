@@ -329,6 +329,7 @@ pub struct Abbreviation {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Footnote {
+    pub attrs: Option<Attrs>,
     pub id: Option<String>,
     pub inline: Option<Vec<InlineNode>>,
     pub number: Option<usize>,

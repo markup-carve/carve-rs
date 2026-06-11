@@ -1760,17 +1760,18 @@ fn try_extension_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<Bl
 // ============================================================================
 
 pub(crate) fn parse_inline_with_options(text: &str, options: &Options<'_>) -> Vec<InlineNode> {
-    parse_inline_context(text, options, false)
+    parse_inline_context(text, options, false, false)
 }
 
 fn parse_caption_inline_with_options(text: &str, options: &Options<'_>) -> Vec<InlineNode> {
-    parse_inline_context(text, options, true)
+    parse_inline_context(text, options, true, false)
 }
 
 fn parse_inline_context(
     text: &str,
     options: &Options<'_>,
     mut caption_number_allowed: bool,
+    in_footnote: bool,
 ) -> Vec<InlineNode> {
     let bytes = text.as_bytes();
     // A `[` only opens an inline link, reference link, or span when a `](`,
@@ -1851,7 +1852,7 @@ fn parse_inline_context(
         }
 
         if c == b'{' {
-            if let Some((critic, consumed)) = parse_critic_markup(bytes, i, options) {
+            if let Some((critic, consumed)) = parse_critic_markup(bytes, i, options, in_footnote) {
                 flush_text(&mut out, &mut buf);
                 out.push(critic);
                 i += consumed;
@@ -1871,26 +1872,31 @@ fn parse_inline_context(
 
         // Inline link: [text](href)
         if c == b'[' {
-            if let Some((footnote, consumed)) = parse_footnote_ref(bytes, i) {
-                flush_text(&mut out, &mut buf);
-                out.push(InlineNode::Footnote(footnote));
-                i += consumed;
-                continue;
+            if !in_footnote {
+                if let Some((footnote, consumed)) = parse_footnote_ref(bytes, i) {
+                    flush_text(&mut out, &mut buf);
+                    out.push(InlineNode::Footnote(footnote));
+                    i += consumed;
+                    continue;
+                }
             }
             if has_link_trigger {
-                if let Some((link, consumed)) = parse_inline_link_with_options(bytes, i, options) {
+                if let Some((link, consumed)) =
+                    parse_inline_link_with_options(bytes, i, options, in_footnote)
+                {
                     flush_text(&mut out, &mut buf);
                     out.push(InlineNode::Link(link));
                     i += consumed;
                     continue;
                 }
-                if let Some((link, consumed)) = parse_reference_link(bytes, i, options) {
+                if let Some((link, consumed)) = parse_reference_link(bytes, i, options, in_footnote)
+                {
                     flush_text(&mut out, &mut buf);
                     out.push(InlineNode::Link(link));
                     i += consumed;
                     continue;
                 }
-                if let Some((span, consumed)) = parse_span(bytes, i, options) {
+                if let Some((span, consumed)) = parse_span(bytes, i, options, in_footnote) {
                     flush_text(&mut out, &mut buf);
                     out.push(InlineNode::Span(span));
                     i += consumed;
@@ -1950,7 +1956,7 @@ fn parse_inline_context(
                 i += consumed;
                 continue;
             }
-            if let Some((node, consumed)) = parse_inline_extension(bytes, i, options) {
+            if let Some((node, consumed)) = parse_inline_extension(bytes, i, options, in_footnote) {
                 flush_text(&mut out, &mut buf);
                 out.push(InlineNode::Extension(node));
                 i += consumed;
@@ -1958,8 +1964,22 @@ fn parse_inline_context(
             }
         }
 
+        // Inline footnote `^[content]`, ranked above superscript.
+        if !in_footnote
+            && c == b'^'
+            && bytes.get(i + 1) == Some(&b'[')
+            && (i == 0 || bytes[i - 1] != b'^')
+        {
+            if let Some((footnote, consumed)) = parse_inline_footnote(bytes, i, options) {
+                flush_text(&mut out, &mut buf);
+                out.push(InlineNode::Footnote(footnote));
+                i += consumed;
+                continue;
+            }
+        }
+
         // Bold-italic, sub, highlight, then single-char emphasis
-        if let Some((mut node, consumed)) = match_emphasis(bytes, i, options) {
+        if let Some((mut node, consumed)) = match_emphasis(bytes, i, options, in_footnote) {
             let mut consumed = consumed;
             if bytes.get(i + consumed) == Some(&b'{') {
                 if let Some((attrs, next)) = read_attrs_at(bytes, i + consumed) {
@@ -2009,13 +2029,14 @@ fn parse_critic_markup(
     bytes: &[u8],
     start: usize,
     options: &Options<'_>,
+    in_footnote: bool,
 ) -> Option<(InlineNode, usize)> {
     let rest = std::str::from_utf8(&bytes[start..]).ok()?;
     if let Some(inner) = rest.strip_prefix("{+") {
         let end = inner.find("+}")?;
         return Some((
             InlineNode::CriticInsert(CriticInsert {
-                children: parse_inline_with_options(&inner[..end], options),
+                children: parse_inline_context(&inner[..end], options, false, in_footnote),
             }),
             end + 4,
         ));
@@ -2024,7 +2045,7 @@ fn parse_critic_markup(
         let end = inner.find("-}")?;
         return Some((
             InlineNode::CriticDelete(CriticDelete {
-                children: parse_inline_with_options(&inner[..end], options),
+                children: parse_inline_context(&inner[..end], options, false, in_footnote),
             }),
             end + 4,
         ));
@@ -2064,14 +2085,56 @@ fn parse_footnote_ref(bytes: &[u8], start: usize) -> Option<(Footnote, usize)> {
         return None;
     }
     let id = std::str::from_utf8(&bytes[start + 2..i]).ok()?.to_string();
+    let mut attrs = None;
+    let mut after = i + 1;
+    if bytes.get(after) == Some(&b'{') {
+        if let Some((parsed_attrs, next)) = read_attrs_at(bytes, after) {
+            attrs = Some(parsed_attrs);
+            after = next;
+        }
+    }
     Some((
         Footnote {
+            attrs,
             id: Some(id),
             inline: None,
             number: None,
             ref_id: None,
         },
-        i + 1 - start,
+        after - start,
+    ))
+}
+
+fn parse_inline_footnote(
+    bytes: &[u8],
+    start: usize,
+    options: &Options<'_>,
+) -> Option<(Footnote, usize)> {
+    if bytes.get(start) != Some(&b'^') || bytes.get(start + 1) != Some(&b'[') {
+        return None;
+    }
+    let (content, after_bracket) = read_bracketed(bytes, start + 1)?;
+    if content.trim().is_empty() {
+        return None;
+    }
+    let mut attrs = None;
+    let mut after = after_bracket;
+    if bytes.get(after) == Some(&b'{') {
+        if let Some((parsed_attrs, next)) = read_attrs_at(bytes, after) {
+            attrs = Some(parsed_attrs);
+            after = next;
+        }
+    }
+    let children = parse_inline_context(&content, options, false, true);
+    Some((
+        Footnote {
+            attrs,
+            id: None,
+            inline: Some(children),
+            number: None,
+            ref_id: None,
+        },
+        after - start,
     ))
 }
 
@@ -2126,6 +2189,7 @@ fn parse_reference_link(
     bytes: &[u8],
     start: usize,
     options: &Options<'_>,
+    in_footnote: bool,
 ) -> Option<(Link, usize)> {
     let (text, after_text) = read_bracketed(bytes, start)?;
     if bytes.get(after_text) != Some(&b'[') {
@@ -2142,7 +2206,7 @@ fn parse_reference_link(
             attrs: None,
             href: String::new(),
             title: None,
-            children: parse_inline_with_options(&text, options),
+            children: parse_inline_context(&text, options, false, in_footnote),
             ref_label: Some(ref_label),
             raw_ref: Some(
                 std::str::from_utf8(&bytes[start..after_label])
@@ -2271,6 +2335,7 @@ fn parse_inline_link_with_options(
     bytes: &[u8],
     start: usize,
     options: &Options<'_>,
+    in_footnote: bool,
 ) -> Option<(Link, usize)> {
     if bytes.get(start) != Some(&b'[') {
         return None;
@@ -2293,7 +2358,7 @@ fn parse_inline_link_with_options(
             attrs,
             href,
             title,
-            children: parse_inline_with_options(&text, options),
+            children: parse_inline_context(&text, options, false, in_footnote),
             ref_label: None,
             raw_ref: None,
         },
@@ -2305,6 +2370,7 @@ fn parse_inline_extension(
     bytes: &[u8],
     start: usize,
     options: &Options<'_>,
+    in_footnote: bool,
 ) -> Option<(InlineExtension, usize)> {
     if bytes.get(start) != Some(&b':') {
         return None;
@@ -2333,13 +2399,18 @@ fn parse_inline_extension(
         InlineExtension {
             attrs,
             name,
-            children: parse_inline_with_options(&content, options),
+            children: parse_inline_context(&content, options, false, in_footnote),
         },
         after - start,
     ))
 }
 
-fn parse_span(bytes: &[u8], start: usize, options: &Options<'_>) -> Option<(Span, usize)> {
+fn parse_span(
+    bytes: &[u8],
+    start: usize,
+    options: &Options<'_>,
+    in_footnote: bool,
+) -> Option<(Span, usize)> {
     let (content, after_bracket) = read_bracketed(bytes, start)?;
     if bytes.get(after_bracket) != Some(&b'{') {
         return None;
@@ -2349,7 +2420,7 @@ fn parse_span(bytes: &[u8], start: usize, options: &Options<'_>) -> Option<(Span
     Some((
         Span {
             attrs: Some(attrs),
-            children: parse_inline_with_options(&content, options),
+            children: parse_inline_context(&content, options, false, in_footnote),
         },
         after_attrs - start,
     ))
@@ -2498,6 +2569,11 @@ fn read_bracketed(bytes: &[u8], start: usize) -> Option<(String, usize)> {
     while i < bytes.len() {
         match bytes[i] {
             b'\\' if i + 1 < bytes.len() => i += 2,
+            b'`' => {
+                // An unclosed verbatim span is opaque to end of text, so no `]`
+                // after it can close the bracket: the construct is not balanced.
+                i = skip_code_span(bytes, i)?;
+            }
             b'[' => {
                 depth += 1;
                 i += 1;
@@ -2513,6 +2589,31 @@ fn read_bracketed(bytes: &[u8], start: usize) -> Option<(String, usize)> {
                 return Some((text, i + 1));
             }
             _ => i += 1,
+        }
+    }
+    None
+}
+
+/// Skip a verbatim (code) span opening at `start` (a backtick run). Returns the
+/// index just past the equal-length closing run, or `None` when the span is
+/// unclosed (opaque to end of text) — mirroring the reference bracket scanner.
+fn skip_code_span(bytes: &[u8], start: usize) -> Option<usize> {
+    let mut i = start;
+    while i < bytes.len() && bytes[i] == b'`' {
+        i += 1;
+    }
+    let open_len = i - start;
+    while i < bytes.len() {
+        if bytes[i] != b'`' {
+            i += 1;
+            continue;
+        }
+        let close_start = i;
+        while i < bytes.len() && bytes[i] == b'`' {
+            i += 1;
+        }
+        if i - close_start == open_len {
+            return Some(i);
         }
     }
     None
@@ -2563,7 +2664,12 @@ fn read_link_target(bytes: &[u8], start: usize) -> Option<(String, Option<String
     Some((href, title, i + 1))
 }
 
-fn match_emphasis(bytes: &[u8], i: usize, options: &Options<'_>) -> Option<(InlineNode, usize)> {
+fn match_emphasis(
+    bytes: &[u8],
+    i: usize,
+    options: &Options<'_>,
+    in_footnote: bool,
+) -> Option<(InlineNode, usize)> {
     let c = bytes[i];
 
     // /*bold italic*/
@@ -2574,7 +2680,7 @@ fn match_emphasis(bytes: &[u8], i: usize, options: &Options<'_>) -> Option<(Inli
                 InlineNode::Emphasis(Emphasis {
                     attrs: None,
                     kind: EmphasisKind::BoldItalic,
-                    children: parse_inline_with_options(inner, options),
+                    children: parse_inline_context(inner, options, false, in_footnote),
                 }),
                 close + 2 - i,
             ));
@@ -2600,7 +2706,7 @@ fn match_emphasis(bytes: &[u8], i: usize, options: &Options<'_>) -> Option<(Inli
                         InlineNode::Emphasis(Emphasis {
                             attrs: None,
                             kind: EmphasisKind::Sub,
-                            children: parse_inline_with_options(inner, options),
+                            children: parse_inline_context(inner, options, false, in_footnote),
                         }),
                         close + 2 - i,
                     ));
@@ -2628,7 +2734,7 @@ fn match_emphasis(bytes: &[u8], i: usize, options: &Options<'_>) -> Option<(Inli
                         InlineNode::Emphasis(Emphasis {
                             attrs: None,
                             kind: EmphasisKind::Highlight,
-                            children: parse_inline_with_options(inner, options),
+                            children: parse_inline_context(inner, options, false, in_footnote),
                         }),
                         close + 2 - i,
                     ));
@@ -2667,7 +2773,7 @@ fn match_emphasis(bytes: &[u8], i: usize, options: &Options<'_>) -> Option<(Inli
         InlineNode::Emphasis(Emphasis {
             attrs: None,
             kind,
-            children: parse_inline_with_options(inner, options),
+            children: parse_inline_context(inner, options, false, in_footnote),
         }),
         close + 1 - i,
     ))

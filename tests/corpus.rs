@@ -32,6 +32,7 @@ const IMPLEMENTED: &[&str] = &[
     "17-attributes",
     "18-frontmatter",
     "85-numbered-cross-references",
+    "86-inline-footnotes",
 ];
 
 fn corpus_dir() -> PathBuf {
@@ -160,3 +161,4 @@ corpus_test!(
     c85_numbered_cross_references,
     "85-numbered-cross-references"
 );
+corpus_test!(c86_inline_footnotes, "86-inline-footnotes");

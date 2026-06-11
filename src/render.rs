@@ -7,32 +7,21 @@
 use crate::ast::*;
 use crate::escape::{escape_attr, escape_text};
 use crate::extension::{Options, RenderContext};
-use std::cell::RefCell;
 use std::collections::BTreeMap;
-
-thread_local! {
-    static FOOTNOTE_NUMBERS: RefCell<BTreeMap<String, usize>> = const { RefCell::new(BTreeMap::new()) };
-}
 
 pub fn render_html(doc: &Document) -> String {
     render_html_with_options(doc, &Options::default())
 }
 
 pub fn render_html_with_options(doc: &Document, options: &Options<'_>) -> String {
+    let mut doc = doc.clone();
     let mut state = RenderState::default();
-    let refs = collect_footnote_refs(&doc.children);
-    let numbers: BTreeMap<String, usize> = refs
-        .iter()
-        .enumerate()
-        .map(|(idx, label)| (label.clone(), idx + 1))
-        .collect();
-    FOOTNOTE_NUMBERS.with(|cell| *cell.borrow_mut() = numbers);
+    let footnotes = collect_footnotes(&mut doc);
     let mut html = render_document_blocks(doc.children.as_slice(), options, &mut state);
-    if !refs.is_empty() {
+    if !footnotes.is_empty() {
         html.push('\n');
-        html.push_str(&render_footnotes_section(doc, &refs, options));
+        html.push_str(&render_footnotes_section(&doc, &footnotes, options));
     }
-    FOOTNOTE_NUMBERS.with(|cell| cell.borrow_mut().clear());
     html
 }
 
@@ -81,86 +70,240 @@ fn render_document_blocks(
     out
 }
 
-fn collect_footnote_refs(nodes: &[BlockNode]) -> Vec<String> {
-    let mut refs = Vec::new();
-    for block in nodes {
-        collect_footnote_refs_block(block, &mut refs);
-    }
-    refs
+#[derive(Clone)]
+struct FootnoteEntry {
+    label: Option<String>,
+    inline: Option<Vec<InlineNode>>,
+    backrefs: Vec<String>,
 }
 
-fn collect_footnote_refs_block(block: &BlockNode, refs: &mut Vec<String>) {
+fn collect_footnotes(doc: &mut Document) -> Vec<FootnoteEntry> {
+    let mut order = Vec::new();
+    let mut seen: BTreeMap<String, usize> = BTreeMap::new();
+    let def_labels: Vec<String> = doc.footnote_defs.keys().cloned().collect();
+
+    for block in &mut doc.children {
+        collect_footnotes_block(block, &def_labels, &mut seen, &mut order);
+    }
+
+    let mut idx = 0;
+    while idx < order.len() {
+        let Some(label) = order[idx].label.clone() else {
+            idx += 1;
+            continue;
+        };
+        if let Some(blocks) = doc.footnote_defs.get_mut(&label) {
+            for block in blocks {
+                collect_footnotes_block(block, &def_labels, &mut seen, &mut order);
+            }
+        }
+        idx += 1;
+    }
+
+    order
+}
+
+fn collect_footnotes_block(
+    block: &mut BlockNode,
+    def_labels: &[String],
+    seen: &mut BTreeMap<String, usize>,
+    order: &mut Vec<FootnoteEntry>,
+) {
     match block {
-        BlockNode::Heading(h) => collect_footnote_refs_inline(&h.children, refs),
-        BlockNode::Paragraph(p) => collect_footnote_refs_inline(&p.children, refs),
+        BlockNode::Heading(h) => collect_footnotes_inline(&mut h.children, def_labels, seen, order),
+        BlockNode::Paragraph(p) => {
+            collect_footnotes_inline(&mut p.children, def_labels, seen, order);
+        }
         BlockNode::List(l) => {
-            for item in &l.items {
-                for child in &item.children {
-                    collect_footnote_refs_block(child, refs);
+            for item in &mut l.items {
+                for child in &mut item.children {
+                    collect_footnotes_block(child, def_labels, seen, order);
                 }
             }
         }
         BlockNode::BlockQuote(b) => {
-            for child in &b.children {
-                collect_footnote_refs_block(child, refs);
+            if let Some(attribution) = &mut b.attribution {
+                collect_footnotes_inline(attribution, def_labels, seen, order);
+            }
+            for child in &mut b.children {
+                collect_footnotes_block(child, def_labels, seen, order);
             }
         }
         BlockNode::Table(t) => {
-            for row in &t.rows {
-                for cell in &row.cells {
-                    collect_footnote_refs_inline(&cell.children, refs);
+            if let Some(caption) = &mut t.caption {
+                collect_footnotes_inline(caption, def_labels, seen, order);
+            }
+            for row in &mut t.rows {
+                for cell in &mut row.cells {
+                    collect_footnotes_inline(&mut cell.children, def_labels, seen, order);
                 }
             }
         }
         BlockNode::Admonition(a) => {
-            for child in &a.children {
-                collect_footnote_refs_block(child, refs);
+            if let Some(title) = &mut a.title {
+                collect_footnotes_inline(title, def_labels, seen, order);
+            }
+            for child in &mut a.children {
+                collect_footnotes_block(child, def_labels, seen, order);
+            }
+        }
+        BlockNode::Div(d) => {
+            for child in &mut d.children {
+                collect_footnotes_block(child, def_labels, seen, order);
+            }
+        }
+        BlockNode::DefinitionList(d) => {
+            for item in &mut d.items {
+                for term in &mut item.terms {
+                    collect_footnotes_inline(term, def_labels, seen, order);
+                }
+                for definition in &mut item.definitions {
+                    for child in definition {
+                        collect_footnotes_block(child, def_labels, seen, order);
+                    }
+                }
+            }
+        }
+        BlockNode::Figure(f) => {
+            collect_footnotes_inline(&mut f.caption, def_labels, seen, order);
+            match &mut f.target {
+                FigureTarget::BlockQuote(b) => {
+                    if let Some(attribution) = &mut b.attribution {
+                        collect_footnotes_inline(attribution, def_labels, seen, order);
+                    }
+                    for child in &mut b.children {
+                        collect_footnotes_block(child, def_labels, seen, order);
+                    }
+                }
+                FigureTarget::Table(t) => {
+                    if let Some(caption) = &mut t.caption {
+                        collect_footnotes_inline(caption, def_labels, seen, order);
+                    }
+                    for row in &mut t.rows {
+                        for cell in &mut row.cells {
+                            collect_footnotes_inline(&mut cell.children, def_labels, seen, order);
+                        }
+                    }
+                }
+                FigureTarget::Image(_) => {}
+            }
+        }
+        BlockNode::Extension(e) => {
+            for child in &mut e.children {
+                collect_footnotes_block(child, def_labels, seen, order);
             }
         }
         _ => {}
     }
 }
 
-fn collect_footnote_refs_inline(nodes: &[InlineNode], refs: &mut Vec<String>) {
+fn collect_footnotes_inline(
+    nodes: &mut [InlineNode],
+    def_labels: &[String],
+    seen: &mut BTreeMap<String, usize>,
+    order: &mut Vec<FootnoteEntry>,
+) {
     for node in nodes {
         match node {
             InlineNode::Footnote(f) => {
-                if let Some(id) = &f.id {
-                    if !refs.contains(id) {
-                        refs.push(id.clone());
-                    }
+                if let Some(inline) = &f.inline {
+                    let number = order.len() + 1;
+                    let ref_id = format!("fnref{number}");
+                    f.number = Some(number);
+                    f.ref_id = Some(ref_id.clone());
+                    order.push(FootnoteEntry {
+                        label: None,
+                        inline: Some(inline.clone()),
+                        backrefs: vec![ref_id],
+                    });
+                    continue;
                 }
+
+                let Some(id) = &f.id else {
+                    continue;
+                };
+                if !def_labels.contains(id) {
+                    continue;
+                }
+                let idx = order
+                    .iter()
+                    .position(|entry| entry.label.as_ref() == Some(id))
+                    .unwrap_or_else(|| {
+                        order.push(FootnoteEntry {
+                            label: Some(id.clone()),
+                            inline: None,
+                            backrefs: Vec::new(),
+                        });
+                        order.len() - 1
+                    });
+                let number = idx + 1;
+                let occurrence = seen.entry(id.clone()).or_insert(0);
+                *occurrence += 1;
+                let ref_id = if *occurrence == 1 {
+                    format!("fnref{number}")
+                } else {
+                    format!("fnref{number}-{occurrence}")
+                };
+                f.number = Some(number);
+                f.ref_id = Some(ref_id.clone());
+                order[idx].backrefs.push(ref_id);
             }
-            InlineNode::Emphasis(e) => collect_footnote_refs_inline(&e.children, refs),
-            InlineNode::Link(l) => collect_footnote_refs_inline(&l.children, refs),
-            InlineNode::Span(s) => collect_footnote_refs_inline(&s.children, refs),
-            InlineNode::Extension(e) => collect_footnote_refs_inline(&e.children, refs),
+            InlineNode::Emphasis(e) => {
+                collect_footnotes_inline(&mut e.children, def_labels, seen, order)
+            }
+            InlineNode::Link(l) => {
+                collect_footnotes_inline(&mut l.children, def_labels, seen, order)
+            }
+            InlineNode::Span(s) => {
+                collect_footnotes_inline(&mut s.children, def_labels, seen, order)
+            }
+            InlineNode::Extension(e) => {
+                collect_footnotes_inline(&mut e.children, def_labels, seen, order)
+            }
+            InlineNode::CriticInsert(c) => {
+                collect_footnotes_inline(&mut c.children, def_labels, seen, order);
+            }
+            InlineNode::CriticDelete(c) => {
+                collect_footnotes_inline(&mut c.children, def_labels, seen, order);
+            }
             _ => {}
         }
     }
 }
 
-fn render_footnotes_section(doc: &Document, refs: &[String], options: &Options<'_>) -> String {
+fn render_footnotes_section(
+    doc: &Document,
+    footnotes: &[FootnoteEntry],
+    options: &Options<'_>,
+) -> String {
     let mut out = String::new();
     out.push_str("<section role=\"doc-endnotes\">\n  <hr>\n  <ol>");
-    for (idx, label) in refs.iter().enumerate() {
+    for (idx, entry) in footnotes.iter().enumerate() {
         let num = idx + 1;
         out.push('\n');
         out.push_str(&format!("    <li id=\"fn{}\">", num));
-        if let Some(blocks) = doc.footnote_defs.get(label) {
-            for (block_idx, block) in blocks.iter().enumerate() {
-                out.push('\n');
-                let mut rendered = String::new();
-                render_block(&mut rendered, block, 3, options);
-                if block_idx + 1 == blocks.len() {
-                    let backlink = format!("<a href=\"#fnref{}\" role=\"doc-backlink\">↩</a>", num);
-                    if let Some(pos) = rendered.rfind("</p>") {
-                        rendered.insert_str(pos, &backlink);
-                    } else {
-                        rendered.push_str(&backlink);
+        if let Some(inline) = &entry.inline {
+            out.push('\n');
+            out.push_str("      <p>");
+            render_inlines(&mut out, inline, options);
+            out.push_str(&render_backlinks(&entry.backrefs));
+            out.push_str("</p>");
+        } else if let Some(label) = &entry.label {
+            if let Some(blocks) = doc.footnote_defs.get(label) {
+                for (block_idx, block) in blocks.iter().enumerate() {
+                    out.push('\n');
+                    let mut rendered = String::new();
+                    render_block(&mut rendered, block, 3, options);
+                    if block_idx + 1 == blocks.len() {
+                        let backlink = render_backlinks(&entry.backrefs);
+                        if let Some(pos) = rendered.rfind("</p>") {
+                            rendered.insert_str(pos, &backlink);
+                        } else {
+                            rendered.push_str(&backlink);
+                        }
                     }
+                    out.push_str(&rendered);
                 }
-                out.push_str(&rendered);
             }
         }
         out.push('\n');
@@ -168,6 +311,13 @@ fn render_footnotes_section(doc: &Document, refs: &[String], options: &Options<'
     }
     out.push_str("\n  </ol>\n</section>");
     out
+}
+
+fn render_backlinks(backrefs: &[String]) -> String {
+    backrefs
+        .iter()
+        .map(|ref_id| format!("<a href=\"#{ref_id}\" role=\"doc-backlink\">↩</a>"))
+        .collect()
 }
 
 fn render_section(
@@ -904,17 +1054,16 @@ fn render_inline(out: &mut String, node: &InlineNode, options: &Options<'_>) {
             escape_text(&a.abbr)
         )),
         InlineNode::Footnote(f) => {
-            if let Some(id) = &f.id {
-                FOOTNOTE_NUMBERS.with(|cell| {
-                    if let Some(num) = cell.borrow().get(id).copied() {
-                        out.push_str(&format!(
-                            "<a id=\"fnref{}\" href=\"#fn{}\" role=\"doc-noteref\"><sup>{}</sup></a>",
-                            num, num, num
-                        ));
-                    } else {
-                        out.push_str(&escape_text(&format!("[^{}]", id)));
-                    }
-                });
+            if let (Some(number), Some(ref_id)) = (f.number, &f.ref_id) {
+                out.push_str(&format!(
+                    "<a id=\"{}\" href=\"#fn{}\" role=\"doc-noteref\"{}><sup>{}</sup></a>",
+                    escape_attr(ref_id),
+                    number,
+                    render_attrs_without_id(&f.attrs),
+                    number
+                ));
+            } else if let Some(id) = &f.id {
+                out.push_str(&escape_text(&format!("[^{id}]")));
             }
         }
         InlineNode::SoftBreak => out.push('\n'),
@@ -1055,6 +1204,15 @@ fn render_attrs(attrs: &Option<Attrs>) -> String {
         }
     }
     out
+}
+
+fn render_attrs_without_id(attrs: &Option<Attrs>) -> String {
+    let mut attrs = attrs.clone();
+    if let Some(attrs) = &mut attrs {
+        attrs.id = None;
+        attrs.order.retain(|slot| !matches!(slot, AttrSlot::Id));
+    }
+    render_attrs(&attrs)
 }
 
 fn smart_text(input: &str) -> String {
