@@ -814,6 +814,10 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     let mut items: Vec<ListItem> = Vec::new();
     let mut tight = true;
     let mut pending_blank = false;
+    // The current item's content column (where its content begins after the
+    // marker). Nested content and sub-blocks of the last item dedent by this, so
+    // it persists across iterations and is updated as each item is opened.
+    let mut content_col = base_indent + 2;
     while let Some(line) = cur.peek() {
         if line.trim().is_empty() {
             // A blank alone does not loosen the list; it loosens only when the
@@ -846,7 +850,7 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                     break;
                 }
                 if let Some(last) = items.last_mut() {
-                    let nested = collect_indented_block(cur, base_indent);
+                    let nested = collect_indented_block(cur, base_indent, content_col);
                     let nested_children = parse_blocks_with_options(&nested, options);
                     // A blank before an indented sub-block loosens only when it
                     // is a genuine second paragraph (#74 compact list blocks).
@@ -874,7 +878,7 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 break;
             }
             if let Some(last) = items.last_mut() {
-                let nested = collect_indented_block(cur, base_indent);
+                let nested = collect_indented_block(cur, base_indent, content_col);
                 let nested_children = parse_blocks_with_options(&nested, options);
                 last.children.extend(nested_children);
                 continue;
@@ -893,7 +897,7 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         // checkbox is content, not marker, so the column is the bullet width
         // (`- `/`* ` = 2) -- a child indented to 2 nests, matching the spec's
         // task attribute/continuation convention (`- [x] x` / `  {.c}`).
-        let content_col = if marker.checked.is_some() {
+        content_col = if marker.checked.is_some() {
             base_indent + 2
         } else {
             let l = cur.peek().unwrap();
@@ -950,7 +954,16 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 cur.consume();
                 continue;
             }
-            para_lines.push(slice_columns(next, (base_indent + 2).min(indent), false));
+            // An indented block opener (block quote, heading, fence, div, table)
+            // at the item's content column interrupts the lead paragraph and nests
+            // as a child block rather than folding in as lazy text. The interrupt
+            // test keys off column 0, so check the dedented line; true lazy
+            // continuation text does not interrupt and stays in the paragraph.
+            let dedented = slice_columns(next, content_col.min(indent), false);
+            if interrupts_paragraph(&dedented, &cur.lines[cur.pos + 1..]) {
+                break;
+            }
+            para_lines.push(dedented);
             cur.consume();
         }
         let para_text = para_lines.join("\n");
@@ -1018,7 +1031,7 @@ fn detect_list_marker_full(line: &str) -> Option<ListMarker<'_>> {
     None
 }
 
-fn collect_indented_block(cur: &mut LineCursor, parent_indent: usize) -> String {
+fn collect_indented_block(cur: &mut LineCursor, parent_indent: usize, strip_cols: usize) -> String {
     let mut lines = Vec::new();
     let mut block_indent: Option<usize> = None;
     while let Some(line) = cur.peek() {
@@ -1049,16 +1062,13 @@ fn collect_indented_block(cur: &mut LineCursor, parent_indent: usize) -> String 
         if block_indent.is_none() {
             block_indent = Some(indent);
         }
-        // A sub-list marker line is dedented residual-aware so tab+space-aligned
-        // siblings keep the same visual column (the recursive parse re-derives
-        // the child base); other lines (lead text, block openers) use whole-tab
-        // dedent so they reach column 0 and parse.
+        // Dedent by the item's content column so a nested block (sub-list, block
+        // quote, heading) reaches column 0 and parses. A sub-list marker line is
+        // dedented residual-aware so tab+space-aligned siblings keep the same
+        // visual column (the recursive parse re-derives the child base); other
+        // lines use whole-tab dedent so they land flush at column 0.
         let is_marker = detect_list_marker_full(line).is_some();
-        lines.push(slice_columns(
-            line,
-            (parent_indent + 2).min(indent),
-            is_marker,
-        ));
+        lines.push(slice_columns(line, strip_cols.min(indent), is_marker));
         cur.consume();
     }
     lines.join("\n")
