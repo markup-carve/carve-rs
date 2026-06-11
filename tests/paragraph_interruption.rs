@@ -133,3 +133,19 @@ fn fence_interrupts_inside_admonition() {
         "<aside class=\"admonition note\">\n  <p>text</p>\n  <pre><code>code\n</code></pre>\n</aside>"
     );
 }
+
+#[test]
+fn tab_indented_bullet_interrupts_paragraph() {
+    // Rule B: a bullet opens a list at any indentation, so a tab-indented one
+    // interrupts an open paragraph (matches a space-indented bullet).
+    assert_eq!(
+        html("text\n\t- item"),
+        "<p>text</p>\n<ul>\n  <li>item</li>\n</ul>"
+    );
+}
+
+#[test]
+fn indented_ordered_marker_does_not_interrupt_paragraph() {
+    // Ordered markers never interrupt a paragraph, at any indentation.
+    assert_eq!(html("text\n  1. item"), "<p>text\n1. item</p>");
+}
