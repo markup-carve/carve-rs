@@ -149,3 +149,37 @@ fn indented_ordered_marker_does_not_interrupt_paragraph() {
     // Ordered markers never interrupt a paragraph, at any indentation.
     assert_eq!(html("text\n  1. item"), "<p>text\n1. item</p>");
 }
+
+#[test]
+fn block_quote_nests_under_an_ordered_item_without_a_blank() {
+    // A block opener indented to the item's content column interrupts the item's
+    // lead paragraph and nests, rather than folding in as lazy text. The content
+    // column of `1. ` is 3, so the dedent must use the marker width, not a fixed
+    // bullet width of 2 (matches carve-php).
+    assert_eq!(
+        html("1. a\n   > q"),
+        "<ol>\n  <li>a\n    <blockquote><p>q</p></blockquote>\n  </li>\n</ol>"
+    );
+}
+
+#[test]
+fn heading_nests_under_an_item_without_a_blank() {
+    assert_eq!(
+        html("- a\n  # H"),
+        "<ul>\n  <li>a\n    <h1>H</h1>\n  </li>\n</ul>"
+    );
+}
+
+#[test]
+fn block_quote_after_a_sub_list_is_an_outer_item_sibling() {
+    assert_eq!(
+        html("1. a\n   1. b\n   > q"),
+        "<ol>\n  <li>a\n    <ol>\n      <li>b</li>\n    </ol>\n    <blockquote><p>q</p></blockquote>\n  </li>\n</ol>"
+    );
+}
+
+#[test]
+fn indented_prose_still_folds_as_lazy_continuation() {
+    // A non-block-opening indented line is lazy continuation, not a new block.
+    assert_eq!(html("1. a\n   more"), "<ol>\n  <li>a\nmore</li>\n</ol>");
+}
