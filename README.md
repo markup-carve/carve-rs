@@ -15,7 +15,7 @@ new corpus pairs fail CI until the parser and renderer support them.
 
 | Pair | Construct | Status |
 |---|---|---|
-| 01-emphasis | `/italic/`, `*bold*`, `_underline_`, `~strike~`, `^super^`, `,,sub,,`, `==hl==`, `/*bi*/` | passing |
+| 01-emphasis | `/italic/`, `*bold*`, `_underline_`, `~strike~`, `^super^`, `,sub,`, `=hl=`, `/*bi*/` | passing |
 | 02-headings | `# H1` … `#### H4` | passing |
 | 03-links | `[text](url)` | passing |
 | 04-images | `![alt](src)` (inline + block) | passing |
@@ -47,6 +47,11 @@ let doc = carve::parse(source);
 // inspect or transform doc.children …
 let html = carve::render_html(&doc);
 ```
+
+Besides HTML, the crate renders the same AST to Markdown, plain text, and
+ANSI-styled text via `carve::to_markdown`, `carve::to_plain_text`, and
+`carve::to_ansi` (each with a matching `render_*` function for a parsed
+`Document`).
 
 ## Extensions
 
