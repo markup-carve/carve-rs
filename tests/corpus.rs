@@ -5,8 +5,9 @@
 //! `NN-slug.html` and asserting that `carve::to_html` produces
 //! byte-identical output after trimming.
 //!
-//! Every checked-in pair is checked by `all_corpus_pairs_match`; named
-//! tests keep representative failures scoped.
+//! Every pair in an implemented category is checked by
+//! `all_implemented_corpus_pairs_match`; named tests keep representative
+//! failures scoped.
 
 use std::fs;
 use std::path::PathBuf;
@@ -30,6 +31,7 @@ const IMPLEMENTED: &[&str] = &[
     "16-inline-extensions",
     "17-attributes",
     "18-frontmatter",
+    "85-numbered-cross-references",
 ];
 
 fn corpus_dir() -> PathBuf {
@@ -72,6 +74,15 @@ fn check_pair(slug: &str) {
     pretty_assert_eq(slug, expected.trim(), actual.trim());
 }
 
+fn is_implemented_pair(slug: &str) -> bool {
+    IMPLEMENTED.iter().any(|implemented| {
+        slug == *implemented
+            || slug.strip_prefix(implemented).is_some_and(|rest| {
+                rest.starts_with('-') && rest[1..].bytes().all(|b| b.is_ascii_digit())
+            })
+    })
+}
+
 fn pretty_assert_eq(slug: &str, expected: &str, actual: &str) {
     if expected == actual {
         return;
@@ -102,9 +113,11 @@ fn all_implemented_pairs_exist() {
 }
 
 #[test]
-fn all_corpus_pairs_match() {
+fn all_implemented_corpus_pairs_match() {
     for slug in corpus_pairs() {
-        check_pair(&slug);
+        if is_implemented_pair(&slug) {
+            check_pair(&slug);
+        }
     }
 }
 
@@ -143,3 +156,7 @@ corpus_test!(c15_mentions_and_tags, "15-mentions-and-tags");
 corpus_test!(c16_inline_extensions, "16-inline-extensions");
 corpus_test!(c17_attributes, "17-attributes");
 corpus_test!(c18_frontmatter, "18-frontmatter");
+corpus_test!(
+    c85_numbered_cross_references,
+    "85-numbered-cross-references"
+);

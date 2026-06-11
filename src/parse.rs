@@ -1216,7 +1216,7 @@ fn consume_caption(cur: &mut LineCursor, options: &Options<'_>) -> Option<Vec<In
         return None;
     };
     cur.consume();
-    Some(parse_inline_with_options(text.trim_end(), options))
+    Some(parse_caption_inline_with_options(text.trim_end(), options))
 }
 
 fn is_table_start(line: &str) -> bool {
@@ -1760,6 +1760,18 @@ fn try_extension_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<Bl
 // ============================================================================
 
 pub(crate) fn parse_inline_with_options(text: &str, options: &Options<'_>) -> Vec<InlineNode> {
+    parse_inline_context(text, options, false)
+}
+
+fn parse_caption_inline_with_options(text: &str, options: &Options<'_>) -> Vec<InlineNode> {
+    parse_inline_context(text, options, true)
+}
+
+fn parse_inline_context(
+    text: &str,
+    options: &Options<'_>,
+    mut caption_number_allowed: bool,
+) -> Vec<InlineNode> {
     let bytes = text.as_bytes();
     // A `[` only opens an inline link, reference link, or span when a `](`,
     // `][`, or `]{` follows (there is no bare shortcut-reference form). If none
@@ -1777,8 +1789,12 @@ pub(crate) fn parse_inline_with_options(text: &str, options: &Options<'_>) -> Ve
         if c == b'\\' && i + 1 < bytes.len() {
             let nxt = bytes[i + 1];
             if is_escapable(nxt) {
-                buf.push('\\');
-                buf.push(nxt as char);
+                if caption_number_allowed && nxt == b'#' {
+                    buf.push('#');
+                } else {
+                    buf.push('\\');
+                    buf.push(nxt as char);
+                }
                 i += 2;
                 continue;
             }
@@ -1902,6 +1918,13 @@ pub(crate) fn parse_inline_with_options(text: &str, options: &Options<'_>) -> Ve
         }
 
         if c == b'#' {
+            if caption_number_allowed && !bytes.get(i + 1).is_some_and(u8::is_ascii_alphabetic) {
+                flush_text(&mut out, &mut buf);
+                out.push(InlineNode::CaptionNumber(CaptionNumber { number: None }));
+                caption_number_allowed = false;
+                i += 1;
+                continue;
+            }
             if let Some((tag, consumed)) = parse_tag(text, i) {
                 flush_text(&mut out, &mut buf);
                 out.push(InlineNode::Tag(tag));
@@ -2803,6 +2826,8 @@ fn resolve_crossrefs(doc: &mut Document) {
     let mut counts = BTreeMap::new();
     let mut titles = BTreeMap::new();
     collect_heading_titles(&doc.children, &mut counts, &mut titles);
+    let mut caption_counts = BTreeMap::new();
+    number_captioned_blocks(&mut doc.children, &mut caption_counts, &mut titles);
     for block in &mut doc.children {
         resolve_crossrefs_block(block, &titles);
     }
@@ -2831,6 +2856,9 @@ fn resolve_reference_links_block(block: &mut BlockNode, defs: &BTreeMap<String, 
             }
         }
         BlockNode::Table(t) => {
+            if let Some(caption) = &mut t.caption {
+                resolve_reference_links_inline(caption, defs);
+            }
             for row in &mut t.rows {
                 for cell in &mut row.cells {
                     resolve_reference_links_inline(&mut cell.children, defs);
@@ -2840,6 +2868,44 @@ fn resolve_reference_links_block(block: &mut BlockNode, defs: &BTreeMap<String, 
         BlockNode::Admonition(a) => {
             for child in &mut a.children {
                 resolve_reference_links_block(child, defs);
+            }
+        }
+        BlockNode::Div(d) => {
+            for child in &mut d.children {
+                resolve_reference_links_block(child, defs);
+            }
+        }
+        BlockNode::DefinitionList(d) => {
+            for item in &mut d.items {
+                for term in &mut item.terms {
+                    resolve_reference_links_inline(term, defs);
+                }
+                for definition in &mut item.definitions {
+                    for child in definition {
+                        resolve_reference_links_block(child, defs);
+                    }
+                }
+            }
+        }
+        BlockNode::Figure(f) => {
+            resolve_reference_links_inline(&mut f.caption, defs);
+            match &mut f.target {
+                FigureTarget::BlockQuote(b) => {
+                    for child in &mut b.children {
+                        resolve_reference_links_block(child, defs);
+                    }
+                }
+                FigureTarget::Table(t) => {
+                    if let Some(caption) = &mut t.caption {
+                        resolve_reference_links_inline(caption, defs);
+                    }
+                    for row in &mut t.rows {
+                        for cell in &mut row.cells {
+                            resolve_reference_links_inline(&mut cell.children, defs);
+                        }
+                    }
+                }
+                FigureTarget::Image(_) => {}
             }
         }
         _ => {}
@@ -2914,8 +2980,96 @@ fn collect_heading_titles(
             }
             BlockNode::BlockQuote(b) => collect_heading_titles(&b.children, counts, titles),
             BlockNode::Admonition(a) => collect_heading_titles(&a.children, counts, titles),
+            BlockNode::Div(d) => collect_heading_titles(&d.children, counts, titles),
+            BlockNode::DefinitionList(d) => {
+                for item in &d.items {
+                    for definition in &item.definitions {
+                        collect_heading_titles(definition, counts, titles);
+                    }
+                }
+            }
+            BlockNode::Figure(f) => match &f.target {
+                FigureTarget::BlockQuote(b) => collect_heading_titles(&b.children, counts, titles),
+                FigureTarget::Table(_) | FigureTarget::Image(_) => {}
+            },
             _ => {}
         }
+    }
+}
+
+fn number_captioned_blocks(
+    blocks: &mut [BlockNode],
+    counts: &mut BTreeMap<String, usize>,
+    titles: &mut BTreeMap<String, String>,
+) {
+    for block in blocks {
+        match block {
+            BlockNode::Table(t) => number_table_caption(t, counts, titles),
+            BlockNode::Figure(f) => {
+                number_caption(&mut f.caption, f.attrs.as_ref(), counts, titles);
+                match &mut f.target {
+                    FigureTarget::BlockQuote(b) => {
+                        number_captioned_blocks(&mut b.children, counts, titles);
+                    }
+                    FigureTarget::Table(t) => number_table_caption(t, counts, titles),
+                    FigureTarget::Image(_) => {}
+                }
+            }
+            BlockNode::List(l) => {
+                for item in &mut l.items {
+                    number_captioned_blocks(&mut item.children, counts, titles);
+                }
+            }
+            BlockNode::BlockQuote(b) => number_captioned_blocks(&mut b.children, counts, titles),
+            BlockNode::Admonition(a) => number_captioned_blocks(&mut a.children, counts, titles),
+            BlockNode::Div(d) => number_captioned_blocks(&mut d.children, counts, titles),
+            BlockNode::DefinitionList(d) => {
+                for item in &mut d.items {
+                    for definition in &mut item.definitions {
+                        number_captioned_blocks(definition, counts, titles);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn number_table_caption(
+    table: &mut Table,
+    counts: &mut BTreeMap<String, usize>,
+    titles: &mut BTreeMap<String, String>,
+) {
+    if let Some(caption) = &mut table.caption {
+        number_caption(caption, table.attrs.as_ref(), counts, titles);
+    }
+}
+
+fn number_caption(
+    caption: &mut [InlineNode],
+    attrs: Option<&Attrs>,
+    counts: &mut BTreeMap<String, usize>,
+    titles: &mut BTreeMap<String, String>,
+) {
+    let Some(idx) = caption
+        .iter()
+        .position(|node| matches!(node, InlineNode::CaptionNumber(_)))
+    else {
+        return;
+    };
+    let label = plain_inlines_parse(&caption[..idx])
+        .trim_end_matches(char::is_whitespace)
+        .to_string();
+    let next = counts.entry(label.clone()).or_insert(0);
+    *next += 1;
+    let number = *next;
+    if let InlineNode::CaptionNumber(caption_number) = &mut caption[idx] {
+        caption_number.number = Some(number);
+    }
+    if let Some(id) = attrs.and_then(|attrs| attrs.id.as_ref()) {
+        titles
+            .entry(id.clone())
+            .or_insert_with(|| format!("{label} {number}"));
     }
 }
 
@@ -2940,11 +3094,52 @@ fn resolve_crossrefs_block(block: &mut BlockNode, titles: &BTreeMap<String, Stri
                 resolve_crossrefs_block(child, titles);
             }
         }
+        BlockNode::Div(d) => {
+            for child in &mut d.children {
+                resolve_crossrefs_block(child, titles);
+            }
+        }
+        BlockNode::DefinitionList(d) => {
+            for item in &mut d.items {
+                for term in &mut item.terms {
+                    resolve_crossrefs_inline(term, titles);
+                }
+                for definition in &mut item.definitions {
+                    for child in definition {
+                        resolve_crossrefs_block(child, titles);
+                    }
+                }
+            }
+        }
         BlockNode::Table(t) => {
+            if let Some(caption) = &mut t.caption {
+                resolve_crossrefs_inline(caption, titles);
+            }
             for row in &mut t.rows {
                 for cell in &mut row.cells {
                     resolve_crossrefs_inline(&mut cell.children, titles);
                 }
+            }
+        }
+        BlockNode::Figure(f) => {
+            resolve_crossrefs_inline(&mut f.caption, titles);
+            match &mut f.target {
+                FigureTarget::BlockQuote(b) => {
+                    for child in &mut b.children {
+                        resolve_crossrefs_block(child, titles);
+                    }
+                }
+                FigureTarget::Table(t) => {
+                    if let Some(caption) = &mut t.caption {
+                        resolve_crossrefs_inline(caption, titles);
+                    }
+                    for row in &mut t.rows {
+                        for cell in &mut row.cells {
+                            resolve_crossrefs_inline(&mut cell.children, titles);
+                        }
+                    }
+                }
+                FigureTarget::Image(_) => {}
             }
         }
         _ => {}
@@ -2991,6 +3186,11 @@ fn plain_inlines_parse(nodes: &[InlineNode]) -> String {
             InlineNode::Abbreviation(a) => out.push_str(&a.abbr),
             InlineNode::Mention(m) => out.push_str(&m.user),
             InlineNode::Tag(t) => out.push_str(&t.name),
+            InlineNode::CaptionNumber(n) => {
+                if let Some(number) = n.number {
+                    out.push_str(&number.to_string());
+                }
+            }
             // A soft/hard break (multi-line heading) is a word separator, so
             // parse-time cross-reference slugs match the rendered heading id.
             InlineNode::SoftBreak | InlineNode::HardBreak => out.push(' '),
