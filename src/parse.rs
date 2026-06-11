@@ -1130,10 +1130,13 @@ fn interrupts_paragraph(line: &str, rest: &[&str]) -> bool {
 }
 
 /// A `- ` or `* ` bullet (NOT `+`, the continuation marker; not ordered).
+///
+/// Leading tabs are skipped as well as spaces: a bullet opens a list at any
+/// indentation (Rule B), so a tab-indented bullet interrupts a paragraph too.
 fn is_interrupting_bullet(line: &str) -> bool {
     let bytes = line.as_bytes();
     let mut i = 0;
-    while i < bytes.len() && bytes[i] == b' ' {
+    while i < bytes.len() && (bytes[i] == b' ' || bytes[i] == b'\t') {
         i += 1;
     }
     i < bytes.len()
