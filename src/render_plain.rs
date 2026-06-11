@@ -1,0 +1,199 @@
+use crate::ast::*;
+use crate::render_text::clean_smart_text;
+
+pub fn render_plain_text(doc: &Document) -> String {
+    let out = render_blocks(&doc.children);
+    let footnotes = render_footnote_defs(doc);
+    normalize(&format!("{out}{footnotes}"))
+}
+
+fn render_blocks(blocks: &[BlockNode]) -> String {
+    blocks.iter().map(render_block).collect()
+}
+
+fn render_block(node: &BlockNode) -> String {
+    match node {
+        BlockNode::Heading(heading) => format!("{}\n\n", render_inlines(&heading.children)),
+        BlockNode::Paragraph(paragraph) => {
+            if let Some((term, def)) = legacy_definition_parts(&paragraph.children) {
+                return format!("{term}\n  {def}\n\n");
+            }
+            format!("{}\n\n", render_inlines(&paragraph.children))
+        }
+        BlockNode::CodeBlock(code) => format!("{}\n\n", code.content),
+        BlockNode::BlockQuote(quote) => {
+            format!("\"{}\"\n\n", render_blocks(&quote.children).trim())
+        }
+        BlockNode::List(list) => render_list(list),
+        BlockNode::ThematicBreak => "---\n\n".to_string(),
+        BlockNode::Table(table) => render_table(table),
+        BlockNode::Admonition(admonition) => render_blocks(&admonition.children),
+        BlockNode::Div(div) => render_blocks(&div.children),
+        BlockNode::DefinitionList(list) => render_definition_list(&list.items, true),
+        BlockNode::Figure(figure) => render_figure(figure),
+        BlockNode::BlockImage(image) => image.alt.clone(),
+        BlockNode::Extension(extension) => render_blocks(&extension.children),
+        BlockNode::RawBlock(_) | BlockNode::AbbreviationDef(_) | BlockNode::Comment(_) => {
+            String::new()
+        }
+    }
+}
+
+fn render_list(node: &List) -> String {
+    let mut out = String::new();
+    let mut counter = node.start.unwrap_or(1);
+    for item in &node.items {
+        if node.ordered {
+            out.push_str(&format!("{counter}. "));
+            counter += 1;
+        } else {
+            out.push_str("- ");
+        }
+        out.push_str(render_blocks(&item.children).trim());
+        out.push('\n');
+    }
+    out.push('\n');
+    out
+}
+
+fn render_definition_list(items: &[DefinitionItem], trailing_blank: bool) -> String {
+    let mut out = String::new();
+    for item in items {
+        for term in &item.terms {
+            out.push_str(&format!("{}\n", render_inlines(term)));
+        }
+        for definition in &item.definitions {
+            out.push_str(&format!("  {}\n", render_blocks(definition).trim()));
+        }
+    }
+    if trailing_blank {
+        out.push('\n');
+    }
+    out
+}
+
+fn render_table(node: &Table) -> String {
+    let mut out = String::new();
+    for row in &node.rows {
+        out.push_str(
+            &row.cells
+                .iter()
+                .map(|cell| render_inlines(&cell.children).trim().to_string())
+                .collect::<Vec<_>>()
+                .join(" | "),
+        );
+        out.push('\n');
+    }
+    if let Some(caption) = &node.caption {
+        out = format!("{}\n{}\n", out.trim_end(), render_inlines(caption));
+    }
+    out.push('\n');
+    out
+}
+
+fn render_figure(node: &Figure) -> String {
+    let target = match &node.target {
+        FigureTarget::Image(image) => image.alt.clone(),
+        FigureTarget::Table(table) => render_table(table).trim().to_string(),
+        FigureTarget::BlockQuote(quote) => render_block(&BlockNode::BlockQuote(quote.clone()))
+            .trim()
+            .to_string(),
+    };
+    format!("{target}{}", render_inlines(&node.caption))
+}
+
+fn render_footnote_defs(doc: &Document) -> String {
+    let mut out = String::new();
+    for (label, blocks) in &doc.footnote_defs {
+        out.push_str(&format!("[{label}]: {}\n", render_blocks(blocks).trim()));
+    }
+    out
+}
+
+fn render_inlines(nodes: &[InlineNode]) -> String {
+    nodes.iter().map(render_inline).collect()
+}
+
+fn render_inline(node: &InlineNode) -> String {
+    match node {
+        InlineNode::Text(text) => clean_smart_text(text),
+        InlineNode::Emphasis(emphasis) => match emphasis.kind {
+            EmphasisKind::Strike => render_inlines(&emphasis.children),
+            _ => render_inlines(&emphasis.children),
+        },
+        InlineNode::Code(code, _) => code.clone(),
+        InlineNode::Link(link) => {
+            if link.href.starts_with('#') {
+                render_inlines(&link.children)
+            } else {
+                link.href.clone()
+            }
+        }
+        InlineNode::Image(image) => image.alt.clone(),
+        InlineNode::Span(span) => render_inlines(&span.children),
+        InlineNode::Math(math) => math.content.clone(),
+        InlineNode::RawInline(_) => String::new(),
+        InlineNode::Emoji(emoji) => format!(":{}:", emoji.name),
+        InlineNode::AutoLink(link) => link
+            .href
+            .strip_prefix("mailto:")
+            .unwrap_or(&link.href)
+            .to_string(),
+        InlineNode::Mention(mention) => format!("@{}", mention.user),
+        InlineNode::Tag(tag) => format!("#{}", tag.name),
+        InlineNode::Extension(extension) => render_inlines(&extension.children),
+        InlineNode::Abbreviation(abbr) => abbr.abbr.clone(),
+        InlineNode::Footnote(footnote) => {
+            if let Some(inline) = &footnote.inline {
+                format!("({})", render_inlines(inline))
+            } else {
+                format!("[{}]", footnote.id.as_deref().unwrap_or(""))
+            }
+        }
+        InlineNode::SoftBreak => " ".to_string(),
+        InlineNode::HardBreak => "\n".to_string(),
+        InlineNode::CriticInsert(insert) => render_inlines(&insert.children),
+        InlineNode::CriticDelete(delete) => format!("~{}~", render_inlines(&delete.children)),
+        InlineNode::CriticSubstitute(sub) => sub.new_text.clone(),
+        InlineNode::CriticComment(_) => String::new(),
+        InlineNode::CrossRef(crossref) => format!("</#{}>", crossref.target),
+        InlineNode::CaptionNumber(number) => number
+            .number
+            .map(|n| n.to_string())
+            .unwrap_or_else(|| "#".to_string()),
+    }
+}
+
+fn normalize(text: &str) -> String {
+    let mut out = String::new();
+    let mut newlines = 0usize;
+    for ch in text.chars() {
+        if ch == '\n' {
+            newlines += 1;
+            if newlines <= 2 {
+                out.push(ch);
+            }
+        } else {
+            newlines = 0;
+            out.push(ch);
+        }
+    }
+    format!("{}\n", out.trim())
+}
+
+fn legacy_definition_parts(nodes: &[InlineNode]) -> Option<(String, String)> {
+    if nodes.len() != 3 {
+        return None;
+    }
+    if !matches!(nodes[1], InlineNode::SoftBreak) {
+        return None;
+    }
+    if let InlineNode::Text(term) = &nodes[0] {
+        if let InlineNode::Text(def) = &nodes[2] {
+            if let Some(stripped) = term.strip_prefix(": ") {
+                return Some((stripped.to_string(), def.clone()));
+            }
+        }
+    }
+    None
+}

@@ -19,6 +19,10 @@ mod escape;
 mod extension;
 mod parse;
 mod render;
+mod render_ansi;
+mod render_markdown;
+mod render_plain;
+mod render_text;
 
 pub use ast::*;
 pub use extension::{
@@ -26,10 +30,28 @@ pub use extension::{
 };
 pub use parse::{parse, parse_with_options};
 pub use render::{render_html, render_html_with_options};
+pub use render_ansi::render_ansi;
+pub use render_markdown::render_markdown;
+pub use render_plain::render_plain_text;
 
 /// Parse a Carve source string and render it as HTML in one call.
 pub fn to_html(source: &str) -> String {
     render_html(&parse(source))
+}
+
+/// Parse a Carve source string and render it as Markdown in one call.
+pub fn to_markdown(source: &str) -> String {
+    render_markdown(&parse(source))
+}
+
+/// Parse a Carve source string and render it as plain text in one call.
+pub fn to_plain_text(source: &str) -> String {
+    render_plain_text(&parse(source))
+}
+
+/// Parse a Carve source string and render it as ANSI-styled text in one call.
+pub fn to_ansi(source: &str) -> String {
+    render_ansi(&parse(source))
 }
 
 /// Parse, run opt-in extension hooks, and render to HTML.
