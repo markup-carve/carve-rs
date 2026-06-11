@@ -31,6 +31,11 @@ const IMPLEMENTED: &[&str] = &[
     "16-inline-extensions",
     "17-attributes",
     "18-frontmatter",
+    "34-reference-link",
+    "35-collapsed-reference-link",
+    "42-math",
+    "43-footnotes",
+    "84-block-attribute-lines",
     "85-numbered-cross-references",
     "86-inline-footnotes",
 ];
