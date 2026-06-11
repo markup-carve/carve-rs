@@ -213,6 +213,7 @@ pub enum InlineNode {
     Emoji(Emoji),
     AutoLink(AutoLink),
     CrossRef(CrossRef),
+    CaptionNumber(CaptionNumber),
     Mention(Mention),
     Tag(Tag),
     Extension(InlineExtension),
@@ -303,6 +304,11 @@ pub struct AutoLink {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CrossRef {
     pub target: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CaptionNumber {
+    pub number: Option<usize>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

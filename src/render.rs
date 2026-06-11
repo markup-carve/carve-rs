@@ -294,6 +294,11 @@ fn plain_inlines(nodes: &[InlineNode]) -> String {
             InlineNode::Abbreviation(a) => out.push_str(&a.abbr),
             InlineNode::Mention(m) => out.push_str(&m.user),
             InlineNode::Tag(t) => out.push_str(&t.name),
+            InlineNode::CaptionNumber(n) => {
+                if let Some(number) = n.number {
+                    out.push_str(&number.to_string());
+                }
+            }
             // A soft/hard break (e.g. a multi-line heading) is a word
             // separator for slug/plain-text purposes, not a join.
             InlineNode::SoftBreak | InlineNode::HardBreak => out.push(' '),
@@ -853,6 +858,11 @@ fn render_inline(out: &mut String, node: &InlineNode, options: &Options<'_>) {
             escape_attr(&c.target),
             escape_text(&c.target)
         )),
+        InlineNode::CaptionNumber(n) => {
+            if let Some(number) = n.number {
+                out.push_str(&number.to_string());
+            }
+        }
         InlineNode::Mention(m) => {
             if let Some(template) = &options.mention_url {
                 let encoded = percent_encode(&m.user);
