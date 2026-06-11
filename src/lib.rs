@@ -15,12 +15,14 @@
 //! inline extensions, attributes, and frontmatter.
 
 pub mod ast;
+mod citations;
 mod escape;
 mod extension;
 mod parse;
 mod render;
 
 pub use ast::*;
+pub use citations::{CitationMode, Citations};
 pub use extension::{
     BlockMatch, CarveExtension, InlineMatch, MatcherContext, Options, RenderContext,
 };

@@ -215,6 +215,7 @@ pub enum InlineNode {
     CrossRef(CrossRef),
     Mention(Mention),
     Tag(Tag),
+    CitationGroup(CitationGroup),
     Extension(InlineExtension),
     Abbreviation(Abbreviation),
     Footnote(Footnote),
@@ -313,6 +314,29 @@ pub struct Mention {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Tag {
     pub name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CitationGroup {
+    pub items: Vec<Citation>,
+    pub raw: String,
+    pub mode: Option<CitationRenderMode>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CitationRenderMode {
+    Numbered,
+    AuthorDate,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Citation {
+    pub key: String,
+    pub prefix: Option<Vec<InlineNode>>,
+    pub locator: Option<Vec<InlineNode>>,
+    pub suppress_author: bool,
+    pub number: Option<usize>,
+    pub label: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
