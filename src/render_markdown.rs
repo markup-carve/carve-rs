@@ -197,8 +197,20 @@ fn render_figure(node: &Figure, ctx: &mut MarkdownContext) -> String {
         FigureTarget::BlockQuote(quote) => render_block(&BlockNode::BlockQuote(quote.clone()), ctx)
             .trim()
             .to_string(),
+        FigureTarget::CodeBlock(cb) => render_block(&BlockNode::CodeBlock(cb.clone()), ctx)
+            .trim()
+            .to_string(),
+        FigureTarget::Paragraph(p) => render_block(&BlockNode::Paragraph(p.clone()), ctx)
+            .trim()
+            .to_string(),
     };
-    format!("{target}{}", render_inlines(&node.caption, ctx))
+    // A block-level target (a code-block listing or a display-math equation)
+    // keeps the caption on its own line; an inline image stays adjacent.
+    let sep = match &node.target {
+        FigureTarget::CodeBlock(_) | FigureTarget::Paragraph(_) => "\n",
+        _ => "",
+    };
+    format!("{target}{sep}{}", render_inlines(&node.caption, ctx))
 }
 
 fn render_footnote_defs(doc: &Document, ctx: &mut MarkdownContext) -> String {
@@ -523,7 +535,10 @@ where
                     FigureTarget::Table(table) => {
                         walk_blocks(&[BlockNode::Table(table.clone())], visit);
                     }
-                    FigureTarget::Image(_) => {}
+                    FigureTarget::Paragraph(p) => {
+                        walk_blocks(&[BlockNode::Paragraph(p.clone())], visit);
+                    }
+                    FigureTarget::Image(_) | FigureTarget::CodeBlock(_) => {}
                 }
             }
             BlockNode::Extension(extension) => walk_blocks(&extension.children, visit),

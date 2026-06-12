@@ -234,7 +234,20 @@ fn parse_blocks(cur: &mut LineCursor, options: &Options<'_>) -> Vec<BlockNode> {
 fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<BlockNode> {
     let line = cur.peek()?;
     if let Some(fence_marker) = detect_fence_open(line) {
-        return Some(parse_fence(cur, fence_marker));
+        let block = parse_fence(cur, fence_marker);
+        // A caption immediately after a fenced code block makes it a numbered
+        // LISTING: wrap it in a figure like a captioned image/table.
+        if let BlockNode::CodeBlock(cb) = block {
+            if let Some(caption) = consume_caption(cur, options) {
+                return Some(BlockNode::Figure(Figure {
+                    attrs: None,
+                    target: FigureTarget::CodeBlock(cb),
+                    caption,
+                }));
+            }
+            return Some(BlockNode::CodeBlock(cb));
+        }
+        return Some(block);
     }
     if detect_thematic_break(line) {
         cur.consume();
@@ -306,7 +319,52 @@ fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<BlockNode>
     if let Some(matched) = try_extension_block(cur, options) {
         return Some(matched);
     }
+    // A block whose sole content is a display-math span (`$$`…``) followed by a
+    // caption is a numbered EQUATION. Diverted before the paragraph fallback so
+    // parse_paragraph does not fold the caption line into the math paragraph.
+    if line.trim_start().starts_with("$$`") {
+        if let Some(eq) = parse_equation_block(cur, options) {
+            return Some(eq);
+        }
+    }
     Some(parse_paragraph(cur, options))
+}
+
+/// Parse a standalone display-math line, wrapping it in a figure when a caption
+/// follows (a numbered equation). Returns `None` when the line is not solely
+/// display math, or when non-blank prose follows with no blank line (so the
+/// line belongs to a normal multi-line paragraph instead).
+fn parse_equation_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<BlockNode> {
+    let line = cur.peek()?;
+    let inline = parse_inline_with_options(line.trim_start(), options);
+    if inline.len() != 1 || !matches!(&inline[0], InlineNode::Math(m) if m.display) {
+        return None;
+    }
+    // Non-blank, non-caption prose on the very next line: let parse_paragraph
+    // fold the math and that text into one paragraph (preserve existing behavior).
+    if let Some(next) = cur.lines.get(cur.pos + 1).copied() {
+        if !next.trim().is_empty() && next.strip_prefix("^ ").is_none() {
+            return None;
+        }
+    }
+    // Standalone display math: consume the line, then attach a caption if one
+    // follows (directly or across a single blank line).
+    cur.consume();
+    let target = FigureTarget::Paragraph(Paragraph {
+        attrs: None,
+        children: inline,
+    });
+    if let Some(caption) = consume_caption(cur, options) {
+        return Some(BlockNode::Figure(Figure {
+            attrs: None,
+            target,
+            caption,
+        }));
+    }
+    match target {
+        FigureTarget::Paragraph(p) => Some(BlockNode::Paragraph(p)),
+        _ => unreachable!(),
+    }
 }
 
 fn detect_heading(line: &str) -> Option<(u8, &str)> {
@@ -3004,7 +3062,9 @@ fn apply_abbreviations_block(block: &mut BlockNode, defs: &BTreeMap<String, Stri
                         }
                     }
                 }
-                FigureTarget::Image(_) => {}
+                FigureTarget::Image(_)
+                | FigureTarget::CodeBlock(_)
+                | FigureTarget::Paragraph(_) => {}
             }
         }
         _ => {}
@@ -3160,7 +3220,9 @@ fn resolve_reference_links_block(block: &mut BlockNode, defs: &BTreeMap<String, 
                         }
                     }
                 }
-                FigureTarget::Image(_) => {}
+                FigureTarget::Image(_)
+                | FigureTarget::CodeBlock(_)
+                | FigureTarget::Paragraph(_) => {}
             }
         }
         _ => {}
@@ -3245,7 +3307,10 @@ fn collect_heading_titles(
             }
             BlockNode::Figure(f) => match &f.target {
                 FigureTarget::BlockQuote(b) => collect_heading_titles(&b.children, counts, titles),
-                FigureTarget::Table(_) | FigureTarget::Image(_) => {}
+                FigureTarget::Table(_)
+                | FigureTarget::Image(_)
+                | FigureTarget::CodeBlock(_)
+                | FigureTarget::Paragraph(_) => {}
             },
             _ => {}
         }
@@ -3267,7 +3332,9 @@ fn number_captioned_blocks(
                         number_captioned_blocks(&mut b.children, counts, titles);
                     }
                     FigureTarget::Table(t) => number_table_caption(t, counts, titles),
-                    FigureTarget::Image(_) => {}
+                    FigureTarget::Image(_)
+                    | FigureTarget::CodeBlock(_)
+                    | FigureTarget::Paragraph(_) => {}
                 }
             }
             BlockNode::List(l) => {
@@ -3394,7 +3461,9 @@ fn resolve_crossrefs_block(block: &mut BlockNode, titles: &BTreeMap<String, Stri
                         }
                     }
                 }
-                FigureTarget::Image(_) => {}
+                FigureTarget::Image(_)
+                | FigureTarget::CodeBlock(_)
+                | FigureTarget::Paragraph(_) => {}
             }
         }
         _ => {}
