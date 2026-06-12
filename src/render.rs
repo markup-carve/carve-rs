@@ -546,7 +546,7 @@ fn render_list_item(
     options: &Options<'_>,
 ) {
     indent(out, level);
-    out.push_str("<li>");
+    out.push_str(&format!("<li{}>", render_attrs(&item.attrs)));
     let checkbox = match item.checked {
         None => "",
         Some(false) => "<input type=\"checkbox\" disabled> ",
