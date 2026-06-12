@@ -1740,6 +1740,17 @@ fn read_attrs_at(bytes: &[u8], start: usize) -> Option<(Attrs, usize)> {
     Some((parse_attrs(inner)?, i + 1))
 }
 
+/// An attribute name (id, class, key) is a grammar identifier: it must start
+/// with a letter or underscore (not a digit -- a `class="123"` / `id="1"` is
+/// also invalid CSS). A name that fails this (including an empty one) makes
+/// the whole block invalid, so it stays literal (§14). A digit after the
+/// first character is fine. Stricter than djot (jgm/djot#399).
+fn is_identifier(name: &str) -> bool {
+    let mut chars = name.chars();
+    matches!(chars.next(), Some(c) if c.is_ascii_alphabetic() || c == '_')
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+}
+
 fn parse_attrs(src: &str) -> Option<Attrs> {
     if src.trim().is_empty() {
         return None;
@@ -1747,7 +1758,7 @@ fn parse_attrs(src: &str) -> Option<Attrs> {
     let mut attrs = Attrs::default();
     for token in attr_tokens(src) {
         if let Some(id) = token.strip_prefix('#') {
-            if id.is_empty() {
+            if !is_identifier(id) {
                 return None;
             }
             if attrs.id.is_none() {
@@ -1755,7 +1766,7 @@ fn parse_attrs(src: &str) -> Option<Attrs> {
             }
             attrs.id = Some(id.to_string());
         } else if let Some(class) = token.strip_prefix('.') {
-            if class.is_empty() {
+            if !is_identifier(class) {
                 return None;
             }
             if attrs.classes.is_empty() {
@@ -1763,7 +1774,7 @@ fn parse_attrs(src: &str) -> Option<Attrs> {
             }
             attrs.classes.push(class.to_string());
         } else if let Some((key, value)) = token.split_once('=') {
-            if key.is_empty() {
+            if !is_identifier(key) {
                 return None;
             }
             if !attrs.key_values.contains_key(key) {
