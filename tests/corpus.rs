@@ -39,6 +39,13 @@ const IMPLEMENTED: &[&str] = &[
     "85-numbered-cross-references",
     "86-inline-footnotes",
     "87-list-item-attributes",
+    "89-mention-and-tag-name-boundaries",
+    "90-superscript-in-a-table-cell",
+    "91-nested-comment-fences",
+    "92-strong-emphasis-starting-with-a-link",
+    "93-abbreviation-definition-interrupts-a-paragraph",
+    "94-literal-less-than-in-prose",
+    "95-boolean-attributes",
 ];
 
 fn corpus_dir() -> PathBuf {
