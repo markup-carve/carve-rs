@@ -2124,6 +2124,25 @@ fn parse_inline_context(
                 i += consumed;
                 continue;
             }
+            // Forced intraword emphasis `{X…X}` — tried before inline attribute
+            // blocks, matching the reference scan order.
+            if let Some((mut node, consumed)) =
+                parse_forced_emphasis(bytes, i, options, in_footnote)
+            {
+                let mut consumed = consumed;
+                // A trailing `{...}` attribute block attaches to the forced span,
+                // exactly like a bare span (`{*x*}{.c}` -> <strong class="c">x</strong>).
+                if bytes.get(i + consumed) == Some(&b'{') {
+                    if let Some((attrs, next)) = read_attrs_at(bytes, i + consumed) {
+                        apply_attrs_to_inline(&mut node, attrs);
+                        consumed = next - i;
+                    }
+                }
+                flush_text(&mut out, &mut buf);
+                out.push(node);
+                i += consumed;
+                continue;
+            }
         }
 
         // Image: ![alt](src)
@@ -2317,8 +2336,11 @@ fn parse_critic_markup(
         ));
     }
     if let Some(inner) = rest.strip_prefix("{~") {
-        let sep = inner.find("~>")?;
+        // A critic substitution is `{~old~>new~}`: the `~>` separator must sit
+        // within this `{~ … ~}`. Without it (`{~view~}`), this is not critic
+        // markup -- it falls through to forced strike emphasis.
         let end = inner.find("~}")?;
+        let sep = inner[..end].find("~>")?;
         return Some((
             InlineNode::CriticSubstitute(CriticSubstitute {
                 old_text: inner[..sep].to_string(),
@@ -2975,69 +2997,17 @@ fn match_emphasis(
             ));
         }
     }
-    // ,,sub,,
-    if c == b',' && bytes.get(i + 1) == Some(&b',') {
-        if bytes.get(i + 2) == Some(&b',') {
-            return None;
-        }
-        if let Some(close) = find_seq(bytes, i + 2, b",,") {
-            if bytes.get(close + 2) == Some(&b',') {
-                return None;
-            }
-            if close > i + 2 {
-                let inner_bytes = &bytes[i + 2..close];
-                if !inner_bytes.is_empty()
-                    && inner_bytes[0] != b' '
-                    && inner_bytes[inner_bytes.len() - 1] != b' '
-                {
-                    let inner = std::str::from_utf8(inner_bytes).ok()?;
-                    return Some((
-                        InlineNode::Emphasis(Emphasis {
-                            attrs: None,
-                            kind: EmphasisKind::Sub,
-                            children: parse_inline_context(inner, options, false, in_footnote),
-                        }),
-                        close + 2 - i,
-                    ));
-                }
-            }
-        }
-    }
-    // ==highlight==
-    if c == b'=' && bytes.get(i + 1) == Some(&b'=') {
-        if bytes.get(i + 2) == Some(&b'=') {
-            return None;
-        }
-        if let Some(close) = find_seq(bytes, i + 2, b"==") {
-            if bytes.get(close + 2) == Some(&b'=') {
-                return None;
-            }
-            if close > i + 2 {
-                let inner_bytes = &bytes[i + 2..close];
-                if !inner_bytes.is_empty()
-                    && inner_bytes[0] != b' '
-                    && inner_bytes[inner_bytes.len() - 1] != b' '
-                {
-                    let inner = std::str::from_utf8(inner_bytes).ok()?;
-                    return Some((
-                        InlineNode::Emphasis(Emphasis {
-                            attrs: None,
-                            kind: EmphasisKind::Highlight,
-                            children: parse_inline_context(inner, options, false, in_footnote),
-                        }),
-                        close + 2 - i,
-                    ));
-                }
-            }
-        }
-    }
-
+    // Single-char delimiters. Highlight `=` and subscript `,` are single-char
+    // like the rest; a doubled `==`/`,,` is therefore literal by same-delimiter
+    // adjacency (checked below), exactly like `**x**`.
     let kind = match c {
         b'/' => EmphasisKind::Italic,
         b'*' => EmphasisKind::Strong,
         b'_' => EmphasisKind::Underline,
         b'~' => EmphasisKind::Strike,
         b'^' => EmphasisKind::Super,
+        b'=' => EmphasisKind::Highlight,
+        b',' => EmphasisKind::Sub,
         _ => return None,
     };
     let delim = c;
@@ -3046,13 +3016,23 @@ fn match_emphasis(
     if after == b' ' || after == b'\n' || after == delim {
         return None;
     }
-    if i > 0 && bytes[i - 1] == delim {
-        return None;
-    }
-    // For / and _, the previous char must not be alphanumeric (avoid mid-word)
-    if (delim == b'/' || delim == b'_') && i > 0 {
+    if i > 0 {
         let prev = bytes[i - 1];
+        // No same-type nesting: a delimiter adjacent to the same delimiter does
+        // not open, so a doubled delimiter (`**x**`, `==x==`, `,,x,,`) is literal.
+        if prev == delim {
+            return None;
+        }
+        // Word-boundary opener (spec §9): no bare delimiter opens after an
+        // alphanumeric or `_`, keeping paths/identifiers/numbers literal
+        // (`a/b/c`, `foo*bar*baz`, `snake_case`, `x = 5`, `key=value`, `1,2,3`).
+        // Use the forced `{X…X}` family for deliberate intraword emphasis.
         if prev.is_ascii_alphanumeric() || prev == b'_' {
+            return None;
+        }
+        // Italic/underline additionally can't open after `/` (path protection,
+        // e.g. `snake_/case/`).
+        if (delim == b'/' || delim == b'_') && prev == b'/' {
             return None;
         }
     }
@@ -3633,6 +3613,50 @@ fn slugify_parse(text: &str) -> String {
     }
 }
 
+/// Forced intraword emphasis `{X…X}` (spec §22): emits the same node as the bare
+/// delimiter X, but with no word-boundary condition. X is one of `/ * _ ^ , ~ =`.
+/// The closing `X}` is the first one after at least one content byte, mirroring
+/// the non-greedy `^\{(X)([\s\S]+?)\1\}` match. `{=html}` (no trailing `=`) does
+/// not match, so raw-format attribute blocks are unaffected.
+fn parse_forced_emphasis(
+    bytes: &[u8],
+    i: usize,
+    options: &Options<'_>,
+    in_footnote: bool,
+) -> Option<(InlineNode, usize)> {
+    let delim = bytes.get(i + 1).copied()?;
+    let kind = match delim {
+        b'/' => EmphasisKind::Italic,
+        b'*' => EmphasisKind::Strong,
+        b'_' => EmphasisKind::Underline,
+        b'^' => EmphasisKind::Super,
+        b',' => EmphasisKind::Sub,
+        b'~' => EmphasisKind::Strike,
+        b'=' => EmphasisKind::Highlight,
+        _ => return None,
+    };
+    let content_start = i + 2;
+    let mut j = content_start;
+    while j + 1 < bytes.len() {
+        if bytes[j] == delim && bytes[j + 1] == b'}' {
+            if j == content_start {
+                return None; // empty content: `+?` requires at least one byte
+            }
+            let inner = std::str::from_utf8(&bytes[content_start..j]).ok()?;
+            return Some((
+                InlineNode::Emphasis(Emphasis {
+                    attrs: None,
+                    kind,
+                    children: parse_inline_context(inner, options, false, in_footnote),
+                }),
+                j + 2 - i,
+            ));
+        }
+        j += 1;
+    }
+    None
+}
+
 fn find_seq(bytes: &[u8], from: usize, marker: &[u8]) -> Option<usize> {
     if marker.is_empty() || from + marker.len() > bytes.len() {
         return None;
@@ -3690,12 +3714,12 @@ fn find_emphasis_close(bytes: &[u8], from: usize, delim: u8) -> Option<usize> {
                 j += 1;
                 continue;
             }
-            if delim == b'/' || delim == b'_' {
-                if let Some(&next) = bytes.get(j + 1) {
-                    if next.is_ascii_alphanumeric() {
-                        j += 1;
-                        continue;
-                    }
+            // Word-boundary closer (spec §9): no bare delimiter closes when
+            // followed by an alphanumeric. Applies to every delimiter.
+            if let Some(&next) = bytes.get(j + 1) {
+                if next.is_ascii_alphanumeric() {
+                    j += 1;
+                    continue;
                 }
             }
             return Some(j);
