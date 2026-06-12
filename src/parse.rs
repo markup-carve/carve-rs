@@ -2713,10 +2713,16 @@ fn parse_mention(text: &str, pos: usize) -> Option<(Mention, usize)> {
         }
     }
     let rest = text.get(pos + 1..)?;
-    let len = rest
+    // Interior dots are part of the name (`@john.doe`); a trailing dot is
+    // sentence punctuation (grammar PART 9 §7; corpus
+    // 89-mention-and-tag-name-boundaries). Same shape as parse_tag below.
+    let mut len = rest
         .bytes()
-        .take_while(|b| b.is_ascii_alphanumeric() || *b == b'_' || *b == b'-')
+        .take_while(|b| b.is_ascii_alphanumeric() || *b == b'_' || *b == b'-' || *b == b'.')
         .count();
+    while len > 0 && rest.as_bytes()[len - 1] == b'.' {
+        len -= 1;
+    }
     if len == 0 {
         return None;
     }
