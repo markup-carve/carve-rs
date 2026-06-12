@@ -1611,6 +1611,10 @@ fn detect_container_open(line: &str) -> Option<ContainerOpen> {
         return None;
     }
     let rest = trimmed[fence_len..].trim();
+    // STRICT (djot): the opener is the colon fence, an optional type word,
+    // and an optional quoted title -- and NOTHING else. A trailing `{...}`
+    // (or any other non-title text) makes the line an ordinary paragraph,
+    // not a fence; attributes attach via a preceding block-attribute line.
     if rest.is_empty() {
         return Some(ContainerOpen {
             fence_len,
@@ -1619,51 +1623,35 @@ fn detect_container_open(line: &str) -> Option<ContainerOpen> {
             attrs: None,
         });
     }
-    if rest.starts_with('{') && rest.ends_with('}') {
-        return Some(ContainerOpen {
-            fence_len,
-            kind: None,
-            title: None,
-            attrs: parse_attrs(&rest[1..rest.len() - 1]),
-        });
-    }
-    // Typed opener: `kind`, then an optional quoted title and an optional
-    // trailing attribute block (grammar admonition_open: type,
-    // [quoted_title], [attributes]). The attribute block needs no leading
-    // space, so it may abut the type or the title (`::: note{.x}`,
-    // `::: note "T"{.x}`); a quoted title may itself contain braces, so the
-    // block is only the `{...}` after the closing quote.
+    // A type word is a leading identifier; without one (e.g. `::: {.x}`,
+    // `:::{k=v}`) the line is not a fence.
     let id_end = rest
         .char_indices()
         .find(|(_, c)| !(c.is_ascii_alphanumeric() || *c == '-' || *c == '_'))
         .map(|(i, _)| i)
         .unwrap_or(rest.len());
-    let (kind, mut tail) = if id_end == 0 {
-        let mut parts = rest.splitn(2, char::is_whitespace);
-        (
-            parts.next().unwrap_or("").to_string(),
-            parts.next().unwrap_or("").trim(),
-        )
-    } else {
-        (rest[..id_end].to_string(), rest[id_end..].trim())
-    };
-    let mut title = None;
-    if let Some(after_open) = tail.strip_prefix('"') {
-        if let Some(close) = after_open.find('"') {
-            title = Some(after_open[..close].to_string());
-            tail = after_open[close + 1..].trim();
-        }
+    if id_end == 0 {
+        return None;
     }
-    let attrs = if tail.starts_with('{') && tail.ends_with('}') && tail.len() >= 2 {
-        parse_attrs(&tail[1..tail.len() - 1])
-    } else {
+    let kind = rest[..id_end].to_string();
+    let after = rest[id_end..].trim();
+    // After the type, only a quoted title may follow (with nothing after
+    // it); anything else (a `{...}` block, unquoted text) is not a fence.
+    let title = if after.is_empty() {
         None
+    } else {
+        let inner = after.strip_prefix('"')?;
+        let close = inner.find('"')?;
+        if !inner[close + 1..].trim().is_empty() {
+            return None;
+        }
+        Some(inner[..close].to_string())
     };
     Some(ContainerOpen {
         fence_len,
         kind: Some(kind),
         title,
-        attrs,
+        attrs: None,
     })
 }
 
