@@ -16,6 +16,16 @@ fn digit_first_block_attribute_line_stays_literal() {
 }
 
 #[test]
+fn invalid_char_after_first_character_stays_literal() {
+    // The identifier rule constrains every character, not just the first: a
+    // non-identifier char anywhere (`!`, `.`, ...) invalidates the whole block.
+    for src in ["[x]{.a!b}", "[x]{a!b=v}", "[x]{.ok .1}"] {
+        let html = carve::to_html(src);
+        assert!(!html.contains("<span"), "{src:?} should be literal: {html}");
+    }
+}
+
+#[test]
 fn digit_after_first_character_is_valid() {
     assert_eq!(
         carve::to_html("[x]{.a1 #b2 k3=v}"),

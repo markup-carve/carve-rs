@@ -1794,7 +1794,9 @@ fn read_attrs_at(bytes: &[u8], start: usize) -> Option<(Attrs, usize)> {
 /// the whole block invalid, so it stays literal (§14). A digit after the
 /// first character is fine. Stricter than djot (jgm/djot#399).
 fn is_identifier(name: &str) -> bool {
-    matches!(name.chars().next(), Some(c) if c.is_ascii_alphabetic() || c == '_')
+    let mut chars = name.chars();
+    matches!(chars.next(), Some(c) if c.is_ascii_alphabetic() || c == '_')
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
 }
 
 fn parse_attrs(src: &str) -> Option<Attrs> {
