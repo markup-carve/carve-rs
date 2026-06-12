@@ -976,15 +976,37 @@ pub(crate) fn render_inlines_with_options(nodes: &[InlineNode], options: &Option
 }
 
 fn render_inlines(out: &mut String, nodes: &[InlineNode], options: &Options<'_>) {
+    let mut prev: Option<&InlineNode> = None;
     for node in nodes {
-        render_inline(out, node, options);
+        render_inline_after(out, node, options, prev);
+        prev = Some(node);
     }
 }
 
-fn render_inline(out: &mut String, node: &InlineNode, options: &Options<'_>) {
+/// Does an inline node end in visible, non-whitespace content? Used as the
+/// flanking context for a `'`/`"` at the START of the following text node
+/// (`@john's` -- the apostrophe is preceded by the mention, so it is a RIGHT
+/// quote, not an opener). Breaks count as whitespace.
+fn ends_non_whitespace(node: &InlineNode) -> bool {
+    match node {
+        InlineNode::SoftBreak | InlineNode::HardBreak => false,
+        InlineNode::Text(s) => s.chars().last().is_some_and(|c| !c.is_whitespace()),
+        _ => true,
+    }
+}
+
+fn render_inline_after(
+    out: &mut String,
+    node: &InlineNode,
+    options: &Options<'_>,
+    prev: Option<&InlineNode>,
+) {
     match node {
         InlineNode::Text(s) => {
-            out.push_str(&escape_text(&smart_text(s)).replace('\u{00a0}', "&nbsp;"))
+            let prev_non_ws = prev.is_some_and(ends_non_whitespace);
+            out.push_str(
+                &escape_text(&smart_text_after(s, prev_non_ws)).replace('\u{00a0}', "&nbsp;"),
+            )
         }
         InlineNode::Emphasis(e) => render_emphasis(out, e, options),
         InlineNode::Code(s, attrs) => {
@@ -1295,7 +1317,7 @@ fn render_attrs_without_id(attrs: &Option<Attrs>) -> String {
     render_attrs(&attrs)
 }
 
-fn smart_text(input: &str) -> String {
+fn smart_text_after(input: &str, prev_non_ws: bool) -> String {
     let s = unescape_text(input);
     let mut s = s;
     let replacements = [
@@ -1343,7 +1365,11 @@ fn smart_text(input: &str) -> String {
                 out.push(ch);
                 continue;
             }
-            let prev_ws = idx == 0 || chars[idx - 1].is_whitespace();
+            let prev_ws = if idx == 0 {
+                !prev_non_ws
+            } else {
+                chars[idx - 1].is_whitespace()
+            };
             let next_alpha = chars.get(idx + 1).is_some_and(|c| c.is_alphabetic());
             if prev_ws && next_alpha {
                 out.push('‘');
