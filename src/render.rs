@@ -648,17 +648,22 @@ fn render_table(out: &mut String, t: &Table, level: usize, options: &Options<'_>
         render_inlines(out, caption, options);
         out.push_str("</caption>");
     }
-    let has_header = t
+    // The leading run of rows whose cells are ALL header cells forms <thead>.
+    // A row that merely contains a header cell (a row header) stays in the body.
+    let header_count = t
         .rows
-        .first()
-        .is_some_and(|row| row.cells.iter().any(|cell| cell.header));
-    let body_start = if has_header { 1 } else { 0 };
+        .iter()
+        .take_while(|row| !row.cells.is_empty() && row.cells.iter().all(|cell| cell.header))
+        .count();
+    let has_header = header_count > 0;
+    let body_start = header_count;
     if has_header {
-        let header = &t.rows[0];
         out.push('\n');
         indent(out, level + 1);
         out.push_str("<thead>");
-        render_table_row(out, header, true, options);
+        for header in &t.rows[..header_count] {
+            render_table_row(out, header, true, options);
+        }
         out.push_str("</thead>");
     }
     // A header-only table (e.g. a GFM `| x |` + `|---|` with no body rows) emits
@@ -731,9 +736,11 @@ fn render_table_body_row(
         if let Some(align) = cell.align.or_else(|| table_column_align(table, col)) {
             attrs.push_str(&align_attr(align));
         }
-        out.push_str(&format!("<td{}>", attrs));
+        // A `|=` cell in a body row is a row header: <th> inside <tbody>.
+        let tag = if cell.header { "th" } else { "td" };
+        out.push_str(&format!("<{}{}>", tag, attrs));
         render_inlines(out, &cell.children, options);
-        out.push_str("</td>");
+        out.push_str(&format!("</{}>", tag));
         col += colspan;
     }
     out.push_str("</tr>");
