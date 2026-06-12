@@ -173,6 +173,8 @@ pub enum FigureTarget {
     Image(Image),
     BlockQuote(BlockQuote),
     Table(Table),
+    CodeBlock(CodeBlock),
+    Paragraph(Paragraph),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
