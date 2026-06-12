@@ -71,3 +71,29 @@ fn attributes_attach_via_a_preceding_block_attribute_line() {
         "<div class=\"x\" id=\"y\">\n  <p>b</p>\n</div>"
     );
 }
+
+#[test]
+fn digit_first_type_word_is_not_a_fence() {
+    // A type word is a grammar identifier (letter | underscore first), so a
+    // digit-first token is not a valid type and the line is a paragraph
+    // (matches carve-js / carve-php; a `class="123"` would be invalid CSS).
+    for src in ["::: 123\nb\n:::", "::: 1a\nb\n:::"] {
+        let html = carve::to_html(src);
+        assert!(
+            html.starts_with("<p>"),
+            "{src:?} should be a paragraph: {html}"
+        );
+        assert!(
+            !html.contains("<div"),
+            "{src:?} should not be a div: {html}"
+        );
+    }
+}
+
+#[test]
+fn underscore_first_type_word_is_a_div() {
+    assert_eq!(
+        carve::to_html("::: _box\nb\n:::"),
+        "<div class=\"_box\">\n  <p>b</p>\n</div>"
+    );
+}

@@ -1623,16 +1623,18 @@ fn detect_container_open(line: &str) -> Option<ContainerOpen> {
             attrs: None,
         });
     }
-    // A type word is a leading identifier; without one (e.g. `::: {.x}`,
-    // `:::{k=v}`) the line is not a fence.
+    // A type word is a grammar identifier: `(letter | '_'), {letter | digit
+    // | '_' | '-'}`. It must START with a letter or underscore, so a
+    // digit-first token (`123`) or a non-identifier opener (`::: {.x}`,
+    // `:::{k=v}`) is not a fence -- the line is an ordinary paragraph.
+    if !rest.starts_with(|c: char| c.is_ascii_alphabetic() || c == '_') {
+        return None;
+    }
     let id_end = rest
         .char_indices()
         .find(|(_, c)| !(c.is_ascii_alphanumeric() || *c == '-' || *c == '_'))
         .map(|(i, _)| i)
         .unwrap_or(rest.len());
-    if id_end == 0 {
-        return None;
-    }
     let kind = rest[..id_end].to_string();
     let after = rest[id_end..].trim();
     // After the type, only a quoted title may follow (with nothing after
