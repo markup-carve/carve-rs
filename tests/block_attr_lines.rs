@@ -47,6 +47,18 @@ fn trailing_same_line_brace_stays_literal() {
 }
 
 #[test]
-fn heading_still_carries_its_trailing_attribute() {
-    assert!(carve::to_html("# H {#x}").contains("id=\"x\""));
+fn heading_trailing_brace_block_is_literal_text() {
+    // djot-strict (spec PART 2 headings; matches carve-js #153): a heading
+    // line carries no trailing attribute block -- the brace block is ordinary
+    // inline content and the id derives from the full literal text.
+    let html = carve::to_html("# H {#x}");
+    assert!(!html.contains("id=\"x\""), "{html}");
+    assert!(html.contains("<section id=\"h-x\">"), "{html}");
+}
+
+#[test]
+fn heading_takes_attributes_from_a_preceding_line() {
+    let html = carve::to_html("{#x .cls}\n# H");
+    assert!(html.contains("<section id=\"x\">"), "{html}");
+    assert!(html.contains("<h1 class=\"cls\">H</h1>"), "{html}");
 }

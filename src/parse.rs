@@ -279,11 +279,15 @@ fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<BlockNode>
             joined.push_str(next);
             cur.consume();
         }
-        let (text, attrs) = split_trailing_attrs(&joined);
+        // djot-strict (spec PART 2 headings; matches carve-js #153): a heading
+        // line carries NO trailing `{...}` attribute block -- a trailing brace
+        // block is ordinary inline content, and the heading id derives from
+        // the full literal text. Attributes attach via a PRECEDING
+        // block-attribute line (the pending-attrs loop, PART 9 §15).
         return Some(BlockNode::Heading(Heading {
-            attrs,
+            attrs: None,
             level,
-            children: parse_inline_with_options(text, options),
+            children: parse_inline_with_options(&joined, options),
         }));
     }
     if line.starts_with('>') {
@@ -1692,58 +1696,6 @@ fn detect_abbreviation_def(line: &str) -> Option<AbbreviationDef> {
         abbr: abbr.to_string(),
         expansion: expansion.trim().to_string(),
     })
-}
-
-fn split_trailing_attrs(text: &str) -> (&str, Option<Attrs>) {
-    let trimmed = text.trim_end();
-    if !trimmed.ends_with('}') {
-        return (text, None);
-    }
-    let Some(open) = find_attr_open(trimmed) else {
-        return (text, None);
-    };
-    // The attribute block must be separated from the preceding text by
-    // whitespace (a space/tab, or a newline when it trails a multi-line
-    // heading/paragraph) — so `foo{#id}` stays literal but `foo {#id}` and a
-    // final `{#id}` line do not.
-    if open == 0 || !trimmed[..open].ends_with([' ', '\t', '\n']) {
-        return (text, None);
-    }
-    let attrs = parse_attrs(&trimmed[open + 1..trimmed.len() - 1]);
-    match attrs {
-        Some(attrs) => (trimmed[..open].trim_end(), Some(attrs)),
-        None => (text, None),
-    }
-}
-
-fn find_attr_open(text: &str) -> Option<usize> {
-    let mut quote: Option<char> = None;
-    let mut escaped = false;
-    let mut last = None;
-    for (idx, ch) in text.char_indices() {
-        if escaped {
-            escaped = false;
-            continue;
-        }
-        if ch == '\\' {
-            escaped = true;
-            continue;
-        }
-        if let Some(q) = quote {
-            if ch == q {
-                quote = None;
-            }
-            continue;
-        }
-        if ch == '"' || ch == '\'' {
-            quote = Some(ch);
-            continue;
-        }
-        if ch == '{' {
-            last = Some(idx);
-        }
-    }
-    last
 }
 
 fn read_attrs_at(bytes: &[u8], start: usize) -> Option<(Attrs, usize)> {
