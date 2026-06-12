@@ -731,7 +731,74 @@ fn is_list_marker(line: &str) -> bool {
         || detect_ordered(line).is_some()
 }
 
-fn detect_unordered(line: &str) -> Option<&str> {
+/// Read an attribute block abutting a list marker (`-{.c}` / `3.{#x}`):
+/// the parsed attributes (`None` for an empty `{}` block) and the byte index
+/// just past the closing `}`. Returns `None` when there is no closing brace
+/// or the content is not a valid attribute list -- in which case the marker
+/// is not a list item (the line is ordinary text, grammar `item_attributes`).
+fn read_list_item_attrs(bytes: &[u8], start: usize) -> Option<(Option<Attrs>, usize)> {
+    if bytes.get(start) != Some(&b'{') {
+        return None;
+    }
+    let mut i = start + 1;
+    let mut quote: Option<u8> = None;
+    let mut escaped = false;
+    while i < bytes.len() {
+        let b = bytes[i];
+        if escaped {
+            escaped = false;
+        } else if b == b'\\' {
+            escaped = true;
+        } else if let Some(q) = quote {
+            if b == q {
+                quote = None;
+            }
+        } else if b == b'"' || b == b'\'' {
+            quote = Some(b);
+        } else if b == b'}' {
+            let inner = std::str::from_utf8(&bytes[start + 1..i]).ok()?;
+            let end = i + 1;
+            return if inner.trim().is_empty() {
+                Some((None, end))
+            } else {
+                Some((Some(parse_attrs(inner)?), end))
+            };
+        }
+        i += 1;
+    }
+    None
+}
+
+/// The text after a list marker: an optional abutting attribute block, then
+/// the marker's required single space, then the item content. Returns the
+/// content (trailing whitespace trimmed) and the item attributes. `None` when
+/// the required space is missing or an abutting `{...}` is not a valid
+/// attribute block (so the line is not a list item). A SPACE before `{` is
+/// ordinary content, not an item-attribute, so it is handled by the plain
+/// space branch and the `{...}` stays in the content.
+fn marker_tail(line: &str, marker_end: usize) -> Option<(&str, Option<Attrs>)> {
+    let bytes = line.as_bytes();
+    let (content, attrs) = match bytes.get(marker_end) {
+        Some(&b' ') => (line[marker_end + 1..].trim_end(), None),
+        Some(&b'{') => {
+            let (attrs, end) = read_list_item_attrs(bytes, marker_end)?;
+            if bytes.get(end) != Some(&b' ') {
+                return None;
+            }
+            (line[end + 1..].trim_end(), attrs)
+        }
+        _ => return None,
+    };
+    // A marker with no same-line content is not a list item -- a bare `- `
+    // (or `-{.c} `) is ordinary text (matches carve-js / carve-php; a list
+    // item carries its content on the marker line).
+    if content.is_empty() {
+        return None;
+    }
+    Some((content, attrs))
+}
+
+fn detect_unordered(line: &str) -> Option<(&str, Option<Attrs>)> {
     let bytes = line.as_bytes();
     let mut i = 0;
     while i < bytes.len() && (bytes[i] == b' ' || bytes[i] == b'\t') {
@@ -745,17 +812,17 @@ fn detect_unordered(line: &str) -> Option<&str> {
     if c != b'-' && c != b'*' {
         return None;
     }
-    if i + 1 >= bytes.len() || bytes[i + 1] != b' ' {
-        return None;
-    }
-    Some(line[i + 2..].trim_end())
+    marker_tail(line, i + 1)
 }
 
 fn detect_ordered(line: &str) -> Option<&str> {
-    detect_ordered_full(line).map(|(content, _, _)| content)
+    detect_ordered_full(line).map(|(content, _, _, _)| content)
 }
 
-fn detect_ordered_full(line: &str) -> Option<(&str, Option<usize>, Option<OrderedListType>)> {
+#[allow(clippy::type_complexity)]
+fn detect_ordered_full(
+    line: &str,
+) -> Option<(&str, Option<usize>, Option<OrderedListType>, Option<Attrs>)> {
     let bytes = line.as_bytes();
     let mut i = 0;
     while i < bytes.len() && (bytes[i] == b' ' || bytes[i] == b'\t') {
@@ -768,43 +835,51 @@ fn detect_ordered_full(line: &str) -> Option<(&str, Option<usize>, Option<Ordere
     if i == marker_start {
         return None;
     }
-    if i + 1 >= bytes.len() || (bytes[i] != b'.' && bytes[i] != b')') || bytes[i + 1] != b' ' {
+    if bytes.get(i) != Some(&b'.') && bytes.get(i) != Some(&b')') {
         return None;
     }
+    // The required space may be preceded by an abutting attribute block
+    // (`3.{#x} item`); `marker_tail` enforces the space and rejects an
+    // invalid block.
+    let (content, attrs) = marker_tail(line, i + 1)?;
     let marker = &line[marker_start..i];
     if marker.bytes().all(|b| b.is_ascii_digit()) {
         return Some((
-            line[i + 2..].trim_end(),
+            content,
             marker.parse::<usize>().ok().filter(|n| *n != 1),
             None,
+            attrs,
         ));
     }
     if marker.len() == 1 {
         let b = marker.as_bytes()[0];
         if b.is_ascii_lowercase() {
             return Some((
-                line[i + 2..].trim_end(),
+                content,
                 Some((b - b'a' + 1) as usize).filter(|n| *n != 1),
                 Some(OrderedListType::LowerAlpha),
+                attrs,
             ));
         }
         if b.is_ascii_uppercase() {
             return Some((
-                line[i + 2..].trim_end(),
+                content,
                 Some((b - b'A' + 1) as usize).filter(|n| *n != 1),
                 Some(OrderedListType::UpperAlpha),
+                attrs,
             ));
         }
     }
     let roman = roman_to_int(marker)?;
     Some((
-        line[i + 2..].trim_end(),
+        content,
         Some(roman).filter(|n| *n != 1),
         Some(if marker.chars().all(|c| c.is_ascii_uppercase()) {
             OrderedListType::UpperRoman
         } else {
             OrderedListType::LowerRoman
         }),
+        attrs,
     ))
 }
 
@@ -832,7 +907,7 @@ fn roman_to_int(s: &str) -> Option<usize> {
     (total > 0).then_some(total as usize)
 }
 
-fn detect_task(line: &str) -> Option<(bool, &str)> {
+fn detect_task(line: &str) -> Option<(bool, &str, Option<Attrs>)> {
     let bytes = line.as_bytes();
     let mut i = 0;
     while i < bytes.len() && (bytes[i] == b' ' || bytes[i] == b'\t') {
@@ -846,19 +921,16 @@ fn detect_task(line: &str) -> Option<(bool, &str)> {
     if c != b'-' && c != b'*' {
         return None;
     }
-    if i + 1 >= bytes.len() || bytes[i + 1] != b' ' {
+    // An attribute block abuts the bullet, BEFORE the task marker:
+    // `-{.c} [ ] text`. `marker_tail` consumes the optional block and the
+    // bullet's required space; the task box `[x] ` then opens the content.
+    let (after, attrs) = marker_tail(line, i + 1)?;
+    let ab = after.as_bytes();
+    if ab.len() < 4 || ab[0] != b'[' || ab[2] != b']' || ab[3] != b' ' {
         return None;
     }
-    i += 2;
-    if i + 3 >= bytes.len() || bytes[i] != b'[' {
-        return None;
-    }
-    let marker = bytes[i + 1];
-    if bytes[i + 2] != b']' || bytes[i + 3] != b' ' {
-        return None;
-    }
-    let checked = matches!(marker, b'x' | b'X');
-    Some((checked, line[i + 4..].trim_end()))
+    let checked = matches!(ab[1], b'x' | b'X');
+    Some((checked, after[4..].trim_end(), attrs))
 }
 
 fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
@@ -968,7 +1040,7 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         // block (no inline paragraph).
         if marker.content.trim() == "+" {
             let mut item = ListItem {
-                attrs: None,
+                attrs: marker.attrs.clone(),
                 checked: marker.checked,
                 children: Vec::new(),
             };
@@ -1026,7 +1098,7 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         }
         let para_text = para_lines.join("\n");
         items.push(ListItem {
-            attrs: None,
+            attrs: marker.attrs.clone(),
             checked: marker.checked,
             children: vec![BlockNode::Paragraph(Paragraph {
                 attrs: None,
@@ -1044,7 +1116,7 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     })
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct ListMarker<'a> {
     indent: usize,
     ordered: bool,
@@ -1052,11 +1124,12 @@ struct ListMarker<'a> {
     start: Option<usize>,
     ol_type: Option<OrderedListType>,
     content: &'a str,
+    attrs: Option<Attrs>,
 }
 
 fn detect_list_marker_full(line: &str) -> Option<ListMarker<'_>> {
     let indent = indent_columns(line);
-    if let Some((checked, content)) = detect_task(line) {
+    if let Some((checked, content, attrs)) = detect_task(line) {
         return Some(ListMarker {
             indent,
             ordered: false,
@@ -1064,9 +1137,10 @@ fn detect_list_marker_full(line: &str) -> Option<ListMarker<'_>> {
             start: None,
             ol_type: None,
             content,
+            attrs,
         });
     }
-    if let Some((content, start, ol_type)) = detect_ordered_full(line) {
+    if let Some((content, start, ol_type, attrs)) = detect_ordered_full(line) {
         return Some(ListMarker {
             indent,
             ordered: true,
@@ -1074,9 +1148,10 @@ fn detect_list_marker_full(line: &str) -> Option<ListMarker<'_>> {
             start,
             ol_type,
             content,
+            attrs,
         });
     }
-    if let Some(content) = detect_unordered(line) {
+    if let Some((content, attrs)) = detect_unordered(line) {
         return Some(ListMarker {
             indent,
             ordered: false,
@@ -1084,6 +1159,7 @@ fn detect_list_marker_full(line: &str) -> Option<ListMarker<'_>> {
             start: None,
             ol_type: None,
             content,
+            attrs,
         });
     }
     None
@@ -1224,20 +1300,16 @@ fn interrupts_paragraph(line: &str, rest: &[&str]) -> bool {
     false
 }
 
-/// A `- ` or `* ` bullet (NOT `+`, the continuation marker; not ordered).
+/// A `- ` / `* ` bullet, including the attributed form `-{.c} ` (NOT `+`, the
+/// continuation marker; not ordered).
 ///
-/// Leading tabs are skipped as well as spaces: a bullet opens a list at any
-/// indentation (Rule B), so a tab-indented bullet interrupts a paragraph too.
+/// Delegates to `detect_unordered` so an attributed bullet interrupts a
+/// paragraph just like a plain one (and an attributed task already does via
+/// `detect_task`). Leading tabs are skipped as well as spaces: a bullet opens
+/// a list at any indentation (Rule B), so a tab-indented bullet interrupts a
+/// paragraph too.
 fn is_interrupting_bullet(line: &str) -> bool {
-    let bytes = line.as_bytes();
-    let mut i = 0;
-    while i < bytes.len() && (bytes[i] == b' ' || bytes[i] == b'\t') {
-        i += 1;
-    }
-    i < bytes.len()
-        && (bytes[i] == b'-' || bytes[i] == b'*')
-        && i + 1 < bytes.len()
-        && bytes[i + 1] == b' '
+    detect_unordered(line).is_some()
 }
 
 fn is_definition_list_start(line: &str) -> bool {
