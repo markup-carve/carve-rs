@@ -1161,11 +1161,15 @@ fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         // as `<p>c</p>`, matching list-item continuation handling.
         lines.push(line.trim_start());
     }
+    // A paragraph never carries its OWN trailing attribute block: a standalone
+    // `{...}` line floats forward (handled via interrupts_paragraph + the
+    // pending-attrs loop), and a trailing same-line `{...}` with no abutting
+    // host stays literal inline content (§14). Paragraph attributes come only
+    // from a preceding block-attribute line (§15), applied by the caller.
     let joined = lines.join("\n");
-    let (text, attrs) = split_trailing_attrs(&joined);
     BlockNode::Paragraph(Paragraph {
-        attrs,
-        children: parse_inline_with_options(text, options),
+        attrs: None,
+        children: parse_inline_with_options(&joined, options),
     })
 }
 
@@ -1185,6 +1189,12 @@ fn interrupts_paragraph(line: &str, rest: &[&str]) -> bool {
     // interrupt too. Ordered lists do NOT interrupt, `+` is the continuation
     // marker not a bullet, and a bare image stays inline.
     if line.trim_start().starts_with("%%") || detect_abbreviation_def(line).is_some() {
+        return true;
+    }
+    // A standalone block-attribute line floats forward to the next block (or is
+    // dropped when none follows, §15), so it interrupts the paragraph rather
+    // than folding in as literal text.
+    if parse_standalone_attrs(line).is_some() {
         return true;
     }
     if detect_heading(line).is_some()
