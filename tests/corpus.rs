@@ -31,10 +31,70 @@ const IMPLEMENTED: &[&str] = &[
     "16-inline-extensions",
     "17-attributes",
     "18-frontmatter",
+    "19-heading-ids",
+    "20-table-column-alignment",
+    "21-table-per-cell-alignment-override",
+    "22-headerless-table-alignment",
+    "23-table-without-alignment",
+    "24-table-alignment-with-colspan",
+    "25-table-doubled-alignment-marker",
+    "26-fenced-code-shorter-inner-fence",
+    "27-blockquote-caption-after-a-blank-line",
+    "28-table-cell-escaped-pipe",
+    "29-table-cell-pipe-inside-code-span",
+    "30-abbreviation-matches-on-word-boundaries-only",
+    "31-mention-ignores-email-addresses",
+    "32-tag-requires-a-word-boundary",
+    "33-table-stacked-rowspan",
     "34-reference-link",
     "35-collapsed-reference-link",
+    "36-unresolved-reference-link",
+    "37-smart-typography-dashes-and-quotes",
+    "39-smart-typography-escapes-and-code",
+    "40-table-multi-line-cell-continuation",
+    "41-table-rowspan-with-multi-line-content",
     "42-math",
     "43-footnotes",
+    "44-generic-divs",
+    "45-definition-lists",
+    "46-comments",
+    "47-raw-blocks",
+    "48-hard-line-breaks",
+    "49-non-breaking-space",
+    "50-raw-inline",
+    "51-emoji",
+    "52-ordered-list-start-and-delimiter",
+    "53-ordered-list-dialects",
+    "54-ordered-marker-vs-prose",
+    "55-footnote-with-multiple-blocks",
+    "56-editorial-markup",
+    "57-thematic-breaks",
+    "58-cross-reference",
+    "59-autolinks",
+    "60-escapes",
+    "61-empty-delimiters",
+    "62-bare-urls-stay-literal",
+    "63-nested-containers",
+    "64-attribute-edge-cases",
+    "65-escape-coverage",
+    "66-inline-span",
+    "67-superscript-and-subscript",
+    "68-parenthesized-ordered-marker",
+    "69-emphasis-edge-cases",
+    "70-list-nesting-and-looseness",
+    "71-doubled-emphasis-delimiters",
+    "72-nested-brackets-in-link-text",
+    "73-reference-labels-are-case-sensitive",
+    "74-two-char-delimiter-runs",
+    "75-trailing-attribute-block-edge-cases",
+    "76-paragraph-interruption",
+    "77-blockquote-lazy-continuation",
+    "78-fenced-code-language-with-punctuation",
+    "79-multi-line-headings",
+    "80-blockquote-lazy-continuation-stops-at-a-fenced-block",
+    "81-list-lazy-continuation",
+    "82-compact-list-blocks",
+    "83-list-continuation-marker",
     "84-block-attribute-lines",
     "85-numbered-cross-references",
     "86-inline-footnotes",
@@ -175,3 +235,172 @@ corpus_test!(
     "85-numbered-cross-references"
 );
 corpus_test!(c86_inline_footnotes, "86-inline-footnotes");
+corpus_test!(c19_heading_ids, "19-heading-ids");
+corpus_test!(c20_table_column_alignment, "20-table-column-alignment");
+corpus_test!(
+    c21_table_per_cell_alignment_override,
+    "21-table-per-cell-alignment-override"
+);
+corpus_test!(
+    c22_headerless_table_alignment,
+    "22-headerless-table-alignment"
+);
+corpus_test!(c23_table_without_alignment, "23-table-without-alignment");
+corpus_test!(
+    c24_table_alignment_with_colspan,
+    "24-table-alignment-with-colspan"
+);
+corpus_test!(
+    c25_table_doubled_alignment_marker,
+    "25-table-doubled-alignment-marker"
+);
+corpus_test!(
+    c26_fenced_code_shorter_inner_fence,
+    "26-fenced-code-shorter-inner-fence"
+);
+corpus_test!(
+    c27_blockquote_caption_after_a_blank_line,
+    "27-blockquote-caption-after-a-blank-line"
+);
+corpus_test!(c28_table_cell_escaped_pipe, "28-table-cell-escaped-pipe");
+corpus_test!(
+    c29_table_cell_pipe_inside_code_span,
+    "29-table-cell-pipe-inside-code-span"
+);
+corpus_test!(
+    c30_abbreviation_matches_on_word_boundaries_only,
+    "30-abbreviation-matches-on-word-boundaries-only"
+);
+corpus_test!(
+    c31_mention_ignores_email_addresses,
+    "31-mention-ignores-email-addresses"
+);
+corpus_test!(
+    c32_tag_requires_a_word_boundary,
+    "32-tag-requires-a-word-boundary"
+);
+corpus_test!(c33_table_stacked_rowspan, "33-table-stacked-rowspan");
+corpus_test!(c34_reference_link, "34-reference-link");
+corpus_test!(c35_collapsed_reference_link, "35-collapsed-reference-link");
+corpus_test!(
+    c36_unresolved_reference_link,
+    "36-unresolved-reference-link"
+);
+corpus_test!(
+    c37_smart_typography_dashes_and_quotes,
+    "37-smart-typography-dashes-and-quotes"
+);
+corpus_test!(
+    c39_smart_typography_escapes_and_code,
+    "39-smart-typography-escapes-and-code"
+);
+corpus_test!(
+    c40_table_multi_line_cell_continuation,
+    "40-table-multi-line-cell-continuation"
+);
+corpus_test!(
+    c41_table_rowspan_with_multi_line_content,
+    "41-table-rowspan-with-multi-line-content"
+);
+corpus_test!(c42_math, "42-math");
+corpus_test!(c43_footnotes, "43-footnotes");
+corpus_test!(c44_generic_divs, "44-generic-divs");
+corpus_test!(c45_definition_lists, "45-definition-lists");
+corpus_test!(c46_comments, "46-comments");
+corpus_test!(c47_raw_blocks, "47-raw-blocks");
+corpus_test!(c48_hard_line_breaks, "48-hard-line-breaks");
+corpus_test!(c49_non_breaking_space, "49-non-breaking-space");
+corpus_test!(c50_raw_inline, "50-raw-inline");
+corpus_test!(c51_emoji, "51-emoji");
+corpus_test!(
+    c52_ordered_list_start_and_delimiter,
+    "52-ordered-list-start-and-delimiter"
+);
+corpus_test!(c53_ordered_list_dialects, "53-ordered-list-dialects");
+corpus_test!(c54_ordered_marker_vs_prose, "54-ordered-marker-vs-prose");
+corpus_test!(
+    c55_footnote_with_multiple_blocks,
+    "55-footnote-with-multiple-blocks"
+);
+corpus_test!(c56_editorial_markup, "56-editorial-markup");
+corpus_test!(c57_thematic_breaks, "57-thematic-breaks");
+corpus_test!(c58_cross_reference, "58-cross-reference");
+corpus_test!(c59_autolinks, "59-autolinks");
+corpus_test!(c60_escapes, "60-escapes");
+corpus_test!(c61_empty_delimiters, "61-empty-delimiters");
+corpus_test!(c62_bare_urls_stay_literal, "62-bare-urls-stay-literal");
+corpus_test!(c63_nested_containers, "63-nested-containers");
+corpus_test!(c64_attribute_edge_cases, "64-attribute-edge-cases");
+corpus_test!(c65_escape_coverage, "65-escape-coverage");
+corpus_test!(c66_inline_span, "66-inline-span");
+corpus_test!(
+    c67_superscript_and_subscript,
+    "67-superscript-and-subscript"
+);
+corpus_test!(
+    c68_parenthesized_ordered_marker,
+    "68-parenthesized-ordered-marker"
+);
+corpus_test!(c69_emphasis_edge_cases, "69-emphasis-edge-cases");
+corpus_test!(
+    c70_list_nesting_and_looseness,
+    "70-list-nesting-and-looseness"
+);
+corpus_test!(
+    c71_doubled_emphasis_delimiters,
+    "71-doubled-emphasis-delimiters"
+);
+corpus_test!(
+    c72_nested_brackets_in_link_text,
+    "72-nested-brackets-in-link-text"
+);
+corpus_test!(
+    c73_reference_labels_are_case_sensitive,
+    "73-reference-labels-are-case-sensitive"
+);
+corpus_test!(c74_two_char_delimiter_runs, "74-two-char-delimiter-runs");
+corpus_test!(
+    c75_trailing_attribute_block_edge_cases,
+    "75-trailing-attribute-block-edge-cases"
+);
+corpus_test!(c76_paragraph_interruption, "76-paragraph-interruption");
+corpus_test!(
+    c77_blockquote_lazy_continuation,
+    "77-blockquote-lazy-continuation"
+);
+corpus_test!(
+    c78_fenced_code_language_with_punctuation,
+    "78-fenced-code-language-with-punctuation"
+);
+corpus_test!(c79_multi_line_headings, "79-multi-line-headings");
+corpus_test!(
+    c80_blockquote_lazy_continuation_stops_at_a_fenced_block,
+    "80-blockquote-lazy-continuation-stops-at-a-fenced-block"
+);
+corpus_test!(c81_list_lazy_continuation, "81-list-lazy-continuation");
+corpus_test!(c82_compact_list_blocks, "82-compact-list-blocks");
+corpus_test!(c83_list_continuation_marker, "83-list-continuation-marker");
+corpus_test!(c84_block_attribute_lines, "84-block-attribute-lines");
+corpus_test!(c87_list_item_attributes, "87-list-item-attributes");
+corpus_test!(
+    c89_mention_and_tag_name_boundaries,
+    "89-mention-and-tag-name-boundaries"
+);
+corpus_test!(
+    c90_superscript_in_a_table_cell,
+    "90-superscript-in-a-table-cell"
+);
+corpus_test!(c91_nested_comment_fences, "91-nested-comment-fences");
+corpus_test!(
+    c92_strong_emphasis_starting_with_a_link,
+    "92-strong-emphasis-starting-with-a-link"
+);
+corpus_test!(
+    c93_abbreviation_definition_interrupts_a_paragraph,
+    "93-abbreviation-definition-interrupts-a-paragraph"
+);
+corpus_test!(
+    c94_literal_less_than_in_prose,
+    "94-literal-less-than-in-prose"
+);
+corpus_test!(c95_boolean_attributes, "95-boolean-attributes");
