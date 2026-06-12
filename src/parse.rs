@@ -1786,6 +1786,13 @@ fn parse_attrs(src: &str) -> Option<Attrs> {
                 .replace("\\\"", "\"")
                 .replace("\\'", "'");
             attrs.key_values.insert(key.to_string(), value);
+        } else if is_identifier(&token) {
+            // Boolean attribute: a bare word with no value, rendered name="".
+            // (Matched last so `k=v` is a key/value, not a bare `k`.)
+            if !attrs.key_values.contains_key(&token) {
+                attrs.order.push(AttrSlot::Key(token.clone()));
+            }
+            attrs.key_values.insert(token, String::new());
         } else {
             return None;
         }
