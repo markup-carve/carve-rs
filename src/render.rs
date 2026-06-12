@@ -185,7 +185,10 @@ fn collect_footnotes_block(
                         }
                     }
                 }
-                FigureTarget::Image(_) => {}
+                FigureTarget::Paragraph(p) => {
+                    collect_footnotes_inline(&mut p.children, def_labels, seen, order);
+                }
+                FigureTarget::Image(_) | FigureTarget::CodeBlock(_) => {}
             }
         }
         BlockNode::Extension(e) => {
@@ -895,6 +898,12 @@ fn render_figure(out: &mut String, f: &Figure, level: usize, options: &Options<'
         }
         FigureTarget::BlockQuote(b) => render_blockquote(out, b, level + 1, options),
         FigureTarget::Table(t) => render_table(out, t, level + 1, options),
+        FigureTarget::CodeBlock(cb) => {
+            render_block(out, &BlockNode::CodeBlock(cb.clone()), level + 1, options)
+        }
+        FigureTarget::Paragraph(p) => {
+            render_block(out, &BlockNode::Paragraph(p.clone()), level + 1, options)
+        }
     }
     out.push('\n');
     indent(out, level + 1);

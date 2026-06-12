@@ -98,8 +98,20 @@ fn render_figure(node: &Figure) -> String {
         FigureTarget::BlockQuote(quote) => render_block(&BlockNode::BlockQuote(quote.clone()))
             .trim()
             .to_string(),
+        FigureTarget::CodeBlock(cb) => render_block(&BlockNode::CodeBlock(cb.clone()))
+            .trim()
+            .to_string(),
+        FigureTarget::Paragraph(p) => render_block(&BlockNode::Paragraph(p.clone()))
+            .trim()
+            .to_string(),
     };
-    format!("{target}{}", render_inlines(&node.caption))
+    // A block-level target keeps the caption on its own line; an inline image
+    // stays adjacent.
+    let sep = match &node.target {
+        FigureTarget::CodeBlock(_) | FigureTarget::Paragraph(_) => "\n",
+        _ => "",
+    };
+    format!("{target}{sep}{}", render_inlines(&node.caption))
 }
 
 fn render_footnote_defs(doc: &Document) -> String {

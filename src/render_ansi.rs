@@ -295,6 +295,12 @@ fn render_figure(node: &Figure, ctx: &mut AnsiContext) -> String {
         FigureTarget::BlockQuote(quote) => render_block(&BlockNode::BlockQuote(quote.clone()), ctx)
             .trim_end()
             .to_string(),
+        FigureTarget::CodeBlock(cb) => render_block(&BlockNode::CodeBlock(cb.clone()), ctx)
+            .trim_end()
+            .to_string(),
+        FigureTarget::Paragraph(p) => render_block(&BlockNode::Paragraph(p.clone()), ctx)
+            .trim_end()
+            .to_string(),
     };
     format!("{target}\n{}", render_caption(&node.caption, ctx))
 }
