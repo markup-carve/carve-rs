@@ -38,6 +38,7 @@ const IMPLEMENTED: &[&str] = &[
     "84-block-attribute-lines",
     "85-numbered-cross-references",
     "86-inline-footnotes",
+    "87-list-item-attributes",
 ];
 
 fn corpus_dir() -> PathBuf {
