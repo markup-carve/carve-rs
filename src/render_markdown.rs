@@ -87,11 +87,29 @@ fn render_block(node: &BlockNode, ctx: &mut MarkdownContext) -> String {
         BlockNode::List(list) => render_list(list, ctx),
         BlockNode::ThematicBreak => "---\n\n".to_string(),
         BlockNode::Table(table) => render_table(table, ctx),
-        BlockNode::Admonition(admonition) => render_blocks(&admonition.children, ctx),
+        BlockNode::Admonition(admonition) => {
+            // Markdown has no admonition; preserve the title (otherwise lost)
+            // as a leading bold line, then the body.
+            let body = render_blocks(&admonition.children, ctx);
+            match &admonition.title {
+                Some(title) => {
+                    let t = render_inlines(title, ctx);
+                    if t.is_empty() {
+                        body
+                    } else {
+                        format!("**{t}**\n\n{body}")
+                    }
+                }
+                None => body,
+            }
+        }
         BlockNode::Div(div) => render_blocks(&div.children, ctx),
         BlockNode::DefinitionList(list) => render_definition_list(&list.items, ctx, true),
         BlockNode::Figure(figure) => render_figure(figure, ctx),
-        BlockNode::BlockImage(image) => render_image(image),
+        // A standalone block image is its own block: terminate it so the next
+        // block is not glued onto the image (render_image stays newline-free
+        // because it is shared with inline image rendering).
+        BlockNode::BlockImage(image) => format!("{}\n\n", render_image(image)),
         BlockNode::RawBlock(raw) => {
             if raw.format == "html" {
                 format!("{}\n\n", raw.content)
@@ -295,7 +313,11 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext) -> String {
         InlineNode::CriticDelete(delete) => {
             format!("~~{}~~", render_inlines(&delete.children, ctx))
         }
-        InlineNode::CriticSubstitute(sub) => format!("<ins>{}</ins>", escape_text(&sub.new_text)),
+        InlineNode::CriticSubstitute(sub) => format!(
+            "<del>{}</del><ins>{}</ins>",
+            escape_text(&sub.old_text),
+            escape_text(&sub.new_text)
+        ),
         InlineNode::CriticComment(_) => String::new(),
         InlineNode::CrossRef(crossref) => format!("</#{}>", crossref.target),
         InlineNode::CaptionNumber(number) => number
@@ -501,7 +523,14 @@ where
             BlockNode::Heading(heading) => visit(block, Some(&heading.children)),
             BlockNode::Paragraph(paragraph) => visit(block, Some(&paragraph.children)),
             BlockNode::BlockQuote(quote) => walk_blocks(&quote.children, visit),
-            BlockNode::Admonition(admonition) => walk_blocks(&admonition.children, visit),
+            BlockNode::Admonition(admonition) => {
+                // The title is now rendered, so a crossref link in it must be
+                // seen by the prepass that collects referenced heading ids.
+                if let Some(title) = &admonition.title {
+                    visit(block, Some(title));
+                }
+                walk_blocks(&admonition.children, visit);
+            }
             BlockNode::Div(div) => walk_blocks(&div.children, visit),
             BlockNode::List(list) => {
                 for item in &list.items {

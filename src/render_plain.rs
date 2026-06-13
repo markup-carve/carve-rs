@@ -27,11 +27,25 @@ fn render_block(node: &BlockNode) -> String {
         BlockNode::List(list) => render_list(list),
         BlockNode::ThematicBreak => "---\n\n".to_string(),
         BlockNode::Table(table) => render_table(table),
-        BlockNode::Admonition(admonition) => render_blocks(&admonition.children),
+        BlockNode::Admonition(admonition) => {
+            let body = render_blocks(&admonition.children);
+            match &admonition.title {
+                Some(title) => {
+                    let t = render_inlines(title);
+                    if t.is_empty() {
+                        body
+                    } else {
+                        format!("{t}\n\n{body}")
+                    }
+                }
+                None => body,
+            }
+        }
         BlockNode::Div(div) => render_blocks(&div.children),
         BlockNode::DefinitionList(list) => render_definition_list(&list.items, true),
         BlockNode::Figure(figure) => render_figure(figure),
-        BlockNode::BlockImage(image) => image.alt.clone(),
+        // Terminate the block image so the next block is not glued onto it.
+        BlockNode::BlockImage(image) => format!("{}\n\n", image.alt),
         BlockNode::Extension(extension) => render_blocks(&extension.children),
         BlockNode::RawBlock(_) | BlockNode::AbbreviationDef(_) | BlockNode::Comment(_) => {
             String::new()
@@ -166,7 +180,7 @@ fn render_inline(node: &InlineNode) -> String {
         InlineNode::HardBreak => "\n".to_string(),
         InlineNode::CriticInsert(insert) => render_inlines(&insert.children),
         InlineNode::CriticDelete(delete) => format!("~{}~", render_inlines(&delete.children)),
-        InlineNode::CriticSubstitute(sub) => sub.new_text.clone(),
+        InlineNode::CriticSubstitute(sub) => format!("~{}~{}", sub.old_text, sub.new_text),
         InlineNode::CriticComment(_) => String::new(),
         InlineNode::CrossRef(crossref) => format!("</#{}>", crossref.target),
         InlineNode::CaptionNumber(number) => number
