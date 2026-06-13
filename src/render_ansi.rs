@@ -77,11 +77,33 @@ fn render_block(node: &BlockNode, ctx: &mut AnsiContext) -> String {
         BlockNode::List(list) => render_list(list, ctx),
         BlockNode::ThematicBreak => format!("{}\n\n", style(&"─".repeat(40), DIM)),
         BlockNode::Table(table) => render_table(table, ctx),
-        BlockNode::Admonition(admonition) => render_blocks(&admonition.children, ctx),
+        BlockNode::Admonition(admonition) => {
+            let body = render_blocks(&admonition.children, ctx);
+            match &admonition.title {
+                Some(title) => {
+                    let t = render_inlines(title, ctx);
+                    if t.is_empty() {
+                        body
+                    } else {
+                        // Carry the blockquote `│` prefix onto the title line
+                        // too, matching how the body content is prefixed.
+                        let prefix = block_quote_prefix(ctx);
+                        let title_line = if prefix.is_empty() {
+                            style(&t, BOLD)
+                        } else {
+                            prefix_lines(&style(&t, BOLD), &prefix)
+                        };
+                        format!("{title_line}\n\n{body}")
+                    }
+                }
+                None => body,
+            }
+        }
         BlockNode::Div(div) => render_blocks(&div.children, ctx),
         BlockNode::DefinitionList(list) => render_definition_list(&list.items, ctx, true),
         BlockNode::Figure(figure) => render_figure(figure, ctx),
-        BlockNode::BlockImage(image) => render_image(image),
+        // Terminate the block image so the next block is not glued onto it.
+        BlockNode::BlockImage(image) => format!("{}\n\n", render_image(image)),
         BlockNode::RawBlock(raw) => format!(
             "{}\n\n",
             style(&format!("[raw:{}] {}", raw.format, raw.content), DIM)
@@ -397,7 +419,11 @@ fn render_inline(node: &InlineNode, ctx: &mut AnsiContext) -> String {
             &render_inlines(&delete.children, ctx),
             &(STRIKE.to_string() + "\x1b[31m"),
         ),
-        InlineNode::CriticSubstitute(sub) => sub.new_text.clone(),
+        InlineNode::CriticSubstitute(sub) => format!(
+            "{}{}",
+            style(&sub.old_text, &(STRIKE.to_string() + "\x1b[31m")),
+            style(&sub.new_text, &(FG_GREEN.to_string() + UNDERLINE)),
+        ),
         InlineNode::CriticComment(_) => String::new(),
         InlineNode::CrossRef(crossref) => format!("</#{}>", crossref.target),
         InlineNode::CaptionNumber(number) => number
