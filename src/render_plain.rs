@@ -204,7 +204,13 @@ fn normalize(text: &str) -> String {
             out.push(ch);
         }
     }
-    format!("{}\n", out.trim())
+    // Trim only document-edge newlines/ASCII spaces, NOT the non-breaking
+    // spaces that carry line-block / escaped-space indentation (a plain `.trim()`
+    // would strip leading U+00A0 too, dropping a first verse line's indent).
+    // Then a non-breaking space becomes a plain space in display output; only
+    // the HTML renderer emits `&nbsp;`.
+    let trimmed = out.trim_matches(|c| c == '\n' || c == ' ');
+    format!("{trimmed}\n").replace('\u{00a0}', " ")
 }
 
 fn legacy_definition_parts(nodes: &[InlineNode]) -> Option<(String, String)> {

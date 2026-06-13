@@ -371,6 +371,18 @@ fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<BlockNode>
     if is_definition_list_start(line) {
         return Some(parse_definition_list(cur, options));
     }
+    if let Some(fence_len) = detect_line_block_open(line) {
+        // A line block, like any colon fence, opens only when a matching
+        // closer exists ahead (grammar §12/§23); an unterminated `::: |`
+        // stays literal instead of swallowing the rest of the document.
+        let has_closer = cur.lines[cur.pos + 1..].iter().any(|l| {
+            let t = l.trim();
+            !t.is_empty() && t.bytes().all(|b| b == b':') && t.len() >= fence_len
+        });
+        if has_closer {
+            return Some(parse_line_block(cur, options));
+        }
+    }
     if detect_container_open(line).is_some() {
         return Some(parse_container(cur, options));
     }
@@ -1370,6 +1382,16 @@ fn interrupts_paragraph(line: &str, rest: &[&str]) -> bool {
             return true;
         }
     }
+    // A `::: |` line block interrupts like any colon-fence block, with the same
+    // matching-closer lookahead.
+    if let Some(len) = detect_line_block_open(line) {
+        if rest.iter().any(|l| {
+            let t = l.trim();
+            !t.is_empty() && t.bytes().all(|b| b == b':') && t.len() >= len
+        }) {
+            return true;
+        }
+    }
     false
 }
 
@@ -1756,6 +1778,150 @@ fn parse_container(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             children,
         })
     }
+}
+
+/// A `::: |` line-block (verse) opener: a colon fence (3+) then a bare pipe and
+/// nothing else (grammar PART 9 §23). Returns the fence length.
+fn detect_line_block_open(line: &str) -> Option<usize> {
+    let trimmed = line.trim();
+    let fence_len = trimmed.bytes().take_while(|b| *b == b':').count();
+    if fence_len < 3 {
+        return None;
+    }
+    // grammar: `line_block_open = colon_fence, space, "|"` -- a space (or tab)
+    // between the fence and the pipe is REQUIRED, so `:::|` is not a line block.
+    let after = &trimmed[fence_len..];
+    let trimmed_after = after.trim_start_matches([' ', '\t']);
+    if trimmed_after.len() == after.len() {
+        return None; // no whitespace before the pipe
+    }
+    if trimmed_after.trim_end() == "|" {
+        Some(fence_len)
+    } else {
+        None
+    }
+}
+
+/// Count a line's leading whitespace in visual columns (tab = next 4-stop).
+fn leading_ws_columns(line: &str) -> usize {
+    let mut columns = 0usize;
+    for ch in line.chars() {
+        match ch {
+            ' ' => columns += 1,
+            '\t' => columns += 4 - (columns % 4),
+            _ => break,
+        }
+    }
+    columns
+}
+
+/// Remove up to `cols` columns of leading whitespace (tab-aware). When a tab
+/// straddles the boundary its unconsumed columns are re-inserted as spaces, so
+/// a verse line's relative indentation is preserved exactly (the residual-aware
+/// dedent Carve uses on indentation it must keep).
+fn strip_leading_columns(line: &str, cols: usize) -> String {
+    let mut columns = 0usize;
+    for (i, ch) in line.char_indices() {
+        if columns >= cols {
+            return line[i..].to_string();
+        }
+        match ch {
+            ' ' => columns += 1,
+            '\t' => {
+                let next = columns + (4 - columns % 4);
+                if next > cols {
+                    // Tab crosses the reference column: keep the leftover columns.
+                    return " ".repeat(next - cols) + &line[i + 1..];
+                }
+                columns = next;
+            }
+            _ => return line[i..].to_string(),
+        }
+    }
+    String::new()
+}
+
+/// Expand a line's LEADING whitespace to non-breaking spaces (the U+00A0 the
+/// renderers emit as `&nbsp;`) so a verse line's indentation survives; tabs
+/// advance to the next 4-column stop. The rest of the line is left untouched.
+fn expand_line_block_leading_ws(line: &str) -> String {
+    let mut columns = 0usize;
+    let mut idx = 0usize;
+    for (i, ch) in line.char_indices() {
+        match ch {
+            ' ' => columns += 1,
+            '\t' => columns += 4 - (columns % 4),
+            _ => {
+                idx = i;
+                break;
+            }
+        }
+        idx = i + ch.len_utf8();
+    }
+    format!("{}{}", "\u{00a0}".repeat(columns), &line[idx..])
+}
+
+/// Parse a `::: |` line block into a `<div class="line-block">`: each stanza
+/// (blank-line-separated run) is a paragraph whose soft breaks become hard
+/// breaks and whose per-line leading whitespace is preserved (grammar §23).
+fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
+    let opener = cur.peek().unwrap();
+    let fence_len = detect_line_block_open(opener).unwrap();
+    // Verse indentation is measured RELATIVE TO THE FENCE (grammar §23
+    // REFERENCE COLUMN): strip the opener's own structural indent from each
+    // body line before preserving the author's intra-verse whitespace.
+    let base_indent = leading_ws_columns(opener);
+    cur.consume();
+    let mut stanzas: Vec<Vec<String>> = Vec::new();
+    let mut stanza: Vec<String> = Vec::new();
+    while let Some(line) = cur.peek() {
+        let t = line.trim();
+        if !t.is_empty() && t.bytes().all(|b| b == b':') && t.len() >= fence_len {
+            cur.consume();
+            break;
+        }
+        cur.consume();
+        if line.trim().is_empty() {
+            if !stanza.is_empty() {
+                stanzas.push(std::mem::take(&mut stanza));
+            }
+            continue;
+        }
+        let stripped = strip_leading_columns(line, base_indent);
+        stanza.push(expand_line_block_leading_ws(&stripped));
+    }
+    if !stanza.is_empty() {
+        stanzas.push(stanza);
+    }
+
+    let children = stanzas
+        .into_iter()
+        .map(|lines| {
+            let inlines = parse_inline_with_options(&lines.join("\n"), options)
+                .into_iter()
+                .map(|n| match n {
+                    InlineNode::SoftBreak => InlineNode::HardBreak,
+                    other => other,
+                })
+                .collect();
+            BlockNode::Paragraph(Paragraph {
+                attrs: None,
+                children: inlines,
+            })
+        })
+        .collect();
+
+    // No inline opener attributes (strict djot); a preceding block-attribute
+    // line merges onto this div in parse_blocks.
+    BlockNode::Div(Div {
+        attrs: Some(Attrs {
+            id: None,
+            classes: vec!["line-block".to_string()],
+            key_values: BTreeMap::new(),
+            order: vec![AttrSlot::Class],
+        }),
+        children,
+    })
 }
 
 fn detect_abbreviation_def(line: &str) -> Option<AbbreviationDef> {
@@ -3060,6 +3226,19 @@ fn match_emphasis(
     if after == b' ' || after == b'\n' || after == delim {
         return None;
     }
+    // A `=` that is part of a multi-char smart-typography operator is consumed
+    // by that operator, not as a highlight opener (grammar PART 8 / §8): it
+    // begins `=>` or trails `<=` / `>=` / `!=`. (The spaced forms like `x <= y`
+    // already fail the opener test -- their `=` is followed by whitespace -- but
+    // compact forms like `a <=b` would otherwise open a stray `<mark>`.)
+    if delim == b'=' {
+        if after == b'>' {
+            return None;
+        }
+        if i > 0 && matches!(bytes[i - 1], b'<' | b'>' | b'!') {
+            return None;
+        }
+    }
     if i > 0 {
         let prev = bytes[i - 1];
         // No same-type nesting: a delimiter adjacent to the same delimiter does
@@ -3760,6 +3939,12 @@ fn find_emphasis_close(bytes: &[u8], from: usize, delim: u8) -> Option<usize> {
             }
             // Word-boundary closer (spec §9): no bare delimiter closes when
             // followed by an alphanumeric. Applies to every delimiter.
+            // NOTE: a `=` is NOT excluded here when it abuts a smart operator
+            // (`=b=>`): both reference impls (carve-js, carve-php) let the
+            // highlight close there, so rs matches them rather than being the
+            // lone grammar-pedantic outlier on this unpinned corner. The
+            // operator exclusion applies only to the OPENER (the corpus-pinned
+            // `a => b` case).
             if let Some(&next) = bytes.get(j + 1) {
                 if next.is_ascii_alphanumeric() {
                     j += 1;
