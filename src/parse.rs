@@ -5,7 +5,55 @@
 
 use crate::ast::*;
 use crate::extension::{BlockMatch, InlineMatch, MatcherContext, Options};
+use std::cell::Cell;
 use std::collections::BTreeMap;
+
+/// Maximum block + inline nesting depth. Pathological input (deeply nested
+/// blockquotes, indented lists, bracketed inlines) recurses one stack frame
+/// per level; without a cap a ~1000-deep document aborts the process with a
+/// stack overflow (uncatchable -- a hard DoS for any embedder). Over the cap
+/// the parser degrades gracefully (remaining block content becomes a flat
+/// paragraph; inline content stays literal text) instead of recursing further.
+///
+/// The cap also bounds the depth of the AST the renderers walk recursively, so
+/// it is chosen to keep parse + render safe on a conservative 2 MiB thread
+/// stack (render alone overflows ~130-deep there); 100 levels is far beyond any
+/// real document while leaving comfortable headroom. carve-php's analogous cap
+/// is higher only because PHP grows its VM stack on the heap.
+const MAX_NESTING_DEPTH: usize = 100;
+
+thread_local! {
+    // Plain initializer (not `const { … }`) to keep the crate's 1.75 MSRV;
+    // the inline-const thread-local form clippy suggests requires Rust 1.79+,
+    // so the lint is allowed here rather than followed.
+    #[allow(clippy::missing_const_for_thread_local)]
+    static NESTING_DEPTH: Cell<usize> = Cell::new(0);
+}
+
+/// RAII recursion-depth guard. `enter()` returns `None` when the cap is
+/// already reached (the caller must degrade without recursing); otherwise it
+/// increments the shared depth and returns a guard that decrements on drop
+/// (including during panic unwind, so a normal parse always returns to 0).
+struct DepthGuard;
+
+impl DepthGuard {
+    fn enter() -> Option<DepthGuard> {
+        NESTING_DEPTH.with(|d| {
+            if d.get() >= MAX_NESTING_DEPTH {
+                None
+            } else {
+                d.set(d.get() + 1);
+                Some(DepthGuard)
+            }
+        })
+    }
+}
+
+impl Drop for DepthGuard {
+    fn drop(&mut self) {
+        NESTING_DEPTH.with(|d| d.set(d.get().saturating_sub(1)));
+    }
+}
 
 pub fn parse(source: &str) -> Document {
     parse_with_options(source, &Options::default())
@@ -118,8 +166,12 @@ fn parse_link_def_target(target: &str) -> LinkDef {
     }
     let href = target[..i].to_string();
     let rest = target[i..].trim();
-    let title = if (rest.starts_with('"') && rest.ends_with('"'))
-        || (rest.starts_with('\'') && rest.ends_with('\''))
+    // A title needs the opening AND a distinct closing quote: a lone `"` (or
+    // `'`) satisfies both starts_with and ends_with on the same byte, so guard
+    // len >= 2 before `rest[1..len-1]` underflows (begin > end panic).
+    let title = if rest.len() >= 2
+        && ((rest.starts_with('"') && rest.ends_with('"'))
+            || (rest.starts_with('\'') && rest.ends_with('\'')))
     {
         Some(rest[1..rest.len() - 1].to_string())
     } else {
@@ -194,6 +246,23 @@ impl<'a> LineCursor<'a> {
 }
 
 fn parse_blocks(cur: &mut LineCursor, options: &Options<'_>) -> Vec<BlockNode> {
+    // Recursion cap (see MAX_NESTING_DEPTH). Over the cap, flatten everything
+    // still in the cursor into one paragraph rather than recursing further,
+    // matching the carve-php degrade behavior.
+    let Some(_depth) = DepthGuard::enter() else {
+        let mut rest: Vec<&str> = Vec::new();
+        while let Some(line) = cur.consume() {
+            rest.push(line);
+        }
+        let text = rest.join("\n");
+        if text.trim().is_empty() {
+            return Vec::new();
+        }
+        return vec![BlockNode::Paragraph(Paragraph {
+            attrs: None,
+            children: parse_inline_with_options(&text, options),
+        })];
+    };
     let mut out = Vec::new();
     let mut pending_attrs: Option<Attrs> = None;
     while !cur.eof() {
@@ -1999,6 +2068,13 @@ fn parse_inline_context(
     mut caption_number_allowed: bool,
     in_footnote: bool,
 ) -> Vec<InlineNode> {
+    // Recursion cap (see MAX_NESTING_DEPTH). Nested links/spans/emphasis recurse
+    // through here one frame per level; over the cap, keep the remaining text
+    // literal rather than recursing further (prevents a stack-overflow abort on
+    // input like `[[[[[…x]]]]]`). Shares the depth counter with block parsing.
+    let Some(_depth) = DepthGuard::enter() else {
+        return vec![InlineNode::Text(text.to_string())];
+    };
     let bytes = text.as_bytes();
     // A `[` only opens an inline link, reference link, or span when a `](`,
     // `][`, or `]{` follows (there is no bare shortcut-reference form). If none
@@ -2254,7 +2330,9 @@ fn parse_inline_context(
         }
 
         if let Some(InlineMatch { node, end }) = try_extension_inline(text, i, options) {
-            if end > i && end <= text.len() {
+            // `end` must land on a char boundary or `text[i..]`/slicing panics;
+            // a misbehaving extension matcher must not be able to crash the core.
+            if end > i && end <= text.len() && text.is_char_boundary(end) {
                 flush_text(&mut out, &mut buf);
                 out.push(node);
                 i = end;
