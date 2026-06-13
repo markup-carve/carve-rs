@@ -50,6 +50,7 @@ const IMPLEMENTED: &[&str] = &[
     "35-collapsed-reference-link",
     "36-unresolved-reference-link",
     "37-smart-typography-dashes-and-quotes",
+    "38-smart-typography-arrows-and-symbols",
     "39-smart-typography-escapes-and-code",
     "40-table-multi-line-cell-continuation",
     "41-table-rowspan-with-multi-line-content",
@@ -99,6 +100,7 @@ const IMPLEMENTED: &[&str] = &[
     "85-numbered-cross-references",
     "86-inline-footnotes",
     "87-list-item-attributes",
+    "88-line-blocks",
     "89-mention-and-tag-name-boundaries",
     "90-superscript-in-a-table-cell",
     "91-nested-comment-fences",
@@ -291,6 +293,10 @@ corpus_test!(
     "37-smart-typography-dashes-and-quotes"
 );
 corpus_test!(
+    c38_smart_typography_arrows_and_symbols,
+    "38-smart-typography-arrows-and-symbols"
+);
+corpus_test!(
     c39_smart_typography_escapes_and_code,
     "39-smart-typography-escapes-and-code"
 );
@@ -382,6 +388,7 @@ corpus_test!(c82_compact_list_blocks, "82-compact-list-blocks");
 corpus_test!(c83_list_continuation_marker, "83-list-continuation-marker");
 corpus_test!(c84_block_attribute_lines, "84-block-attribute-lines");
 corpus_test!(c87_list_item_attributes, "87-list-item-attributes");
+corpus_test!(c88_line_blocks, "88-line-blocks");
 corpus_test!(
     c89_mention_and_tag_name_boundaries,
     "89-mention-and-tag-name-boundaries"
