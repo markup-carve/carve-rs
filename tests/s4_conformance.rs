@@ -154,6 +154,14 @@ fn consecutive_plus_continuations_attach_separate_blocks() {
     // a continuation block that IS a list keeps its own `+` continuations:
     // the second `+` attaches `> q` to item `b`, not to the parent.
     assert!(carve::to_html("- a\n+\n- b\n+\n> q").contains("<li>b"));
+    // a colon-fenced container is self-delimiting too: a `+` inside it is
+    // content, so the whole div is one attached block.
+    assert_eq!(
+        carve::to_html("- a\n+\n:::\n+\n:::")
+            .matches("<div>")
+            .count(),
+        1
+    );
     let html = carve::to_html("- a\n+\n```\n+\n```");
     assert_eq!(html.matches("<pre>").count(), 1);
     assert!(html.contains("+"));

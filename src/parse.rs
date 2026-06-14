@@ -1196,14 +1196,20 @@ fn parse_continuation_block(
     options: &Options<'_>,
     base_indent: usize,
 ) -> Option<BlockNode> {
-    // A nested list manages its OWN `+` continuations, so do not bound it --
-    // bounding would cut a `+` that belongs to the child list and re-attach the
-    // following block to the parent item. Only greedy lazy-continuation blocks
-    // (a block quote, a paragraph) need the bound.
-    if cur
-        .peek()
-        .is_some_and(|line| detect_list_marker_full(line).is_some())
-    {
+    // Only a block that LAZILY over-consumes (a block quote, or a paragraph)
+    // needs the bound. Self-delimiting blocks consume exactly their own span:
+    //  - a list manages its OWN `+` continuations (bounding would cut a `+`
+    //    that belongs to a child list);
+    //  - a colon fence (`:::` div / admonition / `::: |` line block) and a code
+    //    fence run to their own closer, so a `+` inside them is content.
+    // Routing those to the unbounded parser keeps such a `+` from being read as
+    // the parent item's boundary.
+    if cur.peek().is_some_and(|line| {
+        detect_list_marker_full(line).is_some()
+            || detect_container_open(line).is_some()
+            || detect_line_block_open(line).is_some()
+            || detect_fence_open(line).is_some()
+    }) {
         return parse_block(cur, options);
     }
     let mut end = cur.pos;
