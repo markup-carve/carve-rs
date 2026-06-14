@@ -1,5 +1,31 @@
+/// Running smart-quote state for one block in the non-HTML renderers. `"`/`'`
+/// toggle open/closed across the WHOLE inline flow (incl. across emphasis), so
+/// a closing quote after an emphasis span renders correctly. Reset per block.
+#[derive(Default)]
+pub(crate) struct SmartQuoteState {
+    open_double: bool,
+    open_single: bool,
+}
+
+impl SmartQuoteState {
+    pub(crate) fn new() -> Self {
+        SmartQuoteState {
+            open_double: true,
+            open_single: true,
+        }
+    }
+}
+
+/// Smart-quote an isolated text run (fresh state).
 pub(crate) fn clean_smart_text(input: &str) -> String {
-    smart_text(&clean_escaped_text(input))
+    let mut state = SmartQuoteState::new();
+    clean_smart_text_stateful(input, &mut state)
+}
+
+/// Smart-quote a text run, threading the block's running quote state so a
+/// closing quote after an emphasis/link span is recognized.
+pub(crate) fn clean_smart_text_stateful(input: &str, state: &mut SmartQuoteState) -> String {
+    smart_text(&clean_escaped_text(input), state)
 }
 
 fn clean_escaped_text(input: &str) -> String {
@@ -23,7 +49,7 @@ fn clean_escaped_text(input: &str) -> String {
     out
 }
 
-fn smart_text(input: &str) -> String {
+fn smart_text(input: &str, state: &mut SmartQuoteState) -> String {
     let mut s = unescape_text(input);
     let replacements = [
         ("<->", "↔"),
@@ -52,8 +78,6 @@ fn smart_text(input: &str) -> String {
 
     let chars = s.chars().collect::<Vec<_>>();
     let mut out = String::new();
-    let mut open_double = true;
-    let mut open_single = true;
     for (idx, ch) in chars.iter().copied().enumerate() {
         if ch == '\u{e000}' {
             continue;
@@ -63,8 +87,8 @@ fn smart_text(input: &str) -> String {
             if escaped {
                 out.push(ch);
             } else {
-                out.push(if open_double { '“' } else { '”' });
-                open_double = !open_double;
+                out.push(if state.open_double { '“' } else { '”' });
+                state.open_double = !state.open_double;
             }
         } else if ch == '\'' {
             if escaped {
@@ -75,10 +99,10 @@ fn smart_text(input: &str) -> String {
             let next_alpha = chars.get(idx + 1).is_some_and(|c| c.is_alphabetic());
             if prev_ws && next_alpha {
                 out.push('‘');
-                open_single = false;
-            } else if !open_single {
+                state.open_single = false;
+            } else if !state.open_single {
                 out.push('’');
-                open_single = true;
+                state.open_single = true;
             } else {
                 out.push('’');
             }
