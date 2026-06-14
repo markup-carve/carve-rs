@@ -132,11 +132,11 @@ fn replaces_nul_with_replacement_char() {
 }
 
 #[test]
-fn second_continuation_marker_starts_a_new_block() {
-    // Two `+` continuation markers under a list item, each followed by a block
-    // quote, produce TWO quotes -- the second `+` is structural and ends the
-    // first quote's lazy continuation instead of folding into it.
-    let html = carve::to_html("- a\n+\n>q1\n+\n>q2");
-    assert_eq!(html.matches("<blockquote>").count(), 2);
-    assert!(!html.contains("q1\n+\nq2") && !html.contains("q1+q2"));
+fn lone_plus_outside_a_list_stays_quote_prose() {
+    // A lone `+` is only structural as a LIST continuation marker; inside an
+    // open top-level block quote it folds as ordinary prose.
+    assert_eq!(
+        carve::to_html("> a\n+"),
+        "<blockquote><p>a\n+</p></blockquote>"
+    );
 }
