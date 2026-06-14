@@ -130,3 +130,13 @@ fn replaces_nul_with_replacement_char() {
     // output (decided cross-impl behavior).
     assert_eq!(carve::to_html("a\0b"), "<p>a\u{fffd}b</p>");
 }
+
+#[test]
+fn second_continuation_marker_starts_a_new_block() {
+    // Two `+` continuation markers under a list item, each followed by a block
+    // quote, produce TWO quotes -- the second `+` is structural and ends the
+    // first quote's lazy continuation instead of folding into it.
+    let html = carve::to_html("- a\n+\n>q1\n+\n>q2");
+    assert_eq!(html.matches("<blockquote>").count(), 2);
+    assert!(!html.contains("q1\n+\nq2") && !html.contains("q1+q2"));
+}
