@@ -1910,6 +1910,24 @@ fn split_table_cells(content: &str) -> Vec<String> {
 }
 
 fn parse_table_cell(cell: &str, options: &Options<'_>) -> TableCell {
+    // A `{...}` attribute block GLUED to the opening pipe (no leading space)
+    // sets the cell's attributes; the rest, after optional whitespace, is the
+    // content. `read_attrs_at` is quote-aware and validates the whole payload,
+    // so a partially-invalid or empty block reads as None and the `{` stays
+    // content. A space before the brace (`| {.x}`) is also ordinary content.
+    // An attributed cell is never a bare span marker -- its content is literal.
+    if cell.as_bytes().first() == Some(&b'{') {
+        if let Some((attrs, next)) = read_attrs_at(cell.as_bytes(), 0) {
+            return TableCell {
+                header: false,
+                span: None,
+                align: None,
+                attrs: Some(attrs),
+                children: parse_inline_with_options(cell[next..].trim(), options),
+            };
+        }
+    }
+
     let trimmed = cell.trim();
     let header = trimmed.starts_with('=');
     let mut text = if header { trimmed[1..].trim() } else { trimmed };
@@ -1949,6 +1967,7 @@ fn parse_table_cell(cell: &str, options: &Options<'_>) -> TableCell {
         header,
         span,
         align,
+        attrs: None,
         children: if span.is_some() {
             Vec::new()
         } else {
