@@ -60,11 +60,20 @@ pub fn parse(source: &str) -> Document {
 }
 
 pub fn parse_with_options(source: &str, options: &Options<'_>) -> Document {
-    // Normalize line endings up front so CRLF / CR input parses identically to
-    // LF (matching carve-js / carve-php). Only allocates when `\r` is present.
+    // Normalize input up front (matching carve-js / carve-php), only allocating
+    // when needed:
+    //  - strip a single leading UTF-8 BOM (U+FEFF) so `﻿# T` is a heading;
+    //  - collapse CRLF / CR to LF;
+    //  - replace a NUL (U+0000) with the U+FFFD replacement char so a control
+    //    byte never reaches output (WHATWG-style).
     let normalized;
-    let source = if source.contains('\r') {
-        normalized = source.replace("\r\n", "\n").replace('\r', "\n");
+    let source = if source.starts_with('\u{feff}') || source.contains('\r') || source.contains('\0')
+    {
+        let trimmed = source.strip_prefix('\u{feff}').unwrap_or(source);
+        normalized = trimmed
+            .replace("\r\n", "\n")
+            .replace('\r', "\n")
+            .replace('\0', "\u{fffd}");
         normalized.as_str()
     } else {
         source
