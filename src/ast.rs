@@ -125,6 +125,8 @@ pub struct TableCell {
     pub header: bool,
     pub span: Option<TableCellSpan>,
     pub align: Option<TableAlign>,
+    /// Author attributes from a `{...}` glued to the cell's opening pipe.
+    pub attrs: Option<Attrs>,
     pub children: Vec<InlineNode>,
 }
 

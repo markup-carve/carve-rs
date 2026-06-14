@@ -1882,21 +1882,25 @@ fn parse_table_row(line: &str, options: &Options<'_>) -> TableRow {
 fn split_table_cells(content: &str) -> Vec<String> {
     let mut cells = Vec::new();
     let mut buf = String::new();
-    let mut escaped = false;
     let mut code_ticks = 0usize;
-    for ch in content.chars() {
-        if escaped {
-            buf.push(ch);
-            escaped = false;
-            continue;
-        }
-        if ch == '\\' {
-            escaped = true;
-            continue;
-        }
+    let mut chars = content.chars().peekable();
+    while let Some(ch) = chars.next() {
         if ch == '`' {
             code_ticks ^= 1;
             buf.push(ch);
+            continue;
+        }
+        if ch == '\\' {
+            // Only an escaped PIPE is resolved here (so it does not split the
+            // row); every other backslash escape is PRESERVED for the inline
+            // parser to resolve. That keeps a leading `\{` literal rather than
+            // looking like a cell attribute block. Matches carve-js.
+            if chars.peek() == Some(&'|') {
+                buf.push('|');
+                chars.next();
+            } else {
+                buf.push('\\');
+            }
             continue;
         }
         if ch == '|' && code_ticks == 0 {
@@ -1910,6 +1914,24 @@ fn split_table_cells(content: &str) -> Vec<String> {
 }
 
 fn parse_table_cell(cell: &str, options: &Options<'_>) -> TableCell {
+    // A `{...}` attribute block GLUED to the opening pipe (no leading space)
+    // sets the cell's attributes; the rest, after optional whitespace, is the
+    // content. `read_attrs_at` is quote-aware and validates the whole payload,
+    // so a partially-invalid or empty block reads as None and the `{` stays
+    // content. A space before the brace (`| {.x}`) is also ordinary content.
+    // An attributed cell is never a bare span marker -- its content is literal.
+    if cell.as_bytes().first() == Some(&b'{') {
+        if let Some((attrs, next)) = read_attrs_at(cell.as_bytes(), 0) {
+            return TableCell {
+                header: false,
+                span: None,
+                align: None,
+                attrs: Some(attrs),
+                children: parse_inline_with_options(cell[next..].trim(), options),
+            };
+        }
+    }
+
     let trimmed = cell.trim();
     let header = trimmed.starts_with('=');
     let mut text = if header { trimmed[1..].trim() } else { trimmed };
@@ -1949,6 +1971,7 @@ fn parse_table_cell(cell: &str, options: &Options<'_>) -> TableCell {
         header,
         span,
         align,
+        attrs: None,
         children: if span.is_some() {
             Vec::new()
         } else {
