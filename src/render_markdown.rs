@@ -85,7 +85,7 @@ fn render_block(node: &BlockNode, ctx: &mut MarkdownContext) -> String {
             format!("{body}\n\n")
         }
         BlockNode::List(list) => render_list(list, ctx),
-        BlockNode::ThematicBreak => "---\n\n".to_string(),
+        BlockNode::ThematicBreak(_) => "---\n\n".to_string(),
         BlockNode::Table(table) => render_table(table, ctx),
         BlockNode::Admonition(admonition) => {
             // Markdown has no admonition; preserve the title (otherwise lost)

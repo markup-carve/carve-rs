@@ -75,7 +75,7 @@ fn render_block(node: &BlockNode, ctx: &mut AnsiContext) -> String {
             out
         }
         BlockNode::List(list) => render_list(list, ctx),
-        BlockNode::ThematicBreak => format!("{}\n\n", style(&"─".repeat(40), DIM)),
+        BlockNode::ThematicBreak(_) => format!("{}\n\n", style(&"─".repeat(40), DIM)),
         BlockNode::Table(table) => render_table(table, ctx),
         BlockNode::Admonition(admonition) => {
             let body = render_blocks(&admonition.children, ctx);

@@ -46,7 +46,13 @@ pub enum BlockNode {
     Comment(Comment),
     Extension(BlockExtension),
     BlockImage(Image),
-    ThematicBreak,
+    ThematicBreak(ThematicBreak),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ThematicBreak {
+    /// Attributes from a preceding block-attribute line (`{.x}` then `---`).
+    pub attrs: Option<Attrs>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
