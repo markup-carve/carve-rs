@@ -1185,6 +1185,74 @@ fn resolve_ordered_first(
     (first.start, first.ol_type)
 }
 
+/// Parse ONE block attached by a list `+` continuation marker, bounded to the
+/// lines before the next lone `+` marker at the item's base indent. The scan is
+/// fence-aware -- a `+` inside a nested fenced code block is content, not a
+/// boundary -- so a greedy block (e.g. a block quote's lazy continuation)
+/// cannot swallow the following `+` and its block. `- a / + / >q1 / + / >q2`
+/// then yields two separate quotes. Advances `cur` by the lines consumed.
+fn parse_continuation_block(
+    cur: &mut LineCursor,
+    options: &Options<'_>,
+    base_indent: usize,
+) -> Option<BlockNode> {
+    // A nested list manages its OWN `+` continuations -- the boundary scan
+    // cannot tell a child list's `+` from the parent's, so a list is parsed
+    // unbounded. (Code / colon fences are handled INSIDE the scan: a fence with
+    // a matching closer is skipped so its inner `+` is content, while an
+    // unterminated one is not, so a following `+` still bounds the block.)
+    if cur
+        .peek()
+        .is_some_and(|line| detect_list_marker_full(line).is_some())
+    {
+        return parse_block(cur, options);
+    }
+    let mut end = cur.pos;
+    let mut in_fence: Option<FenceOpen> = None;
+    while end < cur.lines.len() {
+        let line = cur.lines[end];
+        if let Some(open) = in_fence {
+            if is_fence_close(line, open) {
+                in_fence = None;
+            }
+            end += 1;
+            continue;
+        }
+        if let Some(open) = detect_fence_open(line) {
+            in_fence = Some(open);
+            end += 1;
+            continue;
+        }
+        // A colon fence (`:::` div / admonition / `::: |` line block) WITH a
+        // matching closer ahead is a self-delimiting block; skip the whole
+        // region so a `+` inside it is content, not the parent's boundary.
+        // (An UNTERMINATED `:::` is literal -- no closer to skip to.)
+        if detect_container_open(line).is_some() || detect_line_block_open(line).is_some() {
+            let fence_len = line.trim_start().bytes().take_while(|b| *b == b':').count();
+            let closer = (end + 1..cur.lines.len()).find(|&j| {
+                let t = cur.lines[j].trim();
+                !t.is_empty() && t.bytes().all(|b| b == b':') && t.len() >= fence_len
+            });
+            if let Some(close) = closer {
+                end = close + 1;
+                continue;
+            }
+        }
+        if end > cur.pos && line.trim() == "+" && indent_columns(line) == base_indent {
+            break;
+        }
+        end += 1;
+    }
+    let slice: Vec<&str> = cur.lines[cur.pos..end].to_vec();
+    let mut sub = LineCursor {
+        lines: &slice,
+        pos: 0,
+    };
+    let block = parse_block(&mut sub, options);
+    cur.pos += sub.pos;
+    block
+}
+
 fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     let first = cur.peek().unwrap();
     let first_marker = detect_list_marker_full(first).unwrap();
@@ -1219,7 +1287,7 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         if line.trim() == "+" && indent_columns(line) == base_indent {
             cur.consume();
             pending_blank = false;
-            if let Some(block) = parse_block(cur, options) {
+            if let Some(block) = parse_continuation_block(cur, options, base_indent) {
                 if let Some(last) = items.last_mut() {
                     last.children.push(block);
                 }
@@ -1313,7 +1381,7 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 checked: marker.checked,
                 children: Vec::new(),
             };
-            if let Some(block) = parse_block(cur, options) {
+            if let Some(block) = parse_continuation_block(cur, options, base_indent) {
                 item.children.push(block);
             }
             items.push(item);

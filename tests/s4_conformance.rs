@@ -142,6 +142,49 @@ fn lone_plus_outside_a_list_stays_quote_prose() {
 }
 
 #[test]
+fn consecutive_plus_continuations_attach_separate_blocks() {
+    // Each `+` attaches its own block, bounded to the lines before the next `+`
+    // marker, so two quotes stay separate (matching carve-js / carve-php).
+    let two_quotes = |s: &str| carve::to_html(s).matches("<blockquote>").count() == 2;
+    assert!(two_quotes("- a\n+\n>q1\n+\n>q2"));
+    // first-block form `- +` is bounded the same way.
+    assert!(two_quotes("- +\n>q1\n+\n>q2"));
+    // the bounding is fence-aware: a `+` INSIDE a fenced code block is content,
+    // so the whole fence (with its `+` line) is one attached code block.
+    // a continuation block that IS a list keeps its own `+` continuations:
+    // the second `+` attaches `> q` to item `b`, not to the parent.
+    assert!(carve::to_html("- a\n+\n- b\n+\n> q").contains("<li>b"));
+    // a colon-fenced container is self-delimiting too: a `+` inside it is
+    // content, so the whole div is one attached block.
+    assert_eq!(
+        carve::to_html("- a\n+\n:::\n+\n:::")
+            .matches("<div>")
+            .count(),
+        1
+    );
+    // a colon fence appearing AFTER a paragraph in the bounded block is also
+    // skipped, so its inner `+` is content (not the parent's boundary).
+    assert_eq!(
+        carve::to_html("- a\n+\ntext\n:::\n+\n:::")
+            .matches("<div>")
+            .count(),
+        1
+    );
+    // an UNTERMINATED colon fence is literal (no closer to skip to), so the
+    // following `+` still bounds it and attaches the next block to the item.
+    assert!(carve::to_html("- a\n+\n:::\n+\n> q").contains("<li>a"));
+    assert_eq!(
+        carve::to_html("- a\n+\n:::\n+\n> q")
+            .matches("<blockquote>")
+            .count(),
+        1
+    );
+    let html = carve::to_html("- a\n+\n```\n+\n```");
+    assert_eq!(html.matches("<pre>").count(), 1);
+    assert!(html.contains("+"));
+}
+
+#[test]
 fn smart_quotes_track_state_across_emphasis() {
     // The closing `"` sits INSIDE an emphasis span; the running quote state must
     // carry across the span so it renders as a closing curly quote, not another
