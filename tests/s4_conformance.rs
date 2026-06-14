@@ -208,6 +208,11 @@ fn glued_table_cell_attributes() {
         row1("|{key=\"{y}\"} hi | b |\n|---|---|\n| c | d |"),
         "  <thead><tr><th key=\"{y}\">hi</th><th>b</th></tr></thead>"
     );
+    // an ESCAPED leading brace is literal content, not a cell attribute block.
+    assert_eq!(
+        row1("|\\{.x} hi | b |\n|---|---|\n| c | d |"),
+        "  <thead><tr><th>{.x} hi</th><th>b</th></tr></thead>"
+    );
     // a computed rowspan wins over an author copy (body rows).
     let html = carve::to_html("| a | b |\n| c | d |\n|{rowspan=9} e | f |\n| ^ | h |");
     assert!(html.contains("rowspan=\"2\"") && !html.contains("rowspan=\"9\""));
