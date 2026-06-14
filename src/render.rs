@@ -389,9 +389,9 @@ fn render_block(out: &mut String, node: &BlockNode, level: usize, options: &Opti
             indent(out, level);
             render_image(out, img);
         }
-        BlockNode::ThematicBreak => {
+        BlockNode::ThematicBreak(n) => {
             indent(out, level);
-            out.push_str("<hr>");
+            out.push_str(&format!("<hr{}>", render_attrs(&n.attrs)));
         }
     }
 }
