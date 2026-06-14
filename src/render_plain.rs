@@ -181,7 +181,10 @@ fn render_inline(node: &InlineNode, state: &mut SmartQuoteState) -> String {
         InlineNode::Abbreviation(abbr) => abbr.abbr.clone(),
         InlineNode::Footnote(footnote) => {
             if let Some(inline) = &footnote.inline {
-                format!("({})", render_inlines_stateful(inline, state))
+                // Footnote content is its own context: render with a FRESH quote
+                // state (via render_inlines) so it neither inherits nor mutates
+                // the surrounding paragraph's open quotes. Matches carve-php.
+                format!("({})", render_inlines(inline))
             } else {
                 format!("[{}]", footnote.id.as_deref().unwrap_or(""))
             }

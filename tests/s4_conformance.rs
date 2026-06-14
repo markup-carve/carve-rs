@@ -166,3 +166,13 @@ fn smart_quotes_track_state_across_emphasis_in_non_html_renderers() {
     // State resets per block in markdown too.
     assert_eq!(carve::to_markdown("\"a\n\n\"b").trim(), "“a\n\n“b");
 }
+
+#[test]
+fn inline_footnote_quote_state_is_isolated() {
+    // A footnote's quotes use their own fresh state and do not disturb the
+    // surrounding paragraph's open quote. Matches carve-php.
+    assert_eq!(
+        carve::to_markdown("a \"b ^[\"x\"] c\" d").trim(),
+        "a “b ^[“x”] c” d"
+    );
+}

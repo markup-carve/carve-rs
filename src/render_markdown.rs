@@ -328,7 +328,13 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext) -> String {
         }
         InlineNode::Footnote(footnote) => {
             if let Some(inline) = &footnote.inline {
-                format!("^[{}]", render_inlines(inline, ctx))
+                // Footnote content is its own context: render with a FRESH quote
+                // state and restore the surrounding paragraph's, so quotes in the
+                // note neither inherit nor mutate the outer flow. Matches carve-php.
+                let saved = std::mem::replace(&mut ctx.smart_quote, SmartQuoteState::new());
+                let rendered = render_inlines(inline, ctx);
+                ctx.smart_quote = saved;
+                format!("^[{rendered}]")
             } else {
                 format!("[^{}]", footnote.id.as_deref().unwrap_or(""))
             }

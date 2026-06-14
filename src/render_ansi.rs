@@ -415,7 +415,12 @@ fn render_inline(node: &InlineNode, ctx: &mut AnsiContext) -> String {
         ),
         InlineNode::Footnote(footnote) => {
             if let Some(inline) = &footnote.inline {
-                format!("({})", render_inlines(inline, ctx))
+                // Footnote content is its own context: render with a FRESH quote
+                // state and restore the surrounding paragraph's. Matches carve-php.
+                let saved = std::mem::replace(&mut ctx.smart_quote, SmartQuoteState::new());
+                let rendered = render_inlines(inline, ctx);
+                ctx.smart_quote = saved;
+                format!("({rendered})")
             } else {
                 style(
                     &format!("[{}]", footnote.id.as_deref().unwrap_or("")),
