@@ -1264,7 +1264,8 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 break;
             }
             if let Some(last) = items.last_mut() {
-                let nested = collect_indented_block(cur, base_indent, content_col);
+                let mut nested = collect_indented_block(cur, base_indent, content_col);
+                collect_trailing_lazy(cur, &mut nested);
                 let nested_children = parse_blocks_with_options(&nested, options);
                 last.children.extend(nested_children);
                 continue;
@@ -1488,6 +1489,26 @@ fn detect_list_marker_full(line: &str) -> Option<ListMarker<'_>> {
         });
     }
     None
+}
+
+/// After a nested block is collected for a list item, pull any immediately
+/// following column-0 lazy-continuation lines into it (plain text only -- not a
+/// blank line, a list marker, or a block-opener). Appended at column 0 so the
+/// recursive parse folds them into the DEEPEST open item, matching carve-js and
+/// carve-php (`- a` / `  - b` / `lazy` -> `<li>b lazy</li>`).
+fn collect_trailing_lazy(cur: &mut LineCursor, nested: &mut String) {
+    while let Some(line) = cur.peek() {
+        if line.trim().is_empty()
+            || indent_columns(line) > 0
+            || is_list_marker(line)
+            || interrupts_paragraph(line, &cur.lines[cur.pos + 1..])
+        {
+            break;
+        }
+        nested.push('\n');
+        nested.push_str(line.trim_start());
+        cur.consume();
+    }
 }
 
 fn collect_indented_block(cur: &mut LineCursor, parent_indent: usize, strip_cols: usize) -> String {
