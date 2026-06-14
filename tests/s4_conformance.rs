@@ -170,6 +170,15 @@ fn consecutive_plus_continuations_attach_separate_blocks() {
             .count(),
         1
     );
+    // an UNTERMINATED colon fence is literal (no closer to skip to), so the
+    // following `+` still bounds it and attaches the next block to the item.
+    assert!(carve::to_html("- a\n+\n:::\n+\n> q").contains("<li>a"));
+    assert_eq!(
+        carve::to_html("- a\n+\n:::\n+\n> q")
+            .matches("<blockquote>")
+            .count(),
+        1
+    );
     let html = carve::to_html("- a\n+\n```\n+\n```");
     assert_eq!(html.matches("<pre>").count(), 1);
     assert!(html.contains("+"));
