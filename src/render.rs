@@ -975,10 +975,42 @@ pub(crate) fn render_inlines_with_options(nodes: &[InlineNode], options: &Option
     out
 }
 
+/// Running smart-quote state for one block. `"`/`'` toggle open/closed across
+/// the WHOLE inline flow in document order -- including across emphasis, links,
+/// spans, etc. -- so `"a /b" c/ d` closes the quote inside the emphasis. Reset
+/// per block (a quote does not carry from one paragraph to the next); verbatim
+/// nodes (code, math, raw) do not touch it.
+struct SmartState {
+    open_double: bool,
+    open_single: bool,
+}
+
+impl Default for SmartState {
+    fn default() -> Self {
+        SmartState {
+            open_double: true,
+            open_single: true,
+        }
+    }
+}
+
+// Block-level entry: each block starts with a fresh quote state.
 fn render_inlines(out: &mut String, nodes: &[InlineNode], options: &Options<'_>) {
+    let mut state = SmartState::default();
+    render_inlines_stateful(out, nodes, options, &mut state);
+}
+
+// Recursive entry: threads the running quote state so nested inline content
+// (emphasis/link/span children) shares the parent's open/closed quote context.
+fn render_inlines_stateful(
+    out: &mut String,
+    nodes: &[InlineNode],
+    options: &Options<'_>,
+    state: &mut SmartState,
+) {
     let mut prev: Option<&InlineNode> = None;
     for node in nodes {
-        render_inline_after(out, node, options, prev);
+        render_inline_after(out, node, options, prev, state);
         prev = Some(node);
     }
 }
@@ -1000,25 +1032,27 @@ fn render_inline_after(
     node: &InlineNode,
     options: &Options<'_>,
     prev: Option<&InlineNode>,
+    state: &mut SmartState,
 ) {
     match node {
         InlineNode::Text(s) => {
             let prev_non_ws = prev.is_some_and(ends_non_whitespace);
             out.push_str(
-                &escape_text(&smart_text_after(s, prev_non_ws)).replace('\u{00a0}', "&nbsp;"),
+                &escape_text(&smart_text_after(s, prev_non_ws, state))
+                    .replace('\u{00a0}', "&nbsp;"),
             )
         }
-        InlineNode::Emphasis(e) => render_emphasis(out, e, options),
+        InlineNode::Emphasis(e) => render_emphasis(out, e, options, state),
         InlineNode::Code(s, attrs) => {
             out.push_str(&format!("<code{}>", render_attrs(attrs)));
             out.push_str(&escape_text(s));
             out.push_str("</code>");
         }
-        InlineNode::Link(l) => render_link(out, l, options),
+        InlineNode::Link(l) => render_link(out, l, options, state),
         InlineNode::Image(img) => render_image(out, img),
         InlineNode::Span(s) => {
             out.push_str(&format!("<span{}>", render_attrs(&s.attrs)));
-            render_inlines(out, &s.children, options);
+            render_inlines_stateful(out, &s.children, options, state);
             out.push_str("</span>");
         }
         InlineNode::Math(m) => {
@@ -1117,7 +1151,7 @@ fn render_inline_after(
                 ));
             }
         }
-        InlineNode::Extension(e) => render_inline_extension(out, e, options),
+        InlineNode::Extension(e) => render_inline_extension(out, e, options, state),
         InlineNode::Abbreviation(a) => out.push_str(&format!(
             "<abbr title=\"{}\">{}</abbr>",
             escape_attr(&a.expansion),
@@ -1140,12 +1174,12 @@ fn render_inline_after(
         InlineNode::HardBreak => out.push_str("<br>\n"),
         InlineNode::CriticInsert(c) => {
             out.push_str("<ins>");
-            render_inlines(out, &c.children, options);
+            render_inlines_stateful(out, &c.children, options, state);
             out.push_str("</ins>");
         }
         InlineNode::CriticDelete(c) => {
             out.push_str("<del>");
-            render_inlines(out, &c.children, options);
+            render_inlines_stateful(out, &c.children, options, state);
             out.push_str("</del>");
         }
         InlineNode::CriticSubstitute(c) => out.push_str(&format!(
@@ -1172,7 +1206,7 @@ fn percent_encode(input: &str) -> String {
     out
 }
 
-fn render_emphasis(out: &mut String, e: &Emphasis, options: &Options<'_>) {
+fn render_emphasis(out: &mut String, e: &Emphasis, options: &Options<'_>, state: &mut SmartState) {
     let (open, close) = match e.kind {
         EmphasisKind::Italic => ("em", "em"),
         EmphasisKind::Strong => ("strong", "strong"),
@@ -1185,16 +1219,16 @@ fn render_emphasis(out: &mut String, e: &Emphasis, options: &Options<'_>) {
     };
     if e.kind == EmphasisKind::BoldItalic {
         out.push_str(open);
-        render_inlines(out, &e.children, options);
+        render_inlines_stateful(out, &e.children, options, state);
         out.push_str(close);
     } else {
         out.push_str(&format!("<{}{}>", open, render_attrs(&e.attrs)));
-        render_inlines(out, &e.children, options);
+        render_inlines_stateful(out, &e.children, options, state);
         out.push_str(&format!("</{}>", close));
     }
 }
 
-fn render_link(out: &mut String, l: &Link, options: &Options<'_>) {
+fn render_link(out: &mut String, l: &Link, options: &Options<'_>, state: &mut SmartState) {
     out.push_str(&format!(
         "<a href=\"{}\"{}",
         escape_attr(&l.href),
@@ -1204,11 +1238,16 @@ fn render_link(out: &mut String, l: &Link, options: &Options<'_>) {
         out.push_str(&format!(" title=\"{}\"", escape_attr(title)));
     }
     out.push('>');
-    render_inlines(out, &l.children, options);
+    render_inlines_stateful(out, &l.children, options, state);
     out.push_str("</a>");
 }
 
-fn render_inline_extension(out: &mut String, node: &InlineExtension, options: &Options<'_>) {
+fn render_inline_extension(
+    out: &mut String,
+    node: &InlineExtension,
+    options: &Options<'_>,
+    state: &mut SmartState,
+) {
     let ctx = RenderContext::new(options);
     for ext in &options.extensions {
         if let Some(html) = ext.render_inline_extension(node, &ctx) {
@@ -1218,7 +1257,7 @@ fn render_inline_extension(out: &mut String, node: &InlineExtension, options: &O
     }
     if node.name == "kbd" {
         out.push_str(&format!("<kbd{}>", render_attrs(&node.attrs)));
-        render_inlines(out, &node.children, options);
+        render_inlines_stateful(out, &node.children, options, state);
         out.push_str("</kbd>");
         return;
     }
@@ -1227,7 +1266,7 @@ fn render_inline_extension(out: &mut String, node: &InlineExtension, options: &O
         escape_attr(&node.name),
         render_attrs(&node.attrs)
     ));
-    render_inlines(out, &node.children, options);
+    render_inlines_stateful(out, &node.children, options, state);
     out.push_str("</span>");
 }
 
@@ -1347,7 +1386,7 @@ fn apply_smart_ops(s: &str, replacements: &[(&str, &str)]) -> String {
     out
 }
 
-fn smart_text_after(input: &str, prev_non_ws: bool) -> String {
+fn smart_text_after(input: &str, prev_non_ws: bool, state: &mut SmartState) -> String {
     let s = unescape_text(input);
     let mut s = s;
     let replacements = [
@@ -1377,8 +1416,6 @@ fn smart_text_after(input: &str, prev_non_ws: bool) -> String {
     s = s.replace("§NO_SMART_DOTS§", "...");
     let chars: Vec<char> = s.chars().collect();
     let mut out = String::new();
-    let mut open_double = true;
-    let mut open_single = true;
     for (idx, ch) in chars.iter().copied().enumerate() {
         if ch == '\u{e000}' {
             continue;
@@ -1388,8 +1425,8 @@ fn smart_text_after(input: &str, prev_non_ws: bool) -> String {
             if escaped {
                 out.push(ch);
             } else {
-                out.push(if open_double { '“' } else { '”' });
-                open_double = !open_double;
+                out.push(if state.open_double { '“' } else { '”' });
+                state.open_double = !state.open_double;
             }
         } else if ch == '\'' {
             if escaped {
@@ -1404,10 +1441,10 @@ fn smart_text_after(input: &str, prev_non_ws: bool) -> String {
             let next_alpha = chars.get(idx + 1).is_some_and(|c| c.is_alphabetic());
             if prev_ws && next_alpha {
                 out.push('‘');
-                open_single = false;
-            } else if !open_single {
+                state.open_single = false;
+            } else if !state.open_single {
                 out.push('’');
-                open_single = true;
+                state.open_single = true;
             } else {
                 out.push('’');
             }
