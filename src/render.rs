@@ -317,10 +317,26 @@ fn render_footnotes_section(
 }
 
 fn render_backlinks(backrefs: &[String]) -> String {
+    // A note referenced once gets a plain `↩`; a note referenced N>1 times gets
+    // one numbered backlink per reference (`↩<sup>k</sup>`, space-separated) so
+    // each return arrow is distinct (matches carve-php + pandoc).
+    if backrefs.len() <= 1 {
+        return backrefs
+            .iter()
+            .map(|ref_id| format!("<a href=\"#{ref_id}\" role=\"doc-backlink\">↩</a>"))
+            .collect();
+    }
     backrefs
         .iter()
-        .map(|ref_id| format!("<a href=\"#{ref_id}\" role=\"doc-backlink\">↩</a>"))
-        .collect()
+        .enumerate()
+        .map(|(k, ref_id)| {
+            format!(
+                "<a href=\"#{ref_id}\" role=\"doc-backlink\">↩<sup>{}</sup></a>",
+                k + 1
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn render_section(
