@@ -162,6 +162,14 @@ fn consecutive_plus_continuations_attach_separate_blocks() {
             .count(),
         1
     );
+    // a colon fence appearing AFTER a paragraph in the bounded block is also
+    // skipped, so its inner `+` is content (not the parent's boundary).
+    assert_eq!(
+        carve::to_html("- a\n+\ntext\n:::\n+\n:::")
+            .matches("<div>")
+            .count(),
+        1
+    );
     let html = carve::to_html("- a\n+\n```\n+\n```");
     assert_eq!(html.matches("<pre>").count(), 1);
     assert!(html.contains("+"));

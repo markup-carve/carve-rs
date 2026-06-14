@@ -1220,9 +1220,30 @@ fn parse_continuation_block(
             if is_fence_close(line, open) {
                 in_fence = None;
             }
-        } else if let Some(open) = detect_fence_open(line) {
+            end += 1;
+            continue;
+        }
+        if let Some(open) = detect_fence_open(line) {
             in_fence = Some(open);
-        } else if end > cur.pos && line.trim() == "+" && indent_columns(line) == base_indent {
+            end += 1;
+            continue;
+        }
+        // A colon fence (`:::` div / admonition / `::: |` line block) WITH a
+        // matching closer ahead is a self-delimiting block; skip the whole
+        // region so a `+` inside it is content, not the parent's boundary.
+        // (An UNTERMINATED `:::` is literal -- no closer to skip to.)
+        if detect_container_open(line).is_some() || detect_line_block_open(line).is_some() {
+            let fence_len = line.trim_start().bytes().take_while(|b| *b == b':').count();
+            let closer = (end + 1..cur.lines.len()).find(|&j| {
+                let t = cur.lines[j].trim();
+                !t.is_empty() && t.bytes().all(|b| b == b':') && t.len() >= fence_len
+            });
+            if let Some(close) = closer {
+                end = close + 1;
+                continue;
+            }
+        }
+        if end > cur.pos && line.trim() == "+" && indent_columns(line) == base_indent {
             break;
         }
         end += 1;
