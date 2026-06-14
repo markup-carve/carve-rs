@@ -1,5 +1,5 @@
 use crate::ast::*;
-use crate::render_text::clean_smart_text;
+use crate::render_text::{clean_smart_text_stateful, SmartQuoteState};
 
 pub fn render_plain_text(doc: &Document) -> String {
     let out = render_blocks(&doc.children);
@@ -137,26 +137,36 @@ fn render_footnote_defs(doc: &Document) -> String {
 }
 
 fn render_inlines(nodes: &[InlineNode]) -> String {
-    nodes.iter().map(render_inline).collect()
+    // Block-level entry: each block starts with a fresh smart-quote state.
+    let mut state = SmartQuoteState::new();
+    render_inlines_stateful(nodes, &mut state)
 }
 
-fn render_inline(node: &InlineNode) -> String {
+fn render_inlines_stateful(nodes: &[InlineNode], state: &mut SmartQuoteState) -> String {
+    let mut out = String::new();
+    for node in nodes {
+        out.push_str(&render_inline(node, state));
+    }
+    out
+}
+
+fn render_inline(node: &InlineNode, state: &mut SmartQuoteState) -> String {
     match node {
-        InlineNode::Text(text) => clean_smart_text(text),
+        InlineNode::Text(text) => clean_smart_text_stateful(text, state),
         InlineNode::Emphasis(emphasis) => match emphasis.kind {
-            EmphasisKind::Strike => render_inlines(&emphasis.children),
-            _ => render_inlines(&emphasis.children),
+            EmphasisKind::Strike => render_inlines_stateful(&emphasis.children, state),
+            _ => render_inlines_stateful(&emphasis.children, state),
         },
         InlineNode::Code(code, _) => code.clone(),
         InlineNode::Link(link) => {
             if link.href.starts_with('#') {
-                render_inlines(&link.children)
+                render_inlines_stateful(&link.children, state)
             } else {
                 link.href.clone()
             }
         }
         InlineNode::Image(image) => image.alt.clone(),
-        InlineNode::Span(span) => render_inlines(&span.children),
+        InlineNode::Span(span) => render_inlines_stateful(&span.children, state),
         InlineNode::Math(math) => math.content.clone(),
         InlineNode::RawInline(_) => String::new(),
         InlineNode::Emoji(emoji) => format!(":{}:", emoji.name),
@@ -167,10 +177,13 @@ fn render_inline(node: &InlineNode) -> String {
             .to_string(),
         InlineNode::Mention(mention) => format!("@{}", mention.user),
         InlineNode::Tag(tag) => format!("#{}", tag.name),
-        InlineNode::Extension(extension) => render_inlines(&extension.children),
+        InlineNode::Extension(extension) => render_inlines_stateful(&extension.children, state),
         InlineNode::Abbreviation(abbr) => abbr.abbr.clone(),
         InlineNode::Footnote(footnote) => {
             if let Some(inline) = &footnote.inline {
+                // Footnote content is its own context: render with a FRESH quote
+                // state (via render_inlines) so it neither inherits nor mutates
+                // the surrounding paragraph's open quotes. Matches carve-php.
                 format!("({})", render_inlines(inline))
             } else {
                 format!("[{}]", footnote.id.as_deref().unwrap_or(""))
@@ -178,8 +191,10 @@ fn render_inline(node: &InlineNode) -> String {
         }
         InlineNode::SoftBreak => " ".to_string(),
         InlineNode::HardBreak => "\n".to_string(),
-        InlineNode::CriticInsert(insert) => render_inlines(&insert.children),
-        InlineNode::CriticDelete(delete) => format!("~{}~", render_inlines(&delete.children)),
+        InlineNode::CriticInsert(insert) => render_inlines_stateful(&insert.children, state),
+        InlineNode::CriticDelete(delete) => {
+            format!("~{}~", render_inlines_stateful(&delete.children, state))
+        }
         InlineNode::CriticSubstitute(sub) => format!("~{}~{}", sub.old_text, sub.new_text),
         InlineNode::CriticComment(_) => String::new(),
         InlineNode::CrossRef(crossref) => format!("</#{}>", crossref.target),

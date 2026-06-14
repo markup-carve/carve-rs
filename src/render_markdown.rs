@@ -1,5 +1,5 @@
 use crate::ast::*;
-use crate::render_text::clean_smart_text;
+use crate::render_text::{clean_smart_text, clean_smart_text_stateful, SmartQuoteState};
 use std::collections::HashSet;
 
 pub fn render_markdown(doc: &Document) -> String {
@@ -28,6 +28,7 @@ pub fn render_markdown(doc: &Document) -> String {
         heading_ids,
         referenced_heading_ids,
         list_depth: 0,
+        smart_quote: SmartQuoteState::new(),
     };
     let out = render_blocks(&doc.children, &mut ctx);
     let footnotes = render_footnote_defs(doc, &mut ctx);
@@ -38,6 +39,17 @@ struct MarkdownContext {
     heading_ids: HashSet<String>,
     referenced_heading_ids: HashSet<String>,
     list_depth: usize,
+    /// Running smart-quote state; reset per block via render_block_inlines.
+    smart_quote: SmartQuoteState,
+}
+
+/// Render a block's inline content with a FRESH smart-quote state (a quote
+/// pair does not carry from one block to the next). Nested inline content
+/// (emphasis/link/span children) keeps using `render_inlines`, which threads
+/// the running state through `ctx.smart_quote`.
+fn render_block_inlines(nodes: &[InlineNode], ctx: &mut MarkdownContext) -> String {
+    ctx.smart_quote = SmartQuoteState::new();
+    render_inlines(nodes, ctx)
 }
 
 fn render_blocks(blocks: &[BlockNode], ctx: &mut MarkdownContext) -> String {
@@ -50,7 +62,7 @@ fn render_blocks(blocks: &[BlockNode], ctx: &mut MarkdownContext) -> String {
 fn render_block(node: &BlockNode, ctx: &mut MarkdownContext) -> String {
     match node {
         BlockNode::Heading(heading) => {
-            let text = flatten_heading_text(&render_inlines(&heading.children, ctx));
+            let text = flatten_heading_text(&render_block_inlines(&heading.children, ctx));
             let mut suffix = String::new();
             let id = heading_id(heading);
             if ctx.referenced_heading_ids.contains(&id) {
@@ -62,7 +74,7 @@ fn render_block(node: &BlockNode, ctx: &mut MarkdownContext) -> String {
             if let Some((term, def)) = legacy_definition_parts(&paragraph.children) {
                 return format!("**{}**\n: {}\n\n", escape_text(&term), escape_text(&def));
             }
-            format!("{}\n\n", render_inlines(&paragraph.children, ctx))
+            format!("{}\n\n", render_block_inlines(&paragraph.children, ctx))
         }
         BlockNode::CodeBlock(code) => {
             let fence = safe_fence(&code.content, 3);
@@ -93,7 +105,7 @@ fn render_block(node: &BlockNode, ctx: &mut MarkdownContext) -> String {
             let body = render_blocks(&admonition.children, ctx);
             match &admonition.title {
                 Some(title) => {
-                    let t = render_inlines(title, ctx);
+                    let t = render_block_inlines(title, ctx);
                     if t.is_empty() {
                         body
                     } else {
@@ -167,7 +179,7 @@ fn render_definition_list(
     let mut out = String::new();
     for item in items {
         for term in &item.terms {
-            out.push_str(&format!("**{}**\n", render_inlines(term, ctx)));
+            out.push_str(&format!("**{}**\n", render_block_inlines(term, ctx)));
         }
         for definition in &item.definitions {
             out.push_str(&format!(": {}\n", render_blocks(definition, ctx).trim()));
@@ -187,7 +199,7 @@ fn render_table(node: &Table, ctx: &mut MarkdownContext) -> String {
         let cells = row
             .cells
             .iter()
-            .map(|cell| render_inlines(&cell.children, ctx).trim().to_string())
+            .map(|cell| render_block_inlines(&cell.children, ctx).trim().to_string())
             .collect::<Vec<_>>();
         columns = columns.max(cells.len());
         let rendered = format!("| {} |", cells.join(" | "));
@@ -228,7 +240,7 @@ fn render_figure(node: &Figure, ctx: &mut MarkdownContext) -> String {
         FigureTarget::CodeBlock(_) | FigureTarget::Paragraph(_) => "\n",
         _ => "",
     };
-    format!("{target}{sep}{}", render_inlines(&node.caption, ctx))
+    format!("{target}{sep}{}", render_block_inlines(&node.caption, ctx))
 }
 
 fn render_footnote_defs(doc: &Document, ctx: &mut MarkdownContext) -> String {
@@ -252,7 +264,7 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext) -> String {
             if is_literal_crossref(text) {
                 text.clone()
             } else {
-                escape_text(&clean_smart_text(text))
+                escape_text(&clean_smart_text_stateful(text, &mut ctx.smart_quote))
             }
         }
         InlineNode::Emphasis(emphasis) => match emphasis.kind {
@@ -316,7 +328,13 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext) -> String {
         }
         InlineNode::Footnote(footnote) => {
             if let Some(inline) = &footnote.inline {
-                format!("^[{}]", render_inlines(inline, ctx))
+                // Footnote content is its own context: render with a FRESH quote
+                // state and restore the surrounding paragraph's, so quotes in the
+                // note neither inherit nor mutate the outer flow. Matches carve-php.
+                let saved = std::mem::replace(&mut ctx.smart_quote, SmartQuoteState::new());
+                let rendered = render_inlines(inline, ctx);
+                ctx.smart_quote = saved;
+                format!("^[{rendered}]")
             } else {
                 format!("[^{}]", footnote.id.as_deref().unwrap_or(""))
             }
