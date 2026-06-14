@@ -1,5 +1,5 @@
 use crate::ast::*;
-use crate::render_text::clean_smart_text;
+use crate::render_text::{clean_smart_text_stateful, SmartQuoteState};
 
 const RESET: &str = "\x1b[0m";
 const BOLD: &str = "\x1b[1m";
@@ -25,6 +25,7 @@ pub fn render_ansi(doc: &Document) -> String {
         list_depth: 0,
         block_quote_depth: 0,
         ordered: Vec::new(),
+        smart_quote: SmartQuoteState::new(),
     };
     let out = render_blocks(&doc.children, &mut ctx);
     let footnotes = render_footnote_defs(doc, &mut ctx);
@@ -35,6 +36,16 @@ struct AnsiContext {
     list_depth: usize,
     block_quote_depth: usize,
     ordered: Vec<usize>,
+    /// Running smart-quote state; reset per block via render_block_inlines.
+    smart_quote: SmartQuoteState,
+}
+
+/// Render a block's inline content with a FRESH smart-quote state (quotes do
+/// not carry across blocks). Nested inline content keeps using `render_inlines`,
+/// which threads the running state through `ctx.smart_quote`.
+fn render_block_inlines(nodes: &[InlineNode], ctx: &mut AnsiContext) -> String {
+    ctx.smart_quote = SmartQuoteState::new();
+    render_inlines(nodes, ctx)
 }
 
 fn style(text: &str, codes: &str) -> String {
@@ -51,7 +62,7 @@ fn render_blocks(blocks: &[BlockNode], ctx: &mut AnsiContext) -> String {
 fn render_block(node: &BlockNode, ctx: &mut AnsiContext) -> String {
     match node {
         BlockNode::Heading(heading) => {
-            render_heading(heading.level, &render_inlines(&heading.children, ctx))
+            render_heading(heading.level, &render_block_inlines(&heading.children, ctx))
         }
         BlockNode::Paragraph(paragraph) => {
             if let Some((term, def)) = legacy_definition_parts(&paragraph.children) {
@@ -60,7 +71,7 @@ fn render_block(node: &BlockNode, ctx: &mut AnsiContext) -> String {
                     style(&term, &(BOLD.to_string() + FG_YELLOW))
                 );
             }
-            let mut content = render_inlines(&paragraph.children, ctx);
+            let mut content = render_block_inlines(&paragraph.children, ctx);
             let prefix = block_quote_prefix(ctx);
             if !prefix.is_empty() {
                 content = prefix_lines(&content, &prefix);
@@ -81,7 +92,7 @@ fn render_block(node: &BlockNode, ctx: &mut AnsiContext) -> String {
             let body = render_blocks(&admonition.children, ctx);
             match &admonition.title {
                 Some(title) => {
-                    let t = render_inlines(title, ctx);
+                    let t = render_block_inlines(title, ctx);
                     if t.is_empty() {
                         body
                     } else {
@@ -208,7 +219,10 @@ fn render_definition_list(
         for term in &item.terms {
             out.push_str(&format!(
                 "{}\n",
-                style(&render_inlines(term, ctx), &(BOLD.to_string() + FG_YELLOW))
+                style(
+                    &render_block_inlines(term, ctx),
+                    &(BOLD.to_string() + FG_YELLOW)
+                )
             ));
         }
         for definition in &item.definitions {
@@ -236,7 +250,7 @@ fn render_table(node: &Table, ctx: &mut AnsiContext) -> String {
             row.cells
                 .iter()
                 .map(|cell| {
-                    let content = render_inlines(&cell.children, ctx).trim().to_string();
+                    let content = render_block_inlines(&cell.children, ctx).trim().to_string();
                     let plain = strip_ansi(&content);
                     RenderedCell {
                         content,
@@ -331,7 +345,7 @@ fn render_caption(nodes: &[InlineNode], ctx: &mut AnsiContext) -> String {
     format!(
         "{}\n\n",
         style(
-            render_inlines(nodes, ctx).trim(),
+            render_block_inlines(nodes, ctx).trim(),
             &(ITALIC.to_string() + DIM)
         )
     )
@@ -355,7 +369,7 @@ fn render_inlines(nodes: &[InlineNode], ctx: &mut AnsiContext) -> String {
 
 fn render_inline(node: &InlineNode, ctx: &mut AnsiContext) -> String {
     match node {
-        InlineNode::Text(text) => clean_smart_text(text),
+        InlineNode::Text(text) => clean_smart_text_stateful(text, &mut ctx.smart_quote),
         InlineNode::Emphasis(emphasis) => match emphasis.kind {
             EmphasisKind::Italic => style(&render_inlines(&emphasis.children, ctx), ITALIC),
             EmphasisKind::Strong => style(&render_inlines(&emphasis.children, ctx), BOLD),

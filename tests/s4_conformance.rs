@@ -155,3 +155,14 @@ fn smart_quotes_track_state_across_emphasis() {
     // quote (`“b`), not a closing one carried over from the first paragraph.
     assert_eq!(carve::to_html("\"a\n\n\"b"), "<p>“a</p>\n<p>“b</p>");
 }
+
+#[test]
+fn smart_quotes_track_state_across_emphasis_in_non_html_renderers() {
+    // The closing quote sits inside an emphasis span; the running quote state
+    // must carry across the span in the markdown / plain renderers too (the
+    // HTML renderer is covered separately). Matches carve-php.
+    assert_eq!(carve::to_markdown("\"a /b\" c/ d").trim(), "“a *b” c* d");
+    assert_eq!(carve::to_plain_text("\"a /b\" c/ d").trim(), "“a b” c d");
+    // State resets per block in markdown too.
+    assert_eq!(carve::to_markdown("\"a\n\n\"b").trim(), "“a\n\n“b");
+}
