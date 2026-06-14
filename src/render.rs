@@ -1317,6 +1317,36 @@ fn render_attrs_without_id(attrs: &Option<Attrs>) -> String {
     render_attrs(&attrs)
 }
 
+/// Apply substring replacements, but never across an escape-guarded char (the
+/// U+E000 guard marks the following char as an escaped literal, so it must not
+/// participate in a smart-typography operator like `<=` or `->`).
+fn apply_smart_ops(s: &str, replacements: &[(&str, &str)]) -> String {
+    let mut out = String::new();
+    let mut seg = String::new();
+    let mut chars = s.chars();
+    while let Some(c) = chars.next() {
+        if c == '\u{e000}' {
+            let mut replaced = seg.clone();
+            for (from, to) in replacements {
+                replaced = replaced.replace(from, to);
+            }
+            out.push_str(&replaced);
+            seg.clear();
+            out.push(c);
+            if let Some(n) = chars.next() {
+                out.push(n);
+            }
+        } else {
+            seg.push(c);
+        }
+    }
+    for (from, to) in replacements {
+        seg = seg.replace(from, to);
+    }
+    out.push_str(&seg);
+    out
+}
+
 fn smart_text_after(input: &str, prev_non_ws: bool) -> String {
     let s = unescape_text(input);
     let mut s = s;
@@ -1339,9 +1369,10 @@ fn smart_text_after(input: &str, prev_non_ws: bool) -> String {
         ("--", "–"),
         ("...", "…"),
     ];
-    for (from, to) in replacements {
-        s = s.replace(from, to);
-    }
+    // Apply the operator replacements only OUTSIDE escape-guarded chars, so an
+    // escaped special (`\<= 5`, `\-> x`) does not form a smart-typography
+    // operator. The U+E000 guard precedes each escaped char.
+    s = apply_smart_ops(&s, &replacements);
     s = s.replace("&#NO_SMART_ARROW;", "->");
     s = s.replace("§NO_SMART_DOTS§", "...");
     let chars: Vec<char> = s.chars().collect();

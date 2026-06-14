@@ -60,6 +60,15 @@ pub fn parse(source: &str) -> Document {
 }
 
 pub fn parse_with_options(source: &str, options: &Options<'_>) -> Document {
+    // Normalize line endings up front so CRLF / CR input parses identically to
+    // LF (matching carve-js / carve-php). Only allocates when `\r` is present.
+    let normalized;
+    let source = if source.contains('\r') {
+        normalized = source.replace("\r\n", "\n").replace('\r', "\n");
+        normalized.as_str()
+    } else {
+        source
+    };
     let (frontmatter, body) = split_frontmatter(source);
     let (body, footnote_defs_src) = extract_footnote_defs(body);
     let (body, link_defs) = extract_link_defs(&body);
@@ -194,11 +203,21 @@ fn split_frontmatter(source: &str) -> (BTreeMap<String, String>, &str) {
         return (BTreeMap::new(), source);
     }
     let rest = &source[first_nl + 1..];
-    let Some(close) = rest.find("\n---\n") else {
+    // The closer is a line that is exactly `---`. It may be the FIRST line of
+    // `rest` (an empty frontmatter, `---\n---`) or follow a newline.
+    let (content_len, after) = if rest == "---" {
+        (0, rest.len())
+    } else if let Some(r) = rest.strip_prefix("---\n") {
+        (0, rest.len() - r.len())
+    } else if let Some(close) = rest.find("\n---\n") {
+        (close, close + 5)
+    } else if let Some(close) = rest.strip_suffix("\n---").map(|s| s.len()) {
+        (close, rest.len())
+    } else {
         return (BTreeMap::new(), source);
     };
-    let frontmatter_src = &rest[..close];
-    let body = &rest[close + 5..];
+    let frontmatter_src = &rest[..content_len];
+    let body = &rest[after..];
     let mut frontmatter = BTreeMap::new();
     // Only the bare / yaml form is key:value; typed blocks (json/toml) are
     // structured and just stripped.
@@ -3112,6 +3131,29 @@ fn read_empty_attrs_at(bytes: &[u8], start: usize) -> Option<(Attrs, usize)> {
     }
 }
 
+/// Length of a mention/tag name = name_word ('.' name_word)*, where
+/// name_word = (letter | digit | '_' | '-')+ (grammar PART 9 §7). A `.` is
+/// INTERIOR only -- it must sit between two name_words, so `a..b` yields `a`
+/// (the run stops before the doubled dot) and `markus.` yields `markus`.
+fn name_run_len(s: &str) -> usize {
+    let b = s.as_bytes();
+    let is_word = |c: u8| c.is_ascii_alphanumeric() || c == b'_' || c == b'-';
+    let mut i = 0;
+    while i < b.len() && is_word(b[i]) {
+        i += 1;
+    }
+    if i == 0 {
+        return 0;
+    }
+    while b.get(i) == Some(&b'.') && b.get(i + 1).is_some_and(|&c| is_word(c)) {
+        i += 1; // the interior dot
+        while i < b.len() && is_word(b[i]) {
+            i += 1;
+        }
+    }
+    i
+}
+
 fn parse_mention(text: &str, pos: usize) -> Option<(Mention, usize)> {
     if pos > 0 {
         let prev = text.as_bytes()[pos - 1];
@@ -3120,16 +3162,7 @@ fn parse_mention(text: &str, pos: usize) -> Option<(Mention, usize)> {
         }
     }
     let rest = text.get(pos + 1..)?;
-    // Interior dots are part of the name (`@john.doe`); a trailing dot is
-    // sentence punctuation (grammar PART 9 §7; corpus
-    // 89-mention-and-tag-name-boundaries). Same shape as parse_tag below.
-    let mut len = rest
-        .bytes()
-        .take_while(|b| b.is_ascii_alphanumeric() || *b == b'_' || *b == b'-' || *b == b'.')
-        .count();
-    while len > 0 && rest.as_bytes()[len - 1] == b'.' {
-        len -= 1;
-    }
+    let len = name_run_len(rest);
     if len == 0 {
         return None;
     }
@@ -3149,13 +3182,7 @@ fn parse_tag(text: &str, pos: usize) -> Option<(Tag, usize)> {
         }
     }
     let rest = text.get(pos + 1..)?;
-    let mut len = rest
-        .bytes()
-        .take_while(|b| b.is_ascii_alphanumeric() || *b == b'_' || *b == b'-' || *b == b'.')
-        .count();
-    while len > 0 && rest.as_bytes()[len - 1] == b'.' {
-        len -= 1;
-    }
+    let len = name_run_len(rest);
     if len == 0 {
         return None;
     }
