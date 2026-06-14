@@ -297,7 +297,23 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext) -> String {
         InlineNode::Mention(mention) => format!("@{}", mention.user),
         InlineNode::Tag(tag) => escape_text(&format!("#{}", tag.name)),
         InlineNode::Extension(extension) => render_inlines(&extension.children, ctx),
-        InlineNode::Abbreviation(abbr) => abbr.abbr.clone(),
+        InlineNode::Abbreviation(abbr) => {
+            // Markdown has no abbreviation syntax; emit an HTML <abbr> so the
+            // title survives (markdown allows inline HTML), matching carve-php.
+            // Dropping it to plain text would lose the expansion.
+            let title = abbr
+                .expansion
+                .replace('&', "&amp;")
+                .replace('<', "&lt;")
+                .replace('>', "&gt;")
+                .replace('"', "&quot;");
+            let text = abbr
+                .abbr
+                .replace('&', "&amp;")
+                .replace('<', "&lt;")
+                .replace('>', "&gt;");
+            format!("<abbr title=\"{title}\">{text}</abbr>")
+        }
         InlineNode::Footnote(footnote) => {
             if let Some(inline) = &footnote.inline {
                 format!("^[{}]", render_inlines(inline, ctx))
