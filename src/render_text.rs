@@ -9,7 +9,11 @@ fn clean_escaped_text(input: &str) -> String {
         if ch == '\\' {
             if let Some(next) = chars.peek().copied() {
                 if matches!(next, '*' | '#' | '_') {
+                    // Drop only the backslash and KEEP the escaped character --
+                    // it is the literal text the user wrote. (Plain/ansi emit it
+                    // bare; the markdown renderer re-escapes it via escape_text.)
                     chars.next();
+                    out.push(next);
                     continue;
                 }
             }
