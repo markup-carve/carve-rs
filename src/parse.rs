@@ -3502,6 +3502,27 @@ fn skip_code_span(bytes: &[u8], start: usize) -> Option<usize> {
 
 /// Read `href[ "title"])` starting at `start` (just past the opening `(`).
 /// Returns (href, optional title, index just past the closing `)`).
+/// Resolve backslash escapes in a link/image title: `\X` becomes `X` when X is
+/// ASCII punctuation (so `\"` is a literal quote), otherwise the backslash is
+/// kept. Mirrors carve-js's unescapeAttrValue.
+fn unescape_title(s: &str) -> String {
+    let mut out = String::new();
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            if let Some(&next) = chars.peek() {
+                if next.is_ascii_punctuation() {
+                    out.push(next);
+                    chars.next();
+                    continue;
+                }
+            }
+        }
+        out.push(c);
+    }
+    out
+}
+
 fn read_link_target(bytes: &[u8], start: usize) -> Option<(String, Option<String>, usize)> {
     let mut i = start;
     let href_start = i;
@@ -3523,17 +3544,21 @@ fn read_link_target(bytes: &[u8], start: usize) -> Option<(String, Option<String
         let quote = bytes[i];
         i += 1;
         let title_start = i;
+        // A backslash escapes the next byte, so `\"` is a literal quote inside
+        // the title rather than its terminator (matches carve-php / carve-js).
         while i < bytes.len() && bytes[i] != quote {
-            i += 1;
+            if bytes[i] == b'\\' && i + 1 < bytes.len() {
+                i += 2;
+            } else {
+                i += 1;
+            }
         }
         if i >= bytes.len() {
             return None;
         }
-        title = Some(
-            std::str::from_utf8(&bytes[title_start..i])
-                .ok()?
-                .to_string(),
-        );
+        title = Some(unescape_title(
+            std::str::from_utf8(&bytes[title_start..i]).ok()?,
+        ));
         i += 1;
         while i < bytes.len() && (bytes[i] == b' ' || bytes[i] == b'\t') {
             i += 1;
