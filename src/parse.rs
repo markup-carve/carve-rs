@@ -856,12 +856,13 @@ fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             continue;
         }
         // Lazy continuation: a non-`>` line folds into an OPEN paragraph. A
-        // blank line, a caption, a lone `+` (the list-continuation marker is
-        // structural, §17 -- it never folds as quote prose), or a line that
-        // starts a block ends the quote.
+        // blank line, a caption, or a line that starts a block ends the quote.
+        // A lone `+` is NOT special here: it is only structural as a LIST
+        // continuation marker, so inside a top-level quote it folds as prose
+        // (`> a` then `+` -> one quote). The list `+` handler bounds what it
+        // hands to a sub-block, so a quote cannot swallow the next `+`.
         if !para_open
             || line.trim().is_empty()
-            || line.trim() == "+"
             || line.starts_with("^ ")
             || interrupts_paragraph(line, &cur.lines[cur.pos + 1..])
         {
