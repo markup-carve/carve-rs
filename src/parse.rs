@@ -604,44 +604,68 @@ fn detect_fence_open(line: &str) -> Option<FenceOpen> {
         i += 1;
     }
     let lang_start = i;
+    // Raw passthrough block: `=FORMAT` (§4.15, djot raw-block syntax) -- a
+    // leading `=` immediately followed by the format name. The `=` is the block
+    // parallel of the inline raw `{=format}` attribute; it is never part of a
+    // language token, so this is unambiguous against an ordinary code block.
+    // parse_fence recovers raw blocks by the leading `=` in this span. The `=`
+    // and format name must be adjacent (`=html`); `= html` is not raw.
+    if i < bytes.len() && bytes[i] == b'=' {
+        i += 1;
+        if i >= bytes.len() || !bytes[i].is_ascii_alphabetic() {
+            return None;
+        }
+        i += 1;
+        while i < bytes.len()
+            && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_' || bytes[i] == b'-')
+        {
+            i += 1;
+        }
+        let lang_end = i;
+        // Must be only whitespace after the format name
+        while i < bytes.len() && bytes[i] == b' ' {
+            i += 1;
+        }
+        if i != bytes.len() {
+            return None;
+        }
+        return Some(FenceOpen {
+            indent,
+            fence_char,
+            fence_len,
+            lang_start,
+            lang_end,
+        });
+    }
     // Language token charset covers real-world tags with punctuation
-    // (c++, c#, f#, asp.net); the token is still anchored (no whitespace),
-    // so a multiword/quoted info string is not a fence.
+    // (c++, c#, f#, asp.net, text/html); the token is still anchored (no
+    // whitespace), so a multiword/quoted info string is not a fence. `/` is
+    // allowed so MIME-like tags stay a single language token.
     while i < bytes.len()
         && (bytes[i].is_ascii_alphanumeric()
             || bytes[i] == b'_'
             || bytes[i] == b'-'
             || bytes[i] == b'+'
             || bytes[i] == b'#'
-            || bytes[i] == b'.')
+            || bytes[i] == b'.'
+            || bytes[i] == b'/')
     {
         i += 1;
     }
     let lang_end = i;
-    if &line[lang_start..lang_end] == "raw" {
-        while i < bytes.len() && bytes[i] == b' ' {
-            i += 1;
-        }
-        while i < bytes.len()
-            && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_' || bytes[i] == b'-')
-        {
-            i += 1;
-        }
-    } else {
-        // Optional bracketed [label] after the language token (info string =
-        // language token + optional [label]); the label is metadata and does
-        // not affect the language class.
-        let mut j = i;
-        while j < bytes.len() && bytes[j] == b' ' {
+    // Optional bracketed [label] after the language token (info string =
+    // language token + optional [label]); the label is metadata and does
+    // not affect the language class.
+    let mut j = i;
+    while j < bytes.len() && bytes[j] == b' ' {
+        j += 1;
+    }
+    if j < bytes.len() && bytes[j] == b'[' {
+        while j < bytes.len() && bytes[j] != b']' {
             j += 1;
         }
-        if j < bytes.len() && bytes[j] == b'[' {
-            while j < bytes.len() && bytes[j] != b']' {
-                j += 1;
-            }
-            if j < bytes.len() && bytes[j] == b']' {
-                i = j + 1;
-            }
+        if j < bytes.len() && bytes[j] == b']' {
+            i = j + 1;
         }
     }
     // Must be only whitespace after the info string
@@ -663,7 +687,7 @@ fn detect_fence_open(line: &str) -> Option<FenceOpen> {
 fn parse_fence(cur: &mut LineCursor, open: FenceOpen) -> BlockNode {
     let open_line = cur.consume().unwrap();
     let open_trim = open_line[open.lang_start..].trim();
-    let raw_format = open_trim.strip_prefix("raw ").map(str::to_string);
+    let raw_format = open_trim.strip_prefix('=').map(|f| f.trim().to_string());
     let lang = if raw_format.is_none() && open.lang_start < open.lang_end {
         Some(open_line[open.lang_start..open.lang_end].to_string())
     } else {
