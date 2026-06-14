@@ -108,6 +108,7 @@ const IMPLEMENTED: &[&str] = &[
     "93-abbreviation-definition-interrupts-a-paragraph",
     "94-literal-less-than-in-prose",
     "95-boolean-attributes",
+    "96-table-span-marker-in-first-column",
 ];
 
 fn corpus_dir() -> PathBuf {
@@ -411,3 +412,7 @@ corpus_test!(
     "94-literal-less-than-in-prose"
 );
 corpus_test!(c95_boolean_attributes, "95-boolean-attributes");
+corpus_test!(
+    c96_table_span_marker_in_first_column,
+    "96-table-span-marker-in-first-column"
+);
