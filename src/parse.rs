@@ -1196,6 +1196,16 @@ fn parse_continuation_block(
     options: &Options<'_>,
     base_indent: usize,
 ) -> Option<BlockNode> {
+    // A nested list manages its OWN `+` continuations, so do not bound it --
+    // bounding would cut a `+` that belongs to the child list and re-attach the
+    // following block to the parent item. Only greedy lazy-continuation blocks
+    // (a block quote, a paragraph) need the bound.
+    if cur
+        .peek()
+        .is_some_and(|line| detect_list_marker_full(line).is_some())
+    {
+        return parse_block(cur, options);
+    }
     let mut end = cur.pos;
     let mut in_fence: Option<FenceOpen> = None;
     while end < cur.lines.len() {

@@ -151,6 +151,9 @@ fn consecutive_plus_continuations_attach_separate_blocks() {
     assert!(two_quotes("- +\n>q1\n+\n>q2"));
     // the bounding is fence-aware: a `+` INSIDE a fenced code block is content,
     // so the whole fence (with its `+` line) is one attached code block.
+    // a continuation block that IS a list keeps its own `+` continuations:
+    // the second `+` attaches `> q` to item `b`, not to the parent.
+    assert!(carve::to_html("- a\n+\n- b\n+\n> q").contains("<li>b"));
     let html = carve::to_html("- a\n+\n```\n+\n```");
     assert_eq!(html.matches("<pre>").count(), 1);
     assert!(html.contains("+"));
