@@ -115,3 +115,18 @@ fn unterminated_colon_fence_stays_literal() {
 fn block_attribute_line_attaches_to_thematic_break() {
     assert_eq!(carve::to_html("{.x}\n---"), "<hr class=\"x\">");
 }
+
+#[test]
+fn strips_leading_bom() {
+    // A leading UTF-8 BOM at the document start does not stop `# T` being a
+    // heading; only at the very start (nested content keeps a literal BOM).
+    assert!(carve::to_html("\u{feff}# T").contains("<h1>T</h1>"));
+    assert!(carve::to_html("> \u{feff}# T").contains("\u{feff}# T"));
+}
+
+#[test]
+fn replaces_nul_with_replacement_char() {
+    // A NUL (U+0000) is replaced with U+FFFD so a control byte never reaches
+    // output (decided cross-impl behavior).
+    assert_eq!(carve::to_html("a\0b"), "<p>a\u{fffd}b</p>");
+}
