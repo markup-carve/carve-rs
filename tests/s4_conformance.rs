@@ -140,3 +140,18 @@ fn lone_plus_outside_a_list_stays_quote_prose() {
         "<blockquote><p>a\n+</p></blockquote>"
     );
 }
+
+#[test]
+fn smart_quotes_track_state_across_emphasis() {
+    // The closing `"` sits INSIDE an emphasis span; the running quote state must
+    // carry across the span so it renders as a closing curly quote, not another
+    // opener. Matches carve-php / carve-js.
+    assert_eq!(carve::to_html("\"a /b\" c/ d"), "<p>“a <em>b” c</em> d</p>");
+    assert_eq!(
+        carve::to_html("He said \"it's /great/\" today"),
+        "<p>He said “it’s <em>great</em>” today</p>"
+    );
+    // State resets per block: the second paragraph's `"` is a fresh OPENING
+    // quote (`“b`), not a closing one carried over from the first paragraph.
+    assert_eq!(carve::to_html("\"a\n\n\"b"), "<p>“a</p>\n<p>“b</p>");
+}
