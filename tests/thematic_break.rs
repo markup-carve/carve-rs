@@ -4,8 +4,14 @@
 
 #[test]
 fn spaced_and_consecutive_runs_are_breaks() {
-    for src in ["---", "***", "___", "- - -", "* * *", "_ _ _", "- - - -", "-  -  -"] {
-        assert_eq!(carve::to_html(src), "<hr>", "{src:?} should be a thematic break");
+    for src in [
+        "---", "***", "___", "- - -", "* * *", "_ _ _", "- - - -", "-  -  -",
+    ] {
+        assert_eq!(
+            carve::to_html(src),
+            "<hr>",
+            "{src:?} should be a thematic break"
+        );
     }
 }
 
