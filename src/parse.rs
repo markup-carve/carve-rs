@@ -1648,9 +1648,13 @@ fn consume_caption(cur: &mut LineCursor, options: &Options<'_>) -> Option<Vec<In
 }
 
 fn is_table_start(line: &str) -> bool {
-    // A table STARTS on a `|` row. `+` continuation cells are consumed inside
-    // parse_table from that first row; a `+` line never starts a table (#80).
-    line.trim_start().starts_with("|=") || line.trim_start().starts_with('|')
+    // A standard table row opens AND closes with `|` (grammar standard_row; a
+    // `|=` cell is a header cell). A stray leading `|` with no closing `|`
+    // (`| a`) is ordinary paragraph text, not a table. (`+` multi-line-cell
+    // continuations are consumed inside parse_table; a `+` line never starts a
+    // table, #80.)
+    let trimmed = line.trim();
+    trimmed.len() >= 2 && trimmed.starts_with('|') && trimmed.ends_with('|')
 }
 
 fn parse_table(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
