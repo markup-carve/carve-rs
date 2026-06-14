@@ -343,11 +343,13 @@ fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<BlockNode>
     }
     if let Some((level, first_text)) = detect_heading(line) {
         cur.consume();
-        // Headings are multi-line (like Djot, and like blockquotes): the text
-        // spills onto following lines until a blank line. A continuation line
-        // may carry the same-or-lower number of `#` (stripped) or none; a
-        // higher/other heading marker starts a new heading, and a caption or a
-        // fenced comment (`%%%`) ends it. Per §10 nothing else interrupts.
+        // Headings are multi-line: the text spills onto following lines until a
+        // blank line. A continuation line may carry the same-or-lower number of
+        // `#` (stripped) or none; a higher/other heading marker starts a new
+        // heading, and a caption or a fenced comment (`%%%`) ends it. A
+        // block-opener (list/quote/table/fence/div/thematic break) ends it and
+        // starts that block, exactly as it interrupts a paragraph (§10); only
+        // plain text folds (an ordered marker folds, it never interrupts).
         let mut joined = first_text.to_string();
         while let Some(next) = cur.peek() {
             if next.trim().is_empty() {
@@ -361,6 +363,9 @@ fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<BlockNode>
             }
             if is_heading_marker_line(next) || next.starts_with("^ ") || is_comment_fence_line(next)
             {
+                break;
+            }
+            if interrupts_paragraph(next, &cur.lines[cur.pos + 1..]) {
                 break;
             }
             joined.push('\n');
