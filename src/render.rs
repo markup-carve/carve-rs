@@ -695,10 +695,13 @@ fn render_table_row(out: &mut String, row: &TableRow, header_row: bool, options:
         } else {
             "td"
         };
+        let align = render_align_attr(cell.align.or_else(|| row_align(row, col)));
+        let emitted: &[&str] = if align.is_empty() { &[] } else { &["style"] };
         out.push_str(&format!(
-            "<{}{}>",
+            "<{}{}{}>",
             tag,
-            render_align_attr(cell.align.or_else(|| row_align(row, col)))
+            render_cell_author_attrs(&cell.attrs, emitted),
+            align
         ));
         render_inlines(out, &cell.children, options);
         out.push_str(&format!("</{}>", tag));
@@ -722,8 +725,10 @@ fn render_table_body_row(
             continue;
         }
         let mut attrs = String::new();
+        let mut emitted: Vec<&str> = Vec::new();
         if let Some(span) = rowspan_cols.get(&(source_row_idx, col)) {
             attrs.push_str(&format!(" rowspan=\"{}\"", span));
+            emitted.push("rowspan");
         }
         if cell.span == Some(TableCellSpan::Colspan) {
             col += 1;
@@ -732,13 +737,20 @@ fn render_table_body_row(
         let colspan = following_colspans(row, col);
         if colspan > 1 {
             attrs.push_str(&format!(" colspan=\"{}\"", colspan));
+            emitted.push("colspan");
         }
         if let Some(align) = cell.align.or_else(|| table_column_align(table, col)) {
             attrs.push_str(&align_attr(align));
+            emitted.push("style");
         }
         // A `|=` cell in a body row is a row header: <th> inside <tbody>.
         let tag = if cell.header { "th" } else { "td" };
-        out.push_str(&format!("<{}{}>", tag, attrs));
+        out.push_str(&format!(
+            "<{}{}{}>",
+            tag,
+            render_cell_author_attrs(&cell.attrs, &emitted),
+            attrs
+        ));
         render_inlines(out, &cell.children, options);
         out.push_str(&format!("</{}>", tag));
         col += colspan;
@@ -756,6 +768,28 @@ fn table_column_align(table: &Table, col: usize) -> Option<TableAlign> {
 
 fn render_align_attr(align: Option<TableAlign>) -> String {
     align.map(align_attr).unwrap_or_default()
+}
+
+/// Render a cell's author attributes, dropping any key that collides (case
+/// -insensitively) with a structural attribute this renderer actually emits
+/// for the cell (`rowspan` / `colspan` / `style`) -- the computed value is
+/// authoritative. When no such structural attribute is emitted, the author's
+/// value (e.g. a custom `style`) is preserved.
+fn render_cell_author_attrs(attrs: &Option<Attrs>, emitted: &[&str]) -> String {
+    let Some(a) = attrs else {
+        return String::new();
+    };
+    let collides = |k: &str| emitted.contains(&k.to_ascii_lowercase().as_str());
+    if emitted.is_empty() || !a.key_values.keys().any(|k| collides(k)) {
+        return render_attrs(attrs);
+    }
+    let mut filtered = a.clone();
+    filtered.key_values.retain(|k, _| !collides(k));
+    filtered.order.retain(|slot| match slot {
+        AttrSlot::Key(k) => !collides(k),
+        _ => true,
+    });
+    render_attrs(&Some(filtered))
 }
 
 fn align_attr(align: TableAlign) -> String {
