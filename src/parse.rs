@@ -339,7 +339,7 @@ fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<BlockNode>
     }
     if detect_thematic_break(line) {
         cur.consume();
-        return Some(BlockNode::ThematicBreak);
+        return Some(BlockNode::ThematicBreak(ThematicBreak::default()));
     }
     if let Some((level, first_text)) = detect_heading(line) {
         cur.consume();
@@ -407,8 +407,18 @@ fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<BlockNode>
             return Some(parse_line_block(cur, options));
         }
     }
-    if detect_container_open(line).is_some() {
-        return Some(parse_container(cur, options));
+    if let Some(open) = detect_container_open(line) {
+        // A colon fence opens only when a matching closer (a line of at least
+        // `fence_len` colons) exists ahead (grammar §12); an unterminated
+        // `:::` / `::: note` stays literal instead of swallowing the rest of
+        // the document. Matches carve-js.
+        let has_closer = cur.lines[cur.pos + 1..].iter().any(|l| {
+            let t = l.trim();
+            !t.is_empty() && t.bytes().all(|b| b == b':') && t.len() >= open.fence_len
+        });
+        if has_closer {
+            return Some(parse_container(cur, options));
+        }
     }
     if let Some(abbr) = detect_abbreviation_def(line) {
         cur.consume();
@@ -2138,6 +2148,13 @@ fn read_attrs_at(bytes: &[u8], start: usize) -> Option<(Attrs, usize)> {
     let mut quote: Option<u8> = None;
     let mut escaped = false;
     while i < bytes.len() {
+        // An inline attribute block is single-line (grammar): a newline before
+        // the closing `}` means this is not an inline attr -- the `{` stays
+        // literal (`[x]{.a\n.b}` is text). Matches carve-js. Block-attribute
+        // lines, which may span lines, are read by a separate path.
+        if bytes[i] == b'\n' {
+            return None;
+        }
         if escaped {
             escaped = false;
             i += 1;
@@ -2209,22 +2226,43 @@ fn parse_attrs(src: &str) -> Option<Attrs> {
             if !is_identifier(key) {
                 return None;
             }
-            if !attrs.key_values.contains_key(key) {
-                attrs.order.push(AttrSlot::Key(key.to_string()));
-            }
             let value = value
                 .trim_matches('"')
                 .trim_matches('\'')
                 .replace("\\\"", "\"")
                 .replace("\\'", "'");
-            attrs.key_values.insert(key.to_string(), value);
-        } else if is_identifier(&token) {
-            // Boolean attribute: a bare word with no value, rendered name="".
-            // (Matched last so `k=v` is a key/value, not a bare `k`.)
-            if !attrs.key_values.contains_key(&token) {
-                attrs.order.push(AttrSlot::Key(token.clone()));
+            if key == "id" {
+                // `id=value` is the same attribute as `#id`: it feeds the id
+                // slot, last-wins (§15), instead of emitting a second `id="…"`
+                // (invalid HTML). `id` never enters key_values, so a bare `id`
+                // boolean (below) cannot leave a stale duplicate. Matches
+                // carve-php.
+                if attrs.id.is_none() {
+                    attrs.order.push(AttrSlot::Id);
+                }
+                attrs.id = Some(value);
+            } else {
+                if !attrs.key_values.contains_key(key) {
+                    attrs.order.push(AttrSlot::Key(key.to_string()));
+                }
+                attrs.key_values.insert(key.to_string(), value);
             }
-            attrs.key_values.insert(token, String::new());
+        } else if is_identifier(&token) {
+            if token == "id" {
+                // A bare boolean `id` also feeds the id slot (value ""), last-wins
+                // and single -- `{id id=j}` -> `id="j"`, `{id}` -> `id=""`.
+                if attrs.id.is_none() {
+                    attrs.order.push(AttrSlot::Id);
+                }
+                attrs.id = Some(String::new());
+            } else {
+                // Boolean attribute: a bare word with no value, rendered name="".
+                // (Matched last so `k=v` is a key/value, not a bare `k`.)
+                if !attrs.key_values.contains_key(&token) {
+                    attrs.order.push(AttrSlot::Key(token.clone()));
+                }
+                attrs.key_values.insert(token, String::new());
+            }
         } else {
             return None;
         }
@@ -2362,6 +2400,7 @@ fn apply_attrs_to_block(node: &mut BlockNode, attrs: Attrs) {
     match node {
         BlockNode::Heading(n) => n.attrs = Some(attrs),
         BlockNode::Paragraph(n) => n.attrs = Some(attrs),
+        BlockNode::ThematicBreak(n) => n.attrs = Some(attrs),
         BlockNode::CodeBlock(n) => n.attrs = Some(attrs),
         BlockNode::List(n) => n.attrs = Some(attrs),
         BlockNode::BlockQuote(n) => n.attrs = Some(attrs),
@@ -2390,6 +2429,40 @@ fn apply_attrs_to_inline(node: &mut InlineNode, attrs: Attrs) {
         InlineNode::Extension(n) => n.attrs = Some(attrs),
         _ => {}
     }
+}
+
+/// Merge an attribute block onto an inline node, accumulating classes (§15)
+/// instead of overwriting -- used for chained blocks (`[x]{.a}{.b}`).
+fn merge_attrs_into_inline(node: &mut InlineNode, attrs: Attrs) {
+    match node {
+        InlineNode::Emphasis(n) => merge_attrs(&mut n.attrs, attrs),
+        InlineNode::Link(n) => merge_attrs(&mut n.attrs, attrs),
+        InlineNode::Image(n) => merge_attrs(&mut n.attrs, attrs),
+        InlineNode::Span(n) => merge_attrs(&mut n.attrs, attrs),
+        InlineNode::Math(n) => merge_attrs(&mut n.attrs, attrs),
+        InlineNode::AutoLink(n) => merge_attrs(&mut n.attrs, attrs),
+        InlineNode::Extension(n) => merge_attrs(&mut n.attrs, attrs),
+        InlineNode::Code(_, a) => merge_attrs(a, attrs),
+        InlineNode::Footnote(n) => merge_attrs(&mut n.attrs, attrs),
+        _ => {}
+    }
+}
+
+/// Whether an inline node can carry an attribute block (so a following `{...}`
+/// attaches rather than staying literal). Text/raw nodes cannot.
+fn inline_is_attributable(node: &InlineNode) -> bool {
+    matches!(
+        node,
+        InlineNode::Emphasis(_)
+            | InlineNode::Link(_)
+            | InlineNode::Image(_)
+            | InlineNode::Span(_)
+            | InlineNode::Math(_)
+            | InlineNode::AutoLink(_)
+            | InlineNode::Extension(_)
+            | InlineNode::Code(_, _)
+            | InlineNode::Footnote(_)
+    )
 }
 
 fn try_extension_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<BlockNode> {
@@ -2541,6 +2614,33 @@ fn parse_inline_context(
                 out.push(node);
                 i += consumed;
                 continue;
+            }
+            // A standalone attribute block merges into the immediately preceding
+            // inline node, so adjacent blocks chain (`[x]{.a}{.b}`,
+            // `*x*{.a}{.b}` -> merged classes, §15). It must be GLUED: a
+            // non-empty `buf` means text (e.g. a space) sits between the node
+            // and the `{`, so the block stays literal. An empty/invalid `{...}`
+            // also stays literal. Matches carve-php / carve-js.
+            if buf.is_empty() && out.last().is_some_and(inline_is_attributable) {
+                if let Some((attrs, next)) = read_attrs_at(bytes, i) {
+                    let last = out.last_mut().unwrap();
+                    // A reference link carries `raw_ref` (its literal source) in
+                    // case it stays unresolved. Merge the block into the link's
+                    // attrs (used when it resolves) AND append the block's
+                    // literal text to `raw_ref` (used when it reverts), so a
+                    // resolved `[t][r]{.a}{.b}` gets class="a b" while an
+                    // unresolved `[t][missing]{.a}{.b}` keeps both blocks literal.
+                    if let InlineNode::Link(l) = last {
+                        if let Some(raw) = l.raw_ref.as_mut() {
+                            if let Ok(lit) = std::str::from_utf8(&bytes[i..next]) {
+                                raw.push_str(lit);
+                            }
+                        }
+                    }
+                    merge_attrs_into_inline(last, attrs);
+                    i = next;
+                    continue;
+                }
             }
         }
 
@@ -3129,9 +3229,24 @@ fn parse_span(
     }
     let (attrs, after_attrs) = read_attrs_at(bytes, after_bracket)
         .or_else(|| read_empty_attrs_at(bytes, after_bracket))?;
+    // Absorb a CHAIN of adjacent attribute blocks (`[x]{.a}{.b}` ->
+    // class="a b"), accumulating classes (§15). A non-attribute `{...}` (e.g.
+    // an empty `{}`) reads as None and is left literal, so `[x]{}{}` keeps the
+    // trailing `{}` -- matching carve-php / carve-js.
+    let mut attrs = Some(attrs);
+    let mut after_attrs = after_attrs;
+    while bytes.get(after_attrs) == Some(&b'{') {
+        match read_attrs_at(bytes, after_attrs) {
+            Some((more, next)) => {
+                merge_attrs(&mut attrs, more);
+                after_attrs = next;
+            }
+            None => break,
+        }
+    }
     Some((
         Span {
-            attrs: Some(attrs),
+            attrs,
             children: parse_inline_context(&content, options, false, in_footnote),
         },
         after_attrs - start,
@@ -3143,7 +3258,10 @@ fn read_empty_attrs_at(bytes: &[u8], start: usize) -> Option<(Attrs, usize)> {
         return None;
     }
     let mut i = start + 1;
-    while i < bytes.len() && bytes[i].is_ascii_whitespace() {
+    // Only space/tab between the braces -- a newline means it is not a
+    // single-line inline attribute block, so `[x]{\n}` stays literal (matching
+    // the read_attrs_at newline-bail and carve-js).
+    while i < bytes.len() && (bytes[i] == b' ' || bytes[i] == b'\t') {
         i += 1;
     }
     if bytes.get(i) == Some(&b'}') {

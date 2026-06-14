@@ -3,3 +3,6 @@ Cargo.lock
 .idea/
 .vscode/
 *.swp
+
+# stray local build artifact
+/check

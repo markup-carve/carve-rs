@@ -25,7 +25,7 @@ fn render_block(node: &BlockNode) -> String {
             format!("\"{}\"\n\n", render_blocks(&quote.children).trim())
         }
         BlockNode::List(list) => render_list(list),
-        BlockNode::ThematicBreak => "---\n\n".to_string(),
+        BlockNode::ThematicBreak(_) => "---\n\n".to_string(),
         BlockNode::Table(table) => render_table(table),
         BlockNode::Admonition(admonition) => {
             let body = render_blocks(&admonition.children);
