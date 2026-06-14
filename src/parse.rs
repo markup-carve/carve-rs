@@ -901,13 +901,20 @@ fn detect_unordered(line: &str) -> Option<(&str, Option<Attrs>)> {
 }
 
 fn detect_ordered(line: &str) -> Option<&str> {
-    detect_ordered_full(line).map(|(content, _, _, _)| content)
+    detect_ordered_full(line).map(|(content, _, _, _, _, _)| content)
 }
 
 #[allow(clippy::type_complexity)]
 fn detect_ordered_full(
     line: &str,
-) -> Option<(&str, Option<usize>, Option<OrderedListType>, Option<Attrs>)> {
+) -> Option<(
+    &str,
+    Option<usize>,
+    Option<OrderedListType>,
+    Option<Attrs>,
+    u8,
+    &str,
+)> {
     let bytes = line.as_bytes();
     let mut i = 0;
     while i < bytes.len() && (bytes[i] == b' ' || bytes[i] == b'\t') {
@@ -923,6 +930,7 @@ fn detect_ordered_full(
     if bytes.get(i) != Some(&b'.') && bytes.get(i) != Some(&b')') {
         return None;
     }
+    let delim = bytes[i];
     // The required space may be preceded by an abutting attribute block
     // (`3.{#x} item`); `marker_tail` enforces the space and rejects an
     // invalid block.
@@ -934,9 +942,14 @@ fn detect_ordered_full(
             marker.parse::<usize>().ok().filter(|n| *n != 1),
             None,
             attrs,
+            delim,
+            marker,
         ));
     }
-    if marker.len() == 1 {
+    // A single letter is ALPHA by default, EXCEPT a lone `i`/`I`, which defaults
+    // to roman (§11 ambiguous-letter rule; the list parser may re-classify
+    // either way when a consecutive sibling disambiguates).
+    if marker.len() == 1 && !marker.eq_ignore_ascii_case("i") {
         let b = marker.as_bytes()[0];
         if b.is_ascii_lowercase() {
             return Some((
@@ -944,6 +957,8 @@ fn detect_ordered_full(
                 Some((b - b'a' + 1) as usize).filter(|n| *n != 1),
                 Some(OrderedListType::LowerAlpha),
                 attrs,
+                delim,
+                marker,
             ));
         }
         if b.is_ascii_uppercase() {
@@ -952,6 +967,8 @@ fn detect_ordered_full(
                 Some((b - b'A' + 1) as usize).filter(|n| *n != 1),
                 Some(OrderedListType::UpperAlpha),
                 attrs,
+                delim,
+                marker,
             ));
         }
     }
@@ -965,6 +982,8 @@ fn detect_ordered_full(
             OrderedListType::LowerRoman
         }),
         attrs,
+        delim,
+        marker,
     ))
 }
 
@@ -1018,14 +1037,82 @@ fn detect_task(line: &str) -> Option<(bool, &str, Option<Attrs>)> {
     Some((checked, after[4..].trim_end(), attrs))
 }
 
+/// Lower-alpha index of a single letter (`a`=1 … `z`=26), case-insensitive.
+fn alpha_index(m: &str) -> Option<usize> {
+    if m.len() != 1 {
+        return None;
+    }
+    let b = m.as_bytes()[0].to_ascii_lowercase();
+    (b.is_ascii_lowercase()).then(|| (b - b'a' + 1) as usize)
+}
+
+/// Resolve the §11 ambiguous-letter tie-break for an ordered list's FIRST
+/// marker, returning its `(start, ol_type)`. A single roman-letter marker
+/// (i/v/x/l/c/d/m) is reclassified to ROMAN when the next sibling is the
+/// consecutive roman numeral, to ALPHA when the next is the consecutive letter;
+/// otherwise the detector's default stands (lone `i`/`I` roman, others alpha).
+fn resolve_ordered_first(
+    first: &ListMarker<'_>,
+    cur: &LineCursor,
+    base_indent: usize,
+) -> (Option<usize>, Option<OrderedListType>) {
+    if !first.ordered || !is_ambiguous_roman_letter(first.marker) {
+        return (first.start, first.ol_type);
+    }
+    // Find the next sibling ordered marker at the same indent, skipping the
+    // first item's own body (blank lines and lines indented past the base).
+    let mut sibling = None;
+    for l in &cur.lines[cur.pos + 1..] {
+        if l.trim().is_empty() {
+            continue;
+        }
+        if indent_columns(l) > base_indent {
+            continue; // part of the first item's body
+        }
+        sibling = detect_list_marker_full(l).filter(|m| m.ordered && m.indent == base_indent);
+        break;
+    }
+    let upper = first.marker.chars().all(|c| c.is_ascii_uppercase());
+    let roman_type = if upper {
+        OrderedListType::UpperRoman
+    } else {
+        OrderedListType::LowerRoman
+    };
+    let alpha_type = if upper {
+        OrderedListType::UpperAlpha
+    } else {
+        OrderedListType::LowerAlpha
+    };
+    if let Some(sib) = sibling {
+        let first_roman = roman_to_int(first.marker);
+        let sib_roman = roman_to_int(sib.marker).filter(|_| !sib.marker.is_empty());
+        if let (Some(fr), Some(sr)) = (first_roman, sib_roman) {
+            // sibling is itself a roman-shaped marker and the consecutive value
+            if sr == fr + 1 {
+                return (Some(fr).filter(|n| *n != 1), Some(roman_type));
+            }
+        }
+        if let (Some(fa), Some(sa)) = (alpha_index(first.marker), alpha_index(sib.marker)) {
+            if sa == fa + 1 {
+                return (Some(fa).filter(|n| *n != 1), Some(alpha_type));
+            }
+        }
+    }
+    (first.start, first.ol_type)
+}
+
 fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     let first = cur.peek().unwrap();
     let first_marker = detect_list_marker_full(first).unwrap();
     let base_indent = first_marker.indent;
     let is_task = first_marker.checked.is_some();
     let is_ordered = first_marker.ordered;
-    let start = first_marker.start;
-    let ol_type = first_marker.ol_type;
+    // §11 ambiguous-letter tie-break: a single roman-letter first marker is
+    // roman or alpha depending on its consecutive sibling. Resolve it against
+    // the next sibling marker before fixing the list's type.
+    let (start, ol_type) = resolve_ordered_first(&first_marker, cur, base_indent);
+    let first_delim = first_marker.delim;
+    let first_dialect = ol_dialect(ol_type);
     let mut items: Vec<ListItem> = Vec::new();
     let mut tight = true;
     let mut pending_blank = false;
@@ -1101,6 +1188,18 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             break;
         }
         if marker.ordered != is_ordered || marker.checked.is_some() != is_task {
+            break;
+        }
+        // §11: an ordered item whose delimiter (`.` vs `)`) or dialect family
+        // (decimal / alpha / roman, case included) differs from the list's first
+        // item starts a NEW sibling list. Skip the FIRST item: its own detected
+        // dialect may differ from the list's resolved (tie-broken) dialect
+        // (`v.` detects alpha but the list is roman), and it can never split
+        // from itself.
+        if is_ordered
+            && !items.is_empty()
+            && (marker.delim != first_delim || !dialect_compatible(first_dialect, &marker))
+        {
             break;
         }
         if pending_blank {
@@ -1210,6 +1309,57 @@ struct ListMarker<'a> {
     ol_type: Option<OrderedListType>,
     content: &'a str,
     attrs: Option<Attrs>,
+    /// Ordered-marker delimiter (`.` or `)`); `None` for bullets/tasks. A change
+    /// in delimiter starts a new sibling list (§11).
+    delim: Option<u8>,
+    /// The raw ordered marker text (`i`, `iv`, `3`, `b`); used to re-classify an
+    /// ambiguous single roman-letter via its sibling (§11 tie-break).
+    marker: &'a str,
+}
+
+/// Coarse ordered-list dialect family for the §11 same-list test: decimal,
+/// alphabetic, or roman (case included). A change splits the list.
+#[derive(PartialEq, Eq, Clone, Copy)]
+enum OlDialect {
+    Decimal,
+    Alpha(bool),
+    Roman(bool),
+}
+
+fn ol_dialect(ol_type: Option<OrderedListType>) -> OlDialect {
+    match ol_type {
+        None => OlDialect::Decimal,
+        Some(OrderedListType::LowerAlpha) => OlDialect::Alpha(false),
+        Some(OrderedListType::UpperAlpha) => OlDialect::Alpha(true),
+        Some(OrderedListType::LowerRoman) => OlDialect::Roman(false),
+        Some(OrderedListType::UpperRoman) => OlDialect::Roman(true),
+    }
+}
+
+/// Does an ordered `marker` keep the list's dialect (no §11 dialect split)? A
+/// non-ambiguous marker must match the family exactly; an ambiguous single
+/// roman-letter is compatible with EITHER a roman or an alpha list of the same
+/// case (it continues as that dialect), but never a decimal list.
+fn dialect_compatible(first: OlDialect, marker: &ListMarker<'_>) -> bool {
+    if is_ambiguous_roman_letter(marker.marker) {
+        let upper = marker.marker.chars().all(|c| c.is_ascii_uppercase());
+        match first {
+            OlDialect::Roman(u) | OlDialect::Alpha(u) => u == upper,
+            OlDialect::Decimal => false,
+        }
+    } else {
+        ol_dialect(marker.ol_type) == first
+    }
+}
+
+/// Is `m` a single roman-letter marker (i/v/x/l/c/d/m, either case)? Such a
+/// marker is dialect-AMBIGUOUS: roman or alpha depending on its sibling (§11).
+fn is_ambiguous_roman_letter(m: &str) -> bool {
+    m.len() == 1
+        && matches!(
+            m.to_ascii_lowercase().as_str(),
+            "i" | "v" | "x" | "l" | "c" | "d" | "m"
+        )
 }
 
 fn detect_list_marker_full(line: &str) -> Option<ListMarker<'_>> {
@@ -1223,9 +1373,11 @@ fn detect_list_marker_full(line: &str) -> Option<ListMarker<'_>> {
             ol_type: None,
             content,
             attrs,
+            delim: None,
+            marker: "",
         });
     }
-    if let Some((content, start, ol_type, attrs)) = detect_ordered_full(line) {
+    if let Some((content, start, ol_type, attrs, delim, marker)) = detect_ordered_full(line) {
         return Some(ListMarker {
             indent,
             ordered: true,
@@ -1234,6 +1386,8 @@ fn detect_list_marker_full(line: &str) -> Option<ListMarker<'_>> {
             ol_type,
             content,
             attrs,
+            delim: Some(delim),
+            marker,
         });
     }
     if let Some((content, attrs)) = detect_unordered(line) {
@@ -1245,6 +1399,8 @@ fn detect_list_marker_full(line: &str) -> Option<ListMarker<'_>> {
             ol_type: None,
             content,
             attrs,
+            delim: None,
+            marker: "",
         });
     }
     None
