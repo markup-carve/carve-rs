@@ -1185,6 +1185,42 @@ fn resolve_ordered_first(
     (first.start, first.ol_type)
 }
 
+/// Parse ONE block attached by a list `+` continuation marker, bounded to the
+/// lines before the next lone `+` marker at the item's base indent. The scan is
+/// fence-aware -- a `+` inside a nested fenced code block is content, not a
+/// boundary -- so a greedy block (e.g. a block quote's lazy continuation)
+/// cannot swallow the following `+` and its block. `- a / + / >q1 / + / >q2`
+/// then yields two separate quotes. Advances `cur` by the lines consumed.
+fn parse_continuation_block(
+    cur: &mut LineCursor,
+    options: &Options<'_>,
+    base_indent: usize,
+) -> Option<BlockNode> {
+    let mut end = cur.pos;
+    let mut in_fence: Option<FenceOpen> = None;
+    while end < cur.lines.len() {
+        let line = cur.lines[end];
+        if let Some(open) = in_fence {
+            if is_fence_close(line, open) {
+                in_fence = None;
+            }
+        } else if let Some(open) = detect_fence_open(line) {
+            in_fence = Some(open);
+        } else if end > cur.pos && line.trim() == "+" && indent_columns(line) == base_indent {
+            break;
+        }
+        end += 1;
+    }
+    let slice: Vec<&str> = cur.lines[cur.pos..end].to_vec();
+    let mut sub = LineCursor {
+        lines: &slice,
+        pos: 0,
+    };
+    let block = parse_block(&mut sub, options);
+    cur.pos += sub.pos;
+    block
+}
+
 fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     let first = cur.peek().unwrap();
     let first_marker = detect_list_marker_full(first).unwrap();
@@ -1219,7 +1255,7 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         if line.trim() == "+" && indent_columns(line) == base_indent {
             cur.consume();
             pending_blank = false;
-            if let Some(block) = parse_block(cur, options) {
+            if let Some(block) = parse_continuation_block(cur, options, base_indent) {
                 if let Some(last) = items.last_mut() {
                     last.children.push(block);
                 }
@@ -1313,7 +1349,7 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 checked: marker.checked,
                 children: Vec::new(),
             };
-            if let Some(block) = parse_block(cur, options) {
+            if let Some(block) = parse_continuation_block(cur, options, base_indent) {
                 item.children.push(block);
             }
             items.push(item);

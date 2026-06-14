@@ -142,6 +142,21 @@ fn lone_plus_outside_a_list_stays_quote_prose() {
 }
 
 #[test]
+fn consecutive_plus_continuations_attach_separate_blocks() {
+    // Each `+` attaches its own block, bounded to the lines before the next `+`
+    // marker, so two quotes stay separate (matching carve-js / carve-php).
+    let two_quotes = |s: &str| carve::to_html(s).matches("<blockquote>").count() == 2;
+    assert!(two_quotes("- a\n+\n>q1\n+\n>q2"));
+    // first-block form `- +` is bounded the same way.
+    assert!(two_quotes("- +\n>q1\n+\n>q2"));
+    // the bounding is fence-aware: a `+` INSIDE a fenced code block is content,
+    // so the whole fence (with its `+` line) is one attached code block.
+    let html = carve::to_html("- a\n+\n```\n+\n```");
+    assert_eq!(html.matches("<pre>").count(), 1);
+    assert!(html.contains("+"));
+}
+
+#[test]
 fn smart_quotes_track_state_across_emphasis() {
     // The closing `"` sits INSIDE an emphasis span; the running quote state must
     // carry across the span so it renders as a closing curly quote, not another
