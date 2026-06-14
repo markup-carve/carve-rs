@@ -546,13 +546,26 @@ fn is_comment_fence_line(line: &str) -> bool {
 }
 
 fn detect_thematic_break(line: &str) -> bool {
+    // 3+ of the SAME `-`/`*`/`_`, optionally separated by spaces/tabs, with
+    // nothing else on the line (`---`, `- - -`, `* * *`). Matches carve-js,
+    // carve-php, and canonical djot. A mixed run (`-*-`) is not a break.
     let trimmed = line.trim();
-    if trimmed.len() < 3 {
-        return false;
+    for marker in [b'-', b'*', b'_'] {
+        let mut count = 0usize;
+        let mut only_marker_and_space = true;
+        for &b in trimmed.as_bytes() {
+            if b == marker {
+                count += 1;
+            } else if b != b' ' && b != b'\t' {
+                only_marker_and_space = false;
+                break;
+            }
+        }
+        if only_marker_and_space && count >= 3 {
+            return true;
+        }
     }
-    trimmed.bytes().all(|b| b == b'-')
-        || trimmed.bytes().all(|b| b == b'*')
-        || trimmed.bytes().all(|b| b == b'_')
+    false
 }
 
 #[derive(Debug, Clone, Copy)]
