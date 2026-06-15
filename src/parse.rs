@@ -1210,11 +1210,20 @@ fn parse_continuation_block(
     // unbounded. (Code / colon fences are handled INSIDE the scan: a fence with
     // a matching closer is skipped so its inner `+` is content, while an
     // unterminated one is not, so a following `+` still bounds the block.)
-    if cur
-        .peek()
-        .is_some_and(|line| detect_list_marker_full(line).is_some())
-    {
-        return parse_block(cur, options);
+    if let Some(line) = cur.peek() {
+        if let Some(nm) = detect_list_marker_full(line) {
+            // A marker indented past the base nests as a child list of THIS
+            // item, so parse it unbounded (it manages its own `+`). But a
+            // marker AT or BELOW the outer base column is a SIBLING of the
+            // outer list, not content of this `+`-attached block: bound the
+            // block to empty so the outer list takes the marker as a sibling
+            // item rather than nesting it (matches carve-php for `+`-then-
+            // marker, e.g. `- a / + / text / + / - b`).
+            if nm.indent > base_indent {
+                return parse_block(cur, options);
+            }
+            return None;
+        }
     }
     let mut end = cur.pos;
     let mut in_fence: Option<FenceOpen> = None;
@@ -1324,7 +1333,18 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                     break;
                 }
                 if let Some(last) = items.last_mut() {
-                    let nested = collect_indented_block(cur, base_indent, content_col);
+                    let mut nested = collect_indented_block(cur, base_indent, content_col);
+                    // A heading folds its trailing plain text as continuation
+                    // (PART 2 headings). When the indented block ends in a
+                    // heading and the next lines are flush-left lazy text, pull
+                    // them in so the heading parser folds them into the heading
+                    // rather than the list ending and the text floating to the
+                    // top level (matches carve-php). Only headings fold this
+                    // way: a code block or table keeps its trailing text as a
+                    // separate top-level block, so the guard is heading-only.
+                    if !pending_blank && nested_ends_with_heading(&nested, options) {
+                        collect_trailing_lazy(cur, &mut nested);
+                    }
                     let nested_children = parse_blocks_with_options(&nested, options);
                     // A blank before an indented sub-block loosens only when it
                     // is a genuine second paragraph (#74 compact list blocks).
@@ -1582,6 +1602,16 @@ fn detect_list_marker_full(line: &str) -> Option<ListMarker<'_>> {
 /// blank line, a list marker, or a block-opener). Appended at column 0 so the
 /// recursive parse folds them into the DEEPEST open item, matching carve-js and
 /// carve-php (`- a` / `  - b` / `lazy` -> `<li>b lazy</li>`).
+/// Whether the collected nested block ends in a heading. Used to decide if
+/// flush-left lazy text following an indented heading-in-item should fold into
+/// the heading (heading continuation) rather than ending the item.
+fn nested_ends_with_heading(nested: &str, options: &Options<'_>) -> bool {
+    matches!(
+        parse_blocks_with_options(nested, options).last(),
+        Some(BlockNode::Heading(_))
+    )
+}
+
 fn collect_trailing_lazy(cur: &mut LineCursor, nested: &mut String) {
     while let Some(line) = cur.peek() {
         if line.trim().is_empty()
