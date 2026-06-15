@@ -722,12 +722,16 @@ fn render_table(out: &mut String, t: &Table, level: usize, options: &Options<'_>
         .count();
     let has_header = header_count > 0;
     let body_start = header_count;
+    // Computed once over ALL rows: a `^` in a body row extends the cell above
+    // it even when that cell is in a header row, so a header cell can carry a
+    // rowspan that crosses the thead/tbody boundary (matches carve-js).
+    let rowspan_cols = compute_rowspans(t);
     if has_header {
         out.push('\n');
         indent(out, level + 1);
         out.push_str("<thead>");
-        for header in &t.rows[..header_count] {
-            render_table_row(out, header, true, options);
+        for (row_idx, header) in t.rows[..header_count].iter().enumerate() {
+            render_table_row(out, header, true, options, row_idx, &rowspan_cols);
         }
         out.push_str("</thead>");
     }
@@ -737,7 +741,6 @@ fn render_table(out: &mut String, t: &Table, level: usize, options: &Options<'_>
         out.push('\n');
         indent(out, level + 1);
         out.push_str("<tbody>");
-        let rowspan_cols = compute_rowspans(t);
         for (row_idx, row) in t.rows.iter().enumerate().skip(body_start) {
             out.push('\n');
             indent(out, level + 2);
@@ -752,20 +755,43 @@ fn render_table(out: &mut String, t: &Table, level: usize, options: &Options<'_>
     out.push_str("</table>");
 }
 
-fn render_table_row(out: &mut String, row: &TableRow, header_row: bool, options: &Options<'_>) {
+fn render_table_row(
+    out: &mut String,
+    row: &TableRow,
+    header_row: bool,
+    options: &Options<'_>,
+    row_idx: usize,
+    rowspan_cols: &BTreeMap<(usize, usize), usize>,
+) {
     out.push_str(&format!("<tr{}>", render_attrs(&row.attrs)));
     for (col, cell) in row.cells.iter().enumerate() {
+        // A `^` cell merges into the cell above (its rowspan was counted in
+        // compute_rowspans); it renders nothing of its own.
+        if cell.span == Some(TableCellSpan::Rowspan) {
+            continue;
+        }
         let tag = if header_row || cell.header {
             "th"
         } else {
             "td"
         };
+        let mut extra = String::new();
+        let mut emitted: Vec<&str> = Vec::new();
+        // A header cell can carry a rowspan that extends down into the body
+        // (a `^` below it), so the header row emits it too -- not just bodies.
+        if let Some(span) = rowspan_cols.get(&(row_idx, col)) {
+            extra.push_str(&format!(" rowspan=\"{}\"", span));
+            emitted.push("rowspan");
+        }
         let align = render_align_attr(cell.align.or_else(|| row_align(row, col)));
-        let emitted: &[&str] = if align.is_empty() { &[] } else { &["style"] };
+        if !align.is_empty() {
+            emitted.push("style");
+        }
         out.push_str(&format!(
-            "<{}{}{}>",
+            "<{}{}{}{}>",
             tag,
-            render_cell_author_attrs(&cell.attrs, emitted),
+            render_cell_author_attrs(&cell.attrs, &emitted),
+            extra,
             align
         ));
         render_inlines(out, &cell.children, options);
