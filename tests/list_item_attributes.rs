@@ -76,11 +76,11 @@ fn bare_marker_with_no_content_is_not_a_list() {
 }
 
 #[test]
-fn attributed_bullet_interrupts_a_paragraph() {
-    // An attributed bullet with no preceding blank line interrupts the open
-    // paragraph, like a plain bullet and an attributed task item (§10).
+fn attributed_bullet_folds_into_a_paragraph() {
+    // Symmetric §10: an attributed bullet does NOT interrupt an open paragraph
+    // (like a plain bullet); with no preceding blank line it folds in.
     assert_eq!(
         carve::to_html("para\n-{.c} item"),
-        "<p>para</p>\n<ul>\n  <li class=\"c\">item</li>\n</ul>"
+        "<p>para\n-{.c} item</p>"
     );
 }

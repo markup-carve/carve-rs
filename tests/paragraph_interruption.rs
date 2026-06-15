@@ -1,8 +1,9 @@
-//! Paragraph interruption (grammar §10, post-Markdown default): a VISIBLE block
-//! interrupts an open paragraph with no blank line, at the top level and nested.
-//! Ordered lists do not interrupt, `+` is the continuation marker not a bullet,
-//! and a bare image stays inline. Invisible constructs (comments, abbreviation
-//! definitions) interrupt as before.
+//! Paragraph interruption (grammar §10): a VISIBLE block interrupts an open
+//! paragraph with no blank line, at the top level and nested. Symmetric rule: a
+//! LIST marker (bullet, task, or ordered) does NOT interrupt -- a list needs a
+//! blank line and otherwise folds in; `+` is the continuation marker not a
+//! bullet, and a bare image stays inline. Invisible constructs (comments,
+//! abbreviation definitions) interrupt as before.
 
 fn html(src: &str) -> String {
     carve::to_html(src).trim().to_string()
@@ -56,11 +57,10 @@ fn table_interrupts() {
 }
 
 #[test]
-fn unordered_list_interrupts() {
-    assert_eq!(
-        html("text\n- a\n- b"),
-        "<p>text</p>\n<ul>\n  <li>a</li>\n  <li>b</li>\n</ul>"
-    );
+fn unordered_list_folds_without_blank_line() {
+    // Symmetric §10: a bullet does not interrupt a paragraph (needs a blank
+    // line), so the bullet lines fold in as lazy continuation.
+    assert_eq!(html("text\n- a\n- b"), "<p>text\n- a\n- b</p>");
 }
 
 // --- Top level: these do NOT interrupt ---
@@ -135,13 +135,10 @@ fn fence_interrupts_inside_admonition() {
 }
 
 #[test]
-fn tab_indented_bullet_interrupts_paragraph() {
-    // Rule B: a bullet opens a list at any indentation, so a tab-indented one
-    // interrupts an open paragraph (matches a space-indented bullet).
-    assert_eq!(
-        html("text\n\t- item"),
-        "<p>text</p>\n<ul>\n  <li>item</li>\n</ul>"
-    );
+fn tab_indented_bullet_folds_into_paragraph() {
+    // Symmetric §10: a bullet does not interrupt a paragraph regardless of
+    // indentation (tab or spaces); with no blank line it folds in.
+    assert_eq!(html("text\n\t- item"), "<p>text\n- item</p>");
 }
 
 #[test]
