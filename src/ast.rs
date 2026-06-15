@@ -118,6 +118,8 @@ pub struct Table {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TableRow {
     pub cells: Vec<TableCell>,
+    /// Row-level attributes from a `{...}` block glued to the closing pipe.
+    pub attrs: Option<Attrs>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
