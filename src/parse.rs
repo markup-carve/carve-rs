@@ -1373,7 +1373,32 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             }
             if let Some(last) = items.last_mut() {
                 let mut nested = collect_indented_block(cur, base_indent, content_col);
-                collect_trailing_lazy(cur, &mut nested);
+                // A trailing lazy line folds into the sublist's deepest item, but
+                // it must not sever the sublist: if a marker (or block) still
+                // indented past the base follows the lazy line, it resumes the
+                // SAME sublist. Alternate lazy/indented collection so the whole
+                // sublist parses in one recursion rather than re-opening a fresh
+                // list (which would emit a stray `<ol start="N">`).
+                loop {
+                    let before = cur.pos;
+                    collect_trailing_lazy(cur, &mut nested);
+                    if cur.pos == before {
+                        break;
+                    }
+                    match cur.peek() {
+                        Some(next)
+                            if !next.trim().is_empty() && indent_columns(next) > base_indent =>
+                        {
+                            let more = collect_indented_block(cur, base_indent, content_col);
+                            if more.is_empty() {
+                                break;
+                            }
+                            nested.push('\n');
+                            nested.push_str(&more);
+                        }
+                        _ => break,
+                    }
+                }
                 let nested_children = parse_blocks_with_options(&nested, options);
                 last.children.extend(nested_children);
                 continue;
