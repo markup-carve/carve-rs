@@ -20,23 +20,37 @@ pub fn render_html_with_options(doc: &Document, options: &Options<'_>) -> String
     let mut html = render_document_blocks(doc.children.as_slice(), options, &mut state);
     if !footnotes.is_empty() {
         html.push('\n');
-        html.push_str(&render_footnotes_section(&doc, &footnotes, options));
+        html.push_str(&render_footnotes_section(
+            &doc, &footnotes, options, &mut state,
+        ));
     }
     html
 }
 
+// Entry point for `RenderContext::render_blocks` (the extension render helper).
+// KNOWN LIMITATION: this starts a fresh heading-id counter, so headings inside
+// blocks rendered by a custom block extension are numbered independently of the
+// surrounding document (a collision can repeat an id). The common path -- the
+// fallback `<div>` rendering in render_block_extension -- already threads the
+// document `state`, so only an extension that explicitly re-renders child
+// headings via this helper is affected. Sharing the live counter would require
+// threading mutable state through the extension RenderContext, which is a
+// cross-impl extension-API change (carve-js resolves heading ids in a separate
+// pass that likewise does not descend into extension nodes); deferred until that
+// is coordinated across implementations.
 pub(crate) fn render_blocks_with_options(nodes: &[BlockNode], options: &Options<'_>) -> String {
-    render_blocks(nodes, options)
+    let mut state = RenderState::default();
+    render_blocks(nodes, options, &mut state)
 }
 
-fn render_blocks(nodes: &[BlockNode], options: &Options<'_>) -> String {
+fn render_blocks(nodes: &[BlockNode], options: &Options<'_>, state: &mut RenderState) -> String {
     let mut out = String::new();
     let mut first = true;
     for block in nodes {
         if !first {
             out.push('\n');
         }
-        render_block(&mut out, block, 0, options);
+        render_block(&mut out, block, 0, options, state);
         first = false;
     }
     out
@@ -62,7 +76,7 @@ fn render_document_blocks(
         if matches!(nodes[i], BlockNode::Heading(_)) {
             i = render_section(&mut out, nodes, i, 0, options, state);
         } else {
-            render_block(&mut out, &nodes[i], 0, options);
+            render_block(&mut out, &nodes[i], 0, options, state);
             i += 1;
         }
         first = false;
@@ -278,6 +292,7 @@ fn render_footnotes_section(
     doc: &Document,
     footnotes: &[FootnoteEntry],
     options: &Options<'_>,
+    state: &mut RenderState,
 ) -> String {
     let mut out = String::new();
     out.push_str("<section role=\"doc-endnotes\">\n  <hr>\n  <ol>");
@@ -296,7 +311,7 @@ fn render_footnotes_section(
                 for (block_idx, block) in blocks.iter().enumerate() {
                     out.push('\n');
                     let mut rendered = String::new();
-                    render_block(&mut rendered, block, 3, options);
+                    render_block(&mut rendered, block, 3, options, state);
                     if block_idx + 1 == blocks.len() {
                         let backlink = render_backlinks(&entry.backrefs);
                         if let Some(pos) = rendered.rfind("</p>") {
@@ -365,7 +380,7 @@ fn render_section(
             continue;
         }
         out.push('\n');
-        render_block(out, &nodes[i], level + 1, options);
+        render_block(out, &nodes[i], level + 1, options, state);
         i += 1;
     }
     out.push('\n');
@@ -380,18 +395,24 @@ fn indent(out: &mut String, level: usize) {
     }
 }
 
-fn render_block(out: &mut String, node: &BlockNode, level: usize, options: &Options<'_>) {
+fn render_block(
+    out: &mut String,
+    node: &BlockNode,
+    level: usize,
+    options: &Options<'_>,
+    state: &mut RenderState,
+) {
     match node {
-        BlockNode::Heading(h) => render_heading(out, h, level, options),
+        BlockNode::Heading(h) => render_heading(out, h, level, options, state),
         BlockNode::Paragraph(p) => render_paragraph(out, p, level, options),
         BlockNode::CodeBlock(c) => render_code_block(out, c, level),
-        BlockNode::List(l) => render_list(out, l, level, options),
-        BlockNode::BlockQuote(b) => render_blockquote(out, b, level, options),
+        BlockNode::List(l) => render_list(out, l, level, options, state),
+        BlockNode::BlockQuote(b) => render_blockquote(out, b, level, options, state),
         BlockNode::Table(t) => render_table(out, t, level, options),
-        BlockNode::Admonition(a) => render_admonition(out, a, level, options),
-        BlockNode::Div(d) => render_div(out, d, level, options),
-        BlockNode::DefinitionList(d) => render_definition_list(out, d, level, options),
-        BlockNode::Figure(f) => render_figure(out, f, level, options),
+        BlockNode::Admonition(a) => render_admonition(out, a, level, options, state),
+        BlockNode::Div(d) => render_div(out, d, level, options, state),
+        BlockNode::DefinitionList(d) => render_definition_list(out, d, level, options, state),
+        BlockNode::Figure(f) => render_figure(out, f, level, options, state),
         BlockNode::AbbreviationDef(_) => {}
         BlockNode::RawBlock(r) => {
             if r.format == "html" {
@@ -400,7 +421,7 @@ fn render_block(out: &mut String, node: &BlockNode, level: usize, options: &Opti
             }
         }
         BlockNode::Comment(_) => {}
-        BlockNode::Extension(e) => render_block_extension(out, e, level, options),
+        BlockNode::Extension(e) => render_block_extension(out, e, level, options, state),
         BlockNode::BlockImage(img) => {
             indent(out, level);
             render_image(out, img);
@@ -412,9 +433,24 @@ fn render_block(out: &mut String, node: &BlockNode, level: usize, options: &Opti
     }
 }
 
-fn render_heading(out: &mut String, h: &Heading, level: usize, options: &Options<'_>) {
+fn render_heading(
+    out: &mut String,
+    h: &Heading,
+    level: usize,
+    options: &Options<'_>,
+    state: &mut RenderState,
+) {
+    // A heading rendered here is nested inside another block (list item,
+    // blockquote, div, ...). Unlike a top-level heading it carries no
+    // `<section>` wrapper, so it must emit its slug id directly on the tag
+    // (matching carve-php). The id is allocated from the same document-order
+    // counter as top-level headings, so duplicate slugs are numbered
+    // consistently across nesting levels.
+    let id = next_heading_id(h, state);
     indent(out, level);
-    out.push_str(&format!("<h{}{}>", h.level, render_attrs(&h.attrs)));
+    out.push_str(&format!("<h{} id=\"{}\"", h.level, escape_attr(&id)));
+    out.push_str(&render_attrs_without_id(&h.attrs));
+    out.push('>');
     render_inlines(out, &h.children, options);
     out.push_str(&format!("</h{}>", h.level));
 }
@@ -524,7 +560,13 @@ fn render_code_block(out: &mut String, c: &CodeBlock, level: usize) {
     out.push_str("\n</code></pre>");
 }
 
-fn render_list(out: &mut String, l: &List, level: usize, options: &Options<'_>) {
+fn render_list(
+    out: &mut String,
+    l: &List,
+    level: usize,
+    options: &Options<'_>,
+    state: &mut RenderState,
+) {
     indent(out, level);
     let tag = if l.ordered { "ol" } else { "ul" };
     let mut extra = render_attrs(&l.attrs);
@@ -547,7 +589,7 @@ fn render_list(out: &mut String, l: &List, level: usize, options: &Options<'_>) 
         if i > 0 {
             out.push('\n');
         }
-        render_list_item(out, item, level + 1, l.tight, options);
+        render_list_item(out, item, level + 1, l.tight, options, state);
     }
     out.push('\n');
     indent(out, level);
@@ -560,6 +602,7 @@ fn render_list_item(
     level: usize,
     tight: bool,
     options: &Options<'_>,
+    state: &mut RenderState,
 ) {
     indent(out, level);
     out.push_str(&format!("<li{}>", render_attrs(&item.attrs)));
@@ -582,7 +625,7 @@ fn render_list_item(
             render_inlines(out, &p.children, options);
             for child in item.children.iter().skip(1) {
                 out.push('\n');
-                render_block(out, child, level + 1, options);
+                render_block(out, child, level + 1, options, state);
             }
             out.push('\n');
             indent(out, level);
@@ -607,7 +650,7 @@ fn render_list_item(
             out.push_str("</p>");
             for child in item.children.iter().skip(1) {
                 out.push('\n');
-                render_block(out, child, level + 1, options);
+                render_block(out, child, level + 1, options, state);
             }
             out.push('\n');
             indent(out, level);
@@ -622,7 +665,7 @@ fn render_list_item(
         if !first {
             out.push('\n');
         }
-        render_block(out, child, level + 1, options);
+        render_block(out, child, level + 1, options, state);
         first = false;
     }
     out.push('\n');
@@ -630,7 +673,13 @@ fn render_list_item(
     out.push_str("</li>");
 }
 
-fn render_blockquote(out: &mut String, b: &BlockQuote, level: usize, options: &Options<'_>) {
+fn render_blockquote(
+    out: &mut String,
+    b: &BlockQuote,
+    level: usize,
+    options: &Options<'_>,
+    state: &mut RenderState,
+) {
     indent(out, level);
     if b.children.len() == 1 {
         if let BlockNode::Paragraph(p) = &b.children[0] {
@@ -646,7 +695,7 @@ fn render_blockquote(out: &mut String, b: &BlockQuote, level: usize, options: &O
         if !first {
             out.push('\n');
         }
-        render_block(out, child, level + 1, options);
+        render_block(out, child, level + 1, options, state);
         first = false;
     }
     out.push('\n');
@@ -853,7 +902,13 @@ fn compute_rowspans(t: &Table) -> BTreeMap<(usize, usize), usize> {
     spans
 }
 
-fn render_admonition(out: &mut String, a: &Admonition, level: usize, options: &Options<'_>) {
+fn render_admonition(
+    out: &mut String,
+    a: &Admonition,
+    level: usize,
+    options: &Options<'_>,
+    state: &mut RenderState,
+) {
     let canonical = matches!(
         a.kind.as_str(),
         "note" | "tip" | "warning" | "danger" | "info" | "success" | "example" | "quote"
@@ -892,19 +947,25 @@ fn render_admonition(out: &mut String, a: &Admonition, level: usize, options: &O
     }
     for child in &a.children {
         out.push('\n');
-        render_block(out, child, level + 1, options);
+        render_block(out, child, level + 1, options, state);
     }
     out.push('\n');
     indent(out, level);
     out.push_str(if canonical { "</aside>" } else { "</div>" });
 }
 
-fn render_div(out: &mut String, d: &Div, level: usize, options: &Options<'_>) {
+fn render_div(
+    out: &mut String,
+    d: &Div,
+    level: usize,
+    options: &Options<'_>,
+    state: &mut RenderState,
+) {
     indent(out, level);
     out.push_str(&format!("<div{}>", render_attrs(&d.attrs)));
     for child in &d.children {
         out.push('\n');
-        render_block(out, child, level + 1, options);
+        render_block(out, child, level + 1, options, state);
     }
     out.push('\n');
     indent(out, level);
@@ -916,6 +977,7 @@ fn render_definition_list(
     d: &DefinitionList,
     level: usize,
     options: &Options<'_>,
+    _state: &mut RenderState,
 ) {
     indent(out, level);
     out.push_str(&format!("<dl{}>", render_attrs(&d.attrs)));
@@ -944,7 +1006,13 @@ fn render_definition_list(
     out.push_str("</dl>");
 }
 
-fn render_figure(out: &mut String, f: &Figure, level: usize, options: &Options<'_>) {
+fn render_figure(
+    out: &mut String,
+    f: &Figure,
+    level: usize,
+    options: &Options<'_>,
+    state: &mut RenderState,
+) {
     indent(out, level);
     out.push_str(&format!("<figure{}>", render_attrs(&f.attrs)));
     out.push('\n');
@@ -953,14 +1021,22 @@ fn render_figure(out: &mut String, f: &Figure, level: usize, options: &Options<'
             indent(out, level + 1);
             render_image(out, img);
         }
-        FigureTarget::BlockQuote(b) => render_blockquote(out, b, level + 1, options),
+        FigureTarget::BlockQuote(b) => render_blockquote(out, b, level + 1, options, state),
         FigureTarget::Table(t) => render_table(out, t, level + 1, options),
-        FigureTarget::CodeBlock(cb) => {
-            render_block(out, &BlockNode::CodeBlock(cb.clone()), level + 1, options)
-        }
-        FigureTarget::Paragraph(p) => {
-            render_block(out, &BlockNode::Paragraph(p.clone()), level + 1, options)
-        }
+        FigureTarget::CodeBlock(cb) => render_block(
+            out,
+            &BlockNode::CodeBlock(cb.clone()),
+            level + 1,
+            options,
+            state,
+        ),
+        FigureTarget::Paragraph(p) => render_block(
+            out,
+            &BlockNode::Paragraph(p.clone()),
+            level + 1,
+            options,
+            state,
+        ),
     }
     out.push('\n');
     indent(out, level + 1);
@@ -977,6 +1053,7 @@ fn render_block_extension(
     node: &BlockExtension,
     level: usize,
     options: &Options<'_>,
+    state: &mut RenderState,
 ) {
     let ctx = RenderContext::new(options);
     for ext in &options.extensions {
@@ -995,7 +1072,7 @@ fn render_block_extension(
             if !first {
                 out.push('\n');
             }
-            render_block(out, child, level + 1, options);
+            render_block(out, child, level + 1, options, state);
             first = false;
         }
         out.push('\n');
