@@ -765,11 +765,6 @@ fn render_table_row(
 ) {
     out.push_str(&format!("<tr{}>", render_attrs(&row.attrs)));
     for (col, cell) in row.cells.iter().enumerate() {
-        // A `^` cell merges into the cell above (its rowspan was counted in
-        // compute_rowspans); it renders nothing of its own.
-        if cell.span == Some(TableCellSpan::Rowspan) {
-            continue;
-        }
         let tag = if header_row || cell.header {
             "th"
         } else {
