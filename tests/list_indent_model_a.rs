@@ -1,7 +1,7 @@
 //! List nesting uses the content column (Model A): a child nests only when
-//! indented to at least the parent item's content column. Below it, an ordered
-//! marker folds (§10: ordered does not interrupt), an unordered/task marker
-//! interrupts.
+//! indented to at least the parent item's content column. Below it, a marker
+//! folds -- under symmetric §10 no list marker (ordered, unordered, or task)
+//! interrupts a paragraph, so a below-content-column child is lazy continuation.
 
 #[test]
 fn ordered_child_below_content_column_folds() {
@@ -13,12 +13,12 @@ fn ordered_child_below_content_column_folds() {
 }
 
 #[test]
-fn unordered_child_below_content_column_still_nests() {
-    // Unordered markers interrupt (§10), so any indent past the parent base
-    // column nests even below the parent content column.
+fn unordered_child_below_content_column_folds() {
+    // col 1 < `- ` content column (2): under symmetric §10 a bullet does not
+    // interrupt, so a below-content-column child folds as lazy continuation.
     assert_eq!(
         carve::to_html("- a\n - b"),
-        "<ul>\n  <li>a\n    <ul>\n      <li>b</li>\n    </ul>\n  </li>\n</ul>"
+        "<ul>\n  <li>a\n- b</li>\n</ul>"
     );
 }
 
@@ -65,12 +65,13 @@ fn task_child_nests_at_the_bullet_content_column() {
 }
 
 #[test]
-fn unordered_child_nests_regardless_of_the_ordered_content_column() {
-    // Unordered markers interrupt (§10), so a `- b` indented under `10. ` nests
-    // even below the ordered content column -- only ordered markers are gated.
+fn unordered_child_below_the_ordered_content_column_folds() {
+    // `- b` at col 2 is below the `10. ` content column (4); under symmetric §10
+    // a bullet does not interrupt, so it folds as lazy continuation (it would
+    // nest only at or past the content column).
     assert_eq!(
         carve::to_html("10. a\n  - b"),
-        "<ol start=\"10\">\n  <li>a\n    <ul>\n      <li>b</li>\n    </ul>\n  </li>\n</ol>"
+        "<ol start=\"10\">\n  <li>a\n- b</li>\n</ol>"
     );
 }
 

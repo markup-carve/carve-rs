@@ -374,7 +374,11 @@ fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<BlockNode>
             {
                 break;
             }
-            if interrupts_paragraph(next, &cur.lines[cur.pos + 1..]) {
+            // A list marker ENDS the heading and starts a sibling list (it does
+            // not fold in). Symmetric §10: a list marker does not interrupt a
+            // PARAGRAPH (it folds), but a heading is ended by it -- matching djot
+            // (`# T` / `- x` -> heading + list). Bullet and ordered alike.
+            if is_list_marker(next) || interrupts_paragraph(next, &cur.lines[cur.pos + 1..]) {
                 break;
             }
             joined.push('\n');
@@ -861,9 +865,14 @@ fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         // continuation marker, so inside a top-level quote it folds as prose
         // (`> a` then `+` -> one quote). The list `+` handler bounds what it
         // hands to a sub-block, so a quote cannot swallow the next `+`.
+        // A list marker ENDS the quote and starts a top-level sibling list (it
+        // does not lazily extend the quote). Symmetric §10: a list marker folds
+        // into a PARAGRAPH but ends a blockquote -- matching djot (`> q` / `- a`
+        // -> quote + list). Bullet and ordered alike.
         if !para_open
             || line.trim().is_empty()
             || line.starts_with("^ ")
+            || is_list_marker(line)
             || interrupts_paragraph(line, &cur.lines[cur.pos + 1..])
         {
             break;
@@ -1241,6 +1250,17 @@ fn parse_continuation_block(
         if end > cur.pos && line.trim() == "+" && indent_columns(line) == base_indent {
             break;
         }
+        // A list marker at (or below) the base column is a SIBLING item of the
+        // outer list, not part of this `+`-attached block. Bound the block here
+        // so it is not absorbed -- now that a bullet does not interrupt, a
+        // `> quote` (or other) block would otherwise swallow a following
+        // `- next` as lazy continuation. Matches carve-js.
+        if end > cur.pos
+            && indent_columns(line) <= base_indent
+            && detect_list_marker_full(line).is_some()
+        {
+            break;
+        }
         end += 1;
     }
     let slice: Vec<&str> = cur.lines[cur.pos..end].to_vec();
@@ -1398,14 +1418,12 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 break;
             }
             if let Some(nm) = detect_list_marker_full(next) {
-                // An ordered marker indented past the base but below this item's
-                // content column is lazy continuation, not a sub-list: ordered
-                // markers do not interrupt a paragraph (§10). Fold it. Any other
-                // marker (or one at/above the content column) ends the paragraph.
-                let folds = nm.ordered
-                    && nm.checked.is_none()
-                    && nm.indent > base_indent
-                    && nm.indent < content_col;
+                // A marker indented past the base but BELOW this item's content
+                // column is lazy continuation, not a sub-list: under symmetric
+                // §10 no list marker (bullet, task, or ordered) interrupts a
+                // paragraph, so fold it. A marker AT or ABOVE the content column
+                // nests; one at the base column is a sibling (ends the paragraph).
+                let folds = nm.indent > base_indent && nm.indent < content_col;
                 if !folds {
                     break;
                 }
@@ -1687,11 +1705,12 @@ fn interrupts_paragraph(line: &str, rest: &[&str]) -> bool {
     if parse_standalone_attrs(line).is_some() {
         return true;
     }
+    // Symmetric §10: a list marker (bullet OR task OR ordered) does NOT
+    // interrupt a paragraph -- a list needs a blank line before it. Only the
+    // other visible blocks interrupt.
     if detect_heading(line).is_some()
         || detect_thematic_break(line)
         || line.starts_with('>')
-        || detect_task(line).is_some()
-        || is_interrupting_bullet(line)
         || is_table_start(line)
     {
         return true;
@@ -1732,10 +1751,6 @@ fn interrupts_paragraph(line: &str, rest: &[&str]) -> bool {
 /// `detect_task`). Leading tabs are skipped as well as spaces: a bullet opens
 /// a list at any indentation (Rule B), so a tab-indented bullet interrupts a
 /// paragraph too.
-fn is_interrupting_bullet(line: &str) -> bool {
-    detect_unordered(line).is_some()
-}
-
 fn is_definition_list_start(line: &str) -> bool {
     line.starts_with(":: ") || line.starts_with(":  ")
 }
