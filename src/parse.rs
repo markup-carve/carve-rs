@@ -1859,8 +1859,34 @@ fn is_table_start(line: &str) -> bool {
     // (`| a`) is ordinary paragraph text, not a table. (`+` multi-line-cell
     // continuations are consumed inside parse_table; a `+` line never starts a
     // table, #80.)
+    //
+    // A row may also carry a `{...}` attribute block glued to its closing pipe
+    // (`| a |{.x}` -> <tr class="x">); split_row_attrs validates it, so a line
+    // ending in a valid row-attribute block also opens a table.
     let trimmed = line.trim();
-    trimmed.len() >= 2 && trimmed.starts_with('|') && trimmed.ends_with('|')
+    if trimmed.len() < 2 || !trimmed.starts_with('|') {
+        return false;
+    }
+    trimmed.ends_with('|') || split_row_attrs(trimmed).0.is_some()
+}
+
+/// A `{...}` attribute block GLUED to the row's closing `|` sets the row's
+/// `<tr>` attributes -- the row-level twin of a cell's opening-pipe block. The
+/// whole payload must be a valid attribute block running to end of line;
+/// otherwise the `{` is ordinary content. Returns the parsed attributes and the
+/// line body up to and including the closing pipe (with the block removed).
+fn split_row_attrs(content: &str) -> (Option<Attrs>, &str) {
+    if let Some(idx) = content.rfind('|') {
+        let bytes = content.as_bytes();
+        if bytes.get(idx + 1) == Some(&b'{') {
+            if let Some((attrs, next)) = read_attrs_at(bytes, idx + 1) {
+                if next == content.len() {
+                    return (Some(attrs), &content[..=idx]);
+                }
+            }
+        }
+    }
+    (None, content)
 }
 
 fn parse_table(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
@@ -2004,6 +2030,8 @@ fn apply_table_continuation(row: &mut TableRow, line: &str, options: &Options<'_
 
 fn parse_table_row(line: &str, options: &Options<'_>) -> TableRow {
     let mut content = line.trim();
+    let (attrs, body) = split_row_attrs(content);
+    content = body;
     if let Some(stripped) = content.strip_prefix('|') {
         content = stripped;
     }
@@ -2014,7 +2042,7 @@ fn parse_table_row(line: &str, options: &Options<'_>) -> TableRow {
         .into_iter()
         .map(|cell| parse_table_cell(&cell, options))
         .collect();
-    TableRow { cells }
+    TableRow { cells, attrs }
 }
 
 fn split_table_cells(content: &str) -> Vec<String> {

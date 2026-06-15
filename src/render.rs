@@ -753,7 +753,7 @@ fn render_table(out: &mut String, t: &Table, level: usize, options: &Options<'_>
 }
 
 fn render_table_row(out: &mut String, row: &TableRow, header_row: bool, options: &Options<'_>) {
-    out.push_str("<tr>");
+    out.push_str(&format!("<tr{}>", render_attrs(&row.attrs)));
     for (col, cell) in row.cells.iter().enumerate() {
         let tag = if header_row || cell.header {
             "th"
@@ -782,7 +782,7 @@ fn render_table_body_row(
     table: &Table,
     options: &Options<'_>,
 ) {
-    out.push_str("<tr>");
+    out.push_str(&format!("<tr{}>", render_attrs(&row.attrs)));
     let mut col = 0usize;
     for cell in &row.cells {
         if cell.span == Some(TableCellSpan::Rowspan) {
