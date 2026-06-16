@@ -109,6 +109,9 @@ const IMPLEMENTED: &[&str] = &[
     "94-literal-less-than-in-prose",
     "95-boolean-attributes",
     "96-table-span-marker-in-first-column",
+    "97-table-cell-attributes",
+    "98-table-row-attributes",
+    "99-table-header-cell-rowspan",
 ];
 
 fn corpus_dir() -> PathBuf {
@@ -415,4 +418,10 @@ corpus_test!(c95_boolean_attributes, "95-boolean-attributes");
 corpus_test!(
     c96_table_span_marker_in_first_column,
     "96-table-span-marker-in-first-column"
+);
+corpus_test!(c97_table_cell_attributes, "97-table-cell-attributes");
+corpus_test!(c98_table_row_attributes, "98-table-row-attributes");
+corpus_test!(
+    c99_table_header_cell_rowspan,
+    "99-table-header-cell-rowspan"
 );
