@@ -517,30 +517,11 @@ fn plain_inlines(nodes: &[InlineNode]) -> String {
 }
 
 fn slugify(text: &str) -> String {
-    let mut out = String::new();
-    let mut last_dash = false;
-    for ch in text.chars() {
-        if ch.is_alphanumeric() {
-            for lc in ch.to_lowercase() {
-                out.push(lc);
-            }
-            last_dash = false;
-        } else if !last_dash && !out.is_empty() {
-            out.push('-');
-            last_dash = true;
-        }
-    }
-    while out.ends_with('-') {
-        out.pop();
-    }
-    if out.chars().next().is_some_and(|ch| ch.is_ascii_digit()) {
-        out = format!("s-{out}");
-    }
-    if out.is_empty() {
-        "section".to_string()
-    } else {
-        out
-    }
+    // Delegate to the single canonical implementation so HTML, Markdown, and
+    // the parser's id index never drift apart (or from carve-js / carve-php).
+    // The Markdown renderer has no Options, so it always uses the case-preserving
+    // default (lowercase = false), matching the parser's default id index.
+    crate::parse::slugify_parse(text, false)
 }
 
 fn is_literal_crossref(text: &str) -> bool {

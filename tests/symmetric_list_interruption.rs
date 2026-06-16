@@ -37,7 +37,7 @@ fn bullet_ends_a_heading_and_starts_a_sibling_list() {
     // a top-level sibling list (matches djot; bullet and ordered alike).
     assert_eq!(
         h("# T\n- item"),
-        "<section id=\"t\">\n  <h1>T</h1>\n  <ul>\n    <li>item</li>\n  </ul>\n</section>"
+        "<section id=\"T\">\n  <h1>T</h1>\n  <ul>\n    <li>item</li>\n  </ul>\n</section>"
     );
 }
 

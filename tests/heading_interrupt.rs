@@ -10,17 +10,17 @@ fn list_marker_ends_heading_and_starts_sibling_list() {
     // A bullet ends the heading and starts a sibling list.
     assert_eq!(
         carve::to_html("# H\n- item"),
-        "<section id=\"h\">\n  <h1>H</h1>\n  <ul>\n    <li>item</li>\n  </ul>\n</section>"
+        "<section id=\"H\">\n  <h1>H</h1>\n  <ul>\n    <li>item</li>\n  </ul>\n</section>"
     );
     // An ordered marker behaves identically (symmetric): it ends the heading.
     assert_eq!(
         carve::to_html("# H\n1. one"),
-        "<section id=\"h\">\n  <h1>H</h1>\n  <ol>\n    <li>one</li>\n  </ol>\n</section>"
+        "<section id=\"H\">\n  <h1>H</h1>\n  <ol>\n    <li>one</li>\n  </ol>\n</section>"
     );
     // A blockquote also ends the heading.
     assert_eq!(
         carve::to_html("# H\n> q"),
-        "<section id=\"h\">\n  <h1>H</h1>\n  <blockquote><p>q</p></blockquote>\n</section>"
+        "<section id=\"H\">\n  <h1>H</h1>\n  <blockquote><p>q</p></blockquote>\n</section>"
     );
 }
 
@@ -28,6 +28,6 @@ fn list_marker_ends_heading_and_starts_sibling_list() {
 fn plain_text_still_folds_into_heading() {
     assert_eq!(
         carve::to_html("# H\nplain words"),
-        "<section id=\"h-plain-words\">\n  <h1>H\nplain words</h1>\n</section>"
+        "<section id=\"H-plain-words\">\n  <h1>H\nplain words</h1>\n</section>"
     );
 }
