@@ -1,5 +1,13 @@
 use crate::ast::*;
+use crate::extension::Options;
 use crate::render_text::{clean_smart_text_stateful, SmartQuoteState};
+
+/// Render a document to ANSI-styled text. See `render_markdown_with_options`
+/// for why the options-taking wrapper exists; the profile transform runs
+/// upstream.
+pub fn render_ansi_with_options(doc: &Document, _options: &Options<'_>) -> String {
+    render_ansi(doc)
+}
 
 const RESET: &str = "\x1b[0m";
 const BOLD: &str = "\x1b[1m";

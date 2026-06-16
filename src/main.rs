@@ -48,6 +48,32 @@ fn main() -> ExitCode {
                 };
                 options = options.with_emoji(name, glyph);
             }
+            "--profile" => {
+                let Some(value) = args.next() else {
+                    eprintln!("carve: --profile requires a name (full|article|comment|minimal)");
+                    return ExitCode::FAILURE;
+                };
+                let profile = match value.as_str() {
+                    "full" => carve::Profile::full(),
+                    "article" => carve::Profile::article(),
+                    "comment" => carve::Profile::comment(),
+                    "minimal" => carve::Profile::minimal(),
+                    other => {
+                        eprintln!(
+                            "carve: unknown profile: {other} (expected full|article|comment|minimal)"
+                        );
+                        return ExitCode::FAILURE;
+                    }
+                };
+                options = options.with_profile(profile);
+            }
+            "--profile-base-host" => {
+                let Some(value) = args.next() else {
+                    eprintln!("carve: --profile-base-host requires a host");
+                    return ExitCode::FAILURE;
+                };
+                options = options.with_profile_base_host(value);
+            }
             "--html" => format = OutputFormat::Html,
             "--markdown" | "--md" => format = OutputFormat::Markdown,
             "--plain" | "--plain-text" => format = OutputFormat::Plain,
@@ -84,17 +110,13 @@ fn main() -> ExitCode {
             }
         },
     };
-    // The non-HTML renderers take a parsed document; mention/tag URL templates
-    // are an HTML-link concern, so they only affect HTML output.
+    // Mention/tag URL templates are an HTML-link concern, so they only affect
+    // HTML output. All formats share the same parse + profile pipeline.
     let output = match format {
         OutputFormat::Html => carve::to_html_with_options(&source, &options),
-        OutputFormat::Markdown => {
-            carve::render_markdown(&carve::parse_with_options(&source, &options))
-        }
-        OutputFormat::Plain => {
-            carve::render_plain_text(&carve::parse_with_options(&source, &options))
-        }
-        OutputFormat::Ansi => carve::render_ansi(&carve::parse_with_options(&source, &options)),
+        OutputFormat::Markdown => carve::to_markdown_with_options(&source, &options),
+        OutputFormat::Plain => carve::to_plain_text_with_options(&source, &options),
+        OutputFormat::Ansi => carve::to_ansi_with_options(&source, &options),
     };
     let mut stdout = io::stdout().lock();
     if let Err(err) = stdout.write_all(output.as_bytes()) {
@@ -121,7 +143,9 @@ fn print_usage() {
          Options:\n  \
          --mention-url TEMPLATE      render @mentions as links (HTML only)\n  \
          --tag-url TEMPLATE          render #tags as links (HTML only)\n  \
-         --emoji NAME=VALUE          map :NAME: to VALUE (repeatable)\n\n\
+         --emoji NAME=VALUE          map :NAME: to VALUE (repeatable)\n  \
+         --profile NAME              restrict features (full|article|comment|minimal)\n  \
+         --profile-base-host HOST    base host for the profile link policy\n\n\
          Spec: https://markup-carve.github.io/carve/"
     );
 }

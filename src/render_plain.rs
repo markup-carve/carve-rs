@@ -1,5 +1,12 @@
 use crate::ast::*;
+use crate::extension::Options;
 use crate::render_text::{clean_smart_text_stateful, SmartQuoteState};
+
+/// Render a document to plain text. See `render_markdown_with_options` for why
+/// the options-taking wrapper exists; the profile transform runs upstream.
+pub fn render_plain_text_with_options(doc: &Document, _options: &Options<'_>) -> String {
+    render_plain_text(doc)
+}
 
 pub fn render_plain_text(doc: &Document) -> String {
     let out = render_blocks(&doc.children);
