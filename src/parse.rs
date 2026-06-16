@@ -4512,14 +4512,45 @@ fn plain_inlines_parse(nodes: &[InlineNode]) -> String {
 /// implementation, shared by the HTML and Markdown renderers so all id
 /// derivation in carve-rs stays byte-identical (and identical to carve-js /
 /// carve-php).
+/// Reverse smart-typography substitutions to their ASCII source, so a heading
+/// id never depends on presentational typography. The inverse of the parser's
+/// smart tokens plus smart quotes and dashes; the recovered ASCII punctuation
+/// then collapses in the slug run. Kept byte-identical to carve-js / carve-php.
+fn de_typography(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for ch in text.chars() {
+        match ch {
+            '↔' => out.push_str("<->"),
+            '™' => out.push_str("(tm)"),
+            '…' => out.push_str("..."),
+            '→' => out.push_str("->"),
+            '←' => out.push_str("<-"),
+            '⇒' => out.push_str("=>"),
+            '≤' => out.push_str("<="),
+            '≥' => out.push_str(">="),
+            '≠' => out.push_str("!="),
+            '±' => out.push_str("+-"),
+            '©' => out.push_str("(c)"),
+            '®' => out.push_str("(r)"),
+            '–' | '—' => out.push('-'),
+            '‘' | '’' => out.push('\''),
+            '“' | '”' => out.push('"'),
+            other => out.push(other),
+        }
+    }
+    out
+}
+
 pub(crate) fn slugify_parse(text: &str, lowercase: bool) -> String {
     // Carve "Automatic Identifiers" (spec #73), kept byte-identical to
     // carve-js / carve-php:
     //   - keep ASCII alphanumerics AND every non-ASCII code point (>= U+0080)
     //     verbatim; replace each maximal run of ASCII non-alphanumerics with a
     //     single '-' and trim. (Do NOT filter by Unicode is_alphanumeric: the
-    //     spec keeps non-ASCII symbols, marks, and punctuation, e.g. an em-dash
-    //     or CJK comma, just like the `[^0-9A-Za-z\x80-\x10FFFF]+` rule.)
+    //     spec keeps non-ASCII symbols, marks, and punctuation, e.g. a CJK
+    //     comma or a bullet, just like the `[^0-9A-Za-z\x80-\x10FFFF]+` rule.)
+    //   - smart-typography output is first reversed to its ASCII source (see
+    //     de_typography) so an id never depends on presentational typography.
     //   - the DEFAULT is CASE-PRESERVING: kept characters are emitted verbatim
     //     (`# Getting Started` -> `Getting-Started`, `# Über uns` -> `Über-uns`).
     //   - when `lowercase` is set, fold kept characters per code point
@@ -4528,9 +4559,10 @@ pub(crate) fn slugify_parse(text: &str, lowercase: bool) -> String {
     //     impls regardless of stdlib whole-string casing behavior. carve-rs has
     //     no ASCII transliterator, so ascii-folding is intentionally not offered
     //     here -- `lowercase` is the only transform.
+    let detyped = de_typography(text);
     let mut out = String::new();
     let mut last_dash = false;
-    for ch in text.chars() {
+    for ch in detyped.chars() {
         if ch.is_ascii_alphanumeric() || ch as u32 >= 0x80 {
             if lowercase {
                 for lc in ch.to_lowercase() {
