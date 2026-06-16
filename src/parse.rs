@@ -4277,9 +4277,7 @@ fn collect_heading_titles(
             BlockNode::Admonition(a) => {
                 collect_heading_titles(&a.children, counts, titles, lowercase_ids)
             }
-            BlockNode::Div(d) => {
-                collect_heading_titles(&d.children, counts, titles, lowercase_ids)
-            }
+            BlockNode::Div(d) => collect_heading_titles(&d.children, counts, titles, lowercase_ids),
             BlockNode::DefinitionList(d) => {
                 for item in &d.items {
                     for definition in &item.definitions {
