@@ -93,7 +93,7 @@ pub fn parse_with_options(source: &str, options: &Options<'_>) -> Document {
     };
     resolve_reference_links(&mut doc, &link_defs);
     apply_abbreviations(&mut doc);
-    resolve_crossrefs(&mut doc);
+    resolve_crossrefs(&mut doc, options.lowercase_heading_ids);
     for ext in &options.extensions {
         doc = ext.after_parse(doc);
     }
@@ -4017,15 +4017,58 @@ fn is_word_boundary(text: &str, pos: usize) -> bool {
         || !text.as_bytes()[pos].is_ascii_alphanumeric()
 }
 
-fn resolve_crossrefs(doc: &mut Document) {
+fn resolve_crossrefs(doc: &mut Document, lowercase_ids: bool) {
     let mut counts = BTreeMap::new();
     let mut titles = BTreeMap::new();
-    collect_heading_titles(&doc.children, &mut counts, &mut titles);
+    collect_heading_titles(&doc.children, &mut counts, &mut titles, lowercase_ids);
     let mut caption_counts = BTreeMap::new();
     number_captioned_blocks(&mut doc.children, &mut caption_counts, &mut titles);
-    for block in &mut doc.children {
-        resolve_crossrefs_block(block, &titles);
+    // Case-folded index of known ids -> actual (case-preserved) id. First
+    // occurrence wins, so a duplicate that only differs in case does not shadow
+    // the earlier heading. Used as a fallback when an exact id match fails, so a
+    // lowercase `</#getting-started>` resolves to a `Getting-Started` heading
+    // (and the emitted href uses the ACTUAL id).
+    let mut folded: BTreeMap<String, String> = BTreeMap::new();
+    for id in titles.keys() {
+        folded.entry(case_fold(id)).or_insert_with(|| id.clone());
     }
+    let index = CrossrefIndex { titles, folded };
+    for block in &mut doc.children {
+        resolve_crossrefs_block(block, &index);
+    }
+}
+
+/// Heading-id lookup table for `</#id>` cross-references: exact id -> title,
+/// plus a case-folded fallback (folded id -> actual case-preserved id) so a
+/// lowercase reference resolves to a case-preserved heading.
+struct CrossrefIndex {
+    titles: BTreeMap<String, String>,
+    folded: BTreeMap<String, String>,
+}
+
+impl CrossrefIndex {
+    /// Resolve a cross-reference target to its `(actual_id, title)`. Tries an
+    /// exact match first, then a case-folded fallback (first-occurrence wins).
+    fn resolve(&self, target: &str) -> Option<(&str, &str)> {
+        if let Some((id, title)) = self.titles.get_key_value(target) {
+            return Some((id.as_str(), title.as_str()));
+        }
+        let id = self.folded.get(&case_fold(target))?;
+        let title = self.titles.get(id)?;
+        Some((id.as_str(), title.as_str()))
+    }
+}
+
+/// Per-code-point lowercase fold, used for case-insensitive `</#id>` lookup.
+/// Matches the `lowercase` transform in `slugify_parse` (no context mappings).
+fn case_fold(s: &str) -> String {
+    let mut out = String::new();
+    for ch in s.chars() {
+        for lc in ch.to_lowercase() {
+            out.push(lc);
+        }
+    }
+    out
 }
 
 fn resolve_reference_links(doc: &mut Document, defs: &BTreeMap<String, LinkDef>) {
@@ -4151,6 +4194,7 @@ fn collect_heading_titles(
     blocks: &[BlockNode],
     counts: &mut BTreeMap<String, usize>,
     titles: &mut BTreeMap<String, String>,
+    lowercase_ids: bool,
 ) {
     for block in blocks {
         match block {
@@ -4160,7 +4204,7 @@ fn collect_heading_titles(
                     .attrs
                     .as_ref()
                     .and_then(|attrs| attrs.id.clone())
-                    .unwrap_or_else(|| slugify_parse(&title));
+                    .unwrap_or_else(|| slugify_parse(&title, lowercase_ids));
                 let count = counts.entry(base.clone()).or_insert(0);
                 *count += 1;
                 let id = if *count == 1 {
@@ -4172,21 +4216,29 @@ fn collect_heading_titles(
             }
             BlockNode::List(l) => {
                 for item in &l.items {
-                    collect_heading_titles(&item.children, counts, titles);
+                    collect_heading_titles(&item.children, counts, titles, lowercase_ids);
                 }
             }
-            BlockNode::BlockQuote(b) => collect_heading_titles(&b.children, counts, titles),
-            BlockNode::Admonition(a) => collect_heading_titles(&a.children, counts, titles),
-            BlockNode::Div(d) => collect_heading_titles(&d.children, counts, titles),
+            BlockNode::BlockQuote(b) => {
+                collect_heading_titles(&b.children, counts, titles, lowercase_ids)
+            }
+            BlockNode::Admonition(a) => {
+                collect_heading_titles(&a.children, counts, titles, lowercase_ids)
+            }
+            BlockNode::Div(d) => {
+                collect_heading_titles(&d.children, counts, titles, lowercase_ids)
+            }
             BlockNode::DefinitionList(d) => {
                 for item in &d.items {
                     for definition in &item.definitions {
-                        collect_heading_titles(definition, counts, titles);
+                        collect_heading_titles(definition, counts, titles, lowercase_ids);
                     }
                 }
             }
             BlockNode::Figure(f) => match &f.target {
-                FigureTarget::BlockQuote(b) => collect_heading_titles(&b.children, counts, titles),
+                FigureTarget::BlockQuote(b) => {
+                    collect_heading_titles(&b.children, counts, titles, lowercase_ids)
+                }
                 FigureTarget::Table(_)
                 | FigureTarget::Image(_)
                 | FigureTarget::CodeBlock(_)
@@ -4275,69 +4327,69 @@ fn number_caption(
     }
 }
 
-fn resolve_crossrefs_block(block: &mut BlockNode, titles: &BTreeMap<String, String>) {
+fn resolve_crossrefs_block(block: &mut BlockNode, index: &CrossrefIndex) {
     match block {
-        BlockNode::Heading(h) => resolve_crossrefs_inline(&mut h.children, titles),
-        BlockNode::Paragraph(p) => resolve_crossrefs_inline(&mut p.children, titles),
+        BlockNode::Heading(h) => resolve_crossrefs_inline(&mut h.children, index),
+        BlockNode::Paragraph(p) => resolve_crossrefs_inline(&mut p.children, index),
         BlockNode::List(l) => {
             for item in &mut l.items {
                 for child in &mut item.children {
-                    resolve_crossrefs_block(child, titles);
+                    resolve_crossrefs_block(child, index);
                 }
             }
         }
         BlockNode::BlockQuote(b) => {
             for child in &mut b.children {
-                resolve_crossrefs_block(child, titles);
+                resolve_crossrefs_block(child, index);
             }
         }
         BlockNode::Admonition(a) => {
             for child in &mut a.children {
-                resolve_crossrefs_block(child, titles);
+                resolve_crossrefs_block(child, index);
             }
         }
         BlockNode::Div(d) => {
             for child in &mut d.children {
-                resolve_crossrefs_block(child, titles);
+                resolve_crossrefs_block(child, index);
             }
         }
         BlockNode::DefinitionList(d) => {
             for item in &mut d.items {
                 for term in &mut item.terms {
-                    resolve_crossrefs_inline(term, titles);
+                    resolve_crossrefs_inline(term, index);
                 }
                 for definition in &mut item.definitions {
                     for child in definition {
-                        resolve_crossrefs_block(child, titles);
+                        resolve_crossrefs_block(child, index);
                     }
                 }
             }
         }
         BlockNode::Table(t) => {
             if let Some(caption) = &mut t.caption {
-                resolve_crossrefs_inline(caption, titles);
+                resolve_crossrefs_inline(caption, index);
             }
             for row in &mut t.rows {
                 for cell in &mut row.cells {
-                    resolve_crossrefs_inline(&mut cell.children, titles);
+                    resolve_crossrefs_inline(&mut cell.children, index);
                 }
             }
         }
         BlockNode::Figure(f) => {
-            resolve_crossrefs_inline(&mut f.caption, titles);
+            resolve_crossrefs_inline(&mut f.caption, index);
             match &mut f.target {
                 FigureTarget::BlockQuote(b) => {
                     for child in &mut b.children {
-                        resolve_crossrefs_block(child, titles);
+                        resolve_crossrefs_block(child, index);
                     }
                 }
                 FigureTarget::Table(t) => {
                     if let Some(caption) = &mut t.caption {
-                        resolve_crossrefs_inline(caption, titles);
+                        resolve_crossrefs_inline(caption, index);
                     }
                     for row in &mut t.rows {
                         for cell in &mut row.cells {
-                            resolve_crossrefs_inline(&mut cell.children, titles);
+                            resolve_crossrefs_inline(&mut cell.children, index);
                         }
                     }
                 }
@@ -4350,16 +4402,18 @@ fn resolve_crossrefs_block(block: &mut BlockNode, titles: &BTreeMap<String, Stri
     }
 }
 
-fn resolve_crossrefs_inline(nodes: &mut Vec<InlineNode>, titles: &BTreeMap<String, String>) {
+fn resolve_crossrefs_inline(nodes: &mut Vec<InlineNode>, index: &CrossrefIndex) {
     for node in nodes {
         match node {
             InlineNode::CrossRef(c) => {
-                if let Some(title) = titles.get(&c.target) {
+                if let Some((actual_id, title)) = index.resolve(&c.target) {
+                    // The href uses the ACTUAL (case-preserved) heading id, even
+                    // when the reference matched only via the case-fold fallback.
                     *node = InlineNode::Link(Link {
                         attrs: None,
-                        href: format!("#{}", c.target),
+                        href: format!("#{actual_id}"),
                         title: None,
-                        children: vec![InlineNode::Text(title.clone())],
+                        children: vec![InlineNode::Text(title.to_string())],
                         ref_label: None,
                         raw_ref: None,
                     });
@@ -4368,10 +4422,10 @@ fn resolve_crossrefs_inline(nodes: &mut Vec<InlineNode>, titles: &BTreeMap<Strin
                     *node = InlineNode::Text(format!("</#{}>", c.target));
                 }
             }
-            InlineNode::Emphasis(e) => resolve_crossrefs_inline(&mut e.children, titles),
-            InlineNode::Link(l) => resolve_crossrefs_inline(&mut l.children, titles),
-            InlineNode::Span(s) => resolve_crossrefs_inline(&mut s.children, titles),
-            InlineNode::Extension(e) => resolve_crossrefs_inline(&mut e.children, titles),
+            InlineNode::Emphasis(e) => resolve_crossrefs_inline(&mut e.children, index),
+            InlineNode::Link(l) => resolve_crossrefs_inline(&mut l.children, index),
+            InlineNode::Span(s) => resolve_crossrefs_inline(&mut s.children, index),
+            InlineNode::Extension(e) => resolve_crossrefs_inline(&mut e.children, index),
             _ => {}
         }
     }
@@ -4404,13 +4458,36 @@ fn plain_inlines_parse(nodes: &[InlineNode]) -> String {
     out
 }
 
-fn slugify_parse(text: &str) -> String {
+/// Carve "Automatic Identifiers" slug (spec #73). The single canonical
+/// implementation, shared by the HTML and Markdown renderers so all id
+/// derivation in carve-rs stays byte-identical (and identical to carve-js /
+/// carve-php).
+pub(crate) fn slugify_parse(text: &str, lowercase: bool) -> String {
+    // Carve "Automatic Identifiers" (spec #73), kept byte-identical to
+    // carve-js / carve-php:
+    //   - keep ASCII alphanumerics AND every non-ASCII code point (>= U+0080)
+    //     verbatim; replace each maximal run of ASCII non-alphanumerics with a
+    //     single '-' and trim. (Do NOT filter by Unicode is_alphanumeric: the
+    //     spec keeps non-ASCII symbols, marks, and punctuation, e.g. an em-dash
+    //     or CJK comma, just like the `[^0-9A-Za-z\x80-\x10FFFF]+` rule.)
+    //   - the DEFAULT is CASE-PRESERVING: kept characters are emitted verbatim
+    //     (`# Getting Started` -> `Getting-Started`, `# Über uns` -> `Über-uns`).
+    //   - when `lowercase` is set, fold kept characters per code point
+    //     (`char::to_lowercase`). Per-code-point folding avoids context mappings
+    //     (Greek final-sigma) so the result is portable and matches the other
+    //     impls regardless of stdlib whole-string casing behavior. carve-rs has
+    //     no ASCII transliterator, so ascii-folding is intentionally not offered
+    //     here -- `lowercase` is the only transform.
     let mut out = String::new();
     let mut last_dash = false;
     for ch in text.chars() {
-        if ch.is_alphanumeric() {
-            for lc in ch.to_lowercase() {
-                out.push(lc);
+        if ch.is_ascii_alphanumeric() || ch as u32 >= 0x80 {
+            if lowercase {
+                for lc in ch.to_lowercase() {
+                    out.push(lc);
+                }
+            } else {
+                out.push(ch);
             }
             last_dash = false;
         } else if !last_dash && !out.is_empty() {
@@ -4421,11 +4498,13 @@ fn slugify_parse(text: &str) -> String {
     while out.ends_with('-') {
         out.pop();
     }
-    if out.chars().next().is_some_and(|c| c.is_ascii_digit()) {
+    // A leading Unicode number (\p{N}: Nd/Nl/No) is a valid HTML id but not a
+    // bare CSS selector, so prefix 's-'. Empty -> 's'. Matches carve-js/php.
+    if out.chars().next().is_some_and(char::is_numeric) {
         out = format!("s-{out}");
     }
     if out.is_empty() {
-        "section".to_string()
+        "s".to_string()
     } else {
         out
     }

@@ -21,6 +21,6 @@ fn incomplete_row_does_not_interrupt_paragraph_or_heading() {
     assert_eq!(carve::to_html("para\n| a"), "<p>para\n| a</p>");
     assert_eq!(
         carve::to_html("# H\n| a"),
-        "<section id=\"h-a\">\n  <h1>H\n| a</h1>\n</section>"
+        "<section id=\"H-a\">\n  <h1>H\n| a</h1>\n</section>"
     );
 }

@@ -53,7 +53,8 @@ fn heading_trailing_brace_block_is_literal_text() {
     // inline content and the id derives from the full literal text.
     let html = carve::to_html("# H {#x}");
     assert!(!html.contains("id=\"x\""), "{html}");
-    assert!(html.contains("<section id=\"h-x\">"), "{html}");
+    // Heading ids are case-preserving by default (`H` is kept verbatim).
+    assert!(html.contains("<section id=\"H-x\">"), "{html}");
 }
 
 #[test]
