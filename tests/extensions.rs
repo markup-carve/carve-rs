@@ -42,6 +42,34 @@ fn unknown_inline_extension_uses_fallback() {
     );
 }
 
+#[test]
+fn semantic_shorthands_render_as_html_elements() {
+    // The core semantic set renders as its matching tag (matches carve-js /
+    // carve-php), no extension required.
+    for (name, html) in [
+        ("kbd", "<kbd>x</kbd>"),
+        ("dfn", "<dfn>x</dfn>"),
+        ("abbr", "<abbr>x</abbr>"),
+        ("cite", "<cite>x</cite>"),
+        ("samp", "<samp>x</samp>"),
+        ("var", "<var>x</var>"),
+        ("code", "<code>x</code>"),
+        ("mark", "<mark>x</mark>"),
+        ("time", "<time>x</time>"),
+    ] {
+        assert_eq!(
+            carve::to_html(&format!(":{name}[x]")),
+            format!("<p>{html}</p>"),
+            "semantic tag {name}"
+        );
+    }
+    // A non-semantic name still falls back to a generic span.
+    assert_eq!(
+        carve::to_html(":foo[x]"),
+        "<p><span class=\"ext-foo\">x</span></p>"
+    );
+}
+
 struct Wiki;
 
 impl CarveExtension for Wiki {

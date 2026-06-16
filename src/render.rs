@@ -1431,10 +1431,16 @@ fn render_inline_extension(
             return;
         }
     }
-    if node.name == "kbd" {
-        out.push_str(&format!("<kbd{}>", render_attrs(&node.attrs)));
+    // Semantic shorthands: `:tag[content]` renders as the matching HTML element
+    // (matches carve-js / carve-php). Any other name falls back to a generic
+    // `<span class="ext-NAME">`.
+    const SEMANTIC_TAGS: [&str; 9] = [
+        "kbd", "dfn", "abbr", "cite", "samp", "var", "code", "mark", "time",
+    ];
+    if SEMANTIC_TAGS.contains(&node.name.as_str()) {
+        out.push_str(&format!("<{}{}>", node.name, render_attrs(&node.attrs)));
         render_inlines_stateful(out, &node.children, options, state);
-        out.push_str("</kbd>");
+        out.push_str(&format!("</{}>", node.name));
         return;
     }
     out.push_str(&format!(
