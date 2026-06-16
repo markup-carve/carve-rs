@@ -15,7 +15,10 @@ pub fn render_html(doc: &Document) -> String {
 
 pub fn render_html_with_options(doc: &Document, options: &Options<'_>) -> String {
     let mut doc = doc.clone();
-    let mut state = RenderState::default();
+    let mut state = RenderState {
+        lowercase_heading_ids: options.lowercase_heading_ids,
+        ..RenderState::default()
+    };
     let footnotes = collect_footnotes(&mut doc);
     let mut html = render_document_blocks(doc.children.as_slice(), options, &mut state);
     if !footnotes.is_empty() {
@@ -39,7 +42,10 @@ pub fn render_html_with_options(doc: &Document, options: &Options<'_>) -> String
 // pass that likewise does not descend into extension nodes); deferred until that
 // is coordinated across implementations.
 pub(crate) fn render_blocks_with_options(nodes: &[BlockNode], options: &Options<'_>) -> String {
-    let mut state = RenderState::default();
+    let mut state = RenderState {
+        lowercase_heading_ids: options.lowercase_heading_ids,
+        ..RenderState::default()
+    };
     render_blocks(nodes, options, &mut state)
 }
 
@@ -59,6 +65,9 @@ fn render_blocks(nodes: &[BlockNode], options: &Options<'_>, state: &mut RenderS
 #[derive(Default)]
 struct RenderState {
     heading_counts: BTreeMap<String, usize>,
+    /// Mirrors `Options::lowercase_heading_ids` so the `<section id>` derived
+    /// here matches the parse-time id index (and the resolved cross-ref hrefs).
+    lowercase_heading_ids: bool,
 }
 
 fn render_document_blocks(
@@ -476,7 +485,7 @@ fn next_heading_id(h: &Heading, state: &mut RenderState) -> String {
         .attrs
         .as_ref()
         .and_then(|attrs| attrs.id.clone())
-        .unwrap_or_else(|| slugify(&plain_inlines(&h.children)));
+        .unwrap_or_else(|| slugify(&plain_inlines(&h.children), state.lowercase_heading_ids));
     let count = state.heading_counts.entry(base.clone()).or_insert(0);
     *count += 1;
     if *count == 1 {
@@ -513,33 +522,10 @@ fn plain_inlines(nodes: &[InlineNode]) -> String {
     out
 }
 
-fn slugify(text: &str) -> String {
-    let mut out = String::new();
-    let mut last_dash = false;
-    for ch in text.chars() {
-        if ch.is_alphanumeric() {
-            // Unicode-preserving, lowercased (GitHub-style): `Café` -> `café`,
-            // `Über` -> `über`. ASCII-folding is opt-in, not the default.
-            for lc in ch.to_lowercase() {
-                out.push(lc);
-            }
-            last_dash = false;
-        } else if !last_dash && !out.is_empty() {
-            out.push('-');
-            last_dash = true;
-        }
-    }
-    while out.ends_with('-') {
-        out.pop();
-    }
-    if out.chars().next().is_some_and(|c| c.is_ascii_digit()) {
-        out = format!("s-{out}");
-    }
-    if out.is_empty() {
-        "section".to_string()
-    } else {
-        out
-    }
+fn slugify(text: &str, lowercase: bool) -> String {
+    // Delegate to the single canonical implementation so HTML, Markdown, and
+    // the parser's id index never drift apart (or from carve-js / carve-php).
+    crate::parse::slugify_parse(text, lowercase)
 }
 
 fn render_paragraph(out: &mut String, p: &Paragraph, level: usize, options: &Options<'_>) {
