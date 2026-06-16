@@ -1344,6 +1344,13 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                     // separate top-level block, so the guard is heading-only.
                     if !pending_blank && nested_ends_with_heading(&nested, options) {
                         collect_trailing_lazy(cur, &mut nested);
+                    } else if !pending_blank && nested_ends_with_open_paragraph(&nested, options) {
+                        // CommonMark lazy continuation: the dedented non-blank
+                        // line folds into the nested block's deepest open
+                        // paragraph (e.g. a block quote's trailing paragraph) so
+                        // it stays INSIDE the item. The recursive block parse
+                        // (block quote lazy continuation) absorbs it.
+                        collect_trailing_lazy(cur, &mut nested);
                     }
                     let nested_children = parse_blocks_with_options(&nested, options);
                     // A blank before an indented sub-block loosens only when it
@@ -1372,31 +1379,32 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 break;
             }
             if let Some(last) = items.last_mut() {
+                let sub_indent = marker.indent;
                 let mut nested = collect_indented_block(cur, base_indent, content_col);
-                // A trailing lazy line folds into the sublist's deepest item, but
-                // it must not sever the sublist: if a marker (or block) still
-                // indented past the base follows the lazy line, it resumes the
-                // SAME sublist. Alternate lazy/indented collection so the whole
-                // sublist parses in one recursion rather than re-opening a fresh
-                // list (which would emit a stray `<ol start="N">`).
+                // A column-0 lazy-continuation line folds into the sub-list's
+                // last open paragraph (e.g. `inner` / `lazy`). It must NOT close
+                // the sub-list: a following sibling marker at the sub-list's own
+                // column (`2. sibling`) resumes the SAME list. Loop folding the
+                // lazy line, then resume collecting the sub-list continuation, so
+                // the sibling joins the open list rather than starting a new one
+                // (corpus 05-lists-17, matches carve-php / carve-js).
                 loop {
+                    // Only fold a column-0 lazy line when the collected content
+                    // still ends in an OPEN paragraph. After a resumed CLOSED
+                    // block (fenced code, table, div), there is none, so the
+                    // dedented line ends the item -> top-level (family-D rule).
+                    if !nested_ends_with_open_paragraph(&nested, options) {
+                        break;
+                    }
                     let before = cur.pos;
                     collect_trailing_lazy(cur, &mut nested);
                     if cur.pos == before {
                         break;
                     }
-                    match cur.peek() {
-                        Some(next)
-                            if !next.trim().is_empty() && indent_columns(next) > base_indent =>
-                        {
-                            let more = collect_indented_block(cur, base_indent, content_col);
-                            if more.is_empty() {
-                                break;
-                            }
-                            nested.push('\n');
-                            nested.push_str(&more);
-                        }
-                        _ => break,
+                    let resumed = collect_indented_block(cur, sub_indent - 1, content_col);
+                    if !resumed.is_empty() {
+                        nested.push('\n');
+                        nested.push_str(&resumed);
                     }
                 }
                 let nested_children = parse_blocks_with_options(&nested, options);
@@ -1635,6 +1643,36 @@ fn nested_ends_with_heading(nested: &str, options: &Options<'_>) -> bool {
         parse_blocks_with_options(nested, options).last(),
         Some(BlockNode::Heading(_))
     )
+}
+
+/// Whether the collected nested block ends in an OPEN paragraph -- i.e. its
+/// last block is a paragraph, or a container (block quote / div / admonition)
+/// whose last child recursively ends in a paragraph. CommonMark lazy
+/// continuation folds a following dedented non-blank line into the deepest open
+/// paragraph: when a list item's last block is a block quote whose trailing
+/// block is a paragraph, the dedented line is the quote's own lazy continuation
+/// and must stay INSIDE the item rather than ending it. A code block or table
+/// has no open paragraph, so it does NOT fold (the dedented line ends the item).
+fn nested_ends_with_open_paragraph(nested: &str, options: &Options<'_>) -> bool {
+    block_ends_with_open_paragraph(parse_blocks_with_options(nested, options).last())
+}
+
+fn block_ends_with_open_paragraph(block: Option<&BlockNode>) -> bool {
+    match block {
+        Some(BlockNode::Paragraph(_)) => true,
+        // A blockquote has no explicit closer: lazy continuation keeps its
+        // trailing paragraph open, so a dedented line folds into it.
+        Some(BlockNode::BlockQuote(q)) => block_ends_with_open_paragraph(q.children.last()),
+        // A list's last item can hold an open paragraph (the deepest open
+        // paragraph a dedented line continues, e.g. a sub-list item's text).
+        Some(BlockNode::List(l)) => {
+            block_ends_with_open_paragraph(l.items.last().and_then(|it| it.children.last()))
+        }
+        // A div / admonition is closed by its `:::` fence -- a complete block
+        // with no open paragraph -- so a dedented line after it ends the item
+        // (like code/table). Matches carve-js.
+        _ => false,
+    }
 }
 
 fn collect_trailing_lazy(cur: &mut LineCursor, nested: &mut String) {
