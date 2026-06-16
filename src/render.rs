@@ -7,7 +7,7 @@
 use crate::ast::*;
 use crate::escape::{escape_attr, escape_text};
 use crate::extension::{Options, RenderContext};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 pub fn render_html(doc: &Document) -> String {
     render_html_with_options(doc, &Options::default())
@@ -711,7 +711,7 @@ fn render_table(out: &mut String, t: &Table, level: usize, options: &Options<'_>
     // Computed once over ALL rows: a `^` in a body row extends the cell above
     // it even when that cell is in a header row, so a header cell can carry a
     // rowspan that crosses the thead/tbody boundary (matches carve-js).
-    let rowspan_cols = compute_rowspans(t);
+    let (rowspan_cols, orphan_carets) = compute_rowspans(t);
     if has_header {
         out.push('\n');
         indent(out, level + 1);
@@ -730,7 +730,7 @@ fn render_table(out: &mut String, t: &Table, level: usize, options: &Options<'_>
         for (row_idx, row) in t.rows.iter().enumerate().skip(body_start) {
             out.push('\n');
             indent(out, level + 2);
-            render_table_body_row(out, row, row_idx, &rowspan_cols, t, options);
+            render_table_body_row(out, row, row_idx, &rowspan_cols, &orphan_carets, t, options);
         }
         out.push('\n');
         indent(out, level + 1);
@@ -786,13 +786,20 @@ fn render_table_body_row(
     row: &TableRow,
     source_row_idx: usize,
     rowspan_cols: &BTreeMap<(usize, usize), usize>,
+    orphan_carets: &BTreeSet<(usize, usize)>,
     table: &Table,
     options: &Options<'_>,
 ) {
     out.push_str(&format!("<tr{}>", render_attrs(&row.attrs)));
     let mut col = 0usize;
-    for cell in &row.cells {
+    for (cell_index, cell) in row.cells.iter().enumerate() {
         if cell.span == Some(TableCellSpan::Rowspan) {
+            // A `^` that merged into a cell above renders nothing; one with
+            // nothing to extend (no cell above) renders an EMPTY cell (§5).
+            if orphan_carets.contains(&(source_row_idx, cell_index)) {
+                let tag = if cell.header { "th" } else { "td" };
+                out.push_str(&format!("<{tag}></{tag}>"));
+            }
             col += 1;
             continue;
         }
@@ -803,6 +810,13 @@ fn render_table_body_row(
             emitted.push("rowspan");
         }
         if cell.span == Some(TableCellSpan::Colspan) {
+            // A `<` that merged into a cell to its left renders nothing; one
+            // with nothing to merge (first column / no real left cell) renders
+            // an EMPTY cell (§5).
+            if colspan_is_orphan(row, cell_index) {
+                let tag = if cell.header { "th" } else { "td" };
+                out.push_str(&format!("<{tag}></{tag}>"));
+            }
             col += 1;
             continue;
         }
@@ -889,8 +903,18 @@ fn following_colspans(row: &TableRow, start: usize) -> usize {
 /// by carrying the current chain origin down per column, so an all-`^` table is
 /// O(cells) rather than O(rows^2) (each `^` previously walked up every prior row
 /// and the result list was scanned linearly per marker).
-fn compute_rowspans(t: &Table) -> BTreeMap<(usize, usize), usize> {
+/// Rowspan counts keyed by origin cell `(row, col)`.
+type RowspanCols = BTreeMap<(usize, usize), usize>;
+/// Positions `(row, cell-index)` of orphan `^` markers (nothing above to extend).
+type OrphanCarets = BTreeSet<(usize, usize)>;
+
+/// Returns (rowspan counts keyed by origin (row, col), positions of orphan `^`
+/// markers). An orphan `^` has no cell above it to extend, so it renders as an
+/// EMPTY cell rather than being dropped (spec PART 9 §5). Positions are keyed
+/// by (row, cell-index), matching the render loop's cell enumeration.
+fn compute_rowspans(t: &Table) -> (RowspanCols, OrphanCarets) {
     let mut spans: BTreeMap<(usize, usize), usize> = BTreeMap::new();
+    let mut orphan_carets: BTreeSet<(usize, usize)> = BTreeSet::new();
     // Per column: the origin row of the current rowspan chain (the most recent
     // non-`^` cell above). A `^` extends that origin; a real cell starts a new
     // chain.
@@ -900,13 +924,31 @@ fn compute_rowspans(t: &Table) -> BTreeMap<(usize, usize), usize> {
             if cell.span == Some(TableCellSpan::Rowspan) {
                 if let Some(&base) = base_for_col.get(&col) {
                     *spans.entry((base, col)).or_insert(1) += 1;
+                } else {
+                    orphan_carets.insert((row_idx, col));
                 }
             } else {
                 base_for_col.insert(col, row_idx);
             }
         }
     }
-    spans
+    (spans, orphan_carets)
+}
+
+/// A `<` colspan marker is an orphan (nothing to its left to merge into) when
+/// scanning left past any contiguous `<` markers reaches the row start or a `^`
+/// rather than a real cell. An orphan renders as an empty cell (spec §5).
+fn colspan_is_orphan(row: &TableRow, i: usize) -> bool {
+    let mut j = i;
+    while j > 0 {
+        j -= 1;
+        match row.cells[j].span {
+            Some(TableCellSpan::Colspan) => continue,
+            Some(TableCellSpan::Rowspan) => return true,
+            None => return false,
+        }
+    }
+    true
 }
 
 fn render_admonition(
