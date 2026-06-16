@@ -17,6 +17,7 @@
 pub mod ast;
 mod escape;
 mod extension;
+pub mod extensions;
 mod parse;
 mod render;
 mod render_ansi;
@@ -27,6 +28,11 @@ mod render_text;
 pub use ast::*;
 pub use extension::{
     BlockMatch, CarveExtension, InlineMatch, MatcherContext, Options, RenderContext,
+};
+pub use extensions::{
+    Autolink, AutolinkOptions, ExternalLinks, ExternalLinksOptions, HeadingPermalinks,
+    HeadingPermalinksOptions, ListType, Mermaid, MermaidOptions, Position, TabNormalize,
+    TableOfContents, TableOfContentsOptions, UrlGenerator, Wikilinks, WikilinksOptions,
 };
 pub use parse::{parse, parse_with_options};
 pub use render::{render_html, render_html_with_options};
