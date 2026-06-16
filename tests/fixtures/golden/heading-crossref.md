@@ -1,3 +1,3 @@
-# Setup {#setup}
+# Setup {#Setup}
 
-See [Setup](#setup) for details.
+See [Setup](#Setup) for details.

@@ -16,6 +16,12 @@ pub struct Options<'a> {
     pub mention_url: Option<String>,
     pub tag_url: Option<String>,
     pub emoji: BTreeMap<String, String>,
+    /// When `true`, lowercase the kept characters of an auto-generated heading
+    /// id per code point (`char::to_lowercase`). Default `false`: heading ids
+    /// are CASE-PRESERVING (`# Getting Started` -> `Getting-Started`), matching
+    /// carve-js / carve-php. carve-rs has no ASCII transliterator, so
+    /// ascii-folding is intentionally unsupported here; only `lowercase` is.
+    pub lowercase_heading_ids: bool,
 }
 
 impl<'a> Options<'a> {
@@ -40,6 +46,13 @@ impl<'a> Options<'a> {
 
     pub fn with_emoji(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
         self.emoji.insert(name.into(), value.into());
+        self
+    }
+
+    /// Opt in to lowercasing auto-generated heading ids (default is
+    /// case-preserving). See [`Options::lowercase_heading_ids`].
+    pub fn with_lowercase_heading_ids(mut self, lowercase: bool) -> Self {
+        self.lowercase_heading_ids = lowercase;
         self
     }
 }

@@ -26,6 +26,6 @@ fn a_spaced_break_interrupts_a_paragraph_and_heading() {
     assert_eq!(carve::to_html("para\n- - -"), "<p>para</p>\n<hr>");
     assert_eq!(
         carve::to_html("# H\n- - -"),
-        "<section id=\"h\">\n  <h1>H</h1>\n  <hr>\n</section>"
+        "<section id=\"H\">\n  <h1>H</h1>\n  <hr>\n</section>"
     );
 }

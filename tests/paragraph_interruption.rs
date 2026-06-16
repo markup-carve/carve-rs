@@ -23,7 +23,7 @@ fn fence_interrupts() {
 fn heading_interrupts() {
     assert_eq!(
         html("text\n# H"),
-        "<p>text</p>\n<section id=\"h\">\n  <h1>H</h1>\n</section>"
+        "<p>text</p>\n<section id=\"H\">\n  <h1>H</h1>\n</section>"
     );
 }
 
@@ -96,7 +96,7 @@ fn comment_interrupts() {
 fn blank_line_starts_heading() {
     assert_eq!(
         html("text\n\n# H"),
-        "<p>text</p>\n<section id=\"h\">\n  <h1>H</h1>\n</section>"
+        "<p>text</p>\n<section id=\"H\">\n  <h1>H</h1>\n</section>"
     );
 }
 
@@ -122,7 +122,7 @@ fn nested_sublist_interrupts() {
 fn heading_interrupts_inside_blockquote() {
     assert_eq!(
         html("> text\n> # H"),
-        "<blockquote>\n  <p>text</p>\n  <h1 id=\"h\">H</h1>\n</blockquote>"
+        "<blockquote>\n  <p>text</p>\n  <h1 id=\"H\">H</h1>\n</blockquote>"
     );
 }
 
@@ -163,7 +163,7 @@ fn block_quote_nests_under_an_ordered_item_without_a_blank() {
 fn heading_nests_under_an_item_without_a_blank() {
     assert_eq!(
         html("- a\n  # H"),
-        "<ul>\n  <li>a\n    <h1 id=\"h\">H</h1>\n  </li>\n</ul>"
+        "<ul>\n  <li>a\n    <h1 id=\"H\">H</h1>\n  </li>\n</ul>"
     );
 }
 
