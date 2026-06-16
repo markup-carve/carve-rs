@@ -1,0 +1,205 @@
+//! Append (or prepend) a clickable permalink anchor to each heading.
+//!
+//! Port of carve-js `heading-permalinks.ts` / carve-php's
+//! `HeadingPermalinksExtension`. carve-js implements this through a heading
+//! block renderer; carve-rs has no per-node block render hook, so this runs as
+//! a `before_render` transform that appends the anchor as an inline child of
+//! each heading. The `<section id>` wrapper stays core; the `<h*>` gains the
+//! anchor.
+//!
+//! Heading id resolution: carve-rs computes heading ids at render time
+//! (case-preserving by default; see [`crate::Options::lowercase_heading_ids`]).
+//! This transform reproduces the same document-order numbered-slug logic. To
+//! match a rendered document that used `with_lowercase_heading_ids(true)`,
+//! construct the extension with [`HeadingPermalinksOptions::lowercase_ids`] set
+//! to the same value.
+
+use std::collections::BTreeMap;
+
+use crate::ast::{BlockNode, Document, Heading, InlineNode, RawInline};
+use crate::extension::CarveExtension;
+
+/// Options for [`HeadingPermalinks`].
+#[derive(Debug, Clone)]
+pub struct HeadingPermalinksOptions {
+    /// Anchor glyph. Default `"¶"`.
+    pub symbol: String,
+    /// CSS class on the anchor. Default `"permalink"`.
+    pub css_class: String,
+    /// `aria-label` on the anchor. Default `"Permalink"`.
+    pub aria_label: String,
+    /// Heading levels (1-6) to add a permalink to. Default all.
+    pub levels: Vec<u8>,
+    /// Place the anchor before the heading text instead of after. Default false.
+    pub prepend: bool,
+    /// Lowercase auto-generated heading ids when computing the link target.
+    /// Must match the renderer's [`crate::Options::lowercase_heading_ids`].
+    /// Default false (case-preserving), matching the carve-rs default.
+    pub lowercase_ids: bool,
+}
+
+impl Default for HeadingPermalinksOptions {
+    fn default() -> Self {
+        Self {
+            symbol: "¶".into(),
+            css_class: "permalink".into(),
+            aria_label: "Permalink".into(),
+            levels: vec![1, 2, 3, 4, 5, 6],
+            prepend: false,
+            lowercase_ids: false,
+        }
+    }
+}
+
+/// Append (or prepend) a clickable permalink anchor to each heading.
+///
+/// ```
+/// use carve::{HeadingPermalinks, HeadingPermalinksOptions, Options};
+/// let opts = HeadingPermalinksOptions { lowercase_ids: true, ..Default::default() };
+/// let ext = HeadingPermalinks::with_options(opts);
+/// let options = Options::new()
+///     .with_extension(&ext)
+///     .with_lowercase_heading_ids(true);
+/// let html = carve::to_html_with_options("# My Heading", &options);
+/// assert!(html.contains(
+///     "<h1>My Heading <a href=\"#my-heading\" class=\"permalink\" aria-label=\"Permalink\">¶</a></h1>"
+/// ));
+/// ```
+pub struct HeadingPermalinks {
+    opts: HeadingPermalinksOptions,
+}
+
+impl HeadingPermalinks {
+    /// Create a heading-permalinks extension with default options.
+    pub fn new() -> Self {
+        Self::with_options(HeadingPermalinksOptions::default())
+    }
+
+    /// Create a heading-permalinks extension with explicit options.
+    pub fn with_options(opts: HeadingPermalinksOptions) -> Self {
+        Self { opts }
+    }
+}
+
+impl Default for HeadingPermalinks {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl CarveExtension for HeadingPermalinks {
+    fn name(&self) -> &'static str {
+        "heading-permalinks"
+    }
+
+    fn before_render(&self, mut doc: Document) -> Document {
+        // Reproduce the renderer's document-order id counter so the anchor
+        // href matches the `<section id>` / `<h* id>` the core emits.
+        let mut counts: BTreeMap<String, usize> = BTreeMap::new();
+        walk_blocks(&mut doc.children, &mut |h| {
+            let id = next_id(h, &mut counts, self.opts.lowercase_ids);
+            if !self.opts.levels.contains(&h.level) {
+                return;
+            }
+            self.append_anchor(h, &id);
+        });
+        doc
+    }
+}
+
+impl HeadingPermalinks {
+    fn append_anchor(&self, h: &mut Heading, id: &str) {
+        let anchor_html = format!(
+            "<a href=\"#{}\" class=\"{}\" aria-label=\"{}\">{}</a>",
+            crate::escape::escape_attr(id),
+            crate::escape::escape_attr(&self.opts.css_class),
+            crate::escape::escape_attr(&self.opts.aria_label),
+            crate::escape::escape_text(&self.opts.symbol),
+        );
+        // Emit the anchor as raw inline HTML so the core inline renderer passes
+        // it through verbatim, with a literal space separating it from the text.
+        let anchor = InlineNode::RawInline(RawInline {
+            format: "html".into(),
+            content: anchor_html,
+        });
+        let space = InlineNode::Text(" ".into());
+        if self.opts.prepend {
+            h.children.insert(0, space);
+            h.children.insert(0, anchor);
+        } else {
+            h.children.push(space);
+            h.children.push(anchor);
+        }
+    }
+}
+
+/// Walk every heading in the document in render order, including headings
+/// nested inside container blocks (the renderer allocates ids for those too).
+fn walk_blocks(blocks: &mut [BlockNode], f: &mut impl FnMut(&mut Heading)) {
+    for block in blocks {
+        match block {
+            BlockNode::Heading(h) => f(h),
+            BlockNode::List(l) => {
+                for item in &mut l.items {
+                    walk_blocks(&mut item.children, f);
+                }
+            }
+            BlockNode::BlockQuote(b) => walk_blocks(&mut b.children, f),
+            BlockNode::Admonition(a) => walk_blocks(&mut a.children, f),
+            BlockNode::Div(d) => walk_blocks(&mut d.children, f),
+            BlockNode::Extension(e) => walk_blocks(&mut e.children, f),
+            BlockNode::DefinitionList(dl) => {
+                for item in &mut dl.items {
+                    for def in &mut item.definitions {
+                        walk_blocks(def, f);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Mirror the renderer's `next_heading_id`: author id if present, else a slug
+/// of the plain text, numbered per document-order duplicate.
+fn next_id(h: &Heading, counts: &mut BTreeMap<String, usize>, lowercase: bool) -> String {
+    let base = h
+        .attrs
+        .as_ref()
+        .and_then(|a| a.id.clone())
+        .unwrap_or_else(|| crate::parse::slugify_parse(&plain_text(&h.children), lowercase));
+    let count = counts.entry(base.clone()).or_insert(0);
+    *count += 1;
+    if *count == 1 {
+        base
+    } else {
+        format!("{base}-{count}")
+    }
+}
+
+/// Plain-text projection of inline nodes for slug generation, matching the
+/// renderer's `plain_inlines`.
+fn plain_text(nodes: &[InlineNode]) -> String {
+    let mut out = String::new();
+    for node in nodes {
+        match node {
+            InlineNode::Text(s) => out.push_str(s),
+            InlineNode::Emphasis(e) => out.push_str(&plain_text(&e.children)),
+            InlineNode::Code(s, _) => out.push_str(s),
+            InlineNode::Link(l) => out.push_str(&plain_text(&l.children)),
+            InlineNode::Image(i) => out.push_str(&i.alt),
+            InlineNode::Extension(e) => out.push_str(&plain_text(&e.children)),
+            InlineNode::Abbreviation(a) => out.push_str(&a.abbr),
+            InlineNode::Mention(m) => out.push_str(&m.user),
+            InlineNode::Tag(t) => out.push_str(&t.name),
+            InlineNode::CaptionNumber(n) => {
+                if let Some(number) = n.number {
+                    out.push_str(&number.to_string());
+                }
+            }
+            InlineNode::SoftBreak | InlineNode::HardBreak => out.push(' '),
+            _ => {}
+        }
+    }
+    out
+}
