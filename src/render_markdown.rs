@@ -1,6 +1,15 @@
 use crate::ast::*;
+use crate::extension::Options;
 use crate::render_text::{clean_smart_text, clean_smart_text_stateful, SmartQuoteState};
 use std::collections::HashSet;
+
+/// Render a document to Markdown. The Markdown renderer has no option-driven
+/// behavior of its own; this wrapper exists so the profile pipeline can render
+/// every format through a uniform `*_with_options` entry point. The profile
+/// transform is applied to `doc` upstream (see `crate::prepare_doc`).
+pub fn render_markdown_with_options(doc: &Document, _options: &Options<'_>) -> String {
+    render_markdown(doc)
+}
 
 pub fn render_markdown(doc: &Document) -> String {
     let mut heading_ids = HashSet::new();
