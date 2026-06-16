@@ -265,12 +265,16 @@ fn mermaid_inside_footnote_is_transformed() {
     // outside the tree), so it must be transformed too -- matching carve-js.
     let ext = Mermaid::new();
     let opts = Options::new().with_extension(&ext);
-    let out = carve::to_html_with_options("see[^a]\n\n[^a]: ``` mermaid\n    graph\n    ```\n", &opts);
+    let out =
+        carve::to_html_with_options("see[^a]\n\n[^a]: ``` mermaid\n    graph\n    ```\n", &opts);
     assert!(
         out.contains("<pre class=\"mermaid\">"),
         "footnote mermaid not transformed: {out}"
     );
-    assert!(!out.contains("language-mermaid"), "left as code block: {out}");
+    assert!(
+        !out.contains("language-mermaid"),
+        "left as code block: {out}"
+    );
 }
 
 #[test]
