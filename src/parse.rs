@@ -94,6 +94,11 @@ pub fn parse_with_options(source: &str, options: &Options<'_>) -> Document {
     resolve_reference_links(&mut doc, &link_defs);
     apply_abbreviations(&mut doc);
     resolve_crossrefs(&mut doc, options.lowercase_heading_ids);
+    // Single post-resolution pass: a link may not contain another link. Runs
+    // after reference and cross-reference resolution because both produce
+    // `Link` nodes only at that stage; running earlier would miss the anchors
+    // they create. Applied over document inline content and footnote bodies.
+    enforce_no_nesting(&mut doc);
     for ext in &options.extensions {
         doc = ext.after_parse(doc);
     }
@@ -4479,6 +4484,178 @@ fn resolve_crossrefs_inline(nodes: &mut Vec<InlineNode>, index: &CrossrefIndex) 
             _ => {}
         }
     }
+}
+
+/// Enforce "links never nest" (CommonMark: a link may not contain another
+/// link). This is a single post-resolution pass: it runs AFTER reference-link
+/// and cross-reference resolution because both turn into `Link` nodes only at
+/// that stage, so a `</#id>` cross-reference or a resolved reference inside a
+/// link's text would otherwise survive as a nested anchor. A link found inside
+/// another link is unwrapped to its (recursively cleaned) text, so only the
+/// outermost destination applies; an autolink inside a link becomes plain text
+/// (the display form the renderer would emit, with a leading `mailto:` scheme
+/// stripped). A footnote body renders in the endnotes section, outside any
+/// anchor, so its links are not nested -- the walk re-enters a footnote body
+/// with `inside_link = false`.
+fn enforce_no_nesting(doc: &mut Document) {
+    for block in &mut doc.children {
+        enforce_no_nesting_block(block);
+    }
+    for body in doc.footnote_defs.values_mut() {
+        for block in body {
+            enforce_no_nesting_block(block);
+        }
+    }
+}
+
+fn enforce_no_nesting_block(block: &mut BlockNode) {
+    match block {
+        BlockNode::Heading(h) => apply_no_nesting(&mut h.children),
+        BlockNode::Paragraph(p) => apply_no_nesting(&mut p.children),
+        BlockNode::List(l) => {
+            for item in &mut l.items {
+                for child in &mut item.children {
+                    enforce_no_nesting_block(child);
+                }
+            }
+        }
+        BlockNode::BlockQuote(b) => {
+            if let Some(attribution) = &mut b.attribution {
+                apply_no_nesting(attribution);
+            }
+            for child in &mut b.children {
+                enforce_no_nesting_block(child);
+            }
+        }
+        BlockNode::Admonition(a) => {
+            if let Some(title) = &mut a.title {
+                apply_no_nesting(title);
+            }
+            for child in &mut a.children {
+                enforce_no_nesting_block(child);
+            }
+        }
+        BlockNode::Div(d) => {
+            for child in &mut d.children {
+                enforce_no_nesting_block(child);
+            }
+        }
+        BlockNode::DefinitionList(d) => {
+            for item in &mut d.items {
+                for term in &mut item.terms {
+                    apply_no_nesting(term);
+                }
+                for definition in &mut item.definitions {
+                    for child in definition {
+                        enforce_no_nesting_block(child);
+                    }
+                }
+            }
+        }
+        BlockNode::Table(t) => {
+            if let Some(caption) = &mut t.caption {
+                apply_no_nesting(caption);
+            }
+            for row in &mut t.rows {
+                for cell in &mut row.cells {
+                    apply_no_nesting(&mut cell.children);
+                }
+            }
+        }
+        BlockNode::Figure(f) => {
+            apply_no_nesting(&mut f.caption);
+            match &mut f.target {
+                FigureTarget::BlockQuote(b) => {
+                    if let Some(attribution) = &mut b.attribution {
+                        apply_no_nesting(attribution);
+                    }
+                    for child in &mut b.children {
+                        enforce_no_nesting_block(child);
+                    }
+                }
+                FigureTarget::Table(t) => {
+                    if let Some(caption) = &mut t.caption {
+                        apply_no_nesting(caption);
+                    }
+                    for row in &mut t.rows {
+                        for cell in &mut row.cells {
+                            apply_no_nesting(&mut cell.children);
+                        }
+                    }
+                }
+                FigureTarget::Image(_)
+                | FigureTarget::CodeBlock(_)
+                | FigureTarget::Paragraph(_) => {}
+            }
+        }
+        _ => {}
+    }
+}
+
+fn apply_no_nesting(nodes: &mut Vec<InlineNode>) {
+    let taken = std::mem::take(nodes);
+    *nodes = enforce_no_nesting_inline(taken, false);
+}
+
+fn enforce_no_nesting_inline(nodes: Vec<InlineNode>, inside_link: bool) -> Vec<InlineNode> {
+    let mut out = Vec::with_capacity(nodes.len());
+    for node in nodes {
+        match node {
+            InlineNode::Link(mut link) => {
+                let children = enforce_no_nesting_inline(link.children, true);
+                if inside_link {
+                    // A nested link is dropped; only its (cleaned) text remains
+                    // because the outermost destination already applies.
+                    out.extend(children);
+                } else {
+                    link.children = children;
+                    out.push(InlineNode::Link(link));
+                }
+            }
+            InlineNode::AutoLink(a) => {
+                if inside_link {
+                    let display = a
+                        .href
+                        .strip_prefix("mailto:")
+                        .unwrap_or(&a.href)
+                        .to_string();
+                    out.push(InlineNode::Text(display));
+                } else {
+                    out.push(InlineNode::AutoLink(a));
+                }
+            }
+            InlineNode::Footnote(mut f) => {
+                // A footnote body renders outside the anchor, so its links are
+                // not nested: re-enter with inside_link = false.
+                if let Some(inline) = f.inline.take() {
+                    f.inline = Some(enforce_no_nesting_inline(inline, false));
+                }
+                out.push(InlineNode::Footnote(f));
+            }
+            InlineNode::Emphasis(mut e) => {
+                e.children = enforce_no_nesting_inline(e.children, inside_link);
+                out.push(InlineNode::Emphasis(e));
+            }
+            InlineNode::Span(mut s) => {
+                s.children = enforce_no_nesting_inline(s.children, inside_link);
+                out.push(InlineNode::Span(s));
+            }
+            InlineNode::Extension(mut ext) => {
+                ext.children = enforce_no_nesting_inline(ext.children, inside_link);
+                out.push(InlineNode::Extension(ext));
+            }
+            InlineNode::CriticInsert(mut c) => {
+                c.children = enforce_no_nesting_inline(c.children, inside_link);
+                out.push(InlineNode::CriticInsert(c));
+            }
+            InlineNode::CriticDelete(mut c) => {
+                c.children = enforce_no_nesting_inline(c.children, inside_link);
+                out.push(InlineNode::CriticDelete(c));
+            }
+            other => out.push(other),
+        }
+    }
+    out
 }
 
 fn plain_inlines_parse(nodes: &[InlineNode]) -> String {
