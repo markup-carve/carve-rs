@@ -864,12 +864,40 @@ fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             inner.push(stripped.to_string());
             continue;
         }
+        // Continuation marker (Carve, PART 9 §17): a lone `+` at column 0 after
+        // a quoted line attaches the FOLLOWING flush-left block to the quote --
+        // the un-prefixed analogue of the list-item form, so a real block (list,
+        // fenced code, table, ...) joins the quote without repeating `>`. Collect
+        // the block's lines (up to a blank line, a `>` line, or a further `+`)
+        // and splice them into the quote body behind a blank-line separator, so
+        // they parse as their own block instead of folding into the quoted
+        // paragraph. The marker only attaches; a blank line still ends the quote
+        // and a `+` outside a container stays literal.
+        if line.trim() == "+" && indent_columns(line) == 0 {
+            cur.consume();
+            let mut attached: Vec<String> = Vec::new();
+            while let Some(&next) = cur.lines.get(cur.pos) {
+                if next.trim().is_empty()
+                    || next.starts_with('>')
+                    || (next.trim() == "+" && indent_columns(next) == 0)
+                {
+                    break;
+                }
+                attached.push(next.to_string());
+                cur.pos += 1;
+            }
+            if !attached.is_empty() {
+                // `inner` always holds the quote's first content line, so a
+                // leading blank separates the attached block from it.
+                inner.push(String::new());
+                inner.extend(attached);
+                inner.push(String::new());
+                para_open = false;
+            }
+            continue;
+        }
         // Lazy continuation: a non-`>` line folds into an OPEN paragraph. A
         // blank line, a caption, or a line that starts a block ends the quote.
-        // A lone `+` is NOT special here: it is only structural as a LIST
-        // continuation marker, so inside a top-level quote it folds as prose
-        // (`> a` then `+` -> one quote). The list `+` handler bounds what it
-        // hands to a sub-block, so a quote cannot swallow the next `+`.
         // A list marker ENDS the quote and starts a top-level sibling list (it
         // does not lazily extend the quote). Symmetric §10: a list marker folds
         // into a PARAGRAPH but ends a blockquote -- matching djot (`> q` / `- a`

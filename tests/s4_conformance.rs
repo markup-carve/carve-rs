@@ -132,13 +132,17 @@ fn replaces_nul_with_replacement_char() {
 }
 
 #[test]
-fn lone_plus_outside_a_list_stays_quote_prose() {
-    // A lone `+` is only structural as a LIST continuation marker; inside an
-    // open top-level block quote it folds as ordinary prose.
+fn quote_continuation_marker_attaches_following_block() {
+    // PART 9 §17: a lone `+` at column 0 after a quoted line attaches the
+    // following flush-left block to the quote (the un-prefixed analogue of the
+    // list-item form), so a real list joins the quote without repeating `>`.
     assert_eq!(
-        carve::to_html("> a\n+"),
-        "<blockquote><p>a\n+</p></blockquote>"
+        carve::to_html("> quoted\n+\n- item"),
+        "<blockquote>\n  <p>quoted</p>\n  <ul>\n    <li>item</li>\n  </ul>\n</blockquote>"
     );
+    // A trailing `+` with nothing to attach is consumed (dropped), matching the
+    // list-item continuation marker.
+    assert_eq!(carve::to_html("> a\n+"), "<blockquote><p>a</p></blockquote>");
 }
 
 #[test]
