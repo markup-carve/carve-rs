@@ -142,7 +142,10 @@ fn quote_continuation_marker_attaches_following_block() {
     );
     // A trailing `+` with nothing to attach is consumed (dropped), matching the
     // list-item continuation marker.
-    assert_eq!(carve::to_html("> a\n+"), "<blockquote><p>a</p></blockquote>");
+    assert_eq!(
+        carve::to_html("> a\n+"),
+        "<blockquote><p>a</p></blockquote>"
+    );
 }
 
 #[test]
