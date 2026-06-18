@@ -42,12 +42,50 @@ fn bullet_ends_a_heading_and_starts_a_sibling_list() {
 }
 
 #[test]
-fn bullet_ends_a_blockquote_and_starts_a_sibling_list() {
-    // A list marker ends the quote and starts a top-level sibling list (it does
-    // not lazily extend the quote); plain text would fold in (matches djot).
+fn bullet_folds_into_an_open_quoted_paragraph() {
+    // A list marker folds into the open quoted paragraph as lazy continuation,
+    // exactly like it folds into a top-level paragraph: a list needs a blank
+    // line before it. (A heading is the sole construct a list marker ends.)
     assert_eq!(
         h("> quoted\n- item"),
-        "<blockquote><p>quoted</p></blockquote>\n<ul>\n  <li>item</li>\n</ul>"
+        "<blockquote><p>quoted\n- item</p></blockquote>"
+    );
+}
+
+#[test]
+fn ordered_folds_into_an_open_quoted_paragraph() {
+    assert_eq!(
+        h("> quoted\n1. item"),
+        "<blockquote><p>quoted\n1. item</p></blockquote>"
+    );
+}
+
+#[test]
+fn bullet_ends_a_quoted_heading_and_starts_a_sibling_list() {
+    // A list marker folds only into an OPEN PARAGRAPH. A quoted heading leaves
+    // no open paragraph, so the marker ends the quote and starts a top-level
+    // sibling list -- mirroring the top-level `# T` / `- item` case.
+    assert_eq!(
+        h("> # h\n- item"),
+        "<blockquote>\n  <h1 id=\"h\">h</h1>\n</blockquote>\n<ul>\n  <li>item</li>\n</ul>"
+    );
+}
+
+#[test]
+fn ordered_ends_a_quoted_heading_and_starts_a_sibling_list() {
+    assert_eq!(
+        h("> # h\n1. item"),
+        "<blockquote>\n  <h1 id=\"h\">h</h1>\n</blockquote>\n<ol>\n  <li>item</li>\n</ol>"
+    );
+}
+
+#[test]
+fn bullet_ends_a_quote_whose_last_line_is_a_heading() {
+    // A paragraph followed by a quoted heading: the heading closes the open
+    // paragraph, so the trailing list marker ends the quote (does not fold).
+    assert_eq!(
+        h("> a\n> # h\n- item"),
+        "<blockquote>\n  <p>a</p>\n  <h1 id=\"h\">h</h1>\n</blockquote>\n<ul>\n  <li>item</li>\n</ul>"
     );
 }
 

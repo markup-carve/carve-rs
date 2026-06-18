@@ -56,8 +56,12 @@ fn blank_line_before_marker_keeps_it_literal() {
 
 #[test]
 fn indented_marker_is_not_a_continuation_marker() {
+    // The indented `+` is not a continuation marker, so it folds into the open
+    // quoted paragraph as literal text. The trailing `- item` list marker folds
+    // in too (a list marker does not interrupt an open quoted paragraph, the
+    // same as at the top level), so the whole thing is one quoted paragraph.
     assert_eq!(
         carve::to_html("> q\n  +\n- item"),
-        "<blockquote><p>q\n+</p></blockquote>\n<ul>\n  <li>item</li>\n</ul>"
+        "<blockquote><p>q\n+\n- item</p></blockquote>"
     );
 }
