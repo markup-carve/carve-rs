@@ -857,9 +857,34 @@ fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                     }
                 }
             } else {
+                // An open paragraph requires plain paragraph text. A stripped
+                // line that is itself a block-opener (heading, thematic break,
+                // table row, `:::` div / line block opener) leaves NO open
+                // paragraph -- so a following list marker has nothing to fold
+                // into and must end the quote. Reuse `interrupts_paragraph`
+                // (the §10 predicate): a line that would interrupt a paragraph
+                // is, by definition, not paragraph continuation text.
+                // `interrupts_paragraph` only consults the lookahead for a
+                // FENCED-CODE opener (its closer probe); `:::` container openers
+                // are already excluded by the detect_container_open check below.
+                // Build the remaining-quoted-body slice ONLY for a fence opener,
+                // so an ordinary long quote stays linear instead of O(n^2).
+                let rest_stripped: Vec<&str> = if detect_fence_open(stripped).is_some() {
+                    cur.lines[cur.pos..]
+                        .iter()
+                        .take_while(|l| l.starts_with('>'))
+                        .map(|l| {
+                            let s = l.strip_prefix('>').unwrap_or(l);
+                            s.strip_prefix(' ').unwrap_or(s)
+                        })
+                        .collect()
+                } else {
+                    Vec::new()
+                };
                 para_open = !stripped.trim().is_empty()
                     && detect_container_open(stripped).is_none()
-                    && !stripped.trim_start().starts_with("%%");
+                    && !stripped.trim_start().starts_with("%%")
+                    && !interrupts_paragraph(stripped, &rest_stripped);
             }
             inner.push(stripped.to_string());
             continue;
@@ -898,14 +923,16 @@ fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         }
         // Lazy continuation: a non-`>` line folds into an OPEN paragraph. A
         // blank line, a caption, or a line that starts a block ends the quote.
-        // A list marker ENDS the quote and starts a top-level sibling list (it
-        // does not lazily extend the quote). Symmetric §10: a list marker folds
-        // into a PARAGRAPH but ends a blockquote -- matching djot (`> q` / `- a`
-        // -> quote + list). Bullet and ordered alike.
+        // A list marker FOLDS into the open quoted paragraph as literal text --
+        // the quoted paragraph follows the same rule as a top-level paragraph,
+        // where a list marker does not interrupt (it needs a blank line before
+        // it). `interrupts_paragraph` is the shared predicate for that decision,
+        // and it already returns false for bullet/task/ordered markers, so we
+        // simply defer to it. A heading is the sole construct a list marker
+        // would otherwise end, and headings still interrupt via that predicate.
         if !para_open
             || line.trim().is_empty()
             || line.starts_with("^ ")
-            || is_list_marker(line)
             || interrupts_paragraph(line, &cur.lines[cur.pos + 1..])
         {
             break;
