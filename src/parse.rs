@@ -358,9 +358,9 @@ fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<BlockNode>
     if let Some((level, first_text)) = detect_heading(line) {
         cur.consume();
         // Headings are multi-line: the text spills onto following lines until a
-        // blank line. A continuation line may carry the same-or-lower number of
-        // `#` (stripped) or none; a higher/other heading marker starts a new
-        // heading, and a caption or a fenced comment (`%%%`) ends it. A
+        // blank line. A continuation line may carry EXACTLY the same number of
+        // `#` (stripped) or none; a different `#` count (more or fewer) starts a
+        // new heading, and a caption or a fenced comment (`%%%`) ends it. A
         // block-opener (list/quote/table/fence/div/thematic break) ends it and
         // starts that block, exactly as it interrupts a paragraph (§10); only
         // plain text folds (an ordered marker folds, it never interrupts).
@@ -369,7 +369,7 @@ fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<BlockNode>
             if next.trim().is_empty() {
                 break;
             }
-            if let Some(cont) = heading_continuation_same_or_lower(next, level) {
+            if let Some(cont) = heading_continuation_same_level(next, level) {
                 joined.push('\n');
                 joined.push_str(cont);
                 cur.consume();
@@ -529,16 +529,18 @@ fn detect_heading(line: &str) -> Option<(u8, &str)> {
     Some((hashes as u8, rest))
 }
 
-/// A heading continuation line carrying 1..=`level` `#` markers, a space, then
-/// non-empty text. Returns the text after the markers (markers stripped), as
-/// in Djot ("may be preceded by the same number of `#` characters").
-fn heading_continuation_same_or_lower(line: &str, level: u8) -> Option<&str> {
+/// A heading continuation line carrying EXACTLY `level` `#` markers, a space,
+/// then non-empty text. Returns the text after the markers (markers stripped),
+/// as in Djot ("may be preceded by the same number of `#` characters"). A
+/// different count (more or fewer) returns None, so that line starts a NEW
+/// heading instead of continuing the current one.
+fn heading_continuation_same_level(line: &str, level: u8) -> Option<&str> {
     let bytes = line.as_bytes();
     let mut hashes = 0usize;
     while hashes < bytes.len() && bytes[hashes] == b'#' {
         hashes += 1;
     }
-    if hashes == 0 || hashes > level as usize {
+    if hashes != level as usize {
         return None;
     }
     if hashes >= bytes.len() || bytes[hashes] != b' ' {
