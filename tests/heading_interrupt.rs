@@ -31,3 +31,40 @@ fn plain_text_still_folds_into_heading() {
         "<section id=\"H-plain-words\">\n  <h1>H\nplain words</h1>\n</section>"
     );
 }
+
+#[test]
+fn only_same_level_hash_marker_continues_a_heading() {
+    // A continuation line with EXACTLY the same number of `#` continues the
+    // heading (markers stripped). Matches Djot: "may be preceded by the same
+    // number of `#` characters".
+    assert_eq!(
+        carve::to_html("## H\n## more"),
+        "<section id=\"H-more\">\n  <h2>H\nmore</h2>\n</section>"
+    );
+    assert_eq!(
+        carve::to_html("# H\n# more"),
+        "<section id=\"H-more\">\n  <h1>H\nmore</h1>\n</section>"
+    );
+    // A no-`#` plain-text line still folds in.
+    assert_eq!(
+        carve::to_html("## H\nmore"),
+        "<section id=\"H-more\">\n  <h2>H\nmore</h2>\n</section>"
+    );
+
+    // A DIFFERENT `#` count (fewer) ends the heading and starts a NEW one. A
+    // shallower heading closes the section rather than nesting.
+    assert_eq!(
+        carve::to_html("## H\n# more"),
+        "<section id=\"H\">\n  <h2>H</h2>\n</section>\n<section id=\"more\">\n  <h1>more</h1>\n</section>"
+    );
+    assert_eq!(
+        carve::to_html("### H\n# more"),
+        "<section id=\"H\">\n  <h3>H</h3>\n</section>\n<section id=\"more\">\n  <h1>more</h1>\n</section>"
+    );
+    // A DIFFERENT `#` count (more) likewise starts a new heading; a deeper
+    // heading nests inside the current section.
+    assert_eq!(
+        carve::to_html("## H\n### more"),
+        "<section id=\"H\">\n  <h2>H</h2>\n  <section id=\"more\">\n    <h3>more</h3>\n  </section>\n</section>"
+    );
+}
