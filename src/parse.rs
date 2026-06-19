@@ -1843,10 +1843,17 @@ fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     // pending-attrs loop), and a trailing same-line `{...}` with no abutting
     // host stays literal inline content (§14). Paragraph attributes come only
     // from a preceding block-attribute line (§15), applied by the caller.
+    // CommonMark / Djot: trailing whitespace at the very END of a paragraph's
+    // final line is not significant and is stripped (`abc ` -> `<p>abc</p>`,
+    // `# ` -> `<p>#</p>`). Only the paragraph's final trailing whitespace is
+    // removed -- whitespace before a MID-paragraph newline is untouched, so a
+    // two-space (`a  \nb`) or backslash (`a\<newline>b`) line break is
+    // preserved. `trim_end` here acts on the joined buffer, i.e. only the end.
     let joined = lines.join("\n");
+    let joined = joined.trim_end_matches([' ', '\t']);
     BlockNode::Paragraph(Paragraph {
         attrs: None,
-        children: parse_inline_with_options(&joined, options),
+        children: parse_inline_with_options(joined, options),
     })
 }
 
