@@ -292,6 +292,16 @@ fn collect_footnotes_inline(
             InlineNode::CriticDelete(c) => {
                 collect_footnotes_inline(&mut c.children, def_labels, seen, order);
             }
+            InlineNode::CitationGroup(g) => {
+                for item in &mut g.items {
+                    if let Some(prefix) = &mut item.prefix {
+                        collect_footnotes_inline(prefix, def_labels, seen, order);
+                    }
+                    if let Some(locator) = &mut item.locator {
+                        collect_footnotes_inline(locator, def_labels, seen, order);
+                    }
+                }
+            }
             _ => {}
         }
     }
@@ -505,6 +515,7 @@ fn plain_inlines(nodes: &[InlineNode]) -> String {
             InlineNode::Link(l) => out.push_str(&plain_inlines(&l.children)),
             InlineNode::Image(i) => out.push_str(&i.alt),
             InlineNode::Extension(e) => out.push_str(&plain_inlines(&e.children)),
+            InlineNode::CitationGroup(g) => out.push_str(&g.raw),
             InlineNode::Abbreviation(a) => out.push_str(&a.abbr),
             InlineNode::Mention(m) => out.push_str(&m.user),
             InlineNode::Tag(t) => out.push_str(&t.name),
@@ -1327,6 +1338,7 @@ fn render_inline_after(
                 ));
             }
         }
+        InlineNode::CitationGroup(g) => render_citation_group(out, g, options),
         InlineNode::Extension(e) => render_inline_extension(out, e, options, state),
         InlineNode::Abbreviation(a) => out.push_str(&format!(
             "<abbr title=\"{}\">{}</abbr>",
@@ -1367,6 +1379,52 @@ fn render_inline_after(
             "<span class=\"critic-comment\">{}</span>",
             escape_text(&c.text)
         )),
+    }
+}
+
+fn render_citation_group(out: &mut String, g: &CitationGroup, options: &Options<'_>) {
+    if g.items.iter().any(|item| item.label.is_none()) {
+        out.push_str(&escape_text(&g.raw));
+        return;
+    }
+
+    match g.mode.unwrap_or(CitationRenderMode::Numbered) {
+        CitationRenderMode::Numbered => {
+            out.push('[');
+            for (idx, item) in g.items.iter().enumerate() {
+                if idx > 0 {
+                    out.push_str(", ");
+                }
+                render_citation_item(out, item, options);
+            }
+            out.push(']');
+        }
+        CitationRenderMode::AuthorDate => {
+            out.push('(');
+            for (idx, item) in g.items.iter().enumerate() {
+                if idx > 0 {
+                    out.push_str("; ");
+                }
+                render_citation_item(out, item, options);
+            }
+            out.push(')');
+        }
+    }
+}
+
+fn render_citation_item(out: &mut String, item: &Citation, options: &Options<'_>) {
+    if let Some(prefix) = &item.prefix {
+        render_inlines(out, prefix, options);
+        out.push(' ');
+    }
+    out.push_str(&format!(
+        "<a href=\"#ref-{}\">{}</a>",
+        escape_attr(&item.key),
+        escape_text(item.label.as_deref().unwrap_or_default())
+    ));
+    if let Some(locator) = &item.locator {
+        out.push_str(", ");
+        render_inlines(out, locator, options);
     }
 }
 

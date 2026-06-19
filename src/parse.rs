@@ -166,6 +166,10 @@ fn extract_link_defs(source: &str) -> (String, BTreeMap<String, LinkDef>) {
         if let Some((label_part, target_part)) =
             line.strip_prefix('[').and_then(|s| s.split_once("]:"))
         {
+            if label_part.starts_with('@') {
+                body.push(line);
+                continue;
+            }
             defs.insert(
                 label_part.to_string(),
                 parse_link_def_target(target_part.trim()),
@@ -4092,6 +4096,17 @@ fn apply_abbreviations_inline(nodes: &mut Vec<InlineNode>, defs: &BTreeMap<Strin
                 apply_abbreviations_inline(&mut e.children, defs);
                 out.push(InlineNode::Extension(e));
             }
+            InlineNode::CitationGroup(mut g) => {
+                for item in &mut g.items {
+                    if let Some(prefix) = &mut item.prefix {
+                        apply_abbreviations_inline(prefix, defs);
+                    }
+                    if let Some(locator) = &mut item.locator {
+                        apply_abbreviations_inline(locator, defs);
+                    }
+                }
+                out.push(InlineNode::CitationGroup(g));
+            }
             other => out.push(other),
         }
     }
@@ -4303,6 +4318,17 @@ fn resolve_reference_links_inline(nodes: &mut Vec<InlineNode>, defs: &BTreeMap<S
             }
             InlineNode::Extension(e) => {
                 resolve_reference_links_inline(&mut e.children, defs);
+                out.push(node);
+            }
+            InlineNode::CitationGroup(g) => {
+                for item in &mut g.items {
+                    if let Some(prefix) = &mut item.prefix {
+                        resolve_reference_links_inline(prefix, defs);
+                    }
+                    if let Some(locator) = &mut item.locator {
+                        resolve_reference_links_inline(locator, defs);
+                    }
+                }
                 out.push(node);
             }
             _ => out.push(node),
@@ -4545,6 +4571,16 @@ fn resolve_crossrefs_inline(nodes: &mut Vec<InlineNode>, index: &CrossrefIndex) 
             InlineNode::Link(l) => resolve_crossrefs_inline(&mut l.children, index),
             InlineNode::Span(s) => resolve_crossrefs_inline(&mut s.children, index),
             InlineNode::Extension(e) => resolve_crossrefs_inline(&mut e.children, index),
+            InlineNode::CitationGroup(g) => {
+                for item in &mut g.items {
+                    if let Some(prefix) = &mut item.prefix {
+                        resolve_crossrefs_inline(prefix, index);
+                    }
+                    if let Some(locator) = &mut item.locator {
+                        resolve_crossrefs_inline(locator, index);
+                    }
+                }
+            }
             _ => {}
         }
     }
@@ -4732,6 +4768,7 @@ fn plain_inlines_parse(nodes: &[InlineNode]) -> String {
             InlineNode::Link(l) => out.push_str(&plain_inlines_parse(&l.children)),
             InlineNode::Image(i) => out.push_str(&i.alt),
             InlineNode::Extension(e) => out.push_str(&plain_inlines_parse(&e.children)),
+            InlineNode::CitationGroup(g) => out.push_str(&g.raw),
             InlineNode::Abbreviation(a) => out.push_str(&a.abbr),
             InlineNode::Mention(m) => out.push_str(&m.user),
             InlineNode::Tag(t) => out.push_str(&t.name),

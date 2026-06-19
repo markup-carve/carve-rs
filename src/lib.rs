@@ -15,6 +15,7 @@
 //! inline extensions, attributes, and frontmatter.
 
 pub mod ast;
+mod citations;
 mod escape;
 mod extension;
 pub mod extensions;
@@ -28,6 +29,7 @@ mod render_plain;
 mod render_text;
 
 pub use ast::*;
+pub use citations::{CitationMode, Citations};
 pub use extension::{
     BlockMatch, CarveExtension, InlineMatch, MatcherContext, Options, RenderContext,
 };
