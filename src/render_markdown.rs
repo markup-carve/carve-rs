@@ -363,6 +363,8 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext) -> String {
         ),
         InlineNode::CriticComment(_) => String::new(),
         InlineNode::CrossRef(crossref) => format!("</#{}>", crossref.target),
+        // Tier-2 ext node; the core renderer has no numbering, so emit the source.
+        InlineNode::CitationGroup(group) => group.raw.clone(),
         InlineNode::CaptionNumber(number) => number
             .number
             .map(|n| n.to_string())

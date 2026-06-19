@@ -205,6 +205,8 @@ fn render_inline(node: &InlineNode, state: &mut SmartQuoteState) -> String {
         InlineNode::CriticSubstitute(sub) => format!("~{}~{}", sub.old_text, sub.new_text),
         InlineNode::CriticComment(_) => String::new(),
         InlineNode::CrossRef(crossref) => format!("</#{}>", crossref.target),
+        // Tier-2 ext node; the core renderer has no numbering, so emit the source.
+        InlineNode::CitationGroup(group) => group.raw.clone(),
         InlineNode::CaptionNumber(number) => number
             .number
             .map(|n| n.to_string())

@@ -813,6 +813,8 @@ fn extract_inline_text(node: &InlineNode) -> String {
         InlineNode::CriticComment(_) => String::new(),
         InlineNode::CrossRef(c) => c.target.clone(),
         InlineNode::CaptionNumber(_) => String::new(),
+        // Tier-2 citation node: its source-flavored text is the verbatim `[...]`.
+        InlineNode::CitationGroup(g) => g.raw.clone(),
     }
 }
 
@@ -952,6 +954,7 @@ fn is_empty_inline(node: &InlineNode) -> bool {
         | InlineNode::Abbreviation(_)
         | InlineNode::CrossRef(_)
         | InlineNode::CaptionNumber(_)
+        | InlineNode::CitationGroup(_)
         | InlineNode::SoftBreak
         | InlineNode::HardBreak
         | InlineNode::AutoLink(_)

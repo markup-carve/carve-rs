@@ -142,6 +142,9 @@ pub fn canonical_inline_type(node: &InlineNode) -> Option<&'static str> {
         // carve-php / carve-js treat `#tag` under the mention feature.
         InlineNode::Tag(_) => Some("mention"),
         InlineNode::Extension(_) => Some("inline_extension"),
+        // Citations are delivered as a Tier-2 extension, so they gate under the
+        // inline-extension feature (allowed only where extensions are allowed).
+        InlineNode::CitationGroup(_) => Some("inline_extension"),
         InlineNode::Abbreviation(_) => Some("abbreviation"),
         // `^[...]` (inline) carries `inline`; `[^id]` is a reference. Both are
         // denied under the footnote family by the presets, but we distinguish

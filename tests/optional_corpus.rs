@@ -47,6 +47,41 @@ fn emoji_map() {
 }
 
 #[test]
+fn citations_numbered() {
+    let citations = carve::Citations::new();
+    let options = carve::Options::new().with_extension(&citations);
+    assert_optional_pair("05-citations-numbered", options);
+}
+
+#[test]
+fn citations_author_date() {
+    let citations = carve::Citations::author_date();
+    let options = carve::Options::new().with_extension(&citations);
+    assert_optional_pair("06-citations-author-date", options);
+}
+
+#[test]
+fn citations_undefined_key() {
+    let citations = carve::Citations::new();
+    let options = carve::Options::new().with_extension(&citations);
+    assert_optional_pair("07-citations-undefined-key", options);
+}
+
+#[test]
+fn citations_attr_span() {
+    let citations = carve::Citations::new();
+    let options = carve::Options::new().with_extension(&citations);
+    assert_optional_pair("08-citations-attr-span", options);
+}
+
+#[test]
+fn citations_locator_semicolon() {
+    let citations = carve::Citations::new();
+    let options = carve::Options::new().with_extension(&citations);
+    assert_optional_pair("09-citations-locator-semicolon", options);
+}
+
+#[test]
 #[ignore = "optional Tier-2 feature not supported by carve-rs yet"]
 fn smart_quotes_locale_de() {
     assert_optional_pair("03-smart-quotes-locale-de", carve::Options::new());
