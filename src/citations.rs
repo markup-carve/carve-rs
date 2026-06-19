@@ -511,6 +511,7 @@ fn inject_references_block(blocks: &mut Vec<BlockNode>) {
         attrs: None,
         name: REFS_BLOCK.to_string(),
         children: Vec::new(),
+        summary: None,
     });
     for block in blocks.iter_mut() {
         match block {
