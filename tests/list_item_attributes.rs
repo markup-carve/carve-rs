@@ -72,7 +72,9 @@ fn attributed_marker_with_no_content_is_not_a_list() {
 #[test]
 fn bare_marker_with_no_content_is_not_a_list() {
     // The same rule applies to a plain marker: a bare `- ` is a paragraph.
-    assert_eq!(carve::to_html("- "), "<p>- </p>");
+    // The final trailing space is stripped (CommonMark "final spaces"), so the
+    // paragraph renders as `<p>-</p>` rather than keeping the dangling space.
+    assert_eq!(carve::to_html("- "), "<p>-</p>");
 }
 
 #[test]
