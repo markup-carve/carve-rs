@@ -1,0 +1,3 @@
+Text[^a] here.
+
+[^a]: the note.

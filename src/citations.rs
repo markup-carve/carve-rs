@@ -436,7 +436,10 @@ fn annotate_citations_block(
                         }
                     }
                 }
-                FigureTarget::Image(_) => {}
+                FigureTarget::Paragraph(p) => {
+                    annotate_citations_inline(&mut p.children, defs, mode, seen, order);
+                }
+                FigureTarget::Image(_) | FigureTarget::CodeBlock(_) => {}
             }
         }
         _ => {}

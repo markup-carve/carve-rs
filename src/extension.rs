@@ -9,6 +9,7 @@ use std::collections::BTreeMap;
 use crate::ast::{BlockExtension, BlockNode, Document, InlineExtension, InlineNode};
 use crate::escape::{escape_attr, escape_text};
 use crate::parse::{parse_blocks_with_options, parse_inline_with_options};
+use crate::profile::Profile;
 
 #[derive(Default)]
 pub struct Options<'a> {
@@ -16,6 +17,21 @@ pub struct Options<'a> {
     pub mention_url: Option<String>,
     pub tag_url: Option<String>,
     pub emoji: BTreeMap<String, String>,
+    /// When `true`, lowercase the kept characters of an auto-generated heading
+    /// id per code point (`char::to_lowercase`). Default `false`: heading ids
+    /// are CASE-PRESERVING (`# Getting Started` -> `Getting-Started`), matching
+    /// carve-js / carve-php. carve-rs has no ASCII transliterator, so
+    /// ascii-folding is intentionally unsupported here; only `lowercase` is.
+    pub lowercase_heading_ids: bool,
+    /// Optional feature-restriction profile. When set, disallowed nodes are
+    /// converted to text / stripped / error'd per the profile's action,
+    /// link/image URLs are gated by its link policy, and `max_nesting` /
+    /// `max_length` are enforced. The transform runs on the parsed document
+    /// before rendering, so it holds for every renderer. See [`Profile`].
+    pub profile: Option<Profile>,
+    /// Current document host, used by the profile's link policy to tell
+    /// internal from external links.
+    pub profile_base_host: Option<String>,
 }
 
 impl<'a> Options<'a> {
@@ -40,6 +56,26 @@ impl<'a> Options<'a> {
 
     pub fn with_emoji(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
         self.emoji.insert(name.into(), value.into());
+        self
+    }
+
+    /// Opt in to lowercasing auto-generated heading ids (default is
+    /// case-preserving). See [`Options::lowercase_heading_ids`].
+    pub fn with_lowercase_heading_ids(mut self, lowercase: bool) -> Self {
+        self.lowercase_heading_ids = lowercase;
+        self
+    }
+
+    /// Apply a feature-restriction [`Profile`] before rendering.
+    pub fn with_profile(mut self, profile: Profile) -> Self {
+        self.profile = Some(profile);
+        self
+    }
+
+    /// Set the base host for the profile's link policy (internal/external
+    /// link detection).
+    pub fn with_profile_base_host(mut self, host: impl Into<String>) -> Self {
+        self.profile_base_host = Some(host.into());
         self
     }
 }

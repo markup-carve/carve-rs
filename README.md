@@ -3,7 +3,7 @@
 [![CI](https://github.com/markup-carve/carve-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/markup-carve/carve-rs/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-Rust parser and HTML renderer for the [Carve](https://github.com/markup-carve/carve) markup language.
+Rust parser and renderer (HTML, Markdown, plain text, ANSI) for the [Carve](https://github.com/markup-carve/carve) markup language.
 
 > Carve is a post-Markdown lightweight markup language with visual mnemonics and human-centered design. See the [language site](https://markup-carve.github.io/carve/) for the spec.
 
@@ -15,7 +15,7 @@ new corpus pairs fail CI until the parser and renderer support them.
 
 | Pair | Construct | Status |
 |---|---|---|
-| 01-emphasis | `/italic/`, `*bold*`, `_underline_`, `~strike~`, `^super^`, `,,sub,,`, `==hl==`, `/*bi*/` | passing |
+| 01-emphasis | `/italic/`, `*bold*`, `_underline_`, `~strike~`, `^super^`, `,sub,`, `=hl=`, `/*bi*/` | passing |
 | 02-headings | `# H1` … `#### H4` | passing |
 | 03-links | `[text](url)` | passing |
 | 04-images | `![alt](src)` (inline + block) | passing |
@@ -47,6 +47,11 @@ let doc = carve::parse(source);
 // inspect or transform doc.children …
 let html = carve::render_html(&doc);
 ```
+
+Besides HTML, the crate renders the same AST to Markdown, plain text, and
+ANSI-styled text via `carve::to_markdown`, `carve::to_plain_text`, and
+`carve::to_ansi` (each with a matching `render_*` function for a parsed
+`Document`).
 
 ## Extensions
 
@@ -84,17 +89,31 @@ assert_eq!(html, "<p>Press <kbd>Ctrl</kbd>.</p>");
 
 ## CLI
 
-The crate ships a `carve` binary that reads Carve source from a file or stdin and writes HTML to stdout:
+The crate ships a `carve` binary that reads Carve source from a file or stdin
+and writes the rendered output to stdout. HTML is the default; pass a format
+flag for Markdown, plain text, or ANSI-colored terminal output:
 
 ```bash
 cargo install --path .
 
-carve README.crv > README.html
-echo '# Hello' | carve
+carve README.crv > README.html      # HTML (default)
+carve --markdown README.crv         # Markdown
+carve --plain README.crv            # plain text
+carve --ansi README.crv             # ANSI-colored terminal text
+echo '# Hello' | carve              # render from stdin
+```
+
+Other options:
+
+```bash
 carve --mention-url '/users/{name}' --tag-url '/topics/{name}' social.crv
 carve --emoji 'rocket=🚀' --emoji 'tada=🎉' emoji.crv
 carve --help
 ```
+
+`--html` / `--markdown` (`--md`) / `--plain` (`--plain-text`) / `--ansi` select
+the format (last one wins). `--mention-url` / `--tag-url` build HTML links and
+apply to HTML output only.
 
 ## Building from source
 

@@ -7,47 +7,56 @@
 use crate::ast::*;
 use crate::escape::{escape_attr, escape_text};
 use crate::extension::{Options, RenderContext};
-use std::cell::RefCell;
-use std::collections::BTreeMap;
-
-thread_local! {
-    static FOOTNOTE_NUMBERS: RefCell<BTreeMap<String, usize>> = const { RefCell::new(BTreeMap::new()) };
-}
+use std::collections::{BTreeMap, BTreeSet};
 
 pub fn render_html(doc: &Document) -> String {
     render_html_with_options(doc, &Options::default())
 }
 
 pub fn render_html_with_options(doc: &Document, options: &Options<'_>) -> String {
-    let mut state = RenderState::default();
-    let refs = collect_footnote_refs(&doc.children);
-    let numbers: BTreeMap<String, usize> = refs
-        .iter()
-        .enumerate()
-        .map(|(idx, label)| (label.clone(), idx + 1))
-        .collect();
-    FOOTNOTE_NUMBERS.with(|cell| *cell.borrow_mut() = numbers);
+    let mut doc = doc.clone();
+    let mut state = RenderState {
+        lowercase_heading_ids: options.lowercase_heading_ids,
+        ..RenderState::default()
+    };
+    let footnotes = collect_footnotes(&mut doc);
     let mut html = render_document_blocks(doc.children.as_slice(), options, &mut state);
-    if !refs.is_empty() {
+    if !footnotes.is_empty() {
         html.push('\n');
-        html.push_str(&render_footnotes_section(doc, &refs, options));
+        html.push_str(&render_footnotes_section(
+            &doc, &footnotes, options, &mut state,
+        ));
     }
-    FOOTNOTE_NUMBERS.with(|cell| cell.borrow_mut().clear());
     html
 }
 
+// Entry point for `RenderContext::render_blocks` (the extension render helper).
+// KNOWN LIMITATION: this starts a fresh heading-id counter, so headings inside
+// blocks rendered by a custom block extension are numbered independently of the
+// surrounding document (a collision can repeat an id). The common path -- the
+// fallback `<div>` rendering in render_block_extension -- already threads the
+// document `state`, so only an extension that explicitly re-renders child
+// headings via this helper is affected. Sharing the live counter would require
+// threading mutable state through the extension RenderContext, which is a
+// cross-impl extension-API change (carve-js resolves heading ids in a separate
+// pass that likewise does not descend into extension nodes); deferred until that
+// is coordinated across implementations.
 pub(crate) fn render_blocks_with_options(nodes: &[BlockNode], options: &Options<'_>) -> String {
-    render_blocks(nodes, options)
+    let mut state = RenderState {
+        lowercase_heading_ids: options.lowercase_heading_ids,
+        ..RenderState::default()
+    };
+    render_blocks(nodes, options, &mut state)
 }
 
-fn render_blocks(nodes: &[BlockNode], options: &Options<'_>) -> String {
+fn render_blocks(nodes: &[BlockNode], options: &Options<'_>, state: &mut RenderState) -> String {
     let mut out = String::new();
     let mut first = true;
     for block in nodes {
         if !first {
             out.push('\n');
         }
-        render_block(&mut out, block, 0, options);
+        render_block(&mut out, block, 0, options, state);
         first = false;
     }
     out
@@ -56,6 +65,9 @@ fn render_blocks(nodes: &[BlockNode], options: &Options<'_>) -> String {
 #[derive(Default)]
 struct RenderState {
     heading_counts: BTreeMap<String, usize>,
+    /// Mirrors `Options::lowercase_heading_ids` so the `<section id>` derived
+    /// here matches the parse-time id index (and the resolved cross-ref hrefs).
+    lowercase_heading_ids: bool,
 }
 
 fn render_document_blocks(
@@ -73,7 +85,7 @@ fn render_document_blocks(
         if matches!(nodes[i], BlockNode::Heading(_)) {
             i = render_section(&mut out, nodes, i, 0, options, state);
         } else {
-            render_block(&mut out, &nodes[i], 0, options);
+            render_block(&mut out, &nodes[i], 0, options, state);
             i += 1;
         }
         first = false;
@@ -81,67 +93,212 @@ fn render_document_blocks(
     out
 }
 
-fn collect_footnote_refs(nodes: &[BlockNode]) -> Vec<String> {
-    let mut refs = Vec::new();
-    for block in nodes {
-        collect_footnote_refs_block(block, &mut refs);
-    }
-    refs
+#[derive(Clone)]
+struct FootnoteEntry {
+    label: Option<String>,
+    inline: Option<Vec<InlineNode>>,
+    backrefs: Vec<String>,
 }
 
-fn collect_footnote_refs_block(block: &BlockNode, refs: &mut Vec<String>) {
+fn collect_footnotes(doc: &mut Document) -> Vec<FootnoteEntry> {
+    let mut order = Vec::new();
+    let mut seen: BTreeMap<String, usize> = BTreeMap::new();
+    let def_labels: Vec<String> = doc.footnote_defs.keys().cloned().collect();
+
+    for block in &mut doc.children {
+        collect_footnotes_block(block, &def_labels, &mut seen, &mut order);
+    }
+
+    let mut idx = 0;
+    while idx < order.len() {
+        let Some(label) = order[idx].label.clone() else {
+            idx += 1;
+            continue;
+        };
+        if let Some(blocks) = doc.footnote_defs.get_mut(&label) {
+            for block in blocks {
+                collect_footnotes_block(block, &def_labels, &mut seen, &mut order);
+            }
+        }
+        idx += 1;
+    }
+
+    order
+}
+
+fn collect_footnotes_block(
+    block: &mut BlockNode,
+    def_labels: &[String],
+    seen: &mut BTreeMap<String, usize>,
+    order: &mut Vec<FootnoteEntry>,
+) {
     match block {
-        BlockNode::Heading(h) => collect_footnote_refs_inline(&h.children, refs),
-        BlockNode::Paragraph(p) => collect_footnote_refs_inline(&p.children, refs),
+        BlockNode::Heading(h) => collect_footnotes_inline(&mut h.children, def_labels, seen, order),
+        BlockNode::Paragraph(p) => {
+            collect_footnotes_inline(&mut p.children, def_labels, seen, order);
+        }
         BlockNode::List(l) => {
-            for item in &l.items {
-                for child in &item.children {
-                    collect_footnote_refs_block(child, refs);
+            for item in &mut l.items {
+                for child in &mut item.children {
+                    collect_footnotes_block(child, def_labels, seen, order);
                 }
             }
         }
         BlockNode::BlockQuote(b) => {
-            for child in &b.children {
-                collect_footnote_refs_block(child, refs);
+            if let Some(attribution) = &mut b.attribution {
+                collect_footnotes_inline(attribution, def_labels, seen, order);
+            }
+            for child in &mut b.children {
+                collect_footnotes_block(child, def_labels, seen, order);
             }
         }
         BlockNode::Table(t) => {
-            for row in &t.rows {
-                for cell in &row.cells {
-                    collect_footnote_refs_inline(&cell.children, refs);
+            if let Some(caption) = &mut t.caption {
+                collect_footnotes_inline(caption, def_labels, seen, order);
+            }
+            for row in &mut t.rows {
+                for cell in &mut row.cells {
+                    collect_footnotes_inline(&mut cell.children, def_labels, seen, order);
                 }
             }
         }
         BlockNode::Admonition(a) => {
-            for child in &a.children {
-                collect_footnote_refs_block(child, refs);
+            if let Some(title) = &mut a.title {
+                collect_footnotes_inline(title, def_labels, seen, order);
+            }
+            for child in &mut a.children {
+                collect_footnotes_block(child, def_labels, seen, order);
+            }
+        }
+        BlockNode::Div(d) => {
+            for child in &mut d.children {
+                collect_footnotes_block(child, def_labels, seen, order);
+            }
+        }
+        BlockNode::DefinitionList(d) => {
+            for item in &mut d.items {
+                for term in &mut item.terms {
+                    collect_footnotes_inline(term, def_labels, seen, order);
+                }
+                for definition in &mut item.definitions {
+                    for child in definition {
+                        collect_footnotes_block(child, def_labels, seen, order);
+                    }
+                }
+            }
+        }
+        BlockNode::Figure(f) => {
+            collect_footnotes_inline(&mut f.caption, def_labels, seen, order);
+            match &mut f.target {
+                FigureTarget::BlockQuote(b) => {
+                    if let Some(attribution) = &mut b.attribution {
+                        collect_footnotes_inline(attribution, def_labels, seen, order);
+                    }
+                    for child in &mut b.children {
+                        collect_footnotes_block(child, def_labels, seen, order);
+                    }
+                }
+                FigureTarget::Table(t) => {
+                    if let Some(caption) = &mut t.caption {
+                        collect_footnotes_inline(caption, def_labels, seen, order);
+                    }
+                    for row in &mut t.rows {
+                        for cell in &mut row.cells {
+                            collect_footnotes_inline(&mut cell.children, def_labels, seen, order);
+                        }
+                    }
+                }
+                FigureTarget::Paragraph(p) => {
+                    collect_footnotes_inline(&mut p.children, def_labels, seen, order);
+                }
+                FigureTarget::Image(_) | FigureTarget::CodeBlock(_) => {}
+            }
+        }
+        BlockNode::Extension(e) => {
+            for child in &mut e.children {
+                collect_footnotes_block(child, def_labels, seen, order);
             }
         }
         _ => {}
     }
 }
 
-fn collect_footnote_refs_inline(nodes: &[InlineNode], refs: &mut Vec<String>) {
+fn collect_footnotes_inline(
+    nodes: &mut [InlineNode],
+    def_labels: &[String],
+    seen: &mut BTreeMap<String, usize>,
+    order: &mut Vec<FootnoteEntry>,
+) {
     for node in nodes {
         match node {
             InlineNode::Footnote(f) => {
-                if let Some(id) = &f.id {
-                    if !refs.contains(id) {
-                        refs.push(id.clone());
-                    }
+                if let Some(inline) = &f.inline {
+                    let number = order.len() + 1;
+                    let ref_id = format!("fnref{number}");
+                    f.number = Some(number);
+                    f.ref_id = Some(ref_id.clone());
+                    order.push(FootnoteEntry {
+                        label: None,
+                        inline: Some(inline.clone()),
+                        backrefs: vec![ref_id],
+                    });
+                    continue;
                 }
+
+                let Some(id) = &f.id else {
+                    continue;
+                };
+                if !def_labels.contains(id) {
+                    continue;
+                }
+                let idx = order
+                    .iter()
+                    .position(|entry| entry.label.as_ref() == Some(id))
+                    .unwrap_or_else(|| {
+                        order.push(FootnoteEntry {
+                            label: Some(id.clone()),
+                            inline: None,
+                            backrefs: Vec::new(),
+                        });
+                        order.len() - 1
+                    });
+                let number = idx + 1;
+                let occurrence = seen.entry(id.clone()).or_insert(0);
+                *occurrence += 1;
+                let ref_id = if *occurrence == 1 {
+                    format!("fnref{number}")
+                } else {
+                    format!("fnref{number}-{occurrence}")
+                };
+                f.number = Some(number);
+                f.ref_id = Some(ref_id.clone());
+                order[idx].backrefs.push(ref_id);
             }
-            InlineNode::Emphasis(e) => collect_footnote_refs_inline(&e.children, refs),
-            InlineNode::Link(l) => collect_footnote_refs_inline(&l.children, refs),
-            InlineNode::Span(s) => collect_footnote_refs_inline(&s.children, refs),
-            InlineNode::Extension(e) => collect_footnote_refs_inline(&e.children, refs),
+            InlineNode::Emphasis(e) => {
+                collect_footnotes_inline(&mut e.children, def_labels, seen, order)
+            }
+            InlineNode::Link(l) => {
+                collect_footnotes_inline(&mut l.children, def_labels, seen, order)
+            }
+            InlineNode::Span(s) => {
+                collect_footnotes_inline(&mut s.children, def_labels, seen, order)
+            }
+            InlineNode::Extension(e) => {
+                collect_footnotes_inline(&mut e.children, def_labels, seen, order)
+            }
+            InlineNode::CriticInsert(c) => {
+                collect_footnotes_inline(&mut c.children, def_labels, seen, order);
+            }
+            InlineNode::CriticDelete(c) => {
+                collect_footnotes_inline(&mut c.children, def_labels, seen, order);
+            }
             InlineNode::CitationGroup(g) => {
-                for item in &g.items {
-                    if let Some(prefix) = &item.prefix {
-                        collect_footnote_refs_inline(prefix, refs);
+                for item in &mut g.items {
+                    if let Some(prefix) = &mut item.prefix {
+                        collect_footnotes_inline(prefix, def_labels, seen, order);
                     }
-                    if let Some(locator) = &item.locator {
-                        collect_footnote_refs_inline(locator, refs);
+                    if let Some(locator) = &mut item.locator {
+                        collect_footnotes_inline(locator, def_labels, seen, order);
                     }
                 }
             }
@@ -150,27 +307,40 @@ fn collect_footnote_refs_inline(nodes: &[InlineNode], refs: &mut Vec<String>) {
     }
 }
 
-fn render_footnotes_section(doc: &Document, refs: &[String], options: &Options<'_>) -> String {
+fn render_footnotes_section(
+    doc: &Document,
+    footnotes: &[FootnoteEntry],
+    options: &Options<'_>,
+    state: &mut RenderState,
+) -> String {
     let mut out = String::new();
     out.push_str("<section role=\"doc-endnotes\">\n  <hr>\n  <ol>");
-    for (idx, label) in refs.iter().enumerate() {
+    for (idx, entry) in footnotes.iter().enumerate() {
         let num = idx + 1;
         out.push('\n');
         out.push_str(&format!("    <li id=\"fn{}\">", num));
-        if let Some(blocks) = doc.footnote_defs.get(label) {
-            for (block_idx, block) in blocks.iter().enumerate() {
-                out.push('\n');
-                let mut rendered = String::new();
-                render_block(&mut rendered, block, 3, options);
-                if block_idx + 1 == blocks.len() {
-                    let backlink = format!("<a href=\"#fnref{}\" role=\"doc-backlink\">↩</a>", num);
-                    if let Some(pos) = rendered.rfind("</p>") {
-                        rendered.insert_str(pos, &backlink);
-                    } else {
-                        rendered.push_str(&backlink);
+        if let Some(inline) = &entry.inline {
+            out.push('\n');
+            out.push_str("      <p>");
+            render_inlines(&mut out, inline, options);
+            out.push_str(&render_backlinks(&entry.backrefs));
+            out.push_str("</p>");
+        } else if let Some(label) = &entry.label {
+            if let Some(blocks) = doc.footnote_defs.get(label) {
+                for (block_idx, block) in blocks.iter().enumerate() {
+                    out.push('\n');
+                    let mut rendered = String::new();
+                    render_block(&mut rendered, block, 3, options, state);
+                    if block_idx + 1 == blocks.len() {
+                        let backlink = render_backlinks(&entry.backrefs);
+                        if let Some(pos) = rendered.rfind("</p>") {
+                            rendered.insert_str(pos, &backlink);
+                        } else {
+                            rendered.push_str(&backlink);
+                        }
                     }
+                    out.push_str(&rendered);
                 }
-                out.push_str(&rendered);
             }
         }
         out.push('\n');
@@ -178,6 +348,29 @@ fn render_footnotes_section(doc: &Document, refs: &[String], options: &Options<'
     }
     out.push_str("\n  </ol>\n</section>");
     out
+}
+
+fn render_backlinks(backrefs: &[String]) -> String {
+    // A note referenced once gets a plain `↩`; a note referenced N>1 times gets
+    // one numbered backlink per reference (`↩<sup>k</sup>`, space-separated) so
+    // each return arrow is distinct (matches carve-php + pandoc).
+    if backrefs.len() <= 1 {
+        return backrefs
+            .iter()
+            .map(|ref_id| format!("<a href=\"#{ref_id}\" role=\"doc-backlink\">↩</a>"))
+            .collect();
+    }
+    backrefs
+        .iter()
+        .enumerate()
+        .map(|(k, ref_id)| {
+            format!(
+                "<a href=\"#{ref_id}\" role=\"doc-backlink\">↩<sup>{}</sup></a>",
+                k + 1
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn render_section(
@@ -206,7 +399,7 @@ fn render_section(
             continue;
         }
         out.push('\n');
-        render_block(out, &nodes[i], level + 1, options);
+        render_block(out, &nodes[i], level + 1, options, state);
         i += 1;
     }
     out.push('\n');
@@ -221,18 +414,24 @@ fn indent(out: &mut String, level: usize) {
     }
 }
 
-fn render_block(out: &mut String, node: &BlockNode, level: usize, options: &Options<'_>) {
+fn render_block(
+    out: &mut String,
+    node: &BlockNode,
+    level: usize,
+    options: &Options<'_>,
+    state: &mut RenderState,
+) {
     match node {
-        BlockNode::Heading(h) => render_heading(out, h, level, options),
+        BlockNode::Heading(h) => render_heading(out, h, level, options, state),
         BlockNode::Paragraph(p) => render_paragraph(out, p, level, options),
         BlockNode::CodeBlock(c) => render_code_block(out, c, level),
-        BlockNode::List(l) => render_list(out, l, level, options),
-        BlockNode::BlockQuote(b) => render_blockquote(out, b, level, options),
+        BlockNode::List(l) => render_list(out, l, level, options, state),
+        BlockNode::BlockQuote(b) => render_blockquote(out, b, level, options, state),
         BlockNode::Table(t) => render_table(out, t, level, options),
-        BlockNode::Admonition(a) => render_admonition(out, a, level, options),
-        BlockNode::Div(d) => render_div(out, d, level, options),
-        BlockNode::DefinitionList(d) => render_definition_list(out, d, level, options),
-        BlockNode::Figure(f) => render_figure(out, f, level, options),
+        BlockNode::Admonition(a) => render_admonition(out, a, level, options, state),
+        BlockNode::Div(d) => render_div(out, d, level, options, state),
+        BlockNode::DefinitionList(d) => render_definition_list(out, d, level, options, state),
+        BlockNode::Figure(f) => render_figure(out, f, level, options, state),
         BlockNode::AbbreviationDef(_) => {}
         BlockNode::RawBlock(r) => {
             if r.format == "html" {
@@ -241,21 +440,36 @@ fn render_block(out: &mut String, node: &BlockNode, level: usize, options: &Opti
             }
         }
         BlockNode::Comment(_) => {}
-        BlockNode::Extension(e) => render_block_extension(out, e, level, options),
+        BlockNode::Extension(e) => render_block_extension(out, e, level, options, state),
         BlockNode::BlockImage(img) => {
             indent(out, level);
             render_image(out, img);
         }
-        BlockNode::ThematicBreak => {
+        BlockNode::ThematicBreak(n) => {
             indent(out, level);
-            out.push_str("<hr>");
+            out.push_str(&format!("<hr{}>", render_attrs(&n.attrs)));
         }
     }
 }
 
-fn render_heading(out: &mut String, h: &Heading, level: usize, options: &Options<'_>) {
+fn render_heading(
+    out: &mut String,
+    h: &Heading,
+    level: usize,
+    options: &Options<'_>,
+    state: &mut RenderState,
+) {
+    // A heading rendered here is nested inside another block (list item,
+    // blockquote, div, ...). Unlike a top-level heading it carries no
+    // `<section>` wrapper, so it must emit its slug id directly on the tag
+    // (matching carve-php). The id is allocated from the same document-order
+    // counter as top-level headings, so duplicate slugs are numbered
+    // consistently across nesting levels.
+    let id = next_heading_id(h, state);
     indent(out, level);
-    out.push_str(&format!("<h{}{}>", h.level, render_attrs(&h.attrs)));
+    out.push_str(&format!("<h{} id=\"{}\"", h.level, escape_attr(&id)));
+    out.push_str(&render_attrs_without_id(&h.attrs));
+    out.push('>');
     render_inlines(out, &h.children, options);
     out.push_str(&format!("</h{}>", h.level));
 }
@@ -281,7 +495,7 @@ fn next_heading_id(h: &Heading, state: &mut RenderState) -> String {
         .attrs
         .as_ref()
         .and_then(|attrs| attrs.id.clone())
-        .unwrap_or_else(|| slugify(&plain_inlines(&h.children)));
+        .unwrap_or_else(|| slugify(&plain_inlines(&h.children), state.lowercase_heading_ids));
     let count = state.heading_counts.entry(base.clone()).or_insert(0);
     *count += 1;
     if *count == 1 {
@@ -305,6 +519,11 @@ fn plain_inlines(nodes: &[InlineNode]) -> String {
             InlineNode::Abbreviation(a) => out.push_str(&a.abbr),
             InlineNode::Mention(m) => out.push_str(&m.user),
             InlineNode::Tag(t) => out.push_str(&t.name),
+            InlineNode::CaptionNumber(n) => {
+                if let Some(number) = n.number {
+                    out.push_str(&number.to_string());
+                }
+            }
             // A soft/hard break (e.g. a multi-line heading) is a word
             // separator for slug/plain-text purposes, not a join.
             InlineNode::SoftBreak | InlineNode::HardBreak => out.push(' '),
@@ -314,33 +533,10 @@ fn plain_inlines(nodes: &[InlineNode]) -> String {
     out
 }
 
-fn slugify(text: &str) -> String {
-    let mut out = String::new();
-    let mut last_dash = false;
-    for ch in text.chars() {
-        if ch.is_alphanumeric() {
-            // Unicode-preserving, lowercased (GitHub-style): `Café` -> `café`,
-            // `Über` -> `über`. ASCII-folding is opt-in, not the default.
-            for lc in ch.to_lowercase() {
-                out.push(lc);
-            }
-            last_dash = false;
-        } else if !last_dash && !out.is_empty() {
-            out.push('-');
-            last_dash = true;
-        }
-    }
-    while out.ends_with('-') {
-        out.pop();
-    }
-    if out.chars().next().is_some_and(|c| c.is_ascii_digit()) {
-        out = format!("s-{out}");
-    }
-    if out.is_empty() {
-        "section".to_string()
-    } else {
-        out
-    }
+fn slugify(text: &str, lowercase: bool) -> String {
+    // Delegate to the single canonical implementation so HTML, Markdown, and
+    // the parser's id index never drift apart (or from carve-js / carve-php).
+    crate::parse::slugify_parse(text, lowercase)
 }
 
 fn render_paragraph(out: &mut String, p: &Paragraph, level: usize, options: &Options<'_>) {
@@ -361,7 +557,13 @@ fn render_code_block(out: &mut String, c: &CodeBlock, level: usize) {
     out.push_str("\n</code></pre>");
 }
 
-fn render_list(out: &mut String, l: &List, level: usize, options: &Options<'_>) {
+fn render_list(
+    out: &mut String,
+    l: &List,
+    level: usize,
+    options: &Options<'_>,
+    state: &mut RenderState,
+) {
     indent(out, level);
     let tag = if l.ordered { "ol" } else { "ul" };
     let mut extra = render_attrs(&l.attrs);
@@ -384,7 +586,7 @@ fn render_list(out: &mut String, l: &List, level: usize, options: &Options<'_>) 
         if i > 0 {
             out.push('\n');
         }
-        render_list_item(out, item, level + 1, l.tight, options);
+        render_list_item(out, item, level + 1, l.tight, options, state);
     }
     out.push('\n');
     indent(out, level);
@@ -397,9 +599,10 @@ fn render_list_item(
     level: usize,
     tight: bool,
     options: &Options<'_>,
+    state: &mut RenderState,
 ) {
     indent(out, level);
-    out.push_str("<li>");
+    out.push_str(&format!("<li{}>", render_attrs(&item.attrs)));
     let checkbox = match item.checked {
         None => "",
         Some(false) => "<input type=\"checkbox\" disabled> ",
@@ -419,7 +622,7 @@ fn render_list_item(
             render_inlines(out, &p.children, options);
             for child in item.children.iter().skip(1) {
                 out.push('\n');
-                render_block(out, child, level + 1, options);
+                render_block(out, child, level + 1, options, state);
             }
             out.push('\n');
             indent(out, level);
@@ -444,7 +647,7 @@ fn render_list_item(
             out.push_str("</p>");
             for child in item.children.iter().skip(1) {
                 out.push('\n');
-                render_block(out, child, level + 1, options);
+                render_block(out, child, level + 1, options, state);
             }
             out.push('\n');
             indent(out, level);
@@ -459,7 +662,7 @@ fn render_list_item(
         if !first {
             out.push('\n');
         }
-        render_block(out, child, level + 1, options);
+        render_block(out, child, level + 1, options, state);
         first = false;
     }
     out.push('\n');
@@ -467,7 +670,13 @@ fn render_list_item(
     out.push_str("</li>");
 }
 
-fn render_blockquote(out: &mut String, b: &BlockQuote, level: usize, options: &Options<'_>) {
+fn render_blockquote(
+    out: &mut String,
+    b: &BlockQuote,
+    level: usize,
+    options: &Options<'_>,
+    state: &mut RenderState,
+) {
     indent(out, level);
     if b.children.len() == 1 {
         if let BlockNode::Paragraph(p) = &b.children[0] {
@@ -483,7 +692,7 @@ fn render_blockquote(out: &mut String, b: &BlockQuote, level: usize, options: &O
         if !first {
             out.push('\n');
         }
-        render_block(out, child, level + 1, options);
+        render_block(out, child, level + 1, options, state);
         first = false;
     }
     out.push('\n');
@@ -501,48 +710,81 @@ fn render_table(out: &mut String, t: &Table, level: usize, options: &Options<'_>
         render_inlines(out, caption, options);
         out.push_str("</caption>");
     }
-    let has_header = t
+    // The leading run of rows whose cells are ALL header cells forms <thead>.
+    // A row that merely contains a header cell (a row header) stays in the body.
+    let header_count = t
         .rows
-        .first()
-        .is_some_and(|row| row.cells.iter().any(|cell| cell.header));
-    let body_start = if has_header { 1 } else { 0 };
+        .iter()
+        .take_while(|row| !row.cells.is_empty() && row.cells.iter().all(|cell| cell.header))
+        .count();
+    let has_header = header_count > 0;
+    let body_start = header_count;
+    // Computed once over ALL rows: a `^` in a body row extends the cell above
+    // it even when that cell is in a header row, so a header cell can carry a
+    // rowspan that crosses the thead/tbody boundary (matches carve-js).
+    let (rowspan_cols, orphan_carets) = compute_rowspans(t);
     if has_header {
-        let header = &t.rows[0];
         out.push('\n');
         indent(out, level + 1);
         out.push_str("<thead>");
-        render_table_row(out, header, true, options);
+        for (row_idx, header) in t.rows[..header_count].iter().enumerate() {
+            render_table_row(out, header, true, options, row_idx, &rowspan_cols);
+        }
         out.push_str("</thead>");
     }
-    out.push('\n');
-    indent(out, level + 1);
-    out.push_str("<tbody>");
-    let rowspan_cols = compute_rowspans(t);
-    for (row_idx, row) in t.rows.iter().enumerate().skip(body_start) {
+    // A header-only table (e.g. a GFM `| x |` + `|---|` with no body rows) emits
+    // no <tbody>, matching carve-php.
+    if body_start < t.rows.len() {
         out.push('\n');
-        indent(out, level + 2);
-        render_table_body_row(out, row, row_idx, &rowspan_cols, t, options);
+        indent(out, level + 1);
+        out.push_str("<tbody>");
+        for (row_idx, row) in t.rows.iter().enumerate().skip(body_start) {
+            out.push('\n');
+            indent(out, level + 2);
+            render_table_body_row(out, row, row_idx, &rowspan_cols, &orphan_carets, t, options);
+        }
+        out.push('\n');
+        indent(out, level + 1);
+        out.push_str("</tbody>");
     }
-    out.push('\n');
-    indent(out, level + 1);
-    out.push_str("</tbody>");
     out.push('\n');
     indent(out, level);
     out.push_str("</table>");
 }
 
-fn render_table_row(out: &mut String, row: &TableRow, header_row: bool, options: &Options<'_>) {
-    out.push_str("<tr>");
+fn render_table_row(
+    out: &mut String,
+    row: &TableRow,
+    header_row: bool,
+    options: &Options<'_>,
+    row_idx: usize,
+    rowspan_cols: &BTreeMap<(usize, usize), usize>,
+) {
+    out.push_str(&format!("<tr{}>", render_attrs(&row.attrs)));
     for (col, cell) in row.cells.iter().enumerate() {
         let tag = if header_row || cell.header {
             "th"
         } else {
             "td"
         };
+        let mut extra = String::new();
+        let mut emitted: Vec<&str> = Vec::new();
+        // A header cell can carry a rowspan that extends down into the body
+        // (a `^` below it), so the header row emits it too -- not just bodies.
+        if let Some(span) = rowspan_cols.get(&(row_idx, col)) {
+            extra.push_str(&format!(" rowspan=\"{}\"", span));
+            emitted.push("rowspan");
+        }
+        let align = render_align_attr(cell.align.or_else(|| row_align(row, col)));
+        if !align.is_empty() {
+            emitted.push("style");
+        }
         out.push_str(&format!(
-            "<{}{}>",
+            "<{}{}{}{}>",
             tag,
-            render_align_attr(cell.align.or_else(|| row_align(row, col)))
+            render_cell_author_attrs(&cell.attrs, &emitted),
+            extra,
+            align
         ));
         render_inlines(out, &cell.children, options);
         out.push_str(&format!("</{}>", tag));
@@ -555,34 +797,59 @@ fn render_table_body_row(
     row: &TableRow,
     source_row_idx: usize,
     rowspan_cols: &BTreeMap<(usize, usize), usize>,
+    orphan_carets: &BTreeSet<(usize, usize)>,
     table: &Table,
     options: &Options<'_>,
 ) {
-    out.push_str("<tr>");
+    out.push_str(&format!("<tr{}>", render_attrs(&row.attrs)));
     let mut col = 0usize;
-    for cell in &row.cells {
+    for (cell_index, cell) in row.cells.iter().enumerate() {
         if cell.span == Some(TableCellSpan::Rowspan) {
+            // A `^` that merged into a cell above renders nothing; one with
+            // nothing to extend (no cell above) renders an EMPTY cell (§5).
+            if orphan_carets.contains(&(source_row_idx, cell_index)) {
+                let tag = if cell.header { "th" } else { "td" };
+                out.push_str(&format!("<{tag}></{tag}>"));
+            }
             col += 1;
             continue;
         }
         let mut attrs = String::new();
+        let mut emitted: Vec<&str> = Vec::new();
         if let Some(span) = rowspan_cols.get(&(source_row_idx, col)) {
             attrs.push_str(&format!(" rowspan=\"{}\"", span));
+            emitted.push("rowspan");
         }
         if cell.span == Some(TableCellSpan::Colspan) {
+            // A `<` that merged into a cell to its left renders nothing; one
+            // with nothing to merge (first column / no real left cell) renders
+            // an EMPTY cell (§5).
+            if colspan_is_orphan(row, cell_index) {
+                let tag = if cell.header { "th" } else { "td" };
+                out.push_str(&format!("<{tag}></{tag}>"));
+            }
             col += 1;
             continue;
         }
         let colspan = following_colspans(row, col);
         if colspan > 1 {
             attrs.push_str(&format!(" colspan=\"{}\"", colspan));
+            emitted.push("colspan");
         }
         if let Some(align) = cell.align.or_else(|| table_column_align(table, col)) {
             attrs.push_str(&align_attr(align));
+            emitted.push("style");
         }
-        out.push_str(&format!("<td{}>", attrs));
+        // A `|=` cell in a body row is a row header: <th> inside <tbody>.
+        let tag = if cell.header { "th" } else { "td" };
+        out.push_str(&format!(
+            "<{}{}{}>",
+            tag,
+            render_cell_author_attrs(&cell.attrs, &emitted),
+            attrs
+        ));
         render_inlines(out, &cell.children, options);
-        out.push_str("</td>");
+        out.push_str(&format!("</{}>", tag));
         col += colspan;
     }
     out.push_str("</tr>");
@@ -598,6 +865,28 @@ fn table_column_align(table: &Table, col: usize) -> Option<TableAlign> {
 
 fn render_align_attr(align: Option<TableAlign>) -> String {
     align.map(align_attr).unwrap_or_default()
+}
+
+/// Render a cell's author attributes, dropping any key that collides (case
+/// -insensitively) with a structural attribute this renderer actually emits
+/// for the cell (`rowspan` / `colspan` / `style`) -- the computed value is
+/// authoritative. When no such structural attribute is emitted, the author's
+/// value (e.g. a custom `style`) is preserved.
+fn render_cell_author_attrs(attrs: &Option<Attrs>, emitted: &[&str]) -> String {
+    let Some(a) = attrs else {
+        return String::new();
+    };
+    let collides = |k: &str| emitted.contains(&k.to_ascii_lowercase().as_str());
+    if emitted.is_empty() || !a.key_values.keys().any(|k| collides(k)) {
+        return render_attrs(attrs);
+    }
+    let mut filtered = a.clone();
+    filtered.key_values.retain(|k, _| !collides(k));
+    filtered.order.retain(|slot| match slot {
+        AttrSlot::Key(k) => !collides(k),
+        _ => true,
+    });
+    render_attrs(&Some(filtered))
 }
 
 fn align_attr(align: TableAlign) -> String {
@@ -625,8 +914,18 @@ fn following_colspans(row: &TableRow, start: usize) -> usize {
 /// by carrying the current chain origin down per column, so an all-`^` table is
 /// O(cells) rather than O(rows^2) (each `^` previously walked up every prior row
 /// and the result list was scanned linearly per marker).
-fn compute_rowspans(t: &Table) -> BTreeMap<(usize, usize), usize> {
+/// Rowspan counts keyed by origin cell `(row, col)`.
+type RowspanCols = BTreeMap<(usize, usize), usize>;
+/// Positions `(row, cell-index)` of orphan `^` markers (nothing above to extend).
+type OrphanCarets = BTreeSet<(usize, usize)>;
+
+/// Returns (rowspan counts keyed by origin (row, col), positions of orphan `^`
+/// markers). An orphan `^` has no cell above it to extend, so it renders as an
+/// EMPTY cell rather than being dropped (spec PART 9 §5). Positions are keyed
+/// by (row, cell-index), matching the render loop's cell enumeration.
+fn compute_rowspans(t: &Table) -> (RowspanCols, OrphanCarets) {
     let mut spans: BTreeMap<(usize, usize), usize> = BTreeMap::new();
+    let mut orphan_carets: BTreeSet<(usize, usize)> = BTreeSet::new();
     // Per column: the origin row of the current rowspan chain (the most recent
     // non-`^` cell above). A `^` extends that origin; a real cell starts a new
     // chain.
@@ -636,29 +935,69 @@ fn compute_rowspans(t: &Table) -> BTreeMap<(usize, usize), usize> {
             if cell.span == Some(TableCellSpan::Rowspan) {
                 if let Some(&base) = base_for_col.get(&col) {
                     *spans.entry((base, col)).or_insert(1) += 1;
+                } else {
+                    orphan_carets.insert((row_idx, col));
                 }
             } else {
                 base_for_col.insert(col, row_idx);
             }
         }
     }
-    spans
+    (spans, orphan_carets)
 }
 
-fn render_admonition(out: &mut String, a: &Admonition, level: usize, options: &Options<'_>) {
+/// A `<` colspan marker is an orphan (nothing to its left to merge into) when
+/// scanning left past any contiguous `<` markers reaches the row start or a `^`
+/// rather than a real cell. An orphan renders as an empty cell (spec §5).
+fn colspan_is_orphan(row: &TableRow, i: usize) -> bool {
+    let mut j = i;
+    while j > 0 {
+        j -= 1;
+        match row.cells[j].span {
+            Some(TableCellSpan::Colspan) => continue,
+            Some(TableCellSpan::Rowspan) => return true,
+            None => return false,
+        }
+    }
+    true
+}
+
+fn render_admonition(
+    out: &mut String,
+    a: &Admonition,
+    level: usize,
+    options: &Options<'_>,
+    state: &mut RenderState,
+) {
     let canonical = matches!(
         a.kind.as_str(),
         "note" | "tip" | "warning" | "danger" | "info" | "success" | "example" | "quote"
     );
     indent(out, level);
-    if canonical {
-        out.push_str(&format!(
-            "<aside class=\"admonition {}\">",
-            escape_attr(&a.kind)
-        ));
+    // The type class is structural (`admonition {kind}` for Tier 1, the bare
+    // `{kind}` for a Tier-2 div) and emitted first; the opener's own
+    // attribute block merges its classes into it and contributes id /
+    // key-values after (never a second class).
+    let base = if canonical {
+        format!("admonition {}", a.kind)
     } else {
-        out.push_str(&format!("<div class=\"{}\">", escape_attr(&a.kind)));
-    }
+        a.kind.clone()
+    };
+    let (class, rest) = match &a.attrs {
+        Some(at) if !at.classes.is_empty() => (
+            format!("{} {}", base, at.classes.join(" ")),
+            render_attrs_after_class(at),
+        ),
+        Some(at) => (base, render_attrs_after_class(at)),
+        None => (base, String::new()),
+    };
+    let tag = if canonical { "aside" } else { "div" };
+    out.push_str(&format!(
+        "<{} class=\"{}\"{}>",
+        tag,
+        escape_attr(&class),
+        rest
+    ));
     if let Some(title) = &a.title {
         out.push('\n');
         indent(out, level + 1);
@@ -668,19 +1007,25 @@ fn render_admonition(out: &mut String, a: &Admonition, level: usize, options: &O
     }
     for child in &a.children {
         out.push('\n');
-        render_block(out, child, level + 1, options);
+        render_block(out, child, level + 1, options, state);
     }
     out.push('\n');
     indent(out, level);
     out.push_str(if canonical { "</aside>" } else { "</div>" });
 }
 
-fn render_div(out: &mut String, d: &Div, level: usize, options: &Options<'_>) {
+fn render_div(
+    out: &mut String,
+    d: &Div,
+    level: usize,
+    options: &Options<'_>,
+    state: &mut RenderState,
+) {
     indent(out, level);
     out.push_str(&format!("<div{}>", render_attrs(&d.attrs)));
     for child in &d.children {
         out.push('\n');
-        render_block(out, child, level + 1, options);
+        render_block(out, child, level + 1, options, state);
     }
     out.push('\n');
     indent(out, level);
@@ -692,6 +1037,7 @@ fn render_definition_list(
     d: &DefinitionList,
     level: usize,
     options: &Options<'_>,
+    _state: &mut RenderState,
 ) {
     indent(out, level);
     out.push_str(&format!("<dl{}>", render_attrs(&d.attrs)));
@@ -720,7 +1066,13 @@ fn render_definition_list(
     out.push_str("</dl>");
 }
 
-fn render_figure(out: &mut String, f: &Figure, level: usize, options: &Options<'_>) {
+fn render_figure(
+    out: &mut String,
+    f: &Figure,
+    level: usize,
+    options: &Options<'_>,
+    state: &mut RenderState,
+) {
     indent(out, level);
     out.push_str(&format!("<figure{}>", render_attrs(&f.attrs)));
     out.push('\n');
@@ -729,8 +1081,22 @@ fn render_figure(out: &mut String, f: &Figure, level: usize, options: &Options<'
             indent(out, level + 1);
             render_image(out, img);
         }
-        FigureTarget::BlockQuote(b) => render_blockquote(out, b, level + 1, options),
+        FigureTarget::BlockQuote(b) => render_blockquote(out, b, level + 1, options, state),
         FigureTarget::Table(t) => render_table(out, t, level + 1, options),
+        FigureTarget::CodeBlock(cb) => render_block(
+            out,
+            &BlockNode::CodeBlock(cb.clone()),
+            level + 1,
+            options,
+            state,
+        ),
+        FigureTarget::Paragraph(p) => render_block(
+            out,
+            &BlockNode::Paragraph(p.clone()),
+            level + 1,
+            options,
+            state,
+        ),
     }
     out.push('\n');
     indent(out, level + 1);
@@ -747,6 +1113,7 @@ fn render_block_extension(
     node: &BlockExtension,
     level: usize,
     options: &Options<'_>,
+    state: &mut RenderState,
 ) {
     let ctx = RenderContext::new(options);
     for ext in &options.extensions {
@@ -765,7 +1132,7 @@ fn render_block_extension(
             if !first {
                 out.push('\n');
             }
-            render_block(out, child, level + 1, options);
+            render_block(out, child, level + 1, options, state);
             first = false;
         }
         out.push('\n');
@@ -795,41 +1162,109 @@ pub(crate) fn render_inlines_with_options(nodes: &[InlineNode], options: &Option
     out
 }
 
-fn render_inlines(out: &mut String, nodes: &[InlineNode], options: &Options<'_>) {
-    for node in nodes {
-        render_inline(out, node, options);
+/// Running smart-quote state for one block. `"`/`'` toggle open/closed across
+/// the WHOLE inline flow in document order -- including across emphasis, links,
+/// spans, etc. -- so `"a /b" c/ d` closes the quote inside the emphasis. Reset
+/// per block (a quote does not carry from one paragraph to the next); verbatim
+/// nodes (code, math, raw) do not touch it.
+struct SmartState {
+    open_double: bool,
+    open_single: bool,
+}
+
+impl Default for SmartState {
+    fn default() -> Self {
+        SmartState {
+            open_double: true,
+            open_single: true,
+        }
     }
 }
 
-fn render_inline(out: &mut String, node: &InlineNode, options: &Options<'_>) {
+// Block-level entry: each block starts with a fresh quote state.
+fn render_inlines(out: &mut String, nodes: &[InlineNode], options: &Options<'_>) {
+    let mut state = SmartState::default();
+    render_inlines_stateful(out, nodes, options, &mut state);
+}
+
+// Recursive entry: threads the running quote state so nested inline content
+// (emphasis/link/span children) shares the parent's open/closed quote context.
+fn render_inlines_stateful(
+    out: &mut String,
+    nodes: &[InlineNode],
+    options: &Options<'_>,
+    state: &mut SmartState,
+) {
+    let mut prev: Option<&InlineNode> = None;
+    for node in nodes {
+        render_inline_after(out, node, options, prev, state);
+        prev = Some(node);
+    }
+}
+
+/// Does an inline node end in visible, non-whitespace content? Used as the
+/// flanking context for a `'`/`"` at the START of the following text node
+/// (`@john's` -- the apostrophe is preceded by the mention, so it is a RIGHT
+/// quote, not an opener). Breaks count as whitespace.
+fn ends_non_whitespace(node: &InlineNode) -> bool {
+    match node {
+        InlineNode::SoftBreak | InlineNode::HardBreak => false,
+        InlineNode::Text(s) => s.chars().last().is_some_and(|c| !c.is_whitespace()),
+        _ => true,
+    }
+}
+
+fn render_inline_after(
+    out: &mut String,
+    node: &InlineNode,
+    options: &Options<'_>,
+    prev: Option<&InlineNode>,
+    state: &mut SmartState,
+) {
     match node {
         InlineNode::Text(s) => {
-            out.push_str(&escape_text(&smart_text(s)).replace('\u{00a0}', "&nbsp;"))
+            let prev_non_ws = prev.is_some_and(ends_non_whitespace);
+            out.push_str(
+                &escape_text(&smart_text_after(s, prev_non_ws, state))
+                    .replace('\u{00a0}', "&nbsp;"),
+            )
         }
-        InlineNode::Emphasis(e) => render_emphasis(out, e, options),
+        InlineNode::Emphasis(e) => render_emphasis(out, e, options, state),
         InlineNode::Code(s, attrs) => {
             out.push_str(&format!("<code{}>", render_attrs(attrs)));
             out.push_str(&escape_text(s));
             out.push_str("</code>");
         }
-        InlineNode::Link(l) => render_link(out, l, options),
+        InlineNode::Link(l) => render_link(out, l, options, state),
         InlineNode::Image(img) => render_image(out, img),
         InlineNode::Span(s) => {
             out.push_str(&format!("<span{}>", render_attrs(&s.attrs)));
-            render_inlines(out, &s.children, options);
+            render_inlines_stateful(out, &s.children, options, state);
             out.push_str("</span>");
         }
         InlineNode::Math(m) => {
-            let class = if m.display {
+            let base = if m.display {
                 "math display"
             } else {
                 "math inline"
             };
             let open = if m.display { "\\[" } else { "\\(" };
             let close = if m.display { "\\]" } else { "\\)" };
+            // The `math {inline,display}` class is structural and emitted
+            // first; a trailing attribute block merges its classes into it
+            // and contributes id / key-values after (never a second class).
+            let (class, rest) = match &m.attrs {
+                Some(a) if !a.classes.is_empty() => (
+                    format!("{} {}", base, a.classes.join(" ")),
+                    render_attrs_after_class(a),
+                ),
+                Some(a) => (base.to_string(), render_attrs_after_class(a)),
+                None => (base.to_string(), String::new()),
+            };
             out.push_str(&format!(
-                "<span class=\"{}\">{}{}</span>",
-                class,
+                "<span class=\"{}\"{}>{}{}</span>",
+                escape_attr(&class),
+                rest,
                 open,
                 escape_text(&m.content) + close
             ));
@@ -864,6 +1299,11 @@ fn render_inline(out: &mut String, node: &InlineNode, options: &Options<'_>) {
             escape_attr(&c.target),
             escape_text(&c.target)
         )),
+        InlineNode::CaptionNumber(n) => {
+            if let Some(number) = n.number {
+                out.push_str(&number.to_string());
+            }
+        }
         InlineNode::Mention(m) => {
             if let Some(template) = &options.mention_url {
                 let encoded = percent_encode(&m.user);
@@ -899,36 +1339,35 @@ fn render_inline(out: &mut String, node: &InlineNode, options: &Options<'_>) {
             }
         }
         InlineNode::CitationGroup(g) => render_citation_group(out, g, options),
-        InlineNode::Extension(e) => render_inline_extension(out, e, options),
+        InlineNode::Extension(e) => render_inline_extension(out, e, options, state),
         InlineNode::Abbreviation(a) => out.push_str(&format!(
             "<abbr title=\"{}\">{}</abbr>",
             escape_attr(&a.expansion),
             escape_text(&a.abbr)
         )),
         InlineNode::Footnote(f) => {
-            if let Some(id) = &f.id {
-                FOOTNOTE_NUMBERS.with(|cell| {
-                    if let Some(num) = cell.borrow().get(id).copied() {
-                        out.push_str(&format!(
-                            "<a id=\"fnref{}\" href=\"#fn{}\" role=\"doc-noteref\"><sup>{}</sup></a>",
-                            num, num, num
-                        ));
-                    } else {
-                        out.push_str(&escape_text(&format!("[^{}]", id)));
-                    }
-                });
+            if let (Some(number), Some(ref_id)) = (f.number, &f.ref_id) {
+                out.push_str(&format!(
+                    "<a id=\"{}\" href=\"#fn{}\" role=\"doc-noteref\"{}><sup>{}</sup></a>",
+                    escape_attr(ref_id),
+                    number,
+                    render_attrs_without_id(&f.attrs),
+                    number
+                ));
+            } else if let Some(id) = &f.id {
+                out.push_str(&escape_text(&format!("[^{id}]")));
             }
         }
         InlineNode::SoftBreak => out.push('\n'),
         InlineNode::HardBreak => out.push_str("<br>\n"),
         InlineNode::CriticInsert(c) => {
             out.push_str("<ins>");
-            render_inlines(out, &c.children, options);
+            render_inlines_stateful(out, &c.children, options, state);
             out.push_str("</ins>");
         }
         InlineNode::CriticDelete(c) => {
             out.push_str("<del>");
-            render_inlines(out, &c.children, options);
+            render_inlines_stateful(out, &c.children, options, state);
             out.push_str("</del>");
         }
         InlineNode::CriticSubstitute(c) => out.push_str(&format!(
@@ -1001,7 +1440,7 @@ fn percent_encode(input: &str) -> String {
     out
 }
 
-fn render_emphasis(out: &mut String, e: &Emphasis, options: &Options<'_>) {
+fn render_emphasis(out: &mut String, e: &Emphasis, options: &Options<'_>, state: &mut SmartState) {
     let (open, close) = match e.kind {
         EmphasisKind::Italic => ("em", "em"),
         EmphasisKind::Strong => ("strong", "strong"),
@@ -1014,16 +1453,16 @@ fn render_emphasis(out: &mut String, e: &Emphasis, options: &Options<'_>) {
     };
     if e.kind == EmphasisKind::BoldItalic {
         out.push_str(open);
-        render_inlines(out, &e.children, options);
+        render_inlines_stateful(out, &e.children, options, state);
         out.push_str(close);
     } else {
         out.push_str(&format!("<{}{}>", open, render_attrs(&e.attrs)));
-        render_inlines(out, &e.children, options);
+        render_inlines_stateful(out, &e.children, options, state);
         out.push_str(&format!("</{}>", close));
     }
 }
 
-fn render_link(out: &mut String, l: &Link, options: &Options<'_>) {
+fn render_link(out: &mut String, l: &Link, options: &Options<'_>, state: &mut SmartState) {
     out.push_str(&format!(
         "<a href=\"{}\"{}",
         escape_attr(&l.href),
@@ -1033,11 +1472,16 @@ fn render_link(out: &mut String, l: &Link, options: &Options<'_>) {
         out.push_str(&format!(" title=\"{}\"", escape_attr(title)));
     }
     out.push('>');
-    render_inlines(out, &l.children, options);
+    render_inlines_stateful(out, &l.children, options, state);
     out.push_str("</a>");
 }
 
-fn render_inline_extension(out: &mut String, node: &InlineExtension, options: &Options<'_>) {
+fn render_inline_extension(
+    out: &mut String,
+    node: &InlineExtension,
+    options: &Options<'_>,
+    state: &mut SmartState,
+) {
     let ctx = RenderContext::new(options);
     for ext in &options.extensions {
         if let Some(html) = ext.render_inline_extension(node, &ctx) {
@@ -1045,10 +1489,16 @@ fn render_inline_extension(out: &mut String, node: &InlineExtension, options: &O
             return;
         }
     }
-    if node.name == "kbd" {
-        out.push_str(&format!("<kbd{}>", render_attrs(&node.attrs)));
-        render_inlines(out, &node.children, options);
-        out.push_str("</kbd>");
+    // Semantic shorthands: `:tag[content]` renders as the matching HTML element
+    // (matches carve-js / carve-php). Any other name falls back to a generic
+    // `<span class="ext-NAME">`.
+    const SEMANTIC_TAGS: [&str; 9] = [
+        "kbd", "dfn", "abbr", "cite", "samp", "var", "code", "mark", "time",
+    ];
+    if SEMANTIC_TAGS.contains(&node.name.as_str()) {
+        out.push_str(&format!("<{}{}>", node.name, render_attrs(&node.attrs)));
+        render_inlines_stateful(out, &node.children, options, state);
+        out.push_str(&format!("</{}>", node.name));
         return;
     }
     out.push_str(&format!(
@@ -1056,7 +1506,7 @@ fn render_inline_extension(out: &mut String, node: &InlineExtension, options: &O
         escape_attr(&node.name),
         render_attrs(&node.attrs)
     ));
-    render_inlines(out, &node.children, options);
+    render_inlines_stateful(out, &node.children, options, state);
     out.push_str("</span>");
 }
 
@@ -1105,7 +1555,78 @@ fn render_attrs(attrs: &Option<Attrs>) -> String {
     out
 }
 
-fn smart_text(input: &str) -> String {
+/// Render an attribute block's id and key-values in source order, omitting
+/// the class slot. Used by a node whose class is structural and merged
+/// separately (the math span: `class="math inline {extra}"`).
+fn render_attrs_after_class(attrs: &Attrs) -> String {
+    let mut out = String::new();
+    if attrs.order.is_empty() {
+        if let Some(id) = &attrs.id {
+            out.push_str(&format!(" id=\"{}\"", escape_attr(id)));
+        }
+        for (key, value) in &attrs.key_values {
+            out.push_str(&format!(" {}=\"{}\"", key, escape_attr(value)));
+        }
+        return out;
+    }
+    for slot in &attrs.order {
+        match slot {
+            AttrSlot::Id => {
+                if let Some(id) = &attrs.id {
+                    out.push_str(&format!(" id=\"{}\"", escape_attr(id)));
+                }
+            }
+            AttrSlot::Class => {}
+            AttrSlot::Key(key) => {
+                if let Some(value) = attrs.key_values.get(key) {
+                    out.push_str(&format!(" {}=\"{}\"", key, escape_attr(value)));
+                }
+            }
+        }
+    }
+    out
+}
+
+fn render_attrs_without_id(attrs: &Option<Attrs>) -> String {
+    let mut attrs = attrs.clone();
+    if let Some(attrs) = &mut attrs {
+        attrs.id = None;
+        attrs.order.retain(|slot| !matches!(slot, AttrSlot::Id));
+    }
+    render_attrs(&attrs)
+}
+
+/// Apply substring replacements, but never across an escape-guarded char (the
+/// U+E000 guard marks the following char as an escaped literal, so it must not
+/// participate in a smart-typography operator like `<=` or `->`).
+fn apply_smart_ops(s: &str, replacements: &[(&str, &str)]) -> String {
+    let mut out = String::new();
+    let mut seg = String::new();
+    let mut chars = s.chars();
+    while let Some(c) = chars.next() {
+        if c == '\u{e000}' {
+            let mut replaced = seg.clone();
+            for (from, to) in replacements {
+                replaced = replaced.replace(from, to);
+            }
+            out.push_str(&replaced);
+            seg.clear();
+            out.push(c);
+            if let Some(n) = chars.next() {
+                out.push(n);
+            }
+        } else {
+            seg.push(c);
+        }
+    }
+    for (from, to) in replacements {
+        seg = seg.replace(from, to);
+    }
+    out.push_str(&seg);
+    out
+}
+
+fn smart_text_after(input: &str, prev_non_ws: bool, state: &mut SmartState) -> String {
     let s = unescape_text(input);
     let mut s = s;
     let replacements = [
@@ -1127,15 +1648,14 @@ fn smart_text(input: &str) -> String {
         ("--", "–"),
         ("...", "…"),
     ];
-    for (from, to) in replacements {
-        s = s.replace(from, to);
-    }
+    // Apply the operator replacements only OUTSIDE escape-guarded chars, so an
+    // escaped special (`\<= 5`, `\-> x`) does not form a smart-typography
+    // operator. The U+E000 guard precedes each escaped char.
+    s = apply_smart_ops(&s, &replacements);
     s = s.replace("&#NO_SMART_ARROW;", "->");
     s = s.replace("§NO_SMART_DOTS§", "...");
     let chars: Vec<char> = s.chars().collect();
     let mut out = String::new();
-    let mut open_double = true;
-    let mut open_single = true;
     for (idx, ch) in chars.iter().copied().enumerate() {
         if ch == '\u{e000}' {
             continue;
@@ -1145,22 +1665,26 @@ fn smart_text(input: &str) -> String {
             if escaped {
                 out.push(ch);
             } else {
-                out.push(if open_double { '“' } else { '”' });
-                open_double = !open_double;
+                out.push(if state.open_double { '“' } else { '”' });
+                state.open_double = !state.open_double;
             }
         } else if ch == '\'' {
             if escaped {
                 out.push(ch);
                 continue;
             }
-            let prev_ws = idx == 0 || chars[idx - 1].is_whitespace();
+            let prev_ws = if idx == 0 {
+                !prev_non_ws
+            } else {
+                chars[idx - 1].is_whitespace()
+            };
             let next_alpha = chars.get(idx + 1).is_some_and(|c| c.is_alphabetic());
             if prev_ws && next_alpha {
                 out.push('‘');
-                open_single = false;
-            } else if !open_single {
+                state.open_single = false;
+            } else if !state.open_single {
                 out.push('’');
-                open_single = true;
+                state.open_single = true;
             } else {
                 out.push('’');
             }

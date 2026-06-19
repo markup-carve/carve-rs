@@ -46,7 +46,13 @@ pub enum BlockNode {
     Comment(Comment),
     Extension(BlockExtension),
     BlockImage(Image),
-    ThematicBreak,
+    ThematicBreak(ThematicBreak),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ThematicBreak {
+    /// Attributes from a preceding block-attribute line (`{.x}` then `---`).
+    pub attrs: Option<Attrs>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -112,6 +118,8 @@ pub struct Table {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TableRow {
     pub cells: Vec<TableCell>,
+    /// Row-level attributes from a `{...}` block glued to the closing pipe.
+    pub attrs: Option<Attrs>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -119,6 +127,8 @@ pub struct TableCell {
     pub header: bool,
     pub span: Option<TableCellSpan>,
     pub align: Option<TableAlign>,
+    /// Author attributes from a `{...}` glued to the cell's opening pipe.
+    pub attrs: Option<Attrs>,
     pub children: Vec<InlineNode>,
 }
 
@@ -173,6 +183,8 @@ pub enum FigureTarget {
     Image(Image),
     BlockQuote(BlockQuote),
     Table(Table),
+    CodeBlock(CodeBlock),
+    Paragraph(Paragraph),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -213,6 +225,7 @@ pub enum InlineNode {
     Emoji(Emoji),
     AutoLink(AutoLink),
     CrossRef(CrossRef),
+    CaptionNumber(CaptionNumber),
     Mention(Mention),
     Tag(Tag),
     CitationGroup(CitationGroup),
@@ -307,6 +320,11 @@ pub struct CrossRef {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CaptionNumber {
+    pub number: Option<usize>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Mention {
     pub user: String,
 }
@@ -347,6 +365,7 @@ pub struct Abbreviation {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Footnote {
+    pub attrs: Option<Attrs>,
     pub id: Option<String>,
     pub inline: Option<Vec<InlineNode>>,
     pub number: Option<usize>,
