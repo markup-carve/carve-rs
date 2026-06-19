@@ -210,6 +210,11 @@ pub struct BlockExtension {
     pub attrs: Option<Attrs>,
     pub name: String,
     pub children: Vec<BlockNode>,
+    /// Optional pre-flattened title text carried by a `before_render`
+    /// rewrite (e.g. the `details` extension stashes the admonition title
+    /// here so its renderer can emit a `<summary>`). `None` for ordinary
+    /// extension carrier nodes.
+    pub summary: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -105,6 +105,11 @@ pub fn canonical_block_type(node: &BlockNode) -> Option<&'static str> {
         BlockNode::Comment(_) => Some("comment"),
         BlockNode::BlockImage(_) => Some("image"),
         BlockNode::ThematicBreak(_) => Some("thematic_break"),
+        // The `details` extension rewrites a `details` admonition (a typed
+        // div) into an extension carrier before profile filtering; gate it as
+        // a `div` so a restrictive profile denies it exactly as the original
+        // admonition (carve-js gates the un-rewritten admonition as a div).
+        BlockNode::Extension(e) if e.name == crate::extensions::details::CARRIER => Some("div"),
         // A block extension is gated under the inline-extension feature, the
         // same name carve-js / carve-php use for both extension axes.
         BlockNode::Extension(_) => Some("inline_extension"),

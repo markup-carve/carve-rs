@@ -87,6 +87,36 @@ let html = carve::to_html_with_options("Press :kbd[Ctrl].", &options);
 assert_eq!(html, "<p>Press <kbd>Ctrl</kbd>.</p>");
 ```
 
+### Built-in extensions
+
+The crate ships the same opt-in extensions as carve-js: `Autolink`,
+`ExternalLinks`, `HeadingPermalinks`, `TableOfContents`, `Wikilinks`,
+`TabNormalize`, `Mermaid`, and `Details`.
+
+#### `Details`
+
+`Details` renders `::: details` admonitions as the HTML5 `<details>/<summary>`
+disclosure widget instead of the default `<div class="details">`. The quoted
+title becomes the `<summary>` (a title-less block falls back to
+`<summary>Details</summary>`); the title is flattened to escaped plain text.
+Block attributes on the opener (`{#faq open}`) carry onto the `<details>` tag in
+source order (the auto `details` class is dropped - the tag is already the
+styling hook):
+
+```rust
+use carve::{Details, Options};
+
+let ext = Details::new();
+let opts = Options::new().with_extension(&ext);
+let src = "::: details \"More info\"\nHidden _here_.\n:::";
+assert_eq!(
+    carve::to_html_with_options(src, &opts),
+    "<details>\n  <summary>More info</summary>\n  <p>Hidden <u>here</u>.</p>\n</details>"
+);
+```
+
+Without the extension, `::: details` stays a plain `<div class="details">`.
+
 ## CLI
 
 The crate ships a `carve` binary that reads Carve source from a file or stdin
