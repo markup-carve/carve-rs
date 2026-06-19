@@ -113,6 +113,8 @@ const IMPLEMENTED: &[&str] = &[
     "98-table-row-attributes",
     "99-table-header-cell-rowspan",
     "100-block-quote-continuation-marker",
+    "101-heading-marker-column-zero",
+    "102-paragraph-trailing-whitespace",
 ];
 
 fn corpus_dir() -> PathBuf {
@@ -179,6 +181,42 @@ fn pretty_assert_eq(slug: &str, expected: &str, actual: &str) {
 #[test]
 fn corpus_pairs_present() {
     assert!(!corpus_pairs().is_empty(), "no .crv files found in corpus");
+}
+
+/// Reduce a corpus pair slug to its base category: `NN-slug` or
+/// `NN-slug-MM` -> `NN-slug`. A trailing `-<digits>` is a variant suffix and is
+/// dropped so all variants of a category map to the single IMPLEMENTED entry.
+fn base_category(slug: &str) -> &str {
+    if let Some((head, tail)) = slug.rsplit_once('-') {
+        if !tail.is_empty() && tail.bytes().all(|b| b.is_ascii_digit()) {
+            return head;
+        }
+    }
+    slug
+}
+
+/// Reverse of `all_implemented_pairs_exist`: every base category present in the
+/// corpus submodule must appear in IMPLEMENTED. Without this, a brand-new spec
+/// corpus category is silently unchecked (this gap once left
+/// `100-block-quote-continuation-marker` unvalidated). A missing category here
+/// forces an IMPLEMENTED update.
+#[test]
+fn all_corpus_categories_implemented() {
+    let mut missing: Vec<String> = Vec::new();
+    for slug in corpus_pairs() {
+        let category = base_category(&slug);
+        if !IMPLEMENTED.contains(&category) {
+            let category = category.to_string();
+            if !missing.contains(&category) {
+                missing.push(category);
+            }
+        }
+    }
+    missing.sort();
+    assert!(
+        missing.is_empty(),
+        "corpus categories not in IMPLEMENTED (add them, then implement/verify): {missing:?}"
+    );
 }
 
 #[test]
