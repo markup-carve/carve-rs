@@ -13,6 +13,7 @@
 //! ```
 
 pub mod autolink;
+pub mod details;
 pub mod external_links;
 pub mod heading_permalinks;
 pub mod mermaid;
@@ -21,6 +22,7 @@ pub mod table_of_contents;
 pub mod wikilinks;
 
 pub use autolink::{Autolink, AutolinkOptions};
+pub use details::Details;
 pub use external_links::{ExternalLinks, ExternalLinksOptions};
 pub use heading_permalinks::{HeadingPermalinks, HeadingPermalinksOptions};
 pub use mermaid::{Mermaid, MermaidOptions};

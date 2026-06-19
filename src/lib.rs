@@ -34,7 +34,7 @@ pub use extension::{
     BlockMatch, CarveExtension, InlineMatch, MatcherContext, Options, RenderContext,
 };
 pub use extensions::{
-    Autolink, AutolinkOptions, ExternalLinks, ExternalLinksOptions, HeadingPermalinks,
+    Autolink, AutolinkOptions, Details, ExternalLinks, ExternalLinksOptions, HeadingPermalinks,
     HeadingPermalinksOptions, ListType, Mermaid, MermaidOptions, Position, TabNormalize,
     TableOfContents, TableOfContentsOptions, UrlGenerator, Wikilinks, WikilinksOptions,
 };

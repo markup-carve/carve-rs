@@ -156,19 +156,77 @@ impl<'a> MatcherContext<'a> {
 
 pub struct RenderContext<'a> {
     pub(crate) options: &'a Options<'a>,
+    /// Indentation level of the node currently being rendered. Zero on the
+    /// inline path (inline extensions never indent); set to the block node's
+    /// level when a block extension is rendered, so a block-extension renderer
+    /// can emit nesting-aware indentation (mirrors carve-js
+    /// `BlockExtensionRenderContext.level`).
+    level: usize,
+    /// The live document render state (heading-id counter) when rendering a
+    /// block extension, so [`RenderContext::render_blocks_at`] continues the
+    /// document's heading numbering across the extension boundary. `None` on
+    /// the inline path and at level-0 entry points.
+    state: Option<&'a std::cell::RefCell<&'a mut crate::render::RenderState>>,
 }
 
 impl<'a> RenderContext<'a> {
     pub(crate) fn new(options: &'a Options<'a>) -> Self {
-        Self { options }
+        Self {
+            options,
+            level: 0,
+            state: None,
+        }
+    }
+
+    pub(crate) fn with_level_and_state(
+        options: &'a Options<'a>,
+        level: usize,
+        state: &'a std::cell::RefCell<&'a mut crate::render::RenderState>,
+    ) -> Self {
+        Self {
+            options,
+            level,
+            state: Some(state),
+        }
     }
 
     pub fn render_inlines(&self, nodes: &[InlineNode]) -> String {
         crate::render::render_inlines_with_options(nodes, self.options)
     }
 
+    /// Render block nodes at level 0 (no leading indentation). Use
+    /// [`RenderContext::render_blocks_at`] to render at a specific nesting
+    /// level.
     pub fn render_blocks(&self, nodes: &[BlockNode]) -> String {
         crate::render::render_blocks_with_options(nodes, self.options)
+    }
+
+    /// Render block nodes indented to `level`, matching the core renderer's
+    /// two-space-per-level layout. A block-extension renderer uses this to
+    /// place its children at `ctx.level() + 1` so a details/disclosure block
+    /// nests identically wherever it sits (top level, list item, blockquote).
+    /// When this context carries the live document state, the heading-id
+    /// counter continues across the extension boundary (a duplicate slug gets
+    /// its numeric suffix); otherwise it falls back to a fresh counter.
+    pub fn render_blocks_at(&self, nodes: &[BlockNode], level: usize) -> String {
+        match self.state {
+            Some(cell) => {
+                let mut state = cell.borrow_mut();
+                crate::render::render_blocks_at_with_state(nodes, self.options, level, &mut state)
+            }
+            None => crate::render::render_blocks_at_with_options(nodes, self.options, level),
+        }
+    }
+
+    /// The indentation level of the block node being rendered. Zero on the
+    /// inline path.
+    pub fn level(&self) -> usize {
+        self.level
+    }
+
+    /// The two-space-per-level indent string for `level`.
+    pub fn indent(&self, level: usize) -> String {
+        "  ".repeat(level)
     }
 
     pub fn escape_html(&self, input: &str) -> String {

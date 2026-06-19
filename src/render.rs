@@ -31,39 +31,63 @@ pub fn render_html_with_options(doc: &Document, options: &Options<'_>) -> String
 }
 
 // Entry point for `RenderContext::render_blocks` (the extension render helper).
-// KNOWN LIMITATION: this starts a fresh heading-id counter, so headings inside
-// blocks rendered by a custom block extension are numbered independently of the
-// surrounding document (a collision can repeat an id). The common path -- the
-// fallback `<div>` rendering in render_block_extension -- already threads the
-// document `state`, so only an extension that explicitly re-renders child
-// headings via this helper is affected. Sharing the live counter would require
-// threading mutable state through the extension RenderContext, which is a
-// cross-impl extension-API change (carve-js resolves heading ids in a separate
-// pass that likewise does not descend into extension nodes); deferred until that
-// is coordinated across implementations.
+// This starts a FRESH heading-id counter, so headings rendered through it are
+// numbered independently of the surrounding document. A block-extension
+// renderer that needs document-consistent heading ids (a duplicate slug getting
+// its `-N` suffix) should instead use `RenderContext::render_blocks_at`, which
+// continues the live document counter when invoked from a block extension (the
+// `Details` extension relies on this for carve-js parity).
 pub(crate) fn render_blocks_with_options(nodes: &[BlockNode], options: &Options<'_>) -> String {
+    render_blocks_at_with_options(nodes, options, 0)
+}
+
+// Like `render_blocks_with_options`, but indents every block to `level`. Used
+// by `RenderContext::render_blocks_at` so a block-extension renderer can place
+// its children at the correct nesting depth (see the same KNOWN LIMITATION on
+// the fresh heading-id counter noted above).
+pub(crate) fn render_blocks_at_with_options(
+    nodes: &[BlockNode],
+    options: &Options<'_>,
+    level: usize,
+) -> String {
     let mut state = RenderState {
         lowercase_heading_ids: options.lowercase_heading_ids,
         ..RenderState::default()
     };
-    render_blocks(nodes, options, &mut state)
+    render_blocks(nodes, level, options, &mut state)
 }
 
-fn render_blocks(nodes: &[BlockNode], options: &Options<'_>, state: &mut RenderState) -> String {
+// Render block nodes at `level`, continuing an existing `RenderState` so the
+// shared heading-id counter keeps numbering across an extension boundary.
+pub(crate) fn render_blocks_at_with_state(
+    nodes: &[BlockNode],
+    options: &Options<'_>,
+    level: usize,
+    state: &mut RenderState,
+) -> String {
+    render_blocks(nodes, level, options, state)
+}
+
+fn render_blocks(
+    nodes: &[BlockNode],
+    level: usize,
+    options: &Options<'_>,
+    state: &mut RenderState,
+) -> String {
     let mut out = String::new();
     let mut first = true;
     for block in nodes {
         if !first {
             out.push('\n');
         }
-        render_block(&mut out, block, 0, options, state);
+        render_block(&mut out, block, level, options, state);
         first = false;
     }
     out
 }
 
 #[derive(Default)]
-struct RenderState {
+pub(crate) struct RenderState {
     heading_counts: BTreeMap<String, usize>,
     /// Mirrors `Options::lowercase_heading_ids` so the `<section id>` derived
     /// here matches the parse-time id index (and the resolved cross-ref hrefs).
@@ -1115,14 +1139,22 @@ fn render_block_extension(
     options: &Options<'_>,
     state: &mut RenderState,
 ) {
-    let ctx = RenderContext::new(options);
-    for ext in &options.extensions {
-        if let Some(html) = ext.render_block_extension(node, &ctx) {
-            indent(out, level);
-            out.push_str(&html);
-            return;
+    // Share the live heading-id counter with the extension's render context so
+    // a child heading rendered via `ctx.render_blocks_at` continues the
+    // document's numbering (e.g. a duplicate slug inside a details block gets
+    // its `-2` suffix) instead of restarting from a fresh counter.
+    let shared = std::cell::RefCell::new(state);
+    {
+        let ctx = RenderContext::with_level_and_state(options, level, &shared);
+        for ext in &options.extensions {
+            if let Some(html) = ext.render_block_extension(node, &ctx) {
+                indent(out, level);
+                out.push_str(&html);
+                return;
+            }
         }
     }
+    let mut state = shared.borrow_mut();
     indent(out, level);
     out.push_str(&format!("<div class=\"{}\">", escape_attr(&node.name)));
     if !node.children.is_empty() {
@@ -1132,7 +1164,7 @@ fn render_block_extension(
             if !first {
                 out.push('\n');
             }
-            render_block(out, child, level + 1, options, state);
+            render_block(out, child, level + 1, options, &mut state);
             first = false;
         }
         out.push('\n');
