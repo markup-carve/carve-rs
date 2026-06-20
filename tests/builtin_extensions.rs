@@ -7,9 +7,9 @@
 //! `lowercase_ids` flag set to match.
 
 use carve::{
-    Autolink, AutolinkOptions, ExternalLinks, ExternalLinksOptions, FencedRender, HeadingPermalinks,
-    HeadingPermalinksOptions, ListType, MathBlock, Mermaid, Options, Position, TabNormalize,
-    TableOfContents, TableOfContentsOptions, Wikilinks, WikilinksOptions,
+    Autolink, AutolinkOptions, ExternalLinks, ExternalLinksOptions, FencedRender,
+    HeadingPermalinks, HeadingPermalinksOptions, ListType, MathBlock, Mermaid, Options, Position,
+    TabNormalize, TableOfContents, TableOfContentsOptions, Wikilinks, WikilinksOptions,
 };
 
 // ---------------------------------------------------------------------------

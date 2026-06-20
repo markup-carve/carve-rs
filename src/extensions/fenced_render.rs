@@ -59,8 +59,7 @@ impl FencedRenderOptions {
         tag: Option<String>,
         content_mode: ContentMode,
     ) -> Self {
-        let css_class =
-            css_class.unwrap_or_else(|| languages.first().cloned().unwrap_or_default());
+        let css_class = css_class.unwrap_or_else(|| languages.first().cloned().unwrap_or_default());
         let tag = tag.unwrap_or_else(|| {
             if content_mode == ContentMode::Json {
                 "div".into()
@@ -267,7 +266,10 @@ fn render_attrs(attrs: &Attrs) -> String {
             out.push_str(&format!(" id=\"{}\"", escape_attr(id)));
         }
         if !attrs.classes.is_empty() {
-            out.push_str(&format!(" class=\"{}\"", escape_attr(&attrs.classes.join(" "))));
+            out.push_str(&format!(
+                " class=\"{}\"",
+                escape_attr(&attrs.classes.join(" "))
+            ));
         }
         for (key, value) in &attrs.key_values {
             push_kv(&mut out, key, value);
@@ -283,7 +285,10 @@ fn render_attrs(attrs: &Attrs) -> String {
             }
             AttrSlot::Class => {
                 if !attrs.classes.is_empty() {
-                    out.push_str(&format!(" class=\"{}\"", escape_attr(&attrs.classes.join(" "))));
+                    out.push_str(&format!(
+                        " class=\"{}\"",
+                        escape_attr(&attrs.classes.join(" "))
+                    ));
                 }
             }
             AttrSlot::Key(key) => {
