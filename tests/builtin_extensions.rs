@@ -8,8 +8,8 @@
 
 use carve::{
     Autolink, AutolinkOptions, ExternalLinks, ExternalLinksOptions, HeadingPermalinks,
-    HeadingPermalinksOptions, ListType, Mermaid, Options, Position, TabNormalize, TableOfContents,
-    TableOfContentsOptions, Wikilinks, WikilinksOptions,
+    HeadingPermalinksOptions, ListType, MathBlock, Mermaid, Options, Position, TabNormalize,
+    TableOfContents, TableOfContentsOptions, Wikilinks, WikilinksOptions,
 };
 
 // ---------------------------------------------------------------------------
@@ -285,6 +285,62 @@ fn mermaid_non_mermaid_defers_golden() {
     assert_eq!(
         carve::to_html_with_options("``` js\nlet x = 1 < 2;\n```\n", &opts),
         "<pre><code class=\"language-js\">let x = 1 &lt; 2;\n</code></pre>"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// math-block
+// ---------------------------------------------------------------------------
+
+#[test]
+fn math_block_integral_golden() {
+    let ext = MathBlock::new();
+    let opts = Options::new().with_extension(&ext);
+    // carveToHtml("``` math\n\\int_0^1 x^2 \\, dx\n```\n", {extensions:[mathBlock()]})
+    assert_eq!(
+        carve::to_html_with_options("``` math\n\\int_0^1 x^2 \\, dx\n```\n", &opts),
+        "<div class=\"math display\">\\[\\int_0^1 x^2 \\, dx\\]</div>"
+    );
+}
+
+#[test]
+fn math_block_escapes_amp_lt_gt() {
+    let ext = MathBlock::new();
+    let opts = Options::new().with_extension(&ext);
+    // `>` is escaped too (unlike Mermaid), matching the core math renderer.
+    assert_eq!(
+        carve::to_html_with_options("``` math\na < b & c > d\n```\n", &opts),
+        "<div class=\"math display\">\\[a &lt; b &amp; c &gt; d\\]</div>"
+    );
+}
+
+#[test]
+fn math_block_single_line_no_trailing_newline() {
+    let ext = MathBlock::new();
+    let opts = Options::new().with_extension(&ext);
+    assert_eq!(
+        carve::to_html_with_options("``` math\nx^2\n```\n", &opts),
+        "<div class=\"math display\">\\[x^2\\]</div>"
+    );
+}
+
+#[test]
+fn math_block_non_math_defers_golden() {
+    let ext = MathBlock::new();
+    let opts = Options::new().with_extension(&ext);
+    assert_eq!(
+        carve::to_html_with_options("``` js\nlet x = 1 < 2;\n```\n", &opts),
+        "<pre><code class=\"language-js\">let x = 1 &lt; 2;\n</code></pre>"
+    );
+}
+
+#[test]
+fn math_block_inert_without_extension() {
+    let opts = Options::new();
+    // Without the extension, a ```math block stays a plain code block.
+    assert_eq!(
+        carve::to_html_with_options("``` math\nx^2\n```\n", &opts),
+        "<pre><code class=\"language-math\">x^2\n</code></pre>"
     );
 }
 
