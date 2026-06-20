@@ -21,6 +21,7 @@ use std::collections::BTreeMap;
 use crate::ast::{
     Admonition, AttrSlot, Attrs, BlockExtension, BlockNode, Document, InlineNode, ListItem,
 };
+use crate::escape::{is_dangerous_attr_name, sanitize_attr_value};
 use crate::extension::{CarveExtension, RenderContext};
 
 /// The admonition kind this extension claims.
@@ -28,6 +29,12 @@ const KIND: &str = "list-table";
 
 /// Sentinel name for the rewritten carrier node.
 pub(crate) const CARRIER: &str = "carve-list-table";
+
+/// DoS guards: span resolution is ~O(rows^2), so cap the dimensions and defer
+/// anything larger to the plain nested-list div. Far beyond any legitimate
+/// hand-authored table; kept identical across carve-php / carve-js / carve-rs.
+const MAX_ROWS: usize = 10_000;
+const MAX_CELLS: usize = 100_000;
 
 /// Render `::: list-table` blocks as real HTML `<table>` markup.
 ///
@@ -148,7 +155,17 @@ fn is_renderable(a: &Admonition) -> bool {
         return false;
     }
     // Every row must yield at least one cell.
-    outer.items.iter().all(|row| !row_cells(row).is_empty())
+    if !outer.items.iter().all(|row| !row_cells(row).is_empty()) {
+        return false;
+    }
+    // DoS guard: span resolution rescans prior rows (~O(rows^2)). Defer an
+    // over-large table to the plain div (content preserved, no quadratic
+    // blow-up). Limits match carve-php / carve-js.
+    if outer.items.len() > MAX_ROWS {
+        return false;
+    }
+    let total_cells: usize = outer.items.iter().map(|row| row_cells(row).len()).sum();
+    total_cells <= MAX_CELLS
 }
 
 /// The cell items of a row: the items of every inner [`List`] child of the row
@@ -559,8 +576,12 @@ fn table_attrs(attrs: Option<&Attrs>, ctx: &RenderContext<'_>) -> String {
         emit_id(&mut out);
         emit_class(&mut out);
         for (key, value) in &attrs.key_values {
-            if !is_consumed(key) {
-                out.push_str(&format!(" {}=\"{}\"", key, ctx.escape_attr(value)));
+            if !is_consumed(key) && !is_dangerous_attr_name(key) {
+                out.push_str(&format!(
+                    " {}=\"{}\"",
+                    ctx.escape_attr(key),
+                    ctx.escape_attr(&sanitize_attr_value(key, value))
+                ));
             }
         }
         return out;
@@ -572,7 +593,13 @@ fn table_attrs(attrs: Option<&Attrs>, ctx: &RenderContext<'_>) -> String {
             AttrSlot::Key(key) => {
                 if !is_consumed(key) {
                     if let Some(value) = attrs.key_values.get(key) {
-                        out.push_str(&format!(" {}=\"{}\"", key, ctx.escape_attr(value)));
+                        if !is_dangerous_attr_name(key) {
+                            out.push_str(&format!(
+                                " {}=\"{}\"",
+                                ctx.escape_attr(key),
+                                ctx.escape_attr(&sanitize_attr_value(key, value))
+                            ));
+                        }
                     }
                 }
             }
@@ -612,8 +639,12 @@ fn cell_attrs(attrs: Option<&Attrs>, ctx: &RenderContext<'_>) -> String {
         emit_id(&mut out);
         emit_class(&mut out);
         for (key, value) in &attrs.key_values {
-            if !is_span(key) {
-                out.push_str(&format!(" {}=\"{}\"", key, ctx.escape_attr(value)));
+            if !is_span(key) && !is_dangerous_attr_name(key) {
+                out.push_str(&format!(
+                    " {}=\"{}\"",
+                    ctx.escape_attr(key),
+                    ctx.escape_attr(&sanitize_attr_value(key, value))
+                ));
             }
         }
         return out;
@@ -625,7 +656,13 @@ fn cell_attrs(attrs: Option<&Attrs>, ctx: &RenderContext<'_>) -> String {
             AttrSlot::Key(key) => {
                 if !is_span(key) {
                     if let Some(value) = attrs.key_values.get(key) {
-                        out.push_str(&format!(" {}=\"{}\"", key, ctx.escape_attr(value)));
+                        if !is_dangerous_attr_name(key) {
+                            out.push_str(&format!(
+                                " {}=\"{}\"",
+                                ctx.escape_attr(key),
+                                ctx.escape_attr(&sanitize_attr_value(key, value))
+                            ));
+                        }
                     }
                 }
             }
