@@ -344,6 +344,21 @@ fn math_block_inert_without_extension() {
     );
 }
 
+#[test]
+fn math_block_does_not_copy_fence_attributes() {
+    let ext = MathBlock::new();
+    let opts = Options::new().with_extension(&ext);
+    // Author attributes on the fence are dropped (only the fixed `math display`
+    // class is emitted), so they cannot bypass safe-mode attribute filtering.
+    assert_eq!(
+        carve::to_html_with_options(
+            "{#eq .big onclick=\"alert(1)\"}\n``` math\nx^2\n```\n",
+            &opts
+        ),
+        "<div class=\"math display\">\\[x^2\\]</div>"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // table-of-contents
 // ---------------------------------------------------------------------------

@@ -11,7 +11,7 @@
 //! escapes `&`, `<`, and `>`). Note this escapes `>` too, unlike the Mermaid
 //! extension which keeps `>` for arrow syntax.
 
-use crate::ast::{Attrs, BlockNode, Document, RawBlock};
+use crate::ast::{BlockNode, Document, RawBlock};
 use crate::extension::CarveExtension;
 
 /// Options for [`MathBlock`].
@@ -84,18 +84,13 @@ fn transform_blocks(blocks: &mut [BlockNode], opts: &MathBlockOptions) {
     for block in blocks.iter_mut() {
         match block {
             BlockNode::CodeBlock(code) if code.lang.as_deref() == Some(opts.language.as_str()) => {
-                // Preserve the block's own attributes (and source order) and
-                // merge the mandatory math classes into the front of the class
-                // group (matching inline math: base classes first).
-                let mut attrs = code.attrs.clone().unwrap_or_default();
-                let mut classes = vec!["math".to_string(), "display".to_string()];
-                classes.extend(attrs.classes.iter().cloned());
-                attrs.classes = classes;
-                ensure_class_slot(&mut attrs);
-
+                // Emit only the fixed `math display` class. Author attributes
+                // from the fence are intentionally NOT copied: rendering them
+                // here would bypass safe-mode attribute filtering (an
+                // `{onclick=...}` on a ```math fence would become an executable
+                // handler on the <div>).
                 let html = format!(
-                    "<div{}>\\[{}\\]</div>",
-                    render_attrs(&attrs),
+                    "<div class=\"math display\">\\[{}\\]</div>",
                     crate::escape::escape_text(&code.content),
                 );
                 *block = BlockNode::RawBlock(RawBlock {
@@ -122,65 +117,4 @@ fn transform_blocks(blocks: &mut [BlockNode], opts: &MathBlockOptions) {
             _ => {}
         }
     }
-}
-
-/// Ensure the class group renders. When a node carries an explicit attribute
-/// `order` (author wrote `{...}`) but no class slot, add one so the merged math
-/// classes are emitted in source-order position.
-fn ensure_class_slot(attrs: &mut Attrs) {
-    use crate::ast::AttrSlot;
-    if attrs.classes.is_empty() {
-        return;
-    }
-    if !attrs.order.is_empty() && !attrs.order.iter().any(|s| matches!(s, AttrSlot::Class)) {
-        // Place the class slot first to mirror carve-js, which spreads the
-        // merged classes ahead of the rest.
-        attrs.order.insert(0, AttrSlot::Class);
-    }
-}
-
-/// Render attributes the same way the core HTML renderer does: when `order` is
-/// empty, emit id, class, then key-values; otherwise follow `order`.
-fn render_attrs(attrs: &Attrs) -> String {
-    use crate::ast::AttrSlot;
-    use crate::escape::escape_attr;
-    let mut out = String::new();
-    if attrs.order.is_empty() {
-        if let Some(id) = &attrs.id {
-            out.push_str(&format!(" id=\"{}\"", escape_attr(id)));
-        }
-        if !attrs.classes.is_empty() {
-            out.push_str(&format!(
-                " class=\"{}\"",
-                escape_attr(&attrs.classes.join(" "))
-            ));
-        }
-        for (key, value) in &attrs.key_values {
-            out.push_str(&format!(" {}=\"{}\"", key, escape_attr(value)));
-        }
-        return out;
-    }
-    for slot in &attrs.order {
-        match slot {
-            AttrSlot::Id => {
-                if let Some(id) = &attrs.id {
-                    out.push_str(&format!(" id=\"{}\"", escape_attr(id)));
-                }
-            }
-            AttrSlot::Class => {
-                if !attrs.classes.is_empty() {
-                    out.push_str(&format!(
-                        " class=\"{}\"",
-                        escape_attr(&attrs.classes.join(" "))
-                    ));
-                }
-            }
-            AttrSlot::Key(key) => {
-                if let Some(value) = attrs.key_values.get(key) {
-                    out.push_str(&format!(" {}=\"{}\"", key, escape_attr(value)));
-                }
-            }
-        }
-    }
-    out
 }
