@@ -345,17 +345,26 @@ fn math_block_inert_without_extension() {
 }
 
 #[test]
-fn math_block_does_not_copy_fence_attributes() {
+fn math_block_merges_classes_and_copies_attributes() {
     let ext = MathBlock::new();
     let opts = Options::new().with_extension(&ext);
-    // Author attributes on the fence are dropped (only the fixed `math display`
-    // class is emitted), so they cannot bypass safe-mode attribute filtering.
+    // Author classes merge after the `math display` base; id and other attrs
+    // follow in source order, mirroring core display `$$` math (class-first).
     assert_eq!(
-        carve::to_html_with_options(
-            "{#eq .big onclick=\"alert(1)\"}\n``` math\nx^2\n```\n",
-            &opts
-        ),
-        "<div class=\"math display\">\\[x^2\\]</div>"
+        carve::to_html_with_options("{#eq .big data-ref=x}\n``` math\nx^2\n```\n", &opts),
+        "<div class=\"math display big\" id=\"eq\" data-ref=\"x\">\\[x^2\\]</div>"
+    );
+}
+
+#[test]
+fn math_block_strips_event_handler_attributes() {
+    let ext = MathBlock::new();
+    let opts = Options::new().with_extension(&ext);
+    // Always-on attribute hardening strips event handlers regardless of options,
+    // while safe author attributes (id, classes) survive.
+    assert_eq!(
+        carve::to_html_with_options("{#eq .big onclick=\"alert(1)\"}\n``` math\nx^2\n```\n", &opts),
+        "<div class=\"math display big\" id=\"eq\">\\[x^2\\]</div>"
     );
 }
 

@@ -136,14 +136,24 @@ assert_eq!(
 );
 ```
 
-Unlike `Mermaid`, `MathBlock` does **not** copy any author attributes onto the
-output `<div>` - neither a fence info-string nor a preceding `{#id .class}`
-block-attribute line. The extension emits raw HTML directly, bypassing the core
-safe-mode attribute sanitizer, so copying attributes would let `{onclick="…"}`
-through unfiltered on untrusted documents. The class is always the fixed
-`math display`. For styleable/targetable math, use the core inline `` $`…` `` /
-display `` $$`…` `` forms instead: they carry `{...}` attributes through the
-core renderer.
+A `{#eq .big key=val}` block-attribute line above the fence merges onto the
+`<div>` exactly as core display `$$` math carries its attributes - the
+`math display` base class ahead of author classes, then id and other attributes
+in source order (class-first):
+
+```text
+{#eq .big data-ref=x}
+``` math
+x^2
+```
+→ <div class="math display big" id="eq" data-ref="x">\[x^2\]</div>
+```
+
+Attributes get the always-on hardening every element gets (`is_dangerous_attr_name`
+strips `on*` / `srcdoc` / `formaction`; `sanitize_attr_value` neutralizes
+dangerous URL / `expression()` values), so a `{onclick="…"}` on a fence can
+never reach the output. This mirrors how core inline `` $`…` `` / display
+`` $$`…` `` math carry their `{...}` attributes.
 
 #### `ListTable`
 
