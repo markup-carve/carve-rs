@@ -72,7 +72,10 @@ trailing `{...}` on the `:::` line would make the whole block literal in Carve):
 
 `header-rows=N` promotes the first N rows to `<thead>` with `<th>` cells.
 `header-cols=N` promotes the first N cells of every row to row-header `<th>`.
-The two combine.
+The two combine. The boolean form `{header-rows}` (no value) means the first
+row, the common "this table has a header row" case, so `=1` is rarely needed;
+`{header-cols}` likewise promotes the first column. An absent attribute means no
+header.
 
 ### Block cells
 
