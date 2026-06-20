@@ -17,3 +17,23 @@ fn orphan_colspan_marker_is_empty_cell() {
         "<table>\n  <tbody>\n    <tr><td></td><td>b</td></tr>\n  </tbody>\n</table>"
     );
 }
+
+#[test]
+fn blocked_colspan_marker_is_empty_cell() {
+    // The `<` in row 3 column 2 has no available origin to its left: column 1 is
+    // held by `x`'s rowspan ("^" above it), so the `<` cannot merge and renders
+    // as an empty cell rather than being dropped (the row would otherwise shift
+    // `d` left). Matches carve-js.
+    assert_eq!(
+        carve::to_html("| A | B | C |\n|---|---|---|\n| x | y | z |\n| ^ | < | d |"),
+        concat!(
+            "<table>\n",
+            "  <thead><tr><th>A</th><th>B</th><th>C</th></tr></thead>\n",
+            "  <tbody>\n",
+            "    <tr><td rowspan=\"2\">x</td><td>y</td><td>z</td></tr>\n",
+            "    <tr><td></td><td>d</td></tr>\n",
+            "  </tbody>\n",
+            "</table>"
+        )
+    );
+}

@@ -296,6 +296,44 @@ fn leading_colspan_marker_becomes_empty_cell() {
 }
 
 #[test]
+fn blocked_colspan_marker_becomes_empty_cell() {
+    // Row 2's `<` (column 2) has no available origin to its left: column 1 is
+    // held by A's rowspan (the `^` below A), so the `<` cannot merge and renders
+    // as an empty cell rather than being dropped (which would shift `D` left).
+    // Matches carve-js and the equivalent pipe table.
+    assert_eq!(
+        h("::: list-table\n- - A\n  - B\n  - C\n- - ^\n  - <\n  - D\n:::"),
+        [
+            "<table>",
+            "  <tbody>",
+            "    <tr><td rowspan=\"2\">A</td><td>B</td><td>C</td></tr>",
+            "    <tr><td></td><td>D</td></tr>",
+            "  </tbody>",
+            "</table>",
+        ]
+        .join("\n")
+    );
+}
+
+#[test]
+fn first_row_caret_then_colspan_marker_merge_into_empty_cell() {
+    // A first-row `^` is an unmergeable empty cell; a `<` immediately to its
+    // right merges INTO that empty cell, growing its colspan (the `<` has a valid
+    // non-skipped left neighbor). Matches carve-js.
+    assert_eq!(
+        h("::: list-table\n- - ^\n  - <\n  - B\n:::"),
+        [
+            "<table>",
+            "  <tbody>",
+            "    <tr><td colspan=\"2\"></td><td>B</td></tr>",
+            "  </tbody>",
+            "</table>",
+        ]
+        .join("\n")
+    );
+}
+
+#[test]
 fn first_row_caret_becomes_empty_cell() {
     // A `^` in the first row has no cell above to extend, so it is an empty cell.
     assert_eq!(
