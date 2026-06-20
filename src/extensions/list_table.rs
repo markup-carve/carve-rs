@@ -16,7 +16,7 @@
 //! ever silently dropped. The defer decision is made on the pristine AST before
 //! any rewrite, so a deferred render is byte-identical to the plain admonition.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use crate::ast::{
     Admonition, AttrSlot, Attrs, BlockExtension, BlockNode, Document, InlineNode, ListItem,
@@ -168,27 +168,29 @@ fn row_cells(row: &ListItem) -> Vec<&ListItem> {
     cells
 }
 
-/// A single placed cell in the resolved grid.
-struct Placed<'a> {
+/// One source cell in the resolved grid (one entry per authored cell). Mirrors
+/// carve-js's `GridEntry`: a `^`/`<` that found a source to merge into is
+/// flagged `skip` and emits nothing; an unmergeable marker (first-row `^`,
+/// leading `<`, or one clamped at the header/body boundary) keeps `skip = false`
+/// and renders as an EMPTY cell occupying its grid position. The marker is never
+/// rendered as literal text.
+struct GridEntry<'a> {
     cell: &'a ListItem,
+    marker: Option<char>,
     rowspan: usize,
     colspan: usize,
-    /// A `^`/`<` marker with nothing to merge into: an empty cell, no content.
-    empty: bool,
-    /// Overlaps a rowspan from above: kept only for span tracking, emits
-    /// nothing (its column is covered).
-    dropped: bool,
+    /// Merged into another cell (a `^`/`<` that found a source): emits nothing.
+    skip: bool,
 }
 
-/// One resolved grid row.
-struct GridRow<'a> {
-    /// Placed cells keyed by their starting column.
-    cells: BTreeMap<usize, Placed<'a>>,
-    /// Columns covered by a colspan body, a rowspan from above, a dropped
-    /// overlapping cell, or a consumed `^` marker (the renderer skips them).
-    covered: BTreeSet<usize>,
-    /// Effective column count of the row (advanced past colspans).
-    width: usize,
+/// Output-column placement for every grid entry (mirrors carve-js `Placement`).
+struct Placement {
+    /// Output start column of each source cell, per row (skipped cells: `None`).
+    cols: Vec<Vec<Option<usize>>>,
+    /// Highest output column reached by each row (rowspan coverage included).
+    row_reach: Vec<usize>,
+    /// Total table width = the widest row's reach.
+    column_count: usize,
 }
 
 /// Build the `<table>` markup for a `list-table` carrier.
@@ -205,9 +207,12 @@ fn render_table(node: &BlockExtension, ctx: &RenderContext<'_>) -> String {
     let header_rows = attr_count(node.attrs.as_ref(), "header-rows");
     let header_cols = attr_count(node.attrs.as_ref(), "header-cols");
 
+    // Resolve `^`/`<` span markers into a positional grid, mirroring the
+    // pipe-table span model so the output matches an equivalent pipe table, then
+    // flow each rendered cell into an output column past any rowspan from above.
     let grid = resolve_spans(&rows, header_rows);
-
-    let column_count = grid.iter().map(|r| r.width).max().unwrap_or(0);
+    let placement = place_columns(&grid);
+    let column_count = placement.column_count;
 
     let mut lines: Vec<String> = Vec::new();
 
@@ -221,13 +226,14 @@ fn render_table(node: &BlockExtension, ctx: &RenderContext<'_>) -> String {
 
     if head_rows > 0 {
         let mut thead = String::new();
-        for (row_index, placed_row) in grid.iter().take(head_rows).enumerate() {
+        for (row_index, grid_row) in grid.iter().take(head_rows).enumerate() {
             thead.push_str(&render_row(
-                placed_row,
+                grid_row,
                 row_index,
                 header_rows,
                 header_cols,
                 column_count,
+                &placement,
                 ctx,
             ));
         }
@@ -236,14 +242,15 @@ fn render_table(node: &BlockExtension, ctx: &RenderContext<'_>) -> String {
 
     if head_rows < grid.len() {
         let mut tbody = String::new();
-        for (offset, placed_row) in grid.iter().skip(head_rows).enumerate() {
+        for (offset, grid_row) in grid.iter().skip(head_rows).enumerate() {
             tbody.push_str("    ");
             tbody.push_str(&render_row(
-                placed_row,
+                grid_row,
                 offset + head_rows,
                 header_rows,
                 header_cols,
                 column_count,
+                &placement,
                 ctx,
             ));
             tbody.push('\n');
@@ -257,53 +264,66 @@ fn render_table(node: &BlockExtension, ctx: &RenderContext<'_>) -> String {
     format!("<table{attrs}>\n{}\n</table>", lines.join("\n"))
 }
 
-/// Render one grid row as a `<tr>...</tr>`.
+/// Render one grid row as a `<tr>...</tr>`. Mirrors carve-js `renderRow`: emit
+/// every non-skipped entry at its placed output column, then pad trailing
+/// columns so a ragged row stays rectangular (a rowspan from above that already
+/// reaches the row end suppresses that padding via `row_reach`).
+#[allow(clippy::too_many_arguments)]
 fn render_row(
-    placed_row: &GridRow<'_>,
+    grid_row: &[GridEntry<'_>],
     row_index: usize,
     header_rows: usize,
     header_cols: usize,
     column_count: usize,
+    placement: &Placement,
     ctx: &RenderContext<'_>,
 ) -> String {
     let is_header_row = row_index < header_rows;
+    let row_cols = &placement.cols[row_index];
     let mut html = String::new();
-    for col in 0..column_count {
-        match placed_row.cells.get(&col) {
-            // A dropped cell overlaps a rowspan from above: emits nothing.
-            Some(placed) if placed.dropped => continue,
-            Some(placed) => {
-                let is_header_cell = is_header_row || col < header_cols;
-                let tag = if is_header_cell { "th" } else { "td" };
-                let mut attr_html = String::new();
-                if placed.rowspan > 1 {
-                    attr_html.push_str(&format!(" rowspan=\"{}\"", placed.rowspan));
-                }
-                if placed.colspan > 1 {
-                    attr_html.push_str(&format!(" colspan=\"{}\"", placed.colspan));
-                }
-                attr_html.push_str(&cell_attrs(placed.cell.attrs.as_ref(), ctx));
-                let content = if placed.empty {
-                    String::new()
-                } else {
-                    render_cell(placed.cell, ctx)
-                };
-                html.push_str(&format!("<{tag}{attr_html}>{content}</{tag}>"));
-            }
-            None => {
-                if placed_row.covered.contains(&col) {
-                    continue;
-                }
-                // A genuinely empty padding column.
-                let tag = if is_header_row || col < header_cols {
-                    "th"
-                } else {
-                    "td"
-                };
-                html.push_str(&format!("<{tag}></{tag}>"));
-            }
+    let mut next_col = 0usize;
+    for (i, entry) in grid_row.iter().enumerate() {
+        // A merged `^`/`<` emits nothing - its column was absorbed by the cell
+        // it merged into (a rowspan above, or the cell to its left).
+        if entry.skip {
+            continue;
         }
+        let Some(col) = row_cols[i] else {
+            continue;
+        };
+        let is_header_cell = is_header_row || col < header_cols;
+        let tag = if is_header_cell { "th" } else { "td" };
+        let mut attr_html = String::new();
+        if entry.rowspan > 1 {
+            attr_html.push_str(&format!(" rowspan=\"{}\"", entry.rowspan));
+        }
+        if entry.colspan > 1 {
+            attr_html.push_str(&format!(" colspan=\"{}\"", entry.colspan));
+        }
+        attr_html.push_str(&cell_attrs(entry.cell.attrs.as_ref(), ctx));
+        // A `^`/`<` marker (merged or not) renders no content, never literal
+        // `^`/`<` (pipe-table parity); an unmergeable marker is an empty cell.
+        let content = if entry.marker.is_some() {
+            String::new()
+        } else {
+            render_cell(entry.cell, ctx)
+        };
+        html.push_str(&format!("<{tag}{attr_html}>{content}</{tag}>"));
+        next_col = col + entry.colspan;
     }
+
+    // Pad trailing columns so a ragged row stays rectangular.
+    let mut col = next_col.max(placement.row_reach[row_index]);
+    while col < column_count {
+        let tag = if is_header_row || col < header_cols {
+            "th"
+        } else {
+            "td"
+        };
+        html.push_str(&format!("<{tag}></{tag}>"));
+        col += 1;
+    }
+
     format!("<tr>{html}</tr>")
 }
 
@@ -327,261 +347,142 @@ fn render_cell(cell: &ListItem, ctx: &RenderContext<'_>) -> String {
         .to_string()
 }
 
-/// Resolve `^` / `<` span markers into a placed grid, mirroring the pipe-table
-/// continuation model so the output matches an equivalent pipe table.
+/// Resolve `^` / `<` span markers into a positional grid (one entry per authored
+/// cell), EXACTLY mirroring carve-js's pipe-table span model (and carve-rs's own
+/// `render.rs` pipe-table renderer) so the output is identical to the equivalent
+/// pipe table.
 ///
-/// - A `<` cell folds into the nearest content cell to its LEFT in the same row,
-///   growing its colspan. A leading `<` (no cell to the left) becomes its own
-///   empty cell.
-/// - A `^` cell folds into the cell currently open in its column above, growing
-///   its rowspan. A `^` with no cell above becomes an empty cell.
+/// - A `^` cell grows the rowspan of the nearest non-skipped cell directly above
+///   it in the same SOURCE column and is flagged `skip` (emits nothing).
+/// - A `<` cell grows the colspan of the nearest non-skipped cell to its LEFT in
+///   the same row and is flagged `skip`.
+/// - A marker that finds no source to merge into (a first-row `^`, a leading `<`,
+///   a `^` clamped at the header/body boundary, or a `<` whose only left neighbor
+///   is a skipped continuation) keeps `skip = false` and renders as an EMPTY
+///   cell occupying its grid position - never dropped, never literal.
 /// - A cell carrying its own attributes is never a bare marker (its `^`/`<` is
 ///   literal).
 /// - `header_rows` clamps rowspans at the header/body boundary: a `^` in a body
-///   row whose origin sits in the header rows finds no valid origin and degrades
+///   row whose source sits in the header rows finds no valid source and degrades
 ///   to an empty cell (an HTML cell cannot span row groups reliably).
-fn resolve_spans<'a>(rows: &[Vec<&'a ListItem>], header_rows: usize) -> Vec<GridRow<'a>> {
-    // Per-column origin of the cell currently open in it: (row_index, start_col).
-    let mut column_origin: BTreeMap<usize, (usize, usize)> = BTreeMap::new();
-    let mut grid: Vec<GridRow<'a>> = Vec::new();
-    let mut has_rowspan = false;
+fn resolve_spans<'a>(rows: &[Vec<&'a ListItem>], header_rows: usize) -> Vec<Vec<GridEntry<'a>>> {
+    let mut grid: Vec<Vec<GridEntry<'a>>> = rows
+        .iter()
+        .map(|cells| {
+            cells
+                .iter()
+                .map(|cell| GridEntry {
+                    cell,
+                    marker: marker_of(cell),
+                    rowspan: 1,
+                    colspan: 1,
+                    skip: false,
+                })
+                .collect()
+        })
+        .collect();
 
-    for (row_index, cells) in rows.iter().enumerate() {
-        // PASS 0: collapse colspan. A `<` increments the colspan of the most
-        // recent entry to its left (unless that entry is itself a `<`); a
-        // leading `<` becomes its own empty entry.
-        struct Resolved<'a> {
-            cell: &'a ListItem,
-            marker: Option<char>,
-            colspan: usize,
-        }
-        let mut resolved: Vec<Resolved<'a>> = Vec::new();
-        for cell in cells {
-            let marker = marker_of(cell);
-            if marker == Some('<') {
-                if let Some(last) = resolved.last_mut() {
-                    if last.marker != Some('<') {
-                        last.colspan += 1;
-                        continue;
-                    }
-                }
-            }
-            resolved.push(Resolved {
-                cell,
-                marker,
-                colspan: 1,
-            });
-        }
-
-        // PASS 1: place each entry at a running column position.
-        let mut placed: BTreeMap<usize, Placed<'a>> = BTreeMap::new();
-        let mut col = 0usize;
-        let mut extended_this_row: BTreeSet<(usize, usize)> = BTreeSet::new();
-        let mut marker_consumed: BTreeSet<usize> = BTreeSet::new();
-        let covered_from_above = if has_rowspan {
-            columns_covered_by_previous_rows(&grid, row_index)
-        } else {
-            BTreeSet::new()
-        };
-
-        for r in &resolved {
-            let colspan = r.colspan;
-            if r.marker == Some('^') {
-                // A `^` over a column already covered from above belongs to that
-                // rowspan; consume it without emitting a cell.
-                if covered_from_above.contains(&col) {
-                    for c in col..col + colspan {
-                        marker_consumed.insert(c);
-                    }
-                    col += colspan;
-                    continue;
-                }
-
-                let origin = column_origin.get(&col).copied();
-                let origin_exists = match origin {
-                    Some((origin_row, origin_col)) => {
-                        origin_row < row_index
-                            && grid
-                                .get(origin_row)
-                                .map(|g| g.cells.contains_key(&origin_col))
-                                .unwrap_or(false)
-                            && column_occupied_in_row(&grid, row_index.wrapping_sub(1), col)
-                            // Clamp at the header/body boundary.
-                            && !(origin_row < header_rows && row_index >= header_rows)
-                    }
-                    None => false,
-                };
-
-                if origin_exists {
-                    let (origin_row, origin_col) = origin.unwrap();
-                    // A cell kept only for tracking after being dropped must not
-                    // gain a rowspan; consume the `^` silently.
-                    let is_dropped = grid[origin_row]
-                        .cells
-                        .get(&origin_col)
-                        .map(|p| p.dropped)
-                        .unwrap_or(false);
-                    if is_dropped {
-                        for c in col..col + colspan {
-                            marker_consumed.insert(c);
-                        }
-                        col += colspan;
-                        continue;
-                    }
-                    // Extend the open cell above (only once per origin per row).
-                    let origin_width;
-                    {
-                        let origin_cell = grid[origin_row].cells.get_mut(&origin_col).unwrap();
-                        if extended_this_row.insert((origin_row, origin_col)) {
-                            origin_cell.rowspan += 1;
-                            has_rowspan = true;
-                        }
-                        origin_width = origin_cell.colspan;
-                    }
-                    // Columns this marker consumes beyond the origin emit no
-                    // cell of their own; skip them.
-                    for c in col..col + colspan {
-                        marker_consumed.insert(c);
-                    }
-                    // Keep the origin's columns pointing at it so a later `^`
-                    // continues the chain across its full width.
-                    for c in origin_col..origin_col + origin_width {
-                        column_origin.insert(c, (origin_row, origin_col));
-                    }
-                    col += colspan;
-                    continue;
-                }
-
-                // No cell above to extend: an empty cell (pipe-table parity).
-                placed.insert(
-                    col,
-                    Placed {
-                        cell: r.cell,
-                        rowspan: 1,
-                        colspan,
-                        empty: true,
-                        dropped: false,
-                    },
-                );
-                for c in col..col + colspan {
-                    column_origin.insert(c, (row_index, col));
-                }
-                col += colspan;
+    // Per SOURCE column, the last row index (above the current one) whose cell is
+    // not skipped - the nearest source a `^` can extend.
+    let mut last_non_skip: Vec<Option<usize>> = Vec::new();
+    for r in 0..grid.len() {
+        let cols = grid[r].len();
+        for c in 0..cols {
+            if grid[r][c].skip {
                 continue;
             }
+            let marker = grid[r][c].marker;
 
-            // A content cell, or a leading `<` (an empty cell, never literal).
-            placed.insert(
-                col,
-                Placed {
-                    cell: r.cell,
-                    rowspan: 1,
-                    colspan,
-                    empty: r.marker == Some('<'),
-                    dropped: false,
-                },
-            );
-            for c in col..col + colspan {
-                column_origin.insert(c, (row_index, col));
-            }
-            col += colspan;
-        }
-        let row_width = col;
-
-        // PASS 2: drop placed cells whose start column is covered by a rowspan
-        // reaching into this row from a previous one. Recompute occupancy now
-        // that pass 1 may have extended a previous row's rowspan into this row.
-        let occupied_by_previous = if has_rowspan {
-            columns_covered_by_previous_rows(&grid, row_index)
-        } else {
-            BTreeSet::new()
-        };
-        let mut dropped_span: BTreeSet<usize> = BTreeSet::new();
-        let start_cols: Vec<usize> = placed.keys().copied().collect();
-        for start_col in start_cols {
-            if occupied_by_previous.contains(&start_col) {
-                let colspan = placed[&start_col].colspan;
-                placed.get_mut(&start_col).unwrap().dropped = true;
-                for c in start_col..start_col + colspan {
-                    dropped_span.insert(c);
+            if marker == Some('^') && r > 0 {
+                let up = last_non_skip.get(c).copied().flatten();
+                // Clamp at the header/body boundary: a `^` in a body row must not
+                // extend a cell that originated in the header rows. Leave it
+                // unmerged (it then renders as an empty cell) so no `th rowspan`
+                // crosses into the body group.
+                let crosses_header = matches!(up, Some(u) if u < header_rows && r >= header_rows);
+                let has_source = matches!(up, Some(u) if u < grid.len() && c < grid[u].len());
+                if has_source && !crosses_header {
+                    let u = up.unwrap();
+                    grid[u][c].rowspan += 1;
+                    grid[r][c].skip = true;
+                }
+            } else if marker == Some('<') && c > 0 {
+                let mut left = c as isize - 1;
+                while left >= 0 && grid[r][left as usize].skip {
+                    left -= 1;
+                }
+                if left >= 0 {
+                    grid[r][left as usize].colspan += 1;
+                    grid[r][c].skip = true;
                 }
             }
-        }
 
-        // Mark every grid column the renderer must skip.
-        let mut covered: BTreeSet<usize> = BTreeSet::new();
-        for (start_col, placed_cell) in &placed {
-            for c in start_col + 1..start_col + placed_cell.colspan {
-                covered.insert(c);
+            // A cell that ends up non-skipped becomes the nearest source for the
+            // cells below it in this source column.
+            if !grid[r][c].skip {
+                if c >= last_non_skip.len() {
+                    last_non_skip.resize(c + 1, None);
+                }
+                last_non_skip[c] = Some(r);
             }
         }
-        for c in dropped_span {
-            covered.insert(c);
-        }
-        for c in &occupied_by_previous {
-            covered.insert(*c);
-        }
-        for c in marker_consumed {
-            covered.insert(c);
-        }
-
-        grid.push(GridRow {
-            cells: placed,
-            covered,
-            width: row_width,
-        });
     }
-
-    // A rowspan that would reach past the last row is naturally clamped: each
-    // cell's rowspan is only ever incremented by a `^` in a row that actually
-    // exists, so the grid can never produce an out-of-table span. carve-php
-    // emits a warning here; carve-rs has no warning channel, so the clamp is
-    // silent (the output is identical either way).
 
     grid
 }
 
-/// Columns covered, in the row at `current_row_index`, by a rowspan that started
-/// in an EARLIER row and reaches into it.
-fn columns_covered_by_previous_rows(
-    grid: &[GridRow<'_>],
-    current_row_index: usize,
-) -> BTreeSet<usize> {
+/// Assign each rendered cell an output column by flowing it top-down past any
+/// column a rowspan from an earlier row still holds - the same flow a browser
+/// (and carve-rs's pipe table) uses. Skipped cells take no column. Mirrors
+/// carve-js's `placeColumns`.
+fn place_columns(grid: &[Vec<GridEntry<'_>>]) -> Placement {
+    // occupied_until[col] = exclusive row index through which a rowspan holds col.
     let mut occupied_until: BTreeMap<usize, usize> = BTreeMap::new();
-    for (row_index, placed_row) in grid.iter().enumerate() {
-        if row_index >= current_row_index {
-            break;
-        }
-        for (start_col, placed_cell) in &placed_row.cells {
-            let end = row_index + placed_cell.rowspan;
-            for c in *start_col..start_col + placed_cell.colspan {
-                let slot = occupied_until.entry(c).or_insert(0);
-                *slot = (*slot).max(end);
+    let mut cols: Vec<Vec<Option<usize>>> = Vec::with_capacity(grid.len());
+    let mut row_reach: Vec<usize> = Vec::with_capacity(grid.len());
+    let mut column_count = 0usize;
+
+    for (r, grid_row) in grid.iter().enumerate() {
+        let mut row_cols: Vec<Option<usize>> = Vec::with_capacity(grid_row.len());
+        let mut col = 0usize;
+        let mut reach = 0usize;
+        // A rowspan descending from above into this row reaches at least its col.
+        for (c, end) in &occupied_until {
+            if *end > r {
+                reach = reach.max(c + 1);
             }
         }
-    }
-    occupied_until
-        .into_iter()
-        .filter(|(_, end)| *end > current_row_index)
-        .map(|(col, _)| col)
-        .collect()
-}
 
-/// Whether `col` was occupied in the already-built row at `row_index`. Gates
-/// `^` continuation: a ragged row that omitted a column breaks the chain.
-fn column_occupied_in_row(grid: &[GridRow<'_>], row_index: usize, col: usize) -> bool {
-    let Some(row) = grid.get(row_index) else {
-        return false;
-    };
-    if row.covered.contains(&col) {
-        return true;
-    }
-    for (start_col, placed_cell) in &row.cells {
-        if col >= *start_col && col < start_col + placed_cell.colspan {
-            return true;
+        for entry in grid_row {
+            if entry.skip {
+                row_cols.push(None);
+                continue;
+            }
+            // Flow past columns a rowspan from above still holds in this row.
+            while occupied_until.get(&col).copied().unwrap_or(0) > r {
+                col += 1;
+            }
+            row_cols.push(Some(col));
+            if entry.rowspan > 1 {
+                for c in col..col + entry.colspan {
+                    let slot = occupied_until.entry(c).or_insert(0);
+                    *slot = (*slot).max(r + entry.rowspan);
+                }
+            }
+            col += entry.colspan;
+            reach = reach.max(col);
         }
+
+        cols.push(row_cols);
+        row_reach.push(reach);
+        column_count = column_count.max(reach);
     }
-    false
+
+    Placement {
+        cols,
+        row_reach,
+        column_count,
+    }
 }
 
 /// Detect a span marker cell. Returns `Some('^')` / `Some('<')` when the cell's
