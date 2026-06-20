@@ -91,7 +91,7 @@ assert_eq!(html, "<p>Press <kbd>Ctrl</kbd>.</p>");
 
 The crate ships the same opt-in extensions as carve-js: `Autolink`,
 `ExternalLinks`, `HeadingPermalinks`, `TableOfContents`, `Wikilinks`,
-`TabNormalize`, `Mermaid`, `MathBlock`, and `Details`.
+`TabNormalize`, `Mermaid`, `MathBlock`, `Details`, and `ListTable`.
 
 #### `Details`
 
@@ -144,6 +144,38 @@ through unfiltered on untrusted documents. The class is always the fixed
 `math display`. For styleable/targetable math, use the core inline `` $`…` `` /
 display `` $$`…` `` forms instead: they carry `{...}` attributes through the
 core renderer.
+
+#### `ListTable`
+
+`ListTable` (a Tier-3 extension) renders a `::: list-table` block authored as a
+nested list into a real HTML `<table>`, so cells can hold full block content
+(paragraphs, lists, code) that the native pipe-table syntax cannot express. The
+outer list items are rows and the inner list items are cells:
+
+```rust
+use carve::{ListTable, Options};
+
+let ext = ListTable::new();
+let opts = Options::new().with_extension(&ext);
+let src = "::: list-table \"Cap\"\n- - A\n  - B\n:::";
+assert_eq!(
+    carve::to_html_with_options(src, &opts),
+    "<table>\n  <caption>Cap</caption>\n  <tbody>\n    <tr><td>A</td><td>B</td></tr>\n  </tbody>\n</table>"
+);
+```
+
+The quoted title becomes the `<caption>`. `{header-rows=N}` / `{header-cols=N}`
+block attributes on the PRECEDING line promote rows to `<thead>`/`<th>` and the
+first N cells of each row to row-header `<th>`. A cell whose sole content is a
+lone `^` merges with the cell above (rowspan) and a lone `<` merges with the cell
+to the left (colspan), matching Carve's native pipe-table continuation markers,
+so the output matches the equivalent pipe table. A cell carrying its own
+attributes (`-{.x} ^`) is never a span marker - its `^`/`<` stays literal and the
+attribute carries onto the `<td>`/`<th>`. A `list-table` that cannot be rendered
+as a table (no usable nested list, or a row with no cell list) is left as the
+default `<div class="list-table">` so content is never silently dropped.
+
+See [docs/extensions.md](docs/extensions.md) for the full reference.
 
 ## CLI
 
