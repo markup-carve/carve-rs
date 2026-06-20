@@ -110,6 +110,11 @@ pub fn canonical_block_type(node: &BlockNode) -> Option<&'static str> {
         // a `div` so a restrictive profile denies it exactly as the original
         // admonition (carve-js gates the un-rewritten admonition as a div).
         BlockNode::Extension(e) if e.name == crate::extensions::details::CARRIER => Some("div"),
+        // The `list-table` extension likewise rewrites a `list-table`
+        // admonition (a typed div) into an extension carrier before profile
+        // filtering; gate it as a `div` so a restrictive profile denies it
+        // exactly as the original admonition.
+        BlockNode::Extension(e) if e.name == crate::extensions::list_table::CARRIER => Some("div"),
         // A block extension is gated under the inline-extension feature, the
         // same name carve-js / carve-php use for both extension axes.
         BlockNode::Extension(_) => Some("inline_extension"),
