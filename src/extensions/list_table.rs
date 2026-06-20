@@ -609,12 +609,24 @@ fn marker_of(cell: &ListItem) -> Option<char> {
 }
 
 /// Parse a non-negative integer block attribute, defaulting to 0.
+/// Resolve a `header-rows` / `header-cols` attribute to a count.
+///
+/// - absent -> 0 (no header rows/cols)
+/// - present but empty (the boolean form `{header-rows}`, which Carve stores as
+///   `header-rows=""`) -> 1, i.e. the first row/column is the header - the
+///   default a table with headers wants, so `{header-rows}` alone suffices
+/// - an explicit number (`{header-rows=2}`) -> that count (clamped at 0)
 fn attr_count(attrs: Option<&Attrs>, key: &str) -> usize {
-    attrs
-        .and_then(|a| a.key_values.get(key))
-        .and_then(|v| v.trim().parse::<i64>().ok())
-        .map(|n| n.max(0) as usize)
-        .unwrap_or(0)
+    match attrs.and_then(|a| a.key_values.get(key)) {
+        None => 0,
+        Some(value) if value.trim().is_empty() => 1,
+        Some(value) => value
+            .trim()
+            .parse::<i64>()
+            .ok()
+            .map(|n| n.max(0) as usize)
+            .unwrap_or(0),
+    }
 }
 
 /// Build the `<table>` tag attributes: drop the structural keys this extension

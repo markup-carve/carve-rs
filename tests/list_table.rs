@@ -68,6 +68,40 @@ fn header_rows_promote_to_thead() {
 }
 
 #[test]
+fn boolean_header_rows_promotes_first_row() {
+    // `{header-rows}` with no value is the boolean form: the first row is the
+    // header, the default a table with headers wants.
+    assert_eq!(
+        h("{header-rows}\n::: list-table\n- - Region\n  - Q1\n- - EMEA\n  - 10\n:::"),
+        [
+            "<table>",
+            "  <thead><tr><th>Region</th><th>Q1</th></tr></thead>",
+            "  <tbody>",
+            "    <tr><td>EMEA</td><td>10</td></tr>",
+            "  </tbody>",
+            "</table>",
+        ]
+        .join("\n")
+    );
+}
+
+#[test]
+fn boolean_header_cols_promotes_first_column() {
+    assert_eq!(
+        h("{header-cols}\n::: list-table\n- - Region\n  - Q1\n- - EMEA\n  - 10\n:::"),
+        [
+            "<table>",
+            "  <tbody>",
+            "    <tr><th>Region</th><td>Q1</td></tr>",
+            "    <tr><th>EMEA</th><td>10</td></tr>",
+            "  </tbody>",
+            "</table>",
+        ]
+        .join("\n")
+    );
+}
+
+#[test]
 fn header_cols_promote_first_cell_to_row_header() {
     assert_eq!(
         h("{header-cols=1}\n::: list-table\n- - Region\n  - Q1\n- - EMEA\n  - 10\n:::"),
