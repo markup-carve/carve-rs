@@ -363,7 +363,10 @@ fn math_block_strips_event_handler_attributes() {
     // Always-on attribute hardening strips event handlers regardless of options,
     // while safe author attributes (id, classes) survive.
     assert_eq!(
-        carve::to_html_with_options("{#eq .big onclick=\"alert(1)\"}\n``` math\nx^2\n```\n", &opts),
+        carve::to_html_with_options(
+            "{#eq .big onclick=\"alert(1)\"}\n``` math\nx^2\n```\n",
+            &opts
+        ),
         "<div class=\"math display big\" id=\"eq\">\\[x^2\\]</div>"
     );
 }
