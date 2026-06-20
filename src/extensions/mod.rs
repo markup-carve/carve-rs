@@ -15,6 +15,7 @@
 pub mod autolink;
 pub mod details;
 pub mod external_links;
+pub mod fenced_render;
 pub mod heading_permalinks;
 pub mod list_table;
 pub mod math_block;
@@ -26,6 +27,7 @@ pub mod wikilinks;
 pub use autolink::{Autolink, AutolinkOptions};
 pub use details::Details;
 pub use external_links::{ExternalLinks, ExternalLinksOptions};
+pub use fenced_render::{ContentMode, FencedRender, FencedRenderOptions};
 pub use heading_permalinks::{HeadingPermalinks, HeadingPermalinksOptions};
 pub use list_table::ListTable;
 pub use math_block::{MathBlock, MathBlockOptions};
