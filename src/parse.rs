@@ -1540,6 +1540,65 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             items.push(item);
             continue;
         }
+        // When the item's content BEGINS, on the marker line, with another list
+        // marker (`- - A`, `* - A`, `1. - A`, ...), the lead is itself a
+        // sub-list, not a paragraph. Parse the lead together with every
+        // following dedented line as ONE block stream so the marker-line
+        // sub-list behaves exactly like a sub-list opened on a *following* line:
+        // following same-indent markers MERGE into it as siblings, and
+        // post-blank indented blocks are ABSORBED into its items. This MATCHES
+        // reference djot.js (@djot/djot 0.3.2) and CommonMark, which both treat
+        // a marker-line sub-list as a normal nested list. It corrects Carve's
+        // prior line-scoping (which split the sub-list from following items and
+        // leaked later indented blocks to the parent row) -- a bug inherited
+        // from djot-php, whose marker-line handling deviates from reference
+        // djot. The combined stream reuses the normal nested-list/absorption
+        // logic (collect_indented_block + recursive parse) -- no separate path.
+        if detect_list_marker_full(marker.content).is_some() {
+            let mut stream = marker.content.to_string();
+            let following = collect_indented_block(cur, base_indent, content_col);
+            if !following.is_empty() {
+                stream.push('\n');
+                stream.push_str(&following);
+            }
+            // A column-0 lazy-continuation line following the marker-line
+            // sub-list folds into its last open paragraph (`- - b` / `lazy` ->
+            // `<li>b\nlazy</li>`), and a following sibling marker at the
+            // sub-list's column resumes the SAME list. This is the same
+            // lazy-fold / resume loop the following-line nested-list path runs
+            // above; reused here so the marker-line sub-list behaves identically.
+            loop {
+                let has_lazy = cur.peek().is_some_and(|line| {
+                    !line.trim().is_empty()
+                        && indent_columns(line) == 0
+                        && !is_list_marker(line)
+                        && !interrupts_paragraph(line, &cur.lines[cur.pos + 1..])
+                });
+                if !has_lazy {
+                    break;
+                }
+                if !nested_ends_with_open_paragraph(&stream, options) {
+                    break;
+                }
+                let before = cur.pos;
+                collect_trailing_lazy(cur, &mut stream);
+                if cur.pos == before {
+                    break;
+                }
+                let resumed = collect_indented_block(cur, content_col - 1, content_col);
+                if !resumed.is_empty() {
+                    stream.push('\n');
+                    stream.push_str(&resumed);
+                }
+            }
+            let children = parse_blocks_with_options(&stream, options);
+            items.push(ListItem {
+                attrs: marker.attrs.clone(),
+                checked: marker.checked,
+                children,
+            });
+            continue;
+        }
         // The item's first paragraph is the marker content plus any
         // immediately-following indented prose lines (lazy continuation).
         // It stops at a blank line or a list marker: a nested sublist still
