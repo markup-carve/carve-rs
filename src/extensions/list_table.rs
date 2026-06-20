@@ -16,7 +16,7 @@
 //! ever silently dropped. The defer decision is made on the pristine AST before
 //! any rewrite, so a deferred render is byte-identical to the plain admonition.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::ast::{
     Admonition, AttrSlot, Attrs, BlockExtension, BlockNode, Document, InlineNode, ListItem,
@@ -186,7 +186,7 @@ struct GridRow<'a> {
     cells: BTreeMap<usize, Placed<'a>>,
     /// Columns covered by a colspan body, a rowspan from above, a dropped
     /// overlapping cell, or a consumed `^` marker (the renderer skips them).
-    covered: std::collections::BTreeSet<usize>,
+    covered: BTreeSet<usize>,
     /// Effective column count of the row (advanced past colspans).
     width: usize,
 }
@@ -341,8 +341,6 @@ fn render_cell(cell: &ListItem, ctx: &RenderContext<'_>) -> String {
 ///   row whose origin sits in the header rows finds no valid origin and degrades
 ///   to an empty cell (an HTML cell cannot span row groups reliably).
 fn resolve_spans<'a>(rows: &[Vec<&'a ListItem>], header_rows: usize) -> Vec<GridRow<'a>> {
-    use std::collections::{BTreeMap, BTreeSet};
-
     // Per-column origin of the cell currently open in it: (row_index, start_col).
     let mut column_origin: BTreeMap<usize, (usize, usize)> = BTreeMap::new();
     let mut grid: Vec<GridRow<'a>> = Vec::new();
@@ -548,8 +546,7 @@ fn resolve_spans<'a>(rows: &[Vec<&'a ListItem>], header_rows: usize) -> Vec<Grid
 fn columns_covered_by_previous_rows(
     grid: &[GridRow<'_>],
     current_row_index: usize,
-) -> std::collections::BTreeSet<usize> {
-    use std::collections::BTreeMap;
+) -> BTreeSet<usize> {
     let mut occupied_until: BTreeMap<usize, usize> = BTreeMap::new();
     for (row_index, placed_row) in grid.iter().enumerate() {
         if row_index >= current_row_index {
