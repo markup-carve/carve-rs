@@ -91,7 +91,7 @@ assert_eq!(html, "<p>Press <kbd>Ctrl</kbd>.</p>");
 
 The crate ships the same opt-in extensions as carve-js: `Autolink`,
 `ExternalLinks`, `HeadingPermalinks`, `TableOfContents`, `Wikilinks`,
-`TabNormalize`, `Mermaid`, and `Details`.
+`TabNormalize`, `Mermaid`, `MathBlock`, and `Details`.
 
 #### `Details`
 
@@ -116,6 +116,34 @@ assert_eq!(
 ```
 
 Without the extension, `::: details` stays a plain `<div class="details">`.
+
+#### `MathBlock`
+
+`MathBlock` renders a fenced code block tagged `math` (a ` ``` math ` fence) as
+`<div class="math display">\[ … \]</div>`, the GFM-style block form of Carve's
+core `$$` display math. The body is HTML-escaped and wrapped in `\[ … \]` for a
+client-side math engine (KaTeX/MathJax). Non-`math` code blocks defer to the
+core renderer.
+
+```rust
+use carve::{MathBlock, Options};
+
+let ext = MathBlock::new();
+let opts = Options::new().with_extension(&ext);
+assert_eq!(
+    carve::to_html_with_options("``` math\nx^2\n```", &opts),
+    "<div class=\"math display\">\\[x^2\\]</div>"
+);
+```
+
+Unlike `Mermaid`, `MathBlock` does **not** copy any author attributes onto the
+output `<div>` - neither a fence info-string nor a preceding `{#id .class}`
+block-attribute line. The extension emits raw HTML directly, bypassing the core
+safe-mode attribute sanitizer, so copying attributes would let `{onclick="…"}`
+through unfiltered on untrusted documents. The class is always the fixed
+`math display`. For styleable/targetable math, use the core inline `` $`…` `` /
+display `` $$`…` `` forms instead: they carry `{...}` attributes through the
+core renderer.
 
 ## CLI
 
