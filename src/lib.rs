@@ -34,10 +34,10 @@ pub use extension::{
     BlockMatch, CarveExtension, InlineMatch, MatcherContext, Options, RenderContext,
 };
 pub use extensions::{
-    Autolink, AutolinkOptions, Details, ExternalLinks, ExternalLinksOptions, HeadingPermalinks,
-    HeadingPermalinksOptions, ListTable, ListType, MathBlock, MathBlockOptions, Mermaid,
-    MermaidOptions, Position, TabNormalize, TableOfContents, TableOfContentsOptions, UrlGenerator,
-    Wikilinks, WikilinksOptions,
+    Autolink, AutolinkOptions, ContentMode, Details, ExternalLinks, ExternalLinksOptions,
+    FencedRender, FencedRenderOptions, HeadingPermalinks, HeadingPermalinksOptions, ListTable,
+    ListType, MathBlock, MathBlockOptions, Mermaid, MermaidOptions, Position, TabNormalize,
+    TableOfContents, TableOfContentsOptions, UrlGenerator, Wikilinks, WikilinksOptions,
 };
 pub use parse::{parse, parse_with_options};
 pub use profile::{DisallowedAction, LinkPolicy, Profile, ProfileViolation, ProfileViolationError};

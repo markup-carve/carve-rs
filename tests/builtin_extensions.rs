@@ -7,9 +7,9 @@
 //! `lowercase_ids` flag set to match.
 
 use carve::{
-    Autolink, AutolinkOptions, ExternalLinks, ExternalLinksOptions, HeadingPermalinks,
-    HeadingPermalinksOptions, ListType, MathBlock, Mermaid, Options, Position, TabNormalize,
-    TableOfContents, TableOfContentsOptions, Wikilinks, WikilinksOptions,
+    Autolink, AutolinkOptions, ExternalLinks, ExternalLinksOptions, FencedRender,
+    HeadingPermalinks, HeadingPermalinksOptions, ListType, MathBlock, Mermaid, Options, Position,
+    TabNormalize, TableOfContents, TableOfContentsOptions, Wikilinks, WikilinksOptions,
 };
 
 // ---------------------------------------------------------------------------
@@ -368,6 +368,101 @@ fn math_block_strips_event_handler_attributes() {
             &opts
         ),
         "<div class=\"math display big\" id=\"eq\">\\[x^2\\]</div>"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// fenced-render
+// ---------------------------------------------------------------------------
+
+#[test]
+fn fenced_render_text_mode_escapes_amp_lt_keeps_gt() {
+    let ext = FencedRender::d2();
+    let opts = Options::new().with_extension(&ext);
+    assert_eq!(
+        carve::to_html_with_options("``` d2\na -> b & <c\n```\n", &opts),
+        "<pre class=\"d2\">a -> b &amp; &lt;c</pre>"
+    );
+}
+
+#[test]
+fn fenced_render_graphviz_claims_dot_and_graphviz() {
+    let ext = FencedRender::graphviz();
+    let opts = Options::new().with_extension(&ext);
+    assert_eq!(
+        carve::to_html_with_options("``` dot\na -> b\n```\n", &opts),
+        "<pre class=\"graphviz\">a -> b</pre>"
+    );
+    assert_eq!(
+        carve::to_html_with_options("``` graphviz\na -> b\n```\n", &opts),
+        "<pre class=\"graphviz\">a -> b</pre>"
+    );
+}
+
+#[test]
+fn fenced_render_json_mode_wraps_in_script_inside_div() {
+    let ext = FencedRender::vega_lite();
+    let opts = Options::new().with_extension(&ext);
+    assert_eq!(
+        carve::to_html_with_options("``` vega-lite\n{\"mark\": \"bar\"}\n```\n", &opts),
+        "<div class=\"vega-lite\"><script type=\"application/json\">{\"mark\": \"bar\"}</script></div>"
+    );
+}
+
+#[test]
+fn fenced_render_json_mode_guards_script_close() {
+    let ext = FencedRender::vega_lite();
+    let opts = Options::new().with_extension(&ext);
+    assert_eq!(
+        carve::to_html_with_options("``` vega-lite\n{\"x\": \"</script>\"}\n```\n", &opts),
+        "<div class=\"vega-lite\"><script type=\"application/json\">{\"x\": \"<\\/script>\"}</script></div>"
+    );
+}
+
+#[test]
+fn fenced_render_strips_event_handler_attributes() {
+    let ext = FencedRender::d2();
+    let opts = Options::new().with_extension(&ext);
+    // Always-on hardening strips on* while safe attributes survive.
+    assert_eq!(
+        carve::to_html_with_options("{#c1 .tall onclick=\"x\"}\n``` d2\na\n```\n", &opts),
+        "<pre id=\"c1\" class=\"d2 tall\">a</pre>"
+    );
+}
+
+#[test]
+fn fenced_render_defers_unclaimed_language() {
+    let ext = FencedRender::d2();
+    let opts = Options::new().with_extension(&ext);
+    let html = carve::to_html_with_options("``` python\nprint(1)\n```\n", &opts);
+    assert!(html.contains("class=\"language-python\""));
+    assert!(!html.contains("class=\"d2\""));
+}
+
+#[test]
+fn fenced_render_custom_tag_and_css_class() {
+    use carve::ContentMode;
+    let ext = FencedRender::with_options(carve::FencedRenderOptions::new(
+        vec!["d2".into()],
+        Some("diagram".into()),
+        Some("div".into()),
+        ContentMode::Text,
+    ));
+    let opts = Options::new().with_extension(&ext);
+    assert_eq!(
+        carve::to_html_with_options("``` d2\na -> b\n```\n", &opts),
+        "<div class=\"diagram\">a -> b</div>"
+    );
+}
+
+#[test]
+fn fenced_render_mermaid_preset_matches_mermaid_extension() {
+    let fr = FencedRender::new("mermaid");
+    let mm = Mermaid::new();
+    let src = "``` mermaid\ngraph TD; A-->B\n```\n";
+    assert_eq!(
+        carve::to_html_with_options(src, &Options::new().with_extension(&fr)),
+        carve::to_html_with_options(src, &Options::new().with_extension(&mm))
     );
 }
 
