@@ -7,7 +7,7 @@
 //! `lowercase_ids` flag set to match.
 
 use carve::{
-    Autolink, AutolinkOptions, ExternalLinks, ExternalLinksOptions, FencedRender,
+    Autolink, AutolinkOptions, Citations, ExternalLinks, ExternalLinksOptions, FencedRender,
     HeadingPermalinks, HeadingPermalinksOptions, ListType, MathBlock, Mermaid, Options, Position,
     TabNormalize, TableOfContents, TableOfContentsOptions, Wikilinks, WikilinksOptions,
 };
@@ -242,6 +242,63 @@ fn heading_permalinks_levels_filter_golden() {
         carve::to_html_with_options("# One\n\n## Two", &opts),
         "<section id=\"one\">\n  <h1>One</h1>\n  <section id=\"two\">\n    <h2>Two <a href=\"#two\" class=\"permalink\" aria-label=\"Permalink\">¶</a></h2>\n  </section>\n</section>"
     );
+}
+
+/// Pull the heading's own id (the `<section id="...">` the core emits) and the
+/// permalink anchor's `href` (the `<a ... class="permalink">`), so a test can
+/// assert the invariant that the two are equal for any heading content.
+fn id_and_permalink_href(html: &str) -> (String, String) {
+    let id = {
+        let i = html.find("<section id=\"").expect("section id present");
+        let rest = &html[i + "<section id=\"".len()..];
+        rest[..rest.find('"').unwrap()].to_string()
+    };
+    let href = {
+        let cls = html
+            .find("class=\"permalink\"")
+            .expect("permalink anchor present");
+        let before = &html[..cls];
+        let h = before.rfind("href=\"#").expect("permalink href present");
+        let rest = &before[h + "href=\"#".len()..];
+        rest[..rest.find('"').unwrap()].to_string()
+    };
+    (id, href)
+}
+
+/// Render `input` with Citations + HeadingPermalinks both enabled and assert
+/// the permalink anchor `href` equals the heading's own id.
+fn assert_href_equals_id(input: &str) {
+    let cit = Citations::default();
+    let perma = HeadingPermalinks::with_options(HeadingPermalinksOptions::default());
+    let opts = Options::new().with_extension(&cit).with_extension(&perma);
+    let html = carve::to_html_with_options(input, &opts);
+    let (id, href) = id_and_permalink_href(&html);
+    assert_eq!(
+        href, id,
+        "permalink href (#{href}) must equal heading id ({id}) for input: {input:?}\n{html}"
+    );
+}
+
+/// Regression: a heading permalink's `href` must always point at the heading's
+/// own id, for any inline content. Previously the permalink slug pass ignored
+/// `CitationGroup` nodes (which the core section-id pass includes), so a heading
+/// like `# Research [@doe]` produced a dead anchor: `href="#Research"` against
+/// `id="Research-doe"`. The fix shares one flattening function between the two
+/// passes, so these cases pin href == id for every inline node type.
+#[test]
+fn heading_permalink_href_always_equals_id() {
+    // The original bug: citation group in the heading.
+    assert_href_equals_id("# Research [@doe]\n\n[@doe]: John Doe, 2020\n");
+    // Other inline node types that were already consistent - guard against
+    // future drift in either pass.
+    assert_href_equals_id("# Hi @bob there\n");
+    assert_href_equals_id("# Energy $E=mc^2$ done\n");
+    assert_href_equals_id("# Smile :smile: here\n");
+    assert_href_equals_id("# Note[^a] here\n\n[^a]: body\n");
+    assert_href_equals_id("# See [](#target) here\n");
+    assert_href_equals_id("# A [span text]{.cls} b\n");
+    assert_href_equals_id("# Tag #foo here\n");
+    assert_href_equals_id("# Plain heading\n");
 }
 
 // ---------------------------------------------------------------------------
