@@ -91,8 +91,8 @@ assert_eq!(html, "<p>Press <kbd>Ctrl</kbd>.</p>");
 
 The crate ships the same opt-in extensions as carve-js: `Autolink`,
 `ExternalLinks`, `HeadingPermalinks`, `TableOfContents`, `Wikilinks`,
-`TabNormalize`, `FencedRender` (with a Mermaid preset), `MathBlock`, `Details`,
-and `ListTable`.
+`TabNormalize`, `FencedRender` (with a Mermaid preset), `MathBlock`, `Spoiler`,
+`Details`, and `ListTable`.
 
 #### `Details`
 
@@ -117,6 +117,77 @@ assert_eq!(
 ```
 
 Without the extension, `::: details` stays a plain `<div class="details">`.
+
+#### `Spoiler`
+
+Hidden / blurred content revealed on interaction (the standard `spoiler` role).
+
+- **Inline** `:spoiler[text]` → `<span class="spoiler">text</span>` (without the
+  extension: generic `<span class="ext-spoiler">`).
+- **Block** `::: spoiler "Title"` → `<details class="spoiler">` disclosure
+  (native, accessible); title-less → `<summary>Spoiler</summary>` (without the
+  extension: `<div class="spoiler">`).
+
+```rust
+use carve::{Spoiler, Options};
+
+let ext = Spoiler::new();
+let opts = Options::new().with_extension(&ext);
+assert_eq!(
+    carve::to_html_with_options("Plot: :spoiler[the butler did it].", &opts),
+    "<p>Plot: <span class=\"spoiler\">the butler did it</span>.</p>"
+);
+```
+
+Author attributes merge onto the marker (spoiler base class first) with the
+always-on attribute hardening (`on*` / `srcdoc` / `formaction` stripped,
+dangerous values neutralized), so a `{onclick="…"}` can never reach the output.
+
+Carve emits only the marker; the blur / collapse + reveal is the host's CSS/JS.
+Three host looks over the same markup (hover never reveals - it would spoil by
+accident; content stays in the DOM for screen readers):
+
+- inline `:spoiler[text]` → `<span class="spoiler">` styled as a **blur**;
+- a generic `{.spoiler}` block div → `<div class="spoiler">` styled as a
+  **blurred panel that keeps its space**, revealing on click;
+- `::: spoiler` → `<details class="spoiler">` left as a **native collapse**
+  (summary only, expands on click - no JS, fully accessible).
+
+A `.masked` variant gives a credit-card / PIN look (`:spoiler[1234]{.masked}`).
+
+```css
+/* Inline: blurred until clicked. */
+span.spoiler { filter: blur(.3em); cursor: pointer; border-radius: 3px; padding: 0 .15em;
+  background: rgba(127, 127, 127, .14); user-select: none; transition: filter .2s; }
+span.spoiler.revealed { filter: none; background: transparent; user-select: text; }
+/* Credit-card / PIN variant ({.masked}): every char a dot. */
+span.spoiler.masked { filter: none; -webkit-text-security: disc; }
+span.spoiler.masked.revealed { -webkit-text-security: none; }
+/* Block as a blurred panel that keeps its space (a generic {.spoiler} div). */
+div.spoiler { filter: blur(.4em); cursor: pointer; border-radius: 8px; padding: 10px 14px;
+  border-left: 3px solid #e0af68; user-select: none; transition: filter .25s; }
+div.spoiler.revealed { filter: none; cursor: auto; user-select: text; }
+/* Block as a native collapse (::: spoiler): summary only until clicked. */
+details.spoiler { border-left: 4px solid #e0af68; border-radius: 8px; padding: 6px 14px; }
+details.spoiler > summary { color: #e0af68; cursor: pointer; list-style: none; }
+details.spoiler > summary::before { content: "👁 "; }
+details.spoiler > summary::after { content: " (click to reveal)"; font-weight: 400; }
+details.spoiler[open] > summary::after { content: ""; }
+```
+
+```js
+// The two blur forms (inline span, block div) reveal on click / Enter / Space.
+for (const el of document.querySelectorAll('span.spoiler, div.spoiler')) {
+  el.tabIndex = 0; el.setAttribute('role', 'button');
+  el.setAttribute('aria-label', 'Spoiler, activate to reveal');
+  const toggle = () => el.classList.toggle('revealed');
+  el.addEventListener('click', toggle);
+  el.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
+  });
+}
+// `::: spoiler` → <details> is a native disclosure - it collapses/expands on its own.
+```
 
 #### `FencedRender`
 
