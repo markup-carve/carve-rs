@@ -1,6 +1,6 @@
 use crate::ast::*;
 use crate::extension::Options;
-use crate::render_text::{clean_smart_text_stateful, SmartQuoteState};
+use crate::render_text::{clean_smart_text_stateful, strip_controls, SmartQuoteState};
 
 /// Render a document to plain text. See `render_markdown_with_options` for why
 /// the options-taking wrapper exists; the profile transform runs upstream.
@@ -27,7 +27,7 @@ fn render_block(node: &BlockNode) -> String {
             }
             format!("{}\n\n", render_inlines(&paragraph.children))
         }
-        BlockNode::CodeBlock(code) => format!("{}\n\n", code.content),
+        BlockNode::CodeBlock(code) => format!("{}\n\n", strip_controls(&code.content)),
         BlockNode::BlockQuote(quote) => {
             format!("\"{}\"\n\n", render_blocks(&quote.children).trim())
         }
@@ -159,12 +159,12 @@ fn render_inlines_stateful(nodes: &[InlineNode], state: &mut SmartQuoteState) ->
 
 fn render_inline(node: &InlineNode, state: &mut SmartQuoteState) -> String {
     match node {
-        InlineNode::Text(text) => clean_smart_text_stateful(text, state),
+        InlineNode::Text(text) => strip_controls(&clean_smart_text_stateful(text, state)),
         InlineNode::Emphasis(emphasis) => match emphasis.kind {
             EmphasisKind::Strike => render_inlines_stateful(&emphasis.children, state),
             _ => render_inlines_stateful(&emphasis.children, state),
         },
-        InlineNode::Code(code, _) => code.clone(),
+        InlineNode::Code(code, _) => strip_controls(code),
         InlineNode::Link(link) => {
             if link.href.starts_with('#') {
                 render_inlines_stateful(&link.children, state)
@@ -174,7 +174,7 @@ fn render_inline(node: &InlineNode, state: &mut SmartQuoteState) -> String {
         }
         InlineNode::Image(image) => image.alt.clone(),
         InlineNode::Span(span) => render_inlines_stateful(&span.children, state),
-        InlineNode::Math(math) => math.content.clone(),
+        InlineNode::Math(math) => strip_controls(&math.content),
         InlineNode::RawInline(_) => String::new(),
         InlineNode::Emoji(emoji) => format!(":{}:", emoji.name),
         InlineNode::AutoLink(link) => link
