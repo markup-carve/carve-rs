@@ -325,7 +325,11 @@ fn table_row(cells: &[RenderedCell], widths: &[usize]) -> String {
         .iter()
         .enumerate()
         .map(|(i, cell)| {
-            let padding = widths.get(i).copied().unwrap_or(0) - width(&cell.plain);
+            let padding = widths
+                .get(i)
+                .copied()
+                .unwrap_or(0)
+                .saturating_sub(width(&cell.plain));
             let content = if cell.is_header {
                 style(&(cell.plain.clone() + &" ".repeat(padding)), BOLD)
             } else {
@@ -405,9 +409,10 @@ fn render_inline(node: &InlineNode, ctx: &mut AnsiContext) -> String {
         InlineNode::Code(code, _) => style(&strip_controls(code), FG_BRIGHT_YELLOW),
         InlineNode::Link(link) => {
             let text = render_inlines(&link.children, ctx);
+            let href = strip_controls(&link.href);
             let mut out = style(&text, &(UNDERLINE.to_string() + FG_BLUE));
-            if !link.href.starts_with('#') && link.href != strip_ansi(&text) {
-                out.push_str(&style(&format!(" ({})", link.href), DIM));
+            if !href.starts_with('#') && href != strip_ansi(&text) {
+                out.push_str(&style(&format!(" ({href})"), DIM));
             }
             out
         }
@@ -417,7 +422,8 @@ fn render_inline(node: &InlineNode, ctx: &mut AnsiContext) -> String {
         InlineNode::RawInline(_) => String::new(),
         InlineNode::Emoji(emoji) => format!(":{}:", emoji.name),
         InlineNode::AutoLink(link) => {
-            let text = link.href.strip_prefix("mailto:").unwrap_or(&link.href);
+            let href = strip_controls(&link.href);
+            let text = href.strip_prefix("mailto:").unwrap_or(&href);
             style(text, &(UNDERLINE.to_string() + FG_BLUE))
         }
         InlineNode::Mention(mention) => format!("@{}", mention.user),

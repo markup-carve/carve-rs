@@ -2565,6 +2565,9 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
 fn detect_abbreviation_def(line: &str) -> Option<AbbreviationDef> {
     let rest = line.strip_prefix("*[")?;
     let (abbr, expansion) = rest.split_once("]:")?;
+    if abbr.is_empty() || !abbr.chars().all(char::is_alphanumeric) {
+        return None;
+    }
     Some(AbbreviationDef {
         abbr: abbr.to_string(),
         expansion: expansion.trim().to_string(),

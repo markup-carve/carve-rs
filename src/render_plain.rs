@@ -169,7 +169,7 @@ fn render_inline(node: &InlineNode, state: &mut SmartQuoteState) -> String {
             if link.href.starts_with('#') {
                 render_inlines_stateful(&link.children, state)
             } else {
-                link.href.clone()
+                strip_controls(&link.href)
             }
         }
         InlineNode::Image(image) => image.alt.clone(),
@@ -177,11 +177,10 @@ fn render_inline(node: &InlineNode, state: &mut SmartQuoteState) -> String {
         InlineNode::Math(math) => strip_controls(&math.content),
         InlineNode::RawInline(_) => String::new(),
         InlineNode::Emoji(emoji) => format!(":{}:", emoji.name),
-        InlineNode::AutoLink(link) => link
-            .href
-            .strip_prefix("mailto:")
-            .unwrap_or(&link.href)
-            .to_string(),
+        InlineNode::AutoLink(link) => {
+            let href = strip_controls(&link.href);
+            href.strip_prefix("mailto:").unwrap_or(&href).to_string()
+        }
         InlineNode::Mention(mention) => format!("@{}", mention.user),
         InlineNode::Tag(tag) => format!("#{}", tag.name),
         InlineNode::Extension(extension) => render_inlines_stateful(&extension.children, state),

@@ -1558,7 +1558,7 @@ fn render_inline_extension(
     out.push_str("</span>");
 }
 
-fn render_attrs(attrs: &Option<Attrs>) -> String {
+pub(crate) fn render_attrs(attrs: &Option<Attrs>) -> String {
     let Some(attrs) = attrs else {
         return String::new();
     };
@@ -1584,12 +1584,16 @@ fn render_attrs(attrs: &Option<Attrs>) -> String {
         }
         return out;
     }
+    let mut seen_id = false;
+    let mut seen_class = false;
+    let mut seen_keys: Vec<&str> = Vec::new();
     for slot in &attrs.order {
         match slot {
             AttrSlot::Id => {
                 if let Some(id) = &attrs.id {
                     out.push_str(&format!(" id=\"{}\"", escape_attr(id)));
                 }
+                seen_id = true;
             }
             AttrSlot::Class => {
                 if !attrs.classes.is_empty() {
@@ -1598,6 +1602,7 @@ fn render_attrs(attrs: &Option<Attrs>) -> String {
                         escape_attr(&attrs.classes.join(" "))
                     ));
                 }
+                seen_class = true;
             }
             AttrSlot::Key(key) => {
                 if let Some(value) = attrs.key_values.get(key) {
@@ -1609,7 +1614,28 @@ fn render_attrs(attrs: &Option<Attrs>) -> String {
                         ));
                     }
                 }
+                seen_keys.push(key);
             }
+        }
+    }
+    if attrs.id.is_some() && !seen_id {
+        if let Some(id) = &attrs.id {
+            out.push_str(&format!(" id=\"{}\"", escape_attr(id)));
+        }
+    }
+    if !attrs.classes.is_empty() && !seen_class {
+        out.push_str(&format!(
+            " class=\"{}\"",
+            escape_attr(&attrs.classes.join(" "))
+        ));
+    }
+    for (key, value) in &attrs.key_values {
+        if !seen_keys.contains(&key.as_str()) && !is_dangerous_attr_name(key) {
+            out.push_str(&format!(
+                " {}=\"{}\"",
+                escape_attr(key),
+                escape_attr(&sanitize_attr_value(key, value))
+            ));
         }
     }
     out

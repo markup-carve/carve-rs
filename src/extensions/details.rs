@@ -13,8 +13,9 @@
 //! identically wherever it sits - top level, inside a list item, inside a
 //! blockquote.
 
-use crate::ast::{AttrSlot, Attrs, BlockExtension, BlockNode, Document, InlineNode};
+use crate::ast::{BlockExtension, BlockNode, Document, InlineNode};
 use crate::extension::{CarveExtension, RenderContext};
+use crate::render::render_attrs;
 
 /// Sentinel extension name for the rewritten carrier node. A `details`
 /// admonition is rewritten to a `BlockNode::Extension` with this name; the
@@ -85,7 +86,7 @@ impl CarveExtension for Details {
             Some(t) if !t.trim().is_empty() => t,
             _ => "Details",
         };
-        let open = format!("<details{}>", attrs_to_html(node.attrs.as_ref(), ctx));
+        let open = format!("<details{}>", render_attrs(&node.attrs));
         let body = ctx.render_blocks_at(&node.children, level + 1);
         Some(format!(
             "{open}\n{inner_pad}<summary>{}</summary>\n{body}\n{pad}</details>",
@@ -129,69 +130,6 @@ fn rewrite_blocks(blocks: &mut [BlockNode]) {
             _ => {}
         }
     }
-}
-
-/// Emit `id`/`class`/`key=value` attributes in source order, then append any
-/// populated attrs the order list misses (it can be stale after another
-/// extension mutates attrs without touching `order`). Mirrors carve-js
-/// `attrsToHtml`. The auto `details` class is never part of the admonition's
-/// own attrs, so the `<details>` tag is already the styling hook.
-fn attrs_to_html(attrs: Option<&Attrs>, ctx: &RenderContext<'_>) -> String {
-    let Some(attrs) = attrs else {
-        return String::new();
-    };
-    // `Some(_)` (not just non-empty) so an explicit empty id (`{id}`) renders
-    // id="".
-    let id_slot = || match &attrs.id {
-        Some(id) => format!(" id=\"{}\"", ctx.escape_attr(id)),
-        None => String::new(),
-    };
-    let class_slot = || {
-        if attrs.classes.is_empty() {
-            String::new()
-        } else {
-            format!(" class=\"{}\"", ctx.escape_attr(&attrs.classes.join(" ")))
-        }
-    };
-    let kv_slot = |key: &str| match attrs.key_values.get(key) {
-        Some(v) => format!(" {}=\"{}\"", key, ctx.escape_attr(v)),
-        None => String::new(),
-    };
-
-    let mut out = String::new();
-    let mut seen_id = false;
-    let mut seen_class = false;
-    let mut seen_keys: Vec<&str> = Vec::new();
-    for slot in &attrs.order {
-        match slot {
-            AttrSlot::Id => {
-                out.push_str(&id_slot());
-                seen_id = true;
-            }
-            AttrSlot::Class => {
-                out.push_str(&class_slot());
-                seen_class = true;
-            }
-            AttrSlot::Key(key) => {
-                out.push_str(&kv_slot(key));
-                seen_keys.push(key);
-            }
-        }
-    }
-    // Append anything the order list missed (a stale order after another
-    // extension appended attrs without updating `order`).
-    if attrs.id.is_some() && !seen_id {
-        out.push_str(&id_slot());
-    }
-    if !attrs.classes.is_empty() && !seen_class {
-        out.push_str(&class_slot());
-    }
-    for key in attrs.key_values.keys() {
-        if !seen_keys.contains(&key.as_str()) {
-            out.push_str(&kv_slot(key));
-        }
-    }
-    out
 }
 
 /// Flatten an inline tree to its text content (used for the summary title).
