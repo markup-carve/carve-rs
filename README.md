@@ -91,7 +91,8 @@ assert_eq!(html, "<p>Press <kbd>Ctrl</kbd>.</p>");
 
 The crate ships the same opt-in extensions as carve-js: `Autolink`,
 `ExternalLinks`, `HeadingPermalinks`, `TableOfContents`, `Wikilinks`,
-`TabNormalize`, `Mermaid`, `MathBlock`, `Details`, and `ListTable`.
+`TabNormalize`, `Mermaid`, `FencedRender`, `MathBlock`, `Details`, and
+`ListTable`.
 
 #### `Details`
 
@@ -116,6 +117,36 @@ assert_eq!(
 ```
 
 Without the extension, `::: details` stays a plain `<div class="details">`.
+
+#### `FencedRender`
+
+Generic client-rendered fenced-block factory that `Mermaid` is a preset of. It
+claims fenced code blocks by language word and emits one hydration element; the
+body is passed through verbatim. One factory covers D2, Graphviz, WaveDrom, ABC,
+Vega-Lite, Chart.js, etc.
+
+- **text mode** (Mermaid/D2/Graphviz/WaveDrom/ABC): escapes `&` and `<`, keeps
+  `>` for arrow syntax.
+- **json mode** (Vega-Lite/Chart.js): body verbatim inside
+  `<script type="application/json">`, with `</` rewritten to `<\/`.
+
+```rust
+use carve::{FencedRender, Options};
+
+let ext = FencedRender::d2();
+let opts = Options::new().with_extension(&ext);
+assert_eq!(
+    carve::to_html_with_options("``` d2\na -> b\n```", &opts),
+    "<pre class=\"d2\">a -> b</pre>"
+);
+```
+
+Presets: `FencedRender::d2()`, `graphviz()` (claims `dot` + `graphviz`),
+`wavedrom()`, `abc()`, `vega_lite()`, `chart()`; or `FencedRender::with_options`
+for a custom language set, `cssClass`, `tag`, or content mode. Author attributes
+on the fence are copied onto the wrapper with the always-on hardening (`on*` /
+`srcdoc` / `formaction` stripped, dangerous values neutralized), so a
+`{onclick="…"}` fence can never reach the output.
 
 #### `MathBlock`
 
