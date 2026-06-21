@@ -90,6 +90,19 @@ pub fn is_dangerous_attr_name(name: &str) -> bool {
     lower.starts_with("on") || lower == "srcdoc" || lower == "formaction"
 }
 
+/// Whether an attribute NAME has valid HTML/XML-ish syntax. Invalid names are
+/// dropped before interpolation so they cannot break out of the attribute slot.
+pub fn is_valid_attr_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    if !(first.is_ascii_alphabetic() || first == '_' || first == ':') {
+        return false;
+    }
+    chars.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.' || c == ':' || c == '-')
+}
+
 /// Blank an attribute value carrying a dangerous URL scheme or a CSS
 /// `expression(...)`, so an author cannot smuggle script through an attribute
 /// the name filter allows (e.g. `background`, `style`). The scheme is
@@ -118,16 +131,67 @@ pub fn sanitize_attr_value<'a>(name: &str, value: &'a str) -> std::borrow::Cow<'
 /// script bindings. Whitespace is collapsed first so `expr ession (` cannot
 /// evade. Blanks the whole value rather than attempting CSS surgery.
 fn has_dangerous_css(value: &str) -> bool {
-    let compact: String = value
-        .to_ascii_lowercase()
-        .chars()
-        .filter(|c| !c.is_whitespace())
-        .collect();
+    let compact = normalize_css_for_dangerous_check(value);
     compact.contains("expression(")
         || compact.contains("url(")
         || compact.contains("@import")
         || compact.contains("behavior:")
         || compact.contains("-moz-binding")
+}
+
+fn normalize_css_for_dangerous_check(value: &str) -> String {
+    let mut out = String::new();
+    let mut chars = value.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '/' && chars.peek() == Some(&'*') {
+            chars.next();
+            let mut prev = '\0';
+            for c in chars.by_ref() {
+                if prev == '*' && c == '/' {
+                    break;
+                }
+                prev = c;
+            }
+            continue;
+        }
+        if ch == '\\' {
+            let mut hex = String::new();
+            while hex.len() < 6 {
+                let Some(next) = chars.peek().copied() else {
+                    break;
+                };
+                if next.is_ascii_hexdigit() {
+                    hex.push(next);
+                    chars.next();
+                } else {
+                    break;
+                }
+            }
+            if !hex.is_empty() {
+                if matches!(chars.peek(), Some(c) if c.is_whitespace()) {
+                    chars.next();
+                }
+                if let Ok(cp) = u32::from_str_radix(&hex, 16) {
+                    if let Some(decoded) = char::from_u32(cp) {
+                        if !decoded.is_whitespace() {
+                            out.extend(decoded.to_lowercase());
+                        }
+                    }
+                }
+                continue;
+            }
+            if let Some(escaped) = chars.next() {
+                if !escaped.is_whitespace() {
+                    out.extend(escaped.to_lowercase());
+                }
+            }
+            continue;
+        }
+        if !ch.is_whitespace() {
+            out.extend(ch.to_lowercase());
+        }
+    }
+    out
 }
 
 /// Always-on URL hardening for `href` / `src`: blank a URL whose (normalized)
