@@ -80,9 +80,8 @@ fn prepare_doc(
     source: &str,
     options: &Options<'_>,
 ) -> Result<ast::Document, ProfileViolationError> {
-    let doc = parsed_doc_with_hooks(source, options);
     let Some(profile) = &options.profile else {
-        return Ok(doc);
+        return Ok(parsed_doc_with_hooks(source, options));
     };
     let max_length = profile.max_length();
     if max_length > 0 && source.len() > max_length {
@@ -100,6 +99,7 @@ fn prepare_doc(
             violations: vec![violation],
         });
     }
+    let doc = parsed_doc_with_hooks(source, options);
     let base_host = options.profile_base_host.as_deref();
     Ok(apply_profile(doc, profile, base_host)?.doc)
 }
@@ -150,10 +150,7 @@ pub fn try_to_ansi_with_options(
     ))
 }
 
-/// Parse and run `before_render` extension hooks, WITHOUT applying the
-/// profile. Used by the infallible entry points as the error-action /
-/// `max_length` fallback so the hooks still run on that path (matching the
-/// normal pipeline in [`prepare_doc`]).
+/// Parse and run `before_render` extension hooks, WITHOUT applying the profile.
 fn parsed_doc_with_hooks(source: &str, options: &Options<'_>) -> ast::Document {
     let mut doc = parse_with_options(source, options);
     for ext in &options.extensions {
@@ -163,38 +160,25 @@ fn parsed_doc_with_hooks(source: &str, options: &Options<'_>) -> ast::Document {
 }
 
 /// Infallible HTML entry point. Identical to [`try_to_html_with_options`]
-/// except that, for the [`DisallowedAction::Error`] action (or an exceeded
-/// `max_length`), it falls back to rendering the unfiltered document rather
-/// than returning an error. Callers that need to surface violations should use
+/// except that profile errors render an empty safe output instead of returning
+/// an error. Callers that need to surface violations should use
 /// [`try_to_html_with_options`].
 pub fn to_html_with_options(source: &str, options: &Options<'_>) -> String {
-    match try_to_html_with_options(source, options) {
-        Ok(out) => out,
-        Err(_) => render_html_with_options(&parsed_doc_with_hooks(source, options), options),
-    }
+    try_to_html_with_options(source, options).unwrap_or_default()
 }
 
 /// Infallible Markdown entry point. See [`to_html_with_options`] for the
 /// error-action fallback behavior.
 pub fn to_markdown_with_options(source: &str, options: &Options<'_>) -> String {
-    match try_to_markdown_with_options(source, options) {
-        Ok(out) => out,
-        Err(_) => render_markdown_with_options(&parsed_doc_with_hooks(source, options), options),
-    }
+    try_to_markdown_with_options(source, options).unwrap_or_default()
 }
 
 /// Infallible plain-text entry point. See [`to_html_with_options`].
 pub fn to_plain_text_with_options(source: &str, options: &Options<'_>) -> String {
-    match try_to_plain_text_with_options(source, options) {
-        Ok(out) => out,
-        Err(_) => render_plain_text_with_options(&parsed_doc_with_hooks(source, options), options),
-    }
+    try_to_plain_text_with_options(source, options).unwrap_or_default()
 }
 
 /// Infallible ANSI entry point. See [`to_html_with_options`].
 pub fn to_ansi_with_options(source: &str, options: &Options<'_>) -> String {
-    match try_to_ansi_with_options(source, options) {
-        Ok(out) => out,
-        Err(_) => render_ansi_with_options(&parsed_doc_with_hooks(source, options), options),
-    }
+    try_to_ansi_with_options(source, options).unwrap_or_default()
 }

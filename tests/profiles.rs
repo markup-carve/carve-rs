@@ -316,6 +316,34 @@ fn allows_input_within_the_length_limit() {
     assert_eq!(html("hi", p), "<p>hi</p>");
 }
 
+#[test]
+fn max_length_blocks_infallible_render_before_hooks() {
+    use std::cell::Cell;
+
+    struct CountingHook<'a>(&'a Cell<usize>);
+
+    impl carve::CarveExtension for CountingHook<'_> {
+        fn name(&self) -> &'static str {
+            "counting-hook"
+        }
+
+        fn before_render(&self, doc: carve::Document) -> carve::Document {
+            self.0.set(self.0.get() + 1);
+            doc
+        }
+    }
+
+    let calls = Cell::new(0);
+    let hook = CountingHook(&calls);
+    let options = Options::new()
+        .with_extension(&hook)
+        .with_profile(Profile::default().set_max_length(1));
+
+    assert_eq!(carve::to_html_with_options("too long", &options), "");
+    assert_eq!(carve::to_markdown_with_options("too long", &options), "");
+    assert_eq!(calls.get(), 0);
+}
+
 // ---- link policy ----
 
 #[test]
