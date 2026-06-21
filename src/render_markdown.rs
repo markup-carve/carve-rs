@@ -133,7 +133,9 @@ fn render_block(node: &BlockNode, ctx: &mut MarkdownContext) -> String {
         BlockNode::BlockImage(image) => format!("{}\n\n", render_image(image)),
         BlockNode::RawBlock(raw) => {
             if raw.format == "html" {
-                format!("{}\n\n", raw.content)
+                // Escape, not emit: raw HTML in Markdown would be live again
+                // when the Markdown is rendered to HTML downstream.
+                format!("{}\n\n", escape_md_html(&raw.content))
             } else {
                 String::new()
             }
@@ -308,7 +310,7 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext) -> String {
         }
         InlineNode::RawInline(raw) => {
             if raw.format == "html" {
-                raw.content.clone()
+                escape_md_html(&raw.content)
             } else {
                 String::new()
             }
@@ -384,18 +386,22 @@ fn render_link(node: &Link, ctx: &mut MarkdownContext) -> String {
         } else {
             format!("[{text}]({destination})")
         }
-    } else if let Some(title) = &node.title {
-        format!("[{text}]({} \"{}\")", node.href, title)
     } else {
-        format!("[{text}]({})", node.href)
+        let href = sanitize_md_url(&node.href);
+        if let Some(title) = &node.title {
+            format!("[{text}]({href} \"{title}\")")
+        } else {
+            format!("[{text}]({href})")
+        }
     }
 }
 
 fn render_image(node: &Image) -> String {
+    let src = sanitize_md_url(&node.src);
     if let Some(title) = &node.title {
-        format!("![{}]({} \"{}\")", node.alt, node.src, title)
+        format!("![{}]({} \"{}\")", node.alt, src, title)
     } else {
-        format!("![{}]({})", node.alt, node.src)
+        format!("![{}]({})", node.alt, src)
     }
 }
 
@@ -443,12 +449,61 @@ fn fragment_id(href: &str) -> Option<&str> {
 fn escape_text(text: &str) -> String {
     let mut out = String::new();
     for ch in text.chars() {
-        if matches!(ch, '\\' | '`' | '*' | '_' | '[' | ']' | '#') {
-            out.push('\\');
+        match ch {
+            // Neutralize embedded HTML so Markdown re-rendered to HTML cannot
+            // execute it (carve's "HTML is text" guarantee for the Markdown
+            // target too): a literal `<img onerror=…>` becomes inert.
+            '&' => {
+                out.push_str("&amp;");
+                continue;
+            }
+            '<' => {
+                out.push_str("&lt;");
+                continue;
+            }
+            '>' => {
+                out.push_str("&gt;");
+                continue;
+            }
+            // Markdown metacharacters.
+            '\\' | '`' | '*' | '_' | '[' | ']' | '#' => out.push('\\'),
+            _ => {}
         }
         out.push(ch);
     }
     out
+}
+
+/// Escape `<>&` so embedded raw HTML cannot become live markup downstream.
+fn escape_md_html(text: &str) -> String {
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+}
+
+/// Blank a URL whose (normalized) scheme is on the dangerous denylist, so a
+/// `javascript:` link/image does not survive into Markdown output.
+fn sanitize_md_url(url: &str) -> String {
+    let probe: String = url.chars().filter(|c| (*c as u32) > 0x20).collect();
+    if let Some(colon) = probe.find(':') {
+        let prefix = &probe[..colon];
+        let is_scheme = prefix
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_ascii_alphabetic())
+            && prefix
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '-' || c == '.');
+        if is_scheme
+            && matches!(
+                prefix.to_ascii_lowercase().as_str(),
+                "javascript" | "vbscript" | "data" | "file"
+            )
+        {
+            return String::new();
+        }
+    }
+    url.to_string()
 }
 
 fn normalize(text: &str) -> String {
