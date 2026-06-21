@@ -502,6 +502,12 @@ fn heading_id(heading: &Heading) -> String {
     slugify(&plain_inlines(&heading.children))
 }
 
+// Markdown-specific flattening: deliberately NOT `render::plain_inlines`.
+// It must apply `clean_smart_text` to `Text` so the Markdown projection of a
+// heading id matches the Markdown text it emits (the HTML core never runs smart
+// typography over its slug source, so the two intentionally differ on that
+// axis). Node coverage is otherwise kept in lockstep with the core, including
+// `CitationGroup` -> `raw`, so a citation heading's id is consistent here too.
 fn plain_inlines(nodes: &[InlineNode]) -> String {
     let mut out = String::new();
     for node in nodes {
@@ -512,6 +518,7 @@ fn plain_inlines(nodes: &[InlineNode]) -> String {
             InlineNode::Link(link) => out.push_str(&plain_inlines(&link.children)),
             InlineNode::Image(image) => out.push_str(&image.alt),
             InlineNode::Extension(extension) => out.push_str(&plain_inlines(&extension.children)),
+            InlineNode::CitationGroup(group) => out.push_str(&group.raw),
             InlineNode::Abbreviation(abbr) => out.push_str(&abbr.abbr),
             InlineNode::Mention(mention) => out.push_str(&mention.user),
             InlineNode::Tag(tag) => out.push_str(&tag.name),
