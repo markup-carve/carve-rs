@@ -144,50 +144,51 @@ merge (spoiler base class first) with the always-on attribute hardening
 (`on*` / `srcdoc` / `formaction` stripped, dangerous values neutralized), so a
 `{onclick="…"}` can never reach the output.
 
-Recommended host pattern: **blurred until clicked** (hover would spoil by
-accident), content kept in the DOM for screen readers. A `.masked` variant gives
-a credit-card / PIN look (every char a dot) - add `.masked` on the fence
-(`:spoiler[1234]{.masked}`):
+Carve emits only the marker; the blur / collapse + reveal is the host's CSS/JS.
+Three host looks over the same markup (hover never reveals - it would spoil by
+accident; content stays in the DOM for screen readers):
+
+- inline `:spoiler[text]` → `<span class="spoiler">` styled as a **blur**;
+- a generic `{.spoiler}` block div → `<div class="spoiler">` styled as a
+  **blurred panel that keeps its space**, revealing on click;
+- `::: spoiler` → `<details class="spoiler">` left as a **native collapse**
+  (summary only, expands on click - no JS, fully accessible).
+
+A `.masked` variant gives a credit-card / PIN look (`:spoiler[1234]{.masked}`).
 
 ```css
-/* Inline: blurred until revealed. */
-.spoiler { filter: blur(.3em); cursor: pointer; border-radius: 3px; padding: 0 .15em;
+/* Inline: blurred until clicked. */
+span.spoiler { filter: blur(.3em); cursor: pointer; border-radius: 3px; padding: 0 .15em;
   background: rgba(127, 127, 127, .14); user-select: none; transition: filter .2s; }
-.spoiler.revealed { filter: none; background: transparent; user-select: text; }
-/* Variant: masked like a credit-card / PIN field. */
-.spoiler.masked { filter: none; -webkit-text-security: disc; }
-.spoiler.masked.revealed { -webkit-text-security: none; }
-/* Block: blur the body, reveal on click (reads as a spoiler, not a collapse). */
-details.spoiler { border-left: 3px solid #e0af68; border-radius: 6px; padding: 4px 12px; }
-details.spoiler > summary { color: #e0af68; cursor: pointer; list-style: none; user-select: none; }
+span.spoiler.revealed { filter: none; background: transparent; user-select: text; }
+/* Credit-card / PIN variant ({.masked}): every char a dot. */
+span.spoiler.masked { filter: none; -webkit-text-security: disc; }
+span.spoiler.masked.revealed { -webkit-text-security: none; }
+/* Block as a blurred panel that keeps its space (a generic {.spoiler} div). */
+div.spoiler { filter: blur(.4em); cursor: pointer; border-radius: 8px; padding: 10px 14px;
+  border-left: 3px solid #e0af68; user-select: none; transition: filter .25s; }
+div.spoiler.revealed { filter: none; cursor: auto; user-select: text; }
+/* Block as a native collapse (::: spoiler): summary only until clicked. */
+details.spoiler { border-left: 4px solid #e0af68; border-radius: 8px; padding: 6px 14px; }
+details.spoiler > summary { color: #e0af68; cursor: pointer; list-style: none; }
 details.spoiler > summary::before { content: "👁 "; }
-details.spoiler > *:not(summary) { filter: blur(.4em); transition: filter .25s; }
-details.spoiler.revealed > *:not(summary) { filter: none; }
+details.spoiler > summary::after { content: " (click to reveal)"; font-weight: 400; }
+details.spoiler[open] > summary::after { content: ""; }
 ```
 
 ```js
-// Inline: reveal on click / Enter / Space.
-for (const s of document.querySelectorAll('span.spoiler')) {
-  s.tabIndex = 0; s.setAttribute('role', 'button');
-  s.setAttribute('aria-label', 'Spoiler, activate to reveal');
-  const toggle = () => s.classList.toggle('revealed');
-  s.addEventListener('click', toggle);
-  s.addEventListener('keydown', (e) => {
+// The two blur forms (inline span, block div) reveal on click / Enter / Space.
+for (const el of document.querySelectorAll('span.spoiler, div.spoiler')) {
+  el.tabIndex = 0; el.setAttribute('role', 'button');
+  el.setAttribute('aria-label', 'Spoiler, activate to reveal');
+  const toggle = () => el.classList.toggle('revealed');
+  el.addEventListener('click', toggle);
+  el.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
   });
 }
-// Block: keep <details> open so the body is present, blur it, reveal on click.
-for (const d of document.querySelectorAll('details.spoiler')) {
-  d.open = true;
-  d.querySelector('summary').addEventListener('click', (e) => {
-    e.preventDefault(); d.classList.toggle('revealed');
-  });
-}
+// `::: spoiler` → <details> is a native disclosure - it collapses/expands on its own.
 ```
-
-Prefer this blur look, or drop the block JS and let `<details>` collapse natively
-(no JS, fully keyboard/screen-reader accessible) - both are valid; the extension
-emits the same `<details class="spoiler">` either way.
 
 #### `FencedRender`
 
