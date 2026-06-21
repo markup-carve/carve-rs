@@ -84,13 +84,25 @@ fn transform_blocks(blocks: &mut [BlockNode], opts: &MathBlockOptions) {
     for block in blocks.iter_mut() {
         match block {
             BlockNode::CodeBlock(code) if code.lang.as_deref() == Some(opts.language.as_str()) => {
-                // Emit only the fixed `math display` class. Author attributes
-                // from the fence are intentionally NOT copied: rendering them
-                // here would bypass safe-mode attribute filtering (an
-                // `{onclick=...}` on a ```math fence would become an executable
-                // handler on the <div>).
+                // Merge the `math display` base class ahead of author classes
+                // and copy the author attributes, mirroring core display `$$`
+                // math (class first, then id / key-values in source order).
+                // render_attrs_after_class drops dangerous names (`on*`,
+                // `srcdoc`, `formaction`) and neutralizes dangerous values, so
+                // a `{onclick=...}` on a ```math fence can never reach output.
+                let base = "math display";
+                let (class, rest) = match &code.attrs {
+                    Some(a) if !a.classes.is_empty() => (
+                        format!("{} {}", base, a.classes.join(" ")),
+                        crate::render::render_attrs_after_class(a),
+                    ),
+                    Some(a) => (base.to_string(), crate::render::render_attrs_after_class(a)),
+                    None => (base.to_string(), String::new()),
+                };
                 let html = format!(
-                    "<div class=\"math display\">\\[{}\\]</div>",
+                    "<div class=\"{}\"{}>\\[{}\\]</div>",
+                    crate::escape::escape_attr(&class),
+                    rest,
                     crate::escape::escape_text(&code.content),
                 );
                 *block = BlockNode::RawBlock(RawBlock {

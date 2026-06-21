@@ -1614,7 +1614,7 @@ fn render_attrs(attrs: &Option<Attrs>) -> String {
 /// Render an attribute block's id and key-values in source order, omitting
 /// the class slot. Used by a node whose class is structural and merged
 /// separately (the math span: `class="math inline {extra}"`).
-fn render_attrs_after_class(attrs: &Attrs) -> String {
+pub(crate) fn render_attrs_after_class(attrs: &Attrs) -> String {
     let mut out = String::new();
     if attrs.order.is_empty() {
         if let Some(id) = &attrs.id {
