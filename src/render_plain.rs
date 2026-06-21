@@ -52,7 +52,7 @@ fn render_block(node: &BlockNode) -> String {
         BlockNode::DefinitionList(list) => render_definition_list(&list.items, true),
         BlockNode::Figure(figure) => render_figure(figure),
         // Terminate the block image so the next block is not glued onto it.
-        BlockNode::BlockImage(image) => format!("{}\n\n", image.alt),
+        BlockNode::BlockImage(image) => format!("{}\n\n", strip_controls(&image.alt)),
         BlockNode::Extension(extension) => render_blocks(&extension.children),
         BlockNode::RawBlock(_) | BlockNode::AbbreviationDef(_) | BlockNode::Comment(_) => {
             String::new()
@@ -114,7 +114,7 @@ fn render_table(node: &Table) -> String {
 
 fn render_figure(node: &Figure) -> String {
     let target = match &node.target {
-        FigureTarget::Image(image) => image.alt.clone(),
+        FigureTarget::Image(image) => strip_controls(&image.alt),
         FigureTarget::Table(table) => render_table(table).trim().to_string(),
         FigureTarget::BlockQuote(quote) => render_block(&BlockNode::BlockQuote(quote.clone()))
             .trim()
@@ -138,7 +138,11 @@ fn render_figure(node: &Figure) -> String {
 fn render_footnote_defs(doc: &Document) -> String {
     let mut out = String::new();
     for (label, blocks) in &doc.footnote_defs {
-        out.push_str(&format!("[{label}]: {}\n", render_blocks(blocks).trim()));
+        out.push_str(&format!(
+            "[{}]: {}\n",
+            strip_controls(label),
+            render_blocks(blocks).trim()
+        ));
     }
     out
 }
@@ -172,7 +176,7 @@ fn render_inline(node: &InlineNode, state: &mut SmartQuoteState) -> String {
                 strip_controls(&link.href)
             }
         }
-        InlineNode::Image(image) => image.alt.clone(),
+        InlineNode::Image(image) => strip_controls(&image.alt),
         InlineNode::Span(span) => render_inlines_stateful(&span.children, state),
         InlineNode::Math(math) => strip_controls(&math.content),
         InlineNode::RawInline(_) => String::new(),
@@ -184,7 +188,7 @@ fn render_inline(node: &InlineNode, state: &mut SmartQuoteState) -> String {
         InlineNode::Mention(mention) => format!("@{}", mention.user),
         InlineNode::Tag(tag) => format!("#{}", tag.name),
         InlineNode::Extension(extension) => render_inlines_stateful(&extension.children, state),
-        InlineNode::Abbreviation(abbr) => abbr.abbr.clone(),
+        InlineNode::Abbreviation(abbr) => strip_controls(&abbr.abbr),
         InlineNode::Footnote(footnote) => {
             if let Some(inline) = &footnote.inline {
                 // Footnote content is its own context: render with a FRESH quote
@@ -192,7 +196,7 @@ fn render_inline(node: &InlineNode, state: &mut SmartQuoteState) -> String {
                 // the surrounding paragraph's open quotes. Matches carve-php.
                 format!("({})", render_inlines(inline))
             } else {
-                format!("[{}]", footnote.id.as_deref().unwrap_or(""))
+                format!("[{}]", strip_controls(footnote.id.as_deref().unwrap_or("")))
             }
         }
         InlineNode::SoftBreak => " ".to_string(),
@@ -201,11 +205,15 @@ fn render_inline(node: &InlineNode, state: &mut SmartQuoteState) -> String {
         InlineNode::CriticDelete(delete) => {
             format!("~{}~", render_inlines_stateful(&delete.children, state))
         }
-        InlineNode::CriticSubstitute(sub) => format!("~{}~{}", sub.old_text, sub.new_text),
+        InlineNode::CriticSubstitute(sub) => format!(
+            "~{}~{}",
+            strip_controls(&sub.old_text),
+            strip_controls(&sub.new_text)
+        ),
         InlineNode::CriticComment(_) => String::new(),
-        InlineNode::CrossRef(crossref) => format!("</#{}>", crossref.target),
+        InlineNode::CrossRef(crossref) => format!("</#{}>", strip_controls(&crossref.target)),
         // Tier-2 ext node; the core renderer has no numbering, so emit the source.
-        InlineNode::CitationGroup(group) => group.raw.clone(),
+        InlineNode::CitationGroup(group) => strip_controls(&group.raw),
         InlineNode::CaptionNumber(number) => number
             .number
             .map(|n| n.to_string())

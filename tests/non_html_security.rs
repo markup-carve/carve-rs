@@ -8,6 +8,16 @@ fn md(src: &str) -> String {
     carve::to_markdown(src).trim().to_string()
 }
 
+fn assert_no_author_controls(out: &str) {
+    assert!(!out.contains('\x1b'), "{out:?}");
+    assert!(!out.contains('\x07'), "{out:?}");
+}
+
+fn assert_no_author_osc(out: &str) {
+    assert!(!out.contains("\x1b]"), "{out:?}");
+    assert!(!out.contains('\x07'), "{out:?}");
+}
+
 #[test]
 fn markdown_blanks_dangerous_url_schemes() {
     assert!(md("[x](javascript:alert(1))").contains("[x]()"));
@@ -91,4 +101,148 @@ fn ansi_and_plain_strip_link_href_control_bytes() {
 fn markdown_escapes_link_and_image_titles() {
     assert_eq!(md("[x](u \"a \\\"b\")"), "[x](u \"a \\\"b\")");
     assert_eq!(md("![alt](img \"a \\\"b\")"), "![alt](img \"a \\\"b\")");
+}
+
+#[test]
+fn markdown_strips_control_bytes_from_author_leaf_fields() {
+    let c = "\x1b]0;p\x07";
+    let mut footnote_defs = BTreeMap::new();
+    footnote_defs.insert(
+        format!("fn{c}"),
+        vec![carve::BlockNode::Paragraph(carve::Paragraph {
+            attrs: None,
+            children: vec![carve::InlineNode::Text(format!("note{c}"))],
+        })],
+    );
+    let doc = carve::Document {
+        frontmatter: BTreeMap::new(),
+        footnote_defs,
+        children: vec![
+            carve::BlockNode::CodeBlock(carve::CodeBlock {
+                attrs: None,
+                lang: None,
+                content: format!("code{c}"),
+            }),
+            carve::BlockNode::RawBlock(carve::RawBlock {
+                format: "html".to_string(),
+                content: format!("<b>{c}</b>"),
+            }),
+            carve::BlockNode::Paragraph(carve::Paragraph {
+                attrs: None,
+                children: vec![
+                    carve::InlineNode::Text(format!("text{c}")),
+                    carve::InlineNode::Code(format!("code{c}"), None),
+                    carve::InlineNode::Math(carve::Math {
+                        attrs: None,
+                        display: false,
+                        content: format!("math{c}"),
+                    }),
+                    carve::InlineNode::Link(carve::Link {
+                        attrs: None,
+                        href: "https://e".to_string(),
+                        title: Some(format!("title{c}")),
+                        children: vec![carve::InlineNode::Text("link".to_string())],
+                        ref_label: None,
+                        raw_ref: None,
+                    }),
+                    carve::InlineNode::Image(carve::Image {
+                        attrs: None,
+                        src: "img".to_string(),
+                        alt: format!("alt{c}"),
+                        title: Some(format!("ititle{c}")),
+                    }),
+                    carve::InlineNode::Abbreviation(carve::Abbreviation {
+                        abbr: format!("abbr{c}"),
+                        expansion: format!("exp{c}"),
+                    }),
+                    carve::InlineNode::Footnote(carve::Footnote {
+                        attrs: None,
+                        id: Some(format!("id{c}")),
+                        inline: None,
+                        number: None,
+                        ref_id: None,
+                    }),
+                    carve::InlineNode::CriticSubstitute(carve::CriticSubstitute {
+                        old_text: format!("old{c}"),
+                        new_text: format!("new{c}"),
+                    }),
+                    carve::InlineNode::CrossRef(carve::CrossRef {
+                        target: format!("target{c}"),
+                    }),
+                    carve::InlineNode::CitationGroup(carve::CitationGroup {
+                        items: Vec::new(),
+                        raw: format!("[@key{c}]"),
+                        mode: None,
+                    }),
+                ],
+            }),
+        ],
+    };
+
+    assert_no_author_controls(&carve::render_markdown(&doc));
+}
+
+#[test]
+fn plain_and_ansi_strip_control_bytes_from_author_leaf_fields() {
+    let c = "\x1b]0;p\x07";
+    let mut footnote_defs = BTreeMap::new();
+    footnote_defs.insert(
+        format!("fn{c}"),
+        vec![carve::BlockNode::Paragraph(carve::Paragraph {
+            attrs: None,
+            children: vec![carve::InlineNode::CitationGroup(carve::CitationGroup {
+                items: Vec::new(),
+                raw: format!("[@key{c}]"),
+                mode: None,
+            })],
+        })],
+    );
+    let doc = carve::Document {
+        frontmatter: BTreeMap::new(),
+        footnote_defs,
+        children: vec![
+            carve::BlockNode::RawBlock(carve::RawBlock {
+                format: format!("fmt{c}"),
+                content: format!("raw{c}"),
+            }),
+            carve::BlockNode::BlockImage(carve::Image {
+                attrs: None,
+                src: "img".to_string(),
+                alt: format!("alt{c}"),
+                title: None,
+            }),
+            carve::BlockNode::Paragraph(carve::Paragraph {
+                attrs: None,
+                children: vec![
+                    carve::InlineNode::Image(carve::Image {
+                        attrs: None,
+                        src: "img".to_string(),
+                        alt: format!("ialt{c}"),
+                        title: None,
+                    }),
+                    carve::InlineNode::Abbreviation(carve::Abbreviation {
+                        abbr: format!("abbr{c}"),
+                        expansion: format!("exp{c}"),
+                    }),
+                    carve::InlineNode::Footnote(carve::Footnote {
+                        attrs: None,
+                        id: Some(format!("id{c}")),
+                        inline: None,
+                        number: None,
+                        ref_id: None,
+                    }),
+                    carve::InlineNode::CriticSubstitute(carve::CriticSubstitute {
+                        old_text: format!("old{c}"),
+                        new_text: format!("new{c}"),
+                    }),
+                    carve::InlineNode::CrossRef(carve::CrossRef {
+                        target: format!("target{c}"),
+                    }),
+                ],
+            }),
+        ],
+    };
+
+    assert_no_author_controls(&carve::render_plain_text(&doc));
+    assert_no_author_osc(&carve::render_ansi(&doc));
 }

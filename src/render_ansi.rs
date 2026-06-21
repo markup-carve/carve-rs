@@ -128,7 +128,11 @@ fn render_block(node: &BlockNode, ctx: &mut AnsiContext) -> String {
         BlockNode::RawBlock(raw) => format!(
             "{}\n\n",
             style(
-                &format!("[raw:{}] {}", raw.format, strip_controls(&raw.content)),
+                &format!(
+                    "[raw:{}] {}",
+                    strip_controls(&raw.format),
+                    strip_controls(&raw.content)
+                ),
                 DIM
             )
         ),
@@ -373,7 +377,10 @@ fn render_footnote_defs(doc: &Document, ctx: &mut AnsiContext) -> String {
     for (label, blocks) in &doc.footnote_defs {
         out.push_str(&format!(
             "{} {}\n",
-            style(&format!("[{label}]"), &(FG_CYAN.to_string() + DIM)),
+            style(
+                &format!("[{}]", strip_controls(label)),
+                &(FG_CYAN.to_string() + DIM)
+            ),
             render_blocks(blocks, ctx).trim()
         ));
     }
@@ -431,8 +438,8 @@ fn render_inline(node: &InlineNode, ctx: &mut AnsiContext) -> String {
         InlineNode::Extension(extension) => render_inlines(&extension.children, ctx),
         InlineNode::Abbreviation(abbr) => format!(
             "{}{}",
-            abbr.abbr,
-            style(&format!(" ({})", abbr.expansion), DIM)
+            strip_controls(&abbr.abbr),
+            style(&format!(" ({})", strip_controls(&abbr.expansion)), DIM)
         ),
         InlineNode::Footnote(footnote) => {
             if let Some(inline) = &footnote.inline {
@@ -444,7 +451,7 @@ fn render_inline(node: &InlineNode, ctx: &mut AnsiContext) -> String {
                 format!("({rendered})")
             } else {
                 style(
-                    &format!("[{}]", footnote.id.as_deref().unwrap_or("")),
+                    &format!("[{}]", strip_controls(footnote.id.as_deref().unwrap_or(""))),
                     &(FG_CYAN.to_string() + BOLD),
                 )
             }
@@ -461,13 +468,19 @@ fn render_inline(node: &InlineNode, ctx: &mut AnsiContext) -> String {
         ),
         InlineNode::CriticSubstitute(sub) => format!(
             "{}{}",
-            style(&sub.old_text, &(STRIKE.to_string() + "\x1b[31m")),
-            style(&sub.new_text, &(FG_GREEN.to_string() + UNDERLINE)),
+            style(
+                &strip_controls(&sub.old_text),
+                &(STRIKE.to_string() + "\x1b[31m")
+            ),
+            style(
+                &strip_controls(&sub.new_text),
+                &(FG_GREEN.to_string() + UNDERLINE)
+            ),
         ),
         InlineNode::CriticComment(_) => String::new(),
-        InlineNode::CrossRef(crossref) => format!("</#{}>", crossref.target),
+        InlineNode::CrossRef(crossref) => format!("</#{}>", strip_controls(&crossref.target)),
         // Tier-2 ext node; the core renderer has no numbering, so emit the source.
-        InlineNode::CitationGroup(group) => group.raw.clone(),
+        InlineNode::CitationGroup(group) => strip_controls(&group.raw),
         InlineNode::CaptionNumber(number) => number
             .number
             .map(|n| n.to_string())
@@ -482,7 +495,7 @@ fn render_image(node: &Image) -> String {
         if node.alt.is_empty() {
             String::new()
         } else {
-            format!(" {}", node.alt)
+            format!(" {}", strip_controls(&node.alt))
         },
         style("]", FG_MAGENTA)
     )
