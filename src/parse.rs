@@ -3968,25 +3968,17 @@ fn unescape_title(s: &str) -> String {
 fn read_link_target(bytes: &[u8], start: usize) -> Option<(String, Option<String>, usize)> {
     let mut i = start;
     let href_start = i;
-    let mut paren_depth = 0usize;
-    while i < bytes.len() {
-        match bytes[i] {
-            b'\\' if i + 1 < bytes.len() => i += 2,
-            b'(' => {
-                paren_depth += 1;
-                i += 1;
-            }
-            b')' if paren_depth > 0 => {
-                paren_depth -= 1;
-                i += 1;
-            }
-            b')' => break,
-            b' ' | b'\t' | b'\n' if paren_depth == 0 => break,
-            _ => i += 1,
-        }
-    }
-    if paren_depth != 0 {
-        return None;
+    // Per the grammar, an inline link destination ends at the first whitespace
+    // or first `)` (no balanced-paren or escape rule). A `)` that needs to live
+    // in a URL comes via a reference definition; the markdown renderer
+    // percent-encodes it on the way out.
+    while i < bytes.len()
+        && bytes[i] != b' '
+        && bytes[i] != b')'
+        && bytes[i] != b'\t'
+        && bytes[i] != b'\n'
+    {
+        i += 1;
     }
     let href = std::str::from_utf8(&bytes[href_start..i]).ok()?.to_string();
     // Skip whitespace

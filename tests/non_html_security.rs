@@ -18,9 +18,12 @@ fn markdown_blanks_dangerous_url_schemes() {
 
 #[test]
 fn markdown_percent_encodes_destination_breakouts() {
+    // A `)` reaching a destination via a reference definition (where the URL
+    // runs to end-of-line, not `)`-delimited) must be percent-encoded so it
+    // cannot break out of the `(...)` in Markdown output.
     assert_eq!(
-        md("[x](https://e.com/a(b)c)"),
-        "[x](https://e.com/a%28b%29c)"
+        md("[x][r]\n\n[r]: https://e.com/a)b"),
+        "[x](https://e.com/a%29b)"
     );
     let image_doc = carve::Document {
         frontmatter: BTreeMap::new(),
