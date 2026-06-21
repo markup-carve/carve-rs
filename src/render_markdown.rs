@@ -382,14 +382,14 @@ fn render_link(node: &Link, ctx: &mut MarkdownContext) -> String {
         }
         let destination = markdown_fragment_destination(id);
         if let Some(title) = &node.title {
-            format!("[{text}]({destination} \"{title}\")")
+            format!("[{text}]({destination} \"{}\")", escape_md_title(title))
         } else {
             format!("[{text}]({destination})")
         }
     } else {
         let href = sanitize_md_url(&node.href);
         if let Some(title) = &node.title {
-            format!("[{text}]({href} \"{title}\")")
+            format!("[{text}]({href} \"{}\")", escape_md_title(title))
         } else {
             format!("[{text}]({href})")
         }
@@ -399,10 +399,14 @@ fn render_link(node: &Link, ctx: &mut MarkdownContext) -> String {
 fn render_image(node: &Image) -> String {
     let src = sanitize_md_url(&node.src);
     if let Some(title) = &node.title {
-        format!("![{}]({} \"{}\")", node.alt, src, title)
+        format!("![{}]({} \"{}\")", node.alt, src, escape_md_title(title))
     } else {
         format!("![{}]({})", node.alt, src)
     }
+}
+
+fn escape_md_title(title: &str) -> String {
+    title.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
 fn safe_fence(content: &str, min: usize) -> String {
