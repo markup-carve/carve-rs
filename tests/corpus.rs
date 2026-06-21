@@ -119,6 +119,7 @@ const IMPLEMENTED: &[&str] = &[
     "104-blocked-span-marker-renders-as-empty-cell",
     "105-colspan-marker-scans-left-past-a-consumed-cell",
     "106-security-hardening",
+    "107-link-destination-stops-at-the-first-parenthesis",
 ];
 
 fn corpus_dir() -> PathBuf {
