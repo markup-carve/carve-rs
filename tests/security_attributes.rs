@@ -4,6 +4,7 @@
 //! (spans, divs, headings, list-table cells, ...).
 
 use carve::{ListTable, Options};
+use std::collections::BTreeMap;
 
 fn h(src: &str) -> String {
     carve::to_html(src).trim().to_string()
@@ -125,4 +126,39 @@ fn css_style_hardening() {
     assert!(carve::to_html("[x]{style=\"background:url(javascript:1)\"}").contains("style=\"\""));
     assert!(carve::to_html("[x]{style=\"@import url(evil.css)\"}").contains("style=\"\""));
     assert!(carve::to_html("[x]{style=\"color:red\"}").contains("style=\"color:red\""));
+}
+
+#[test]
+fn css_style_hardening_decodes_css_escapes() {
+    assert_eq!(
+        h("[x]{style=\"background:u\\72l(http://e/p)\"}"),
+        "<p><span style=\"\">x</span></p>"
+    );
+}
+
+#[test]
+fn drops_invalid_attribute_names_before_rendering() {
+    let mut key_values = BTreeMap::new();
+    key_values.insert("bad name".to_string(), "x".to_string());
+    key_values.insert("=breakout".to_string(), "x".to_string());
+    key_values.insert("data-ok".to_string(), "1".to_string());
+    let doc = carve::Document {
+        frontmatter: BTreeMap::new(),
+        footnote_defs: BTreeMap::new(),
+        children: vec![carve::BlockNode::Paragraph(carve::Paragraph {
+            attrs: Some(carve::Attrs {
+                id: None,
+                classes: Vec::new(),
+                key_values,
+                order: vec![
+                    carve::AttrSlot::Key("bad name".to_string()),
+                    carve::AttrSlot::Key("=breakout".to_string()),
+                    carve::AttrSlot::Key("data-ok".to_string()),
+                ],
+            }),
+            children: vec![carve::InlineNode::Text("x".to_string())],
+        })],
+    };
+
+    assert_eq!(carve::render_html(&doc).trim(), "<p data-ok=\"1\">x</p>");
 }

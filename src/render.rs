@@ -6,8 +6,8 @@
 
 use crate::ast::*;
 use crate::escape::{
-    escape_attr, escape_text, is_dangerous_attr_name, sanitize_attr_value, sanitize_url,
-    write_escaped_attr, write_escaped_text,
+    escape_attr, escape_text, is_dangerous_attr_name, is_valid_attr_name, sanitize_attr_value,
+    sanitize_url, write_escaped_attr, write_escaped_text,
 };
 use crate::extension::{Options, RenderContext};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
@@ -1723,7 +1723,7 @@ fn write_attrs(out: &mut String, attrs: &Option<Attrs>) {
             write_attr_class(out, &attrs.classes);
         }
         for (key, value) in &attrs.key_values {
-            if !is_dangerous_attr_name(key) {
+            if !is_dangerous_attr_name(key) && is_valid_attr_name(key) {
                 write_attr_key_value(out, key, value);
             }
         }
@@ -1752,7 +1752,7 @@ fn write_attrs(out: &mut String, attrs: &Option<Attrs>) {
             }
             AttrSlot::Key(key) => {
                 if let Some(value) = attrs.key_values.get(key) {
-                    if !is_dangerous_attr_name(key) {
+                    if !is_dangerous_attr_name(key) && is_valid_attr_name(key) {
                         write_attr_key_value(out, key, value);
                     }
                 }
@@ -1769,7 +1769,10 @@ fn write_attrs(out: &mut String, attrs: &Option<Attrs>) {
         write_attr_class(out, &attrs.classes);
     }
     for (key, value) in &attrs.key_values {
-        if !seen_keys.contains(&key.as_str()) && !is_dangerous_attr_name(key) {
+        if !seen_keys.contains(&key.as_str())
+            && !is_dangerous_attr_name(key)
+            && is_valid_attr_name(key)
+        {
             write_attr_key_value(out, key, value);
         }
     }
@@ -1808,7 +1811,7 @@ pub(crate) fn render_attrs_after_class(attrs: &Attrs) -> String {
             out.push_str(&format!(" id=\"{}\"", escape_attr(id)));
         }
         for (key, value) in &attrs.key_values {
-            if !is_dangerous_attr_name(key) {
+            if !is_dangerous_attr_name(key) && is_valid_attr_name(key) {
                 out.push_str(&format!(
                     " {}=\"{}\"",
                     escape_attr(key),
@@ -1828,7 +1831,7 @@ pub(crate) fn render_attrs_after_class(attrs: &Attrs) -> String {
             AttrSlot::Class => {}
             AttrSlot::Key(key) => {
                 if let Some(value) = attrs.key_values.get(key) {
-                    if !is_dangerous_attr_name(key) {
+                    if !is_dangerous_attr_name(key) && is_valid_attr_name(key) {
                         out.push_str(&format!(
                             " {}=\"{}\"",
                             escape_attr(key),

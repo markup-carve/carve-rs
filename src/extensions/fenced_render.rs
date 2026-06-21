@@ -23,7 +23,7 @@
 //! inject.
 
 use crate::ast::{AttrSlot, Attrs, BlockNode, Document, RawBlock};
-use crate::escape::{escape_attr, is_dangerous_attr_name, sanitize_attr_value};
+use crate::escape::{escape_attr, is_dangerous_attr_name, is_valid_attr_name, sanitize_attr_value};
 use crate::extension::CarveExtension;
 
 /// How a [`FencedRender`] instance places the block body.
@@ -293,7 +293,7 @@ fn ensure_class_slot(attrs: &mut Attrs) {
 fn render_attrs(attrs: &Attrs) -> String {
     let mut out = String::new();
     let push_kv = |out: &mut String, key: &str, value: &str| {
-        if !is_dangerous_attr_name(key) {
+        if !is_dangerous_attr_name(key) && is_valid_attr_name(key) {
             out.push_str(&format!(
                 " {}=\"{}\"",
                 escape_attr(key),

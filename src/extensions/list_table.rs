@@ -21,7 +21,7 @@ use std::collections::BTreeMap;
 use crate::ast::{
     Admonition, AttrSlot, Attrs, BlockExtension, BlockNode, Document, InlineNode, ListItem,
 };
-use crate::escape::{is_dangerous_attr_name, sanitize_attr_value};
+use crate::escape::{is_dangerous_attr_name, is_valid_attr_name, sanitize_attr_value};
 use crate::extension::{CarveExtension, RenderContext};
 
 /// The admonition kind this extension claims.
@@ -576,7 +576,7 @@ fn table_attrs(attrs: Option<&Attrs>, ctx: &RenderContext<'_>) -> String {
         emit_id(&mut out);
         emit_class(&mut out);
         for (key, value) in &attrs.key_values {
-            if !is_consumed(key) && !is_dangerous_attr_name(key) {
+            if !is_consumed(key) && !is_dangerous_attr_name(key) && is_valid_attr_name(key) {
                 out.push_str(&format!(
                     " {}=\"{}\"",
                     ctx.escape_attr(key),
@@ -593,7 +593,7 @@ fn table_attrs(attrs: Option<&Attrs>, ctx: &RenderContext<'_>) -> String {
             AttrSlot::Key(key) => {
                 if !is_consumed(key) {
                     if let Some(value) = attrs.key_values.get(key) {
-                        if !is_dangerous_attr_name(key) {
+                        if !is_dangerous_attr_name(key) && is_valid_attr_name(key) {
                             out.push_str(&format!(
                                 " {}=\"{}\"",
                                 ctx.escape_attr(key),
@@ -639,7 +639,7 @@ fn cell_attrs(attrs: Option<&Attrs>, ctx: &RenderContext<'_>) -> String {
         emit_id(&mut out);
         emit_class(&mut out);
         for (key, value) in &attrs.key_values {
-            if !is_span(key) && !is_dangerous_attr_name(key) {
+            if !is_span(key) && !is_dangerous_attr_name(key) && is_valid_attr_name(key) {
                 out.push_str(&format!(
                     " {}=\"{}\"",
                     ctx.escape_attr(key),
@@ -656,7 +656,7 @@ fn cell_attrs(attrs: Option<&Attrs>, ctx: &RenderContext<'_>) -> String {
             AttrSlot::Key(key) => {
                 if !is_span(key) {
                     if let Some(value) = attrs.key_values.get(key) {
-                        if !is_dangerous_attr_name(key) {
+                        if !is_dangerous_attr_name(key) && is_valid_attr_name(key) {
                             out.push_str(&format!(
                                 " {}=\"{}\"",
                                 ctx.escape_attr(key),

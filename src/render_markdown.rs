@@ -88,12 +88,13 @@ fn render_block(node: &BlockNode, ctx: &mut MarkdownContext) -> String {
             format!("{}\n\n", render_block_inlines(&paragraph.children, ctx))
         }
         BlockNode::CodeBlock(code) => {
-            let fence = safe_fence(&code.content, 3);
+            let content = strip_controls(&code.content);
+            let fence = safe_fence(&content, 3);
             format!(
                 "{}{}\n{}\n{}\n\n",
                 fence,
                 code.lang.as_deref().unwrap_or(""),
-                code.content,
+                content,
                 fence
             )
         }
@@ -137,7 +138,7 @@ fn render_block(node: &BlockNode, ctx: &mut MarkdownContext) -> String {
             if raw.format == "html" {
                 // Escape, not emit: raw HTML in Markdown would be live again
                 // when the Markdown is rendered to HTML downstream.
-                format!("{}\n\n", escape_md_html(&raw.content))
+                format!("{}\n\n", escape_md_html(&strip_controls(&raw.content)))
             } else {
                 String::new()
             }
@@ -260,7 +261,8 @@ fn render_footnote_defs(doc: &Document, ctx: &mut MarkdownContext) -> String {
     let mut out = String::new();
     for (label, blocks) in &doc.footnote_defs {
         out.push_str(&format!(
-            "[^{label}]: {}\n",
+            "[^{}]: {}\n",
+            strip_controls(label),
             render_blocks(blocks, ctx).trim()
         ));
     }
@@ -275,9 +277,12 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext) -> String {
     match node {
         InlineNode::Text(text) => {
             if is_literal_crossref(text) {
-                text.clone()
+                strip_controls(text)
             } else {
-                escape_text(&clean_smart_text_stateful(text, &mut ctx.smart_quote))
+                escape_text(&strip_controls(&clean_smart_text_stateful(
+                    text,
+                    &mut ctx.smart_quote,
+                )))
             }
         }
         InlineNode::Emphasis(emphasis) => match emphasis.kind {
@@ -299,20 +304,21 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext) -> String {
                 format!("***{}***", render_inlines(&emphasis.children, ctx))
             }
         },
-        InlineNode::Code(code, _) => render_code(code),
+        InlineNode::Code(code, _) => render_code(&strip_controls(code)),
         InlineNode::Link(link) => render_link(link, ctx),
         InlineNode::Image(image) => render_image(image),
         InlineNode::Span(span) => render_inlines(&span.children, ctx),
         InlineNode::Math(math) => {
+            let content = strip_controls(&math.content);
             if math.display {
-                format!("$${}$$", math.content)
+                format!("$${content}$$")
             } else {
-                format!("${}$", math.content)
+                format!("${content}$")
             }
         }
         InlineNode::RawInline(raw) => {
             if raw.format == "html" {
-                escape_md_html(&raw.content)
+                escape_md_html(&strip_controls(&raw.content))
             } else {
                 String::new()
             }
@@ -330,14 +336,16 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext) -> String {
             // Markdown has no abbreviation syntax; emit an HTML <abbr> so the
             // title survives (markdown allows inline HTML), matching carve-php.
             // Dropping it to plain text would lose the expansion.
-            let title = abbr
-                .expansion
+            let expansion = strip_controls(&abbr.expansion);
+            let abbr_text = strip_controls(&abbr.abbr);
+            let title = expansion
+                .as_str()
                 .replace('&', "&amp;")
                 .replace('<', "&lt;")
                 .replace('>', "&gt;")
                 .replace('"', "&quot;");
-            let text = abbr
-                .abbr
+            let text = abbr_text
+                .as_str()
                 .replace('&', "&amp;")
                 .replace('<', "&lt;")
                 .replace('>', "&gt;");
@@ -353,7 +361,10 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext) -> String {
                 ctx.smart_quote = saved;
                 format!("^[{rendered}]")
             } else {
-                format!("[^{}]", footnote.id.as_deref().unwrap_or(""))
+                format!(
+                    "[^{}]",
+                    strip_controls(footnote.id.as_deref().unwrap_or(""))
+                )
             }
         }
         InlineNode::SoftBreak => "\n".to_string(),
@@ -366,13 +377,13 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext) -> String {
         }
         InlineNode::CriticSubstitute(sub) => format!(
             "<del>{}</del><ins>{}</ins>",
-            escape_text(&sub.old_text),
-            escape_text(&sub.new_text)
+            escape_text(&strip_controls(&sub.old_text)),
+            escape_text(&strip_controls(&sub.new_text))
         ),
         InlineNode::CriticComment(_) => String::new(),
-        InlineNode::CrossRef(crossref) => format!("</#{}>", crossref.target),
+        InlineNode::CrossRef(crossref) => format!("</#{}>", strip_controls(&crossref.target)),
         // Tier-2 ext node; the core renderer has no numbering, so emit the source.
-        InlineNode::CitationGroup(group) => group.raw.clone(),
+        InlineNode::CitationGroup(group) => strip_controls(&group.raw),
         InlineNode::CaptionNumber(number) => number
             .number
             .map(|n| n.to_string())
@@ -388,14 +399,20 @@ fn render_link(node: &Link, ctx: &mut MarkdownContext) -> String {
         }
         let destination = encode_markdown_destination(&format!("#{id}"));
         if let Some(title) = &node.title {
-            format!("[{text}]({destination} \"{}\")", escape_md_title(title))
+            format!(
+                "[{text}]({destination} \"{}\")",
+                escape_md_title(&strip_controls(title))
+            )
         } else {
             format!("[{text}]({destination})")
         }
     } else {
         let href = encode_markdown_destination(&node.href);
         if let Some(title) = &node.title {
-            format!("[{text}]({href} \"{}\")", escape_md_title(title))
+            format!(
+                "[{text}]({href} \"{}\")",
+                escape_md_title(&strip_controls(title))
+            )
         } else {
             format!("[{text}]({href})")
         }
@@ -404,10 +421,16 @@ fn render_link(node: &Link, ctx: &mut MarkdownContext) -> String {
 
 fn render_image(node: &Image) -> String {
     let src = encode_markdown_destination(&node.src);
+    let alt = strip_controls(&node.alt);
     if let Some(title) = &node.title {
-        format!("![{}]({} \"{}\")", node.alt, src, escape_md_title(title))
+        format!(
+            "![{}]({} \"{}\")",
+            alt,
+            src,
+            escape_md_title(&strip_controls(title))
+        )
     } else {
-        format!("![{}]({})", node.alt, src)
+        format!("![{}]({})", alt, src)
     }
 }
 
