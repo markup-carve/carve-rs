@@ -87,7 +87,8 @@ fn render_block(node: &BlockNode, ctx: &mut AnsiContext) -> String {
             format!("{content}\n\n")
         }
         BlockNode::CodeBlock(code) => {
-            render_code_block(&strip_controls(&code.content), code.lang.as_deref())
+            let lang = code.lang.as_deref().map(strip_controls);
+            render_code_block(&strip_controls(&code.content), lang.as_deref())
         }
         BlockNode::BlockQuote(quote) => {
             ctx.block_quote_depth += 1;
