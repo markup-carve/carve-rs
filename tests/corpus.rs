@@ -116,6 +116,7 @@ const IMPLEMENTED: &[&str] = &[
     "101-heading-marker-column-zero",
     "102-paragraph-trailing-whitespace",
     "103-marker-line-nested-lists",
+    "104-blocked-span-marker-renders-as-empty-cell",
 ];
 
 fn corpus_dir() -> PathBuf {
