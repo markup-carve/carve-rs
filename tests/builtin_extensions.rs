@@ -8,7 +8,7 @@
 
 use carve::{
     Autolink, AutolinkOptions, ExternalLinks, ExternalLinksOptions, FencedRender,
-    HeadingPermalinks, HeadingPermalinksOptions, ListType, MathBlock, Mermaid, Options, Position,
+    HeadingPermalinks, HeadingPermalinksOptions, ListType, MathBlock, Options, Position,
     TabNormalize, TableOfContents, TableOfContentsOptions, Wikilinks, WikilinksOptions,
 };
 
@@ -250,7 +250,7 @@ fn heading_permalinks_levels_filter_golden() {
 
 #[test]
 fn mermaid_diagram_golden() {
-    let ext = Mermaid::new();
+    let ext = FencedRender::mermaid();
     let opts = Options::new().with_extension(&ext);
     // carveToHtml("``` mermaid\ngraph TD; A-->B\n```\n", {extensions:[mermaid()]})
     assert_eq!(
@@ -263,7 +263,7 @@ fn mermaid_diagram_golden() {
 fn mermaid_inside_footnote_is_transformed() {
     // A mermaid block inside a footnote def is rendered (from footnote_defs,
     // outside the tree), so it must be transformed too -- matching carve-js.
-    let ext = Mermaid::new();
+    let ext = FencedRender::mermaid();
     let opts = Options::new().with_extension(&ext);
     let out =
         carve::to_html_with_options("see[^a]\n\n[^a]: ``` mermaid\n    graph\n    ```\n", &opts);
@@ -279,7 +279,7 @@ fn mermaid_inside_footnote_is_transformed() {
 
 #[test]
 fn mermaid_non_mermaid_defers_golden() {
-    let ext = Mermaid::new();
+    let ext = FencedRender::mermaid();
     let opts = Options::new().with_extension(&ext);
     // carveToHtml("``` js\nlet x = 1 < 2;\n```\n", {extensions:[mermaid()]})
     assert_eq!(
@@ -456,13 +456,35 @@ fn fenced_render_custom_tag_and_css_class() {
 }
 
 #[test]
-fn fenced_render_mermaid_preset_matches_mermaid_extension() {
+fn fenced_render_mermaid_preset_matches_manual_instance() {
     let fr = FencedRender::new("mermaid");
-    let mm = Mermaid::new();
+    let mm = FencedRender::mermaid();
     let src = "``` mermaid\ngraph TD; A-->B\n```\n";
     assert_eq!(
         carve::to_html_with_options(src, &Options::new().with_extension(&fr)),
         carve::to_html_with_options(src, &Options::new().with_extension(&mm))
+    );
+}
+
+#[test]
+fn fenced_render_presets_register_all_languages() {
+    let presets = FencedRender::presets();
+    assert_eq!(presets.len(), 7);
+    let mut opts = Options::new();
+    for ext in &presets {
+        opts = opts.with_extension(ext);
+    }
+    assert_eq!(
+        carve::to_html_with_options("``` mermaid\ngraph TD; A-->B\n```\n", &opts),
+        "<pre class=\"mermaid\">graph TD; A-->B</pre>"
+    );
+    assert!(
+        carve::to_html_with_options("``` dot\ndigraph { a -> b }\n```\n", &opts)
+            .contains("<pre class=\"graphviz\">")
+    );
+    assert!(
+        carve::to_html_with_options("``` chart\n{\"type\":\"bar\"}\n```\n", &opts)
+            .contains("<div class=\"chart\">")
     );
 }
 
