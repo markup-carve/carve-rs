@@ -11,12 +11,16 @@ use crate::escape::{escape_attr, escape_text};
 use crate::parse::{parse_blocks_with_options, parse_inline_with_options};
 use crate::profile::Profile;
 
-#[derive(Default)]
 pub struct Options<'a> {
     pub extensions: Vec<&'a dyn CarveExtension>,
     pub mention_url: Option<String>,
     pub tag_url: Option<String>,
     pub emoji: BTreeMap<String, String>,
+    /// Allow raw HTML passthrough (`` `…`{=html} `` inline and ` ```=html `
+    /// block) to emit verbatim. Default `true` (matches the corpus). Set
+    /// `false` for UNTRUSTED input: raw-HTML content is then escaped to text
+    /// instead of emitted, closing the one author-controlled raw-HTML vector.
+    pub allow_raw_html: bool,
     /// When `true`, lowercase the kept characters of an auto-generated heading
     /// id per code point (`char::to_lowercase`). Default `false`: heading ids
     /// are CASE-PRESERVING (`# Getting Started` -> `Getting-Started`), matching
@@ -34,9 +38,31 @@ pub struct Options<'a> {
     pub profile_base_host: Option<String>,
 }
 
+impl Default for Options<'_> {
+    fn default() -> Self {
+        Self {
+            extensions: Vec::new(),
+            mention_url: None,
+            tag_url: None,
+            emoji: BTreeMap::new(),
+            allow_raw_html: true,
+            lowercase_heading_ids: false,
+            profile: None,
+            profile_base_host: None,
+        }
+    }
+}
+
 impl<'a> Options<'a> {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Allow or suppress raw HTML passthrough. Pass `false` for untrusted
+    /// input to escape `=html` raw inline/block content instead of emitting it.
+    pub fn with_raw_html(mut self, allow: bool) -> Self {
+        self.allow_raw_html = allow;
+        self
     }
 
     pub fn with_extension(mut self, extension: &'a dyn CarveExtension) -> Self {

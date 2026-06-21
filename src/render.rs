@@ -5,7 +5,9 @@
 //! indent their `<li>` children two spaces.
 
 use crate::ast::*;
-use crate::escape::{escape_attr, escape_text, is_dangerous_attr_name, sanitize_attr_value};
+use crate::escape::{
+    escape_attr, escape_text, is_dangerous_attr_name, sanitize_attr_value, sanitize_url,
+};
 use crate::extension::{Options, RenderContext};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -460,7 +462,12 @@ fn render_block(
         BlockNode::RawBlock(r) => {
             if r.format == "html" {
                 indent(out, level);
-                out.push_str(&r.content);
+                // Escape instead of emitting when raw HTML is disabled.
+                if options.allow_raw_html {
+                    out.push_str(&r.content);
+                } else {
+                    out.push_str(&escape_text(&r.content));
+                }
             }
         }
         BlockNode::Comment(_) => {}
@@ -1176,7 +1183,7 @@ fn render_block_extension(
 fn render_image(out: &mut String, img: &Image) {
     out.push_str(&format!(
         "<img src=\"{}\" alt=\"{}\"",
-        escape_attr(&img.src),
+        escape_attr(&sanitize_url(&img.src)),
         escape_attr(&img.alt)
     ));
     if let Some(title) = &img.title {
@@ -1303,7 +1310,12 @@ fn render_inline_after(
         }
         InlineNode::RawInline(r) => {
             if r.format.trim() == "html" {
-                out.push_str(&r.content);
+                // Escape instead of emitting when raw HTML is disabled.
+                if options.allow_raw_html {
+                    out.push_str(&r.content);
+                } else {
+                    out.push_str(&escape_text(&r.content));
+                }
             }
         }
         InlineNode::Emoji(e) => {
@@ -1321,7 +1333,7 @@ fn render_inline_after(
             };
             out.push_str(&format!(
                 "<a href=\"{}\"{}>{}</a>",
-                escape_attr(&a.href),
+                escape_attr(&sanitize_url(&a.href)),
                 render_attrs(&a.attrs),
                 escape_text(display)
             ));
@@ -1497,7 +1509,7 @@ fn render_emphasis(out: &mut String, e: &Emphasis, options: &Options<'_>, state:
 fn render_link(out: &mut String, l: &Link, options: &Options<'_>, state: &mut SmartState) {
     out.push_str(&format!(
         "<a href=\"{}\"{}",
-        escape_attr(&l.href),
+        escape_attr(&sanitize_url(&l.href)),
         render_attrs(&l.attrs)
     ));
     if let Some(title) = &l.title {
