@@ -536,7 +536,11 @@ fn next_heading_id(h: &Heading, state: &mut RenderState) -> String {
     }
 }
 
-fn plain_inlines(nodes: &[InlineNode]) -> String {
+/// Flatten inline nodes to the plain-text projection used for heading-id slug
+/// generation. This is the single source of truth: the heading-permalinks
+/// extension reuses it so its anchor `href` can never diverge from the id the
+/// core emits for the same heading (see `heading_permalinks::next_id`).
+pub(crate) fn plain_inlines(nodes: &[InlineNode]) -> String {
     let mut out = String::new();
     for node in nodes {
         match node {
