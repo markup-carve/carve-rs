@@ -3802,7 +3802,7 @@ fn parse_autolink(text: &str, pos: usize) -> Option<(AutoLink, usize)> {
             consumed = next - pos;
         }
     }
-    if target.starts_with("http://") || target.starts_with("https://") {
+    if is_url_autolink_target(target) {
         return Some((
             AutoLink {
                 attrs,
@@ -3821,6 +3821,51 @@ fn parse_autolink(text: &str, pos: usize) -> Option<(AutoLink, usize)> {
         ));
     }
     None
+}
+
+fn is_url_autolink_target(target: &str) -> bool {
+    let Some((scheme, url)) = target.split_once(':') else {
+        return false;
+    };
+    let Some(first) = scheme.bytes().next() else {
+        return false;
+    };
+    if url.is_empty() || !first.is_ascii_alphabetic() {
+        return false;
+    }
+    scheme
+        .bytes()
+        .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'+' | b'-' | b'.'))
+        && url.bytes().all(is_url_autolink_char)
+}
+
+fn is_url_autolink_char(b: u8) -> bool {
+    b.is_ascii_alphanumeric()
+        || matches!(
+            b,
+            b'-' | b'.'
+                | b'_'
+                | b'~'
+                | b':'
+                | b'/'
+                | b'?'
+                | b'#'
+                | b'['
+                | b']'
+                | b'@'
+                | b'!'
+                | b'$'
+                | b'&'
+                | b'\''
+                | b'('
+                | b')'
+                | b'*'
+                | b'+'
+                | b','
+                | b';'
+                | b'='
+                | b'%'
+        )
 }
 
 fn parse_crossref(text: &str, pos: usize) -> Option<(CrossRef, usize)> {
