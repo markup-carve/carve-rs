@@ -53,6 +53,15 @@ fn flattens_inline_markup_in_title() {
 }
 
 #[test]
+fn hardens_authored_attributes() {
+    let out =
+        h("{onclick=alert(1) style=\"background:url(javascript:alert(1))\"}\n::: details\nx\n:::");
+    assert!(!out.contains("onclick="), "{out}");
+    assert!(!out.contains("javascript:"), "{out}");
+    assert!(out.contains("style=\"\""), "{out}");
+}
+
+#[test]
 fn summary_keeps_code_link_emphasis_text() {
     // carve-js collects code `value` and emphasis/link `children`.
     assert!(h("::: details \"a `code` b\"\nx\n:::").contains("<summary>a code b</summary>"));

@@ -1678,17 +1678,26 @@ fn write_attrs(out: &mut String, attrs: &Option<Attrs>) {
         }
         return;
     }
+    // Track which slots the recorded `order` already emitted, so attrs an
+    // extension added WITHOUT updating `order` (a stale order list) are still
+    // appended below instead of silently dropped. For normally-parsed nodes
+    // `order` covers everything, so the fallback emits nothing.
+    let mut seen_id = false;
+    let mut seen_class = false;
+    let mut seen_keys: Vec<&str> = Vec::new();
     for slot in &attrs.order {
         match slot {
             AttrSlot::Id => {
                 if let Some(id) = &attrs.id {
                     write_attr_id(out, id);
                 }
+                seen_id = true;
             }
             AttrSlot::Class => {
                 if !attrs.classes.is_empty() {
                     write_attr_class(out, &attrs.classes);
                 }
+                seen_class = true;
             }
             AttrSlot::Key(key) => {
                 if let Some(value) = attrs.key_values.get(key) {
@@ -1696,12 +1705,26 @@ fn write_attrs(out: &mut String, attrs: &Option<Attrs>) {
                         write_attr_key_value(out, key, value);
                     }
                 }
+                seen_keys.push(key.as_str());
             }
+        }
+    }
+    if !seen_id {
+        if let Some(id) = &attrs.id {
+            write_attr_id(out, id);
+        }
+    }
+    if !seen_class && !attrs.classes.is_empty() {
+        write_attr_class(out, &attrs.classes);
+    }
+    for (key, value) in &attrs.key_values {
+        if !seen_keys.contains(&key.as_str()) && !is_dangerous_attr_name(key) {
+            write_attr_key_value(out, key, value);
         }
     }
 }
 
-fn render_attrs(attrs: &Option<Attrs>) -> String {
+pub(crate) fn render_attrs(attrs: &Option<Attrs>) -> String {
     let mut out = String::new();
     write_attrs(&mut out, attrs);
     out
