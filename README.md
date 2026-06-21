@@ -222,6 +222,22 @@ on the fence are copied onto the wrapper with the always-on hardening (`on*` /
 `srcdoc` / `formaction` stripped, dangerous values neutralized), so a
 `{onclick="…"}` fence can never reach the output.
 
+> **Note:** json mode emits a `<script type="application/json">`. If you
+> sanitize the HTML *after* converting, that inert script is usually stripped -
+> whitelist `<script type="application/json">` in your sanitizer, or render the
+> config in **text mode** so it rides in a `<pre>` as escaped text (read from
+> `textContent`):
+>
+> ```rust
+> use carve::{ContentMode, FencedRender, FencedRenderOptions, Options};
+> // Text mode: config rides in <pre class="chart"> as escaped text and survives
+> // HTML sanitizing (the json preset's <script> wrapper would be stripped).
+> let chart = FencedRender::with_options(FencedRenderOptions::new(
+>     vec!["chart".into()], Some("chart".into()), None, ContentMode::Text,
+> ));
+> let opts = Options::new().with_extension(&chart);
+> ```
+
 #### `MathBlock`
 
 `MathBlock` renders a fenced code block tagged `math` (a ` ``` math ` fence) as

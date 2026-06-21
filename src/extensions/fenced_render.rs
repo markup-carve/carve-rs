@@ -11,7 +11,10 @@
 //!   (`&` and `<`), but `>` is preserved so arrow syntax (`-->`) survives.
 //! - JSON mode (Vega-Lite/Chart.js): the body is emitted verbatim inside a
 //!   `<script type="application/json">` (default wrapper `<div>`), with `</`
-//!   rewritten to `<\/` so it cannot close the script element early.
+//!   rewritten to `<\/` so it cannot close the script element early. Note:
+//!   consumers that sanitize the HTML after conversion should whitelist that
+//!   `<script>` tag or use text mode (the config then rides in a `<pre>` as
+//!   escaped text).
 //!
 //! Author attributes on the fence are copied onto the wrapper and hardened
 //! exactly as the core renderer hardens every element (`is_dangerous_attr_name`
