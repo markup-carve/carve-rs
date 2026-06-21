@@ -868,7 +868,7 @@ fn render_table_body_row(
     out.push_str("<tr");
     write_attrs(out, &row.attrs);
     out.push('>');
-    let mut col = 0usize;
+    let consumed_cols = consumed_rowspan_cols(source_row_idx, rowspan_cols);
     for (cell_index, cell) in row.cells.iter().enumerate() {
         if cell.span == Some(TableCellSpan::Rowspan) {
             // A `^` that merged into a cell above renders nothing; one with
@@ -877,12 +877,11 @@ fn render_table_body_row(
                 let tag = if cell.header { "th" } else { "td" };
                 write!(out, "<{tag}></{tag}>").unwrap();
             }
-            col += 1;
             continue;
         }
         let mut attrs = String::new();
         let mut emitted: Vec<&str> = Vec::new();
-        if let Some(span) = rowspan_cols.get(&(source_row_idx, col)) {
+        if let Some(span) = rowspan_cols.get(&(source_row_idx, cell_index)) {
             attrs.push_str(&format!(" rowspan=\"{}\"", span));
             emitted.push("rowspan");
         }
@@ -890,19 +889,18 @@ fn render_table_body_row(
             // A `<` that merged into a cell to its left renders nothing; one
             // with nothing to merge (first column / no real left cell) renders
             // an EMPTY cell (§5).
-            if colspan_is_orphan(row, cell_index) {
+            if colspan_target(row, cell_index, &consumed_cols).is_none() {
                 let tag = if cell.header { "th" } else { "td" };
                 write!(out, "<{tag}></{tag}>").unwrap();
             }
-            col += 1;
             continue;
         }
-        let colspan = following_colspans(row, col);
+        let colspan = colspan_for_cell(row, cell_index, &consumed_cols);
         if colspan > 1 {
             attrs.push_str(&format!(" colspan=\"{}\"", colspan));
             emitted.push("colspan");
         }
-        if let Some(align) = cell.align.or_else(|| table_column_align(table, col)) {
+        if let Some(align) = cell.align.or_else(|| table_column_align(table, cell_index)) {
             attrs.push_str(&align_attr(align));
             emitted.push("style");
         }
@@ -917,7 +915,6 @@ fn render_table_body_row(
         out.push_str("</");
         out.push_str(tag);
         out.push('>');
-        col += colspan;
     }
     out.push_str("</tr>");
 }
@@ -965,16 +962,26 @@ fn align_attr(align: TableAlign) -> String {
     format!(" style=\"text-align: {value};\"")
 }
 
-fn following_colspans(row: &TableRow, start: usize) -> usize {
-    let mut span = 1;
-    for cell in row.cells.iter().skip(start + 1) {
-        if cell.span == Some(TableCellSpan::Colspan) {
-            span += 1;
-        } else {
-            break;
-        }
-    }
-    span
+fn consumed_rowspan_cols(row_idx: usize, rowspan_cols: &RowspanCols) -> BTreeSet<usize> {
+    rowspan_cols
+        .iter()
+        .filter_map(|(&(origin_row, col), &span)| {
+            (row_idx > origin_row && row_idx < origin_row + span).then_some(col)
+        })
+        .collect()
+}
+
+fn colspan_for_cell(row: &TableRow, cell_index: usize, consumed_cols: &BTreeSet<usize>) -> usize {
+    1 + row
+        .cells
+        .iter()
+        .enumerate()
+        .skip(cell_index + 1)
+        .filter(|&(marker_index, marker)| {
+            marker.span == Some(TableCellSpan::Colspan)
+                && colspan_target(row, marker_index, consumed_cols) == Some(cell_index)
+        })
+        .count()
 }
 
 /// Maps the origin cell `(row, col)` of each rowspan to its span count. Resolved
@@ -1013,20 +1020,24 @@ fn compute_rowspans(t: &Table) -> (RowspanCols, OrphanCarets) {
     (spans, orphan_carets)
 }
 
-/// A `<` colspan marker is an orphan (nothing to its left to merge into) when
-/// scanning left past any contiguous `<` markers reaches the row start or a `^`
-/// rather than a real cell. An orphan renders as an empty cell (spec §5).
-fn colspan_is_orphan(row: &TableRow, i: usize) -> bool {
+/// Resolve a `<` colspan marker by walking left to the nearest real cell that is
+/// not already occupied by a rowspan from above. Contiguous `<` markers are
+/// transparent, as are columns consumed by rowspans. If the scan reaches the
+/// table edge, the marker is orphaned and renders as an empty cell (spec §5).
+fn colspan_target(row: &TableRow, i: usize, consumed_cols: &BTreeSet<usize>) -> Option<usize> {
     let mut j = i;
     while j > 0 {
         j -= 1;
+        if consumed_cols.contains(&j) {
+            continue;
+        }
         match row.cells[j].span {
             Some(TableCellSpan::Colspan) => continue,
-            Some(TableCellSpan::Rowspan) => return true,
-            None => return false,
+            Some(TableCellSpan::Rowspan) => return None,
+            None => return Some(j),
         }
     }
-    true
+    None
 }
 
 fn render_admonition(
@@ -1225,7 +1236,7 @@ fn render_image(out: &mut String, img: &Image) {
     if let Some(title) = &img.title {
         out.push_str(&format!(" title=\"{}\"", escape_attr(title)));
     }
-    out.push_str(&render_attrs(&img.attrs));
+    out.push_str(&render_attrs_without_keys(&img.attrs, &["src"]));
     out.push('>');
 }
 
@@ -1577,7 +1588,7 @@ fn render_link(out: &mut String, l: &Link, options: &Options<'_>, state: &mut Sm
     out.push_str(&format!(
         "<a href=\"{}\"{}",
         escape_attr(&sanitize_url(&l.href)),
-        render_attrs(&l.attrs)
+        render_attrs_without_keys(&l.attrs, &["href"])
     ));
     if let Some(title) = &l.title {
         out.push_str(&format!(" title=\"{}\"", escape_attr(title)));
@@ -1728,6 +1739,23 @@ pub(crate) fn render_attrs(attrs: &Option<Attrs>) -> String {
     let mut out = String::new();
     write_attrs(&mut out, attrs);
     out
+}
+
+fn render_attrs_without_keys(attrs: &Option<Attrs>, blocked: &[&str]) -> String {
+    let Some(a) = attrs else {
+        return String::new();
+    };
+    let is_blocked = |k: &str| blocked.contains(&k.to_ascii_lowercase().as_str());
+    if !a.key_values.keys().any(|k| is_blocked(k)) {
+        return render_attrs(attrs);
+    }
+    let mut filtered = a.clone();
+    filtered.key_values.retain(|k, _| !is_blocked(k));
+    filtered.order.retain(|slot| match slot {
+        AttrSlot::Key(k) => !is_blocked(k),
+        _ => true,
+    });
+    render_attrs(&Some(filtered))
 }
 
 /// Render an attribute block's id and key-values in source order, omitting
