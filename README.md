@@ -91,8 +91,8 @@ assert_eq!(html, "<p>Press <kbd>Ctrl</kbd>.</p>");
 
 The crate ships the same opt-in extensions as carve-js: `Autolink`,
 `ExternalLinks`, `HeadingPermalinks`, `TableOfContents`, `Wikilinks`,
-`TabNormalize`, `Mermaid`, `FencedRender`, `MathBlock`, `Details`, and
-`ListTable`.
+`TabNormalize`, `Mermaid`, `FencedRender`, `MathBlock`, `Spoiler`, `Details`,
+and `ListTable`.
 
 #### `Details`
 
@@ -117,6 +117,32 @@ assert_eq!(
 ```
 
 Without the extension, `::: details` stays a plain `<div class="details">`.
+
+#### `Spoiler`
+
+Hidden / blurred content revealed on interaction (the standard `spoiler` role).
+
+- **Inline** `:spoiler[text]` → `<span class="spoiler">text</span>` (without the
+  extension: generic `<span class="ext-spoiler">`).
+- **Block** `::: spoiler "Title"` → `<details class="spoiler">` disclosure
+  (native, accessible); title-less → `<summary>Spoiler</summary>` (without the
+  extension: `<div class="spoiler">`).
+
+```rust
+use carve::{Spoiler, Options};
+
+let ext = Spoiler::new();
+let opts = Options::new().with_extension(&ext);
+assert_eq!(
+    carve::to_html_with_options("Plot: :spoiler[the butler did it].", &opts),
+    "<p>Plot: <span class=\"spoiler\">the butler did it</span>.</p>"
+);
+```
+
+Carve emits only the marker; blur + reveal is the host's CSS. Author attributes
+merge (spoiler base class first) with the always-on attribute hardening
+(`on*` / `srcdoc` / `formaction` stripped, dangerous values neutralized), so a
+`{onclick="…"}` can never reach the output.
 
 #### `FencedRender`
 

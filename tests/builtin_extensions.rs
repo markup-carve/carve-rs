@@ -9,7 +9,7 @@
 use carve::{
     Autolink, AutolinkOptions, Citations, ExternalLinks, ExternalLinksOptions, FencedRender,
     HeadingPermalinks, HeadingPermalinksOptions, ListType, MathBlock, Mermaid, Options, Position,
-    TabNormalize, TableOfContents, TableOfContentsOptions, Wikilinks, WikilinksOptions,
+    Spoiler, TabNormalize, TableOfContents, TableOfContentsOptions, Wikilinks, WikilinksOptions,
 };
 
 // ---------------------------------------------------------------------------
@@ -425,6 +425,66 @@ fn math_block_strips_event_handler_attributes() {
             &opts
         ),
         "<div class=\"math display big\" id=\"eq\">\\[x^2\\]</div>"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// spoiler
+// ---------------------------------------------------------------------------
+
+#[test]
+fn spoiler_inline_renders_span() {
+    let ext = Spoiler::new();
+    let opts = Options::new().with_extension(&ext);
+    assert_eq!(
+        carve::to_html_with_options("Plot: :spoiler[the butler did it].", &opts),
+        "<p>Plot: <span class=\"spoiler\">the butler did it</span>.</p>"
+    );
+}
+
+#[test]
+fn spoiler_inline_merges_classes_and_strips_event_handler() {
+    let ext = Spoiler::new();
+    let opts = Options::new().with_extension(&ext);
+    assert_eq!(
+        carve::to_html_with_options(":spoiler[x]{#s .big onclick=\"y\"}", &opts),
+        "<p><span class=\"spoiler big\" id=\"s\">x</span></p>"
+    );
+}
+
+#[test]
+fn spoiler_inline_falls_back_to_ext_span_without_extension() {
+    assert_eq!(
+        carve::to_html("Plot: :spoiler[x]."),
+        "<p>Plot: <span class=\"ext-spoiler\">x</span>.</p>"
+    );
+}
+
+#[test]
+fn spoiler_block_renders_details_disclosure() {
+    let ext = Spoiler::new();
+    let opts = Options::new().with_extension(&ext);
+    assert_eq!(
+        carve::to_html_with_options("::: spoiler \"Ending\"\nEveryone lives.\n:::", &opts),
+        "<details class=\"spoiler\">\n  <summary>Ending</summary>\n  <p>Everyone lives.</p>\n</details>"
+    );
+}
+
+#[test]
+fn spoiler_block_defaults_summary() {
+    let ext = Spoiler::new();
+    let opts = Options::new().with_extension(&ext);
+    assert_eq!(
+        carve::to_html_with_options("::: spoiler\nHidden.\n:::", &opts),
+        "<details class=\"spoiler\">\n  <summary>Spoiler</summary>\n  <p>Hidden.</p>\n</details>"
+    );
+}
+
+#[test]
+fn spoiler_block_falls_back_to_div_without_extension() {
+    assert_eq!(
+        carve::to_html("::: spoiler\nHidden.\n:::"),
+        "<div class=\"spoiler\">\n  <p>Hidden.</p>\n</div>"
     );
 }
 
