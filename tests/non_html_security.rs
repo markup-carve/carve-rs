@@ -39,3 +39,21 @@ fn ansi_and_plain_strip_control_bytes() {
     assert!(!plain.contains('\x1b'));
     assert!(!plain.contains('\x07'));
 }
+
+#[test]
+fn ansi_and_plain_strip_link_href_control_bytes() {
+    let src = "[x](http://a/\x1b]0;PWNED\x07/b)";
+    let ansi = carve::to_ansi(src);
+    assert!(!ansi.contains("\x1b]0;"), "{ansi:?}");
+    assert!(!ansi.contains('\x07'), "{ansi:?}");
+
+    let plain = carve::to_plain_text(src);
+    assert!(!plain.contains('\x1b'), "{plain:?}");
+    assert!(!plain.contains('\x07'), "{plain:?}");
+}
+
+#[test]
+fn markdown_escapes_link_and_image_titles() {
+    assert_eq!(md("[x](u \"a \\\"b\")"), "[x](u \"a \\\"b\")");
+    assert_eq!(md("![alt](img \"a \\\"b\")"), "![alt](img \"a \\\"b\")");
+}
