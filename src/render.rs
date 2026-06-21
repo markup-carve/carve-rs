@@ -7,9 +7,11 @@
 use crate::ast::*;
 use crate::escape::{
     escape_attr, escape_text, is_dangerous_attr_name, sanitize_attr_value, sanitize_url,
+    write_escaped_attr, write_escaped_text,
 };
 use crate::extension::{Options, RenderContext};
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt::Write as _;
 
 pub fn render_html(doc: &Document) -> String {
     render_html_with_options(doc, &Options::default())
@@ -478,7 +480,9 @@ fn render_block(
         }
         BlockNode::ThematicBreak(n) => {
             indent(out, level);
-            out.push_str(&format!("<hr{}>", render_attrs(&n.attrs)));
+            out.push_str("<hr");
+            write_attrs(out, &n.attrs);
+            out.push('>');
         }
     }
 }
@@ -498,11 +502,13 @@ fn render_heading(
     // consistently across nesting levels.
     let id = next_heading_id(h, state);
     indent(out, level);
-    out.push_str(&format!("<h{} id=\"{}\"", h.level, escape_attr(&id)));
+    write!(out, "<h{} id=\"", h.level).unwrap();
+    write_escaped_attr(out, &id);
+    out.push('"');
     out.push_str(&render_attrs_without_id(&h.attrs));
     out.push('>');
     render_inlines(out, &h.children, options);
-    out.push_str(&format!("</h{}>", h.level));
+    write!(out, "</h{}>", h.level).unwrap();
 }
 
 fn render_heading_without_section_id(
@@ -516,9 +522,11 @@ fn render_heading_without_section_id(
         attrs.id = None;
     }
     indent(out, level);
-    out.push_str(&format!("<h{}{}>", h.level, render_attrs(&attrs)));
+    write!(out, "<h{}", h.level).unwrap();
+    write_attrs(out, &attrs);
+    out.push('>');
     render_inlines(out, &h.children, options);
-    out.push_str(&format!("</h{}>", h.level));
+    write!(out, "</h{}>", h.level).unwrap();
 }
 
 fn next_heading_id(h: &Heading, state: &mut RenderState) -> String {
@@ -576,19 +584,25 @@ fn slugify(text: &str, lowercase: bool) -> String {
 
 fn render_paragraph(out: &mut String, p: &Paragraph, level: usize, options: &Options<'_>) {
     indent(out, level);
-    out.push_str(&format!("<p{}>", render_attrs(&p.attrs)));
+    out.push_str("<p");
+    write_attrs(out, &p.attrs);
+    out.push('>');
     render_inlines(out, &p.children, options);
     out.push_str("</p>");
 }
 
 fn render_code_block(out: &mut String, c: &CodeBlock, level: usize) {
     indent(out, level);
-    out.push_str(&format!("<pre{}><code", render_attrs(&c.attrs)));
+    out.push_str("<pre");
+    write_attrs(out, &c.attrs);
+    out.push_str("><code");
     if let Some(lang) = &c.lang {
-        out.push_str(&format!(" class=\"language-{}\"", lang));
+        out.push_str(" class=\"language-");
+        out.push_str(lang);
+        out.push('"');
     }
     out.push('>');
-    out.push_str(&escape_text(&c.content));
+    write_escaped_text(out, &c.content);
     out.push_str("\n</code></pre>");
 }
 
@@ -601,7 +615,9 @@ fn render_list(
 ) {
     indent(out, level);
     let tag = if l.ordered { "ol" } else { "ul" };
-    let mut extra = render_attrs(&l.attrs);
+    out.push('<');
+    out.push_str(tag);
+    write_attrs(out, &l.attrs);
     if l.ordered {
         if let Some(ol_type) = l.ol_type {
             let value = match ol_type {
@@ -610,13 +626,13 @@ fn render_list(
                 OrderedListType::LowerRoman => "i",
                 OrderedListType::UpperRoman => "I",
             };
-            extra.push_str(&format!(" type=\"{}\"", value));
+            write!(out, " type=\"{value}\"").unwrap();
         }
         if let Some(start) = l.start {
-            extra.push_str(&format!(" start=\"{}\"", start));
+            write!(out, " start=\"{start}\"").unwrap();
         }
     }
-    out.push_str(&format!("<{}{}>\n", tag, extra));
+    out.push_str(">\n");
     for (i, item) in l.items.iter().enumerate() {
         if i > 0 {
             out.push('\n');
@@ -625,7 +641,9 @@ fn render_list(
     }
     out.push('\n');
     indent(out, level);
-    out.push_str(&format!("</{}>", tag));
+    out.push_str("</");
+    out.push_str(tag);
+    out.push('>');
 }
 
 fn render_list_item(
@@ -637,7 +655,9 @@ fn render_list_item(
     state: &mut RenderState,
 ) {
     indent(out, level);
-    out.push_str(&format!("<li{}>", render_attrs(&item.attrs)));
+    out.push_str("<li");
+    write_attrs(out, &item.attrs);
+    out.push('>');
     let checkbox = match item.checked {
         None => "",
         Some(false) => "<input type=\"checkbox\" disabled> ",
@@ -715,13 +735,17 @@ fn render_blockquote(
     indent(out, level);
     if b.children.len() == 1 {
         if let BlockNode::Paragraph(p) = &b.children[0] {
-            out.push_str(&format!("<blockquote{}><p>", render_attrs(&b.attrs)));
+            out.push_str("<blockquote");
+            write_attrs(out, &b.attrs);
+            out.push_str("><p>");
             render_inlines(out, &p.children, options);
             out.push_str("</p></blockquote>");
             return;
         }
     }
-    out.push_str(&format!("<blockquote{}>\n", render_attrs(&b.attrs)));
+    out.push_str("<blockquote");
+    write_attrs(out, &b.attrs);
+    out.push_str(">\n");
     let mut first = true;
     for child in &b.children {
         if !first {
@@ -737,7 +761,9 @@ fn render_blockquote(
 
 fn render_table(out: &mut String, t: &Table, level: usize, options: &Options<'_>) {
     indent(out, level);
-    out.push_str(&format!("<table{}>", render_attrs(&t.attrs)));
+    out.push_str("<table");
+    write_attrs(out, &t.attrs);
+    out.push('>');
     if let Some(caption) = &t.caption {
         out.push('\n');
         indent(out, level + 1);
@@ -795,7 +821,9 @@ fn render_table_row(
     row_idx: usize,
     rowspan_cols: &BTreeMap<(usize, usize), usize>,
 ) {
-    out.push_str(&format!("<tr{}>", render_attrs(&row.attrs)));
+    out.push_str("<tr");
+    write_attrs(out, &row.attrs);
+    out.push('>');
     for (col, cell) in row.cells.iter().enumerate() {
         let tag = if header_row || cell.header {
             "th"
@@ -814,15 +842,16 @@ fn render_table_row(
         if !align.is_empty() {
             emitted.push("style");
         }
-        out.push_str(&format!(
-            "<{}{}{}{}>",
-            tag,
-            render_cell_author_attrs(&cell.attrs, &emitted),
-            extra,
-            align
-        ));
+        out.push('<');
+        out.push_str(tag);
+        out.push_str(&render_cell_author_attrs(&cell.attrs, &emitted));
+        out.push_str(&extra);
+        out.push_str(&align);
+        out.push('>');
         render_inlines(out, &cell.children, options);
-        out.push_str(&format!("</{}>", tag));
+        out.push_str("</");
+        out.push_str(tag);
+        out.push('>');
     }
     out.push_str("</tr>");
 }
@@ -836,7 +865,9 @@ fn render_table_body_row(
     table: &Table,
     options: &Options<'_>,
 ) {
-    out.push_str(&format!("<tr{}>", render_attrs(&row.attrs)));
+    out.push_str("<tr");
+    write_attrs(out, &row.attrs);
+    out.push('>');
     let mut col = 0usize;
     for (cell_index, cell) in row.cells.iter().enumerate() {
         if cell.span == Some(TableCellSpan::Rowspan) {
@@ -844,7 +875,7 @@ fn render_table_body_row(
             // nothing to extend (no cell above) renders an EMPTY cell (§5).
             if orphan_carets.contains(&(source_row_idx, cell_index)) {
                 let tag = if cell.header { "th" } else { "td" };
-                out.push_str(&format!("<{tag}></{tag}>"));
+                write!(out, "<{tag}></{tag}>").unwrap();
             }
             col += 1;
             continue;
@@ -861,7 +892,7 @@ fn render_table_body_row(
             // an EMPTY cell (§5).
             if colspan_is_orphan(row, cell_index) {
                 let tag = if cell.header { "th" } else { "td" };
-                out.push_str(&format!("<{tag}></{tag}>"));
+                write!(out, "<{tag}></{tag}>").unwrap();
             }
             col += 1;
             continue;
@@ -877,14 +908,15 @@ fn render_table_body_row(
         }
         // A `|=` cell in a body row is a row header: <th> inside <tbody>.
         let tag = if cell.header { "th" } else { "td" };
-        out.push_str(&format!(
-            "<{}{}{}>",
-            tag,
-            render_cell_author_attrs(&cell.attrs, &emitted),
-            attrs
-        ));
+        out.push('<');
+        out.push_str(tag);
+        out.push_str(&render_cell_author_attrs(&cell.attrs, &emitted));
+        out.push_str(&attrs);
+        out.push('>');
         render_inlines(out, &cell.children, options);
-        out.push_str(&format!("</{}>", tag));
+        out.push_str("</");
+        out.push_str(tag);
+        out.push('>');
         col += colspan;
     }
     out.push_str("</tr>");
@@ -1257,6 +1289,27 @@ fn ends_non_whitespace(node: &InlineNode) -> bool {
     }
 }
 
+/// Escape text content (`& < >`) and fold the no-break space U+00A0 into
+/// `&nbsp;`, writing directly into `out`. Equivalent to
+/// `escape_text(s).replace('\u{00a0}', "&nbsp;")` but in one pass with no
+/// intermediate allocations.
+fn write_escaped_text_nbsp(out: &mut String, input: &str) {
+    let mut start = 0;
+    for (i, ch) in input.char_indices() {
+        let entity = match ch {
+            '&' => "&amp;",
+            '<' => "&lt;",
+            '>' => "&gt;",
+            '\u{00a0}' => "&nbsp;",
+            _ => continue,
+        };
+        out.push_str(&input[start..i]);
+        out.push_str(entity);
+        start = i + ch.len_utf8();
+    }
+    out.push_str(&input[start..]);
+}
+
 fn render_inline_after(
     out: &mut String,
     node: &InlineNode,
@@ -1267,21 +1320,26 @@ fn render_inline_after(
     match node {
         InlineNode::Text(s) => {
             let prev_non_ws = prev.is_some_and(ends_non_whitespace);
-            out.push_str(
-                &escape_text(&smart_text_after(s, prev_non_ws, state))
-                    .replace('\u{00a0}', "&nbsp;"),
-            )
+            let smart = smart_text_after(s, prev_non_ws, state);
+            // Escape `& < >` AND fold U+00A0 to `&nbsp;` in a single pass over
+            // `out`. None of the escaped chars is U+00A0, so the combined pass
+            // is byte-identical to `escape_text(..).replace('\u{00a0}', ..)`.
+            write_escaped_text_nbsp(out, &smart);
         }
         InlineNode::Emphasis(e) => render_emphasis(out, e, options, state),
         InlineNode::Code(s, attrs) => {
-            out.push_str(&format!("<code{}>", render_attrs(attrs)));
-            out.push_str(&escape_text(s));
+            out.push_str("<code");
+            write_attrs(out, attrs);
+            out.push('>');
+            write_escaped_text(out, s);
             out.push_str("</code>");
         }
         InlineNode::Link(l) => render_link(out, l, options, state),
         InlineNode::Image(img) => render_image(out, img),
         InlineNode::Span(s) => {
-            out.push_str(&format!("<span{}>", render_attrs(&s.attrs)));
+            out.push_str("<span");
+            write_attrs(out, &s.attrs);
+            out.push('>');
             render_inlines_stateful(out, &s.children, options, state);
             out.push_str("</span>");
         }
@@ -1324,9 +1382,11 @@ fn render_inline_after(
         }
         InlineNode::Emoji(e) => {
             if let Some(value) = options.emoji.get(&e.name) {
-                out.push_str(&escape_text(value));
+                write_escaped_text(out, value);
             } else {
-                out.push_str(&format!(":{}:", escape_text(&e.name)));
+                out.push(':');
+                write_escaped_text(out, &e.name);
+                out.push(':');
             }
         }
         InlineNode::AutoLink(a) => {
@@ -1335,18 +1395,21 @@ fn render_inline_after(
             } else {
                 &a.href
             };
-            out.push_str(&format!(
-                "<a href=\"{}\"{}>{}</a>",
-                escape_attr(&sanitize_url(&a.href)),
-                render_attrs(&a.attrs),
-                escape_text(display)
-            ));
+            out.push_str("<a href=\"");
+            write_escaped_attr(out, &sanitize_url(&a.href));
+            out.push('"');
+            write_attrs(out, &a.attrs);
+            out.push('>');
+            write_escaped_text(out, display);
+            out.push_str("</a>");
         }
-        InlineNode::CrossRef(c) => out.push_str(&format!(
-            "<a href=\"#{}\">{}</a>",
-            escape_attr(&c.target),
-            escape_text(&c.target)
-        )),
+        InlineNode::CrossRef(c) => {
+            out.push_str("<a href=\"#");
+            write_escaped_attr(out, &c.target);
+            out.push_str("\">");
+            write_escaped_text(out, &c.target);
+            out.push_str("</a>");
+        }
         InlineNode::CaptionNumber(n) => {
             if let Some(number) = n.number {
                 out.push_str(&number.to_string());
@@ -1358,52 +1421,50 @@ fn render_inline_after(
                 let href = template
                     .replace("{name}", &encoded)
                     .replace("{user}", &encoded);
-                out.push_str(&format!(
-                    "<a class=\"mention\" href=\"{}\">@{}</a>",
-                    escape_attr(&href),
-                    escape_text(&m.user)
-                ));
+                out.push_str("<a class=\"mention\" href=\"");
+                write_escaped_attr(out, &href);
+                out.push_str("\">@");
+                write_escaped_text(out, &m.user);
+                out.push_str("</a>");
             } else {
-                out.push_str(&format!(
-                    "<span class=\"mention\"><strong>@{}</strong></span>",
-                    escape_text(&m.user)
-                ));
+                out.push_str("<span class=\"mention\"><strong>@");
+                write_escaped_text(out, &m.user);
+                out.push_str("</strong></span>");
             }
         }
         InlineNode::Tag(t) => {
             if let Some(template) = &options.tag_url {
                 let encoded = percent_encode(&t.name);
                 let href = template.replace("{name}", &encoded);
-                out.push_str(&format!(
-                    "<a class=\"tag\" href=\"{}\">#{}</a>",
-                    escape_attr(&href),
-                    escape_text(&t.name)
-                ));
+                out.push_str("<a class=\"tag\" href=\"");
+                write_escaped_attr(out, &href);
+                out.push_str("\">#");
+                write_escaped_text(out, &t.name);
+                out.push_str("</a>");
             } else {
-                out.push_str(&format!(
-                    "<span class=\"tag\"><strong>#{}</strong></span>",
-                    escape_text(&t.name)
-                ));
+                out.push_str("<span class=\"tag\"><strong>#");
+                write_escaped_text(out, &t.name);
+                out.push_str("</strong></span>");
             }
         }
         InlineNode::CitationGroup(g) => render_citation_group(out, g, options),
         InlineNode::Extension(e) => render_inline_extension(out, e, options, state),
-        InlineNode::Abbreviation(a) => out.push_str(&format!(
-            "<abbr title=\"{}\">{}</abbr>",
-            escape_attr(&a.expansion),
-            escape_text(&a.abbr)
-        )),
+        InlineNode::Abbreviation(a) => {
+            out.push_str("<abbr title=\"");
+            write_escaped_attr(out, &a.expansion);
+            out.push_str("\">");
+            write_escaped_text(out, &a.abbr);
+            out.push_str("</abbr>");
+        }
         InlineNode::Footnote(f) => {
             if let (Some(number), Some(ref_id)) = (f.number, &f.ref_id) {
-                out.push_str(&format!(
-                    "<a id=\"{}\" href=\"#fn{}\" role=\"doc-noteref\"{}><sup>{}</sup></a>",
-                    escape_attr(ref_id),
-                    number,
-                    render_attrs_without_id(&f.attrs),
-                    number
-                ));
+                out.push_str("<a id=\"");
+                write_escaped_attr(out, ref_id);
+                write!(out, "\" href=\"#fn{number}\" role=\"doc-noteref\"").unwrap();
+                out.push_str(&render_attrs_without_id(&f.attrs));
+                write!(out, "><sup>{number}</sup></a>").unwrap();
             } else if let Some(id) = &f.id {
-                out.push_str(&escape_text(&format!("[^{id}]")));
+                write_escaped_text(out, &format!("[^{id}]"));
             }
         }
         InlineNode::SoftBreak => out.push('\n'),
@@ -1418,11 +1479,13 @@ fn render_inline_after(
             render_inlines_stateful(out, &c.children, options, state);
             out.push_str("</del>");
         }
-        InlineNode::CriticSubstitute(c) => out.push_str(&format!(
-            "<del>{}</del><ins>{}</ins>",
-            escape_text(&c.old_text),
-            escape_text(&c.new_text)
-        )),
+        InlineNode::CriticSubstitute(c) => {
+            out.push_str("<del>");
+            write_escaped_text(out, &c.old_text);
+            out.push_str("</del><ins>");
+            write_escaped_text(out, &c.new_text);
+            out.push_str("</ins>");
+        }
         InlineNode::CriticComment(c) => out.push_str(&format!(
             "<span class=\"critic-comment\">{}</span>",
             escape_text(&c.text)
@@ -1558,60 +1621,89 @@ fn render_inline_extension(
     out.push_str("</span>");
 }
 
-fn render_attrs(attrs: &Option<Attrs>) -> String {
+/// Write the ` id="..."` slot.
+#[inline]
+fn write_attr_id(out: &mut String, id: &str) {
+    out.push_str(" id=\"");
+    write_escaped_attr(out, id);
+    out.push('"');
+}
+
+/// Write the ` class="..."` slot from a list of class names joined by spaces.
+#[inline]
+fn write_attr_class(out: &mut String, classes: &[String]) {
+    out.push_str(" class=\"");
+    let mut first = true;
+    for class in classes {
+        if !first {
+            out.push(' ');
+        }
+        write_escaped_attr(out, class);
+        first = false;
+    }
+    out.push('"');
+}
+
+/// Write a ` key="value"` slot, applying the value sanitizer.
+#[inline]
+fn write_attr_key_value(out: &mut String, key: &str, value: &str) {
+    out.push(' ');
+    write_escaped_attr(out, key);
+    out.push_str("=\"");
+    // `sanitize_attr_value` returns the original string unchanged in the common
+    // case, so escape it in place rather than always materializing a new owned
+    // value.
+    match sanitize_attr_value(key, value) {
+        std::borrow::Cow::Borrowed(v) => write_escaped_attr(out, v),
+        std::borrow::Cow::Owned(v) => write_escaped_attr(out, &v),
+    }
+    out.push('"');
+}
+
+fn write_attrs(out: &mut String, attrs: &Option<Attrs>) {
     let Some(attrs) = attrs else {
-        return String::new();
+        return;
     };
-    let mut out = String::new();
     if attrs.order.is_empty() {
         if let Some(id) = &attrs.id {
-            out.push_str(&format!(" id=\"{}\"", escape_attr(id)));
+            write_attr_id(out, id);
         }
         if !attrs.classes.is_empty() {
-            out.push_str(&format!(
-                " class=\"{}\"",
-                escape_attr(&attrs.classes.join(" "))
-            ));
+            write_attr_class(out, &attrs.classes);
         }
         for (key, value) in &attrs.key_values {
             if !is_dangerous_attr_name(key) {
-                out.push_str(&format!(
-                    " {}=\"{}\"",
-                    escape_attr(key),
-                    escape_attr(&sanitize_attr_value(key, value))
-                ));
+                write_attr_key_value(out, key, value);
             }
         }
-        return out;
+        return;
     }
     for slot in &attrs.order {
         match slot {
             AttrSlot::Id => {
                 if let Some(id) = &attrs.id {
-                    out.push_str(&format!(" id=\"{}\"", escape_attr(id)));
+                    write_attr_id(out, id);
                 }
             }
             AttrSlot::Class => {
                 if !attrs.classes.is_empty() {
-                    out.push_str(&format!(
-                        " class=\"{}\"",
-                        escape_attr(&attrs.classes.join(" "))
-                    ));
+                    write_attr_class(out, &attrs.classes);
                 }
             }
             AttrSlot::Key(key) => {
                 if let Some(value) = attrs.key_values.get(key) {
                     if !is_dangerous_attr_name(key) {
-                        out.push_str(&format!(
-                            " {}=\"{}\"",
-                            escape_attr(key),
-                            escape_attr(&sanitize_attr_value(key, value))
-                        ));
+                        write_attr_key_value(out, key, value);
                     }
                 }
             }
         }
     }
+}
+
+fn render_attrs(attrs: &Option<Attrs>) -> String {
+    let mut out = String::new();
+    write_attrs(&mut out, attrs);
     out
 }
 
@@ -1698,7 +1790,33 @@ fn apply_smart_ops(s: &str, replacements: &[(&str, &str)]) -> String {
     out
 }
 
-fn smart_text_after(input: &str, prev_non_ws: bool, state: &mut SmartState) -> String {
+/// True if `input` contains any character that could trigger an unescape, a
+/// smart-typography operator, or curly-quote handling in `smart_text_after`.
+/// When none are present the function is the identity, so the caller can skip
+/// the whole multi-pass pipeline (and its allocations) entirely.
+///
+/// Triggers: `\` (escape), the smart-op opening chars `< - = ! > + ( .`, and
+/// the quote chars `" '`. The intermediate markers (`&#NO_SMART_ARROW;`,
+/// `§NO_SMART_DOTS§`, U+E000) are only ever produced by `unescape_text`, so a
+/// backslash-free input cannot contain them.
+#[inline]
+fn needs_smart_pass(input: &str) -> bool {
+    input.bytes().any(|b| {
+        matches!(
+            b,
+            b'\\' | b'<' | b'-' | b'=' | b'!' | b'>' | b'+' | b'(' | b'.' | b'"' | b'\''
+        )
+    })
+}
+
+fn smart_text_after<'a>(
+    input: &'a str,
+    prev_non_ws: bool,
+    state: &mut SmartState,
+) -> std::borrow::Cow<'a, str> {
+    if !needs_smart_pass(input) {
+        return std::borrow::Cow::Borrowed(input);
+    }
     let s = unescape_text(input);
     let mut s = s;
     let replacements = [
@@ -1764,7 +1882,7 @@ fn smart_text_after(input: &str, prev_non_ws: bool, state: &mut SmartState) -> S
             out.push(ch);
         }
     }
-    out
+    std::borrow::Cow::Owned(out)
 }
 
 fn unescape_text(input: &str) -> String {
