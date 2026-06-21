@@ -1,6 +1,6 @@
 use crate::ast::*;
 use crate::extension::Options;
-use crate::render_text::{clean_smart_text_stateful, SmartQuoteState};
+use crate::render_text::{clean_smart_text_stateful, strip_controls, SmartQuoteState};
 
 /// Render a document to ANSI-styled text. See `render_markdown_with_options`
 /// for why the options-taking wrapper exists; the profile transform runs
@@ -86,7 +86,9 @@ fn render_block(node: &BlockNode, ctx: &mut AnsiContext) -> String {
             }
             format!("{content}\n\n")
         }
-        BlockNode::CodeBlock(code) => render_code_block(&code.content, code.lang.as_deref()),
+        BlockNode::CodeBlock(code) => {
+            render_code_block(&strip_controls(&code.content), code.lang.as_deref())
+        }
         BlockNode::BlockQuote(quote) => {
             ctx.block_quote_depth += 1;
             let out = render_blocks(&quote.children, ctx);
@@ -125,7 +127,10 @@ fn render_block(node: &BlockNode, ctx: &mut AnsiContext) -> String {
         BlockNode::BlockImage(image) => format!("{}\n\n", render_image(image)),
         BlockNode::RawBlock(raw) => format!(
             "{}\n\n",
-            style(&format!("[raw:{}] {}", raw.format, raw.content), DIM)
+            style(
+                &format!("[raw:{}] {}", raw.format, strip_controls(&raw.content)),
+                DIM
+            )
         ),
         BlockNode::Extension(extension) => render_blocks(&extension.children, ctx),
         BlockNode::AbbreviationDef(_) | BlockNode::Comment(_) => String::new(),
@@ -377,7 +382,9 @@ fn render_inlines(nodes: &[InlineNode], ctx: &mut AnsiContext) -> String {
 
 fn render_inline(node: &InlineNode, ctx: &mut AnsiContext) -> String {
     match node {
-        InlineNode::Text(text) => clean_smart_text_stateful(text, &mut ctx.smart_quote),
+        InlineNode::Text(text) => {
+            strip_controls(&clean_smart_text_stateful(text, &mut ctx.smart_quote))
+        }
         InlineNode::Emphasis(emphasis) => match emphasis.kind {
             EmphasisKind::Italic => style(&render_inlines(&emphasis.children, ctx), ITALIC),
             EmphasisKind::Strong => style(&render_inlines(&emphasis.children, ctx), BOLD),
@@ -395,7 +402,7 @@ fn render_inline(node: &InlineNode, ctx: &mut AnsiContext) -> String {
                 &(BOLD.to_string() + ITALIC),
             ),
         },
-        InlineNode::Code(code, _) => style(code, FG_BRIGHT_YELLOW),
+        InlineNode::Code(code, _) => style(&strip_controls(code), FG_BRIGHT_YELLOW),
         InlineNode::Link(link) => {
             let text = render_inlines(&link.children, ctx);
             let mut out = style(&text, &(UNDERLINE.to_string() + FG_BLUE));
@@ -406,7 +413,7 @@ fn render_inline(node: &InlineNode, ctx: &mut AnsiContext) -> String {
         }
         InlineNode::Image(image) => render_image(image),
         InlineNode::Span(span) => render_inlines(&span.children, ctx),
-        InlineNode::Math(math) => style(&math.content, FG_BRIGHT_MAGENTA),
+        InlineNode::Math(math) => style(&strip_controls(&math.content), FG_BRIGHT_MAGENTA),
         InlineNode::RawInline(_) => String::new(),
         InlineNode::Emoji(emoji) => format!(":{}:", emoji.name),
         InlineNode::AutoLink(link) => {
