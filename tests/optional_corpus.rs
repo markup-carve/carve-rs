@@ -39,6 +39,22 @@ fn social_link_templates() {
 }
 
 #[test]
+fn social_link_templates_sanitize_final_href() {
+    let options = carve::Options::new()
+        .with_mention_url("javascript:alert({name})")
+        .with_tag_url("javascript:alert({name})");
+    let html = carve::to_html_with_options("@alice #topic", &options);
+    assert!(
+        html.contains("<a class=\"mention\" href=\"\">@alice</a>"),
+        "{html}"
+    );
+    assert!(
+        html.contains("<a class=\"tag\" href=\"\">#topic</a>"),
+        "{html}"
+    );
+}
+
+#[test]
 fn emoji_map() {
     let options = carve::Options::new()
         .with_emoji("rocket", "🚀")
