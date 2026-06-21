@@ -91,6 +91,22 @@ fn adjacent_attribute_blocks_merge() {
 }
 
 #[test]
+fn link_and_image_destination_attrs_win_over_attribute_block_collisions() {
+    assert_eq!(
+        carve::to_html("[safe](https://example.com){href=\"javascript:steal\"}"),
+        "<p><a href=\"https://example.com\">safe</a></p>"
+    );
+    assert_eq!(
+        carve::to_html("![safe](https://example.com/i.png){src=\"javascript:steal\"}"),
+        "<img src=\"https://example.com/i.png\" alt=\"safe\">"
+    );
+    assert_eq!(
+        carve::to_html("[safe](https://example.com){href=\"javascript:steal\" .ok data-x=1}"),
+        "<p><a href=\"https://example.com\" class=\"ok\" data-x=\"1\">safe</a></p>"
+    );
+}
+
+#[test]
 fn inline_attribute_block_is_single_line() {
     // A newline before the closing brace means it is not an inline attr block.
     assert_eq!(carve::to_html("[x]{.a\n.b}"), "<p>[x]{.a\n.b}</p>");

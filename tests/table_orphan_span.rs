@@ -37,3 +37,21 @@ fn blocked_colspan_marker_is_empty_cell() {
         )
     );
 }
+
+#[test]
+fn colspan_marker_scans_left_past_consumed_rowspan_cell() {
+    assert_eq!(
+        carve::to_html(
+            "| p | q | r | s |\n|---|---|---|---|\n| a | b | c | d |\n| p | ^ | < | e |"
+        ),
+        concat!(
+            "<table>\n",
+            "  <thead><tr><th>p</th><th>q</th><th>r</th><th>s</th></tr></thead>\n",
+            "  <tbody>\n",
+            "    <tr><td>a</td><td rowspan=\"2\">b</td><td>c</td><td>d</td></tr>\n",
+            "    <tr><td colspan=\"2\">p</td><td>e</td></tr>\n",
+            "  </tbody>\n",
+            "</table>"
+        )
+    );
+}
