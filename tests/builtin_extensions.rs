@@ -527,6 +527,84 @@ fn fenced_render_mermaid_preset_matches_mermaid_extension() {
 // table-of-contents
 // ---------------------------------------------------------------------------
 
+/// Collect every `<section id="...">` value in document order.
+fn section_ids(html: &str) -> Vec<String> {
+    let mut ids = Vec::new();
+    let mut rest = html;
+    while let Some(i) = rest.find("<section id=\"") {
+        rest = &rest[i + "<section id=\"".len()..];
+        let end = rest.find('"').expect("section id closing quote");
+        ids.push(rest[..end].to_string());
+        rest = &rest[end..];
+    }
+    ids
+}
+
+/// Collect every TOC anchor target (`<a href="#...">` inside the `<nav>`).
+fn toc_anchor_targets(html: &str) -> Vec<String> {
+    let nav_start = html.find("<nav").expect("nav present");
+    let nav_end = html[nav_start..].find("</nav>").expect("nav closed") + nav_start;
+    let nav = &html[nav_start..nav_end];
+    let mut targets = Vec::new();
+    let mut rest = nav;
+    while let Some(i) = rest.find("href=\"#") {
+        rest = &rest[i + "href=\"#".len()..];
+        let end = rest.find('"').expect("href closing quote");
+        targets.push(rest[..end].to_string());
+        rest = &rest[end..];
+    }
+    targets
+}
+
+/// Render `input` with the TOC + Citations extensions enabled and assert every
+/// TOC anchor target resolves to an actual heading section id.
+fn assert_toc_anchors_match_heading_ids(input: &str) {
+    let cit = Citations::default();
+    let toc = TableOfContents::with_options(TableOfContentsOptions {
+        lowercase_ids: true,
+        ..Default::default()
+    });
+    let opts = Options::new()
+        .with_extension(&cit)
+        .with_extension(&toc)
+        .with_lowercase_heading_ids(true);
+    let html = carve::to_html_with_options(input, &opts);
+    let ids = section_ids(&html);
+    let targets = toc_anchor_targets(&html);
+    assert!(
+        !targets.is_empty(),
+        "expected at least one TOC anchor for input: {input:?}\n{html}"
+    );
+    for target in &targets {
+        assert!(
+            ids.contains(target),
+            "TOC anchor (#{target}) has no matching heading id ({ids:?}) for input: {input:?}\n{html}"
+        );
+    }
+}
+
+/// Regression: a TOC entry's anchor must point at the heading's own id, for any
+/// inline content. The TOC previously kept its own flattening that ignored
+/// `CitationGroup` nodes (which the core section-id pass includes), so a heading
+/// like `# Research [@doe]` produced a dead TOC link: `href="#research"` against
+/// `id="research-doe"`. The fix shares the core's `plain_inlines` between the
+/// TOC and the renderer, so these cases pin TOC anchor == heading id for every
+/// inline node type.
+#[test]
+fn toc_anchor_always_equals_heading_id() {
+    // The original bug: citation group in the heading.
+    assert_toc_anchors_match_heading_ids("# Research [@doe]\n\n[@doe]: John Doe, 2020\n");
+    // Other inline node types - guard against future drift in either pass.
+    assert_toc_anchors_match_heading_ids("# Hi @bob there\n");
+    assert_toc_anchors_match_heading_ids("# Energy $E=mc^2$ done\n");
+    assert_toc_anchors_match_heading_ids("# Smile :smile: here\n");
+    assert_toc_anchors_match_heading_ids("# Note[^a] here\n\n[^a]: body\n");
+    assert_toc_anchors_match_heading_ids("# See [](#target) here\n");
+    assert_toc_anchors_match_heading_ids("# A [span text]{.cls} b\n");
+    assert_toc_anchors_match_heading_ids("# Tag #foo here\n");
+    assert_toc_anchors_match_heading_ids("# Plain heading\n");
+}
+
 #[test]
 fn toc_top_nested_golden() {
     let ext = TableOfContents::with_options(TableOfContentsOptions {

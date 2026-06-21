@@ -13,7 +13,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::ast::{BlockNode, Document, Heading, InlineNode, RawBlock};
+use crate::ast::{BlockNode, Document, Heading, RawBlock};
 use crate::extension::CarveExtension;
 
 /// List element for the TOC entries.
@@ -166,7 +166,7 @@ fn collect_entries(
                 if top_level && h.level >= opts.min_level && h.level <= opts.max_level {
                     entries.push(TocEntry {
                         level: h.level,
-                        text: plain_text(&h.children),
+                        text: crate::render::plain_inlines(&h.children),
                         id,
                     });
                 }
@@ -197,7 +197,9 @@ fn next_id(h: &Heading, counts: &mut BTreeMap<String, usize>, lowercase: bool) -
         .attrs
         .as_ref()
         .and_then(|a| a.id.clone())
-        .unwrap_or_else(|| crate::parse::slugify_parse(&plain_text(&h.children), lowercase));
+        .unwrap_or_else(|| {
+            crate::parse::slugify_parse(&crate::render::plain_inlines(&h.children), lowercase)
+        });
     let count = counts.entry(base.clone()).or_insert(0);
     *count += 1;
     if *count == 1 {
@@ -264,32 +266,6 @@ fn escape_html(s: &str) -> String {
             '>' => out.push_str("&gt;"),
             '"' => out.push_str("&quot;"),
             other => out.push(other),
-        }
-    }
-    out
-}
-
-/// Plain-text projection matching the renderer's `plain_inlines`.
-fn plain_text(nodes: &[InlineNode]) -> String {
-    let mut out = String::new();
-    for node in nodes {
-        match node {
-            InlineNode::Text(s) => out.push_str(s),
-            InlineNode::Emphasis(e) => out.push_str(&plain_text(&e.children)),
-            InlineNode::Code(s, _) => out.push_str(s),
-            InlineNode::Link(l) => out.push_str(&plain_text(&l.children)),
-            InlineNode::Image(i) => out.push_str(&i.alt),
-            InlineNode::Extension(e) => out.push_str(&plain_text(&e.children)),
-            InlineNode::Abbreviation(a) => out.push_str(&a.abbr),
-            InlineNode::Mention(m) => out.push_str(&m.user),
-            InlineNode::Tag(t) => out.push_str(&t.name),
-            InlineNode::CaptionNumber(n) => {
-                if let Some(number) = n.number {
-                    out.push_str(&number.to_string());
-                }
-            }
-            InlineNode::SoftBreak | InlineNode::HardBreak => out.push(' '),
-            _ => {}
         }
     }
     out
