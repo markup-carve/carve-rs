@@ -82,3 +82,47 @@ fn over_large_list_table_defers_to_plain_div() {
     assert!(out.starts_with("<div class=\"list-table\">"));
     assert!(!out.contains("<table>"));
 }
+
+// Safe-by-default v2: URL denylist (always on), raw-HTML opt-out, CSS hardening.
+
+#[test]
+fn url_scheme_denylist_blanks_dangerous_links() {
+    assert!(carve::to_html("[x](javascript:alert(1))").contains("href=\"\""));
+    assert!(carve::to_html("![i](javascript:alert(1))").contains("src=\"\""));
+    assert!(carve::to_html("[x](data:text/html,foo)").contains("href=\"\""));
+}
+
+#[test]
+fn url_scheme_denylist_passes_ordinary_schemes() {
+    assert!(carve::to_html("[x](https://e.com)").contains("href=\"https://e.com\""));
+    assert!(carve::to_html("[c](tel:+1)").contains("href=\"tel:+1\""));
+    assert!(carve::to_html("[r](/p)").contains("href=\"/p\""));
+}
+
+#[test]
+fn raw_html_emitted_by_default() {
+    assert_eq!(
+        carve::to_html("`<b>x</b>`{=html}").trim(),
+        "<p><b>x</b></p>"
+    );
+}
+
+#[test]
+fn raw_html_escaped_when_disabled() {
+    let off = carve::Options::new().with_raw_html(false);
+    assert_eq!(
+        carve::to_html_with_options("`<img onerror=alert(1)>`{=html}", &off).trim(),
+        "<p>&lt;img onerror=alert(1)&gt;</p>"
+    );
+    assert_eq!(
+        carve::to_html_with_options("```=html\n<img onerror=x>\n```", &off).trim(),
+        "&lt;img onerror=x&gt;"
+    );
+}
+
+#[test]
+fn css_style_hardening() {
+    assert!(carve::to_html("[x]{style=\"background:url(javascript:1)\"}").contains("style=\"\""));
+    assert!(carve::to_html("[x]{style=\"@import url(evil.css)\"}").contains("style=\"\""));
+    assert!(carve::to_html("[x]{style=\"color:red\"}").contains("style=\"color:red\""));
+}

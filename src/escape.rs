@@ -58,15 +58,52 @@ pub fn sanitize_attr_value(name: &str, value: &str) -> String {
             return String::new();
         }
     }
-    if name.eq_ignore_ascii_case("style") {
-        let compact: String = value
-            .to_ascii_lowercase()
-            .chars()
-            .filter(|c| !c.is_whitespace())
-            .collect();
-        if compact.contains("expression(") {
+    if name.eq_ignore_ascii_case("style") && has_dangerous_css(value) {
+        return String::new();
+    }
+    value.to_string()
+}
+
+/// Detect script-bearing / fetching constructs in a CSS `style` value:
+/// `expression()` (legacy IE script), `url(...)` (can fetch or carry
+/// `javascript:`), `@import`, and the legacy `behavior` / `-moz-binding`
+/// script bindings. Whitespace is collapsed first so `expr ession (` cannot
+/// evade. Blanks the whole value rather than attempting CSS surgery.
+fn has_dangerous_css(value: &str) -> bool {
+    let compact: String = value
+        .to_ascii_lowercase()
+        .chars()
+        .filter(|c| !c.is_whitespace())
+        .collect();
+    compact.contains("expression(")
+        || compact.contains("url(")
+        || compact.contains("@import")
+        || compact.contains("behavior:")
+        || compact.contains("-moz-binding")
+}
+
+/// Always-on URL hardening for `href` / `src`: blank a URL whose (normalized)
+/// scheme is on the dangerous denylist (`javascript`, `vbscript`, `data`,
+/// `file`); every other scheme and any scheme-less URL passes. Scheme detection
+/// strips C0 controls + spaces to defeat `java\tscript:` evasion. The returned
+/// value is still passed through `escape_attr` by the caller.
+pub fn sanitize_url(url: &str) -> String {
+    let probe: String = url.chars().filter(|c| (*c as u32) > 0x20).collect();
+    if let Some(colon) = probe.find(':') {
+        // A scheme is letters/digits/+/-/. before the colon; if the prefix
+        // contains anything else it is not a URL scheme (e.g. a path segment).
+        let prefix = &probe[..colon];
+        let is_scheme = !prefix.is_empty()
+            && prefix
+                .chars()
+                .next()
+                .is_some_and(|c| c.is_ascii_alphabetic())
+            && prefix
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '-' || c == '.');
+        if is_scheme && DANGEROUS_VALUE_SCHEMES.contains(&prefix.to_ascii_lowercase().as_str()) {
             return String::new();
         }
     }
-    value.to_string()
+    url.to_string()
 }
