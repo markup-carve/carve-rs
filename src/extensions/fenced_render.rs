@@ -3,9 +3,9 @@
 //! Port of carve#167 / carve-php `FencedRenderExtension` / carve-js
 //! `fencedRender`. Claims fenced code blocks by language word and rewrites each
 //! match into a `raw-block` of one hydration element; the block body is passed
-//! through verbatim. This is the same client-hydration shape `Mermaid` uses -
-//! Mermaid is one preset of it - generalized so D2, Graphviz, WaveDrom, ABC,
-//! Vega-Lite, Chart.js, etc. need no new code.
+//! through verbatim. Mermaid is one preset of this client-hydration shape,
+//! generalized so D2, Graphviz, WaveDrom, ABC, Vega-Lite, Chart.js, etc. need no
+//! new code.
 //!
 //! - Text mode (Mermaid/D2/Graphviz/WaveDrom/ABC): the body is HTML-escaped
 //!   (`&` and `<`), but `>` is preserved so arrow syntax (`-->`) survives.
@@ -110,6 +110,14 @@ impl FencedRender {
         Self { opts }
     }
 
+    /// Mermaid preset (text mode, `<pre class="mermaid">`).
+    ///
+    /// Mermaid is one preset of this factory; load Mermaid.js on the page to
+    /// render the diagrams.
+    pub fn mermaid() -> Self {
+        Self::new("mermaid")
+    }
+
     /// D2 preset (text mode, `<pre class="d2">`).
     pub fn d2() -> Self {
         Self::new("d2")
@@ -153,6 +161,35 @@ impl FencedRender {
             None,
             ContentMode::Json,
         ))
+    }
+
+    /// Every bundled diagram preset as ready-to-register instances.
+    ///
+    /// Claims every preset fence word (`mermaid`, `d2`, `dot`, `graphviz`,
+    /// `wavedrom`, `abc`, `vega-lite`, `chart`), so a literal code sample in one
+    /// of those languages becomes a hydration element; register only the presets
+    /// whose client library you actually load if that matters.
+    ///
+    /// ```
+    /// use carve::{FencedRender, Options};
+    /// let presets = FencedRender::presets();
+    /// let mut opts = Options::new();
+    /// for ext in &presets {
+    ///     opts = opts.with_extension(ext);
+    /// }
+    /// let html = carve::to_html_with_options("``` mermaid\ngraph TD; A-->B\n```\n", &opts);
+    /// assert_eq!(html, "<pre class=\"mermaid\">graph TD; A-->B</pre>");
+    /// ```
+    pub fn presets() -> Vec<FencedRender> {
+        vec![
+            Self::mermaid(),
+            Self::d2(),
+            Self::graphviz(),
+            Self::wavedrom(),
+            Self::abc(),
+            Self::vega_lite(),
+            Self::chart(),
+        ]
     }
 }
 
