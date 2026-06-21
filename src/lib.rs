@@ -36,9 +36,8 @@ pub use extension::{
 pub use extensions::{
     Autolink, AutolinkOptions, ContentMode, Details, ExternalLinks, ExternalLinksOptions,
     FencedRender, FencedRenderOptions, HeadingPermalinks, HeadingPermalinksOptions, ListTable,
-    ListType, MathBlock, MathBlockOptions, Mermaid, MermaidOptions, Position, Spoiler,
-    TabNormalize, TableOfContents, TableOfContentsOptions, UrlGenerator, Wikilinks,
-    WikilinksOptions,
+    ListType, MathBlock, MathBlockOptions, Position, Spoiler, TabNormalize, TableOfContents,
+    TableOfContentsOptions, UrlGenerator, Wikilinks, WikilinksOptions,
 };
 pub use parse::{parse, parse_with_options};
 pub use profile::{DisallowedAction, LinkPolicy, Profile, ProfileViolation, ProfileViolationError};

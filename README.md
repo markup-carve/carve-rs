@@ -91,8 +91,8 @@ assert_eq!(html, "<p>Press <kbd>Ctrl</kbd>.</p>");
 
 The crate ships the same opt-in extensions as carve-js: `Autolink`,
 `ExternalLinks`, `HeadingPermalinks`, `TableOfContents`, `Wikilinks`,
-`TabNormalize`, `Mermaid`, `FencedRender`, `MathBlock`, `Spoiler`, `Details`,
-and `ListTable`.
+`TabNormalize`, `FencedRender` (with a Mermaid preset), `MathBlock`, `Spoiler`,
+`Details`, and `ListTable`.
 
 #### `Details`
 
@@ -139,10 +139,9 @@ assert_eq!(
 );
 ```
 
-Carve emits only the marker; blur + reveal is the host's CSS. Author attributes
-merge (spoiler base class first) with the always-on attribute hardening
-(`on*` / `srcdoc` / `formaction` stripped, dangerous values neutralized), so a
-`{onclick="…"}` can never reach the output.
+Author attributes merge onto the marker (spoiler base class first) with the
+always-on attribute hardening (`on*` / `srcdoc` / `formaction` stripped,
+dangerous values neutralized), so a `{onclick="…"}` can never reach the output.
 
 Carve emits only the marker; the blur / collapse + reveal is the host's CSS/JS.
 Three host looks over the same markup (hover never reveals - it would spoil by
@@ -192,10 +191,10 @@ for (const el of document.querySelectorAll('span.spoiler, div.spoiler')) {
 
 #### `FencedRender`
 
-Generic client-rendered fenced-block factory that `Mermaid` is a preset of. It
+Generic client-rendered fenced-block factory; Mermaid is one preset of it. It
 claims fenced code blocks by language word and emits one hydration element; the
-body is passed through verbatim. One factory covers D2, Graphviz, WaveDrom, ABC,
-Vega-Lite, Chart.js, etc.
+body is passed through verbatim. One factory covers Mermaid, D2, Graphviz,
+WaveDrom, ABC, Vega-Lite, Chart.js, etc.
 
 - **text mode** (Mermaid/D2/Graphviz/WaveDrom/ABC): escapes `&` and `<`, keeps
   `>` for arrow syntax.
@@ -213,9 +212,12 @@ assert_eq!(
 );
 ```
 
-Presets: `FencedRender::d2()`, `graphviz()` (claims `dot` + `graphviz`),
-`wavedrom()`, `abc()`, `vega_lite()`, `chart()`; or `FencedRender::with_options`
-for a custom language set, `cssClass`, `tag`, or content mode. Author attributes
+Presets: `FencedRender::mermaid()`, `d2()`, `graphviz()` (claims `dot` +
+`graphviz`), `wavedrom()`, `abc()`, `vega_lite()`, `chart()`; or
+`FencedRender::with_options` for a custom language set, `cssClass`, `tag`, or
+content mode. `FencedRender::presets()` returns every preset as a `Vec` to
+register in a loop (it claims every preset fence word, so register only those
+whose client library you load if that matters). Author attributes
 on the fence are copied onto the wrapper with the always-on hardening (`on*` /
 `srcdoc` / `formaction` stripped, dangerous values neutralized), so a
 `{onclick="…"}` fence can never reach the output.
