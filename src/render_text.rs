@@ -61,6 +61,9 @@ fn clean_escaped_text(input: &str) -> String {
 }
 
 fn smart_text(input: &str, state: &mut SmartQuoteState) -> String {
+    if !needs_smart_pass(input) {
+        return input.to_string();
+    }
     let mut s = unescape_text(input);
     let replacements = [
         ("<->", "↔"),
@@ -122,6 +125,15 @@ fn smart_text(input: &str, state: &mut SmartQuoteState) -> String {
         }
     }
     out
+}
+
+fn needs_smart_pass(input: &str) -> bool {
+    input.chars().any(|ch| {
+        matches!(
+            ch,
+            '\\' | '<' | '-' | '=' | '!' | '>' | '+' | '(' | '.' | '"' | '\''
+        )
+    })
 }
 
 fn unescape_text(input: &str) -> String {

@@ -3968,13 +3968,25 @@ fn unescape_title(s: &str) -> String {
 fn read_link_target(bytes: &[u8], start: usize) -> Option<(String, Option<String>, usize)> {
     let mut i = start;
     let href_start = i;
-    while i < bytes.len()
-        && bytes[i] != b' '
-        && bytes[i] != b')'
-        && bytes[i] != b'\t'
-        && bytes[i] != b'\n'
-    {
-        i += 1;
+    let mut paren_depth = 0usize;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'\\' if i + 1 < bytes.len() => i += 2,
+            b'(' => {
+                paren_depth += 1;
+                i += 1;
+            }
+            b')' if paren_depth > 0 => {
+                paren_depth -= 1;
+                i += 1;
+            }
+            b')' => break,
+            b' ' | b'\t' | b'\n' if paren_depth == 0 => break,
+            _ => i += 1,
+        }
+    }
+    if paren_depth != 0 {
+        return None;
     }
     let href = std::str::from_utf8(&bytes[href_start..i]).ok()?.to_string();
     // Skip whitespace
@@ -4126,51 +4138,67 @@ fn apply_abbreviations(doc: &mut Document) {
     }
     doc.children
         .retain(|node| !matches!(node, BlockNode::AbbreviationDef(_)));
+    let index = abbreviation_index(&defs);
     for block in &mut doc.children {
-        apply_abbreviations_block(block, &defs);
+        apply_abbreviations_block(block, &index);
     }
 }
 
-fn apply_abbreviations_block(block: &mut BlockNode, defs: &BTreeMap<String, String>) {
+type AbbreviationIndex<'a> = BTreeMap<char, Vec<(&'a str, &'a str)>>;
+
+fn abbreviation_index(defs: &BTreeMap<String, String>) -> AbbreviationIndex<'_> {
+    let mut index: AbbreviationIndex<'_> = BTreeMap::new();
+    for (abbr, expansion) in defs {
+        if let Some(first) = abbr.chars().next() {
+            index
+                .entry(first)
+                .or_default()
+                .push((abbr.as_str(), expansion.as_str()));
+        }
+    }
+    index
+}
+
+fn apply_abbreviations_block(block: &mut BlockNode, index: &AbbreviationIndex<'_>) {
     match block {
-        BlockNode::Heading(h) => apply_abbreviations_inline(&mut h.children, defs),
-        BlockNode::Paragraph(p) => apply_abbreviations_inline(&mut p.children, defs),
+        BlockNode::Heading(h) => apply_abbreviations_inline(&mut h.children, index),
+        BlockNode::Paragraph(p) => apply_abbreviations_inline(&mut p.children, index),
         BlockNode::List(l) => {
             for item in &mut l.items {
                 for child in &mut item.children {
-                    apply_abbreviations_block(child, defs);
+                    apply_abbreviations_block(child, index);
                 }
             }
         }
         BlockNode::BlockQuote(b) => {
             for child in &mut b.children {
-                apply_abbreviations_block(child, defs);
+                apply_abbreviations_block(child, index);
             }
         }
         BlockNode::Table(t) => {
             for row in &mut t.rows {
                 for cell in &mut row.cells {
-                    apply_abbreviations_inline(&mut cell.children, defs);
+                    apply_abbreviations_inline(&mut cell.children, index);
                 }
             }
         }
         BlockNode::Admonition(a) => {
             for child in &mut a.children {
-                apply_abbreviations_block(child, defs);
+                apply_abbreviations_block(child, index);
             }
         }
         BlockNode::Figure(f) => {
-            apply_abbreviations_inline(&mut f.caption, defs);
+            apply_abbreviations_inline(&mut f.caption, index);
             match &mut f.target {
                 FigureTarget::BlockQuote(b) => {
                     for child in &mut b.children {
-                        apply_abbreviations_block(child, defs);
+                        apply_abbreviations_block(child, index);
                     }
                 }
                 FigureTarget::Table(t) => {
                     for row in &mut t.rows {
                         for cell in &mut row.cells {
-                            apply_abbreviations_inline(&mut cell.children, defs);
+                            apply_abbreviations_inline(&mut cell.children, index);
                         }
                     }
                 }
@@ -4183,33 +4211,33 @@ fn apply_abbreviations_block(block: &mut BlockNode, defs: &BTreeMap<String, Stri
     }
 }
 
-fn apply_abbreviations_inline(nodes: &mut Vec<InlineNode>, defs: &BTreeMap<String, String>) {
+fn apply_abbreviations_inline(nodes: &mut Vec<InlineNode>, index: &AbbreviationIndex<'_>) {
     let mut out = Vec::new();
     for node in std::mem::take(nodes) {
         match node {
             InlineNode::Text(text) => {
-                let mut parts = replace_abbreviations_in_text(&text, defs);
+                let mut parts = replace_abbreviations_in_text(&text, index);
                 out.append(&mut parts);
             }
             InlineNode::Emphasis(mut e) => {
-                apply_abbreviations_inline(&mut e.children, defs);
+                apply_abbreviations_inline(&mut e.children, index);
                 out.push(InlineNode::Emphasis(e));
             }
             InlineNode::Link(mut l) => {
-                apply_abbreviations_inline(&mut l.children, defs);
+                apply_abbreviations_inline(&mut l.children, index);
                 out.push(InlineNode::Link(l));
             }
             InlineNode::Extension(mut e) => {
-                apply_abbreviations_inline(&mut e.children, defs);
+                apply_abbreviations_inline(&mut e.children, index);
                 out.push(InlineNode::Extension(e));
             }
             InlineNode::CitationGroup(mut g) => {
                 for item in &mut g.items {
                     if let Some(prefix) = &mut item.prefix {
-                        apply_abbreviations_inline(prefix, defs);
+                        apply_abbreviations_inline(prefix, index);
                     }
                     if let Some(locator) = &mut item.locator {
-                        apply_abbreviations_inline(locator, defs);
+                        apply_abbreviations_inline(locator, index);
                     }
                 }
                 out.push(InlineNode::CitationGroup(g));
@@ -4220,18 +4248,21 @@ fn apply_abbreviations_inline(nodes: &mut Vec<InlineNode>, defs: &BTreeMap<Strin
     *nodes = out;
 }
 
-fn replace_abbreviations_in_text(text: &str, defs: &BTreeMap<String, String>) -> Vec<InlineNode> {
+fn replace_abbreviations_in_text(text: &str, index: &AbbreviationIndex<'_>) -> Vec<InlineNode> {
     let mut out = Vec::new();
     let mut i = 0;
     while i < text.len() {
         let mut matched: Option<(&str, &str)> = None;
-        for (abbr, expansion) in defs {
-            if text[i..].starts_with(abbr)
-                && is_word_boundary(text, i)
-                && is_word_boundary(text, i + abbr.len())
-            {
-                matched = Some((abbr.as_str(), expansion.as_str()));
-                break;
+        let ch = text[i..].chars().next().unwrap();
+        if let Some(candidates) = index.get(&ch) {
+            for (abbr, expansion) in candidates {
+                if text[i..].starts_with(abbr)
+                    && is_word_boundary(text, i)
+                    && is_word_boundary(text, i + abbr.len())
+                {
+                    matched = Some((*abbr, *expansion));
+                    break;
+                }
             }
         }
         if let Some((abbr, expansion)) = matched {
@@ -4242,7 +4273,6 @@ fn replace_abbreviations_in_text(text: &str, defs: &BTreeMap<String, String>) ->
             i += abbr.len();
             continue;
         }
-        let ch = text[i..].chars().next().unwrap();
         match out.last_mut() {
             Some(InlineNode::Text(existing)) => existing.push(ch),
             _ => out.push(InlineNode::Text(ch.to_string())),

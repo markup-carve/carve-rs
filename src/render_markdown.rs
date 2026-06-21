@@ -1,6 +1,8 @@
 use crate::ast::*;
 use crate::extension::Options;
-use crate::render_text::{clean_smart_text, clean_smart_text_stateful, SmartQuoteState};
+use crate::render_text::{
+    clean_smart_text, clean_smart_text_stateful, strip_controls, SmartQuoteState,
+};
 use std::collections::HashSet;
 
 /// Render a document to Markdown. The Markdown renderer has no option-driven
@@ -316,7 +318,11 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext) -> String {
             }
         }
         InlineNode::Emoji(emoji) => format!(":{}:", emoji.name),
-        InlineNode::AutoLink(link) => format!("[{}]({})", link.href, link.href),
+        InlineNode::AutoLink(link) => format!(
+            "[{}]({})",
+            strip_controls(&link.href),
+            encode_markdown_destination(&link.href)
+        ),
         InlineNode::Mention(mention) => format!("@{}", mention.user),
         InlineNode::Tag(tag) => escape_text(&format!("#{}", tag.name)),
         InlineNode::Extension(extension) => render_inlines(&extension.children, ctx),
@@ -380,14 +386,14 @@ fn render_link(node: &Link, ctx: &mut MarkdownContext) -> String {
         if !ctx.heading_ids.contains(id) {
             return text;
         }
-        let destination = markdown_fragment_destination(id);
+        let destination = encode_markdown_destination(&format!("#{id}"));
         if let Some(title) = &node.title {
             format!("[{text}]({destination} \"{}\")", escape_md_title(title))
         } else {
             format!("[{text}]({destination})")
         }
     } else {
-        let href = sanitize_md_url(&node.href);
+        let href = encode_markdown_destination(&node.href);
         if let Some(title) = &node.title {
             format!("[{text}]({href} \"{}\")", escape_md_title(title))
         } else {
@@ -397,7 +403,7 @@ fn render_link(node: &Link, ctx: &mut MarkdownContext) -> String {
 }
 
 fn render_image(node: &Image) -> String {
-    let src = sanitize_md_url(&node.src);
+    let src = encode_markdown_destination(&node.src);
     if let Some(title) = &node.title {
         format!("![{}]({} \"{}\")", node.alt, src, escape_md_title(title))
     } else {
@@ -430,20 +436,6 @@ fn render_code(content: &str) -> String {
     } else {
         format!("{fence}{content}{fence}")
     }
-}
-
-fn markdown_fragment_destination(id: &str) -> String {
-    if !id
-        .chars()
-        .any(|ch| matches!(ch, ' ' | '(' | ')' | '<' | '>'))
-    {
-        return format!("#{id}");
-    }
-    let escaped = id
-        .replace('\\', "\\\\")
-        .replace('<', "\\<")
-        .replace('>', "\\>");
-    format!("<#{escaped}>")
 }
 
 fn fragment_id(href: &str) -> Option<&str> {
@@ -508,6 +500,22 @@ fn sanitize_md_url(url: &str) -> String {
         }
     }
     url.to_string()
+}
+
+fn encode_markdown_destination(url: &str) -> String {
+    let sanitized = sanitize_md_url(url);
+    let mut out = String::new();
+    for ch in sanitized.chars() {
+        match ch {
+            ' ' => out.push_str("%20"),
+            '(' => out.push_str("%28"),
+            ')' => out.push_str("%29"),
+            '<' => out.push_str("%3C"),
+            '>' => out.push_str("%3E"),
+            _ => out.push(ch),
+        }
+    }
+    strip_controls(&out)
 }
 
 fn normalize(text: &str) -> String {

@@ -2,6 +2,8 @@
 //! downstream Markdown -> HTML render, and ANSI/plain cannot inject terminal
 //! escape sequences.
 
+use std::collections::BTreeMap;
+
 fn md(src: &str) -> String {
     carve::to_markdown(src).trim().to_string()
 }
@@ -11,6 +13,36 @@ fn markdown_blanks_dangerous_url_schemes() {
     assert!(md("[x](javascript:alert(1))").contains("[x]()"));
     assert!(md("![a](javascript:alert(1))").contains("![a]()"));
     assert!(md("[ok](https://e.com)").contains("[ok](https://e.com)"));
+    assert_eq!(md("<javascript:alert(1)>"), "[javascript:alert(1)]()");
+}
+
+#[test]
+fn markdown_percent_encodes_destination_breakouts() {
+    assert_eq!(
+        md("[x](https://e.com/a(b)c)"),
+        "[x](https://e.com/a%28b%29c)"
+    );
+    let image_doc = carve::Document {
+        frontmatter: BTreeMap::new(),
+        footnote_defs: BTreeMap::new(),
+        children: vec![carve::BlockNode::Paragraph(carve::Paragraph {
+            attrs: None,
+            children: vec![carve::InlineNode::Image(carve::Image {
+                attrs: None,
+                src: "https://e.com/a b<c>".to_string(),
+                alt: "x".to_string(),
+                title: None,
+            })],
+        })],
+    };
+    assert_eq!(
+        carve::render_markdown(&image_doc).trim(),
+        "![x](https://e.com/a%20b%3Cc%3E)"
+    );
+    assert_eq!(
+        md("<https://example.com>"),
+        "[https://example.com](https://example.com)"
+    );
 }
 
 #[test]
