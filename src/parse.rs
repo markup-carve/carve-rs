@@ -2637,6 +2637,7 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
 fn detect_abbreviation_def(line: &str) -> Option<AbbreviationDef> {
     let rest = line.strip_prefix("*[")?;
     let (abbr, expansion) = rest.split_once("]:")?;
+    let expansion = expansion.strip_prefix(' ')?;
     if abbr.is_empty() || !abbr.chars().all(char::is_alphanumeric) {
         return None;
     }
@@ -3953,9 +3954,13 @@ fn parse_crossref(text: &str, pos: usize) -> Option<(CrossRef, usize)> {
     let rest = text.get(pos..)?;
     let inner = rest.strip_prefix("</#")?;
     let close = inner.find('>')?;
+    let target = &inner[..close];
+    if target.is_empty() || target.bytes().any(|b| b.is_ascii_whitespace()) {
+        return None;
+    }
     Some((
         CrossRef {
-            target: inner[..close].to_string(),
+            target: target.to_string(),
         },
         close + 4,
     ))

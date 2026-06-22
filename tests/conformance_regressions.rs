@@ -77,3 +77,22 @@ fn reference_and_footnote_definitions_require_space_after_colon() {
     assert_eq!(html("[a]:u"), "<p>[a]:u</p>");
     assert_eq!(html("[^1]\n\n[^1]:x"), "<p>[^1]</p>\n<p>[^1]:x</p>");
 }
+
+#[test]
+fn abbreviation_definition_requires_space_after_colon() {
+    assert_eq!(html("*[A]:x\n\nA"), "<p>*[A]:x</p>\n<p>A</p>");
+}
+
+#[test]
+fn tag_after_crossref_opener_with_space_is_a_tag() {
+    assert_eq!(
+        html("</#a b>"),
+        "<p>&lt;/<span class=\"tag\"><strong>#a</strong></span> b&gt;</p>"
+    );
+}
+
+#[test]
+fn smart_typography_tokenizes_overlapping_arrows_and_dashes_left_to_right() {
+    assert_eq!(html("->-->"), "<p>→–&gt;</p>");
+    assert_eq!(html("--->"), "<p>—&gt;</p>");
+}
