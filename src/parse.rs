@@ -152,7 +152,7 @@ fn extract_footnote_defs(source: &str) -> (String, BTreeMap<String, String>) {
 
 fn parse_footnote_def_line(line: &str) -> Option<(&str, &str)> {
     let rest = line.strip_prefix("[^")?;
-    let (label, body) = rest.split_once("]:")?;
+    let (label, body) = rest.split_once("]: ")?;
     Some((label, body.trim_start()))
 }
 
@@ -167,7 +167,7 @@ fn extract_link_defs(source: &str) -> (String, BTreeMap<String, LinkDef>) {
     let mut defs = BTreeMap::new();
     for line in source.lines() {
         if let Some((label_part, target_part)) =
-            line.strip_prefix('[').and_then(|s| s.split_once("]:"))
+            line.strip_prefix('[').and_then(|s| s.split_once("]: "))
         {
             if label_part.starts_with('@') {
                 body.push(line);
@@ -1037,13 +1037,23 @@ fn read_list_item_attrs(bytes: &[u8], start: usize) -> Option<(Option<Attrs>, us
 fn marker_tail(line: &str, marker_end: usize) -> Option<(&str, Option<Attrs>)> {
     let bytes = line.as_bytes();
     let (content, attrs) = match bytes.get(marker_end) {
-        Some(&b' ') => (line[marker_end + 1..].trim_end(), None),
+        Some(&b' ' | &b'\t') => {
+            let mut content_start = marker_end;
+            while matches!(bytes.get(content_start), Some(b' ' | b'\t')) {
+                content_start += 1;
+            }
+            (line[content_start..].trim_end(), None)
+        }
         Some(&b'{') => {
             let (attrs, end) = read_list_item_attrs(bytes, marker_end)?;
-            if bytes.get(end) != Some(&b' ') {
+            if !matches!(bytes.get(end), Some(b' ' | b'\t')) {
                 return None;
             }
-            (line[end + 1..].trim_end(), attrs)
+            let mut content_start = end;
+            while matches!(bytes.get(content_start), Some(b' ' | b'\t')) {
+                content_start += 1;
+            }
+            (line[content_start..].trim_end(), attrs)
         }
         _ => return None,
     };
@@ -1056,7 +1066,7 @@ fn marker_tail(line: &str, marker_end: usize) -> Option<(&str, Option<Attrs>)> {
     Some((content, attrs))
 }
 
-fn detect_unordered(line: &str) -> Option<(&str, Option<Attrs>)> {
+fn detect_unordered(line: &str) -> Option<(&str, Option<Attrs>, &str)> {
     let bytes = line.as_bytes();
     let mut i = 0;
     while i < bytes.len() && (bytes[i] == b' ' || bytes[i] == b'\t') {
@@ -1070,7 +1080,8 @@ fn detect_unordered(line: &str) -> Option<(&str, Option<Attrs>)> {
     if c != b'-' && c != b'*' {
         return None;
     }
-    marker_tail(line, i + 1)
+    let (content, attrs) = marker_tail(line, i + 1)?;
+    Some((content, attrs, &line[i..i + 1]))
 }
 
 fn detect_ordered(line: &str) -> Option<&str> {
@@ -1184,7 +1195,7 @@ fn roman_to_int(s: &str) -> Option<usize> {
     (total > 0).then_some(total as usize)
 }
 
-fn detect_task(line: &str) -> Option<(bool, &str, Option<Attrs>)> {
+fn detect_task(line: &str) -> Option<(bool, &str, Option<Attrs>, &str)> {
     let bytes = line.as_bytes();
     let mut i = 0;
     while i < bytes.len() && (bytes[i] == b' ' || bytes[i] == b'\t') {
@@ -1207,7 +1218,7 @@ fn detect_task(line: &str) -> Option<(bool, &str, Option<Attrs>)> {
         return None;
     }
     let checked = matches!(ab[1], b'x' | b'X');
-    Some((checked, after[4..].trim_end(), attrs))
+    Some((checked, after[4..].trim_end(), attrs, &line[i..i + 1]))
 }
 
 /// Lower-alpha index of a single letter (`a`=1 … `z`=26), case-insensitive.
@@ -1514,6 +1525,9 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         if marker.ordered != is_ordered || marker.checked.is_some() != is_task {
             break;
         }
+        if !is_ordered && marker.marker != first_marker.marker {
+            break;
+        }
         // §11: an ordered item whose delimiter (`.` vs `)`) or dialect family
         // (decimal / alpha / roman, case included) differs from the list's first
         // item starts a NEW sibling list. Skip the FIRST item: its own detected
@@ -1572,6 +1586,21 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         // from djot-php, whose marker-line handling deviates from reference
         // djot. The combined stream reuses the normal nested-list/absorption
         // logic (collect_indented_block + recursive parse) -- no separate path.
+        if marker.content.starts_with('>') {
+            let mut stream = marker.content.to_string();
+            let following = collect_indented_block(cur, base_indent, content_col);
+            if !following.is_empty() {
+                stream.push('\n');
+                stream.push_str(&following);
+            }
+            let children = parse_blocks_with_options(&stream, options);
+            items.push(ListItem {
+                attrs: marker.attrs.clone(),
+                checked: marker.checked,
+                children,
+            });
+            continue;
+        }
         if detect_list_marker_full(marker.content).is_some() {
             let mut stream = marker.content.to_string();
             let following = collect_indented_block(cur, base_indent, content_col);
@@ -1749,7 +1778,7 @@ fn is_ambiguous_roman_letter(m: &str) -> bool {
 
 fn detect_list_marker_full(line: &str) -> Option<ListMarker<'_>> {
     let indent = indent_columns(line);
-    if let Some((checked, content, attrs)) = detect_task(line) {
+    if let Some((checked, content, attrs, marker)) = detect_task(line) {
         return Some(ListMarker {
             indent,
             ordered: false,
@@ -1759,7 +1788,7 @@ fn detect_list_marker_full(line: &str) -> Option<ListMarker<'_>> {
             content,
             attrs,
             delim: None,
-            marker: "",
+            marker,
         });
     }
     if let Some((content, start, ol_type, attrs, delim, marker)) = detect_ordered_full(line) {
@@ -1775,7 +1804,7 @@ fn detect_list_marker_full(line: &str) -> Option<ListMarker<'_>> {
             marker,
         });
     }
-    if let Some((content, attrs)) = detect_unordered(line) {
+    if let Some((content, attrs, marker)) = detect_unordered(line) {
         return Some(ListMarker {
             indent,
             ordered: false,
@@ -1785,7 +1814,7 @@ fn detect_list_marker_full(line: &str) -> Option<ListMarker<'_>> {
             content,
             attrs,
             delim: None,
-            marker: "",
+            marker,
         });
     }
     None
@@ -2778,7 +2807,10 @@ fn attr_tokens(src: &str) -> Vec<String> {
             buf.push(ch);
             continue;
         }
-        if ch.is_whitespace() {
+        if (ch == '#' || ch == '.') && (buf.starts_with('#') || buf.starts_with('.')) {
+            tokens.push(std::mem::take(&mut buf));
+            buf.push(ch);
+        } else if ch.is_whitespace() {
             if !buf.is_empty() {
                 tokens.push(std::mem::take(&mut buf));
             }
@@ -3444,6 +3476,9 @@ fn parse_math(bytes: &[u8], start: usize) -> Option<(Math, usize)> {
     }
     let rest = std::str::from_utf8(&bytes[tick + 1..]).ok()?;
     let close = rest.find('`')?;
+    if close == 0 {
+        return None;
+    }
     let end = tick + 1 + close + 1;
     // A trailing attribute block attaches to the math span (math reuses the
     // code-span attribute slot), EXCEPT `{=format}`, the raw-inline form,
@@ -3575,7 +3610,7 @@ fn parse_inline_code(bytes: &[u8], start: usize) -> Option<(String, usize)> {
             let raw = std::str::from_utf8(&bytes[content_start..close_start]).ok()?;
             // Per CommonMark/JS: trim one leading and one trailing space if both ends are spaces.
             let trimmed =
-                if raw.starts_with(' ') && raw.ends_with(' ') && raw.trim().len() < raw.len() {
+                if raw.starts_with(' ') && raw.ends_with(' ') && !raw.chars().all(|c| c == ' ') {
                     &raw[1..raw.len() - 1]
                 } else {
                     raw
@@ -3587,7 +3622,7 @@ fn parse_inline_code(bytes: &[u8], start: usize) -> Option<(String, usize)> {
     // No matching closer: an unclosed verbatim opener is opaque to the end of
     // the text (matches djot / carve-php / carve-js).
     let raw = std::str::from_utf8(&bytes[content_start..]).ok()?;
-    let trimmed = if raw.starts_with(' ') && raw.ends_with(' ') && raw.trim().len() < raw.len() {
+    let trimmed = if raw.starts_with(' ') && raw.ends_with(' ') && !raw.chars().all(|c| c == ' ') {
         &raw[1..raw.len() - 1]
     } else {
         raw
