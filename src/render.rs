@@ -1858,16 +1858,34 @@ fn render_attrs_without_id(attrs: &Option<Attrs>) -> String {
 /// U+E000 guard marks the following char as an escaped literal, so it must not
 /// participate in a smart-typography operator like `<=` or `->`).
 fn apply_smart_ops(s: &str, replacements: &[(&str, &str)]) -> String {
+    fn apply_segment(seg: &str, replacements: &[(&str, &str)]) -> String {
+        let mut out = String::new();
+        let mut i = 0;
+        while i < seg.len() {
+            if let Some((from, to)) = replacements
+                .iter()
+                .find(|(from, _)| seg[i..].starts_with(*from))
+            {
+                out.push_str(to);
+                i += from.len();
+            } else {
+                let ch = seg[i..]
+                    .chars()
+                    .next()
+                    .expect("scanner index must point at a character boundary");
+                out.push(ch);
+                i += ch.len_utf8();
+            }
+        }
+        out
+    }
+
     let mut out = String::new();
     let mut seg = String::new();
     let mut chars = s.chars();
     while let Some(c) = chars.next() {
         if c == '\u{e000}' {
-            let mut replaced = seg.clone();
-            for (from, to) in replacements {
-                replaced = replaced.replace(from, to);
-            }
-            out.push_str(&replaced);
+            out.push_str(&apply_segment(&seg, replacements));
             seg.clear();
             out.push(c);
             if let Some(n) = chars.next() {
@@ -1877,10 +1895,7 @@ fn apply_smart_ops(s: &str, replacements: &[(&str, &str)]) -> String {
             seg.push(c);
         }
     }
-    for (from, to) in replacements {
-        seg = seg.replace(from, to);
-    }
-    out.push_str(&seg);
+    out.push_str(&apply_segment(&seg, replacements));
     out
 }
 
