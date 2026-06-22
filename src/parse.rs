@@ -17,10 +17,10 @@ use std::collections::{BTreeMap, HashMap};
 ///
 /// The cap also bounds the depth of the AST the renderers walk recursively, so
 /// it is chosen to keep parse + render safe on a conservative 2 MiB thread
-/// stack (render alone overflows ~130-deep there); 100 levels is far beyond any
+/// stack (render alone overflows ~130-deep there); 40 levels is far beyond any
 /// real document while leaving comfortable headroom. carve-php's analogous cap
 /// is higher only because PHP grows its VM stack on the heap.
-const MAX_NESTING_DEPTH: usize = 100;
+const MAX_NESTING_DEPTH: usize = 40;
 
 thread_local! {
     // Plain initializer (not `const { … }`) to keep the crate's 1.75 MSRV;
@@ -623,6 +623,10 @@ struct FenceOpen {
     fence_len: usize,
     lang_start: usize,
     lang_end: usize,
+    title_start: Option<usize>,
+    title_end: Option<usize>,
+    label_start: Option<usize>,
+    label_end: Option<usize>,
 }
 
 fn detect_fence_open(line: &str) -> Option<FenceOpen> {
@@ -647,7 +651,11 @@ fn detect_fence_open(line: &str) -> Option<FenceOpen> {
     if fence_len < 3 {
         return None;
     }
-    // Optional whitespace then language identifier
+    // Optional whitespace then info string:
+    //   [language] ["header"] [[label]]
+    // in that fixed order. With no language, a header or label may sit
+    // directly against the fence; after a language each following token must
+    // be whitespace-separated.
     while i < bytes.len() && bytes[i] == b' ' {
         i += 1;
     }
@@ -683,6 +691,10 @@ fn detect_fence_open(line: &str) -> Option<FenceOpen> {
             fence_len,
             lang_start,
             lang_end,
+            title_start: None,
+            title_end: None,
+            label_start: None,
+            label_end: None,
         });
     }
     // Language token charset covers real-world tags with punctuation
@@ -701,20 +713,57 @@ fn detect_fence_open(line: &str) -> Option<FenceOpen> {
         i += 1;
     }
     let lang_end = i;
-    // Optional bracketed [label] after the language token (info string =
-    // language token + optional [label]); the label is metadata and does
-    // not affect the language class.
-    let mut j = i;
-    while j < bytes.len() && bytes[j] == b' ' {
-        j += 1;
+    let has_lang = lang_start < lang_end;
+    let mut title_start = None;
+    let mut title_end = None;
+    let mut label_start = None;
+    let mut label_end = None;
+    let mut separated = false;
+    while i < bytes.len() && bytes[i] == b' ' {
+        separated = true;
+        i += 1;
     }
-    if j < bytes.len() && bytes[j] == b'[' {
-        while j < bytes.len() && bytes[j] != b']' {
-            j += 1;
+    if i < bytes.len() && bytes[i] == b'"' {
+        if has_lang && !separated {
+            return None;
         }
-        if j < bytes.len() && bytes[j] == b']' {
-            i = j + 1;
+        i += 1;
+        let start = i;
+        while i < bytes.len() {
+            if bytes[i] == b'\\' && i + 1 < bytes.len() {
+                i += 2;
+                continue;
+            }
+            if bytes[i] == b'"' {
+                title_start = Some(start);
+                title_end = Some(i);
+                i += 1;
+                break;
+            }
+            i += 1;
         }
+        title_start?;
+        separated = false;
+        while i < bytes.len() && bytes[i] == b' ' {
+            separated = true;
+            i += 1;
+        }
+    }
+    if i < bytes.len() && bytes[i] == b'[' {
+        if (has_lang || title_start.is_some()) && !separated {
+            return None;
+        }
+        i += 1;
+        let start = i;
+        while i < bytes.len() && bytes[i] != b']' {
+            i += 1;
+        }
+        if i >= bytes.len() {
+            return None;
+        }
+        label_start = Some(start);
+        label_end = Some(i);
+        i += 1;
     }
     // Must be only whitespace after the info string
     while i < bytes.len() && bytes[i] == b' ' {
@@ -729,6 +778,10 @@ fn detect_fence_open(line: &str) -> Option<FenceOpen> {
         fence_len,
         lang_start,
         lang_end,
+        title_start,
+        title_end,
+        label_start,
+        label_end,
     })
 }
 
@@ -741,6 +794,14 @@ fn parse_fence(cur: &mut LineCursor, open: FenceOpen) -> BlockNode {
     } else {
         None
     };
+    let title = open
+        .title_start
+        .zip(open.title_end)
+        .map(|(start, end)| unescape_quoted_header(&open_line[start..end]));
+    let label = open
+        .label_start
+        .zip(open.label_end)
+        .map(|(start, end)| open_line[start..end].to_string());
     let mut content_lines: Vec<String> = Vec::new();
     while let Some(line) = cur.peek() {
         if is_fence_close(line, open) {
@@ -761,9 +822,28 @@ fn parse_fence(cur: &mut LineCursor, open: FenceOpen) -> BlockNode {
         BlockNode::CodeBlock(CodeBlock {
             attrs: None,
             lang,
+            title,
+            label,
             content: content_lines.join("\n"),
         })
     }
+}
+
+fn unescape_quoted_header(s: &str) -> String {
+    let mut out = String::new();
+    let mut chars = s.chars();
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            if let Some(next) = chars.next() {
+                out.push(next);
+            } else {
+                out.push(c);
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out
 }
 
 fn is_fence_close(line: &str, open: FenceOpen) -> bool {
@@ -2413,6 +2493,7 @@ struct ContainerOpen {
     fence_len: usize,
     kind: Option<String>,
     title: Option<String>,
+    label: Option<String>,
     attrs: Option<Attrs>,
 }
 
@@ -2432,6 +2513,16 @@ fn detect_container_open(line: &str) -> Option<ContainerOpen> {
             fence_len,
             kind: None,
             title: None,
+            label: None,
+            attrs: None,
+        });
+    }
+    if let Some(label) = parse_bare_label(rest) {
+        return Some(ContainerOpen {
+            fence_len,
+            kind: None,
+            title: None,
+            label: Some(label),
             attrs: None,
         });
     }
@@ -2448,25 +2539,65 @@ fn detect_container_open(line: &str) -> Option<ContainerOpen> {
         .map(|(i, _)| i)
         .unwrap_or(rest.len());
     let kind = rest[..id_end].to_string();
-    let after = rest[id_end..].trim();
-    // After the type, only a quoted title may follow (with nothing after
-    // it); anything else (a `{...}` block, unquoted text) is not a fence.
-    let title = if after.is_empty() {
-        None
+    let after_kind = &rest[id_end..];
+    if !after_kind.is_empty() && !after_kind.starts_with(char::is_whitespace) {
+        return None;
+    }
+    let mut after = after_kind.trim_start();
+    let title = if after.starts_with('"') {
+        let (title, remainder) = parse_quoted_metadata(after)?;
+        after = remainder.trim_start();
+        Some(title)
     } else {
-        let inner = after.strip_prefix('"')?;
-        let close = inner.find('"')?;
-        if !inner[close + 1..].trim().is_empty() {
+        None
+    };
+    let label = if after.starts_with('[') {
+        let close = after.find(']')?;
+        let label = after[1..close].to_string();
+        if !after[close + 1..].trim().is_empty() {
             return None;
         }
-        Some(inner[..close].to_string())
+        Some(label)
+    } else {
+        if !after.is_empty() {
+            return None;
+        }
+        None
     };
     Some(ContainerOpen {
         fence_len,
         kind: Some(kind),
         title,
+        label,
         attrs: None,
     })
+}
+
+fn parse_bare_label(s: &str) -> Option<String> {
+    let close = s.find(']')?;
+    if !s.starts_with('[') || !s[close + 1..].trim().is_empty() {
+        return None;
+    }
+    Some(s[1..close].to_string())
+}
+
+fn parse_quoted_metadata(s: &str) -> Option<(String, &str)> {
+    let bytes = s.as_bytes();
+    if bytes.first() != Some(&b'"') {
+        return None;
+    }
+    let mut i = 1;
+    while i < bytes.len() {
+        if bytes[i] == b'\\' && i + 1 < bytes.len() {
+            i += 2;
+            continue;
+        }
+        if bytes[i] == b'"' {
+            return Some((unescape_quoted_header(&s[1..i]), &s[i + 1..]));
+        }
+        i += 1;
+    }
+    None
 }
 
 fn parse_container(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
@@ -2487,11 +2618,13 @@ fn parse_container(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             attrs: open.attrs,
             kind,
             title: open.title.map(|t| parse_inline_with_options(&t, options)),
+            label: open.label,
             children,
         })
     } else {
         BlockNode::Div(Div {
             attrs: open.attrs,
+            label: open.label,
             children,
         })
     }
@@ -2637,6 +2770,7 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             key_values: BTreeMap::new(),
             order: vec![AttrSlot::Class],
         }),
+        label: None,
         children,
     })
 }

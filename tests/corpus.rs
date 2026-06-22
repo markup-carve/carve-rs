@@ -122,6 +122,10 @@ const IMPLEMENTED: &[&str] = &[
     "107-link-destination-stops-at-the-first-parenthesis",
     "108-empty-link-and-image-titles-are-preserved",
     "109-cross-references-resolve-inside-footnote-bodies",
+    "110-unquoted-attribute-values-may-contain-dots-and-colons",
+    "111-a-pipe-pair-with-no-cell-is-not-a-table",
+    "112-adjacent-attribute-blocks-on-one-line-merge",
+    "113-a-continuation-row-needs-a-body-row",
 ];
 
 fn corpus_dir() -> PathBuf {

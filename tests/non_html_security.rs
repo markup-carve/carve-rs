@@ -111,6 +111,8 @@ fn markdown_sanitizes_code_fence_info_string() {
         children: vec![carve::BlockNode::CodeBlock(carve::CodeBlock {
             attrs: None,
             lang: Some("rs ```\n# injected".to_string()),
+            title: None,
+            label: None,
             content: "let x = 1;".to_string(),
         })],
     };
@@ -160,6 +162,8 @@ fn markdown_strips_control_bytes_from_author_leaf_fields() {
             carve::BlockNode::CodeBlock(carve::CodeBlock {
                 attrs: None,
                 lang: None,
+                title: None,
+                label: None,
                 content: format!("code{c}"),
             }),
             carve::BlockNode::RawBlock(carve::RawBlock {
