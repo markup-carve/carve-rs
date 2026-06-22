@@ -63,3 +63,19 @@ fn heading_takes_attributes_from_a_preceding_line() {
     assert!(html.contains("<section id=\"x\">"), "{html}");
     assert!(html.contains("<h1 class=\"cls\">H</h1>"), "{html}");
 }
+
+#[test]
+fn adjacent_attr_blocks_on_one_line_merge_for_next_block() {
+    assert_eq!(
+        carve::to_html("{.c}{#i}\n# H"),
+        "<section id=\"i\">\n  <h1 class=\"c\">H</h1>\n</section>"
+    );
+}
+
+#[test]
+fn adjacent_attr_block_classes_merge_in_order() {
+    assert_eq!(
+        carve::to_html("{.a}{.b}\n# H"),
+        "<section id=\"H\">\n  <h1 class=\"a b\">H</h1>\n</section>"
+    );
+}

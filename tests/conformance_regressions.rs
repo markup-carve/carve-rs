@@ -96,3 +96,8 @@ fn smart_typography_tokenizes_overlapping_arrows_and_dashes_left_to_right() {
     assert_eq!(html("->-->"), "<p>→–&gt;</p>");
     assert_eq!(html("--->"), "<p>—&gt;</p>");
 }
+
+#[test]
+fn bare_two_pipe_empty_content_is_paragraph_not_table() {
+    assert_eq!(html("||"), "<p>||</p>");
+}
