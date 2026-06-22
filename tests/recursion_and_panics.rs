@@ -45,3 +45,51 @@ fn normal_nesting_still_renders() {
     assert!(html.contains("<blockquote>"), "{html}");
     assert!(html.contains("<em>i</em>"), "{html}");
 }
+
+#[test]
+fn non_html_renderers_bound_programmatic_block_depth() {
+    let mut block = carve::BlockNode::Paragraph(carve::Paragraph {
+        attrs: None,
+        children: vec![carve::InlineNode::Text("leaf".to_string())],
+    });
+    for _ in 0..500 {
+        block = carve::BlockNode::BlockQuote(carve::BlockQuote {
+            attrs: None,
+            children: vec![block],
+            attribution: None,
+        });
+    }
+    let doc = carve::Document {
+        frontmatter: std::collections::BTreeMap::new(),
+        footnote_defs: std::collections::BTreeMap::new(),
+        children: vec![block],
+    };
+
+    let _ = carve::render_markdown(&doc);
+    let _ = carve::render_plain_text(&doc);
+    let _ = carve::render_ansi(&doc);
+}
+
+#[test]
+fn non_html_renderers_bound_programmatic_inline_depth() {
+    let mut inline = carve::InlineNode::Text("leaf".to_string());
+    for _ in 0..500 {
+        inline = carve::InlineNode::Emphasis(carve::Emphasis {
+            attrs: None,
+            kind: carve::EmphasisKind::Italic,
+            children: vec![inline],
+        });
+    }
+    let doc = carve::Document {
+        frontmatter: std::collections::BTreeMap::new(),
+        footnote_defs: std::collections::BTreeMap::new(),
+        children: vec![carve::BlockNode::Paragraph(carve::Paragraph {
+            attrs: None,
+            children: vec![inline],
+        })],
+    };
+
+    let _ = carve::render_markdown(&doc);
+    let _ = carve::render_plain_text(&doc);
+    let _ = carve::render_ansi(&doc);
+}
