@@ -5,6 +5,8 @@ use crate::render_text::{
 };
 use std::collections::HashSet;
 
+const MAX_RENDER_DEPTH: usize = 100;
+
 /// Render a document to Markdown. The Markdown renderer has no option-driven
 /// behavior of its own; this wrapper exists so the profile pipeline can render
 /// every format through a uniform `*_with_options` entry point. The profile
@@ -16,14 +18,14 @@ pub fn render_markdown_with_options(doc: &Document, _options: &Options<'_>) -> S
 pub fn render_markdown(doc: &Document) -> String {
     let mut heading_ids = HashSet::new();
     let mut referenced_heading_ids = HashSet::new();
-    walk_blocks(&doc.children, &mut |block, _| {
+    walk_blocks(&doc.children, 0, &mut |block, _| {
         if let BlockNode::Heading(heading) = block {
             heading_ids.insert(heading_id(heading));
         }
     });
-    walk_blocks(&doc.children, &mut |_, inlines| {
+    walk_blocks(&doc.children, 0, &mut |_, inlines| {
         if let Some(inlines) = inlines {
-            walk_inlines(inlines, &mut |node| {
+            walk_inlines(inlines, 0, &mut |node| {
                 if let InlineNode::Link(link) = node {
                     if let Some(id) = fragment_id(&link.href) {
                         if heading_ids.contains(id) {
@@ -41,7 +43,7 @@ pub fn render_markdown(doc: &Document) -> String {
         list_depth: 0,
         smart_quote: SmartQuoteState::new(),
     };
-    let out = render_blocks(&doc.children, &mut ctx);
+    let out = render_blocks(&doc.children, &mut ctx, 0);
     let footnotes = render_footnote_defs(doc, &mut ctx);
     normalize(&format!("{out}{footnotes}"))
 }
@@ -60,17 +62,23 @@ struct MarkdownContext {
 /// the running state through `ctx.smart_quote`.
 fn render_block_inlines(nodes: &[InlineNode], ctx: &mut MarkdownContext) -> String {
     ctx.smart_quote = SmartQuoteState::new();
-    render_inlines(nodes, ctx)
+    render_inlines(nodes, ctx, 0)
 }
 
-fn render_blocks(blocks: &[BlockNode], ctx: &mut MarkdownContext) -> String {
+fn render_blocks(blocks: &[BlockNode], ctx: &mut MarkdownContext, depth: usize) -> String {
+    if depth > MAX_RENDER_DEPTH {
+        return String::new();
+    }
     blocks
         .iter()
-        .map(|block| render_block(block, ctx))
+        .map(|block| render_block(block, ctx, depth))
         .collect()
 }
 
-fn render_block(node: &BlockNode, ctx: &mut MarkdownContext) -> String {
+fn render_block(node: &BlockNode, ctx: &mut MarkdownContext, depth: usize) -> String {
+    if depth > MAX_RENDER_DEPTH {
+        return String::new();
+    }
     match node {
         BlockNode::Heading(heading) => {
             let text = flatten_heading_text(&render_block_inlines(&heading.children, ctx));
@@ -90,16 +98,16 @@ fn render_block(node: &BlockNode, ctx: &mut MarkdownContext) -> String {
         BlockNode::CodeBlock(code) => {
             let content = strip_controls(&code.content);
             let fence = safe_fence(&content, 3);
-            format!(
-                "{}{}\n{}\n{}\n\n",
-                fence,
-                code.lang.as_deref().unwrap_or(""),
-                content,
-                fence
-            )
+            let lang = code
+                .lang
+                .as_deref()
+                .map(sanitize_code_lang)
+                .filter(|lang| !lang.is_empty())
+                .unwrap_or_default();
+            format!("{}{}\n{}\n{}\n\n", fence, lang, content, fence)
         }
         BlockNode::BlockQuote(quote) => {
-            let lines = render_blocks(&quote.children, ctx);
+            let lines = render_blocks(&quote.children, ctx, depth + 1);
             let body = lines
                 .trim()
                 .split('\n')
@@ -108,13 +116,13 @@ fn render_block(node: &BlockNode, ctx: &mut MarkdownContext) -> String {
                 .join("\n");
             format!("{body}\n\n")
         }
-        BlockNode::List(list) => render_list(list, ctx),
+        BlockNode::List(list) => render_list(list, ctx, depth + 1),
         BlockNode::ThematicBreak(_) => "---\n\n".to_string(),
         BlockNode::Table(table) => render_table(table, ctx),
         BlockNode::Admonition(admonition) => {
             // Markdown has no admonition; preserve the title (otherwise lost)
             // as a leading bold line, then the body.
-            let body = render_blocks(&admonition.children, ctx);
+            let body = render_blocks(&admonition.children, ctx, depth + 1);
             match &admonition.title {
                 Some(title) => {
                     let t = render_block_inlines(title, ctx);
@@ -127,9 +135,11 @@ fn render_block(node: &BlockNode, ctx: &mut MarkdownContext) -> String {
                 None => body,
             }
         }
-        BlockNode::Div(div) => render_blocks(&div.children, ctx),
-        BlockNode::DefinitionList(list) => render_definition_list(&list.items, ctx, true),
-        BlockNode::Figure(figure) => render_figure(figure, ctx),
+        BlockNode::Div(div) => render_blocks(&div.children, ctx, depth + 1),
+        BlockNode::DefinitionList(list) => {
+            render_definition_list(&list.items, ctx, true, depth + 1)
+        }
+        BlockNode::Figure(figure) => render_figure(figure, ctx, depth + 1),
         // A standalone block image is its own block: terminate it so the next
         // block is not glued onto the image (render_image stays newline-free
         // because it is shared with inline image rendering).
@@ -143,12 +153,15 @@ fn render_block(node: &BlockNode, ctx: &mut MarkdownContext) -> String {
                 String::new()
             }
         }
-        BlockNode::Extension(extension) => render_blocks(&extension.children, ctx),
+        BlockNode::Extension(extension) => render_blocks(&extension.children, ctx, depth + 1),
         BlockNode::AbbreviationDef(_) | BlockNode::Comment(_) => String::new(),
     }
 }
 
-fn render_list(node: &List, ctx: &mut MarkdownContext) -> String {
+fn render_list(node: &List, ctx: &mut MarkdownContext, depth: usize) -> String {
+    if depth > MAX_RENDER_DEPTH {
+        return String::new();
+    }
     ctx.list_depth += 1;
     let mut out = String::new();
     let mut counter = node.start.unwrap_or(1);
@@ -167,7 +180,9 @@ fn render_list(node: &List, ctx: &mut MarkdownContext) -> String {
         } else {
             "- ".to_string()
         };
-        let content = render_blocks(&item.children, ctx).trim().to_string();
+        let content = render_blocks(&item.children, ctx, depth + 1)
+            .trim()
+            .to_string();
         let mut lines = content.split('\n');
         out.push_str(&format!(
             "{indent}{prefix}{}\n",
@@ -189,14 +204,21 @@ fn render_definition_list(
     items: &[DefinitionItem],
     ctx: &mut MarkdownContext,
     trailing_blank: bool,
+    depth: usize,
 ) -> String {
+    if depth > MAX_RENDER_DEPTH {
+        return String::new();
+    }
     let mut out = String::new();
     for item in items {
         for term in &item.terms {
             out.push_str(&format!("**{}**\n", render_block_inlines(term, ctx)));
         }
         for definition in &item.definitions {
-            out.push_str(&format!(": {}\n", render_blocks(definition, ctx).trim()));
+            out.push_str(&format!(
+                ": {}\n",
+                render_blocks(definition, ctx, depth + 1).trim()
+            ));
         }
     }
     if trailing_blank {
@@ -234,19 +256,28 @@ fn render_table(node: &Table, ctx: &mut MarkdownContext) -> String {
     out
 }
 
-fn render_figure(node: &Figure, ctx: &mut MarkdownContext) -> String {
+fn render_figure(node: &Figure, ctx: &mut MarkdownContext, depth: usize) -> String {
+    if depth > MAX_RENDER_DEPTH {
+        return String::new();
+    }
     let target = match &node.target {
         FigureTarget::Image(image) => render_image(image),
         FigureTarget::Table(table) => render_table(table, ctx).trim().to_string(),
-        FigureTarget::BlockQuote(quote) => render_block(&BlockNode::BlockQuote(quote.clone()), ctx)
-            .trim()
-            .to_string(),
-        FigureTarget::CodeBlock(cb) => render_block(&BlockNode::CodeBlock(cb.clone()), ctx)
-            .trim()
-            .to_string(),
-        FigureTarget::Paragraph(p) => render_block(&BlockNode::Paragraph(p.clone()), ctx)
-            .trim()
-            .to_string(),
+        FigureTarget::BlockQuote(quote) => {
+            render_block(&BlockNode::BlockQuote(quote.clone()), ctx, depth + 1)
+                .trim()
+                .to_string()
+        }
+        FigureTarget::CodeBlock(cb) => {
+            render_block(&BlockNode::CodeBlock(cb.clone()), ctx, depth + 1)
+                .trim()
+                .to_string()
+        }
+        FigureTarget::Paragraph(p) => {
+            render_block(&BlockNode::Paragraph(p.clone()), ctx, depth + 1)
+                .trim()
+                .to_string()
+        }
     };
     // A block-level target (a code-block listing or a display-math equation)
     // keeps the caption on its own line; an inline image stays adjacent.
@@ -263,17 +294,26 @@ fn render_footnote_defs(doc: &Document, ctx: &mut MarkdownContext) -> String {
         out.push_str(&format!(
             "[^{}]: {}\n",
             strip_controls(label),
-            render_blocks(blocks, ctx).trim()
+            render_blocks(blocks, ctx, 0).trim()
         ));
     }
     out
 }
 
-fn render_inlines(nodes: &[InlineNode], ctx: &mut MarkdownContext) -> String {
-    nodes.iter().map(|node| render_inline(node, ctx)).collect()
+fn render_inlines(nodes: &[InlineNode], ctx: &mut MarkdownContext, depth: usize) -> String {
+    if depth > MAX_RENDER_DEPTH {
+        return String::new();
+    }
+    nodes
+        .iter()
+        .map(|node| render_inline(node, ctx, depth))
+        .collect()
 }
 
-fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext) -> String {
+fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> String {
+    if depth > MAX_RENDER_DEPTH {
+        return String::new();
+    }
     match node {
         InlineNode::Text(text) => {
             if is_literal_crossref(text) {
@@ -286,28 +326,44 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext) -> String {
             }
         }
         InlineNode::Emphasis(emphasis) => match emphasis.kind {
-            EmphasisKind::Italic => format!("*{}*", render_inlines(&emphasis.children, ctx)),
-            EmphasisKind::Strong => format!("**{}**", render_inlines(&emphasis.children, ctx)),
+            EmphasisKind::Italic => {
+                format!("*{}*", render_inlines(&emphasis.children, ctx, depth + 1))
+            }
+            EmphasisKind::Strong => {
+                format!("**{}**", render_inlines(&emphasis.children, ctx, depth + 1))
+            }
             EmphasisKind::Underline => {
-                format!("<u>{}</u>", render_inlines(&emphasis.children, ctx))
+                format!(
+                    "<u>{}</u>",
+                    render_inlines(&emphasis.children, ctx, depth + 1)
+                )
             }
             EmphasisKind::Strike | EmphasisKind::Sub => {
-                format!("~~{}~~", render_inlines(&emphasis.children, ctx))
+                format!("~~{}~~", render_inlines(&emphasis.children, ctx, depth + 1))
             }
             EmphasisKind::Super => {
-                format!("<sup>{}</sup>", render_inlines(&emphasis.children, ctx))
+                format!(
+                    "<sup>{}</sup>",
+                    render_inlines(&emphasis.children, ctx, depth + 1)
+                )
             }
             EmphasisKind::Highlight => {
-                format!("<mark>{}</mark>", render_inlines(&emphasis.children, ctx))
+                format!(
+                    "<mark>{}</mark>",
+                    render_inlines(&emphasis.children, ctx, depth + 1)
+                )
             }
             EmphasisKind::BoldItalic => {
-                format!("***{}***", render_inlines(&emphasis.children, ctx))
+                format!(
+                    "***{}***",
+                    render_inlines(&emphasis.children, ctx, depth + 1)
+                )
             }
         },
         InlineNode::Code(code, _) => render_code(&strip_controls(code)),
-        InlineNode::Link(link) => render_link(link, ctx),
+        InlineNode::Link(link) => render_link(link, ctx, depth + 1),
         InlineNode::Image(image) => render_image(image),
-        InlineNode::Span(span) => render_inlines(&span.children, ctx),
+        InlineNode::Span(span) => render_inlines(&span.children, ctx, depth + 1),
         InlineNode::Math(math) => {
             let content = strip_controls(&math.content);
             if math.display {
@@ -329,9 +385,9 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext) -> String {
             strip_controls(&link.href),
             encode_markdown_destination(&link.href)
         ),
-        InlineNode::Mention(mention) => format!("@{}", mention.user),
-        InlineNode::Tag(tag) => escape_text(&format!("#{}", tag.name)),
-        InlineNode::Extension(extension) => render_inlines(&extension.children, ctx),
+        InlineNode::Mention(mention) => format!("@{}", strip_controls(&mention.user)),
+        InlineNode::Tag(tag) => escape_text(&format!("#{}", strip_controls(&tag.name))),
+        InlineNode::Extension(extension) => render_inlines(&extension.children, ctx, depth + 1),
         InlineNode::Abbreviation(abbr) => {
             // Markdown has no abbreviation syntax; emit an HTML <abbr> so the
             // title survives (markdown allows inline HTML), matching carve-php.
@@ -357,7 +413,7 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext) -> String {
                 // state and restore the surrounding paragraph's, so quotes in the
                 // note neither inherit nor mutate the outer flow. Matches carve-php.
                 let saved = std::mem::replace(&mut ctx.smart_quote, SmartQuoteState::new());
-                let rendered = render_inlines(inline, ctx);
+                let rendered = render_inlines(inline, ctx, depth + 1);
                 ctx.smart_quote = saved;
                 format!("^[{rendered}]")
             } else {
@@ -370,10 +426,13 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext) -> String {
         InlineNode::SoftBreak => "\n".to_string(),
         InlineNode::HardBreak => "  \n".to_string(),
         InlineNode::CriticInsert(insert) => {
-            format!("<ins>{}</ins>", render_inlines(&insert.children, ctx))
+            format!(
+                "<ins>{}</ins>",
+                render_inlines(&insert.children, ctx, depth + 1)
+            )
         }
         InlineNode::CriticDelete(delete) => {
-            format!("~~{}~~", render_inlines(&delete.children, ctx))
+            format!("~~{}~~", render_inlines(&delete.children, ctx, depth + 1))
         }
         InlineNode::CriticSubstitute(sub) => format!(
             "<del>{}</del><ins>{}</ins>",
@@ -391,8 +450,8 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext) -> String {
     }
 }
 
-fn render_link(node: &Link, ctx: &mut MarkdownContext) -> String {
-    let text = render_inlines(&node.children, ctx);
+fn render_link(node: &Link, ctx: &mut MarkdownContext, depth: usize) -> String {
+    let text = render_inlines(&node.children, ctx, depth);
     if let Some(id) = fragment_id(&node.href) {
         if !ctx.heading_ids.contains(id) {
             return text;
@@ -421,7 +480,7 @@ fn render_link(node: &Link, ctx: &mut MarkdownContext) -> String {
 
 fn render_image(node: &Image) -> String {
     let src = encode_markdown_destination(&node.src);
-    let alt = strip_controls(&node.alt);
+    let alt = escape_md_label(&strip_controls(&node.alt));
     if let Some(title) = &node.title {
         format!(
             "![{}]({} \"{}\")",
@@ -436,6 +495,28 @@ fn render_image(node: &Image) -> String {
 
 fn escape_md_title(title: &str) -> String {
     title.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
+fn escape_md_label(label: &str) -> String {
+    label
+        .replace('\\', "\\\\")
+        .replace('[', "\\[")
+        .replace(']', "\\]")
+}
+
+fn sanitize_code_lang(lang: &str) -> String {
+    // Keep only the first whitespace-delimited token (the language word); drop
+    // it if it still contains a backtick (would break the fence).
+    let token = strip_controls(lang)
+        .split_whitespace()
+        .next()
+        .unwrap_or("")
+        .to_string();
+    if token.contains('`') {
+        String::new()
+    } else {
+        token
+    }
 }
 
 fn safe_fence(content: &str, min: usize) -> String {
@@ -636,28 +717,31 @@ fn is_literal_crossref(text: &str) -> bool {
     text.starts_with("</#") && text.ends_with('>') && !text[3..text.len() - 1].contains('>')
 }
 
-fn walk_blocks<F>(blocks: &[BlockNode], visit: &mut F)
+fn walk_blocks<F>(blocks: &[BlockNode], depth: usize, visit: &mut F)
 where
     F: FnMut(&BlockNode, Option<&[InlineNode]>),
 {
+    if depth > MAX_RENDER_DEPTH {
+        return;
+    }
     for block in blocks {
         visit(block, None);
         match block {
             BlockNode::Heading(heading) => visit(block, Some(&heading.children)),
             BlockNode::Paragraph(paragraph) => visit(block, Some(&paragraph.children)),
-            BlockNode::BlockQuote(quote) => walk_blocks(&quote.children, visit),
+            BlockNode::BlockQuote(quote) => walk_blocks(&quote.children, depth + 1, visit),
             BlockNode::Admonition(admonition) => {
                 // The title is now rendered, so a crossref link in it must be
                 // seen by the prepass that collects referenced heading ids.
                 if let Some(title) = &admonition.title {
                     visit(block, Some(title));
                 }
-                walk_blocks(&admonition.children, visit);
+                walk_blocks(&admonition.children, depth + 1, visit);
             }
-            BlockNode::Div(div) => walk_blocks(&div.children, visit),
+            BlockNode::Div(div) => walk_blocks(&div.children, depth + 1, visit),
             BlockNode::List(list) => {
                 for item in &list.items {
-                    walk_blocks(&item.children, visit);
+                    walk_blocks(&item.children, depth + 1, visit);
                 }
             }
             BlockNode::DefinitionList(list) => {
@@ -666,7 +750,7 @@ where
                         visit(block, Some(term));
                     }
                     for definition in &item.definitions {
-                        walk_blocks(definition, visit);
+                        walk_blocks(definition, depth + 1, visit);
                     }
                 }
             }
@@ -683,40 +767,45 @@ where
             BlockNode::Figure(figure) => {
                 visit(block, Some(&figure.caption));
                 match &figure.target {
-                    FigureTarget::BlockQuote(quote) => walk_blocks(&quote.children, visit),
+                    FigureTarget::BlockQuote(quote) => {
+                        walk_blocks(&quote.children, depth + 1, visit)
+                    }
                     FigureTarget::Table(table) => {
-                        walk_blocks(&[BlockNode::Table(table.clone())], visit);
+                        walk_blocks(&[BlockNode::Table(table.clone())], depth + 1, visit);
                     }
                     FigureTarget::Paragraph(p) => {
-                        walk_blocks(&[BlockNode::Paragraph(p.clone())], visit);
+                        walk_blocks(&[BlockNode::Paragraph(p.clone())], depth + 1, visit);
                     }
                     FigureTarget::Image(_) | FigureTarget::CodeBlock(_) => {}
                 }
             }
-            BlockNode::Extension(extension) => walk_blocks(&extension.children, visit),
+            BlockNode::Extension(extension) => walk_blocks(&extension.children, depth + 1, visit),
             _ => {}
         }
     }
 }
 
-fn walk_inlines<F>(nodes: &[InlineNode], visit: &mut F)
+fn walk_inlines<F>(nodes: &[InlineNode], depth: usize, visit: &mut F)
 where
     F: FnMut(&InlineNode),
 {
+    if depth > MAX_RENDER_DEPTH {
+        return;
+    }
     for node in nodes {
         visit(node);
         match node {
-            InlineNode::Emphasis(emphasis) => walk_inlines(&emphasis.children, visit),
-            InlineNode::Link(link) => walk_inlines(&link.children, visit),
-            InlineNode::Span(span) => walk_inlines(&span.children, visit),
-            InlineNode::Extension(extension) => walk_inlines(&extension.children, visit),
+            InlineNode::Emphasis(emphasis) => walk_inlines(&emphasis.children, depth + 1, visit),
+            InlineNode::Link(link) => walk_inlines(&link.children, depth + 1, visit),
+            InlineNode::Span(span) => walk_inlines(&span.children, depth + 1, visit),
+            InlineNode::Extension(extension) => walk_inlines(&extension.children, depth + 1, visit),
             InlineNode::Footnote(footnote) => {
                 if let Some(inline) = &footnote.inline {
-                    walk_inlines(inline, visit);
+                    walk_inlines(inline, depth + 1, visit);
                 }
             }
-            InlineNode::CriticInsert(insert) => walk_inlines(&insert.children, visit),
-            InlineNode::CriticDelete(delete) => walk_inlines(&delete.children, visit),
+            InlineNode::CriticInsert(insert) => walk_inlines(&insert.children, depth + 1, visit),
+            InlineNode::CriticDelete(delete) => walk_inlines(&delete.children, depth + 1, visit),
             _ => {}
         }
     }

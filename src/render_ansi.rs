@@ -2,6 +2,8 @@ use crate::ast::*;
 use crate::extension::Options;
 use crate::render_text::{clean_smart_text_stateful, strip_controls, SmartQuoteState};
 
+const MAX_RENDER_DEPTH: usize = 100;
+
 /// Render a document to ANSI-styled text. See `render_markdown_with_options`
 /// for why the options-taking wrapper exists; the profile transform runs
 /// upstream.
@@ -35,7 +37,7 @@ pub fn render_ansi(doc: &Document) -> String {
         ordered: Vec::new(),
         smart_quote: SmartQuoteState::new(),
     };
-    let out = render_blocks(&doc.children, &mut ctx);
+    let out = render_blocks(&doc.children, &mut ctx, 0);
     let footnotes = render_footnote_defs(doc, &mut ctx);
     normalize(&format!("{out}{footnotes}"))
 }
@@ -53,21 +55,27 @@ struct AnsiContext {
 /// which threads the running state through `ctx.smart_quote`.
 fn render_block_inlines(nodes: &[InlineNode], ctx: &mut AnsiContext) -> String {
     ctx.smart_quote = SmartQuoteState::new();
-    render_inlines(nodes, ctx)
+    render_inlines(nodes, ctx, 0)
 }
 
 fn style(text: &str, codes: &str) -> String {
     format!("{codes}{text}{RESET}")
 }
 
-fn render_blocks(blocks: &[BlockNode], ctx: &mut AnsiContext) -> String {
+fn render_blocks(blocks: &[BlockNode], ctx: &mut AnsiContext, depth: usize) -> String {
+    if depth > MAX_RENDER_DEPTH {
+        return String::new();
+    }
     blocks
         .iter()
-        .map(|block| render_block(block, ctx))
+        .map(|block| render_block(block, ctx, depth))
         .collect()
 }
 
-fn render_block(node: &BlockNode, ctx: &mut AnsiContext) -> String {
+fn render_block(node: &BlockNode, ctx: &mut AnsiContext, depth: usize) -> String {
+    if depth > MAX_RENDER_DEPTH {
+        return String::new();
+    }
     match node {
         BlockNode::Heading(heading) => {
             render_heading(heading.level, &render_block_inlines(&heading.children, ctx))
@@ -92,15 +100,15 @@ fn render_block(node: &BlockNode, ctx: &mut AnsiContext) -> String {
         }
         BlockNode::BlockQuote(quote) => {
             ctx.block_quote_depth += 1;
-            let out = render_blocks(&quote.children, ctx);
+            let out = render_blocks(&quote.children, ctx, depth + 1);
             ctx.block_quote_depth -= 1;
             out
         }
-        BlockNode::List(list) => render_list(list, ctx),
+        BlockNode::List(list) => render_list(list, ctx, depth + 1),
         BlockNode::ThematicBreak(_) => format!("{}\n\n", style(&"─".repeat(40), DIM)),
         BlockNode::Table(table) => render_table(table, ctx),
         BlockNode::Admonition(admonition) => {
-            let body = render_blocks(&admonition.children, ctx);
+            let body = render_blocks(&admonition.children, ctx, depth + 1);
             match &admonition.title {
                 Some(title) => {
                     let t = render_block_inlines(title, ctx);
@@ -121,9 +129,11 @@ fn render_block(node: &BlockNode, ctx: &mut AnsiContext) -> String {
                 None => body,
             }
         }
-        BlockNode::Div(div) => render_blocks(&div.children, ctx),
-        BlockNode::DefinitionList(list) => render_definition_list(&list.items, ctx, true),
-        BlockNode::Figure(figure) => render_figure(figure, ctx),
+        BlockNode::Div(div) => render_blocks(&div.children, ctx, depth + 1),
+        BlockNode::DefinitionList(list) => {
+            render_definition_list(&list.items, ctx, true, depth + 1)
+        }
+        BlockNode::Figure(figure) => render_figure(figure, ctx, depth + 1),
         // Terminate the block image so the next block is not glued onto it.
         BlockNode::BlockImage(image) => format!("{}\n\n", render_image(image)),
         BlockNode::RawBlock(raw) => format!(
@@ -137,7 +147,7 @@ fn render_block(node: &BlockNode, ctx: &mut AnsiContext) -> String {
                 DIM
             )
         ),
-        BlockNode::Extension(extension) => render_blocks(&extension.children, ctx),
+        BlockNode::Extension(extension) => render_blocks(&extension.children, ctx, depth + 1),
         BlockNode::AbbreviationDef(_) | BlockNode::Comment(_) => String::new(),
     }
 }
@@ -191,7 +201,10 @@ fn prefix_lines(content: &str, prefix: &str) -> String {
         .join("\n")
 }
 
-fn render_list(node: &List, ctx: &mut AnsiContext) -> String {
+fn render_list(node: &List, ctx: &mut AnsiContext, depth: usize) -> String {
+    if depth > MAX_RENDER_DEPTH {
+        return String::new();
+    }
     ctx.list_depth += 1;
     if node.ordered {
         if ctx.ordered.len() <= ctx.list_depth {
@@ -217,7 +230,7 @@ fn render_list(node: &List, ctx: &mut AnsiContext) -> String {
         };
         out.push_str(&format!(
             "{indent}{marker} {}\n",
-            render_blocks(&item.children, ctx).trim()
+            render_blocks(&item.children, ctx, depth + 1).trim()
         ));
     }
     ctx.list_depth -= 1;
@@ -231,7 +244,11 @@ fn render_definition_list(
     items: &[DefinitionItem],
     ctx: &mut AnsiContext,
     trailing_blank: bool,
+    depth: usize,
 ) -> String {
+    if depth > MAX_RENDER_DEPTH {
+        return String::new();
+    }
     let mut out = String::new();
     for item in items {
         for term in &item.terms {
@@ -244,7 +261,10 @@ fn render_definition_list(
             ));
         }
         for definition in &item.definitions {
-            out.push_str(&format!("  {}\n", render_blocks(definition, ctx).trim()));
+            out.push_str(&format!(
+                "  {}\n",
+                render_blocks(definition, ctx, depth + 1).trim()
+            ));
         }
     }
     if trailing_blank {
@@ -346,19 +366,28 @@ fn table_row(cells: &[RenderedCell], widths: &[usize]) -> String {
     format!("{sep}{}{sep}\n", parts.join(&sep))
 }
 
-fn render_figure(node: &Figure, ctx: &mut AnsiContext) -> String {
+fn render_figure(node: &Figure, ctx: &mut AnsiContext, depth: usize) -> String {
+    if depth > MAX_RENDER_DEPTH {
+        return String::new();
+    }
     let target = match &node.target {
         FigureTarget::Image(image) => render_image(image),
         FigureTarget::Table(table) => render_table(table, ctx).trim_end().to_string(),
-        FigureTarget::BlockQuote(quote) => render_block(&BlockNode::BlockQuote(quote.clone()), ctx)
-            .trim_end()
-            .to_string(),
-        FigureTarget::CodeBlock(cb) => render_block(&BlockNode::CodeBlock(cb.clone()), ctx)
-            .trim_end()
-            .to_string(),
-        FigureTarget::Paragraph(p) => render_block(&BlockNode::Paragraph(p.clone()), ctx)
-            .trim_end()
-            .to_string(),
+        FigureTarget::BlockQuote(quote) => {
+            render_block(&BlockNode::BlockQuote(quote.clone()), ctx, depth + 1)
+                .trim_end()
+                .to_string()
+        }
+        FigureTarget::CodeBlock(cb) => {
+            render_block(&BlockNode::CodeBlock(cb.clone()), ctx, depth + 1)
+                .trim_end()
+                .to_string()
+        }
+        FigureTarget::Paragraph(p) => {
+            render_block(&BlockNode::Paragraph(p.clone()), ctx, depth + 1)
+                .trim_end()
+                .to_string()
+        }
     };
     format!("{target}\n{}", render_caption(&node.caption, ctx))
 }
@@ -382,41 +411,59 @@ fn render_footnote_defs(doc: &Document, ctx: &mut AnsiContext) -> String {
                 &format!("[{}]", strip_controls(label)),
                 &(FG_CYAN.to_string() + DIM)
             ),
-            render_blocks(blocks, ctx).trim()
+            render_blocks(blocks, ctx, 0).trim()
         ));
     }
     out
 }
 
-fn render_inlines(nodes: &[InlineNode], ctx: &mut AnsiContext) -> String {
-    nodes.iter().map(|node| render_inline(node, ctx)).collect()
+fn render_inlines(nodes: &[InlineNode], ctx: &mut AnsiContext, depth: usize) -> String {
+    if depth > MAX_RENDER_DEPTH {
+        return String::new();
+    }
+    nodes
+        .iter()
+        .map(|node| render_inline(node, ctx, depth))
+        .collect()
 }
 
-fn render_inline(node: &InlineNode, ctx: &mut AnsiContext) -> String {
+fn render_inline(node: &InlineNode, ctx: &mut AnsiContext, depth: usize) -> String {
+    if depth > MAX_RENDER_DEPTH {
+        return String::new();
+    }
     match node {
         InlineNode::Text(text) => {
             strip_controls(&clean_smart_text_stateful(text, &mut ctx.smart_quote))
         }
         InlineNode::Emphasis(emphasis) => match emphasis.kind {
-            EmphasisKind::Italic => style(&render_inlines(&emphasis.children, ctx), ITALIC),
-            EmphasisKind::Strong => style(&render_inlines(&emphasis.children, ctx), BOLD),
-            EmphasisKind::Underline => style(&render_inlines(&emphasis.children, ctx), UNDERLINE),
-            EmphasisKind::Strike | EmphasisKind::Sub => {
-                style(&render_inlines(&emphasis.children, ctx), STRIKE)
+            EmphasisKind::Italic => {
+                style(&render_inlines(&emphasis.children, ctx, depth + 1), ITALIC)
             }
-            EmphasisKind::Super => to_superscript(&render_inlines(&emphasis.children, ctx)),
+            EmphasisKind::Strong => {
+                style(&render_inlines(&emphasis.children, ctx, depth + 1), BOLD)
+            }
+            EmphasisKind::Underline => style(
+                &render_inlines(&emphasis.children, ctx, depth + 1),
+                UNDERLINE,
+            ),
+            EmphasisKind::Strike | EmphasisKind::Sub => {
+                style(&render_inlines(&emphasis.children, ctx, depth + 1), STRIKE)
+            }
+            EmphasisKind::Super => {
+                to_superscript(&render_inlines(&emphasis.children, ctx, depth + 1))
+            }
             EmphasisKind::Highlight => style(
-                &render_inlines(&emphasis.children, ctx),
+                &render_inlines(&emphasis.children, ctx, depth + 1),
                 &("\x1b[7m".to_string() + FG_YELLOW),
             ),
             EmphasisKind::BoldItalic => style(
-                &render_inlines(&emphasis.children, ctx),
+                &render_inlines(&emphasis.children, ctx, depth + 1),
                 &(BOLD.to_string() + ITALIC),
             ),
         },
         InlineNode::Code(code, _) => style(&strip_controls(code), FG_BRIGHT_YELLOW),
         InlineNode::Link(link) => {
-            let text = render_inlines(&link.children, ctx);
+            let text = render_inlines(&link.children, ctx, depth + 1);
             let href = strip_controls(&link.href);
             let mut out = style(&text, &(UNDERLINE.to_string() + FG_BLUE));
             if !href.starts_with('#') && href != strip_ansi(&text) {
@@ -425,7 +472,7 @@ fn render_inline(node: &InlineNode, ctx: &mut AnsiContext) -> String {
             out
         }
         InlineNode::Image(image) => render_image(image),
-        InlineNode::Span(span) => render_inlines(&span.children, ctx),
+        InlineNode::Span(span) => render_inlines(&span.children, ctx, depth + 1),
         InlineNode::Math(math) => style(&strip_controls(&math.content), FG_BRIGHT_MAGENTA),
         InlineNode::RawInline(_) => String::new(),
         InlineNode::Emoji(emoji) => format!(":{}:", emoji.name),
@@ -434,9 +481,9 @@ fn render_inline(node: &InlineNode, ctx: &mut AnsiContext) -> String {
             let text = href.strip_prefix("mailto:").unwrap_or(&href);
             style(text, &(UNDERLINE.to_string() + FG_BLUE))
         }
-        InlineNode::Mention(mention) => format!("@{}", mention.user),
-        InlineNode::Tag(tag) => format!("#{}", tag.name),
-        InlineNode::Extension(extension) => render_inlines(&extension.children, ctx),
+        InlineNode::Mention(mention) => format!("@{}", strip_controls(&mention.user)),
+        InlineNode::Tag(tag) => format!("#{}", strip_controls(&tag.name)),
+        InlineNode::Extension(extension) => render_inlines(&extension.children, ctx, depth + 1),
         InlineNode::Abbreviation(abbr) => format!(
             "{}{}",
             strip_controls(&abbr.abbr),
@@ -447,7 +494,7 @@ fn render_inline(node: &InlineNode, ctx: &mut AnsiContext) -> String {
                 // Footnote content is its own context: render with a FRESH quote
                 // state and restore the surrounding paragraph's. Matches carve-php.
                 let saved = std::mem::replace(&mut ctx.smart_quote, SmartQuoteState::new());
-                let rendered = render_inlines(inline, ctx);
+                let rendered = render_inlines(inline, ctx, depth + 1);
                 ctx.smart_quote = saved;
                 format!("({rendered})")
             } else {
@@ -460,11 +507,11 @@ fn render_inline(node: &InlineNode, ctx: &mut AnsiContext) -> String {
         InlineNode::SoftBreak => " ".to_string(),
         InlineNode::HardBreak => "\n".to_string(),
         InlineNode::CriticInsert(insert) => style(
-            &render_inlines(&insert.children, ctx),
+            &render_inlines(&insert.children, ctx, depth + 1),
             &(FG_GREEN.to_string() + UNDERLINE),
         ),
         InlineNode::CriticDelete(delete) => style(
-            &render_inlines(&delete.children, ctx),
+            &render_inlines(&delete.children, ctx, depth + 1),
             &(STRIKE.to_string() + "\x1b[31m"),
         ),
         InlineNode::CriticSubstitute(sub) => format!(

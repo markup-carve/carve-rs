@@ -104,6 +104,45 @@ fn markdown_escapes_link_and_image_titles() {
 }
 
 #[test]
+fn markdown_sanitizes_code_fence_info_string() {
+    let doc = carve::Document {
+        frontmatter: BTreeMap::new(),
+        footnote_defs: BTreeMap::new(),
+        children: vec![carve::BlockNode::CodeBlock(carve::CodeBlock {
+            attrs: None,
+            lang: Some("rs ```\n# injected".to_string()),
+            content: "let x = 1;".to_string(),
+        })],
+    };
+
+    // First whitespace-delimited token (`rs`) survives; the rest (backticks +
+    // injected line) is dropped. Byte-identical with carve-js / carve-php.
+    assert_eq!(
+        carve::render_markdown(&doc).trim(),
+        "```rs\nlet x = 1;\n```"
+    );
+}
+
+#[test]
+fn markdown_escapes_image_alt_label_metacharacters() {
+    let out = carve::render_markdown(&carve::Document {
+        frontmatter: BTreeMap::new(),
+        footnote_defs: BTreeMap::new(),
+        children: vec![carve::BlockNode::Paragraph(carve::Paragraph {
+            attrs: None,
+            children: vec![carve::InlineNode::Image(carve::Image {
+                attrs: None,
+                src: "/safe".to_string(),
+                alt: r"x](javascript:alert(1))![y\z".to_string(),
+                title: None,
+            })],
+        })],
+    });
+
+    assert_eq!(out.trim(), r"![x\](javascript:alert(1))!\[y\\z](/safe)");
+}
+
+#[test]
 fn markdown_strips_control_bytes_from_author_leaf_fields() {
     let c = "\x1b]0;p\x07";
     let mut footnote_defs = BTreeMap::new();
@@ -154,6 +193,12 @@ fn markdown_strips_control_bytes_from_author_leaf_fields() {
                     carve::InlineNode::Abbreviation(carve::Abbreviation {
                         abbr: format!("abbr{c}"),
                         expansion: format!("exp{c}"),
+                    }),
+                    carve::InlineNode::Mention(carve::Mention {
+                        user: format!("user{c}"),
+                    }),
+                    carve::InlineNode::Tag(carve::Tag {
+                        name: format!("tag{c}"),
                     }),
                     carve::InlineNode::Footnote(carve::Footnote {
                         attrs: None,
@@ -223,6 +268,12 @@ fn plain_and_ansi_strip_control_bytes_from_author_leaf_fields() {
                     carve::InlineNode::Abbreviation(carve::Abbreviation {
                         abbr: format!("abbr{c}"),
                         expansion: format!("exp{c}"),
+                    }),
+                    carve::InlineNode::Mention(carve::Mention {
+                        user: format!("user{c}"),
+                    }),
+                    carve::InlineNode::Tag(carve::Tag {
+                        name: format!("tag{c}"),
                     }),
                     carve::InlineNode::Footnote(carve::Footnote {
                         attrs: None,

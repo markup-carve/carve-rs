@@ -283,3 +283,33 @@ fn glued_table_cell_attributes() {
     let html = carve::to_html("| a | b |\n| c | d |\n|{rowspan=9} e | f |\n| ^ | h |");
     assert!(html.contains("rowspan=\"2\"") && !html.contains("rowspan=\"9\""));
 }
+
+#[test]
+fn footnote_body_reference_links_are_resolved() {
+    let html = carve::to_html("Body[^n]\n\n[^n]: [x][r]\n\n[r]: /u");
+    assert!(
+        html.contains("<li id=\"fn1\">") && html.contains("<p><a href=\"/u\">x</a>"),
+        "{html}"
+    );
+}
+
+#[test]
+fn footnote_body_crossrefs_are_resolved() {
+    let html = carve::to_html("# H\n\nBody[^n]\n\n[^n]: see </#h>");
+    assert!(
+        html.contains("<li id=\"fn1\">") && html.contains("<p>see <a href=\"#H\">H</a>"),
+        "{html}"
+    );
+}
+
+#[test]
+fn explicit_empty_link_and_image_titles_are_preserved() {
+    assert_eq!(
+        carve::to_html("[x](u \"\")"),
+        "<p><a href=\"u\" title=\"\">x</a></p>"
+    );
+    assert_eq!(
+        carve::to_html("![x](u \"\")"),
+        "<img src=\"u\" alt=\"x\" title=\"\">"
+    );
+}

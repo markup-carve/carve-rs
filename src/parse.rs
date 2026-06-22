@@ -4326,8 +4326,14 @@ fn resolve_crossrefs(doc: &mut Document, lowercase_ids: bool) {
     let mut counts = BTreeMap::new();
     let mut titles = BTreeMap::new();
     collect_heading_titles(&doc.children, &mut counts, &mut titles, lowercase_ids);
+    for blocks in doc.footnote_defs.values() {
+        collect_heading_titles(blocks, &mut counts, &mut titles, lowercase_ids);
+    }
     let mut caption_counts = BTreeMap::new();
     number_captioned_blocks(&mut doc.children, &mut caption_counts, &mut titles);
+    for blocks in doc.footnote_defs.values_mut() {
+        number_captioned_blocks(blocks, &mut caption_counts, &mut titles);
+    }
     // Case-folded index of known ids -> actual (case-preserved) id. First
     // occurrence wins, so a duplicate that only differs in case does not shadow
     // the earlier heading. Used as a fallback when an exact id match fails, so a
@@ -4340,6 +4346,11 @@ fn resolve_crossrefs(doc: &mut Document, lowercase_ids: bool) {
     let index = CrossrefIndex { titles, folded };
     for block in &mut doc.children {
         resolve_crossrefs_block(block, &index);
+    }
+    for blocks in doc.footnote_defs.values_mut() {
+        for block in blocks {
+            resolve_crossrefs_block(block, &index);
+        }
     }
 }
 
@@ -4379,6 +4390,11 @@ fn case_fold(s: &str) -> String {
 fn resolve_reference_links(doc: &mut Document, defs: &BTreeMap<String, LinkDef>) {
     for block in &mut doc.children {
         resolve_reference_links_block(block, defs);
+    }
+    for blocks in doc.footnote_defs.values_mut() {
+        for block in blocks {
+            resolve_reference_links_block(block, defs);
+        }
     }
 }
 
