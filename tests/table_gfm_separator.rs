@@ -41,3 +41,11 @@ fn no_separator_keeps_all_rows_as_data() {
 <tr><td>c</td><td>d</td></tr>\n  </tbody>\n</table>"
     );
 }
+
+#[test]
+fn continuation_after_header_only_separator_table_starts_new_block() {
+    assert_eq!(
+        html("| a | b |\n| - | - |\n+ cont |"),
+        "<table>\n  <thead><tr><th>a</th><th>b</th></tr></thead>\n</table>\n<p>+ cont |</p>"
+    );
+}
