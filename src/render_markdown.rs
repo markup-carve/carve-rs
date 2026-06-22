@@ -18,12 +18,20 @@ pub fn render_markdown_with_options(doc: &Document, _options: &Options<'_>) -> S
 pub fn render_markdown(doc: &Document) -> String {
     let mut heading_ids = HashSet::new();
     let mut referenced_heading_ids = HashSet::new();
-    walk_blocks(&doc.children, 0, &mut |block, _| {
+    // Footnote definition bodies are rendered as block content too, so their
+    // headings and crossref links must be part of the heading-id / referenced-id
+    // prepass; otherwise a heading referenced only from a footnote loses the
+    // `{#id}` suffix needed to keep the link valid on reparse.
+    let mut heading_pass = |block: &BlockNode, _: Option<&[InlineNode]>| {
         if let BlockNode::Heading(heading) = block {
             heading_ids.insert(heading_id(heading));
         }
-    });
-    walk_blocks(&doc.children, 0, &mut |_, inlines| {
+    };
+    walk_blocks(&doc.children, 0, &mut heading_pass);
+    for body in doc.footnote_defs.values() {
+        walk_blocks(body, 0, &mut heading_pass);
+    }
+    let mut ref_pass = |_: &BlockNode, inlines: Option<&[InlineNode]>| {
         if let Some(inlines) = inlines {
             walk_inlines(inlines, 0, &mut |node| {
                 if let InlineNode::Link(link) = node {
@@ -35,7 +43,11 @@ pub fn render_markdown(doc: &Document) -> String {
                 }
             });
         }
-    });
+    };
+    walk_blocks(&doc.children, 0, &mut ref_pass);
+    for body in doc.footnote_defs.values() {
+        walk_blocks(body, 0, &mut ref_pass);
+    }
 
     let mut ctx = MarkdownContext {
         heading_ids,
