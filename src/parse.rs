@@ -2123,6 +2123,9 @@ fn is_table_start(line: &str) -> bool {
     if trimmed.len() < 2 || !trimmed.starts_with('|') {
         return false;
     }
+    if trimmed == "||" {
+        return false;
+    }
     trimmed.ends_with('|') || split_row_attrs(trimmed).0.is_some()
 }
 
@@ -2159,13 +2162,17 @@ fn parse_table(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         if !is_table_start(line) && !is_table_continuation(line) {
             break;
         }
-        cur.consume();
         if is_table_continuation(line) {
+            if saw_separator && rows.len() == 1 {
+                break;
+            }
+            cur.consume();
             if let Some(last) = rows.last_mut() {
                 apply_table_continuation(last, line, options);
             }
             continue;
         }
+        cur.consume();
         if rows.is_empty() {
             first_is_delim = is_delim_row(line);
         } else if rows.len() == 1 && !saw_separator && !first_is_delim && is_delim_row(line) {
@@ -2827,10 +2834,21 @@ fn attr_tokens(src: &str) -> Vec<String> {
 
 fn parse_standalone_attrs(line: &str) -> Option<Attrs> {
     let trimmed = line.trim();
-    if !trimmed.starts_with('{') || !trimmed.ends_with('}') {
+    if !trimmed.starts_with('{') {
         return None;
     }
-    parse_attrs(&trimmed[1..trimmed.len() - 1])
+    let bytes = trimmed.as_bytes();
+    let mut pos = 0usize;
+    let mut attrs: Option<Attrs> = None;
+    while pos < bytes.len() {
+        let (incoming, next) = read_attrs_at(bytes, pos)?;
+        merge_attrs(&mut attrs, incoming);
+        pos = next;
+        if pos < bytes.len() && bytes[pos] != b'{' {
+            return None;
+        }
+    }
+    attrs
 }
 
 /// A standalone block-attribute block, possibly spanning several contiguous
