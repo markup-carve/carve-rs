@@ -72,6 +72,8 @@ pub struct Paragraph {
 pub struct CodeBlock {
     pub attrs: Option<Attrs>,
     pub lang: Option<String>,
+    pub title: Option<String>,
+    pub label: Option<String>,
     pub content: String,
 }
 
@@ -150,12 +152,14 @@ pub struct Admonition {
     pub attrs: Option<Attrs>,
     pub kind: String,
     pub title: Option<Vec<InlineNode>>,
+    pub label: Option<String>,
     pub children: Vec<BlockNode>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Div {
     pub attrs: Option<Attrs>,
+    pub label: Option<String>,
     pub children: Vec<BlockNode>,
 }
 
