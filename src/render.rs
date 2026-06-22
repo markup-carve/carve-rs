@@ -13,6 +13,8 @@ use crate::extension::{Options, RenderContext};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fmt::Write as _;
 
+const MAX_RENDER_DEPTH: usize = 80;
+
 pub fn render_html(doc: &Document) -> String {
     render_html_with_options(doc, &Options::default())
 }
@@ -489,6 +491,9 @@ fn render_block(
     options: &Options<'_>,
     state: &mut RenderState,
 ) {
+    if level > MAX_RENDER_DEPTH {
+        return;
+    }
     match node {
         BlockNode::Heading(h) => render_heading(out, h, level, options, state),
         BlockNode::Paragraph(p) => render_paragraph(out, p, level, options),
@@ -634,6 +639,11 @@ fn render_paragraph(out: &mut String, p: &Paragraph, level: usize, options: &Opt
 fn render_code_block(out: &mut String, c: &CodeBlock, level: usize) {
     indent(out, level);
     out.push_str("<pre");
+    if let Some(title) = &c.title {
+        if !attrs_has_key(&c.attrs, "title") {
+            write_attr_key_value(out, "title", title);
+        }
+    }
     write_attrs(out, &c.attrs);
     out.push_str("><code");
     if let Some(lang) = &c.lang {
@@ -644,6 +654,12 @@ fn render_code_block(out: &mut String, c: &CodeBlock, level: usize) {
     out.push('>');
     write_escaped_text(out, &c.content);
     out.push_str("\n</code></pre>");
+}
+
+fn attrs_has_key(attrs: &Option<Attrs>, key: &str) -> bool {
+    attrs
+        .as_ref()
+        .is_some_and(|attrs| attrs.key_values.keys().any(|k| k.eq_ignore_ascii_case(key)))
 }
 
 fn render_list(
