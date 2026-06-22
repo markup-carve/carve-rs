@@ -120,14 +120,17 @@ fn extract_footnote_defs(source: &str) -> (String, BTreeMap<String, String>) {
                     break;
                 }
                 if line.trim().is_empty() {
-                    if i + 1 < lines.len() && leading_ws(lines[i + 1]) >= 4 {
+                    // A footnote body extends to following lines indented by
+                    // >= 2 spaces (grammar PART 9 §16); single blank lines
+                    // are allowed between chunks.
+                    if i + 1 < lines.len() && leading_ws(lines[i + 1]) >= 2 {
                         def_lines.push(String::new());
                         i += 1;
                         continue;
                     }
                     break;
                 }
-                if leading_ws(line) > 0 {
+                if leading_ws(line) >= 2 {
                     def_lines.push(line.trim_start().to_string());
                     i += 1;
                     continue;
@@ -2700,6 +2703,9 @@ fn parse_attrs(src: &str) -> Option<Attrs> {
             if !is_identifier(key) {
                 return None;
             }
+            if value.is_empty() {
+                return None;
+            }
             let value = value
                 .trim_matches('"')
                 .trim_matches('\'')
@@ -4019,6 +4025,9 @@ fn read_link_target(bytes: &[u8], start: usize) -> Option<(String, Option<String
         && bytes[i] != b'\n'
     {
         i += 1;
+    }
+    if i == href_start {
+        return None;
     }
     let href = std::str::from_utf8(&bytes[href_start..i]).ok()?.to_string();
     // Skip whitespace
