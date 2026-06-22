@@ -120,14 +120,17 @@ fn extract_footnote_defs(source: &str) -> (String, BTreeMap<String, String>) {
                     break;
                 }
                 if line.trim().is_empty() {
-                    if i + 1 < lines.len() && leading_ws(lines[i + 1]) > 0 {
+                    // A footnote body extends to following lines indented by
+                    // >= 2 spaces (grammar PART 9 §16); single blank lines
+                    // are allowed between chunks.
+                    if i + 1 < lines.len() && leading_ws(lines[i + 1]) >= 2 {
                         def_lines.push(String::new());
                         i += 1;
                         continue;
                     }
                     break;
                 }
-                if leading_ws(line) > 0 {
+                if leading_ws(line) >= 2 {
                     def_lines.push(line.trim_start().to_string());
                     i += 1;
                     continue;
