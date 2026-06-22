@@ -32,3 +32,53 @@ fn blank_separated_indented_footnote_continuation_stays_in_footnote() {
         )
     );
 }
+
+#[test]
+fn compact_multiple_ids_last_wins() {
+    assert_eq!(html("[a]{#i#j}"), "<p><span id=\"j\">a</span></p>");
+}
+
+#[test]
+fn compact_multiple_classes_accumulate() {
+    assert_eq!(
+        html("[a]{.a.b}"),
+        "<p><span class=\"a b\">a</span></p>"
+    );
+}
+
+#[test]
+fn list_marker_strips_all_whitespace_before_content() {
+    assert_eq!(html("-   x"), "<ul>\n  <li>x</li>\n</ul>");
+}
+
+#[test]
+fn bullet_marker_change_splits_list() {
+    assert_eq!(
+        html("* a\n- b"),
+        "<ul>\n  <li>a</li>\n</ul>\n<ul>\n  <li>b</li>\n</ul>"
+    );
+}
+
+#[test]
+fn blockquote_on_list_marker_line_nests_in_item() {
+    assert_eq!(
+        html("- > q"),
+        "<ul>\n  <li>\n    <blockquote><p>q</p></blockquote>\n  </li>\n</ul>"
+    );
+}
+
+#[test]
+fn empty_code_span_after_dollar_is_not_math() {
+    assert_eq!(html("$``"), "<p>$<code></code></p>");
+    assert_eq!(html("$$``"), "<p>$$<code></code></p>");
+}
+
+#[test]
+fn reference_definition_requires_space_after_colon() {
+    assert_eq!(html("[a]:u"), "<p>[a]:u</p>");
+}
+
+#[test]
+fn footnote_definition_requires_space_after_colon() {
+    assert_eq!(html("[^1]\n\n[^1]:x"), "<p>[^1]</p>\n<p>[^1]:x</p>");
+}

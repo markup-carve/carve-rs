@@ -17,10 +17,10 @@ use std::collections::{BTreeMap, HashMap};
 ///
 /// The cap also bounds the depth of the AST the renderers walk recursively, so
 /// it is chosen to keep parse + render safe on a conservative 2 MiB thread
-/// stack (render alone overflows ~130-deep there); 100 levels is far beyond any
+/// stack (render alone overflows ~130-deep there); 64 levels is far beyond any
 /// real document while leaving comfortable headroom. carve-php's analogous cap
 /// is higher only because PHP grows its VM stack on the heap.
-const MAX_NESTING_DEPTH: usize = 100;
+const MAX_NESTING_DEPTH: usize = 64;
 
 thread_local! {
     // Plain initializer (not `const { … }`) to keep the crate's 1.75 MSRV;
@@ -152,7 +152,7 @@ fn extract_footnote_defs(source: &str) -> (String, BTreeMap<String, String>) {
 
 fn parse_footnote_def_line(line: &str) -> Option<(&str, &str)> {
     let rest = line.strip_prefix("[^")?;
-    let (label, body) = rest.split_once("]:")?;
+    let (label, body) = rest.split_once("]: ")?;
     Some((label, body.trim_start()))
 }
 
@@ -167,7 +167,7 @@ fn extract_link_defs(source: &str) -> (String, BTreeMap<String, LinkDef>) {
     let mut defs = BTreeMap::new();
     for line in source.lines() {
         if let Some((label_part, target_part)) =
-            line.strip_prefix('[').and_then(|s| s.split_once("]:"))
+            line.strip_prefix('[').and_then(|s| s.split_once("]: "))
         {
             if label_part.starts_with('@') {
                 body.push(line);
@@ -623,6 +623,8 @@ struct FenceOpen {
     fence_len: usize,
     lang_start: usize,
     lang_end: usize,
+    /// Byte span (quotes excluded) of an opener `"header"`, if present.
+    header: Option<(usize, usize)>,
 }
 
 fn detect_fence_open(line: &str) -> Option<FenceOpen> {
@@ -683,6 +685,7 @@ fn detect_fence_open(line: &str) -> Option<FenceOpen> {
             fence_len,
             lang_start,
             lang_end,
+            header: None,
         });
     }
     // Language token charset covers real-world tags with punctuation
@@ -701,20 +704,51 @@ fn detect_fence_open(line: &str) -> Option<FenceOpen> {
         i += 1;
     }
     let lang_end = i;
-    // Optional bracketed [label] after the language token (info string =
-    // language token + optional [label]); the label is metadata and does
-    // not affect the language class.
-    let mut j = i;
-    while j < bytes.len() && bytes[j] == b' ' {
-        j += 1;
+    let had_lang = lang_end > lang_start;
+    // Info string after the language: an optional quoted "header" then an
+    // optional bracketed [label], in that order. Each must be whitespace-
+    // separated from the preceding token (grammar PART 9 §2); the FIRST token
+    // may sit directly against the fence when there is no language. A glued or
+    // out-of-order token, a key=value pair, or any other text is NOT a fence.
+    let mut header: Option<(usize, usize)> = None;
+    // optional "header"
+    let before_header = i;
+    while i < bytes.len() && bytes[i] == b' ' {
+        i += 1;
     }
-    if j < bytes.len() && bytes[j] == b'[' {
-        while j < bytes.len() && bytes[j] != b']' {
-            j += 1;
+    let saw_space_h = i > before_header;
+    if i < bytes.len() && bytes[i] == b'"' {
+        if had_lang && !saw_space_h {
+            return None; // glued to the language token
         }
-        if j < bytes.len() && bytes[j] == b']' {
-            i = j + 1;
+        let hs = i + 1;
+        i += 1;
+        while i < bytes.len() && bytes[i] != b'"' {
+            i += 1;
         }
+        if i >= bytes.len() {
+            return None; // unterminated header
+        }
+        header = Some((hs, i));
+        i += 1; // past closing quote
+    }
+    // optional [label]
+    let before_label = if header.is_some() { i } else { before_header };
+    while i < bytes.len() && bytes[i] == b' ' {
+        i += 1;
+    }
+    let saw_space_l = i > before_label;
+    if i < bytes.len() && bytes[i] == b'[' {
+        if (had_lang || header.is_some()) && !saw_space_l {
+            return None; // glued to a preceding token
+        }
+        while i < bytes.len() && bytes[i] != b']' {
+            i += 1;
+        }
+        if i >= bytes.len() || bytes[i] != b']' {
+            return None; // unterminated label
+        }
+        i += 1; // past ]
     }
     // Must be only whitespace after the info string
     while i < bytes.len() && bytes[i] == b' ' {
@@ -729,6 +763,7 @@ fn detect_fence_open(line: &str) -> Option<FenceOpen> {
         fence_len,
         lang_start,
         lang_end,
+        header,
     })
 }
 
@@ -741,6 +776,9 @@ fn parse_fence(cur: &mut LineCursor, open: FenceOpen) -> BlockNode {
     } else {
         None
     };
+    let header = open
+        .header
+        .map(|(s, e)| open_line[s..e].to_string());
     let mut content_lines: Vec<String> = Vec::new();
     while let Some(line) = cur.peek() {
         if is_fence_close(line, open) {
@@ -761,6 +799,7 @@ fn parse_fence(cur: &mut LineCursor, open: FenceOpen) -> BlockNode {
         BlockNode::CodeBlock(CodeBlock {
             attrs: None,
             lang,
+            header,
             content: content_lines.join("\n"),
         })
     }
@@ -1037,13 +1076,23 @@ fn read_list_item_attrs(bytes: &[u8], start: usize) -> Option<(Option<Attrs>, us
 fn marker_tail(line: &str, marker_end: usize) -> Option<(&str, Option<Attrs>)> {
     let bytes = line.as_bytes();
     let (content, attrs) = match bytes.get(marker_end) {
-        Some(&b' ') => (line[marker_end + 1..].trim_end(), None),
+        Some(&b' ') => (
+            line[marker_end + 1..]
+                .trim_start_matches([' ', '\t'])
+                .trim_end(),
+            None,
+        ),
         Some(&b'{') => {
             let (attrs, end) = read_list_item_attrs(bytes, marker_end)?;
             if bytes.get(end) != Some(&b' ') {
                 return None;
             }
-            (line[end + 1..].trim_end(), attrs)
+            (
+                line[end + 1..]
+                    .trim_start_matches([' ', '\t'])
+                    .trim_end(),
+                attrs,
+            )
         }
         _ => return None,
     };
@@ -1514,6 +1563,9 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         if marker.ordered != is_ordered || marker.checked.is_some() != is_task {
             break;
         }
+        if !is_ordered && !items.is_empty() && marker.marker != first_marker.marker {
+            break;
+        }
         // §11: an ordered item whose delimiter (`.` vs `)`) or dialect family
         // (decimal / alpha / roman, case included) differs from the list's first
         // item starts a NEW sibling list. Skip the FIRST item: its own detected
@@ -1611,6 +1663,21 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                     stream.push('\n');
                     stream.push_str(&resumed);
                 }
+            }
+            let children = parse_blocks_with_options(&stream, options);
+            items.push(ListItem {
+                attrs: marker.attrs.clone(),
+                checked: marker.checked,
+                children,
+            });
+            continue;
+        }
+        if marker.content.starts_with('>') {
+            let mut stream = marker.content.to_string();
+            let following = collect_indented_block(cur, base_indent, content_col);
+            if !following.is_empty() {
+                stream.push('\n');
+                stream.push_str(&following);
             }
             let children = parse_blocks_with_options(&stream, options);
             items.push(ListItem {
@@ -1750,6 +1817,7 @@ fn is_ambiguous_roman_letter(m: &str) -> bool {
 fn detect_list_marker_full(line: &str) -> Option<ListMarker<'_>> {
     let indent = indent_columns(line);
     if let Some((checked, content, attrs)) = detect_task(line) {
+        let marker_start = leading_ws(line);
         return Some(ListMarker {
             indent,
             ordered: false,
@@ -1759,7 +1827,7 @@ fn detect_list_marker_full(line: &str) -> Option<ListMarker<'_>> {
             content,
             attrs,
             delim: None,
-            marker: "",
+            marker: &line[marker_start..marker_start + 1],
         });
     }
     if let Some((content, start, ol_type, attrs, delim, marker)) = detect_ordered_full(line) {
@@ -1776,6 +1844,7 @@ fn detect_list_marker_full(line: &str) -> Option<ListMarker<'_>> {
         });
     }
     if let Some((content, attrs)) = detect_unordered(line) {
+        let marker_start = leading_ws(line);
         return Some(ListMarker {
             indent,
             ordered: false,
@@ -1785,7 +1854,7 @@ fn detect_list_marker_full(line: &str) -> Option<ListMarker<'_>> {
             content,
             attrs,
             delim: None,
-            marker: "",
+            marker: &line[marker_start..marker_start + 1],
         });
     }
     None
@@ -2377,7 +2446,22 @@ struct ContainerOpen {
     fence_len: usize,
     kind: Option<String>,
     title: Option<String>,
+    /// Inert opener `[label]` grouping id (PART 9 §12); not rendered by core,
+    /// reserved for a group extension.
+    label: Option<String>,
     attrs: Option<Attrs>,
+}
+
+/// Parse a trailing `[label]`: the slice must be exactly `[...]` with nothing
+/// but whitespace after it. Returns the inner text, or None if it is not a
+/// single clean bracketed label.
+fn parse_bracket_label(s: &str) -> Option<String> {
+    let inner = s.strip_prefix('[')?;
+    let close = inner.find(']')?;
+    if !inner[close + 1..].trim().is_empty() {
+        return None;
+    }
+    Some(inner[..close].to_string())
 }
 
 fn detect_container_open(line: &str) -> Option<ContainerOpen> {
@@ -2387,15 +2471,29 @@ fn detect_container_open(line: &str) -> Option<ContainerOpen> {
         return None;
     }
     let rest = trimmed[fence_len..].trim();
-    // STRICT (djot): the opener is the colon fence, an optional type word,
-    // and an optional quoted title -- and NOTHING else. A trailing `{...}`
-    // (or any other non-title text) makes the line an ordinary paragraph,
-    // not a fence; attributes attach via a preceding block-attribute line.
+    // STRICT (djot): the opener is the colon fence, an optional type word, an
+    // optional quoted "header", and an optional bracketed [label] -- in that
+    // order -- and NOTHING else. The header/label are whitespace-separated from
+    // the type and from each other; a bare [label] with no type may sit against
+    // the fence. A trailing `{...}` (or any other text) makes the line an
+    // ordinary paragraph; attributes attach via a preceding block-attribute line.
     if rest.is_empty() {
         return Some(ContainerOpen {
             fence_len,
             kind: None,
             title: None,
+            label: None,
+            attrs: None,
+        });
+    }
+    // A bare [label] with no type word (a typeless tab member).
+    if rest.starts_with('[') {
+        let label = parse_bracket_label(rest)?;
+        return Some(ContainerOpen {
+            fence_len,
+            kind: None,
+            title: None,
+            label: Some(label),
             attrs: None,
         });
     }
@@ -2412,23 +2510,36 @@ fn detect_container_open(line: &str) -> Option<ContainerOpen> {
         .map(|(i, _)| i)
         .unwrap_or(rest.len());
     let kind = rest[..id_end].to_string();
-    let after = rest[id_end..].trim();
-    // After the type, only a quoted title may follow (with nothing after
-    // it); anything else (a `{...}` block, unquoted text) is not a fence.
-    let title = if after.is_empty() {
-        None
-    } else {
-        let inner = after.strip_prefix('"')?;
+    let after_raw = &rest[id_end..];
+    let after = after_raw.trim();
+    // Metadata after the type must be whitespace-separated from it.
+    if !after.is_empty() && !after_raw.starts_with(|c: char| c.is_whitespace()) {
+        return None;
+    }
+    // Optional quoted "header", then optional [label] (space-separated).
+    let (title, tail) = if let Some(inner) = after.strip_prefix('"') {
         let close = inner.find('"')?;
-        if !inner[close + 1..].trim().is_empty() {
+        let raw_tail = &inner[close + 1..];
+        let tail = raw_tail.trim();
+        if !tail.is_empty() && !raw_tail.starts_with(|c: char| c.is_whitespace()) {
             return None;
         }
-        Some(inner[..close].to_string())
+        (Some(inner[..close].to_string()), tail)
+    } else {
+        (None, after)
+    };
+    let label = if tail.is_empty() {
+        None
+    } else if tail.starts_with('[') {
+        Some(parse_bracket_label(tail)?)
+    } else {
+        return None;
     };
     Some(ContainerOpen {
         fence_len,
         kind: Some(kind),
         title,
+        label,
         attrs: None,
     })
 }
@@ -2451,11 +2562,13 @@ fn parse_container(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             attrs: open.attrs,
             kind,
             title: open.title.map(|t| parse_inline_with_options(&t, options)),
+            label: open.label,
             children,
         })
     } else {
         BlockNode::Div(Div {
             attrs: open.attrs,
+            label: open.label,
             children,
         })
     }
@@ -2601,6 +2714,7 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             key_values: BTreeMap::new(),
             order: vec![AttrSlot::Class],
         }),
+        label: None,
         children,
     })
 }
@@ -2683,22 +2797,34 @@ fn parse_attrs(src: &str) -> Option<Attrs> {
     }
     let mut attrs = Attrs::default();
     for token in attr_tokens(src) {
-        if let Some(id) = token.strip_prefix('#') {
-            if !is_identifier(id) {
-                return None;
+        if token.starts_with('#') || token.starts_with('.') {
+            let mut rest = token.as_str();
+            while !rest.is_empty() {
+                let sigil = rest.as_bytes()[0];
+                if sigil != b'#' && sigil != b'.' {
+                    return None;
+                }
+                let next = rest[1..]
+                    .find(['#', '.'])
+                    .map(|idx| idx + 1)
+                    .unwrap_or(rest.len());
+                let name = &rest[1..next];
+                if !is_identifier(name) {
+                    return None;
+                }
+                if sigil == b'#' {
+                    if attrs.id.is_none() {
+                        attrs.order.push(AttrSlot::Id);
+                    }
+                    attrs.id = Some(name.to_string());
+                } else {
+                    if attrs.classes.is_empty() {
+                        attrs.order.push(AttrSlot::Class);
+                    }
+                    attrs.classes.push(name.to_string());
+                }
+                rest = &rest[next..];
             }
-            if attrs.id.is_none() {
-                attrs.order.push(AttrSlot::Id);
-            }
-            attrs.id = Some(id.to_string());
-        } else if let Some(class) = token.strip_prefix('.') {
-            if !is_identifier(class) {
-                return None;
-            }
-            if attrs.classes.is_empty() {
-                attrs.order.push(AttrSlot::Class);
-            }
-            attrs.classes.push(class.to_string());
         } else if let Some((key, value)) = token.split_once('=') {
             if !is_identifier(key) {
                 return None;
@@ -3444,6 +3570,9 @@ fn parse_math(bytes: &[u8], start: usize) -> Option<(Math, usize)> {
     }
     let rest = std::str::from_utf8(&bytes[tick + 1..]).ok()?;
     let close = rest.find('`')?;
+    if close == 0 {
+        return None;
+    }
     let end = tick + 1 + close + 1;
     // A trailing attribute block attaches to the math span (math reuses the
     // code-span attribute slot), EXCEPT `{=format}`, the raw-inline form,
@@ -3575,7 +3704,7 @@ fn parse_inline_code(bytes: &[u8], start: usize) -> Option<(String, usize)> {
             let raw = std::str::from_utf8(&bytes[content_start..close_start]).ok()?;
             // Per CommonMark/JS: trim one leading and one trailing space if both ends are spaces.
             let trimmed =
-                if raw.starts_with(' ') && raw.ends_with(' ') && raw.trim().len() < raw.len() {
+                if raw.starts_with(' ') && raw.ends_with(' ') && !raw.trim().is_empty() {
                     &raw[1..raw.len() - 1]
                 } else {
                     raw
@@ -3587,7 +3716,7 @@ fn parse_inline_code(bytes: &[u8], start: usize) -> Option<(String, usize)> {
     // No matching closer: an unclosed verbatim opener is opaque to the end of
     // the text (matches djot / carve-php / carve-js).
     let raw = std::str::from_utf8(&bytes[content_start..]).ok()?;
-    let trimmed = if raw.starts_with(' ') && raw.ends_with(' ') && raw.trim().len() < raw.len() {
+    let trimmed = if raw.starts_with(' ') && raw.ends_with(' ') && !raw.trim().is_empty() {
         &raw[1..raw.len() - 1]
     } else {
         raw

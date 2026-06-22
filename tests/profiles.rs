@@ -54,6 +54,7 @@ fn maps_block_variants_to_canonical_names() {
         canonical_block_type(&BlockNode::CodeBlock(CodeBlock {
             attrs: None,
             lang: None,
+            header: None,
             content: String::new(),
         })),
         Some("code_block")
@@ -68,6 +69,7 @@ fn maps_block_variants_to_canonical_names() {
             attrs: None,
             kind: "note".into(),
             title: None,
+            label: None,
             children: vec![],
         })),
         Some("div")

@@ -72,6 +72,9 @@ pub struct Paragraph {
 pub struct CodeBlock {
     pub attrs: Option<Attrs>,
     pub lang: Option<String>,
+    /// Opener `"header"` (```php "src/Auth.php"). Literal text rendered as the
+    /// `title` attribute on the `<pre>`; a preceding `{title=...}` line wins.
+    pub header: Option<String>,
     pub content: String,
 }
 
@@ -150,12 +153,17 @@ pub struct Admonition {
     pub attrs: Option<Attrs>,
     pub kind: String,
     pub title: Option<Vec<InlineNode>>,
+    /// Inert opener `[label]` (`::: tab [First]`) -- structured grouping
+    /// metadata, not rendered by core; reserved for a group extension.
+    pub label: Option<String>,
     pub children: Vec<BlockNode>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Div {
     pub attrs: Option<Attrs>,
+    /// Inert opener `[label]` (bare `::: [First]`) -- see Admonition::label.
+    pub label: Option<String>,
     pub children: Vec<BlockNode>,
 }
 

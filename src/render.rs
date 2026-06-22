@@ -635,6 +635,15 @@ fn render_code_block(out: &mut String, c: &CodeBlock, level: usize) {
     indent(out, level);
     out.push_str("<pre");
     write_attrs(out, &c.attrs);
+    let has_title_attr = c
+        .attrs
+        .as_ref()
+        .is_some_and(|attrs| attrs.key_values.contains_key("title"));
+    if !has_title_attr {
+        if let Some(header) = &c.header {
+            write_attr_key_value(out, "title", header);
+        }
+    }
     out.push_str("><code");
     if let Some(lang) = &c.lang {
         out.push_str(" class=\"language-");
