@@ -2,6 +2,8 @@ use crate::ast::*;
 use crate::extension::Options;
 use crate::render_text::{clean_smart_text_stateful, strip_controls, SmartQuoteState};
 
+const MAX_RENDER_DEPTH: usize = 100;
+
 /// Render a document to plain text. See `render_markdown_with_options` for why
 /// the options-taking wrapper exists; the profile transform runs upstream.
 pub fn render_plain_text_with_options(doc: &Document, _options: &Options<'_>) -> String {
@@ -9,16 +11,25 @@ pub fn render_plain_text_with_options(doc: &Document, _options: &Options<'_>) ->
 }
 
 pub fn render_plain_text(doc: &Document) -> String {
-    let out = render_blocks(&doc.children);
+    let out = render_blocks(&doc.children, 0);
     let footnotes = render_footnote_defs(doc);
     normalize(&format!("{out}{footnotes}"))
 }
 
-fn render_blocks(blocks: &[BlockNode]) -> String {
-    blocks.iter().map(render_block).collect()
+fn render_blocks(blocks: &[BlockNode], depth: usize) -> String {
+    if depth > MAX_RENDER_DEPTH {
+        return String::new();
+    }
+    blocks
+        .iter()
+        .map(|block| render_block(block, depth))
+        .collect()
 }
 
-fn render_block(node: &BlockNode) -> String {
+fn render_block(node: &BlockNode, depth: usize) -> String {
+    if depth > MAX_RENDER_DEPTH {
+        return String::new();
+    }
     match node {
         BlockNode::Heading(heading) => format!("{}\n\n", render_inlines(&heading.children)),
         BlockNode::Paragraph(paragraph) => {
@@ -29,13 +40,16 @@ fn render_block(node: &BlockNode) -> String {
         }
         BlockNode::CodeBlock(code) => format!("{}\n\n", strip_controls(&code.content)),
         BlockNode::BlockQuote(quote) => {
-            format!("\"{}\"\n\n", render_blocks(&quote.children).trim())
+            format!(
+                "\"{}\"\n\n",
+                render_blocks(&quote.children, depth + 1).trim()
+            )
         }
-        BlockNode::List(list) => render_list(list),
+        BlockNode::List(list) => render_list(list, depth + 1),
         BlockNode::ThematicBreak(_) => "---\n\n".to_string(),
         BlockNode::Table(table) => render_table(table),
         BlockNode::Admonition(admonition) => {
-            let body = render_blocks(&admonition.children);
+            let body = render_blocks(&admonition.children, depth + 1);
             match &admonition.title {
                 Some(title) => {
                     let t = render_inlines(title);
@@ -48,19 +62,22 @@ fn render_block(node: &BlockNode) -> String {
                 None => body,
             }
         }
-        BlockNode::Div(div) => render_blocks(&div.children),
-        BlockNode::DefinitionList(list) => render_definition_list(&list.items, true),
-        BlockNode::Figure(figure) => render_figure(figure),
+        BlockNode::Div(div) => render_blocks(&div.children, depth + 1),
+        BlockNode::DefinitionList(list) => render_definition_list(&list.items, true, depth + 1),
+        BlockNode::Figure(figure) => render_figure(figure, depth + 1),
         // Terminate the block image so the next block is not glued onto it.
         BlockNode::BlockImage(image) => format!("{}\n\n", strip_controls(&image.alt)),
-        BlockNode::Extension(extension) => render_blocks(&extension.children),
+        BlockNode::Extension(extension) => render_blocks(&extension.children, depth + 1),
         BlockNode::RawBlock(_) | BlockNode::AbbreviationDef(_) | BlockNode::Comment(_) => {
             String::new()
         }
     }
 }
 
-fn render_list(node: &List) -> String {
+fn render_list(node: &List, depth: usize) -> String {
+    if depth > MAX_RENDER_DEPTH {
+        return String::new();
+    }
     let mut out = String::new();
     let mut counter = node.start.unwrap_or(1);
     for item in &node.items {
@@ -70,21 +87,27 @@ fn render_list(node: &List) -> String {
         } else {
             out.push_str("- ");
         }
-        out.push_str(render_blocks(&item.children).trim());
+        out.push_str(render_blocks(&item.children, depth + 1).trim());
         out.push('\n');
     }
     out.push('\n');
     out
 }
 
-fn render_definition_list(items: &[DefinitionItem], trailing_blank: bool) -> String {
+fn render_definition_list(items: &[DefinitionItem], trailing_blank: bool, depth: usize) -> String {
+    if depth > MAX_RENDER_DEPTH {
+        return String::new();
+    }
     let mut out = String::new();
     for item in items {
         for term in &item.terms {
             out.push_str(&format!("{}\n", render_inlines(term)));
         }
         for definition in &item.definitions {
-            out.push_str(&format!("  {}\n", render_blocks(definition).trim()));
+            out.push_str(&format!(
+                "  {}\n",
+                render_blocks(definition, depth + 1).trim()
+            ));
         }
     }
     if trailing_blank {
@@ -112,17 +135,22 @@ fn render_table(node: &Table) -> String {
     out
 }
 
-fn render_figure(node: &Figure) -> String {
+fn render_figure(node: &Figure, depth: usize) -> String {
+    if depth > MAX_RENDER_DEPTH {
+        return String::new();
+    }
     let target = match &node.target {
         FigureTarget::Image(image) => strip_controls(&image.alt),
         FigureTarget::Table(table) => render_table(table).trim().to_string(),
-        FigureTarget::BlockQuote(quote) => render_block(&BlockNode::BlockQuote(quote.clone()))
+        FigureTarget::BlockQuote(quote) => {
+            render_block(&BlockNode::BlockQuote(quote.clone()), depth + 1)
+                .trim()
+                .to_string()
+        }
+        FigureTarget::CodeBlock(cb) => render_block(&BlockNode::CodeBlock(cb.clone()), depth + 1)
             .trim()
             .to_string(),
-        FigureTarget::CodeBlock(cb) => render_block(&BlockNode::CodeBlock(cb.clone()))
-            .trim()
-            .to_string(),
-        FigureTarget::Paragraph(p) => render_block(&BlockNode::Paragraph(p.clone()))
+        FigureTarget::Paragraph(p) => render_block(&BlockNode::Paragraph(p.clone()), depth + 1)
             .trim()
             .to_string(),
     };
@@ -141,7 +169,7 @@ fn render_footnote_defs(doc: &Document) -> String {
         out.push_str(&format!(
             "[{}]: {}\n",
             strip_controls(label),
-            render_blocks(blocks).trim()
+            render_blocks(blocks, 0).trim()
         ));
     }
     out
@@ -150,34 +178,44 @@ fn render_footnote_defs(doc: &Document) -> String {
 fn render_inlines(nodes: &[InlineNode]) -> String {
     // Block-level entry: each block starts with a fresh smart-quote state.
     let mut state = SmartQuoteState::new();
-    render_inlines_stateful(nodes, &mut state)
+    render_inlines_stateful(nodes, &mut state, 0)
 }
 
-fn render_inlines_stateful(nodes: &[InlineNode], state: &mut SmartQuoteState) -> String {
+fn render_inlines_stateful(
+    nodes: &[InlineNode],
+    state: &mut SmartQuoteState,
+    depth: usize,
+) -> String {
+    if depth > MAX_RENDER_DEPTH {
+        return String::new();
+    }
     let mut out = String::new();
     for node in nodes {
-        out.push_str(&render_inline(node, state));
+        out.push_str(&render_inline(node, state, depth));
     }
     out
 }
 
-fn render_inline(node: &InlineNode, state: &mut SmartQuoteState) -> String {
+fn render_inline(node: &InlineNode, state: &mut SmartQuoteState, depth: usize) -> String {
+    if depth > MAX_RENDER_DEPTH {
+        return String::new();
+    }
     match node {
         InlineNode::Text(text) => strip_controls(&clean_smart_text_stateful(text, state)),
         InlineNode::Emphasis(emphasis) => match emphasis.kind {
-            EmphasisKind::Strike => render_inlines_stateful(&emphasis.children, state),
-            _ => render_inlines_stateful(&emphasis.children, state),
+            EmphasisKind::Strike => render_inlines_stateful(&emphasis.children, state, depth + 1),
+            _ => render_inlines_stateful(&emphasis.children, state, depth + 1),
         },
         InlineNode::Code(code, _) => strip_controls(code),
         InlineNode::Link(link) => {
             if link.href.starts_with('#') {
-                render_inlines_stateful(&link.children, state)
+                render_inlines_stateful(&link.children, state, depth + 1)
             } else {
                 strip_controls(&link.href)
             }
         }
         InlineNode::Image(image) => strip_controls(&image.alt),
-        InlineNode::Span(span) => render_inlines_stateful(&span.children, state),
+        InlineNode::Span(span) => render_inlines_stateful(&span.children, state, depth + 1),
         InlineNode::Math(math) => strip_controls(&math.content),
         InlineNode::RawInline(_) => String::new(),
         InlineNode::Emoji(emoji) => format!(":{}:", emoji.name),
@@ -185,25 +223,36 @@ fn render_inline(node: &InlineNode, state: &mut SmartQuoteState) -> String {
             let href = strip_controls(&link.href);
             href.strip_prefix("mailto:").unwrap_or(&href).to_string()
         }
-        InlineNode::Mention(mention) => format!("@{}", mention.user),
-        InlineNode::Tag(tag) => format!("#{}", tag.name),
-        InlineNode::Extension(extension) => render_inlines_stateful(&extension.children, state),
+        InlineNode::Mention(mention) => format!("@{}", strip_controls(&mention.user)),
+        InlineNode::Tag(tag) => format!("#{}", strip_controls(&tag.name)),
+        InlineNode::Extension(extension) => {
+            render_inlines_stateful(&extension.children, state, depth + 1)
+        }
         InlineNode::Abbreviation(abbr) => strip_controls(&abbr.abbr),
         InlineNode::Footnote(footnote) => {
             if let Some(inline) = &footnote.inline {
                 // Footnote content is its own context: render with a FRESH quote
-                // state (via render_inlines) so it neither inherits nor mutates
-                // the surrounding paragraph's open quotes. Matches carve-php.
-                format!("({})", render_inlines(inline))
+                // state so it neither inherits nor mutates the surrounding
+                // paragraph's open quotes. Matches carve-php.
+                let mut footnote_state = SmartQuoteState::new();
+                format!(
+                    "({})",
+                    render_inlines_stateful(inline, &mut footnote_state, depth + 1)
+                )
             } else {
                 format!("[{}]", strip_controls(footnote.id.as_deref().unwrap_or("")))
             }
         }
         InlineNode::SoftBreak => " ".to_string(),
         InlineNode::HardBreak => "\n".to_string(),
-        InlineNode::CriticInsert(insert) => render_inlines_stateful(&insert.children, state),
+        InlineNode::CriticInsert(insert) => {
+            render_inlines_stateful(&insert.children, state, depth + 1)
+        }
         InlineNode::CriticDelete(delete) => {
-            format!("~{}~", render_inlines_stateful(&delete.children, state))
+            format!(
+                "~{}~",
+                render_inlines_stateful(&delete.children, state, depth + 1)
+            )
         }
         InlineNode::CriticSubstitute(sub) => format!(
             "~{}~{}",
