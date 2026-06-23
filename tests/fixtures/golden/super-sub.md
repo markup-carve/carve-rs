@@ -1,1 +1,1 @@
-x<sup>2</sup> and H~~2~~O and <mark>note</mark>
+x<sup>2</sup> and H<sub>2</sub>O and <mark>note</mark>
