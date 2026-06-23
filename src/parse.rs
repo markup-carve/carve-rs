@@ -2815,9 +2815,11 @@ fn strip_leading_columns(line: &str, cols: usize) -> String {
     String::new()
 }
 
-/// Expand a line's LEADING whitespace to non-breaking spaces (the U+00A0 the
-/// renderers emit as `&nbsp;`) so a verse line's indentation survives; tabs
-/// advance to the next 4-column stop. The rest of the line is left untouched.
+/// Expand a line's LEADING whitespace to non-breaking spaces so a verse line's
+/// indentation survives; tabs advance to the next 4-column stop. The rest of
+/// the line is left untouched. Uses the generated-NBSP placeholder (HTML folds
+/// it to `&nbsp;`; plain/ANSI turn it back into an ASCII space), so it stays
+/// distinct from a literal U+00A0 typed in the source.
 fn expand_line_block_leading_ws(line: &str) -> String {
     let mut columns = 0usize;
     let mut idx = 0usize;
@@ -2832,7 +2834,11 @@ fn expand_line_block_leading_ws(line: &str) -> String {
         }
         idx = i + ch.len_utf8();
     }
-    format!("{}{}", "\u{00a0}".repeat(columns), &line[idx..])
+    format!(
+        "{}{}",
+        crate::NBSP_PLACEHOLDER.to_string().repeat(columns),
+        &line[idx..]
+    )
 }
 
 /// Parse a `::: |` line block into a `<div class="line-block">`: each stanza

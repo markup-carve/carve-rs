@@ -28,6 +28,13 @@ mod render_markdown;
 mod render_plain;
 mod render_text;
 
+/// Private-use sentinel for a parser/renderer-GENERATED non-breaking space
+/// (an escaped space `\ ` or line-block leading indent). It is distinct from a
+/// LITERAL U+00A0 typed in the source: HTML folds both to `&nbsp;`, but the
+/// plain/ANSI renderers turn this placeholder back into an ASCII space while
+/// preserving literal U+00A0. Using a real char would conflate the two.
+pub(crate) const NBSP_PLACEHOLDER: char = '\u{e001}';
+
 pub use ast::*;
 pub use citations::{CitationMode, Citations};
 pub use extension::{

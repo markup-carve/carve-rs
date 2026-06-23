@@ -384,7 +384,7 @@ fn table_row(cells: &[RenderedCell], widths: &[usize]) -> String {
                 .unwrap_or(0)
                 .saturating_sub(width(&cell.plain));
             let content = if cell.is_header {
-                style(&(cell.plain.clone() + &" ".repeat(padding)), BOLD)
+                style(&(cell.content.clone() + &" ".repeat(padding)), BOLD)
             } else {
                 cell.content.clone() + &" ".repeat(padding)
             };
@@ -666,13 +666,14 @@ fn normalize(text: &str) -> String {
             out.push(ch);
         }
     }
-    // Trim only document-edge newlines/ASCII spaces, NOT the non-breaking
-    // spaces that carry line-block / escaped-space indentation (a plain `.trim()`
-    // would strip leading U+00A0 too, dropping a first verse line's indent).
-    // Then a non-breaking space becomes a plain space in display output; only
-    // the HTML renderer emits `&nbsp;`.
+    // Trim only document-edge newlines/ASCII spaces, NOT the generated-NBSP
+    // placeholders that carry line-block / escaped-space indentation (a plain
+    // `.trim()` would strip them too, dropping a first verse line's indent).
     let trimmed = out.trim_matches(|c| c == '\n' || c == ' ');
-    format!("{trimmed}\n").replace('\u{00a0}', " ")
+    // A generated-NBSP placeholder (escaped space / verse indent) becomes a
+    // plain space in display output; a LITERAL U+00A0 typed in the source is
+    // preserved as-is. Only the HTML renderer folds both to `&nbsp;`.
+    format!("{trimmed}\n").replace(crate::NBSP_PLACEHOLDER, " ")
 }
 
 fn legacy_definition_parts(nodes: &[InlineNode]) -> Option<(String, String)> {
