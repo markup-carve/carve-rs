@@ -110,13 +110,16 @@ fn render_block(node: &BlockNode, ctx: &mut MarkdownContext, depth: usize) -> St
         BlockNode::CodeBlock(code) => {
             let content = strip_controls(&code.content);
             let fence = safe_fence(&content, 3);
-            let lang = code
+            let mut info = code
                 .lang
                 .as_deref()
                 .map(sanitize_code_lang)
                 .filter(|lang| !lang.is_empty())
                 .unwrap_or_default();
-            format!("{}{}\n{}\n{}\n\n", fence, lang, content, fence)
+            if let Some(title) = &code.title {
+                info.push_str(&format!(" \"{}\"", escape_code_title(title)));
+            }
+            format!("{}{}\n{}\n{}\n\n", fence, info, content, fence)
         }
         BlockNode::BlockQuote(quote) => {
             let lines = render_blocks(&quote.children, ctx, depth + 1);
@@ -298,6 +301,7 @@ fn render_figure(node: &Figure, ctx: &mut MarkdownContext, depth: usize) -> Stri
     // A block-level target (a code-block listing or a display-math equation)
     // keeps the caption on its own line; an inline image stays adjacent.
     let sep = match &node.target {
+        FigureTarget::BlockQuote(_) => "\n\n",
         FigureTarget::CodeBlock(_) | FigureTarget::Paragraph(_) => "\n",
         _ => "",
     };
@@ -539,6 +543,12 @@ fn sanitize_code_lang(lang: &str) -> String {
     } else {
         token
     }
+}
+
+fn escape_code_title(title: &str) -> String {
+    strip_controls(title)
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"")
 }
 
 fn safe_fence(content: &str, min: usize) -> String {

@@ -417,7 +417,11 @@ fn render_figure(node: &Figure, ctx: &mut AnsiContext, depth: usize) -> String {
                 .to_string()
         }
     };
-    format!("{target}\n{}", render_caption(&node.caption, ctx))
+    let sep = match &node.target {
+        FigureTarget::BlockQuote(_) => "\n\n",
+        _ => "\n",
+    };
+    format!("{target}{sep}{}", render_caption(&node.caption, ctx))
 }
 
 fn render_caption(nodes: &[InlineNode], ctx: &mut AnsiContext) -> String {

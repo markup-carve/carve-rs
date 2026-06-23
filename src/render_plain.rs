@@ -178,6 +178,7 @@ fn render_figure(node: &Figure, depth: usize) -> String {
     // A block-level target keeps the caption on its own line; an inline image
     // stays adjacent.
     let sep = match &node.target {
+        FigureTarget::BlockQuote(_) => "\n\n",
         FigureTarget::CodeBlock(_) | FigureTarget::Paragraph(_) => "\n",
         _ => "",
     };
