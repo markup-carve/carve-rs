@@ -143,7 +143,7 @@ fn unescape_text(input: &str) -> String {
     while i < chars.len() {
         if chars[i] == '\\' && i + 1 < chars.len() {
             if chars[i + 1] == ' ' {
-                out.push('\u{00a0}');
+                out.push(crate::NBSP_PLACEHOLDER);
                 i += 2;
                 continue;
             }

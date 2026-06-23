@@ -1395,7 +1395,9 @@ fn write_escaped_text_nbsp(out: &mut String, input: &str) {
             '&' => "&amp;",
             '<' => "&lt;",
             '>' => "&gt;",
-            '\u{00a0}' => "&nbsp;",
+            // Both a literal U+00A0 and the generated-NBSP placeholder render
+            // as `&nbsp;` in HTML; they only diverge in plain/ANSI output.
+            '\u{00a0}' | crate::NBSP_PLACEHOLDER => "&nbsp;",
             _ => continue,
         };
         out.push_str(&input[start..i]);

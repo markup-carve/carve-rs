@@ -80,3 +80,53 @@ fn markdown_code_fence_keeps_quoted_header() {
         "```js \"Title\"\nx\n```\n"
     );
 }
+
+#[test]
+fn markdown_critic_delete_renders_as_del_element() {
+    assert_eq!(carve::to_markdown("{-del-}"), "<del>del</del>\n");
+    assert_eq!(carve::to_markdown("{+ins+}"), "<ins>ins</ins>\n");
+}
+
+#[test]
+fn plain_text_links_render_visible_text_not_destination() {
+    assert_eq!(carve::to_plain_text("[t](u)"), "t\n");
+    assert_eq!(carve::to_plain_text("[t](u \"ti\")"), "t\n");
+    assert_eq!(carve::to_plain_text("[a][r]\n\n[r]: /u \"T\""), "a\n");
+    assert_eq!(carve::to_plain_text("<https://x>"), "https://x\n");
+}
+
+#[test]
+fn plain_text_and_ansi_preserve_literal_nbsp() {
+    let input = "#\u{00a0}h";
+    let expected = "#\u{00a0}h\n";
+
+    assert_eq!(carve::to_plain_text(input), expected);
+    assert_eq!(carve::to_plain_text(input).as_bytes(), b"#\xc2\xa0h\n");
+    assert_eq!(carve::to_ansi(input), expected);
+    assert_eq!(carve::to_ansi(input).as_bytes(), b"#\xc2\xa0h\n");
+}
+
+#[test]
+fn generated_nbsp_renders_as_ascii_space_not_literal_nbsp() {
+    // A GENERATED non-breaking space (an escaped space `\ ` or line-block
+    // indent) must render as an ASCII space in plain/ANSI, while a LITERAL
+    // U+00A0 typed in the source (test above) is preserved. Only HTML/Markdown
+    // fold the escaped space back to `&nbsp;` / a literal NBSP.
+    assert_eq!(carve::to_plain_text("10\\ kg").as_bytes(), b"10 kg\n");
+    assert_eq!(carve::to_ansi("10\\ kg").as_bytes(), b"10 kg\n");
+    assert!(carve::to_html("10\\ kg").contains("10&nbsp;kg"));
+    assert_eq!(carve::to_markdown("10\\ kg").as_bytes(), b"10\xc2\xa0kg\n");
+
+    // Line-block leading indentation is generated-NBSP too: ASCII spaces in
+    // plain output, not literal U+00A0.
+    let verse = "::: |\n  indented\nflush\n:::\n";
+    assert!(carve::to_plain_text(verse).starts_with("  indented"));
+}
+
+#[test]
+fn ansi_table_header_code_keeps_nested_code_color() {
+    let out = carve::to_ansi("| `a|b` | c |\n|--|--|\n| d | e |");
+
+    assert!(out.contains("\x1b[1m\x1b[93ma|b\x1b[0m\x1b[0m"), "{out:?}");
+    assert!(out.contains("\x1b[1mc\x1b[0m"), "{out:?}");
+}
