@@ -50,7 +50,7 @@ fn render_block(node: &BlockNode, depth: usize) -> String {
         BlockNode::Table(table) => render_table(table),
         BlockNode::Admonition(admonition) => {
             let body = render_blocks(&admonition.children, depth + 1);
-            match &admonition.title {
+            let body = match &admonition.title {
                 Some(title) => {
                     let t = render_inlines(title);
                     if t.is_empty() {
@@ -60,9 +60,13 @@ fn render_block(node: &BlockNode, depth: usize) -> String {
                     }
                 }
                 None => body,
-            }
+            };
+            prepend_label(body, admonition.label.as_deref())
         }
-        BlockNode::Div(div) => render_blocks(&div.children, depth + 1),
+        BlockNode::Div(div) => {
+            let body = render_blocks(&div.children, depth + 1);
+            prepend_label(body, div.label.as_deref())
+        }
         BlockNode::DefinitionList(list) => render_definition_list(&list.items, true, depth + 1),
         BlockNode::Figure(figure) => render_figure(figure, depth + 1),
         // Terminate the block image so the next block is not glued onto it.
@@ -71,6 +75,23 @@ fn render_block(node: &BlockNode, depth: usize) -> String {
         BlockNode::RawBlock(_) | BlockNode::AbbreviationDef(_) | BlockNode::Comment(_) => {
             String::new()
         }
+    }
+}
+
+/// Graceful degradation: when no extension consumed the grouping `[label]`,
+/// surface it as a leading line (mirroring how an admonition title renders) so
+/// the authored label is never silently dropped in plain text.
+fn prepend_label(body: String, label: Option<&str>) -> String {
+    match label {
+        Some(label) if !label.is_empty() => {
+            let l = strip_controls(label);
+            if body.is_empty() {
+                format!("{l}\n\n")
+            } else {
+                format!("{l}\n\n{body}")
+            }
+        }
+        _ => body,
     }
 }
 

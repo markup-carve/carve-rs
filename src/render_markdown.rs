@@ -135,7 +135,7 @@ fn render_block(node: &BlockNode, ctx: &mut MarkdownContext, depth: usize) -> St
             // Markdown has no admonition; preserve the title (otherwise lost)
             // as a leading bold line, then the body.
             let body = render_blocks(&admonition.children, ctx, depth + 1);
-            match &admonition.title {
+            let body = match &admonition.title {
                 Some(title) => {
                     let t = render_block_inlines(title, ctx);
                     if t.is_empty() {
@@ -145,9 +145,13 @@ fn render_block(node: &BlockNode, ctx: &mut MarkdownContext, depth: usize) -> St
                     }
                 }
                 None => body,
-            }
+            };
+            prepend_label(body, admonition.label.as_deref())
         }
-        BlockNode::Div(div) => render_blocks(&div.children, ctx, depth + 1),
+        BlockNode::Div(div) => {
+            let body = render_blocks(&div.children, ctx, depth + 1);
+            prepend_label(body, div.label.as_deref())
+        }
         BlockNode::DefinitionList(list) => {
             render_definition_list(&list.items, ctx, true, depth + 1)
         }
@@ -562,6 +566,23 @@ fn render_code(content: &str) -> String {
 
 fn fragment_id(href: &str) -> Option<&str> {
     href.strip_prefix('#')
+}
+
+/// Graceful degradation: when no extension consumed the grouping `[label]`,
+/// surface it as a leading bold line (mirroring how an admonition title
+/// renders) so the authored label is never silently dropped in Markdown.
+fn prepend_label(body: String, label: Option<&str>) -> String {
+    match label {
+        Some(label) if !label.is_empty() => {
+            let l = escape_text(label);
+            if body.is_empty() {
+                format!("**{l}**\n\n")
+            } else {
+                format!("**{l}**\n\n{body}")
+            }
+        }
+        _ => body,
+    }
 }
 
 fn escape_text(text: &str) -> String {

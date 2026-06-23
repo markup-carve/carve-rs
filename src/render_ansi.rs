@@ -109,7 +109,7 @@ fn render_block(node: &BlockNode, ctx: &mut AnsiContext, depth: usize) -> String
         BlockNode::Table(table) => render_table(table, ctx),
         BlockNode::Admonition(admonition) => {
             let body = render_blocks(&admonition.children, ctx, depth + 1);
-            match &admonition.title {
+            let body = match &admonition.title {
                 Some(title) => {
                     let t = render_block_inlines(title, ctx);
                     if t.is_empty() {
@@ -127,9 +127,13 @@ fn render_block(node: &BlockNode, ctx: &mut AnsiContext, depth: usize) -> String
                     }
                 }
                 None => body,
-            }
+            };
+            prepend_label(body, admonition.label.as_deref(), ctx)
         }
-        BlockNode::Div(div) => render_blocks(&div.children, ctx, depth + 1),
+        BlockNode::Div(div) => {
+            let body = render_blocks(&div.children, ctx, depth + 1);
+            prepend_label(body, div.label.as_deref(), ctx)
+        }
         BlockNode::DefinitionList(list) => {
             render_definition_list(&list.items, ctx, true, depth + 1)
         }
@@ -183,6 +187,30 @@ fn render_code_block(content: &str, lang: Option<&str>) -> String {
     }
     out.push('\n');
     out
+}
+
+/// Graceful degradation: when no extension consumed the grouping `[label]`,
+/// surface it as a leading bold line (mirroring how an admonition title
+/// renders, including the blockquote prefix) so the authored label is never
+/// silently dropped in ANSI output.
+fn prepend_label(body: String, label: Option<&str>, ctx: &AnsiContext) -> String {
+    match label {
+        Some(label) if !label.is_empty() => {
+            let l = strip_controls(label);
+            let prefix = block_quote_prefix(ctx);
+            let label_line = if prefix.is_empty() {
+                style(&l, BOLD)
+            } else {
+                prefix_lines(&style(&l, BOLD), &prefix)
+            };
+            if body.is_empty() {
+                format!("{label_line}\n\n")
+            } else {
+                format!("{label_line}\n\n{body}")
+            }
+        }
+        _ => body,
+    }
 }
 
 fn block_quote_prefix(ctx: &AnsiContext) -> String {
