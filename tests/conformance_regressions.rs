@@ -101,3 +101,89 @@ fn smart_typography_tokenizes_overlapping_arrows_and_dashes_left_to_right() {
 fn bare_two_pipe_empty_content_is_paragraph_not_table() {
     assert_eq!(html("||"), "<p>||</p>");
 }
+
+#[test]
+fn definition_blank_between_term_and_definition_ends_list() {
+    assert_eq!(
+        html(":: t\n\n:  d"),
+        "<dl>\n  <dt>t</dt>\n</dl>\n<p>:  d</p>"
+    );
+}
+
+#[test]
+fn definition_pairs_separated_by_blank_share_one_list() {
+    assert_eq!(
+        html(":: a\n:  b\n\n:: c\n:  d"),
+        "<dl>\n  <dt>a</dt>\n  <dd>b</dd>\n  <dt>c</dt>\n  <dd>d</dd>\n</dl>"
+    );
+}
+
+#[test]
+fn list_nested_under_definition_is_inside_description() {
+    assert_eq!(
+        html(":: t\n:  - a\n   - b"),
+        concat!(
+            "<dl>\n",
+            "  <dt>t</dt>\n",
+            "  <dd>\n",
+            "    <ul>\n",
+            "      <li>a</li>\n",
+            "      <li>b</li>\n",
+            "    </ul>\n",
+            "  </dd>\n",
+            "</dl>"
+        )
+    );
+}
+
+#[test]
+fn empty_term_is_not_definition_list() {
+    assert_eq!(html(":: \n:  d"), "<p>:: \n:  d</p>");
+}
+
+#[test]
+fn empty_definition_body_is_literal_paragraph() {
+    assert_eq!(html(":: t\n:  "), "<dl>\n  <dt>t</dt>\n</dl>\n<p>:</p>");
+}
+
+#[test]
+fn fenced_code_block_inside_list_item() {
+    assert_eq!(
+        html("- ```\n  x\n  ```"),
+        "<ul>\n  <li>\n    <pre><code>x\n</code></pre>\n  </li>\n</ul>"
+    );
+}
+
+#[test]
+fn table_inside_list_item() {
+    assert_eq!(
+        html("- |a|b|\n  |-|-|"),
+        concat!(
+            "<ul>\n",
+            "  <li>\n",
+            "    <table>\n",
+            "      <thead><tr><th>a</th><th>b</th></tr></thead>\n",
+            "    </table>\n",
+            "  </li>\n",
+            "</ul>"
+        )
+    );
+}
+
+#[test]
+fn empty_raw_format_tag_after_code_stays_literal() {
+    assert_eq!(html("`a`{=}"), "<p><code>a</code>{=}</p>");
+}
+
+#[test]
+fn escaped_dollar_stays_literal_before_code() {
+    assert_eq!(html("\\$`a`"), "<p>$<code>a</code></p>");
+}
+
+#[test]
+fn empty_list_item_line_keeps_no_trailing_space() {
+    assert_eq!(
+        html("- a\n- \n- b"),
+        "<ul>\n  <li>a\n-</li>\n  <li>b</li>\n</ul>"
+    );
+}
