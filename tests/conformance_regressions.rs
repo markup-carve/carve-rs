@@ -5,6 +5,53 @@ fn html(src: &str) -> String {
 }
 
 #[test]
+fn unresolved_collapsed_reference_resolves_to_matching_heading_slug() {
+    let src = "See [name][]\n\n# Name";
+    assert_eq!(
+        html(src),
+        concat!(
+            "<p>See <a href=\"#Name\">name</a></p>\n",
+            "<section id=\"Name\">\n",
+            "  <h1>Name</h1>\n",
+            "</section>"
+        )
+    );
+    assert_eq!(
+        html("See [NAME][]\n\n# name"),
+        concat!(
+            "<p>See <a href=\"#name\">NAME</a></p>\n",
+            "<section id=\"name\">\n",
+            "  <h1>name</h1>\n",
+            "</section>"
+        )
+    );
+    assert!(carve::to_markdown(src).contains("See [name](#Name)"));
+    assert!(!carve::to_markdown(src).contains("[name][]"));
+    assert!(!carve::to_plain_text(src).contains("[name][]"));
+    assert!(!carve::to_ansi(src).contains("[name][]"));
+}
+
+#[test]
+fn explicit_missing_reference_does_not_use_heading_fallback() {
+    assert_eq!(
+        html("See [name][label]\n\n# label"),
+        concat!(
+            "<p>See [name][label]</p>\n",
+            "<section id=\"label\">\n",
+            "  <h1>label</h1>\n",
+            "</section>"
+        )
+    );
+}
+
+#[test]
+fn non_html_subscript_is_not_strikethrough() {
+    assert_eq!(carve::to_markdown(",sub,"), "<sub>sub</sub>\n");
+    assert_eq!(carve::to_plain_text(",sub,"), "sub\n");
+    assert_eq!(carve::to_ansi(",sub,"), "sub\n");
+}
+
+#[test]
 fn empty_unquoted_attribute_value_rejects_whole_block() {
     assert_eq!(html("[a]{k=}"), "<p>[a]{k=}</p>");
 }

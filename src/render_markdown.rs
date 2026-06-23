@@ -350,8 +350,14 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
                     render_inlines(&emphasis.children, ctx, depth + 1)
                 )
             }
-            EmphasisKind::Strike | EmphasisKind::Sub => {
+            EmphasisKind::Strike => {
                 format!("~~{}~~", render_inlines(&emphasis.children, ctx, depth + 1))
+            }
+            EmphasisKind::Sub => {
+                format!(
+                    "<sub>{}</sub>",
+                    render_inlines(&emphasis.children, ctx, depth + 1)
+                )
             }
             EmphasisKind::Super => {
                 format!(
