@@ -339,10 +339,13 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
             if is_literal_crossref(text) {
                 strip_controls(text)
             } else {
-                escape_text(&strip_controls(&clean_smart_text_stateful(
-                    text,
-                    &mut ctx.smart_quote,
-                )))
+                // The generated-NBSP placeholder (escaped space `\ ` / verse
+                // indent) round-trips to a literal non-breaking space in
+                // Markdown, matching the other renderers' source projection.
+                escape_text(
+                    &strip_controls(&clean_smart_text_stateful(text, &mut ctx.smart_quote))
+                        .replace(crate::NBSP_PLACEHOLDER, "\u{00a0}"),
+                )
             }
         }
         InlineNode::Emphasis(emphasis) => match emphasis.kind {
@@ -458,7 +461,10 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
             )
         }
         InlineNode::CriticDelete(delete) => {
-            format!("~~{}~~", render_inlines(&delete.children, ctx, depth + 1))
+            format!(
+                "<del>{}</del>",
+                render_inlines(&delete.children, ctx, depth + 1)
+            )
         }
         InlineNode::CriticSubstitute(sub) => format!(
             "<del>{}</del><ins>{}</ins>",
@@ -732,7 +738,9 @@ fn plain_inlines(nodes: &[InlineNode]) -> String {
     let mut out = String::new();
     for node in nodes {
         match node {
-            InlineNode::Text(text) => out.push_str(&clean_smart_text(text)),
+            InlineNode::Text(text) => {
+                out.push_str(&clean_smart_text(text).replace(crate::NBSP_PLACEHOLDER, " "))
+            }
             InlineNode::Emphasis(emphasis) => out.push_str(&plain_inlines(&emphasis.children)),
             InlineNode::Code(code, _) => out.push_str(code),
             InlineNode::Link(link) => out.push_str(&plain_inlines(&link.children)),

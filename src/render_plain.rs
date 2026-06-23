@@ -229,13 +229,7 @@ fn render_inline(node: &InlineNode, state: &mut SmartQuoteState, depth: usize) -
             _ => render_inlines_stateful(&emphasis.children, state, depth + 1),
         },
         InlineNode::Code(code, _) => strip_controls(code),
-        InlineNode::Link(link) => {
-            if link.href.starts_with('#') {
-                render_inlines_stateful(&link.children, state, depth + 1)
-            } else {
-                strip_controls(&link.href)
-            }
-        }
+        InlineNode::Link(link) => render_inlines_stateful(&link.children, state, depth + 1),
         InlineNode::Image(image) => strip_controls(&image.alt),
         InlineNode::Span(span) => render_inlines_stateful(&span.children, state, depth + 1),
         InlineNode::Math(math) => strip_controls(&math.content),
@@ -306,13 +300,14 @@ fn normalize(text: &str) -> String {
             out.push(ch);
         }
     }
-    // Trim only document-edge newlines/ASCII spaces, NOT the non-breaking
-    // spaces that carry line-block / escaped-space indentation (a plain `.trim()`
-    // would strip leading U+00A0 too, dropping a first verse line's indent).
-    // Then a non-breaking space becomes a plain space in display output; only
-    // the HTML renderer emits `&nbsp;`.
+    // Trim only document-edge newlines/ASCII spaces, NOT the generated-NBSP
+    // placeholders that carry line-block / escaped-space indentation (a plain
+    // `.trim()` would strip them too, dropping a first verse line's indent).
     let trimmed = out.trim_matches(|c| c == '\n' || c == ' ');
-    format!("{trimmed}\n").replace('\u{00a0}', " ")
+    // A generated-NBSP placeholder (escaped space / verse indent) becomes a
+    // plain space in display output; a LITERAL U+00A0 typed in the source is
+    // preserved as-is. Only the HTML renderer folds both to `&nbsp;`.
+    format!("{trimmed}\n").replace(crate::NBSP_PLACEHOLDER, " ")
 }
 
 fn legacy_definition_parts(nodes: &[InlineNode]) -> Option<(String, String)> {
