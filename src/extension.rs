@@ -11,6 +11,87 @@ use crate::escape::{escape_attr, escape_text};
 use crate::parse::{parse_blocks_with_options, parse_inline_with_options};
 use crate::profile::Profile;
 
+/// Render mode - a render OPTION, not document syntax. See the
+/// [extensions contract](https://markup-carve.github.io/carve/extensions)
+/// §2.5 "Static rendering mode".
+///
+/// - [`Mode::Interactive`] (default): online HTML - extensions render their
+///   interactive form (live disclosures, mermaid via a client script, KaTeX).
+/// - [`Mode::Static`]: HTML for a medium that cannot interact or run client
+///   scripts (print, PDF source, archival HTML). Extensions render through
+///   their static path (disclosures expand, diagrams/math become build-rendered
+///   output or source). The Markdown, plain-text and ANSI renderers are
+///   inherently static and reach the same end by flattening containers (they do
+///   not consult this mode).
+///
+/// `"print"` / `"email"` and similar names are RESERVED for future named
+/// presets; this enum admits only the two valid values, so an unknown mode is
+/// rejected by construction (the spec requires rejecting, not guessing).
+/// Omitting the mode means [`Mode::Interactive`], so existing callers are
+/// unaffected.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Mode {
+    /// Live HTML (the default).
+    #[default]
+    Interactive,
+    /// Self-contained HTML for print / PDF / archival - no client scripts.
+    Static,
+}
+
+/// A build-time renderer for a diagram extension (mermaid / chart): source
+/// string in, self-contained HTML out (an `<svg>` / `<img>`).
+pub type DiagramRenderer = Box<dyn Fn(&str) -> String + 'static>;
+
+/// A build-time renderer for math: the TeX source plus a `display` flag in,
+/// MathML / HTML out.
+pub type MathRenderer = Box<dyn Fn(&str, bool) -> String + 'static>;
+
+/// A borrowed diagram renderer, as threaded into an extension's static path.
+pub(crate) type DiagramRendererRef<'r> = &'r (dyn Fn(&str) -> String + 'static);
+
+/// A borrowed math renderer, as threaded into an extension's static path.
+pub(crate) type MathRendererRef<'r> = &'r (dyn Fn(&str, bool) -> String + 'static);
+
+/// Build-time renderers for client-script extensions, supplied for a
+/// [`Mode::Static`] HTML render. Each maps the construct's source to a
+/// self-contained string the engine emits directly (an `<svg>` / `<img>` for a
+/// diagram, MathML / HTML for math). When the renderer a node needs is absent,
+/// the extension's static path falls back to source - never blank.
+///
+/// A caller injects a renderer as a boxed closure, for example:
+///
+/// ```
+/// use carve::{Mode, Options, StaticRenderers};
+/// let opts = Options::new()
+///     .with_mode(Mode::Static)
+///     .with_renderers(StaticRenderers {
+///         mermaid: Some(Box::new(|src: &str| format!("<svg data-len=\"{}\"></svg>", src.len()))),
+///         math: Some(Box::new(|tex: &str, display: bool| {
+///             format!("<math data-display=\"{display}\">{tex}</math>")
+///         })),
+///         ..Default::default()
+///     });
+/// ```
+#[derive(Default)]
+pub struct StaticRenderers {
+    /// Mermaid diagram source -> SVG / HTML string.
+    pub mermaid: Option<DiagramRenderer>,
+    /// Chart config source -> SVG / HTML string.
+    pub chart: Option<DiagramRenderer>,
+    /// Math TeX source -> MathML / HTML string. The `bool` flags display math.
+    pub math: Option<MathRenderer>,
+}
+
+impl std::fmt::Debug for StaticRenderers {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("StaticRenderers")
+            .field("mermaid", &self.mermaid.as_ref().map(|_| "<fn>"))
+            .field("chart", &self.chart.as_ref().map(|_| "<fn>"))
+            .field("math", &self.math.as_ref().map(|_| "<fn>"))
+            .finish()
+    }
+}
+
 pub struct Options<'a> {
     pub extensions: Vec<&'a dyn CarveExtension>,
     pub mention_url: Option<String>,
@@ -36,6 +117,15 @@ pub struct Options<'a> {
     /// Current document host, used by the profile's link policy to tell
     /// internal from external links.
     pub profile_base_host: Option<String>,
+    /// Render mode. [`Mode::Interactive`] (default) emits live HTML; the HTML
+    /// renderer's [`Mode::Static`] path flattens interactive constructs and
+    /// degrades client-script visuals (mermaid / chart / math) to a supplied
+    /// build renderer's output, else source. Ignored by the Markdown,
+    /// plain-text and ANSI renderers (they are inherently static). See [`Mode`].
+    pub mode: Mode,
+    /// Build-time renderers for client-script extensions, consulted only on the
+    /// HTML [`Mode::Static`] path. See [`StaticRenderers`].
+    pub renderers: StaticRenderers,
 }
 
 impl Default for Options<'_> {
@@ -49,6 +139,8 @@ impl Default for Options<'_> {
             lowercase_heading_ids: false,
             profile: None,
             profile_base_host: None,
+            mode: Mode::Interactive,
+            renderers: StaticRenderers::default(),
         }
     }
 }
@@ -104,6 +196,27 @@ impl<'a> Options<'a> {
         self.profile_base_host = Some(host.into());
         self
     }
+
+    /// Set the render [`Mode`]. Omitting it leaves [`Mode::Interactive`]
+    /// (the default). [`Mode::Static`] only affects the HTML renderer; the
+    /// Markdown / plain-text / ANSI renderers are inherently static.
+    pub fn with_mode(mut self, mode: Mode) -> Self {
+        self.mode = mode;
+        self
+    }
+
+    /// Supply the [`StaticRenderers`] map for an HTML [`Mode::Static`] render
+    /// (build-time mermaid / chart / math renderers). Without a renderer the
+    /// matching static path degrades to source, never blank.
+    pub fn with_renderers(mut self, renderers: StaticRenderers) -> Self {
+        self.renderers = renderers;
+        self
+    }
+
+    /// True when this render is in HTML static mode.
+    pub(crate) fn is_static(&self) -> bool {
+        self.mode == Mode::Static
+    }
 }
 
 pub trait CarveExtension {
@@ -131,7 +244,18 @@ pub trait CarveExtension {
         doc
     }
 
-    fn before_render(&self, doc: Document) -> Document {
+    /// `beforeRender` transform. Receives a [`BeforeRenderContext`] carrying the
+    /// render [`Options`] AND the *effective* [`Mode`] for the actual target
+    /// format. An extension that emits its final HTML here (the carve-rs
+    /// transform model for `FencedRender` / `MathBlock`) branches on
+    /// `ctx.mode()` / `ctx.is_static()` and consults `ctx.options().renderers`.
+    ///
+    /// The effective mode is `Interactive` for the Markdown / plain-text / ANSI
+    /// renderers regardless of `Options::mode` - static rendering is an
+    /// HTML-only concern (those renderers reach the same end by flattening), so
+    /// a caller reusing one `Options` across formats gets unchanged non-HTML
+    /// output. Most extensions ignore this hook entirely.
+    fn before_render(&self, doc: Document, _ctx: &BeforeRenderContext<'_>) -> Document {
         doc
     }
 
@@ -149,6 +273,46 @@ pub trait CarveExtension {
         _ctx: &RenderContext<'_>,
     ) -> Option<String> {
         None
+    }
+}
+
+/// Context handed to [`CarveExtension::before_render`]. Carries the render
+/// [`Options`] and the *effective* [`Mode`] for the target format - which is
+/// always [`Mode::Interactive`] for the non-HTML renderers, so static rendering
+/// stays an HTML-only concern even when a single `Options` is reused across
+/// formats.
+pub struct BeforeRenderContext<'a> {
+    options: &'a Options<'a>,
+    effective_mode: Mode,
+}
+
+impl<'a> BeforeRenderContext<'a> {
+    pub(crate) fn new(options: &'a Options<'a>, effective_mode: Mode) -> Self {
+        Self {
+            options,
+            effective_mode,
+        }
+    }
+
+    /// The render options.
+    pub fn options(&self) -> &Options<'a> {
+        self.options
+    }
+
+    /// The effective render [`Mode`] for the target format.
+    pub fn mode(&self) -> Mode {
+        self.effective_mode
+    }
+
+    /// True when the effective mode is [`Mode::Static`] (HTML static path).
+    pub fn is_static(&self) -> bool {
+        self.effective_mode == Mode::Static
+    }
+
+    /// The build-time [`StaticRenderers`] map (shorthand for
+    /// `self.options().renderers`).
+    pub fn renderers(&self) -> &StaticRenderers {
+        &self.options.renderers
     }
 }
 
@@ -253,6 +417,24 @@ impl<'a> RenderContext<'a> {
     /// The two-space-per-level indent string for `level`.
     pub fn indent(&self, level: usize) -> String {
         "  ".repeat(level)
+    }
+
+    /// The active render [`Mode`]. A block-extension renderer branches on this
+    /// to emit its static (flattened, no-interaction) form.
+    pub fn mode(&self) -> Mode {
+        self.options.mode
+    }
+
+    /// True when this render is in HTML static mode.
+    pub fn is_static(&self) -> bool {
+        self.options.is_static()
+    }
+
+    /// The build-time [`StaticRenderers`] map for this render. Used by a
+    /// client-script extension's static path to server-render mermaid / chart /
+    /// math, falling back to source when the needed renderer is absent.
+    pub fn renderers(&self) -> &StaticRenderers {
+        &self.options.renderers
     }
 
     pub fn escape_html(&self, input: &str) -> String {

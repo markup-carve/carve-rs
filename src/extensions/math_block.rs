@@ -12,7 +12,7 @@
 //! extension which keeps `>` for arrow syntax.
 
 use crate::ast::{BlockNode, Document, RawBlock};
-use crate::extension::CarveExtension;
+use crate::extension::{BeforeRenderContext, CarveExtension, MathRendererRef};
 
 /// Options for [`MathBlock`].
 #[derive(Debug, Clone)]
@@ -68,19 +68,35 @@ impl CarveExtension for MathBlock {
         "math-block"
     }
 
-    fn before_render(&self, mut doc: Document) -> Document {
-        transform_blocks(&mut doc.children, &self.opts);
+    fn before_render(&self, mut doc: Document, ctx: &BeforeRenderContext<'_>) -> Document {
+        // On the HTML static path a supplied `renderers.math` server-renders the
+        // body (MathML / HTML) inside the `math display` div so the page needs no
+        // client KaTeX / MathJax; absent it, the static output is the same
+        // `\[…\]` source as interactive (never blank). The effective mode is
+        // interactive for the non-HTML renderers (static rendering is HTML-only),
+        // so Markdown / ANSI output is unchanged when one `Options` is reused
+        // across formats. Mirrors carve-js `math-block.ts` `staticBlockRenderers`.
+        let math_renderer: Option<MathRendererRef<'_>> = if ctx.is_static() {
+            ctx.renderers().math.as_deref()
+        } else {
+            None
+        };
+        transform_blocks(&mut doc.children, &self.opts, math_renderer);
         // Footnote bodies are rendered from footnote_defs (outside the tree), so
         // a math block inside a footnote must be transformed too (matches
         // carve-js, which transforms footnote-def blocks).
         for blocks in doc.footnote_defs.values_mut() {
-            transform_blocks(blocks, &self.opts);
+            transform_blocks(blocks, &self.opts, math_renderer);
         }
         doc
     }
 }
 
-fn transform_blocks(blocks: &mut [BlockNode], opts: &MathBlockOptions) {
+fn transform_blocks(
+    blocks: &mut [BlockNode],
+    opts: &MathBlockOptions,
+    math_renderer: Option<MathRendererRef<'_>>,
+) {
     for block in blocks.iter_mut() {
         match block {
             BlockNode::CodeBlock(code) if code.lang.as_deref() == Some(opts.language.as_str()) => {
@@ -99,11 +115,18 @@ fn transform_blocks(blocks: &mut [BlockNode], opts: &MathBlockOptions) {
                     Some(a) => (base.to_string(), crate::render::render_attrs_after_class(a)),
                     None => (base.to_string(), String::new()),
                 };
+                // Static-with-renderer: the build renderer's verbatim SSR output
+                // (display = true). Else (interactive, or static with no math
+                // renderer): the `\[…\]` source with the body HTML-escaped.
+                let body = match math_renderer {
+                    Some(build) => build(&code.content, true),
+                    None => format!("\\[{}\\]", crate::escape::escape_text(&code.content)),
+                };
                 let html = format!(
-                    "<div class=\"{}\"{}>\\[{}\\]</div>",
+                    "<div class=\"{}\"{}>{}</div>",
                     crate::escape::escape_attr(&class),
                     rest,
-                    crate::escape::escape_text(&code.content),
+                    body,
                 );
                 *block = BlockNode::RawBlock(RawBlock {
                     format: "html".into(),
@@ -112,17 +135,17 @@ fn transform_blocks(blocks: &mut [BlockNode], opts: &MathBlockOptions) {
             }
             BlockNode::List(l) => {
                 for item in &mut l.items {
-                    transform_blocks(&mut item.children, opts);
+                    transform_blocks(&mut item.children, opts, math_renderer);
                 }
             }
-            BlockNode::BlockQuote(b) => transform_blocks(&mut b.children, opts),
-            BlockNode::Admonition(a) => transform_blocks(&mut a.children, opts),
-            BlockNode::Div(d) => transform_blocks(&mut d.children, opts),
-            BlockNode::Extension(e) => transform_blocks(&mut e.children, opts),
+            BlockNode::BlockQuote(b) => transform_blocks(&mut b.children, opts, math_renderer),
+            BlockNode::Admonition(a) => transform_blocks(&mut a.children, opts, math_renderer),
+            BlockNode::Div(d) => transform_blocks(&mut d.children, opts, math_renderer),
+            BlockNode::Extension(e) => transform_blocks(&mut e.children, opts, math_renderer),
             BlockNode::DefinitionList(dl) => {
                 for item in &mut dl.items {
                     for def in &mut item.definitions {
-                        transform_blocks(def, opts);
+                        transform_blocks(def, opts, math_renderer);
                     }
                 }
             }

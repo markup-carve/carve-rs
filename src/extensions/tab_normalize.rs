@@ -16,7 +16,7 @@
 //! exact equivalent.
 
 use crate::ast::{BlockNode, Document, InlineNode};
-use crate::extension::CarveExtension;
+use crate::extension::{BeforeRenderContext, CarveExtension};
 
 /// Normalize tabs to spaces in code content.
 ///
@@ -60,7 +60,7 @@ impl CarveExtension for TabNormalize {
         "tab-normalize"
     }
 
-    fn before_render(&self, mut doc: Document) -> Document {
+    fn before_render(&self, mut doc: Document, _ctx: &BeforeRenderContext<'_>) -> Document {
         for block in &mut doc.children {
             self.visit_block(block);
         }

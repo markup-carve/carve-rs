@@ -330,7 +330,11 @@ fn max_length_blocks_infallible_render_before_hooks() {
             "counting-hook"
         }
 
-        fn before_render(&self, doc: carve::Document) -> carve::Document {
+        fn before_render(
+            &self,
+            doc: carve::Document,
+            _ctx: &carve::BeforeRenderContext<'_>,
+        ) -> carve::Document {
             self.0.set(self.0.get() + 1);
             doc
         }

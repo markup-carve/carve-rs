@@ -17,7 +17,7 @@
 use std::collections::BTreeMap;
 
 use crate::ast::{BlockNode, Document, Heading, InlineNode, RawInline};
-use crate::extension::CarveExtension;
+use crate::extension::{BeforeRenderContext, CarveExtension};
 
 /// Options for [`HeadingPermalinks`].
 #[derive(Debug, Clone)]
@@ -92,7 +92,7 @@ impl CarveExtension for HeadingPermalinks {
         "heading-permalinks"
     }
 
-    fn before_render(&self, mut doc: Document) -> Document {
+    fn before_render(&self, mut doc: Document, _ctx: &BeforeRenderContext<'_>) -> Document {
         // Reproduce the renderer's document-order id counter so the anchor
         // href matches the `<section id>` / `<h* id>` the core emits.
         let mut counts: BTreeMap<String, usize> = BTreeMap::new();

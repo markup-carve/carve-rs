@@ -219,6 +219,11 @@ pub struct BlockExtension {
     /// here so its renderer can emit a `<summary>`). `None` for ordinary
     /// extension carrier nodes.
     pub summary: Option<String>,
+    /// Optional grouping `[label]` carried over from the source container, so a
+    /// static-mode renderer can surface it as the caption floor (mirroring the
+    /// core caption floor for an unconsumed label). `None` when the source had
+    /// no label.
+    pub label: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

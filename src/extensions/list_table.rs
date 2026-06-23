@@ -22,7 +22,7 @@ use crate::ast::{
     Admonition, AttrSlot, Attrs, BlockExtension, BlockNode, Document, InlineNode, ListItem,
 };
 use crate::escape::{is_dangerous_attr_name, is_valid_attr_name, sanitize_attr_value};
-use crate::extension::{CarveExtension, RenderContext};
+use crate::extension::{BeforeRenderContext, CarveExtension, RenderContext};
 
 /// The admonition kind this extension claims.
 const KIND: &str = "list-table";
@@ -74,7 +74,7 @@ impl CarveExtension for ListTable {
         "list-table"
     }
 
-    fn before_render(&self, mut doc: Document) -> Document {
+    fn before_render(&self, mut doc: Document, _ctx: &BeforeRenderContext<'_>) -> Document {
         rewrite_blocks(&mut doc.children);
         // Footnote bodies live outside the tree but are still rendered, so a
         // list-table inside a footnote def must be rewritten too (mirrors the
@@ -112,6 +112,7 @@ fn rewrite_blocks(blocks: &mut [BlockNode]) {
                         name: CARRIER.to_string(),
                         children: std::mem::take(&mut a.children),
                         summary: a.title.take().map(|t| inline_text(&t)),
+                        label: a.label.take(),
                     });
                 }
             }
@@ -236,6 +237,19 @@ fn render_table(node: &BlockExtension, ctx: &RenderContext<'_>) -> String {
     if let Some(summary) = node.summary.as_deref() {
         if !summary.trim().is_empty() {
             lines.push(format!("  <caption>{}</caption>", ctx.escape_html(summary)));
+        }
+    }
+    // Graceful degradation: a grouping `[label]` is uncommon on a list-table,
+    // but it must never be silently dropped. The table renderer consumes the
+    // node, so the core caption floor never runs; surface the label here as the
+    // same `<p class="div-label">` caption the floor would emit (after the
+    // title `<caption>` when both are present).
+    if let Some(label) = node.label.as_deref() {
+        if !label.is_empty() {
+            lines.push(format!(
+                "  <p class=\"div-label\">{}</p>",
+                ctx.escape_html(label)
+            ));
         }
     }
 

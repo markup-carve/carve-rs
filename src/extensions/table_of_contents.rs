@@ -14,7 +14,7 @@
 use std::collections::BTreeMap;
 
 use crate::ast::{BlockNode, Document, Heading, RawBlock};
-use crate::extension::CarveExtension;
+use crate::extension::{BeforeRenderContext, CarveExtension};
 
 /// List element for the TOC entries.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -120,7 +120,7 @@ impl CarveExtension for TableOfContents {
         "table-of-contents"
     }
 
-    fn before_render(&self, mut doc: Document) -> Document {
+    fn before_render(&self, mut doc: Document, _ctx: &BeforeRenderContext<'_>) -> Document {
         // The renderer allocates ids over ALL headings in document order
         // (including nested ones). Reproduce that counter so a top-level
         // heading's link target matches the `<section id>` the core emits.

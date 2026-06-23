@@ -6,7 +6,7 @@
 //! table cells, list items, captions, definition lists, footnote defs).
 
 use crate::ast::{AttrSlot, Attrs, BlockNode, Document, InlineNode};
-use crate::extension::CarveExtension;
+use crate::extension::{BeforeRenderContext, CarveExtension};
 
 /// Options for [`ExternalLinks`].
 #[derive(Debug, Clone)]
@@ -81,7 +81,7 @@ impl CarveExtension for ExternalLinks {
         "external-links"
     }
 
-    fn before_render(&self, mut doc: Document) -> Document {
+    fn before_render(&self, mut doc: Document, _ctx: &BeforeRenderContext<'_>) -> Document {
         for block in &mut doc.children {
             self.visit_block(block);
         }

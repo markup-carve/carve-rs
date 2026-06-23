@@ -24,8 +24,12 @@
 
 use crate::ast::{Attrs, BlockExtension, BlockNode, Document, InlineExtension, InlineNode};
 use crate::escape::escape_attr;
-use crate::extension::{CarveExtension, RenderContext};
+use crate::extension::{BeforeRenderContext, CarveExtension, RenderContext};
 use crate::render::render_attrs_after_class;
+
+/// The extra class a static (revealed) spoiler carries (after the base
+/// `spoiler` class): the blur is dropped, the content shown plainly.
+const REVEALED: &str = "spoiler spoiler-revealed";
 
 /// Sentinel extension name for the rewritten block carrier.
 pub(crate) const CARRIER: &str = "carve-spoiler";
@@ -62,7 +66,7 @@ impl CarveExtension for Spoiler {
         "spoiler"
     }
 
-    fn before_render(&self, mut doc: Document) -> Document {
+    fn before_render(&self, mut doc: Document, _ctx: &BeforeRenderContext<'_>) -> Document {
         rewrite_blocks(&mut doc.children);
         for blocks in doc.footnote_defs.values_mut() {
             rewrite_blocks(blocks);
@@ -78,9 +82,13 @@ impl CarveExtension for Spoiler {
         if node.name != ROLE {
             return None;
         }
+        // Static mode: hiding is meaningless offline, so the content is revealed
+        // (the `spoiler-revealed` class drops the blur). Mirrors carve-js
+        // `spoiler.ts` `staticInlineRenderers`.
+        let base = if ctx.is_static() { REVEALED } else { ROLE };
         Some(format!(
             "<span{}>{}</span>",
-            open_attrs(node.attrs.as_ref()),
+            open_attrs_with_base(node.attrs.as_ref(), base),
             ctx.render_inlines(&node.children),
         ))
     }
@@ -100,8 +108,33 @@ impl CarveExtension for Spoiler {
             Some(t) if !t.trim().is_empty() => t,
             _ => DEFAULT_SUMMARY,
         };
-        let open = format!("<details{}>", open_attrs(node.attrs.as_ref()));
         let body = ctx.render_blocks_at(&node.children, level + 1);
+        // Static mode: the disclosure is revealed and expanded into a flat,
+        // inert `<section class="spoiler spoiler-revealed">` - the title becomes
+        // an `<h3 class="spoiler-title">` heading and a grouping `[label]` is
+        // surfaced as the caption floor after it. Mirrors carve-js
+        // `spoiler.ts` `staticBlockRenderers`.
+        if ctx.is_static() {
+            let open = format!(
+                "<section{}>",
+                open_attrs_with_base(node.attrs.as_ref(), REVEALED)
+            );
+            let label_line = match &node.label {
+                Some(l) => format!(
+                    "{inner_pad}<p class=\"div-label\">{}</p>\n",
+                    ctx.escape_html(l)
+                ),
+                None => String::new(),
+            };
+            return Some(format!(
+                "{open}\n{inner_pad}<h3 class=\"spoiler-title\">{}</h3>\n{label_line}{body}\n{pad}</section>",
+                ctx.escape_html(summary),
+            ));
+        }
+        let open = format!(
+            "<details{}>",
+            open_attrs_with_base(node.attrs.as_ref(), ROLE)
+        );
         Some(format!(
             "{open}\n{inner_pad}<summary>{}</summary>\n{body}\n{pad}</details>",
             ctx.escape_html(summary),
@@ -109,14 +142,14 @@ impl CarveExtension for Spoiler {
     }
 }
 
-/// Build the output element's attribute string: the `spoiler` base class ahead
-/// of any author classes, then id / key-values via the shared
-/// `render_attrs_after_class` (which applies the always-on attribute hardening
-/// and value escaping). Class-first, matching carve-php and core math.
-fn open_attrs(attrs: Option<&Attrs>) -> String {
+/// Build the output element's attribute string: `base` (one or more space-
+/// separated classes) ahead of any author classes, then id / key-values via the
+/// shared `render_attrs_after_class` (always-on attribute hardening + value
+/// escaping). Class-first, matching carve-php and core math.
+fn open_attrs_with_base(attrs: Option<&Attrs>, base: &str) -> String {
     match attrs {
         Some(a) => {
-            let mut classes = vec![ROLE.to_string()];
+            let mut classes: Vec<String> = base.split(' ').map(str::to_string).collect();
             for class in &a.classes {
                 if !classes.contains(class) {
                     classes.push(class.clone());
@@ -128,7 +161,7 @@ fn open_attrs(attrs: Option<&Attrs>) -> String {
                 render_attrs_after_class(a),
             )
         }
-        None => format!(" class=\"{ROLE}\""),
+        None => format!(" class=\"{}\"", escape_attr(base)),
     }
 }
 
@@ -146,6 +179,7 @@ fn rewrite_blocks(blocks: &mut [BlockNode]) {
                     name: CARRIER.to_string(),
                     children: std::mem::take(&mut a.children),
                     summary,
+                    label: a.label.take(),
                 });
             }
             BlockNode::List(l) => {

@@ -14,8 +14,9 @@
 //! blockquote.
 
 use crate::ast::{BlockExtension, BlockNode, Document, InlineNode};
-use crate::extension::{CarveExtension, RenderContext};
-use crate::render::render_attrs;
+use crate::escape::escape_attr;
+use crate::extension::{BeforeRenderContext, CarveExtension, RenderContext};
+use crate::render::{render_attrs, render_attrs_after_class};
 
 /// Sentinel extension name for the rewritten carrier node. A `details`
 /// admonition is rewritten to a `BlockNode::Extension` with this name; the
@@ -60,7 +61,7 @@ impl CarveExtension for Details {
         "details"
     }
 
-    fn before_render(&self, mut doc: Document) -> Document {
+    fn before_render(&self, mut doc: Document, _ctx: &BeforeRenderContext<'_>) -> Document {
         rewrite_blocks(&mut doc.children);
         // Footnote bodies live outside the tree but are still rendered, so a
         // details block inside a footnote def must be rewritten too (matches
@@ -86,12 +87,55 @@ impl CarveExtension for Details {
             Some(t) if !t.trim().is_empty() => t,
             _ => "Details",
         };
-        let open = format!("<details{}>", render_attrs(&node.attrs));
         let body = ctx.render_blocks_at(&node.children, level + 1);
+        // Static mode: the disclosure is expanded into a flat, inert
+        // `<section class="details">` (no client interaction needed). The
+        // summary becomes an `<h3 class="details-title">` heading and a grouping
+        // `[label]` (if any) is surfaced as the caption floor after the title -
+        // the static path consumes the node, so the core floor never runs;
+        // preserving it keeps the no-content-dropped invariant. Mirrors
+        // carve-js `details.ts` `staticBlockRenderers`.
+        if ctx.is_static() {
+            let open = format!("<section{}>", open_attrs_with_base(&node.attrs, "details"));
+            let label_line = match &node.label {
+                Some(l) => format!(
+                    "{inner_pad}<p class=\"div-label\">{}</p>\n",
+                    ctx.escape_html(l)
+                ),
+                None => String::new(),
+            };
+            return Some(format!(
+                "{open}\n{inner_pad}<h3 class=\"details-title\">{}</h3>\n{label_line}{body}\n{pad}</section>",
+                ctx.escape_html(summary),
+            ));
+        }
+        let open = format!("<details{}>", render_attrs(&node.attrs));
         Some(format!(
             "{open}\n{inner_pad}<summary>{}</summary>\n{body}\n{pad}</details>",
             ctx.escape_html(summary),
         ))
+    }
+}
+
+/// Build a static-section attribute string: `base` class ahead of any author
+/// classes (one merged `class`), then id / key-values via the shared
+/// `render_attrs_after_class` hardening. Mirrors carve-js `withBaseClass`.
+fn open_attrs_with_base(attrs: &Option<crate::ast::Attrs>, base: &str) -> String {
+    match attrs {
+        Some(a) => {
+            let mut classes = vec![base.to_string()];
+            for class in &a.classes {
+                if !classes.contains(class) {
+                    classes.push(class.clone());
+                }
+            }
+            format!(
+                " class=\"{}\"{}",
+                escape_attr(&classes.join(" ")),
+                render_attrs_after_class(a),
+            )
+        }
+        None => format!(" class=\"{}\"", escape_attr(base)),
     }
 }
 
@@ -109,6 +153,7 @@ fn rewrite_blocks(blocks: &mut [BlockNode]) {
                     name: CARRIER.to_string(),
                     children: std::mem::take(&mut a.children),
                     summary,
+                    label: a.label.take(),
                 });
             }
             BlockNode::List(l) => {
