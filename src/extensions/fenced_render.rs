@@ -23,8 +23,10 @@
 //! inject.
 
 use crate::ast::{AttrSlot, Attrs, BlockNode, Document, RawBlock};
-use crate::escape::{escape_attr, is_dangerous_attr_name, is_valid_attr_name, sanitize_attr_value};
-use crate::extension::CarveExtension;
+use crate::escape::{
+    escape_attr, escape_text, is_dangerous_attr_name, is_valid_attr_name, sanitize_attr_value,
+};
+use crate::extension::{BeforeRenderContext, CarveExtension, DiagramRendererRef};
 
 /// How a [`FencedRender`] instance places the block body.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -33,6 +35,16 @@ pub enum ContentMode {
     Text,
     /// Verbatim body inside a `<script type="application/json">`.
     Json,
+}
+
+/// Which build-time renderer in the static [`crate::StaticRenderers`] map
+/// produces a [`FencedRender`] instance's image on the HTML static path.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StaticRendererKey {
+    /// Use `renderers.mermaid`.
+    Mermaid,
+    /// Use `renderers.chart`.
+    Chart,
 }
 
 /// Options for [`FencedRender`].
@@ -50,6 +62,12 @@ pub struct FencedRenderOptions {
     pub wrap_in_figure: bool,
     /// Figure class.
     pub figure_class: String,
+    /// Which build-time renderer (if any) produces this instance's image on the
+    /// HTML static path. When set and a [`crate::Mode::Static`] render supplies
+    /// that renderer, the static path emits the renderer's output (an
+    /// `<svg>` / `<img>`); otherwise it degrades to the source as a
+    /// `<pre><code>` block. `None` means static always degrades to source.
+    pub static_renderer: Option<StaticRendererKey>,
 }
 
 impl FencedRenderOptions {
@@ -78,6 +96,7 @@ impl FencedRenderOptions {
             content_mode,
             wrap_in_figure: false,
             figure_class,
+            static_renderer: None,
         }
     }
 }
@@ -118,7 +137,10 @@ impl FencedRender {
     /// Mermaid is one preset of this factory; load Mermaid.js on the page to
     /// render the diagrams.
     pub fn mermaid() -> Self {
-        Self::new("mermaid")
+        let mut opts =
+            FencedRenderOptions::new(vec!["mermaid".into()], None, None, ContentMode::Text);
+        opts.static_renderer = Some(StaticRendererKey::Mermaid);
+        Self::with_options(opts)
     }
 
     /// D2 preset (text mode, `<pre class="d2">`).
@@ -156,14 +178,14 @@ impl FencedRender {
         ))
     }
 
-    /// Chart.js preset (json mode, `<div class="chart"><script ...>`).
+    /// Chart.js preset (json mode, `<div class="chart"><script ...>`). On the
+    /// HTML static path a supplied `renderers.chart` pre-renders the config to
+    /// an image; absent that, it degrades to the JSON source as a `<pre><code>`.
     pub fn chart() -> Self {
-        Self::with_options(FencedRenderOptions::new(
-            vec!["chart".into()],
-            None,
-            None,
-            ContentMode::Json,
-        ))
+        let mut opts =
+            FencedRenderOptions::new(vec!["chart".into()], None, None, ContentMode::Json);
+        opts.static_renderer = Some(StaticRendererKey::Chart);
+        Self::with_options(opts)
     }
 
     /// Every bundled diagram preset as ready-to-register instances.
@@ -201,20 +223,55 @@ impl CarveExtension for FencedRender {
         "fenced-render"
     }
 
-    fn before_render(&self, mut doc: Document) -> Document {
-        transform_blocks(&mut doc.children, &self.opts);
+    fn before_render(&self, mut doc: Document, ctx: &BeforeRenderContext<'_>) -> Document {
+        // On the HTML static path the client-script diagram cannot be drawn by
+        // the engine. Resolve this instance's build renderer (if it declares one
+        // and the caller supplied it): a present renderer SSR-renders the source;
+        // absent, the static path degrades to an escaped `<pre><code>` source
+        // block. In interactive mode this is `None` and the live hydration
+        // element is emitted as before. The effective mode is interactive for
+        // the non-HTML renderers (static rendering is HTML-only), so reusing one
+        // `Options` across formats leaves Markdown / ANSI output unchanged.
+        // Mirrors carve-js `fenced-render.ts` `staticBlockRenderers`.
+        let static_build: Option<DiagramRendererRef<'_>> = if ctx.is_static() {
+            self.opts.static_renderer.and_then(|key| match key {
+                StaticRendererKey::Mermaid => ctx.renderers().mermaid.as_deref(),
+                StaticRendererKey::Chart => ctx.renderers().chart.as_deref(),
+            })
+        } else {
+            None
+        };
+        let mode = StaticState {
+            is_static: ctx.is_static(),
+            build: static_build,
+        };
+        transform_blocks(&mut doc.children, &self.opts, &mode);
         // Footnote bodies render from footnote_defs (outside the tree), so a
         // claimed block inside a footnote must be transformed too.
         for blocks in doc.footnote_defs.values_mut() {
-            transform_blocks(blocks, &self.opts);
+            transform_blocks(blocks, &self.opts, &mode);
         }
         doc
     }
 }
 
-/// Rewrite every claimed code block in `blocks` into its hydration `raw-block`.
-/// Shared with the `Mermaid` preset.
-pub(crate) fn transform_blocks(blocks: &mut [BlockNode], opts: &FencedRenderOptions) {
+/// Resolved static-render decision for a `FencedRender` instance, computed once
+/// per `before_render`: whether HTML static mode is active and, if so, the
+/// build renderer to SSR this instance's source (else `None` -> degrade to a
+/// `<pre><code>` source block).
+pub(crate) struct StaticState<'r> {
+    is_static: bool,
+    build: Option<DiagramRendererRef<'r>>,
+}
+
+/// Rewrite every claimed code block in `blocks` into its hydration `raw-block`
+/// (interactive) or its static form (`mode.is_static`): the build renderer's
+/// SSR output when supplied, else an escaped `<pre><code>` source block.
+pub(crate) fn transform_blocks(
+    blocks: &mut [BlockNode],
+    opts: &FencedRenderOptions,
+    mode: &StaticState<'_>,
+) {
     for block in blocks.iter_mut() {
         match block {
             BlockNode::CodeBlock(code)
@@ -224,30 +281,10 @@ pub(crate) fn transform_blocks(blocks: &mut [BlockNode], opts: &FencedRenderOpti
                     .map(|l| opts.languages.iter().any(|w| w == l))
                     .unwrap_or(false) =>
             {
-                // Merge the cssClass into the front of the class group, keeping
-                // the block's own attributes and their source order.
-                let mut attrs = code.attrs.clone().unwrap_or_default();
-                let mut classes = vec![opts.css_class.clone()];
-                classes.extend(attrs.classes.iter().cloned());
-                attrs.classes = classes;
-                ensure_class_slot(&mut attrs);
-
-                let body = match opts.content_mode {
-                    ContentMode::Text => escape_text_keep_gt(&code.content),
-                    ContentMode::Json => format!(
-                        "<script type=\"application/json\">{}</script>",
-                        guard_script_close(&code.content)
-                    ),
-                };
-                let element = format!("<{0}{1}>{2}</{0}>", opts.tag, render_attrs(&attrs), body);
-                let html = if opts.wrap_in_figure {
-                    format!(
-                        "<figure class=\"{}\">\n{}\n</figure>",
-                        escape_attr(&opts.figure_class),
-                        element
-                    )
+                let html = if mode.is_static {
+                    static_html(code, opts, mode.build)
                 } else {
-                    element
+                    interactive_html(code, opts)
                 };
                 *block = BlockNode::RawBlock(RawBlock {
                     format: "html".into(),
@@ -256,22 +293,90 @@ pub(crate) fn transform_blocks(blocks: &mut [BlockNode], opts: &FencedRenderOpti
             }
             BlockNode::List(l) => {
                 for item in &mut l.items {
-                    transform_blocks(&mut item.children, opts);
+                    transform_blocks(&mut item.children, opts, mode);
                 }
             }
-            BlockNode::BlockQuote(b) => transform_blocks(&mut b.children, opts),
-            BlockNode::Admonition(a) => transform_blocks(&mut a.children, opts),
-            BlockNode::Div(d) => transform_blocks(&mut d.children, opts),
-            BlockNode::Extension(e) => transform_blocks(&mut e.children, opts),
+            BlockNode::BlockQuote(b) => transform_blocks(&mut b.children, opts, mode),
+            BlockNode::Admonition(a) => transform_blocks(&mut a.children, opts, mode),
+            BlockNode::Div(d) => transform_blocks(&mut d.children, opts, mode),
+            BlockNode::Extension(e) => transform_blocks(&mut e.children, opts, mode),
             BlockNode::DefinitionList(dl) => {
                 for item in &mut dl.items {
                     for def in &mut item.definitions {
-                        transform_blocks(def, opts);
+                        transform_blocks(def, opts, mode);
                     }
                 }
             }
             _ => {}
         }
+    }
+}
+
+/// The interactive client-hydration element (the original behavior).
+fn interactive_html(code: &crate::ast::CodeBlock, opts: &FencedRenderOptions) -> String {
+    let attrs = merged_attrs(code, opts);
+    let body = match opts.content_mode {
+        ContentMode::Text => escape_text_keep_gt(&code.content),
+        ContentMode::Json => format!(
+            "<script type=\"application/json\">{}</script>",
+            guard_script_close(&code.content)
+        ),
+    };
+    let element = format!("<{0}{1}>{2}</{0}>", opts.tag, render_attrs(&attrs), body);
+    wrap_figure(element, opts)
+}
+
+/// The HTML static-path output: the build renderer's verbatim SSR output when
+/// supplied (an `<svg>` / `<img>`), else the source as a self-contained,
+/// HTML-escaped `<pre><code class="language-LANG">…\n</code></pre>` block
+/// (fence attributes preserved). Never blank. Mirrors carve-js
+/// `fenced-render.ts` `staticBlockRenderers`.
+fn static_html(
+    code: &crate::ast::CodeBlock,
+    opts: &FencedRenderOptions,
+    build: Option<DiagramRendererRef<'_>>,
+) -> String {
+    if let Some(build) = build {
+        let element = build(&code.content);
+        return wrap_figure(element, opts);
+    }
+    // Source fallback: merge the cssClass ahead of author classes and copy the
+    // author attributes (same hardening as the interactive path), so an
+    // `{#id .class data-x=y}` on the fence survives the degradation path.
+    let attrs = merged_attrs(code, opts);
+    let lang_attr = match &code.lang {
+        Some(l) => format!(" class=\"language-{}\"", escape_attr(l)),
+        None => String::new(),
+    };
+    format!(
+        "<pre{}><code{}>{}\n</code></pre>",
+        render_attrs(&attrs),
+        lang_attr,
+        escape_text(&code.content),
+    )
+}
+
+/// Merge the cssClass into the front of the class group, keeping the block's
+/// own attributes and their source order.
+fn merged_attrs(code: &crate::ast::CodeBlock, opts: &FencedRenderOptions) -> Attrs {
+    let mut attrs = code.attrs.clone().unwrap_or_default();
+    let mut classes = vec![opts.css_class.clone()];
+    classes.extend(attrs.classes.iter().cloned());
+    attrs.classes = classes;
+    ensure_class_slot(&mut attrs);
+    attrs
+}
+
+/// Wrap an element in `<figure class="{figure_class}">` when configured.
+fn wrap_figure(element: String, opts: &FencedRenderOptions) -> String {
+    if opts.wrap_in_figure {
+        format!(
+            "<figure class=\"{}\">\n{}\n</figure>",
+            escape_attr(&opts.figure_class),
+            element
+        )
+    } else {
+        element
     }
 }
 

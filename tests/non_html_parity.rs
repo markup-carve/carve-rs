@@ -60,3 +60,23 @@ fn plain_text_parity() {
 fn ansi_parity() {
     check("ansi", carve::to_ansi);
 }
+
+#[test]
+fn blockquote_attribution_is_separated_in_non_html_renderers() {
+    let input = "> q\n^ Attr";
+
+    assert_eq!(carve::to_markdown(input), "> q\n\nAttr\n");
+    assert_eq!(carve::to_plain_text(input), "\"q\"\n\nAttr\n");
+    assert_eq!(
+        carve::to_ansi(input),
+        "\x1b[36m\x1b[2m│\x1b[0m q\n\n\x1b[3m\x1b[2mAttr\x1b[0m\n"
+    );
+}
+
+#[test]
+fn markdown_code_fence_keeps_quoted_header() {
+    assert_eq!(
+        carve::to_markdown("```js \"Title\"\nx\n```"),
+        "```js \"Title\"\nx\n```\n"
+    );
+}
