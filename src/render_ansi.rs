@@ -446,9 +446,10 @@ fn render_inline(node: &InlineNode, ctx: &mut AnsiContext, depth: usize) -> Stri
                 &render_inlines(&emphasis.children, ctx, depth + 1),
                 UNDERLINE,
             ),
-            EmphasisKind::Strike | EmphasisKind::Sub => {
+            EmphasisKind::Strike => {
                 style(&render_inlines(&emphasis.children, ctx, depth + 1), STRIKE)
             }
+            EmphasisKind::Sub => to_subscript(&render_inlines(&emphasis.children, ctx, depth + 1)),
             EmphasisKind::Super => {
                 to_superscript(&render_inlines(&emphasis.children, ctx, depth + 1))
             }
@@ -569,6 +570,29 @@ fn strip_ansi(text: &str) -> String {
 
 fn width(text: &str) -> usize {
     strip_ansi(text).chars().count()
+}
+
+fn to_subscript(text: &str) -> String {
+    text.chars()
+        .map(|ch| match ch {
+            '0' => '₀',
+            '1' => '₁',
+            '2' => '₂',
+            '3' => '₃',
+            '4' => '₄',
+            '5' => '₅',
+            '6' => '₆',
+            '7' => '₇',
+            '8' => '₈',
+            '9' => '₉',
+            '+' => '₊',
+            '-' => '₋',
+            '=' => '₌',
+            '(' => '₍',
+            ')' => '₎',
+            other => other,
+        })
+        .collect()
 }
 
 fn to_superscript(text: &str) -> String {

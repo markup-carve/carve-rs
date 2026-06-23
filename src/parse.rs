@@ -91,7 +91,12 @@ pub fn parse_with_options(source: &str, options: &Options<'_>) -> Document {
         footnote_defs,
         children,
     };
-    resolve_reference_links(&mut doc, &link_defs);
+    let heading_index = heading_index(
+        &doc.children,
+        &doc.footnote_defs,
+        options.lowercase_heading_ids,
+    );
+    resolve_reference_links(&mut doc, &link_defs, &heading_index);
     apply_abbreviations(&mut doc);
     resolve_crossrefs(&mut doc, options.lowercase_heading_ids);
     // Single post-resolution pass: a link may not contain another link. Runs
@@ -4613,16 +4618,7 @@ fn resolve_crossrefs(doc: &mut Document, lowercase_ids: bool) {
     for blocks in doc.footnote_defs.values_mut() {
         number_captioned_blocks(blocks, &mut caption_counts, &mut titles);
     }
-    // Case-folded index of known ids -> actual (case-preserved) id. First
-    // occurrence wins, so a duplicate that only differs in case does not shadow
-    // the earlier heading. Used as a fallback when an exact id match fails, so a
-    // lowercase `</#getting-started>` resolves to a `Getting-Started` heading
-    // (and the emitted href uses the ACTUAL id).
-    let mut folded: BTreeMap<String, String> = BTreeMap::new();
-    for id in titles.keys() {
-        folded.entry(case_fold(id)).or_insert_with(|| id.clone());
-    }
-    let index = CrossrefIndex { titles, folded };
+    let index = crossref_index(titles);
     for block in &mut doc.children {
         resolve_crossrefs_block(block, &index);
     }
@@ -4631,6 +4627,33 @@ fn resolve_crossrefs(doc: &mut Document, lowercase_ids: bool) {
             resolve_crossrefs_block(block, &index);
         }
     }
+}
+
+fn heading_index(
+    children: &[BlockNode],
+    footnote_defs: &BTreeMap<String, Vec<BlockNode>>,
+    lowercase_ids: bool,
+) -> CrossrefIndex {
+    let mut counts = BTreeMap::new();
+    let mut titles = BTreeMap::new();
+    collect_heading_titles(children, &mut counts, &mut titles, lowercase_ids);
+    for blocks in footnote_defs.values() {
+        collect_heading_titles(blocks, &mut counts, &mut titles, lowercase_ids);
+    }
+    crossref_index(titles)
+}
+
+fn crossref_index(titles: BTreeMap<String, String>) -> CrossrefIndex {
+    // Case-folded index of known ids -> actual (case-preserved) id. First
+    // occurrence wins, so a duplicate that only differs in case does not shadow
+    // the earlier heading. Used as a fallback when an exact match fails, so a
+    // lowercase reference resolves to a `Getting-Started` heading and the
+    // emitted href uses the ACTUAL id.
+    let mut folded: BTreeMap<String, String> = BTreeMap::new();
+    for id in titles.keys() {
+        folded.entry(case_fold(id)).or_insert_with(|| id.clone());
+    }
+    CrossrefIndex { titles, folded }
 }
 
 /// Heading-id lookup table for `</#id>` cross-references: exact id -> title,
@@ -4666,80 +4689,92 @@ fn case_fold(s: &str) -> String {
     out
 }
 
-fn resolve_reference_links(doc: &mut Document, defs: &BTreeMap<String, LinkDef>) {
+fn resolve_reference_links(
+    doc: &mut Document,
+    defs: &BTreeMap<String, LinkDef>,
+    heading_index: &CrossrefIndex,
+) {
     for block in &mut doc.children {
-        resolve_reference_links_block(block, defs);
+        resolve_reference_links_block(block, defs, heading_index);
     }
     for blocks in doc.footnote_defs.values_mut() {
         for block in blocks {
-            resolve_reference_links_block(block, defs);
+            resolve_reference_links_block(block, defs, heading_index);
         }
     }
 }
 
-fn resolve_reference_links_block(block: &mut BlockNode, defs: &BTreeMap<String, LinkDef>) {
+fn resolve_reference_links_block(
+    block: &mut BlockNode,
+    defs: &BTreeMap<String, LinkDef>,
+    heading_index: &CrossrefIndex,
+) {
     match block {
-        BlockNode::Heading(h) => resolve_reference_links_inline(&mut h.children, defs),
-        BlockNode::Paragraph(p) => resolve_reference_links_inline(&mut p.children, defs),
+        BlockNode::Heading(h) => {
+            resolve_reference_links_inline(&mut h.children, defs, heading_index)
+        }
+        BlockNode::Paragraph(p) => {
+            resolve_reference_links_inline(&mut p.children, defs, heading_index)
+        }
         BlockNode::List(l) => {
             for item in &mut l.items {
                 for child in &mut item.children {
-                    resolve_reference_links_block(child, defs);
+                    resolve_reference_links_block(child, defs, heading_index);
                 }
             }
         }
         BlockNode::BlockQuote(b) => {
             for child in &mut b.children {
-                resolve_reference_links_block(child, defs);
+                resolve_reference_links_block(child, defs, heading_index);
             }
         }
         BlockNode::Table(t) => {
             if let Some(caption) = &mut t.caption {
-                resolve_reference_links_inline(caption, defs);
+                resolve_reference_links_inline(caption, defs, heading_index);
             }
             for row in &mut t.rows {
                 for cell in &mut row.cells {
-                    resolve_reference_links_inline(&mut cell.children, defs);
+                    resolve_reference_links_inline(&mut cell.children, defs, heading_index);
                 }
             }
         }
         BlockNode::Admonition(a) => {
             for child in &mut a.children {
-                resolve_reference_links_block(child, defs);
+                resolve_reference_links_block(child, defs, heading_index);
             }
         }
         BlockNode::Div(d) => {
             for child in &mut d.children {
-                resolve_reference_links_block(child, defs);
+                resolve_reference_links_block(child, defs, heading_index);
             }
         }
         BlockNode::DefinitionList(d) => {
             for item in &mut d.items {
                 for term in &mut item.terms {
-                    resolve_reference_links_inline(term, defs);
+                    resolve_reference_links_inline(term, defs, heading_index);
                 }
                 for definition in &mut item.definitions {
                     for child in definition {
-                        resolve_reference_links_block(child, defs);
+                        resolve_reference_links_block(child, defs, heading_index);
                     }
                 }
             }
         }
         BlockNode::Figure(f) => {
-            resolve_reference_links_inline(&mut f.caption, defs);
+            resolve_reference_links_inline(&mut f.caption, defs, heading_index);
             match &mut f.target {
                 FigureTarget::BlockQuote(b) => {
                     for child in &mut b.children {
-                        resolve_reference_links_block(child, defs);
+                        resolve_reference_links_block(child, defs, heading_index);
                     }
                 }
                 FigureTarget::Table(t) => {
                     if let Some(caption) = &mut t.caption {
-                        resolve_reference_links_inline(caption, defs);
+                        resolve_reference_links_inline(caption, defs, heading_index);
                     }
                     for row in &mut t.rows {
                         for cell in &mut row.cells {
-                            resolve_reference_links_inline(&mut cell.children, defs);
+                            resolve_reference_links_inline(&mut cell.children, defs, heading_index);
                         }
                     }
                 }
@@ -4752,7 +4787,11 @@ fn resolve_reference_links_block(block: &mut BlockNode, defs: &BTreeMap<String, 
     }
 }
 
-fn resolve_reference_links_inline(nodes: &mut Vec<InlineNode>, defs: &BTreeMap<String, LinkDef>) {
+fn resolve_reference_links_inline(
+    nodes: &mut Vec<InlineNode>,
+    defs: &BTreeMap<String, LinkDef>,
+    heading_index: &CrossrefIndex,
+) {
     let mut out = Vec::new();
     for mut node in std::mem::take(nodes) {
         match &mut node {
@@ -4764,33 +4803,43 @@ fn resolve_reference_links_inline(nodes: &mut Vec<InlineNode>, defs: &BTreeMap<S
                         l.ref_label = None;
                         l.raw_ref = None;
                         out.push(node);
+                    } else if is_collapsed_reference(l) {
+                        if let Some((actual_id, _)) = heading_index.resolve(label) {
+                            l.href = format!("#{actual_id}");
+                            l.title = None;
+                            l.ref_label = None;
+                            l.raw_ref = None;
+                            out.push(node);
+                        } else {
+                            out.push(InlineNode::Text(l.raw_ref.clone().unwrap_or_default()));
+                        }
                     } else {
                         out.push(InlineNode::Text(l.raw_ref.clone().unwrap_or_default()));
                     }
                 } else {
-                    resolve_reference_links_inline(&mut l.children, defs);
+                    resolve_reference_links_inline(&mut l.children, defs, heading_index);
                     out.push(node);
                 }
             }
             InlineNode::Emphasis(e) => {
-                resolve_reference_links_inline(&mut e.children, defs);
+                resolve_reference_links_inline(&mut e.children, defs, heading_index);
                 out.push(node);
             }
             InlineNode::Span(s) => {
-                resolve_reference_links_inline(&mut s.children, defs);
+                resolve_reference_links_inline(&mut s.children, defs, heading_index);
                 out.push(node);
             }
             InlineNode::Extension(e) => {
-                resolve_reference_links_inline(&mut e.children, defs);
+                resolve_reference_links_inline(&mut e.children, defs, heading_index);
                 out.push(node);
             }
             InlineNode::CitationGroup(g) => {
                 for item in &mut g.items {
                     if let Some(prefix) = &mut item.prefix {
-                        resolve_reference_links_inline(prefix, defs);
+                        resolve_reference_links_inline(prefix, defs, heading_index);
                     }
                     if let Some(locator) = &mut item.locator {
-                        resolve_reference_links_inline(locator, defs);
+                        resolve_reference_links_inline(locator, defs, heading_index);
                     }
                 }
                 out.push(node);
@@ -4799,6 +4848,20 @@ fn resolve_reference_links_inline(nodes: &mut Vec<InlineNode>, defs: &BTreeMap<S
         }
     }
     *nodes = out;
+}
+
+fn is_collapsed_reference(link: &Link) -> bool {
+    let Some(raw) = &link.raw_ref else {
+        return false;
+    };
+    let bytes = raw.as_bytes();
+    let Some((_, after_text)) = read_bracketed(bytes, 0) else {
+        return false;
+    };
+    let Some((label, _)) = read_bracketed(bytes, after_text) else {
+        return false;
+    };
+    label.is_empty()
 }
 
 fn collect_heading_titles(
