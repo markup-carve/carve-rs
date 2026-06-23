@@ -338,9 +338,11 @@ the format (last one wins). `--mention-url` / `--tag-url` build HTML links and
 apply to HTML output only. `--static` (vs the default `--interactive`) renders
 self-contained HTML: interactive constructs flatten (a `::: details` becomes an
 expanded `<section>`) and client-script visuals (mermaid / chart / math) degrade
-to source. Supplying build renderers for those requires the library API
-(`Options::with_mode` + `with_renderers`); see `docs/extensions.md` and
-`examples/static_mode.rs`.
+to source. Pass `--extensions` to enable the bundled interactive extensions
+(details, spoiler, mermaid, chart, math) so `--static` has something to flatten;
+without it the CLI parses those words as plain containers. Supplying build
+renderers for the diagrams/math requires the library API (`Options::with_mode` +
+`with_renderers`); see `docs/extensions.md` and `examples/static_mode.rs`.
 
 ## Building from source
 

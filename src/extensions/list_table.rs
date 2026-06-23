@@ -239,6 +239,19 @@ fn render_table(node: &BlockExtension, ctx: &RenderContext<'_>) -> String {
             lines.push(format!("  <caption>{}</caption>", ctx.escape_html(summary)));
         }
     }
+    // Graceful degradation: a grouping `[label]` is uncommon on a list-table,
+    // but it must never be silently dropped. The table renderer consumes the
+    // node, so the core caption floor never runs; surface the label here as the
+    // same `<p class="div-label">` caption the floor would emit (after the
+    // title `<caption>` when both are present).
+    if let Some(label) = node.label.as_deref() {
+        if !label.is_empty() {
+            lines.push(format!(
+                "  <p class=\"div-label\">{}</p>",
+                ctx.escape_html(label)
+            ));
+        }
+    }
 
     let head_rows = grid.len().min(header_rows);
 
