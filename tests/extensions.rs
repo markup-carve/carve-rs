@@ -1,6 +1,6 @@
 use carve::{
-    BlockMatch, BlockNode, CarveExtension, Document, InlineExtension, InlineMatch, InlineNode,
-    MatcherContext, Options, Paragraph, RenderContext,
+    BeforeRenderContext, BlockMatch, BlockNode, CarveExtension, Document, InlineExtension,
+    InlineMatch, InlineNode, MatcherContext, Options, Paragraph, RenderContext,
 };
 
 struct Kbd;
@@ -181,7 +181,7 @@ impl CarveExtension for UppercaseBeforeRender {
         "uppercase"
     }
 
-    fn before_render(&self, mut doc: Document) -> Document {
+    fn before_render(&self, mut doc: Document, _ctx: &BeforeRenderContext<'_>) -> Document {
         if let Some(BlockNode::Paragraph(p)) = doc.children.first_mut() {
             if let Some(InlineNode::Text(text)) = p.children.first_mut() {
                 *text = text.to_uppercase();

@@ -204,14 +204,14 @@ fn keeps_attrs_with_stale_order_list() {
     // carve-js `keeps attrs another extension adds with a stale order list`
     // test.
     use carve::ast::{Attrs, BlockNode, Document};
-    use carve::{CarveExtension, RenderContext};
+    use carve::{BeforeRenderContext, CarveExtension, RenderContext};
 
     struct AddClass;
     impl CarveExtension for AddClass {
         fn name(&self) -> &'static str {
             "add"
         }
-        fn before_render(&self, mut doc: Document) -> Document {
+        fn before_render(&self, mut doc: Document, _ctx: &BeforeRenderContext<'_>) -> Document {
             fn walk(blocks: &mut [BlockNode]) {
                 for block in blocks.iter_mut() {
                     if let BlockNode::Admonition(a) = block {

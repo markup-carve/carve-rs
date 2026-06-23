@@ -22,7 +22,7 @@ use crate::ast::{
     Admonition, AttrSlot, Attrs, BlockExtension, BlockNode, Document, InlineNode, ListItem,
 };
 use crate::escape::{is_dangerous_attr_name, is_valid_attr_name, sanitize_attr_value};
-use crate::extension::{CarveExtension, RenderContext};
+use crate::extension::{BeforeRenderContext, CarveExtension, RenderContext};
 
 /// The admonition kind this extension claims.
 const KIND: &str = "list-table";
@@ -74,7 +74,7 @@ impl CarveExtension for ListTable {
         "list-table"
     }
 
-    fn before_render(&self, mut doc: Document) -> Document {
+    fn before_render(&self, mut doc: Document, _ctx: &BeforeRenderContext<'_>) -> Document {
         rewrite_blocks(&mut doc.children);
         // Footnote bodies live outside the tree but are still rendered, so a
         // list-table inside a footnote def must be rewritten too (mirrors the
@@ -112,6 +112,7 @@ fn rewrite_blocks(blocks: &mut [BlockNode]) {
                         name: CARRIER.to_string(),
                         children: std::mem::take(&mut a.children),
                         summary: a.title.take().map(|t| inline_text(&t)),
+                        label: a.label.take(),
                     });
                 }
             }

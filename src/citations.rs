@@ -3,7 +3,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::ast::*;
 use crate::escape::escape_attr;
-use crate::extension::{CarveExtension, InlineMatch, MatcherContext, RenderContext};
+use crate::extension::{
+    BeforeRenderContext, CarveExtension, InlineMatch, MatcherContext, RenderContext,
+};
 
 const REFS_BLOCK: &str = "citations-references";
 
@@ -80,7 +82,7 @@ impl CarveExtension for Citations {
         doc
     }
 
-    fn before_render(&self, mut doc: Document) -> Document {
+    fn before_render(&self, mut doc: Document, _ctx: &BeforeRenderContext<'_>) -> Document {
         let defs = self.defs.borrow();
         let mut seen = BTreeSet::new();
         let mut order = Vec::new();
@@ -512,6 +514,7 @@ fn inject_references_block(blocks: &mut Vec<BlockNode>) {
         name: REFS_BLOCK.to_string(),
         children: Vec::new(),
         summary: None,
+        label: None,
     });
     for block in blocks.iter_mut() {
         match block {

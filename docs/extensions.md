@@ -165,3 +165,90 @@ nothing is silently lost.
 
 Without the extension registered, `::: list-table` always stays the default
 `<div class="list-table">`.
+
+## Static rendering mode
+
+A render carries a **mode** - a render option, not document syntax (see the
+[normative extensions contract](https://markup-carve.github.io/carve/extensions)
+§2.5 and the [graceful-degradation page](https://markup-carve.github.io/carve/graceful-degradation)):
+
+- `Mode::Interactive` (default) - online HTML; extensions render their
+  interactive form (live `<details>` disclosures, mermaid via a client script,
+  KaTeX-ready math).
+- `Mode::Static` - self-contained HTML for a medium that cannot interact or run
+  client scripts (print, PDF source, archival HTML). Interactive constructs
+  flatten and client-script visuals degrade to a build renderer's output or to
+  source.
+
+```rust
+use carve::{Mode, Options};
+let opts = Options::new().with_mode(Mode::Static);
+```
+
+`Mode` is a closed enum, so an unknown mode value (a future `"print"` /
+`"email"` preset) is unrepresentable - the spec's "MUST reject an unknown mode"
+is satisfied by construction. Omitting the mode leaves `Mode::Interactive`, so
+existing callers are unaffected. The mode only affects the **HTML** renderer;
+the Markdown, plain-text and ANSI renderers are inherently static and reach the
+same end by flattening containers and keeping client-script blocks as source.
+
+The CLI exposes this as `carve --static file.crv` (and `--interactive`, the
+default). A runnable end-to-end demo lives in `examples/static_mode.rs`
+(`cargo run --example static_mode`): it renders one document interactive, static
+with source fallback, and static with build renderers.
+
+### The renderers map
+
+Client-script extensions (mermaid, chart, math) cannot produce their image
+inside the engine. A static render therefore accepts a **renderers** map of
+boxed closures keyed by extension. When the needed renderer is absent, the
+static path falls back to source - never blank.
+
+```rust
+use carve::{Mode, Options, StaticRenderers};
+let opts = Options::new()
+    .with_mode(Mode::Static)
+    .with_renderers(StaticRenderers {
+        // src -> SVG / <img> for mermaid diagrams
+        mermaid: Some(Box::new(|src: &str| pre_render_mermaid(src))),
+        // config src -> SVG / <img> for charts
+        chart: Some(Box::new(|src: &str| pre_render_chart(src))),
+        // (tex, display) -> MathML / HTML for server-side math
+        math: Some(Box::new(|tex: &str, display: bool| ssr_math(tex, display))),
+    });
+```
+
+`mermaid` / `chart` are `Box<dyn Fn(&str) -> String>` (`DiagramRenderer`);
+`math` is `Box<dyn Fn(&str, bool) -> String>` (`MathRenderer`), where the `bool`
+is `true` for display math. Renderer output is trusted and emitted verbatim.
+
+### Per-extension static output
+
+carve-rs ships Details, Spoiler, FencedRender (mermaid / chart presets) and
+MathBlock. It has no Tabs / CodeGroup extension - those exist in carve-js and
+carve-php only - so the labeled-section flattening for tab groups is provided by
+the **core caption floor**: an unconsumed grouping `[label]` renders as a
+`<p class="div-label">` caption in every target (the floor that also covers a
+bare labeled `:::` div).
+
+| Extension | Interactive HTML | Static HTML |
+| --- | --- | --- |
+| Details (`::: details`) | `<details><summary>T</summary>…</details>` | `<section class="details"><h3 class="details-title">T</h3>…</section>` (a `[label]` follows the title as a `<p class="div-label">`) |
+| Spoiler inline (`:spoiler[x]`) | `<span class="spoiler">x</span>` | `<span class="spoiler spoiler-revealed">x</span>` |
+| Spoiler block (`::: spoiler`) | `<details class="spoiler"><summary>T</summary>…</details>` | `<section class="spoiler spoiler-revealed"><h3 class="spoiler-title">T</h3>…</section>` |
+| FencedRender mermaid | `<pre class="mermaid">…</pre>` (client-hydration) | `renderers.mermaid` output, else `<pre class="mermaid"><code class="language-mermaid">…\n</code></pre>` (source, fence attrs preserved) |
+| FencedRender chart | `<div class="chart"><script type="application/json">…</script></div>` | `renderers.chart` output, else `<pre class="chart"><code class="language-chart">…\n</code></pre>` (no `<script>`) |
+| FencedRender other presets (d2, graphviz, …) | `<pre class="lang">…</pre>` | always source `<pre><code>` (no build renderer) |
+| MathBlock (` ```math `) | `<div class="math display">\[…\]</div>` | `renderers.math(src, true)` output inside the div, else the same `\[…\]` source |
+| Core inline / display math (`$…$` / `$$…$$`) | `<span class="math {inline,display}">\(…\)</span>` | `renderers.math(src, display)` output inside the span, else the same `\(…\)` / `\[…\]` source |
+
+In static HTML the resolution order per node is: the extension's static path if
+defined; else its ordinary renderer (correct for already-static extensions like
+ListTable, which need no static path); else the core caption floor for any
+unconsumed grouping `[label]`. No authored token is ever dropped.
+
+> Note on cross-impl parity: this branch follows the carve-js shapes
+> (`<section class="details">`, `spoiler-revealed`). carve-php degrades Details
+> / Spoiler natively (it keeps the `<details>`/`<summary>` disclosure in static
+> mode rather than flattening to a `<section>`); the two will be reconciled when
+> the spec PR lands.

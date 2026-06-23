@@ -317,7 +317,8 @@ flag for Markdown, plain text, or ANSI-colored terminal output:
 ```bash
 cargo install --path .
 
-carve README.crv > README.html      # HTML (default)
+carve README.crv > README.html      # HTML (default, interactive)
+carve --static README.crv           # self-contained HTML (print / PDF / archival)
 carve --markdown README.crv         # Markdown
 carve --plain README.crv            # plain text
 carve --ansi README.crv             # ANSI-colored terminal text
@@ -334,7 +335,12 @@ carve --help
 
 `--html` / `--markdown` (`--md`) / `--plain` (`--plain-text`) / `--ansi` select
 the format (last one wins). `--mention-url` / `--tag-url` build HTML links and
-apply to HTML output only.
+apply to HTML output only. `--static` (vs the default `--interactive`) renders
+self-contained HTML: interactive constructs flatten (a `::: details` becomes an
+expanded `<section>`) and client-script visuals (mermaid / chart / math) degrade
+to source. Supplying build renderers for those requires the library API
+(`Options::with_mode` + `with_renderers`); see `docs/extensions.md` and
+`examples/static_mode.rs`.
 
 ## Building from source
 

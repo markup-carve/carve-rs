@@ -78,6 +78,8 @@ fn main() -> ExitCode {
             "--markdown" | "--md" => format = OutputFormat::Markdown,
             "--plain" | "--plain-text" => format = OutputFormat::Plain,
             "--ansi" => format = OutputFormat::Ansi,
+            "--static" => options = options.with_mode(carve::Mode::Static),
+            "--interactive" => options = options.with_mode(carve::Mode::Interactive),
             "-" => input_path = None,
             path if path.starts_with('-') => {
                 eprintln!("carve: unknown option: {path}");
@@ -140,6 +142,10 @@ fn print_usage() {
          --markdown, --md            Markdown\n  \
          --plain, --plain-text       plain text\n  \
          --ansi                      ANSI-colored terminal text\n\n\
+         Render mode (HTML only; default --interactive):\n  \
+         --static                    self-contained HTML: flatten interactive\n                              \
+         constructs, degrade diagrams/math to source\n  \
+         --interactive               live HTML (default)\n\n\
          Options:\n  \
          --mention-url TEMPLATE      render @mentions as links (HTML only)\n  \
          --tag-url TEMPLATE          render #tags as links (HTML only)\n  \

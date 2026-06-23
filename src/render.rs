@@ -1457,12 +1457,21 @@ fn render_inline_after(
                 Some(a) => (base.to_string(), render_attrs_after_class(a)),
                 None => (base.to_string(), String::new()),
             };
+            // Static mode: when a build-time math renderer is supplied, emit its
+            // server-side output (MathML / HTML) inside the math span so the page
+            // needs no client KaTeX / MathJax; the renderer output is trusted and
+            // emitted verbatim. Absent a renderer (or in interactive mode), fall
+            // back to the same delimiter-wrapped, HTML-escaped source - never
+            // blank. Mirrors carve-js `render-html.ts` `case 'math'`.
+            let body = match (options.is_static(), &options.renderers.math) {
+                (true, Some(build)) => build(&m.content, m.display),
+                _ => format!("{}{}{}", open, escape_text(&m.content), close),
+            };
             out.push_str(&format!(
-                "<span class=\"{}\"{}>{}{}</span>",
+                "<span class=\"{}\"{}>{}</span>",
                 escape_attr(&class),
                 rest,
-                open,
-                escape_text(&m.content) + close
+                body,
             ));
         }
         InlineNode::RawInline(r) => {
