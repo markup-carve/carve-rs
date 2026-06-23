@@ -1729,6 +1729,21 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             });
             continue;
         }
+        if marker_content_starts_block(marker.content, cur, content_col) {
+            let mut stream = marker.content.to_string();
+            let following = collect_indented_block(cur, base_indent, content_col);
+            if !following.is_empty() {
+                stream.push('\n');
+                stream.push_str(&following);
+            }
+            let children = parse_blocks_with_options(&stream, options);
+            items.push(ListItem {
+                attrs: marker.attrs.clone(),
+                checked: marker.checked,
+                children,
+            });
+            continue;
+        }
         // The item's first paragraph is the marker content plus any
         // immediately-following indented prose lines (lazy continuation).
         // It stops at a blank line or a list marker: a nested sublist still
@@ -1775,12 +1790,13 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             cur.consume();
         }
         let para_text = para_lines.join("\n");
+        let para_text = para_text.trim_end_matches([' ', '\t']);
         items.push(ListItem {
             attrs: marker.attrs.clone(),
             checked: marker.checked,
             children: vec![BlockNode::Paragraph(Paragraph {
                 attrs: None,
-                children: parse_inline_with_options(&para_text, options),
+                children: parse_inline_with_options(para_text, options),
             })],
         });
     }
@@ -1792,6 +1808,22 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         tight,
         items,
     })
+}
+
+fn marker_content_starts_block(content: &str, cur: &LineCursor<'_>, content_col: usize) -> bool {
+    if let Some(open) = detect_fence_open(content) {
+        return cur.lines[cur.pos..]
+            .iter()
+            .map(|line| slice_columns(line, content_col.min(indent_columns(line)), false))
+            .any(|line| is_fence_close(&line, open));
+    }
+    if is_table_start(content) {
+        return cur.lines.get(cur.pos).is_some_and(|line| {
+            let indent = indent_columns(line);
+            indent >= content_col && is_table_start(&slice_columns(line, content_col, false))
+        });
+    }
+    false
 }
 
 #[derive(Clone)]
@@ -2143,33 +2175,71 @@ fn is_colon_closer(line: &str, fence_len: usize) -> bool {
 /// a list at any indentation (Rule B), so a tab-indented bullet interrupts a
 /// paragraph too.
 fn is_definition_list_start(line: &str) -> bool {
-    line.starts_with(":: ") || line.starts_with(":  ")
+    line.strip_prefix(":: ")
+        .is_some_and(|term| !term.trim().is_empty())
 }
 
 fn parse_definition_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
-    let mut terms = Vec::new();
-    let mut defs = Vec::new();
+    let mut items = Vec::new();
     while let Some(line) = cur.peek() {
-        if let Some(term) = line.strip_prefix(":: ") {
-            terms.push(parse_inline_with_options(term.trim_end(), options));
+        let Some(term) = line.strip_prefix(":: ") else {
+            break;
+        };
+        if term.trim().is_empty() {
+            break;
+        }
+        cur.consume();
+        let terms = vec![parse_inline_with_options(term.trim_end(), options)];
+        let mut defs = Vec::new();
+
+        while let Some(line) = cur.peek() {
+            let Some(def) = line.strip_prefix(":  ") else {
+                break;
+            };
+            if def.trim().is_empty() {
+                break;
+            }
             cur.consume();
-        } else if let Some(def) = line.strip_prefix(":  ") {
-            defs.push(vec![BlockNode::Paragraph(Paragraph {
-                attrs: None,
-                children: parse_inline_with_options(def.trim_end(), options),
-            })]);
+            let mut body = def.trim_end().to_string();
+            let following = collect_definition_body(cur);
+            if !following.is_empty() {
+                body.push('\n');
+                body.push_str(&following);
+            }
+            defs.push(parse_blocks_with_options(&body, options));
+        }
+
+        items.push(DefinitionItem {
+            terms,
+            definitions: defs,
+        });
+
+        let saved = cur.pos;
+        while matches!(cur.peek(), Some(line) if line.trim().is_empty()) {
             cur.consume();
-        } else {
+        }
+        if !cur.peek().is_some_and(is_definition_list_start) {
+            cur.pos = saved;
             break;
         }
     }
-    BlockNode::DefinitionList(DefinitionList {
-        attrs: None,
-        items: vec![DefinitionItem {
-            terms,
-            definitions: defs,
-        }],
-    })
+    BlockNode::DefinitionList(DefinitionList { attrs: None, items })
+}
+
+fn collect_definition_body(cur: &mut LineCursor) -> String {
+    let mut lines = Vec::new();
+    while let Some(line) = cur.peek() {
+        if line.trim().is_empty() {
+            break;
+        }
+        let indent = indent_columns(line);
+        if indent < 3 {
+            break;
+        }
+        lines.push(slice_columns(line, 3.min(indent), false));
+        cur.consume();
+    }
+    lines.join("\n")
 }
 
 fn consume_caption(cur: &mut LineCursor, options: &Options<'_>) -> Option<Vec<InlineNode>> {
@@ -3610,6 +3680,9 @@ fn parse_raw_inline_after_code(
     if i >= bytes.len() {
         return None;
     }
+    if format_start == i {
+        return None;
+    }
     Some((
         RawInline {
             format: std::str::from_utf8(&bytes[format_start..i])
@@ -3734,6 +3807,11 @@ fn is_escapable(b: u8) -> bool {
             | b'|'
             | b'='
             | b','
+            | b':'
+            | b';'
+            | b'$'
+            | b'&'
+            | b'?'
     )
 }
 

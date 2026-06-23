@@ -1184,15 +1184,24 @@ fn render_definition_list(
             out.push_str("</dt>");
         }
         for def in &item.definitions {
-            for block in def {
-                if let BlockNode::Paragraph(p) = block {
-                    out.push('\n');
-                    indent(out, level + 1);
+            out.push('\n');
+            indent(out, level + 1);
+            if def.len() == 1 {
+                if let BlockNode::Paragraph(p) = &def[0] {
                     out.push_str("<dd>");
                     render_inlines(out, &p.children, options);
                     out.push_str("</dd>");
+                    continue;
                 }
             }
+            out.push_str("<dd>");
+            for block in def {
+                out.push('\n');
+                render_block(out, block, level + 2, options, _state);
+            }
+            out.push('\n');
+            indent(out, level + 1);
+            out.push_str("</dd>");
         }
     }
     out.push('\n');
