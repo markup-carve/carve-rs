@@ -4804,7 +4804,11 @@ fn resolve_reference_links_inline(
                         l.raw_ref = None;
                         out.push(node);
                     } else if is_collapsed_reference(l) {
-                        if let Some((actual_id, _)) = heading_index.resolve(label) {
+                        // Implicit heading reference: slugify the label the same
+                        // way heading ids are generated, then resolve against the
+                        // heading slug index (resolve() handles case-folding).
+                        let slug = slugify_parse(label, false);
+                        if let Some((actual_id, _)) = heading_index.resolve(&slug) {
                             l.href = format!("#{actual_id}");
                             l.title = None;
                             l.ref_label = None;
