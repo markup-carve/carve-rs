@@ -355,10 +355,59 @@ fn parse_blocks(cur: &mut LineCursor, options: &Options<'_>) -> Vec<BlockNode> {
             if let Some(attrs) = pending_attrs.take() {
                 apply_attrs_to_block(&mut node, attrs);
             }
+            // Resolve a code fence's opener title to the `title` attribute (after
+            // the preceding {title=...} line was applied, so that line wins), so
+            // the title lives on the node attrs and survives every consumer: the
+            // core renderer, a caption Figure, and a FencedRender extension that
+            // rewrites the block (it clones the code block's attrs).
+            resolve_code_title(&mut node);
             out.push(node);
         }
     }
     out
+}
+
+/// True if `attrs` already carries a `title` key (case-insensitive, since HTML
+/// attribute names are case-insensitive).
+fn attrs_have_title(attrs: &Option<Attrs>) -> bool {
+    attrs
+        .as_ref()
+        .is_some_and(|a| a.key_values.keys().any(|k| k.eq_ignore_ascii_case("title")))
+}
+
+/// Copy a code fence's opener `title` to the `title` attribute (unless a
+/// preceding `{title=...}` line already set one, which wins). The `title` field
+/// is left in place as the source of truth for non-HTML renderers.
+fn copy_title_to_attr(cb: &mut CodeBlock) {
+    let Some(title) = cb.title.clone() else {
+        return;
+    };
+    if attrs_have_title(&cb.attrs) {
+        return;
+    }
+    let attrs = cb.attrs.get_or_insert_with(Attrs::default);
+    attrs.key_values.insert("title".to_string(), title);
+    attrs.order.push(AttrSlot::Key("title".to_string()));
+}
+
+/// Resolve a code fence's opener title onto the node attrs so it renders
+/// uniformly and survives a caption Figure and a FencedRender extension (which
+/// clones the code block's attrs). For a captioned block a `{title=...}` line
+/// attaches to the figure and wins, so the inner block's title is dropped.
+fn resolve_code_title(node: &mut BlockNode) {
+    match node {
+        BlockNode::CodeBlock(cb) => copy_title_to_attr(cb),
+        BlockNode::Figure(f) => {
+            if let FigureTarget::CodeBlock(cb) = &mut f.target {
+                if attrs_have_title(&f.attrs) {
+                    cb.title = None;
+                } else {
+                    copy_title_to_attr(cb);
+                }
+            }
+        }
+        _ => {}
+    }
 }
 
 fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<BlockNode> {
