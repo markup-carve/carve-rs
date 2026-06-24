@@ -7,6 +7,10 @@ use std::collections::HashSet;
 
 const MAX_RENDER_DEPTH: usize = 100;
 
+fn trim_block_output(s: &str) -> &str {
+    s.trim_matches(|c| c == '\n' || c == ' ')
+}
+
 /// Render a document to Markdown. The Markdown renderer has no option-driven
 /// behavior of its own; this wrapper exists so the profile pipeline can render
 /// every format through a uniform `*_with_options` entry point. The profile
@@ -123,8 +127,7 @@ fn render_block(node: &BlockNode, ctx: &mut MarkdownContext, depth: usize) -> St
         }
         BlockNode::BlockQuote(quote) => {
             let lines = render_blocks(&quote.children, ctx, depth + 1);
-            let body = lines
-                .trim()
+            let body = trim_block_output(&lines)
                 .split('\n')
                 .map(|line| format!("> {line}"))
                 .collect::<Vec<_>>()
@@ -199,9 +202,7 @@ fn render_list(node: &List, ctx: &mut MarkdownContext, depth: usize) -> String {
         } else {
             "- ".to_string()
         };
-        let content = render_blocks(&item.children, ctx, depth + 1)
-            .trim()
-            .to_string();
+        let content = trim_block_output(&render_blocks(&item.children, ctx, depth + 1)).to_string();
         let mut lines = content.split('\n');
         out.push_str(&format!(
             "{indent}{prefix}{}\n",
@@ -236,7 +237,7 @@ fn render_definition_list(
         for definition in &item.definitions {
             out.push_str(&format!(
                 ": {}\n",
-                render_blocks(definition, ctx, depth + 1).trim()
+                trim_block_output(&render_blocks(definition, ctx, depth + 1))
             ));
         }
     }
@@ -691,7 +692,7 @@ fn normalize(text: &str) -> String {
             out.push(ch);
         }
     }
-    format!("{}\n", out.trim())
+    format!("{}\n", out.trim_matches(|c| c == '\n' || c == ' '))
 }
 
 fn legacy_definition_parts(nodes: &[InlineNode]) -> Option<(String, String)> {

@@ -22,6 +22,22 @@ use std::collections::{BTreeMap, HashMap};
 /// is higher only because PHP grows its VM stack on the heap.
 const MAX_NESTING_DEPTH: usize = 40;
 
+fn trim_ascii_start(s: &str) -> &str {
+    s.trim_start_matches([' ', '\t'])
+}
+
+fn trim_ascii_end(s: &str) -> &str {
+    s.trim_end_matches([' ', '\t'])
+}
+
+fn trim_ascii(s: &str) -> &str {
+    trim_ascii_end(trim_ascii_start(s))
+}
+
+fn is_blank_line(s: &str) -> bool {
+    trim_ascii(s).is_empty()
+}
+
 thread_local! {
     // Plain initializer (not `const { … }`) to keep the crate's 1.75 MSRV;
     // the inline-const thread-local form clippy suggests requires Rust 1.79+,
@@ -124,7 +140,7 @@ fn extract_footnote_defs(source: &str) -> (String, BTreeMap<String, String>) {
                 if parse_footnote_def_line(line).is_some() {
                     break;
                 }
-                if line.trim().is_empty() {
+                if is_blank_line(line) {
                     // A footnote body extends to following lines indented by
                     // >= 2 spaces (grammar PART 9 §16); single blank lines
                     // are allowed between chunks.
@@ -136,7 +152,7 @@ fn extract_footnote_defs(source: &str) -> (String, BTreeMap<String, String>) {
                     break;
                 }
                 if leading_ws(line) >= 2 {
-                    def_lines.push(line.trim_start().to_string());
+                    def_lines.push(trim_ascii_start(line).to_string());
                     i += 1;
                     continue;
                 }
@@ -158,7 +174,7 @@ fn extract_footnote_defs(source: &str) -> (String, BTreeMap<String, String>) {
 fn parse_footnote_def_line(line: &str) -> Option<(&str, &str)> {
     let rest = line.strip_prefix("[^")?;
     let (label, body) = rest.split_once("]: ")?;
-    Some((label, body.trim_start()))
+    Some((label, trim_ascii_start(body)))
 }
 
 #[derive(Clone)]
@@ -316,7 +332,10 @@ fn parse_blocks(cur: &mut LineCursor, options: &Options<'_>) -> Vec<BlockNode> {
             rest.push(line);
         }
         let text = rest.join("\n");
-        if text.trim().is_empty() {
+        // Check line-wise: `is_blank_line` only trims spaces/tabs, so a joined
+        // multi-line all-blank tail (which contains newlines) must be tested
+        // per line, not on the joined string.
+        if rest.iter().all(|line| is_blank_line(line)) {
             return Vec::new();
         }
         return vec![BlockNode::Paragraph(Paragraph {
@@ -328,21 +347,21 @@ fn parse_blocks(cur: &mut LineCursor, options: &Options<'_>) -> Vec<BlockNode> {
     let mut pending_attrs: Option<Attrs> = None;
     while !cur.eof() {
         let line = cur.peek().unwrap();
-        if line.trim().is_empty() {
+        if is_blank_line(line) {
             cur.consume();
             continue;
         }
-        if line.trim_start().starts_with("%%%") {
+        if trim_ascii_start(line).starts_with("%%%") {
             cur.consume();
             while let Some(line) = cur.peek() {
                 cur.consume();
-                if line.trim_start().starts_with("%%%") {
+                if trim_ascii_start(line).starts_with("%%%") {
                     break;
                 }
             }
             continue;
         }
-        if line.trim_start().starts_with("%%") {
+        if trim_ascii_start(line).starts_with("%%") {
             cur.consume();
             continue;
         }
@@ -443,7 +462,7 @@ fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<BlockNode>
         // plain text folds (an ordered marker folds, it never interrupts).
         let mut joined = first_text.to_string();
         while let Some(next) = cur.peek() {
-            if next.trim().is_empty() {
+            if is_blank_line(next) {
                 break;
             }
             if let Some(cont) = heading_continuation_same_level(next, level) {
@@ -531,7 +550,7 @@ fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<BlockNode>
     // A block whose sole content is a display-math span (`$$`…``) followed by a
     // caption is a numbered EQUATION. Diverted before the paragraph fallback so
     // parse_paragraph does not fold the caption line into the math paragraph.
-    if line.trim_start().starts_with("$$`") {
+    if trim_ascii_start(line).starts_with("$$`") {
         if let Some(eq) = parse_equation_block(cur, options) {
             return Some(eq);
         }
@@ -545,14 +564,14 @@ fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<BlockNode>
 /// line belongs to a normal multi-line paragraph instead).
 fn parse_equation_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<BlockNode> {
     let line = cur.peek()?;
-    let inline = parse_inline_with_options(line.trim_start(), options);
+    let inline = parse_inline_with_options(trim_ascii_start(line), options);
     if inline.len() != 1 || !matches!(&inline[0], InlineNode::Math(m) if m.display) {
         return None;
     }
     // Non-blank, non-caption prose on the very next line: let parse_paragraph
     // fold the math and that text into one paragraph (preserve existing behavior).
     if let Some(next) = cur.lines.get(cur.pos + 1).copied() {
-        if !next.trim().is_empty() && next.strip_prefix("^ ").is_none() {
+        if !is_blank_line(next) && next.strip_prefix("^ ").is_none() {
             return None;
         }
     }
@@ -594,7 +613,7 @@ fn detect_heading(line: &str) -> Option<(u8, &str)> {
     while start < bytes.len() && bytes[start] == b' ' {
         start += 1;
     }
-    let rest = line[start..].trim_end();
+    let rest = trim_ascii_end(&line[start..]);
     if rest.is_empty() {
         return None;
     }
@@ -623,7 +642,7 @@ fn heading_continuation_same_level(line: &str, level: u8) -> Option<&str> {
     while start < bytes.len() && bytes[start] == b' ' {
         start += 1;
     }
-    let rest = line[start..].trim_end();
+    let rest = trim_ascii_end(&line[start..]);
     if rest.is_empty() {
         return None;
     }
@@ -1035,9 +1054,9 @@ fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 } else {
                     Vec::new()
                 };
-                para_open = !stripped.trim().is_empty()
+                para_open = !is_blank_line(stripped)
                     && detect_container_open(stripped).is_none()
-                    && !stripped.trim_start().starts_with("%%")
+                    && !trim_ascii_start(stripped).starts_with("%%")
                     && !interrupts_paragraph_with_rest(stripped, &rest_stripped);
             }
             inner.push(stripped.to_string());
@@ -1052,13 +1071,13 @@ fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         // they parse as their own block instead of folding into the quoted
         // paragraph. The marker only attaches; a blank line still ends the quote
         // and a `+` outside a container stays literal.
-        if line.trim() == "+" && indent_columns(line) == 0 {
+        if trim_ascii(line) == "+" && indent_columns(line) == 0 {
             cur.consume();
             let mut attached: Vec<String> = Vec::new();
             while let Some(&next) = cur.lines.get(cur.pos) {
-                if next.trim().is_empty()
+                if is_blank_line(next)
                     || next.starts_with('>')
-                    || (next.trim() == "+" && indent_columns(next) == 0)
+                    || (trim_ascii(next) == "+" && indent_columns(next) == 0)
                 {
                     break;
                 }
@@ -1084,7 +1103,7 @@ fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         // and it already returns false for bullet/task/ordered markers, so we
         // simply defer to it. A heading is the sole construct a list marker
         // would otherwise end, and headings still interrupt via that predicate.
-        if !para_open || line.trim().is_empty() || line.starts_with("^ ") || {
+        if !para_open || is_blank_line(line) || line.starts_with("^ ") || {
             let line_owned = line.to_string();
             interrupts_paragraph(cur, &line_owned)
         } {
@@ -1176,7 +1195,7 @@ fn marker_tail(line: &str, marker_end: usize) -> Option<(&str, Option<Attrs>)> {
             while matches!(bytes.get(content_start), Some(b' ' | b'\t')) {
                 content_start += 1;
             }
-            (line[content_start..].trim_end(), None)
+            (trim_ascii_end(&line[content_start..]), None)
         }
         Some(&b'{') => {
             let (attrs, end) = read_list_item_attrs(bytes, marker_end)?;
@@ -1187,7 +1206,7 @@ fn marker_tail(line: &str, marker_end: usize) -> Option<(&str, Option<Attrs>)> {
             while matches!(bytes.get(content_start), Some(b' ' | b'\t')) {
                 content_start += 1;
             }
-            (line[content_start..].trim_end(), attrs)
+            (trim_ascii_end(&line[content_start..]), attrs)
         }
         _ => return None,
     };
@@ -1352,7 +1371,7 @@ fn detect_task(line: &str) -> Option<(bool, &str, Option<Attrs>, &str)> {
         return None;
     }
     let checked = matches!(ab[1], b'x' | b'X');
-    Some((checked, after[4..].trim_end(), attrs, &line[i..i + 1]))
+    Some((checked, trim_ascii_end(&after[4..]), attrs, &line[i..i + 1]))
 }
 
 /// Lower-alpha index of a single letter (`a`=1 … `z`=26), case-insensitive.
@@ -1381,7 +1400,7 @@ fn resolve_ordered_first(
     // first item's own body (blank lines and lines indented past the base).
     let mut sibling = None;
     for l in &cur.lines[cur.pos + 1..] {
-        if l.trim().is_empty() {
+        if is_blank_line(l) {
             continue;
         }
         if indent_columns(l) > base_indent {
@@ -1471,9 +1490,12 @@ fn parse_continuation_block(
         // region so a `+` inside it is content, not the parent's boundary.
         // (An UNTERMINATED `:::` is literal -- no closer to skip to.)
         if detect_container_open(line).is_some() || detect_line_block_open(line).is_some() {
-            let fence_len = line.trim_start().bytes().take_while(|b| *b == b':').count();
+            let fence_len = trim_ascii_start(line)
+                .bytes()
+                .take_while(|b| *b == b':')
+                .count();
             let closer = (end + 1..cur.lines.len()).find(|&j| {
-                let t = cur.lines[j].trim();
+                let t = trim_ascii(cur.lines[j]);
                 !t.is_empty() && t.bytes().all(|b| b == b':') && t.len() >= fence_len
             });
             if let Some(close) = closer {
@@ -1481,7 +1503,7 @@ fn parse_continuation_block(
                 continue;
             }
         }
-        if end > cur.pos && line.trim() == "+" && indent_columns(line) == base_indent {
+        if end > cur.pos && trim_ascii(line) == "+" && indent_columns(line) == base_indent {
             break;
         }
         // A list marker at (or below) the base column is a SIBLING item of the
@@ -1528,7 +1550,7 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     // it persists across iterations and is updated as each item is opened.
     let mut content_col = base_indent + 2;
     while let Some(line) = cur.peek() {
-        if line.trim().is_empty() {
+        if is_blank_line(line) {
             // A blank alone does not loosen the list; it loosens only when the
             // next line is a sibling item (handled at the marker branch via
             // pending_blank) or an indented second paragraph (below). A blank
@@ -1539,7 +1561,7 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         }
         // Lone `+` continuation marker (Carve): attaches the next flush-left
         // block to the current item without indentation.
-        if line.trim() == "+" && indent_columns(line) == base_indent {
+        if trim_ascii(line) == "+" && indent_columns(line) == base_indent {
             cur.consume();
             pending_blank = false;
             if let Some(block) = parse_continuation_block(cur, options, base_indent) {
@@ -1622,7 +1644,7 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                     // is a lazy line pending, else deeply nested lists blow up).
                     let has_lazy = if let Some(line) = cur.peek() {
                         let line = line.to_string();
-                        !line.trim().is_empty()
+                        !is_blank_line(&line)
                             && indent_columns(&line) == 0
                             && !is_list_marker(&line)
                             && !interrupts_paragraph(cur, &line)
@@ -1694,7 +1716,7 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         // First-block form `- +` (grammar §17): a lone `+` as the marker
         // content means the item's first block is the following flush-left
         // block (no inline paragraph).
-        if marker.content.trim() == "+" {
+        if trim_ascii(marker.content) == "+" {
             let mut item = ListItem {
                 attrs: marker.attrs.clone(),
                 checked: marker.checked,
@@ -1751,7 +1773,7 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             loop {
                 let has_lazy = if let Some(line) = cur.peek() {
                     let line = line.to_string();
-                    !line.trim().is_empty()
+                    !is_blank_line(&line)
                         && indent_columns(&line) == 0
                         && !is_list_marker(&line)
                         && !interrupts_paragraph(cur, &line)
@@ -1805,7 +1827,7 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         // block opener -- heading, fence, etc. -- stays paragraph text.
         let mut para_lines = vec![marker.content.to_string()];
         while let Some(next) = cur.peek() {
-            if next.trim().is_empty() || next.trim() == "+" {
+            if is_blank_line(next) || trim_ascii(next) == "+" {
                 break;
             }
             if let Some(nm) = detect_list_marker_full(next) {
@@ -1827,7 +1849,7 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 if interrupts_paragraph(cur, &next_owned) {
                     break;
                 }
-                para_lines.push(next.trim_start().to_string());
+                para_lines.push(trim_ascii_start(next).to_string());
                 cur.consume();
                 continue;
             }
@@ -2033,14 +2055,14 @@ fn block_ends_with_open_paragraph(block: Option<&BlockNode>) -> bool {
 
 fn collect_trailing_lazy(cur: &mut LineCursor, nested: &mut String) {
     while let Some(line) = cur.peek() {
-        if line.trim().is_empty() || indent_columns(line) > 0 || is_list_marker(line) || {
+        if is_blank_line(line) || indent_columns(line) > 0 || is_list_marker(line) || {
             let line_owned = line.to_string();
             interrupts_paragraph(cur, &line_owned)
         } {
             break;
         }
         nested.push('\n');
-        nested.push_str(line.trim_start());
+        nested.push_str(trim_ascii_start(line));
         cur.consume();
     }
 }
@@ -2049,7 +2071,7 @@ fn collect_indented_block(cur: &mut LineCursor, parent_indent: usize, strip_cols
     let mut lines = Vec::new();
     let mut block_indent: Option<usize> = None;
     while let Some(line) = cur.peek() {
-        if line.trim().is_empty() {
+        if is_blank_line(line) {
             // Lazy continuation does not cross a blank line: after a blank, only
             // keep collecting if the next non-blank line is still indented to the
             // block's own level. A shallower line (e.g. a dedent landing below a
@@ -2057,7 +2079,7 @@ fn collect_indented_block(cur: &mut LineCursor, parent_indent: usize, strip_cols
             // the list rather than fold in (grammar §10, corpus 81-list-lazy-5).
             if let Some(bi) = block_indent {
                 let mut k = cur.pos + 1;
-                while k < cur.lines.len() && cur.lines[k].trim().is_empty() {
+                while k < cur.lines.len() && is_blank_line(cur.lines[k]) {
                     k += 1;
                 }
                 let continues = k < cur.lines.len() && indent_columns(cur.lines[k]) >= bi;
@@ -2103,7 +2125,7 @@ fn detect_block_image(line: &str) -> Option<Image> {
 fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     let mut lines: Vec<&str> = Vec::new();
     while let Some(line) = cur.peek() {
-        if line.trim().is_empty() {
+        if is_blank_line(line) {
             break;
         }
         // First line is always part of the paragraph; from the second on, a
@@ -2116,7 +2138,7 @@ fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         // Leading indentation is not significant in a paragraph (djot has no
         // indented code blocks); strip it so an indented line like ` c` renders
         // as `<p>c</p>`, matching list-item continuation handling.
-        lines.push(line.trim_start());
+        lines.push(trim_ascii_start(line));
     }
     // A paragraph never carries its OWN trailing attribute block: a standalone
     // `{...}` line floats forward (handled via interrupts_paragraph + the
@@ -2152,7 +2174,7 @@ fn interrupts_paragraph(cur: &mut LineCursor<'_>, line: &str) -> bool {
     // with no blank line. Invisible constructs (comments, abbreviation defs)
     // interrupt too. Ordered lists do NOT interrupt, `+` is the continuation
     // marker not a bullet, and a bare image stays inline.
-    if line.trim_start().starts_with("%%") || detect_abbreviation_def(line).is_some() {
+    if trim_ascii_start(line).starts_with("%%") || detect_abbreviation_def(line).is_some() {
         return true;
     }
     // A standalone block-attribute line floats forward to the next block (or is
@@ -2194,7 +2216,7 @@ fn interrupts_paragraph(cur: &mut LineCursor<'_>, line: &str) -> bool {
 }
 
 fn interrupts_paragraph_with_rest(line: &str, rest: &[&str]) -> bool {
-    if line.trim_start().starts_with("%%") || detect_abbreviation_def(line).is_some() {
+    if trim_ascii_start(line).starts_with("%%") || detect_abbreviation_def(line).is_some() {
         return true;
     }
     if parse_standalone_attrs(line).is_some() {
@@ -2216,7 +2238,7 @@ fn interrupts_paragraph_with_rest(line: &str, rest: &[&str]) -> bool {
 }
 
 fn is_colon_closer(line: &str, fence_len: usize) -> bool {
-    let t = line.trim();
+    let t = trim_ascii(line);
     !t.is_empty() && t.bytes().all(|b| b == b':') && t.len() >= fence_len
 }
 
@@ -2230,7 +2252,7 @@ fn is_colon_closer(line: &str, fence_len: usize) -> bool {
 /// paragraph too.
 fn is_definition_list_start(line: &str) -> bool {
     line.strip_prefix(":: ")
-        .is_some_and(|term| !term.trim().is_empty())
+        .is_some_and(|term| !is_blank_line(term))
 }
 
 fn parse_definition_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
@@ -2239,22 +2261,22 @@ fn parse_definition_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNo
         let Some(term) = line.strip_prefix(":: ") else {
             break;
         };
-        if term.trim().is_empty() {
+        if is_blank_line(term) {
             break;
         }
         cur.consume();
-        let terms = vec![parse_inline_with_options(term.trim_end(), options)];
+        let terms = vec![parse_inline_with_options(trim_ascii_end(term), options)];
         let mut defs = Vec::new();
 
         while let Some(line) = cur.peek() {
             let Some(def) = line.strip_prefix(":  ") else {
                 break;
             };
-            if def.trim().is_empty() {
+            if is_blank_line(def) {
                 break;
             }
             cur.consume();
-            let mut body = def.trim_end().to_string();
+            let mut body = trim_ascii_end(def).to_string();
             let following = collect_definition_body(cur);
             if !following.is_empty() {
                 body.push('\n');
@@ -2269,7 +2291,7 @@ fn parse_definition_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNo
         });
 
         let saved = cur.pos;
-        while matches!(cur.peek(), Some(line) if line.trim().is_empty()) {
+        while matches!(cur.peek(), Some(line) if is_blank_line(line)) {
             cur.consume();
         }
         if !cur.peek().is_some_and(is_definition_list_start) {
@@ -2283,7 +2305,7 @@ fn parse_definition_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNo
 fn collect_definition_body(cur: &mut LineCursor) -> String {
     let mut lines = Vec::new();
     while let Some(line) = cur.peek() {
-        if line.trim().is_empty() {
+        if is_blank_line(line) {
             break;
         }
         let indent = indent_columns(line);
@@ -2298,7 +2320,7 @@ fn collect_definition_body(cur: &mut LineCursor) -> String {
 
 fn consume_caption(cur: &mut LineCursor, options: &Options<'_>) -> Option<Vec<InlineNode>> {
     let saved = cur.pos;
-    while matches!(cur.peek(), Some(line) if line.trim().is_empty()) {
+    while matches!(cur.peek(), Some(line) if is_blank_line(line)) {
         cur.consume();
     }
     let Some(line) = cur.peek() else {
@@ -2310,7 +2332,10 @@ fn consume_caption(cur: &mut LineCursor, options: &Options<'_>) -> Option<Vec<In
         return None;
     };
     cur.consume();
-    Some(parse_caption_inline_with_options(text.trim_end(), options))
+    Some(parse_caption_inline_with_options(
+        trim_ascii_end(text),
+        options,
+    ))
 }
 
 fn is_table_start(line: &str) -> bool {
@@ -2407,7 +2432,7 @@ fn parse_table(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
 }
 
 fn is_table_continuation(line: &str) -> bool {
-    line.trim_start().starts_with('+')
+    trim_ascii_start(line).starts_with('+')
 }
 
 /// A GFM delimiter cell: an optional leading colon, one or more dashes, an
@@ -2855,13 +2880,13 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     let mut stanzas: Vec<Vec<String>> = Vec::new();
     let mut stanza: Vec<String> = Vec::new();
     while let Some(line) = cur.peek() {
-        let t = line.trim();
+        let t = trim_ascii(line);
         if !t.is_empty() && t.bytes().all(|b| b == b':') && t.len() >= fence_len {
             cur.consume();
             break;
         }
         cur.consume();
-        if line.trim().is_empty() {
+        if is_blank_line(line) {
             if !stanza.is_empty() {
                 stanzas.push(std::mem::take(&mut stanza));
             }
@@ -3121,7 +3146,7 @@ fn parse_standalone_attrs(line: &str) -> Option<Attrs> {
 /// or leaves the cursor untouched if it is not a valid attribute block.
 fn parse_standalone_attrs_block(cur: &mut LineCursor) -> Option<Attrs> {
     let first = cur.peek()?;
-    if !first.trim_start().starts_with('{') {
+    if !trim_ascii_start(first).starts_with('{') {
         return None;
     }
     if let Some(attrs) = parse_standalone_attrs(first) {
@@ -3132,16 +3157,16 @@ fn parse_standalone_attrs_block(cur: &mut LineCursor) -> Option<Attrs> {
     let mut joined = String::new();
     let mut count = 0usize;
     while let Some(line) = cur.lines.get(cur.pos + count).copied() {
-        if line.trim().is_empty() {
+        if is_blank_line(line) {
             return None;
         }
         if !joined.is_empty() {
             joined.push(' ');
         }
-        joined.push_str(line.trim());
+        joined.push_str(trim_ascii(line));
         count += 1;
-        if line.trim_end().ends_with('}') {
-            let inner = joined.trim();
+        if trim_ascii_end(line).ends_with('}') {
+            let inner = trim_ascii(&joined);
             if inner.starts_with('{') && inner.ends_with('}') {
                 if let Some(attrs) = parse_attrs(&inner[1..inner.len() - 1]) {
                     for _ in 0..count {
