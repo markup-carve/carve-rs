@@ -109,7 +109,13 @@ fn smart_text(input: &str, state: &mut SmartQuoteState) -> String {
                 out.push(ch);
                 continue;
             }
-            let prev_ws = idx == 0 || chars[idx - 1].is_whitespace();
+            // A non-breaking space is whitespace for quote flanking: a quote
+            // after one opens. Covers both a literal U+00A0 (already
+            // whitespace) and the generated-NBSP placeholder (escaped `\ ` /
+            // line-block indent), which is_whitespace() does not catch.
+            let prev_ws = idx == 0
+                || chars[idx - 1].is_whitespace()
+                || chars[idx - 1] == crate::NBSP_PLACEHOLDER;
             let next_alpha = chars.get(idx + 1).is_some_and(|c| c.is_alphabetic());
             if prev_ws && next_alpha {
                 out.push('‘');
