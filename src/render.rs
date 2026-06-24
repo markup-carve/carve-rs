@@ -2030,7 +2030,10 @@ fn smart_text_after<'a>(
             let prev_ws = if idx == 0 {
                 !prev_non_ws
             } else {
-                chars[idx - 1].is_whitespace()
+                // A non-breaking space (literal U+00A0 or the generated
+                // placeholder) is whitespace for quote flanking, so a quote
+                // after one opens.
+                chars[idx - 1].is_whitespace() || chars[idx - 1] == crate::NBSP_PLACEHOLDER
             };
             let next_alpha = chars.get(idx + 1).is_some_and(|c| c.is_alphabetic());
             if prev_ws && next_alpha {
