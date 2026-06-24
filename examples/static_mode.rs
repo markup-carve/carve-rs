@@ -74,7 +74,7 @@ fn main() {
     println!("{}", carve::to_html_with_options(SRC, &static_source));
 
     // 3) Static WITH build renderers: a host injects build-time mermaid / chart
-    //    / math renderers (here stubs) so the static HTML is a finished artifact
+    //    / graphviz / math renderers (here stubs) so the static HTML is a finished artifact
     //    with no client scripts. This is the API carve-py will wrap: each
     //    renderer is a boxed closure keyed by extension on StaticRenderers.
     let mut static_ssr = Options::new()
@@ -88,6 +88,9 @@ fn main() {
             })),
             chart: Some(Box::new(|_src: &str| {
                 "<img alt=\"chart\" src=\"chart.svg\">".to_string()
+            })),
+            graphviz: Some(Box::new(|_src: &str| {
+                "<img alt=\"graphviz\" src=\"graph.svg\">".to_string()
             })),
             math: Some(Box::new(|tex: &str, display: bool| {
                 format!(
