@@ -44,6 +44,22 @@ fn defeats_scheme_obfuscation() {
 }
 
 #[test]
+fn defeats_unicode_whitespace_before_scheme() {
+    // Finding 5: a leading NBSP / line/paragraph separator / BOM before the
+    // scheme must not survive the scheme probe and let `javascript:` through.
+    for ws in ["\u{00A0}", "\u{2028}", "\u{2029}", "\u{FEFF}"] {
+        let html = carve::to_html(&format!("[x]({ws}javascript:alert(1))"));
+        assert!(
+            html.contains("href=\"\""),
+            "expected blanked href for prefix {:?}, got {html}",
+            ws
+        );
+    }
+    // An already-safe scheme behind the same whitespace stays untouched.
+    assert!(carve::to_html("[x](\u{00A0}https://e.com)").contains("https://e.com"));
+}
+
+#[test]
 fn blanks_css_expression_but_keeps_plain_style() {
     assert_eq!(
         h("[x]{style=\"x:expression(alert(1))\"}"),
