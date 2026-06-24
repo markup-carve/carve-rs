@@ -112,7 +112,7 @@ pub fn sanitize_attr_value<'a>(name: &str, value: &'a str) -> std::borrow::Cow<'
     if let Some(colon) = value.find(':') {
         let scheme: String = value[..colon]
             .chars()
-            .filter(|c| (*c as u32) > 0x20)
+            .filter(|c| !is_url_probe_skippable(*c))
             .collect::<String>()
             .to_ascii_lowercase();
         if DANGEROUS_VALUE_SCHEMES.contains(&scheme.as_str()) {
@@ -200,7 +200,10 @@ fn normalize_css_for_dangerous_check(value: &str) -> String {
 /// strips C0 controls + spaces to defeat `java\tscript:` evasion. The returned
 /// value is still passed through `escape_attr` by the caller.
 pub fn sanitize_url(url: &str) -> std::borrow::Cow<'_, str> {
-    let probe: String = url.chars().filter(|c| (*c as u32) > 0x20).collect();
+    let probe: String = url
+        .chars()
+        .filter(|c| !is_url_probe_skippable(*c))
+        .collect();
     if let Some(colon) = probe.find(':') {
         // A scheme is letters/digits/+/-/. before the colon; if the prefix
         // contains anything else it is not a URL scheme (e.g. a path segment).
@@ -218,4 +221,14 @@ pub fn sanitize_url(url: &str) -> std::borrow::Cow<'_, str> {
         }
     }
     std::borrow::Cow::Borrowed(url)
+}
+
+/// Characters dropped before probing a URL's scheme. Browsers strip C0 controls
+/// and ASCII space inside a scheme, so `java\tscript:` must still be detected.
+/// We additionally drop Unicode whitespace/separators (NBSP U+00A0, the line/
+/// paragraph separators U+2028/U+2029) and the zero-width no-break space / BOM
+/// (U+FEFF). These are not browser-stripped in practice, so this is defense in
+/// depth and parity with the JS/PHP implementations, not an exploitable gap.
+fn is_url_probe_skippable(c: char) -> bool {
+    (c as u32) <= 0x20 || c.is_whitespace() || c == '\u{FEFF}'
 }
