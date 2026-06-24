@@ -86,3 +86,56 @@ fn wide_table_row_colspan_render_is_linear() {
         start.elapsed()
     );
 }
+
+#[test]
+fn deeply_nested_list_parse_is_bounded() {
+    // Finding 1: deeply nested lists collect-and-reparse the tail per level.
+    // MAX_NESTING_DEPTH (40) caps the recursion so the work stays linear in the
+    // input bytes; this guards against a regression that would reintroduce a
+    // per-level rescan blow-up. 300 levels is far past the depth cap while the
+    // input stays small (~180 KB) so the bound holds in a debug build too.
+    let mut source = String::new();
+    for i in 0..300 {
+        for _ in 0..i {
+            source.push_str("  ");
+        }
+        source.push_str("- x\n");
+    }
+
+    let start = Instant::now();
+    let html = carve::to_html(&source);
+
+    assert!(html.contains("<li>x"), "expected nested list items");
+    assert!(
+        start.elapsed().as_secs_f32() < 2.0,
+        "deeply nested list parse took {:?}",
+        start.elapsed()
+    );
+}
+
+#[test]
+fn deeply_nested_div_parse_is_bounded() {
+    // Finding 4: deeply nested divs collect-and-reparse per level, and each
+    // opener is an unterminated colon fence of a distinct length. With the
+    // colon-closer suffix-max cache (Finding 2) and the MAX_NESTING_DEPTH cap,
+    // the work stays linear in the input bytes. 600 levels is well past the
+    // depth cap while the input stays small enough to hold the bound in debug.
+    let mut source = String::new();
+    for i in 0..600 {
+        for _ in 0..(3 + i) {
+            source.push(':');
+        }
+        source.push_str(" d\n");
+    }
+    source.push('x');
+
+    let start = Instant::now();
+    let html = carve::to_html(&source);
+
+    assert!(!html.is_empty(), "expected output");
+    assert!(
+        start.elapsed().as_secs_f32() < 2.0,
+        "deeply nested div parse took {:?}",
+        start.elapsed()
+    );
+}
