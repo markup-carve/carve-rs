@@ -12,17 +12,6 @@
 use std::fs;
 use std::path::PathBuf;
 
-/// Corpus pairs this branch INTENTIONALLY diverges from, pending the spec
-/// adopting the caption-floor proposal (carve PR #205). Each carries a grouping
-/// `[label]` the current corpus drops; the caption floor instead surfaces it as
-/// a `<p class="div-label">`, so no authored label is silently lost. These are
-/// the ONLY corpus deltas on this branch. `all_implemented_corpus_pairs_match`
-/// skips them and `known_label_divergences_still_diverge` asserts they remain
-/// divergent, so the delta stays visible (and the test flips the day the spec
-/// corpus is regenerated to match).
-const KNOWN_LABEL_DIVERGENCES: &[&str] =
-    &["13-admonitions-4", "13-admonitions-5", "13-admonitions-6"];
-
 const IMPLEMENTED: &[&str] = &[
     "01-emphasis",
     "02-headings",
@@ -256,41 +245,9 @@ fn all_implemented_pairs_exist() {
 #[test]
 fn all_implemented_corpus_pairs_match() {
     for slug in corpus_pairs() {
-        if is_implemented_pair(&slug) && !KNOWN_LABEL_DIVERGENCES.contains(&slug.as_str()) {
+        if is_implemented_pair(&slug) {
             check_pair(&slug);
         }
-    }
-}
-
-/// The caption-floor proposal (carve PR #205) intentionally diverges from the
-/// current corpus on the labeled-container pairs. Assert they STILL diverge, so
-/// the delta is documented and the suite stays green; the day the spec corpus
-/// adopts the floor, this test fails and points at the slug to move back into
-/// `all_implemented_corpus_pairs_match`.
-#[test]
-fn known_label_divergences_still_diverge() {
-    let dir = corpus_dir();
-    for slug in KNOWN_LABEL_DIVERGENCES {
-        let crv = dir.join(format!("{slug}.crv"));
-        let html = dir.join(format!("{slug}.html"));
-        let source =
-            fs::read_to_string(&crv).unwrap_or_else(|e| panic!("read {}: {e}", crv.display()));
-        let expected =
-            fs::read_to_string(&html).unwrap_or_else(|e| panic!("read {}: {e}", html.display()));
-        let actual = carve::to_html(&source);
-        assert_ne!(
-            expected.trim(),
-            actual.trim(),
-            "corpus pair `{slug}` now MATCHES the spec - the caption-floor \
-             proposal was adopted; move it out of KNOWN_LABEL_DIVERGENCES back \
-             into the conformance set."
-        );
-        // The divergence must be exactly the surfaced label caption.
-        assert!(
-            actual.contains("<p class=\"div-label\">"),
-            "corpus pair `{slug}` diverges but NOT via the caption floor - \
-             unexpected delta:\n{actual}"
-        );
     }
 }
 

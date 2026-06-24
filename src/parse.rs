@@ -500,6 +500,14 @@ fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<BlockNode>
             return Some(parse_line_block(cur, options));
         }
     }
+    if let Some(fence_len) = detect_hardbreaks_block_open(line) {
+        // Like a line block, a `::: \` opens only when a matching closer exists
+        // ahead (grammar §12/§23); an unterminated opener stays literal.
+        let has_closer = cur.has_colon_closer_after(cur.pos + 1, fence_len);
+        if has_closer {
+            return Some(parse_hardbreaks_block(cur, options));
+        }
+    }
     if let Some(open) = detect_container_open(line) {
         // A colon fence opens only when a matching closer (a line of at least
         // `fence_len` colons) exists ahead (grammar §12); an unterminated
@@ -1470,7 +1478,10 @@ fn parse_continuation_block(
         // matching closer ahead is a self-delimiting block; skip the whole
         // region so a `+` inside it is content, not the parent's boundary.
         // (An UNTERMINATED `:::` is literal -- no closer to skip to.)
-        if detect_container_open(line).is_some() || detect_line_block_open(line).is_some() {
+        if detect_container_open(line).is_some()
+            || detect_line_block_open(line).is_some()
+            || detect_hardbreaks_block_open(line).is_some()
+        {
             let fence_len = line.trim_start().bytes().take_while(|b| *b == b':').count();
             let closer = (end + 1..cur.lines.len()).find(|&j| {
                 let t = cur.lines[j].trim();
@@ -2183,9 +2194,9 @@ fn interrupts_paragraph(cur: &mut LineCursor<'_>, line: &str) -> bool {
             return true;
         }
     }
-    // A `::: |` line block interrupts like any colon-fence block, with the same
-    // matching-closer lookahead.
-    if let Some(len) = detect_line_block_open(line) {
+    // A `::: |` line block or `::: \` hard-break block interrupts like any
+    // colon-fence block, with the same matching-closer lookahead.
+    if let Some(len) = detect_line_block_open(line).or_else(|| detect_hardbreaks_block_open(line)) {
         if cur.has_colon_closer_after(cur.pos + 1, len) {
             return true;
         }
@@ -2897,6 +2908,74 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         attrs: Some(Attrs {
             id: None,
             classes: vec!["line-block".to_string()],
+            key_values: BTreeMap::new(),
+            order: vec![AttrSlot::Class],
+        }),
+        label: None,
+        children,
+    })
+}
+
+/// A `::: \` local hard-break block opener: a colon fence (3+) then a bare
+/// backslash and nothing else (grammar PART 9 §23). Returns the fence length.
+/// Deliberately smaller than a line block: it converts soft breaks in DIRECT
+/// paragraph children to hard breaks, but does NOT preserve leading whitespace,
+/// keeps the stanza/block structure of its body, and does not affect nested
+/// blocks. Mirrors carve-js `RE_HARDBREAKS_BLOCK_OPEN` / `parseHardBreaksBlock`.
+fn detect_hardbreaks_block_open(line: &str) -> Option<usize> {
+    let trimmed = line.trim();
+    let fence_len = trimmed.bytes().take_while(|b| *b == b':').count();
+    if fence_len < 3 {
+        return None;
+    }
+    // `hardbreaks_block_open = colon_fence, space, "\"` -- a space (or tab)
+    // between the fence and the backslash is REQUIRED, so `:::\` is not one.
+    let after = &trimmed[fence_len..];
+    let trimmed_after = after.trim_start_matches([' ', '\t']);
+    if trimmed_after.len() == after.len() {
+        return None; // no whitespace before the backslash
+    }
+    if trimmed_after.trim_end() == "\\" {
+        Some(fence_len)
+    } else {
+        None
+    }
+}
+
+/// Parse a `::: \` local hard-break block into a `<div class="hardbreaks">`:
+/// the body is parsed as ordinary blocks, then every soft break in a DIRECT
+/// paragraph child becomes a hard break. Unlike a line block, leading
+/// whitespace is not preserved and nested blocks keep ordinary soft breaks.
+fn parse_hardbreaks_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
+    let opener = cur.peek().unwrap();
+    let fence_len = detect_hardbreaks_block_open(opener).unwrap();
+    cur.consume();
+    let mut inner = Vec::new();
+    while let Some(line) = cur.peek() {
+        let t = line.trim();
+        if !t.is_empty() && t.bytes().all(|b| b == b':') && t.len() >= fence_len {
+            cur.consume();
+            break;
+        }
+        inner.push(line.to_string());
+        cur.consume();
+    }
+    let mut children = parse_blocks_with_options(&inner.join("\n"), options);
+    for child in &mut children {
+        if let BlockNode::Paragraph(para) = child {
+            for node in &mut para.children {
+                if matches!(node, InlineNode::SoftBreak) {
+                    *node = InlineNode::HardBreak;
+                }
+            }
+        }
+    }
+    // No inline opener attributes (strict djot); a preceding block-attribute
+    // line merges onto this div in parse_blocks.
+    BlockNode::Div(Div {
+        attrs: Some(Attrs {
+            id: None,
+            classes: vec!["hardbreaks".to_string()],
             key_values: BTreeMap::new(),
             order: vec![AttrSlot::Class],
         }),

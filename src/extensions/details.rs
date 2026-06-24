@@ -14,9 +14,8 @@
 //! blockquote.
 
 use crate::ast::{BlockExtension, BlockNode, Document, InlineNode};
-use crate::escape::escape_attr;
 use crate::extension::{BeforeRenderContext, CarveExtension, RenderContext};
-use crate::render::{render_attrs, render_attrs_after_class};
+use crate::render::{render_attrs, render_attrs_without_keys};
 
 /// Sentinel extension name for the rewritten carrier node. A `details`
 /// admonition is rewritten to a `BlockNode::Extension` with this name; the
@@ -35,6 +34,10 @@ pub(crate) const CARRIER: &str = "carve-details";
 /// block falls back to `<summary>Details</summary>`), and block attributes on
 /// the opener (`{#faq open}`) carry onto the `<details>` tag in source order
 /// (the auto `details` class is dropped - the tag is already the styling hook).
+///
+/// In static mode the disclosure is NOT flattened: it stays the same native
+/// `<details>` element and only gains the `open` boolean attribute so the body
+/// is visible without client interaction.
 ///
 /// ```
 /// use carve::{Details, Options};
@@ -88,54 +91,25 @@ impl CarveExtension for Details {
             _ => "Details",
         };
         let body = ctx.render_blocks_at(&node.children, level + 1);
-        // Static mode: the disclosure is expanded into a flat, inert
-        // `<section class="details">` (no client interaction needed). The
-        // summary becomes an `<h3 class="details-title">` heading and a grouping
-        // `[label]` (if any) is surfaced as the caption floor after the title -
-        // the static path consumes the node, so the core floor never runs;
-        // preserving it keeps the no-content-dropped invariant. Mirrors
-        // carve-js `details.ts` `staticBlockRenderers`.
-        if ctx.is_static() {
-            let open = format!("<section{}>", open_attrs_with_base(&node.attrs, "details"));
-            let label_line = match &node.label {
-                Some(l) => format!(
-                    "{inner_pad}<p class=\"div-label\">{}</p>\n",
-                    ctx.escape_html(l)
-                ),
-                None => String::new(),
-            };
-            return Some(format!(
-                "{open}\n{inner_pad}<h3 class=\"details-title\">{}</h3>\n{label_line}{body}\n{pad}</section>",
-                ctx.escape_html(summary),
-            ));
-        }
-        let open = format!("<details{}>", render_attrs(&node.attrs));
+        // A disclosure is NOT flattened in static mode: it stays a native
+        // `<details>` element in every mode. Static mode only forces the `open`
+        // boolean attribute so the body is visible without client interaction;
+        // the element, summary, and escaping are otherwise identical to the
+        // interactive disclosure. Any author-supplied `open` is dropped from the
+        // attribute render so the forced `open` is not duplicated (a duplicate
+        // HTML attribute is invalid). Mirrors carve-js `details.ts`.
+        let open = if ctx.is_static() {
+            format!(
+                "<details open{}>",
+                render_attrs_without_keys(&node.attrs, &["open"]),
+            )
+        } else {
+            format!("<details{}>", render_attrs(&node.attrs))
+        };
         Some(format!(
             "{open}\n{inner_pad}<summary>{}</summary>\n{body}\n{pad}</details>",
             ctx.escape_html(summary),
         ))
-    }
-}
-
-/// Build a static-section attribute string: `base` class ahead of any author
-/// classes (one merged `class`), then id / key-values via the shared
-/// `render_attrs_after_class` hardening. Mirrors carve-js `withBaseClass`.
-fn open_attrs_with_base(attrs: &Option<crate::ast::Attrs>, base: &str) -> String {
-    match attrs {
-        Some(a) => {
-            let mut classes = vec![base.to_string()];
-            for class in &a.classes {
-                if !classes.contains(class) {
-                    classes.push(class.clone());
-                }
-            }
-            format!(
-                " class=\"{}\"{}",
-                escape_attr(&classes.join(" ")),
-                render_attrs_after_class(a),
-            )
-        }
-        None => format!(" class=\"{}\"", escape_attr(base)),
     }
 }
 
