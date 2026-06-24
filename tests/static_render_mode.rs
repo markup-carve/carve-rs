@@ -5,7 +5,7 @@
 //! extension carve-rs ships, the no-renderer source fallback and the
 //! with-renderer SSR path, the caption floor, and escaping. carve-rs has no
 //! Tabs / CodeGroup extension (those are carve-js / carve-php only), so this
-//! battery covers Details, Spoiler, FencedRender (mermaid / chart), MathBlock,
+//! battery covers Details, Spoiler, FencedRender (mermaid / chart / graphviz), MathBlock,
 //! and core inline / display math.
 
 use carve::{Details, FencedRender, MathBlock, Mode, Options, Spoiler, StaticRenderers};
@@ -226,6 +226,51 @@ fn chart_static_with_renderer_emits_injected_image() {
         });
     let html = carve::to_html_with_options("``` chart\n{\"type\":\"bar\"}\n```\n", &opts);
     assert_eq!(html.trim(), "<img alt=\"chart\" src=\"chart.png\">");
+}
+
+// --- fenced-render: graphviz -------------------------------------------------
+
+#[test]
+fn graphviz_static_no_renderer_degrades_to_escaped_source() {
+    let ext = FencedRender::graphviz();
+    // No renderer supplied: the source degrades to an escaped <pre><code> block.
+    assert_eq!(
+        static_html("``` graphviz\ndigraph { A -> B }\n```\n", &[&ext]),
+        "<pre class=\"graphviz\"><code class=\"language-graphviz\">digraph { A -&gt; B }\n</code></pre>"
+    );
+}
+
+#[test]
+fn graphviz_static_with_renderer_emits_injected_image() {
+    let ext = FencedRender::graphviz();
+    let opts = Options::new()
+        .with_mode(Mode::Static)
+        .with_extension(&ext)
+        .with_renderers(StaticRenderers {
+            graphviz: Some(Box::new(|_src: &str| {
+                "<img alt=\"graphviz\" src=\"graph.svg\">".to_string()
+            })),
+            ..Default::default()
+        });
+    let html = carve::to_html_with_options("``` graphviz\ndigraph { A -> B }\n```\n", &opts);
+    assert_eq!(html.trim(), "<img alt=\"graphviz\" src=\"graph.svg\">");
+}
+
+#[test]
+fn graphviz_dot_alias_static_with_renderer_emits_injected_image() {
+    // The graphviz preset also claims `dot`; it must consult the same key.
+    let ext = FencedRender::graphviz();
+    let opts = Options::new()
+        .with_mode(Mode::Static)
+        .with_extension(&ext)
+        .with_renderers(StaticRenderers {
+            graphviz: Some(Box::new(|_src: &str| {
+                "<img alt=\"graphviz\" src=\"graph.svg\">".to_string()
+            })),
+            ..Default::default()
+        });
+    let html = carve::to_html_with_options("``` dot\ndigraph { A -> B }\n```\n", &opts);
+    assert_eq!(html.trim(), "<img alt=\"graphviz\" src=\"graph.svg\">");
 }
 
 #[test]
