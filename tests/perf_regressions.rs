@@ -41,6 +41,33 @@ fn many_unterminated_colon_fence_openers_do_not_rescan_document() {
 }
 
 #[test]
+fn distinct_fence_length_openers_do_not_defeat_closer_cache() {
+    // Finding 2: every line opens an unterminated colon fence of a DISTINCT
+    // length, so a cache keyed by exact fence length missed every line and did
+    // a full forward scan to EOF per line (O(N^2)). Fence lengths cycle in a
+    // bounded range so total input bytes stay linear -- any super-linear time
+    // here is the per-line rescan, not the input size.
+    let mut source = String::from("intro\n");
+    for i in 0..20_000 {
+        let len = 3 + (i % 60);
+        for _ in 0..len {
+            source.push(':');
+        }
+        source.push_str(" |\n");
+    }
+
+    let start = Instant::now();
+    let html = carve::to_html(&source);
+
+    assert!(html.contains(" |"), "expected literal fence text in output");
+    assert!(
+        start.elapsed().as_secs_f32() < 2.0,
+        "distinct-fence-length colon-fence parse took {:?}",
+        start.elapsed()
+    );
+}
+
+#[test]
 fn wide_table_row_colspan_render_is_linear() {
     // A single row with 100k cells and no colspan markers must not re-scan the
     // rest of the row per cell (Finding 3: O(cells^2) colspan resolution).
