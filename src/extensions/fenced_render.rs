@@ -45,6 +45,8 @@ pub enum StaticRendererKey {
     Mermaid,
     /// Use `renderers.chart`.
     Chart,
+    /// Use `renderers.graphviz`.
+    Graphviz,
 }
 
 /// Options for [`FencedRender`].
@@ -148,14 +150,18 @@ impl FencedRender {
         Self::new("d2")
     }
 
-    /// Graphviz preset (text mode); claims both `dot` and `graphviz`.
+    /// Graphviz preset (text mode); claims both `dot` and `graphviz`. On the
+    /// HTML static path a supplied `renderers.graphviz` pre-renders the source
+    /// to an image; absent that, it degrades to the source as a `<pre><code>`.
     pub fn graphviz() -> Self {
-        Self::with_options(FencedRenderOptions::new(
+        let mut opts = FencedRenderOptions::new(
             vec!["dot".into(), "graphviz".into()],
             Some("graphviz".into()),
             None,
             ContentMode::Text,
-        ))
+        );
+        opts.static_renderer = Some(StaticRendererKey::Graphviz);
+        Self::with_options(opts)
     }
 
     /// WaveDrom preset (text mode, `<pre class="wavedrom">`).
@@ -237,6 +243,7 @@ impl CarveExtension for FencedRender {
             self.opts.static_renderer.and_then(|key| match key {
                 StaticRendererKey::Mermaid => ctx.renderers().mermaid.as_deref(),
                 StaticRendererKey::Chart => ctx.renderers().chart.as_deref(),
+                StaticRendererKey::Graphviz => ctx.renderers().graphviz.as_deref(),
             })
         } else {
             None
