@@ -57,7 +57,7 @@ fn mode_is_an_enum_so_unknown_values_are_unrepresentable() {
 // --- details -----------------------------------------------------------------
 
 #[test]
-fn details_interactive_is_disclosure_static_is_expanded_section() {
+fn details_interactive_and_static_are_both_native_disclosure() {
     let ext = Details::new();
     let src = "::: details \"More info\"\nHidden body.\n:::";
 
@@ -72,13 +72,15 @@ fn details_interactive_is_disclosure_static_is_expanded_section() {
         .join("\n")
     );
 
+    // Static mode is NOT flattened: it stays the native `<details>` element and
+    // only adds the `open` attribute so the body is visible without a client.
     assert_eq!(
         static_html(src, &[&ext]),
         [
-            "<section class=\"details\">",
-            "  <h3 class=\"details-title\">More info</h3>",
+            "<details open>",
+            "  <summary>More info</summary>",
             "  <p>Hidden body.</p>",
-            "</section>",
+            "</details>",
         ]
         .join("\n")
     );
@@ -87,28 +89,26 @@ fn details_interactive_is_disclosure_static_is_expanded_section() {
 #[test]
 fn details_static_default_title_when_none() {
     let ext = Details::new();
-    assert!(static_html("::: details\nBody.\n:::", &[&ext])
-        .contains("<h3 class=\"details-title\">Details</h3>"));
+    assert!(static_html("::: details\nBody.\n:::", &[&ext]).contains("<summary>Details</summary>"));
 }
 
 #[test]
-fn details_static_preserves_grouping_label_after_title() {
-    let ext = Details::new();
-    let html = static_html("::: details \"More\" [Build]\nBody.\n:::", &[&ext]);
-    assert!(html.contains("<h3 class=\"details-title\">More</h3>"));
-    assert!(html.contains("<p class=\"div-label\">Build</p>"));
-    // Title first, then the label floor.
-    assert!(html.find("details-title").unwrap() < html.find("div-label").unwrap());
-}
-
-#[test]
-fn details_static_merges_author_classes_into_one_attribute() {
+fn details_static_keeps_author_attributes_on_the_tag() {
     let ext = Details::new();
     // Attributes attach via a preceding block-attribute line (strict djot).
     let html = static_html("{.wide}\n::: details \"More\"\nBody.\n:::", &[&ext]);
-    assert!(html.contains("<section class=\"details wide\">"));
-    // section + h3 = exactly two class attributes (no duplicate `class`).
-    assert_eq!(html.matches("class=\"").count(), 2);
+    // `open` first, then the author class carries onto the same `<details>` tag.
+    assert!(html.contains("<details open class=\"wide\">"));
+}
+
+#[test]
+fn details_static_does_not_duplicate_author_open_attribute() {
+    let ext = Details::new();
+    // An author-supplied `open` must not produce a duplicate `open` attribute
+    // (invalid HTML); the forced static `open` subsumes it.
+    let html = static_html("{open}\n::: details \"More\"\nBody.\n:::", &[&ext]);
+    assert!(html.starts_with("<details open>"));
+    assert_eq!(html.matches("open").count(), 1);
 }
 
 // --- spoiler -----------------------------------------------------------------

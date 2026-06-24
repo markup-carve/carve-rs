@@ -1839,7 +1839,7 @@ pub(crate) fn render_attrs(attrs: &Option<Attrs>) -> String {
     out
 }
 
-fn render_attrs_without_keys(attrs: &Option<Attrs>, blocked: &[&str]) -> String {
+pub(crate) fn render_attrs_without_keys(attrs: &Option<Attrs>, blocked: &[&str]) -> String {
     let Some(a) = attrs else {
         return String::new();
     };
