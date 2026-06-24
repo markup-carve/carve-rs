@@ -39,3 +39,23 @@ fn many_unterminated_colon_fence_openers_do_not_rescan_document() {
         start.elapsed()
     );
 }
+
+#[test]
+fn wide_table_row_colspan_render_is_linear() {
+    // A single row with 100k cells and no colspan markers must not re-scan the
+    // rest of the row per cell (Finding 3: O(cells^2) colspan resolution).
+    let mut source = String::from("|");
+    for _ in 0..100_000 {
+        source.push_str("x|");
+    }
+
+    let start = Instant::now();
+    let html = carve::to_html(&source);
+
+    assert!(html.contains("<td>x</td>"), "expected cells in output");
+    assert!(
+        start.elapsed().as_secs_f32() < 2.0,
+        "wide-table colspan render took {:?}",
+        start.elapsed()
+    );
+}
