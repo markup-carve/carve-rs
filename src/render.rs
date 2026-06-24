@@ -925,6 +925,7 @@ fn render_table_body_row(
     write_attrs(out, &row.attrs);
     out.push('>');
     let consumed_cols = consumed_rowspan_cols(source_row_idx, rowspan_cols);
+    let colspan_counts = compute_colspans(row, &consumed_cols);
     for (cell_index, cell) in row.cells.iter().enumerate() {
         if cell.span == Some(TableCellSpan::Rowspan) {
             // A `^` that merged into a cell above renders nothing; one with
@@ -951,7 +952,7 @@ fn render_table_body_row(
             }
             continue;
         }
-        let colspan = colspan_for_cell(row, cell_index, &consumed_cols);
+        let colspan = colspan_counts.get(&cell_index).copied().unwrap_or(1);
         if colspan > 1 {
             attrs.push_str(&format!(" colspan=\"{}\"", colspan));
             emitted.push("colspan");
@@ -1027,17 +1028,39 @@ fn consumed_rowspan_cols(row_idx: usize, rowspan_cols: &RowspanCols) -> BTreeSet
         .collect()
 }
 
-fn colspan_for_cell(row: &TableRow, cell_index: usize, consumed_cols: &BTreeSet<usize>) -> usize {
-    1 + row
-        .cells
-        .iter()
-        .enumerate()
-        .skip(cell_index + 1)
-        .filter(|&(marker_index, marker)| {
-            marker.span == Some(TableCellSpan::Colspan)
-                && colspan_target(row, marker_index, consumed_cols) == Some(cell_index)
-        })
-        .count()
+/// Per-cell colspan counts for a row, keyed by the origin cell index. Computed in
+/// a single left-to-right pass (mirroring `compute_rowspans`) so a row is
+/// O(cells) rather than O(cells^2): each `<` extends the current chain origin
+/// instead of every cell re-scanning the rest of the row.
+type ColspanCounts = BTreeMap<usize, usize>;
+
+/// Resolve every colspan origin in `row` to its total colspan count in one pass.
+/// A real cell (`None` span, not consumed by a rowspan from above) starts a new
+/// chain; each following `<` (Colspan) extends it; a rowspan cell or an orphan
+/// `<` (no preceding real cell) breaks the chain so the next `<` resolves to
+/// nothing. Consumed columns are transparent, matching `colspan_target`.
+fn compute_colspans(row: &TableRow, consumed_cols: &BTreeSet<usize>) -> ColspanCounts {
+    let mut counts: ColspanCounts = BTreeMap::new();
+    let mut current_target: Option<usize> = None;
+    for (i, cell) in row.cells.iter().enumerate() {
+        if consumed_cols.contains(&i) {
+            continue;
+        }
+        match cell.span {
+            Some(TableCellSpan::Colspan) => {
+                if let Some(target) = current_target {
+                    *counts.entry(target).or_insert(1) += 1;
+                }
+            }
+            Some(TableCellSpan::Rowspan) => {
+                current_target = None;
+            }
+            None => {
+                current_target = Some(i);
+            }
+        }
+    }
+    counts
 }
 
 /// Maps the origin cell `(row, col)` of each rowspan to its span count. Resolved

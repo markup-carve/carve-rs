@@ -6,7 +6,7 @@
 use crate::ast::*;
 use crate::extension::{BlockMatch, InlineMatch, MatcherContext, Options};
 use std::cell::Cell;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 
 /// Maximum block + inline nesting depth. Pathological input (deeply nested
 /// blockquotes, indented lists, bracketed inlines) recurses one stack frame
@@ -278,21 +278,32 @@ pub(crate) fn parse_blocks_with_options(source: &str, options: &Options<'_>) -> 
     // `lines()` already drops a single trailing newline; nothing more to do.
     let _ = &mut lines;
 
-    let mut cursor = LineCursor {
-        lines: &lines,
-        pos: 0,
-        colon_closer_cache: HashMap::new(),
-    };
+    let mut cursor = LineCursor::new(&lines);
     parse_blocks(&mut cursor, options)
 }
 
 struct LineCursor<'a> {
     lines: &'a [&'a str],
     pos: usize,
-    colon_closer_cache: HashMap<usize, Option<usize>>,
+    /// Lazily built suffix-maximum of each line's colon-closer length: entry `i`
+    /// holds the largest all-colon line length at any index `>= i` (0 if none).
+    /// A closer for a fence of length `k` is any all-colon line of length `>= k`,
+    /// so "a closer of length `>= k` exists at or after `start`" is exactly
+    /// `colon_closer_suffix_max[start] >= k` -- independent of the exact fence
+    /// length. This defeats the distinct-increasing-fence-length cache miss that
+    /// turned a per-fence-length cache into an O(N^2) full rescan per line.
+    colon_closer_suffix_max: Option<Vec<usize>>,
 }
 
 impl<'a> LineCursor<'a> {
+    fn new(lines: &'a [&'a str]) -> Self {
+        LineCursor {
+            lines,
+            pos: 0,
+            colon_closer_suffix_max: None,
+        }
+    }
+
     fn peek(&self) -> Option<&'a str> {
         self.lines.get(self.pos).copied()
     }
@@ -308,18 +319,32 @@ impl<'a> LineCursor<'a> {
     }
 
     fn has_colon_closer_after(&mut self, start: usize, fence_len: usize) -> bool {
-        if let Some(cached) = self.colon_closer_cache.get(&fence_len).copied() {
-            match cached {
-                Some(idx) if idx >= start => return true,
-                Some(_) => {}
-                None => return false,
-            }
+        if self.colon_closer_suffix_max.is_none() {
+            self.colon_closer_suffix_max = Some(build_colon_closer_suffix_max(self.lines));
         }
-        let closer =
-            (start..self.lines.len()).find(|&idx| is_colon_closer(self.lines[idx], fence_len));
-        self.colon_closer_cache.insert(fence_len, closer);
-        closer.is_some()
+        let suffix_max = self.colon_closer_suffix_max.as_ref().unwrap();
+        // `start` may sit one past the end (opener is the last line).
+        suffix_max.get(start).copied().unwrap_or(0) >= fence_len
     }
+}
+
+/// Build the suffix-maximum of each line's colon-closer length (see
+/// `LineCursor::colon_closer_suffix_max`). A line contributes its trimmed length
+/// when it is a non-empty all-colon line, else 0. Single O(N) right-to-left pass.
+fn build_colon_closer_suffix_max(lines: &[&str]) -> Vec<usize> {
+    let mut suffix_max = vec![0usize; lines.len()];
+    let mut running = 0usize;
+    for idx in (0..lines.len()).rev() {
+        let t = trim_ascii(lines[idx]);
+        let len = if !t.is_empty() && t.bytes().all(|b| b == b':') {
+            t.len()
+        } else {
+            0
+        };
+        running = running.max(len);
+        suffix_max[idx] = running;
+    }
+    suffix_max
 }
 
 fn parse_blocks(cur: &mut LineCursor, options: &Options<'_>) -> Vec<BlockNode> {
@@ -1122,11 +1147,7 @@ fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     }
     let joined = inner.join("\n");
     let sub_lines: Vec<&str> = joined.lines().collect();
-    let mut sub_cursor = LineCursor {
-        lines: &sub_lines,
-        pos: 0,
-        colon_closer_cache: HashMap::new(),
-    };
+    let mut sub_cursor = LineCursor::new(&sub_lines);
     let children = parse_blocks(&mut sub_cursor, options);
     let quote = BlockQuote {
         attrs: None,
@@ -1531,11 +1552,7 @@ fn parse_continuation_block(
         end += 1;
     }
     let slice: Vec<&str> = cur.lines[cur.pos..end].to_vec();
-    let mut sub = LineCursor {
-        lines: &slice,
-        pos: 0,
-        colon_closer_cache: HashMap::new(),
-    };
+    let mut sub = LineCursor::new(&slice);
     let block = parse_block(&mut sub, options);
     cur.pos += sub.pos;
     block
@@ -2255,11 +2272,6 @@ fn interrupts_paragraph_with_rest(line: &str, rest: &[&str]) -> bool {
         return true;
     }
     false
-}
-
-fn is_colon_closer(line: &str, fence_len: usize) -> bool {
-    let t = trim_ascii(line);
-    !t.is_empty() && t.bytes().all(|b| b == b':') && t.len() >= fence_len
 }
 
 /// A `- ` / `* ` bullet, including the attributed form `-{.c} ` (NOT `+`, the
