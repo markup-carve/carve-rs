@@ -142,6 +142,45 @@ fn reference_and_footnote_definitions_require_space_after_colon() {
 }
 
 #[test]
+fn reference_definitions_inside_blockquote_and_list_items_resolve() {
+    assert_eq!(
+        html("> [ref]: /url\n\nSee [it][ref]."),
+        "<blockquote>\n\n</blockquote>\n<p>See <a href=\"/url\">it</a>.</p>"
+    );
+    assert_eq!(
+        html("- [ref]: /url\n\nSee [it][ref]."),
+        "<ul>\n  <li></li>\n</ul>\n<p>See <a href=\"/url\">it</a>.</p>"
+    );
+}
+
+#[test]
+fn reference_definitions_inside_fenced_code_are_literal() {
+    assert_eq!(
+        html("```\n[ref]: /url\n```\n\nSee [it][ref]."),
+        "<pre><code>[ref]: /url\n</code></pre>\n<p>See [it][ref].</p>"
+    );
+}
+
+#[test]
+fn nested_list_fence_closes_so_later_definitions_collect() {
+    // The fence opens on a nested-list marker and closes on an indented line
+    // (`    ~~~`, no list marker). The def-collection prepass must recognize
+    // that close despite the residual indentation, else `in_fence` stays set
+    // and the later definition is wrongly skipped.
+    assert!(html("- - ~~~\n  code\n    ~~~\n\n[r]: /u\n\n[x][r]").contains("href=\"/u\""));
+}
+
+#[test]
+fn only_bullet_decimal_and_task_list_markers_collect_definitions() {
+    // Bullet / decimal-ordered / task: collected (resolve).
+    assert!(html("1. [r]: /u\n\n[x][r]").contains("href=\"/u\""));
+    assert!(html("- [ ] [r]: /u\n\n[x][r]").contains("href=\"/u\""));
+    // Alpha / roman ordered: NOT collected (matches carve-js), so unresolved.
+    assert!(!html("a. [r]: /u\n\n[x][r]").contains("href=\"/u\""));
+    assert!(!html("i. [r]: /u\n\n[x][r]").contains("href=\"/u\""));
+}
+
+#[test]
 fn abbreviation_definition_requires_space_after_colon() {
     assert_eq!(html("*[A]:x\n\nA"), "<p>*[A]:x</p>\n<p>A</p>");
 }
