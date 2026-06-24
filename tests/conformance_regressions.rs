@@ -247,3 +247,35 @@ fn quote_after_non_breaking_space_opens() {
     // Non-HTML renderers agree on the opening quote too.
     assert_eq!(carve::to_plain_text("a\\ 'tis").trim_end(), "a \u{2018}tis");
 }
+
+// carve-rs issue 148: a colon-fence-family opener on a quoted line must end the
+// blockquote's lazy continuation, so an unquoted line after it is NOT absorbed
+// into the quote. This already held for the plain `:::` div; it now holds for
+// the `::: |` line block and the `::: \` hard-break block too. (carve-js lags on
+// the hard-break block, so the spec corpus is the reference, not carve-js.)
+#[test]
+fn colon_fence_openers_end_blockquote_lazy_continuation() {
+    let expect = concat!(
+        "<blockquote><p>{OPENER}</p></blockquote>\n",
+        "<p>outside</p>\n",
+        "<blockquote><p>:::</p></blockquote>"
+    );
+    assert_eq!(
+        html("> ::: |\noutside\n> :::"),
+        expect.replace("{OPENER}", "::: |")
+    );
+    assert_eq!(
+        html("> ::: \\\noutside\n> :::"),
+        expect.replace("{OPENER}", "::: \\")
+    );
+    // Plain div (the case that already worked -- regression guard).
+    assert_eq!(
+        html("> ::: note\noutside\n> :::"),
+        expect.replace("{OPENER}", "::: note")
+    );
+    // No closer in the rest: the opener still ends the quote.
+    assert_eq!(
+        html("> ::: |\noutside"),
+        "<blockquote><p>::: |</p></blockquote>\n<p>outside</p>"
+    );
+}

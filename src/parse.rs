@@ -2223,6 +2223,15 @@ fn interrupts_paragraph_with_rest(line: &str, rest: &[&str]) -> bool {
             return true;
         }
     }
+    // Colon-fence family openers (`::: |` line block, `::: \` hard-break block)
+    // interrupt blockquote lazy continuation like any block opener, matching the
+    // plain `:::` div the caller already guards. Without this, an unquoted line
+    // after a quoted opener is wrongly absorbed into the quote. carve-js lags on
+    // the hard-break block, so the spec corpus (88-line-blocks) -- not carve-js
+    // -- is the reference here (carve-rs issue 148).
+    if detect_line_block_open(line).is_some() || detect_hardbreaks_block_open(line).is_some() {
+        return true;
+    }
     false
 }
 
