@@ -234,3 +234,16 @@ fn empty_list_item_line_keeps_no_trailing_space() {
         "<ul>\n  <li>a\n-</li>\n  <li>b</li>\n</ul>"
     );
 }
+
+#[test]
+fn quote_after_non_breaking_space_opens() {
+    // A non-breaking space is whitespace for smart-quote flanking, so a quote
+    // after one opens -- both the escaped `\\ ` form and a literal U+00A0.
+    assert_eq!(
+        html("say\\ 'twas a fine\\ \"day\""),
+        "<p>say&nbsp;\u{2018}twas a fine&nbsp;\u{201C}day\u{201D}</p>"
+    );
+    assert_eq!(html("a \'tis"), "<p>a&nbsp;\u{2018}tis</p>");
+    // Non-HTML renderers agree on the opening quote too.
+    assert_eq!(carve::to_plain_text("a\\ 'tis").trim_end(), "a \u{2018}tis");
+}
