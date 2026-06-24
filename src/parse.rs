@@ -184,14 +184,33 @@ struct LinkDef {
 }
 
 fn extract_link_defs(source: &str) -> (String, BTreeMap<String, LinkDef>) {
-    let mut body = Vec::new();
+    let mut body: Vec<String> = Vec::new();
     let mut defs = BTreeMap::new();
+    let mut in_fence: Option<FenceOpen> = None;
     for line in source.lines() {
-        if let Some((label_part, target_part)) =
-            line.strip_prefix('[').and_then(|s| s.split_once("]: "))
-        {
+        let stripped = strip_container_prefixes(line);
+        // The fence open/close markers can sit behind residual indentation that
+        // strip_container_prefixes does not remove (e.g. a nested-list fence
+        // whose closer `    ~~~` carries no list marker, only indent). carve-js
+        // strips all leading whitespace before its fence test, so do the same
+        // here; otherwise the fence would stay open and later definitions would
+        // be wrongly skipped.
+        let fence_line = stripped.bare.trim_start_matches([' ', '\t']);
+        if let Some(open) = in_fence {
+            body.push(line.to_string());
+            if is_fence_close(fence_line, open) {
+                in_fence = None;
+            }
+            continue;
+        }
+        if let Some(open) = detect_fence_open(fence_line) {
+            in_fence = Some(open);
+            body.push(line.to_string());
+            continue;
+        }
+        if let Some((label_part, target_part)) = parse_link_def_line(stripped.bare) {
             if label_part.starts_with('@') {
-                body.push(line);
+                body.push(line.to_string());
                 continue;
             }
             defs.insert(
@@ -201,12 +220,68 @@ fn extract_link_defs(source: &str) -> (String, BTreeMap<String, LinkDef>) {
             // Leave a blank line in place of the (invisible) definition so it
             // still acts as a block boundary (matches carve-js, where a
             // definition interrupts a paragraph / ends a lazy blockquote).
-            body.push("");
+            body.push(stripped.replacement());
         } else {
-            body.push(line);
+            body.push(line.to_string());
         }
     }
     (body.join("\n"), defs)
+}
+
+struct StrippedContainerLine<'a> {
+    structural: &'a str,
+    bare: &'a str,
+    needs_empty_list_content: bool,
+}
+
+impl StrippedContainerLine<'_> {
+    fn replacement(&self) -> String {
+        let mut replacement = self.structural.to_string();
+        if self.needs_empty_list_content {
+            replacement.push_str("%%");
+        }
+        replacement
+    }
+}
+
+fn parse_link_def_line(line: &str) -> Option<(&str, &str)> {
+    line.strip_prefix('[').and_then(|s| s.split_once("]: "))
+}
+
+fn strip_container_prefixes(mut line: &str) -> StrippedContainerLine<'_> {
+    let original = line;
+    let mut needs_empty_list_content = false;
+    loop {
+        let before = line;
+        while let Some(rest) = strip_blockquote_prefix(line) {
+            line = rest;
+            needs_empty_list_content = false;
+        }
+        // Only bullets and DECIMAL-ordered markers (ol_type == None) carry a
+        // collected definition, matching carve-js and the spec corpus. An
+        // alpha/roman ordered marker is left intact (carve-js does not collect
+        // those either; byte-parity there is moot as js is itself inconsistent).
+        if let Some(marker) = detect_list_marker_full(line) {
+            if marker.ol_type.is_none() {
+                line = marker.content;
+                needs_empty_list_content = true;
+            }
+        }
+        if line.len() == before.len() {
+            break;
+        }
+    }
+    let structural_len = original.len() - line.len();
+    StrippedContainerLine {
+        structural: &original[..structural_len],
+        bare: line,
+        needs_empty_list_content,
+    }
+}
+
+fn strip_blockquote_prefix(line: &str) -> Option<&str> {
+    let rest = line.strip_prefix('>')?;
+    Some(rest.strip_prefix(' ').unwrap_or(rest))
 }
 
 fn parse_link_def_target(target: &str) -> LinkDef {
