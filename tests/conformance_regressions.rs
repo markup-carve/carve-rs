@@ -98,6 +98,22 @@ fn unordered_marker_tail_strips_all_leading_whitespace() {
 }
 
 #[test]
+fn literal_nbsp_is_content_not_structural_whitespace() {
+    assert_eq!(html("\u{00a0}x"), "<p>&nbsp;x</p>");
+    assert_eq!(html("\u{00a0}\u{00a0}x"), "<p>&nbsp;&nbsp;x</p>");
+    assert_eq!(html("a\n\n\u{00a0}b"), "<p>a</p>\n<p>&nbsp;b</p>");
+    assert_eq!(
+        html("> \u{00a0}x"),
+        "<blockquote><p>&nbsp;x</p></blockquote>"
+    );
+    assert_eq!(html("- \u{00a0}x"), "<ul>\n  <li>&nbsp;x</li>\n</ul>");
+    assert_eq!(html("\u{00a0}"), "<p>&nbsp;</p>");
+
+    assert_eq!(carve::to_markdown("\u{00a0}x").as_bytes(), b"\xc2\xa0x\n");
+    assert_eq!(carve::to_plain_text("\u{00a0}").as_bytes(), b"\xc2\xa0\n");
+}
+
+#[test]
 fn changing_unordered_marker_starts_new_list() {
     assert_eq!(
         html("* a\n- b"),

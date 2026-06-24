@@ -4,6 +4,10 @@ use crate::render_text::{clean_smart_text_stateful, strip_controls, SmartQuoteSt
 
 const MAX_RENDER_DEPTH: usize = 100;
 
+fn trim_block_output(s: &str) -> &str {
+    s.trim_matches(|c| c == '\n' || c == ' ')
+}
+
 /// Render a document to plain text. See `render_markdown_with_options` for why
 /// the options-taking wrapper exists; the profile transform runs upstream.
 pub fn render_plain_text_with_options(doc: &Document, _options: &Options<'_>) -> String {
@@ -42,7 +46,7 @@ fn render_block(node: &BlockNode, depth: usize) -> String {
         BlockNode::BlockQuote(quote) => {
             format!(
                 "\"{}\"\n\n",
-                render_blocks(&quote.children, depth + 1).trim()
+                trim_block_output(&render_blocks(&quote.children, depth + 1))
             )
         }
         BlockNode::List(list) => render_list(list, depth + 1),
@@ -108,7 +112,7 @@ fn render_list(node: &List, depth: usize) -> String {
         } else {
             out.push_str("- ");
         }
-        out.push_str(render_blocks(&item.children, depth + 1).trim());
+        out.push_str(trim_block_output(&render_blocks(&item.children, depth + 1)));
         out.push('\n');
     }
     out.push('\n');
@@ -127,7 +131,7 @@ fn render_definition_list(items: &[DefinitionItem], trailing_blank: bool, depth:
         for definition in &item.definitions {
             out.push_str(&format!(
                 "  {}\n",
-                render_blocks(definition, depth + 1).trim()
+                trim_block_output(&render_blocks(definition, depth + 1))
             ));
         }
     }

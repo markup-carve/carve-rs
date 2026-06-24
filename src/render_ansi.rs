@@ -4,6 +4,10 @@ use crate::render_text::{clean_smart_text_stateful, strip_controls, SmartQuoteSt
 
 const MAX_RENDER_DEPTH: usize = 100;
 
+fn trim_block_output(s: &str) -> &str {
+    s.trim_matches(|c| c == '\n' || c == ' ')
+}
+
 /// Render a document to ANSI-styled text. See `render_markdown_with_options`
 /// for why the options-taking wrapper exists; the profile transform runs
 /// upstream.
@@ -258,7 +262,7 @@ fn render_list(node: &List, ctx: &mut AnsiContext, depth: usize) -> String {
         };
         out.push_str(&format!(
             "{indent}{marker} {}\n",
-            render_blocks(&item.children, ctx, depth + 1).trim()
+            trim_block_output(&render_blocks(&item.children, ctx, depth + 1))
         ));
     }
     ctx.list_depth -= 1;
@@ -291,7 +295,7 @@ fn render_definition_list(
         for definition in &item.definitions {
             out.push_str(&format!(
                 "  {}\n",
-                render_blocks(definition, ctx, depth + 1).trim()
+                trim_block_output(&render_blocks(definition, ctx, depth + 1))
             ));
         }
     }
