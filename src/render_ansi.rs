@@ -458,10 +458,14 @@ fn render_inlines(nodes: &[InlineNode], ctx: &mut AnsiContext, depth: usize) -> 
     if depth > MAX_RENDER_DEPTH {
         return String::new();
     }
-    nodes
-        .iter()
-        .map(|node| render_inline(node, ctx, depth))
-        .collect()
+    let mut out = String::new();
+    for node in nodes {
+        out.push_str(&render_inline(node, ctx, depth));
+        // Any rendered sibling means a following text node's leading quote is
+        // no longer at the true start of the inline flow.
+        ctx.smart_quote.mark_started();
+    }
+    out
 }
 
 fn render_inline(node: &InlineNode, ctx: &mut AnsiContext, depth: usize) -> String {

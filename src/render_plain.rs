@@ -218,6 +218,9 @@ fn render_inlines_stateful(
     let mut out = String::new();
     for node in nodes {
         out.push_str(&render_inline(node, state, depth));
+        // Any rendered sibling means a following text node's leading quote is
+        // no longer at the true start of the inline flow.
+        state.mark_started();
     }
     out
 }
