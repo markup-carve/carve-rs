@@ -4449,7 +4449,7 @@ fn parse_autolink(text: &str, pos: usize) -> Option<(AutoLink, usize)> {
             consumed,
         ));
     }
-    if target.contains('@') && !target.contains(' ') {
+    if is_email_autolink_target(target) {
         return Some((
             AutoLink {
                 attrs,
@@ -4459,6 +4459,44 @@ fn parse_autolink(text: &str, pos: usize) -> Option<(AutoLink, usize)> {
         ));
     }
     None
+}
+
+/// `email_char = letter | digit | '.' | '-' | '_' | '+'` (grammar.ebnf).
+/// Note `:` is deliberately NOT an email char.
+fn is_email_char(b: u8) -> bool {
+    b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-' | b'_' | b'+')
+}
+
+/// `email_autolink = {email_char}+ '@' {email_char}+ '.' {letter}+`.
+/// The local part and domain are both non-empty runs of `email_char`, and the
+/// domain MUST end in `.` followed by a TLD of one or more ASCII letters. So
+/// `<a@b>` (no TLD) and `<x@y:z>` (`:` is not an email_char) stay literal,
+/// while `<a@b.com>` is a `mailto:` link.
+fn is_email_autolink_target(target: &str) -> bool {
+    let bytes = target.as_bytes();
+    let Some(at) = bytes.iter().position(|&b| b == b'@') else {
+        return false;
+    };
+    let local = &bytes[..at];
+    let domain = &bytes[at + 1..];
+    if local.is_empty() || domain.is_empty() {
+        return false;
+    }
+    if !local.iter().all(|&b| is_email_char(b)) || !domain.iter().all(|&b| is_email_char(b)) {
+        return false;
+    }
+    // A single `@` only: `@` is not an email_char, so any later `@` already
+    // failed the `is_email_char` check above.
+    // Domain must end in `.` + TLD ({letter}+).
+    let Some(dot) = domain.iter().rposition(|&b| b == b'.') else {
+        return false;
+    };
+    let tld = &domain[dot + 1..];
+    if dot == 0 {
+        // No host label before the final dot.
+        return false;
+    }
+    !tld.is_empty() && tld.iter().all(|&b| b.is_ascii_alphabetic())
 }
 
 fn is_url_autolink_target(target: &str) -> bool {
