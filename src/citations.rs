@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::ast::*;
-use crate::escape::escape_attr;
+use crate::escape::{escape_attr, escape_text};
 use crate::extension::{
     BeforeRenderContext, CarveExtension, InlineMatch, MatcherContext, RenderContext,
 };
@@ -24,17 +24,51 @@ impl From<CitationMode> for CitationRenderMode {
     }
 }
 
+/// A CSL-JSON name object (the subset the minimal formatter reads). The host
+/// builds these from parsed CSL-JSON; the extension does no file I/O or parsing.
+#[derive(Debug, Clone, Default)]
+pub struct CslName {
+    pub family: Option<String>,
+    pub given: Option<String>,
+    pub literal: Option<String>,
+}
+
+/// A CSL-JSON `issued` date (the subset the minimal formatter reads).
+#[derive(Debug, Clone, Default)]
+pub struct CslDate {
+    /// `date-parts[0][0]` is the year.
+    pub date_parts: Option<Vec<Vec<i64>>>,
+    pub literal: Option<String>,
+}
+
+/// A CSL-JSON bibliography entry (the subset the minimal formatter reads).
+#[derive(Debug, Clone, Default)]
+pub struct CslEntry {
+    pub id: String,
+    pub author: Option<Vec<CslName>>,
+    pub issued: Option<CslDate>,
+    pub title: Option<String>,
+}
+
 #[derive(Debug, Clone)]
 struct Def {
     entry: Vec<InlineNode>,
     author: Option<String>,
     year: Option<String>,
+    /// Pre-formatted entry text for a CSL-JSON-sourced def (HTML-escaped at
+    /// render time); when set, used instead of the parsed inline `entry`.
+    csl_text: Option<String>,
 }
 
 pub struct Citations {
     mode: CitationMode,
+    /// A supplied pool (even empty) activates the Tier-3 Bibliography behavior:
+    /// external resolution + back-links (#199).
+    bibliography: Option<Vec<CslEntry>>,
     defs: RefCell<BTreeMap<String, Def>>,
     order: RefCell<Vec<String>>,
+    /// Per-key use-site count, populated in before_render; drives back-links.
+    uses: RefCell<BTreeMap<String, usize>>,
 }
 
 impl Citations {
@@ -49,9 +83,23 @@ impl Citations {
     pub fn with_mode(mode: CitationMode) -> Self {
         Self {
             mode,
+            bibliography: None,
             defs: RefCell::new(BTreeMap::new()),
             order: RefCell::new(Vec::new()),
+            uses: RefCell::new(BTreeMap::new()),
         }
+    }
+
+    /// Attach an external CSL-JSON pool (Tier-3 Bibliography, #199). Citation
+    /// keys resolve against in-document `[@key]:` defs first, then this pool;
+    /// in-text citations and the references list gain footnote-style back-links.
+    pub fn with_bibliography(mut self, bibliography: Vec<CslEntry>) -> Self {
+        self.bibliography = Some(bibliography);
+        self
+    }
+
+    fn has_bib(&self) -> bool {
+        self.bibliography.is_some()
     }
 }
 
@@ -78,7 +126,17 @@ impl CarveExtension for Citations {
     fn after_parse(&self, mut doc: Document) -> Document {
         self.defs.borrow_mut().clear();
         self.order.borrow_mut().clear();
+        self.uses.borrow_mut().clear();
         doc.children = collect_defs(doc.children, &mut self.defs.borrow_mut());
+        // Seed the CSL-JSON pool: in-document defs win on collision (§6.2).
+        if let Some(pool) = &self.bibliography {
+            let mut defs = self.defs.borrow_mut();
+            for entry in pool {
+                if !entry.id.is_empty() && !defs.contains_key(&entry.id) {
+                    defs.insert(entry.id.clone(), csl_to_def(entry));
+                }
+            }
+        }
         doc
     }
 
@@ -86,11 +144,16 @@ impl CarveExtension for Citations {
         let defs = self.defs.borrow();
         let mut seen = BTreeSet::new();
         let mut order = Vec::new();
+        let mut uses = BTreeMap::new();
+        let has_bib = self.has_bib();
         for block in &mut doc.children {
-            annotate_citations_block(block, &defs, self.mode, &mut seen, &mut order);
+            annotate_citations_block(
+                block, &defs, self.mode, has_bib, &mut seen, &mut order, &mut uses,
+            );
         }
         drop(defs);
         *self.order.borrow_mut() = order;
+        *self.uses.borrow_mut() = uses;
         if !self.order.borrow().is_empty() {
             inject_references_block(&mut doc.children);
         }
@@ -108,6 +171,8 @@ impl CarveExtension for Citations {
                 self.mode,
                 &self.order.borrow(),
                 &self.defs.borrow(),
+                &self.uses.borrow(),
+                self.has_bib(),
             ))
         } else {
             None
@@ -198,6 +263,7 @@ fn parse_item(raw: &str, ctx: &MatcherContext<'_>) -> Option<Citation> {
             suppress_author,
             number: None,
             label: None,
+            use_index: None,
         });
     }
     None
@@ -331,9 +397,84 @@ fn as_definition(line: &[InlineNode]) -> Option<(String, Def)> {
         entry,
         author: None,
         year: None,
+        csl_text: None,
     };
     consume_leading_attrs(&mut def);
     Some((item.key.clone(), def))
+}
+
+/// Build a `Def` from a CSL-JSON entry using the minimal fixed template (§6.3):
+/// `Family, Given (Year). Title.`, missing fields + separators omitted, trailing
+/// period when non-empty. The text is plain (HTML-escaped at render time).
+fn csl_to_def(e: &CslEntry) -> Def {
+    let names: Vec<String> = e
+        .author
+        .as_deref()
+        .unwrap_or_default()
+        .iter()
+        .map(format_name)
+        .filter(|n| !n.is_empty())
+        .collect();
+    let authors = names.join("; ");
+    let year = csl_year(e.issued.as_ref());
+    let head = if let Some(y) = &year {
+        if authors.is_empty() {
+            format!("({y})")
+        } else {
+            format!("{authors} ({y})")
+        }
+    } else {
+        authors
+    };
+    let mut segs: Vec<String> = Vec::new();
+    if !head.is_empty() {
+        segs.push(head);
+    }
+    if let Some(title) = &e.title {
+        if !title.is_empty() {
+            segs.push(title.clone());
+        }
+    }
+    let mut csl_text = segs.join(". ");
+    if !csl_text.is_empty() {
+        csl_text.push('.');
+    }
+    // author/year also feed author-date mode; use the first author's family.
+    let author = e
+        .author
+        .as_deref()
+        .and_then(|a| a.first())
+        .and_then(|n| n.literal.clone().or_else(|| n.family.clone()));
+    Def {
+        entry: Vec::new(),
+        author,
+        year,
+        csl_text: Some(csl_text),
+    }
+}
+
+fn format_name(n: &CslName) -> String {
+    if let Some(literal) = &n.literal {
+        return literal.clone();
+    }
+    match (&n.family, &n.given) {
+        (Some(family), Some(given)) => format!("{family}, {given}"),
+        (Some(family), None) => family.clone(),
+        _ => String::new(),
+    }
+}
+
+fn csl_year(issued: Option<&CslDate>) -> Option<String> {
+    let issued = issued?;
+    if let Some(y) = issued
+        .date_parts
+        .as_ref()
+        .and_then(|p| p.first())
+        .and_then(|p| p.first())
+    {
+        return Some(y.to_string());
+    }
+    issued.literal.clone()
 }
 
 fn consume_leading_attrs(def: &mut Def) {
@@ -365,81 +506,108 @@ fn attr_value(attrs: &str, key: &str) -> Option<String> {
     None
 }
 
+#[allow(clippy::too_many_arguments)]
 fn annotate_citations_block(
     block: &mut BlockNode,
     defs: &BTreeMap<String, Def>,
     mode: CitationMode,
+    has_bib: bool,
     seen: &mut BTreeSet<String>,
     order: &mut Vec<String>,
+    uses: &mut BTreeMap<String, usize>,
 ) {
     match block {
         BlockNode::Heading(h) => {
-            annotate_citations_inline(&mut h.children, defs, mode, seen, order)
+            annotate_citations_inline(&mut h.children, defs, mode, has_bib, seen, order, uses)
         }
         BlockNode::Paragraph(p) => {
-            annotate_citations_inline(&mut p.children, defs, mode, seen, order);
+            annotate_citations_inline(&mut p.children, defs, mode, has_bib, seen, order, uses);
         }
         BlockNode::List(l) => {
             for item in &mut l.items {
                 for child in &mut item.children {
-                    annotate_citations_block(child, defs, mode, seen, order);
+                    annotate_citations_block(child, defs, mode, has_bib, seen, order, uses);
                 }
             }
         }
         BlockNode::BlockQuote(b) => {
             for child in &mut b.children {
-                annotate_citations_block(child, defs, mode, seen, order);
+                annotate_citations_block(child, defs, mode, has_bib, seen, order, uses);
             }
         }
         BlockNode::Table(t) => {
             for row in &mut t.rows {
                 for cell in &mut row.cells {
-                    annotate_citations_inline(&mut cell.children, defs, mode, seen, order);
+                    annotate_citations_inline(
+                        &mut cell.children,
+                        defs,
+                        mode,
+                        has_bib,
+                        seen,
+                        order,
+                        uses,
+                    );
                 }
             }
         }
         BlockNode::Admonition(a) => {
             if let Some(title) = &mut a.title {
-                annotate_citations_inline(title, defs, mode, seen, order);
+                annotate_citations_inline(title, defs, mode, has_bib, seen, order, uses);
             }
             for child in &mut a.children {
-                annotate_citations_block(child, defs, mode, seen, order);
+                annotate_citations_block(child, defs, mode, has_bib, seen, order, uses);
             }
         }
         BlockNode::Div(d) => {
             for child in &mut d.children {
-                annotate_citations_block(child, defs, mode, seen, order);
+                annotate_citations_block(child, defs, mode, has_bib, seen, order, uses);
             }
         }
         BlockNode::DefinitionList(d) => {
             for item in &mut d.items {
                 for term in &mut item.terms {
-                    annotate_citations_inline(term, defs, mode, seen, order);
+                    annotate_citations_inline(term, defs, mode, has_bib, seen, order, uses);
                 }
                 for def_blocks in &mut item.definitions {
                     for child in def_blocks {
-                        annotate_citations_block(child, defs, mode, seen, order);
+                        annotate_citations_block(child, defs, mode, has_bib, seen, order, uses);
                     }
                 }
             }
         }
         BlockNode::Figure(f) => {
-            annotate_citations_inline(&mut f.caption, defs, mode, seen, order);
+            annotate_citations_inline(&mut f.caption, defs, mode, has_bib, seen, order, uses);
             match &mut f.target {
                 FigureTarget::BlockQuote(b) => {
                     for child in &mut b.children {
-                        annotate_citations_block(child, defs, mode, seen, order);
+                        annotate_citations_block(child, defs, mode, has_bib, seen, order, uses);
                     }
                 }
                 FigureTarget::Table(t) => {
                     for row in &mut t.rows {
                         for cell in &mut row.cells {
-                            annotate_citations_inline(&mut cell.children, defs, mode, seen, order);
+                            annotate_citations_inline(
+                                &mut cell.children,
+                                defs,
+                                mode,
+                                has_bib,
+                                seen,
+                                order,
+                                uses,
+                            );
                         }
                     }
                 }
                 FigureTarget::Paragraph(p) => {
-                    annotate_citations_inline(&mut p.children, defs, mode, seen, order);
+                    annotate_citations_inline(
+                        &mut p.children,
+                        defs,
+                        mode,
+                        has_bib,
+                        seen,
+                        order,
+                        uses,
+                    );
                 }
                 FigureTarget::Image(_) | FigureTarget::CodeBlock(_) => {}
             }
@@ -448,26 +616,39 @@ fn annotate_citations_block(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn annotate_citations_inline(
     nodes: &mut [InlineNode],
     defs: &BTreeMap<String, Def>,
     mode: CitationMode,
+    has_bib: bool,
     seen: &mut BTreeSet<String>,
     order: &mut Vec<String>,
+    uses: &mut BTreeMap<String, usize>,
 ) {
     for node in nodes {
         match node {
             InlineNode::CitationGroup(g) => {
                 g.mode = Some(mode.into());
+                // A group with any unresolved key renders verbatim (§6.4): its
+                // keys are literal text, not citations, so they are neither
+                // numbered, listed, nor a back-link use site. Skip the whole
+                // group.
+                if !g.items.iter().all(|it| defs.contains_key(&it.key)) {
+                    continue;
+                }
                 for item in &mut g.items {
-                    let Some(def) = defs.get(&item.key) else {
-                        continue;
-                    };
+                    let def = defs.get(&item.key).expect("all keys resolved above");
                     if seen.insert(item.key.clone()) {
                         order.push(item.key.clone());
                     }
                     let number = order.iter().position(|key| key == &item.key).unwrap() + 1;
                     item.number = Some(number);
+                    if has_bib {
+                        let n = uses.entry(item.key.clone()).or_insert(0);
+                        *n += 1;
+                        item.use_index = Some(*n);
+                    }
                     item.label = Some(match mode {
                         CitationMode::Numbered => number.to_string(),
                         CitationMode::AuthorDate => {
@@ -492,16 +673,16 @@ fn annotate_citations_inline(
                 }
             }
             InlineNode::Emphasis(e) => {
-                annotate_citations_inline(&mut e.children, defs, mode, seen, order)
+                annotate_citations_inline(&mut e.children, defs, mode, has_bib, seen, order, uses)
             }
             InlineNode::Link(l) => {
-                annotate_citations_inline(&mut l.children, defs, mode, seen, order)
+                annotate_citations_inline(&mut l.children, defs, mode, has_bib, seen, order, uses)
             }
             InlineNode::Span(s) => {
-                annotate_citations_inline(&mut s.children, defs, mode, seen, order)
+                annotate_citations_inline(&mut s.children, defs, mode, has_bib, seen, order, uses)
             }
             InlineNode::Extension(e) => {
-                annotate_citations_inline(&mut e.children, defs, mode, seen, order);
+                annotate_citations_inline(&mut e.children, defs, mode, has_bib, seen, order, uses);
             }
             _ => {}
         }
@@ -543,6 +724,8 @@ fn render_refs_list(
     mode: CitationMode,
     order: &[String],
     defs: &BTreeMap<String, Def>,
+    uses: &BTreeMap<String, usize>,
+    has_bib: bool,
 ) -> String {
     let mut keys = order.to_vec();
     if mode == CitationMode::AuthorDate {
@@ -560,11 +743,36 @@ fn render_refs_list(
     let mut out = format!("<{tag} class=\"references\">");
     for key in keys {
         if let Some(def) = defs.get(&key) {
+            // A CSL-sourced entry is plain text (escaped); an in-doc def is AST.
+            let body = match &def.csl_text {
+                Some(text) => escape_text(text),
+                None => ctx.render_inlines(&def.entry),
+            };
+            let mut backlinks = String::new();
+            if has_bib {
+                let n = uses.get(&key).copied().unwrap_or(0);
+                let links: Vec<String> = (1..=n)
+                    .map(|m| {
+                        format!(
+                            "<a href=\"#cite-{}-{}\" class=\"ref-backref\">\u{21a9}</a>",
+                            escape_attr(&key),
+                            m
+                        )
+                    })
+                    .collect();
+                if !links.is_empty() {
+                    if !body.is_empty() {
+                        backlinks.push(' ');
+                    }
+                    backlinks.push_str(&links.join(" "));
+                }
+            }
             out.push('\n');
             out.push_str(&format!(
-                "  <li id=\"ref-{}\">{}</li>",
+                "  <li id=\"ref-{}\">{}{}</li>",
                 escape_attr(&key),
-                ctx.render_inlines(&def.entry)
+                body,
+                backlinks
             ));
         }
     }
