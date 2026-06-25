@@ -23,6 +23,7 @@ pub fn render_html(doc: &Document) -> String {
 pub fn render_html_with_options(doc: &Document, options: &Options<'_>) -> String {
     let mut doc = doc.clone();
     let _abbr_guard = AbbrBudgetGuard::new(doc.source_len);
+    let _index_guard = crate::index_budget::IndexBudgetGuard::new(doc.source_len);
     let mut state = RenderState {
         lowercase_heading_ids: options.lowercase_heading_ids,
         ..RenderState::default()

@@ -100,3 +100,92 @@ fn nested_in_blockquote() {
         "<li>parser <a href=\"#idx-parser-1\" class=\"index-backref\">\u{21a9}</a></li>"
     ));
 }
+
+// --- index-expansion budget (memory-amplification DoS) ----------------------
+
+/// Build a worst-case amplification input: `markers` distinct `:index[term]`
+/// markers in the body plus `blocks` `::: index` blocks. Each block re-emits the
+/// COMPLETE sorted backlink list, so without a budget the output would be
+/// `blocks * markers * ~52` bytes, far larger than the input.
+fn index_amplification_source(markers: usize, blocks: usize) -> String {
+    let mut body = String::new();
+    for i in 0..markers {
+        body.push_str(&format!(":index[term{i}] "));
+    }
+    body.push_str("\n\n");
+    for _ in 0..blocks {
+        body.push_str("::: index\n:::\n\n");
+    }
+    body
+}
+
+#[test]
+fn index_expansion_output_is_bounded() {
+    let source = index_amplification_source(3_000, 400);
+    let input_len = source.len();
+    let start = std::time::Instant::now();
+    let html = h(&source);
+    let elapsed = start.elapsed();
+
+    // The budget = max(1_000_000, 8 * input_len) caps the re-emitted backlink
+    // list content (the amplifying part). Uncharged overhead is bounded too: the
+    // one-time body marker spans and the per-block `<ul>` wrappers (empty once
+    // the budget is exhausted). Allowing 2x the budget as a generous ceiling, the
+    // output stays near the budget instead of ballooning to blocks * markers *
+    // ~52 bytes (well over 100 MB here) - a ~50x reduction at minimum.
+    let budget = 1_000_000usize.max(8 * input_len);
+    let unbounded_estimate = 400usize * 3_000 * 52;
+    assert!(
+        html.len() < 2 * budget,
+        "html output {} exceeded bounded ceiling {} (budget {}, unbounded would be ~{}, input {})",
+        html.len(),
+        2 * budget,
+        budget,
+        unbounded_estimate,
+        input_len
+    );
+    assert!(
+        elapsed.as_secs_f32() < 5.0,
+        "bounded index render took {elapsed:?}"
+    );
+}
+
+#[test]
+fn large_first_term_with_many_blocks_stays_fast() {
+    // One very large index term plus many `::: index` blocks. Once the budget is
+    // spent, later blocks must NOT re-escape the large term: this stays fast and
+    // bounded (the escape-then-reject CPU/allocation path is closed).
+    let big_term = "x".repeat(2_000_000);
+    let mut source = format!(":index[{big_term}]\n\n");
+    for _ in 0..200 {
+        source.push_str("::: index\n:::\n\n");
+    }
+    let input_len = source.len();
+    let budget = 1_000_000usize.max(8 * input_len);
+    let start = std::time::Instant::now();
+    let html = h(&source);
+    let elapsed = start.elapsed();
+    assert!(
+        html.len() < 2 * budget,
+        "html output {} exceeded bounded ceiling {}",
+        html.len(),
+        2 * budget
+    );
+    assert!(
+        elapsed.as_secs_f32() < 5.0,
+        "large-term index render took {elapsed:?} (escape-then-reject path likely open)"
+    );
+}
+
+#[test]
+fn normal_index_renders_fully_under_budget() {
+    // A small index stays far under the 1 MB floor and renders every backlink
+    // in every block, unchanged.
+    let out = h("A :index[parser] and :index[lexer].\n\n::: index\n:::\n\n::: index\n:::");
+    // Both blocks emit the complete two-entry list with all backlinks.
+    assert_eq!(out.matches("<ul class=\"index\">").count(), 2);
+    assert_eq!(out.matches("class=\"index-backref\"").count(), 4);
+    assert!(out.contains(
+        "<li>parser <a href=\"#idx-parser-1\" class=\"index-backref\">\u{21a9}</a></li>"
+    ));
+}
