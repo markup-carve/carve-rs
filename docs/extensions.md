@@ -208,6 +208,71 @@ nothing is silently lost.
 Without the extension registered, `::: list-table` always stays the default
 `<div class="list-table">`.
 
+## Glossary
+
+`Glossary` is a Tier-3 extension (#91) that renders a `::: glossary` definition
+list as a `<dl class="glossary">` whose terms carry linkable `gloss-{slug}` ids,
+and links every `:term[word]` use to the matching entry. It reuses existing
+syntax (the definition list and the `:name[…]` inline form), so there is no new
+markup. Off by default; register it explicitly.
+
+```rust
+use carve::{Glossary, Options};
+
+let ext = Glossary::new();
+let opts = Options::new().with_extension(&ext);
+let src = "Use :term[HTTP].\n\n::: glossary\n:: HTTP\n:  HyperText Transfer Protocol.\n:::";
+let html = carve::to_html_with_options(src, &opts);
+assert!(html.contains("<a href=\"#gloss-http\" class=\"term\">HTTP</a>"));
+assert!(html.contains("<dt id=\"gloss-http\">HTTP</dt>"));
+```
+
+- The id slug is the heading-id slug of the term's plain text, lowercased
+  (`HTTP` -> `gloss-http`); `:term[word]` slugs its own bracket text the same
+  way, so the two sides meet without a separate key.
+- The `<dl>` renders in source order (no sort); on a duplicate slug the first
+  entry wins the id. A single-paragraph definition collapses to inline content.
+- `:term[word]` with no matching entry degrades to `<span class="term">word</span>`
+  (no link). With the extension off it is the generic `<span class="ext-term">`.
+- Authored attributes carry through: a preceding `{#id .class}` line lands on the
+  (first) `<dl>` (`glossary` stays the leading class); inline `:term[x]{.c #i}`
+  attributes ride on the output, and a duplicate author `href` is dropped so the
+  resolved link has exactly one. Non-definition-list content inside the block is
+  preserved in place; a `::: glossary` nested in a blockquote / list / div is
+  found too.
+
+## Index
+
+`Index` is a Tier-3 extension (#91) that collects invisible `:index[term]`
+markers into a `::: index` block - a sorted `<ul class="index">` with one
+back-link per occurrence. Off by default; register it explicitly. Pairs with but
+is independent of `Glossary`.
+
+```rust
+use carve::{Index, Options};
+
+let ext = Index::new();
+let opts = Options::new().with_extension(&ext);
+let src = "A :index[parser] here.\n\n::: index\n:::";
+let html = carve::to_html_with_options(src, &opts);
+assert!(html.contains("<span id=\"idx-parser-1\" class=\"index-term\"></span>"));
+assert!(html.contains("<a href=\"#idx-parser-1\" class=\"index-backref\">"));
+```
+
+- Each body `:index[term]` emits an empty `<span id="idx-{slug}-{n}"
+  class="index-term">` anchor target (`n` is that slug's 1-based occurrence in
+  document order). A span, not an `<a>`, so a marker inside a link label never
+  nests one anchor in another.
+- `::: index` renders `<ul class="index">`, one `<li>` per distinct slug sorted
+  by Unicode codepoint, each with a `↩` back-link per occurrence. With no markers
+  it stays the plain `<div class="index">`; authored content inside the block is
+  preserved before the list, and a preceding `{#id .class}` line lands on the
+  `<ul>`.
+- Only body markers are indexed: a `:index` inside deferred content (a footnote
+  definition) renders inert (`<span class="index-term">`, no id) so a back-link
+  never dangles. With the extension off, `:index[term]` is the generic
+  `<span class="ext-index">term</span>`.
+
 ## Static rendering mode
 
 A render carries a **mode** - a render option, not document syntax (see the
