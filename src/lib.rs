@@ -44,11 +44,11 @@ pub use extension::{
     RenderContext, StaticRenderers,
 };
 pub use extensions::{
-    Autolink, AutolinkOptions, ColorSwatch, ContentMode, Details, ExternalLinks,
-    ExternalLinksOptions, FencedRender, FencedRenderOptions, Glossary, HeadingPermalinks,
-    HeadingPermalinksOptions, Index, ListTable, ListType, MathBlock, MathBlockOptions, Position,
-    Spoiler, TabNormalize, TableOfContents, TableOfContentsOptions, UrlGenerator, Wikilinks,
-    WikilinksOptions,
+    Autolink, AutolinkOptions, ColorSwatch, ContentMode, CrossrefStyle, Details, ExternalLinks,
+    ExternalLinksOptions, FencedRender, FencedRenderOptions, Glossary, HeadingNumbers,
+    HeadingNumbersOptions, HeadingPermalinks, HeadingPermalinksOptions, Index, ListTable, ListType,
+    MathBlock, MathBlockOptions, Position, Spoiler, TabNormalize, TableOfContents,
+    TableOfContentsOptions, UrlGenerator, Wikilinks, WikilinksOptions,
 };
 pub use parse::{parse, parse_with_options};
 pub use profile::{DisallowedAction, LinkPolicy, Profile, ProfileViolation, ProfileViolationError};

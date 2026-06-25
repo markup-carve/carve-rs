@@ -165,6 +165,7 @@ fn link_node(href: &str, text: &str) -> InlineNode {
         children: vec![InlineNode::Text(text.to_string())],
         ref_label: None,
         raw_ref: None,
+        from_crossref: false,
     })
 }
 

@@ -287,6 +287,12 @@ pub struct Link {
     pub children: Vec<InlineNode>,
     pub ref_label: Option<String>,
     pub raw_ref: Option<String>,
+    /// Set when this `Link` was produced from a `</#id>` cross-reference (not an
+    /// ordinary `[text](url)` link or an implicit `[label][]` reference).
+    /// Non-rendered metadata - every renderer ignores it; it lets a render-stage
+    /// extension (HeadingNumbers, #198) rewrite only auto-filled
+    /// cross-references without a fragile title-equality guess.
+    pub from_crossref: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
