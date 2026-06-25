@@ -619,6 +619,41 @@ fn color_swatch_tint_paints_color_mix_behind_swatch() {
     );
 }
 
+#[test]
+fn color_swatch_reveal_wraps_value_and_makes_swatch_focusable() {
+    let ext = ColorSwatch::new().reveal(true);
+    let opts = Options::new().with_extension(&ext);
+    assert_eq!(
+        carve::to_html_with_options(":color[#3b82f6]", &opts),
+        "<p><span class=\"swatch swatch-reveal\" tabindex=\"0\"><span class=\"swatch-chip\" style=\"background-color:#3b82f6\"></span> <span class=\"swatch-val\">#3b82f6</span></span></p>"
+    );
+}
+
+#[test]
+fn color_swatch_reveal_with_position_after_wraps_value_before_chip() {
+    let ext = ColorSwatch::new()
+        .position(SwatchPosition::After)
+        .reveal(true);
+    let opts = Options::new().with_extension(&ext);
+    assert_eq!(
+        carve::to_html_with_options(":color[#3b82f6]", &opts),
+        "<p><span class=\"swatch swatch-reveal\" tabindex=\"0\"><span class=\"swatch-val\">#3b82f6</span> <span class=\"swatch-chip\" style=\"background-color:#3b82f6\"></span></span></p>"
+    );
+}
+
+#[test]
+fn color_swatch_reveal_is_ignored_when_position_is_none() {
+    // `none` already hides the value (surfaced via title); reveal must be a no-op.
+    let ext = ColorSwatch::new()
+        .position(SwatchPosition::None)
+        .reveal(true);
+    let opts = Options::new().with_extension(&ext);
+    assert_eq!(
+        carve::to_html_with_options(":color[#3b82f6]", &opts),
+        "<p><span class=\"swatch swatch-chip-only\" title=\"#3b82f6\"><span class=\"swatch-chip\" style=\"background-color:#3b82f6\"></span></span></p>"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // fenced-render
 // ---------------------------------------------------------------------------

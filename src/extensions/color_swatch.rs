@@ -9,7 +9,7 @@
 //!   fallback, so core emits `<span class="ext-color">...</span>`.
 //!
 //! The render is configurable via [`ColorSwatch::position`],
-//! [`ColorSwatch::shape`] and [`ColorSwatch::tint`].
+//! [`ColorSwatch::shape`], [`ColorSwatch::tint`] and [`ColorSwatch::reveal`].
 
 use crate::ast::{Attrs, InlineExtension, InlineNode};
 use crate::escape::{escape_attr, escape_text};
@@ -69,6 +69,7 @@ pub struct ColorSwatch {
     position: SwatchPosition,
     shape: SwatchShape,
     tint: bool,
+    reveal: bool,
 }
 
 impl ColorSwatch {
@@ -96,8 +97,16 @@ impl ColorSwatch {
         self
     }
 
+    /// Collapse the value text and reveal it on hover / keyboard focus (pure-CSS,
+    /// driven by the `swatch-reveal` class). The value stays in the DOM for
+    /// assistive tech. Ignored when the position is `None` (already hidden).
+    pub fn reveal(mut self, reveal: bool) -> Self {
+        self.reveal = reveal;
+        self
+    }
+
     fn render_swatch(&self, attrs: Option<&Attrs>, color: &str) -> String {
-        let label = escape_text(color);
+        let mut label = escape_text(color);
 
         // A ring shows the color as the border; filled shapes as the background.
         let chip_class = match self.shape {
@@ -124,15 +133,29 @@ impl ColorSwatch {
             None
         };
 
-        let (inner, title) = match self.position {
+        let mut extra_kvs: Vec<(&str, &str)> = Vec::new();
+        let inner = match self.position {
             SwatchPosition::None => {
                 // Chip only: surface the value as the element title so it stays
-                // available on hover and to assistive technology.
+                // available on hover and to assistive technology. `reveal` is
+                // meaningless here (there is no inline value) and ignored.
                 extra_classes.push("swatch-chip-only");
-                (chip.clone(), Some(color))
+                extra_kvs.push(("title", color));
+                chip.clone()
             }
-            SwatchPosition::After => (format!("{} {}", label, chip), None),
-            SwatchPosition::Before => (format!("{} {}", chip, label), None),
+            position => {
+                // When revealing, wrap the value so CSS can collapse / expand it,
+                // make the swatch keyboard-focusable, and keep the value in the DOM.
+                if self.reveal {
+                    extra_classes.push("swatch-reveal");
+                    extra_kvs.push(("tabindex", "0"));
+                    label = format!("<span class=\"swatch-val\">{}</span>", label);
+                }
+                match position {
+                    SwatchPosition::After => format!("{} {}", label, chip),
+                    _ => format!("{} {}", chip, label),
+                }
+            }
         };
 
         format!(
@@ -142,7 +165,7 @@ impl ColorSwatch {
                 "swatch",
                 &extra_classes,
                 tint_style.as_deref(),
-                title
+                &extra_kvs
             ),
             inner,
         )
@@ -169,15 +192,16 @@ impl CarveExtension for ColorSwatch {
 }
 
 /// Build the output element's attribute string: the base class first, then any
-/// extension classes, then author classes; an optional extension `style` /
-/// `title` (only when the author did not set their own); then the author's
-/// remaining attributes. Mirrors the spoiler extension's class merge.
+/// extension classes, then author classes; an optional extension `style`, then
+/// any extension key-values (each applied only when the author did not set its
+/// own); then the author's remaining attributes. Mirrors the spoiler extension's
+/// class merge.
 fn open_attrs(
     attrs: Option<&Attrs>,
     base: &str,
     extra_classes: &[&str],
     extra_style: Option<&str>,
-    extra_title: Option<&str>,
+    extra_kvs: &[(&str, &str)],
 ) -> String {
     let mut classes: Vec<String> = base.split(' ').map(str::to_string).collect();
     for class in extra_classes {
@@ -202,9 +226,9 @@ fn open_attrs(
             out.push_str(&format!(" style=\"{}\"", escape_attr(style)));
         }
     }
-    if let Some(title) = extra_title {
-        if !author_has("title") {
-            out.push_str(&format!(" title=\"{}\"", escape_attr(title)));
+    for (key, value) in extra_kvs {
+        if !author_has(key) {
+            out.push_str(&format!(" {}=\"{}\"", key, escape_attr(value)));
         }
     }
     if let Some(a) = attrs {
