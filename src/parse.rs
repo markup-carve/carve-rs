@@ -210,7 +210,11 @@ fn extract_link_defs(source: &str) -> (String, BTreeMap<String, LinkDef>) {
             continue;
         }
         if let Some((label_part, target_part)) = parse_link_def_line(stripped.bare) {
-            if label_part.starts_with('@') {
+            // A reference definition needs a non-empty destination (carve-js
+            // `RE_LINK_DEF` requires `(\S+)` after the colon). An empty target
+            // (`[r]:` + only whitespace) is NOT a definition -- the line stays
+            // literal text. (corpus 34-reference-link-9)
+            if label_part.starts_with('@') || target_part.trim().is_empty() {
                 body.push(line.to_string());
                 continue;
             }
@@ -300,7 +304,10 @@ fn parse_link_def_target(target: &str) -> LinkDef {
         && ((rest.starts_with('"') && rest.ends_with('"'))
             || (rest.starts_with('\'') && rest.ends_with('\'')))
     {
-        Some(rest[1..rest.len() - 1].to_string())
+        // A backslash-escaped quote (or any escaped ASCII punctuation) inside
+        // the title is unescaped, matching inline-link titles and carve-js
+        // `unescapeAttrValue` (`[y]: /u "a\"b\"c"` -> title `a"b"c`).
+        Some(unescape_title(&rest[1..rest.len() - 1]))
     } else {
         None
     };

@@ -530,3 +530,18 @@ fn inline_extension_name_content_and_class_merge() {
         "<p><span class=\"ext-foo cls\" id=\"id\">a</span></p>"
     );
 }
+
+/// Reference definitions: an empty destination is not a definition (the line
+/// stays literal, corpus 34-reference-link-9), and a backslash-escaped quote
+/// inside the title is unescaped (corpus 34-reference-link-7).
+#[test]
+fn reference_definition_empty_destination_and_escaped_title() {
+    // `[r]:` with only trailing whitespace is not a definition.
+    assert_eq!(html("[r]:"), "<p>[r]:</p>");
+    assert_eq!(html("[r]:   "), "<p>[r]:</p>");
+    // A real definition with an escaped quote in the title.
+    assert_eq!(
+        html("[x][y]\n\n[y]: /u \"a\\\"b\\\"c\""),
+        "<p><a href=\"/u\" title=\"a&quot;b&quot;c\">x</a></p>"
+    );
+}
