@@ -1453,7 +1453,10 @@ fn render_inline_after(
             out.push_str("<code");
             write_attrs(out, attrs);
             out.push('>');
-            write_escaped_text(out, s);
+            // Escape `& < >` AND fold U+00A0 to `&nbsp;`, matching the prose
+            // text path: a literal no-break space inside a code span serializes
+            // as the named entity in HTML (corpus 49-non-breaking-space-3).
+            write_escaped_text_nbsp(out, s);
             out.push_str("</code>");
         }
         InlineNode::Link(l) => render_link(out, l, options, state),
