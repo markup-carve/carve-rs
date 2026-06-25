@@ -329,6 +329,19 @@ fn rewrite_links_inlines(
                     rewrite_links_inlines(inl, by_id, opts);
                 }
             }
+            InlineNode::CitationGroup(g) => {
+                // Citation prefixes/locators are rendered inline and the parser
+                // resolves `</#id>` inside them; rewrite there too (carve-js's
+                // generic link walk reaches these).
+                for item in &mut g.items {
+                    if let Some(p) = &mut item.prefix {
+                        rewrite_links_inlines(p, by_id, opts);
+                    }
+                    if let Some(loc) = &mut item.locator {
+                        rewrite_links_inlines(loc, by_id, opts);
+                    }
+                }
+            }
             _ => {}
         }
     }
