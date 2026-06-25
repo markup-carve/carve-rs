@@ -171,6 +171,60 @@ fn marker_line_colon_blocks_nest_inside_list_item() {
 }
 
 #[test]
+fn unindented_admonition_body_lazy_continues_list_item_literal_opener() {
+    assert_eq!(
+        html("- ::: note\nbody\n:::"),
+        "<ul>\n  <li>::: note\nbody</li>\n</ul>\n<p>:::</p>"
+    );
+    assert_eq!(
+        html("- :::\n:::"),
+        "<ul>\n  <li>:::</li>\n</ul>\n<p>:::</p>"
+    );
+    assert_eq!(html("- a\nb"), "<ul>\n  <li>a\nb</li>\n</ul>");
+}
+
+#[test]
+fn flush_left_colon_fence_shape_ends_lazy_continuation() {
+    assert_eq!(html("- a\n:::"), "<ul>\n  <li>a</li>\n</ul>\n<p>:::</p>");
+    assert_eq!(
+        html("- a\n::: note\nno"),
+        "<ul>\n  <li>a</li>\n</ul>\n<p>::: note\nno</p>"
+    );
+    assert_eq!(
+        html("- a\n:::\nb"),
+        "<ul>\n  <li>a</li>\n</ul>\n<p>:::\nb</p>"
+    );
+    assert_eq!(html("1. a\n:::"), "<ol>\n  <li>a</li>\n</ol>\n<p>:::</p>");
+    assert_eq!(
+        html("> a\n:::"),
+        "<blockquote><p>a</p></blockquote>\n<p>:::</p>"
+    );
+
+    assert_eq!(
+        html("- ::: note\nbody\n:::"),
+        "<ul>\n  <li>::: note\nbody</li>\n</ul>\n<p>:::</p>"
+    );
+    assert_eq!(
+        html("- ::: note\n  body\n  :::"),
+        concat!(
+            "<ul>\n",
+            "  <li>\n",
+            "    <aside class=\"admonition note\">\n",
+            "      <p>body</p>\n",
+            "    </aside>\n",
+            "  </li>\n",
+            "</ul>"
+        )
+    );
+    assert_eq!(html("> a\nb"), "<blockquote><p>a\nb</p></blockquote>");
+    assert_eq!(html("- a\nb"), "<ul>\n  <li>a\nb</li>\n</ul>");
+    assert_eq!(
+        html("> ::: x\n> y\n> :::"),
+        "<blockquote>\n  <div class=\"x\">\n    <p>y</p>\n  </div>\n</blockquote>"
+    );
+}
+
+#[test]
 fn list_marker_requires_space_not_tab() {
     assert_eq!(html("-\tx"), "<p>-\tx</p>");
     assert_eq!(html("- x"), "<ul>\n  <li>x</li>\n</ul>");

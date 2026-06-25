@@ -1214,7 +1214,7 @@ fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         // would otherwise end, and headings still interrupt via that predicate.
         if !para_open || is_blank_line(line) || line.starts_with("^ ") || {
             let line_owned = line.to_string();
-            interrupts_paragraph(cur, &line_owned)
+            interrupts_lazy_continuation(cur, &line_owned)
         } {
             break;
         }
@@ -1930,9 +1930,23 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         // interrupts (the one Carve deviation, grammar §10), while every other
         // block opener -- heading, fence, etc. -- stays paragraph text.
         let mut para_lines = vec![marker.content.to_string()];
+        let literal_colon_opener = detect_container_open(marker.content)
+            .map(|open| open.fence_len)
+            .or_else(|| detect_line_block_open(marker.content))
+            .or_else(|| detect_hardbreaks_block_open(marker.content));
         while let Some(next) = cur.peek() {
             if is_blank_line(next) || trim_ascii(next) == "+" {
                 break;
+            }
+            if let Some(fence_len) = literal_colon_opener {
+                let trimmed = trim_ascii(next);
+                if indent_columns(next) <= base_indent
+                    && !trimmed.is_empty()
+                    && trimmed.bytes().all(|b| b == b':')
+                    && trimmed.len() >= fence_len
+                {
+                    break;
+                }
             }
             if let Some(nm) = detect_list_marker_full(next) {
                 // A marker indented past the base but BELOW this item's content
@@ -1950,7 +1964,7 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 // Lazy continuation: a non-indented line that does not start a
                 // block folds into the item's open paragraph (djot/CommonMark).
                 let next_owned = next.to_string();
-                if interrupts_paragraph(cur, &next_owned) {
+                if interrupts_lazy_continuation(cur, &next_owned) {
                     break;
                 }
                 para_lines.push(trim_ascii_start(next).to_string());
@@ -2002,8 +2016,12 @@ fn marker_content_starts_block(content: &str, cur: &LineCursor<'_>, content_col:
         .or_else(|| detect_line_block_open(content))
         .or_else(|| detect_hardbreaks_block_open(content));
     if let Some(fence_len) = colon_fence_len {
-        return cur.lines[cur.pos..].iter().any(|line| {
-            let line = slice_columns(line, content_col.min(indent_columns(line)), false);
+        return cur.lines[cur.pos..].iter().enumerate().any(|(idx, line)| {
+            let indent = indent_columns(line);
+            if idx > 0 && indent < content_col {
+                return false;
+            }
+            let line = slice_columns(line, content_col.min(indent), false);
             let trimmed = trim_ascii(&line);
             !trimmed.is_empty() && trimmed.bytes().all(|b| b == b':') && trimmed.len() >= fence_len
         });
@@ -2172,7 +2190,7 @@ fn collect_trailing_lazy(cur: &mut LineCursor, nested: &mut String) {
     while let Some(line) = cur.peek() {
         if is_blank_line(line) || indent_columns(line) > 0 || is_list_marker(line) || {
             let line_owned = line.to_string();
-            interrupts_paragraph(cur, &line_owned)
+            interrupts_lazy_continuation(cur, &line_owned)
         } {
             break;
         }
@@ -2330,6 +2348,24 @@ fn interrupts_paragraph(cur: &mut LineCursor<'_>, line: &str) -> bool {
         }
     }
     false
+}
+
+fn interrupts_lazy_continuation(cur: &mut LineCursor<'_>, line: &str) -> bool {
+    interrupts_paragraph(cur, line) || is_colon_fence_opener_shape(line)
+}
+
+fn is_colon_fence_opener_shape(line: &str) -> bool {
+    // Only a FLUSH-LEFT colon fence ends lazy continuation regardless of a
+    // closer (grammar PART 9 §10). An INDENTED colon-shaped line (the detectors
+    // trim leading whitespace) is still within the container; it keeps the
+    // normal closer-lookahead via interrupts_paragraph, so an unterminated
+    // indented `  ::: note` folds as lazy text instead of escaping the container.
+    if line.starts_with(' ') || line.starts_with('\t') {
+        return false;
+    }
+    detect_container_open(line).is_some()
+        || detect_line_block_open(line).is_some()
+        || detect_hardbreaks_block_open(line).is_some()
 }
 
 fn interrupts_paragraph_with_rest(line: &str, rest: &[&str]) -> bool {
