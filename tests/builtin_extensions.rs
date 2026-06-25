@@ -7,9 +7,10 @@
 //! `lowercase_ids` flag set to match.
 
 use carve::{
-    Autolink, AutolinkOptions, Citations, ExternalLinks, ExternalLinksOptions, FencedRender,
-    HeadingPermalinks, HeadingPermalinksOptions, ListType, MathBlock, Options, Position, Spoiler,
-    TabNormalize, TableOfContents, TableOfContentsOptions, Wikilinks, WikilinksOptions,
+    Autolink, AutolinkOptions, Citations, ColorSwatch, ExternalLinks, ExternalLinksOptions,
+    FencedRender, HeadingPermalinks, HeadingPermalinksOptions, ListType, MathBlock, Options,
+    Position, Spoiler, TabNormalize, TableOfContents, TableOfContentsOptions, Wikilinks,
+    WikilinksOptions,
 };
 
 // ---------------------------------------------------------------------------
@@ -485,6 +486,64 @@ fn spoiler_block_falls_back_to_div_without_extension() {
     assert_eq!(
         carve::to_html("::: spoiler\nHidden.\n:::"),
         "<div class=\"spoiler\">\n  <p>Hidden.</p>\n</div>"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// color swatch
+// ---------------------------------------------------------------------------
+
+#[test]
+fn color_swatch_hex_renders_chip_and_label() {
+    let ext = ColorSwatch::new();
+    let opts = Options::new().with_extension(&ext);
+    assert_eq!(
+        carve::to_html_with_options(":color[#ff8800]", &opts),
+        "<p><span class=\"swatch\"><span class=\"swatch-chip\" style=\"background-color:#ff8800\"></span> #ff8800</span></p>"
+    );
+}
+
+#[test]
+fn color_swatch_named_color_renders_chip_and_label() {
+    let ext = ColorSwatch::new();
+    let opts = Options::new().with_extension(&ext);
+    assert_eq!(
+        carve::to_html_with_options(":color[rebeccapurple]", &opts),
+        "<p><span class=\"swatch\"><span class=\"swatch-chip\" style=\"background-color:rebeccapurple\"></span> rebeccapurple</span></p>"
+    );
+}
+
+#[test]
+fn color_swatch_function_color_renders_chip_and_label() {
+    let ext = ColorSwatch::new();
+    let opts = Options::new().with_extension(&ext);
+    assert_eq!(
+        carve::to_html_with_options(":color[rgb(248,81,73)]", &opts),
+        "<p><span class=\"swatch\"><span class=\"swatch-chip\" style=\"background-color:rgb(248,81,73)\"></span> rgb(248,81,73)</span></p>"
+    );
+}
+
+#[test]
+fn color_swatch_merges_author_attrs_on_outer_span() {
+    let ext = ColorSwatch::new();
+    let opts = Options::new().with_extension(&ext);
+    assert_eq!(
+        carve::to_html_with_options(":color[#fff]{#x .y onclick=\"z\"}", &opts),
+        "<p><span class=\"swatch y\" id=\"x\"><span class=\"swatch-chip\" style=\"background-color:#fff\"></span> #fff</span></p>"
+    );
+}
+
+#[test]
+fn color_swatch_invalid_value_defers_to_generic_fallback() {
+    let ext = ColorSwatch::new();
+    let opts = Options::new().with_extension(&ext);
+    assert_eq!(
+        carve::to_html_with_options(":color[nope!]", &opts),
+        "<p><span class=\"ext-color\">nope!</span></p>"
+    );
+    assert_eq!(
+        carve::to_html_with_options(":color[red;}x{}]", &opts),
+        "<p><span class=\"ext-color\">red;}x{}</span></p>"
     );
 }
 
