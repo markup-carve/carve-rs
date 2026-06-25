@@ -5,6 +5,48 @@ This page documents the built-in extensions in more depth than the README. See
 the README's `## Extensions` section for the general extension model and the
 short list of all built-ins.
 
+## Bibliography (Citations + CSL-JSON)
+
+The `Citations` extension (Tier-2) parses `[@key]` citations and renders a
+references list from in-document `[@key]:` definitions. Attaching an external
+**CSL-JSON pool** with `with_bibliography` turns on the Tier-3 Bibliography
+behavior (spec §6, issue #199): keys resolve against in-document defs first,
+then the pool, and the in-text citations plus the references list gain
+footnote-style back-links.
+
+The extension does no file I/O or JSON parsing - the host resolves the
+front-matter `bibliography:` path, parses the CSL-JSON, and passes the entries
+in as plain `CslEntry` values:
+
+```rust
+use carve::{Citations, CslDate, CslEntry, CslName, Options};
+
+let pool = vec![CslEntry {
+    id: "smith2020".to_string(),
+    author: Some(vec![CslName {
+        family: Some("Smith".to_string()),
+        given: Some("John".to_string()),
+        literal: None,
+    }]),
+    issued: Some(CslDate { date_parts: Some(vec![vec![2020]]), literal: None }),
+    title: Some("A Study".to_string()),
+}];
+let ext = Citations::new().with_bibliography(pool);
+let opts = Options::new().with_extension(&ext);
+let html = carve::to_html_with_options("See [@smith2020].", &opts);
+// in-text: <a id="cite-smith2020-1" href="#ref-smith2020">1</a>
+// entry:   <li id="ref-smith2020">Smith, John (2020). A Study.
+//            <a href="#cite-smith2020-1" class="ref-backref">↩</a></li>
+```
+
+A CSL-JSON entry renders with the minimal fixed template
+`Family, Given (Year). Title.` (authors joined with `; `, any missing field and
+its separator omitted, trailing period). The entry text is plain - HTML-escaped,
+never re-parsed as Carve. In-document `[@key]:` definitions keep their inline
+rendering and win over a pool entry with the same key. Back-links appear only
+when a pool is supplied; plain Tier-2 citations are byte-identical to before.
+Resolving an arbitrary `.csl` style is out of scope (a renderer-plugin point).
+
 ## ListTable
 
 `ListTable` is a Tier-3 extension that renders a `::: list-table` block authored

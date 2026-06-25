@@ -1657,11 +1657,22 @@ fn render_citation_item(out: &mut String, item: &Citation, options: &Options<'_>
         render_inlines(out, prefix, options);
         out.push(' ');
     }
-    out.push_str(&format!(
-        "<a href=\"#ref-{}\">{}</a>",
-        escape_attr(&item.key),
-        escape_text(item.label.as_deref().unwrap_or_default())
-    ));
+    // A use_index is only set when a bibliography pool is active (#199); it adds
+    // the per-use back-link anchor to the existing forward link.
+    match item.use_index {
+        Some(n) => out.push_str(&format!(
+            "<a id=\"cite-{}-{}\" href=\"#ref-{}\">{}</a>",
+            escape_attr(&item.key),
+            n,
+            escape_attr(&item.key),
+            escape_text(item.label.as_deref().unwrap_or_default())
+        )),
+        None => out.push_str(&format!(
+            "<a href=\"#ref-{}\">{}</a>",
+            escape_attr(&item.key),
+            escape_text(item.label.as_deref().unwrap_or_default())
+        )),
+    }
     if let Some(locator) = &item.locator {
         out.push_str(", ");
         render_inlines(out, locator, options);

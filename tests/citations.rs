@@ -155,3 +155,236 @@ fn injects_into_explicit_references_block() {
     let out = h("[@a].\n\n::: references\n:::\n\n[@a]: A.");
     assert!(out.contains("<div class=\"references\">\n  <ol class=\"references\">"));
 }
+
+// ----- Tier-3 Bibliography (#199) -------------------------------------------
+
+use carve::{CslDate, CslEntry, CslName};
+
+fn smith() -> CslEntry {
+    CslEntry {
+        id: "smith2020".to_string(),
+        author: Some(vec![CslName {
+            family: Some("Smith".to_string()),
+            given: Some("John".to_string()),
+            literal: None,
+        }]),
+        issued: Some(CslDate {
+            date_parts: Some(vec![vec![2020]]),
+            literal: None,
+        }),
+        title: Some("A Study".to_string()),
+    }
+}
+
+fn hb(source: &str, bib: Vec<CslEntry>) -> String {
+    let citations = Citations::new().with_bibliography(bib);
+    let options = Options::new().with_extension(&citations);
+    carve::to_html_with_options(source, &options)
+        .trim()
+        .to_string()
+}
+
+fn entry(csl: CslEntry) -> String {
+    let out = hb("[@x]", vec![csl]);
+    let start = out.find("<li id=\"ref-x\">").unwrap() + "<li id=\"ref-x\">".len();
+    let tail = &out[start..];
+    let end = tail
+        .find(" <a href=\"#cite-x-1\"")
+        .or_else(|| tail.find("</li>"))
+        .unwrap();
+    tail[..end].to_string()
+}
+
+#[test]
+fn bib_resolves_from_pool_with_backlinks() {
+    let out = hb("See [@smith2020].", vec![smith()]);
+    assert!(out.contains("<a id=\"cite-smith2020-1\" href=\"#ref-smith2020\">1</a>"));
+    assert!(out.contains(
+        "<li id=\"ref-smith2020\">Smith, John (2020). A Study. \
+         <a href=\"#cite-smith2020-1\" class=\"ref-backref\">\u{21a9}</a></li>"
+    ));
+}
+
+#[test]
+fn bib_in_doc_def_overrides_pool() {
+    let out = hb(
+        "See [@smith2020].\n\n[@smith2020]: In-doc entry.",
+        vec![smith()],
+    );
+    assert!(out.contains("<li id=\"ref-smith2020\">In-doc entry."));
+    assert!(!out.contains("A Study"));
+}
+
+#[test]
+fn bib_one_backlink_per_use_site() {
+    let out = hb("[@smith2020] then [@smith2020] again.", vec![smith()]);
+    assert!(out.contains("<a id=\"cite-smith2020-1\" href=\"#ref-smith2020\">1</a>"));
+    assert!(out.contains("<a id=\"cite-smith2020-2\" href=\"#ref-smith2020\">1</a>"));
+    assert!(out.contains("<a href=\"#cite-smith2020-1\" class=\"ref-backref\">\u{21a9}</a>"));
+    assert!(out.contains("<a href=\"#cite-smith2020-2\" class=\"ref-backref\">\u{21a9}</a>"));
+}
+
+#[test]
+fn bib_multi_key_group_anchors_each_key() {
+    let out = hb(
+        "[@a; @b]",
+        vec![
+            CslEntry {
+                id: "a".to_string(),
+                title: Some("Alpha".to_string()),
+                ..Default::default()
+            },
+            CslEntry {
+                id: "b".to_string(),
+                title: Some("Beta".to_string()),
+                ..Default::default()
+            },
+        ],
+    );
+    assert!(out.contains("<a id=\"cite-a-1\" href=\"#ref-a\">1</a>"));
+    assert!(out.contains("<a id=\"cite-b-1\" href=\"#ref-b\">2</a>"));
+}
+
+#[test]
+fn bib_unresolved_key_is_verbatim() {
+    let out = hb("[@nope]", vec![smith()]);
+    assert!(out.contains("[@nope]"));
+    assert!(!out.contains("cite-nope"));
+    assert!(!out.contains("class=\"references\""));
+}
+
+#[test]
+fn bib_escapes_csl_entry_text() {
+    let out = hb(
+        "[@x]",
+        vec![CslEntry {
+            id: "x".to_string(),
+            title: Some("<b>raw</b> & co".to_string()),
+            ..Default::default()
+        }],
+    );
+    assert!(out.contains("&lt;b&gt;raw&lt;/b&gt; &amp; co."));
+}
+
+#[test]
+fn bib_formatter_author_year_title() {
+    assert_eq!(
+        entry(CslEntry {
+            id: "x".to_string(),
+            author: Some(vec![CslName {
+                family: Some("Smith".to_string()),
+                given: Some("John".to_string()),
+                literal: None,
+            }]),
+            issued: Some(CslDate {
+                date_parts: Some(vec![vec![2020]]),
+                literal: None
+            }),
+            title: Some("T".to_string()),
+        }),
+        "Smith, John (2020). T."
+    );
+}
+
+#[test]
+fn bib_formatter_author_only() {
+    assert_eq!(
+        entry(CslEntry {
+            id: "x".to_string(),
+            author: Some(vec![CslName {
+                family: Some("Doe".to_string()),
+                given: None,
+                literal: None
+            }]),
+            ..Default::default()
+        }),
+        "Doe."
+    );
+}
+
+#[test]
+fn bib_formatter_year_title_no_author() {
+    assert_eq!(
+        entry(CslEntry {
+            id: "x".to_string(),
+            issued: Some(CslDate {
+                date_parts: Some(vec![vec![1999]]),
+                literal: None
+            }),
+            title: Some("T".to_string()),
+            ..Default::default()
+        }),
+        "(1999). T."
+    );
+}
+
+#[test]
+fn bib_formatter_multiple_authors() {
+    assert_eq!(
+        entry(CslEntry {
+            id: "x".to_string(),
+            author: Some(vec![
+                CslName {
+                    family: Some("A".to_string()),
+                    given: Some("X".to_string()),
+                    literal: None
+                },
+                CslName {
+                    family: Some("B".to_string()),
+                    given: Some("Y".to_string()),
+                    literal: None
+                },
+            ]),
+            title: Some("T".to_string()),
+            ..Default::default()
+        }),
+        "A, X; B, Y. T."
+    );
+}
+
+#[test]
+fn bib_formatter_literal_name_and_year() {
+    assert_eq!(
+        entry(CslEntry {
+            id: "x".to_string(),
+            author: Some(vec![CslName {
+                family: None,
+                given: None,
+                literal: Some("WHO".to_string())
+            }]),
+            issued: Some(CslDate {
+                date_parts: None,
+                literal: Some("n.d.".to_string())
+            }),
+            title: Some("T".to_string()),
+        }),
+        "WHO (n.d.). T."
+    );
+}
+
+#[test]
+fn bib_mixed_group_lists_defined_key_without_backlink() {
+    // A group mixing a resolved and an unresolved key renders verbatim and is
+    // not a use site (no anchor, no back-link), but the defined key is still
+    // listed - matching Tier-2 semantics and carve-js parity.
+    let out = hb(
+        "[@a; @missing]",
+        vec![CslEntry {
+            id: "a".to_string(),
+            title: Some("A".to_string()),
+            ..Default::default()
+        }],
+    );
+    assert!(out.contains("<p>[@a; @missing]</p>"));
+    assert!(out.contains("<li id=\"ref-a\">A.</li>"));
+    assert!(!out.contains("cite-a-1"));
+    assert!(!out.contains("ref-backref"));
+}
+
+#[test]
+fn bib_no_pool_keeps_tier2_behavior() {
+    let out = h("[@a].\n\n[@a]: A.");
+    assert!(out.contains("<li id=\"ref-a\">A.</li>"));
+    assert!(!out.contains("ref-backref"));
+    assert!(!out.contains("id=\"cite-a-1\""));
+}
