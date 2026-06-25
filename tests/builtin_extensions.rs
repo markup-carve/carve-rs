@@ -9,8 +9,8 @@
 use carve::{
     Autolink, AutolinkOptions, Citations, ColorSwatch, ExternalLinks, ExternalLinksOptions,
     FencedRender, HeadingPermalinks, HeadingPermalinksOptions, ListType, MathBlock, Options,
-    Position, Spoiler, TabNormalize, TableOfContents, TableOfContentsOptions, Wikilinks,
-    WikilinksOptions,
+    Position, Spoiler, SwatchPosition, SwatchShape, TabNormalize, TableOfContents,
+    TableOfContentsOptions, Wikilinks, WikilinksOptions,
 };
 
 // ---------------------------------------------------------------------------
@@ -544,6 +544,78 @@ fn color_swatch_invalid_value_defers_to_generic_fallback() {
     assert_eq!(
         carve::to_html_with_options(":color[red;}x{}]", &opts),
         "<p><span class=\"ext-color\">red;}x{}</span></p>"
+    );
+}
+
+#[test]
+fn color_swatch_bareword_that_is_not_a_named_color_defers_to_fallback() {
+    let ext = ColorSwatch::new();
+    let opts = Options::new().with_extension(&ext);
+    assert_eq!(
+        carve::to_html_with_options(":color[banana]", &opts),
+        "<p><span class=\"ext-color\">banana</span></p>"
+    );
+}
+
+#[test]
+fn color_swatch_named_color_matches_case_insensitively() {
+    let ext = ColorSwatch::new();
+    let opts = Options::new().with_extension(&ext);
+    assert_eq!(
+        carve::to_html_with_options(":color[DarkSlateGray]", &opts),
+        "<p><span class=\"swatch\"><span class=\"swatch-chip\" style=\"background-color:DarkSlateGray\"></span> DarkSlateGray</span></p>"
+    );
+}
+
+#[test]
+fn color_swatch_position_after_puts_chip_after_value() {
+    let ext = ColorSwatch::new().position(SwatchPosition::After);
+    let opts = Options::new().with_extension(&ext);
+    assert_eq!(
+        carve::to_html_with_options(":color[#3b82f6]", &opts),
+        "<p><span class=\"swatch\">#3b82f6 <span class=\"swatch-chip\" style=\"background-color:#3b82f6\"></span></span></p>"
+    );
+}
+
+#[test]
+fn color_swatch_position_none_renders_chip_only_with_title() {
+    let ext = ColorSwatch::new().position(SwatchPosition::None);
+    let opts = Options::new().with_extension(&ext);
+    assert_eq!(
+        carve::to_html_with_options(":color[#3b82f6]", &opts),
+        "<p><span class=\"swatch swatch-chip-only\" title=\"#3b82f6\"><span class=\"swatch-chip\" style=\"background-color:#3b82f6\"></span></span></p>"
+    );
+}
+
+#[test]
+fn color_swatch_shape_round_adds_modifier_class() {
+    let ext = ColorSwatch::new().shape(SwatchShape::Round);
+    let opts = Options::new().with_extension(&ext);
+    assert!(
+        carve::to_html_with_options(":color[#3b82f6]", &opts).contains(
+            "<span class=\"swatch-chip swatch-chip-round\" style=\"background-color:#3b82f6\">"
+        )
+    );
+}
+
+#[test]
+fn color_swatch_shape_ring_uses_border_color() {
+    let ext = ColorSwatch::new().shape(SwatchShape::Ring);
+    let opts = Options::new().with_extension(&ext);
+    let html = carve::to_html_with_options(":color[#3b82f6]", &opts);
+    assert!(html.contains("swatch-chip-ring"));
+    assert!(html.contains("style=\"border-color:#3b82f6\""));
+    assert!(!html.contains("background-color:#3b82f6"));
+}
+
+#[test]
+fn color_swatch_tint_paints_color_mix_behind_swatch() {
+    let ext = ColorSwatch::new().tint(true);
+    let opts = Options::new().with_extension(&ext);
+    let html = carve::to_html_with_options(":color[#3b82f6]", &opts);
+    assert!(html.contains("class=\"swatch swatch-tint\""));
+    assert!(
+        html.contains("style=\"background-color:color-mix(in srgb, #3b82f6 12%, transparent)\"")
     );
 }
 

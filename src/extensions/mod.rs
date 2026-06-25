@@ -29,7 +29,7 @@ pub mod table_of_contents;
 pub mod wikilinks;
 
 pub use autolink::{Autolink, AutolinkOptions};
-pub use color_swatch::ColorSwatch;
+pub use color_swatch::{ColorSwatch, SwatchPosition, SwatchShape};
 pub use details::Details;
 pub use external_links::{ExternalLinks, ExternalLinksOptions};
 pub use fenced_render::{ContentMode, FencedRender, FencedRenderOptions};
