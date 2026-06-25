@@ -14,6 +14,7 @@
 //! captions / figures, admonitions, abbreviations, mentions, tags,
 //! inline extensions, attributes, and frontmatter.
 
+mod abbr_budget;
 pub mod ast;
 mod citations;
 mod escape;

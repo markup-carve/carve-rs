@@ -35,6 +35,7 @@ const FG_BRIGHT_GREEN: &str = "\x1b[92m";
 const FG_BRIGHT_WHITE: &str = "\x1b[97m";
 
 pub fn render_ansi(doc: &Document) -> String {
+    let _abbr_guard = crate::abbr_budget::AbbrBudgetGuard::new(doc.source_len);
     let mut ctx = AnsiContext {
         list_depth: 0,
         block_quote_depth: 0,
@@ -521,11 +522,21 @@ fn render_inline(node: &InlineNode, ctx: &mut AnsiContext, depth: usize) -> Stri
         InlineNode::Mention(mention) => format!("@{}", strip_controls(&mention.user)),
         InlineNode::Tag(tag) => format!("#{}", strip_controls(&tag.name)),
         InlineNode::Extension(extension) => render_inlines(&extension.children, ctx, depth + 1),
-        InlineNode::Abbreviation(abbr) => format!(
-            "{}{}",
-            strip_controls(&abbr.abbr),
-            style(&format!(" ({})", strip_controls(&abbr.expansion)), DIM)
-        ),
+        InlineNode::Abbreviation(abbr) => {
+            // Bound cumulative expansion bytes (memory-amplification DoS): once
+            // the budget is exhausted, drop the `(EXPANSION)` suffix and emit
+            // the plain key only.
+            let key = strip_controls(&abbr.abbr);
+            if crate::abbr_budget::try_spend(abbr.expansion.len()) {
+                format!(
+                    "{}{}",
+                    key,
+                    style(&format!(" ({})", strip_controls(&abbr.expansion)), DIM)
+                )
+            } else {
+                key
+            }
+        }
         InlineNode::Footnote(footnote) => {
             if let Some(inline) = &footnote.inline {
                 // Footnote content is its own context: render with a FRESH quote

@@ -106,6 +106,7 @@ pub fn parse_with_options(source: &str, options: &Options<'_>) -> Document {
         frontmatter,
         footnote_defs,
         children,
+        source_len: source.len(),
     };
     let heading_index = heading_index(
         &doc.children,
@@ -2228,7 +2229,9 @@ fn detect_block_image(line: &str) -> Option<Image> {
     if !line.starts_with("![") {
         return None;
     }
-    let (img, consumed) = parse_image_at(line.as_bytes(), 0)?;
+    let bytes = line.as_bytes();
+    let bracket_matches = compute_bracket_matches(bytes);
+    let (img, consumed) = parse_image_at(bytes, 0, &bracket_matches)?;
     let after = &line[consumed..];
     if !after.trim().is_empty() {
         return None;
@@ -3524,6 +3527,16 @@ fn parse_inline_context(
     // deeply nested run like `[[[[x]]]]` stays O(n) instead of O(n^2). Footnotes
     // (`[^...]`) are handled separately and cheaply gated on `[^`.
     let has_link_trigger = text.contains("](") || text.contains("][") || text.contains("]{");
+    // Precompute every `[`-to-`]` match once (O(n)) so the per-`[` link /
+    // reference / span / image parsers locate their closing bracket in O(1)
+    // instead of re-scanning O(n) each. Without this, deeply nested balanced
+    // links (`[[[...x]()]()...]`) are O(n^2). Only needed when bracket
+    // constructs can actually fire.
+    let bracket_matches = if has_link_trigger || text.contains("![") {
+        compute_bracket_matches(bytes)
+    } else {
+        Vec::new()
+    };
     let mut out = Vec::new();
     let mut buf = String::new();
     let mut i = 0;
@@ -3652,7 +3665,7 @@ fn parse_inline_context(
 
         // Image: ![alt](src)
         if c == b'!' && bytes.get(i + 1) == Some(&b'[') {
-            if let Some((img, consumed)) = parse_image_at(bytes, i) {
+            if let Some((img, consumed)) = parse_image_at(bytes, i, &bracket_matches) {
                 flush_text(&mut out, &mut buf);
                 out.push(InlineNode::Image(img));
                 i += consumed;
@@ -3672,21 +3685,24 @@ fn parse_inline_context(
             }
             if has_link_trigger {
                 if let Some((link, consumed)) =
-                    parse_inline_link_with_options(bytes, i, options, in_footnote)
+                    parse_inline_link_with_options(bytes, i, options, in_footnote, &bracket_matches)
                 {
                     flush_text(&mut out, &mut buf);
                     out.push(InlineNode::Link(link));
                     i += consumed;
                     continue;
                 }
-                if let Some((link, consumed)) = parse_reference_link(bytes, i, options, in_footnote)
+                if let Some((link, consumed)) =
+                    parse_reference_link(bytes, i, options, in_footnote, &bracket_matches)
                 {
                     flush_text(&mut out, &mut buf);
                     out.push(InlineNode::Link(link));
                     i += consumed;
                     continue;
                 }
-                if let Some((span, consumed)) = parse_span(bytes, i, options, in_footnote) {
+                if let Some((span, consumed)) =
+                    parse_span(bytes, i, options, in_footnote, &bracket_matches)
+                {
                     flush_text(&mut out, &mut buf);
                     out.push(InlineNode::Span(span));
                     i += consumed;
@@ -4003,12 +4019,13 @@ fn parse_reference_link(
     start: usize,
     options: &Options<'_>,
     in_footnote: bool,
+    matches: &[usize],
 ) -> Option<(Link, usize)> {
-    let (text, after_text) = read_bracketed(bytes, start)?;
+    let (text, after_text) = read_bracketed_cached(bytes, start, matches)?;
     if bytes.get(after_text) != Some(&b'[') {
         return None;
     }
-    let (label, after_label) = read_bracketed(bytes, after_text)?;
+    let (label, after_label) = read_bracketed_cached(bytes, after_text, matches)?;
     let ref_label = if label.is_empty() {
         text.clone()
     } else {
@@ -4132,11 +4149,11 @@ fn parse_inline_code(bytes: &[u8], start: usize) -> Option<(String, usize)> {
     Some((trimmed.to_string(), bytes.len() - start))
 }
 
-fn parse_image_at(bytes: &[u8], start: usize) -> Option<(Image, usize)> {
+fn parse_image_at(bytes: &[u8], start: usize, matches: &[usize]) -> Option<(Image, usize)> {
     if bytes.get(start) != Some(&b'!') || bytes.get(start + 1) != Some(&b'[') {
         return None;
     }
-    let (alt, after_alt) = read_bracketed(bytes, start + 1)?;
+    let (alt, after_alt) = read_bracketed_cached(bytes, start + 1, matches)?;
     if bytes.get(after_alt) != Some(&b'(') {
         return None;
     }
@@ -4165,11 +4182,12 @@ fn parse_inline_link_with_options(
     start: usize,
     options: &Options<'_>,
     in_footnote: bool,
+    matches: &[usize],
 ) -> Option<(Link, usize)> {
     if bytes.get(start) != Some(&b'[') {
         return None;
     }
-    let (text, after_bracket) = read_bracketed(bytes, start)?;
+    let (text, after_bracket) = read_bracketed_cached(bytes, start, matches)?;
     if bytes.get(after_bracket) != Some(&b'(') {
         return None;
     }
@@ -4239,8 +4257,9 @@ fn parse_span(
     start: usize,
     options: &Options<'_>,
     in_footnote: bool,
+    matches: &[usize],
 ) -> Option<(Span, usize)> {
-    let (content, after_bracket) = read_bracketed(bytes, start)?;
+    let (content, after_bracket) = read_bracketed_cached(bytes, start, matches)?;
     if bytes.get(after_bracket) != Some(&b'{') {
         return None;
     }
@@ -4469,6 +4488,24 @@ fn parse_crossref(text: &str, pos: usize) -> Option<(CrossRef, usize)> {
 
 /// Read a `[…]` span starting at `start` (which must point to `[`).
 /// Returns the inner text and the index just past the closing `]`.
+/// O(1) `read_bracketed` using a precomputed match table (see
+/// `compute_bracket_matches`). `start` must index a `[`. Returns the bracket
+/// content and the index just past the matching `]`, identical to what
+/// `read_bracketed` would compute by scanning.
+fn read_bracketed_cached(bytes: &[u8], start: usize, matches: &[usize]) -> Option<(String, usize)> {
+    if bytes.get(start) != Some(&b'[') {
+        return None;
+    }
+    let close = *matches.get(start)?;
+    if close == NO_BRACKET_MATCH {
+        return None;
+    }
+    let text = std::str::from_utf8(&bytes[start + 1..close])
+        .ok()?
+        .to_string();
+    Some((text, close + 1))
+}
+
 fn read_bracketed(bytes: &[u8], start: usize) -> Option<(String, usize)> {
     if bytes.get(start) != Some(&b'[') {
         return None;
@@ -4502,6 +4539,51 @@ fn read_bracketed(bytes: &[u8], start: usize) -> Option<(String, usize)> {
         }
     }
     None
+}
+
+/// Sentinel in a bracket-match table meaning "this `[` has no matching `]`".
+const NO_BRACKET_MATCH: usize = usize::MAX;
+
+/// Precompute, in a single O(n) pass, the matching `]` index for every `[` in
+/// `bytes`, mirroring `read_bracketed`'s scan rules exactly (backslash escapes
+/// skip two bytes; an unclosed inline-code span is opaque to end of text and
+/// closes no bracket; a `[` increments depth, the first `]` at depth>0
+/// decrements it, and the `]` at depth 0 matches the most recent unmatched
+/// `[`). The returned table lets the per-`[` link/reference/span parsers find
+/// their closing bracket in O(1) instead of re-scanning O(n) at every position,
+/// which removes the O(n^2) blowup on deeply nested balanced links
+/// (`[[[...x]()]()...]`). Output is unchanged: a lookup yields the same close
+/// index `read_bracketed` would return by scanning.
+///
+/// Entry `i` is meaningful only when `bytes[i] == b'['`; it holds the matching
+/// `]` index, or `NO_BRACKET_MATCH` when that `[` never closes.
+fn compute_bracket_matches(bytes: &[u8]) -> Vec<usize> {
+    let mut matches = vec![NO_BRACKET_MATCH; bytes.len()];
+    let mut stack: Vec<usize> = Vec::new();
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'\\' if i + 1 < bytes.len() => i += 2,
+            b'`' => match skip_code_span(bytes, i) {
+                // An unclosed code span is opaque to end of text: no later `]`
+                // can close a bracket, so every still-open `[` stays unmatched.
+                Some(next) => i = next,
+                None => break,
+            },
+            b'[' => {
+                stack.push(i);
+                i += 1;
+            }
+            b']' => {
+                if let Some(open) = stack.pop() {
+                    matches[open] = i;
+                }
+                i += 1;
+            }
+            _ => i += 1,
+        }
+    }
+    matches
 }
 
 /// Skip a verbatim (code) span opening at `start` (a backtick run). Returns the

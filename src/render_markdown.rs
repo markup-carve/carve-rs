@@ -20,6 +20,7 @@ pub fn render_markdown_with_options(doc: &Document, _options: &Options<'_>) -> S
 }
 
 pub fn render_markdown(doc: &Document) -> String {
+    let _abbr_guard = crate::abbr_budget::AbbrBudgetGuard::new(doc.source_len);
     let mut heading_ids = HashSet::new();
     let mut referenced_heading_ids = HashSet::new();
     // Footnote definition bodies are rendered as block content too, so their
@@ -422,20 +423,26 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
             // Markdown has no abbreviation syntax; emit an HTML <abbr> so the
             // title survives (markdown allows inline HTML), matching carve-php.
             // Dropping it to plain text would lose the expansion.
-            let expansion = strip_controls(&abbr.expansion);
             let abbr_text = strip_controls(&abbr.abbr);
-            let title = expansion
-                .as_str()
-                .replace('&', "&amp;")
-                .replace('<', "&lt;")
-                .replace('>', "&gt;")
-                .replace('"', "&quot;");
             let text = abbr_text
                 .as_str()
                 .replace('&', "&amp;")
                 .replace('<', "&lt;")
                 .replace('>', "&gt;");
-            format!("<abbr title=\"{title}\">{text}</abbr>")
+            // Bound cumulative expansion bytes (memory-amplification DoS): once
+            // the budget is exhausted, degrade to plain key text with no title.
+            if crate::abbr_budget::try_spend(abbr.expansion.len()) {
+                let expansion = strip_controls(&abbr.expansion);
+                let title = expansion
+                    .as_str()
+                    .replace('&', "&amp;")
+                    .replace('<', "&lt;")
+                    .replace('>', "&gt;")
+                    .replace('"', "&quot;");
+                format!("<abbr title=\"{title}\">{text}</abbr>")
+            } else {
+                text
+            }
         }
         InlineNode::Footnote(footnote) => {
             if let Some(inline) = &footnote.inline {
