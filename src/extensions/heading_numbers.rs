@@ -94,12 +94,13 @@ impl CarveExtension for HeadingNumbers {
     }
 
     fn before_render(&self, mut doc: Document, _ctx: &BeforeRenderContext<'_>) -> Document {
-        // Idempotency: decorating mutates the document, so re-running over an
-        // already-numbered doc must be a no-op (parse-once / render-twice),
-        // matching carve-js's WeakSet<Document> guard - otherwise spans stack.
-        if already_numbered(&doc.children) {
-            return doc;
-        }
+        // No idempotency guard is needed: `before_render` takes the Document by
+        // value and returns it, so the pipeline owns it and runs this exactly
+        // once per render - there is no parse-once / render-twice reuse of the
+        // same instance (unlike carve-js, which passes the doc by reference and
+        // needs a WeakSet). A content-based "already numbered" check would also
+        // be unsafe: an author span `[x]{.section-number}` is valid source and
+        // must not disable the whole pass.
         // Pass 1: number headings (gap-free stack), decorate each `<h*>` with a
         // section-number span, and remember number + original title per id.
         let mut state = NumberState {
@@ -145,34 +146,6 @@ fn has_class(h: &Heading, cls: &str) -> bool {
     h.attrs
         .as_ref()
         .is_some_and(|a| a.classes.iter().any(|c| c == cls))
-}
-
-/// True if any heading already carries a leading `section-number` span - i.e.
-/// this document was already processed by a prior `before_render` run. Mirrors
-/// the descent of `number_blocks` so nested headings count too.
-fn already_numbered(blocks: &[BlockNode]) -> bool {
-    blocks.iter().any(|block| match block {
-        BlockNode::Heading(h) => matches!(
-            h.children.first(),
-            Some(InlineNode::Span(s))
-                if s.attrs
-                    .as_ref()
-                    .is_some_and(|a| a.classes.iter().any(|c| c == "section-number"))
-        ),
-        BlockNode::BlockQuote(b) => already_numbered(&b.children),
-        BlockNode::Div(d) => already_numbered(&d.children),
-        BlockNode::Admonition(a) => already_numbered(&a.children),
-        BlockNode::List(l) => l.items.iter().any(|i| already_numbered(&i.children)),
-        BlockNode::DefinitionList(dl) => dl
-            .items
-            .iter()
-            .any(|i| i.definitions.iter().any(|d| already_numbered(d))),
-        BlockNode::Figure(f) => {
-            matches!(&f.target, FigureTarget::BlockQuote(b) if already_numbered(&b.children))
-        }
-        BlockNode::Extension(e) => already_numbered(&e.children),
-        _ => false,
-    })
 }
 
 fn number_blocks(blocks: &mut [BlockNode], in_blockquote: bool, state: &mut NumberState) {
@@ -383,36 +356,21 @@ mod tests {
     use super::*;
     use crate::extension::Mode;
     use crate::parse::parse;
+    use crate::render::render_html_with_options;
     use crate::Options;
 
-    fn count_section_number_spans(blocks: &[BlockNode]) -> usize {
-        let mut n = 0;
-        for b in blocks {
-            if let BlockNode::Heading(h) = b {
-                for c in &h.children {
-                    if let InlineNode::Span(s) = c {
-                        if s.attrs
-                            .as_ref()
-                            .is_some_and(|a| a.classes.iter().any(|c| c == "section-number"))
-                        {
-                            n += 1;
-                        }
-                    }
-                }
-            }
-        }
-        n
-    }
-
     #[test]
-    fn before_render_is_idempotent() {
-        // Re-running over the same document must not stack section-number spans.
+    fn author_section_number_span_does_not_disable_numbering() {
+        // An author span `[v1]{.section-number}` is valid source and must NOT be
+        // mistaken for a processed marker that turns the whole pass into a no-op.
         let ext = HeadingNumbers::new();
         let opts = Options::default();
         let ctx = BeforeRenderContext::new(&opts, Mode::Interactive);
-        let doc = parse("# A\n");
-        let doc = ext.before_render(doc, &ctx);
-        let doc = ext.before_render(doc, &ctx);
-        assert_eq!(count_section_number_spans(&doc.children), 1);
+        let doc = parse("# [v1]{.section-number} API\n\n## Next\n\nSee </#Next>.\n");
+        let out = render_html_with_options(&ext.before_render(doc, &ctx), &opts);
+        // Numbering still happened: the second heading is numbered and its
+        // cross-reference is rewritten.
+        assert!(out.contains("<span class=\"section-number\">1.1</span> Next"));
+        assert!(out.contains("Section 1.1 - Next"));
     }
 }
