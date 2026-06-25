@@ -4097,6 +4097,7 @@ fn parse_reference_link(
             // literal rather than silently dropping the `{.c}`. A resolved
             // reference ignores `raw_ref` and applies `attrs` instead.
             raw_ref: Some(std::str::from_utf8(&bytes[start..after]).ok()?.to_string()),
+            from_crossref: false,
         },
         after - start,
     ))
@@ -4251,6 +4252,7 @@ fn parse_inline_link_with_options(
             children: parse_inline_context(&text, options, false, in_footnote),
             ref_label: None,
             raw_ref: None,
+            from_crossref: false,
         },
         after - start,
     ))
@@ -5553,6 +5555,7 @@ fn resolve_crossrefs_inline(nodes: &mut Vec<InlineNode>, index: &CrossrefIndex) 
                         children: vec![InlineNode::Text(title.to_string())],
                         ref_label: None,
                         raw_ref: None,
+                        from_crossref: true,
                     });
                 } else {
                     // Unknown heading id: the cross-reference stays literal text.
