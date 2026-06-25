@@ -106,6 +106,7 @@ pub fn parse_with_options(source: &str, options: &Options<'_>) -> Document {
         frontmatter,
         footnote_defs,
         children,
+        source_len: source.len(),
     };
     let heading_index = heading_index(
         &doc.children,
