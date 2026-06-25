@@ -160,6 +160,7 @@ fn drops_invalid_attribute_names_before_rendering() {
     key_values.insert("data-ok".to_string(), "1".to_string());
     let doc = carve::Document {
         frontmatter: BTreeMap::new(),
+        source_len: 0,
         footnote_defs: BTreeMap::new(),
         children: vec![carve::BlockNode::Paragraph(carve::Paragraph {
             attrs: Some(carve::Attrs {

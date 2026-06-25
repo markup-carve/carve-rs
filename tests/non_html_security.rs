@@ -37,6 +37,7 @@ fn markdown_percent_encodes_destination_breakouts() {
     );
     let image_doc = carve::Document {
         frontmatter: BTreeMap::new(),
+        source_len: 0,
         footnote_defs: BTreeMap::new(),
         children: vec![carve::BlockNode::Paragraph(carve::Paragraph {
             attrs: None,
@@ -107,6 +108,7 @@ fn markdown_escapes_link_and_image_titles() {
 fn markdown_sanitizes_code_fence_info_string() {
     let doc = carve::Document {
         frontmatter: BTreeMap::new(),
+        source_len: 0,
         footnote_defs: BTreeMap::new(),
         children: vec![carve::BlockNode::CodeBlock(carve::CodeBlock {
             attrs: None,
@@ -129,6 +131,7 @@ fn markdown_sanitizes_code_fence_info_string() {
 fn markdown_escapes_image_alt_label_metacharacters() {
     let out = carve::render_markdown(&carve::Document {
         frontmatter: BTreeMap::new(),
+        source_len: 0,
         footnote_defs: BTreeMap::new(),
         children: vec![carve::BlockNode::Paragraph(carve::Paragraph {
             attrs: None,
@@ -157,6 +160,7 @@ fn markdown_strips_control_bytes_from_author_leaf_fields() {
     );
     let doc = carve::Document {
         frontmatter: BTreeMap::new(),
+        source_len: 0,
         footnote_defs,
         children: vec![
             carve::BlockNode::CodeBlock(carve::CodeBlock {
@@ -248,6 +252,7 @@ fn plain_and_ansi_strip_control_bytes_from_author_leaf_fields() {
     );
     let doc = carve::Document {
         frontmatter: BTreeMap::new(),
+        source_len: 0,
         footnote_defs,
         children: vec![
             carve::BlockNode::RawBlock(carve::RawBlock {

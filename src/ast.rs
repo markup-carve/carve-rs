@@ -27,6 +27,12 @@ pub struct Document {
     pub frontmatter: BTreeMap<String, String>,
     pub footnote_defs: BTreeMap<String, Vec<BlockNode>>,
     pub children: Vec<BlockNode>,
+    /// Byte length of the (normalized) source this document was parsed from.
+    /// Renderers use it to size the abbreviation-expansion budget that bounds
+    /// memory-amplification DoS (see `ABBR_EXPANSION_BUDGET_BASE`). Documents
+    /// built programmatically (not via `parse`) leave this at 0, which yields
+    /// the budget floor — far above any realistic hand-built document.
+    pub source_len: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

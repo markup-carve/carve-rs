@@ -4,6 +4,7 @@
 //! their own line; inline content flows within the block tag. Lists
 //! indent their `<li>` children two spaces.
 
+use crate::abbr_budget::AbbrBudgetGuard;
 use crate::ast::*;
 use crate::escape::{
     escape_attr, escape_text, is_dangerous_attr_name, is_valid_attr_name, sanitize_attr_value,
@@ -21,6 +22,7 @@ pub fn render_html(doc: &Document) -> String {
 
 pub fn render_html_with_options(doc: &Document, options: &Options<'_>) -> String {
     let mut doc = doc.clone();
+    let _abbr_guard = AbbrBudgetGuard::new(doc.source_len);
     let mut state = RenderState {
         lowercase_heading_ids: options.lowercase_heading_ids,
         ..RenderState::default()
@@ -1579,11 +1581,18 @@ fn render_inline_after(
         InlineNode::CitationGroup(g) => render_citation_group(out, g, options),
         InlineNode::Extension(e) => render_inline_extension(out, e, options, state),
         InlineNode::Abbreviation(a) => {
-            out.push_str("<abbr title=\"");
-            write_escaped_attr(out, &a.expansion);
-            out.push_str("\">");
-            write_escaped_text(out, &a.abbr);
-            out.push_str("</abbr>");
+            // Bound cumulative expansion bytes: once the budget is exhausted,
+            // degrade to plain key text (no `<abbr>`, no title) so a large
+            // expansion repeated many times cannot amplify output without limit.
+            if crate::abbr_budget::try_spend(a.expansion.len()) {
+                out.push_str("<abbr title=\"");
+                write_escaped_attr(out, &a.expansion);
+                out.push_str("\">");
+                write_escaped_text(out, &a.abbr);
+                out.push_str("</abbr>");
+            } else {
+                write_escaped_text(out, &a.abbr);
+            }
         }
         InlineNode::Footnote(f) => {
             if let (Some(number), Some(ref_id)) = (f.number, &f.ref_id) {
