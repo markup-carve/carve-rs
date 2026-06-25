@@ -130,6 +130,55 @@ fn marker_line_blockquote_nests_inside_list_item() {
 }
 
 #[test]
+fn marker_line_colon_blocks_nest_inside_list_item() {
+    assert_eq!(
+        html("- ::: note\n  body\n  :::"),
+        concat!(
+            "<ul>\n",
+            "  <li>\n",
+            "    <aside class=\"admonition note\">\n",
+            "      <p>body</p>\n",
+            "    </aside>\n",
+            "  </li>\n",
+            "</ul>"
+        )
+    );
+    assert_eq!(
+        html("- :::\n  body\n  :::"),
+        concat!(
+            "<ul>\n",
+            "  <li>\n",
+            "    <div>\n",
+            "      <p>body</p>\n",
+            "    </div>\n",
+            "  </li>\n",
+            "</ul>"
+        )
+    );
+    assert_eq!(
+        html("- ::: |\n  a\n  b\n  :::"),
+        concat!(
+            "<ul>\n",
+            "  <li>\n",
+            "    <div class=\"line-block\">\n",
+            "      <p>a<br>\n",
+            "b</p>\n",
+            "    </div>\n",
+            "  </li>\n",
+            "</ul>"
+        )
+    );
+}
+
+#[test]
+fn list_marker_requires_space_not_tab() {
+    assert_eq!(html("-\tx"), "<p>-\tx</p>");
+    assert_eq!(html("- x"), "<ul>\n  <li>x</li>\n</ul>");
+    assert_eq!(html("1.\tx"), "<p>1.\tx</p>");
+    assert_eq!(html("1. x"), "<ol>\n  <li>x</li>\n</ol>");
+}
+
+#[test]
 fn empty_backtick_pair_after_dollar_is_code_not_math() {
     assert_eq!(html("$``"), "<p>$<code></code></p>");
     assert_eq!(html("$$``"), "<p>$$<code></code></p>");
