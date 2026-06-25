@@ -437,3 +437,68 @@ fn colon_fence_openers_end_blockquote_lazy_continuation() {
         "<blockquote><p>::: |</p></blockquote>\n<p>outside</p>"
     );
 }
+
+/// §8 smart-quote flanking battery (HTML path): a quote OPENS (left `“`/`‘`)
+/// after start-of-content, whitespace/NBSP, or one of `( [ { = : - /`, an en/em
+/// dash, or a nested opening curly quote; otherwise it CLOSES (right `”`/`’`).
+/// The single quote additionally closes when the previous char is alphanumeric
+/// or the next char is a digit. A node boundary (any prior sibling) is treated
+/// as word-adjacent (closing) -- only the true start of content opens.
+#[test]
+fn smart_quote_flanking_html_double() {
+    // Opening contexts -> left double quote, matching `"q"` closing on `q`.
+    // (A leading space is trimmed from a paragraph, so the whitespace context
+    // is exercised separately via `x "q"`.)
+    for prefix in ["", "(", "[", "{", "=", ":", "-", "/"] {
+        assert_eq!(
+            html(&format!("{prefix}\"q\"")),
+            format!("<p>{prefix}“q”</p>"),
+            "prefix {prefix:?} should open a double quote",
+        );
+    }
+    assert_eq!(html("x \"q\""), "<p>x “q”</p>");
+    // Closing contexts -> right double quote on BOTH marks (word/punct before).
+    assert_eq!(html("}\"q\""), "<p>}”q”</p>");
+    assert_eq!(html(")\"q\""), "<p>)”q”</p>");
+    assert_eq!(html("]\"q\""), "<p>]”q”</p>");
+    assert_eq!(html(".\"q\""), "<p>.”q”</p>");
+    assert_eq!(html(",\"q\""), "<p>,”q”</p>");
+    assert_eq!(html("a\"b"), "<p>a”b</p>");
+    // Empty `""` at true start opens then closes; after a soft break both close.
+    assert_eq!(html("\"\""), "<p>“”</p>");
+    assert_eq!(html("a\"b\n\"\""), "<p>a”b\n””</p>");
+}
+
+#[test]
+fn smart_quote_flanking_html_single() {
+    // Opening contexts (non-digit next) -> left single quote.
+    for prefix in ["", "(", "[", "{", "=", ":", "-", "/"] {
+        assert_eq!(
+            html(&format!("{prefix}'q'")),
+            format!("<p>{prefix}‘q’</p>"),
+            "prefix {prefix:?} should open a single quote",
+        );
+    }
+    assert_eq!(html("x 'q'"), "<p>x ‘q’</p>");
+    // Apostrophe / closing: alnum before, or a digit next (decade elision).
+    assert_eq!(html("it's"), "<p>it’s</p>");
+    assert_eq!(html("the '70s"), "<p>the ’70s</p>");
+    assert_eq!(html("'24'"), "<p>’24’</p>");
+    assert_eq!(html("'word'"), "<p>‘word’</p>");
+    // A quote at a node boundary (after emphasis) is word-adjacent -> closing.
+    assert_eq!(html("*x*'s"), "<p><strong>x</strong>’s</p>");
+    assert_eq!(html("*x*\"q"), "<p><strong>x</strong>”q</p>");
+}
+
+/// The same flanking rule drives the non-HTML renderers (plain text path).
+#[test]
+fn smart_quote_flanking_plain() {
+    assert_eq!(carve::to_plain_text(":\"q\"").trim(), ":“q”");
+    assert_eq!(carve::to_plain_text("}\"q\"").trim(), "}”q”");
+    assert_eq!(carve::to_plain_text("the '70s").trim(), "the ’70s");
+    assert_eq!(carve::to_plain_text("'word'").trim(), "‘word’");
+    // Plain text joins a soft break as a space; both marks still close.
+    assert_eq!(carve::to_plain_text("a\"b\n\"\"").trim(), "a”b ””");
+    // Node boundary in plain text closes too.
+    assert_eq!(carve::to_plain_text("*x*'s").trim(), "x’s");
+}

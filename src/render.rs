@@ -1398,18 +1398,6 @@ fn render_inlines_stateful(
     }
 }
 
-/// Does an inline node end in visible, non-whitespace content? Used as the
-/// flanking context for a `'`/`"` at the START of the following text node
-/// (`@john's` -- the apostrophe is preceded by the mention, so it is a RIGHT
-/// quote, not an opener). Breaks count as whitespace.
-fn ends_non_whitespace(node: &InlineNode) -> bool {
-    match node {
-        InlineNode::SoftBreak | InlineNode::HardBreak => false,
-        InlineNode::Text(s) => s.chars().last().is_some_and(|c| !c.is_whitespace()),
-        _ => true,
-    }
-}
-
 /// Escape text content (`& < >`) and fold the no-break space U+00A0 into
 /// `&nbsp;`, writing directly into `out`. Equivalent to
 /// `escape_text(s).replace('\u{00a0}', "&nbsp;")` but in one pass with no
@@ -1442,8 +1430,11 @@ fn render_inline_after(
 ) {
     match node {
         InlineNode::Text(s) => {
-            let prev_non_ws = prev.is_some_and(ends_non_whitespace);
-            let smart = smart_text_after(s, prev_non_ws, state);
+            // A leading quote in this text node opens only at the true start
+            // of the inline flow; any preceding sibling makes it word-adjacent
+            // (closing context), matching carve-js. See `quote_open_context`.
+            let has_prev_sibling = prev.is_some();
+            let smart = smart_text_after(s, has_prev_sibling, state);
             // Escape `& < >` AND fold U+00A0 to `&nbsp;` in a single pass over
             // `out`. None of the escaped chars is U+00A0, so the combined pass
             // is byte-identical to `escape_text(..).replace('\u{00a0}', ..)`.
@@ -2022,7 +2013,7 @@ fn needs_smart_pass(input: &str) -> bool {
 
 fn smart_text_after<'a>(
     input: &'a str,
-    prev_non_ws: bool,
+    has_prev_sibling: bool,
     state: &mut SmartState,
 ) -> std::borrow::Cow<'a, str> {
     if !needs_smart_pass(input) {
@@ -2065,38 +2056,61 @@ fn smart_text_after<'a>(
         if ch == '"' {
             if escaped {
                 out.push(ch);
-            } else {
-                out.push(if state.open_double { '“' } else { '”' });
-                state.open_double = !state.open_double;
+                continue;
             }
+            // Normative §8: a double quote OPENS (left `“`) when its preceding
+            // character is an opening context (start-of-content, whitespace/
+            // NBSP, or one of `( [ { = : - /`, an en/em dash, or a nested
+            // opening curly quote); otherwise it CLOSES (right `”`).
+            let opening = quote_open_context(&chars, idx, has_prev_sibling);
+            out.push(if opening { '“' } else { '”' });
+            state.open_double = !opening;
         } else if ch == '\'' {
             if escaped {
                 out.push(ch);
                 continue;
             }
-            let prev_ws = if idx == 0 {
-                !prev_non_ws
-            } else {
-                // A non-breaking space (literal U+00A0 or the generated
-                // placeholder) is whitespace for quote flanking, so a quote
-                // after one opens.
-                chars[idx - 1].is_whitespace() || chars[idx - 1] == crate::NBSP_PLACEHOLDER
-            };
-            let next_alpha = chars.get(idx + 1).is_some_and(|c| c.is_alphabetic());
-            if prev_ws && next_alpha {
-                out.push('‘');
-                state.open_single = false;
-            } else if !state.open_single {
-                out.push('’');
-                state.open_single = true;
-            } else {
-                out.push('’');
-            }
+            // Single quote (§8, matching djot): a closing/apostrophe `’` when
+            // the previous char is alphanumeric (`it's`, `John's`) OR the next
+            // char is a digit (decade elision `'70s`, `'24'`) OR the preceding
+            // context is not an opening one; an opening `‘` only in an open
+            // context with a non-digit next char.
+            let prev_alnum = idx > 0 && chars[idx - 1].is_alphanumeric();
+            let next_digit = chars.get(idx + 1).is_some_and(|c| c.is_ascii_digit());
+            let apostrophe =
+                prev_alnum || next_digit || !quote_open_context(&chars, idx, has_prev_sibling);
+            out.push(if apostrophe { '’' } else { '‘' });
+            state.open_single = apostrophe;
         } else {
             out.push(ch);
         }
     }
     std::borrow::Cow::Owned(out)
+}
+
+/// Normative §8 quote flanking context: a quote at `chars[idx]` is in an
+/// OPENING context when its preceding character is start-of-content,
+/// whitespace/NBSP, one of the opening/operator chars `( [ { = : - /`, an
+/// en/em dash, or a nested opening curly quote (`“`/`‘`). At a text-node
+/// boundary (`idx == 0`) the quote opens only when there is no preceding
+/// inline sibling (true start of content); any prior sibling is treated as
+/// word-adjacent (closing context), matching carve-js.
+fn quote_open_context(chars: &[char], idx: usize, has_prev_sibling: bool) -> bool {
+    // At a text-node boundary the quote opens only at the true start of the
+    // inline flow (no preceding sibling). Any preceding sibling -- text,
+    // emphasis, link, code, a soft/hard break -- is treated as word-adjacent
+    // (closing context), matching carve-js (`prevForQuote = out.length ? 'x'
+    // : ''`). So `a"b\n""` closes all four marks (`a”b\n””`).
+    if idx == 0 {
+        return !has_prev_sibling;
+    }
+    let prev = chars[idx - 1];
+    prev.is_whitespace()
+        || prev == crate::NBSP_PLACEHOLDER
+        || matches!(
+            prev,
+            '(' | '[' | '{' | '=' | ':' | '-' | '/' | '–' | '—' | '“' | '‘'
+        )
 }
 
 fn unescape_text(input: &str) -> String {
