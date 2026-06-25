@@ -1756,11 +1756,21 @@ fn render_inline_extension(
         out.push_str(&format!("</{}>", node.name));
         return;
     }
-    out.push_str(&format!(
-        "<span class=\"ext-{}\"{}>",
-        escape_attr(&node.name),
-        render_attrs(&node.attrs)
-    ));
+    // The `ext-NAME` class is structural and emitted first; a trailing
+    // attribute block merges its classes into the SAME `class` attribute
+    // (`:foo[a]{.cls}` -> `class="ext-foo cls"`, never two `class` attrs) and
+    // contributes id / key-values after. Matches the math-span merge and
+    // carve-js / carve-php.
+    let base = format!("ext-{}", node.name);
+    let (class, rest) = match &node.attrs {
+        Some(a) if !a.classes.is_empty() => (
+            format!("{} {}", base, a.classes.join(" ")),
+            render_attrs_after_class(a),
+        ),
+        Some(a) => (base, render_attrs_after_class(a)),
+        None => (base, String::new()),
+    };
+    out.push_str(&format!("<span class=\"{}\"{}>", escape_attr(&class), rest));
     render_inlines_stateful(out, &node.children, options, state);
     out.push_str("</span>");
 }

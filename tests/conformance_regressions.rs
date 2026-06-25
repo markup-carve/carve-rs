@@ -502,3 +502,31 @@ fn smart_quote_flanking_plain() {
     // Node boundary in plain text closes too.
     assert_eq!(carve::to_plain_text("*x*'s").trim(), "x’s");
 }
+
+/// Inline extension `:name[content]` (§16, carve-js regex
+/// `^:([a-zA-Z_][\w-]*)\[([^\]]*)\]`): the name is an identifier (letter/`_`
+/// first), the content runs to the FIRST `]` without balancing nested
+/// brackets, and a trailing attribute block merges its classes into the SAME
+/// `ext-NAME` class attribute (never two `class` attrs).
+#[test]
+fn inline_extension_name_content_and_class_merge() {
+    // Digit-first name is invalid -> the whole construct stays literal.
+    assert_eq!(html(":1[x]"), "<p>:1[x]</p>");
+    // A name may contain digits after the first identifier char.
+    assert_eq!(html(":a1[x]"), "<p><span class=\"ext-a1\">x</span></p>");
+    // Content stops at the first `]`; the rest is literal text.
+    assert_eq!(
+        html(":foo[a [b] c]"),
+        "<p><span class=\"ext-foo\">a [b</span> c]</p>"
+    );
+    // Authored classes merge into one `class` attribute, structural first.
+    assert_eq!(
+        html(":foo[a]{.cls}"),
+        "<p><span class=\"ext-foo cls\">a</span></p>"
+    );
+    // Id / key-values from the attribute block still render (after the class).
+    assert_eq!(
+        html(":foo[a]{#id .cls}"),
+        "<p><span class=\"ext-foo cls\" id=\"id\">a</span></p>"
+    );
+}
