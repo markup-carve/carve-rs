@@ -307,27 +307,46 @@ fn render_index_list(
     let inner = ctx.indent(level + 1);
     // BTreeMap iterates keys in ascending byte order == Unicode-codepoint order,
     // the same locale-independent sort every implementation uses.
-    let items: Vec<String> = counts
-        .iter()
-        .map(|(slug, &n)| {
-            let links: Vec<String> = (1..=n)
-                .map(|m| {
-                    format!(
-                        "<a href=\"#idx-{}-{}\" class=\"index-backref\">\u{21a9}</a>",
-                        ctx.escape_attr(slug),
-                        m
-                    )
-                })
-                .collect();
-            let text = display.get(slug).map(String::as_str).unwrap_or_default();
-            format!(
-                "{}<li>{} {}</li>",
-                inner,
-                ctx.escape_html(text),
-                links.join(" ")
-            )
-        })
-        .collect();
+    //
+    // Bound cumulative emitted bytes against the per-render index budget: the
+    // complete backlink list is re-emitted in EVERY `::: index` block, so with
+    // many markers and many blocks the output amplifies far beyond the input.
+    // Once charging the next entry or backlink would exceed the budget, stop
+    // emitting further index content (no huge string is ever allocated). The
+    // budget sits far above any legitimate document, so the corpus is unaffected.
+    let mut items: Vec<String> = Vec::new();
+    'entries: for (slug, &n) in counts.iter() {
+        // Bail before the (possibly large) escape once the budget is spent, so a
+        // huge first term repeated across many `::: index` blocks cannot become a
+        // CPU/allocation amplification path even though no content is emitted.
+        if crate::index_budget::is_exhausted() {
+            break;
+        }
+        let text = display.get(slug).map(String::as_str).unwrap_or_default();
+        let escaped_text = ctx.escape_html(text);
+        let mut entry = format!("{}<li>{} ", inner, escaped_text);
+        if !crate::index_budget::try_spend(entry.len()) {
+            break;
+        }
+        for m in 1..=n {
+            let link = format!(
+                "<a href=\"#idx-{}-{}\" class=\"index-backref\">\u{21a9}</a>",
+                ctx.escape_attr(slug),
+                m
+            );
+            // Each backlink after the first is separated by a space.
+            let cost = if m == 1 { link.len() } else { link.len() + 1 };
+            if !crate::index_budget::try_spend(cost) {
+                break 'entries;
+            }
+            if m > 1 {
+                entry.push(' ');
+            }
+            entry.push_str(&link);
+        }
+        entry.push_str("</li>");
+        items.push(entry);
+    }
     let ul = format!(
         "{}<ul{}>\n{}\n{}</ul>",
         pad,

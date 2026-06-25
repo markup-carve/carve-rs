@@ -20,6 +20,7 @@ mod citations;
 mod escape;
 mod extension;
 pub mod extensions;
+mod index_budget;
 mod parse;
 pub mod profile;
 pub mod profile_filter;
