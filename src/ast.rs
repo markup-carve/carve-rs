@@ -375,6 +375,9 @@ pub struct Citation {
     pub suppress_author: bool,
     pub number: Option<usize>,
     pub label: Option<String>,
+    /// Per-key, document-wide use-site index (1-based), assigned only when a
+    /// bibliography pool is supplied; drives back-link anchors (#199).
+    pub use_index: Option<usize>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
