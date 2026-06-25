@@ -1,0 +1,418 @@
+//! HeadingNumbers (#198, Tier-3). Auto-number sections and rewrite auto-filled
+//! `</#id>` cross-references to "Section 1.2 - Title". Render-stage, opt-in, no
+//! new syntax (reads headings + the `{.unnumbered}` class). Off by default,
+//! never corpus-pinned. See docs/extensions.md §9.
+//!
+//! Port of the carve-js `heading-numbers.ts`, byte-identical in HTML output. A
+//! pure `before_render` transform: it prepends a `<span class="section-number">`
+//! to each numbered `<h*>` and rewrites the children of `</#id>`-origin links
+//! (identified by the non-rendered [`crate::ast::Link::from_crossref`] flag set
+//! during crossref resolution).
+
+use std::collections::BTreeMap;
+
+use crate::ast::{Attrs, BlockNode, Document, FigureTarget, Heading, InlineNode, Link, Span};
+use crate::extension::{BeforeRenderContext, CarveExtension};
+use crate::parse::slugify_parse;
+use crate::render::plain_inlines;
+
+/// In-text cross-reference rendering for an auto-filled `</#id>` reference.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CrossrefStyle {
+    /// `Section 1.2`
+    Number,
+    /// `Section 1.2 - Title` (default).
+    NumberTitle,
+    /// Leave cross-references untouched; number only the headings.
+    Title,
+}
+
+/// Options for [`HeadingNumbers`].
+#[derive(Debug, Clone)]
+pub struct HeadingNumbersOptions {
+    /// Top numbered heading level (1-6). Default 1; set 2 when `#` is the title.
+    pub min_level: u8,
+    /// Cross-reference prefix word. Default `"Section"`.
+    pub label: String,
+    /// Auto-filled cross-reference text. Default [`CrossrefStyle::NumberTitle`].
+    pub crossref: CrossrefStyle,
+}
+
+impl Default for HeadingNumbersOptions {
+    fn default() -> Self {
+        Self {
+            min_level: 1,
+            label: "Section".to_string(),
+            crossref: CrossrefStyle::NumberTitle,
+        }
+    }
+}
+
+/// Auto-number sections and render numbered cross-references.
+///
+/// ```
+/// use carve::{HeadingNumbers, Options};
+/// let ext = HeadingNumbers::new();
+/// let opts = Options::new().with_extension(&ext);
+/// let html = carve::to_html_with_options("# Parsing\n\nSee </#Parsing>.", &opts);
+/// assert!(html.contains("<span class=\"section-number\">1</span> Parsing"));
+/// assert!(html.contains("<a href=\"#Parsing\">Section 1 - Parsing</a>"));
+/// ```
+#[derive(Debug)]
+pub struct HeadingNumbers {
+    opts: HeadingNumbersOptions,
+}
+
+impl Default for HeadingNumbers {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl HeadingNumbers {
+    /// Create with default options (number from level 1, `Section`, number-title).
+    pub fn new() -> Self {
+        Self {
+            opts: HeadingNumbersOptions::default(),
+        }
+    }
+
+    /// Create with explicit options.
+    pub fn with_options(opts: HeadingNumbersOptions) -> Self {
+        Self { opts }
+    }
+}
+
+struct Entry {
+    number: String,
+    title: String,
+}
+
+impl CarveExtension for HeadingNumbers {
+    fn name(&self) -> &'static str {
+        "headingNumbers"
+    }
+
+    fn before_render(&self, mut doc: Document, _ctx: &BeforeRenderContext<'_>) -> Document {
+        // Idempotency: decorating mutates the document, so re-running over an
+        // already-numbered doc must be a no-op (parse-once / render-twice),
+        // matching carve-js's WeakSet<Document> guard - otherwise spans stack.
+        if already_numbered(&doc.children) {
+            return doc;
+        }
+        // Pass 1: number headings (gap-free stack), decorate each `<h*>` with a
+        // section-number span, and remember number + original title per id.
+        let mut state = NumberState {
+            min_level: self.opts.min_level,
+            lowercase: _ctx.options().lowercase_heading_ids,
+            levels: Vec::new(),
+            numbers: Vec::new(),
+            heading_counts: BTreeMap::new(),
+            by_id: BTreeMap::new(),
+        };
+        number_blocks(&mut doc.children, false, &mut state);
+
+        // Pass 2: rewrite auto-filled cross-references. Only links tagged
+        // `from_crossref` are touched, so ordinary `[text](#id)` links and
+        // implicit `[label][]` references keep their text. Walk the body and
+        // footnote definitions (both rendered).
+        if self.opts.crossref != CrossrefStyle::Title {
+            let rewrite = |blocks: &mut Vec<BlockNode>| {
+                rewrite_links_blocks(blocks, &state.by_id, &self.opts);
+            };
+            rewrite(&mut doc.children);
+            for blocks in doc.footnote_defs.values_mut() {
+                rewrite(blocks);
+            }
+        }
+
+        doc
+    }
+}
+
+struct NumberState {
+    min_level: u8,
+    lowercase: bool,
+    levels: Vec<u8>,
+    numbers: Vec<u32>,
+    /// Per-base id dedup counter, mirroring the renderer's `next_heading_id`
+    /// so the computed id matches the rendered `<section id>` / `</#id>` href.
+    heading_counts: BTreeMap<String, u32>,
+    by_id: BTreeMap<String, Entry>,
+}
+
+fn has_class(h: &Heading, cls: &str) -> bool {
+    h.attrs
+        .as_ref()
+        .is_some_and(|a| a.classes.iter().any(|c| c == cls))
+}
+
+/// True if any heading already carries a leading `section-number` span - i.e.
+/// this document was already processed by a prior `before_render` run. Mirrors
+/// the descent of `number_blocks` so nested headings count too.
+fn already_numbered(blocks: &[BlockNode]) -> bool {
+    blocks.iter().any(|block| match block {
+        BlockNode::Heading(h) => matches!(
+            h.children.first(),
+            Some(InlineNode::Span(s))
+                if s.attrs
+                    .as_ref()
+                    .is_some_and(|a| a.classes.iter().any(|c| c == "section-number"))
+        ),
+        BlockNode::BlockQuote(b) => already_numbered(&b.children),
+        BlockNode::Div(d) => already_numbered(&d.children),
+        BlockNode::Admonition(a) => already_numbered(&a.children),
+        BlockNode::List(l) => l.items.iter().any(|i| already_numbered(&i.children)),
+        BlockNode::DefinitionList(dl) => dl
+            .items
+            .iter()
+            .any(|i| i.definitions.iter().any(|d| already_numbered(d))),
+        BlockNode::Figure(f) => {
+            matches!(&f.target, FigureTarget::BlockQuote(b) if already_numbered(&b.children))
+        }
+        BlockNode::Extension(e) => already_numbered(&e.children),
+        _ => false,
+    })
+}
+
+fn number_blocks(blocks: &mut [BlockNode], in_blockquote: bool, state: &mut NumberState) {
+    for block in blocks.iter_mut() {
+        match block {
+            BlockNode::Heading(h) => number_heading(h, in_blockquote, state),
+            BlockNode::BlockQuote(b) => number_blocks(&mut b.children, true, state),
+            BlockNode::Div(d) => number_blocks(&mut d.children, in_blockquote, state),
+            BlockNode::Admonition(a) => number_blocks(&mut a.children, in_blockquote, state),
+            BlockNode::List(l) => {
+                for item in &mut l.items {
+                    number_blocks(&mut item.children, in_blockquote, state);
+                }
+            }
+            BlockNode::DefinitionList(dl) => {
+                for item in &mut dl.items {
+                    for def in &mut item.definitions {
+                        number_blocks(def, in_blockquote, state);
+                    }
+                }
+            }
+            BlockNode::Figure(f) => {
+                // Only a blockquote target can hold a heading; the resolver
+                // assigns its heading an id (as a quoted heading), so mirror
+                // that descent for first-id-wins.
+                if let FigureTarget::BlockQuote(b) = &mut f.target {
+                    number_blocks(&mut b.children, true, state);
+                }
+            }
+            // An extension carrier (Details/Spoiler/Glossary/… registered
+            // before this one) wraps rendered block content; descend so its
+            // headings are numbered, matching how carve-js descends the
+            // admonition those map to.
+            BlockNode::Extension(e) => number_blocks(&mut e.children, in_blockquote, state),
+            _ => {}
+        }
+    }
+}
+
+fn number_heading(h: &mut Heading, in_blockquote: bool, state: &mut NumberState) {
+    // Compute this heading's FINAL id exactly as the renderer's `next_heading_id`
+    // does (explicit id or slug, then dedup), advancing the shared counter for
+    // EVERY heading in document order so the ids stay in lock-step with the
+    // rendered `<section id>` / resolved `</#id>` hrefs. Deduped ids are unique,
+    // so first-id-wins falls out for free (no later heading reuses a key).
+    let base = h
+        .attrs
+        .as_ref()
+        .and_then(|a| a.id.clone())
+        .unwrap_or_else(|| slugify_parse(&plain_inlines(&h.children), state.lowercase));
+    let count = state.heading_counts.entry(base.clone()).or_insert(0);
+    *count += 1;
+    let id = if *count == 1 {
+        base
+    } else {
+        format!("{base}-{count}")
+    };
+
+    if in_blockquote || has_class(h, "unnumbered") || h.level < state.min_level {
+        return;
+    }
+
+    let lvl = h.level;
+    while state.levels.last().is_some_and(|&top| top > lvl) {
+        state.levels.pop();
+        state.numbers.pop();
+    }
+    if state.levels.last() == Some(&lvl) {
+        *state.numbers.last_mut().unwrap() += 1;
+    } else {
+        state.levels.push(lvl);
+        state.numbers.push(1);
+    }
+    let number = state
+        .numbers
+        .iter()
+        .map(|n| n.to_string())
+        .collect::<Vec<_>>()
+        .join(".");
+
+    let title = plain_inlines(&h.children); // capture BEFORE injecting the span
+    state.by_id.insert(
+        id,
+        Entry {
+            number: number.clone(),
+            title,
+        },
+    );
+
+    let span = InlineNode::Span(Span {
+        attrs: Some(Attrs {
+            classes: vec!["section-number".to_string()],
+            ..Attrs::default()
+        }),
+        children: vec![InlineNode::Text(number)],
+    });
+    let mut new_children = Vec::with_capacity(h.children.len() + 2);
+    new_children.push(span);
+    new_children.push(InlineNode::Text(" ".to_string()));
+    new_children.append(&mut h.children);
+    h.children = new_children;
+}
+
+fn rewrite_links_blocks(
+    blocks: &mut [BlockNode],
+    by_id: &BTreeMap<String, Entry>,
+    opts: &HeadingNumbersOptions,
+) {
+    for block in blocks.iter_mut() {
+        match block {
+            BlockNode::Heading(h) => rewrite_links_inlines(&mut h.children, by_id, opts),
+            BlockNode::Paragraph(p) => rewrite_links_inlines(&mut p.children, by_id, opts),
+            BlockNode::BlockQuote(b) => {
+                rewrite_links_blocks(&mut b.children, by_id, opts);
+                if let Some(attr) = &mut b.attribution {
+                    rewrite_links_inlines(attr, by_id, opts);
+                }
+            }
+            BlockNode::Div(d) => rewrite_links_blocks(&mut d.children, by_id, opts),
+            BlockNode::Admonition(a) => {
+                if let Some(t) = &mut a.title {
+                    rewrite_links_inlines(t, by_id, opts);
+                }
+                rewrite_links_blocks(&mut a.children, by_id, opts);
+            }
+            BlockNode::List(l) => {
+                for item in &mut l.items {
+                    rewrite_links_blocks(&mut item.children, by_id, opts);
+                }
+            }
+            BlockNode::DefinitionList(dl) => {
+                for item in &mut dl.items {
+                    for term in &mut item.terms {
+                        rewrite_links_inlines(term, by_id, opts);
+                    }
+                    for def in &mut item.definitions {
+                        rewrite_links_blocks(def, by_id, opts);
+                    }
+                }
+            }
+            BlockNode::Table(t) => {
+                if let Some(caption) = &mut t.caption {
+                    rewrite_links_inlines(caption, by_id, opts);
+                }
+                for row in &mut t.rows {
+                    for cell in &mut row.cells {
+                        rewrite_links_inlines(&mut cell.children, by_id, opts);
+                    }
+                }
+            }
+            BlockNode::Figure(f) => {
+                rewrite_links_inlines(&mut f.caption, by_id, opts);
+                if let FigureTarget::BlockQuote(b) = &mut f.target {
+                    rewrite_links_blocks(&mut b.children, by_id, opts);
+                }
+            }
+            BlockNode::Extension(e) => rewrite_links_blocks(&mut e.children, by_id, opts),
+            _ => {}
+        }
+    }
+}
+
+fn rewrite_links_inlines(
+    nodes: &mut [InlineNode],
+    by_id: &BTreeMap<String, Entry>,
+    opts: &HeadingNumbersOptions,
+) {
+    for node in nodes.iter_mut() {
+        match node {
+            InlineNode::Link(l) => {
+                rewrite_links_inlines(&mut l.children, by_id, opts);
+                maybe_rewrite_link(l, by_id, opts);
+            }
+            InlineNode::Emphasis(e) => rewrite_links_inlines(&mut e.children, by_id, opts),
+            InlineNode::Span(s) => rewrite_links_inlines(&mut s.children, by_id, opts),
+            InlineNode::Extension(e) => rewrite_links_inlines(&mut e.children, by_id, opts),
+            InlineNode::CriticInsert(c) => rewrite_links_inlines(&mut c.children, by_id, opts),
+            InlineNode::CriticDelete(c) => rewrite_links_inlines(&mut c.children, by_id, opts),
+            InlineNode::Footnote(f) => {
+                if let Some(inl) = &mut f.inline {
+                    rewrite_links_inlines(inl, by_id, opts);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn maybe_rewrite_link(l: &mut Link, by_id: &BTreeMap<String, Entry>, opts: &HeadingNumbersOptions) {
+    if !l.from_crossref {
+        return;
+    }
+    let Some(id) = l.href.strip_prefix('#') else {
+        return;
+    };
+    let Some(entry) = by_id.get(id) else {
+        return; // crossref to an unnumbered heading: leave the title
+    };
+    let text = match opts.crossref {
+        CrossrefStyle::Number => format!("{} {}", opts.label, entry.number),
+        _ => format!("{} {} - {}", opts.label, entry.number, entry.title),
+    };
+    l.children = vec![InlineNode::Text(text)];
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::extension::Mode;
+    use crate::parse::parse;
+    use crate::Options;
+
+    fn count_section_number_spans(blocks: &[BlockNode]) -> usize {
+        let mut n = 0;
+        for b in blocks {
+            if let BlockNode::Heading(h) = b {
+                for c in &h.children {
+                    if let InlineNode::Span(s) = c {
+                        if s.attrs
+                            .as_ref()
+                            .is_some_and(|a| a.classes.iter().any(|c| c == "section-number"))
+                        {
+                            n += 1;
+                        }
+                    }
+                }
+            }
+        }
+        n
+    }
+
+    #[test]
+    fn before_render_is_idempotent() {
+        // Re-running over the same document must not stack section-number spans.
+        let ext = HeadingNumbers::new();
+        let opts = Options::default();
+        let ctx = BeforeRenderContext::new(&opts, Mode::Interactive);
+        let doc = parse("# A\n");
+        let doc = ext.before_render(doc, &ctx);
+        let doc = ext.before_render(doc, &ctx);
+        assert_eq!(count_section_number_spans(&doc.children), 1);
+    }
+}

@@ -273,6 +273,38 @@ assert!(html.contains("<a href=\"#idx-parser-1\" class=\"index-backref\">"));
   never dangles. With the extension off, `:index[term]` is the generic
   `<span class="ext-index">term</span>`.
 
+## HeadingNumbers
+
+`HeadingNumbers` is a Tier-3 extension (#198) that auto-numbers sections and
+rewrites auto-filled `</#id>` cross-references to "Section 1.2 - Title". Render
+policy, not source semantics: off by default, no new syntax. Register it
+explicitly.
+
+```rust
+use carve::{HeadingNumbers, Options};
+
+let ext = HeadingNumbers::new();
+let opts = Options::new().with_extension(&ext);
+let src = "# Parsing\n\nSee </#Parsing>.";
+let html = carve::to_html_with_options(src, &opts);
+assert!(html.contains("<span class=\"section-number\">1</span> Parsing"));
+assert!(html.contains("<a href=\"#Parsing\">Section 1 - Parsing</a>"));
+```
+
+- Numbers headings gap-free (`1`, `1.1`, `1.2`) in document order and prepends a
+  `<span class="section-number">` inside each `<h*>`; the id is unchanged. Skips
+  blockquote-quoted and `{.unnumbered}` headings (the class from a preceding
+  attribute line). `min_level` (default 1) sets the top numbered level - set 2
+  when `#` is the doc title.
+- Rewrites only `</#id>`-origin links - identified by the non-rendered
+  `Link::from_crossref` flag set during cross-reference resolution - so ordinary
+  `[text](#id)` links and implicit `[label][]` references keep their text.
+  `HeadingNumbersOptions::crossref` (`Number` / `NumberTitle` (default) /
+  `Title`) and `label` (default `"Section"`) tune the output.
+- With the extension off, headings and cross-references render unchanged. The
+  `from_crossref` flag is metadata only - it changes no rendered output, so the
+  conformance corpus is unaffected.
+
 ## Static rendering mode
 
 A render carries a **mode** - a render option, not document syntax (see the

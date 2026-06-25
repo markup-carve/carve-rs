@@ -191,6 +191,7 @@ fn markdown_strips_control_bytes_from_author_leaf_fields() {
                         children: vec![carve::InlineNode::Text("link".to_string())],
                         ref_label: None,
                         raw_ref: None,
+                        from_crossref: false,
                     }),
                     carve::InlineNode::Image(carve::Image {
                         attrs: None,

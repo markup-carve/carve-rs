@@ -142,6 +142,7 @@ impl CarveExtension for Wikilinks {
                 children: vec![InlineNode::Text(display_text)],
                 ref_label: None,
                 raw_ref: None,
+                from_crossref: false,
             }),
             end,
         })
