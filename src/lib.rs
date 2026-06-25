@@ -44,7 +44,7 @@ pub use extension::{
     RenderContext, StaticRenderers,
 };
 pub use extensions::{
-    Autolink, AutolinkOptions, ContentMode, CrossrefStyle, Details, ExternalLinks,
+    Autolink, AutolinkOptions, ColorSwatch, ContentMode, CrossrefStyle, Details, ExternalLinks,
     ExternalLinksOptions, FencedRender, FencedRenderOptions, Glossary, HeadingNumbers,
     HeadingNumbersOptions, HeadingPermalinks, HeadingPermalinksOptions, Index, ListTable, ListType,
     MathBlock, MathBlockOptions, Position, Spoiler, TabNormalize, TableOfContents,
