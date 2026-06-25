@@ -210,7 +210,11 @@ fn extract_link_defs(source: &str) -> (String, BTreeMap<String, LinkDef>) {
             continue;
         }
         if let Some((label_part, target_part)) = parse_link_def_line(stripped.bare) {
-            if label_part.starts_with('@') {
+            // A reference definition needs a non-empty destination (carve-js
+            // `RE_LINK_DEF` requires `(\S+)` after the colon). An empty target
+            // (`[r]:` + only whitespace) is NOT a definition -- the line stays
+            // literal text. (corpus 34-reference-link-9)
+            if label_part.starts_with('@') || target_part.trim().is_empty() {
                 body.push(line.to_string());
                 continue;
             }
@@ -300,7 +304,10 @@ fn parse_link_def_target(target: &str) -> LinkDef {
         && ((rest.starts_with('"') && rest.ends_with('"'))
             || (rest.starts_with('\'') && rest.ends_with('\'')))
     {
-        Some(rest[1..rest.len() - 1].to_string())
+        // A backslash-escaped quote (or any escaped ASCII punctuation) inside
+        // the title is unescaped, matching inline-link titles and carve-js
+        // `unescapeAttrValue` (`[y]: /u "a\"b\"c"` -> title `a"b"c`).
+        Some(unescape_title(&rest[1..rest.len() - 1]))
     } else {
         None
     };
@@ -4260,6 +4267,13 @@ fn parse_inline_extension(
     }
     let mut i = start + 1;
     let name_start = i;
+    // `extension_name = identifier`: must start with a letter or `_` -- a
+    // digit-first name (`:1[x]`) is invalid and the whole construct stays
+    // literal. (`:a1[x]` is fine; digits are allowed after the first char.)
+    match bytes.get(i) {
+        Some(b) if b.is_ascii_alphabetic() || *b == b'_' => {}
+        _ => return None,
+    }
     while i < bytes.len()
         && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'-' || bytes[i] == b'_')
     {
@@ -4269,7 +4283,10 @@ fn parse_inline_extension(
         return None;
     }
     let name = std::str::from_utf8(&bytes[name_start..i]).ok()?.to_string();
-    let (content, after_bracket) = read_bracketed(bytes, i)?;
+    // `extension_content = {character - ']'}`: the content runs to the FIRST
+    // unescaped `]` and does not balance nested brackets (`:foo[a [b] c]` ->
+    // `<span class="ext-foo">a [b</span> c]`).
+    let (content, after_bracket) = read_to_first_bracket(bytes, i)?;
     let mut attrs = None;
     let mut after = after_bracket;
     if bytes.get(after) == Some(&b'{') {
@@ -4578,6 +4595,28 @@ fn read_bracketed_cached(bytes: &[u8], start: usize, matches: &[usize]) -> Optio
         .ok()?
         .to_string();
     Some((text, close + 1))
+}
+
+/// Read `[...]` content for an inline extension: the content runs to the
+/// FIRST `]` and does NOT balance nested brackets or honor escapes
+/// (`extension_content = {character - ']'}`, carve-js regex `\[([^\]]*)\]`).
+/// Returns the content and the index just past the closing `]`.
+fn read_to_first_bracket(bytes: &[u8], start: usize) -> Option<(String, usize)> {
+    if bytes.get(start) != Some(&b'[') {
+        return None;
+    }
+    let content_start = start + 1;
+    let mut i = content_start;
+    while i < bytes.len() {
+        if bytes[i] == b']' {
+            let text = std::str::from_utf8(&bytes[content_start..i])
+                .ok()?
+                .to_string();
+            return Some((text, i + 1));
+        }
+        i += 1;
+    }
+    None
 }
 
 fn read_bracketed(bytes: &[u8], start: usize) -> Option<(String, usize)> {
