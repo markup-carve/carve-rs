@@ -13,6 +13,36 @@ fn link_def_lone_quote_does_not_panic() {
 }
 
 #[test]
+fn list_marker_multibyte_first_char_with_trailing_ws_does_not_panic() {
+    // A bullet whose first content char is multibyte, followed by trailing
+    // whitespace, made `strip_container_prefixes` compute the structural prefix
+    // by length subtraction. `marker_tail` end-trims the trailing whitespace,
+    // so the length difference no longer matched the byte offset of the content
+    // slice and the cut landed inside the leading multibyte char (`- ́ ` was a
+    // 5-byte crash reproducer). The structural length is now the byte offset of
+    // the trimmed content within the original line, which is char-boundary safe.
+    // carve-js and carve-php both render these as `<ul><li>...</li></ul>`.
+    let cases = [
+        // (input, expected list-item inner HTML)
+        ("- \u{301} ", "\u{301}"),  // combining acute, the original repro
+        ("* \u{301} ", "\u{301}"),  // bullet `*` variant
+        ("- \u{301}\t", "\u{301}"), // trailing TAB instead of space
+        ("- \u{00a0} ", "&nbsp;"),  // NBSP
+        ("- \u{1f600} ", "\u{1f600}"), // astral emoji
+        ("- \u{200e} ", "\u{200e}"), // bidi LRM control
+        ("- \u{feff} ", "\u{feff}"), // BOM / ZWNBSP
+    ];
+    for (input, inner) in cases {
+        let html = carve::to_html(input);
+        let expected = format!("<ul>\n  <li>{inner}</li>\n</ul>");
+        assert!(
+            html.contains(&expected),
+            "input {input:?}: expected {expected:?} in {html:?}"
+        );
+    }
+}
+
+#[test]
 fn deeply_nested_blockquote_degrades_without_overflow() {
     let src = ">".repeat(5000) + " x\n";
     let html = carve::to_html(&src); // must return, not abort
