@@ -107,10 +107,15 @@ fn renders_undefined_key_verbatim() {
 }
 
 #[test]
-fn mixed_defined_undefined_group_renders_raw_but_lists_defined_key() {
+fn partially_resolved_group_is_fully_verbatim() {
+    // A group with any unresolved key renders verbatim (§6.4): the defined key
+    // is literal text, not a citation, so it is NOT numbered or listed - no
+    // orphan reference entry. Matches carve-js / carve-php (§6.5).
     let out = h("[@a; @missing].\n\n[@a]: A.");
     assert!(out.contains("[@a; @missing]"));
-    assert!(out.contains("<li id=\"ref-a\">A.</li>"));
+    assert!(!out.contains("id=\"ref-a\""));
+    assert!(!out.contains("href=\"#ref-a\""));
+    assert!(!out.contains("class=\"references\""));
 }
 
 #[test]
@@ -363,10 +368,11 @@ fn bib_formatter_literal_name_and_year() {
 }
 
 #[test]
-fn bib_mixed_group_lists_defined_key_without_backlink() {
-    // A group mixing a resolved and an unresolved key renders verbatim and is
-    // not a use site (no anchor, no back-link), but the defined key is still
-    // listed - matching Tier-2 semantics and carve-js parity.
+fn bib_partially_resolved_group_is_fully_verbatim() {
+    // A group mixing a resolved and an unresolved key renders verbatim (§6.4):
+    // its keys are literal text, not citations, so the defined key is NOT
+    // numbered, listed, or a use site - no orphan entry with a dangling
+    // back-ref. Matches carve-js / carve-php (§6.5).
     let out = hb(
         "[@a; @missing]",
         vec![CslEntry {
@@ -376,9 +382,10 @@ fn bib_mixed_group_lists_defined_key_without_backlink() {
         }],
     );
     assert!(out.contains("<p>[@a; @missing]</p>"));
-    assert!(out.contains("<li id=\"ref-a\">A.</li>"));
+    assert!(!out.contains("id=\"ref-a\""));
     assert!(!out.contains("cite-a-1"));
     assert!(!out.contains("ref-backref"));
+    assert!(!out.contains("class=\"references\""));
 }
 
 #[test]

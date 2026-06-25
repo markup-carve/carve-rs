@@ -630,19 +630,21 @@ fn annotate_citations_inline(
         match node {
             InlineNode::CitationGroup(g) => {
                 g.mode = Some(mode.into());
-                // A group with any unresolved key renders verbatim and is not a
-                // use site (§6.4); only assign back-link indexes when all resolve.
-                let all_resolved = g.items.iter().all(|it| defs.contains_key(&it.key));
+                // A group with any unresolved key renders verbatim (§6.4): its
+                // keys are literal text, not citations, so they are neither
+                // numbered, listed, nor a back-link use site. Skip the whole
+                // group.
+                if !g.items.iter().all(|it| defs.contains_key(&it.key)) {
+                    continue;
+                }
                 for item in &mut g.items {
-                    let Some(def) = defs.get(&item.key) else {
-                        continue;
-                    };
+                    let def = defs.get(&item.key).expect("all keys resolved above");
                     if seen.insert(item.key.clone()) {
                         order.push(item.key.clone());
                     }
                     let number = order.iter().position(|key| key == &item.key).unwrap() + 1;
                     item.number = Some(number);
-                    if has_bib && all_resolved {
+                    if has_bib {
                         let n = uses.entry(item.key.clone()).or_insert(0);
                         *n += 1;
                         item.use_index = Some(*n);
