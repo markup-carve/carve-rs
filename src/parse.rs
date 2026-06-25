@@ -1294,7 +1294,7 @@ fn read_list_item_attrs(bytes: &[u8], start: usize) -> Option<(Option<Attrs>, us
 fn marker_tail(line: &str, marker_end: usize) -> Option<(&str, Option<Attrs>)> {
     let bytes = line.as_bytes();
     let (content, attrs) = match bytes.get(marker_end) {
-        Some(&b' ' | &b'\t') => {
+        Some(&b' ') => {
             let mut content_start = marker_end;
             while matches!(bytes.get(content_start), Some(b' ' | b'\t')) {
                 content_start += 1;
@@ -1303,7 +1303,7 @@ fn marker_tail(line: &str, marker_end: usize) -> Option<(&str, Option<Attrs>)> {
         }
         Some(&b'{') => {
             let (attrs, end) = read_list_item_attrs(bytes, marker_end)?;
-            if !matches!(bytes.get(end), Some(b' ' | b'\t')) {
+            if bytes.get(end) != Some(&b' ') {
                 return None;
             }
             let mut content_start = end;
@@ -1995,6 +1995,17 @@ fn marker_content_starts_block(content: &str, cur: &LineCursor<'_>, content_col:
             .iter()
             .map(|line| slice_columns(line, content_col.min(indent_columns(line)), false))
             .any(|line| is_fence_close(&line, open));
+    }
+    let colon_fence_len = detect_container_open(content)
+        .map(|open| open.fence_len)
+        .or_else(|| detect_line_block_open(content))
+        .or_else(|| detect_hardbreaks_block_open(content));
+    if let Some(fence_len) = colon_fence_len {
+        return cur.lines[cur.pos..].iter().any(|line| {
+            let line = slice_columns(line, content_col.min(indent_columns(line)), false);
+            let trimmed = trim_ascii(&line);
+            !trimmed.is_empty() && trimmed.bytes().all(|b| b == b':') && trimmed.len() >= fence_len
+        });
     }
     if is_table_start(content) {
         return cur.lines.get(cur.pos).is_some_and(|line| {
