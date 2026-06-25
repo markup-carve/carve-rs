@@ -139,3 +139,81 @@ fn deeply_nested_div_parse_is_bounded() {
         start.elapsed()
     );
 }
+
+/// Build `n` balanced nested inline links: `[` * n + "x" + "]()" * n, i.e.
+/// `[[[...x]()]()...]()`. Before the bracket-match precompute, each `[` re-scanned
+/// O(n) bytes to find its closing `]`, so the parse was O(n^2).
+fn nested_links(n: usize) -> String {
+    let mut s = String::with_capacity(4 * n + 1);
+    for _ in 0..n {
+        s.push('[');
+    }
+    s.push('x');
+    for _ in 0..n {
+        s.push_str("]()");
+    }
+    s
+}
+
+#[test]
+fn deeply_nested_balanced_links_parse_in_near_linear_time() {
+    // Finding 2: deeply nested balanced links were O(n^2) because every `[`
+    // re-scanned to its matching `]`. A single precomputed bracket-match table
+    // makes each lookup O(1), so doubling the input roughly doubles the time
+    // (not quadruples). Run each size a few times and take the minimum to damp
+    // scheduler noise, then assert the larger size is well under a quadratic
+    // multiple of the smaller.
+    fn min_parse_time(source: &str) -> f64 {
+        (0..5)
+            .map(|_| {
+                let start = Instant::now();
+                let _ = carve::to_html(source);
+                start.elapsed().as_secs_f64()
+            })
+            .fold(f64::INFINITY, f64::min)
+    }
+
+    let small = nested_links(4_000);
+    let large = nested_links(8_000);
+
+    let t_small = min_parse_time(&small);
+    let t_large = min_parse_time(&large);
+
+    // Quadratic would give ~4x for a 2x input; linear gives ~2x. Allow generous
+    // slack (5x) so the test is robust on slow/loaded CI while still failing
+    // hard on a reintroduced O(n^2) (which scaled ~4x here, but with the old
+    // ~0.9s baseline at n=8000 the absolute bound below is the real guard).
+    if t_small > 0.0 {
+        let ratio = t_large / t_small;
+        assert!(
+            ratio < 5.0,
+            "nested-link parse scaling looks super-linear: {t_small:.4}s -> {t_large:.4}s (ratio {ratio:.1}x)"
+        );
+    }
+
+    // Absolute wall-clock guard: the fixed parser handles n=8000 in well under
+    // 50 ms (release); the pre-fix code took ~0.9 s. Use a wide 1 s bound to
+    // tolerate an unoptimized debug build and loaded CI while still catching a
+    // regression to quadratic.
+    assert!(
+        t_large < 1.0,
+        "nested-link parse for n=8000 took {t_large:.4}s (expected near-instant)"
+    );
+}
+
+#[test]
+fn deeply_nested_balanced_links_preserve_output() {
+    // The bracket-match precompute must not change parse output. For this
+    // pathological `[[[...x]()...]` shape the inline links all carry an empty
+    // destination and nest, so the "links never nest" pass unwraps them down to
+    // plain literal text (no anchors) - exactly as before the optimization.
+    let n = 50;
+    let html = carve::to_html(&nested_links(n));
+    assert_eq!(html.matches("<a href=").count(), 0, "{html}");
+    assert!(html.contains('x'), "inner text must survive: {html}");
+    // A genuine link with a destination still renders as an anchor.
+    assert_eq!(
+        carve::to_html("[text](https://example.com)"),
+        "<p><a href=\"https://example.com\">text</a></p>"
+    );
+}
