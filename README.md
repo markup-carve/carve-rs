@@ -330,12 +330,15 @@ Other options:
 ```bash
 carve --mention-url '/users/{name}' --tag-url '/topics/{name}' social.crv
 carve --emoji 'rocket=🚀' --emoji 'tada=🎉' emoji.crv
+carve --no-raw-html untrusted.crv   # escape =html raw blocks/spans
 carve --help
 ```
 
 `--html` / `--markdown` (`--md`) / `--plain` (`--plain-text`) / `--ansi` select
 the format (last one wins). `--mention-url` / `--tag-url` build HTML links and
-apply to HTML output only. `--static` (vs the default `--interactive`) renders
+apply to HTML output only. `--no-raw-html` (alias `--safe`) escapes `=html` raw
+blocks and spans instead of emitting them verbatim, which is the safe choice when
+rendering untrusted input; it composes with every format and with `--profile`. `--static` (vs the default `--interactive`) renders
 self-contained HTML: interactive constructs flatten (a `::: details` becomes an
 expanded `<section>`) and client-script visuals (mermaid / chart / math) degrade
 to source. Pass `--extensions` to enable the bundled interactive extensions
