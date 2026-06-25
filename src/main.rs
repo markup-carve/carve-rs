@@ -94,6 +94,7 @@ fn main() -> ExitCode {
             "--static" => options = options.with_mode(carve::Mode::Static),
             "--interactive" => options = options.with_mode(carve::Mode::Interactive),
             "--extensions" => enable_extensions = true,
+            "--no-raw-html" | "--safe" => options = options.with_raw_html(false),
             "-" => input_path = None,
             path if path.starts_with('-') => {
                 eprintln!("carve: unknown option: {path}");
@@ -177,6 +178,8 @@ fn print_usage() {
          --mention-url TEMPLATE      render @mentions as links (HTML only)\n  \
          --tag-url TEMPLATE          render #tags as links (HTML only)\n  \
          --emoji NAME=VALUE          map :NAME: to VALUE (repeatable)\n  \
+         --no-raw-html, --safe       escape =html raw blocks/spans instead of\n                              \
+         emitting them (for untrusted input)\n  \
          --profile NAME              restrict features (full|article|comment|minimal)\n  \
          --profile-base-host HOST    base host for the profile link policy\n\n\
          Spec: https://markup-carve.github.io/carve/"
