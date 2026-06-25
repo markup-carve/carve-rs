@@ -276,7 +276,14 @@ fn strip_container_prefixes(mut line: &str) -> StrippedContainerLine<'_> {
             break;
         }
     }
-    let structural_len = original.len() - line.len();
+    // Compute the structural prefix length from the BYTE OFFSET of `line`
+    // within `original`, not by length subtraction. `marker_tail` trims trailing
+    // ASCII whitespace off the END of the collected content, so `line` can be
+    // shorter than its true offset; a length-difference cut would then land
+    // inside a leading multibyte content char and panic (`- ́ ` repro). `line`
+    // is always a subslice of `original` whose START pointer is preserved by an
+    // end-trim, so pointer subtraction yields the correct, char-boundary length.
+    let structural_len = line.as_ptr() as usize - original.as_ptr() as usize;
     StrippedContainerLine {
         structural: &original[..structural_len],
         bare: line,
