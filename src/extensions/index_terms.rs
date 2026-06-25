@@ -1,0 +1,363 @@
+//! Index terms (#91, Tier-3). Invisible `:index[term]` markers are collected
+//! into a `::: index` block - a sorted `<ul class="index">` with one back-link
+//! per occurrence. Reuses the `:name[…]` inline form; no new syntax. Off by
+//! default, never corpus-pinned. See docs/extensions.md §8.
+//!
+//! Port of the carve-js `index-terms.ts`, byte-identical in HTML output. Like
+//! `details` / `list-table`, this is a `before_render` transform: body
+//! `:index[term]` markers are rewritten into a carrier inline extension that
+//! carries their per-slug occurrence index, and a `::: index` admonition (when
+//! any marker exists) is rewritten into a block carrier that renders the list.
+//! A marker outside the body (e.g. inside a footnote definition) is left as the
+//! plain `index` extension and renders inert, so the index never dangles.
+
+use std::cell::RefCell;
+use std::collections::BTreeMap;
+
+use crate::ast::{
+    Attrs, BlockExtension, BlockNode, Document, FigureTarget, InlineExtension, InlineNode,
+};
+use crate::extension::{BeforeRenderContext, CarveExtension, RenderContext};
+use crate::parse::slugify_parse;
+use crate::render::render_attrs;
+
+/// Sentinel name for a counted body marker (carries `slug` + occurrence `n`).
+const MARKER_CARRIER: &str = "carve-index-marker";
+/// Sentinel name for the rewritten `::: index` list carrier.
+pub(crate) const LIST_CARRIER: &str = "carve-index-list";
+
+/// Collect `:index[term]` markers into a generated `::: index` list.
+///
+/// ```
+/// use carve::{Index, Options};
+/// let ext = Index::new();
+/// let opts = Options::new().with_extension(&ext);
+/// let src = "A :index[parser] here.\n\n::: index\n:::";
+/// let html = carve::to_html_with_options(src, &opts);
+/// assert!(html.contains("<span id=\"idx-parser-1\" class=\"index-term\"></span>"));
+/// assert!(html.contains("<a href=\"#idx-parser-1\" class=\"index-backref\">"));
+/// ```
+#[derive(Debug, Default)]
+pub struct Index {
+    /// slug -> total occurrences (BTreeMap keeps codepoint/byte-ascending order).
+    counts: RefCell<BTreeMap<String, usize>>,
+    /// slug -> first occurrence's display text.
+    display: RefCell<BTreeMap<String, String>>,
+}
+
+impl Index {
+    /// Create an index extension.
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+impl CarveExtension for Index {
+    fn name(&self) -> &'static str {
+        "index"
+    }
+
+    fn before_render(&self, mut doc: Document, _ctx: &BeforeRenderContext<'_>) -> Document {
+        let mut counts: BTreeMap<String, usize> = BTreeMap::new();
+        let mut display: BTreeMap<String, String> = BTreeMap::new();
+        // Body-only collection: a marker in deferred content (footnote defs the
+        // renderer may drop or reorder) is left as the plain `index` extension
+        // and renders inert, so the index never points at a dropped anchor.
+        for block in &mut doc.children {
+            rewrite_markers_block(block, &mut counts, &mut display);
+        }
+        let any = !counts.is_empty();
+        *self.counts.borrow_mut() = counts;
+        *self.display.borrow_mut() = display;
+        // Rewrite `::: index` placeholders into list carriers only when there is
+        // something to list; otherwise leave the plain `<div class="index">`.
+        if any {
+            rewrite_containers(&mut doc.children);
+            for blocks in doc.footnote_defs.values_mut() {
+                rewrite_containers(blocks);
+            }
+        }
+        doc
+    }
+
+    fn render_inline_extension(
+        &self,
+        node: &InlineExtension,
+        ctx: &RenderContext<'_>,
+    ) -> Option<String> {
+        match node.name.as_str() {
+            MARKER_CARRIER => {
+                let slug = attr(node, "idx-slug");
+                let n = attr(node, "idx-n");
+                Some(format!(
+                    "<span id=\"idx-{}-{}\" class=\"index-term\"></span>",
+                    ctx.escape_attr(&slug),
+                    ctx.escape_attr(&n)
+                ))
+            }
+            // An uncounted marker (deferred content) renders inert: no id.
+            "index" => Some("<span class=\"index-term\"></span>".to_string()),
+            _ => None,
+        }
+    }
+
+    fn render_block_extension(
+        &self,
+        node: &BlockExtension,
+        ctx: &RenderContext<'_>,
+    ) -> Option<String> {
+        if node.name != LIST_CARRIER {
+            return None;
+        }
+        Some(render_index_list(
+            node,
+            ctx,
+            &self.counts.borrow(),
+            &self.display.borrow(),
+        ))
+    }
+}
+
+fn term_slug(term: &[InlineNode]) -> String {
+    slugify_parse(&inline_text(term), true)
+}
+
+fn attr(node: &InlineExtension, key: &str) -> String {
+    node.attrs
+        .as_ref()
+        .and_then(|a| a.key_values.get(key))
+        .cloned()
+        .unwrap_or_default()
+}
+
+/// Prepend `base` as the leading class of (a clone of) `attrs`.
+fn with_base_class(attrs: &Option<Attrs>, base: &str) -> Attrs {
+    let mut a = attrs.clone().unwrap_or_default();
+    a.classes.insert(0, base.to_string());
+    a
+}
+
+// ----- before_render: rewrite body markers ---------------------------------
+
+fn rewrite_markers_block(
+    block: &mut BlockNode,
+    counts: &mut BTreeMap<String, usize>,
+    display: &mut BTreeMap<String, String>,
+) {
+    match block {
+        BlockNode::Heading(h) => rewrite_markers_inline(&mut h.children, counts, display),
+        BlockNode::Paragraph(p) => rewrite_markers_inline(&mut p.children, counts, display),
+        BlockNode::List(l) => {
+            for item in &mut l.items {
+                for child in &mut item.children {
+                    rewrite_markers_block(child, counts, display);
+                }
+            }
+        }
+        BlockNode::BlockQuote(b) => {
+            for child in &mut b.children {
+                rewrite_markers_block(child, counts, display);
+            }
+        }
+        BlockNode::Admonition(a) => {
+            if let Some(title) = &mut a.title {
+                rewrite_markers_inline(title, counts, display);
+            }
+            for child in &mut a.children {
+                rewrite_markers_block(child, counts, display);
+            }
+        }
+        BlockNode::Div(d) => {
+            for child in &mut d.children {
+                rewrite_markers_block(child, counts, display);
+            }
+        }
+        BlockNode::Extension(e) => {
+            for child in &mut e.children {
+                rewrite_markers_block(child, counts, display);
+            }
+        }
+        BlockNode::Table(t) => {
+            for row in &mut t.rows {
+                for cell in &mut row.cells {
+                    rewrite_markers_inline(&mut cell.children, counts, display);
+                }
+            }
+        }
+        BlockNode::DefinitionList(dl) => {
+            for item in &mut dl.items {
+                for term in &mut item.terms {
+                    rewrite_markers_inline(term, counts, display);
+                }
+                for def in &mut item.definitions {
+                    for child in def {
+                        rewrite_markers_block(child, counts, display);
+                    }
+                }
+            }
+        }
+        BlockNode::Figure(f) => {
+            rewrite_markers_inline(&mut f.caption, counts, display);
+            match &mut f.target {
+                FigureTarget::BlockQuote(b) => {
+                    for child in &mut b.children {
+                        rewrite_markers_block(child, counts, display);
+                    }
+                }
+                FigureTarget::Table(t) => {
+                    for row in &mut t.rows {
+                        for cell in &mut row.cells {
+                            rewrite_markers_inline(&mut cell.children, counts, display);
+                        }
+                    }
+                }
+                FigureTarget::Paragraph(p) => {
+                    rewrite_markers_inline(&mut p.children, counts, display);
+                }
+                FigureTarget::Image(_) | FigureTarget::CodeBlock(_) => {}
+            }
+        }
+        _ => {}
+    }
+}
+
+fn rewrite_markers_inline(
+    nodes: &mut [InlineNode],
+    counts: &mut BTreeMap<String, usize>,
+    display: &mut BTreeMap<String, String>,
+) {
+    for node in nodes.iter_mut() {
+        match node {
+            InlineNode::Extension(e) if e.name == "index" => {
+                let slug = term_slug(&e.children);
+                let n = counts.entry(slug.clone()).or_insert(0);
+                *n += 1;
+                let occurrence = *n;
+                display
+                    .entry(slug.clone())
+                    .or_insert_with(|| inline_text(&e.children));
+                let mut attrs = Attrs::default();
+                attrs.key_values.insert("idx-slug".to_string(), slug);
+                attrs
+                    .key_values
+                    .insert("idx-n".to_string(), occurrence.to_string());
+                *node = InlineNode::Extension(InlineExtension {
+                    attrs: Some(attrs),
+                    name: MARKER_CARRIER.to_string(),
+                    children: Vec::new(),
+                });
+            }
+            InlineNode::Emphasis(e) => rewrite_markers_inline(&mut e.children, counts, display),
+            InlineNode::Link(l) => rewrite_markers_inline(&mut l.children, counts, display),
+            InlineNode::Span(s) => rewrite_markers_inline(&mut s.children, counts, display),
+            InlineNode::Extension(e) => rewrite_markers_inline(&mut e.children, counts, display),
+            InlineNode::CriticInsert(c) => rewrite_markers_inline(&mut c.children, counts, display),
+            InlineNode::CriticDelete(c) => rewrite_markers_inline(&mut c.children, counts, display),
+            _ => {}
+        }
+    }
+}
+
+// ----- before_render: rewrite `::: index` containers -----------------------
+
+fn rewrite_containers(blocks: &mut [BlockNode]) {
+    for block in blocks.iter_mut() {
+        match block {
+            BlockNode::Admonition(a) if a.kind == "index" => {
+                rewrite_containers(&mut a.children);
+                *block = BlockNode::Extension(BlockExtension {
+                    attrs: a.attrs.take(),
+                    name: LIST_CARRIER.to_string(),
+                    children: std::mem::take(&mut a.children),
+                    summary: None,
+                    label: a.label.take(),
+                });
+            }
+            BlockNode::List(l) => {
+                for item in &mut l.items {
+                    rewrite_containers(&mut item.children);
+                }
+            }
+            BlockNode::BlockQuote(b) => rewrite_containers(&mut b.children),
+            BlockNode::Admonition(a) => rewrite_containers(&mut a.children),
+            BlockNode::Div(d) => rewrite_containers(&mut d.children),
+            BlockNode::Extension(e) => rewrite_containers(&mut e.children),
+            BlockNode::DefinitionList(dl) => {
+                for item in &mut dl.items {
+                    for def in &mut item.definitions {
+                        rewrite_containers(def);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+// ----- render --------------------------------------------------------------
+
+fn render_index_list(
+    node: &BlockExtension,
+    ctx: &RenderContext<'_>,
+    counts: &BTreeMap<String, usize>,
+    display: &BTreeMap<String, String>,
+) -> String {
+    let level = ctx.level();
+    let pad = ctx.indent(level);
+    let inner = ctx.indent(level + 1);
+    // BTreeMap iterates keys in ascending byte order == Unicode-codepoint order,
+    // the same locale-independent sort every implementation uses.
+    let items: Vec<String> = counts
+        .iter()
+        .map(|(slug, &n)| {
+            let links: Vec<String> = (1..=n)
+                .map(|m| {
+                    format!(
+                        "<a href=\"#idx-{}-{}\" class=\"index-backref\">\u{21a9}</a>",
+                        ctx.escape_attr(slug),
+                        m
+                    )
+                })
+                .collect();
+            let text = display.get(slug).map(String::as_str).unwrap_or_default();
+            format!(
+                "{}<li>{} {}</li>",
+                inner,
+                ctx.escape_html(text),
+                links.join(" ")
+            )
+        })
+        .collect();
+    let ul = format!(
+        "{}<ul{}>\n{}\n{}</ul>",
+        pad,
+        render_attrs(&Some(with_base_class(&node.attrs, "index"))),
+        items.join("\n"),
+        pad
+    );
+    // Preserve any authored content inside the placeholder before the list.
+    if node.children.is_empty() {
+        ul
+    } else {
+        format!("{}\n{}", ctx.render_blocks_at(&node.children, level), ul)
+    }
+}
+
+/// Flatten an inline tree to its text content, matching carve-js `inlineText`.
+fn inline_text(nodes: &[InlineNode]) -> String {
+    let mut out = String::new();
+    for node in nodes {
+        match node {
+            InlineNode::Text(s) => out.push_str(s),
+            InlineNode::Code(s, _) => out.push_str(s),
+            InlineNode::Emphasis(e) => out.push_str(&inline_text(&e.children)),
+            InlineNode::Link(l) => out.push_str(&inline_text(&l.children)),
+            InlineNode::Span(s) => out.push_str(&inline_text(&s.children)),
+            InlineNode::Extension(e) => out.push_str(&inline_text(&e.children)),
+            InlineNode::CriticInsert(c) => out.push_str(&inline_text(&c.children)),
+            InlineNode::CriticDelete(c) => out.push_str(&inline_text(&c.children)),
+            _ => {}
+        }
+    }
+    out
+}
