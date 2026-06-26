@@ -39,7 +39,9 @@ mod unicode_nfc;
 pub(crate) const NBSP_PLACEHOLDER: char = '\u{e001}';
 
 pub use ast::*;
-pub use citations::{CitationMode, Citations, CslDate, CslEntry, CslName};
+pub use citations::{
+    parse_locator, CitationMode, Citations, CslDate, CslEntry, CslName, ParsedLocator,
+};
 pub use extension::{
     BeforeRenderContext, BlockMatch, CarveExtension, InlineMatch, MatcherContext, Mode, Options,
     RenderContext, StaticRenderers,
