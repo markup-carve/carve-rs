@@ -574,6 +574,16 @@ fn color_swatch_contrast_merges_author_attrs_and_consumes_flag() {
 }
 
 #[test]
+fn color_swatch_contrast_declines_fully_transparent_color() {
+    let ext = ColorSwatch::new();
+    let opts = Options::new().with_extension(&ext);
+    assert_eq!(
+        carve::to_html_with_options(":color[#00000000]{contrast}", &opts),
+        "<p><span class=\"swatch\"><span class=\"swatch-chip\" style=\"background-color:#00000000\"></span> #00000000</span></p>"
+    );
+}
+
+#[test]
 fn color_swatch_contrast_author_style_wins_without_duplicate() {
     let ext = ColorSwatch::new();
     let opts = Options::new().with_extension(&ext);

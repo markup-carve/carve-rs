@@ -315,6 +315,12 @@ fn without_attr(attrs: Option<&Attrs>, key: &str) -> Option<Attrs> {
 }
 
 fn auto_text_color(color: &str) -> Option<&'static str> {
+    // A fully transparent color paints no background, so a computed text color
+    // would sit on the page itself and could be unreadable. Decline the contrast
+    // label (fall back to the normal swatch) instead of guessing.
+    if is_fully_transparent_hex(color) {
+        return None;
+    }
     let (r, g, b) = parse_rgb_bytes(color)?;
     let brightness = (u32::from(r) * 299 + u32::from(g) * 587 + u32::from(b) * 114) / 1000;
     if brightness >= 128 {
@@ -326,6 +332,23 @@ fn auto_text_color(color: &str) -> Option<&'static str> {
 
 fn parse_rgb_bytes(value: &str) -> Option<(u8, u8, u8)> {
     parse_hex_rgb(value).or_else(|| parse_rgb_function(value))
+}
+
+/// True for hex colors whose alpha channel is fully zero (e.g. `#0000`,
+/// `#00000000`).
+fn is_fully_transparent_hex(value: &str) -> bool {
+    let Some(hex) = value.strip_prefix('#') else {
+        return false;
+    };
+    if !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return false;
+    }
+    let alpha = match hex.len() {
+        4 => &hex[3..4],
+        8 => &hex[6..8],
+        _ => return false,
+    };
+    alpha.bytes().all(|b| b == b'0')
 }
 
 fn parse_hex_rgb(value: &str) -> Option<(u8, u8, u8)> {
