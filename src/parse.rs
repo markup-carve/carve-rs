@@ -85,6 +85,20 @@ pub fn parse(source: &str) -> Document {
 }
 
 pub fn parse_with_options(source: &str, options: &Options<'_>) -> Document {
+    parse_with_options_mode(source, options, ParseMode::Html)
+}
+
+pub(crate) fn parse_for_carve(source: &str) -> Document {
+    parse_with_options_mode(source, &Options::default(), ParseMode::Carve)
+}
+
+#[derive(Clone, Copy)]
+enum ParseMode {
+    Html,
+    Carve,
+}
+
+fn parse_with_options_mode(source: &str, options: &Options<'_>, mode: ParseMode) -> Document {
     // Normalize input up front (matching carve-js / carve-php), only allocating
     // when needed:
     //  - strip a single leading UTF-8 BOM (U+FEFF) so `﻿# T` is a heading;
@@ -122,14 +136,21 @@ pub fn parse_with_options(source: &str, options: &Options<'_>) -> Document {
         &doc.footnote_defs,
         options.lowercase_heading_ids,
     );
-    resolve_reference_links(&mut doc, &link_defs, &heading_index);
-    apply_abbreviations(&mut doc);
-    resolve_crossrefs(&mut doc, options.lowercase_heading_ids);
-    // Single post-resolution pass: a link may not contain another link. Runs
-    // after reference and cross-reference resolution because both produce
-    // `Link` nodes only at that stage; running earlier would miss the anchors
-    // they create. Applied over document inline content and footnote bodies.
-    enforce_no_nesting(&mut doc);
+    resolve_reference_links(
+        &mut doc,
+        &link_defs,
+        &heading_index,
+        matches!(mode, ParseMode::Carve),
+    );
+    if matches!(mode, ParseMode::Html) {
+        apply_abbreviations(&mut doc);
+        resolve_crossrefs(&mut doc, options.lowercase_heading_ids);
+        // Single post-resolution pass: a link may not contain another link. Runs
+        // after reference and cross-reference resolution because both produce
+        // `Link` nodes only at that stage; running earlier would miss the anchors
+        // they create. Applied over document inline content and footnote bodies.
+        enforce_no_nesting(&mut doc);
+    }
     for ext in &options.extensions {
         doc = ext.after_parse(doc);
     }
@@ -514,17 +535,32 @@ fn parse_blocks(cur: &mut LineCursor, options: &Options<'_>) -> Vec<BlockNode> {
             continue;
         }
         if trim_ascii_start(line).starts_with("%%%") {
+            let mut content = Vec::new();
             cur.consume();
             while let Some(line) = cur.peek() {
                 cur.consume();
                 if trim_ascii_start(line).starts_with("%%%") {
                     break;
                 }
+                content.push(line.to_string());
             }
+            out.push(BlockNode::Comment(Comment {
+                block: true,
+                content: content.join("\n"),
+            }));
             continue;
         }
         if trim_ascii_start(line).starts_with("%%") {
+            let content = trim_ascii_start(line)
+                .strip_prefix("%%")
+                .unwrap_or_default()
+                .trim_start()
+                .to_string();
             cur.consume();
+            out.push(BlockNode::Comment(Comment {
+                block: false,
+                content,
+            }));
             continue;
         }
         if let Some(attrs) = parse_standalone_attrs_block(cur) {
@@ -5210,13 +5246,14 @@ fn resolve_reference_links(
     doc: &mut Document,
     defs: &BTreeMap<String, LinkDef>,
     heading_index: &CrossrefIndex,
+    preserve_unresolved: bool,
 ) {
     for block in &mut doc.children {
-        resolve_reference_links_block(block, defs, heading_index);
+        resolve_reference_links_block(block, defs, heading_index, preserve_unresolved);
     }
     for blocks in doc.footnote_defs.values_mut() {
         for block in blocks {
-            resolve_reference_links_block(block, defs, heading_index);
+            resolve_reference_links_block(block, defs, heading_index, preserve_unresolved);
         }
     }
 }
@@ -5225,73 +5262,110 @@ fn resolve_reference_links_block(
     block: &mut BlockNode,
     defs: &BTreeMap<String, LinkDef>,
     heading_index: &CrossrefIndex,
+    preserve_unresolved: bool,
 ) {
     match block {
-        BlockNode::Heading(h) => {
-            resolve_reference_links_inline(&mut h.children, defs, heading_index)
-        }
-        BlockNode::Paragraph(p) => {
-            resolve_reference_links_inline(&mut p.children, defs, heading_index)
-        }
+        BlockNode::Heading(h) => resolve_reference_links_inline(
+            &mut h.children,
+            defs,
+            heading_index,
+            preserve_unresolved,
+        ),
+        BlockNode::Paragraph(p) => resolve_reference_links_inline(
+            &mut p.children,
+            defs,
+            heading_index,
+            preserve_unresolved,
+        ),
         BlockNode::List(l) => {
             for item in &mut l.items {
                 for child in &mut item.children {
-                    resolve_reference_links_block(child, defs, heading_index);
+                    resolve_reference_links_block(child, defs, heading_index, preserve_unresolved);
                 }
             }
         }
         BlockNode::BlockQuote(b) => {
             for child in &mut b.children {
-                resolve_reference_links_block(child, defs, heading_index);
+                resolve_reference_links_block(child, defs, heading_index, preserve_unresolved);
             }
         }
         BlockNode::Table(t) => {
             if let Some(caption) = &mut t.caption {
-                resolve_reference_links_inline(caption, defs, heading_index);
+                resolve_reference_links_inline(caption, defs, heading_index, preserve_unresolved);
             }
             for row in &mut t.rows {
                 for cell in &mut row.cells {
-                    resolve_reference_links_inline(&mut cell.children, defs, heading_index);
+                    resolve_reference_links_inline(
+                        &mut cell.children,
+                        defs,
+                        heading_index,
+                        preserve_unresolved,
+                    );
                 }
             }
         }
         BlockNode::Admonition(a) => {
             for child in &mut a.children {
-                resolve_reference_links_block(child, defs, heading_index);
+                resolve_reference_links_block(child, defs, heading_index, preserve_unresolved);
             }
         }
         BlockNode::Div(d) => {
             for child in &mut d.children {
-                resolve_reference_links_block(child, defs, heading_index);
+                resolve_reference_links_block(child, defs, heading_index, preserve_unresolved);
             }
         }
         BlockNode::DefinitionList(d) => {
             for item in &mut d.items {
                 for term in &mut item.terms {
-                    resolve_reference_links_inline(term, defs, heading_index);
+                    resolve_reference_links_inline(term, defs, heading_index, preserve_unresolved);
                 }
                 for definition in &mut item.definitions {
                     for child in definition {
-                        resolve_reference_links_block(child, defs, heading_index);
+                        resolve_reference_links_block(
+                            child,
+                            defs,
+                            heading_index,
+                            preserve_unresolved,
+                        );
                     }
                 }
             }
         }
         BlockNode::Figure(f) => {
-            resolve_reference_links_inline(&mut f.caption, defs, heading_index);
+            resolve_reference_links_inline(
+                &mut f.caption,
+                defs,
+                heading_index,
+                preserve_unresolved,
+            );
             match &mut f.target {
                 FigureTarget::BlockQuote(b) => {
                     for child in &mut b.children {
-                        resolve_reference_links_block(child, defs, heading_index);
+                        resolve_reference_links_block(
+                            child,
+                            defs,
+                            heading_index,
+                            preserve_unresolved,
+                        );
                     }
                 }
                 FigureTarget::Table(t) => {
                     if let Some(caption) = &mut t.caption {
-                        resolve_reference_links_inline(caption, defs, heading_index);
+                        resolve_reference_links_inline(
+                            caption,
+                            defs,
+                            heading_index,
+                            preserve_unresolved,
+                        );
                     }
                     for row in &mut t.rows {
                         for cell in &mut row.cells {
-                            resolve_reference_links_inline(&mut cell.children, defs, heading_index);
+                            resolve_reference_links_inline(
+                                &mut cell.children,
+                                defs,
+                                heading_index,
+                                preserve_unresolved,
+                            );
                         }
                     }
                 }
@@ -5308,6 +5382,7 @@ fn resolve_reference_links_inline(
     nodes: &mut Vec<InlineNode>,
     defs: &BTreeMap<String, LinkDef>,
     heading_index: &CrossrefIndex,
+    preserve_unresolved: bool,
 ) {
     let mut out = Vec::new();
     for mut node in std::mem::take(nodes) {
@@ -5331,36 +5406,70 @@ fn resolve_reference_links_inline(
                             l.ref_label = None;
                             l.raw_ref = None;
                             out.push(node);
+                        } else if preserve_unresolved {
+                            out.push(node);
                         } else {
                             out.push(InlineNode::Text(l.raw_ref.clone().unwrap_or_default()));
                         }
+                    } else if preserve_unresolved {
+                        out.push(node);
                     } else {
                         out.push(InlineNode::Text(l.raw_ref.clone().unwrap_or_default()));
                     }
                 } else {
-                    resolve_reference_links_inline(&mut l.children, defs, heading_index);
+                    resolve_reference_links_inline(
+                        &mut l.children,
+                        defs,
+                        heading_index,
+                        preserve_unresolved,
+                    );
                     out.push(node);
                 }
             }
             InlineNode::Emphasis(e) => {
-                resolve_reference_links_inline(&mut e.children, defs, heading_index);
+                resolve_reference_links_inline(
+                    &mut e.children,
+                    defs,
+                    heading_index,
+                    preserve_unresolved,
+                );
                 out.push(node);
             }
             InlineNode::Span(s) => {
-                resolve_reference_links_inline(&mut s.children, defs, heading_index);
+                resolve_reference_links_inline(
+                    &mut s.children,
+                    defs,
+                    heading_index,
+                    preserve_unresolved,
+                );
                 out.push(node);
             }
             InlineNode::Extension(e) => {
-                resolve_reference_links_inline(&mut e.children, defs, heading_index);
+                resolve_reference_links_inline(
+                    &mut e.children,
+                    defs,
+                    heading_index,
+                    preserve_unresolved,
+                );
                 out.push(node);
             }
             InlineNode::CitationGroup(g) => {
                 for item in &mut g.items {
                     if let Some(prefix) = &mut item.prefix {
-                        resolve_reference_links_inline(prefix, defs, heading_index);
+                        resolve_reference_links_inline(
+                            prefix,
+                            defs,
+                            heading_index,
+                            preserve_unresolved,
+                        );
                     }
                     if let Some(locator) = &mut item.locator {
-                        resolve_reference_links_inline(locator, defs, heading_index);
+                        resolve_reference_links_inline(
+                            locator,
+                            defs,
+                            heading_index,
+                            preserve_unresolved,
+                        );
                     }
                 }
                 out.push(node);
