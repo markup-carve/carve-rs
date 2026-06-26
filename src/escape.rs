@@ -109,7 +109,39 @@ pub fn escape_attr(input: &str) -> String {
 }
 
 /// URL schemes that must never appear in an attribute value.
-const DANGEROUS_VALUE_SCHEMES: [&str; 4] = ["javascript", "vbscript", "data", "file"];
+///
+/// Beyond the classic script-bearing schemes (`javascript`, `vbscript`,
+/// `data`, `file`), this also denies OS protocol-handler / command-execution
+/// schemes (CVE-2026-20841 class): clicking such a link can hand a payload to
+/// a desktop application's URL handler. These are blocked everywhere a URL is
+/// emitted (link href, image src, autolinks, and `{href=...}`/`{src=...}`
+/// attribute overrides), case-insensitively and after the existing
+/// obfuscation defenses.
+const DANGEROUS_VALUE_SCHEMES: [&str; 23] = [
+    "javascript",
+    "vbscript",
+    "data",
+    "file",
+    "ms-msdt",
+    "ms-office",
+    "ms-word",
+    "ms-excel",
+    "ms-powerpoint",
+    "ms-access",
+    "ms-visio",
+    "ms-project",
+    "ms-publisher",
+    "ms-infopath",
+    "ms-spd",
+    "ms-search",
+    "search-ms",
+    "ms-cxh",
+    "ms-cxh-full",
+    "shell",
+    "vscode",
+    "vscode-insiders",
+    "jar",
+];
 
 /// Whether an attribute NAME is unsafe regardless of value: event handlers
 /// (`on*`) and the injection sinks `srcdoc` / `formaction`. Such attributes are
@@ -265,7 +297,7 @@ fn is_url_probe_skippable(c: char) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{escape_text, is_bidi_control};
+    use super::{escape_text, is_bidi_control, sanitize_attr_value, sanitize_url};
 
     #[test]
     fn bidi_overrides_and_isolates_are_controls() {
@@ -297,5 +329,75 @@ mod tests {
         assert_eq!(escape_text("a\u{202e}<b>"), "a&lt;b&gt;");
         // Nothing to strip: fast path returns the input unchanged.
         assert_eq!(escape_text("plain"), "plain");
+    }
+
+    #[test]
+    fn sanitize_url_blocks_os_handler_schemes() {
+        // OS protocol-handler / command-execution schemes (CVE-2026-20841 class)
+        // are blanked everywhere a URL is emitted.
+        for url in [
+            "ms-msdt:/id",
+            "ms-office:ofe|u|http://evil/x.docm",
+            "ms-word:ofe|u|x",
+            "ms-excel:ofe|u|x",
+            "ms-powerpoint:ofe|u|x",
+            "ms-access:x",
+            "ms-visio:x",
+            "ms-project:x",
+            "ms-publisher:x",
+            "ms-infopath:x",
+            "ms-spd:x",
+            "ms-search:x",
+            "search-ms:x",
+            "ms-cxh:x",
+            "ms-cxh-full:x",
+            "shell:Startup",
+            "vscode:x",
+            "vscode-insiders:x",
+            "jar:http://evil/x.jar!/",
+        ] {
+            assert_eq!(sanitize_url(url), "", "{url} must be blanked");
+        }
+    }
+
+    #[test]
+    fn sanitize_url_os_handler_block_is_case_insensitive() {
+        assert_eq!(sanitize_url("MS-OFFICE:ofe|u|x"), "");
+        assert_eq!(sanitize_url("Ms-Msdt:/id"), "");
+        assert_eq!(sanitize_url("SHELL:Startup"), "");
+        assert_eq!(sanitize_url("VSCode:x"), "");
+    }
+
+    #[test]
+    fn sanitize_url_allows_safe_schemes() {
+        for url in [
+            "https://ok.com",
+            "http://ok.com",
+            "mailto:a@b.com",
+            "tel:+15551234",
+            "ftp://ok.com/x",
+            "sms:+15551234",
+            "/relative/path",
+            "#anchor",
+        ] {
+            assert_eq!(sanitize_url(url), url, "{url} must pass unchanged");
+        }
+    }
+
+    #[test]
+    fn sanitize_attr_value_blocks_os_handler_overrides() {
+        // `{href=...}` / `{src=...}` attribute overrides route through the same set.
+        assert_eq!(sanitize_attr_value("href", "ms-office:ofe|u|x"), "");
+        assert_eq!(sanitize_attr_value("src", "ms-msdt:/id"), "");
+        assert_eq!(sanitize_attr_value("href", "SHELL:Startup"), "");
+        // Safe schemes survive.
+        assert_eq!(
+            sanitize_attr_value("href", "https://ok.com"),
+            "https://ok.com"
+        );
+        assert_eq!(
+            sanitize_attr_value("href", "tel:+15551234"),
+            "tel:+15551234"
+        );
     }
 }
