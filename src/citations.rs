@@ -254,12 +254,16 @@ fn parse_item(raw: &str, ctx: &MatcherContext<'_>) -> Option<Citation> {
         } else if let Some(loc_raw) = rest.strip_prefix(',') {
             let loc_raw = loc_raw.trim();
             if loc_raw.is_empty() {
-                return None;
+                // A trailing comma with no locator text is ignored - the item is
+                // a normal citation, not a verbatim fallback (matches carve-js /
+                // carve-php; markup-carve/carve#227).
+                (None, None, None, None)
+            } else {
+                let locator = Some(ctx.parse_inlines(loc_raw));
+                let p = parse_locator(loc_raw);
+                let suffix = p.suffix_text.as_deref().map(|st| ctx.parse_inlines(st));
+                (locator, p.label, p.value, suffix)
             }
-            let locator = Some(ctx.parse_inlines(loc_raw));
-            let p = parse_locator(loc_raw);
-            let suffix = p.suffix_text.as_deref().map(|st| ctx.parse_inlines(st));
-            (locator, p.label, p.value, suffix)
         } else {
             continue;
         };

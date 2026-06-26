@@ -476,6 +476,15 @@ fn data_locator_attrs() {
 }
 
 #[test]
+fn trailing_comma_empty_locator_is_a_citation() {
+    // `[@key,]` - a trailing comma with no locator - is a normal citation, not
+    // a verbatim fallback (carve#227; matches carve-js / carve-php).
+    let out = h("See [@smith2020,].\n\n[@smith2020]: Smith, J. (2020).");
+    assert!(out.contains("href=\"#ref-smith2020\">1</a>"));
+    assert!(!out.contains("[@smith2020,]"));
+}
+
+#[test]
 fn parse_locator_multibyte_does_not_panic() {
     // A locator beginning with a multibyte char must not panic when a vocab
     // matcher's byte length lands mid-char (e.g. `s[..2]` over a 3-byte char).
