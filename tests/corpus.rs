@@ -126,6 +126,12 @@ const IMPLEMENTED: &[&str] = &[
     "111-a-pipe-pair-with-no-cell-is-not-a-table",
     "112-adjacent-attribute-blocks-on-one-line-merge",
     "113-a-continuation-row-needs-a-body-row",
+    "114-fence-opener-with-a-nested-list-body-inside-a-list-item",
+    "115-footnote-definition-inside-a-container-is-collected",
+    "116-cyclic-cross-reference-resolves-to-one-level",
+    "117-trojan-source-heading-ids-are-nfc-normalized-and-strip-invisible-controls",
+    "118-trojan-source-rendered-text-and-code-strip-bidi-override-controls",
+    "119-scheme-probe-strips-unicode-whitespace",
 ];
 
 fn corpus_dir() -> PathBuf {
@@ -474,4 +480,28 @@ corpus_test!(c98_table_row_attributes, "98-table-row-attributes");
 corpus_test!(
     c99_table_header_cell_rowspan,
     "99-table-header-cell-rowspan"
+);
+corpus_test!(
+    c114_fence_opener_with_a_nested_list_body_inside_a_list_item,
+    "114-fence-opener-with-a-nested-list-body-inside-a-list-item"
+);
+corpus_test!(
+    c115_footnote_definition_inside_a_container_is_collected,
+    "115-footnote-definition-inside-a-container-is-collected"
+);
+corpus_test!(
+    c116_cyclic_cross_reference_resolves_to_one_level,
+    "116-cyclic-cross-reference-resolves-to-one-level"
+);
+corpus_test!(
+    c117_trojan_source_heading_ids,
+    "117-trojan-source-heading-ids-are-nfc-normalized-and-strip-invisible-controls"
+);
+corpus_test!(
+    c118_trojan_source_rendered_text_and_code,
+    "118-trojan-source-rendered-text-and-code-strip-bidi-override-controls"
+);
+corpus_test!(
+    c119_scheme_probe_strips_unicode_whitespace,
+    "119-scheme-probe-strips-unicode-whitespace"
 );

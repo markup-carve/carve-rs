@@ -603,6 +603,13 @@ pub(crate) fn plain_inlines(nodes: &[InlineNode]) -> String {
             InlineNode::Text(s) => out.push_str(s),
             InlineNode::Emphasis(e) => out.push_str(&plain_inlines(&e.children)),
             InlineNode::Code(s, _) => out.push_str(s),
+            // A `</#id>` cross-reference contributes nothing to a heading id: the
+            // id is derived from the heading text as authored, before cross-ref
+            // resolution turns the reference into a Link. Skipping it here keeps
+            // the render-time id byte-identical to the parse-time id used to
+            // build the cross-reference index (so `# A </#a>` keeps id `A`, not
+            // `A-A`). Mirrors `plain_inlines_parse`, which never saw the Link.
+            InlineNode::Link(l) if l.from_crossref => {}
             InlineNode::Link(l) => out.push_str(&plain_inlines(&l.children)),
             InlineNode::Image(i) => out.push_str(&i.alt),
             InlineNode::Extension(e) => out.push_str(&plain_inlines(&e.children)),
@@ -1175,6 +1182,13 @@ fn render_admonition(
         out.push_str(&escape_text(label));
         out.push_str("</p>");
     }
+    // carve-js renders the body as `>\n${title}${label}${body}\n${pad}</tag>`,
+    // so an admonition with NO title, label, or children still emits one blank
+    // line between the open and close tags (corpus 114-7). Mirror that: when the
+    // body is otherwise empty, the missing content is a single empty line.
+    if a.title.is_none() && a.label.is_none() && a.children.is_empty() {
+        out.push('\n');
+    }
     for child in &a.children {
         out.push('\n');
         render_block(out, child, level + 1, options, state);
@@ -1412,6 +1426,15 @@ fn write_escaped_text_nbsp(out: &mut String, input: &str) {
             // Both a literal U+00A0 and the generated-NBSP placeholder render
             // as `&nbsp;` in HTML; they only diverge in plain/ANSI output.
             '\u{00a0}' | crate::NBSP_PLACEHOLDER => "&nbsp;",
+            // Trojan-Source bidi-override / isolate controls are REMOVED (not
+            // escaped) from rendered text and code: an entity reference decodes
+            // back to the raw control and still reorders the DOM, so only
+            // physical removal is inert. See `escape::is_bidi_control`.
+            c if crate::escape::is_bidi_control(c) => {
+                out.push_str(&input[start..i]);
+                start = i + ch.len_utf8();
+                continue;
+            }
             _ => continue,
         };
         out.push_str(&input[start..i]);
