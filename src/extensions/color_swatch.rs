@@ -11,7 +11,7 @@
 //! The render is configurable via [`ColorSwatch::position`],
 //! [`ColorSwatch::shape`], [`ColorSwatch::tint`] and [`ColorSwatch::reveal`].
 
-use crate::ast::{Attrs, InlineExtension, InlineNode};
+use crate::ast::{AttrSlot, Attrs, InlineExtension, InlineNode};
 use crate::escape::{escape_attr, escape_text};
 use crate::extension::{CarveExtension, RenderContext};
 use crate::render::render_attrs_after_class;
@@ -170,6 +170,14 @@ impl ColorSwatch {
             inner,
         )
     }
+
+    fn render_label(&self, attrs: Option<&Attrs>, color: &str, text_color: &str) -> String {
+        format!(
+            "<span{}>{}</span>",
+            open_label_attrs(attrs, color, text_color),
+            escape_text(color),
+        )
+    }
 }
 
 impl CarveExtension for ColorSwatch {
@@ -180,14 +188,29 @@ impl CarveExtension for ColorSwatch {
     fn render_inline_extension(
         &self,
         node: &InlineExtension,
-        _ctx: &RenderContext<'_>,
+        ctx: &RenderContext<'_>,
     ) -> Option<String> {
         if node.name != ROLE {
             return None;
         }
         let value = inline_text(&node.children);
-        let color = safe_color(&value)?;
-        Some(self.render_swatch(node.attrs.as_ref(), color))
+        let contrast = has_attr(node.attrs.as_ref(), "contrast");
+        let attrs = if contrast {
+            without_attr(node.attrs.as_ref(), "contrast")
+        } else {
+            None
+        };
+        let render_attrs = attrs.as_ref().or(node.attrs.as_ref());
+        let Some(color) = safe_color(&value) else {
+            return contrast
+                .then(|| generic_fallback(&node.name, render_attrs, &node.children, ctx));
+        };
+        if contrast {
+            if let Some(text_color) = auto_text_color(color) {
+                return Some(self.render_label(render_attrs, color, text_color));
+            }
+        }
+        Some(self.render_swatch(render_attrs, color))
     }
 }
 
@@ -235,6 +258,152 @@ fn open_attrs(
         out.push_str(&render_attrs_after_class(a));
     }
     out
+}
+
+fn open_label_attrs(attrs: Option<&Attrs>, color: &str, text_color: &str) -> String {
+    // The computed colors go last so author attributes keep their source order;
+    // an explicit author `style` wins and suppresses ours (which also avoids
+    // emitting a duplicate `style` attribute).
+    let mut out = open_attrs(attrs, "swatch-label", &[], None, &[]);
+    let author_has_style = attrs.is_some_and(|a| a.key_values.contains_key("style"));
+    if !author_has_style {
+        out.push_str(&format!(
+            " style=\"{}\"",
+            escape_attr(&format!("background:{color};color:{text_color}"))
+        ));
+    }
+    out
+}
+
+fn generic_fallback(
+    name: &str,
+    attrs: Option<&Attrs>,
+    children: &[InlineNode],
+    ctx: &RenderContext<'_>,
+) -> String {
+    let base = format!("ext-{name}");
+    let mut classes = vec![base];
+    if let Some(a) = attrs {
+        for class in &a.classes {
+            if !classes.contains(class) {
+                classes.push(class.clone());
+            }
+        }
+    }
+    let mut out = format!("<span class=\"{}\"", escape_attr(&classes.join(" ")));
+    if let Some(a) = attrs {
+        out.push_str(&render_attrs_after_class(a));
+    }
+    out.push('>');
+    out.push_str(&ctx.render_inlines(children));
+    out.push_str("</span>");
+    out
+}
+
+fn has_attr(attrs: Option<&Attrs>, key: &str) -> bool {
+    attrs.is_some_and(|a| a.key_values.contains_key(key))
+}
+
+fn without_attr(attrs: Option<&Attrs>, key: &str) -> Option<Attrs> {
+    let mut attrs = attrs?.clone();
+    attrs.key_values.remove(key);
+    attrs.order.retain(|slot| match slot {
+        AttrSlot::Key(k) => k != key,
+        _ => true,
+    });
+    Some(attrs)
+}
+
+fn auto_text_color(color: &str) -> Option<&'static str> {
+    // A fully transparent color paints no background, so a computed text color
+    // would sit on the page itself and could be unreadable. Decline the contrast
+    // label (fall back to the normal swatch) instead of guessing.
+    if is_fully_transparent_hex(color) {
+        return None;
+    }
+    let (r, g, b) = parse_rgb_bytes(color)?;
+    let brightness = (u32::from(r) * 299 + u32::from(g) * 587 + u32::from(b) * 114) / 1000;
+    if brightness >= 128 {
+        Some("#000")
+    } else {
+        Some("#fff")
+    }
+}
+
+fn parse_rgb_bytes(value: &str) -> Option<(u8, u8, u8)> {
+    parse_hex_rgb(value).or_else(|| parse_rgb_function(value))
+}
+
+/// True for hex colors whose alpha channel is fully zero (e.g. `#0000`,
+/// `#00000000`).
+fn is_fully_transparent_hex(value: &str) -> bool {
+    let Some(hex) = value.strip_prefix('#') else {
+        return false;
+    };
+    if !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return false;
+    }
+    let alpha = match hex.len() {
+        4 => &hex[3..4],
+        8 => &hex[6..8],
+        _ => return false,
+    };
+    alpha.bytes().all(|b| b == b'0')
+}
+
+fn parse_hex_rgb(value: &str) -> Option<(u8, u8, u8)> {
+    let hex = value.strip_prefix('#')?;
+    match hex.len() {
+        3 | 4 => {
+            let mut nibbles = hex.bytes().map(hex_nibble);
+            let r = nibbles.next()?? * 17;
+            let g = nibbles.next()?? * 17;
+            let b = nibbles.next()?? * 17;
+            Some((r, g, b))
+        }
+        6 | 8 => {
+            let r = u8::from_str_radix(&hex[0..2], 16).ok()?;
+            let g = u8::from_str_radix(&hex[2..4], 16).ok()?;
+            let b = u8::from_str_radix(&hex[4..6], 16).ok()?;
+            Some((r, g, b))
+        }
+        _ => None,
+    }
+}
+
+fn hex_nibble(b: u8) -> Option<u8> {
+    match b {
+        b'0'..=b'9' => Some(b - b'0'),
+        b'a'..=b'f' => Some(b - b'a' + 10),
+        b'A'..=b'F' => Some(b - b'A' + 10),
+        _ => None,
+    }
+}
+
+fn parse_rgb_function(value: &str) -> Option<(u8, u8, u8)> {
+    let open = value.find('(')?;
+    if !value.ends_with(')') {
+        return None;
+    }
+    let name = &value[..open];
+    if !matches!(name, "rgb" | "rgba") {
+        return None;
+    }
+    let inner = &value[open + 1..value.len() - 1];
+    let mut values = inner
+        .split(|c: char| c == ',' || c == '/' || c.is_ascii_whitespace())
+        .filter(|token| !token.is_empty())
+        .take(3)
+        .map(parse_integer_byte);
+    Some((values.next()??, values.next()??, values.next()??))
+}
+
+fn parse_integer_byte(token: &str) -> Option<u8> {
+    if token.is_empty() || !token.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    let n = token.parse::<u16>().ok()?;
+    Some(n.min(255) as u8)
 }
 
 /// Return the trimmed value when it matches the safe color grammar.
