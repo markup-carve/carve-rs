@@ -86,6 +86,9 @@ fn render_blocks(
     let mut out = String::new();
     let mut first = true;
     for block in nodes {
+        if matches!(block, BlockNode::Comment(_)) {
+            continue;
+        }
         if !first {
             out.push('\n');
         }
@@ -112,6 +115,10 @@ fn render_document_blocks(
     let mut i = 0;
     let mut first = true;
     while i < nodes.len() {
+        if matches!(nodes[i], BlockNode::Comment(_)) {
+            i += 1;
+            continue;
+        }
         if !first {
             out.push('\n');
         }
