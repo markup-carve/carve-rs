@@ -524,6 +524,76 @@ fn color_swatch_function_color_renders_chip_and_label() {
 }
 
 #[test]
+fn color_swatch_contrast_dark_hex_uses_white_text() {
+    let ext = ColorSwatch::new();
+    let opts = Options::new().with_extension(&ext);
+    assert_eq!(
+        carve::to_html_with_options(":color[#0d1117]{contrast}", &opts),
+        "<p><span class=\"swatch-label\" style=\"background:#0d1117;color:#fff\">#0d1117</span></p>"
+    );
+}
+
+#[test]
+fn color_swatch_contrast_mid_hex_uses_black_text() {
+    let ext = ColorSwatch::new();
+    let opts = Options::new().with_extension(&ext);
+    assert_eq!(
+        carve::to_html_with_options(":color[#58a6ff]{contrast}", &opts),
+        "<p><span class=\"swatch-label\" style=\"background:#58a6ff;color:#000\">#58a6ff</span></p>"
+    );
+}
+
+#[test]
+fn color_swatch_contrast_light_hex_uses_black_text() {
+    let ext = ColorSwatch::new();
+    let opts = Options::new().with_extension(&ext);
+    assert_eq!(
+        carve::to_html_with_options(":color[#f0f6fc]{contrast}", &opts),
+        "<p><span class=\"swatch-label\" style=\"background:#f0f6fc;color:#000\">#f0f6fc</span></p>"
+    );
+}
+
+#[test]
+fn color_swatch_contrast_rgb_integer_uses_black_text() {
+    let ext = ColorSwatch::new();
+    let opts = Options::new().with_extension(&ext);
+    assert_eq!(
+        carve::to_html_with_options(":color[rgb(240,246,252)]{contrast}", &opts),
+        "<p><span class=\"swatch-label\" style=\"background:rgb(240,246,252);color:#000\">rgb(240,246,252)</span></p>"
+    );
+}
+
+#[test]
+fn color_swatch_contrast_merges_author_attrs_and_consumes_flag() {
+    let ext = ColorSwatch::new();
+    let opts = Options::new().with_extension(&ext);
+    assert_eq!(
+        carve::to_html_with_options(":color[#fff]{contrast .x #y}", &opts),
+        "<p><span class=\"swatch-label x\" id=\"y\" style=\"background:#fff;color:#000\">#fff</span></p>"
+    );
+}
+
+#[test]
+fn color_swatch_contrast_author_style_wins_without_duplicate() {
+    let ext = ColorSwatch::new();
+    let opts = Options::new().with_extension(&ext);
+    assert_eq!(
+        carve::to_html_with_options(":color[#fff]{contrast style=\"opacity:0.5\"}", &opts),
+        "<p><span class=\"swatch-label\" style=\"opacity:0.5\">#fff</span></p>"
+    );
+}
+
+#[test]
+fn color_swatch_contrast_named_color_falls_back_to_normal_swatch() {
+    let ext = ColorSwatch::new();
+    let opts = Options::new().with_extension(&ext);
+    assert_eq!(
+        carve::to_html_with_options(":color[rebeccapurple]{contrast}", &opts),
+        "<p><span class=\"swatch\"><span class=\"swatch-chip\" style=\"background-color:rebeccapurple\"></span> rebeccapurple</span></p>"
+    );
+}
+
+#[test]
 fn color_swatch_merges_author_attrs_on_outer_span() {
     let ext = ColorSwatch::new();
     let opts = Options::new().with_extension(&ext);
