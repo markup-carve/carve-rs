@@ -98,6 +98,83 @@ fn citations_locator_semicolon() {
 }
 
 #[test]
+fn citations_locator_page() {
+    let citations = carve::Citations::new();
+    let options = carve::Options::new().with_extension(&citations);
+    assert_optional_pair("13-citations-locator-page", options);
+}
+
+#[test]
+fn citations_locator_range_suffix() {
+    let citations = carve::Citations::new();
+    let options = carve::Options::new().with_extension(&citations);
+    assert_optional_pair("14-citations-locator-range-suffix", options);
+}
+
+#[test]
+fn citations_locator_labels() {
+    let citations = carve::Citations::new();
+    let options = carve::Options::new().with_extension(&citations);
+    assert_optional_pair("15-citations-locator-labels", options);
+}
+
+#[test]
+fn citations_locator_default_page() {
+    let citations = carve::Citations::new();
+    let options = carve::Options::new().with_extension(&citations);
+    assert_optional_pair("16-citations-locator-default-page", options);
+}
+
+#[test]
+fn citations_locator_roman() {
+    let citations = carve::Citations::new();
+    let options = carve::Options::new().with_extension(&citations);
+    assert_optional_pair("17-citations-locator-roman", options);
+}
+
+#[test]
+fn citations_label_boundary() {
+    let citations = carve::Citations::new();
+    let options = carve::Options::new().with_extension(&citations);
+    assert_optional_pair("18-citations-label-boundary", options);
+}
+
+#[test]
+fn citations_comma_suffix_trim() {
+    let citations = carve::Citations::new();
+    let options = carve::Options::new().with_extension(&citations);
+    assert_optional_pair("19-citations-comma-suffix-trim", options);
+}
+
+#[test]
+fn citations_empty_value() {
+    let citations = carve::Citations::new();
+    let options = carve::Options::new().with_extension(&citations);
+    assert_optional_pair("20-citations-empty-value", options);
+}
+
+#[test]
+fn citations_integral() {
+    let citations = carve::Citations::new();
+    let options = carve::Options::new().with_extension(&citations);
+    assert_optional_pair("21-citations-integral", options);
+}
+
+#[test]
+fn citations_group_marker_vs_item() {
+    let citations = carve::Citations::new();
+    let options = carve::Options::new().with_extension(&citations);
+    assert_optional_pair("22-citations-group-marker-vs-item", options);
+}
+
+#[test]
+fn citations_suppress_per_item() {
+    let citations = carve::Citations::new();
+    let options = carve::Options::new().with_extension(&citations);
+    assert_optional_pair("23-citations-suppress-per-item", options);
+}
+
+#[test]
 #[ignore = "optional Tier-2 feature not supported by carve-rs yet"]
 fn smart_quotes_locale_de() {
     assert_optional_pair("03-smart-quotes-locale-de", carve::Options::new());

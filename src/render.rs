@@ -1655,6 +1655,10 @@ fn render_citation_group(out: &mut String, g: &CitationGroup, options: &Options<
         return;
     }
 
+    if g.integral {
+        out.push_str("<span class=\"citation\" data-cite-mode=\"integral\">");
+    }
+
     match g.mode.unwrap_or(CitationRenderMode::Numbered) {
         CitationRenderMode::Numbered => {
             out.push('[');
@@ -1677,6 +1681,26 @@ fn render_citation_group(out: &mut String, g: &CitationGroup, options: &Options<
             out.push(')');
         }
     }
+
+    if g.integral {
+        out.push_str("</span>");
+    }
+}
+
+/// Flatten inline nodes to plain text (for `data-*` attribute values).
+fn flatten_text(nodes: &[InlineNode]) -> String {
+    let mut out = String::new();
+    for node in nodes {
+        match node {
+            InlineNode::Text(t) => out.push_str(t),
+            InlineNode::Emphasis(e) => out.push_str(&flatten_text(&e.children)),
+            InlineNode::Link(l) => out.push_str(&flatten_text(&l.children)),
+            InlineNode::Span(s) => out.push_str(&flatten_text(&s.children)),
+            InlineNode::Extension(e) => out.push_str(&flatten_text(&e.children)),
+            _ => {}
+        }
+    }
+    out
 }
 
 fn render_citation_item(out: &mut String, item: &Citation, options: &Options<'_>) {
@@ -1684,18 +1708,41 @@ fn render_citation_item(out: &mut String, item: &Citation, options: &Options<'_>
         render_inlines(out, prefix, options);
         out.push(' ');
     }
+
+    // Build data-* attribute string (order is normative per spec).
+    let mut attrs = format!("data-cite-key=\"{}\"", escape_attr(&item.key));
+    if item.suppress_author {
+        attrs.push_str(" data-suppress-author=\"true\"");
+    }
+    let pfx = flatten_text(item.prefix.as_deref().unwrap_or(&[]));
+    if !pfx.is_empty() {
+        attrs.push_str(&format!(" data-cite-prefix=\"{}\"", escape_attr(&pfx)));
+    }
+    if let Some(ll) = &item.locator_label {
+        attrs.push_str(&format!(" data-locator-label=\"{}\"", escape_attr(ll)));
+    }
+    if let Some(lv) = &item.locator_value {
+        attrs.push_str(&format!(" data-locator=\"{}\"", escape_attr(lv)));
+    }
+    let sfx = flatten_text(item.suffix.as_deref().unwrap_or(&[]));
+    if !sfx.is_empty() {
+        attrs.push_str(&format!(" data-suffix=\"{}\"", escape_attr(&sfx)));
+    }
+
     // A use_index is only set when a bibliography pool is active (#199); it adds
     // the per-use back-link anchor to the existing forward link.
     match item.use_index {
         Some(n) => out.push_str(&format!(
-            "<a id=\"cite-{}-{}\" href=\"#ref-{}\">{}</a>",
+            "<a id=\"cite-{}-{}\" {} href=\"#ref-{}\">{}</a>",
             escape_attr(&item.key),
             n,
+            attrs,
             escape_attr(&item.key),
             escape_text(item.label.as_deref().unwrap_or_default())
         )),
         None => out.push_str(&format!(
-            "<a href=\"#ref-{}\">{}</a>",
+            "<a {} href=\"#ref-{}\">{}</a>",
+            attrs,
             escape_attr(&item.key),
             escape_text(item.label.as_deref().unwrap_or_default())
         )),
