@@ -1,5 +1,5 @@
 //! `carve` CLI — reads Carve source from a file or stdin, writes the rendered
-//! output (HTML by default, or Markdown / plain text / ANSI) to stdout.
+//! output (HTML by default, or Markdown / plain text / ANSI / Carve) to stdout.
 
 use std::io::{self, Read, Write};
 use std::process::ExitCode;
@@ -10,6 +10,13 @@ enum OutputFormat {
     Markdown,
     Plain,
     Ansi,
+    Carve,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Command {
+    Render,
+    Fmt,
 }
 
 fn main() -> ExitCode {
@@ -28,15 +35,24 @@ fn main() -> ExitCode {
 
     let mut options = carve::Options::new();
     let mut format = OutputFormat::Html;
+    let mut command = Command::Render;
+    let mut fmt_write = false;
+    let mut fmt_check = false;
     let mut enable_extensions = false;
-    let mut input_path: Option<String> = None;
+    let mut input_paths: Vec<String> = Vec::new();
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
+            "fmt" if command == Command::Render && input_paths.is_empty() => {
+                command = Command::Fmt;
+                format = OutputFormat::Carve;
+            }
             "-h" | "--help" => {
                 print_usage();
                 return ExitCode::SUCCESS;
             }
+            "-w" | "--write" if command == Command::Fmt => fmt_write = true,
+            "--check" if command == Command::Fmt => fmt_check = true,
             "--mention-url" => {
                 let Some(value) = args.next() else {
                     eprintln!("carve: --mention-url requires a template");
@@ -92,23 +108,29 @@ fn main() -> ExitCode {
             "--markdown" | "--md" => format = OutputFormat::Markdown,
             "--plain" | "--plain-text" => format = OutputFormat::Plain,
             "--ansi" => format = OutputFormat::Ansi,
+            "--carve" => format = OutputFormat::Carve,
             "--static" => options = options.with_mode(carve::Mode::Static),
             "--interactive" => options = options.with_mode(carve::Mode::Interactive),
             "--extensions" => enable_extensions = true,
             "--no-raw-html" | "--safe" => options = options.with_raw_html(false),
-            "-" => input_path = None,
+            "-" if command == Command::Render => input_paths.clear(),
+            "-" if command == Command::Fmt => input_paths.push(arg),
             path if path.starts_with('-') => {
                 eprintln!("carve: unknown option: {path}");
                 return ExitCode::FAILURE;
             }
             path => {
-                if input_path.is_some() {
+                if command == Command::Render && !input_paths.is_empty() {
                     eprintln!("carve: multiple input files specified");
                     return ExitCode::FAILURE;
                 }
-                input_path = Some(path.to_string());
+                input_paths.push(path.to_string());
             }
         }
+    }
+
+    if command == Command::Fmt {
+        return run_fmt(&input_paths, fmt_write, fmt_check);
     }
 
     if enable_extensions {
@@ -122,8 +144,8 @@ fn main() -> ExitCode {
             .with_extension(&math_block);
     }
 
-    let source = match input_path.as_deref() {
-        None => {
+    let source = match input_paths.first().map(String::as_str) {
+        None | Some("-") => {
             let mut buf = String::new();
             if let Err(err) = io::stdin().read_to_string(&mut buf) {
                 eprintln!("carve: cannot read stdin: {err}");
@@ -146,6 +168,7 @@ fn main() -> ExitCode {
         OutputFormat::Markdown => carve::to_markdown_with_options(&source, &options),
         OutputFormat::Plain => carve::to_plain_text_with_options(&source, &options),
         OutputFormat::Ansi => carve::to_ansi_with_options(&source, &options),
+        OutputFormat::Carve => carve::to_carve(&source),
     };
     let mut stdout = io::stdout().lock();
     if let Err(err) = stdout.write_all(output.as_bytes()) {
@@ -158,17 +181,135 @@ fn main() -> ExitCode {
     ExitCode::SUCCESS
 }
 
+fn run_fmt(paths: &[String], write: bool, check: bool) -> ExitCode {
+    if write && check {
+        eprintln!("carve fmt: --write and --check are mutually exclusive");
+        return ExitCode::FAILURE;
+    }
+    if paths.is_empty() || paths == ["-"] {
+        if write || check {
+            eprintln!("carve fmt: --write/--check require file paths");
+            return ExitCode::FAILURE;
+        }
+        let mut source = String::new();
+        if let Err(err) = read_stdin_to_string(&mut source) {
+            eprintln!("carve fmt: cannot read stdin: {err}");
+            return ExitCode::FAILURE;
+        }
+        return write_stdout(&carve::to_carve(&source));
+    }
+
+    let mut changed = Vec::new();
+    let mut stdout = String::new();
+    for path in paths {
+        if path == "-" {
+            eprintln!("carve fmt: stdin cannot be mixed with file paths");
+            return ExitCode::FAILURE;
+        }
+        let source = match std::fs::read_to_string(path) {
+            Ok(source) => source,
+            Err(err) => {
+                eprintln!("carve fmt: cannot read {path}: {err}");
+                return ExitCode::FAILURE;
+            }
+        };
+        let formatted = carve::to_carve(&source);
+        if formatted != source {
+            changed.push(path.clone());
+            if write {
+                if let Err(err) = std::fs::write(path, formatted.as_bytes()) {
+                    eprintln!("carve fmt: cannot write {path}: {err}");
+                    return ExitCode::FAILURE;
+                }
+            }
+        }
+        if !write && !check {
+            stdout.push_str(&formatted);
+        }
+    }
+    if check && !changed.is_empty() {
+        for path in changed {
+            eprintln!("carve fmt: would reformat {path}");
+        }
+        return ExitCode::FAILURE;
+    }
+    if !stdout.is_empty() {
+        return write_stdout(&stdout);
+    }
+    ExitCode::SUCCESS
+}
+
+fn write_stdout(output: &str) -> ExitCode {
+    let mut stdout = io::stdout().lock();
+    if let Err(err) = stdout.write_all(output.as_bytes()) {
+        eprintln!("carve: cannot write stdout: {err}");
+        return ExitCode::FAILURE;
+    }
+    if !output.ends_with('\n') {
+        let _ = stdout.write_all(b"\n");
+    }
+    ExitCode::SUCCESS
+}
+
+fn read_stdin_to_string(out: &mut String) -> io::Result<()> {
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    let (tx, rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        let mut stdin = io::stdin().lock();
+        let mut buf = [0u8; 8192];
+        loop {
+            match stdin.read(&mut buf) {
+                Ok(0) => {
+                    let _ = tx.send(Ok(Vec::new()));
+                    break;
+                }
+                Ok(n) => {
+                    if tx.send(Ok(buf[..n].to_vec())).is_err() {
+                        break;
+                    }
+                }
+                Err(err) => {
+                    let _ = tx.send(Err(err));
+                    break;
+                }
+            }
+        }
+    });
+
+    let mut bytes = Vec::new();
+    loop {
+        match rx.recv_timeout(Duration::from_millis(100)) {
+            Ok(Ok(chunk)) if chunk.is_empty() => break,
+            Ok(Ok(chunk)) => bytes.extend_from_slice(&chunk),
+            Ok(Err(err)) => return Err(err),
+            Err(mpsc::RecvTimeoutError::Timeout) if !bytes.is_empty() => break,
+            Err(mpsc::RecvTimeoutError::Timeout) => continue,
+            Err(mpsc::RecvTimeoutError::Disconnected) => break,
+        }
+    }
+    *out =
+        String::from_utf8(bytes).map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err))?;
+    Ok(())
+}
+
 fn print_usage() {
     println!(
         "carve — render Carve markup\n\n\
          Usage:\n  \
          carve [options] [file]      render file (or stdin when omitted or `-`)\n  \
+         carve fmt [options] [files] format Carve source to stdout\n  \
          carve -h                    show this help\n\n\
          Output format (default --html; last one wins):\n  \
          --html                      HTML\n  \
          --markdown, --md            Markdown\n  \
          --plain, --plain-text       plain text\n  \
-         --ansi                      ANSI-colored terminal text\n\n\
+         --ansi                      ANSI-colored terminal text\n  \
+         --carve                     canonical Carve source\n\n\
+         Format options:\n  \
+         -w, --write                 write formatted output in place\n  \
+         --check                     fail if any file is not formatted\n\n\
          Render mode (HTML only; default --interactive):\n  \
          --static                    self-contained HTML: flatten interactive\n                              \
          constructs, degrade diagrams/math to source\n  \

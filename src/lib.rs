@@ -26,6 +26,7 @@ pub mod profile;
 pub mod profile_filter;
 mod render;
 mod render_ansi;
+mod render_carve;
 mod render_markdown;
 mod render_plain;
 mod render_text;
@@ -59,6 +60,7 @@ pub use profile::{DisallowedAction, LinkPolicy, Profile, ProfileViolation, Profi
 pub use profile_filter::{apply_profile, ProfileFilterResult};
 pub use render::{render_html, render_html_with_options};
 pub use render_ansi::{render_ansi, render_ansi_with_options};
+pub use render_carve::render_carve;
 pub use render_markdown::{render_markdown, render_markdown_with_options};
 pub use render_plain::{render_plain_text, render_plain_text_with_options};
 
@@ -80,6 +82,101 @@ pub fn to_plain_text(source: &str) -> String {
 /// Parse a Carve source string and render it as ANSI-styled text in one call.
 pub fn to_ansi(source: &str) -> String {
     render_ansi(&parse(source))
+}
+
+/// Parse a Carve source string and render canonical Carve source in one call.
+///
+/// This formatter is intentionally parse-only: it does not run extension hooks,
+/// profile filtering, heading-id enrichment, or other render-time transforms.
+pub fn to_carve(source: &str) -> String {
+    let (frontmatter, _) = raw_frontmatter(source);
+    let mut doc = parse::parse_for_carve(source);
+    if frontmatter.is_some() {
+        doc.frontmatter.clear();
+    }
+    let body = restore_inline_comments(source, &render_carve(&doc));
+    match frontmatter {
+        Some(frontmatter) if body.trim().is_empty() => format!("{frontmatter}\n"),
+        Some(frontmatter) => format!("{frontmatter}\n\n{body}"),
+        None => body,
+    }
+}
+
+fn restore_inline_comments(source: &str, formatted: &str) -> String {
+    let mut lines = formatted.lines().map(str::to_string).collect::<Vec<_>>();
+    for source_line in source.lines() {
+        let Some((before, comment)) = split_inline_comment(source_line) else {
+            continue;
+        };
+        if before.trim().is_empty() {
+            continue;
+        }
+        let marker = render_carve(&parse::parse_for_carve(before));
+        let marker = marker.trim_end();
+        if marker.is_empty() {
+            continue;
+        }
+        if let Some(line) = lines.iter_mut().find(|line| line.as_str() == marker) {
+            line.push(' ');
+            line.push_str(comment);
+        }
+    }
+    format!("{}\n", lines.join("\n"))
+}
+
+fn split_inline_comment(line: &str) -> Option<(&str, &str)> {
+    let bytes = line.as_bytes();
+    let mut in_code = false;
+    let mut i = 0;
+    while i + 1 < bytes.len() {
+        if bytes[i] == b'`' {
+            in_code = !in_code;
+            i += 1;
+            continue;
+        }
+        if !in_code
+            && bytes[i] == b'%'
+            && bytes[i + 1] == b'%'
+            && (i == 0 || matches!(bytes[i - 1], b' ' | b'\t'))
+        {
+            return Some((line[..i].trim_end(), &line[i..]));
+        }
+        i += 1;
+    }
+    None
+}
+
+fn raw_frontmatter(source: &str) -> (Option<String>, &str) {
+    if !source.starts_with("---") {
+        return (None, source);
+    }
+    let Some(first_nl) = source.find('\n') else {
+        return (None, source);
+    };
+    let kind = source[3..first_nl].trim();
+    if !kind.is_empty() && !kind.chars().all(|c| c.is_ascii_alphanumeric()) {
+        return (None, source);
+    }
+    let rest = &source[first_nl + 1..];
+    let (content_len, after) = if rest == "---" {
+        (0, rest.len())
+    } else if let Some(r) = rest.strip_prefix("---\n") {
+        (0, rest.len() - r.len())
+    } else if let Some(close) = rest.find("\n---\n") {
+        (close, close + 5)
+    } else if let Some(close) = rest.strip_suffix("\n---").map(str::len) {
+        (close, rest.len())
+    } else {
+        return (None, source);
+    };
+    let open = if kind.is_empty() {
+        "---".to_string()
+    } else {
+        format!("---{kind}")
+    };
+    let content = &rest[..content_len];
+    let body = &rest[after..];
+    (Some(format!("{open}\n{content}\n---")), body)
 }
 
 /// Parse the source, run `before_render` extension hooks, then apply the
