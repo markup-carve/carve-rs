@@ -27,11 +27,41 @@ fn attr_entity(byte: u8) -> Option<&'static str> {
     }
 }
 
-/// Write `input` into `out`, escaping text-content characters (`&`, `<`, `>`).
+/// Trojan-Source bidi-override / isolate controls that must be REMOVED (not
+/// entity-escaped) from rendered TEXT and CODE: U+202A..U+202E (LRE/RLE/PDF/
+/// LRO/RLO) and U+2066..U+2069 (LRI/RLI/FSI/PDI). An entity reference would
+/// decode back to the raw control and still reorder the live DOM, so only
+/// physical removal is DOM-inert. The directional MARKS U+200E / U+200F
+/// (LRM / RLM) and the zero-width characters are deliberately NOT stripped from
+/// text (they are only stripped from generated ids; see `slugify_parse`).
+/// Matches carve-js `stripBidiControls` / carve-php.
+pub fn is_bidi_control(c: char) -> bool {
+    matches!(c, '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}')
+}
+
+/// Whether `input` contains any bidi-override / isolate control (fast pre-check
+/// so the common path allocates nothing). All such controls are 3-byte UTF-8
+/// sequences led by `0xE2`, so a byte scan is enough to rule them out.
+#[inline]
+fn has_bidi_control(input: &str) -> bool {
+    input.as_bytes().contains(&0xE2) && input.chars().any(is_bidi_control)
+}
+
+/// Write `input` into `out`, escaping text-content characters (`&`, `<`, `>`)
+/// and first STRIPPING Trojan-Source bidi controls (see [`is_bidi_control`]).
 /// All escaped characters are ASCII, so byte scanning is UTF-8 safe (multibyte
 /// sequences only contain bytes `>= 0x80`). Copies runs between escapes in a
 /// single `push_str` instead of char-by-char.
 pub fn write_escaped_text(out: &mut String, input: &str) {
+    if has_bidi_control(input) {
+        let stripped: String = input.chars().filter(|c| !is_bidi_control(*c)).collect();
+        write_escaped_text_inner(out, &stripped);
+        return;
+    }
+    write_escaped_text_inner(out, input);
+}
+
+fn write_escaped_text_inner(out: &mut String, input: &str) {
     let bytes = input.as_bytes();
     let mut start = 0;
     for (i, &b) in bytes.iter().enumerate() {
@@ -60,8 +90,8 @@ pub fn write_escaped_attr(out: &mut String, input: &str) {
 }
 
 pub fn escape_text(input: &str) -> String {
-    // Fast path: nothing to escape, avoid an allocation copy where possible.
-    if !input.bytes().any(|b| text_entity(b).is_some()) {
+    // Fast path: nothing to escape or strip, avoid an allocation copy.
+    if !input.bytes().any(|b| text_entity(b).is_some()) && !has_bidi_control(input) {
         return input.to_string();
     }
     let mut out = String::with_capacity(input.len() + 8);
@@ -231,4 +261,41 @@ pub fn sanitize_url(url: &str) -> std::borrow::Cow<'_, str> {
 /// depth and parity with the JS/PHP implementations, not an exploitable gap.
 fn is_url_probe_skippable(c: char) -> bool {
     (c as u32) <= 0x20 || c.is_whitespace() || c == '\u{FEFF}'
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{escape_text, is_bidi_control};
+
+    #[test]
+    fn bidi_overrides_and_isolates_are_controls() {
+        for c in ['\u{202A}', '\u{202B}', '\u{202C}', '\u{202D}', '\u{202E}'] {
+            assert!(is_bidi_control(c), "U+{:04X} should be a control", c as u32);
+        }
+        for c in ['\u{2066}', '\u{2067}', '\u{2068}', '\u{2069}'] {
+            assert!(is_bidi_control(c), "U+{:04X} should be a control", c as u32);
+        }
+    }
+
+    #[test]
+    fn marks_and_zero_width_are_not_bidi_controls() {
+        for c in [
+            '\u{200E}', '\u{200F}', '\u{200B}', '\u{FEFF}', 'a', '\u{2065}', '\u{206A}',
+        ] {
+            assert!(
+                !is_bidi_control(c),
+                "U+{:04X} must not be a control",
+                c as u32
+            );
+        }
+    }
+
+    #[test]
+    fn escape_text_strips_bidi_controls() {
+        assert_eq!(escape_text("a\u{202e}b"), "ab");
+        // Strip AND escape in one pass.
+        assert_eq!(escape_text("a\u{202e}<b>"), "a&lt;b&gt;");
+        // Nothing to strip: fast path returns the input unchanged.
+        assert_eq!(escape_text("plain"), "plain");
+    }
 }

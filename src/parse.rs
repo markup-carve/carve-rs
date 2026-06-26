@@ -16,11 +16,20 @@ use std::collections::BTreeMap;
 /// paragraph; inline content stays literal text) instead of recursing further.
 ///
 /// The cap also bounds the depth of the AST the renderers walk recursively, so
-/// it is chosen to keep parse + render safe on a conservative 2 MiB thread
-/// stack (render alone overflows ~130-deep there); 40 levels is far beyond any
-/// real document while leaving comfortable headroom. carve-php's analogous cap
-/// is higher only because PHP grows its VM stack on the heap.
-const MAX_NESTING_DEPTH: usize = 40;
+/// it bounds the depth of the AST the renderers walk recursively.
+///
+/// The cap is 200, applied UNIFORMLY to blockquote, list, div, and admonition
+/// nesting, matching carve-js (`MAX_NESTING_DEPTH = 200`) and carve-php so the
+/// three implementations degrade at the same depth. Deeply nested input
+/// degrades gracefully at the cap (remaining block content becomes a flat
+/// paragraph; inline content stays literal) instead of recursing further, so
+/// the AST depth is bounded by this constant. The recursive-descent parser and
+/// the renderers use one native stack frame per level; in a release build 200
+/// levels fit comfortably in a default 2 MiB thread stack (a debug build's
+/// larger frames need more, which is why the worst-case-depth robustness tests
+/// run on a generous worker stack). carve-php's analogous cap relies on PHP
+/// growing its VM stack on the heap.
+const MAX_NESTING_DEPTH: usize = 200;
 
 fn trim_ascii_start(s: &str) -> &str {
     s.trim_start_matches([' ', '\t'])
@@ -131,41 +140,79 @@ fn extract_footnote_defs(source: &str) -> (String, BTreeMap<String, String>) {
     let lines: Vec<&str> = source.lines().collect();
     let mut body = Vec::new();
     let mut defs = BTreeMap::new();
+    let mut in_fence: Option<FenceOpen> = None;
     let mut i = 0;
     while i < lines.len() {
-        if let Some((label, first)) = parse_footnote_def_line(lines[i]) {
+        // A footnote definition is collected at the top level AND from inside a
+        // blockquote / bullet-list container: `> [^a]: body` and `- [^a]: body`
+        // both stash the def and leave the container empty, matching carve-js
+        // (which recognizes the def inside the container's sub-lexer). Strip the
+        // container prefix first, then test the bare content (corpus 115).
+        let stripped = strip_container_prefixes(lines[i]);
+        let in_container = !stripped.structural.is_empty();
+        // A footnote definition is NEVER collected from inside a fenced code
+        // block: a `[^x]: ...` line there is literal content. Track the fence on
+        // the prefix-stripped line so a fence inside a blockquote / list item is
+        // recognized too (mirrors `extract_link_defs`). Without this, stripping
+        // the container prefix would expose a fenced `[^x]:` line as a def.
+        let fence_line = stripped.bare.trim_start_matches([' ', '\t']);
+        if let Some(open) = in_fence {
+            body.push(lines[i].to_string());
+            if is_fence_close(fence_line, open) {
+                in_fence = None;
+            }
+            i += 1;
+            continue;
+        }
+        if let Some(open) = detect_fence_open(fence_line) {
+            in_fence = Some(open);
+            body.push(lines[i].to_string());
+            i += 1;
+            continue;
+        }
+        if let Some((label, first)) = parse_footnote_def_line(stripped.bare) {
             i += 1;
             let mut def_lines = vec![first.to_string()];
-            while i < lines.len() {
-                let line = lines[i];
-                if parse_footnote_def_line(line).is_some() {
-                    break;
-                }
-                if is_blank_line(line) {
-                    // A footnote body extends to following lines indented by
-                    // >= 2 spaces (grammar PART 9 §16); single blank lines
-                    // are allowed between chunks.
-                    if i + 1 < lines.len() && leading_ws(lines[i + 1]) >= 2 {
-                        def_lines.push(String::new());
+            // Multi-line continuation (indented >= 2) is only gathered for a
+            // TOP-LEVEL definition. A container-nested def is single-line here:
+            // its continuation would carry the container prefix and is left to
+            // normal block parsing, which the spec corpus does not pin.
+            if !in_container {
+                while i < lines.len() {
+                    let line = lines[i];
+                    if parse_footnote_def_line(line).is_some() {
+                        break;
+                    }
+                    if is_blank_line(line) {
+                        // A footnote body extends to following lines indented by
+                        // >= 2 spaces (grammar PART 9 §16); single blank lines
+                        // are allowed between chunks.
+                        if i + 1 < lines.len() && leading_ws(lines[i + 1]) >= 2 {
+                            def_lines.push(String::new());
+                            i += 1;
+                            continue;
+                        }
+                        break;
+                    }
+                    if leading_ws(line) >= 2 {
+                        def_lines.push(trim_ascii_start(line).to_string());
                         i += 1;
                         continue;
                     }
                     break;
                 }
-                if leading_ws(line) >= 2 {
-                    def_lines.push(trim_ascii_start(line).to_string());
-                    i += 1;
-                    continue;
-                }
-                break;
             }
-            defs.insert(label.to_string(), def_lines.join("\n"));
-            // Leave a blank line where the (invisible) definition was, so it
-            // still acts as a block boundary — a following paragraph or a
-            // lazy blockquote continuation does not absorb across it.
-            body.push("");
+            // First definition for a label wins (later duplicates are ignored).
+            defs.entry(label.to_string())
+                .or_insert_with(|| def_lines.join("\n"));
+            // Leave the container's structural prefix (or a blank line at top
+            // level) where the invisible definition was, so the container still
+            // renders and the line still acts as a block boundary -- a following
+            // paragraph or a lazy blockquote continuation does not absorb across
+            // it.
+            body.push(stripped.replacement());
         } else {
-            body.push(lines[i]);
+            body.push(lines[i].to_string());
             i += 1;
         }
     }
@@ -5821,6 +5868,35 @@ fn de_typography(text: &str) -> String {
     out
 }
 
+/// Code points removed from a heading-id source before slugging: the
+/// bidi-override / isolate controls (also stripped from rendered text, see
+/// `escape::is_bidi_control`) plus the zero-width characters that are NOT
+/// stripped from text but must never leak into an `id="..."`.
+fn is_id_strippable(c: char) -> bool {
+    matches!(
+        c,
+        '\u{202A}'..='\u{202E}'   // bidi LRE/RLE/PDF/LRO/RLO
+        | '\u{2066}'..='\u{2069}' // bidi isolates LRI/RLI/FSI/PDI
+        | '\u{200B}'              // zero-width space
+        | '\u{200C}'              // zero-width non-joiner
+        | '\u{200D}'              // zero-width joiner
+        | '\u{2060}'              // word joiner
+        | '\u{FEFF}'              // zero-width no-break space / BOM
+        | '\u{00AD}'              // soft hyphen
+    )
+}
+
+/// NFC-normalize, then drop the invisible/dangerous controls (see
+/// `is_id_strippable`). The pre-slug transform that makes a generated id
+/// deterministic and Trojan-Source-safe (corpus 117). Parity with carve-js
+/// `sanitizeIdSource`.
+fn sanitize_id_source(text: &str) -> String {
+    crate::unicode_nfc::nfc(text)
+        .chars()
+        .filter(|c| !is_id_strippable(*c))
+        .collect()
+}
+
 pub(crate) fn slugify_parse(text: &str, lowercase: bool) -> String {
     // Carve "Automatic Identifiers" (spec #73), kept byte-identical to
     // carve-js / carve-php:
@@ -5839,7 +5915,16 @@ pub(crate) fn slugify_parse(text: &str, lowercase: bool) -> String {
     //     impls regardless of stdlib whole-string casing behavior. carve-rs has
     //     no ASCII transliterator, so ascii-folding is intentionally not offered
     //     here -- `lowercase` is the only transform.
-    let detyped = de_typography(text);
+    // Trojan-Source hardening for generated ids (corpus 117), applied BEFORE
+    // the slug run so the remaining text slugs as usual:
+    //   - NFC normalization, so a precomposed `é` (U+00E9) and a decomposed
+    //     `e`+U+0301 produce the SAME id.
+    //   - strip bidi-override / isolate controls (U+202A..U+202E, U+2066..U+2069)
+    //     and zero-width characters (U+200B/C/D, U+2060, U+FEFF, U+00AD) so none
+    //     of these can ever appear inside an `id="..."`.
+    // Matches carve-js `sanitizeIdSource` (heading-ids.ts).
+    let sanitized = sanitize_id_source(text);
+    let detyped = de_typography(&sanitized);
     let mut out = String::new();
     let mut last_dash = false;
     for ch in detyped.chars() {

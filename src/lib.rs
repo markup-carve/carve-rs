@@ -29,6 +29,7 @@ mod render_ansi;
 mod render_markdown;
 mod render_plain;
 mod render_text;
+mod unicode_nfc;
 
 /// Private-use sentinel for a parser/renderer-GENERATED non-breaking space
 /// (an escaped space `\ ` or line-block leading indent). It is distinct from a
