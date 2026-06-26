@@ -159,7 +159,10 @@ fn is_callout_candidate(p: &Paragraph) -> bool {
 
 fn render_code(node: &BlockExtension, ctx: &RenderContext<'_>) -> String {
     let Some(BlockNode::CodeBlock(c)) = node.children.first() else {
-        return String::new();
+        // Another code-block transformer (MathBlock / FencedRender) registered
+        // before us may have replaced the carrier's inner CodeBlock; render
+        // whatever it became so the content is never dropped.
+        return ctx.render_blocks_at(&node.children, ctx.level());
     };
     let pad = ctx.indent(ctx.level());
     let body = c
