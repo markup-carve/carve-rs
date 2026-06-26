@@ -104,6 +104,10 @@ pub fn to_carve(source: &str) -> String {
 
 fn restore_inline_comments(source: &str, formatted: &str) -> String {
     let mut lines = formatted.lines().map(str::to_string).collect::<Vec<_>>();
+    // Formatting preserves block order, so match comment-bearing source lines to
+    // formatted lines in order: advance a cursor and consume each match so a
+    // repeated line cannot pull a later comment onto an earlier duplicate.
+    let mut cursor = 0;
     for source_line in source.lines() {
         let Some((before, comment)) = split_inline_comment(source_line) else {
             continue;
@@ -116,9 +120,14 @@ fn restore_inline_comments(source: &str, formatted: &str) -> String {
         if marker.is_empty() {
             continue;
         }
-        if let Some(line) = lines.iter_mut().find(|line| line.as_str() == marker) {
-            line.push(' ');
-            line.push_str(comment);
+        if let Some(offset) = lines[cursor..]
+            .iter()
+            .position(|line| line.as_str() == marker)
+        {
+            let idx = cursor + offset;
+            lines[idx].push(' ');
+            lines[idx].push_str(comment);
+            cursor = idx + 1;
         }
     }
     format!("{}\n", lines.join("\n"))

@@ -192,7 +192,7 @@ fn run_fmt(paths: &[String], write: bool, check: bool) -> ExitCode {
             return ExitCode::FAILURE;
         }
         let mut source = String::new();
-        if let Err(err) = read_stdin_to_string(&mut source) {
+        if let Err(err) = io::stdin().read_to_string(&mut source) {
             eprintln!("carve fmt: cannot read stdin: {err}");
             return ExitCode::FAILURE;
         }
@@ -249,49 +249,6 @@ fn write_stdout(output: &str) -> ExitCode {
         let _ = stdout.write_all(b"\n");
     }
     ExitCode::SUCCESS
-}
-
-fn read_stdin_to_string(out: &mut String) -> io::Result<()> {
-    use std::sync::mpsc;
-    use std::time::Duration;
-
-    let (tx, rx) = mpsc::channel();
-    std::thread::spawn(move || {
-        let mut stdin = io::stdin().lock();
-        let mut buf = [0u8; 8192];
-        loop {
-            match stdin.read(&mut buf) {
-                Ok(0) => {
-                    let _ = tx.send(Ok(Vec::new()));
-                    break;
-                }
-                Ok(n) => {
-                    if tx.send(Ok(buf[..n].to_vec())).is_err() {
-                        break;
-                    }
-                }
-                Err(err) => {
-                    let _ = tx.send(Err(err));
-                    break;
-                }
-            }
-        }
-    });
-
-    let mut bytes = Vec::new();
-    loop {
-        match rx.recv_timeout(Duration::from_millis(100)) {
-            Ok(Ok(chunk)) if chunk.is_empty() => break,
-            Ok(Ok(chunk)) => bytes.extend_from_slice(&chunk),
-            Ok(Err(err)) => return Err(err),
-            Err(mpsc::RecvTimeoutError::Timeout) if !bytes.is_empty() => break,
-            Err(mpsc::RecvTimeoutError::Timeout) => continue,
-            Err(mpsc::RecvTimeoutError::Disconnected) => break,
-        }
-    }
-    *out =
-        String::from_utf8(bytes).map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err))?;
-    Ok(())
 }
 
 fn print_usage() {
