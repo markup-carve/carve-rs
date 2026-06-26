@@ -20,6 +20,7 @@ fn main() -> ExitCode {
     // form, and a document not using them is unaffected.
     let details = carve::Details::new();
     let spoiler = carve::Spoiler::new();
+    let code_callouts = carve::CodeCallouts::new();
     let color_swatch = carve::ColorSwatch::new();
     let mermaid = carve::FencedRender::mermaid();
     let chart = carve::FencedRender::chart();
@@ -114,6 +115,7 @@ fn main() -> ExitCode {
         options = options
             .with_extension(&details)
             .with_extension(&spoiler)
+            .with_extension(&code_callouts)
             .with_extension(&color_swatch)
             .with_extension(&mermaid)
             .with_extension(&chart)
@@ -173,8 +175,8 @@ fn print_usage() {
          --interactive               live HTML (default)\n\n\
          Options:\n  \
          --extensions                enable the bundled interactive extensions\n                              \
-         (details, spoiler, color, mermaid, chart, math); needed\n                              \
-         for --static to flatten/degrade those constructs\n  \
+         (details, spoiler, code-callouts, color, mermaid, chart, math);\n                              \
+         needed for --static to flatten/degrade those constructs\n  \
          --mention-url TEMPLATE      render @mentions as links (HTML only)\n  \
          --tag-url TEMPLATE          render #tags as links (HTML only)\n  \
          --emoji NAME=VALUE          map :NAME: to VALUE (repeatable)\n  \
