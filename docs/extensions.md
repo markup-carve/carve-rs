@@ -391,3 +391,28 @@ unconsumed grouping `[label]`. No authored token is ever dropped.
 > / Spoiler natively (it keeps the `<details>`/`<summary>` disclosure in static
 > mode rather than flattening to a `<section>`); the two will be reconciled when
 > the spec PR lands.
+
+## CodeCallouts
+
+`CodeCallouts` is a Tier-2 extension (#88) for AsciiDoc-style annotations inside
+fenced code. A `<n>` (ASCII digits) that is the last non-whitespace content on a
+fenced-code line renders as `<b class="callout" data-callout="n">n</b>` (only the
+marker is not HTML-escaped); a host hides it from copy with CSS. An immediately
+following paragraph whose every soft-break line is `<n> text` binds as
+`<ol class="callouts">` with one `<li value="n">` per line (the explicit `value`
+matches the bubble, so non-sequential numbers stay aligned).
+
+```rust
+use carve::{CodeCallouts, Options};
+
+let ext = CodeCallouts::new();
+let options = Options::new().with_extension(&ext);
+```
+
+- The list binds only when the code block has at least one marker and every
+  following line is a `<n> text` item; otherwise the `<n>` stay literal.
+- Markers render independent of any list; only the trailing `<n>` per line is a
+  marker. Authored block attributes ride onto the `<ol>` (`callouts` leading
+  class).
+- Off by default, optional-corpus pinned. HTML-only: non-HTML targets keep the
+  `<n>` literal (source-faithful). Byte-identical to carve-js.
