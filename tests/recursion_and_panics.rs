@@ -42,29 +42,52 @@ fn list_marker_multibyte_first_char_with_trailing_ws_does_not_panic() {
     }
 }
 
+/// Run `f` on a worker thread with an ample stack. The block-container cap is
+/// MAX_NESTING_DEPTH = 200; a degrading parse still builds an AST up to that
+/// depth and the recursive-descent parser/renderer use one native frame per
+/// level. In a RELEASE build 200 levels fit comfortably in a default 2 MiB
+/// stack (verified), but a DEBUG `cargo test` build has much larger,
+/// un-inlined frames, so these worst-case-depth probes get a generous stack.
+/// The property under test is the DEGRADATION logic (deep input returns a
+/// bounded AST instead of recursing unbounded), not the exact per-frame size.
+fn on_big_stack<F: FnOnce() + Send + 'static>(f: F) {
+    std::thread::Builder::new()
+        .stack_size(16 * 1024 * 1024)
+        .spawn(f)
+        .expect("spawn worker")
+        .join()
+        .expect("worker must return, not abort");
+}
+
 #[test]
 fn deeply_nested_blockquote_degrades_without_overflow() {
-    let src = ">".repeat(5000) + " x\n";
-    let html = carve::to_html(&src); // must return, not abort
-    assert!(html.contains("blockquote"), "expected some quote nesting");
+    on_big_stack(|| {
+        let src = ">".repeat(5000) + " x\n";
+        let html = carve::to_html(&src); // must return, not abort
+        assert!(html.contains("blockquote"), "expected some quote nesting");
+    });
 }
 
 #[test]
 fn deeply_nested_indented_list_degrades_without_overflow() {
-    let mut src = String::new();
-    for i in 0..400 {
-        src.push_str(&"  ".repeat(i));
-        src.push_str("- x\n");
-    }
-    let _ = carve::to_html(&src); // must return, not abort
+    on_big_stack(|| {
+        let mut src = String::new();
+        for i in 0..400 {
+            src.push_str(&"  ".repeat(i));
+            src.push_str("- x\n");
+        }
+        let _ = carve::to_html(&src); // must return, not abort
+    });
 }
 
 #[test]
 fn deeply_nested_inline_brackets_degrade_without_overflow() {
-    let src = "[".repeat(9000) + "x" + &"](u)".repeat(9000) + "\n";
-    let _ = carve::to_html(&src); // must return, not throw/abort
-    let spans = "[".repeat(9000) + "x" + &"]{.c}".repeat(9000) + "\n";
-    let _ = carve::to_html(&spans);
+    on_big_stack(|| {
+        let src = "[".repeat(9000) + "x" + &"](u)".repeat(9000) + "\n";
+        let _ = carve::to_html(&src); // must return, not throw/abort
+        let spans = "[".repeat(9000) + "x" + &"]{.c}".repeat(9000) + "\n";
+        let _ = carve::to_html(&spans);
+    });
 }
 
 #[test]
