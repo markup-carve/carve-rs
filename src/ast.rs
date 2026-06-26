@@ -365,6 +365,7 @@ pub struct CitationGroup {
     pub items: Vec<Citation>,
     pub raw: String,
     pub mode: Option<CitationRenderMode>,
+    pub integral: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -378,6 +379,9 @@ pub struct Citation {
     pub key: String,
     pub prefix: Option<Vec<InlineNode>>,
     pub locator: Option<Vec<InlineNode>>,
+    pub locator_label: Option<String>,
+    pub locator_value: Option<String>,
+    pub suffix: Option<Vec<InlineNode>>,
     pub suppress_author: bool,
     pub number: Option<usize>,
     pub label: Option<String>,

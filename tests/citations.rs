@@ -77,7 +77,7 @@ fn parses_locator_suppress_author_and_multiple_items() {
 #[test]
 fn drops_definition_paragraph_and_numbers_citation() {
     let out = h("See [@smith2020].\n\n[@smith2020]: Smith, J. (2020). Title.");
-    assert!(out.contains("[<a href=\"#ref-smith2020\">1</a>]"));
+    assert!(out.contains("[<a data-cite-key=\"smith2020\" href=\"#ref-smith2020\">1</a>]"));
     assert!(!out.contains("<p>Smith, J. (2020). Title.</p>"));
 }
 
@@ -91,14 +91,14 @@ fn builds_references_list_with_stable_ids() {
 #[test]
 fn numbers_by_first_citation_order() {
     let out = h("[@b] then [@a].\n\n[@a]: A.\n\n[@b]: B.");
-    assert!(out.contains("href=\"#ref-b\">1</a>"));
-    assert!(out.contains("href=\"#ref-a\">2</a>"));
+    assert!(out.contains("data-cite-key=\"b\" href=\"#ref-b\">1</a>"));
+    assert!(out.contains("data-cite-key=\"a\" href=\"#ref-a\">2</a>"));
 }
 
 #[test]
 fn renders_locator_and_prefix_inside_brackets() {
     let out = h("[see @a, p. 3].\n\n[@a]: A.");
-    assert!(out.contains("[see <a href=\"#ref-a\">1</a>, p. 3]"));
+    assert!(out.contains("[see <a data-cite-key=\"a\" data-cite-prefix=\"see\" data-locator-label=\"page\" data-locator=\"3\" href=\"#ref-a\">1</a>, p. 3]"));
 }
 
 #[test]
@@ -137,9 +137,10 @@ fn collects_consecutive_definition_lines() {
 #[test]
 fn author_date_renders_attrs_and_suppresses_author() {
     let out = ha("See [@s].\n\n[@s]: {author=\"Smith\" year=\"2020\"} Smith, J.");
-    assert!(out.contains("(<a href=\"#ref-s\">Smith 2020</a>)"));
+    assert!(out.contains("(<a data-cite-key=\"s\" href=\"#ref-s\">Smith 2020</a>)"));
 
     let out = ha("[-@s].\n\n[@s]: {author=\"Smith\" year=\"2020\"} S.");
+    assert!(out.contains("data-suppress-author=\"true\""));
     assert!(out.contains(">2020</a>"));
 }
 
@@ -203,7 +204,9 @@ fn entry(csl: CslEntry) -> String {
 #[test]
 fn bib_resolves_from_pool_with_backlinks() {
     let out = hb("See [@smith2020].", vec![smith()]);
-    assert!(out.contains("<a id=\"cite-smith2020-1\" href=\"#ref-smith2020\">1</a>"));
+    assert!(out.contains(
+        "<a id=\"cite-smith2020-1\" data-cite-key=\"smith2020\" href=\"#ref-smith2020\">1</a>"
+    ));
     assert!(out.contains(
         "<li id=\"ref-smith2020\">Smith, John (2020). A Study. \
          <a href=\"#cite-smith2020-1\" class=\"ref-backref\">\u{21a9}</a></li>"
@@ -223,8 +226,12 @@ fn bib_in_doc_def_overrides_pool() {
 #[test]
 fn bib_one_backlink_per_use_site() {
     let out = hb("[@smith2020] then [@smith2020] again.", vec![smith()]);
-    assert!(out.contains("<a id=\"cite-smith2020-1\" href=\"#ref-smith2020\">1</a>"));
-    assert!(out.contains("<a id=\"cite-smith2020-2\" href=\"#ref-smith2020\">1</a>"));
+    assert!(out.contains(
+        "<a id=\"cite-smith2020-1\" data-cite-key=\"smith2020\" href=\"#ref-smith2020\">1</a>"
+    ));
+    assert!(out.contains(
+        "<a id=\"cite-smith2020-2\" data-cite-key=\"smith2020\" href=\"#ref-smith2020\">1</a>"
+    ));
     assert!(out.contains("<a href=\"#cite-smith2020-1\" class=\"ref-backref\">\u{21a9}</a>"));
     assert!(out.contains("<a href=\"#cite-smith2020-2\" class=\"ref-backref\">\u{21a9}</a>"));
 }
@@ -246,8 +253,8 @@ fn bib_multi_key_group_anchors_each_key() {
             },
         ],
     );
-    assert!(out.contains("<a id=\"cite-a-1\" href=\"#ref-a\">1</a>"));
-    assert!(out.contains("<a id=\"cite-b-1\" href=\"#ref-b\">2</a>"));
+    assert!(out.contains("<a id=\"cite-a-1\" data-cite-key=\"a\" href=\"#ref-a\">1</a>"));
+    assert!(out.contains("<a id=\"cite-b-1\" data-cite-key=\"b\" href=\"#ref-b\">2</a>"));
 }
 
 #[test]
@@ -394,4 +401,91 @@ fn bib_no_pool_keeps_tier2_behavior() {
     assert!(out.contains("<li id=\"ref-a\">A.</li>"));
     assert!(!out.contains("ref-backref"));
     assert!(!out.contains("id=\"cite-a-1\""));
+}
+
+// ----- parse_locator unit tests -----------------------------------------------
+
+#[test]
+fn parse_locator_page_abbrev() {
+    let g = group("[@k, p. 4]").unwrap();
+    assert_eq!(g.items[0].locator_label.as_deref(), Some("page"));
+    assert_eq!(g.items[0].locator_value.as_deref(), Some("4"));
+    assert!(g.items[0].suffix.is_none());
+}
+
+#[test]
+fn parse_locator_default_page_for_digit() {
+    let g = group("[@k, 4]").unwrap();
+    assert_eq!(g.items[0].locator_label.as_deref(), Some("page"));
+    assert_eq!(g.items[0].locator_value.as_deref(), Some("4"));
+}
+
+#[test]
+fn parse_locator_no_label_is_suffix() {
+    // "iv" does not start with a digit and no term matches at a boundary
+    let g = group("[@k, iv]").unwrap();
+    assert!(g.items[0].locator_label.is_none());
+    assert!(g.items[0].locator_value.is_none());
+    // suffix holds the raw text
+    assert!(g.items[0].suffix.is_some());
+}
+
+#[test]
+fn parse_locator_section_symbol() {
+    let g = group("[@k, § 5]").unwrap();
+    assert_eq!(g.items[0].locator_label.as_deref(), Some("section"));
+    assert_eq!(g.items[0].locator_value.as_deref(), Some("5"));
+}
+
+#[test]
+fn integral_group_marker() {
+    let g = group("[+@k]").unwrap();
+    assert!(g.integral);
+}
+
+#[test]
+fn non_integral_group() {
+    let g = group("[@k]").unwrap();
+    assert!(!g.integral);
+}
+
+#[test]
+fn integral_render_has_wrapper_span() {
+    let out = h("[+@a] here.\n\n[@a]: A.");
+    assert!(out.contains("<span class=\"citation\" data-cite-mode=\"integral\">"));
+    assert!(out.contains("</span>"));
+}
+
+#[test]
+fn data_cite_key_always_present() {
+    let out = h("[@a].\n\n[@a]: A.");
+    assert!(out.contains("data-cite-key=\"a\""));
+}
+
+#[test]
+fn data_suppress_author_when_set() {
+    let out = h("[-@a].\n\n[@a]: A.");
+    assert!(out.contains("data-suppress-author=\"true\""));
+}
+
+#[test]
+fn data_locator_attrs() {
+    let out = h("[@a, p. 4].\n\n[@a]: A.");
+    assert!(out.contains("data-locator-label=\"page\""));
+    assert!(out.contains("data-locator=\"4\""));
+}
+
+#[test]
+fn parse_locator_multibyte_does_not_panic() {
+    // A locator beginning with a multibyte char must not panic when a vocab
+    // matcher's byte length lands mid-char (e.g. `s[..2]` over a 3-byte char).
+    let _ = group("[@k, €5]");
+    let _ = group("[@k, 中文]");
+    let _ = group("[@k, \u{1F600}x]");
+    let _ = parse_locator_via("€5");
+    let _ = parse_locator_via("中");
+}
+
+fn parse_locator_via(loc: &str) -> carve::ParsedLocator {
+    carve::parse_locator(loc)
 }

@@ -192,8 +192,15 @@ fn match_citation(text: &str, pos: usize, ctx: &MatcherContext<'_>) -> Option<In
     if !inner.contains('@') {
         return None;
     }
+    let mut integral = false;
+    let inner_str = if let Some(stripped) = inner.strip_prefix('+') {
+        integral = true;
+        stripped
+    } else {
+        inner
+    };
     let mut items = Vec::new();
-    for part in inner.split(';') {
+    for part in inner_str.split(';') {
         items.push(parse_item(part, ctx)?);
     }
     if items.is_empty() {
@@ -204,6 +211,7 @@ fn match_citation(text: &str, pos: usize, ctx: &MatcherContext<'_>) -> Option<In
             items,
             raw: text[pos..close + 1].to_string(),
             mode: None,
+            integral,
         }),
         end: close + 1,
     })
@@ -241,14 +249,17 @@ fn parse_item(raw: &str, ctx: &MatcherContext<'_>) -> Option<Citation> {
         }
         let (key, key_end) = parse_key(trimmed, at + 1)?;
         let rest = trimmed[key_end..].trim_start();
-        let locator = if rest.is_empty() {
-            None
-        } else if let Some(loc) = rest.strip_prefix(',') {
-            let loc = loc.trim();
-            if loc.is_empty() {
+        let (locator, locator_label, locator_value, suffix) = if rest.is_empty() {
+            (None, None, None, None)
+        } else if let Some(loc_raw) = rest.strip_prefix(',') {
+            let loc_raw = loc_raw.trim();
+            if loc_raw.is_empty() {
                 return None;
             }
-            Some(ctx.parse_inlines(loc))
+            let locator = Some(ctx.parse_inlines(loc_raw));
+            let p = parse_locator(loc_raw);
+            let suffix = p.suffix_text.as_deref().map(|st| ctx.parse_inlines(st));
+            (locator, p.label, p.value, suffix)
         } else {
             continue;
         };
@@ -260,6 +271,9 @@ fn parse_item(raw: &str, ctx: &MatcherContext<'_>) -> Option<Citation> {
             key: key.to_string(),
             prefix,
             locator,
+            locator_label,
+            locator_value,
+            suffix,
             suppress_author,
             number: None,
             label: None,
@@ -267,6 +281,192 @@ fn parse_item(raw: &str, ctx: &MatcherContext<'_>) -> Option<Citation> {
         });
     }
     None
+}
+
+/// The result of parsing the locator text after a citation key's comma.
+pub struct ParsedLocator {
+    pub label: Option<String>,
+    pub value: Option<String>,
+    pub suffix_text: Option<String>,
+}
+
+/// Parse the locator portion of a citation (the text after the comma and key).
+///
+/// Implements the CSL locator-label vocabulary: matches known terms at word
+/// boundaries, extracts the numeric/roman value, and captures any trailing text
+/// as a suffix.
+pub fn parse_locator(loc: &str) -> ParsedLocator {
+    // All (matcher, canonical) pairs — sorted by matcher length descending so
+    // longer forms beat shorter prefixes (e.g. "pages" before "page").
+    const VOCAB: &[(&str, &str)] = &[
+        ("sub verbo", "sub verbo"),
+        ("paragraph", "paragraph"),
+        ("section", "section"),
+        ("chapter", "chapter"),
+        ("volume", "volume"),
+        ("figure", "figure"),
+        ("column", "column"),
+        ("verse", "verse"),
+        ("pages", "page"),
+        ("folio", "folio"),
+        ("issue", "issue"),
+        ("note", "note"),
+        ("opus", "opus"),
+        ("part", "part"),
+        ("line", "line"),
+        ("book", "book"),
+        ("chaps.", "chapter"),
+        ("chap.", "chapter"),
+        ("cols.", "column"),
+        ("col.", "column"),
+        ("figs.", "figure"),
+        ("fig.", "figure"),
+        ("fols.", "folio"),
+        ("fol.", "folio"),
+        ("opp.", "opus"),
+        ("op.", "opus"),
+        ("pp.", "page"),
+        ("page", "page"),
+        ("paras.", "paragraph"),
+        ("para.", "paragraph"),
+        ("pts.", "part"),
+        ("pt.", "part"),
+        ("secs.", "section"),
+        ("sec.", "section"),
+        ("s.vv.", "sub verbo"),
+        ("s.v.", "sub verbo"),
+        ("vols.", "volume"),
+        ("vol.", "volume"),
+        ("vv.", "verse"),
+        ("ll.", "line"),
+        ("nn.", "note"),
+        ("bk.", "book"),
+        ("no.", "issue"),
+        ("p.", "page"),
+        ("v.", "verse"),
+        ("l.", "line"),
+        ("n.", "note"),
+        ("¶¶", "paragraph"),
+        ("¶", "paragraph"),
+        ("§§", "section"),
+        ("§", "section"),
+    ];
+
+    let s = loc.trim_start_matches([' ', '\t']);
+    if s.is_empty() {
+        return ParsedLocator {
+            label: None,
+            value: None,
+            suffix_text: None,
+        };
+    }
+
+    // Try each matcher (longest first).
+    let matched = VOCAB.iter().find_map(|(matcher, canonical)| {
+        let ml = matcher.len();
+        let sl = s.len();
+        if sl < ml {
+            return None;
+        }
+        // The matcher's byte length may land mid-char when `s` begins with a
+        // multibyte char (e.g. a 2-byte matcher over a 3-byte `€`). Guard the
+        // slice so an exotic locator does not panic — carve-js indexes by code
+        // unit and never throws here.
+        if !s.is_char_boundary(ml) {
+            return None;
+        }
+        // Case-insensitive prefix match.
+        if !s[..ml].eq_ignore_ascii_case(matcher) {
+            return None;
+        }
+        // Boundary check: char immediately after the match must be a boundary
+        // or the string ends.
+        let rest_after = &s[ml..];
+        let boundary = match rest_after.chars().next() {
+            None => true,
+            Some(' ') | Some('\t') => true,
+            Some(c) if c.is_ascii_digit() => true,
+            Some('§') | Some('¶') => true,
+            _ => false,
+        };
+        if !boundary {
+            return None;
+        }
+        // Strip leading whitespace from rest.
+        let rest = rest_after.trim_start_matches([' ', '\t']);
+        Some((*canonical, rest))
+    });
+
+    let (label, rest) = if let Some((canonical, rest)) = matched {
+        (Some(canonical.to_string()), rest)
+    } else {
+        // No label matched — if the first char is a digit, default to "page".
+        if s.chars()
+            .next()
+            .map(|c| c.is_ascii_digit())
+            .unwrap_or(false)
+        {
+            (Some("page".to_string()), s)
+        } else {
+            // No label, treat entire text as suffix.
+            let st = s.to_string();
+            return ParsedLocator {
+                label: None,
+                value: None,
+                suffix_text: if st.is_empty() { None } else { Some(st) },
+            };
+        }
+    };
+
+    // Parse value: consume VALUE_CHAR chars from start of rest.
+    // VALUE_CHAR = [0-9IVXLCDMivxlcdm.,&\- ]
+    let value_end = rest
+        .char_indices()
+        .find(|(_, c)| {
+            !matches!(
+                c,
+                '0'..='9'
+                    | 'I'
+                    | 'V'
+                    | 'X'
+                    | 'L'
+                    | 'C'
+                    | 'D'
+                    | 'M'
+                    | 'i'
+                    | 'v'
+                    | 'x'
+                    | 'l'
+                    | 'c'
+                    | 'd'
+                    | 'm'
+                    | '.'
+                    | ','
+                    | '&'
+                    | '-'
+                    | ' '
+            )
+        })
+        .map(|(i, _)| i)
+        .unwrap_or(rest.len());
+    let raw_value = &rest[..value_end];
+    // Trim trailing [ ,&\-.] from value.
+    let value = raw_value
+        .trim_end_matches([' ', ',', '&', '-', '.'])
+        .to_string();
+
+    let suffix_start = &rest[value_end..];
+    let suffix_text_str = suffix_start.trim_start_matches([' ', '\t']).to_string();
+
+    ParsedLocator {
+        label,
+        value: if value.is_empty() { None } else { Some(value) },
+        suffix_text: if suffix_text_str.is_empty() {
+            None
+        } else {
+            Some(suffix_text_str)
+        },
+    }
 }
 
 fn parse_key(text: &str, start: usize) -> Option<(&str, usize)> {

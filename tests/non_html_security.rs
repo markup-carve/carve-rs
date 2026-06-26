@@ -227,6 +227,7 @@ fn markdown_strips_control_bytes_from_author_leaf_fields() {
                         items: Vec::new(),
                         raw: format!("[@key{c}]"),
                         mode: None,
+                        integral: false,
                     }),
                 ],
             }),
@@ -248,6 +249,7 @@ fn plain_and_ansi_strip_control_bytes_from_author_leaf_fields() {
                 items: Vec::new(),
                 raw: format!("[@key{c}]"),
                 mode: None,
+                integral: false,
             })],
         })],
     );
