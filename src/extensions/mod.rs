@@ -13,6 +13,7 @@
 //! ```
 
 pub mod autolink;
+pub mod code_callouts;
 pub mod color_swatch;
 pub mod details;
 pub mod external_links;
@@ -29,6 +30,7 @@ pub mod table_of_contents;
 pub mod wikilinks;
 
 pub use autolink::{Autolink, AutolinkOptions};
+pub use code_callouts::CodeCallouts;
 pub use color_swatch::{ColorSwatch, SwatchPosition, SwatchShape};
 pub use details::Details;
 pub use external_links::{ExternalLinks, ExternalLinksOptions};
