@@ -30,6 +30,7 @@ mod render_carve;
 mod render_markdown;
 mod render_plain;
 mod render_text;
+mod stamp;
 mod unicode_nfc;
 
 /// Private-use sentinel for a parser/renderer-GENERATED non-breaking space
@@ -38,6 +39,7 @@ mod unicode_nfc;
 /// plain/ANSI renderers turn this placeholder back into an ASCII space while
 /// preserving literal U+00A0. Using a real char would conflate the two.
 pub(crate) const NBSP_PLACEHOLDER: char = '\u{e001}';
+pub const SPEC_VERSION: &str = "0.1";
 
 pub use ast::*;
 pub use citations::{
@@ -63,6 +65,7 @@ pub use render_ansi::{render_ansi, render_ansi_with_options};
 pub use render_carve::render_carve;
 pub use render_markdown::{render_markdown, render_markdown_with_options};
 pub use render_plain::{render_plain_text, render_plain_text_with_options};
+pub use stamp::{stamp_carve, StampForm};
 
 /// Parse a Carve source string and render it as HTML in one call.
 pub fn to_html(source: &str) -> String {
