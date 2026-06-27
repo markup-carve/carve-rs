@@ -7,6 +7,8 @@ Rust parser and renderer (HTML, Markdown, plain text, ANSI) for the [Carve](http
 
 > Carve is a post-Markdown lightweight markup language with visual mnemonics and human-centered design. See the [language site](https://markup-carve.github.io/carve/) for the spec.
 
+Implements **Carve spec 0.1** (see [Versioning & Changelog](https://markup-carve.github.io/carve/versioning)).
+
 ## Status
 
 The crate passes every `.crv` / `.html` pair currently checked into its
