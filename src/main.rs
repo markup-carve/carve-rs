@@ -38,6 +38,7 @@ fn main() -> ExitCode {
     let mut command = Command::Render;
     let mut fmt_write = false;
     let mut fmt_check = false;
+    let mut fmt_stamp = None;
     let mut enable_extensions = false;
     let mut input_paths: Vec<String> = Vec::new();
     let mut args = std::env::args().skip(1);
@@ -53,6 +54,10 @@ fn main() -> ExitCode {
             }
             "-w" | "--write" if command == Command::Fmt => fmt_write = true,
             "--check" if command == Command::Fmt => fmt_check = true,
+            "--stamp" if command == Command::Fmt => fmt_stamp = Some(carve::StampForm::Line),
+            "--stamp-block" if command == Command::Fmt => {
+                fmt_stamp = Some(carve::StampForm::Block);
+            }
             "--mention-url" => {
                 let Some(value) = args.next() else {
                     eprintln!("carve: --mention-url requires a template");
@@ -130,7 +135,7 @@ fn main() -> ExitCode {
     }
 
     if command == Command::Fmt {
-        return run_fmt(&input_paths, fmt_write, fmt_check);
+        return run_fmt(&input_paths, fmt_write, fmt_check, fmt_stamp);
     }
 
     if enable_extensions {
@@ -181,7 +186,12 @@ fn main() -> ExitCode {
     ExitCode::SUCCESS
 }
 
-fn run_fmt(paths: &[String], write: bool, check: bool) -> ExitCode {
+fn run_fmt(
+    paths: &[String],
+    write: bool,
+    check: bool,
+    stamp: Option<carve::StampForm>,
+) -> ExitCode {
     if write && check {
         eprintln!("carve fmt: --write and --check are mutually exclusive");
         return ExitCode::FAILURE;
@@ -196,7 +206,7 @@ fn run_fmt(paths: &[String], write: bool, check: bool) -> ExitCode {
             eprintln!("carve fmt: cannot read stdin: {err}");
             return ExitCode::FAILURE;
         }
-        return write_stdout(&carve::to_carve(&source));
+        return write_stdout(&format_carve(&source, stamp));
     }
 
     let mut changed = Vec::new();
@@ -213,7 +223,7 @@ fn run_fmt(paths: &[String], write: bool, check: bool) -> ExitCode {
                 return ExitCode::FAILURE;
             }
         };
-        let formatted = carve::to_carve(&source);
+        let formatted = format_carve(&source, stamp);
         if formatted != source {
             changed.push(path.clone());
             if write {
@@ -237,6 +247,17 @@ fn run_fmt(paths: &[String], write: bool, check: bool) -> ExitCode {
         return write_stdout(&stdout);
     }
     ExitCode::SUCCESS
+}
+
+fn format_carve(source: &str, stamp: Option<carve::StampForm>) -> String {
+    let formatted = carve::to_carve(source);
+    match stamp {
+        Some(form) => {
+            let generated_by = format!("carve-rs {}", env!("CARGO_PKG_VERSION"));
+            carve::stamp_carve(&formatted, &generated_by, form)
+        }
+        None => formatted,
+    }
 }
 
 fn write_stdout(output: &str) -> ExitCode {
@@ -267,6 +288,8 @@ fn print_usage() {
          Format options:\n  \
          -w, --write                 write formatted output in place\n  \
          --check                     fail if any file is not formatted\n\n\
+         --stamp                     append/update provenance marker\n  \
+         --stamp-block               append/update provenance marker as block comment\n\n\
          Render mode (HTML only; default --interactive):\n  \
          --static                    self-contained HTML: flatten interactive\n                              \
          constructs, degrade diagrams/math to source\n  \
