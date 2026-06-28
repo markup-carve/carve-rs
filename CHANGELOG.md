@@ -12,7 +12,9 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 Initial release of **carve-rs**, a zero-dependency Rust crate and CLI for the
 [Carve](https://github.com/markup-carve/carve) markup language. The crate is
 byte-conformant with the carve-js reference implementation against the shared
-spec corpus.
+spec corpus. Published on crates.io as **`carve-lang`** (the name `carve` was
+already taken); the library is still imported as `use carve` and the CLI binary
+is still `carve`.
 
 ### Core parsing and rendering
 

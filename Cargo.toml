@@ -1,5 +1,7 @@
 [package]
-name = "carve"
+# Published crate name (`carve` is taken on crates.io). The library is still
+# imported as `carve` (see [lib].name) and the CLI binary is still `carve`.
+name = "carve-lang"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.75"
@@ -7,7 +9,7 @@ description = "Reference Rust parser and HTML renderer for the Carve markup lang
 license = "MIT"
 repository = "https://github.com/markup-carve/carve-rs"
 homepage = "https://markup-carve.github.io/carve/"
-documentation = "https://docs.rs/carve"
+documentation = "https://docs.rs/carve-lang"
 readme = "README.md"
 keywords = ["carve", "markup", "parser", "html", "djot"]
 categories = ["parser-implementations", "text-processing"]
