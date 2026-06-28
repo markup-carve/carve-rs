@@ -9,6 +9,19 @@ Rust parser and renderer (HTML, Markdown, plain text, ANSI) for the [Carve](http
 
 Implements **Carve spec 0.1** (see [Versioning & Changelog](https://markup-carve.github.io/carve/versioning)).
 
+## Install
+
+```sh
+cargo add carve-lang
+```
+
+The crate is published on crates.io as **`carve-lang`** (the name `carve` was
+taken), but it is imported as `carve` and its CLI binary is `carve`:
+
+```rust
+let html = carve::to_html("# Hello /Carve/");
+```
+
 ## Status
 
 The crate passes every `.crv` / `.html` pair currently checked into its

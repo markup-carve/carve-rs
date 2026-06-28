@@ -7,7 +7,7 @@
 //! A non-math code block is left untouched and defers to the core renderer.
 //!
 //! The LaTeX body is HTML-escaped the same way the core math renderer escapes
-//! inline / display `$…$` math (via [`crate::escape::escape_text`], which
+//! inline / display `$…$` math (via the core `escape_text` helper, which
 //! escapes `&`, `<`, and `>`). Note this escapes `>` too, unlike the Mermaid
 //! extension which keeps `>` for arrow syntax.
 
