@@ -59,7 +59,9 @@ spec corpus.
 
 ### Tier-3 opt-in extensions
 
-- `Bibliography` - CSL-JSON pool with cite-ordered `<ol>` and back-links
+- citations `bibliography` option - supplying a CSL-JSON pool renders a
+  cite-ordered `<ol>` with back-links (a citations capability, not a standalone
+  extension)
 - `Glossary` + `Index` - `::: glossary` / `:term[word]` and `:index[term]` /
   `::: index` with back-links
 - `HeadingNumbers` - section auto-numbering and numbered cross-references
@@ -103,5 +105,5 @@ spec corpus.
 - Uniform nesting depth cap of 200
 - Char-boundary panic guard in container-prefix stripping (crash-DoS fix)
 
-[Unreleased]: https://github.com/markup-carve/carve-rs/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/markup-carve/carve-rs/releases/tag/v0.1.0
+[Unreleased]: https://github.com/markup-carve/carve-rs/compare/0.1.0...HEAD
+[0.1.0]: https://github.com/markup-carve/carve-rs/releases/tag/0.1.0
