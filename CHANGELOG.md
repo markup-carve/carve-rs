@@ -18,7 +18,7 @@ spec corpus.
 
 - Linear-time block lexer (line-by-line) and single-pass inline scanner with no
   backtracking; zero runtime dependencies
-- Full Tier-1 feature set: headings (H1-H4), paragraphs, emphasis (`/italic/`,
+- Full Tier-1 feature set: headings (H1-H6), paragraphs, emphasis (`/italic/`,
   `*bold*`, `_underline_`, `~strikethrough~`, `^super^`, `,sub,`, `=highlight=`,
   `/*bold-italic*/`), blockquotes with attribution captions, unordered and ordered
   lists, task lists, tables (with colspan/rowspan), inline code and fenced code
@@ -29,7 +29,8 @@ spec corpus.
   key=val}`), raw HTML passthrough (`=html`), comment lines (`%%`), and reference
   links/images
 - Inline footnotes (`^[...]`) and block footnote definitions
-- CriticMarkup (`{++add++}`, `{--del--}`, `{~~sub~~}`, `{==hl==}`, `{>>comment<<}`)
+- Editorial / critic markup (`{+ +}` insert, `{- -}` delete,
+  `{~ old~>new ~}` substitute, `{= =}` highlight, `{# #}` comment)
 - Smart typography: curly quotes, em/en dashes, ellipsis
 - HTML renderer (`carve::to_html` / `carve::render_html`)
 - Markdown renderer (`carve::to_markdown`), plain-text renderer
