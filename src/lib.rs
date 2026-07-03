@@ -17,6 +17,7 @@
 mod abbr_budget;
 pub mod ast;
 mod citations;
+mod document_ids;
 mod escape;
 mod extension;
 pub mod extensions;

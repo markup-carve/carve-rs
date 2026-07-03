@@ -47,6 +47,14 @@ rendering and win over a pool entry with the same key. Back-links appear only
 when a pool is supplied; plain Tier-2 citations are byte-identical to before.
 Resolving an arbitrary `.csl` style is out of scope (a renderer-plugin point).
 
+The generated citation ids (`cite-{key}-{n}` use-site anchors, `ref-{key}`
+reference entries) are deduplicated against the document id namespace
+(extensions contract §2.6): when an explicit `{#id}` attribute or a generated
+heading id already uses a name, the citation id takes the next free suffix
+(`ref-foo-2`) instead of emitting a duplicate DOM id, and every href /
+back-link follows. Custom extensions can reserve their own generated ids in
+the same namespace through `RenderContext::unique_id`.
+
 ## ListTable
 
 `ListTable` is a Tier-3 extension that renders a `::: list-table` block authored

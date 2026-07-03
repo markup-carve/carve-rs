@@ -952,15 +952,17 @@ fn render_refs_list(
                 Some(text) => escape_text(text),
                 None => ctx.render_inlines(&def.entry),
             };
+            // Ids come from the per-render document id namespace (extensions
+            // contract §2.6): a `<li id>` or back-link target bumped by a
+            // collision stays consistent with the in-text citation anchors.
             let mut backlinks = String::new();
             if has_bib {
                 let n = uses.get(&key).copied().unwrap_or(0);
                 let links: Vec<String> = (1..=n)
                     .map(|m| {
                         format!(
-                            "<a href=\"#cite-{}-{}\" class=\"ref-backref\">\u{21a9}</a>",
-                            escape_attr(&key),
-                            m
+                            "<a href=\"#{}\" class=\"ref-backref\">\u{21a9}</a>",
+                            escape_attr(&crate::document_ids::cite_id(&key, m))
                         )
                     })
                     .collect();
@@ -973,8 +975,8 @@ fn render_refs_list(
             }
             out.push('\n');
             out.push_str(&format!(
-                "  <li id=\"ref-{}\">{}{}</li>",
-                escape_attr(&key),
+                "  <li id=\"{}\">{}{}</li>",
+                escape_attr(&crate::document_ids::ref_id(&key)),
                 body,
                 backlinks
             ));

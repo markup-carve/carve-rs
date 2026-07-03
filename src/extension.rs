@@ -440,6 +440,18 @@ impl<'a> RenderContext<'a> {
         &self.options.renderers
     }
 
+    /// Reserve a DOM id in the shared per-render document id namespace (see
+    /// the [extensions contract](https://markup-carve.github.io/carve/extensions)
+    /// §2.6 "Generated ids"): returns `base_id` when the name is free, else
+    /// the next free numeric suffix (`base_id-2`, `-3`, ...), never colliding
+    /// with an explicit `{#id}` attribute, a generated heading id, or a
+    /// previously generated id. The namespace is seeded from the whole
+    /// document before rendering starts, so first-in-source wins. Outside an
+    /// active HTML render the base id is returned unchanged.
+    pub fn unique_id(&self, base_id: &str) -> String {
+        crate::document_ids::unique_id(base_id)
+    }
+
     pub fn escape_html(&self, input: &str) -> String {
         escape_text(input)
     }

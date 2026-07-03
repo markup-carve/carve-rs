@@ -24,6 +24,12 @@ pub fn render_html_with_options(doc: &Document, options: &Options<'_>) -> String
     let mut doc = doc.clone();
     let _abbr_guard = AbbrBudgetGuard::new(doc.source_len);
     let _index_guard = crate::index_budget::IndexBudgetGuard::new(doc.source_len);
+    // Document id namespace (extensions contract §2.6): seeded with every
+    // explicit `{#id}` attribute and every heading id this render will assign,
+    // so extension-generated ids (citation anchors / reference entries) take
+    // the next free suffix instead of emitting a duplicate DOM id.
+    let _document_ids_guard =
+        crate::document_ids::DocumentIdsGuard::new(&doc, options.lowercase_heading_ids);
     let mut state = RenderState {
         lowercase_heading_ids: options.lowercase_heading_ids,
         ..RenderState::default()
@@ -1737,20 +1743,23 @@ fn render_citation_item(out: &mut String, item: &Citation, options: &Options<'_>
     }
 
     // A use_index is only set when a bibliography pool is active (#199); it adds
-    // the per-use back-link anchor to the existing forward link.
+    // the per-use back-link anchor to the existing forward link. Both ids are
+    // read from the per-render document id namespace (extensions contract
+    // §2.6), so a collision with an explicit `{#id}` or a heading id bumps the
+    // anchor id / href consistently with the references list.
+    let ref_id = crate::document_ids::ref_id(&item.key);
     match item.use_index {
         Some(n) => out.push_str(&format!(
-            "<a id=\"cite-{}-{}\" {} href=\"#ref-{}\">{}</a>",
-            escape_attr(&item.key),
-            n,
+            "<a id=\"{}\" {} href=\"#{}\">{}</a>",
+            escape_attr(&crate::document_ids::cite_id(&item.key, n)),
             attrs,
-            escape_attr(&item.key),
+            escape_attr(&ref_id),
             escape_text(item.label.as_deref().unwrap_or_default())
         )),
         None => out.push_str(&format!(
-            "<a {} href=\"#ref-{}\">{}</a>",
+            "<a {} href=\"#{}\">{}</a>",
             attrs,
-            escape_attr(&item.key),
+            escape_attr(&ref_id),
             escape_text(item.label.as_deref().unwrap_or_default())
         )),
     }
