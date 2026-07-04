@@ -55,8 +55,8 @@ pub use extensions::{
     ExternalLinks, ExternalLinksOptions, FencedRender, FencedRenderOptions, Glossary,
     HeadingNumbers, HeadingNumbersOptions, HeadingPermalinks, HeadingPermalinksOptions, Index,
     ListTable, ListType, MathBlock, MathBlockOptions, Position, Spoiler, SwatchPosition,
-    SwatchShape, TabNormalize, TableOfContents, TableOfContentsOptions, UrlGenerator, Wikilinks,
-    WikilinksOptions,
+    SwatchShape, TabNormalize, TableOfContents, TableOfContentsOptions, TocPlacement, UrlGenerator,
+    Wikilinks, WikilinksOptions,
 };
 pub use parse::{parse, parse_with_options};
 pub use profile::{DisallowedAction, LinkPolicy, Profile, ProfileViolation, ProfileViolationError};

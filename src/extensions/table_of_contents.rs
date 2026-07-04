@@ -11,10 +11,16 @@
 //! with `with_lowercase_heading_ids(true)`, set
 //! [`TableOfContentsOptions::lowercase_ids`] to the same value.
 
+use std::cell::RefCell;
 use std::collections::BTreeMap;
 
-use crate::ast::{BlockNode, Document, Heading, RawBlock};
-use crate::extension::{BeforeRenderContext, CarveExtension};
+use crate::ast::{Attrs, BlockExtension, BlockNode, Document, Heading, RawBlock};
+use crate::extension::{BeforeRenderContext, CarveExtension, RenderContext};
+use crate::render::render_attrs_without_keys;
+
+/// Carrier extension name a `::: toc` block is rewritten to in `before_render`,
+/// then rendered by [`TocPlacement::render_block_extension`].
+const TOC_CARRIER: &str = "toc-placement";
 
 /// List element for the TOC entries.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -75,6 +81,7 @@ impl Default for TableOfContentsOptions {
     }
 }
 
+#[derive(Clone)]
 struct TocEntry {
     level: u8,
     text: String,
@@ -133,7 +140,7 @@ impl CarveExtension for TableOfContents {
         }
 
         let html = format!(
-            "<nav class=\"{}\">{}</nav>",
+            "<nav class=\"{}\">\n{}</nav>",
             escape_html(&self.opts.css_class),
             build_list(&entries, self.opts.list_type),
         );
@@ -209,37 +216,34 @@ fn next_id(h: &Heading, counts: &mut BTreeMap<String, usize>, lowercase: bool) -
     }
 }
 
-/// Build a nested list from a flat, document-order entry list. Mirrors the
-/// carve-js stack walk exactly: never pop the root list, open one nested list
-/// when going deeper, emit a sibling at the same level, and a heading shallower
-/// than its predecessor but deeper than an ancestor stays nested.
+/// Build a nested list from a flat, document-order entry list. Byte-faithful
+/// port of carve-php's `TableOfContentsExtension::renderTocList` (and the
+/// matching carve-js `buildList`): one tag per line, and a heading deeper than
+/// its predecessor's predecessor stays a sibling `<li>` in the same nested
+/// `<ul>` rather than opening a fresh one. Returns the `<ul>…</ul>` list with
+/// its trailing newline.
 fn build_list(entries: &[TocEntry], list_type: ListType) -> String {
     let tag = list_type.tag();
-    let mut html = String::new();
-    let mut open: Vec<u8> = Vec::new();
+    if entries.is_empty() {
+        return String::new();
+    }
+    let mut html = format!("<{tag}>\n");
+    let mut level_stack: Vec<u8> = vec![entries[0].level];
+    let mut has_open_item = false;
     for e in entries {
-        if open.is_empty() {
-            html.push('<');
-            html.push_str(tag);
-            html.push('>');
-            open.push(e.level);
-        } else {
-            while open.len() > 1 && *open.last().expect("non-empty") > e.level {
-                html.push_str(&format!("</li></{tag}>"));
-                open.pop();
-            }
-            let last = *open.last().expect("non-empty");
-            if last < e.level {
-                html.push('<');
-                html.push_str(tag);
-                html.push('>');
-                open.push(e.level);
+        if has_open_item {
+            let mut depth = level_stack.len();
+            let current = level_stack[depth - 1];
+            if e.level > current {
+                html.push_str(&format!("\n<{tag}>\n"));
+                level_stack.push(e.level);
             } else {
-                html.push_str("</li>");
-                if e.level < last {
-                    let idx = open.len() - 1;
-                    open[idx] = e.level;
+                while depth > 1 && e.level <= level_stack[depth - 2] {
+                    html.push_str(&format!("</li>\n</{tag}>\n"));
+                    level_stack.pop();
+                    depth -= 1;
                 }
+                html.push_str("</li>\n");
             }
         }
         html.push_str(&format!(
@@ -247,11 +251,16 @@ fn build_list(entries: &[TocEntry], list_type: ListType) -> String {
             escape_html(&e.id),
             escape_html(&e.text)
         ));
+        has_open_item = true;
     }
-    while !open.is_empty() {
-        html.push_str(&format!("</li></{tag}>"));
-        open.pop();
+    html.push_str("</li>\n");
+    let mut depth = level_stack.len();
+    while depth > 1 {
+        html.push_str(&format!("</{tag}>\n</li>\n"));
+        level_stack.pop();
+        depth -= 1;
     }
+    html.push_str(&format!("</{tag}>\n"));
     html
 }
 
@@ -269,4 +278,185 @@ fn escape_html(s: &str) -> String {
         }
     }
     out
+}
+
+// ===========================================================================
+// In-document `::: toc` placement directive
+// ===========================================================================
+
+/// In-document table-of-contents placement directive (Tier-3). Unlike
+/// [`TableOfContents`] (which injects one TOC at the document top or bottom),
+/// this renders a `<nav class="toc">` exactly where the author writes a
+/// `::: toc` block. Off by default.
+///
+/// The level window is set with attributes on the line *before* the opener
+/// (Carve attaches `:::`-block attributes on a preceding attribute line):
+///
+/// ```text
+/// ::: toc              (all levels, 1-6)
+/// :::
+///
+/// {depth=2}            (levels 1-2)
+/// ::: toc
+/// :::
+///
+/// {from=2 to=4}        (levels 2-4)
+/// ::: toc
+/// :::
+/// ```
+///
+/// The nested `<ul>` is byte-identical to carve-js / carve-php. Heading ids are
+/// derived with the renderer's `lowercase_heading_ids` option so link targets
+/// match the emitted `<section id>` anchors.
+pub struct TocPlacement {
+    entries: RefCell<Vec<TocEntry>>,
+}
+
+impl TocPlacement {
+    /// Create the placement extension.
+    pub fn new() -> Self {
+        Self {
+            entries: RefCell::new(Vec::new()),
+        }
+    }
+}
+
+impl Default for TocPlacement {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl CarveExtension for TocPlacement {
+    fn name(&self) -> &'static str {
+        "toc"
+    }
+
+    fn before_render(&self, mut doc: Document, ctx: &BeforeRenderContext<'_>) -> Document {
+        // Collect ALL top-level headings (the per-directive window is applied at
+        // render time), keeping the id counter aligned with the renderer.
+        let opts = TableOfContentsOptions {
+            min_level: 1,
+            max_level: 6,
+            lowercase_ids: ctx.options().lowercase_heading_ids,
+            ..Default::default()
+        };
+        let mut counts: BTreeMap<String, usize> = BTreeMap::new();
+        let mut entries: Vec<TocEntry> = Vec::new();
+        collect_entries(&doc.children, &mut counts, &opts, &mut entries, true);
+        *self.entries.borrow_mut() = entries;
+
+        rewrite_toc_containers(&mut doc.children);
+        doc
+    }
+
+    fn render_block_extension(
+        &self,
+        node: &BlockExtension,
+        ctx: &RenderContext<'_>,
+    ) -> Option<String> {
+        if node.name != TOC_CARRIER {
+            return None;
+        }
+        Some(render_toc_nav(node, ctx, &self.entries.borrow()))
+    }
+}
+
+/// Rewrite every `::: toc` admonition into a [`TOC_CARRIER`] block extension so
+/// `render_block_extension` renders it in place. Recurses into containers.
+fn rewrite_toc_containers(blocks: &mut [BlockNode]) {
+    for block in blocks.iter_mut() {
+        match block {
+            BlockNode::Admonition(a) if a.kind == "toc" => {
+                rewrite_toc_containers(&mut a.children);
+                *block = BlockNode::Extension(BlockExtension {
+                    attrs: a.attrs.take(),
+                    name: TOC_CARRIER.to_string(),
+                    children: std::mem::take(&mut a.children),
+                    summary: None,
+                    label: a.label.take(),
+                });
+            }
+            BlockNode::List(l) => {
+                for item in &mut l.items {
+                    rewrite_toc_containers(&mut item.children);
+                }
+            }
+            BlockNode::BlockQuote(b) => rewrite_toc_containers(&mut b.children),
+            BlockNode::Admonition(a) => rewrite_toc_containers(&mut a.children),
+            BlockNode::Div(d) => rewrite_toc_containers(&mut d.children),
+            BlockNode::Extension(e) => rewrite_toc_containers(&mut e.children),
+            BlockNode::DefinitionList(dl) => {
+                for item in &mut dl.items {
+                    for def in &mut item.definitions {
+                        rewrite_toc_containers(def);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn render_toc_nav(node: &BlockExtension, ctx: &RenderContext<'_>, entries: &[TocEntry]) -> String {
+    let (min, max) = toc_window(&node.attrs);
+    let picked: Vec<TocEntry> = entries
+        .iter()
+        .filter(|e| e.level >= min && e.level <= max)
+        .cloned()
+        .collect();
+    let attrs = render_attrs_without_keys(
+        &Some(with_base_class(&node.attrs, "toc")),
+        &["depth", "from", "to"],
+    );
+    let nav = if picked.is_empty() {
+        format!("<nav{attrs}></nav>")
+    } else {
+        format!("<nav{attrs}>\n{}</nav>", build_list(&picked, ListType::Ul))
+    };
+    // Preserve any authored blocks written inside the placeholder before the nav.
+    if node.children.is_empty() {
+        nav
+    } else {
+        format!(
+            "{}\n{}",
+            ctx.render_blocks_at(&node.children, ctx.level()),
+            nav
+        )
+    }
+}
+
+/// Resolve the heading-level window from a `::: toc` directive's attributes.
+/// `{from=X to=Y}` is an explicit range (swapped if inverted); `{depth=N}` is
+/// shorthand for levels 1..N. `from`/`to` win over `depth` when both appear.
+fn toc_window(attrs: &Option<Attrs>) -> (u8, u8) {
+    let get = |k: &str| {
+        attrs
+            .as_ref()
+            .and_then(|a| a.key_values.get(k))
+            .map(String::as_str)
+    };
+    let level = |value: Option<&str>, fallback: u8| -> u8 {
+        value
+            .and_then(|s| s.trim().parse::<i64>().ok())
+            .map(|n| n.clamp(1, 6) as u8)
+            .unwrap_or(fallback)
+    };
+    if get("from").is_some() || get("to").is_some() {
+        let mut min = level(get("from"), 1);
+        let mut max = level(get("to"), 6);
+        if min > max {
+            std::mem::swap(&mut min, &mut max);
+        }
+        (min, max)
+    } else {
+        (1, level(get("depth"), 6))
+    }
+}
+
+/// Prepend `base` as the leading class of (a clone of) `attrs`.
+fn with_base_class(attrs: &Option<Attrs>, base: &str) -> Attrs {
+    let mut a = attrs.clone().unwrap_or_default();
+    a.classes.insert(0, base.to_string());
+    a
 }

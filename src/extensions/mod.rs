@@ -43,5 +43,7 @@ pub use list_table::ListTable;
 pub use math_block::{MathBlock, MathBlockOptions};
 pub use spoiler::Spoiler;
 pub use tab_normalize::TabNormalize;
-pub use table_of_contents::{ListType, Position, TableOfContents, TableOfContentsOptions};
+pub use table_of_contents::{
+    ListType, Position, TableOfContents, TableOfContentsOptions, TocPlacement,
+};
 pub use wikilinks::{UrlGenerator, Wikilinks, WikilinksOptions};

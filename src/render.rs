@@ -37,12 +37,51 @@ pub fn render_html_with_options(doc: &Document, options: &Options<'_>) -> String
     let footnotes = collect_footnotes(&mut doc);
     let mut html = render_document_blocks(doc.children.as_slice(), options, &mut state);
     if !footnotes.is_empty() {
-        html.push('\n');
-        html.push_str(&render_footnotes_section(
-            &doc, &footnotes, options, &mut state,
-        ));
+        let section = render_footnotes_section(&doc, &footnotes, options, &mut state);
+        // `::: footnotes` placement: every footnote is numbered by now, so flush
+        // the endnotes at the sentinel instead of appending at the end. A
+        // document without the marker is byte-identical to before.
+        if html.contains(FOOTNOTES_PLACEMENT_SENTINEL) {
+            html = place_footnotes_section(html, &section);
+        } else {
+            html.push('\n');
+            html.push_str(&section);
+        }
+    }
+    // Sweep any sentinel that still remains and degrade it to an empty
+    // placeholder: a `::: footnotes` nested INSIDE a footnote definition emits a
+    // sentinel while the endnotes section renders (after the body check above),
+    // and a marker in a document with no footnotes never hit the branch above.
+    // The raw sentinel must never leak into output.
+    if html.contains(FOOTNOTES_PLACEMENT_SENTINEL) {
+        html = html.replace(
+            FOOTNOTES_PLACEMENT_SENTINEL,
+            "<div class=\"footnotes\"></div>",
+        );
     }
     html
+}
+
+/// Private sentinel emitted for a `::: footnotes` placement block; the top-level
+/// render swaps it for the endnotes section (relocated from the document end).
+/// Uses NUL bytes, which cannot appear in rendered HTML output.
+const FOOTNOTES_PLACEMENT_SENTINEL: &str = "\u{0}carve:footnotes-placement\u{0}";
+
+/// Relocate the endnotes section to the first `::: footnotes` sentinel; any
+/// additional sentinels degrade to an empty placeholder so a second block never
+/// duplicates the section.
+fn place_footnotes_section(html: String, section: &str) -> String {
+    let Some(pos) = html.find(FOOTNOTES_PLACEMENT_SENTINEL) else {
+        return html;
+    };
+    let mut out = String::with_capacity(html.len() + section.len());
+    out.push_str(&html[..pos]);
+    out.push_str(section);
+    out.push_str(&html[pos + FOOTNOTES_PLACEMENT_SENTINEL.len()..]);
+    out.replace(
+        FOOTNOTES_PLACEMENT_SENTINEL,
+        "<div class=\"footnotes\"></div>",
+    )
 }
 
 // Entry point for `RenderContext::render_blocks` (the extension render helper).
@@ -110,6 +149,10 @@ pub(crate) struct RenderState {
     /// Mirrors `Options::lowercase_heading_ids` so the `<section id>` derived
     /// here matches the parse-time id index (and the resolved cross-ref hrefs).
     lowercase_heading_ids: bool,
+    /// True while rendering the endnotes section's footnote bodies. A
+    /// `::: footnotes` nested inside a footnote definition must NOT emit a
+    /// placement sentinel (it renders as an ordinary div, matching carve-js).
+    rendering_footnotes: bool,
 }
 
 fn render_document_blocks(
@@ -399,6 +442,10 @@ fn render_footnotes_section(
     options: &Options<'_>,
     state: &mut RenderState,
 ) -> String {
+    // Suppress `::: footnotes` placement while rendering footnote bodies, so a
+    // nested marker renders as an ordinary div instead of emitting a sentinel.
+    let was_rendering_footnotes = state.rendering_footnotes;
+    state.rendering_footnotes = true;
     let mut out = String::new();
     out.push_str("<section role=\"doc-endnotes\">\n  <hr>\n  <ol>");
     for (idx, entry) in footnotes.iter().enumerate() {
@@ -433,6 +480,7 @@ fn render_footnotes_section(
         out.push_str("    </li>");
     }
     out.push_str("\n  </ol>\n</section>");
+    state.rendering_footnotes = was_rendering_footnotes;
     out
 }
 
@@ -1149,6 +1197,13 @@ fn render_admonition(
     options: &Options<'_>,
     state: &mut RenderState,
 ) {
+    // `::: footnotes` placement directive: emit a sentinel that the top-level
+    // render replaces with the endnotes section, relocating it from the
+    // document end. A document without this block is byte-identical to before.
+    if a.kind == "footnotes" && !state.rendering_footnotes {
+        out.push_str(FOOTNOTES_PLACEMENT_SENTINEL);
+        return;
+    }
     let canonical = matches!(
         a.kind.as_str(),
         "note" | "tip" | "warning" | "danger" | "info" | "success" | "example" | "quote"

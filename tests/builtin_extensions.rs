@@ -10,7 +10,7 @@ use carve::{
     Autolink, AutolinkOptions, Citations, ColorSwatch, ExternalLinks, ExternalLinksOptions,
     FencedRender, HeadingPermalinks, HeadingPermalinksOptions, ListType, MathBlock, Options,
     Position, Spoiler, SwatchPosition, SwatchShape, TabNormalize, TableOfContents,
-    TableOfContentsOptions, Wikilinks, WikilinksOptions,
+    TableOfContentsOptions, TocPlacement, Wikilinks, WikilinksOptions,
 };
 
 // ---------------------------------------------------------------------------
@@ -945,7 +945,7 @@ fn toc_top_nested_golden() {
     // carveToHtml("# Intro\n\nText.\n\n## Details\n\nMore.\n", {extensions:[tableOfContents()]})
     assert_eq!(
         carve::to_html_with_options("# Intro\n\nText.\n\n## Details\n\nMore.\n", &opts),
-        "<nav class=\"toc\"><ul><li><a href=\"#intro\">Intro</a><ul><li><a href=\"#details\">Details</a></li></ul></li></ul></nav>\n<section id=\"intro\">\n  <h1>Intro</h1>\n  <p>Text.</p>\n  <section id=\"details\">\n    <h2>Details</h2>\n    <p>More.</p>\n  </section>\n</section>"
+        "<nav class=\"toc\">\n<ul>\n<li><a href=\"#intro\">Intro</a>\n<ul>\n<li><a href=\"#details\">Details</a></li>\n</ul>\n</li>\n</ul>\n</nav>\n<section id=\"intro\">\n  <h1>Intro</h1>\n  <p>Text.</p>\n  <section id=\"details\">\n    <h2>Details</h2>\n    <p>More.</p>\n  </section>\n</section>"
     );
 }
 
@@ -969,11 +969,11 @@ fn toc_bottom_ol_golden() {
     // assertion encodes the carve-rs output (nav contents match js exactly).
     let html = carve::to_html_with_options("# Alpha\n\n## Beta\n", &opts);
     assert!(html.contains(
-        "<nav class=\"toc\"><ol><li><a href=\"#alpha\">Alpha</a><ol><li><a href=\"#beta\">Beta</a></li></ol></li></ol></nav>"
+        "<nav class=\"toc\">\n<ol>\n<li><a href=\"#alpha\">Alpha</a>\n<ol>\n<li><a href=\"#beta\">Beta</a></li>\n</ol>\n</li>\n</ol>\n</nav>"
     ));
     assert_eq!(
         html,
-        "<section id=\"alpha\">\n  <h1>Alpha</h1>\n  <section id=\"beta\">\n    <h2>Beta</h2>\n    <nav class=\"toc\"><ol><li><a href=\"#alpha\">Alpha</a><ol><li><a href=\"#beta\">Beta</a></li></ol></li></ol></nav>\n  </section>\n</section>"
+        "<section id=\"alpha\">\n  <h1>Alpha</h1>\n  <section id=\"beta\">\n    <h2>Beta</h2>\n    <nav class=\"toc\">\n<ol>\n<li><a href=\"#alpha\">Alpha</a>\n<ol>\n<li><a href=\"#beta\">Beta</a></li>\n</ol>\n</li>\n</ol>\n</nav>\n  </section>\n</section>"
     );
 }
 
@@ -1001,4 +1001,128 @@ fn tab_normalize_inline_code_width_four_golden() {
         carve::to_html_with_options("Code: `a\tb`", &opts),
         "<p>Code: <code>a    b</code></p>"
     );
+}
+
+// ---------------------------------------------------------------------------
+// ::: toc placement directive
+// ---------------------------------------------------------------------------
+
+#[test]
+fn toc_placement_renders_nested_nav_in_place() {
+    let ext = TocPlacement::new();
+    let opts = Options::new().with_extension(&ext);
+    let html = carve::to_html_with_options(
+        "::: toc\n:::\n\n# Intro\n\n## Setup\n\n### Details\n\n## Usage\n",
+        &opts,
+    );
+    assert!(html.contains(
+        "<nav class=\"toc\">\n<ul>\n<li><a href=\"#Intro\">Intro</a>\n<ul>\n\
+<li><a href=\"#Setup\">Setup</a>\n<ul>\n<li><a href=\"#Details\">Details</a></li>\n</ul>\n</li>\n\
+<li><a href=\"#Usage\">Usage</a></li>\n</ul>\n</li>\n</ul>\n</nav>"
+    ));
+    // Placed before the first heading section.
+    assert!(html.find("<nav").expect("nav") < html.find("<h1").expect("h1"));
+}
+
+#[test]
+fn toc_placement_depth_limits_levels() {
+    let ext = TocPlacement::new();
+    let opts = Options::new().with_extension(&ext);
+    let html = carve::to_html_with_options(
+        "# A\n\n{depth=2}\n::: toc\n:::\n\n## B\n\n### C\n\n## D\n",
+        &opts,
+    );
+    assert!(html.contains("<a href=\"#B\">B</a>"));
+    assert!(html.contains("<a href=\"#D\">D</a>"));
+    assert!(!html.contains("href=\"#C\""));
+}
+
+#[test]
+fn toc_placement_from_to_window() {
+    let ext = TocPlacement::new();
+    let opts = Options::new().with_extension(&ext);
+    let html = carve::to_html_with_options(
+        "# A\n\n{from=2 to=2}\n::: toc\n:::\n\n## B\n\n### C\n\n## D\n",
+        &opts,
+    );
+    assert!(html.contains("<a href=\"#B\">B</a>"));
+    assert!(html.contains("<a href=\"#D\">D</a>"));
+    assert!(!html.contains("href=\"#A\""));
+    assert!(!html.contains("href=\"#C\""));
+}
+
+#[test]
+fn toc_placement_carries_author_attrs_and_strips_window_keys() {
+    let ext = TocPlacement::new();
+    let opts = Options::new().with_extension(&ext);
+    let html =
+        carve::to_html_with_options("# A\n\n{#nav .side depth=1}\n::: toc\n:::\n\n## B\n", &opts);
+    assert!(html.contains("<nav id=\"nav\" class=\"toc side\">"));
+    assert!(!html.contains("depth="));
+}
+
+#[test]
+fn toc_placement_empty_window_renders_empty_nav() {
+    let ext = TocPlacement::new();
+    let opts = Options::new().with_extension(&ext);
+    let html = carve::to_html_with_options("::: toc\n:::\n\nplain\n", &opts);
+    assert!(html.contains("<nav class=\"toc\"></nav>"));
+}
+
+#[test]
+fn toc_placement_inert_without_extension() {
+    let html = carve::to_html("# A\n\n::: toc\n:::\n");
+    assert!(html.contains("class=\"toc\""));
+    assert!(!html.contains("<nav"));
+}
+
+// ---------------------------------------------------------------------------
+// ::: footnotes placement directive (core, no extension)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn footnotes_placement_flushes_at_marker() {
+    let html = carve::to_html("Intro[^a].\n\n::: footnotes\n:::\n\n## After\n\n[^a]: note a\n");
+    assert!(html.find("role=\"doc-endnotes\"").expect("endnotes") < html.find("<h2").expect("h2"));
+    assert!(html.contains("<li id=\"fn1\">"));
+}
+
+#[test]
+fn footnotes_placement_includes_later_references() {
+    // Flush is "all footnotes", including those referenced after the marker.
+    let html = carve::to_html(
+        "A[^a].\n\n::: footnotes\n:::\n\n## After\n\nB[^b].\n\n[^a]: a\n\n[^b]: b\n",
+    );
+    assert!(html.contains("<li id=\"fn1\">"));
+    assert!(html.contains("<li id=\"fn2\">"));
+    assert_eq!(html.matches("role=\"doc-endnotes\"").count(), 1);
+}
+
+#[test]
+fn footnotes_no_marker_renders_at_end() {
+    let html = carve::to_html("Intro[^a].\n\n## After\n\n[^a]: note a\n");
+    assert!(html.find("<h2").expect("h2") < html.find("role=\"doc-endnotes\"").expect("endnotes"));
+}
+
+#[test]
+fn footnotes_placement_degrades_without_footnotes() {
+    let html = carve::to_html("Plain.\n\n::: footnotes\n:::\n");
+    assert!(html.contains("<div class=\"footnotes\"></div>"));
+    assert!(!html.contains("doc-endnotes"));
+}
+
+#[test]
+fn footnotes_placement_second_marker_no_duplicate() {
+    let html = carve::to_html("X[^a].\n\n::: footnotes\n:::\n\n::: footnotes\n:::\n\n[^a]: a\n");
+    assert_eq!(html.matches("role=\"doc-endnotes\"").count(), 1);
+}
+
+#[test]
+fn footnotes_placement_nested_in_definition_never_leaks_sentinel() {
+    // A `::: footnotes` inside a footnote definition renders as an ordinary div,
+    // never the internal placement sentinel.
+    let html = carve::to_html("X[^a].\n\n[^a]: ::: footnotes\n    :::\n");
+    assert!(!html.contains('\u{0}'));
+    assert!(!html.contains("footnotes-placement"));
+    assert!(html.contains("<div class=\"footnotes\">"));
 }
