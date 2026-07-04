@@ -132,6 +132,7 @@ const IMPLEMENTED: &[&str] = &[
     "117-trojan-source-heading-ids-are-nfc-normalized-and-strip-invisible-controls",
     "118-trojan-source-rendered-text-and-code-strip-bidi-override-controls",
     "119-scheme-probe-strips-unicode-whitespace",
+    "120-footnotes-placement",
 ];
 
 fn corpus_dir() -> PathBuf {
