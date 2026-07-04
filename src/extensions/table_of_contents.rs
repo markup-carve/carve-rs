@@ -199,6 +199,51 @@ fn collect_entries(
     }
 }
 
+/// Like [`collect_entries`] but records EVERY heading (not only top-level ones),
+/// recursing into every container. Used by the `::: toc` placement directive so
+/// headings nested in `::: note`, blockquotes, lists, etc. appear in the TOC.
+/// The id counter matches the renderer's document-order allocation.
+fn collect_all_entries(
+    blocks: &[BlockNode],
+    counts: &mut BTreeMap<String, usize>,
+    lowercase: bool,
+    entries: &mut Vec<TocEntry>,
+) {
+    for block in blocks {
+        match block {
+            BlockNode::Heading(h) => {
+                let id = next_id(h, counts, lowercase);
+                entries.push(TocEntry {
+                    level: h.level,
+                    text: crate::render::plain_inlines(&h.children),
+                    id,
+                });
+            }
+            BlockNode::List(l) => {
+                for item in &l.items {
+                    collect_all_entries(&item.children, counts, lowercase, entries);
+                }
+            }
+            BlockNode::BlockQuote(b) => {
+                collect_all_entries(&b.children, counts, lowercase, entries)
+            }
+            BlockNode::Admonition(a) => {
+                collect_all_entries(&a.children, counts, lowercase, entries)
+            }
+            BlockNode::Div(d) => collect_all_entries(&d.children, counts, lowercase, entries),
+            BlockNode::Extension(e) => collect_all_entries(&e.children, counts, lowercase, entries),
+            BlockNode::DefinitionList(dl) => {
+                for item in &dl.items {
+                    for def in &item.definitions {
+                        collect_all_entries(def, counts, lowercase, entries);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
 fn next_id(h: &Heading, counts: &mut BTreeMap<String, usize>, lowercase: bool) -> String {
     let base = h
         .attrs
@@ -333,17 +378,15 @@ impl CarveExtension for TocPlacement {
     }
 
     fn before_render(&self, mut doc: Document, ctx: &BeforeRenderContext<'_>) -> Document {
-        // Collect ALL top-level headings (the per-directive window is applied at
-        // render time), keeping the id counter aligned with the renderer.
-        let opts = TableOfContentsOptions {
-            min_level: 1,
-            max_level: 6,
-            lowercase_ids: ctx.options().lowercase_heading_ids,
-            ..Default::default()
-        };
+        // Collect EVERY heading (the per-directive window is applied at render
+        // time), recursing into containers so headings nested in `::: note`,
+        // blockquotes, lists, etc. are included - they render with id anchors.
+        // The id counter stays aligned with the renderer; footnote definitions
+        // live outside `doc.children`, so their (id-less) headings are excluded.
+        let lowercase = ctx.options().lowercase_heading_ids;
         let mut counts: BTreeMap<String, usize> = BTreeMap::new();
         let mut entries: Vec<TocEntry> = Vec::new();
-        collect_entries(&doc.children, &mut counts, &opts, &mut entries, true);
+        collect_all_entries(&doc.children, &mut counts, lowercase, &mut entries);
         *self.entries.borrow_mut() = entries;
 
         rewrite_toc_containers(&mut doc.children);
