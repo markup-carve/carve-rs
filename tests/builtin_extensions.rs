@@ -1126,3 +1126,17 @@ fn footnotes_placement_nested_in_definition_never_leaks_sentinel() {
     assert!(!html.contains("footnotes-placement"));
     assert!(html.contains("<div class=\"footnotes\">"));
 }
+
+#[test]
+fn toc_placement_includes_nested_container_headings() {
+    // Headings inside ::: note, blockquotes, lists render with id anchors, so
+    // the placed TOC includes them.
+    let ext = TocPlacement::new();
+    let opts = Options::new().with_extension(&ext);
+    let html = carve::to_html_with_options(
+        "::: toc\n:::\n\n# Top\n\n::: note\n## InNote\n:::\n\n> ## InQuote\n",
+        &opts,
+    );
+    assert!(html.contains("<a href=\"#InNote\">InNote</a>"));
+    assert!(html.contains("<a href=\"#InQuote\">InQuote</a>"));
+}
