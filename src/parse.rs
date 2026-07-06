@@ -2844,9 +2844,17 @@ fn parse_table_cell(cell: &str, options: &Options<'_>) -> TableCell {
         }
     }
 
-    let trimmed = cell.trim();
-    let header = trimmed.starts_with('=');
-    let mut text = if header { trimmed[1..].trim() } else { trimmed };
+    // A leading `=` marks a HEADER cell, but only when GLUED to the `|` (no
+    // leading whitespace), per grammar §20. `| =x |` (space before `=`) is a
+    // literal `<td>`, matching carve-js / carve-php; check the RAW cell, not
+    // the trimmed one.
+    let header = cell.starts_with('=');
+    let trimmed = if header {
+        cell[1..].trim()
+    } else {
+        cell.trim()
+    };
+    let mut text = trimmed;
     let align = if text.len() > 1 {
         match text.as_bytes()[0] {
             b'>' if text.as_bytes()[1] == b' ' => {
