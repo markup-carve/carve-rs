@@ -16,7 +16,7 @@
 //! assign — so ids reserved during the render can never collide with them.
 
 use std::cell::RefCell;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::ast::*;
 
@@ -32,6 +32,11 @@ pub(crate) struct DocumentIdRegistry {
     cite_ids: BTreeMap<String, String>,
     /// key -> deduplicated `ref-{key}` references-list entry id.
     ref_ids: BTreeMap<String, String>,
+    /// Every EXPLICIT `{#id}` in the document (on any node). A heading's auto
+    /// slug must skip these so it never collides with an explicit id elsewhere
+    /// (two elements sharing a DOM id is invalid HTML). Reserved up front, so
+    /// the seeder's simulated heading ids and the renderer's assigned ones agree.
+    explicit_ids: BTreeSet<String>,
 }
 
 impl DocumentIdRegistry {
@@ -129,6 +134,17 @@ pub(crate) fn unique_id(base_id: &str) -> String {
     })
 }
 
+/// True when `id` is an explicit `{#id}` in the document. A heading's auto slug
+/// skips these so it never emits a duplicate DOM id. Outside an active render
+/// (no guard) nothing is reserved, so this is false.
+pub(crate) fn is_explicit_id(id: &str) -> bool {
+    ACTIVE.with(|cell| {
+        cell.borrow()
+            .as_ref()
+            .is_some_and(|registry| registry.explicit_ids.contains(id))
+    })
+}
+
 /// The deduplicated id of the `n`-th use-site anchor of citation `key`
 /// (base form `cite-{key}-{n}`).
 pub(crate) fn cite_id(key: &str, n: usize) -> String {
@@ -167,10 +183,19 @@ fn seed_registry(doc: &Document, lowercase_heading_ids: bool) -> DocumentIdRegis
         heading_counts: BTreeMap::new(),
         citation_index: BTreeMap::new(),
         lowercase_heading_ids,
+        collect_explicit_only: true,
     };
+    // Pass A: reserve every explicit id across the whole document (body then
+    // footnote defs), so heading auto-slugs in pass B can skip them regardless
+    // of document order.
     seeder.walk_blocks(&doc.children);
-    // Footnote definitions render after the document body (in the footnotes
-    // section), so their explicit ids and headings join the namespace last.
+    for blocks in doc.footnote_defs.values() {
+        seeder.walk_blocks(blocks);
+    }
+    // Pass B: number headings (skipping the explicit ids) and reserve citation
+    // ids. Footnote definitions render after the body, so they join last.
+    seeder.collect_explicit_only = false;
+    seeder.walk_blocks(&doc.children);
     for blocks in doc.footnote_defs.values() {
         seeder.walk_blocks(blocks);
     }
@@ -185,12 +210,17 @@ struct Seeder {
     /// Citation key -> index into `registry.pending_citations`.
     citation_index: BTreeMap<String, usize>,
     lowercase_heading_ids: bool,
+    /// Pass A only reserves EXPLICIT ids (so the whole explicit-id set is known
+    /// before any heading is numbered); heading + citation reservation run in
+    /// pass B.
+    collect_explicit_only: bool,
 }
 
 impl Seeder {
     fn reserve_attrs(&mut self, attrs: &Option<Attrs>) {
         if let Some(id) = attrs.as_ref().and_then(|attrs| attrs.id.as_deref()) {
             self.registry.reserve(id);
+            self.registry.explicit_ids.insert(id.to_string());
         }
     }
 
@@ -198,23 +228,29 @@ impl Seeder {
     /// attribute id or the text slug, numbered by the shared document-order
     /// counter (mirrors `render::next_heading_id`).
     fn reserve_heading_id(&mut self, h: &Heading) {
-        let base = h
-            .attrs
-            .as_ref()
-            .and_then(|attrs| attrs.id.clone())
-            .unwrap_or_else(|| {
-                crate::parse::slugify_parse(
-                    &crate::render::plain_inlines(&h.children),
-                    self.lowercase_heading_ids,
-                )
-            });
-        let count = self.heading_counts.entry(base.clone()).or_insert(0);
-        *count += 1;
-        let id = if *count == 1 {
-            base
-        } else {
-            format!("{base}-{count}")
+        let explicit = h.attrs.as_ref().and_then(|attrs| attrs.id.clone());
+        let has_explicit = explicit.is_some();
+        let base = explicit.unwrap_or_else(|| {
+            crate::parse::slugify_parse(
+                &crate::render::plain_inlines(&h.children),
+                self.lowercase_heading_ids,
+            )
+        });
+        let mut count = self.heading_counts.get(&base).copied().unwrap_or(0);
+        let id = loop {
+            count += 1;
+            let id = if count == 1 {
+                base.clone()
+            } else {
+                format!("{base}-{count}")
+            };
+            // An explicit heading id wins verbatim; an auto slug skips any id an
+            // explicit `{#id}` elsewhere already claimed (avoids a duplicate id).
+            if has_explicit || !self.registry.explicit_ids.contains(&id) {
+                break id;
+            }
         };
+        self.heading_counts.insert(base, count);
         self.registry.reserve(&id);
     }
 
@@ -227,7 +263,9 @@ impl Seeder {
     fn walk_block(&mut self, block: &BlockNode) {
         match block {
             BlockNode::Heading(h) => {
-                self.reserve_heading_id(h);
+                if !self.collect_explicit_only {
+                    self.reserve_heading_id(h);
+                }
                 self.walk_inlines(&h.children);
             }
             BlockNode::Paragraph(p) => {
@@ -331,7 +369,9 @@ impl Seeder {
                 }
                 InlineNode::Math(m) => self.reserve_attrs(&m.attrs),
                 InlineNode::AutoLink(a) => self.reserve_attrs(&a.attrs),
-                InlineNode::CitationGroup(g) => self.collect_citation_group(g),
+                InlineNode::CitationGroup(g) if !self.collect_explicit_only => {
+                    self.collect_citation_group(g)
+                }
                 InlineNode::Extension(e) => {
                     self.reserve_attrs(&e.attrs);
                     self.walk_inlines(&e.children);

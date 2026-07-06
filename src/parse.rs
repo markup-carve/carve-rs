@@ -3362,11 +3362,19 @@ fn parse_attrs(src: &str) -> Option<Attrs> {
             if value.is_empty() {
                 return None;
             }
-            let value = value
-                .trim_matches('"')
-                .trim_matches('\'')
-                .replace("\\\"", "\"")
-                .replace("\\'", "'");
+            // A quoted value unescapes ANY backslash-escaped ASCII punctuation
+            // (grammar: escaped_char = '\' ascii_punctuation), not just \" / \'.
+            // Route it through the same scan link/image titles use, matching
+            // carve-js / carve-php. A bare value carries no escapes.
+            let value = if let Some(inner) = value
+                .strip_prefix('"')
+                .and_then(|v| v.strip_suffix('"'))
+                .or_else(|| value.strip_prefix('\'').and_then(|v| v.strip_suffix('\'')))
+            {
+                unescape_title(inner)
+            } else {
+                value.to_string()
+            };
             if key == "id" {
                 // `id=value` is the same attribute as `#id`: it feeds the id
                 // slot, last-wins (§15), instead of emitting a second `id="…"`
