@@ -1140,3 +1140,57 @@ fn toc_placement_includes_nested_container_headings() {
     assert!(html.contains("<a href=\"#InNote\">InNote</a>"));
     assert!(html.contains("<a href=\"#InQuote\">InQuote</a>"));
 }
+
+#[test]
+fn toc_placement_nests_deeper_heading_under_shallower_predecessor() {
+    // # A / ### B / ## C / ### D: D must nest under C, not flatten as its sibling.
+    let ext = TocPlacement::new();
+    let opts = Options::new().with_extension(&ext);
+    let html =
+        carve::to_html_with_options("::: toc\n:::\n\n# A\n\n### B\n\n## C\n\n### D\n", &opts);
+    assert!(html.contains("C</a>\n<ul>\n<li><a href=\"#D\">D</a></li>"));
+}
+
+#[test]
+fn toc_placement_bounds_amplification() {
+    let mut doc = String::new();
+    for i in 0..50 {
+        doc.push_str(&format!("# Heading number {i} with length\n\n"));
+    }
+    let mut blocks = String::new();
+    for _ in 0..5000 {
+        blocks.push_str("::: toc\n:::\n\n");
+    }
+    let src = format!("{blocks}{doc}");
+    let ext = TocPlacement::new();
+    let opts = Options::new().with_extension(&ext);
+    let out = carve::to_html_with_options(&src, &opts);
+    // Bounded to ~max(1MB, 8*input); unbounded before the budget.
+    assert!(out.len() < (8 * src.len()).max(1_000_000) * 13 / 10);
+}
+
+#[test]
+fn footnotes_placement_preserves_authored_children() {
+    let html = carve::to_html("X[^a].\n\n::: footnotes\nNotes below:\n:::\n\n[^a]: note\n");
+    assert!(html.contains("Notes below:"));
+    assert!(html.find("Notes below:").unwrap() < html.find("role=\"doc-endnotes\"").unwrap());
+}
+
+#[test]
+fn toc_placement_no_panic_when_nested_over_budget() {
+    // A nested ::: toc inside an over-budget outer toc must not panic
+    // (RefCell budget borrow released before rendering fallback children).
+    let mut doc = String::new();
+    for i in 0..50 {
+        doc.push_str(&format!("# Heading number {i} with some length\n\n"));
+    }
+    let mut blocks = String::new();
+    for _ in 0..6000 {
+        blocks.push_str("::: toc\n:::\n\n");
+    }
+    let src = format!("{blocks}\n:::: toc\n::: toc\n:::\n::::\n\n{doc}");
+    let ext = TocPlacement::new();
+    let opts = Options::new().with_extension(&ext);
+    let out = carve::to_html_with_options(&src, &opts);
+    assert!(!out.is_empty());
+}

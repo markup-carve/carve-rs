@@ -1201,6 +1201,14 @@ fn render_admonition(
     // render replaces with the endnotes section, relocating it from the
     // document end. A document without this block is byte-identical to before.
     if a.kind == "footnotes" && !state.rendering_footnotes {
+        // Preserve any blocks authored inside the placeholder before the
+        // relocated endnotes (matching carve-js), then the sentinel.
+        let body = render_blocks(&a.children, level, options, state);
+        let body = body.trim_end_matches('\n');
+        if !body.is_empty() {
+            out.push_str(body);
+            out.push('\n');
+        }
         out.push_str(FOOTNOTES_PLACEMENT_SENTINEL);
         return;
     }
