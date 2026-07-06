@@ -1194,3 +1194,12 @@ fn toc_placement_no_panic_when_nested_over_budget() {
     let out = carve::to_html_with_options(&src, &opts);
     assert!(!out.is_empty());
 }
+
+#[test]
+fn table_header_marker_must_be_glued_to_pipe() {
+    // `|=x|` is a header cell; `| =x |` (space before `=`) is a literal <td>,
+    // per grammar section 20 ("glued to the |"). Matches carve-js / carve-php.
+    assert!(carve::to_html("|=x|\n| c |\n").contains("<th"));
+    assert!(!carve::to_html("| =x |\n| c |\n").contains("<th"));
+    assert!(carve::to_html("| =x |\n| c |\n").contains("<td>=x</td>"));
+}
