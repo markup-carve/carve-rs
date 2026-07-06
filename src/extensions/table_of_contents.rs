@@ -173,7 +173,7 @@ fn collect_entries(
                 if top_level && h.level >= opts.min_level && h.level <= opts.max_level {
                     entries.push(TocEntry {
                         level: h.level,
-                        text: crate::render::plain_inlines(&h.children),
+                        text: strip_bidi(&crate::render::plain_inlines(&h.children)),
                         id,
                     });
                 }
@@ -215,7 +215,7 @@ fn collect_all_entries(
                 let id = next_id(h, counts, lowercase);
                 entries.push(TocEntry {
                     level: h.level,
-                    text: crate::render::plain_inlines(&h.children),
+                    text: strip_bidi(&crate::render::plain_inlines(&h.children)),
                     id,
                 });
             }
@@ -289,6 +289,10 @@ fn build_list(entries: &[TocEntry], list_type: ListType) -> String {
                     depth -= 1;
                 }
                 html.push_str("</li>\n");
+                // Record this entry's (shallower) level so a later deeper
+                // heading nests under IT, not the stale reused-list level (else
+                // `# A/### B/## C/### D` flattens D as a sibling of C).
+                level_stack[depth - 1] = e.level;
             }
         }
         html.push_str(&format!(
@@ -307,6 +311,14 @@ fn build_list(entries: &[TocEntry], list_type: ListType) -> String {
     }
     html.push_str(&format!("</{tag}>\n"));
     html
+}
+
+/// Strip Trojan-Source bidi-override / isolate controls (§26) so a TOC link
+/// cannot visually spoof its target, matching the core heading-text policy.
+fn strip_bidi(s: &str) -> String {
+    s.chars()
+        .filter(|c| !matches!(*c, '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}'))
+        .collect()
 }
 
 /// Escape `&`, `<`, `>`, `"` (matching the carve-js TOC `escapeHtml`). Note
@@ -355,6 +367,9 @@ fn escape_html(s: &str) -> String {
 /// match the emitted `<section id>` anchors.
 pub struct TocPlacement {
     entries: RefCell<Vec<TocEntry>>,
+    /// Remaining `<nav>` output budget for the current render; bounds K blocks
+    /// x N headings amplification. Seeded in `before_render`.
+    budget: RefCell<usize>,
 }
 
 impl TocPlacement {
@@ -362,6 +377,7 @@ impl TocPlacement {
     pub fn new() -> Self {
         Self {
             entries: RefCell::new(Vec::new()),
+            budget: RefCell::new(0),
         }
     }
 }
@@ -388,6 +404,7 @@ impl CarveExtension for TocPlacement {
         let mut entries: Vec<TocEntry> = Vec::new();
         collect_all_entries(&doc.children, &mut counts, lowercase, &mut entries);
         *self.entries.borrow_mut() = entries;
+        *self.budget.borrow_mut() = (8usize.saturating_mul(doc.source_len)).max(1_000_000);
 
         rewrite_toc_containers(&mut doc.children);
         doc
@@ -401,7 +418,12 @@ impl CarveExtension for TocPlacement {
         if node.name != TOC_CARRIER {
             return None;
         }
-        Some(render_toc_nav(node, ctx, &self.entries.borrow()))
+        Some(render_toc_nav(
+            node,
+            ctx,
+            &self.entries.borrow(),
+            &self.budget,
+        ))
     }
 }
 
@@ -441,31 +463,58 @@ fn rewrite_toc_containers(blocks: &mut [BlockNode]) {
     }
 }
 
-fn render_toc_nav(node: &BlockExtension, ctx: &RenderContext<'_>, entries: &[TocEntry]) -> String {
+fn render_toc_nav(
+    node: &BlockExtension,
+    ctx: &RenderContext<'_>,
+    entries: &[TocEntry],
+    budget: &RefCell<usize>,
+) -> String {
     let (min, max) = toc_window(&node.attrs);
+    let attrs = render_attrs_without_keys(
+        &Some(with_base_class(&node.attrs, "toc")),
+        &["depth", "from", "to"],
+    );
+    let empty_nav = format!("<nav{attrs}></nav>");
+    // Preserve any authored blocks written inside the placeholder before the nav.
+    let wrap = |nav: String| -> String {
+        if node.children.is_empty() {
+            nav
+        } else {
+            format!(
+                "{}\n{}",
+                ctx.render_blocks_at(&node.children, ctx.level()),
+                nav
+            )
+        }
+    };
+
     let picked: Vec<TocEntry> = entries
         .iter()
         .filter(|e| e.level >= min && e.level <= max)
         .cloned()
         .collect();
-    let attrs = render_attrs_without_keys(
-        &Some(with_base_class(&node.attrs, "toc")),
-        &["depth", "from", "to"],
-    );
-    let nav = if picked.is_empty() {
-        format!("<nav{attrs}></nav>")
-    } else {
-        format!("<nav{attrs}>\n{}</nav>", build_list(&picked, ListType::Ul))
+    if picked.is_empty() {
+        return wrap(empty_nav);
+    }
+    let nav = format!("<nav{attrs}>\n{}</nav>", build_list(&picked, ListType::Ul));
+    // Bound cumulative nav bytes across all `::: toc` blocks in one render: K
+    // blocks x N headings would otherwise amplify output ~K*N. Once the budget
+    // is exhausted, degrade to an empty nav. The borrow is scoped and released
+    // BEFORE `wrap`, which may render a nested `::: toc` that re-borrows the
+    // budget (holding it across `wrap` panics with "RefCell already borrowed").
+    let within_budget = {
+        let mut remaining = budget.borrow_mut();
+        if nav.len() > *remaining {
+            false
+        } else {
+            *remaining -= nav.len();
+            true
+        }
     };
-    // Preserve any authored blocks written inside the placeholder before the nav.
-    if node.children.is_empty() {
-        nav
+    if within_budget {
+        wrap(nav)
     } else {
-        format!(
-            "{}\n{}",
-            ctx.render_blocks_at(&node.children, ctx.level()),
-            nav
-        )
+        wrap(empty_nav)
     }
 }
 
@@ -500,6 +549,8 @@ fn toc_window(attrs: &Option<Attrs>) -> (u8, u8) {
 /// Prepend `base` as the leading class of (a clone of) `attrs`.
 fn with_base_class(attrs: &Option<Attrs>, base: &str) -> Attrs {
     let mut a = attrs.clone().unwrap_or_default();
+    // Drop any author-supplied copy so `{.toc}` never doubles the base class.
+    a.classes.retain(|c| c != base);
     a.classes.insert(0, base.to_string());
     a
 }
