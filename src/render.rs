@@ -639,18 +639,27 @@ fn render_heading_without_section_id(
 }
 
 fn next_heading_id(h: &Heading, state: &mut RenderState) -> String {
-    let base = h
-        .attrs
-        .as_ref()
-        .and_then(|attrs| attrs.id.clone())
+    let explicit = h.attrs.as_ref().and_then(|attrs| attrs.id.clone());
+    let has_explicit = explicit.is_some();
+    let base = explicit
         .unwrap_or_else(|| slugify(&plain_inlines(&h.children), state.lowercase_heading_ids));
-    let count = state.heading_counts.entry(base.clone()).or_insert(0);
-    *count += 1;
-    if *count == 1 {
-        base
-    } else {
-        format!("{base}-{count}")
-    }
+    let mut count = state.heading_counts.get(&base).copied().unwrap_or(0);
+    let id = loop {
+        count += 1;
+        let id = if count == 1 {
+            base.clone()
+        } else {
+            format!("{base}-{count}")
+        };
+        // An explicit heading id wins verbatim; an auto slug skips any id an
+        // explicit `{#id}` elsewhere already claimed (avoids a duplicate DOM
+        // id). Mirrors the seeder's reserve_heading_id so the two agree.
+        if has_explicit || !crate::document_ids::is_explicit_id(&id) {
+            break id;
+        }
+    };
+    state.heading_counts.insert(base, count);
+    id
 }
 
 /// Flatten inline nodes to the plain-text projection used for heading-id slug

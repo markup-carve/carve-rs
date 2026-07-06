@@ -1203,3 +1203,21 @@ fn table_header_marker_must_be_glued_to_pipe() {
     assert!(!carve::to_html("| =x |\n| c |\n").contains("<th"));
     assert!(carve::to_html("| =x |\n| c |\n").contains("<td>=x</td>"));
 }
+
+#[test]
+fn heading_auto_slug_dedups_against_explicit_non_heading_id() {
+    // A heading auto-slug must not collide with an explicit {#id} elsewhere
+    // (duplicate DOM id is invalid HTML). Matches carve-js / carve-php.
+    let h = carve::to_html("# Foo\n\n[x]{#Foo}\n");
+    assert_eq!(h.matches("id=\"Foo\"").count(), 1);
+    assert!(h.contains("id=\"Foo-2\""));
+    // Works regardless of document order.
+    let h2 = carve::to_html("[x]{#Foo}\n\n# Foo\n");
+    assert_eq!(h2.matches("id=\"Foo\"").count(), 1);
+}
+
+#[test]
+fn quoted_attr_value_unescapes_all_ascii_punctuation() {
+    assert!(carve::to_html(r#"[x]{k="a\;b"}"#).contains(r#"k="a;b""#));
+    assert!(carve::to_html(r#"[x]{k="a\}b"}"#).contains(r#"k="a}b""#));
+}
