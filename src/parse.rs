@@ -4570,6 +4570,7 @@ fn parse_autolink(text: &str, pos: usize) -> Option<(AutoLink, usize)> {
             AutoLink {
                 attrs,
                 href: target.to_string(),
+                text: target.to_string(),
             },
             consumed,
         ));
@@ -4579,6 +4580,7 @@ fn parse_autolink(text: &str, pos: usize) -> Option<(AutoLink, usize)> {
             AutoLink {
                 attrs,
                 href: format!("mailto:{target}"),
+                text: target.to_string(),
             },
             consumed,
         ));

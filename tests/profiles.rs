@@ -128,6 +128,7 @@ fn maps_inline_variants_to_canonical_names() {
         canonical_inline_type(&InlineNode::AutoLink(AutoLink {
             attrs: None,
             href: "https://x".into(),
+            text: "https://x".into(),
         })),
         Some("link")
     );
