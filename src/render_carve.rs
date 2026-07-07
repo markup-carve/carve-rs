@@ -557,10 +557,11 @@ fn render_inline(
         }
         InlineNode::Emoji(emoji) => format!(":{}:", escape_identifier(&emoji.name)),
         InlineNode::AutoLink(link) => {
-            let href = link.href.strip_prefix("mailto:").unwrap_or(&link.href);
+            // Emit the raw autolink content verbatim (keeps a URI scheme like
+            // `mailto:`), so it re-parses to the same autolink.
             format!(
                 "<{}>{}",
-                escape_autolink_href(href),
+                escape_autolink_href(&link.text),
                 render_attrs(&link.attrs)
             )
         }
@@ -911,13 +912,15 @@ fn escape_destination(text: &str) -> String {
     let mut out = String::new();
     for ch in text.chars() {
         match ch {
-            '\\' => out.push_str("\\\\"),
+            // A backslash is a literal destination character (no destination
+            // escapes), emitted verbatim -- escaping it would double on
+            // re-parse. Whitespace is percent-encoded (it would end the
+            // destination otherwise).
             ch if ch.is_whitespace() => {
                 if ch == ' ' {
                     out.push_str("%20");
                 } else {
-                    out.push('\\');
-                    out.push(ch);
+                    out.push_str(&format!("%{:02X}", ch as u32));
                 }
             }
             '(' if sanitize_blank => out.push_str("%28"),
