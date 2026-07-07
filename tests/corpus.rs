@@ -133,6 +133,11 @@ const IMPLEMENTED: &[&str] = &[
     "118-trojan-source-rendered-text-and-code-strip-bidi-override-controls",
     "119-scheme-probe-strips-unicode-whitespace",
     "120-footnotes-placement",
+    "121-classes-are-deduplicated",
+    "122-code-span-and-image-trailing-attributes-are-strict",
+    "123-a-bare-attribute-block-on-its-own-line-is-literal",
+    "124-a-backslash-in-a-link-destination-is-a-literal-character",
+    "125-autolink-display-keeps-the-raw-content",
 ];
 
 fn corpus_dir() -> PathBuf {
@@ -505,4 +510,24 @@ corpus_test!(
 corpus_test!(
     c119_scheme_probe_strips_unicode_whitespace,
     "119-scheme-probe-strips-unicode-whitespace"
+);
+corpus_test!(
+    c121_classes_are_deduplicated,
+    "121-classes-are-deduplicated"
+);
+corpus_test!(
+    c122_code_span_and_image_trailing_attributes_are_strict,
+    "122-code-span-and-image-trailing-attributes-are-strict"
+);
+corpus_test!(
+    c123_a_bare_attribute_block_on_its_own_line_is_literal,
+    "123-a-bare-attribute-block-on-its-own-line-is-literal"
+);
+corpus_test!(
+    c124_a_backslash_in_a_link_destination_is_a_literal_character,
+    "124-a-backslash-in-a-link-destination-is-a-literal-character"
+);
+corpus_test!(
+    c125_autolink_display_keeps_the_raw_content,
+    "125-autolink-display-keeps-the-raw-content"
 );
