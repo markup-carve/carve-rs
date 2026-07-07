@@ -1237,7 +1237,7 @@ fn render_admonition(
     };
     let (class, rest) = match &a.attrs {
         Some(at) if !at.classes.is_empty() => (
-            format!("{} {}", base, at.classes.join(" ")),
+            dedup_class_str(&format!("{} {}", base, at.classes.join(" "))),
             render_attrs_after_class(at),
         ),
         Some(at) => (base, render_attrs_after_class(at)),
@@ -1581,7 +1581,7 @@ fn render_inline_after(
             // and contributes id / key-values after (never a second class).
             let (class, rest) = match &m.attrs {
                 Some(a) if !a.classes.is_empty() => (
-                    format!("{} {}", base, a.classes.join(" ")),
+                    dedup_class_str(&format!("{} {}", base, a.classes.join(" "))),
                     render_attrs_after_class(a),
                 ),
                 Some(a) => (base.to_string(), render_attrs_after_class(a)),
@@ -1624,11 +1624,8 @@ fn render_inline_after(
             }
         }
         InlineNode::AutoLink(a) => {
-            let display = if let Some(stripped) = a.href.strip_prefix("mailto:") {
-                stripped
-            } else {
-                &a.href
-            };
+            // Display the raw autolink content (a URI autolink keeps its scheme).
+            let display = a.text.as_str();
             out.push_str("<a href=\"");
             write_escaped_attr(out, &sanitize_url(&a.href));
             out.push('"');
@@ -1922,7 +1919,7 @@ fn render_inline_extension(
     let base = format!("ext-{}", node.name);
     let (class, rest) = match &node.attrs {
         Some(a) if !a.classes.is_empty() => (
-            format!("{} {}", base, a.classes.join(" ")),
+            dedup_class_str(&format!("{} {}", base, a.classes.join(" "))),
             render_attrs_after_class(a),
         ),
         Some(a) => (base, render_attrs_after_class(a)),
@@ -1946,7 +1943,14 @@ fn write_attr_id(out: &mut String, id: &str) {
 fn write_attr_class(out: &mut String, classes: &[String]) {
     out.push_str(" class=\"");
     let mut first = true;
+    // Dedup repeated classes keeping first-occurrence order (`{.a .a}` ->
+    // `class="a"`), matching carve-php / carve-js (§15).
+    let mut seen: Vec<&str> = Vec::new();
     for class in classes {
+        if seen.contains(&class.as_str()) {
+            continue;
+        }
+        seen.push(class);
         if !first {
             out.push(' ');
         }
@@ -1954,6 +1958,18 @@ fn write_attr_class(out: &mut String, classes: &[String]) {
         first = false;
     }
     out.push('"');
+}
+
+/// Dedup whitespace-separated classes, keeping first-occurrence order. Used
+/// where a structural base class is merged with author classes (§15).
+fn dedup_class_str(s: &str) -> String {
+    let mut seen: Vec<&str> = Vec::new();
+    for c in s.split_whitespace() {
+        if !seen.contains(&c) {
+            seen.push(c);
+        }
+    }
+    seen.join(" ")
 }
 
 /// Write a ` key="value"` slot, applying the value sanitizer.

@@ -338,6 +338,9 @@ pub struct Emoji {
 pub struct AutoLink {
     pub attrs: Option<Attrs>,
     pub href: String,
+    /// Display text = the raw content between `<>`: a URI autolink keeps its
+    /// scheme (`<mailto:a@b>` shows `mailto:a@b`), an email shows the address.
+    pub text: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
