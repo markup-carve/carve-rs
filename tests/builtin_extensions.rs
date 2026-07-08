@@ -1243,3 +1243,21 @@ fn code_span_trailing_brace_does_not_drop_content() {
     // A valid `{=format}` is still a raw inline.
     assert_eq!(carve::to_html("`c`{=html}").trim(), "<p>c</p>");
 }
+
+#[test]
+fn math_verbatim_uses_maximal_backtick_run() {
+    // Math reuses a code span: a maximal opening run, matching closing run.
+    assert!(carve::to_html("$`a``b`").contains(r"\(a``b\)"));
+    assert!(carve::to_html("$``a``").contains(r"\(a\)"));
+    assert!(carve::to_html("$$``a``").contains(r"\[a\]"));
+    // Empty verbatim is a code span, not math.
+    assert_eq!(carve::to_html("$``").trim(), "<p>$<code></code></p>");
+}
+
+#[test]
+fn thematic_break_as_ordered_list_item_content() {
+    // `1. ---` is an ordered item containing a thematic break, not an em-dash.
+    let h = carve::to_html("1. ---");
+    assert!(h.contains("<hr>"));
+    assert!(!h.contains('—'));
+}
