@@ -588,10 +588,18 @@ fn render_inline(
         InlineNode::SoftBreak => "\n".to_string(),
         InlineNode::HardBreak => "\\\n".to_string(),
         InlineNode::CriticInsert(insert) => {
-            format!("{{+{}+}}", render_inlines(&insert.children, ctx))
+            format!(
+                "{{+{}+}}{}",
+                render_inlines(&insert.children, ctx),
+                render_attrs(&insert.attrs)
+            )
         }
         InlineNode::CriticDelete(delete) => {
-            format!("{{-{}-}}", render_inlines(&delete.children, ctx))
+            format!(
+                "{{-{}-}}{}",
+                render_inlines(&delete.children, ctx),
+                render_attrs(&delete.attrs)
+            )
         }
         InlineNode::CriticSubstitute(sub) => {
             format!(

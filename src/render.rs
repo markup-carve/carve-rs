@@ -1708,12 +1708,16 @@ fn render_inline_after(
         InlineNode::SoftBreak => out.push('\n'),
         InlineNode::HardBreak => out.push_str("<br>\n"),
         InlineNode::CriticInsert(c) => {
-            out.push_str("<ins>");
+            out.push_str("<ins");
+            write_attrs(out, &c.attrs);
+            out.push('>');
             render_inlines_stateful(out, &c.children, options, state);
             out.push_str("</ins>");
         }
         InlineNode::CriticDelete(c) => {
-            out.push_str("<del>");
+            out.push_str("<del");
+            write_attrs(out, &c.attrs);
+            out.push('>');
             render_inlines_stateful(out, &c.children, options, state);
             out.push_str("</del>");
         }

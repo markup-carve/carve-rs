@@ -411,11 +411,13 @@ pub struct Footnote {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CriticInsert {
     pub children: Vec<InlineNode>,
+    pub attrs: Option<Attrs>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CriticDelete {
     pub children: Vec<InlineNode>,
+    pub attrs: Option<Attrs>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

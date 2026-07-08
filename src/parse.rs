@@ -3608,6 +3608,8 @@ fn merge_attrs_into_inline(node: &mut InlineNode, attrs: Attrs) {
         InlineNode::Extension(n) => merge_attrs(&mut n.attrs, attrs),
         InlineNode::Code(_, a) => merge_attrs(a, attrs),
         InlineNode::Footnote(n) => merge_attrs(&mut n.attrs, attrs),
+        InlineNode::CriticInsert(n) => merge_attrs(&mut n.attrs, attrs),
+        InlineNode::CriticDelete(n) => merge_attrs(&mut n.attrs, attrs),
         _ => {}
     }
 }
@@ -3626,6 +3628,8 @@ fn inline_is_attributable(node: &InlineNode) -> bool {
             | InlineNode::Extension(_)
             | InlineNode::Code(_, _)
             | InlineNode::Footnote(_)
+            | InlineNode::CriticInsert(_)
+            | InlineNode::CriticDelete(_)
     )
 }
 
@@ -3998,6 +4002,7 @@ fn parse_critic_markup(
         return Some((
             InlineNode::CriticInsert(CriticInsert {
                 children: parse_inline_context(&inner[..end], options, false, in_footnote),
+                attrs: None,
             }),
             end + 4,
         ));
@@ -4007,6 +4012,7 @@ fn parse_critic_markup(
         return Some((
             InlineNode::CriticDelete(CriticDelete {
                 children: parse_inline_context(&inner[..end], options, false, in_footnote),
+                attrs: None,
             }),
             end + 4,
         ));

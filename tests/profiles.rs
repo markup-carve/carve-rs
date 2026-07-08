@@ -134,11 +134,17 @@ fn maps_inline_variants_to_canonical_names() {
     );
     // critic insert/delete fold to insert/delete.
     assert_eq!(
-        canonical_inline_type(&InlineNode::CriticInsert(CriticInsert { children: vec![] })),
+        canonical_inline_type(&InlineNode::CriticInsert(CriticInsert {
+            children: vec![],
+            attrs: None
+        })),
         Some("insert")
     );
     assert_eq!(
-        canonical_inline_type(&InlineNode::CriticDelete(CriticDelete { children: vec![] })),
+        canonical_inline_type(&InlineNode::CriticDelete(CriticDelete {
+            children: vec![],
+            attrs: None
+        })),
         Some("delete")
     );
     // No canonical mapping.
