@@ -138,6 +138,7 @@ const IMPLEMENTED: &[&str] = &[
     "123-a-bare-attribute-block-on-its-own-line-is-literal",
     "124-a-backslash-in-a-link-destination-is-a-literal-character",
     "125-autolink-display-keeps-the-raw-content",
+    "126-editorial-markup-takes-a-trailing-attribute",
 ];
 
 fn corpus_dir() -> PathBuf {
@@ -530,4 +531,8 @@ corpus_test!(
 corpus_test!(
     c125_autolink_display_keeps_the_raw_content,
     "125-autolink-display-keeps-the-raw-content"
+);
+corpus_test!(
+    c126_editorial_markup_takes_a_trailing_attribute,
+    "126-editorial-markup-takes-a-trailing-attribute"
 );
