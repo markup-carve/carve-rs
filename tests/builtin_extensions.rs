@@ -1221,3 +1221,25 @@ fn quoted_attr_value_unescapes_all_ascii_punctuation() {
     assert!(carve::to_html(r#"[x]{k="a\;b"}"#).contains(r#"k="a;b""#));
     assert!(carve::to_html(r#"[x]{k="a\}b"}"#).contains(r#"k="a}b""#));
 }
+
+#[test]
+fn code_span_trailing_brace_does_not_drop_content() {
+    // A `{...}` after a code span that is NOT a valid `{=format}` raw inline
+    // must not consume/drop the code span. `{==h==}` is a forced highlight,
+    // `{_u_}` a forced underline, `{.c}` an attribute. (Regression: rs parsed
+    // `{==h==}` as a bogus raw-inline format and rendered nothing.)
+    assert_eq!(
+        carve::to_html("`c`{==h==}").trim(),
+        "<p><code>c</code><mark><mark>h</mark></mark></p>"
+    );
+    assert_eq!(
+        carve::to_html("`c`{_u_}").trim(),
+        "<p><code>c</code><u>u</u></p>"
+    );
+    assert_eq!(
+        carve::to_html("`c`{.cls}").trim(),
+        "<p><code class=\"cls\">c</code></p>"
+    );
+    // A valid `{=format}` is still a raw inline.
+    assert_eq!(carve::to_html("`c`{=html}").trim(), "<p>c</p>");
+}

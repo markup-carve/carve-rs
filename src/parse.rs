@@ -3735,15 +3735,13 @@ fn parse_inline_context(
                     continue;
                 }
                 flush_text(&mut out, &mut buf);
-                // An inline attribute block right after the code span attaches
-                // to it (`` `code`{.cls} `` -> <code class="cls">), matching the
-                // general "attributes attach to the preceding inline" rule.
-                let (attrs, code_consumed) = match read_attrs_at(bytes, i + consumed) {
-                    Some((parsed, next)) => (Some(parsed), next - i),
-                    None => (None, consumed),
-                };
-                out.push(InlineNode::Code(value, attrs));
-                i += code_consumed;
+                // Push the bare code span. A trailing inline attribute block
+                // (`` `code`{.cls} ``) is attached by the general attr-merge in
+                // the main loop, which runs AFTER the forced-emphasis / critic
+                // checks -- so `` `c`{_u_} `` is a code span + forced underline,
+                // not a bogus `_u_` attribute. Matches carve-js / carve-php.
+                out.push(InlineNode::Code(value, None));
+                i += consumed;
                 continue;
             }
         }
@@ -4119,11 +4117,22 @@ fn parse_raw_inline_after_code(
     if format_start == i {
         return None;
     }
+    let format = std::str::from_utf8(&bytes[format_start..i]).ok()?;
+    // The format must be a valid `format_name` (an identifier: letter/`_`
+    // start, then letter/digit/`_`/`-`), per grammar §20. Anything else
+    // (`{=h=}`, `{==h==}`, `{=text/html}`) is NOT a raw inline -- it falls back
+    // to a plain code span plus forced-emphasis / literal text, matching
+    // carve-js / carve-php. Without this rs greedily consumed the code span and
+    // dropped its content for a bogus format.
+    let mut fc = format.bytes();
+    let valid = matches!(fc.next(), Some(b) if b.is_ascii_alphabetic() || b == b'_')
+        && fc.all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-');
+    if !valid {
+        return None;
+    }
     Some((
         RawInline {
-            format: std::str::from_utf8(&bytes[format_start..i])
-                .ok()?
-                .to_string(),
+            format: format.to_string(),
             content: value.to_string(),
         },
         i + 1 - start,
