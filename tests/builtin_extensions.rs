@@ -1261,3 +1261,17 @@ fn thematic_break_as_ordered_list_item_content() {
     assert!(h.contains("<hr>"));
     assert!(!h.contains('—'));
 }
+
+#[test]
+fn editorial_markup_takes_trailing_attribute_block() {
+    // A `{...}` after {++...++}/{--...--} attaches to the <ins>/<del>, like
+    // any other inline node (matches carve-js / carve-php).
+    assert_eq!(
+        carve::to_html("{++a++}{.a}").trim(),
+        "<p><ins class=\"a\">+a+</ins></p>"
+    );
+    assert_eq!(
+        carve::to_html("{--d--}{#i}").trim(),
+        "<p><del id=\"i\">-d-</del></p>"
+    );
+}
