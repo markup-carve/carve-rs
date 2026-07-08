@@ -2102,6 +2102,12 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
 }
 
 fn marker_content_starts_block(content: &str, cur: &LineCursor<'_>, content_col: usize) -> bool {
+    // A thematic break as the marker-line content is a block (`1. ---` ->
+    // <li><hr></li>), not inline text -- otherwise smart punctuation turns
+    // `---` into an em-dash. Matches carve-js / carve-php.
+    if detect_thematic_break(content) {
+        return true;
+    }
     if let Some(open) = detect_fence_open(content) {
         return cur.lines[cur.pos..]
             .iter()
@@ -4145,12 +4151,16 @@ fn parse_math(bytes: &[u8], start: usize) -> Option<(Math, usize)> {
     if bytes.get(tick) != Some(&b'`') {
         return None;
     }
-    let rest = std::str::from_utf8(&bytes[tick + 1..]).ok()?;
-    let close = rest.find('`')?;
-    if close == 0 {
+    // Math reuses a code span for its verbatim body (grammar `math_inline =
+    // '$', code_span`): a MAXIMAL backtick run opens and an equal-length run
+    // closes, so `$``a``` and `$`a``b`` behave like the code span `` `a``b` ``.
+    let (content, code_consumed) = parse_inline_code(bytes, tick)?;
+    // Empty verbatim content is NOT math (`$``` / `$$```): the `$` stays literal
+    // and the backtick pair is an empty code span. Matches carve-js / carve-php.
+    if content.is_empty() {
         return None;
     }
-    let end = tick + 1 + close + 1;
+    let end = tick + code_consumed;
     // A trailing attribute block attaches to the math span (math reuses the
     // code-span attribute slot), EXCEPT `{=format}`, the raw-inline form,
     // which is code-span-only and not inherited by math -- leave it literal.
@@ -4166,7 +4176,7 @@ fn parse_math(bytes: &[u8], start: usize) -> Option<(Math, usize)> {
         Math {
             attrs,
             display,
-            content: rest[..close].to_string(),
+            content,
         },
         after - start,
     ))
