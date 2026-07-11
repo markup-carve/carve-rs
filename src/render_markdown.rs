@@ -417,7 +417,7 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
         InlineNode::Emoji(emoji) => format!(":{}:", emoji.name),
         InlineNode::AutoLink(link) => format!(
             "[{}]({})",
-            strip_controls(&link.href),
+            strip_controls(&link.text),
             encode_markdown_destination(&link.href)
         ),
         InlineNode::Mention(mention) => format!("@{}", strip_controls(&mention.user)),

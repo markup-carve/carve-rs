@@ -519,9 +519,11 @@ fn render_inline(node: &InlineNode, ctx: &mut AnsiContext, depth: usize) -> Stri
         InlineNode::RawInline(_) => String::new(),
         InlineNode::Emoji(emoji) => format!(":{}:", emoji.name),
         InlineNode::AutoLink(link) => {
-            let href = strip_controls(&link.href);
-            let text = href.strip_prefix("mailto:").unwrap_or(&href);
-            style(text, &(UNDERLINE.to_string() + FG_BLUE))
+            // Raw autolink content (URI keeps its scheme; email shows address).
+            style(
+                &strip_controls(&link.text),
+                &(UNDERLINE.to_string() + FG_BLUE),
+            )
         }
         InlineNode::Mention(mention) => format!("@{}", strip_controls(&mention.user)),
         InlineNode::Tag(tag) => format!("#{}", strip_controls(&tag.name)),
