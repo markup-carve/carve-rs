@@ -86,12 +86,6 @@ fn render_block(node: &BlockNode, ctx: &mut AnsiContext, depth: usize) -> String
             render_heading(heading.level, &render_block_inlines(&heading.children, ctx))
         }
         BlockNode::Paragraph(paragraph) => {
-            if let Some((term, def)) = legacy_definition_parts(&paragraph.children) {
-                return format!(
-                    "{}\n  {def}\n\n",
-                    style(&term, &(BOLD.to_string() + FG_YELLOW))
-                );
-            }
             let mut content = render_block_inlines(&paragraph.children, ctx);
             let prefix = block_quote_prefix(ctx);
             if !prefix.is_empty() {
@@ -693,21 +687,4 @@ fn normalize(text: &str) -> String {
     // plain space in display output; a LITERAL U+00A0 typed in the source is
     // preserved as-is. Only the HTML renderer folds both to `&nbsp;`.
     format!("{trimmed}\n").replace(crate::NBSP_PLACEHOLDER, " ")
-}
-
-fn legacy_definition_parts(nodes: &[InlineNode]) -> Option<(String, String)> {
-    if nodes.len() != 3 {
-        return None;
-    }
-    if !matches!(nodes[1], InlineNode::SoftBreak) {
-        return None;
-    }
-    if let InlineNode::Text(term) = &nodes[0] {
-        if let InlineNode::Text(def) = &nodes[2] {
-            if let Some(stripped) = term.strip_prefix(": ") {
-                return Some((stripped.to_string(), def.clone()));
-            }
-        }
-    }
-    None
 }

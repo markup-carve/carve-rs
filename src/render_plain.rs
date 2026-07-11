@@ -37,9 +37,6 @@ fn render_block(node: &BlockNode, depth: usize) -> String {
     match node {
         BlockNode::Heading(heading) => format!("{}\n\n", render_inlines(&heading.children)),
         BlockNode::Paragraph(paragraph) => {
-            if let Some((term, def)) = legacy_definition_parts(&paragraph.children) {
-                return format!("{term}\n  {def}\n\n");
-            }
             format!("{}\n\n", render_inlines(&paragraph.children))
         }
         BlockNode::CodeBlock(code) => format!("{}\n\n", strip_controls(&code.content)),
@@ -315,21 +312,4 @@ fn normalize(text: &str) -> String {
     // plain space in display output; a LITERAL U+00A0 typed in the source is
     // preserved as-is. Only the HTML renderer folds both to `&nbsp;`.
     format!("{trimmed}\n").replace(crate::NBSP_PLACEHOLDER, " ")
-}
-
-fn legacy_definition_parts(nodes: &[InlineNode]) -> Option<(String, String)> {
-    if nodes.len() != 3 {
-        return None;
-    }
-    if !matches!(nodes[1], InlineNode::SoftBreak) {
-        return None;
-    }
-    if let InlineNode::Text(term) = &nodes[0] {
-        if let InlineNode::Text(def) = &nodes[2] {
-            if let Some(stripped) = term.strip_prefix(": ") {
-                return Some((stripped.to_string(), def.clone()));
-            }
-        }
-    }
-    None
 }

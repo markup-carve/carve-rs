@@ -107,9 +107,6 @@ fn render_block(node: &BlockNode, ctx: &mut MarkdownContext, depth: usize) -> St
             format!("{} {text}{suffix}\n\n", "#".repeat(heading.level as usize))
         }
         BlockNode::Paragraph(paragraph) => {
-            if let Some((term, def)) = legacy_definition_parts(&paragraph.children) {
-                return format!("**{}**\n: {}\n\n", escape_text(&term), escape_text(&def));
-            }
             format!("{}\n\n", render_block_inlines(&paragraph.children, ctx))
         }
         BlockNode::CodeBlock(code) => {
@@ -704,23 +701,6 @@ fn normalize(text: &str) -> String {
         }
     }
     format!("{}\n", out.trim_matches(|c| c == '\n' || c == ' '))
-}
-
-fn legacy_definition_parts(nodes: &[InlineNode]) -> Option<(String, String)> {
-    if nodes.len() != 3 {
-        return None;
-    }
-    if !matches!(nodes[1], InlineNode::SoftBreak) {
-        return None;
-    }
-    if let InlineNode::Text(term) = &nodes[0] {
-        if let InlineNode::Text(def) = &nodes[2] {
-            if let Some(stripped) = term.strip_prefix(": ") {
-                return Some((stripped.to_string(), def.clone()));
-            }
-        }
-    }
-    None
 }
 
 fn flatten_heading_text(text: &str) -> String {

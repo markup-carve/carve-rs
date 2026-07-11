@@ -1,2 +1,2 @@
-**Term**
-: Definition text.
+: Term
+Definition text.
