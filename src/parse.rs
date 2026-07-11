@@ -877,7 +877,7 @@ fn detect_thematic_break(line: &str) -> bool {
     // nothing else on the line (`---`, `- - -`, `* * *`). Matches carve-js,
     // carve-php, and canonical djot. A mixed run (`-*-`) is not a break.
     let trimmed = line.trim();
-    for marker in [b'-', b'*', b'_'] {
+    for &marker in b"-*_" {
         let mut count = 0usize;
         let mut only_marker_and_space = true;
         for &b in trimmed.as_bytes() {
