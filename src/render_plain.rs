@@ -243,8 +243,9 @@ fn render_inline(node: &InlineNode, state: &mut SmartQuoteState, depth: usize) -
         InlineNode::RawInline(_) => String::new(),
         InlineNode::Emoji(emoji) => format!(":{}:", emoji.name),
         InlineNode::AutoLink(link) => {
-            let href = strip_controls(&link.href);
-            href.strip_prefix("mailto:").unwrap_or(&href).to_string()
+            // Raw autolink content: a URI autolink keeps its scheme, an email
+            // shows the address.
+            strip_controls(&link.text)
         }
         InlineNode::Mention(mention) => format!("@{}", strip_controls(&mention.user)),
         InlineNode::Tag(tag) => format!("#{}", strip_controls(&tag.name)),
