@@ -252,6 +252,9 @@ fn render_table(node: &Table, ctx: &mut MarkdownContext) -> String {
     let mut header = None;
     let mut rows = Vec::new();
     let mut columns = 0usize;
+    // Per-column alignment from the first non-header row (matching carve-php),
+    // so the Markdown separator preserves `:---` / `:---:` / `---:`.
+    let mut aligns: Vec<Option<TableAlign>> = Vec::new();
     for row in &node.rows {
         let cells = row
             .cells
@@ -264,13 +267,30 @@ fn render_table(node: &Table, ctx: &mut MarkdownContext) -> String {
             header = Some(rendered);
         } else {
             rows.push(rendered);
+            for (i, cell) in row.cells.iter().enumerate() {
+                if aligns.len() <= i {
+                    aligns.resize(i + 1, None);
+                }
+                if aligns[i].is_none() {
+                    aligns[i] = cell.align;
+                }
+            }
         }
     }
     let mut out = String::new();
     if let Some(header) = header {
         out.push_str(&header);
         out.push('\n');
-        out.push_str(&format!("| {} |\n", vec!["---"; columns].join(" | ")));
+        let sep = (0..columns)
+            .map(|i| match aligns.get(i).copied().flatten() {
+                Some(TableAlign::Left) => ":---",
+                Some(TableAlign::Center) => ":---:",
+                Some(TableAlign::Right) => "---:",
+                None => "---",
+            })
+            .collect::<Vec<_>>()
+            .join(" | ");
+        out.push_str(&format!("| {sep} |\n"));
     }
     out.push_str(&rows.join("\n"));
     out.push_str("\n\n");
