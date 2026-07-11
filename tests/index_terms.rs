@@ -34,6 +34,19 @@ fn full_golden_matches_carve_js() {
 }
 
 #[test]
+fn nested_index_block_opening_ul_indented_once() {
+    // Inside a container the injected <ul class="index"> opening tag must sit at
+    // the container's indent (2 spaces), not double-indented (4). Regression for
+    // the framework-first-line + self-pad double-indent, matching carve-js.
+    let out = h("X :index[A] Y\n\n:::: note\n::: index\n:::\n::::");
+    assert!(
+        out.contains("<aside class=\"admonition note\">\n  <ul class=\"index\">\n    <li>A "),
+        "{out}"
+    );
+    assert!(!out.contains("    <ul class=\"index\">"), "{out}");
+}
+
+#[test]
 fn sorted_with_backlinks() {
     let out = h("A :index[parser] and :index[lexer], then :index[parser].\n\n::: index\n:::");
     assert!(out.contains("<ul class=\"index\">"));
