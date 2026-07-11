@@ -347,18 +347,29 @@ fn render_index_list(
         entry.push_str("</li>");
         items.push(entry);
     }
+    // The framework indents the FIRST line of the returned HTML by `level`
+    // (see render_block_extension), so the opening `<ul>` must NOT carry its own
+    // leading pad or it double-indents inside a container (`    <ul>` instead of
+    // `  <ul>`, diverging from carve-js / carve-php). Interior lines still
+    // self-indent: `<li>` at level+1, `</ul>` at level.
     let ul = format!(
-        "{}<ul{}>\n{}\n{}</ul>",
-        pad,
+        "<ul{}>\n{}\n{}</ul>",
         render_attrs(&Some(with_base_class(&node.attrs, "index"))),
         items.join("\n"),
         pad
     );
-    // Preserve any authored content inside the placeholder before the list.
+    // Preserve any authored content inside the placeholder before the list. That
+    // content becomes the framework-indented first line, so the `<ul>` is no
+    // longer first and must supply its own `pad`.
     if node.children.is_empty() {
         ul
     } else {
-        format!("{}\n{}", ctx.render_blocks_at(&node.children, level), ul)
+        format!(
+            "{}\n{}{}",
+            ctx.render_blocks_at(&node.children, level),
+            pad,
+            ul
+        )
     }
 }
 
