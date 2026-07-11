@@ -464,8 +464,10 @@ fn smart_quote_flanking_html_double() {
     assert_eq!(html(".\"q\""), "<p>.”q”</p>");
     assert_eq!(html(",\"q\""), "<p>,”q”</p>");
     assert_eq!(html("a\"b"), "<p>a”b</p>");
-    // Empty `""` at true start opens then closes; after a soft break both close.
-    assert_eq!(html("\"\""), "<p>“”</p>");
+    // Empty `""` at true start: the first opens, and the second follows an
+    // opening curly quote (an opening context), so it opens too -> `““`,
+    // matching carve-js / carve-php. After a soft break both close.
+    assert_eq!(html("\"\""), "<p>““</p>");
     assert_eq!(html("a\"b\n\"\""), "<p>a”b\n””</p>");
 }
 
@@ -501,6 +503,21 @@ fn smart_quote_flanking_plain() {
     assert_eq!(carve::to_plain_text("a\"b\n\"\"").trim(), "a”b ””");
     // Node boundary in plain text closes too.
     assert_eq!(carve::to_plain_text("*x*'s").trim(), "x’s");
+}
+
+/// A quote immediately after another OPENING quote is itself in an opening
+/// context (the just-emitted `“`/`‘` is a nested-open char), so `"'x'"` nests
+/// as `“‘x’”` -- matching carve-js / carve-php. Regression for reading the raw
+/// source char (straight `"`) instead of the emitted curly quote.
+#[test]
+fn smart_quote_nested_open_after_open() {
+    assert_eq!(html("\"'x'\""), "<p>“‘x’”</p>");
+    assert_eq!(html("a \"'x'\" b"), "<p>a “‘x’” b</p>");
+    // A quote after a CLOSING quote stays closing: `x"'y` -> `x”’y`.
+    assert_eq!(html("x\"'y"), "<p>x”’y</p>");
+    // Same on the non-HTML paths.
+    assert_eq!(carve::to_plain_text("\"'x'\"").trim(), "“‘x’”");
+    assert_eq!(carve::to_markdown("\"'x'\"").trim(), "“‘x’”");
 }
 
 /// Inline extension `:name[content]` (§16, carve-js regex
