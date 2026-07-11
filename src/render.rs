@@ -2236,69 +2236,73 @@ fn smart_text_after<'a>(
     s = s.replace("§NO_SMART_DOTS§", "...");
     let chars: Vec<char> = s.chars().collect();
     let mut out = String::new();
+    // Track the previously EMITTED char (curly-converted), matching carve-js
+    // which decides quote flanking from the output buffer's last char, not the
+    // raw source. So a `'` right after an opening `"` (already emitted as `“`)
+    // correctly opens (`“‘…’”`) instead of being misread as word-adjacent.
+    let mut prev_out: Option<char> = None;
     for (idx, ch) in chars.iter().copied().enumerate() {
         if ch == '\u{e000}' {
+            // An escaped space emits nothing here but is whitespace context for
+            // a following quote.
+            prev_out = Some(crate::NBSP_PLACEHOLDER);
             continue;
         }
         let escaped = idx > 0 && chars[idx - 1] == '\u{e000}';
-        if ch == '"' {
-            if escaped {
-                out.push(ch);
-                continue;
-            }
+        if ch == '"' && !escaped {
             // Normative §8: a double quote OPENS (left `“`) when its preceding
-            // character is an opening context (start-of-content, whitespace/
+            // emitted char is an opening context (start-of-content, whitespace/
             // NBSP, or one of `( [ { = : - /`, an en/em dash, or a nested
             // opening curly quote); otherwise it CLOSES (right `”`).
-            let opening = quote_open_context(&chars, idx, has_prev_sibling);
-            out.push(if opening { '“' } else { '”' });
+            let opening = quote_open_prev(prev_out, has_prev_sibling);
+            let e = if opening { '“' } else { '”' };
+            out.push(e);
             state.open_double = !opening;
-        } else if ch == '\'' {
-            if escaped {
-                out.push(ch);
-                continue;
-            }
+            prev_out = Some(e);
+        } else if ch == '\'' && !escaped {
             // Single quote (§8, matching djot): a closing/apostrophe `’` when
-            // the previous char is alphanumeric (`it's`, `John's`) OR the next
-            // char is a digit (decade elision `'70s`, `'24'`) OR the preceding
-            // context is not an opening one; an opening `‘` only in an open
-            // context with a non-digit next char.
-            let prev_alnum = idx > 0 && chars[idx - 1].is_alphanumeric();
+            // the previous emitted char is alphanumeric (`it's`, `John's`) OR
+            // the next char is a digit (decade elision `'70s`, `'24'`) OR the
+            // preceding context is not an opening one; an opening `‘` only in an
+            // open context with a non-digit next char.
+            let prev_alnum = prev_out.is_some_and(|c| c.is_alphanumeric());
             let next_digit = chars.get(idx + 1).is_some_and(|c| c.is_ascii_digit());
             let apostrophe =
-                prev_alnum || next_digit || !quote_open_context(&chars, idx, has_prev_sibling);
-            out.push(if apostrophe { '’' } else { '‘' });
+                prev_alnum || next_digit || !quote_open_prev(prev_out, has_prev_sibling);
+            let e = if apostrophe { '’' } else { '‘' };
+            out.push(e);
             state.open_single = apostrophe;
+            prev_out = Some(e);
         } else {
             out.push(ch);
+            prev_out = Some(ch);
         }
     }
     std::borrow::Cow::Owned(out)
 }
 
-/// Normative §8 quote flanking context: a quote at `chars[idx]` is in an
-/// OPENING context when its preceding character is start-of-content,
-/// whitespace/NBSP, one of the opening/operator chars `( [ { = : - /`, an
-/// en/em dash, or a nested opening curly quote (`“`/`‘`). At a text-node
-/// boundary (`idx == 0`) the quote opens only when there is no preceding
-/// inline sibling (true start of content); any prior sibling is treated as
-/// word-adjacent (closing context), matching carve-js.
-fn quote_open_context(chars: &[char], idx: usize, has_prev_sibling: bool) -> bool {
-    // At a text-node boundary the quote opens only at the true start of the
-    // inline flow (no preceding sibling). Any preceding sibling -- text,
-    // emphasis, link, code, a soft/hard break -- is treated as word-adjacent
-    // (closing context), matching carve-js (`prevForQuote = out.length ? 'x'
-    // : ''`). So `a"b\n""` closes all four marks (`a”b\n””`).
-    if idx == 0 {
-        return !has_prev_sibling;
+/// Normative §8 quote flanking context, decided from the previously EMITTED
+/// char (`None` at the true start of the text node's output). A quote is in an
+/// OPENING context when that char is whitespace/NBSP or one of the opening/
+/// operator chars `( [ { = : - /`, an en/em dash, or a nested opening curly
+/// quote (`“`/`‘`). At a text-node boundary (`None`) the quote opens only when
+/// there is no preceding inline sibling (true start of content); any prior
+/// sibling is treated as word-adjacent (closing context), matching carve-js
+/// (`prevForQuote = out.length ? 'x' : ''`). Using the emitted char (not the
+/// raw source) makes a quote right after another opening quote open too, so
+/// `"'x'"` -> `“‘x’”`.
+fn quote_open_prev(prev: Option<char>, has_prev_sibling: bool) -> bool {
+    match prev {
+        None => !has_prev_sibling,
+        Some(c) => {
+            c.is_whitespace()
+                || c == crate::NBSP_PLACEHOLDER
+                || matches!(
+                    c,
+                    '(' | '[' | '{' | '=' | ':' | '-' | '/' | '–' | '—' | '“' | '‘'
+                )
+        }
     }
-    let prev = chars[idx - 1];
-    prev.is_whitespace()
-        || prev == crate::NBSP_PLACEHOLDER
-        || matches!(
-            prev,
-            '(' | '[' | '{' | '=' | ':' | '-' | '/' | '–' | '—' | '“' | '‘'
-        )
 }
 
 fn unescape_text(input: &str) -> String {

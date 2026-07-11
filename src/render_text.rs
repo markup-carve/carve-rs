@@ -104,64 +104,66 @@ fn smart_text(input: &str, state: &mut SmartQuoteState) -> String {
 
     let chars = s.chars().collect::<Vec<_>>();
     let mut out = String::new();
+    // Decide quote flanking from the previously EMITTED char (curly-converted),
+    // matching carve-js and the HTML path, so a quote right after an opening
+    // quote opens too (`"'x'"` -> `“‘x’”`). Reading the raw source instead
+    // misread the second quote as word-adjacent.
+    let mut prev_out: Option<char> = None;
     for (idx, ch) in chars.iter().copied().enumerate() {
         if ch == '\u{e000}' {
+            prev_out = Some(crate::NBSP_PLACEHOLDER);
             continue;
         }
         let escaped = idx > 0 && chars[idx - 1] == '\u{e000}';
-        if ch == '"' {
-            if escaped {
-                out.push(ch);
-                continue;
-            }
+        if ch == '"' && !escaped {
             // Normative §8: a double quote OPENS (left `“`) in an opening
             // context (start-of-content, whitespace/NBSP, or one of
             // `( [ { = : - /`, an en/em dash, or a nested opening curly quote);
             // otherwise it CLOSES (right `”`).
-            let opening = quote_open_context(&chars, idx, state.started);
-            out.push(if opening { '“' } else { '”' });
+            let opening = quote_open_prev(prev_out, state.started);
+            let e = if opening { '“' } else { '”' };
+            out.push(e);
             state.open_double = !opening;
-        } else if ch == '\'' {
-            if escaped {
-                out.push(ch);
-                continue;
-            }
+            prev_out = Some(e);
+        } else if ch == '\'' && !escaped {
             // Single quote (§8, matching djot): a closing/apostrophe `’` when
-            // the previous char is alphanumeric OR the next char is a digit OR
-            // the context is not an opening one; an opening `‘` only in an open
-            // context with a non-digit next char.
-            let prev_alnum = idx > 0 && chars[idx - 1].is_alphanumeric();
+            // the previous emitted char is alphanumeric OR the next char is a
+            // digit OR the context is not an opening one; an opening `‘` only in
+            // an open context with a non-digit next char.
+            let prev_alnum = prev_out.is_some_and(|c| c.is_alphanumeric());
             let next_digit = chars.get(idx + 1).is_some_and(|c| c.is_ascii_digit());
-            let apostrophe =
-                prev_alnum || next_digit || !quote_open_context(&chars, idx, state.started);
-            out.push(if apostrophe { '’' } else { '‘' });
+            let apostrophe = prev_alnum || next_digit || !quote_open_prev(prev_out, state.started);
+            let e = if apostrophe { '’' } else { '‘' };
+            out.push(e);
             state.open_single = apostrophe;
+            prev_out = Some(e);
         } else {
             out.push(ch);
+            prev_out = Some(ch);
         }
     }
     out
 }
 
-/// Normative §8 quote flanking context (non-HTML renderers): a quote at
-/// `chars[idx]` is in an OPENING context when its preceding character is
-/// start-of-content, whitespace/NBSP, one of the opening/operator chars
-/// `( [ { = : - /`, an en/em dash, or a nested opening curly quote. At a
-/// text-node boundary (`idx == 0`) the quote opens only when no inline content
-/// has been emitted yet in the block (`started == false`); any prior sibling
-/// makes it word-adjacent (closing context), matching carve-js and the HTML
-/// path.
-fn quote_open_context(chars: &[char], idx: usize, started: bool) -> bool {
-    if idx == 0 {
-        return !started;
+/// Normative §8 quote flanking context (non-HTML renderers), decided from the
+/// previously EMITTED char (`None` at the block's start). OPENING when that
+/// char is whitespace/NBSP or one of the opening/operator chars `( [ { = : - /`,
+/// an en/em dash, or a nested opening curly quote. At the start (`None`) the
+/// quote opens only when no inline content has been emitted yet in the block
+/// (`started == false`); any prior sibling makes it word-adjacent (closing),
+/// matching carve-js and the HTML path.
+fn quote_open_prev(prev: Option<char>, started: bool) -> bool {
+    match prev {
+        None => !started,
+        Some(c) => {
+            c.is_whitespace()
+                || c == crate::NBSP_PLACEHOLDER
+                || matches!(
+                    c,
+                    '(' | '[' | '{' | '=' | ':' | '-' | '/' | '–' | '—' | '“' | '‘'
+                )
+        }
     }
-    let prev = chars[idx - 1];
-    prev.is_whitespace()
-        || prev == crate::NBSP_PLACEHOLDER
-        || matches!(
-            prev,
-            '(' | '[' | '{' | '=' | ':' | '-' | '/' | '–' | '—' | '“' | '‘'
-        )
 }
 
 fn needs_smart_pass(input: &str) -> bool {
