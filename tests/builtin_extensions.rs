@@ -212,6 +212,46 @@ fn heading_permalinks_append_golden() {
 }
 
 #[test]
+fn heading_permalinks_show_on_hover_golden() {
+    let ext = HeadingPermalinks::with_options(HeadingPermalinksOptions {
+        show_on_hover: true,
+        ..Default::default()
+    });
+    let opts = Options::new().with_extension(&ext);
+    assert_eq!(
+        carve::to_html_with_options("# Title", &opts),
+        "<section id=\"Title\">\n  <h1>Title <span class=\"permalink-wrapper permalink-hover\"><a href=\"#Title\" class=\"permalink\" aria-label=\"Permalink\">¶</a></span></h1>\n</section>"
+    );
+}
+
+#[test]
+fn heading_permalinks_copy_to_clipboard_golden() {
+    let ext = HeadingPermalinks::with_options(HeadingPermalinksOptions {
+        copy_to_clipboard: true,
+        ..Default::default()
+    });
+    let opts = Options::new().with_extension(&ext);
+    assert_eq!(
+        carve::to_html_with_options("# Title", &opts),
+        "<section id=\"Title\">\n  <h1>Title <a href=\"#Title\" class=\"permalink\" aria-label=\"Permalink\" data-permalink-copy=\"\">¶</a></h1>\n</section>"
+    );
+}
+
+#[test]
+fn heading_permalinks_hover_and_copy_golden() {
+    let ext = HeadingPermalinks::with_options(HeadingPermalinksOptions {
+        show_on_hover: true,
+        copy_to_clipboard: true,
+        ..Default::default()
+    });
+    let opts = Options::new().with_extension(&ext);
+    assert_eq!(
+        carve::to_html_with_options("# Title", &opts),
+        "<section id=\"Title\">\n  <h1>Title <span class=\"permalink-wrapper permalink-hover\"><a href=\"#Title\" class=\"permalink\" aria-label=\"Permalink\" data-permalink-copy=\"\">¶</a></span></h1>\n</section>"
+    );
+}
+
+#[test]
 fn heading_permalinks_prepend_golden() {
     let ext = HeadingPermalinks::with_options(HeadingPermalinksOptions {
         lowercase_ids: true,

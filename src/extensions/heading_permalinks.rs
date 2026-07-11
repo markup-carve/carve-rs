@@ -32,6 +32,13 @@ pub struct HeadingPermalinksOptions {
     pub levels: Vec<u8>,
     /// Place the anchor before the heading text instead of after. Default false.
     pub prepend: bool,
+    /// Only reveal the anchor on heading hover: wrap it in a
+    /// `<span class="permalink-wrapper permalink-hover">` the host stylesheet
+    /// targets via `h*:hover > .permalink-hover`. Default false (bare anchor).
+    pub show_on_hover: bool,
+    /// Add a `data-permalink-copy` hook the host JS can use to copy the URL.
+    /// Default false.
+    pub copy_to_clipboard: bool,
     /// Lowercase auto-generated heading ids when computing the link target.
     /// Must match the renderer's [`crate::Options::lowercase_heading_ids`].
     /// Default false (case-preserving), matching the carve-rs default.
@@ -46,6 +53,8 @@ impl Default for HeadingPermalinksOptions {
             aria_label: "Permalink".into(),
             levels: vec![1, 2, 3, 4, 5, 6],
             prepend: false,
+            show_on_hover: false,
+            copy_to_clipboard: false,
             lowercase_ids: false,
         }
     }
@@ -109,18 +118,31 @@ impl CarveExtension for HeadingPermalinks {
 
 impl HeadingPermalinks {
     fn append_anchor(&self, h: &mut Heading, id: &str) {
+        let copy_attr = if self.opts.copy_to_clipboard {
+            " data-permalink-copy=\"\""
+        } else {
+            ""
+        };
         let anchor_html = format!(
-            "<a href=\"#{}\" class=\"{}\" aria-label=\"{}\">{}</a>",
+            "<a href=\"#{}\" class=\"{}\" aria-label=\"{}\"{}>{}</a>",
             crate::escape::escape_attr(id),
             crate::escape::escape_attr(&self.opts.css_class),
             crate::escape::escape_attr(&self.opts.aria_label),
+            copy_attr,
             crate::escape::escape_text(&self.opts.symbol),
         );
-        // Emit the anchor as raw inline HTML so the core inline renderer passes
+        // showOnHover wraps the anchor so the hover CSS (`h*:hover >
+        // .permalink-hover`) has a child to target; default is the bare anchor.
+        let marker_html = if self.opts.show_on_hover {
+            format!("<span class=\"permalink-wrapper permalink-hover\">{anchor_html}</span>")
+        } else {
+            anchor_html
+        };
+        // Emit the marker as raw inline HTML so the core inline renderer passes
         // it through verbatim, with a literal space separating it from the text.
         let anchor = InlineNode::RawInline(RawInline {
             format: "html".into(),
-            content: anchor_html,
+            content: marker_html,
         });
         let space = InlineNode::Text(" ".into());
         if self.opts.prepend {
