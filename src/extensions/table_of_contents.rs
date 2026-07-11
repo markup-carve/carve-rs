@@ -173,7 +173,7 @@ fn collect_entries(
                 if top_level && h.level >= opts.min_level && h.level <= opts.max_level {
                     entries.push(TocEntry {
                         level: h.level,
-                        text: strip_bidi(&crate::render::plain_inlines(&h.children)),
+                        text: strip_bidi(crate::render::plain_inlines(&h.children).trim()),
                         id,
                     });
                 }
@@ -215,7 +215,7 @@ fn collect_all_entries(
                 let id = next_id(h, counts, lowercase);
                 entries.push(TocEntry {
                     level: h.level,
-                    text: strip_bidi(&crate::render::plain_inlines(&h.children)),
+                    text: strip_bidi(crate::render::plain_inlines(&h.children).trim()),
                     id,
                 });
             }
