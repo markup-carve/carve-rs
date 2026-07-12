@@ -317,14 +317,20 @@ fn render_figure(node: &Figure, ctx: &mut MarkdownContext, depth: usize) -> Stri
                 .to_string()
         }
     };
-    // A block-level target (a code-block listing or a display-math equation)
-    // keeps the caption on its own line; an inline image stays adjacent.
+    // The caption sits on its own line directly under the figure (`\n`) - an
+    // image target used to glue it on (`![a](/u)cap`). A blockquote target keeps
+    // the blank-line separation; a table drops the caption entirely.
     let sep = match &node.target {
         FigureTarget::BlockQuote(_) => "\n\n",
-        FigureTarget::CodeBlock(_) | FigureTarget::Paragraph(_) => "\n",
-        _ => "",
+        FigureTarget::Table(_) => "",
+        _ => "\n",
     };
-    format!("{target}{sep}{}", render_block_inlines(&node.caption, ctx))
+    // End with the block separator so a following block is not glued to the
+    // caption (matching every other block renderer and carve-php).
+    format!(
+        "{target}{sep}{}\n\n",
+        render_block_inlines(&node.caption, ctx)
+    )
 }
 
 fn render_footnote_defs(doc: &Document, ctx: &mut MarkdownContext) -> String {

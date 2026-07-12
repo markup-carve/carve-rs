@@ -1,1 +1,2 @@
-![A sunset](sun.jpg)Figure 1: A sunset
+![A sunset](sun.jpg)
+Figure 1: A sunset
