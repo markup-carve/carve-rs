@@ -208,4 +208,3 @@ fn rewrite_blocks(blocks: &mut [BlockNode]) {
         }
     }
 }
-
