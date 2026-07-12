@@ -85,3 +85,40 @@ fn reference_link_and_image_coexist() {
         "<p><a href=\"/u\">alt</a> and <img src=\"/u\" alt=\"alt\"></p>"
     );
 }
+
+#[test]
+fn resolved_reference_image_with_caption_is_figure() {
+    assert_eq!(
+        h("![a][r]\n^ cap\n\n[r]: /u"),
+        "<figure>\n  <img src=\"/u\" alt=\"a\">\n  <figcaption>cap</figcaption>\n</figure>"
+    );
+}
+
+#[test]
+fn reference_figure_caption_keeps_markup() {
+    assert_eq!(
+        h("![a][r]\n^ *b* c\n\n[r]: /u"),
+        "<figure>\n  <img src=\"/u\" alt=\"a\">\n  <figcaption><strong>b</strong> c</figcaption>\n</figure>"
+    );
+}
+
+#[test]
+fn collapsed_reference_image_with_caption_is_figure() {
+    assert_eq!(
+        h("![a][]\n^ cap\n\n[a]: /u"),
+        "<figure>\n  <img src=\"/u\" alt=\"a\">\n  <figcaption>cap</figcaption>\n</figure>"
+    );
+}
+
+#[test]
+fn unresolved_reference_image_with_caption_stays_literal() {
+    assert_eq!(h("![a][nope]\n^ cap"), "<p>![a][nope]\n^ cap</p>");
+}
+
+#[test]
+fn leading_text_before_reference_image_is_not_a_figure() {
+    assert_eq!(
+        h("x ![a][r]\n^ cap\n\n[r]: /u"),
+        "<p>x <img src=\"/u\" alt=\"a\">\n^ cap</p>"
+    );
+}
