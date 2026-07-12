@@ -5602,6 +5602,17 @@ fn resolve_reference_links_inline(
 /// image, matching the standalone inline-image rule (`detect_block_image`) and
 /// carve-php. Recurses into container blocks. An unresolved reference image
 /// already became a `Text` node, so its paragraph is left untouched.
+/// Length (in bytes) of a leading `^` + one-or-more whitespace caption marker
+/// (`RE_CAPTION = /^\^\s+/`), or `None` when the text does not open a caption.
+fn caption_marker_len(text: &str) -> Option<usize> {
+    let rest = text.strip_prefix('^')?;
+    let ws = rest.len() - rest.trim_start().len();
+    if ws == 0 {
+        return None;
+    }
+    Some(1 + ws)
+}
+
 fn promote_block_images(blocks: &mut [BlockNode]) {
     for block in blocks.iter_mut() {
         let single_image = matches!(
@@ -5619,6 +5630,49 @@ fn promote_block_images(blocks: &mut [BlockNode]) {
             if let InlineNode::Image(img) = children.remove(0) {
                 *block = BlockNode::BlockImage(img);
             }
+            continue;
+        }
+        // A resolved reference image on its own line followed by a `^ ` caption
+        // becomes a Figure, matching a direct-image figure and carve-php. A
+        // reference image arrives here as `Paragraph[Image, SoftBreak,
+        // "^ caption…"]` (the syntactic block-image/caption pass only knows the
+        // inline `![…](…)` form); an unresolved ref is a Text node (not an
+        // Image) so it stays literal. The caption inlines are already parsed;
+        // strip the `^ ` marker from the leading Text. Only a single-line
+        // caption (no further soft break) figure-izes, matching the one-line
+        // direct caption.
+        let ref_figure = matches!(
+            block,
+            BlockNode::Paragraph(p)
+                if p.children.len() >= 3
+                    && matches!(p.children[0], InlineNode::Image(_))
+                    && matches!(p.children[1], InlineNode::SoftBreak)
+                    && matches!(&p.children[2], InlineNode::Text(t) if caption_marker_len(t).is_some())
+                    && !p.children[2..].iter().any(|c| matches!(c, InlineNode::SoftBreak))
+        );
+        if ref_figure {
+            let mut children = match block {
+                BlockNode::Paragraph(p) => std::mem::take(&mut p.children),
+                _ => unreachable!(),
+            };
+            let InlineNode::Image(img) = children.remove(0) else {
+                unreachable!()
+            };
+            children.remove(0); // the soft break
+            if let InlineNode::Text(t) = &mut children[0] {
+                let n = caption_marker_len(t).unwrap();
+                let rest = t[n..].to_string();
+                if rest.is_empty() {
+                    children.remove(0);
+                } else {
+                    *t = rest;
+                }
+            }
+            *block = BlockNode::Figure(Figure {
+                attrs: None,
+                target: FigureTarget::Image(img),
+                caption: children,
+            });
             continue;
         }
         match block {
