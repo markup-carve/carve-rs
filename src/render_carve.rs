@@ -642,6 +642,12 @@ fn render_link(node: &Link, ctx: &mut CarveContext) -> String {
 }
 
 fn render_image(node: &Image) -> String {
+    // An unresolved reference image round-trips via its verbatim source, exactly
+    // like an unresolved reference link (render_link); `![alt]()` would change
+    // the rendered text and break the to_html(fmt(x)) == to_html(x) invariant.
+    if node.ref_label.is_some() && node.raw_ref.is_some() {
+        return node.raw_ref.clone().unwrap_or_default();
+    }
     let title = node
         .title
         .as_ref()
