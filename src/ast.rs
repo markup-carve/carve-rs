@@ -301,6 +301,14 @@ pub struct Image {
     pub src: String,
     pub alt: String,
     pub title: Option<String>,
+    /// Unresolved reference label for `![alt][ref]` / collapsed `![alt][]`,
+    /// mirroring [`Link::ref_label`]. `resolve_reference_links` matches it
+    /// against the document's explicit `[label]: url` defs (case-sensitively):
+    /// on hit it fills `src`/`title` and clears these; an unresolved image ref
+    /// becomes the literal `raw_ref` source. Unlike a link ref it never matches
+    /// heading text. `None` for a direct `![alt](src)` image.
+    pub ref_label: Option<String>,
+    pub raw_ref: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
