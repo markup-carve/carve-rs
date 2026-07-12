@@ -41,7 +41,10 @@ fn alt_is_raw_text() {
 
 #[test]
 fn nested_brackets_in_alt() {
-    assert_eq!(h("![a [b] c][ref]\n\n[ref]: /u"), "<img src=\"/u\" alt=\"a [b] c\">");
+    assert_eq!(
+        h("![a [b] c][ref]\n\n[ref]: /u"),
+        "<img src=\"/u\" alt=\"a [b] c\">"
+    );
 }
 
 #[test]
@@ -69,7 +72,10 @@ fn inline_image_wins_over_reference() {
 
 #[test]
 fn stays_inline_with_surrounding_text() {
-    assert_eq!(h("x ![a][ref]\n\n[ref]: /u"), "<p>x <img src=\"/u\" alt=\"a\"></p>");
+    assert_eq!(
+        h("x ![a][ref]\n\n[ref]: /u"),
+        "<p>x <img src=\"/u\" alt=\"a\"></p>"
+    );
 }
 
 #[test]
