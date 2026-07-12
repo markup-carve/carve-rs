@@ -541,12 +541,12 @@ fn parse_blocks(cur: &mut LineCursor, options: &Options<'_>) -> Vec<BlockNode> {
             cur.consume();
             continue;
         }
-        if trim_ascii_start(line).starts_with("%%%") {
+        if is_comment_fence_line(line) {
             let mut content = Vec::new();
             cur.consume();
             while let Some(line) = cur.peek() {
                 cur.consume();
-                if trim_ascii_start(line).starts_with("%%%") {
+                if is_comment_fence_line(line) {
                     break;
                 }
                 content.push(line.to_string());
