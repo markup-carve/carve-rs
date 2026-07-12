@@ -63,6 +63,11 @@ fn render_block_inlines(nodes: &[InlineNode], ctx: &mut AnsiContext) -> String {
     render_inlines(nodes, ctx, 0)
 }
 
+fn render_title_inlines(nodes: &[InlineNode], ctx: &mut AnsiContext) -> String {
+    let nodes = inline_nodes_without_strong(nodes);
+    render_block_inlines(&nodes, ctx)
+}
+
 fn style(text: &str, codes: &str) -> String {
     format!("{codes}{text}{RESET}")
 }
@@ -110,7 +115,7 @@ fn render_block(node: &BlockNode, ctx: &mut AnsiContext, depth: usize) -> String
             let body = render_blocks(&admonition.children, ctx, depth + 1);
             let body = match &admonition.title {
                 Some(title) => {
-                    let t = render_block_inlines(title, ctx);
+                    let t = render_title_inlines(title, ctx);
                     if t.is_empty() {
                         body
                     } else {

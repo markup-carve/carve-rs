@@ -82,6 +82,11 @@ fn render_block_inlines(nodes: &[InlineNode], ctx: &mut MarkdownContext) -> Stri
     render_inlines(nodes, ctx, 0)
 }
 
+fn render_title_inlines(nodes: &[InlineNode], ctx: &mut MarkdownContext) -> String {
+    let nodes = inline_nodes_without_strong(nodes);
+    render_block_inlines(&nodes, ctx)
+}
+
 fn render_blocks(blocks: &[BlockNode], ctx: &mut MarkdownContext, depth: usize) -> String {
     if depth > MAX_RENDER_DEPTH {
         return String::new();
@@ -141,7 +146,7 @@ fn render_block(node: &BlockNode, ctx: &mut MarkdownContext, depth: usize) -> St
             let body = render_blocks(&admonition.children, ctx, depth + 1);
             let body = match &admonition.title {
                 Some(title) => {
-                    let t = render_block_inlines(title, ctx);
+                    let t = render_title_inlines(title, ctx);
                     if t.is_empty() {
                         body
                     } else {

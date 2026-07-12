@@ -220,11 +220,10 @@ pub struct BlockExtension {
     pub attrs: Option<Attrs>,
     pub name: String,
     pub children: Vec<BlockNode>,
-    /// Optional pre-flattened title text carried by a `before_render`
-    /// rewrite (e.g. the `details` extension stashes the admonition title
-    /// here so its renderer can emit a `<summary>`). `None` for ordinary
-    /// extension carrier nodes.
-    pub summary: Option<String>,
+    /// Optional parsed title carried by a `before_render` rewrite (e.g. the
+    /// `details` extension stashes the admonition title here so its renderer
+    /// can emit a `<summary>`). `None` for ordinary extension carrier nodes.
+    pub summary: Option<Vec<InlineNode>>,
     /// Optional grouping `[label]` carried over from the source container, so a
     /// static-mode renderer can surface it as the caption floor (mirroring the
     /// core caption floor for an unconsumed label). `None` when the source had
@@ -258,6 +257,71 @@ pub enum InlineNode {
     CriticDelete(CriticDelete),
     CriticSubstitute(CriticSubstitute),
     CriticComment(CriticComment),
+}
+
+pub(crate) fn inline_nodes_without_strong(nodes: &[InlineNode]) -> Vec<InlineNode> {
+    let mut out = Vec::new();
+    for node in nodes {
+        match node {
+            InlineNode::Emphasis(e) if e.kind == EmphasisKind::Strong => {
+                out.extend(inline_nodes_without_strong(&e.children));
+            }
+            InlineNode::Emphasis(e) => {
+                let mut e = e.clone();
+                e.children = inline_nodes_without_strong(&e.children);
+                out.push(InlineNode::Emphasis(e));
+            }
+            InlineNode::Link(l) => {
+                let mut l = l.clone();
+                l.children = inline_nodes_without_strong(&l.children);
+                out.push(InlineNode::Link(l));
+            }
+            InlineNode::Span(s) => {
+                let mut s = s.clone();
+                s.children = inline_nodes_without_strong(&s.children);
+                out.push(InlineNode::Span(s));
+            }
+            InlineNode::Extension(e) => {
+                let mut e = e.clone();
+                e.children = inline_nodes_without_strong(&e.children);
+                out.push(InlineNode::Extension(e));
+            }
+            InlineNode::CitationGroup(g) => {
+                let mut g = g.clone();
+                for item in &mut g.items {
+                    if let Some(prefix) = &mut item.prefix {
+                        *prefix = inline_nodes_without_strong(prefix);
+                    }
+                    if let Some(locator) = &mut item.locator {
+                        *locator = inline_nodes_without_strong(locator);
+                    }
+                    if let Some(suffix) = &mut item.suffix {
+                        *suffix = inline_nodes_without_strong(suffix);
+                    }
+                }
+                out.push(InlineNode::CitationGroup(g));
+            }
+            InlineNode::Footnote(f) => {
+                let mut f = f.clone();
+                if let Some(inline) = &mut f.inline {
+                    *inline = inline_nodes_without_strong(inline);
+                }
+                out.push(InlineNode::Footnote(f));
+            }
+            InlineNode::CriticInsert(c) => {
+                let mut c = c.clone();
+                c.children = inline_nodes_without_strong(&c.children);
+                out.push(InlineNode::CriticInsert(c));
+            }
+            InlineNode::CriticDelete(c) => {
+                let mut c = c.clone();
+                c.children = inline_nodes_without_strong(&c.children);
+                out.push(InlineNode::CriticDelete(c));
+            }
+            _ => out.push(node.clone()),
+        }
+    }
+    out
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

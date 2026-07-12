@@ -46,6 +46,24 @@ fn quoted_title_becomes_caption() {
 }
 
 #[test]
+fn caption_renders_inline_markup_in_title() {
+    assert!(h("::: list-table \"Q *totals* `2026`\"\n- - A\n:::")
+        .contains("<caption>Q <strong>totals</strong> <code>2026</code></caption>"));
+}
+
+#[test]
+fn caption_renders_image_only_title() {
+    assert!(h("::: list-table \"![alt](/x.png)\"\n- - A\n:::")
+        .contains("<caption><img src=\"/x.png\" alt=\"alt\"></caption>"));
+}
+
+#[test]
+fn empty_title_emits_no_caption() {
+    let out = h("::: list-table \"\"\n- - A\n:::");
+    assert!(!out.contains("<caption>"), "{out}");
+}
+
+#[test]
 fn caption_escapes_html_special_chars() {
     assert!(h("::: list-table \"Tom & Jerry\"\n- - A\n  - B\n:::")
         .contains("<caption>Tom &amp; Jerry</caption>"));
