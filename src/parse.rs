@@ -2598,11 +2598,27 @@ fn consume_caption(cur: &mut LineCursor, options: &Options<'_>) -> Option<Vec<In
         cur.pos = saved;
         return None;
     };
+    let mut joined = trim_ascii_end(text).to_string();
     cur.consume();
-    Some(parse_caption_inline_with_options(
-        trim_ascii_end(text),
-        options,
-    ))
+    // A caption is multi-line inline content, so it folds following lines like a
+    // PARAGRAPH (§10), NOT like a heading: a list marker FOLDS in (djot -- a
+    // list needs a blank line to interrupt), while a heading / blockquote /
+    // table / fenced code / `:::` div / thematic break / `%%%` comment
+    // interrupts and ends the caption. A blank line or a further `^ ` caption
+    // line also ends it. Continuation lines join with `\n`.
+    while let Some(next) = cur.peek() {
+        if is_blank_line(next) || next.starts_with("^ ") {
+            break;
+        }
+        let next_owned = next.to_string();
+        if interrupts_paragraph(cur, &next_owned) {
+            break;
+        }
+        joined.push('\n');
+        joined.push_str(next);
+        cur.consume();
+    }
+    Some(parse_caption_inline_with_options(&joined, options))
 }
 
 fn is_table_start(line: &str) -> bool {
@@ -5637,10 +5653,10 @@ fn promote_block_images(blocks: &mut [BlockNode]) {
         // reference image arrives here as `Paragraph[Image, SoftBreak,
         // "^ caption…"]` (the syntactic block-image/caption pass only knows the
         // inline `![…](…)` form); an unresolved ref is a Text node (not an
-        // Image) so it stays literal. The caption inlines are already parsed;
-        // strip the `^ ` marker from the leading Text. Only a single-line
-        // caption (no further soft break) figure-izes, matching the one-line
-        // direct caption.
+        // Image) so it stays literal. The caption inlines are already parsed
+        // (paragraph interruption already stopped the caption at a block opener,
+        // so a multi-line caption keeps its interior soft breaks); strip the
+        // `^ ` marker from the leading Text.
         let ref_figure = matches!(
             block,
             BlockNode::Paragraph(p)
@@ -5648,7 +5664,6 @@ fn promote_block_images(blocks: &mut [BlockNode]) {
                     && matches!(p.children[0], InlineNode::Image(_))
                     && matches!(p.children[1], InlineNode::SoftBreak)
                     && matches!(&p.children[2], InlineNode::Text(t) if caption_marker_len(t).is_some())
-                    && !p.children[2..].iter().any(|c| matches!(c, InlineNode::SoftBreak))
         );
         if ref_figure {
             let mut children = match block {
