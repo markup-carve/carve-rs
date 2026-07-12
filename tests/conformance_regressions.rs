@@ -562,3 +562,18 @@ fn reference_definition_empty_destination_and_escaped_title() {
         "<p><a href=\"/u\" title=\"a&quot;b&quot;c\">x</a></p>"
     );
 }
+
+/// A `%%%` comment-block OPENER must be 3+ `%` then only whitespace to end of
+/// line (grammar: `comment_block_open, newline`). A line with trailing TEXT
+/// (`%%% c`) is NOT an opener -- it is ordinary content, matching carve-js /
+/// carve-php. Regression for treating any `%%%`-prefixed line as a comment.
+#[test]
+fn comment_fence_opener_rejects_trailing_text() {
+    // Trailing text -> not a comment; the body is a paragraph.
+    assert_eq!(html("%%% c\nhidden\n%%%"), "<p>hidden</p>");
+    assert_eq!(html("x\n%%% c\nhidden\n%%%"), "<p>x</p>\n<p>hidden</p>");
+    // A clean opener (with optional trailing whitespace) is still a comment.
+    assert_eq!(html("%%%\nhidden\n%%%"), "");
+    assert_eq!(html("%%% \nhidden\n%%%"), "");
+    assert_eq!(html("%%%%\nhidden\n%%%%"), "");
+}
