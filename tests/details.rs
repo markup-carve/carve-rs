@@ -48,8 +48,9 @@ fn escapes_html_special_chars_in_summary() {
 }
 
 #[test]
-fn flattens_inline_markup_in_title() {
-    assert!(h("::: details \"see /here/\"\nx\n:::").contains("<summary>see here</summary>"));
+fn summary_renders_inline_markup_in_title() {
+    assert!(h("::: details \"a *b* `c`\"\nHidden.\n:::")
+        .contains("<summary>a <strong>b</strong> <code>c</code></summary>"));
 }
 
 #[test]
@@ -63,17 +64,34 @@ fn hardens_authored_attributes() {
 
 #[test]
 fn summary_keeps_code_link_emphasis_text() {
-    // carve-js collects code `value` and emphasis/link `children`.
-    assert!(h("::: details \"a `code` b\"\nx\n:::").contains("<summary>a code b</summary>"));
-    assert!(h("::: details \"a [link](x) b\"\nx\n:::").contains("<summary>a link b</summary>"));
-    assert!(h("::: details \"a *bold* b\"\nx\n:::").contains("<summary>a bold b</summary>"));
+    assert!(h("::: details \"a `code` b\"\nx\n:::")
+        .contains("<summary>a <code>code</code> b</summary>"));
+    assert!(h("::: details \"a [link](x) b\"\nx\n:::")
+        .contains("<summary>a <a href=\"x\">link</a> b</summary>"));
+    assert!(h("::: details \"a *bold* b\"\nx\n:::")
+        .contains("<summary>a <strong>bold</strong> b</summary>"));
 }
 
 #[test]
-fn summary_drops_image_alt_matching_carve_js() {
-    // carve-js drops image alt (the image node carries no `value`/children
-    // array its walk picks up): `a ![alt](x) b` -> `a  b`.
-    assert!(h("::: details \"a ![alt text](x.png) b\"\nx\n:::").contains("<summary>a  b</summary>"));
+fn summary_renders_image_only_title_without_fallback() {
+    assert!(h("::: details \"![alt](/x.png)\"\nx\n:::")
+        .contains("<summary><img src=\"/x.png\" alt=\"alt\"></summary>"));
+}
+
+#[test]
+fn empty_title_uses_default_summary() {
+    assert!(h("::: details \"\"\nx\n:::").contains("<summary>Details</summary>"));
+}
+
+#[test]
+fn static_summary_renders_inline_markup() {
+    let ext = Details::new();
+    let opts = Options::new()
+        .with_extension(&ext)
+        .with_mode(carve::Mode::Static);
+    let out = carve::to_html_with_options("::: details \"a *b* `c`\"\nx\n:::", &opts);
+    assert!(out.contains("<details open>"), "{out}");
+    assert!(out.contains("<summary>a <strong>b</strong> <code>c</code></summary>"));
 }
 
 #[test]

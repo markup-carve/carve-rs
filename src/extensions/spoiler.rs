@@ -22,7 +22,7 @@
 //! `on*` / `srcdoc` / `formaction` and neutralizes dangerous values), so a
 //! `{onclick=...}` can never reach the output.
 
-use crate::ast::{Attrs, BlockExtension, BlockNode, Document, InlineExtension, InlineNode};
+use crate::ast::{Attrs, BlockExtension, BlockNode, Document, InlineExtension};
 use crate::escape::escape_attr;
 use crate::extension::{BeforeRenderContext, CarveExtension, RenderContext};
 use crate::render::render_attrs_after_class;
@@ -104,9 +104,16 @@ impl CarveExtension for Spoiler {
         let level = ctx.level();
         let inner_pad = ctx.indent(level + 1);
         let pad = ctx.indent(level);
-        let summary = match node.summary.as_deref() {
-            Some(t) if !t.trim().is_empty() => t,
-            _ => DEFAULT_SUMMARY,
+        let summary = match &node.summary {
+            Some(nodes) => {
+                let rendered = ctx.render_inlines(nodes);
+                if rendered.trim().is_empty() {
+                    DEFAULT_SUMMARY.to_string()
+                } else {
+                    rendered
+                }
+            }
+            None => DEFAULT_SUMMARY.to_string(),
         };
         let body = ctx.render_blocks_at(&node.children, level + 1);
         // Static mode: the disclosure is revealed and expanded into a flat,
@@ -128,7 +135,7 @@ impl CarveExtension for Spoiler {
             };
             return Some(format!(
                 "{open}\n{inner_pad}<h3 class=\"spoiler-title\">{}</h3>\n{label_line}{body}\n{pad}</section>",
-                ctx.escape_html(summary),
+                summary,
             ));
         }
         let open = format!(
@@ -137,7 +144,7 @@ impl CarveExtension for Spoiler {
         );
         Some(format!(
             "{open}\n{inner_pad}<summary>{}</summary>\n{body}\n{pad}</details>",
-            ctx.escape_html(summary),
+            summary,
         ))
     }
 }
@@ -173,12 +180,11 @@ fn rewrite_blocks(blocks: &mut [BlockNode]) {
         match block {
             BlockNode::Admonition(a) if a.kind == ROLE => {
                 rewrite_blocks(&mut a.children);
-                let summary = a.title.as_deref().map(inline_text);
                 *block = BlockNode::Extension(BlockExtension {
                     attrs: a.attrs.take(),
                     name: CARRIER.to_string(),
                     children: std::mem::take(&mut a.children),
-                    summary,
+                    summary: a.title.take(),
                     label: a.label.take(),
                 });
             }
@@ -201,24 +207,4 @@ fn rewrite_blocks(blocks: &mut [BlockNode]) {
             _ => {}
         }
     }
-}
-
-/// Flatten an inline tree to its text content for the summary title (mirrors the
-/// `details` extension's `inline_text`).
-fn inline_text(nodes: &[InlineNode]) -> String {
-    let mut out = String::new();
-    for node in nodes {
-        match node {
-            InlineNode::Text(s) => out.push_str(s),
-            InlineNode::Code(s, _) => out.push_str(s),
-            InlineNode::Emphasis(e) => out.push_str(&inline_text(&e.children)),
-            InlineNode::Link(l) => out.push_str(&inline_text(&l.children)),
-            InlineNode::Span(s) => out.push_str(&inline_text(&s.children)),
-            InlineNode::Extension(e) => out.push_str(&inline_text(&e.children)),
-            InlineNode::CriticInsert(c) => out.push_str(&inline_text(&c.children)),
-            InlineNode::CriticDelete(c) => out.push_str(&inline_text(&c.children)),
-            _ => {}
-        }
-    }
-    out
 }

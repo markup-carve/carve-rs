@@ -5,7 +5,7 @@
 //! renderer keyed on the `admonition` node type; carve-rs has no per-node
 //! render hook for an existing node, so this runs as a `before_render`
 //! transform that rewrites every `details` admonition into a
-//! [`BlockNode::Extension`] carrier (stashing the flattened title in its
+//! [`BlockNode::Extension`] carrier (stashing the parsed title in its
 //! `summary` field), then renders that carrier via
 //! [`CarveExtension::render_block_extension`]. The inner content is rendered
 //! by the core renderer at the correct nesting level
@@ -13,7 +13,7 @@
 //! identically wherever it sits - top level, inside a list item, inside a
 //! blockquote.
 
-use crate::ast::{BlockExtension, BlockNode, Document, InlineNode};
+use crate::ast::{BlockExtension, BlockNode, Document};
 use crate::extension::{BeforeRenderContext, CarveExtension, RenderContext};
 use crate::render::{render_attrs, render_attrs_without_keys};
 
@@ -86,9 +86,16 @@ impl CarveExtension for Details {
         let level = ctx.level();
         let inner_pad = ctx.indent(level + 1);
         let pad = ctx.indent(level);
-        let summary = match node.summary.as_deref() {
-            Some(t) if !t.trim().is_empty() => t,
-            _ => "Details",
+        let summary = match &node.summary {
+            Some(nodes) => {
+                let rendered = ctx.render_inlines(nodes);
+                if rendered.trim().is_empty() {
+                    "Details".to_string()
+                } else {
+                    rendered
+                }
+            }
+            None => "Details".to_string(),
         };
         let body = ctx.render_blocks_at(&node.children, level + 1);
         // A disclosure is NOT flattened in static mode: it stays a native
@@ -108,25 +115,24 @@ impl CarveExtension for Details {
         };
         Some(format!(
             "{open}\n{inner_pad}<summary>{}</summary>\n{body}\n{pad}</details>",
-            ctx.escape_html(summary),
+            summary,
         ))
     }
 }
 
 /// Rewrite every `details` admonition in `blocks` (recursively) into a
 /// `carve-details` extension carrier, preserving its attributes and children
-/// and stashing the flattened title text in the carrier's `summary` field.
+/// and stashing the parsed title in the carrier's `summary` field.
 fn rewrite_blocks(blocks: &mut [BlockNode]) {
     for block in blocks.iter_mut() {
         match block {
             BlockNode::Admonition(a) if a.kind == "details" => {
                 rewrite_blocks(&mut a.children);
-                let summary = a.title.as_deref().map(inline_text);
                 *block = BlockNode::Extension(BlockExtension {
                     attrs: a.attrs.take(),
                     name: CARRIER.to_string(),
                     children: std::mem::take(&mut a.children),
-                    summary,
+                    summary: a.title.take(),
                     label: a.label.take(),
                 });
             }
@@ -149,37 +155,4 @@ fn rewrite_blocks(blocks: &mut [BlockNode]) {
             _ => {}
         }
     }
-}
-
-/// Flatten an inline tree to its text content (used for the summary title).
-/// Inline markup is dropped: `"see /here/"` -> `see here`.
-///
-/// Mirrors carve-js `details.ts` `inlineText`, which collects each node's
-/// string `value` (text, inline code) and recurses into its inline-children
-/// array (`children` / `content`: emphasis, link, span, the inline extension,
-/// critic insert/delete). Every other inline node - image, abbreviation,
-/// mention, tag, math, autolink, emoji, cross-ref, footnote, citation - carries
-/// its visible text in a differently named field, so carve-js's generic walk
-/// drops it; this match drops the same set, byte-for-byte, so a title using
-/// those nodes flattens identically across implementations.
-fn inline_text(nodes: &[InlineNode]) -> String {
-    let mut out = String::new();
-    for node in nodes {
-        match node {
-            // String `value` fields (carve-js: `n.value`).
-            InlineNode::Text(s) => out.push_str(s),
-            InlineNode::Code(s, _) => out.push_str(s),
-            // Inline-children arrays (carve-js: `n.children ?? n.content`).
-            InlineNode::Emphasis(e) => out.push_str(&inline_text(&e.children)),
-            InlineNode::Link(l) => out.push_str(&inline_text(&l.children)),
-            InlineNode::Span(s) => out.push_str(&inline_text(&s.children)),
-            InlineNode::Extension(e) => out.push_str(&inline_text(&e.children)),
-            InlineNode::CriticInsert(c) => out.push_str(&inline_text(&c.children)),
-            InlineNode::CriticDelete(c) => out.push_str(&inline_text(&c.children)),
-            // Everything else carries no `value`/children array carve-js would
-            // pick up, so it is dropped (matches carve-js exactly).
-            _ => {}
-        }
-    }
-    out
 }

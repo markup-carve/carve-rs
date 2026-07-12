@@ -130,3 +130,35 @@ fn ansi_table_header_code_keeps_nested_code_color() {
     assert!(out.contains("\x1b[1m\x1b[93ma|b\x1b[0m\x1b[0m"), "{out:?}");
     assert!(out.contains("\x1b[1mc\x1b[0m"), "{out:?}");
 }
+
+#[test]
+fn markdown_admonition_title_unwraps_nested_strong_only_in_title() {
+    assert_eq!(
+        carve::to_markdown("::: note \"a *b* `c`\"\nx\n:::"),
+        "**a b `c`**\n\nx\n"
+    );
+    assert_eq!(
+        carve::to_markdown("::: note \"a /em/ d\"\nx\n:::"),
+        "**a *em* d**\n\nx\n"
+    );
+    assert_eq!(
+        carve::to_markdown("::: note \"t\"\n*a*\n:::"),
+        "**t**\n\n**a**\n"
+    );
+}
+
+#[test]
+fn ansi_admonition_title_unwraps_nested_strong_only_in_title() {
+    assert_eq!(
+        carve::to_ansi("::: note \"a *b* `c`\"\nx\n:::"),
+        "\x1b[1ma b \x1b[93mc\x1b[0m\x1b[0m\n\nx\n"
+    );
+    assert_eq!(
+        carve::to_ansi("::: note \"a /em/ d\"\nx\n:::"),
+        "\x1b[1ma \x1b[3mem\x1b[0m d\x1b[0m\n\nx\n"
+    );
+    assert_eq!(
+        carve::to_ansi("::: note \"t\"\n*a*\n:::"),
+        "\x1b[1mt\x1b[0m\n\n\x1b[1ma\x1b[0m\n"
+    );
+}

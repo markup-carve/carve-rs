@@ -111,7 +111,7 @@ fn rewrite_blocks(blocks: &mut [BlockNode]) {
                         attrs: a.attrs.take(),
                         name: CARRIER.to_string(),
                         children: std::mem::take(&mut a.children),
-                        summary: a.title.take().map(|t| inline_text(&t)),
+                        summary: a.title.take(),
                         label: a.label.take(),
                     });
                 }
@@ -234,9 +234,10 @@ fn render_table(node: &BlockExtension, ctx: &RenderContext<'_>) -> String {
 
     let mut lines: Vec<String> = Vec::new();
 
-    if let Some(summary) = node.summary.as_deref() {
-        if !summary.trim().is_empty() {
-            lines.push(format!("  <caption>{}</caption>", ctx.escape_html(summary)));
+    if let Some(summary) = &node.summary {
+        let rendered = ctx.render_inlines(summary);
+        if !rendered.trim().is_empty() {
+            lines.push(format!("  <caption>{rendered}</caption>"));
         }
     }
     // Graceful degradation: a grouping `[label]` is uncommon on a list-table,
@@ -680,27 +681,6 @@ fn cell_attrs(attrs: Option<&Attrs>, ctx: &RenderContext<'_>) -> String {
                     }
                 }
             }
-        }
-    }
-    out
-}
-
-/// Flatten an inline tree to its text content (used for the caption title).
-/// Mirrors the `details` extension's `inline_text`, dropping the same set of
-/// nodes so a caption flattens identically across implementations.
-fn inline_text(nodes: &[InlineNode]) -> String {
-    let mut out = String::new();
-    for node in nodes {
-        match node {
-            InlineNode::Text(s) => out.push_str(s),
-            InlineNode::Code(s, _) => out.push_str(s),
-            InlineNode::Emphasis(e) => out.push_str(&inline_text(&e.children)),
-            InlineNode::Link(l) => out.push_str(&inline_text(&l.children)),
-            InlineNode::Span(s) => out.push_str(&inline_text(&s.children)),
-            InlineNode::Extension(e) => out.push_str(&inline_text(&e.children)),
-            InlineNode::CriticInsert(c) => out.push_str(&inline_text(&c.children)),
-            InlineNode::CriticDelete(c) => out.push_str(&inline_text(&c.children)),
-            _ => {}
         }
     }
     out

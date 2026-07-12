@@ -484,6 +484,18 @@ fn spoiler_inline_renders_span() {
 }
 
 #[test]
+fn spoiler_block_summary_renders_inline_markup() {
+    // <summary> is phrasing content: the title renders through the inline
+    // pipeline (parity with carve-js / carve-php).
+    let ext = Spoiler::new();
+    let opts = Options::new().with_extension(&ext);
+    assert_eq!(
+        carve::to_html_with_options("::: spoiler \"a *b*\"\nHidden.\n:::", &opts),
+        "<details class=\"spoiler\">\n  <summary>a <strong>b</strong></summary>\n  <p>Hidden.</p>\n</details>"
+    );
+}
+
+#[test]
 fn spoiler_inline_merges_classes_and_strips_event_handler() {
     let ext = Spoiler::new();
     let opts = Options::new().with_extension(&ext);
