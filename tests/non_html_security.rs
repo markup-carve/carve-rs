@@ -46,6 +46,8 @@ fn markdown_percent_encodes_destination_breakouts() {
                 src: "https://e.com/a b<c>".to_string(),
                 alt: "x".to_string(),
                 title: None,
+                ref_label: None,
+                raw_ref: None,
             })],
         })],
     };
@@ -140,6 +142,8 @@ fn markdown_escapes_image_alt_label_metacharacters() {
                 src: "/safe".to_string(),
                 alt: r"x](javascript:alert(1))![y\z".to_string(),
                 title: None,
+                ref_label: None,
+                raw_ref: None,
             })],
         })],
     });
@@ -198,6 +202,8 @@ fn markdown_strips_control_bytes_from_author_leaf_fields() {
                         src: "img".to_string(),
                         alt: format!("alt{c}"),
                         title: Some(format!("ititle{c}")),
+                        ref_label: None,
+                        raw_ref: None,
                     }),
                     carve::InlineNode::Abbreviation(carve::Abbreviation {
                         abbr: format!("abbr{c}"),
@@ -267,6 +273,8 @@ fn plain_and_ansi_strip_control_bytes_from_author_leaf_fields() {
                 src: "img".to_string(),
                 alt: format!("alt{c}"),
                 title: None,
+                ref_label: None,
+                raw_ref: None,
             }),
             carve::BlockNode::Paragraph(carve::Paragraph {
                 attrs: None,
@@ -276,6 +284,8 @@ fn plain_and_ansi_strip_control_bytes_from_author_leaf_fields() {
                         src: "img".to_string(),
                         alt: format!("ialt{c}"),
                         title: None,
+                        ref_label: None,
+                        raw_ref: None,
                     }),
                     carve::InlineNode::Abbreviation(carve::Abbreviation {
                         abbr: format!("abbr{c}"),

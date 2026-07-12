@@ -145,6 +145,13 @@ fn parse_with_options_mode(source: &str, options: &Options<'_>, mode: ParseMode)
     if matches!(mode, ParseMode::Html) {
         apply_abbreviations(&mut doc);
         resolve_crossrefs(&mut doc, options.lowercase_heading_ids);
+        // A resolved reference image lands as a one-image paragraph (the
+        // syntactic block-image check ran before resolution); promote it to a
+        // block image like a standalone direct image, matching carve-php.
+        promote_block_images(&mut doc.children);
+        for blocks in doc.footnote_defs.values_mut() {
+            promote_block_images(blocks);
+        }
         // Single post-resolution pass: a link may not contain another link. Runs
         // after reference and cross-reference resolution because both produce
         // `Link` nodes only at that stage; running earlier would miss the anchors
@@ -3820,9 +3827,15 @@ fn parse_inline_context(
             }
         }
 
-        // Image: ![alt](src)
+        // Image: ![alt](src), then reference image ![alt][ref] / ![alt][].
         if c == b'!' && bytes.get(i + 1) == Some(&b'[') {
             if let Some((img, consumed)) = parse_image_at(bytes, i, &bracket_matches) {
+                flush_text(&mut out, &mut buf);
+                out.push(InlineNode::Image(img));
+                i += consumed;
+                continue;
+            }
+            if let Some((img, consumed)) = parse_reference_image(bytes, i, &bracket_matches) {
                 flush_text(&mut out, &mut buf);
                 out.push(InlineNode::Image(img));
                 i += consumed;
@@ -4347,6 +4360,49 @@ fn parse_image_at(bytes: &[u8], start: usize, matches: &[usize]) -> Option<(Imag
             src,
             alt,
             title,
+            ref_label: None,
+            raw_ref: None,
+        },
+        after - start,
+    ))
+}
+
+/// Parse a reference image `![alt][ref]` / collapsed `![alt][]` — the image
+/// form of a reference link, mirroring `parse_reference_link`. `src` is empty
+/// until `resolve_reference_links` fills it from the matching `[label]: url`
+/// def; the full form allows an empty alt (label = ref), collapsed needs a
+/// non-empty alt (label = alt).
+fn parse_reference_image(bytes: &[u8], start: usize, matches: &[usize]) -> Option<(Image, usize)> {
+    if bytes.get(start) != Some(&b'!') || bytes.get(start + 1) != Some(&b'[') {
+        return None;
+    }
+    let (alt, after_alt) = read_bracketed_cached(bytes, start + 1, matches)?;
+    if bytes.get(after_alt) != Some(&b'[') {
+        return None;
+    }
+    let (label, after_label) = read_bracketed_cached(bytes, after_alt, matches)?;
+    // Collapsed `![alt][]` reuses the alt as the label, so it needs a non-empty
+    // alt; the full `![alt][ref]` form accepts an empty alt (label = ref).
+    if label.is_empty() && alt.is_empty() {
+        return None;
+    }
+    let ref_label = if label.is_empty() { alt.clone() } else { label };
+    let mut attrs = None;
+    let mut after = after_label;
+    if bytes.get(after) == Some(&b'{') {
+        if let Some((parsed_attrs, next)) = read_attrs_at(bytes, after) {
+            attrs = Some(parsed_attrs);
+            after = next;
+        }
+    }
+    Some((
+        Image {
+            attrs,
+            src: String::new(),
+            alt,
+            title: None,
+            ref_label: Some(ref_label),
+            raw_ref: Some(std::str::from_utf8(&bytes[start..after]).ok()?.to_string()),
         },
         after - start,
     ))
@@ -5517,10 +5573,73 @@ fn resolve_reference_links_inline(
                 }
                 out.push(node);
             }
+            InlineNode::Image(img) => {
+                if let Some(label) = &img.ref_label {
+                    if let Some(def) = defs.get(label) {
+                        img.src = def.href.clone();
+                        img.title = def.title.clone();
+                        img.ref_label = None;
+                        img.raw_ref = None;
+                        out.push(node);
+                    } else if preserve_unresolved {
+                        out.push(node);
+                    } else {
+                        // Unresolved image ref -> literal source. An image ref
+                        // never matches heading text (unlike a link ref).
+                        out.push(InlineNode::Text(img.raw_ref.clone().unwrap_or_default()));
+                    }
+                } else {
+                    out.push(node);
+                }
+            }
             _ => out.push(node),
         }
     }
     *nodes = out;
+}
+
+/// Promote a paragraph whose sole child is a (resolved) image to a block-level
+/// image, matching the standalone inline-image rule (`detect_block_image`) and
+/// carve-php. Recurses into container blocks. An unresolved reference image
+/// already became a `Text` node, so its paragraph is left untouched.
+fn promote_block_images(blocks: &mut [BlockNode]) {
+    for block in blocks.iter_mut() {
+        let single_image = matches!(
+            block,
+            BlockNode::Paragraph(p)
+                if p.children.len() == 1 && matches!(p.children[0], InlineNode::Image(_))
+        );
+        if single_image {
+            // Take the children out first so the paragraph borrow ends before
+            // `block` is reassigned.
+            let mut children = match block {
+                BlockNode::Paragraph(p) => std::mem::take(&mut p.children),
+                _ => unreachable!(),
+            };
+            if let InlineNode::Image(img) = children.remove(0) {
+                *block = BlockNode::BlockImage(img);
+            }
+            continue;
+        }
+        match block {
+            BlockNode::BlockQuote(b) => promote_block_images(&mut b.children),
+            BlockNode::Admonition(a) => promote_block_images(&mut a.children),
+            BlockNode::Div(d) => promote_block_images(&mut d.children),
+            BlockNode::List(l) => {
+                for item in &mut l.items {
+                    promote_block_images(&mut item.children);
+                }
+            }
+            BlockNode::DefinitionList(d) => {
+                for item in &mut d.items {
+                    for def in &mut item.definitions {
+                        promote_block_images(def);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
 }
 
 fn is_collapsed_reference(link: &Link) -> bool {
