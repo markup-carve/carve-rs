@@ -3654,6 +3654,9 @@ fn apply_attrs_to_block(node: &mut BlockNode, attrs: Attrs) {
         BlockNode::DefinitionList(n) => n.attrs = Some(attrs),
         BlockNode::Figure(n) => n.attrs = Some(attrs),
         BlockNode::Extension(n) => n.attrs = Some(attrs),
+        // A direct block image (`{#id}\n![…](…)`) carries the leading attrs on
+        // the `<img>` itself; the image's own inline attrs win on conflict (§15).
+        BlockNode::BlockImage(img) => merge_leading_attrs(&mut img.attrs, attrs),
         _ => {}
     }
 }
@@ -5770,12 +5773,18 @@ fn promote_block_images(blocks: &mut [BlockNode], figures_only: bool) {
             );
         if single_image {
             // Take the children out first so the paragraph borrow ends before
-            // `block` is reassigned.
-            let mut children = match block {
-                BlockNode::Paragraph(p) => std::mem::take(&mut p.children),
+            // `block` is reassigned. A leading block-attribute line (`{#id}`)
+            // landed on the paragraph; carry it onto the promoted block image
+            // (its own inline attrs win on conflict, §15), matching a direct
+            // block image -- otherwise the id would be lost with the wrapper.
+            let (mut children, para_attrs) = match block {
+                BlockNode::Paragraph(p) => (std::mem::take(&mut p.children), p.attrs.take()),
                 _ => unreachable!(),
             };
-            if let InlineNode::Image(img) = children.remove(0) {
+            if let InlineNode::Image(mut img) = children.remove(0) {
+                if let Some(attrs) = para_attrs {
+                    merge_leading_attrs(&mut img.attrs, attrs);
+                }
                 *block = BlockNode::BlockImage(img);
             }
             continue;

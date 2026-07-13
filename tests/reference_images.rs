@@ -217,3 +217,36 @@ fn non_breaking_space_is_caption_content() {
         "<figure>\n  <img src=\"/u\" alt=\"a\">\n  <figcaption>&nbsp;</figcaption>\n</figure>"
     );
 }
+
+// A leading block-attribute line (`{#id}`) before a sole block image lands on
+// the promoted bare `<img>` (§15) -- consistent with an inline `![…](…){#id}`
+// and with a sole image rendering bare (no `<p>` wrapper). A following caption
+// still puts the id on the `<figure>`.
+#[test]
+fn leading_attr_line_on_direct_block_image() {
+    assert_eq!(h("{#f}\n![a](/u)"), "<img src=\"/u\" alt=\"a\" id=\"f\">");
+}
+
+#[test]
+fn leading_attr_line_on_reference_block_image() {
+    assert_eq!(
+        h("{#f}\n![a][r]\n\n[r]: /u"),
+        "<img src=\"/u\" alt=\"a\" id=\"f\">"
+    );
+}
+
+#[test]
+fn leading_attr_line_merges_with_image_own_attrs() {
+    assert_eq!(
+        h("{#f}\n![a][r]{.c}\n\n[r]: /u"),
+        "<img src=\"/u\" alt=\"a\" id=\"f\" class=\"c\">"
+    );
+}
+
+#[test]
+fn leading_attr_line_with_caption_stays_on_figure() {
+    assert_eq!(
+        h("{#f}\n![a](/u)\n^ cap"),
+        "<figure id=\"f\">\n  <img src=\"/u\" alt=\"a\">\n  <figcaption>cap</figcaption>\n</figure>"
+    );
+}
