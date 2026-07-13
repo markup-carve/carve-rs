@@ -676,7 +676,9 @@ fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<BlockNode>
                 cur.consume();
                 continue;
             }
-            if is_heading_marker_line(next) || next.starts_with("^ ") || is_comment_fence_line(next)
+            if is_heading_marker_line(next)
+                || caption_content(next).is_some()
+                || is_comment_fence_line(next)
             {
                 break;
             }
@@ -789,7 +791,7 @@ fn parse_equation_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<B
     // Non-blank, non-caption prose on the very next line: let parse_paragraph
     // fold the math and that text into one paragraph (preserve existing behavior).
     if let Some(next) = cur.lines.get(cur.pos + 1).copied() {
-        if !is_blank_line(next) && next.strip_prefix("^ ").is_none() {
+        if !is_blank_line(next) && caption_content(next).is_none() {
             return None;
         }
     }
@@ -1321,7 +1323,7 @@ fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         // and it already returns false for bullet/task/ordered markers, so we
         // simply defer to it. A heading is the sole construct a list marker
         // would otherwise end, and headings still interrupt via that predicate.
-        if !para_open || is_blank_line(line) || line.starts_with("^ ") || {
+        if !para_open || is_blank_line(line) || caption_content(line).is_some() || {
             let line_owned = line.to_string();
             interrupts_lazy_continuation(cur, &line_owned)
         } {
@@ -2599,7 +2601,7 @@ fn image_is_block(cur: &mut LineCursor) -> bool {
     let Some(next) = cur.lines.get(cur.pos + 1).copied() else {
         return true;
     };
-    if is_blank_line(next) || next.strip_prefix("^ ").is_some() {
+    if is_blank_line(next) || caption_content(next).is_some() {
         return true;
     }
     // Peek-1 interruption: test the next line as if it were current, then rewind.
@@ -2620,11 +2622,11 @@ fn consume_caption(cur: &mut LineCursor, options: &Options<'_>) -> Option<Vec<In
         cur.pos = saved;
         return None;
     };
-    let Some(text) = line.strip_prefix("^ ") else {
+    let Some(text) = caption_content(line) else {
         cur.pos = saved;
         return None;
     };
-    let mut joined = trim_ascii_end(text).to_string();
+    let mut joined = text.to_string();
     cur.consume();
     // A caption is multi-line inline content, so it folds following lines like a
     // PARAGRAPH (§10), NOT like a heading: a list marker FOLDS in (djot -- a
@@ -2633,7 +2635,7 @@ fn consume_caption(cur: &mut LineCursor, options: &Options<'_>) -> Option<Vec<In
     // interrupts and ends the caption. A blank line or a further `^ ` caption
     // line also ends it. Continuation lines join with `\n`.
     while let Some(next) = cur.peek() {
-        if is_blank_line(next) || next.starts_with("^ ") {
+        if is_blank_line(next) || caption_content(next).is_some() {
             break;
         }
         let next_owned = next.to_string();
@@ -5646,13 +5648,74 @@ fn resolve_reference_links_inline(
 /// already became a `Text` node, so its paragraph is left untouched.
 /// Length (in bytes) of a leading `^` + one-or-more whitespace caption marker
 /// (`RE_CAPTION = /^\^\s+/`), or `None` when the text does not open a caption.
-fn caption_marker_len(text: &str) -> Option<usize> {
-    let rest = text.strip_prefix('^')?;
-    let ws = rest.len() - rest.trim_start().len();
-    if ws == 0 {
+/// A caption line mirrors a heading's first line (`detect_heading`): `^` +
+/// one-or-more literal spaces (the grammar delimiter is a space, not a tab) +
+/// non-empty content. Returns the caption text with leading spaces skipped and
+/// trailing whitespace trimmed. None when there is no space after `^`, the
+/// delimiter is a tab, or the content is empty (`^ ` alone).
+fn caption_content(line: &str) -> Option<&str> {
+    let bytes = line.as_bytes();
+    if bytes.first() != Some(&b'^') || bytes.get(1) != Some(&b' ') {
         return None;
     }
-    Some(1 + ws)
+    let mut start = 1;
+    while start < bytes.len() && bytes[start] == b' ' {
+        start += 1;
+    }
+    let text = trim_ascii_end(&line[start..]);
+    if text.is_empty() {
+        return None;
+    }
+    Some(text)
+}
+
+/// Byte length of a caption marker (`^` + one-or-more spaces) at the START of an
+/// inline Text node, used when splitting a reference-image figure caption off
+/// its leading text. Mirrors `caption_content`'s delimiter: a space, not a tab.
+/// Content-emptiness is decided separately (`caption_first_line_has_content`),
+/// because the caption's content may live in a following inline node (`^ *b*`,
+/// where the marker node is just `"^ "` and `*b*` is an Emphasis sibling).
+fn caption_marker_len(text: &str) -> Option<usize> {
+    let bytes = text.as_bytes();
+    if bytes.first() != Some(&b'^') || bytes.get(1) != Some(&b' ') {
+        return None;
+    }
+    let mut n = 1;
+    while n < bytes.len() && bytes[n] == b' ' {
+        n += 1;
+    }
+    Some(n)
+}
+
+/// Whether a string carries caption content: at least one non-ASCII-whitespace
+/// byte. A non-breaking space (U+00A0) and any other non-ASCII byte count as
+/// content, matching the direct-caption path (`caption_content` trims only
+/// ASCII whitespace) and carve-php's byte-mode `\S`. `str::trim` is
+/// Unicode-aware and would wrongly drop NBSP, so test bytes directly.
+fn has_caption_content(s: &str) -> bool {
+    s.bytes().any(|b| !b.is_ascii_whitespace())
+}
+
+/// Whether a `[Image, SoftBreak, "^ …", …]` paragraph's caption carries any
+/// content on its FIRST line: text after the `^ ` marker on the marker node, or
+/// any following inline node before the first soft break. Rejects an empty
+/// first-line caption (`^ ` with content only on later folded lines, or none).
+fn caption_first_line_has_content(children: &[InlineNode]) -> bool {
+    if let InlineNode::Text(t) = &children[2] {
+        if let Some(n) = caption_marker_len(t) {
+            if has_caption_content(&t[n..]) {
+                return true;
+            }
+        }
+    }
+    for child in &children[3..] {
+        match child {
+            InlineNode::SoftBreak => break,
+            InlineNode::Text(t) if !has_caption_content(t) => continue,
+            _ => return true,
+        }
+    }
+    false
 }
 
 fn promote_block_images(blocks: &mut [BlockNode]) {
@@ -5690,6 +5753,7 @@ fn promote_block_images(blocks: &mut [BlockNode]) {
                     && matches!(p.children[0], InlineNode::Image(_))
                     && matches!(p.children[1], InlineNode::SoftBreak)
                     && matches!(&p.children[2], InlineNode::Text(t) if caption_marker_len(t).is_some())
+                    && caption_first_line_has_content(&p.children)
         );
         if ref_figure {
             let mut children = match block {

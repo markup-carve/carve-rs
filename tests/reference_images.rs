@@ -158,3 +158,62 @@ fn bare_image_before_interrupter_stays_standalone() {
         "<img src=\"/u\" alt=\"a\">\n<section id=\"H\">\n  <h1>H</h1>\n</section>"
     );
 }
+
+// The caption delimiter mirrors a heading's first line (§4/§553): `^` + one-or-
+// more literal SPACES (not a tab) + non-empty content. `^ ` alone, `^\t…`, or a
+// `^ ` whose content only appears on a later folded line is NOT a caption.
+#[test]
+fn empty_caption_is_not_a_caption() {
+    assert_eq!(h("![a](/u)\n^ "), "<p><img src=\"/u\" alt=\"a\">\n^</p>");
+}
+
+#[test]
+fn caption_with_content_only_on_a_later_line_is_not_a_caption() {
+    assert_eq!(
+        h("![a](/u)\n^ \nmore"),
+        "<p><img src=\"/u\" alt=\"a\">\n^ \nmore</p>"
+    );
+}
+
+#[test]
+fn tab_after_caret_is_not_a_caption_delimiter() {
+    assert_eq!(
+        h("![a](/u)\n^\tx"),
+        "<p><img src=\"/u\" alt=\"a\">\n^\tx</p>"
+    );
+}
+
+#[test]
+fn extra_leading_spaces_after_caret_fold_into_the_delimiter() {
+    assert_eq!(
+        h("![a](/u)\n^  x"),
+        "<figure>\n  <img src=\"/u\" alt=\"a\">\n  <figcaption>x</figcaption>\n</figure>"
+    );
+}
+
+#[test]
+fn reference_image_empty_caption_is_not_promoted() {
+    assert_eq!(
+        h("![a][r]\n^ \n\n[r]: /u"),
+        "<p><img src=\"/u\" alt=\"a\">\n^</p>"
+    );
+}
+
+#[test]
+fn reference_image_caption_of_inline_markup_is_a_figure() {
+    assert_eq!(
+        h("![a][r]\n^ *b* c\n\n[r]: /u"),
+        "<figure>\n  <img src=\"/u\" alt=\"a\">\n  <figcaption><strong>b</strong> c</figcaption>\n</figure>"
+    );
+}
+
+// A non-breaking space (U+00A0) is caption content: "content" excludes only
+// ASCII whitespace, so `^ \u{00a0}` is a caption, matching the parser's NBSP
+// handling elsewhere and carve-php's byte-mode \S.
+#[test]
+fn non_breaking_space_is_caption_content() {
+    assert_eq!(
+        h("![a](/u)\n^ \u{00a0}"),
+        "<figure>\n  <img src=\"/u\" alt=\"a\">\n  <figcaption>&nbsp;</figcaption>\n</figure>"
+    );
+}
