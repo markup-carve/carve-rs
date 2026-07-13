@@ -122,3 +122,39 @@ fn leading_text_before_reference_image_is_not_a_figure() {
         "<p>x <img src=\"/u\" alt=\"a\">\n^ cap</p>"
     );
 }
+
+// Grammar §1722 I3: a bare image is not a block of its own; it stays inline in a
+// paragraph, rendering as a bare block image only when it stands alone.
+#[test]
+fn bare_image_plus_text_is_one_paragraph() {
+    assert_eq!(
+        h("![a](/u)\nmore"),
+        "<p><img src=\"/u\" alt=\"a\">\nmore</p>"
+    );
+}
+
+#[test]
+fn two_bare_images_are_one_paragraph() {
+    assert_eq!(
+        h("![a](/u)\n![b](/u)"),
+        "<p><img src=\"/u\" alt=\"a\">\n<img src=\"/u\" alt=\"b\"></p>"
+    );
+}
+
+#[test]
+fn bare_image_plus_list_marker_folds() {
+    assert_eq!(h("![a](/u)\n- x"), "<p><img src=\"/u\" alt=\"a\">\n- x</p>");
+}
+
+#[test]
+fn bare_image_alone_is_block() {
+    assert_eq!(h("![a](/u)"), "<img src=\"/u\" alt=\"a\">");
+}
+
+#[test]
+fn bare_image_before_interrupter_stays_standalone() {
+    assert_eq!(
+        h("![a](/u)\n# H"),
+        "<img src=\"/u\" alt=\"a\">\n<section id=\"H\">\n  <h1>H</h1>\n</section>"
+    );
+}

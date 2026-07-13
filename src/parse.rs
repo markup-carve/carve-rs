@@ -747,15 +747,20 @@ fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<BlockNode>
         return Some(BlockNode::AbbreviationDef(abbr));
     }
     if let Some(img) = detect_block_image(line) {
-        cur.consume();
-        if let Some(caption) = consume_caption(cur, options) {
-            return Some(BlockNode::Figure(Figure {
-                attrs: None,
-                target: FigureTarget::Image(img),
-                caption,
-            }));
+        if image_is_block(cur) {
+            cur.consume();
+            if let Some(caption) = consume_caption(cur, options) {
+                return Some(BlockNode::Figure(Figure {
+                    attrs: None,
+                    target: FigureTarget::Image(img),
+                    caption,
+                }));
+            }
+            return Some(BlockNode::BlockImage(img));
         }
-        return Some(BlockNode::BlockImage(img));
+        // Not standalone: the image folds into a paragraph with the following
+        // content (parse_paragraph below); a sole-image paragraph is still
+        // promoted to a bare block image afterwards.
     }
     if let Some(matched) = try_extension_block(cur, options) {
         return Some(matched);
@@ -2583,6 +2588,27 @@ fn collect_definition_body(cur: &mut LineCursor) -> String {
         cur.consume();
     }
     lines.join("\n")
+}
+
+/// A bare image line is a block image (or figure) ONLY when it stands alone --
+/// the next line is blank / EOF, a `^ ` caption, or a paragraph interrupter.
+/// When the next line FOLDS (plain text, list marker, another bare image), the
+/// image stays inline in a paragraph with that content, per grammar §1722 I3
+/// ("an image is not a block of its own; it stays inline in the paragraph").
+fn image_is_block(cur: &mut LineCursor) -> bool {
+    let Some(next) = cur.lines.get(cur.pos + 1).copied() else {
+        return true;
+    };
+    if is_blank_line(next) || next.strip_prefix("^ ").is_some() {
+        return true;
+    }
+    // Peek-1 interruption: test the next line as if it were current, then rewind.
+    let next_owned = next.to_string();
+    let saved = cur.pos;
+    cur.pos += 1;
+    let interrupts = interrupts_paragraph(cur, &next_owned);
+    cur.pos = saved;
+    interrupts
 }
 
 fn consume_caption(cur: &mut LineCursor, options: &Options<'_>) -> Option<Vec<InlineNode>> {
