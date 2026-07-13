@@ -711,10 +711,13 @@ fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<BlockNode>
         // block is ordinary inline content, and the heading id derives from
         // the full literal text. Attributes attach via a PRECEDING
         // block-attribute line (the pending-attrs loop, PART 9 §15).
+        // §756 (NORMATIVE): strip the FINAL line's trailing whitespace only
+        // (trim_ascii_end -- ASCII whitespace, so a trailing NBSP survives; an
+        // interior trailing run before a soft break is preserved).
         return Some(BlockNode::Heading(Heading {
             attrs: None,
             level,
-            children: parse_inline_with_options(&joined, options),
+            children: parse_inline_with_options(trim_ascii_end(&joined), options),
         }));
     }
     if line.starts_with('>') {
@@ -845,8 +848,12 @@ fn detect_heading(line: &str) -> Option<(u8, &str)> {
     while start < bytes.len() && bytes[start] == b' ' {
         start += 1;
     }
-    let rest = trim_ascii_end(&line[start..]);
-    if rest.is_empty() {
+    // Return the content VERBATIM (leading tab kept, trailing kept): first-line
+    // trailing is interior once continuation lines fold in, so it is stripped
+    // only from the final assembled content (§756). The empty gate still tests a
+    // trailing-stripped view so `# `, `#  `, `# \t` are not headings.
+    let rest = &line[start..];
+    if trim_ascii_end(rest).is_empty() {
         return None;
     }
     Some((hashes as u8, rest))
@@ -874,8 +881,10 @@ fn heading_continuation_same_level(line: &str, level: u8) -> Option<&str> {
     while start < bytes.len() && bytes[start] == b' ' {
         start += 1;
     }
-    let rest = trim_ascii_end(&line[start..]);
-    if rest.is_empty() {
+    // Verbatim content (see detect_heading): a continuation line's trailing is
+    // interior, so only the final assembled content is trailing-stripped (§756).
+    let rest = &line[start..];
+    if trim_ascii_end(rest).is_empty() {
         return None;
     }
     Some(rest)
@@ -2658,7 +2667,11 @@ fn consume_caption(cur: &mut LineCursor, options: &Options<'_>) -> Option<Vec<In
         joined.push_str(next);
         cur.consume();
     }
-    Some(parse_caption_inline_with_options(&joined, options))
+    // §756 (NORMATIVE): strip the final line's trailing whitespace only.
+    Some(parse_caption_inline_with_options(
+        trim_ascii_end(&joined),
+        options,
+    ))
 }
 
 fn is_table_start(line: &str) -> bool {
@@ -5674,8 +5687,12 @@ fn caption_content(line: &str) -> Option<&str> {
     while start < bytes.len() && bytes[start] == b' ' {
         start += 1;
     }
-    let text = trim_ascii_end(&line[start..]);
-    if text.is_empty() {
+    // Verbatim content (see detect_heading): a caption folds continuation lines
+    // like a paragraph, so first-line trailing is interior; only the final
+    // assembled caption is trailing-stripped (§756). The gate still tests a
+    // trailing-stripped view so `^ ` / `^  ` / `^ \t` are not captions.
+    let text = &line[start..];
+    if trim_ascii_end(text).is_empty() {
         return None;
     }
     Some(text)
