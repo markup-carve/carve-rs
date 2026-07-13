@@ -148,15 +148,27 @@ fn parse_with_options_mode(source: &str, options: &Options<'_>, mode: ParseMode)
         // A resolved reference image lands as a one-image paragraph (the
         // syntactic block-image check ran before resolution); promote it to a
         // block image like a standalone direct image, matching carve-php.
-        promote_block_images(&mut doc.children);
+        promote_block_images(&mut doc.children, false);
         for blocks in doc.footnote_defs.values_mut() {
-            promote_block_images(blocks);
+            promote_block_images(blocks, false);
         }
         // Single post-resolution pass: a link may not contain another link. Runs
         // after reference and cross-reference resolution because both produce
         // `Link` nodes only at that stage; running earlier would miss the anchors
         // they create. Applied over document inline content and footnote bodies.
         enforce_no_nesting(&mut doc);
+    } else {
+        // Carve/fmt mode: promote image+caption paragraphs to figures too, so a
+        // caption serializes as an unescaped `^ …` line -- portable and
+        // round-tripping in every implementation. Without this the caption would
+        // stay a paragraph `[Image, SoftBreak, "^ …"]` and the leading `^` would
+        // be escaped to `\^`, which only carve-js's lenient parser reads back as
+        // a caption (carve-rs / carve-php read it as literal text, losing the
+        // figure). Reference-link resolution already ran above.
+        promote_block_images(&mut doc.children, true);
+        for blocks in doc.footnote_defs.values_mut() {
+            promote_block_images(blocks, true);
+        }
     }
     for ext in &options.extensions {
         doc = ext.after_parse(doc);
@@ -5718,13 +5730,27 @@ fn caption_first_line_has_content(children: &[InlineNode]) -> bool {
     false
 }
 
-fn promote_block_images(blocks: &mut [BlockNode]) {
+fn promote_block_images(blocks: &mut [BlockNode], figures_only: bool) {
     for block in blocks.iter_mut() {
-        let single_image = matches!(
-            block,
-            BlockNode::Paragraph(p)
-                if p.children.len() == 1 && matches!(p.children[0], InlineNode::Image(_))
-        );
+        // The sole-image -> block-image promotion is skipped in `figures_only`
+        // mode (the formatter): a paragraph and a bare block image serialize
+        // identically, so the only effect there would be dropping a leading
+        // block-attribute line (`{#id}`) that the paragraph carries but a bare
+        // block image cannot. The formatter keeps it a paragraph so those attrs
+        // survive.
+        //
+        // Only a REAL image (direct or resolved reference) promotes. An
+        // unresolved reference image keeps its `ref_label` and renders as
+        // literal text; in HTML mode it is already a Text node here, so the
+        // guard only matters for the parse-only formatter path, where the
+        // unresolved Image survives.
+        let single_image = !figures_only
+            && matches!(
+                block,
+                BlockNode::Paragraph(p)
+                    if p.children.len() == 1
+                        && matches!(&p.children[0], InlineNode::Image(img) if img.ref_label.is_none())
+            );
         if single_image {
             // Take the children out first so the paragraph borrow ends before
             // `block` is reassigned.
@@ -5750,14 +5776,18 @@ fn promote_block_images(blocks: &mut [BlockNode]) {
             block,
             BlockNode::Paragraph(p)
                 if p.children.len() >= 3
-                    && matches!(p.children[0], InlineNode::Image(_))
+                    && matches!(&p.children[0], InlineNode::Image(img) if img.ref_label.is_none())
                     && matches!(p.children[1], InlineNode::SoftBreak)
                     && matches!(&p.children[2], InlineNode::Text(t) if caption_marker_len(t).is_some())
                     && caption_first_line_has_content(&p.children)
         );
         if ref_figure {
-            let mut children = match block {
-                BlockNode::Paragraph(p) => std::mem::take(&mut p.children),
+            // Carry a leading block-attribute line (`{#id}` etc.) from the
+            // paragraph onto the figure, matching a direct-image figure (which
+            // takes the attrs at parse time) and carve-php -- otherwise
+            // `carve fmt` would drop it.
+            let (mut children, attrs) = match block {
+                BlockNode::Paragraph(p) => (std::mem::take(&mut p.children), p.attrs.take()),
                 _ => unreachable!(),
             };
             let InlineNode::Image(img) = children.remove(0) else {
@@ -5774,25 +5804,25 @@ fn promote_block_images(blocks: &mut [BlockNode]) {
                 }
             }
             *block = BlockNode::Figure(Figure {
-                attrs: None,
+                attrs,
                 target: FigureTarget::Image(img),
                 caption: children,
             });
             continue;
         }
         match block {
-            BlockNode::BlockQuote(b) => promote_block_images(&mut b.children),
-            BlockNode::Admonition(a) => promote_block_images(&mut a.children),
-            BlockNode::Div(d) => promote_block_images(&mut d.children),
+            BlockNode::BlockQuote(b) => promote_block_images(&mut b.children, figures_only),
+            BlockNode::Admonition(a) => promote_block_images(&mut a.children, figures_only),
+            BlockNode::Div(d) => promote_block_images(&mut d.children, figures_only),
             BlockNode::List(l) => {
                 for item in &mut l.items {
-                    promote_block_images(&mut item.children);
+                    promote_block_images(&mut item.children, figures_only);
                 }
             }
             BlockNode::DefinitionList(d) => {
                 for item in &mut d.items {
                     for def in &mut item.definitions {
-                        promote_block_images(def);
+                        promote_block_images(def, figures_only);
                     }
                 }
             }

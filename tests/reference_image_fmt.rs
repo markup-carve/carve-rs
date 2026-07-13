@@ -24,3 +24,58 @@ fn resolved_reference_image_formats_to_inline() {
     assert_eq!(carve::to_carve(src).trim(), "![alt](/u \"t\")");
     assert_eq!(carve::to_html(&carve::to_carve(src)), carve::to_html(src));
 }
+
+// A figure caption must serialize as an UNESCAPED `^ …` line: escaping the caret
+// to `\^` only round-trips in carve-js's lenient parser; carve-rs and carve-php
+// read `\^` as literal text and lose the figure. to_carve promotes image+caption
+// (direct, resolved-ref, or one with a tricky title) to a figure, emitting the
+// caption verbatim.
+#[test]
+fn resolved_reference_image_caption_is_unescaped() {
+    let src = "![a][r]\n^ cap\n\n[r]: /u";
+    assert_eq!(carve::to_carve(src).trim(), "![a](/u)\n^ cap");
+    assert_eq!(carve::to_html(&carve::to_carve(src)), carve::to_html(src));
+}
+
+#[test]
+fn reference_image_with_attrs_caption_is_unescaped() {
+    let src = "![a][r]{.c}\n^ cap\n\n[r]: /u";
+    assert_eq!(carve::to_carve(src).trim(), "![a](/u){.c}\n^ cap");
+    assert_eq!(carve::to_html(&carve::to_carve(src)), carve::to_html(src));
+}
+
+#[test]
+fn direct_image_escaped_quote_title_caption_is_unescaped() {
+    let src = "![a](/u \"t\\\"i\")\n^ cap";
+    assert_eq!(carve::to_carve(src).trim(), "![a](/u \"t\\\"i\")\n^ cap");
+    assert_eq!(carve::to_html(&carve::to_carve(src)), carve::to_html(src));
+}
+
+#[test]
+fn unresolved_reference_image_caption_stays_escaped() {
+    // Not a figure (unresolved ref is literal text), so the caret is escaped.
+    let src = "![a][nope]\n^ cap";
+    assert_eq!(carve::to_carve(src).trim(), "![a][nope]\n\\^ cap");
+    assert_eq!(carve::to_html(&carve::to_carve(src)), carve::to_html(src));
+}
+
+// A leading block-attribute line (`{#id}`) is preserved when a reference-image
+// figure is promoted while formatting: the figure inherits the paragraph attrs,
+// matching a direct-image figure and carve-php.
+#[test]
+fn reference_figure_keeps_leading_attribute_line() {
+    let src = "{#f}\n![a][r]\n^ cap\n\n[r]: /u";
+    assert_eq!(carve::to_carve(src).trim(), "{#f}\n![a](/u)\n^ cap");
+    assert_eq!(carve::to_html(&carve::to_carve(src)), carve::to_html(src));
+}
+
+#[test]
+fn captionless_reference_image_keeps_leading_attribute_line() {
+    // The sole-image -> block-image promotion is skipped while formatting, so the
+    // paragraph keeps the `{#f}` line a bare block image could not carry. Byte
+    // output matches carve-js / carve-php. (No to_html invariant assertion: an
+    // attributed reference sole-image has a PRE-EXISTING HTML divergence, so the
+    // round-trip changes the id independently of this change.)
+    let src = "{#f}\n![a][r]\n\n[r]: /u";
+    assert_eq!(carve::to_carve(src).trim(), "{#f}\n![a](/u)");
+}
