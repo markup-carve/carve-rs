@@ -1,9 +1,12 @@
 name: Release
 
+# Publishing a GitHub Release (draft -> publish) creates the tag and holds the
+# notes; this workflow then publishes the crate to crates.io. The published
+# Release is the single source of truth - there is no in-repo release-notes file
+# and no separate job that creates the Release.
 on:
-  push:
-    tags:
-      - "[0-9]+.[0-9]+.[0-9]+"
+  release:
+    types: [published]
 
 env:
   CARGO_TERM_COLOR: always
@@ -26,7 +29,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.release.tag_name }}
           submodules: recursive
+
+      # Guard: the crate version must match the release tag, so a mistyped tag
+      # or a forgotten version bump cannot publish the wrong version.
+      - name: Verify Cargo.toml version matches the release tag
+        run: |
+          TAG="${{ github.event.release.tag_name }}"
+          VER="$(grep -m1 -E '^version[[:space:]]*=' Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')"
+          if [ "$TAG" != "$VER" ]; then
+            echo "::error::Release tag $TAG does not match Cargo.toml version $VER."
+            exit 1
+          fi
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -41,28 +56,3 @@ jobs:
       - run: cargo publish
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN || steps.auth.outputs.token }}
-
-  github-release:
-    name: GitHub release
-    needs: publish
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-
-      # Release notes live in the repo (.github/release-notes/<version>.md) so a
-      # deleted release is rebuildable and the tag alone yields populated notes.
-      - name: Resolve release notes
-        run: |
-          NOTES=".github/release-notes/${GITHUB_REF_NAME}.md"
-          if [ ! -f "$NOTES" ]; then
-            echo "::error::Missing release notes file $NOTES - create it before tagging ${GITHUB_REF_NAME}."
-            exit 1
-          fi
-          echo "NOTES_FILE=$NOTES" >> "$GITHUB_ENV"
-
-      - name: Publish GitHub release
-        uses: softprops/action-gh-release@v2
-        with:
-          body_path: ${{ env.NOTES_FILE }}
