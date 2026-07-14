@@ -3998,15 +3998,15 @@ fn parse_inline_context(
 
         // Inline extension: :name[content]
         if c == b':' {
-            if let Some((emoji, consumed)) = parse_emoji(text, i) {
-                flush_text(&mut out, &mut buf);
-                out.push(InlineNode::Emoji(emoji));
-                i += consumed;
-                continue;
-            }
             if let Some((node, consumed)) = parse_inline_extension(bytes, i, options, in_footnote) {
                 flush_text(&mut out, &mut buf);
                 out.push(InlineNode::Extension(node));
+                i += consumed;
+                continue;
+            }
+            if let Some((symbol, consumed)) = parse_symbol(text, i) {
+                flush_text(&mut out, &mut buf);
+                out.push(InlineNode::Symbol(symbol));
                 i += consumed;
                 continue;
             }
@@ -4681,24 +4681,49 @@ fn parse_tag(text: &str, pos: usize) -> Option<(Tag, usize)> {
     ))
 }
 
-fn parse_emoji(text: &str, pos: usize) -> Option<(Emoji, usize)> {
+fn parse_symbol(text: &str, pos: usize) -> Option<(Symbol, usize)> {
     let bytes = text.as_bytes();
     if bytes.get(pos) != Some(&b':') {
         return None;
     }
-    let rest = text.get(pos + 1..)?;
-    let len = rest
-        .bytes()
-        .take_while(|b| b.is_ascii_alphanumeric() || *b == b'_' || *b == b'+' || *b == b'-')
-        .count();
-    if len == 0 || bytes.get(pos + 1 + len) != Some(&b':') {
+    if pos > 0 {
+        let prev = bytes[pos - 1];
+        if prev.is_ascii_alphanumeric() || prev == b'_' {
+            return None;
+        }
+    }
+    // The first name char is a letter, digit, `+` or `-` (so the reaction
+    // shortcodes `:+1:` / `:-1:` parse), but never `_`: `:_x_:` would steal
+    // from underline. Scanning the symbol at the opening `:` also gives it
+    // precedence over smart typography, so `:+-:` is the symbol `+-`, not a
+    // `±` between colons (grammar PART 9 §7).
+    let first = *bytes.get(pos + 1)?;
+    if !first.is_ascii_alphanumeric() && first != b'+' && first != b'-' {
         return None;
     }
+    let mut len = 1;
+    while let Some(&b) = bytes.get(pos + 1 + len) {
+        if b.is_ascii_alphanumeric() || b == b'_' || b == b'+' || b == b'-' {
+            len += 1;
+        } else {
+            break;
+        }
+    }
+    let close_pos = pos + 1 + len;
+    if bytes.get(close_pos) != Some(&b':') {
+        return None;
+    }
+    let (attrs, consumed) = if let Some((attrs, next)) = read_attrs_at(bytes, close_pos + 1) {
+        (Some(attrs), next - pos)
+    } else {
+        (None, len + 2)
+    };
     Some((
-        Emoji {
-            name: rest[..len].to_string(),
+        Symbol {
+            name: text[pos + 1..close_pos].to_string(),
+            attrs,
         },
-        len + 2,
+        consumed,
     ))
 }
 

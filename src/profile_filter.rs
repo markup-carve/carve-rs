@@ -794,7 +794,7 @@ fn extract_inline_text(node: &InlineNode) -> String {
         InlineNode::Mention(m) => format!("@{}", m.user),
         InlineNode::Tag(t) => format!("#{}", t.name),
         InlineNode::Abbreviation(a) => a.abbr.clone(),
-        InlineNode::Emoji(e) => format!(":{}:", e.name),
+        InlineNode::Symbol(e) => format!(":{}:", e.name),
         InlineNode::Link(l) => l.children.iter().map(extract_inline_text).collect(),
         InlineNode::AutoLink(a) => a.href.clone(),
         InlineNode::Footnote(f) => match &f.inline {
@@ -950,7 +950,7 @@ fn is_empty_inline(node: &InlineNode) -> bool {
         InlineNode::Image(_)
         | InlineNode::Mention(_)
         | InlineNode::Tag(_)
-        | InlineNode::Emoji(_)
+        | InlineNode::Symbol(_)
         | InlineNode::Abbreviation(_)
         | InlineNode::CrossRef(_)
         | InlineNode::CaptionNumber(_)

@@ -72,16 +72,16 @@ fn main() -> ExitCode {
                 };
                 options = options.with_tag_url(value);
             }
-            "--emoji" => {
+            "--symbol" => {
                 let Some(value) = args.next() else {
-                    eprintln!("carve: --emoji requires name=value");
+                    eprintln!("carve: --symbol requires name=value");
                     return ExitCode::FAILURE;
                 };
                 let Some((name, glyph)) = value.split_once('=') else {
-                    eprintln!("carve: --emoji requires name=value");
+                    eprintln!("carve: --symbol requires name=value");
                     return ExitCode::FAILURE;
                 };
-                options = options.with_emoji(name, glyph);
+                options = options.with_symbol(name, glyph);
             }
             "--profile" => {
                 let Some(value) = args.next() else {
@@ -300,7 +300,7 @@ fn print_usage() {
          needed for --static to flatten/degrade those constructs\n  \
          --mention-url TEMPLATE      render @mentions as links (HTML only)\n  \
          --tag-url TEMPLATE          render #tags as links (HTML only)\n  \
-         --emoji NAME=VALUE          map :NAME: to VALUE (repeatable)\n  \
+         --symbol NAME=VALUE         map :NAME: to VALUE (repeatable)\n  \
          --no-raw-html, --safe       escape =html raw blocks/spans instead of\n                              \
          emitting them (for untrusted input)\n  \
          --profile NAME              restrict features (full|article|comment|minimal)\n  \

@@ -630,7 +630,7 @@ fn inline_text(nodes: &[InlineNode]) -> String {
                 out.push('#');
                 out.push_str(&t.name);
             }
-            InlineNode::Emoji(e) => {
+            InlineNode::Symbol(e) => {
                 out.push(':');
                 out.push_str(&e.name);
                 out.push(':');

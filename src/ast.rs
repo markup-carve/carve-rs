@@ -241,7 +241,7 @@ pub enum InlineNode {
     Span(Span),
     Math(Math),
     RawInline(RawInline),
-    Emoji(Emoji),
+    Symbol(Symbol),
     AutoLink(AutoLink),
     CrossRef(CrossRef),
     CaptionNumber(CaptionNumber),
@@ -402,8 +402,9 @@ pub struct RawInline {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Emoji {
+pub struct Symbol {
     pub name: String,
+    pub attrs: Option<Attrs>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

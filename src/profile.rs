@@ -132,7 +132,7 @@ pub fn canonical_block_type(node: &BlockNode) -> Option<&'static str> {
 
 /// Map an [`InlineNode`] to its canonical snake_case name.
 ///
-/// Returns `None` for nodes that have no canonical mapping (e.g. `Emoji`,
+/// Returns `None` for nodes that have no canonical mapping (e.g. `Symbol`,
 /// `CrossRef`, `CaptionNumber`, `CriticSubstitute`, `CriticComment`); such
 /// nodes are denied-by-default by the resolver.
 pub fn canonical_inline_type(node: &InlineNode) -> Option<&'static str> {
@@ -177,7 +177,7 @@ pub fn canonical_inline_type(node: &InlineNode) -> Option<&'static str> {
         InlineNode::CriticInsert(_) => Some("insert"),
         InlineNode::CriticDelete(_) => Some("delete"),
         // No canonical mapping -> denied by default.
-        InlineNode::Emoji(_)
+        InlineNode::Symbol(_)
         | InlineNode::CrossRef(_)
         | InlineNode::CaptionNumber(_)
         | InlineNode::CriticSubstitute(_)
