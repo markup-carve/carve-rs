@@ -4692,8 +4692,13 @@ fn parse_symbol(text: &str, pos: usize) -> Option<(Symbol, usize)> {
             return None;
         }
     }
+    // The first name char is a letter, digit, `+` or `-` (so the reaction
+    // shortcodes `:+1:` / `:-1:` parse), but never `_`: `:_x_:` would steal
+    // from underline. Scanning the symbol at the opening `:` also gives it
+    // precedence over smart typography, so `:+-:` is the symbol `+-`, not a
+    // `±` between colons (grammar PART 9 §7).
     let first = *bytes.get(pos + 1)?;
-    if !first.is_ascii_alphanumeric() {
+    if !first.is_ascii_alphanumeric() && first != b'+' && first != b'-' {
         return None;
     }
     let mut len = 1;
