@@ -4012,12 +4012,9 @@ fn parse_inline_context(
             }
         }
 
-        // Inline footnote `^[content]`, ranked above superscript.
-        if !in_footnote
-            && c == b'^'
-            && bytes.get(i + 1) == Some(&b'[')
-            && (i == 0 || bytes[i - 1] != b'^')
-        {
+        // Inline footnote `^[content]`. A `^` anywhere else is literal text
+        // (there is no bare superscript), so `^^[x]` is a literal `^` + a note.
+        if !in_footnote && c == b'^' && bytes.get(i + 1) == Some(&b'[') {
             if let Some((footnote, consumed)) = parse_inline_footnote(bytes, i, options) {
                 flush_text(&mut out, &mut buf);
                 out.push(InlineNode::Footnote(footnote));
@@ -5086,17 +5083,17 @@ fn match_emphasis(
             ));
         }
     }
-    // Single-char delimiters. Highlight `=` and subscript `,` are single-char
-    // like the rest; a doubled `==`/`,,` is therefore literal by same-delimiter
-    // adjacency (checked below), exactly like `**x**`.
+    // Single-char delimiters. Highlight `=` is single-char like the rest; a
+    // doubled `==` is therefore literal by same-delimiter adjacency (checked
+    // below), exactly like `**x**`. There is NO bare `^`/`,` delimiter:
+    // superscript and subscript exist only in the braced forms `{^x^}`/`{,x,}`
+    // (grammar PART 9 §9 rationale note) -- a bare caret or comma is literal.
     let kind = match c {
         b'/' => EmphasisKind::Italic,
         b'*' => EmphasisKind::Strong,
         b'_' => EmphasisKind::Underline,
         b'~' => EmphasisKind::Strike,
-        b'^' => EmphasisKind::Super,
         b'=' => EmphasisKind::Highlight,
-        b',' => EmphasisKind::Sub,
         _ => return None,
     };
     let delim = c;

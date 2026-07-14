@@ -117,7 +117,17 @@ fn generic_line_block_div_keeps_soft_breaks() {
 #[test]
 fn inline_delimiter_emission() {
     assert_eq!(
-        carve::to_carve("/i/ *b* _u_ ~s~ ^sup^ ,sub, =mark= `code`\n"),
-        "/i/ *b* _u_ ~s~ ^sup^ ,sub, =mark= `code`\n"
+        carve::to_carve("/i/ *b* _u_ ~s~ {^sup^} {,sub,} =mark= `code`\n"),
+        "/i/ *b* _u_ ~s~ {^sup^} {,sub,} =mark= `code`\n"
+    );
+}
+
+#[test]
+fn literal_caret_escaped_literal_comma_unescaped() {
+    // `^sup^` / `,sub,` are plain text (no bare sup/sub delimiter): the comma
+    // needs no escape; the caret keeps one (footnote/caption channels).
+    assert_eq!(
+        carve::to_carve("^sup^ ,sub, stays literal\n"),
+        "\\^sup\\^ ,sub, stays literal\n"
     );
 }

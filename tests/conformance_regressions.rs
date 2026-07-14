@@ -46,9 +46,11 @@ fn explicit_missing_reference_does_not_use_heading_fallback() {
 
 #[test]
 fn non_html_subscript_is_not_strikethrough() {
-    assert_eq!(carve::to_markdown(",sub,"), "<sub>sub</sub>\n");
-    assert_eq!(carve::to_plain_text(",sub,"), "sub\n");
-    assert_eq!(carve::to_ansi(",sub,"), "sub\n");
+    // Subscript is the braced `{,x,}` only; a bare `,sub,` is literal text.
+    assert_eq!(carve::to_markdown("{,sub,}"), "<sub>sub</sub>\n");
+    assert_eq!(carve::to_plain_text("{,sub,}"), "sub\n");
+    assert_eq!(carve::to_ansi("{,sub,}"), "sub\n");
+    assert_eq!(carve::to_plain_text(",sub,"), ",sub,\n");
 }
 
 #[test]

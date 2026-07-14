@@ -30,7 +30,7 @@ new corpus pairs fail CI until the parser and renderer support them.
 
 | Pair | Construct | Status |
 |---|---|---|
-| 01-emphasis | `/italic/`, `*bold*`, `_underline_`, `~strike~`, `^super^`, `,sub,`, `=hl=`, `/*bi*/` | passing |
+| 01-emphasis | `/italic/`, `*bold*`, `_underline_`, `~strike~`, `=hl=`, `{^super^}`, `{,sub,}`, `/*bi*/` | passing |
 | 02-headings | `# H1` … `#### H4` | passing |
 | 03-links | `[text](url)` | passing |
 | 04-images | `![alt](src)` (inline + block) | passing |

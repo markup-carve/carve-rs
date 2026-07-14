@@ -521,8 +521,8 @@ fn render_inline(
                     ("_", render_emphasis("_", &content, prev_char, next_char))
                 }
                 EmphasisKind::Strike => ("~", render_emphasis("~", &content, prev_char, next_char)),
-                EmphasisKind::Super => ("^", render_emphasis("^", &content, prev_char, next_char)),
-                EmphasisKind::Sub => (",", render_emphasis(",", &content, prev_char, next_char)),
+                EmphasisKind::Super => ("^", render_forced_emphasis("^", &content)),
+                EmphasisKind::Sub => (",", render_forced_emphasis(",", &content)),
                 EmphasisKind::Highlight => {
                     ("=", render_emphasis("=", &content, prev_char, next_char))
                 }
@@ -686,6 +686,12 @@ fn render_block_comment(content: &str) -> String {
     }
     let fence = "%".repeat(3.max(longest + 1));
     format!("{fence}\n{content}\n{fence}")
+}
+
+// Superscript and subscript have no bare delimiter form -- always emit the
+// braced `{^x^}` / `{,x,}` form.
+fn render_forced_emphasis(delim: &str, content: &str) -> String {
+    format!("{{{delim}{content}{delim}}}")
 }
 
 fn render_emphasis(delim: &str, content: &str, prev_char: char, next_char: char) -> String {
@@ -898,7 +904,8 @@ fn escape_text(text: &str) -> String {
                 | '%'
                 | '|'
                 | '='
-                | ','
+                // no ',' here: there is no bare subscript delimiter, and the
+                // braced `{,` opener is neutralized by the `{` escape
                 | ':'
                 | ';'
                 | '"'
