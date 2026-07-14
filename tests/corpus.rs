@@ -63,7 +63,7 @@ const IMPLEMENTED: &[&str] = &[
     "48-hard-line-breaks",
     "49-non-breaking-space",
     "50-raw-inline",
-    "51-emoji",
+    "51-symbols",
     "52-ordered-list-start-and-delimiter",
     "53-ordered-list-dialects",
     "54-ordered-marker-vs-prose",
@@ -384,7 +384,7 @@ corpus_test!(c47_raw_blocks, "47-raw-blocks");
 corpus_test!(c48_hard_line_breaks, "48-hard-line-breaks");
 corpus_test!(c49_non_breaking_space, "49-non-breaking-space");
 corpus_test!(c50_raw_inline, "50-raw-inline");
-corpus_test!(c51_emoji, "51-emoji");
+corpus_test!(c51_symbols, "51-symbols");
 corpus_test!(
     c52_ordered_list_start_and_delimiter,
     "52-ordered-list-start-and-delimiter"
