@@ -149,7 +149,10 @@ fn maps_inline_variants_to_canonical_names() {
     );
     // No canonical mapping.
     assert_eq!(
-        canonical_inline_type(&InlineNode::Emoji(Emoji { name: "x".into() })),
+        canonical_inline_type(&InlineNode::Symbol(Symbol {
+            name: "x".into(),
+            attrs: None,
+        })),
         None
     );
     assert_eq!(

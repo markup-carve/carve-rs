@@ -555,7 +555,11 @@ fn render_inline(
                 escape_format(&raw.format)
             )
         }
-        InlineNode::Emoji(emoji) => format!(":{}:", escape_identifier(&emoji.name)),
+        InlineNode::Symbol(symbol) => format!(
+            ":{}:{}",
+            escape_identifier(&symbol.name),
+            render_attrs(&symbol.attrs)
+        ),
         InlineNode::AutoLink(link) => {
             // Emit the raw autolink content verbatim (keeps a URI scheme like
             // `mailto:`), so it re-parses to the same autolink.
@@ -1099,7 +1103,7 @@ fn boundary_text(node: &InlineNode) -> Option<&str> {
         InlineNode::Abbreviation(abbr) => Some(&abbr.abbr),
         InlineNode::Mention(mention) => Some(&mention.user),
         InlineNode::Tag(tag) => Some(&tag.name),
-        InlineNode::Emoji(emoji) => Some(&emoji.name),
+        InlineNode::Symbol(symbol) => Some(&symbol.name),
         _ => None,
     }
 }

@@ -516,7 +516,7 @@ fn render_inline(node: &InlineNode, ctx: &mut AnsiContext, depth: usize) -> Stri
         InlineNode::Span(span) => render_inlines(&span.children, ctx, depth + 1),
         InlineNode::Math(math) => style(&strip_controls(&math.content), FG_BRIGHT_MAGENTA),
         InlineNode::RawInline(_) => String::new(),
-        InlineNode::Emoji(emoji) => format!(":{}:", emoji.name),
+        InlineNode::Symbol(symbol) => format!(":{}:", symbol.name),
         InlineNode::AutoLink(link) => {
             // Raw autolink content (URI keeps its scheme; email shows address).
             style(

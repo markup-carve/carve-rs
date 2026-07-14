@@ -99,7 +99,7 @@ pub struct Options<'a> {
     pub extensions: Vec<&'a dyn CarveExtension>,
     pub mention_url: Option<String>,
     pub tag_url: Option<String>,
-    pub emoji: BTreeMap<String, String>,
+    pub symbols: BTreeMap<String, String>,
     /// Allow raw HTML passthrough (`` `…`{=html} `` inline and ` ```=html `
     /// block) to emit verbatim. Default `true` (matches the corpus). Set
     /// `false` for UNTRUSTED input: raw-HTML content is then escaped to text
@@ -137,7 +137,7 @@ impl Default for Options<'_> {
             extensions: Vec::new(),
             mention_url: None,
             tag_url: None,
-            emoji: BTreeMap::new(),
+            symbols: BTreeMap::new(),
             allow_raw_html: true,
             lowercase_heading_ids: false,
             profile: None,
@@ -175,8 +175,8 @@ impl<'a> Options<'a> {
         self
     }
 
-    pub fn with_emoji(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
-        self.emoji.insert(name.into(), value.into());
+    pub fn with_symbol(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
+        self.symbols.insert(name.into(), value.into());
         self
     }
 

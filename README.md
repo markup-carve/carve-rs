@@ -344,7 +344,7 @@ Other options:
 
 ```bash
 carve --mention-url '/users/{name}' --tag-url '/topics/{name}' social.crv
-carve --emoji 'rocket=🚀' --emoji 'tada=🎉' emoji.crv
+carve --symbol 'rocket=🚀' --symbol 'tada=🎉' symbols.crv
 carve --no-raw-html untrusted.crv   # escape =html raw blocks/spans
 carve --help
 ```

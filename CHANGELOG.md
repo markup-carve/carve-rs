@@ -7,6 +7,11 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- BREAKING: rename `Emoji` AST nodes to `Symbol`, the `emoji` render option to
+  `symbols`, and the CLI flag `--emoji` to `--symbol`; symbol shortcodes now
+  require a leading word boundary, require an ASCII alphanumeric first name
+  character, and support trailing attrs via an HTML `<span>` wrapper.
+
 ## [0.1.0] - YYYY-MM-DD
 
 Initial release of **carve-rs**, a zero-dependency Rust crate and CLI for the
@@ -91,7 +96,7 @@ is still `carve`.
 - `--extensions` enables the bundled interactive extension bundle (details,
   spoiler, mermaid, chart, math, citations, code-callouts)
 - `--mention-url` and `--tag-url` for `@mention` and `#tag` link templates
-- `--emoji` for custom emoji token expansion
+- `--symbol` for custom symbol shortcode expansion (e.g. emoji)
 - `carve fmt` - canonical formatter (semantic-preserving, `-w` in-place,
   `--check` CI gate)
 

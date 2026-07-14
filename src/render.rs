@@ -1614,13 +1614,21 @@ fn render_inline_after(
                 }
             }
         }
-        InlineNode::Emoji(e) => {
-            if let Some(value) = options.emoji.get(&e.name) {
-                write_escaped_text(out, value);
+        InlineNode::Symbol(e) => {
+            if e.attrs.is_some() {
+                out.push_str("<span");
+                write_attrs(out, &e.attrs);
+                out.push('>');
+            }
+            if let Some(value) = options.symbols.get(&e.name) {
+                out.push_str(value);
             } else {
                 out.push(':');
                 write_escaped_text(out, &e.name);
                 out.push(':');
+            }
+            if e.attrs.is_some() {
+                out.push_str("</span>");
             }
         }
         InlineNode::AutoLink(a) => {
