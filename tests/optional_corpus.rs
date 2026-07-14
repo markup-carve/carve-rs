@@ -55,11 +55,13 @@ fn social_link_templates_sanitize_final_href() {
 }
 
 #[test]
-fn emoji_map() {
+fn symbol_map() {
     let options = carve::Options::new()
         .with_symbol("rocket", "🚀")
-        .with_symbol("tada", "🎉");
-    assert_optional_pair("02-emoji-map", options);
+        .with_symbol("tada", "🎉")
+        .with_symbol("+1", "👍")
+        .with_symbol("UPPER", "⬆️");
+    assert_optional_pair("02-symbol-map", options);
 }
 
 #[test]

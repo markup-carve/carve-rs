@@ -557,7 +557,7 @@ fn render_inline(
         }
         InlineNode::Symbol(symbol) => format!(
             ":{}:{}",
-            escape_identifier(&symbol.name),
+            escape_symbol_name(&symbol.name),
             render_attrs(&symbol.attrs)
         ),
         InlineNode::AutoLink(link) => {
@@ -1002,6 +1002,14 @@ fn escape_abbr(text: &str) -> String {
 fn escape_identifier(text: &str) -> String {
     text.chars()
         .filter(|ch| ch.is_ascii_alphanumeric() || *ch == '_' || *ch == '-')
+        .collect()
+}
+
+// A symbol name may contain `+` and `-` (so `:+1:` / `:-1:` round-trip),
+// unlike an extension identifier.
+fn escape_symbol_name(text: &str) -> String {
+    text.chars()
+        .filter(|ch| ch.is_ascii_alphanumeric() || *ch == '_' || *ch == '+' || *ch == '-')
         .collect()
 }
 
