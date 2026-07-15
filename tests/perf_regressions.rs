@@ -329,3 +329,264 @@ fn deeply_nested_balanced_links_preserve_output() {
         "<p><a href=\"https://example.com\">text</a></p>"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Unclosed-construct quadratics (same class as the flat-unclosed-link shapes
+// above). Each construct scanned forward to a mandatory closing delimiter with
+// no absence short-circuit, so a run of unclosed openers re-scanned to
+// end-of-text at every position -- O(n^2). A per-inline-text last-occurrence
+// bound (see InlineBounds in src/parse.rs) makes each attempt O(1) when the
+// closer cannot lie ahead. Output stays byte-identical (only failing scans are
+// elided).
+// ---------------------------------------------------------------------------
+
+/// Assert `build(n)` parses without an O(n^2) blowup on an unclosed-construct
+/// shape. A reintroduced quadratic here takes seconds at n=200000, so the
+/// absolute wall-clock bound is the primary guard. The size ratio is a
+/// secondary check, applied only when the smaller sample rises above timing
+/// noise -- several of these fixed shapes parse in microseconds, where a ratio
+/// is pure scheduler jitter (e.g. 1.5ms -> 4.8ms reads as "3x" but is O(1)).
+/// Run against a release build; a debug build is far slower per byte.
+fn assert_bounded_scan(build: impl Fn(usize) -> String, label: &str) {
+    fn min_parse_time(source: &str) -> f64 {
+        (0..7)
+            .map(|_| {
+                let start = Instant::now();
+                let _ = carve::to_html(source);
+                start.elapsed().as_secs_f64()
+            })
+            .fold(f64::INFINITY, f64::min)
+    }
+
+    let t_small = min_parse_time(&build(100_000));
+    let t_large = min_parse_time(&build(200_000));
+
+    // A reintroduced O(n^2) at n=200000 (~0.6-0.8 MB) runs in seconds; the fixed
+    // parser stays well under a millisecond-to-second. A wide 2 s bound tolerates
+    // loaded CI while failing hard on regression.
+    assert!(
+        t_large < 2.0,
+        "{label} parse for n=200000 took {t_large:.4}s (expected near-instant; O(n^2) regression?)"
+    );
+
+    // Only compare sizes when the signal is above noise (30 ms); below that the
+    // ratio is jitter and the absolute bound above already guards the shape.
+    if t_small > 0.03 {
+        let ratio = t_large / t_small;
+        assert!(
+            ratio < 3.5,
+            "{label} parse scaling looks super-linear: {t_small:.4}s -> {t_large:.4}s (ratio {ratio:.1}x)"
+        );
+    }
+}
+
+/// `[x]{`×n: span/attribute openers with no closing `}` anywhere. The `}`-attr
+/// scan walked to EOF for every `{`.
+fn flat_unclosed_span_attr(n: usize) -> String {
+    "[x]{".repeat(n)
+}
+
+/// `{+`×n: critic-insert openers with no `+}` pair. The `find("+}")` walked to
+/// EOF for every opener.
+fn flat_unclosed_critic_insert(n: usize) -> String {
+    "{+".repeat(n)
+}
+
+/// `{-`×n: critic-delete openers with no `-}` pair.
+fn flat_unclosed_critic_delete(n: usize) -> String {
+    "{-".repeat(n)
+}
+
+/// `{~ }`×n: critic-substitution openers where a `}` IS present but the `~}`
+/// pair never is (a single-`}` bound is insufficient; the `~}`-pair bound is
+/// what makes this linear).
+fn flat_critic_sub_no_pair(n: usize) -> String {
+    "{~ }".repeat(n)
+}
+
+/// `{#`×n: critic-comment openers with no `#}` pair.
+fn flat_unclosed_critic_comment(n: usize) -> String {
+    "{#".repeat(n)
+}
+
+/// `{/`×n: forced-emphasis openers with no `/}` pair.
+fn flat_unclosed_forced_emphasis(n: usize) -> String {
+    "{/".repeat(n)
+}
+
+/// `[^`×n: footnote-ref openers with no closing `]`.
+fn flat_unclosed_footnote_ref(n: usize) -> String {
+    "[^".repeat(n)
+}
+
+/// `^[`×n: inline-footnote openers with no closing `]`.
+fn flat_unclosed_inline_footnote(n: usize) -> String {
+    "^[".repeat(n)
+}
+
+/// `:a[`×n: inline-extension openers with no closing `]`.
+fn flat_unclosed_inline_extension(n: usize) -> String {
+    ":a[".repeat(n)
+}
+
+/// `</#`×n: crossref openers with no closing `>`.
+fn flat_unclosed_crossref(n: usize) -> String {
+    "</#".repeat(n)
+}
+
+/// `<`×n: autolink openers with no closing `>`.
+fn flat_unclosed_autolink(n: usize) -> String {
+    "<".repeat(n)
+}
+
+#[test]
+fn flat_unclosed_span_attributes_parse_in_near_linear_time() {
+    assert_bounded_scan(flat_unclosed_span_attr, "flat-unclosed-span-attr");
+}
+
+#[test]
+fn flat_unclosed_critic_insert_openers_parse_in_near_linear_time() {
+    assert_bounded_scan(flat_unclosed_critic_insert, "flat-unclosed-critic-insert");
+}
+
+#[test]
+fn flat_unclosed_critic_delete_openers_parse_in_near_linear_time() {
+    assert_bounded_scan(flat_unclosed_critic_delete, "flat-unclosed-critic-delete");
+}
+
+#[test]
+fn flat_critic_sub_without_pair_parses_in_near_linear_time() {
+    assert_bounded_scan(flat_critic_sub_no_pair, "flat-critic-sub-no-pair");
+}
+
+#[test]
+fn flat_unclosed_critic_comment_openers_parse_in_near_linear_time() {
+    assert_bounded_scan(flat_unclosed_critic_comment, "flat-unclosed-critic-comment");
+}
+
+#[test]
+fn flat_unclosed_forced_emphasis_openers_parse_in_near_linear_time() {
+    assert_bounded_scan(
+        flat_unclosed_forced_emphasis,
+        "flat-unclosed-forced-emphasis",
+    );
+}
+
+#[test]
+fn flat_unclosed_footnote_refs_parse_in_near_linear_time() {
+    assert_bounded_scan(flat_unclosed_footnote_ref, "flat-unclosed-footnote-ref");
+}
+
+#[test]
+fn flat_unclosed_inline_footnotes_parse_in_near_linear_time() {
+    assert_bounded_scan(
+        flat_unclosed_inline_footnote,
+        "flat-unclosed-inline-footnote",
+    );
+}
+
+#[test]
+fn flat_unclosed_inline_extensions_parse_in_near_linear_time() {
+    assert_bounded_scan(
+        flat_unclosed_inline_extension,
+        "flat-unclosed-inline-extension",
+    );
+}
+
+#[test]
+fn flat_unclosed_crossrefs_parse_in_near_linear_time() {
+    assert_bounded_scan(flat_unclosed_crossref, "flat-unclosed-crossref");
+}
+
+#[test]
+fn flat_unclosed_autolinks_parse_in_near_linear_time() {
+    assert_bounded_scan(flat_unclosed_autolink, "flat-unclosed-autolink");
+}
+
+#[test]
+fn bounded_attribute_and_critic_scans_preserve_output() {
+    // Closed constructs still render exactly as before the bound was added.
+    assert_eq!(
+        carve::to_html("[word]{.hl}"),
+        "<p><span class=\"hl\">word</span></p>"
+    );
+    assert_eq!(carve::to_html("{+ins+}"), "<p><ins>ins</ins></p>");
+    assert_eq!(carve::to_html("{-del-}"), "<p><del>del</del></p>");
+    assert_eq!(
+        carve::to_html("{~old~>new~}"),
+        "<p><del>old</del><ins>new</ins></p>"
+    );
+    assert_eq!(
+        carve::to_html("{#note#}"),
+        "<p><span class=\"critic-comment\">note</span></p>"
+    );
+    assert_eq!(carve::to_html("{/it/}"), "<p><em>it</em></p>");
+
+    // Unclosed openers stay literal: no element is produced, and the source
+    // text survives verbatim.
+    let span = carve::to_html(&flat_unclosed_span_attr(5));
+    assert_eq!(span.matches("<span").count(), 0, "{span}");
+    assert!(span.contains("[x]{"), "{span}");
+
+    let ins = carve::to_html(&flat_unclosed_critic_insert(5));
+    assert_eq!(ins.matches("<ins>").count(), 0, "{ins}");
+    assert!(ins.contains("{+"), "{ins}");
+
+    let del = carve::to_html(&flat_unclosed_critic_delete(5));
+    assert_eq!(del.matches("<del>").count(), 0, "{del}");
+
+    let sub = carve::to_html(&flat_critic_sub_no_pair(5));
+    assert_eq!(sub.matches("<del>").count(), 0, "{sub}");
+    assert_eq!(sub.matches("<ins>").count(), 0, "{sub}");
+
+    let cmt = carve::to_html(&flat_unclosed_critic_comment(5));
+    assert_eq!(cmt.matches("critic-comment").count(), 0, "{cmt}");
+
+    // `{/`×n forms no FORCED emphasis (there is no `/}` pair), but the bare `/`
+    // italic delimiter still pairs up as ordinary emphasis -- that is unchanged,
+    // pre-existing behavior. What the bound must preserve is that no forced-span
+    // is fabricated and the leading `{`s stay literal.
+    let forced = carve::to_html(&flat_unclosed_forced_emphasis(5));
+    assert!(
+        forced.contains('{'),
+        "leading brace must stay literal: {forced}"
+    );
+}
+
+#[test]
+fn bounded_bracket_and_angle_scans_preserve_output() {
+    // Closed constructs still render.
+    assert_eq!(
+        carve::to_html(":name[body]"),
+        "<p><span class=\"ext-name\">body</span></p>"
+    );
+    assert_eq!(
+        carve::to_html("<https://example.com>"),
+        "<p><a href=\"https://example.com\">https://example.com</a></p>"
+    );
+    assert!(
+        carve::to_html("x[^a]\n\n[^a]: the note").contains("role=\"doc-noteref\""),
+        "resolved footnote ref must still render"
+    );
+    assert!(
+        carve::to_html("y^[note]").contains("role=\"doc-noteref\""),
+        "inline footnote must still render"
+    );
+
+    // Unclosed openers stay literal.
+    let fnref = carve::to_html(&flat_unclosed_footnote_ref(5));
+    assert_eq!(fnref.matches("doc-noteref").count(), 0, "{fnref}");
+    assert!(fnref.contains("[^"), "{fnref}");
+
+    let infn = carve::to_html(&flat_unclosed_inline_footnote(5));
+    assert_eq!(infn.matches("doc-noteref").count(), 0, "{infn}");
+
+    let ext = carve::to_html(&flat_unclosed_inline_extension(5));
+    assert_eq!(ext.matches("class=\"ext-").count(), 0, "{ext}");
+
+    let xref = carve::to_html(&flat_unclosed_crossref(5));
+    assert_eq!(xref.matches("<a ").count(), 0, "{xref}");
+
+    let auto = carve::to_html(&flat_unclosed_autolink(5));
+    assert_eq!(auto.matches("<a ").count(), 0, "{auto}");
+}
