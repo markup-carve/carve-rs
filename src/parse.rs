@@ -4277,11 +4277,21 @@ fn parse_reference_link(
     in_footnote: bool,
     matches: &[usize],
 ) -> Option<(Link, usize)> {
-    let (text, after_text) = read_bracketed_cached(bytes, start, matches)?;
+    let text_close = bracketed_close(bytes, start, matches)?;
+    let after_text = text_close + 1;
     if bytes.get(after_text) != Some(&b'[') {
         return None;
     }
-    let (label, after_label) = read_bracketed_cached(bytes, after_text, matches)?;
+    let label_close = bracketed_close(bytes, after_text, matches)?;
+    let after_label = label_close + 1;
+    // Both brackets are present, so materializing their labels now costs O(1)
+    // per accepted reference rather than per candidate `[`.
+    let text = std::str::from_utf8(&bytes[start + 1..text_close])
+        .ok()?
+        .to_string();
+    let label = std::str::from_utf8(&bytes[after_text + 1..label_close])
+        .ok()?
+        .to_string();
     let ref_label = if label.is_empty() {
         text.clone()
     } else {
@@ -4410,11 +4420,17 @@ fn parse_image_at(bytes: &[u8], start: usize, matches: &[usize]) -> Option<(Imag
     if bytes.get(start) != Some(&b'!') || bytes.get(start + 1) != Some(&b'[') {
         return None;
     }
-    let (alt, after_alt) = read_bracketed_cached(bytes, start + 1, matches)?;
+    let alt_close = bracketed_close(bytes, start + 1, matches)?;
+    let after_alt = alt_close + 1;
     if bytes.get(after_alt) != Some(&b'(') {
         return None;
     }
     let (src, title, after_paren) = read_link_target(bytes, after_alt + 1)?;
+    // Only a valid `(target)` reaches here, so the alt copy is deferred off the
+    // failing-`![...]()` path that would otherwise be O(n) per position.
+    let alt = std::str::from_utf8(&bytes[start + 2..alt_close])
+        .ok()?
+        .to_string();
     let mut attrs = None;
     let mut after = after_paren;
     if bytes.get(after) == Some(&b'{') {
@@ -4445,11 +4461,19 @@ fn parse_reference_image(bytes: &[u8], start: usize, matches: &[usize]) -> Optio
     if bytes.get(start) != Some(&b'!') || bytes.get(start + 1) != Some(&b'[') {
         return None;
     }
-    let (alt, after_alt) = read_bracketed_cached(bytes, start + 1, matches)?;
+    let alt_close = bracketed_close(bytes, start + 1, matches)?;
+    let after_alt = alt_close + 1;
     if bytes.get(after_alt) != Some(&b'[') {
         return None;
     }
-    let (label, after_label) = read_bracketed_cached(bytes, after_alt, matches)?;
+    let label_close = bracketed_close(bytes, after_alt, matches)?;
+    let after_label = label_close + 1;
+    let alt = std::str::from_utf8(&bytes[start + 2..alt_close])
+        .ok()?
+        .to_string();
+    let label = std::str::from_utf8(&bytes[after_alt + 1..label_close])
+        .ok()?
+        .to_string();
     // Collapsed `![alt][]` reuses the alt as the label, so it needs a non-empty
     // alt; the full `![alt][ref]` form accepts an empty alt (label = ref).
     if label.is_empty() && alt.is_empty() {
@@ -4487,11 +4511,18 @@ fn parse_inline_link_with_options(
     if bytes.get(start) != Some(&b'[') {
         return None;
     }
-    let (text, after_bracket) = read_bracketed_cached(bytes, start, matches)?;
+    let text_close = bracketed_close(bytes, start, matches)?;
+    let after_bracket = text_close + 1;
     if bytes.get(after_bracket) != Some(&b'(') {
         return None;
     }
     let (href, title, after_paren) = read_link_target(bytes, after_bracket + 1)?;
+    // The label is copied only once a valid `(target)` follows; the failing
+    // `[...]()` path (empty target) returns above without allocating, which is
+    // what keeps `[[[...x]()]()...]()` linear instead of quadratic.
+    let text = std::str::from_utf8(&bytes[start + 1..text_close])
+        .ok()?
+        .to_string();
     let mut attrs = None;
     let mut after = after_paren;
     if bytes.get(after) == Some(&b'{') {
@@ -4570,7 +4601,8 @@ fn parse_span(
     in_footnote: bool,
     matches: &[usize],
 ) -> Option<(Span, usize)> {
-    let (content, after_bracket) = read_bracketed_cached(bytes, start, matches)?;
+    let content_close = bracketed_close(bytes, start, matches)?;
+    let after_bracket = content_close + 1;
     if bytes.get(after_bracket) != Some(&b'{') {
         return None;
     }
@@ -4591,6 +4623,11 @@ fn parse_span(
             None => break,
         }
     }
+    // Only a valid `{attrs}` follow reaches here, so the content copy stays off
+    // the failing `[...]` path (e.g. `[...]()` never gets past the `{` check).
+    let content = std::str::from_utf8(&bytes[start + 1..content_close])
+        .ok()?
+        .to_string();
     Some((
         Span {
             attrs,
@@ -4862,13 +4899,16 @@ fn parse_crossref(text: &str, pos: usize) -> Option<(CrossRef, usize)> {
     ))
 }
 
-/// Read a `[…]` span starting at `start` (which must point to `[`).
-/// Returns the inner text and the index just past the closing `]`.
-/// O(1) `read_bracketed` using a precomputed match table (see
-/// `compute_bracket_matches`). `start` must index a `[`. Returns the bracket
-/// content and the index just past the matching `]`, identical to what
-/// `read_bracketed` would compute by scanning.
-fn read_bracketed_cached(bytes: &[u8], start: usize, matches: &[usize]) -> Option<(String, usize)> {
+/// O(1) lookup of the matching `]` for the `[` at `start` using a precomputed
+/// match table (see `compute_bracket_matches`). `start` must index a `[`.
+/// Returns the byte index of the closing `]` (a borrow position, no allocation).
+///
+/// Callers materialize the bracket label only after the follow (target `(`,
+/// reference `[`, span `{`) validates, so a `[` whose construct never completes
+/// stays O(1) instead of eagerly copying its label at every position -- the
+/// difference between linear and quadratic parsing on pathological input like
+/// `[[[...x]()]()...]()`.
+fn bracketed_close(bytes: &[u8], start: usize, matches: &[usize]) -> Option<usize> {
     if bytes.get(start) != Some(&b'[') {
         return None;
     }
@@ -4876,10 +4916,7 @@ fn read_bracketed_cached(bytes: &[u8], start: usize, matches: &[usize]) -> Optio
     if close == NO_BRACKET_MATCH {
         return None;
     }
-    let text = std::str::from_utf8(&bytes[start + 1..close])
-        .ok()?
-        .to_string();
-    Some((text, close + 1))
+    Some(close)
 }
 
 /// Read `[...]` content for an inline extension: the content runs to the

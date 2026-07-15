@@ -163,7 +163,10 @@ fn deeply_nested_div_parse_is_bounded() {
 
 /// Build `n` balanced nested inline links: `[` * n + "x" + "]()" * n, i.e.
 /// `[[[...x]()]()...]()`. Before the bracket-match precompute, each `[` re-scanned
-/// O(n) bytes to find its closing `]`, so the parse was O(n^2).
+/// O(n) bytes to find its closing `]`; after it, each `[` still eagerly copied
+/// its label to a `String` before validating the `()` target, so the parse was
+/// still O(n^2) on this shape (the target never validates, so every one of the
+/// n candidate `[` paid an O(n) label copy).
 fn nested_links(n: usize) -> String {
     let mut s = String::with_capacity(4 * n + 1);
     for _ in 0..n {
@@ -176,14 +179,32 @@ fn nested_links(n: usize) -> String {
     s
 }
 
-#[test]
-fn deeply_nested_balanced_links_parse_in_near_linear_time() {
-    // Finding 2: deeply nested balanced links were O(n^2) because every `[`
-    // re-scanned to its matching `]`. A single precomputed bracket-match table
-    // makes each lookup O(1), so doubling the input roughly doubles the time
-    // (not quadruples). Run each size a few times and take the minimum to damp
-    // scheduler noise, then assert the larger size is well under a quadratic
-    // multiple of the smaller.
+/// The image variant of `nested_links`: `![` * n + "x" + "]()" * n. Exercises
+/// the same label-allocation path through `parse_image_at`.
+fn nested_images(n: usize) -> String {
+    let mut s = String::with_capacity(5 * n + 1);
+    for _ in 0..n {
+        s.push_str("![");
+    }
+    s.push('x');
+    for _ in 0..n {
+        s.push_str("]()");
+    }
+    s
+}
+
+/// Run each size a few times, take the minimum to damp scheduler noise, and
+/// assert the larger size is well under a quadratic multiple of the smaller
+/// while staying within an absolute wall-clock bound. A quadratic parse gives
+/// ~4x for a 2x input; linear gives ~2x.
+///
+/// NOTE: these sizes (100k / 200k `[`, i.e. ~400 KB / ~800 KB of input) are
+/// chosen to expose a quadratic *constant* -- the old n=4000/8000 sizes ran in
+/// low single-digit milliseconds and could not distinguish linear from
+/// quadratic through scheduler noise. Run against a release build
+/// (`cargo test --release`); a debug build is ~10-20x slower and may exceed the
+/// absolute bound without any regression.
+fn assert_near_linear(build: impl Fn(usize) -> String, label: &str) {
     fn min_parse_time(source: &str) -> f64 {
         (0..5)
             .map(|_| {
@@ -194,32 +215,37 @@ fn deeply_nested_balanced_links_parse_in_near_linear_time() {
             .fold(f64::INFINITY, f64::min)
     }
 
-    let small = nested_links(4_000);
-    let large = nested_links(8_000);
+    let small = build(100_000);
+    let large = build(200_000);
 
     let t_small = min_parse_time(&small);
     let t_large = min_parse_time(&large);
 
-    // Quadratic would give ~4x for a 2x input; linear gives ~2x. Allow generous
-    // slack (5x) so the test is robust on slow/loaded CI while still failing
-    // hard on a reintroduced O(n^2) (which scaled ~4x here, but with the old
-    // ~0.9s baseline at n=8000 the absolute bound below is the real guard).
     if t_small > 0.0 {
         let ratio = t_large / t_small;
         assert!(
-            ratio < 5.0,
-            "nested-link parse scaling looks super-linear: {t_small:.4}s -> {t_large:.4}s (ratio {ratio:.1}x)"
+            ratio < 3.0,
+            "{label} parse scaling looks super-linear: {t_small:.4}s -> {t_large:.4}s (ratio {ratio:.1}x)"
         );
     }
 
-    // Absolute wall-clock guard: the fixed parser handles n=8000 in well under
-    // 50 ms (release); the pre-fix code took ~0.9 s. Use a wide 1 s bound to
-    // tolerate an unoptimized debug build and loaded CI while still catching a
-    // regression to quadratic.
+    // Absolute wall-clock guard: the fixed parser handles n=200000 (~800 KB) in
+    // a few milliseconds (release); the pre-fix code took ~10 s. A wide 2 s bound
+    // tolerates loaded CI while still failing hard on a reintroduced O(n^2).
     assert!(
-        t_large < 1.0,
-        "nested-link parse for n=8000 took {t_large:.4}s (expected near-instant)"
+        t_large < 2.0,
+        "{label} parse for n=200000 took {t_large:.4}s (expected near-instant)"
     );
+}
+
+#[test]
+fn deeply_nested_balanced_links_parse_in_near_linear_time() {
+    on_big_stack(|| assert_near_linear(nested_links, "nested-link"));
+}
+
+#[test]
+fn deeply_nested_balanced_images_parse_in_near_linear_time() {
+    on_big_stack(|| assert_near_linear(nested_images, "nested-image"));
 }
 
 #[test]
