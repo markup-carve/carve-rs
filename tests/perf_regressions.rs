@@ -229,11 +229,14 @@ fn assert_near_linear(build: impl Fn(usize) -> String, label: &str) {
         );
     }
 
-    // Absolute wall-clock guard: the fixed parser handles n=200000 (~800 KB) in
-    // a few milliseconds (release); the pre-fix code took ~10 s. A wide 2 s bound
-    // tolerates loaded CI while still failing hard on a reintroduced O(n^2).
+    // Absolute wall-clock guard, catastrophic-only: the ratio check above is the
+    // real (build-invariant) quadratic detector. This bound just backstops a full
+    // O(n^2) reintroduction. CI runs `cargo test` in DEBUG, ~10-20x slower per
+    // byte than release, so n=200000 legitimately takes ~2 s here; a wide 30 s
+    // bound tolerates a loaded debug runner while a reintroduced quadratic (tens
+    // of seconds to minutes at this n) still trips it.
     assert!(
-        t_large < 2.0,
+        t_large < 30.0,
         "{label} parse for n=200000 took {t_large:.4}s (expected near-instant)"
     );
 }
@@ -361,11 +364,13 @@ fn assert_bounded_scan(build: impl Fn(usize) -> String, label: &str) {
     let t_small = min_parse_time(&build(100_000));
     let t_large = min_parse_time(&build(200_000));
 
-    // A reintroduced O(n^2) at n=200000 (~0.6-0.8 MB) runs in seconds; the fixed
-    // parser stays well under a millisecond-to-second. A wide 2 s bound tolerates
-    // loaded CI while failing hard on regression.
+    // A reintroduced O(n^2) at n=200000 (~0.6-0.8 MB) runs in tens of seconds to
+    // minutes; the fixed parser stays sub-second in release, ~seconds in a debug
+    // CI build (~10-20x slower per byte). A wide 30 s bound tolerates a loaded
+    // debug runner while failing hard on regression; the ratio check below is the
+    // build-invariant detector.
     assert!(
-        t_large < 2.0,
+        t_large < 30.0,
         "{label} parse for n=200000 took {t_large:.4}s (expected near-instant; O(n^2) regression?)"
     );
 
