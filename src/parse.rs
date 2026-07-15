@@ -2640,8 +2640,7 @@ fn is_plus_marker(line: &str) -> bool {
 /// separators so the block sub-parse yields multiple paragraphs.
 fn collect_definition_body(cur: &mut LineCursor) -> String {
     let mut lines: Vec<String> = Vec::new();
-    loop {
-        let Some(line) = cur.peek() else { break };
+    while let Some(line) = cur.peek() {
         // Form B: `+` pull-left continuation.
         if is_plus_marker(line) {
             cur.consume();
