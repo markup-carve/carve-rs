@@ -256,9 +256,32 @@ fn flat_unclosed_links(n: usize) -> String {
     "[a](".repeat(n)
 }
 
+/// A flat run of underline openers each butting against `](`: `_a](` * n. No
+/// `_` ever closes (each candidate closer is a word-boundary miss), so the
+/// emphasis-closer scan walked to EOF for every one of the n openers -- O(n^2).
+/// The per-delimiter no-close memo bounds it to O(1) after the first failure.
+fn flat_unclosed_underline(n: usize) -> String {
+    "_a](".repeat(n)
+}
+
+/// The `*`/strong variant of `flat_unclosed_underline`: `*a](` * n.
+fn flat_unclosed_strong(n: usize) -> String {
+    "*a](".repeat(n)
+}
+
 #[test]
 fn flat_unclosed_link_destinations_parse_in_near_linear_time() {
     assert_near_linear(flat_unclosed_links, "flat-unclosed-link");
+}
+
+#[test]
+fn flat_unclosed_underline_openers_parse_in_near_linear_time() {
+    assert_near_linear(flat_unclosed_underline, "flat-unclosed-underline");
+}
+
+#[test]
+fn flat_unclosed_strong_openers_parse_in_near_linear_time() {
+    assert_near_linear(flat_unclosed_strong, "flat-unclosed-strong");
 }
 
 #[test]
@@ -273,6 +296,21 @@ fn flat_unclosed_link_destinations_preserve_output() {
         carve::to_html("[text](https://example.com)"),
         "<p><a href=\"https://example.com\">text</a></p>"
     );
+}
+
+#[test]
+fn flat_unclosed_emphasis_openers_preserve_output() {
+    // The `_a](`×n / `*a](`×n shapes never close, so every opener stays
+    // literal. The per-delimiter no-close memo must not change that.
+    let under = carve::to_html(&flat_unclosed_underline(5));
+    assert_eq!(under.matches("<u>").count(), 0, "{under}");
+
+    let strong = carve::to_html(&flat_unclosed_strong(5));
+    assert_eq!(strong.matches("<strong>").count(), 0, "{strong}");
+
+    // Genuine emphasis still renders correctly (memo off-path).
+    assert_eq!(carve::to_html("_underlined_"), "<p><u>underlined</u></p>");
+    assert_eq!(carve::to_html("*strong*"), "<p><strong>strong</strong></p>");
 }
 
 #[test]

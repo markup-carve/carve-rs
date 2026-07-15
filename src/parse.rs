@@ -3786,6 +3786,12 @@ fn parse_inline_context(
     } else {
         None
     };
+    // Per-delimiter memo of the earliest opener position from which the emphasis
+    // closer scan already failed. Once an opener of a given delimiter finds no
+    // valid closer to EOF, every later opener of that delimiter also fails, so
+    // the scan is skipped in O(1). Keeps `_a](`×n / `*a](`×n linear. See
+    // cached_find_emphasis_close.
+    let mut emphasis_no_close: [Option<usize>; EMPHASIS_DELIM_SLOTS] = [None; EMPHASIS_DELIM_SLOTS];
     let mut out = Vec::new();
     let mut buf = String::new();
     let mut i = 0;
@@ -4042,7 +4048,9 @@ fn parse_inline_context(
         }
 
         // Bold-italic, sub, highlight, then single-char emphasis
-        if let Some((mut node, consumed)) = match_emphasis(bytes, i, options, in_footnote) {
+        if let Some((mut node, consumed)) =
+            match_emphasis(bytes, i, options, in_footnote, &mut emphasis_no_close)
+        {
             let mut consumed = consumed;
             if bytes.get(i + consumed) == Some(&b'{') {
                 if let Some((attrs, next)) = read_attrs_at(bytes, i + consumed) {
@@ -5166,6 +5174,7 @@ fn match_emphasis(
     i: usize,
     options: &Options<'_>,
     in_footnote: bool,
+    no_close: &mut [Option<usize>; EMPHASIS_DELIM_SLOTS],
 ) -> Option<(InlineNode, usize)> {
     let c = bytes[i];
 
@@ -5235,7 +5244,7 @@ fn match_emphasis(
             return None;
         }
     }
-    let close = find_emphasis_close(bytes, i + 1, delim)?;
+    let close = cached_find_emphasis_close(bytes, i + 1, delim, no_close)?;
     let inner = std::str::from_utf8(&bytes[i + 1..close]).ok()?;
     Some((
         InlineNode::Emphasis(Emphasis {
@@ -6596,6 +6605,52 @@ fn find_seq(bytes: &[u8], from: usize, marker: &[u8]) -> Option<usize> {
         j += 1;
     }
     None
+}
+
+/// Number of distinct single-char emphasis delimiters (`/ * _ ~ =`), plus one
+/// catch-all slot. Sizes the per-`parse_inline_context` no-close memo.
+const EMPHASIS_DELIM_SLOTS: usize = 6;
+
+#[inline]
+fn emphasis_delim_index(delim: u8) -> usize {
+    match delim {
+        b'/' => 0,
+        b'*' => 1,
+        b'_' => 2,
+        b'~' => 3,
+        b'=' => 4,
+        _ => 5,
+    }
+}
+
+/// `find_emphasis_close` with a per-delimiter failure memo. Once an opener of a
+/// given delimiter finds no valid closer scanning to end-of-text, every later
+/// opener of that delimiter (a larger `from`) also fails: the main loop only
+/// calls `match_emphasis` at positions outside code spans / escapes -- the same
+/// positions `find_emphasis_close` treats as "clean" -- so a suffix scan from a
+/// larger `from` can never expose a closer that the earlier, wider scan missed.
+/// This bounds `_a](`×n / `*a](`×n at O(n) instead of O(n^2) while keeping
+/// output byte-identical (skipping only ever elides a call that would fail).
+fn cached_find_emphasis_close(
+    bytes: &[u8],
+    from: usize,
+    delim: u8,
+    no_close: &mut [Option<usize>; EMPHASIS_DELIM_SLOTS],
+) -> Option<usize> {
+    let idx = emphasis_delim_index(delim);
+    if let Some(first) = no_close[idx] {
+        if from >= first {
+            return None;
+        }
+    }
+    let close = find_emphasis_close(bytes, from, delim);
+    if close.is_none() {
+        no_close[idx] = Some(match no_close[idx] {
+            Some(f) => f.min(from),
+            None => from,
+        });
+    }
+    close
 }
 
 fn find_emphasis_close(bytes: &[u8], from: usize, delim: u8) -> Option<usize> {
