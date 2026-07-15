@@ -394,10 +394,31 @@ fn flat_unclosed_span_attr(n: usize) -> String {
 /// `[x]{`×n + one trailing `}`: the "far-brace" shape. A single `}` DOES exist,
 /// so the last-`}` presence guard passes, yet the content never validates. Each
 /// opener used to walk to that far `}` and re-parse the whole tail (O(n^2)); the
-/// first-significant-byte guard rejects the `[`-led content in O(1) before the
-/// walk. Distinct from `flat_unclosed_span_attr` (no `}` at all).
+/// provably-invalid filter rejects the `[`-led content in O(1) before the walk.
+/// Distinct from `flat_unclosed_span_attr` (no `}` at all).
 fn far_brace_span_attr(n: usize) -> String {
     "[x]{".repeat(n) + "}"
+}
+
+/// Far-brace variants whose content starts with a VALID attribute-token prefix
+/// but still never validates (a nested `[x]{` follows). A first-byte-only guard
+/// misses these -- the token-walk filter must consume the valid prefix and bail
+/// at the invalid boundary byte, still O(1) per opener.
+///
+/// `[x]{a `×n + `}`: a bareword, then whitespace, then the nested `[`.
+fn far_brace_bareword_prefix(n: usize) -> String {
+    "[x]{a ".repeat(n) + "}"
+}
+
+/// `[x]{.a `×n + `}`: a `.class`, then whitespace, then the nested `[`.
+fn far_brace_class_prefix(n: usize) -> String {
+    "[x]{.a ".repeat(n) + "}"
+}
+
+/// `[x]{k= `×n + `}`: a `key=` whose value is empty (whitespace follows) -- a
+/// dangling `=`, which is invalid, then the nested `[`.
+fn far_brace_dangling_key(n: usize) -> String {
+    "[x]{k= ".repeat(n) + "}"
 }
 
 /// `{+`×n: critic-insert openers with no `+}` pair. The `find("+}")` walked to
@@ -461,6 +482,21 @@ fn flat_unclosed_span_attributes_parse_in_near_linear_time() {
 #[test]
 fn far_brace_span_attributes_parse_in_near_linear_time() {
     assert_bounded_scan(far_brace_span_attr, "far-brace-span-attr");
+}
+
+#[test]
+fn far_brace_bareword_prefix_parses_in_near_linear_time() {
+    assert_bounded_scan(far_brace_bareword_prefix, "far-brace-bareword-prefix");
+}
+
+#[test]
+fn far_brace_class_prefix_parses_in_near_linear_time() {
+    assert_bounded_scan(far_brace_class_prefix, "far-brace-class-prefix");
+}
+
+#[test]
+fn far_brace_dangling_key_parses_in_near_linear_time() {
+    assert_bounded_scan(far_brace_dangling_key, "far-brace-dangling-key");
 }
 
 #[test]
@@ -549,17 +585,44 @@ fn bounded_attribute_and_critic_scans_preserve_output() {
 
     // The far-brace shape's `[x]{[...` openers never form a span (the content
     // is never a valid attribute list), so they stay literal -- the
-    // first-significant-byte guard must not change that. The ONLY span is the
-    // trailing `[x]{}` (an empty attribute block, handled separately and
-    // unaffected by the guard).
+    // provably-invalid filter must not change that. The ONLY span is the trailing
+    // `[x]{}` (an empty attribute block, handled separately).
     let far = carve::to_html(&far_brace_span_attr(5));
     assert_eq!(far, "<p>[x]{[x]{[x]{[x]{<span>x</span></p>", "{far}");
+
+    // Valid-prefix variants: the filter consumes the valid token prefix and bails
+    // at the nested `[`, so the `…[x]{prefix [` openers stay literal. Only the
+    // final block, which has no nested opener, forms its span (or, for the
+    // dangling-`=` variant, stays literal too). Byte-identical to the full parse.
+    assert_eq!(
+        carve::to_html(&far_brace_bareword_prefix(5)),
+        "<p>[x]{a [x]{a [x]{a [x]{a <span a=\"\">x</span></p>"
+    );
+    assert_eq!(
+        carve::to_html(&far_brace_class_prefix(5)),
+        "<p>[x]{.a [x]{.a [x]{.a [x]{.a <span class=\"a\">x</span></p>"
+    );
+    assert_eq!(
+        carve::to_html(&far_brace_dangling_key(5)),
+        "<p>[x]{k= [x]{k= [x]{k= [x]{k= [x]{k= }</p>"
+    );
+
     // A `{` whose content DOES start validly still renders, even with an
     // unbalanced inner `{` (carve-rs stops at the first `}`, unlike carve-php):
-    // the guard only rejects a first byte that can begin no attribute token.
+    // the filter defers on the `key=<value>` (real value) rather than rejecting.
     assert_eq!(
         carve::to_html("[x]{a=b{c}"),
         "<p><span a=\"b{c\">x</span></p>"
+    );
+    // A bare value, id/class chains, whitespace separators, and Unicode-space
+    // separators (NBSP) all still form their spans -- the filter defers on each.
+    assert_eq!(
+        carve::to_html("[x]{#i .c key=v}"),
+        "<p><span id=\"i\" class=\"c\" key=\"v\">x</span></p>"
+    );
+    assert_eq!(
+        carve::to_html("[x]{a\u{00A0}b}"),
+        "<p><span a=\"\" b=\"\">x</span></p>"
     );
 
     let ins = carve::to_html(&flat_unclosed_critic_insert(5));

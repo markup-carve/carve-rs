@@ -3368,6 +3368,103 @@ fn detect_abbreviation_def(line: &str) -> Option<AbbreviationDef> {
     })
 }
 
+/// First byte of an attribute identifier (id/class/key): a letter or `_`
+/// (matches `is_identifier`'s first-char rule). Non-ASCII bytes are never a
+/// start here (`is_identifier` uses `is_ascii_alphabetic`).
+#[inline]
+fn is_attr_ident_start(b: u8) -> bool {
+    b.is_ascii_alphabetic() || b == b'_'
+}
+
+/// Continuation byte of an attribute identifier: a letter, digit, `_`, or `-`
+/// (matches `is_identifier`'s tail rule). Non-ASCII → false, ending the run.
+#[inline]
+fn is_attr_ident_part(b: u8) -> bool {
+    b.is_ascii_alphanumeric() || b == b'_' || b == b'-'
+}
+
+/// Whether the attribute payload following the `{` at `brace` provably cannot
+/// parse -- i.e. `read_attrs_at`'s scan+`parse_attrs` would return `None`.
+///
+/// It walks the SAME token grammar `attr_tokens`/`parse_attrs` accept and bails
+/// at the first byte that cannot continue a valid token, so a doomed payload is
+/// rejected in O(1) per opener instead of the char walk running to a far `}`
+/// (O(n²) on `[x]{`×n + `}`, `[x]{a `×n + `}`, `[x]{.a `×n + `}`, `[x]{k= `×n +
+/// `}`, …). It is a pure SKIP filter: it returns `true` ONLY when the payload is
+/// provably invalid; on a `}` (a candidate close), a newline, a quote, an
+/// escape, a `key=<value>` with a real value, or ANY non-ASCII byte (a possible
+/// Unicode-whitespace separator or non-ASCII content), it returns `false` and
+/// the unchanged scan/`parse_attrs` path decides -- so every accepted block, and
+/// its output, is byte-identical. A nested `{`/`[` (or any other invalid
+/// boundary byte) ends the walk, so each byte is visited O(1) times -> O(n)
+/// total. Deferring on non-ASCII keeps it correct without decoding chars (only
+/// the ASCII pathological shapes need the O(1) bail; a non-ASCII payload is rare
+/// and still handled correctly by the full scan). Mirrors carve-js
+/// `spanAttrProvablyInvalid`, matched to carve-rs's first-`}` (non-balancing)
+/// acceptance.
+fn attr_payload_provably_invalid(bytes: &[u8], brace: usize) -> bool {
+    let n = bytes.len();
+    let mut i = brace + 1;
+    while i < n {
+        let c = bytes[i];
+        // Non-ASCII: a Unicode-whitespace separator, a non-ASCII value byte, or
+        // other subtle content. Defer to the full scan/parse (byte-identical;
+        // non-ASCII is never the repeated ASCII pathological shape).
+        if !c.is_ascii() {
+            return false;
+        }
+        match c {
+            // A candidate close at a token boundary: let the real scan decide.
+            b'}' => return false,
+            // A newline ends an inline block (read_attrs_at bails); defer.
+            b'\n' => return false,
+            // Other ASCII whitespace separates tokens (attr_tokens treats
+            // char::is_whitespace as a separator); skip it and continue.
+            b' ' | b'\t' | 0x0B | 0x0C | b'\r' => i += 1,
+            // Quotes and escapes are subtle -- defer.
+            b'"' | b'\'' | b'\\' => return false,
+            // `#id` / `.class`: an identifier MUST follow, else the token (and
+            // the whole payload) is invalid (§14).
+            b'#' | b'.' => {
+                match bytes.get(i + 1) {
+                    Some(&d) if is_attr_ident_start(d) => {}
+                    _ => return true,
+                }
+                i += 2;
+                while i < n && is_attr_ident_part(bytes[i]) {
+                    i += 1;
+                }
+            }
+            // A bareword: a boolean attribute, or the name in `key=value`.
+            _ if is_attr_ident_start(c) => {
+                i += 1;
+                while i < n && is_attr_ident_part(bytes[i]) {
+                    i += 1;
+                }
+                if bytes.get(i) == Some(&b'=') {
+                    // `key=` with an EMPTY value (EOF, `}`, or ASCII whitespace
+                    // next) leaves a dangling `=` -> invalid. A bare value
+                    // (>=1 non-space) or a quoted value: defer (a valid bare
+                    // value is consumed whole by the scan -> linear). Non-ASCII
+                    // after `=` (a value byte or Unicode space) also defers.
+                    match bytes.get(i + 1) {
+                        None => return true,
+                        Some(&b'}') => return true,
+                        Some(&v) if v.is_ascii() && v.is_ascii_whitespace() => return true,
+                        _ => return false,
+                    }
+                }
+                // else continue to the next token.
+            }
+            // Any other ASCII byte cannot begin a valid token at a boundary
+            // (`[`, `{`, `(`, a digit, `-`, `+`, `=`, `,`, …): invalid.
+            _ => return true,
+        }
+    }
+    // Ran off the end without a `}`: the scan would fail too.
+    true
+}
+
 /// Read an inline attribute block `{...}` at `start` (which must index a `{`).
 ///
 /// `last_close_brace` is the index of the last `}` in `bytes` (or `None` if
@@ -3389,31 +3486,14 @@ fn read_attrs_at(
     if last_close_brace.map_or(true, |p| p < start) {
         return None;
     }
-    // A valid attribute block's first token starts with a letter, `_`, `#`, or
-    // `.` (a bare boolean/`key=value`, an id, or a class). When the first
-    // significant byte can begin none of these, the content cannot parse, so
-    // bail here in O(1). Without this, a run of never-validating openers whose
-    // only `}` lies far ahead (`[x]{`×n + `}`) walks to that far `}` AND
-    // re-parses the whole tail at every opener -- O(n^2). Since the elided path
-    // is exactly one where `parse_attrs` returns `None`, output is byte-identical.
-    // Leading ASCII whitespace is skipped as `attr_tokens` skips it, and a
-    // newline is bailed the same way the scan below does; a non-ASCII leading
-    // byte (a possible Unicode-whitespace separator or letter) is left to the
-    // full scan/parse so those stay byte-identical too.
-    {
-        let mut j = start + 1;
-        while let Some(&b) = bytes.get(j) {
-            match b {
-                b'\n' => return None,
-                b' ' | b'\t' | 0x0B | 0x0C | b'\r' => j += 1,
-                _ => break,
-            }
-        }
-        if let Some(&c) = bytes.get(j) {
-            if c.is_ascii() && !(c.is_ascii_alphabetic() || c == b'_' || c == b'#' || c == b'.') {
-                return None;
-            }
-        }
+    // Reject, in O(1) per opener, a payload that provably cannot parse before the
+    // char walk below runs to a far `}`. Without this, a run of never-validating
+    // openers whose only `}` lies far ahead (`[x]{`×n + `}`, `[x]{a `×n + `}`, …)
+    // walks to that `}` AND re-parses the whole tail at every opener -- O(n^2).
+    // The filter only reports "invalid" where `parse_attrs` would return `None`
+    // too, so output is byte-identical.
+    if attr_payload_provably_invalid(bytes, start) {
+        return None;
     }
     let mut i = start + 1;
     let mut quote: Option<u8> = None;
