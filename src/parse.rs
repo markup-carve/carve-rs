@@ -226,13 +226,41 @@ fn extract_footnote_defs(source: &str) -> (String, BTreeMap<String, String>) {
                     if is_blank_line(line) {
                         // A footnote body extends to following lines indented by
                         // >= 2 spaces (grammar PART 9 §16); single blank lines
-                        // are allowed between chunks.
-                        if i + 1 < lines.len() && leading_ws(lines[i + 1]) >= 2 {
+                        // are allowed between chunks. A `+` continuation marker
+                        // also keeps the body open (PART 9 §17).
+                        if i + 1 < lines.len()
+                            && (leading_ws(lines[i + 1]) >= 2 || is_plus_marker(lines[i + 1]))
+                        {
                             def_lines.push(String::new());
                             i += 1;
                             continue;
                         }
                         break;
+                    }
+                    // Form B: a lone `+` attaches the following flush-left block
+                    // to the note with no indentation (the same continuation
+                    // marker lists, block quotes and definition bodies use); the
+                    // attached block ends at a blank line, another `+`, or the
+                    // next footnote definition.
+                    if is_plus_marker(line) {
+                        i += 1;
+                        let mut attached: Vec<String> = Vec::new();
+                        while i < lines.len() {
+                            let a = lines[i];
+                            if is_blank_line(a)
+                                || is_plus_marker(a)
+                                || parse_footnote_def_line(a).is_some()
+                            {
+                                break;
+                            }
+                            attached.push(a.to_string());
+                            i += 1;
+                        }
+                        if !attached.is_empty() {
+                            def_lines.push(String::new());
+                            def_lines.extend(attached);
+                        }
+                        continue;
                     }
                     if leading_ws(line) >= 2 {
                         def_lines.push(trim_ascii_start(line).to_string());
@@ -2597,18 +2625,70 @@ fn parse_definition_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNo
     BlockNode::DefinitionList(DefinitionList { attrs: None, items })
 }
 
+/// A lone `+` (optionally followed by spaces/tabs) is the continuation marker
+/// (PART 9 §17): it attaches the following flush-left block to the open
+/// container.
+fn is_plus_marker(line: &str) -> bool {
+    line.strip_prefix('+')
+        .is_some_and(|rest| rest.bytes().all(|b| b == b' ' || b == b'\t'))
+}
+
+/// Collect the continuation of a definition body. A definition continues like a
+/// list item (PART 9 §17): form A folds an indented block in (a blank line is
+/// tolerated when a later line still continues), and form B attaches a lone `+`
+/// pull-left flush-left block with no indentation. Returned lines carry blank
+/// separators so the block sub-parse yields multiple paragraphs.
 fn collect_definition_body(cur: &mut LineCursor) -> String {
-    let mut lines = Vec::new();
-    while let Some(line) = cur.peek() {
-        if is_blank_line(line) {
+    let mut lines: Vec<String> = Vec::new();
+    loop {
+        let Some(line) = cur.peek() else { break };
+        // Form B: `+` pull-left continuation.
+        if is_plus_marker(line) {
+            cur.consume();
+            let mut attached: Vec<String> = Vec::new();
+            while let Some(a) = cur.peek() {
+                if is_blank_line(a)
+                    || is_plus_marker(a)
+                    || a.strip_prefix(":: ").is_some()
+                    || a.strip_prefix(":  ").is_some()
+                {
+                    break;
+                }
+                attached.push(a.to_string());
+                cur.consume();
+            }
+            if !attached.is_empty() {
+                lines.push(String::new());
+                lines.extend(attached);
+            }
+            continue;
+        }
+        // Form A: an indented continuation line (no intervening blank).
+        if !is_blank_line(line) {
+            let indent = indent_columns(line);
+            if indent >= 3 {
+                lines.push(slice_columns(line, 3.min(indent), false));
+                cur.consume();
+                continue;
+            }
             break;
         }
-        let indent = indent_columns(line);
-        if indent < 3 {
-            break;
+        // Blank line: absorb it as a paragraph separator ONLY when a later line
+        // still continues the definition (form A); otherwise leave it for the
+        // entry separator / outer block stream.
+        let mut look = 0usize;
+        while matches!(cur.lines.get(cur.pos + look).copied(), Some(l) if is_blank_line(l)) {
+            look += 1;
         }
-        lines.push(slice_columns(line, 3.min(indent), false));
-        cur.consume();
+        match cur.lines.get(cur.pos + look).copied() {
+            Some(after) if !is_blank_line(after) && indent_columns(after) >= 3 => {
+                for _ in 0..look {
+                    lines.push(String::new());
+                    cur.consume();
+                }
+            }
+            _ => break,
+        }
     }
     lines.join("\n")
 }
