@@ -248,6 +248,33 @@ fn deeply_nested_balanced_images_parse_in_near_linear_time() {
     on_big_stack(|| assert_near_linear(nested_images, "nested-image"));
 }
 
+/// A flat run of unclosed link openers with NO `)` anywhere: `[a](` * n. Each
+/// `[` reaches the link-destination reader, which used to scan to end-of-text
+/// looking for the mandatory `)` -- O(n) per `[`, so O(n^2) overall. The
+/// last-`)` short-circuit bounds each attempt to O(1).
+fn flat_unclosed_links(n: usize) -> String {
+    "[a](".repeat(n)
+}
+
+#[test]
+fn flat_unclosed_link_destinations_parse_in_near_linear_time() {
+    assert_near_linear(flat_unclosed_links, "flat-unclosed-link");
+}
+
+#[test]
+fn flat_unclosed_link_destinations_preserve_output() {
+    // The `[a](`×n shape never forms a real link: every opener stays literal.
+    // The last-`)` short-circuit must not change that.
+    let link = carve::to_html(&flat_unclosed_links(5));
+    assert_eq!(link.matches("<a ").count(), 0, "{link}");
+    assert!(link.contains("[a]("), "literal text must survive: {link}");
+    // A genuine link with a destination still renders as an anchor.
+    assert_eq!(
+        carve::to_html("[text](https://example.com)"),
+        "<p><a href=\"https://example.com\">text</a></p>"
+    );
+}
+
 #[test]
 fn deeply_nested_balanced_links_preserve_output() {
     // The bracket-match precompute must not change parse output. For this

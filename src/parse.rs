@@ -2387,7 +2387,8 @@ fn detect_block_image(line: &str) -> Option<Image> {
     }
     let bytes = line.as_bytes();
     let bracket_matches = compute_bracket_matches(bytes);
-    let (img, consumed) = parse_image_at(bytes, 0, &bracket_matches)?;
+    let last_close_paren = bytes.iter().rposition(|&b| b == b')');
+    let (img, consumed) = parse_image_at(bytes, 0, &bracket_matches, last_close_paren)?;
     let after = &line[consumed..];
     if !after.trim().is_empty() {
         return None;
@@ -3770,10 +3771,20 @@ fn parse_inline_context(
     // instead of re-scanning O(n) each. Without this, deeply nested balanced
     // links (`[[[...x]()]()...]`) are O(n^2). Only needed when bracket
     // constructs can actually fire.
-    let bracket_matches = if has_link_trigger || text.contains("![") {
+    let has_brackets = has_link_trigger || text.contains("![");
+    let bracket_matches = if has_brackets {
         compute_bracket_matches(bytes)
     } else {
         Vec::new()
+    };
+    // Index of the last `)` in the text (only needed when link/image parsing can
+    // fire). A `read_link_target` attempt whose `start` is past this can never
+    // find its mandatory closing `)`, so it short-circuits in O(1) instead of
+    // scanning to EOF -- keeps `[a](`×n (no `)`) linear. See read_link_target.
+    let last_close_paren = if has_brackets {
+        bytes.iter().rposition(|&b| b == b')')
+    } else {
+        None
     };
     let mut out = Vec::new();
     let mut buf = String::new();
@@ -3901,7 +3912,9 @@ fn parse_inline_context(
 
         // Image: ![alt](src), then reference image ![alt][ref] / ![alt][].
         if c == b'!' && bytes.get(i + 1) == Some(&b'[') {
-            if let Some((img, consumed)) = parse_image_at(bytes, i, &bracket_matches) {
+            if let Some((img, consumed)) =
+                parse_image_at(bytes, i, &bracket_matches, last_close_paren)
+            {
                 flush_text(&mut out, &mut buf);
                 out.push(InlineNode::Image(img));
                 i += consumed;
@@ -3926,9 +3939,14 @@ fn parse_inline_context(
                 }
             }
             if has_link_trigger {
-                if let Some((link, consumed)) =
-                    parse_inline_link_with_options(bytes, i, options, in_footnote, &bracket_matches)
-                {
+                if let Some((link, consumed)) = parse_inline_link_with_options(
+                    bytes,
+                    i,
+                    options,
+                    in_footnote,
+                    &bracket_matches,
+                    last_close_paren,
+                ) {
                     flush_text(&mut out, &mut buf);
                     out.push(InlineNode::Link(link));
                     i += consumed;
@@ -4416,7 +4434,12 @@ fn parse_inline_code(bytes: &[u8], start: usize) -> Option<(String, usize)> {
     Some((trimmed.to_string(), bytes.len() - start))
 }
 
-fn parse_image_at(bytes: &[u8], start: usize, matches: &[usize]) -> Option<(Image, usize)> {
+fn parse_image_at(
+    bytes: &[u8],
+    start: usize,
+    matches: &[usize],
+    last_close_paren: Option<usize>,
+) -> Option<(Image, usize)> {
     if bytes.get(start) != Some(&b'!') || bytes.get(start + 1) != Some(&b'[') {
         return None;
     }
@@ -4425,7 +4448,7 @@ fn parse_image_at(bytes: &[u8], start: usize, matches: &[usize]) -> Option<(Imag
     if bytes.get(after_alt) != Some(&b'(') {
         return None;
     }
-    let (src, title, after_paren) = read_link_target(bytes, after_alt + 1)?;
+    let (src, title, after_paren) = read_link_target(bytes, after_alt + 1, last_close_paren)?;
     // Only a valid `(target)` reaches here, so the alt copy is deferred off the
     // failing-`![...]()` path that would otherwise be O(n) per position.
     let alt = std::str::from_utf8(&bytes[start + 2..alt_close])
@@ -4507,6 +4530,7 @@ fn parse_inline_link_with_options(
     options: &Options<'_>,
     in_footnote: bool,
     matches: &[usize],
+    last_close_paren: Option<usize>,
 ) -> Option<(Link, usize)> {
     if bytes.get(start) != Some(&b'[') {
         return None;
@@ -4516,7 +4540,7 @@ fn parse_inline_link_with_options(
     if bytes.get(after_bracket) != Some(&b'(') {
         return None;
     }
-    let (href, title, after_paren) = read_link_target(bytes, after_bracket + 1)?;
+    let (href, title, after_paren) = read_link_target(bytes, after_bracket + 1, last_close_paren)?;
     // The label is copied only once a valid `(target)` follows; the failing
     // `[...]()` path (empty target) returns above without allocating, which is
     // what keeps `[[[...x]()]()...]()` linear instead of quadratic.
@@ -5069,7 +5093,21 @@ fn unescape_title(s: &str) -> String {
     out
 }
 
-fn read_link_target(bytes: &[u8], start: usize) -> Option<(String, Option<String>, usize)> {
+fn read_link_target(
+    bytes: &[u8],
+    start: usize,
+    last_close_paren: Option<usize>,
+) -> Option<(String, Option<String>, usize)> {
+    // A valid inline target MUST end with a `)` (checked below). If no `)`
+    // occurs at or after `start`, the destination scan can only walk to
+    // end-of-text and then fail -- so short-circuit here in O(1). Without this,
+    // a run like `[a](`×n (no `)` anywhere) makes every `[` re-scan to EOF,
+    // which is O(n^2). `last_close_paren` is the index of the last `)` in the
+    // whole text, precomputed once by the caller; skipping only ever elides a
+    // call that would have returned `None`, keeping output byte-identical.
+    if last_close_paren.map_or(true, |p| start > p) {
+        return None;
+    }
     let mut i = start;
     let href_start = i;
     // Per the grammar, an inline link destination ends at the first whitespace
