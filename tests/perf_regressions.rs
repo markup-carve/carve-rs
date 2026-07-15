@@ -391,6 +391,15 @@ fn flat_unclosed_span_attr(n: usize) -> String {
     "[x]{".repeat(n)
 }
 
+/// `[x]{`×n + one trailing `}`: the "far-brace" shape. A single `}` DOES exist,
+/// so the last-`}` presence guard passes, yet the content never validates. Each
+/// opener used to walk to that far `}` and re-parse the whole tail (O(n^2)); the
+/// first-significant-byte guard rejects the `[`-led content in O(1) before the
+/// walk. Distinct from `flat_unclosed_span_attr` (no `}` at all).
+fn far_brace_span_attr(n: usize) -> String {
+    "[x]{".repeat(n) + "}"
+}
+
 /// `{+`×n: critic-insert openers with no `+}` pair. The `find("+}")` walked to
 /// EOF for every opener.
 fn flat_unclosed_critic_insert(n: usize) -> String {
@@ -447,6 +456,11 @@ fn flat_unclosed_autolink(n: usize) -> String {
 #[test]
 fn flat_unclosed_span_attributes_parse_in_near_linear_time() {
     assert_bounded_scan(flat_unclosed_span_attr, "flat-unclosed-span-attr");
+}
+
+#[test]
+fn far_brace_span_attributes_parse_in_near_linear_time() {
+    assert_bounded_scan(far_brace_span_attr, "far-brace-span-attr");
 }
 
 #[test]
@@ -532,6 +546,21 @@ fn bounded_attribute_and_critic_scans_preserve_output() {
     let span = carve::to_html(&flat_unclosed_span_attr(5));
     assert_eq!(span.matches("<span").count(), 0, "{span}");
     assert!(span.contains("[x]{"), "{span}");
+
+    // The far-brace shape's `[x]{[...` openers never form a span (the content
+    // is never a valid attribute list), so they stay literal -- the
+    // first-significant-byte guard must not change that. The ONLY span is the
+    // trailing `[x]{}` (an empty attribute block, handled separately and
+    // unaffected by the guard).
+    let far = carve::to_html(&far_brace_span_attr(5));
+    assert_eq!(far, "<p>[x]{[x]{[x]{[x]{<span>x</span></p>", "{far}");
+    // A `{` whose content DOES start validly still renders, even with an
+    // unbalanced inner `{` (carve-rs stops at the first `}`, unlike carve-php):
+    // the guard only rejects a first byte that can begin no attribute token.
+    assert_eq!(
+        carve::to_html("[x]{a=b{c}"),
+        "<p><span a=\"b{c\">x</span></p>"
+    );
 
     let ins = carve::to_html(&flat_unclosed_critic_insert(5));
     assert_eq!(ins.matches("<ins>").count(), 0, "{ins}");

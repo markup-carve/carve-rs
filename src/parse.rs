@@ -3389,6 +3389,32 @@ fn read_attrs_at(
     if last_close_brace.map_or(true, |p| p < start) {
         return None;
     }
+    // A valid attribute block's first token starts with a letter, `_`, `#`, or
+    // `.` (a bare boolean/`key=value`, an id, or a class). When the first
+    // significant byte can begin none of these, the content cannot parse, so
+    // bail here in O(1). Without this, a run of never-validating openers whose
+    // only `}` lies far ahead (`[x]{`×n + `}`) walks to that far `}` AND
+    // re-parses the whole tail at every opener -- O(n^2). Since the elided path
+    // is exactly one where `parse_attrs` returns `None`, output is byte-identical.
+    // Leading ASCII whitespace is skipped as `attr_tokens` skips it, and a
+    // newline is bailed the same way the scan below does; a non-ASCII leading
+    // byte (a possible Unicode-whitespace separator or letter) is left to the
+    // full scan/parse so those stay byte-identical too.
+    {
+        let mut j = start + 1;
+        while let Some(&b) = bytes.get(j) {
+            match b {
+                b'\n' => return None,
+                b' ' | b'\t' | 0x0B | 0x0C | b'\r' => j += 1,
+                _ => break,
+            }
+        }
+        if let Some(&c) = bytes.get(j) {
+            if c.is_ascii() && !(c.is_ascii_alphabetic() || c == b'_' || c == b'#' || c == b'.') {
+                return None;
+            }
+        }
+    }
     let mut i = start + 1;
     let mut quote: Option<u8> = None;
     let mut escaped = false;
