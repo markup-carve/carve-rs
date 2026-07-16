@@ -2605,7 +2605,27 @@ fn parse_definition_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNo
             break;
         }
         cur.consume();
-        let terms = vec![parse_inline_with_options(trim_ascii_end(term), options)];
+        // A term folds a following plain line like a heading (soft break), so a
+        // wrapped term line does not strand the definition. A blank line, a new
+        // marker (`::` / `:  `), a list marker, or a block opener ends the term.
+        let mut term_text = trim_ascii_end(term).to_string();
+        while let Some(next) = cur.peek() {
+            if is_blank_line(next)
+                || next.strip_prefix(":: ").is_some()
+                || next.strip_prefix(":  ").is_some()
+                || is_list_marker(next)
+            {
+                break;
+            }
+            let owned = next.to_string();
+            if interrupts_paragraph(cur, &owned) {
+                break;
+            }
+            term_text.push('\n');
+            term_text.push_str(&owned);
+            cur.consume();
+        }
+        let terms = vec![parse_inline_with_options(&term_text, options)];
         let mut defs = Vec::new();
 
         while let Some(line) = cur.peek() {
