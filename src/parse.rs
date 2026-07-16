@@ -2628,7 +2628,29 @@ fn parse_definition_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNo
         let terms = vec![parse_inline_with_options(&term_text, options)];
         let mut defs = Vec::new();
 
-        while let Some(line) = cur.peek() {
+        loop {
+            // A blank line before a `:  ` definition is a separator (djot
+            // parity): a definition may be separated from its term or a
+            // previous definition by a blank line. A blank not followed by a
+            // `:  ` definition ends the entry.
+            if matches!(cur.peek(), Some(l) if is_blank_line(l)) {
+                let mut look = 0usize;
+                while matches!(cur.lines.get(cur.pos + look).copied(), Some(l) if is_blank_line(l))
+                {
+                    look += 1;
+                }
+                match cur.lines.get(cur.pos + look).copied() {
+                    Some(after) if after.strip_prefix(":  ").is_some() => {
+                        for _ in 0..look {
+                            cur.consume();
+                        }
+                    }
+                    _ => break,
+                }
+            }
+            let Some(line) = cur.peek() else {
+                break;
+            };
             let Some(def) = line.strip_prefix(":  ") else {
                 break;
             };
