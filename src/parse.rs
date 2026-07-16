@@ -2415,7 +2415,17 @@ fn detect_block_image(line: &str) -> Option<Image> {
     }
     let bytes = line.as_bytes();
     let bracket_matches = compute_bracket_matches(bytes);
-    let (img, consumed) = parse_image_at(bytes, 0, &bracket_matches)?;
+    // Block-image detection runs once on a single line (not in a per-position
+    // loop), so full-slice last-occurrence scans are fine here.
+    let bounds = InlineBounds {
+        matches: &bracket_matches,
+        last_close_paren: bytes.iter().rposition(|&b| b == b')'),
+        last_close_brace: bytes.iter().rposition(|&b| b == b'}'),
+        last_close_bracket: bytes.iter().rposition(|&b| b == b']'),
+        last_gt: bytes.iter().rposition(|&b| b == b'>'),
+        delim_brace: [None; DELIM_BRACE_SLOTS],
+    };
+    let (img, consumed) = parse_image_at(bytes, 0, &bounds)?;
     let after = &line[consumed..];
     if !after.trim().is_empty() {
         return None;
@@ -2782,7 +2792,8 @@ fn split_row_attrs(content: &str) -> (Option<Attrs>, &str) {
     if let Some(idx) = content.rfind('|') {
         let bytes = content.as_bytes();
         if bytes.get(idx + 1) == Some(&b'{') {
-            if let Some((attrs, next)) = read_attrs_at(bytes, idx + 1) {
+            let last_close_brace = bytes.iter().rposition(|&b| b == b'}');
+            if let Some((attrs, next)) = read_attrs_at(bytes, idx + 1, last_close_brace) {
                 if next == content.len() {
                     return (Some(attrs), &content[..=idx]);
                 }
@@ -2994,7 +3005,9 @@ fn parse_table_cell(cell: &str, options: &Options<'_>) -> TableCell {
     // content. A space before the brace (`| {.x}`) is also ordinary content.
     // An attributed cell is never a bare span marker -- its content is literal.
     if cell.as_bytes().first() == Some(&b'{') {
-        if let Some((attrs, next)) = read_attrs_at(cell.as_bytes(), 0) {
+        let cell_bytes = cell.as_bytes();
+        let last_close_brace = cell_bytes.iter().rposition(|&b| b == b'}');
+        if let Some((attrs, next)) = read_attrs_at(cell_bytes, 0, last_close_brace) {
             return TableCell {
                 header: false,
                 span: None,
@@ -3434,8 +3447,131 @@ fn detect_abbreviation_def(line: &str) -> Option<AbbreviationDef> {
     })
 }
 
-fn read_attrs_at(bytes: &[u8], start: usize) -> Option<(Attrs, usize)> {
+/// First byte of an attribute identifier (id/class/key): a letter or `_`
+/// (matches `is_identifier`'s first-char rule). Non-ASCII bytes are never a
+/// start here (`is_identifier` uses `is_ascii_alphabetic`).
+#[inline]
+fn is_attr_ident_start(b: u8) -> bool {
+    b.is_ascii_alphabetic() || b == b'_'
+}
+
+/// Continuation byte of an attribute identifier: a letter, digit, `_`, or `-`
+/// (matches `is_identifier`'s tail rule). Non-ASCII → false, ending the run.
+#[inline]
+fn is_attr_ident_part(b: u8) -> bool {
+    b.is_ascii_alphanumeric() || b == b'_' || b == b'-'
+}
+
+/// Whether the attribute payload following the `{` at `brace` provably cannot
+/// parse -- i.e. `read_attrs_at`'s scan+`parse_attrs` would return `None`.
+///
+/// It walks the SAME token grammar `attr_tokens`/`parse_attrs` accept and bails
+/// at the first byte that cannot continue a valid token, so a doomed payload is
+/// rejected in O(1) per opener instead of the char walk running to a far `}`
+/// (O(n²) on `[x]{`×n + `}`, `[x]{a `×n + `}`, `[x]{.a `×n + `}`, `[x]{k= `×n +
+/// `}`, …). It is a pure SKIP filter: it returns `true` ONLY when the payload is
+/// provably invalid; on a `}` (a candidate close), a newline, a quote, an
+/// escape, a `key=<value>` with a real value, or ANY non-ASCII byte (a possible
+/// Unicode-whitespace separator or non-ASCII content), it returns `false` and
+/// the unchanged scan/`parse_attrs` path decides -- so every accepted block, and
+/// its output, is byte-identical. A nested `{`/`[` (or any other invalid
+/// boundary byte) ends the walk, so each byte is visited O(1) times -> O(n)
+/// total. Deferring on non-ASCII keeps it correct without decoding chars (only
+/// the ASCII pathological shapes need the O(1) bail; a non-ASCII payload is rare
+/// and still handled correctly by the full scan). Mirrors carve-js
+/// `spanAttrProvablyInvalid`, matched to carve-rs's first-`}` (non-balancing)
+/// acceptance.
+fn attr_payload_provably_invalid(bytes: &[u8], brace: usize) -> bool {
+    let n = bytes.len();
+    let mut i = brace + 1;
+    while i < n {
+        let c = bytes[i];
+        // Non-ASCII: a Unicode-whitespace separator, a non-ASCII value byte, or
+        // other subtle content. Defer to the full scan/parse (byte-identical;
+        // non-ASCII is never the repeated ASCII pathological shape).
+        if !c.is_ascii() {
+            return false;
+        }
+        match c {
+            // A candidate close at a token boundary: let the real scan decide.
+            b'}' => return false,
+            // A newline ends an inline block (read_attrs_at bails); defer.
+            b'\n' => return false,
+            // Other ASCII whitespace separates tokens (attr_tokens treats
+            // char::is_whitespace as a separator); skip it and continue.
+            b' ' | b'\t' | 0x0B | 0x0C | b'\r' => i += 1,
+            // Quotes and escapes are subtle -- defer.
+            b'"' | b'\'' | b'\\' => return false,
+            // `#id` / `.class`: an identifier MUST follow, else the token (and
+            // the whole payload) is invalid (§14).
+            b'#' | b'.' => {
+                match bytes.get(i + 1) {
+                    Some(&d) if is_attr_ident_start(d) => {}
+                    _ => return true,
+                }
+                i += 2;
+                while i < n && is_attr_ident_part(bytes[i]) {
+                    i += 1;
+                }
+            }
+            // A bareword: a boolean attribute, or the name in `key=value`.
+            _ if is_attr_ident_start(c) => {
+                i += 1;
+                while i < n && is_attr_ident_part(bytes[i]) {
+                    i += 1;
+                }
+                if bytes.get(i) == Some(&b'=') {
+                    // `key=` with an EMPTY value (EOF, `}`, or ASCII whitespace
+                    // next) leaves a dangling `=` -> invalid. A bare value
+                    // (>=1 non-space) or a quoted value: defer (a valid bare
+                    // value is consumed whole by the scan -> linear). Non-ASCII
+                    // after `=` (a value byte or Unicode space) also defers.
+                    match bytes.get(i + 1) {
+                        None => return true,
+                        Some(&b'}') => return true,
+                        Some(&v) if v.is_ascii() && v.is_ascii_whitespace() => return true,
+                        _ => return false,
+                    }
+                }
+                // else continue to the next token.
+            }
+            // Any other ASCII byte cannot begin a valid token at a boundary
+            // (`[`, `{`, `(`, a digit, `-`, `+`, `=`, `,`, …): invalid.
+            _ => return true,
+        }
+    }
+    // Ran off the end without a `}`: the scan would fail too.
+    true
+}
+
+/// Read an inline attribute block `{...}` at `start` (which must index a `{`).
+///
+/// `last_close_brace` is the index of the last `}` in `bytes` (or `None` if
+/// there is none). A block can only close on a `}`, so when no `}` lies at or
+/// after `start` the scan could only walk to end-of-text and fail -- it is
+/// skipped in O(1). This keeps a run of unclosed `{`-attribute openers
+/// (`[x]{`×n, `*a*{`×n, `:a:{`×n, …) linear instead of O(n^2). Callers scanning
+/// a fresh slice (block attributes, table cells) pass that slice's own last-`}`
+/// index. Skipping only elides a call that would return `None`, so output is
+/// byte-identical.
+fn read_attrs_at(
+    bytes: &[u8],
+    start: usize,
+    last_close_brace: Option<usize>,
+) -> Option<(Attrs, usize)> {
     if bytes.get(start) != Some(&b'{') {
+        return None;
+    }
+    if last_close_brace.map_or(true, |p| p < start) {
+        return None;
+    }
+    // Reject, in O(1) per opener, a payload that provably cannot parse before the
+    // char walk below runs to a far `}`. Without this, a run of never-validating
+    // openers whose only `}` lies far ahead (`[x]{`×n + `}`, `[x]{a `×n + `}`, …)
+    // walks to that `}` AND re-parses the whole tail at every opener -- O(n^2).
+    // The filter only reports "invalid" where `parse_attrs` would return `None`
+    // too, so output is byte-identical.
+    if attr_payload_provably_invalid(bytes, start) {
         return None;
     }
     let mut i = start + 1;
@@ -3626,10 +3762,11 @@ fn parse_standalone_attrs(line: &str) -> Option<Attrs> {
         return None;
     }
     let bytes = trimmed.as_bytes();
+    let last_close_brace = bytes.iter().rposition(|&b| b == b'}');
     let mut pos = 0usize;
     let mut attrs: Option<Attrs> = None;
     while pos < bytes.len() {
-        let (incoming, next) = read_attrs_at(bytes, pos)?;
+        let (incoming, next) = read_attrs_at(bytes, pos, last_close_brace)?;
         merge_attrs(&mut attrs, incoming);
         pos = next;
         if pos < bytes.len() && bytes[pos] != b'{' {
@@ -3816,6 +3953,77 @@ fn try_extension_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<Bl
 // Inline parsing
 // ============================================================================
 
+/// Number of distinct `X}` pair closers tracked in `InlineBounds::delim_brace`.
+/// Covers the critic markers (`+ - ~ #`) and the forced-emphasis delimiters
+/// (`/ * _ ^ , = ~`); `~` is shared between critic substitution/strike.
+const DELIM_BRACE_SLOTS: usize = 10;
+
+/// Slot in `InlineBounds::delim_brace` for the leading byte of an `X}` pair, or
+/// `None` for a byte that never opens a tracked pair.
+#[inline]
+fn delim_brace_slot(b: u8) -> Option<usize> {
+    Some(match b {
+        b'+' => 0,
+        b'-' => 1,
+        b'~' => 2,
+        b'#' => 3,
+        b'/' => 4,
+        b'*' => 5,
+        b'_' => 6,
+        b'^' => 7,
+        b',' => 8,
+        b'=' => 9,
+        _ => return None,
+    })
+}
+
+/// Precomputed, per-inline-text closer positions used to short-circuit the
+/// per-position construct scanners in `parse_inline_context`. Each scanner needs
+/// a specific closing delimiter somewhere ahead; if the last occurrence of that
+/// closer lies before the candidate opener, the scan could only walk to
+/// end-of-text and fail, so it is skipped in O(1). Without these bounds, a run
+/// of unclosed openers (`{+`×n, `[^`×n, `[x]{`×n, `<`×n, …) forces every opener
+/// to re-scan to EOF -- classic O(n^2). Skipping only ever elides a scan that
+/// would have returned `None`, so output stays byte-identical.
+struct InlineBounds<'a> {
+    /// Matching `]` index for every `[` (see `compute_bracket_matches`); empty
+    /// when the text contains no bracket construct trigger.
+    matches: &'a [usize],
+    /// Index of the last `)` (inline link/image destination closer).
+    last_close_paren: Option<usize>,
+    /// Index of the last `}` (attribute-block closer).
+    last_close_brace: Option<usize>,
+    /// Index of the last `]` (footnote-ref / inline-footnote / extension closer).
+    last_close_bracket: Option<usize>,
+    /// Index of the last `>` (crossref / autolink closer).
+    last_gt: Option<usize>,
+    /// For each tracked `X}` pair, the index of the leading `X` of its LAST
+    /// occurrence (see `delim_brace_slot`). Used by critic markup and forced
+    /// emphasis, whose closers are two-byte `X}` pairs.
+    delim_brace: [Option<usize>; DELIM_BRACE_SLOTS],
+}
+
+impl InlineBounds<'_> {
+    /// True when a `]` occurs at or after `pos`.
+    #[inline]
+    fn has_bracket_from(&self, pos: usize) -> bool {
+        self.last_close_bracket.is_some_and(|p| p >= pos)
+    }
+
+    /// True when a `>` occurs at or after `pos`.
+    #[inline]
+    fn has_gt_from(&self, pos: usize) -> bool {
+        self.last_gt.is_some_and(|p| p >= pos)
+    }
+
+    /// True when an `X}` pair with leading byte `delim` occurs at or after
+    /// `pos`.
+    #[inline]
+    fn has_delim_brace_from(&self, delim: u8, pos: usize) -> bool {
+        delim_brace_slot(delim).is_some_and(|s| self.delim_brace[s].is_some_and(|p| p >= pos))
+    }
+}
+
 pub(crate) fn parse_inline_with_options(text: &str, options: &Options<'_>) -> Vec<InlineNode> {
     parse_inline_context(text, options, false, false)
 }
@@ -3849,11 +4057,65 @@ fn parse_inline_context(
     // instead of re-scanning O(n) each. Without this, deeply nested balanced
     // links (`[[[...x]()]()...]`) are O(n^2). Only needed when bracket
     // constructs can actually fire.
-    let bracket_matches = if has_link_trigger || text.contains("![") {
+    let has_brackets = has_link_trigger || text.contains("![");
+    let bracket_matches = if has_brackets {
         compute_bracket_matches(bytes)
     } else {
         Vec::new()
     };
+    // Last-occurrence positions of each mandatory closer, precomputed once so the
+    // per-position scanners short-circuit in O(1) when their closer cannot lie
+    // ahead (see InlineBounds). Each is gated on a cheap presence check; a
+    // `rposition`/pair scan runs only when that byte actually appears. This is
+    // what keeps runs of unclosed openers linear instead of O(n^2).
+    let last_close_paren = if has_brackets {
+        bytes.iter().rposition(|&b| b == b')')
+    } else {
+        None
+    };
+    let has_close_brace = text.contains('}');
+    let last_close_brace = if has_close_brace {
+        bytes.iter().rposition(|&b| b == b'}')
+    } else {
+        None
+    };
+    let last_close_bracket = if text.contains(']') {
+        bytes.iter().rposition(|&b| b == b']')
+    } else {
+        None
+    };
+    let last_gt = if text.contains('>') {
+        bytes.iter().rposition(|&b| b == b'>')
+    } else {
+        None
+    };
+    // For each tracked `X}` pair (`+} -} ~} #}` for critic, plus the forced-
+    // emphasis delimiters), record the leading byte's LAST position. Built only
+    // when a `}` exists at all, since every such pair ends in `}`.
+    let mut delim_brace: [Option<usize>; DELIM_BRACE_SLOTS] = [None; DELIM_BRACE_SLOTS];
+    if has_close_brace {
+        for p in 0..bytes.len().saturating_sub(1) {
+            if bytes[p + 1] == b'}' {
+                if let Some(slot) = delim_brace_slot(bytes[p]) {
+                    delim_brace[slot] = Some(p);
+                }
+            }
+        }
+    }
+    let bounds = InlineBounds {
+        matches: &bracket_matches,
+        last_close_paren,
+        last_close_brace,
+        last_close_bracket,
+        last_gt,
+        delim_brace,
+    };
+    // Per-delimiter memo of the earliest opener position from which the emphasis
+    // closer scan already failed. Once an opener of a given delimiter finds no
+    // valid closer to EOF, every later opener of that delimiter also fails, so
+    // the scan is skipped in O(1). Keeps `_a](`×n / `*a](`×n linear. See
+    // cached_find_emphasis_close.
+    let mut emphasis_no_close: [Option<usize>; EMPHASIS_DELIM_SLOTS] = [None; EMPHASIS_DELIM_SLOTS];
     let mut out = Vec::new();
     let mut buf = String::new();
     let mut i = 0;
@@ -3915,7 +4177,7 @@ fn parse_inline_context(
         }
 
         if c == b'$' {
-            if let Some((math, consumed)) = parse_math(bytes, i) {
+            if let Some((math, consumed)) = parse_math(bytes, i, &bounds) {
                 flush_text(&mut out, &mut buf);
                 out.push(InlineNode::Math(math));
                 i += consumed;
@@ -3924,7 +4186,9 @@ fn parse_inline_context(
         }
 
         if c == b'{' {
-            if let Some((critic, consumed)) = parse_critic_markup(bytes, i, options, in_footnote) {
+            if let Some((critic, consumed)) =
+                parse_critic_markup(bytes, i, options, in_footnote, &bounds)
+            {
                 flush_text(&mut out, &mut buf);
                 out.push(critic);
                 i += consumed;
@@ -3933,13 +4197,15 @@ fn parse_inline_context(
             // Forced intraword emphasis `{X…X}` — tried before inline attribute
             // blocks, matching the reference scan order.
             if let Some((mut node, consumed)) =
-                parse_forced_emphasis(bytes, i, options, in_footnote)
+                parse_forced_emphasis(bytes, i, options, in_footnote, &bounds)
             {
                 let mut consumed = consumed;
                 // A trailing `{...}` attribute block attaches to the forced span,
                 // exactly like a bare span (`{*x*}{.c}` -> <strong class="c">x</strong>).
                 if bytes.get(i + consumed) == Some(&b'{') {
-                    if let Some((attrs, next)) = read_attrs_at(bytes, i + consumed) {
+                    if let Some((attrs, next)) =
+                        read_attrs_at(bytes, i + consumed, bounds.last_close_brace)
+                    {
                         apply_attrs_to_inline(&mut node, attrs);
                         consumed = next - i;
                     }
@@ -3956,7 +4222,7 @@ fn parse_inline_context(
             // and the `{`, so the block stays literal. An empty/invalid `{...}`
             // also stays literal. Matches carve-php / carve-js.
             if buf.is_empty() && out.last().is_some_and(inline_is_attributable) {
-                if let Some((attrs, next)) = read_attrs_at(bytes, i) {
+                if let Some((attrs, next)) = read_attrs_at(bytes, i, bounds.last_close_brace) {
                     let last = out.last_mut().unwrap();
                     // A reference link carries `raw_ref` (its literal source) in
                     // case it stays unresolved. Merge the block into the link's
@@ -3980,13 +4246,13 @@ fn parse_inline_context(
 
         // Image: ![alt](src), then reference image ![alt][ref] / ![alt][].
         if c == b'!' && bytes.get(i + 1) == Some(&b'[') {
-            if let Some((img, consumed)) = parse_image_at(bytes, i, &bracket_matches) {
+            if let Some((img, consumed)) = parse_image_at(bytes, i, &bounds) {
                 flush_text(&mut out, &mut buf);
                 out.push(InlineNode::Image(img));
                 i += consumed;
                 continue;
             }
-            if let Some((img, consumed)) = parse_reference_image(bytes, i, &bracket_matches) {
+            if let Some((img, consumed)) = parse_reference_image(bytes, i, &bounds) {
                 flush_text(&mut out, &mut buf);
                 out.push(InlineNode::Image(img));
                 i += consumed;
@@ -3997,7 +4263,7 @@ fn parse_inline_context(
         // Inline link: [text](href)
         if c == b'[' {
             if !in_footnote {
-                if let Some((footnote, consumed)) = parse_footnote_ref(bytes, i) {
+                if let Some((footnote, consumed)) = parse_footnote_ref(bytes, i, &bounds) {
                     flush_text(&mut out, &mut buf);
                     out.push(InlineNode::Footnote(footnote));
                     i += consumed;
@@ -4006,7 +4272,7 @@ fn parse_inline_context(
             }
             if has_link_trigger {
                 if let Some((link, consumed)) =
-                    parse_inline_link_with_options(bytes, i, options, in_footnote, &bracket_matches)
+                    parse_inline_link_with_options(bytes, i, options, in_footnote, &bounds)
                 {
                     flush_text(&mut out, &mut buf);
                     out.push(InlineNode::Link(link));
@@ -4014,15 +4280,14 @@ fn parse_inline_context(
                     continue;
                 }
                 if let Some((link, consumed)) =
-                    parse_reference_link(bytes, i, options, in_footnote, &bracket_matches)
+                    parse_reference_link(bytes, i, options, in_footnote, &bounds)
                 {
                     flush_text(&mut out, &mut buf);
                     out.push(InlineNode::Link(link));
                     i += consumed;
                     continue;
                 }
-                if let Some((span, consumed)) =
-                    parse_span(bytes, i, options, in_footnote, &bracket_matches)
+                if let Some((span, consumed)) = parse_span(bytes, i, options, in_footnote, &bounds)
                 {
                     flush_text(&mut out, &mut buf);
                     out.push(InlineNode::Span(span));
@@ -4033,7 +4298,7 @@ fn parse_inline_context(
         }
 
         if c == b'<' {
-            if let Some((crossref, consumed)) = parse_crossref(text, i) {
+            if let Some((crossref, consumed)) = parse_crossref(text, i, &bounds) {
                 flush_text(&mut out, &mut buf);
                 out.push(InlineNode::CrossRef(crossref));
                 i += consumed;
@@ -4067,7 +4332,7 @@ fn parse_inline_context(
         }
 
         if c == b'<' {
-            if let Some((autolink, consumed)) = parse_autolink(text, i) {
+            if let Some((autolink, consumed)) = parse_autolink(text, i, &bounds) {
                 flush_text(&mut out, &mut buf);
                 out.push(InlineNode::AutoLink(autolink));
                 i += consumed;
@@ -4077,13 +4342,15 @@ fn parse_inline_context(
 
         // Inline extension: :name[content]
         if c == b':' {
-            if let Some((node, consumed)) = parse_inline_extension(bytes, i, options, in_footnote) {
+            if let Some((node, consumed)) =
+                parse_inline_extension(bytes, i, options, in_footnote, &bounds)
+            {
                 flush_text(&mut out, &mut buf);
                 out.push(InlineNode::Extension(node));
                 i += consumed;
                 continue;
             }
-            if let Some((symbol, consumed)) = parse_symbol(text, i) {
+            if let Some((symbol, consumed)) = parse_symbol(text, i, &bounds) {
                 flush_text(&mut out, &mut buf);
                 out.push(InlineNode::Symbol(symbol));
                 i += consumed;
@@ -4094,7 +4361,7 @@ fn parse_inline_context(
         // Inline footnote `^[content]`. A `^` anywhere else is literal text
         // (there is no bare superscript), so `^^[x]` is a literal `^` + a note.
         if !in_footnote && c == b'^' && bytes.get(i + 1) == Some(&b'[') {
-            if let Some((footnote, consumed)) = parse_inline_footnote(bytes, i, options) {
+            if let Some((footnote, consumed)) = parse_inline_footnote(bytes, i, options, &bounds) {
                 flush_text(&mut out, &mut buf);
                 out.push(InlineNode::Footnote(footnote));
                 i += consumed;
@@ -4103,10 +4370,14 @@ fn parse_inline_context(
         }
 
         // Bold-italic, sub, highlight, then single-char emphasis
-        if let Some((mut node, consumed)) = match_emphasis(bytes, i, options, in_footnote) {
+        if let Some((mut node, consumed)) =
+            match_emphasis(bytes, i, options, in_footnote, &mut emphasis_no_close)
+        {
             let mut consumed = consumed;
             if bytes.get(i + consumed) == Some(&b'{') {
-                if let Some((attrs, next)) = read_attrs_at(bytes, i + consumed) {
+                if let Some((attrs, next)) =
+                    read_attrs_at(bytes, i + consumed, bounds.last_close_brace)
+                {
                     apply_attrs_to_inline(&mut node, attrs);
                     consumed = next - i;
                 }
@@ -4156,56 +4427,94 @@ fn parse_critic_markup(
     start: usize,
     options: &Options<'_>,
     in_footnote: bool,
+    bounds: &InlineBounds<'_>,
 ) -> Option<(InlineNode, usize)> {
-    let rest = std::str::from_utf8(&bytes[start..]).ok()?;
-    if let Some(inner) = rest.strip_prefix("{+") {
-        let end = inner.find("+}")?;
-        return Some((
-            InlineNode::CriticInsert(CriticInsert {
-                children: parse_inline_context(&inner[..end], options, false, in_footnote),
-                attrs: None,
-            }),
-            end + 4,
-        ));
+    // Match the two-byte opener on raw bytes -- validating `bytes[start..]` as
+    // UTF-8 here would be O(n) at every `{`, i.e. O(n^2) over a run of critic
+    // openers. Only the matched inner slice (up to the closing pair) is
+    // validated, once a pair is located.
+    if bytes.get(start) != Some(&b'{') {
+        return None;
     }
-    if let Some(inner) = rest.strip_prefix("{-") {
-        let end = inner.find("-}")?;
-        return Some((
-            InlineNode::CriticDelete(CriticDelete {
-                children: parse_inline_context(&inner[..end], options, false, in_footnote),
-                attrs: None,
-            }),
-            end + 4,
-        ));
+    let content_start = start + 2;
+    // Each critic form closes on a two-byte `X}` pair; if that pair does not lie
+    // ahead, the `find_seq` could only scan to end-of-text and fail, so bail in
+    // O(1). Keeps `{+`×n / `{-`×n / `{~ }`×n (no closing pair) linear.
+    match bytes.get(start + 1).copied()? {
+        b'+' => {
+            if !bounds.has_delim_brace_from(b'+', start) {
+                return None;
+            }
+            let pair = find_seq(bytes, content_start, b"+}")?;
+            let inner = std::str::from_utf8(&bytes[content_start..pair]).ok()?;
+            Some((
+                InlineNode::CriticInsert(CriticInsert {
+                    children: parse_inline_context(inner, options, false, in_footnote),
+                    attrs: None,
+                }),
+                pair + 2 - start,
+            ))
+        }
+        b'-' => {
+            if !bounds.has_delim_brace_from(b'-', start) {
+                return None;
+            }
+            let pair = find_seq(bytes, content_start, b"-}")?;
+            let inner = std::str::from_utf8(&bytes[content_start..pair]).ok()?;
+            Some((
+                InlineNode::CriticDelete(CriticDelete {
+                    children: parse_inline_context(inner, options, false, in_footnote),
+                    attrs: None,
+                }),
+                pair + 2 - start,
+            ))
+        }
+        b'~' => {
+            // A critic substitution is `{~old~>new~}`: the `~>` separator must
+            // sit within this `{~ … ~}`. Without it (`{~view~}`), this is not
+            // critic markup -- it falls through to forced strike emphasis.
+            if !bounds.has_delim_brace_from(b'~', start) {
+                return None;
+            }
+            let pair = find_seq(bytes, content_start, b"~}")?;
+            let inner = std::str::from_utf8(&bytes[content_start..pair]).ok()?;
+            let sep = inner.find("~>")?;
+            Some((
+                InlineNode::CriticSubstitute(CriticSubstitute {
+                    old_text: inner[..sep].to_string(),
+                    new_text: inner[sep + 2..].to_string(),
+                }),
+                pair + 2 - start,
+            ))
+        }
+        b'#' => {
+            if !bounds.has_delim_brace_from(b'#', start) {
+                return None;
+            }
+            let pair = find_seq(bytes, content_start, b"#}")?;
+            let inner = std::str::from_utf8(&bytes[content_start..pair]).ok()?;
+            Some((
+                InlineNode::CriticComment(CriticComment {
+                    text: inner.to_string(),
+                }),
+                pair + 2 - start,
+            ))
+        }
+        _ => None,
     }
-    if let Some(inner) = rest.strip_prefix("{~") {
-        // A critic substitution is `{~old~>new~}`: the `~>` separator must sit
-        // within this `{~ … ~}`. Without it (`{~view~}`), this is not critic
-        // markup -- it falls through to forced strike emphasis.
-        let end = inner.find("~}")?;
-        let sep = inner[..end].find("~>")?;
-        return Some((
-            InlineNode::CriticSubstitute(CriticSubstitute {
-                old_text: inner[..sep].to_string(),
-                new_text: inner[sep + 2..end].to_string(),
-            }),
-            end + 4,
-        ));
-    }
-    if let Some(inner) = rest.strip_prefix("{#") {
-        let end = inner.find("#}")?;
-        return Some((
-            InlineNode::CriticComment(CriticComment {
-                text: inner[..end].to_string(),
-            }),
-            end + 4,
-        ));
-    }
-    None
 }
 
-fn parse_footnote_ref(bytes: &[u8], start: usize) -> Option<(Footnote, usize)> {
+fn parse_footnote_ref(
+    bytes: &[u8],
+    start: usize,
+    bounds: &InlineBounds<'_>,
+) -> Option<(Footnote, usize)> {
     if bytes.get(start) != Some(&b'[') || bytes.get(start + 1) != Some(&b'^') {
+        return None;
+    }
+    // The id runs to the closing `]`; with no `]` ahead the scan could only walk
+    // to end-of-text and fail, so bail in O(1) (keeps `[^`×n linear).
+    if !bounds.has_bracket_from(start) {
         return None;
     }
     let mut i = start + 2;
@@ -4219,7 +4528,7 @@ fn parse_footnote_ref(bytes: &[u8], start: usize) -> Option<(Footnote, usize)> {
     let mut attrs = None;
     let mut after = i + 1;
     if bytes.get(after) == Some(&b'{') {
-        if let Some((parsed_attrs, next)) = read_attrs_at(bytes, after) {
+        if let Some((parsed_attrs, next)) = read_attrs_at(bytes, after, bounds.last_close_brace) {
             attrs = Some(parsed_attrs);
             after = next;
         }
@@ -4240,8 +4549,14 @@ fn parse_inline_footnote(
     bytes: &[u8],
     start: usize,
     options: &Options<'_>,
+    bounds: &InlineBounds<'_>,
 ) -> Option<(Footnote, usize)> {
     if bytes.get(start) != Some(&b'^') || bytes.get(start + 1) != Some(&b'[') {
+        return None;
+    }
+    // The body runs to a balancing `]`; with no `]` ahead the bracket scan could
+    // only walk to end-of-text and fail, so bail in O(1) (keeps `^[`×n linear).
+    if !bounds.has_bracket_from(start) {
         return None;
     }
     let (content, after_bracket) = read_bracketed(bytes, start + 1)?;
@@ -4251,7 +4566,7 @@ fn parse_inline_footnote(
     let mut attrs = None;
     let mut after = after_bracket;
     if bytes.get(after) == Some(&b'{') {
-        if let Some((parsed_attrs, next)) = read_attrs_at(bytes, after) {
+        if let Some((parsed_attrs, next)) = read_attrs_at(bytes, after, bounds.last_close_brace) {
             attrs = Some(parsed_attrs);
             after = next;
         }
@@ -4312,7 +4627,7 @@ fn parse_raw_inline_after_code(
     ))
 }
 
-fn parse_math(bytes: &[u8], start: usize) -> Option<(Math, usize)> {
+fn parse_math(bytes: &[u8], start: usize, bounds: &InlineBounds<'_>) -> Option<(Math, usize)> {
     let display = bytes.get(start + 1) == Some(&b'$');
     let tick = if display { start + 2 } else { start + 1 };
     if bytes.get(tick) != Some(&b'`') {
@@ -4334,7 +4649,7 @@ fn parse_math(bytes: &[u8], start: usize) -> Option<(Math, usize)> {
     let mut attrs = None;
     let mut after = end;
     if bytes.get(end) == Some(&b'{') && bytes.get(end + 1) != Some(&b'=') {
-        if let Some((parsed, next)) = read_attrs_at(bytes, end) {
+        if let Some((parsed, next)) = read_attrs_at(bytes, end, bounds.last_close_brace) {
             attrs = Some(parsed);
             after = next;
         }
@@ -4354,13 +4669,23 @@ fn parse_reference_link(
     start: usize,
     options: &Options<'_>,
     in_footnote: bool,
-    matches: &[usize],
+    bounds: &InlineBounds<'_>,
 ) -> Option<(Link, usize)> {
-    let (text, after_text) = read_bracketed_cached(bytes, start, matches)?;
+    let text_close = bracketed_close(bytes, start, bounds.matches)?;
+    let after_text = text_close + 1;
     if bytes.get(after_text) != Some(&b'[') {
         return None;
     }
-    let (label, after_label) = read_bracketed_cached(bytes, after_text, matches)?;
+    let label_close = bracketed_close(bytes, after_text, bounds.matches)?;
+    let after_label = label_close + 1;
+    // Both brackets are present, so materializing their labels now costs O(1)
+    // per accepted reference rather than per candidate `[`.
+    let text = std::str::from_utf8(&bytes[start + 1..text_close])
+        .ok()?
+        .to_string();
+    let label = std::str::from_utf8(&bytes[after_text + 1..label_close])
+        .ok()?
+        .to_string();
     let ref_label = if label.is_empty() {
         text.clone()
     } else {
@@ -4371,7 +4696,7 @@ fn parse_reference_link(
     let mut attrs = None;
     let mut after = after_label;
     if bytes.get(after) == Some(&b'{') {
-        if let Some((parsed_attrs, next)) = read_attrs_at(bytes, after) {
+        if let Some((parsed_attrs, next)) = read_attrs_at(bytes, after, bounds.last_close_brace) {
             attrs = Some(parsed_attrs);
             after = next;
         }
@@ -4485,19 +4810,26 @@ fn parse_inline_code(bytes: &[u8], start: usize) -> Option<(String, usize)> {
     Some((trimmed.to_string(), bytes.len() - start))
 }
 
-fn parse_image_at(bytes: &[u8], start: usize, matches: &[usize]) -> Option<(Image, usize)> {
+fn parse_image_at(bytes: &[u8], start: usize, bounds: &InlineBounds<'_>) -> Option<(Image, usize)> {
     if bytes.get(start) != Some(&b'!') || bytes.get(start + 1) != Some(&b'[') {
         return None;
     }
-    let (alt, after_alt) = read_bracketed_cached(bytes, start + 1, matches)?;
+    let alt_close = bracketed_close(bytes, start + 1, bounds.matches)?;
+    let after_alt = alt_close + 1;
     if bytes.get(after_alt) != Some(&b'(') {
         return None;
     }
-    let (src, title, after_paren) = read_link_target(bytes, after_alt + 1)?;
+    let (src, title, after_paren) =
+        read_link_target(bytes, after_alt + 1, bounds.last_close_paren)?;
+    // Only a valid `(target)` reaches here, so the alt copy is deferred off the
+    // failing-`![...]()` path that would otherwise be O(n) per position.
+    let alt = std::str::from_utf8(&bytes[start + 2..alt_close])
+        .ok()?
+        .to_string();
     let mut attrs = None;
     let mut after = after_paren;
     if bytes.get(after) == Some(&b'{') {
-        if let Some((parsed_attrs, next)) = read_attrs_at(bytes, after) {
+        if let Some((parsed_attrs, next)) = read_attrs_at(bytes, after, bounds.last_close_brace) {
             attrs = Some(parsed_attrs);
             after = next;
         }
@@ -4520,15 +4852,27 @@ fn parse_image_at(bytes: &[u8], start: usize, matches: &[usize]) -> Option<(Imag
 /// until `resolve_reference_links` fills it from the matching `[label]: url`
 /// def; the full form allows an empty alt (label = ref), collapsed needs a
 /// non-empty alt (label = alt).
-fn parse_reference_image(bytes: &[u8], start: usize, matches: &[usize]) -> Option<(Image, usize)> {
+fn parse_reference_image(
+    bytes: &[u8],
+    start: usize,
+    bounds: &InlineBounds<'_>,
+) -> Option<(Image, usize)> {
     if bytes.get(start) != Some(&b'!') || bytes.get(start + 1) != Some(&b'[') {
         return None;
     }
-    let (alt, after_alt) = read_bracketed_cached(bytes, start + 1, matches)?;
+    let alt_close = bracketed_close(bytes, start + 1, bounds.matches)?;
+    let after_alt = alt_close + 1;
     if bytes.get(after_alt) != Some(&b'[') {
         return None;
     }
-    let (label, after_label) = read_bracketed_cached(bytes, after_alt, matches)?;
+    let label_close = bracketed_close(bytes, after_alt, bounds.matches)?;
+    let after_label = label_close + 1;
+    let alt = std::str::from_utf8(&bytes[start + 2..alt_close])
+        .ok()?
+        .to_string();
+    let label = std::str::from_utf8(&bytes[after_alt + 1..label_close])
+        .ok()?
+        .to_string();
     // Collapsed `![alt][]` reuses the alt as the label, so it needs a non-empty
     // alt; the full `![alt][ref]` form accepts an empty alt (label = ref).
     if label.is_empty() && alt.is_empty() {
@@ -4538,7 +4882,7 @@ fn parse_reference_image(bytes: &[u8], start: usize, matches: &[usize]) -> Optio
     let mut attrs = None;
     let mut after = after_label;
     if bytes.get(after) == Some(&b'{') {
-        if let Some((parsed_attrs, next)) = read_attrs_at(bytes, after) {
+        if let Some((parsed_attrs, next)) = read_attrs_at(bytes, after, bounds.last_close_brace) {
             attrs = Some(parsed_attrs);
             after = next;
         }
@@ -4561,20 +4905,28 @@ fn parse_inline_link_with_options(
     start: usize,
     options: &Options<'_>,
     in_footnote: bool,
-    matches: &[usize],
+    bounds: &InlineBounds<'_>,
 ) -> Option<(Link, usize)> {
     if bytes.get(start) != Some(&b'[') {
         return None;
     }
-    let (text, after_bracket) = read_bracketed_cached(bytes, start, matches)?;
+    let text_close = bracketed_close(bytes, start, bounds.matches)?;
+    let after_bracket = text_close + 1;
     if bytes.get(after_bracket) != Some(&b'(') {
         return None;
     }
-    let (href, title, after_paren) = read_link_target(bytes, after_bracket + 1)?;
+    let (href, title, after_paren) =
+        read_link_target(bytes, after_bracket + 1, bounds.last_close_paren)?;
+    // The label is copied only once a valid `(target)` follows; the failing
+    // `[...]()` path (empty target) returns above without allocating, which is
+    // what keeps `[[[...x]()]()...]()` linear instead of quadratic.
+    let text = std::str::from_utf8(&bytes[start + 1..text_close])
+        .ok()?
+        .to_string();
     let mut attrs = None;
     let mut after = after_paren;
     if bytes.get(after) == Some(&b'{') {
-        if let Some((parsed_attrs, next)) = read_attrs_at(bytes, after) {
+        if let Some((parsed_attrs, next)) = read_attrs_at(bytes, after, bounds.last_close_brace) {
             attrs = Some(parsed_attrs);
             after = next;
         }
@@ -4598,8 +4950,14 @@ fn parse_inline_extension(
     start: usize,
     options: &Options<'_>,
     in_footnote: bool,
+    bounds: &InlineBounds<'_>,
 ) -> Option<(InlineExtension, usize)> {
     if bytes.get(start) != Some(&b':') {
+        return None;
+    }
+    // The content runs to the first `]`; with no `]` ahead the scan could only
+    // walk to end-of-text and fail, so bail in O(1) (keeps `:a[`×n linear).
+    if !bounds.has_bracket_from(start) {
         return None;
     }
     let mut i = start + 1;
@@ -4627,7 +4985,7 @@ fn parse_inline_extension(
     let mut attrs = None;
     let mut after = after_bracket;
     if bytes.get(after) == Some(&b'{') {
-        if let Some((parsed_attrs, next)) = read_attrs_at(bytes, after) {
+        if let Some((parsed_attrs, next)) = read_attrs_at(bytes, after, bounds.last_close_brace) {
             attrs = Some(parsed_attrs);
             after = next;
         }
@@ -4647,13 +5005,14 @@ fn parse_span(
     start: usize,
     options: &Options<'_>,
     in_footnote: bool,
-    matches: &[usize],
+    bounds: &InlineBounds<'_>,
 ) -> Option<(Span, usize)> {
-    let (content, after_bracket) = read_bracketed_cached(bytes, start, matches)?;
+    let content_close = bracketed_close(bytes, start, bounds.matches)?;
+    let after_bracket = content_close + 1;
     if bytes.get(after_bracket) != Some(&b'{') {
         return None;
     }
-    let (attrs, after_attrs) = read_attrs_at(bytes, after_bracket)
+    let (attrs, after_attrs) = read_attrs_at(bytes, after_bracket, bounds.last_close_brace)
         .or_else(|| read_empty_attrs_at(bytes, after_bracket))?;
     // Absorb a CHAIN of adjacent attribute blocks (`[x]{.a}{.b}` ->
     // class="a b"), accumulating classes (§15). A non-attribute `{...}` (e.g.
@@ -4662,7 +5021,7 @@ fn parse_span(
     let mut attrs = Some(attrs);
     let mut after_attrs = after_attrs;
     while bytes.get(after_attrs) == Some(&b'{') {
-        match read_attrs_at(bytes, after_attrs) {
+        match read_attrs_at(bytes, after_attrs, bounds.last_close_brace) {
             Some((more, next)) => {
                 merge_attrs(&mut attrs, more);
                 after_attrs = next;
@@ -4670,6 +5029,11 @@ fn parse_span(
             None => break,
         }
     }
+    // Only a valid `{attrs}` follow reaches here, so the content copy stays off
+    // the failing `[...]` path (e.g. `[...]()` never gets past the `{` check).
+    let content = std::str::from_utf8(&bytes[start + 1..content_close])
+        .ok()?
+        .to_string();
     Some((
         Span {
             attrs,
@@ -4760,7 +5124,7 @@ fn parse_tag(text: &str, pos: usize) -> Option<(Tag, usize)> {
     ))
 }
 
-fn parse_symbol(text: &str, pos: usize) -> Option<(Symbol, usize)> {
+fn parse_symbol(text: &str, pos: usize, bounds: &InlineBounds<'_>) -> Option<(Symbol, usize)> {
     let bytes = text.as_bytes();
     if bytes.get(pos) != Some(&b':') {
         return None;
@@ -4792,11 +5156,12 @@ fn parse_symbol(text: &str, pos: usize) -> Option<(Symbol, usize)> {
     if bytes.get(close_pos) != Some(&b':') {
         return None;
     }
-    let (attrs, consumed) = if let Some((attrs, next)) = read_attrs_at(bytes, close_pos + 1) {
-        (Some(attrs), next - pos)
-    } else {
-        (None, len + 2)
-    };
+    let (attrs, consumed) =
+        if let Some((attrs, next)) = read_attrs_at(bytes, close_pos + 1, bounds.last_close_brace) {
+            (Some(attrs), next - pos)
+        } else {
+            (None, len + 2)
+        };
     Some((
         Symbol {
             name: text[pos + 1..close_pos].to_string(),
@@ -4806,7 +5171,12 @@ fn parse_symbol(text: &str, pos: usize) -> Option<(Symbol, usize)> {
     ))
 }
 
-fn parse_autolink(text: &str, pos: usize) -> Option<(AutoLink, usize)> {
+fn parse_autolink(text: &str, pos: usize, bounds: &InlineBounds<'_>) -> Option<(AutoLink, usize)> {
+    // The target runs to the closing `>`; with no `>` ahead the scan could only
+    // walk to end-of-text and fail, so bail in O(1) (keeps `<`×n linear).
+    if !bounds.has_gt_from(pos) {
+        return None;
+    }
     let rest = text.get(pos..)?;
     let close = rest.find('>')?;
     let target = &rest[1..close];
@@ -4814,7 +5184,9 @@ fn parse_autolink(text: &str, pos: usize) -> Option<(AutoLink, usize)> {
     let mut consumed = close + 1;
     let bytes = text.as_bytes();
     if bytes.get(pos + consumed) == Some(&b'{') {
-        if let Some((parsed_attrs, next)) = read_attrs_at(bytes, pos + consumed) {
+        if let Some((parsed_attrs, next)) =
+            read_attrs_at(bytes, pos + consumed, bounds.last_close_brace)
+        {
             attrs = Some(parsed_attrs);
             consumed = next - pos;
         }
@@ -4925,7 +5297,12 @@ fn is_url_autolink_char(b: u8) -> bool {
         )
 }
 
-fn parse_crossref(text: &str, pos: usize) -> Option<(CrossRef, usize)> {
+fn parse_crossref(text: &str, pos: usize, bounds: &InlineBounds<'_>) -> Option<(CrossRef, usize)> {
+    // The target runs to the closing `>`; with no `>` ahead the scan could only
+    // walk to end-of-text and fail, so bail in O(1) (keeps `</#`×n linear).
+    if !bounds.has_gt_from(pos) {
+        return None;
+    }
     let rest = text.get(pos..)?;
     let inner = rest.strip_prefix("</#")?;
     let close = inner.find('>')?;
@@ -4941,13 +5318,16 @@ fn parse_crossref(text: &str, pos: usize) -> Option<(CrossRef, usize)> {
     ))
 }
 
-/// Read a `[…]` span starting at `start` (which must point to `[`).
-/// Returns the inner text and the index just past the closing `]`.
-/// O(1) `read_bracketed` using a precomputed match table (see
-/// `compute_bracket_matches`). `start` must index a `[`. Returns the bracket
-/// content and the index just past the matching `]`, identical to what
-/// `read_bracketed` would compute by scanning.
-fn read_bracketed_cached(bytes: &[u8], start: usize, matches: &[usize]) -> Option<(String, usize)> {
+/// O(1) lookup of the matching `]` for the `[` at `start` using a precomputed
+/// match table (see `compute_bracket_matches`). `start` must index a `[`.
+/// Returns the byte index of the closing `]` (a borrow position, no allocation).
+///
+/// Callers materialize the bracket label only after the follow (target `(`,
+/// reference `[`, span `{`) validates, so a `[` whose construct never completes
+/// stays O(1) instead of eagerly copying its label at every position -- the
+/// difference between linear and quadratic parsing on pathological input like
+/// `[[[...x]()]()...]()`.
+fn bracketed_close(bytes: &[u8], start: usize, matches: &[usize]) -> Option<usize> {
     if bytes.get(start) != Some(&b'[') {
         return None;
     }
@@ -4955,10 +5335,7 @@ fn read_bracketed_cached(bytes: &[u8], start: usize, matches: &[usize]) -> Optio
     if close == NO_BRACKET_MATCH {
         return None;
     }
-    let text = std::str::from_utf8(&bytes[start + 1..close])
-        .ok()?
-        .to_string();
-    Some((text, close + 1))
+    Some(close)
 }
 
 /// Read `[...]` content for an inline extension: the content runs to the
@@ -5111,7 +5488,21 @@ fn unescape_title(s: &str) -> String {
     out
 }
 
-fn read_link_target(bytes: &[u8], start: usize) -> Option<(String, Option<String>, usize)> {
+fn read_link_target(
+    bytes: &[u8],
+    start: usize,
+    last_close_paren: Option<usize>,
+) -> Option<(String, Option<String>, usize)> {
+    // A valid inline target MUST end with a `)` (checked below). If no `)`
+    // occurs at or after `start`, the destination scan can only walk to
+    // end-of-text and then fail -- so short-circuit here in O(1). Without this,
+    // a run like `[a](`×n (no `)` anywhere) makes every `[` re-scan to EOF,
+    // which is O(n^2). `last_close_paren` is the index of the last `)` in the
+    // whole text, precomputed once by the caller; skipping only ever elides a
+    // call that would have returned `None`, keeping output byte-identical.
+    if last_close_paren.map_or(true, |p| start > p) {
+        return None;
+    }
     let mut i = start;
     let href_start = i;
     // Per the grammar, an inline link destination ends at the first whitespace
@@ -5170,6 +5561,7 @@ fn match_emphasis(
     i: usize,
     options: &Options<'_>,
     in_footnote: bool,
+    no_close: &mut [Option<usize>; EMPHASIS_DELIM_SLOTS],
 ) -> Option<(InlineNode, usize)> {
     let c = bytes[i];
 
@@ -5239,7 +5631,7 @@ fn match_emphasis(
             return None;
         }
     }
-    let close = find_emphasis_close(bytes, i + 1, delim)?;
+    let close = cached_find_emphasis_close(bytes, i + 1, delim, no_close)?;
     let inner = std::str::from_utf8(&bytes[i + 1..close]).ok()?;
     Some((
         InlineNode::Emphasis(Emphasis {
@@ -6554,6 +6946,7 @@ fn parse_forced_emphasis(
     i: usize,
     options: &Options<'_>,
     in_footnote: bool,
+    bounds: &InlineBounds<'_>,
 ) -> Option<(InlineNode, usize)> {
     let delim = bytes.get(i + 1).copied()?;
     let kind = match delim {
@@ -6566,6 +6959,11 @@ fn parse_forced_emphasis(
         b'=' => EmphasisKind::Highlight,
         _ => return None,
     };
+    // The span closes on a `delim}` pair; with no such pair ahead the scan could
+    // only walk to end-of-text and fail, so bail in O(1) (keeps `{/`×n linear).
+    if !bounds.has_delim_brace_from(delim, i) {
+        return None;
+    }
     let content_start = i + 2;
     let mut j = content_start;
     while j + 1 < bytes.len() {
@@ -6600,6 +6998,52 @@ fn find_seq(bytes: &[u8], from: usize, marker: &[u8]) -> Option<usize> {
         j += 1;
     }
     None
+}
+
+/// Number of distinct single-char emphasis delimiters (`/ * _ ~ =`), plus one
+/// catch-all slot. Sizes the per-`parse_inline_context` no-close memo.
+const EMPHASIS_DELIM_SLOTS: usize = 6;
+
+#[inline]
+fn emphasis_delim_index(delim: u8) -> usize {
+    match delim {
+        b'/' => 0,
+        b'*' => 1,
+        b'_' => 2,
+        b'~' => 3,
+        b'=' => 4,
+        _ => 5,
+    }
+}
+
+/// `find_emphasis_close` with a per-delimiter failure memo. Once an opener of a
+/// given delimiter finds no valid closer scanning to end-of-text, every later
+/// opener of that delimiter (a larger `from`) also fails: the main loop only
+/// calls `match_emphasis` at positions outside code spans / escapes -- the same
+/// positions `find_emphasis_close` treats as "clean" -- so a suffix scan from a
+/// larger `from` can never expose a closer that the earlier, wider scan missed.
+/// This bounds `_a](`×n / `*a](`×n at O(n) instead of O(n^2) while keeping
+/// output byte-identical (skipping only ever elides a call that would fail).
+fn cached_find_emphasis_close(
+    bytes: &[u8],
+    from: usize,
+    delim: u8,
+    no_close: &mut [Option<usize>; EMPHASIS_DELIM_SLOTS],
+) -> Option<usize> {
+    let idx = emphasis_delim_index(delim);
+    if let Some(first) = no_close[idx] {
+        if from >= first {
+            return None;
+        }
+    }
+    let close = find_emphasis_close(bytes, from, delim);
+    if close.is_none() {
+        no_close[idx] = Some(match no_close[idx] {
+            Some(f) => f.min(from),
+            None => from,
+        });
+    }
+    close
 }
 
 fn find_emphasis_close(bytes: &[u8], from: usize, delim: u8) -> Option<usize> {
