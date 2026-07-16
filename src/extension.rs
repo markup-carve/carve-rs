@@ -111,6 +111,11 @@ pub struct Options<'a> {
     /// carve-js / carve-php. carve-rs has no ASCII transliterator, so
     /// ascii-folding is intentionally unsupported here; only `lowercase` is.
     pub lowercase_heading_ids: bool,
+    /// When `true`, stamp each top-level block element with a `data-source-line`
+    /// attribute holding the 1-based source line where the block starts, so an
+    /// editor live-preview can sync scroll to the source. Opt-in (default
+    /// `false`) so normal rendering output is unchanged.
+    pub source_lines: bool,
     /// Optional feature-restriction profile. When set, disallowed nodes are
     /// converted to text / stripped / error'd per the profile's action,
     /// link/image URLs are gated by its link policy, and `max_nesting` /
@@ -140,6 +145,7 @@ impl Default for Options<'_> {
             symbols: BTreeMap::new(),
             allow_raw_html: true,
             lowercase_heading_ids: false,
+            source_lines: false,
             profile: None,
             profile_base_host: None,
             mode: Mode::Interactive,
@@ -157,6 +163,13 @@ impl<'a> Options<'a> {
     /// input to escape `=html` raw inline/block content instead of emitting it.
     pub fn with_raw_html(mut self, allow: bool) -> Self {
         self.allow_raw_html = allow;
+        self
+    }
+
+    /// Stamp top-level block elements with a `data-source-line` attribute
+    /// (1-based). Opt-in; for editor preview scroll-sync.
+    pub fn with_source_lines(mut self, enabled: bool) -> Self {
+        self.source_lines = enabled;
         self
     }
 

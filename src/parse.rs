@@ -484,7 +484,7 @@ pub(crate) fn parse_blocks_with_options(source: &str, options: &Options<'_>) -> 
     let _ = &mut lines;
 
     let mut cursor = LineCursor::new(&lines);
-    parse_blocks(&mut cursor, options)
+    parse_blocks(&mut cursor, options, true)
 }
 
 struct LineCursor<'a> {
@@ -552,7 +552,7 @@ fn build_colon_closer_suffix_max(lines: &[&str]) -> Vec<usize> {
     suffix_max
 }
 
-fn parse_blocks(cur: &mut LineCursor, options: &Options<'_>) -> Vec<BlockNode> {
+fn parse_blocks(cur: &mut LineCursor, options: &Options<'_>, top_level: bool) -> Vec<BlockNode> {
     // Recursion cap (see MAX_NESTING_DEPTH). Over the cap, flatten everything
     // still in the cursor into one paragraph rather than recursing further,
     // matching the carve-php degrade behavior.
@@ -614,6 +614,7 @@ fn parse_blocks(cur: &mut LineCursor, options: &Options<'_>) -> Vec<BlockNode> {
             merge_attrs(&mut pending_attrs, attrs);
             continue;
         }
+        let start_line = cur.pos;
         if let Some(node) = parse_block(cur, options) {
             let mut node = node;
             if let Some(attrs) = pending_attrs.take() {
@@ -625,6 +626,12 @@ fn parse_blocks(cur: &mut LineCursor, options: &Options<'_>) -> Vec<BlockNode> {
             // core renderer, a caption Figure, and a FencedRender extension that
             // rewrites the block (it clones the code block's attrs).
             resolve_code_title(&mut node);
+            // Stamp document-level blocks with their 1-based source line for
+            // editor preview scroll-sync. Top-level only: nested containers parse
+            // over a relative sub-cursor whose line index is not document-global.
+            if top_level && options.source_lines {
+                stamp_source_line(&mut node, start_line + 1);
+            }
             out.push(node);
         }
     }
@@ -1384,7 +1391,7 @@ fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     let joined = inner.join("\n");
     let sub_lines: Vec<&str> = joined.lines().collect();
     let mut sub_cursor = LineCursor::new(&sub_lines);
-    let children = parse_blocks(&mut sub_cursor, options);
+    let children = parse_blocks(&mut sub_cursor, options, false);
     let quote = BlockQuote {
         attrs: None,
         children,
@@ -3849,6 +3856,37 @@ fn merge_leading_attrs(target: &mut Option<Attrs>, leading: Attrs) {
             *target = Some(leading);
             merge_attrs(target, own);
         }
+    }
+}
+
+/// Add a `data-source-line` attribute to a block node, preserving any existing
+/// attributes. No-op for blocks that carry no attributes (raw block, comment,
+/// abbreviation definition).
+fn stamp_source_line(node: &mut BlockNode, line: usize) {
+    let slot: Option<&mut Option<Attrs>> = match node {
+        BlockNode::Heading(n) => Some(&mut n.attrs),
+        BlockNode::Paragraph(n) => Some(&mut n.attrs),
+        BlockNode::ThematicBreak(n) => Some(&mut n.attrs),
+        BlockNode::CodeBlock(n) => Some(&mut n.attrs),
+        BlockNode::List(n) => Some(&mut n.attrs),
+        BlockNode::BlockQuote(n) => Some(&mut n.attrs),
+        BlockNode::Table(n) => Some(&mut n.attrs),
+        BlockNode::Admonition(n) => Some(&mut n.attrs),
+        BlockNode::Div(n) => Some(&mut n.attrs),
+        BlockNode::DefinitionList(n) => Some(&mut n.attrs),
+        BlockNode::Figure(n) => Some(&mut n.attrs),
+        BlockNode::Extension(n) => Some(&mut n.attrs),
+        BlockNode::BlockImage(n) => Some(&mut n.attrs),
+        BlockNode::AbbreviationDef(_) | BlockNode::RawBlock(_) | BlockNode::Comment(_) => None,
+    };
+    let Some(opt) = slot else {
+        return;
+    };
+    let attrs = opt.get_or_insert_with(Attrs::default);
+    let key = "data-source-line";
+    if !attrs.key_values.contains_key(key) {
+        attrs.key_values.insert(key.to_string(), line.to_string());
+        attrs.order.push(AttrSlot::Key(key.to_string()));
     }
 }
 
