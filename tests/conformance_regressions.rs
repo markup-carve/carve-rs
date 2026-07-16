@@ -310,10 +310,13 @@ fn bare_two_pipe_empty_content_is_paragraph_not_table() {
 }
 
 #[test]
-fn definition_blank_between_term_and_definition_ends_list() {
+fn definition_blank_between_term_and_definition_keeps_definition() {
+    // A blank line between a term and its definition is a separator (djot
+    // parity): the `:  d` still attaches to the term. (Previously the blank
+    // stranded the definition in a paragraph -- a footgun, now fixed.)
     assert_eq!(
         html(":: t\n\n:  d"),
-        "<dl>\n  <dt>t</dt>\n</dl>\n<p>:  d</p>"
+        "<dl>\n  <dt>t</dt>\n  <dd>d</dd>\n</dl>"
     );
 }
 
