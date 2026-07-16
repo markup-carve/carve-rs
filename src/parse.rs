@@ -2645,9 +2645,11 @@ fn is_plus_marker(line: &str) -> bool {
 
 /// Collect the continuation of a definition body. A definition continues like a
 /// list item (PART 9 §17): form A folds an indented block in (a blank line is
-/// tolerated when a later line still continues), and form B attaches a lone `+`
-/// pull-left flush-left block with no indentation. Returned lines carry blank
-/// separators so the block sub-parse yields multiple paragraphs.
+/// tolerated when a later line still continues), form B attaches a lone `+`
+/// pull-left flush-left block with no indentation, and a flush-left line with no
+/// blank before it that does not start an interrupting block lazily continues
+/// the open paragraph (matching list items, block quotes and djot). Returned
+/// lines carry blank separators so the block sub-parse yields multiple paragraphs.
 fn collect_definition_body(cur: &mut LineCursor) -> String {
     let mut lines: Vec<String> = Vec::new();
     while let Some(line) = cur.peek() {
@@ -2677,6 +2679,21 @@ fn collect_definition_body(cur: &mut LineCursor) -> String {
             let indent = indent_columns(line);
             if indent >= 3 {
                 lines.push(slice_columns(line, 3.min(indent), false));
+                cur.consume();
+                continue;
+            }
+            // A new term/definition marker ends the definition (the outer loop
+            // picks it up).
+            if line.strip_prefix(":: ").is_some() || line.strip_prefix(":  ").is_some() {
+                break;
+            }
+            // Lazy continuation: a flush-left line with no blank before it that
+            // does not start an interrupting block folds into the open
+            // paragraph (the same rule list items and block quotes use, matching
+            // djot). A block opener ends the definition.
+            let owned = line.to_string();
+            if !interrupts_paragraph(cur, &owned) {
+                lines.push(owned);
                 cur.consume();
                 continue;
             }
