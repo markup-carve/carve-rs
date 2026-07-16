@@ -523,6 +523,14 @@ fn to_strings(items: &[&str]) -> Vec<String> {
 }
 
 impl Profile {
+    /// Default maximum input length (UTF-8 bytes) for the untrusted `comment`
+    /// preset - a DoS backstop enforced pre-parse. Generous for a comment body;
+    /// override with `set_max_length(0)` to disable or another value to retune.
+    pub const COMMENT_MAX_LENGTH: usize = 100_000;
+    /// Default maximum input length (UTF-8 bytes) for the untrusted `minimal`
+    /// preset (chat / micro-posts). Override with `set_max_length` as needed.
+    pub const MINIMAL_MAX_LENGTH: usize = 10_000;
+
     /// All features enabled. Use only for trusted content.
     pub fn full() -> Self {
         Self {
@@ -590,7 +598,8 @@ impl Profile {
                     .add_rel_attribute("nofollow")
                     .add_rel_attribute("ugc"),
             ))
-            .set_max_nesting(4);
+            .set_max_nesting(4)
+            .set_max_length(Self::COMMENT_MAX_LENGTH);
         for (k, v) in [
             (
                 "heading",
@@ -674,7 +683,8 @@ impl Profile {
                 "hard_break",
             ]))
             .allow_block(Some(&["paragraph", "list", "list_item"]))
-            .set_max_nesting(2);
+            .set_max_nesting(2)
+            .set_max_length(Self::MINIMAL_MAX_LENGTH);
         for (k, v) in [
             ("link", "Links are disabled in this minimal context."),
             (

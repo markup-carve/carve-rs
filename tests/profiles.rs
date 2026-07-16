@@ -330,6 +330,31 @@ fn allows_input_within_the_length_limit() {
 }
 
 #[test]
+fn untrusted_presets_carry_a_default_length_cap() {
+    assert_eq!(Profile::comment().max_length(), Profile::COMMENT_MAX_LENGTH);
+    assert_eq!(Profile::minimal().max_length(), Profile::MINIMAL_MAX_LENGTH);
+    // Trusted presets stay unlimited.
+    assert_eq!(Profile::full().max_length(), 0);
+    assert_eq!(Profile::article().max_length(), 0);
+}
+
+#[test]
+fn comment_preset_rejects_an_over_cap_body() {
+    let over = "a".repeat(Profile::COMMENT_MAX_LENGTH + 1);
+    let err = try_html(&over, Profile::comment()).unwrap_err();
+    assert!(err.to_string().contains("maximum length"), "{}", err);
+    // A short comment still renders.
+    assert_eq!(html("hi there", Profile::comment()), "<p>hi there</p>");
+}
+
+#[test]
+fn a_preset_cap_is_overridable() {
+    let long = "word ".repeat(Profile::MINIMAL_MAX_LENGTH);
+    let p = Profile::minimal().set_max_length(0);
+    assert!(carve::try_to_html_with_options(&long, &Options::new().with_profile(p)).is_ok());
+}
+
+#[test]
 fn max_length_blocks_infallible_render_before_hooks() {
     use std::cell::Cell;
 
