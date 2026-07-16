@@ -2609,10 +2609,32 @@ fn parse_definition_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNo
                 break;
             }
             cur.consume();
-            let mut body = trim_ascii_end(def).to_string();
+            let def_trimmed = trim_ascii_end(def);
+            // First-block form (`:  +`, mirroring the list `- +`): when the sole
+            // content is a lone `+`, seed the body with the FOLLOWING flush-left
+            // block (no `+` literal), with no indentation. `:  \+` stays literal.
+            let mut body = if is_plus_marker(def_trimmed) {
+                let mut fb: Vec<String> = Vec::new();
+                while let Some(a) = cur.peek() {
+                    if is_blank_line(a)
+                        || is_plus_marker(a)
+                        || a.strip_prefix(":: ").is_some()
+                        || a.strip_prefix(":  ").is_some()
+                    {
+                        break;
+                    }
+                    fb.push(a.to_string());
+                    cur.consume();
+                }
+                fb.join("\n")
+            } else {
+                def_trimmed.to_string()
+            };
             let following = collect_definition_body(cur);
             if !following.is_empty() {
-                body.push('\n');
+                if !body.is_empty() {
+                    body.push('\n');
+                }
                 body.push_str(&following);
             }
             defs.push(parse_blocks_with_options(&body, options));
