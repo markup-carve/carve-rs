@@ -230,3 +230,15 @@ fn source_lines_preserve_frontmatter_offset_before_trailing_link_definition() {
     );
     assert!(!html.contains("data-source-line=\"1\""), "got: {html}");
 }
+
+#[test]
+fn source_lines_stamp_endnote_items_with_definition_line() {
+    let opts = Options::new().with_source_lines(true);
+    let html = to_html_with_options("Text[^a]\n\n[^a]: foot one\n\n  foot two\n", &opts);
+
+    assert!(
+        html.contains("<li id=\"fn1\" data-source-line=\"3\">"),
+        "got: {html}"
+    );
+    assert!(html.contains("data-source-line=\"5\""), "got: {html}");
+}
