@@ -427,9 +427,11 @@ fn colon_fence_openers_end_blockquote_lazy_continuation() {
         html("> ::: |\noutside\n> :::"),
         expect.replace("{OPENER}", "::: |")
     );
+    // The degraded `::: \` opener is a paragraph ending in a backslash, so the
+    // trailing `\` renders as a hard break (djot / trailing-backslash rule).
     assert_eq!(
         html("> ::: \\\noutside\n> :::"),
-        expect.replace("{OPENER}", "::: \\")
+        expect.replace("{OPENER}", "::: <br>\n")
     );
     // Plain div (the case that already worked -- regression guard).
     assert_eq!(
