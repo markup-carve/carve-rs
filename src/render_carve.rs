@@ -1132,7 +1132,24 @@ fn escape_critic_text(text: &str) -> String {
 }
 
 fn first_boundary(node: &InlineNode) -> Option<char> {
-    boundary_text(node).and_then(|s| s.chars().next())
+    boundary_text(node).and_then(|s| {
+        let mut chars = s.chars();
+        match chars.next() {
+            // In carve parse mode, text nodes preserve backslash escapes, so a
+            // formatted `\_b\_` reaches us with a leading `\`. The escape marker
+            // is not the adjacency-relevant character -- the escaped punctuation
+            // char is. Skip a single leading backslash that escapes an ASCII
+            // punctuation char so the emphasis bracing decision stays a function
+            // of the semantic next character (e.g. `_`), matching `last_boundary`
+            // (which already returns the escaped char) and keeping the formatter
+            // idempotent and byte-identical to carve-js / carve-php.
+            Some('\\') => match chars.next() {
+                Some(next) if next.is_ascii_punctuation() => Some(next),
+                _ => Some('\\'),
+            },
+            other => other,
+        }
+    })
 }
 
 fn last_boundary(node: &InlineNode) -> Option<char> {
