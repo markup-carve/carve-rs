@@ -723,6 +723,13 @@ fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<BlockNode>
                 cur.consume();
                 continue;
             }
+            // A bare same-level marker line continues the heading, contributing
+            // no content (checked before is_heading_marker_line, which would
+            // otherwise treat it as the start of a new heading).
+            if is_bare_same_level_marker(next, level) {
+                cur.consume();
+                continue;
+            }
             if is_heading_marker_line(next)
                 || caption_content(next).is_some()
                 || is_comment_fence_line(next)
@@ -923,6 +930,20 @@ fn heading_continuation_same_level(line: &str, level: u8) -> Option<&str> {
         return None;
     }
     Some(rest)
+}
+
+/// A bare SAME-level marker line (`#` / `# ` for a level-1 heading): exactly
+/// `level` `#`s followed by only spaces. It continues the heading but adds no
+/// content, so the surrounding marker lines join with a single newline (djot;
+/// "same number of `#` ... or none"). A DIFFERENT count is left to
+/// is_heading_marker_line, which ends the heading and starts a new one.
+fn is_bare_same_level_marker(line: &str, level: u8) -> bool {
+    let bytes = line.as_bytes();
+    let mut hashes = 0usize;
+    while hashes < bytes.len() && bytes[hashes] == b'#' {
+        hashes += 1;
+    }
+    hashes == level as usize && bytes[hashes..].iter().all(|&b| b == b' ')
 }
 
 /// Any ATX heading marker line (`#`..`######` followed by a space or EOL) —
@@ -4242,6 +4263,15 @@ fn parse_inline_context(
         let c = bytes[i];
 
         // Backslash escapes
+        // A backslash at the very end of the content (no following byte) is a
+        // hard break, mirroring the `\`-before-newline rule at end of input
+        // (`para\` at EOF -> `<br>`), matching djot and the cheatsheet.
+        if c == b'\\' && i + 1 >= bytes.len() {
+            flush_text(&mut out, &mut buf);
+            out.push(InlineNode::HardBreak);
+            i += 1;
+            continue;
+        }
         if c == b'\\' && i + 1 < bytes.len() {
             let nxt = bytes[i + 1];
             if is_escapable(nxt) {
