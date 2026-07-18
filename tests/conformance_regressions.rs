@@ -582,3 +582,21 @@ fn comment_fence_opener_rejects_trailing_text() {
     assert_eq!(html("%%% \nhidden\n%%%"), "");
     assert_eq!(html("%%%%\nhidden\n%%%%"), "");
 }
+
+/// Bold-italic `/*…*/` requires content that starts AND ends with a non-space
+/// char (grammar `boldItalic = "/*" ~spaceOrEnd biInner+ "*/"`; carve-php also
+/// rejects a whitespace-final closer). Empty (`/**/`) or space-bounded
+/// (`/* */`, `/*x */`, `/* x*/`) content is NOT bold-italic and falls through
+/// to ordinary `/` emphasis. Regression against carve-rs accepting empty /
+/// space-initial spans that carve-php and the spec oracle reject.
+#[test]
+fn bold_italic_rejects_empty_and_space_bounded_content() {
+    // Empty / space-bounded -> plain `/emphasis/` over the literal `*`s.
+    assert_eq!(html("/**/"), "<p><em>**</em></p>");
+    assert_eq!(html("/* */"), "<p><em>* *</em></p>");
+    assert_eq!(html("/*x */"), "<p><em>*x *</em></p>");
+    assert_eq!(html("/* x*/"), "<p><em>* x*</em></p>");
+    // Genuine bold-italic still produces Strong>Emphasis.
+    assert_eq!(html("/*x*/"), "<p><strong><em>x</em></strong></p>");
+    assert_eq!(html("x/*y*/z"), "<p>x<strong><em>y</em></strong>z</p>");
+}

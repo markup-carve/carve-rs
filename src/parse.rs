@@ -5684,18 +5684,33 @@ fn match_emphasis(
 ) -> Option<(InlineNode, usize)> {
     let c = bytes[i];
 
-    // /*bold italic*/
+    // /*bold italic*/ -- a combined Strong>Emphasis span. The grammar
+    // (`boldItalic = "/*" ~spaceOrEnd biInner+ "*/"`) requires the content to
+    // start with a non-space char and be non-empty; carve-php additionally
+    // rejects a closer whose content ends in whitespace, scanning on to a later
+    // `*/`. Empty / space-bounded content is NOT bold-italic and falls through
+    // to ordinary `/` emphasis below.
     if c == b'/' && bytes.get(i + 1) == Some(&b'*') {
-        if let Some(close) = find_seq(bytes, i + 2, b"*/") {
-            let inner = std::str::from_utf8(&bytes[i + 2..close]).ok()?;
-            return Some((
-                InlineNode::Emphasis(Emphasis {
-                    attrs: None,
-                    kind: EmphasisKind::BoldItalic,
-                    children: parse_inline_context(inner, options, false, in_footnote),
-                }),
-                close + 2 - i,
-            ));
+        let start = i + 2;
+        // Opener guard: the first content byte must exist and not be whitespace.
+        if bytes.get(start).is_some_and(|b| !b.is_ascii_whitespace()) {
+            let mut search = start;
+            while let Some(close) = find_seq(bytes, search, b"*/") {
+                // Reject empty content or content ending in whitespace; keep
+                // scanning for a later closer, matching carve-php.
+                if close > start && !bytes[close - 1].is_ascii_whitespace() {
+                    let inner = std::str::from_utf8(&bytes[start..close]).ok()?;
+                    return Some((
+                        InlineNode::Emphasis(Emphasis {
+                            attrs: None,
+                            kind: EmphasisKind::BoldItalic,
+                            children: parse_inline_context(inner, options, false, in_footnote),
+                        }),
+                        close + 2 - i,
+                    ));
+                }
+                search = close + 1;
+            }
         }
     }
     // Single-char delimiters. Highlight `=` is single-char like the rest; a
