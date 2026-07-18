@@ -943,26 +943,27 @@ fn is_comment_fence_line(line: &str) -> bool {
 }
 
 fn detect_thematic_break(line: &str) -> bool {
-    // 3+ of the SAME `-`/`*`/`_`, optionally separated by spaces/tabs, with
-    // nothing else on the line (`---`, `- - -`, `* * *`). Matches carve-js,
-    // carve-php, and canonical djot. A mixed run (`-*-`) is not a break.
-    let trimmed = line.trim();
-    for &marker in b"-*_" {
-        let mut count = 0usize;
-        let mut only_marker_and_space = true;
-        for &b in trimmed.as_bytes() {
-            if b == marker {
-                count += 1;
-            } else if b != b' ' && b != b'\t' {
-                only_marker_and_space = false;
-                break;
-            }
-        }
-        if only_marker_and_space && count >= 3 {
-            return true;
-        }
+    // Grammar (spec §262): a col-0 run of 3+ of the SAME `-`/`*`/`_`,
+    // CONTIGUOUS (no internal spaces), followed only by trailing whitespace.
+    // No leading indent. So `***`/`----`/`___` are breaks, but `* * *` (spaces)
+    // and ` ***` (indented) fall through to list/paragraph. A mixed run (`-*-`)
+    // is not a break either.
+    let bytes = line.as_bytes();
+    let marker = match bytes.first() {
+        Some(&b @ (b'-' | b'*' | b'_')) => b,
+        _ => return false,
+    };
+    let mut count = 0usize;
+    let mut i = 0;
+    while i < bytes.len() && bytes[i] == marker {
+        count += 1;
+        i += 1;
     }
-    false
+    if count < 3 {
+        return false;
+    }
+    // Only trailing whitespace may follow the contiguous marker run.
+    bytes[i..].iter().all(|&b| b == b' ' || b == b'\t')
 }
 
 #[derive(Debug, Clone, Copy)]
