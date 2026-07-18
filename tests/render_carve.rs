@@ -131,3 +131,33 @@ fn literal_caret_escaped_literal_comma_unescaped() {
         "\\^sup\\^ ,sub, stays literal\n"
     );
 }
+
+// Verbatim content survives document normalization (carve-js issue 340):
+// trailing whitespace and blank-line runs inside code blocks, raw blocks,
+// frontmatter, and block comments are byte-exact after fmt.
+#[test]
+fn verbatim_content_survives_normalization() {
+    for src in [
+        "```\ntrailing   \nalso\t\t\n```\n",
+        "```\na\n\n\n\nb\n```\n",
+        "```=html\n<pre>x   \n\n\n\ny</pre>\n```\n",
+        "%%%\nc   \n\n\n\nd\n%%%\n\nbody\n",
+    ] {
+        let formatted = carve::to_carve(src);
+        assert_eq!(formatted, src);
+        assert_eq!(carve::to_html(&formatted), carve::to_html(src));
+    }
+}
+
+#[test]
+fn verbatim_content_stable_inside_containers() {
+    for src in [
+        "> ```\n> a   \n>\n>\n>\n> b\n> ```\n",
+        "- item\n\n  ```\n  a   \n\n\n\n  b\n  ```\n",
+    ] {
+        let f1 = carve::to_carve(src);
+        let f2 = carve::to_carve(&f1);
+        assert_eq!(f1, f2);
+        assert_eq!(carve::to_html(&f1), carve::to_html(src));
+    }
+}

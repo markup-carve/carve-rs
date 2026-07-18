@@ -69,7 +69,10 @@ fn render_block(node: &BlockNode, ctx: &mut CarveContext) -> String {
             );
             with_block_attrs(
                 &code.attrs,
-                &format!("{fence}{info}\n{}\n{fence}", code.content),
+                &format!(
+                    "{fence}{info}\n{}\n{fence}",
+                    protect_verbatim(&code.content)
+                ),
             )
         }
         BlockNode::BlockQuote(quote) => {
@@ -128,7 +131,7 @@ fn render_block(node: &BlockNode, ctx: &mut CarveContext) -> String {
             format!(
                 "{fence}={}\n{}\n{fence}",
                 escape_format(&raw.format),
-                raw.content
+                protect_verbatim(&raw.content)
             )
         }
         BlockNode::AbbreviationDef(abbr) => {
@@ -671,7 +674,7 @@ fn render_frontmatter(frontmatter: &std::collections::BTreeMap<String, String>) 
         out.push('\n');
         out.push_str(key);
         out.push_str(": ");
-        out.push_str(value);
+        out.push_str(&protect_verbatim(value));
     }
     out.push_str("\n---");
     out
@@ -689,7 +692,7 @@ fn render_block_comment(content: &str) -> String {
         }
     }
     let fence = "%".repeat(3.max(longest + 1));
-    format!("{fence}\n{content}\n{fence}")
+    format!("{fence}\n{}\n{fence}", protect_verbatim(content))
 }
 
 // Superscript and subscript have no bare delimiter form -- always emit the
@@ -848,7 +851,39 @@ fn normalize(text: &str) -> String {
         .map(|line| trim_end_non_nbsp(line).to_string())
         .collect::<Vec<_>>()
         .join("\n");
-    format!("{}\n", trim_non_nbsp(&collapse_blank_lines(&lines)))
+    format!(
+        "{}\n",
+        restore_verbatim(trim_non_nbsp(&collapse_blank_lines(&lines)))
+    )
+}
+
+/// Whole-document normalization (trailing-whitespace strip, blank-line
+/// collapsing) must not reach inside verbatim content - code blocks, raw
+/// blocks, frontmatter, and block comments reproduce their content byte-exact
+/// (carve-js issue 340). Sentinel-encode the vulnerable bytes before the
+/// content joins the document string; `normalize` restores them at the end.
+/// U+E000 is already the NBSP sentinel; U+E001..U+E003 extend the scheme.
+fn protect_verbatim(content: &str) -> String {
+    let mut lines = Vec::new();
+    for line in content.split('\n') {
+        if line.is_empty() {
+            lines.push("\u{e003}".to_string());
+            continue;
+        }
+        let stripped = line.trim_end_matches([' ', '\t']);
+        let tail: String = line[stripped.len()..]
+            .chars()
+            .map(|ch| if ch == ' ' { '\u{e001}' } else { '\u{e002}' })
+            .collect();
+        lines.push(format!("{stripped}{tail}"));
+    }
+    lines.join("\n")
+}
+
+fn restore_verbatim(text: &str) -> String {
+    text.replace('\u{e001}', " ")
+        .replace('\u{e002}', "\t")
+        .replace('\u{e003}', "")
 }
 
 fn collapse_blank_lines(text: &str) -> String {
