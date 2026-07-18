@@ -436,6 +436,28 @@ fn collect_footnotes_inline(
     }
 }
 
+/// Source line stamped on a block during parsing, if any. Used to anchor the
+/// endnote `<li>` to its definition's line (carve-php / carve-js parity).
+fn block_source_line(block: &BlockNode) -> Option<&str> {
+    let attrs = match block {
+        BlockNode::Heading(n) => n.attrs.as_ref(),
+        BlockNode::Paragraph(n) => n.attrs.as_ref(),
+        BlockNode::ThematicBreak(n) => n.attrs.as_ref(),
+        BlockNode::CodeBlock(n) => n.attrs.as_ref(),
+        BlockNode::List(n) => n.attrs.as_ref(),
+        BlockNode::BlockQuote(n) => n.attrs.as_ref(),
+        BlockNode::Table(n) => n.attrs.as_ref(),
+        BlockNode::Admonition(n) => n.attrs.as_ref(),
+        BlockNode::Div(n) => n.attrs.as_ref(),
+        BlockNode::DefinitionList(n) => n.attrs.as_ref(),
+        BlockNode::Figure(n) => n.attrs.as_ref(),
+        BlockNode::Extension(n) => n.attrs.as_ref(),
+        BlockNode::BlockImage(n) => n.attrs.as_ref(),
+        BlockNode::AbbreviationDef(_) | BlockNode::RawBlock(_) | BlockNode::Comment(_) => None,
+    }?;
+    attrs.key_values.get("data-source-line").map(String::as_str)
+}
+
 fn render_footnotes_section(
     doc: &Document,
     footnotes: &[FootnoteEntry],
@@ -451,7 +473,24 @@ fn render_footnotes_section(
     for (idx, entry) in footnotes.iter().enumerate() {
         let num = idx + 1;
         out.push('\n');
-        out.push_str(&format!("    <li id=\"fn{}\">", num));
+        // Anchor the endnote item to its definition's source line (taken from
+        // the first stamped body block), matching carve-php and carve-js.
+        let li_source_line = if options.source_lines {
+            entry
+                .label
+                .as_ref()
+                .and_then(|label| doc.footnote_defs.get(label))
+                .and_then(|blocks| blocks.iter().find_map(block_source_line))
+        } else {
+            None
+        };
+        match li_source_line {
+            Some(line) => out.push_str(&format!(
+                "    <li id=\"fn{}\" data-source-line=\"{}\">",
+                num, line
+            )),
+            None => out.push_str(&format!("    <li id=\"fn{}\">", num)),
+        }
         if let Some(inline) = &entry.inline {
             out.push('\n');
             out.push_str("      <p>");
@@ -823,7 +862,7 @@ fn render_list_item(
     }
     if !tight && item.children.len() == 1 {
         if let BlockNode::Paragraph(p) = &item.children[0] {
-            out.push_str("<p>");
+            out.push_str(&format!("<p{}>", render_attrs(&p.attrs)));
             out.push_str(checkbox);
             render_inlines(out, &p.children, options);
             out.push_str("</p></li>");
@@ -832,7 +871,7 @@ fn render_list_item(
     }
     if !tight && item.children.len() > 1 {
         if let BlockNode::Paragraph(p) = &item.children[0] {
-            out.push_str("<p>");
+            out.push_str(&format!("<p{}>", render_attrs(&p.attrs)));
             out.push_str(checkbox);
             render_inlines(out, &p.children, options);
             out.push_str("</p>");
@@ -873,7 +912,9 @@ fn render_blockquote(
         if let BlockNode::Paragraph(p) = &b.children[0] {
             out.push_str("<blockquote");
             write_attrs(out, &b.attrs);
-            out.push_str("><p>");
+            out.push_str("><p");
+            write_attrs(out, &p.attrs);
+            out.push('>');
             render_inlines(out, &p.children, options);
             out.push_str("</p></blockquote>");
             return;
@@ -1323,7 +1364,7 @@ fn render_definition_list(
         for term in &item.terms {
             out.push('\n');
             indent(out, level + 1);
-            out.push_str("<dt>");
+            out.push_str(&format!("<dt{}>", render_attrs(&term.attrs)));
             render_inlines(out, term, options);
             out.push_str("</dt>");
         }
@@ -1332,13 +1373,13 @@ fn render_definition_list(
             indent(out, level + 1);
             if def.len() == 1 {
                 if let BlockNode::Paragraph(p) = &def[0] {
-                    out.push_str("<dd>");
+                    out.push_str(&format!("<dd{}>", render_attrs(&def.attrs)));
                     render_inlines(out, &p.children, options);
                     out.push_str("</dd>");
                     continue;
                 }
             }
-            out.push_str("<dd>");
+            out.push_str(&format!("<dd{}>", render_attrs(&def.attrs)));
             for block in def {
                 out.push('\n');
                 render_block(out, block, level + 2, options, _state);
