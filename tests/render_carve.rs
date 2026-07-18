@@ -73,6 +73,8 @@ fn bullet_marker_normalization() {
             ordered: false,
             start: None,
             ol_type: None,
+            delim: None,
+            bullet_char: None,
             tight: true,
             items: vec![carve::ListItem {
                 attrs: None,
@@ -158,6 +160,33 @@ fn verbatim_content_stable_inside_containers() {
         let f1 = carve::to_carve(src);
         let f2 = carve::to_carve(&f1);
         assert_eq!(f1, f2);
+        assert_eq!(carve::to_html(&f1), carve::to_html(src));
+    }
+}
+
+// The list marker is semantic (§11): a sibling with a different bullet char
+// or ordered delimiter starts a NEW list, so fmt preserves the authored
+// marker (carve issue 286) - normalizing would merge adjacent sibling lists.
+#[test]
+fn preserves_authored_list_markers() {
+    for src in [
+        "1) a\n2) b\n",
+        "1. a\n2. b\n",
+        "* a\n* b\n",
+        "- a\n- b\n",
+        "* [x] done\n* [ ] todo\n",
+    ] {
+        assert_eq!(carve::to_carve(src), src);
+    }
+}
+
+#[test]
+fn adjacent_lists_separated_by_marker_stay_separate() {
+    // fmt invariant: to_html(fmt(x)) == to_html(x). Before marker
+    // preservation these merged into one list on re-parse.
+    for src in ["1. a\n1) b", "1. a\n\n1) b", "- a\n* b", "- a\n\n* b"] {
+        let f1 = carve::to_carve(src);
+        assert_eq!(carve::to_carve(&f1), f1);
         assert_eq!(carve::to_html(&f1), carve::to_html(src));
     }
 }

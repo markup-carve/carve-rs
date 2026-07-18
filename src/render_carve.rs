@@ -167,25 +167,33 @@ fn render_list(node: &List, ctx: &mut CarveContext) -> String {
     ctx.list_depth += 1;
     let mut out = String::new();
     let mut counter = node.start.unwrap_or(1);
+    // The marker is semantic (§11: a different bullet char / ordered delim
+    // starts a new list), so emit it as authored - normalizing would merge
+    // adjacent sibling lists on re-parse (carve issue 286).
+    let delim = node.delim.unwrap_or('.');
+    let bullet = node.bullet_char.unwrap_or('-');
     for (idx, item) in node.items.iter().enumerate() {
         let indent = "  ".repeat(ctx.list_depth - 1);
         let mut prefix = if node.ordered {
             let marker = ordered_marker(counter, node.ol_type);
             counter += 1;
-            format!("{marker}. ")
+            format!("{marker}{delim} ")
         } else if let Some(checked) = item.checked {
-            format!("- [{}] ", if checked { "x" } else { " " })
+            format!("{bullet} [{}] ", if checked { "x" } else { " " })
         } else {
-            "- ".to_string()
+            format!("{bullet} ")
         };
         let item_attrs = render_attrs(&item.attrs);
         if !item_attrs.is_empty() {
             prefix = if node.ordered {
                 format!("{}{item_attrs} ", prefix.trim_end())
             } else if let Some(checked) = item.checked {
-                format!("-{item_attrs} [{}] ", if checked { "x" } else { " " })
+                format!(
+                    "{bullet}{item_attrs} [{}] ",
+                    if checked { "x" } else { " " }
+                )
             } else {
-                format!("-{item_attrs} ")
+                format!("{bullet}{item_attrs} ")
             };
         }
         let mut content = render_blocks(&item.children, ctx);
@@ -241,9 +249,13 @@ fn ordered_marker(n: usize, ty: Option<OrderedListType>) -> String {
 
 fn is_rendered_list_marker(line: &str) -> bool {
     line.starts_with("- ")
+        || line.starts_with("* ")
         || line.starts_with("- [")
-        || line.split_once(". ").is_some_and(|(marker, _)| {
-            !marker.is_empty() && marker.chars().all(|ch| ch.is_ascii_alphanumeric())
+        || line.starts_with("* [")
+        || [". ", ") "].iter().any(|sep| {
+            line.split_once(sep).is_some_and(|(marker, _)| {
+                !marker.is_empty() && marker.chars().all(|ch| ch.is_ascii_alphanumeric())
+            })
         })
 }
 

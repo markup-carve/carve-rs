@@ -2335,6 +2335,16 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         ordered: is_ordered,
         start,
         ol_type,
+        delim: first_delim.map(char::from),
+        bullet_char: if is_ordered {
+            None
+        } else {
+            first_marker
+                .marker
+                .chars()
+                .next()
+                .filter(|c| *c == '-' || *c == '*')
+        },
         tight,
         items,
     })
