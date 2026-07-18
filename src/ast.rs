@@ -90,6 +90,14 @@ pub struct List {
     pub ordered: bool,
     pub start: Option<usize>,
     pub ol_type: Option<OrderedListType>,
+    /// Ordered-marker delimiter as authored: `.` or `)`. The marker is
+    /// semantic (§11: a sibling with a different delimiter starts a new
+    /// list), so the formatter preserves it (carve issue 286). `None`
+    /// (programmatic ASTs, bullets) falls back to `.`.
+    pub delim: Option<char>,
+    /// Bullet character as authored: `-` or `*` (unordered lists only).
+    /// Same §11 semantics as `delim`; `None` falls back to `-`.
+    pub bullet_char: Option<char>,
     pub tight: bool,
     pub items: Vec<ListItem>,
 }
