@@ -118,13 +118,20 @@ fn parse_with_options_mode(source: &str, options: &Options<'_>, mode: ParseMode)
         source
     };
     let (frontmatter, body) = split_frontmatter(source);
-    let (body, footnote_defs_src) = extract_footnote_defs(body);
-    let (body, link_defs) = extract_link_defs(&body);
+    let body_start_line = source
+        [..(body.as_ptr() as usize).saturating_sub(source.as_ptr() as usize)]
+        .bytes()
+        .filter(|b| *b == b'\n')
+        .count()
+        + 1;
+    let (body, footnote_defs_src) = extract_footnote_defs(body, body_start_line);
+    let (body_source, link_defs) = extract_link_defs(&body.source);
+    let body = remap_source(body_source, &body);
     let footnote_defs = footnote_defs_src
         .into_iter()
-        .map(|(label, source)| (label, parse_blocks_with_options(&source, options)))
+        .map(|(label, source)| (label, parse_mapped_source(&source, options)))
         .collect();
-    let children = parse_blocks_with_options(&body, options);
+    let children = parse_mapped_source(&body, options);
     let mut doc = Document {
         frontmatter,
         footnote_defs,
@@ -176,9 +183,27 @@ fn parse_with_options_mode(source: &str, options: &Options<'_>, mode: ParseMode)
     doc
 }
 
-fn extract_footnote_defs(source: &str) -> (String, BTreeMap<String, String>) {
+fn remap_source(source: String, original: &MappedSource) -> MappedSource {
+    let source_line_count = source.lines().count();
+    if source_line_count <= original.line_map.len() {
+        return MappedSource {
+            source,
+            line_map: original.line_map[..source_line_count].to_vec(),
+        };
+    }
+    MappedSource {
+        line_map: (1..=source_line_count).map(Some).collect(),
+        source,
+    }
+}
+
+fn extract_footnote_defs(
+    source: &str,
+    first_source_line: usize,
+) -> (MappedSource, BTreeMap<String, MappedSource>) {
     let lines: Vec<&str> = source.lines().collect();
     let mut body = Vec::new();
+    let mut body_line_map = Vec::new();
     let mut defs = BTreeMap::new();
     let mut in_fence: Option<FenceOpen> = None;
     let mut i = 0;
@@ -198,6 +223,7 @@ fn extract_footnote_defs(source: &str) -> (String, BTreeMap<String, String>) {
         let fence_line = stripped.bare.trim_start_matches([' ', '\t']);
         if let Some(open) = in_fence {
             body.push(lines[i].to_string());
+            body_line_map.push(Some(first_source_line + i));
             if is_fence_close(fence_line, open) {
                 in_fence = None;
             }
@@ -207,12 +233,15 @@ fn extract_footnote_defs(source: &str) -> (String, BTreeMap<String, String>) {
         if let Some(open) = detect_fence_open(fence_line) {
             in_fence = Some(open);
             body.push(lines[i].to_string());
+            body_line_map.push(Some(first_source_line + i));
             i += 1;
             continue;
         }
         if let Some((label, first)) = parse_footnote_def_line(stripped.bare) {
+            let def_start_line = first_source_line + i;
             i += 1;
             let mut def_lines = vec![first.to_string()];
+            let mut def_line_map = vec![Some(def_start_line)];
             // Multi-line continuation (indented >= 2) is only gathered for a
             // TOP-LEVEL definition. A container-nested def is single-line here:
             // its continuation would carry the container prefix and is left to
@@ -232,6 +261,7 @@ fn extract_footnote_defs(source: &str) -> (String, BTreeMap<String, String>) {
                             && (leading_ws(lines[i + 1]) >= 2 || is_plus_marker(lines[i + 1]))
                         {
                             def_lines.push(String::new());
+                            def_line_map.push(Some(first_source_line + i));
                             i += 1;
                             continue;
                         }
@@ -245,6 +275,7 @@ fn extract_footnote_defs(source: &str) -> (String, BTreeMap<String, String>) {
                     if is_plus_marker(line) {
                         i += 1;
                         let mut attached: Vec<String> = Vec::new();
+                        let attached_start = i;
                         while i < lines.len() {
                             let a = lines[i];
                             if is_blank_line(a)
@@ -258,12 +289,19 @@ fn extract_footnote_defs(source: &str) -> (String, BTreeMap<String, String>) {
                         }
                         if !attached.is_empty() {
                             def_lines.push(String::new());
+                            def_line_map.push(None);
+                            let attached_len = attached.len();
                             def_lines.extend(attached);
+                            def_line_map.extend(
+                                (attached_start..attached_start + attached_len)
+                                    .map(|line_idx| Some(first_source_line + line_idx)),
+                            );
                         }
                         continue;
                     }
                     if leading_ws(line) >= 2 {
                         def_lines.push(trim_ascii_start(line).to_string());
+                        def_line_map.push(Some(first_source_line + i));
                         i += 1;
                         continue;
                     }
@@ -272,19 +310,30 @@ fn extract_footnote_defs(source: &str) -> (String, BTreeMap<String, String>) {
             }
             // First definition for a label wins (later duplicates are ignored).
             defs.entry(label.to_string())
-                .or_insert_with(|| def_lines.join("\n"));
+                .or_insert_with(|| MappedSource {
+                    source: def_lines.join("\n"),
+                    line_map: def_line_map,
+                });
             // Leave the container's structural prefix (or a blank line at top
             // level) where the invisible definition was, so the container still
             // renders and the line still acts as a block boundary -- a following
             // paragraph or a lazy blockquote continuation does not absorb across
             // it.
             body.push(stripped.replacement());
+            body_line_map.push(Some(def_start_line));
         } else {
             body.push(lines[i].to_string());
+            body_line_map.push(Some(first_source_line + i));
             i += 1;
         }
     }
-    (body.join("\n"), defs)
+    (
+        MappedSource {
+            source: body.join("\n"),
+            line_map: body_line_map,
+        },
+        defs,
+    )
 }
 
 fn parse_footnote_def_line(line: &str) -> Option<(&str, &str)> {
@@ -483,12 +532,18 @@ pub(crate) fn parse_blocks_with_options(source: &str, options: &Options<'_>) -> 
     // `lines()` already drops a single trailing newline; nothing more to do.
     let _ = &mut lines;
 
-    let mut cursor = LineCursor::new(&lines);
-    parse_blocks(&mut cursor, options, true)
+    let line_map: Vec<Option<usize>> = if options.source_lines {
+        (1..=lines.len()).map(Some).collect()
+    } else {
+        Vec::new()
+    };
+    let mut cursor = LineCursor::new(&lines, options.source_lines.then_some(&line_map));
+    parse_blocks(&mut cursor, options)
 }
 
 struct LineCursor<'a> {
     lines: &'a [&'a str],
+    line_map: Option<&'a [Option<usize>]>,
     pos: usize,
     /// Lazily built suffix-maximum of each line's colon-closer length: entry `i`
     /// holds the largest all-colon line length at any index `>= i` (0 if none).
@@ -501,9 +556,10 @@ struct LineCursor<'a> {
 }
 
 impl<'a> LineCursor<'a> {
-    fn new(lines: &'a [&'a str]) -> Self {
+    fn new(lines: &'a [&'a str], line_map: Option<&'a [Option<usize>]>) -> Self {
         LineCursor {
             lines,
+            line_map,
             pos: 0,
             colon_closer_suffix_max: None,
         }
@@ -522,6 +578,10 @@ impl<'a> LineCursor<'a> {
     fn eof(&self) -> bool {
         self.pos >= self.lines.len()
     }
+    fn source_line(&self, pos: usize) -> Option<usize> {
+        self.line_map
+            .and_then(|map| map.get(pos).copied().flatten())
+    }
 
     fn has_colon_closer_after(&mut self, start: usize, fence_len: usize) -> bool {
         if self.colon_closer_suffix_max.is_none() {
@@ -531,6 +591,76 @@ impl<'a> LineCursor<'a> {
         // `start` may sit one past the end (opener is the last line).
         suffix_max.get(start).copied().unwrap_or(0) >= fence_len
     }
+}
+
+#[derive(Default)]
+struct LineBuffer {
+    lines: Vec<String>,
+    line_map: Vec<Option<usize>>,
+}
+
+impl LineBuffer {
+    fn push(&mut self, line: String, source_line: Option<usize>) {
+        self.lines.push(line);
+        if source_line.is_some() || !self.line_map.is_empty() {
+            self.line_map.push(source_line);
+        }
+    }
+
+    fn push_synthetic_blank(&mut self) {
+        self.push(String::new(), None);
+    }
+
+    fn into_source(self) -> MappedSource {
+        MappedSource {
+            source: self.lines.join("\n"),
+            line_map: self.line_map,
+        }
+    }
+}
+
+struct MappedSource {
+    source: String,
+    line_map: Vec<Option<usize>>,
+}
+
+impl MappedSource {
+    fn new_line(line: String, source_line: Option<usize>) -> Self {
+        MappedSource {
+            source: line,
+            line_map: source_line.into_iter().map(Some).collect(),
+        }
+    }
+
+    fn push_newline(&mut self, line: String, source_line: Option<usize>) {
+        if !self.source.is_empty() {
+            self.source.push('\n');
+        }
+        self.source.push_str(&line);
+        if source_line.is_some() || !self.line_map.is_empty() {
+            self.line_map.push(source_line);
+        }
+    }
+
+    fn append(&mut self, other: MappedSource) {
+        if other.source.is_empty() {
+            return;
+        }
+        if !self.source.is_empty() {
+            self.source.push('\n');
+        }
+        self.source.push_str(&other.source);
+        self.line_map.extend(other.line_map);
+    }
+}
+
+fn parse_mapped_source(source: &MappedSource, options: &Options<'_>) -> Vec<BlockNode> {
+    if !options.source_lines {
+        return parse_blocks_with_options(&source.source, options);
+    }
+    let lines: Vec<&str> = source.source.lines().collect();
+    let mut cursor = LineCursor::new(&lines, Some(&source.line_map));
+    parse_blocks(&mut cursor, options)
 }
 
 /// Build the suffix-maximum of each line's colon-closer length (see
@@ -552,7 +682,7 @@ fn build_colon_closer_suffix_max(lines: &[&str]) -> Vec<usize> {
     suffix_max
 }
 
-fn parse_blocks(cur: &mut LineCursor, options: &Options<'_>, top_level: bool) -> Vec<BlockNode> {
+fn parse_blocks(cur: &mut LineCursor, options: &Options<'_>) -> Vec<BlockNode> {
     // Recursion cap (see MAX_NESTING_DEPTH). Over the cap, flatten everything
     // still in the cursor into one paragraph rather than recursing further,
     // matching the carve-php degrade behavior.
@@ -626,11 +756,12 @@ fn parse_blocks(cur: &mut LineCursor, options: &Options<'_>, top_level: bool) ->
             // core renderer, a caption Figure, and a FencedRender extension that
             // rewrites the block (it clones the code block's attrs).
             resolve_code_title(&mut node);
-            // Stamp document-level blocks with their 1-based source line for
-            // editor preview scroll-sync. Top-level only: nested containers parse
-            // over a relative sub-cursor whose line index is not document-global.
-            if top_level && options.source_lines {
-                stamp_source_line(&mut node, start_line + 1);
+            // Stamp blocks with their 1-based original source line for editor
+            // preview scroll-sync. Synthetic extracted lines carry no map entry.
+            if options.source_lines {
+                if let Some(line) = cur.source_line(start_line) {
+                    stamp_source_line(&mut node, line);
+                }
             }
             out.push(node);
         }
@@ -1274,11 +1405,12 @@ fn slice_columns(line: &str, cols: usize, keep_residual: bool) -> String {
 }
 
 fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
-    let mut inner = Vec::new();
+    let mut inner = LineBuffer::default();
     let mut para_open = false;
     let mut in_fence: Option<FenceOpen> = None;
     while let Some(line) = cur.peek() {
         if let Some(rest) = line.strip_prefix('>') {
+            let source_line = cur.source_line(cur.pos);
             cur.consume();
             let stripped = rest.strip_prefix(' ').unwrap_or(rest);
             if let Some(open) = in_fence {
@@ -1336,7 +1468,7 @@ fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                     && !trim_ascii_start(stripped).starts_with("%%")
                     && !interrupts_paragraph_with_rest(stripped, &rest_stripped);
             }
-            inner.push(stripped.to_string());
+            inner.push(stripped.to_string(), source_line);
             continue;
         }
         // Continuation marker (Carve, PART 9 §17): a lone `+` at column 0 after
@@ -1350,7 +1482,7 @@ fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         // and a `+` outside a container stays literal.
         if trim_ascii(line) == "+" && indent_columns(line) == 0 {
             cur.consume();
-            let mut attached: Vec<String> = Vec::new();
+            let mut attached = LineBuffer::default();
             while let Some(&next) = cur.lines.get(cur.pos) {
                 if is_blank_line(next)
                     || next.starts_with('>')
@@ -1358,15 +1490,16 @@ fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 {
                     break;
                 }
-                attached.push(next.to_string());
+                attached.push(next.to_string(), cur.source_line(cur.pos));
                 cur.pos += 1;
             }
-            if !attached.is_empty() {
+            if !attached.lines.is_empty() {
                 // `inner` always holds the quote's first content line, so a
                 // leading blank separates the attached block from it.
-                inner.push(String::new());
-                inner.extend(attached);
-                inner.push(String::new());
+                inner.push_synthetic_blank();
+                inner.lines.extend(attached.lines);
+                inner.line_map.extend(attached.line_map);
+                inner.push_synthetic_blank();
                 para_open = false;
             }
             continue;
@@ -1386,13 +1519,12 @@ fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         } {
             break;
         }
+        let source_line = cur.source_line(cur.pos);
         cur.consume();
-        inner.push(line.to_string());
+        inner.push(line.to_string(), source_line);
     }
-    let joined = inner.join("\n");
-    let sub_lines: Vec<&str> = joined.lines().collect();
-    let mut sub_cursor = LineCursor::new(&sub_lines);
-    let children = parse_blocks(&mut sub_cursor, options, false);
+    let inner = inner.into_source();
+    let children = parse_mapped_source(&inner, options);
     let quote = BlockQuote {
         attrs: None,
         children,
@@ -1796,8 +1928,22 @@ fn parse_continuation_block(
         end += 1;
     }
     let slice: Vec<&str> = cur.lines[cur.pos..end].to_vec();
-    let mut sub = LineCursor::new(&slice);
-    let block = parse_block(&mut sub, options);
+    let line_map: Vec<Option<usize>> = cur
+        .line_map
+        .map(|map| map[cur.pos..end].to_vec())
+        .unwrap_or_default();
+    let mut sub = LineCursor::new(
+        &slice,
+        cur.line_map.is_some().then_some(line_map.as_slice()),
+    );
+    let mut block = parse_block(&mut sub, options);
+    if options.source_lines {
+        if let Some(block) = &mut block {
+            if let Some(line) = line_map.first().copied().flatten() {
+                stamp_source_line(block, line);
+            }
+        }
+    }
     cur.pos += sub.pos;
     block
 }
@@ -1853,7 +1999,7 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                     break;
                 }
                 if let Some(last) = items.last_mut() {
-                    let mut nested = collect_indented_block(cur, base_indent, content_col);
+                    let mut nested = collect_indented_block_mapped(cur, base_indent, content_col);
                     // A heading folds its trailing plain text as continuation
                     // (PART 2 headings). When the indented block ends in a
                     // heading and the next lines are flush-left lazy text, pull
@@ -1862,9 +2008,11 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                     // top level (matches carve-php). Only headings fold this
                     // way: a code block or table keeps its trailing text as a
                     // separate top-level block, so the guard is heading-only.
-                    if !pending_blank && nested_ends_with_heading(&nested, options) {
+                    if !pending_blank && nested_ends_with_heading(&nested.source, options) {
                         collect_trailing_lazy(cur, &mut nested);
-                    } else if !pending_blank && nested_ends_with_open_paragraph(&nested, options) {
+                    } else if !pending_blank
+                        && nested_ends_with_open_paragraph(&nested.source, options)
+                    {
                         // CommonMark lazy continuation: the dedented non-blank
                         // line folds into the nested block's deepest open
                         // paragraph (e.g. a block quote's trailing paragraph) so
@@ -1872,7 +2020,7 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                         // (block quote lazy continuation) absorbs it.
                         collect_trailing_lazy(cur, &mut nested);
                     }
-                    let nested_children = parse_blocks_with_options(&nested, options);
+                    let nested_children = parse_mapped_source(&nested, options);
                     // A blank before an indented sub-block loosens only when it
                     // is a genuine second paragraph (#74 compact list blocks).
                     if pending_blank
@@ -1900,7 +2048,7 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             }
             if let Some(last) = items.last_mut() {
                 let sub_indent = marker.indent;
-                let mut nested = collect_indented_block(cur, base_indent, content_col);
+                let mut nested = collect_indented_block_mapped(cur, base_indent, content_col);
                 // A column-0 lazy-continuation line folds into the sub-list's
                 // last open paragraph (e.g. `inner` / `lazy`). It must NOT close
                 // the sub-list: a following sibling marker at the sub-list's own
@@ -1930,7 +2078,7 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                     // still ends in an OPEN paragraph. After a CLOSED block
                     // (fenced code, table, div) there is none, so the dedented
                     // line ends the item -> top-level (family-D rule).
-                    if !nested_ends_with_open_paragraph(&nested, options) {
+                    if !nested_ends_with_open_paragraph(&nested.source, options) {
                         break;
                     }
                     let before = cur.pos;
@@ -1938,13 +2086,13 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                     if cur.pos == before {
                         break;
                     }
-                    let resumed = collect_indented_block(cur, sub_indent - 1, content_col);
-                    if !resumed.is_empty() {
-                        nested.push('\n');
-                        nested.push_str(&resumed);
-                    }
+                    nested.append(collect_indented_block_mapped(
+                        cur,
+                        sub_indent - 1,
+                        content_col,
+                    ));
                 }
-                let nested_children = parse_blocks_with_options(&nested, options);
+                let nested_children = parse_mapped_source(&nested, options);
                 last.children.extend(nested_children);
                 continue;
             }
@@ -1984,13 +2132,15 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             let byte_off = (marker.content.as_ptr() as usize).saturating_sub(l.as_ptr() as usize);
             indent_columns(l) + byte_off.saturating_sub(leading_ws(l))
         };
+        let item_source_line = cur.source_line(cur.pos);
         cur.consume();
+        let item_attrs = source_line_attrs(marker.attrs.clone(), item_source_line, options);
         // First-block form `- +` (grammar §17): a lone `+` as the marker
         // content means the item's first block is the following flush-left
         // block (no inline paragraph).
         if trim_ascii(marker.content) == "+" {
             let mut item = ListItem {
-                attrs: marker.attrs.clone(),
+                attrs: item_attrs,
                 checked: marker.checked,
                 children: Vec::new(),
             };
@@ -2015,27 +2165,21 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         // djot. The combined stream reuses the normal nested-list/absorption
         // logic (collect_indented_block + recursive parse) -- no separate path.
         if marker.content.starts_with('>') {
-            let mut stream = marker.content.to_string();
-            let following = collect_indented_block(cur, base_indent, content_col);
-            if !following.is_empty() {
-                stream.push('\n');
-                stream.push_str(&following);
-            }
-            let children = parse_blocks_with_options(&stream, options);
+            let mut stream =
+                MappedSource::new_line(marker.content.to_string(), cur.source_line(cur.pos - 1));
+            stream.append(collect_indented_block_mapped(cur, base_indent, content_col));
+            let children = parse_mapped_source(&stream, options);
             items.push(ListItem {
-                attrs: marker.attrs.clone(),
+                attrs: item_attrs,
                 checked: marker.checked,
                 children,
             });
             continue;
         }
         if detect_list_marker_full(marker.content).is_some() {
-            let mut stream = marker.content.to_string();
-            let following = collect_indented_block(cur, base_indent, content_col);
-            if !following.is_empty() {
-                stream.push('\n');
-                stream.push_str(&following);
-            }
+            let mut stream =
+                MappedSource::new_line(marker.content.to_string(), cur.source_line(cur.pos - 1));
+            stream.append(collect_indented_block_mapped(cur, base_indent, content_col));
             // A column-0 lazy-continuation line following the marker-line
             // sub-list folds into its last open paragraph (`- - b` / `lazy` ->
             // `<li>b\nlazy</li>`), and a following sibling marker at the
@@ -2055,7 +2199,7 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 if !has_lazy {
                     break;
                 }
-                if !nested_ends_with_open_paragraph(&stream, options) {
+                if !nested_ends_with_open_paragraph(&stream.source, options) {
                     break;
                 }
                 let before = cur.pos;
@@ -2063,30 +2207,27 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 if cur.pos == before {
                     break;
                 }
-                let resumed = collect_indented_block(cur, content_col - 1, content_col);
-                if !resumed.is_empty() {
-                    stream.push('\n');
-                    stream.push_str(&resumed);
-                }
+                stream.append(collect_indented_block_mapped(
+                    cur,
+                    content_col - 1,
+                    content_col,
+                ));
             }
-            let children = parse_blocks_with_options(&stream, options);
+            let children = parse_mapped_source(&stream, options);
             items.push(ListItem {
-                attrs: marker.attrs.clone(),
+                attrs: item_attrs,
                 checked: marker.checked,
                 children,
             });
             continue;
         }
         if marker_content_starts_block(marker.content, cur, content_col) {
-            let mut stream = marker.content.to_string();
-            let following = collect_indented_block(cur, base_indent, content_col);
-            if !following.is_empty() {
-                stream.push('\n');
-                stream.push_str(&following);
-            }
-            let children = parse_blocks_with_options(&stream, options);
+            let mut stream =
+                MappedSource::new_line(marker.content.to_string(), cur.source_line(cur.pos - 1));
+            stream.append(collect_indented_block_mapped(cur, base_indent, content_col));
+            let children = parse_mapped_source(&stream, options);
             items.push(ListItem {
-                attrs: marker.attrs.clone(),
+                attrs: item_attrs,
                 checked: marker.checked,
                 children,
             });
@@ -2153,13 +2294,19 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         }
         let para_text = para_lines.join("\n");
         let para_text = para_text.trim_end_matches([' ', '\t']);
+        let mut paragraph = BlockNode::Paragraph(Paragraph {
+            attrs: None,
+            children: parse_inline_with_options(para_text, options),
+        });
+        if options.source_lines {
+            if let Some(line) = item_source_line {
+                stamp_source_line(&mut paragraph, line);
+            }
+        }
         items.push(ListItem {
-            attrs: marker.attrs.clone(),
+            attrs: item_attrs,
             checked: marker.checked,
-            children: vec![BlockNode::Paragraph(Paragraph {
-                attrs: None,
-                children: parse_inline_with_options(para_text, options),
-            })],
+            children: vec![paragraph],
         });
     }
     BlockNode::List(List {
@@ -2360,7 +2507,7 @@ fn block_ends_with_open_paragraph(block: Option<&BlockNode>) -> bool {
     }
 }
 
-fn collect_trailing_lazy(cur: &mut LineCursor, nested: &mut String) {
+fn collect_trailing_lazy(cur: &mut LineCursor, nested: &mut MappedSource) {
     while let Some(line) = cur.peek() {
         if is_blank_line(line) || indent_columns(line) > 0 || is_list_marker(line) || {
             let line_owned = line.to_string();
@@ -2368,14 +2515,24 @@ fn collect_trailing_lazy(cur: &mut LineCursor, nested: &mut String) {
         } {
             break;
         }
-        nested.push('\n');
-        nested.push_str(trim_ascii_start(line));
+        nested.push_newline(trim_ascii_start(line).to_string(), cur.source_line(cur.pos));
         cur.consume();
     }
 }
 
-fn collect_indented_block(cur: &mut LineCursor, parent_indent: usize, strip_cols: usize) -> String {
+fn collect_indented_block_mapped(
+    cur: &mut LineCursor,
+    parent_indent: usize,
+    strip_cols: usize,
+) -> MappedSource {
+    if cur.line_map.is_none() {
+        return MappedSource {
+            source: collect_indented_block_plain(cur, parent_indent, strip_cols),
+            line_map: Vec::new(),
+        };
+    }
     let mut lines = Vec::new();
+    let mut line_map = Vec::new();
     let mut block_indent: Option<usize> = None;
     while let Some(line) = cur.peek() {
         if is_blank_line(line) {
@@ -2384,6 +2541,57 @@ fn collect_indented_block(cur: &mut LineCursor, parent_indent: usize, strip_cols
             // block's own level. A shallower line (e.g. a dedent landing below a
             // sublist) ends the block and is left for the caller, so it can close
             // the list rather than fold in (grammar §10, corpus 81-list-lazy-5).
+            if let Some(bi) = block_indent {
+                let mut k = cur.pos + 1;
+                while k < cur.lines.len() && is_blank_line(cur.lines[k]) {
+                    k += 1;
+                }
+                let continues = k < cur.lines.len() && indent_columns(cur.lines[k]) >= bi;
+                if !continues {
+                    break;
+                }
+            }
+            lines.push(String::new());
+            if cur.line_map.is_some() {
+                line_map.push(cur.source_line(cur.pos));
+            }
+            cur.consume();
+            continue;
+        }
+        let indent = indent_columns(line);
+        if indent <= parent_indent {
+            break;
+        }
+        if block_indent.is_none() {
+            block_indent = Some(indent);
+        }
+        // Dedent by the item's content column so a nested block (sub-list, block
+        // quote, heading) reaches column 0 and parses. A sub-list marker line is
+        // dedented residual-aware so tab+space-aligned siblings keep the same
+        // visual column (the recursive parse re-derives the child base); other
+        // lines use whole-tab dedent so they land flush at column 0.
+        let is_marker = detect_list_marker_full(line).is_some();
+        lines.push(slice_columns(line, strip_cols.min(indent), is_marker));
+        if cur.line_map.is_some() {
+            line_map.push(cur.source_line(cur.pos));
+        }
+        cur.consume();
+    }
+    MappedSource {
+        source: lines.join("\n"),
+        line_map,
+    }
+}
+
+fn collect_indented_block_plain(
+    cur: &mut LineCursor,
+    parent_indent: usize,
+    strip_cols: usize,
+) -> String {
+    let mut lines = Vec::new();
+    let mut block_indent: Option<usize> = None;
+    while let Some(line) = cur.peek() {
+        if is_blank_line(line) {
             if let Some(bi) = block_indent {
                 let mut k = cur.pos + 1;
                 while k < cur.lines.len() && is_blank_line(cur.lines[k]) {
@@ -2405,11 +2613,6 @@ fn collect_indented_block(cur: &mut LineCursor, parent_indent: usize, strip_cols
         if block_indent.is_none() {
             block_indent = Some(indent);
         }
-        // Dedent by the item's content column so a nested block (sub-list, block
-        // quote, heading) reaches column 0 and parses. A sub-list marker line is
-        // dedented residual-aware so tab+space-aligned siblings keep the same
-        // visual column (the recursive parse re-derives the child base); other
-        // lines use whole-tab dedent so they land flush at column 0.
         let is_marker = detect_list_marker_full(line).is_some();
         lines.push(slice_columns(line, strip_cols.min(indent), is_marker));
         cur.consume();
@@ -2605,6 +2808,7 @@ fn parse_definition_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNo
         if is_blank_line(term) {
             break;
         }
+        let term_source_line = cur.source_line(cur.pos);
         cur.consume();
         // A term folds a following plain line like a heading (soft break), so a
         // wrapped term line does not strand the definition. A blank line, a new
@@ -2626,7 +2830,10 @@ fn parse_definition_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNo
             term_text.push_str(&owned);
             cur.consume();
         }
-        let terms = vec![parse_inline_with_options(&term_text, options)];
+        let terms = vec![DefinitionTerm {
+            attrs: source_line_attrs(None, term_source_line, options),
+            children: parse_inline_with_options(&term_text, options),
+        }];
         let mut defs = Vec::new();
 
         loop {
@@ -2658,13 +2865,14 @@ fn parse_definition_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNo
             if is_blank_line(def) {
                 break;
             }
+            let def_source_line = cur.source_line(cur.pos);
             cur.consume();
             let def_trimmed = trim_ascii_end(def);
             // First-block form (`:  +`, mirroring the list `- +`): when the sole
             // content is a lone `+`, seed the body with the FOLLOWING flush-left
             // block (no `+` literal), with no indentation. `:  \+` stays literal.
             let mut body = if is_plus_marker(def_trimmed) {
-                let mut fb: Vec<String> = Vec::new();
+                let mut fb = LineBuffer::default();
                 while let Some(a) = cur.peek() {
                     if is_blank_line(a)
                         || is_plus_marker(a)
@@ -2673,21 +2881,18 @@ fn parse_definition_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNo
                     {
                         break;
                     }
-                    fb.push(a.to_string());
+                    fb.push(a.to_string(), cur.source_line(cur.pos));
                     cur.consume();
                 }
-                fb.join("\n")
+                fb.into_source()
             } else {
-                def_trimmed.to_string()
+                MappedSource::new_line(def_trimmed.to_string(), def_source_line)
             };
-            let following = collect_definition_body(cur);
-            if !following.is_empty() {
-                if !body.is_empty() {
-                    body.push('\n');
-                }
-                body.push_str(&following);
-            }
-            defs.push(parse_blocks_with_options(&body, options));
+            body.append(collect_definition_body(cur));
+            defs.push(DefinitionDef {
+                attrs: source_line_attrs(None, def_source_line, options),
+                children: parse_mapped_source(&body, options),
+            });
         }
 
         items.push(DefinitionItem {
@@ -2722,13 +2927,14 @@ fn is_plus_marker(line: &str) -> bool {
 /// blank before it that does not start an interrupting block lazily continues
 /// the open paragraph (matching list items, block quotes and djot). Returned
 /// lines carry blank separators so the block sub-parse yields multiple paragraphs.
-fn collect_definition_body(cur: &mut LineCursor) -> String {
+fn collect_definition_body(cur: &mut LineCursor) -> MappedSource {
     let mut lines: Vec<String> = Vec::new();
+    let mut line_map: Vec<Option<usize>> = Vec::new();
     while let Some(line) = cur.peek() {
         // Form B: `+` pull-left continuation.
         if is_plus_marker(line) {
             cur.consume();
-            let mut attached: Vec<String> = Vec::new();
+            let mut attached = LineBuffer::default();
             while let Some(a) = cur.peek() {
                 if is_blank_line(a)
                     || is_plus_marker(a)
@@ -2737,12 +2943,14 @@ fn collect_definition_body(cur: &mut LineCursor) -> String {
                 {
                     break;
                 }
-                attached.push(a.to_string());
+                attached.push(a.to_string(), cur.source_line(cur.pos));
                 cur.consume();
             }
-            if !attached.is_empty() {
+            if !attached.lines.is_empty() {
                 lines.push(String::new());
-                lines.extend(attached);
+                line_map.push(None);
+                lines.extend(attached.lines);
+                line_map.extend(attached.line_map);
             }
             continue;
         }
@@ -2751,6 +2959,7 @@ fn collect_definition_body(cur: &mut LineCursor) -> String {
             let indent = indent_columns(line);
             if indent >= 3 {
                 lines.push(slice_columns(line, 3.min(indent), false));
+                line_map.push(cur.source_line(cur.pos));
                 cur.consume();
                 continue;
             }
@@ -2766,6 +2975,7 @@ fn collect_definition_body(cur: &mut LineCursor) -> String {
             let owned = line.to_string();
             if !interrupts_paragraph(cur, &owned) {
                 lines.push(owned);
+                line_map.push(cur.source_line(cur.pos));
                 cur.consume();
                 continue;
             }
@@ -2782,13 +2992,17 @@ fn collect_definition_body(cur: &mut LineCursor) -> String {
             Some(after) if !is_blank_line(after) && indent_columns(after) >= 3 => {
                 for _ in 0..look {
                     lines.push(String::new());
+                    line_map.push(cur.source_line(cur.pos));
                     cur.consume();
                 }
             }
             _ => break,
         }
     }
-    lines.join("\n")
+    MappedSource {
+        source: lines.join("\n"),
+        line_map,
+    }
 }
 
 /// A bare image line is a block image (or figure) ONLY when it stands alone --
@@ -3277,16 +3491,16 @@ fn parse_quoted_metadata(s: &str) -> Option<(String, &str)> {
 fn parse_container(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     let open = detect_container_open(cur.peek().unwrap()).unwrap();
     cur.consume();
-    let mut inner = Vec::new();
+    let mut inner = LineBuffer::default();
     while let Some(line) = cur.peek() {
         if line.trim().bytes().all(|b| b == b':') && line.trim().len() >= open.fence_len {
             cur.consume();
             break;
         }
-        inner.push(line.to_string());
+        inner.push(line.to_string(), cur.source_line(cur.pos));
         cur.consume();
     }
-    let children = parse_blocks_with_options(&inner.join("\n"), options);
+    let children = parse_mapped_source(&inner.into_source(), options);
     if let Some(kind) = open.kind {
         BlockNode::Admonition(Admonition {
             attrs: open.attrs,
@@ -3402,42 +3616,58 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     // body line before preserving the author's intra-verse whitespace.
     let base_indent = leading_ws_columns(opener);
     cur.consume();
-    let mut stanzas: Vec<Vec<String>> = Vec::new();
+    let mut stanzas: Vec<LineBuffer> = Vec::new();
     let mut stanza: Vec<String> = Vec::new();
+    let mut stanza_line_map: Vec<Option<usize>> = Vec::new();
     while let Some(line) = cur.peek() {
         let t = trim_ascii(line);
         if !t.is_empty() && t.bytes().all(|b| b == b':') && t.len() >= fence_len {
             cur.consume();
             break;
         }
+        let source_line = cur.source_line(cur.pos);
         cur.consume();
         if is_blank_line(line) {
             if !stanza.is_empty() {
-                stanzas.push(std::mem::take(&mut stanza));
+                stanzas.push(LineBuffer {
+                    lines: std::mem::take(&mut stanza),
+                    line_map: std::mem::take(&mut stanza_line_map),
+                });
             }
             continue;
         }
         let stripped = strip_leading_columns(line, base_indent);
         stanza.push(expand_line_block_leading_ws(&stripped));
+        stanza_line_map.push(source_line);
     }
     if !stanza.is_empty() {
-        stanzas.push(stanza);
+        stanzas.push(LineBuffer {
+            lines: stanza,
+            line_map: stanza_line_map,
+        });
     }
 
     let children = stanzas
         .into_iter()
         .map(|lines| {
-            let inlines = parse_inline_with_options(&lines.join("\n"), options)
+            let source_line = lines.line_map.first().copied().flatten();
+            let inlines = parse_inline_with_options(&lines.lines.join("\n"), options)
                 .into_iter()
                 .map(|n| match n {
                     InlineNode::SoftBreak => InlineNode::HardBreak,
                     other => other,
                 })
                 .collect();
-            BlockNode::Paragraph(Paragraph {
+            let mut node = BlockNode::Paragraph(Paragraph {
                 attrs: None,
                 children: inlines,
-            })
+            });
+            if options.source_lines {
+                if let Some(line) = source_line {
+                    stamp_source_line(&mut node, line);
+                }
+            }
+            node
         })
         .collect();
 
@@ -3489,17 +3719,17 @@ fn parse_hardbreaks_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockN
     let opener = cur.peek().unwrap();
     let fence_len = detect_hardbreaks_block_open(opener).unwrap();
     cur.consume();
-    let mut inner = Vec::new();
+    let mut inner = LineBuffer::default();
     while let Some(line) = cur.peek() {
         let t = line.trim();
         if !t.is_empty() && t.bytes().all(|b| b == b':') && t.len() >= fence_len {
             cur.consume();
             break;
         }
-        inner.push(line.to_string());
+        inner.push(line.to_string(), cur.source_line(cur.pos));
         cur.consume();
     }
-    let mut children = parse_blocks_with_options(&inner.join("\n"), options);
+    let mut children = parse_mapped_source(&inner.into_source(), options);
     for child in &mut children {
         if let BlockNode::Paragraph(para) = child {
             for node in &mut para.children {
@@ -3965,6 +4195,24 @@ fn stamp_source_line(node: &mut BlockNode, line: usize) {
         return;
     };
     let attrs = opt.get_or_insert_with(Attrs::default);
+    stamp_source_line_attr(attrs, line);
+}
+
+fn source_line_attrs(
+    mut attrs: Option<Attrs>,
+    line: Option<usize>,
+    options: &Options<'_>,
+) -> Option<Attrs> {
+    if options.source_lines {
+        if let Some(line) = line {
+            let attrs = attrs.get_or_insert_with(Attrs::default);
+            stamp_source_line_attr(attrs, line);
+        }
+    }
+    attrs
+}
+
+fn stamp_source_line_attr(attrs: &mut Attrs, line: usize) {
     let key = "data-source-line";
     if !attrs.key_values.contains_key(key) {
         attrs.key_values.insert(key.to_string(), line.to_string());

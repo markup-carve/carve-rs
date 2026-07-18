@@ -6,6 +6,7 @@
 //! frontmatter are deferred to future PRs.
 
 use std::collections::BTreeMap;
+use std::ops::{Deref, DerefMut};
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Attrs {
@@ -171,8 +172,66 @@ pub struct Div {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DefinitionItem {
-    pub terms: Vec<Vec<InlineNode>>,
-    pub definitions: Vec<Vec<BlockNode>>,
+    pub terms: Vec<DefinitionTerm>,
+    pub definitions: Vec<DefinitionDef>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DefinitionTerm {
+    pub attrs: Option<Attrs>,
+    pub children: Vec<InlineNode>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DefinitionDef {
+    pub attrs: Option<Attrs>,
+    pub children: Vec<BlockNode>,
+}
+
+impl Deref for DefinitionTerm {
+    type Target = Vec<InlineNode>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.children
+    }
+}
+
+impl DerefMut for DefinitionTerm {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.children
+    }
+}
+
+impl Deref for DefinitionDef {
+    type Target = Vec<BlockNode>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.children
+    }
+}
+
+impl DerefMut for DefinitionDef {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.children
+    }
+}
+
+impl<'a> IntoIterator for &'a DefinitionDef {
+    type Item = &'a BlockNode;
+    type IntoIter = std::slice::Iter<'a, BlockNode>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.children.iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a mut DefinitionDef {
+    type Item = &'a mut BlockNode;
+    type IntoIter = std::slice::IterMut<'a, BlockNode>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.children.iter_mut()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

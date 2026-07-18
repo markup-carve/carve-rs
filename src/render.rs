@@ -823,7 +823,7 @@ fn render_list_item(
     }
     if !tight && item.children.len() == 1 {
         if let BlockNode::Paragraph(p) = &item.children[0] {
-            out.push_str("<p>");
+            out.push_str(&format!("<p{}>", render_attrs(&p.attrs)));
             out.push_str(checkbox);
             render_inlines(out, &p.children, options);
             out.push_str("</p></li>");
@@ -832,7 +832,7 @@ fn render_list_item(
     }
     if !tight && item.children.len() > 1 {
         if let BlockNode::Paragraph(p) = &item.children[0] {
-            out.push_str("<p>");
+            out.push_str(&format!("<p{}>", render_attrs(&p.attrs)));
             out.push_str(checkbox);
             render_inlines(out, &p.children, options);
             out.push_str("</p>");
@@ -873,7 +873,9 @@ fn render_blockquote(
         if let BlockNode::Paragraph(p) = &b.children[0] {
             out.push_str("<blockquote");
             write_attrs(out, &b.attrs);
-            out.push_str("><p>");
+            out.push_str("><p");
+            write_attrs(out, &p.attrs);
+            out.push('>');
             render_inlines(out, &p.children, options);
             out.push_str("</p></blockquote>");
             return;
@@ -1323,7 +1325,7 @@ fn render_definition_list(
         for term in &item.terms {
             out.push('\n');
             indent(out, level + 1);
-            out.push_str("<dt>");
+            out.push_str(&format!("<dt{}>", render_attrs(&term.attrs)));
             render_inlines(out, term, options);
             out.push_str("</dt>");
         }
@@ -1332,13 +1334,13 @@ fn render_definition_list(
             indent(out, level + 1);
             if def.len() == 1 {
                 if let BlockNode::Paragraph(p) = &def[0] {
-                    out.push_str("<dd>");
+                    out.push_str(&format!("<dd{}>", render_attrs(&def.attrs)));
                     render_inlines(out, &p.children, options);
                     out.push_str("</dd>");
                     continue;
                 }
             }
-            out.push_str("<dd>");
+            out.push_str(&format!("<dd{}>", render_attrs(&def.attrs)));
             for block in def {
                 out.push('\n');
                 render_block(out, block, level + 2, options, _state);
