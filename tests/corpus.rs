@@ -141,7 +141,10 @@ const IMPLEMENTED: &[&str] = &[
     "126-editorial-markup-takes-a-trailing-attribute",
     "127-emphasis-opener-slash-adjacency",
     "128-bold-italic-delimiter-needs-content",
-    "129-thematic-break-requires-contiguous-markers",
+    "129-emphasis-span-closes-before-a-following-delimiter",
+    "130-thematic-break-requires-contiguous-markers",
+    "131-sublist-marker-interrupts-a-continuation-paragraph",
+    "132-footnote-definition-requires-an-inline-body",
 ];
 
 fn corpus_dir() -> PathBuf {
@@ -604,6 +607,18 @@ corpus_test!(
     "128-bold-italic-delimiter-needs-content"
 );
 corpus_test!(
-    c129_thematic_break_requires_contiguous_markers,
-    "129-thematic-break-requires-contiguous-markers"
+    c129_emphasis_span_closes_before_a_following_delimiter,
+    "129-emphasis-span-closes-before-a-following-delimiter"
+);
+corpus_test!(
+    c130_thematic_break_requires_contiguous_markers,
+    "130-thematic-break-requires-contiguous-markers"
+);
+corpus_test!(
+    c131_sublist_marker_interrupts_a_continuation_paragraph,
+    "131-sublist-marker-interrupts-a-continuation-paragraph"
+);
+corpus_test!(
+    c132_footnote_definition_requires_an_inline_body,
+    "132-footnote-definition-requires-an-inline-body"
 );

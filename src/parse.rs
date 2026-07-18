@@ -2020,7 +2020,8 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                     break;
                 }
                 if let Some(last) = items.last_mut() {
-                    let mut nested = collect_indented_block_mapped(cur, base_indent, content_col);
+                    let mut nested =
+                        collect_item_continuation_block_mapped(cur, base_indent, content_col);
                     // A heading folds its trailing plain text as continuation
                     // (PART 2 headings). When the indented block ends in a
                     // heading and the next lines are flush-left lazy text, pull
@@ -2551,14 +2552,36 @@ fn collect_trailing_lazy(cur: &mut LineCursor, nested: &mut MappedSource) {
     }
 }
 
+fn collect_item_continuation_block_mapped(
+    cur: &mut LineCursor,
+    parent_indent: usize,
+    content_col: usize,
+) -> MappedSource {
+    collect_indented_block_mapped_with(cur, parent_indent, content_col, true)
+}
+
 fn collect_indented_block_mapped(
     cur: &mut LineCursor,
     parent_indent: usize,
     strip_cols: usize,
 ) -> MappedSource {
+    collect_indented_block_mapped_with(cur, parent_indent, strip_cols, false)
+}
+
+fn collect_indented_block_mapped_with(
+    cur: &mut LineCursor,
+    parent_indent: usize,
+    strip_cols: usize,
+    stop_at_content_column_marker: bool,
+) -> MappedSource {
     if cur.line_map.is_none() {
         return MappedSource {
-            source: collect_indented_block_plain(cur, parent_indent, strip_cols),
+            source: collect_indented_block_plain_with(
+                cur,
+                parent_indent,
+                strip_cols,
+                stop_at_content_column_marker,
+            ),
             line_map: Vec::new(),
         };
     }
@@ -2593,6 +2616,10 @@ fn collect_indented_block_mapped(
         if indent <= parent_indent {
             break;
         }
+        let is_marker = detect_list_marker_full(line).is_some();
+        if stop_at_content_column_marker && is_marker && indent >= strip_cols {
+            break;
+        }
         if block_indent.is_none() {
             block_indent = Some(indent);
         }
@@ -2601,7 +2628,6 @@ fn collect_indented_block_mapped(
         // dedented residual-aware so tab+space-aligned siblings keep the same
         // visual column (the recursive parse re-derives the child base); other
         // lines use whole-tab dedent so they land flush at column 0.
-        let is_marker = detect_list_marker_full(line).is_some();
         lines.push(slice_columns(line, strip_cols.min(indent), is_marker));
         if cur.line_map.is_some() {
             line_map.push(cur.source_line(cur.pos));
@@ -2614,10 +2640,11 @@ fn collect_indented_block_mapped(
     }
 }
 
-fn collect_indented_block_plain(
+fn collect_indented_block_plain_with(
     cur: &mut LineCursor,
     parent_indent: usize,
     strip_cols: usize,
+    stop_at_content_column_marker: bool,
 ) -> String {
     let mut lines = Vec::new();
     let mut block_indent: Option<usize> = None;
@@ -2641,10 +2668,13 @@ fn collect_indented_block_plain(
         if indent <= parent_indent {
             break;
         }
+        let is_marker = detect_list_marker_full(line).is_some();
+        if stop_at_content_column_marker && is_marker && indent >= strip_cols {
+            break;
+        }
         if block_indent.is_none() {
             block_indent = Some(indent);
         }
-        let is_marker = detect_list_marker_full(line).is_some();
         lines.push(slice_columns(line, strip_cols.min(indent), is_marker));
         cur.consume();
     }
