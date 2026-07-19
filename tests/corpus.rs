@@ -145,6 +145,9 @@ const IMPLEMENTED: &[&str] = &[
     "130-thematic-break-requires-contiguous-markers",
     "131-sublist-marker-interrupts-a-continuation-paragraph",
     "132-footnote-definition-requires-an-inline-body",
+    "133-footnote-definition-separator-must-be-a-space",
+    "134-link-reference-definition-separator-must-be-a-space",
+    "135-abbreviation-definition-separator-must-be-a-space",
 ];
 
 fn corpus_dir() -> PathBuf {
@@ -621,4 +624,16 @@ corpus_test!(
 corpus_test!(
     c132_footnote_definition_requires_an_inline_body,
     "132-footnote-definition-requires-an-inline-body"
+);
+corpus_test!(
+    c133_footnote_definition_separator_must_be_a_space,
+    "133-footnote-definition-separator-must-be-a-space"
+);
+corpus_test!(
+    c134_link_reference_definition_separator_must_be_a_space,
+    "134-link-reference-definition-separator-must-be-a-space"
+);
+corpus_test!(
+    c135_abbreviation_definition_separator_must_be_a_space,
+    "135-abbreviation-definition-separator-must-be-a-space"
 );
