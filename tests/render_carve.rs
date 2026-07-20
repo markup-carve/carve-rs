@@ -374,16 +374,34 @@ mod include_directives_survive_formatting {
         assert_eq!(carve::to_carve("{{ oops\n"), "\\{\\{ oops\n");
         // Closes, but carries no path token at all.
         assert_eq!(carve::to_carve("{{ }}\n"), "\\{\\{ \\}\\}\n");
-        // The quoted form can spell an empty path where the bare form cannot.
-        // Its quotes get CURLED, which is itself the proof that it took the
-        // ordinary-text path: the directive branch bypasses smart typography
-        // precisely so a quoted path is never curled into a different file.
+        // A section or options but no path is likewise not a directive.
+        assert_eq!(carve::to_carve("{{ #intro }}\n"), "\\{\\{ #intro \\}\\}\n");
+        assert_eq!(
+            carve::to_carve("{{ @lines:2-4 }}\n"),
+            "\\{\\{ @lines\\:2\\-4 \\}\\}\n"
+        );
+        // The quoted form can spell an empty or whitespace-only path where the
+        // bare form cannot; neither is a directive. Their quotes get CURLED,
+        // which is itself the proof that they took the ordinary-text path: the
+        // directive branch bypasses smart typography precisely so a real
+        // quoted path is never curled into a name for a different file.
         assert_eq!(
             carve::to_carve("{{ \"\" }}\n"),
             "\\{\\{ \u{201c}\u{201c} \\}\\}\n"
         );
+        assert_eq!(
+            carve::to_carve("{{ \"   \" }}\n"),
+            "\\{\\{ \u{201c}   \u{201c} \\}\\}\n"
+        );
         assert_survives("{{ oops\n");
         assert_survives("{{ }}\n");
+        assert_survives("{{ #intro }}\n");
+        assert_survives("{{ @lines:2-4 }}\n");
+        assert_survives("{{ \"\" }}\n");
+        assert_survives("{{ \"   \" }}\n");
+        // The empty token between two real directives is escaped without
+        // taking its neighbors: both of those still expand.
+        assert_survives("a {{ x.crv }} b {{ \"\" }} c {{ y.crv }} d\n");
     }
 
     /// Preservation is scoped to SHAPE, not validity (spec I1).

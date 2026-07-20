@@ -766,6 +766,58 @@ mod rules {
         );
     }
 
+    /// I1: an empty or whitespace-only path - and a token that carries a
+    /// section or options but NO path at all - is not a directive.
+    ///
+    /// The bare forms (`{{ }}`, `{{ #intro }}`, `{{ @lines:2-4 }}`) never
+    /// matched the recognizer, but the QUOTED forms (`{{ "" }}`, `{{ "   " }}`)
+    /// used to: the expander resolved them, recorded a dependency with an
+    /// EMPTY id, and even expanded whatever the resolver returned - while the
+    /// formatter escaped them. That self-contradiction is the tell. An empty
+    /// id cannot be watched, which defeats I11's whole invalidation purpose,
+    /// so the maintainer ruled these are literal text at expansion too.
+    ///
+    /// The recognizer is shared with the serializer, so a rejection here is
+    /// the same rejection the formatter already applies.
+    #[test]
+    fn i1_an_empty_or_pathless_token_is_not_a_directive_and_never_reaches_the_resolver() {
+        for source in [
+            "{{ }}",
+            "{{   }}",
+            "{{ #intro }}",
+            "{{ @lines:2-4 }}",
+            "{{ \"\" }}",
+            "{{ \"   \" }}",
+            "a {{ \"\" }} b",
+            "{{ \"\" #intro }}",
+        ] {
+            // A resolver that DOES answer the empty and whitespace-only paths,
+            // so any recognition would splice "LEAK" into the output, register
+            // a dependency and be recorded as a call - three independent tells.
+            let resolver = MapResolver::new(&[("", "LEAK"), ("   ", "LEAK")]);
+            let opts = IncludeOptions::new();
+            let doc = parse(source);
+            let result = expand_includes(doc, source, &opts.with_resolver(&resolver));
+            assert!(
+                result.warnings.is_empty(),
+                "{source:?} warned: {:?}",
+                result.warnings
+            );
+            assert!(
+                result.dependencies.is_empty(),
+                "{source:?} recorded a dependency: {:?}",
+                result.dependencies
+            );
+            assert!(
+                resolver.calls.borrow().is_empty(),
+                "{source:?} reached the resolver: {:?}",
+                resolver.calls.borrow()
+            );
+            // Renders as literal text, byte-identical to no-resolver output.
+            assert_eq!(render_html(&result.doc), literal_html(source));
+        }
+    }
+
     #[test]
     fn i5_collisions_reference_definition_labels_resolve_per_file_without_renaming() {
         // Reference definitions are FILE-LOCAL: resolved inside their own

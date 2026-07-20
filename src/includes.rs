@@ -304,6 +304,18 @@ fn match_directive_at(text: &str, start: usize) -> Option<(usize, RawDirective)>
     };
     i = after_path;
 
+    // A quoted form can spell an empty or whitespace-only path (`{{ "" }}`,
+    // `{{ "   " }}`); the maintainer ruled such a token is NOT a directive at
+    // all. Rejecting it HERE is what converges the serializer and the expander
+    // on one recognizer: the spec requires the serializer's preserved set and
+    // the expander's recognized set to be identical, and every recognition
+    // path in this module funnels through `match_directive_at`. Bare paths
+    // cannot be empty or hold whitespace, so this only ever fires on the
+    // quoted forms.
+    if path.trim().is_empty() {
+        return None;
+    }
+
     // Optional ` #section`, exactly one, immediately after the path.
     let mut section = None;
     {
@@ -470,7 +482,10 @@ fn parse_full_directive(text: &str) -> ParsedDirective {
 /// malformed directive must stay a malformed DIRECTIVE, not become prose.
 ///
 /// A run that is not shape-well-formed - `{{ oops` with no close, or `{{ }}`
-/// with no path - is ordinary text and is escaped as before.
+/// / `{{ "" }}` with an empty or whitespace-only path - is ordinary text and
+/// is escaped as before. The empty-path exclusion lives in
+/// [`match_directive_at`] so the serializer and the expander share exactly one
+/// recognizer; this scanner needs no path check of its own.
 ///
 /// This exists for the Carve serializer (spec I1): a directive must survive
 /// `carve fmt` verbatim, because escaping it to `\{\{ … \}\}` renders the same
@@ -484,12 +499,8 @@ fn find_directive(text: &str, from: usize) -> Option<(usize, usize)> {
     let mut i = from;
     while let Some(offset) = text[i..].find("{{") {
         let start = i + offset;
-        // The bare-path branch already rejects an empty path; the quoted
-        // branches do not, so `{{ "" }}` is excluded explicitly here.
-        if let Some((end, raw)) = match_directive_at(text, start) {
-            if !raw.path.is_empty() {
-                return Some((start, end));
-            }
+        if let Some((end, _raw)) = match_directive_at(text, start) {
+            return Some((start, end));
         }
         // `{{` is ASCII, so this stays on a char boundary.
         i = start + 2;
