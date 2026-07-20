@@ -226,6 +226,7 @@ mod include_directives_survive_formatting {
     struct Expansion {
         html: String,
         dependencies: Vec<(String, bool)>,
+        rules: Vec<String>,
     }
 
     fn expand(source: &str) -> Expansion {
@@ -241,9 +242,10 @@ mod include_directives_survive_formatting {
             html: render_html(&result.doc),
             dependencies: result
                 .dependencies
-                .into_iter()
-                .map(|d| (d.id, d.resolved))
+                .iter()
+                .map(|d| (d.id.clone(), d.resolved))
                 .collect(),
+            rules: result.warnings.iter().map(|w| w.rule.clone()).collect(),
         }
     }
 
@@ -260,6 +262,13 @@ mod include_directives_survive_formatting {
         assert_eq!(
             after.dependencies, before.dependencies,
             "formatting changed the dependency set of {source:?} (formatted: {formatted:?})"
+        );
+        // A directive that is preserved but whose DIAGNOSTICS are lost is
+        // still a regression: the warning is the only thing that tells the
+        // author their typo is a typo.
+        assert_eq!(
+            after.rules, before.rules,
+            "formatting changed the include warnings of {source:?} (formatted: {formatted:?})"
         );
         assert_eq!(
             carve::to_carve(&formatted),
@@ -351,16 +360,55 @@ mod include_directives_survive_formatting {
     }
 
     #[test]
-    fn malformed_runs_are_still_escaped_as_ordinary_text() {
-        // Not directive-shaped: no closing `}}`.
+    fn runs_that_are_not_shape_well_formed_are_still_escaped_as_ordinary_text() {
+        // No closing `}}`.
         assert_eq!(carve::to_carve("{{ oops\n"), "\\{\\{ oops\n");
-        // Shaped, but the option tail is not valid per I1, so it is not a
-        // well-formed directive and stays ordinary text.
+        // Closes, but carries no path token at all.
+        assert_eq!(carve::to_carve("{{ }}\n"), "\\{\\{ \\}\\}\n");
+        // The quoted form can spell an empty path where the bare form cannot.
+        // Its quotes get CURLED, which is itself the proof that it took the
+        // ordinary-text path: the directive branch bypasses smart typography
+        // precisely so a quoted path is never curled into a different file.
         assert_eq!(
-            carve::to_carve("{{ chapter.crv @bogus:1 }}\n"),
-            "\\{\\{ chapter\\.crv @bogus\\:1 \\}\\}\n"
+            carve::to_carve("{{ \"\" }}\n"),
+            "\\{\\{ \u{201c}\u{201c} \\}\\}\n"
         );
         assert_survives("{{ oops\n");
+        assert_survives("{{ }}\n");
+    }
+
+    /// Preservation is scoped to SHAPE, not validity (spec I1).
+    ///
+    /// `@bogus:1` is an invalid option, but the run is unmistakably a
+    /// directive: it opens, closes, and names a path. Escaping it would freeze
+    /// a one-character typo into permanent literal text AND silently drop the
+    /// `include-unknown-option` warning that names the mistake - turning a
+    /// fixable error into prose that merely looks like an error. Option
+    /// validity is an expansion-time DIAGNOSTIC, never a preservation gate.
+    #[test]
+    fn a_shaped_directive_with_an_invalid_option_is_preserved_with_its_warning() {
+        assert_eq!(
+            carve::to_carve("{{ chapter.crv @bogus:1 }}\n"),
+            "{{ chapter.crv @bogus:1 }}\n"
+        );
+        assert_eq!(
+            expand("{{ chapter.crv @bogus:1 }}\n").rules,
+            ["include-unknown-option"]
+        );
+        assert_survives("{{ chapter.crv @bogus:1 }}\n");
+    }
+
+    /// Same rule for the other selector: a `#section` the target does not have
+    /// is a diagnostic (`include-section`), so the directive round-trips and
+    /// the warning still fires on the formatted document.
+    #[test]
+    fn a_shaped_directive_with_a_missing_section_is_preserved_with_its_warning() {
+        assert_eq!(
+            carve::to_carve("{{ book.crv #nope }}\n"),
+            "{{ book.crv #nope }}\n"
+        );
+        assert_eq!(expand("{{ book.crv #nope }}\n").rules, ["include-section"]);
+        assert_survives("{{ book.crv #nope }}\n");
     }
 
     #[test]

@@ -446,13 +446,23 @@ fn parse_full_directive(text: &str) -> ParsedDirective {
     }
 }
 
-/// Byte range of the first WELL-FORMED directive at or after `from`, if any.
+/// Byte range of the first SHAPE-well-formed directive at or after `from`.
 ///
-/// "Well-formed" is exactly what expansion itself accepts: `match_directive_at`
-/// finds the token shape (path, optional `#section`, optional option tail) and
-/// `parse_options` validates it to [`ParsedDirective::Ok`]. A run that only
-/// looks directive-ish - `{{ oops` with no close, or an unknown/malformed
-/// `@key:value` - is NOT well-formed and stays ordinary text.
+/// "Shape-well-formed" is deliberately WIDER than what expansion accepts: the
+/// run opens `{{`, closes `}}`, and carries a non-empty path token - exactly
+/// what [`match_directive_at`] recognizes. Section existence and option
+/// validity are NOT required here; they are expansion-time DIAGNOSTICS
+/// (`include-section`, `include-unknown-option`), and preservation must not
+/// depend on them.
+///
+/// Gating preservation on full validity was the earlier behavior and it was
+/// actively harmful: `{{ a.crv @bogus:1 }}` is a one-character typo, but
+/// escaping it to `\{\{ … \}\}` froze the typo into permanent literal text and
+/// destroyed the very warning that would have told the author what to fix. A
+/// malformed directive must stay a malformed DIRECTIVE, not become prose.
+///
+/// A run that is not shape-well-formed - `{{ oops` with no close, or `{{ }}`
+/// with no path - is ordinary text and is escaped as before.
 ///
 /// This exists for the Carve serializer (spec I1): a directive must survive
 /// `carve fmt` verbatim, because escaping it to `\{\{ … \}\}` renders the same
@@ -466,8 +476,10 @@ fn find_directive(text: &str, from: usize) -> Option<(usize, usize)> {
     let mut i = from;
     while let Some(offset) = text[i..].find("{{") {
         let start = i + offset;
+        // The bare-path branch already rejects an empty path; the quoted
+        // branches do not, so `{{ "" }}` is excluded explicitly here.
         if let Some((end, raw)) = match_directive_at(text, start) {
-            if matches!(parse_options(raw), ParsedDirective::Ok(_)) {
+            if !raw.path.is_empty() {
                 return Some((start, end));
             }
         }
