@@ -471,6 +471,15 @@ struct State<'a> {
     /// Identity of the document whose content is currently being expanded.
     file: Option<String>,
     used_heading_ids: HashSet<String>,
+    /// Open reservation frames, one per include being expanded (spec I7).
+    ///
+    /// Every identifier claimed while a child is being processed is journalled
+    /// into the innermost frame. The frame is committed only when the child's
+    /// content actually merges, and released otherwise, so a REJECTED
+    /// directive leaves the document byte-identical to one that had the
+    /// directive written as literal text from the start. Frames nest: an outer
+    /// rejection releases everything its successful descendants claimed.
+    reservation_frames: Vec<Vec<String>>,
     /// Include targets in first-encounter order, plus an index for dedup.
     dependencies: Vec<IncludeDependency>,
     dep_index: HashMap<String, usize>,
@@ -520,6 +529,49 @@ impl State<'_> {
                     resolved,
                 });
             }
+        }
+    }
+
+    /// Claim an explicit heading id, journalling it into the innermost open
+    /// reservation frame. Returns `true` when the id was still free.
+    ///
+    /// Claims made outside any frame - the root document's own ids - are
+    /// permanent and never journalled.
+    fn reserve_heading_id(&mut self, id: &str) -> bool {
+        let fresh = self.used_heading_ids.insert(id.to_string());
+        if fresh {
+            if let Some(frame) = self.reservation_frames.last_mut() {
+                frame.push(id.to_string());
+            }
+        }
+        fresh
+    }
+
+    fn open_reservations(&mut self) {
+        self.reservation_frames.push(Vec::new());
+    }
+
+    /// Keep the frame's claims by folding them into the enclosing frame, so an
+    /// outer rejection can still release them.
+    fn commit_reservations(&mut self) {
+        let frame = self
+            .reservation_frames
+            .pop()
+            .expect("reservation frames are balanced");
+        if let Some(outer) = self.reservation_frames.last_mut() {
+            outer.extend(frame);
+        }
+    }
+
+    /// Release every identifier the frame claimed: the child's content is not
+    /// being merged, so nothing it named may influence the parent (I7).
+    fn rollback_reservations(&mut self) {
+        let frame = self
+            .reservation_frames
+            .pop()
+            .expect("reservation frames are balanced");
+        for id in frame {
+            self.used_heading_ids.remove(&id);
         }
     }
 
@@ -714,14 +766,14 @@ fn rename_child_heading_ids(
         let Some(id) = h.attrs.as_ref().and_then(|a| a.id.clone()) else {
             return;
         };
-        if state.used_heading_ids.insert(id.clone()) {
+        if state.reserve_heading_id(&id) {
             return;
         }
         let renamed = next_free(&id, |c| state.used_heading_ids.contains(c));
         if let Some(attrs) = h.attrs.as_mut() {
             attrs.id = Some(renamed.clone());
         }
-        state.used_heading_ids.insert(renamed.clone());
+        state.reserve_heading_id(&renamed);
         state.warn(
             "include-heading-id-rename",
             format!("Heading id \"{id}\" was renamed to \"{renamed}\"."),
@@ -964,6 +1016,32 @@ struct ExpandedChild {
     file: Option<String>,
 }
 
+/// Resolve one directive and hand the result to `merge`, which decides whether
+/// the content can actually land at the directive's position.
+///
+/// This is the single entry point for expanding a directive, and it enforces
+/// spec I7 structurally rather than case by case: a reservation frame is open
+/// for the whole of resolution AND merging, and is released unless `merge`
+/// returns `Some`. Any rejection - unresolvable, binary, both selections,
+/// cycle, depth, size, or content that cannot merge here - therefore leaves no
+/// identifier claimed, so the document is byte-identical to one where the
+/// directive was literal text from the start. Side effects added later are
+/// covered by construction as long as they are journalled into the frame.
+fn with_child<T>(
+    d: &Directive,
+    state: &mut State<'_>,
+    merge: impl FnOnce(ExpandedChild, &mut State<'_>) -> Option<T>,
+) -> Option<T> {
+    state.open_reservations();
+    let merged = expand_child(d, state).and_then(|child| merge(child, state));
+    if merged.is_some() {
+        state.commit_reservations();
+    } else {
+        state.rollback_reservations();
+    }
+    merged
+}
+
 fn expand_child(d: &Directive, state: &mut State<'_>) -> Option<ExpandedChild> {
     let (source, id) = resolve_child(d, state)?;
     // I4 fragment containment: the child is PARSED as a self-contained
@@ -1127,32 +1205,33 @@ fn expand_run(run: &[InlineNode], state: &mut State<'_>) -> Vec<InlineNode> {
             }
             ParsedDirective::NotADirective => continue,
         };
-        let Some(expanded) = expand_child(&d, state) else {
+        let Some(replacement) = with_child(&d, state, |expanded, state| {
+            let mut children = expanded.children;
+            // I2: resolved content in INLINE position must parse to inline-only
+            // content - a single paragraph, or nothing.
+            let inline_only = match children.len() {
+                0 => true,
+                1 => matches!(children[0], BlockNode::Paragraph(_)),
+                _ => false,
+            };
+            if !inline_only {
+                state.warn(
+                    "include-block-in-inline",
+                    format!("Inline include \"{}\" resolved to block content.", d.path),
+                );
+                return None;
+            }
+            // Merge BEFORE lifting the paragraph's inlines out: a footnote-label
+            // rename rewrites the references inside `children`, so taking them
+            // first would rename the definition while leaving the spliced
+            // reference pointing at the label the parent kept.
+            merge_footnotes(expanded.footnotes, &mut children, state, expanded.file);
+            Some(match children.first_mut() {
+                Some(BlockNode::Paragraph(p)) => std::mem::take(&mut p.children),
+                _ => Vec::new(),
+            })
+        }) else {
             continue;
-        };
-        let mut children = expanded.children;
-        // I2: resolved content in INLINE position must parse to inline-only
-        // content - a single paragraph, or nothing.
-        let inline_only = match children.len() {
-            0 => true,
-            1 => matches!(children[0], BlockNode::Paragraph(_)),
-            _ => false,
-        };
-        if !inline_only {
-            state.warn(
-                "include-block-in-inline",
-                format!("Inline include \"{}\" resolved to block content.", d.path),
-            );
-            continue;
-        }
-        // Merge BEFORE lifting the paragraph's inlines out: a footnote-label
-        // rename rewrites the references inside `children`, so taking them
-        // first would rename the definition while leaving the spliced
-        // reference pointing at the label the parent kept.
-        merge_footnotes(expanded.footnotes, &mut children, state, expanded.file);
-        let replacement = match children.first_mut() {
-            Some(BlockNode::Paragraph(p)) => std::mem::take(&mut p.children),
-            _ => Vec::new(),
         };
         spans.push((start, end, replacement));
     }
@@ -1242,14 +1321,14 @@ fn expand_paragraph(block: &mut Paragraph, state: &mut State<'_>) -> Option<Vec<
         let parsed = parse_full_directive(&source);
         match parsed {
             ParsedDirective::Ok(d) => {
-                if let Some(expanded) = expand_child(&d, state) {
+                // I7: on any rejection this yields None and the original inline
+                // nodes stay, rendering exactly as the core does with no
+                // resolver - and `with_child` releases what the child claimed.
+                return with_child(&d, state, |expanded, state| {
                     let mut children = expanded.children;
                     merge_footnotes(expanded.footnotes, &mut children, state, expanded.file);
-                    return Some(children);
-                }
-                // I7: degrade to literal - the original inline nodes render
-                // exactly as the core does with no resolver.
-                return None;
+                    Some(children)
+                });
             }
             ParsedDirective::BadOption(part) => {
                 state.warn(
@@ -1365,6 +1444,7 @@ pub fn expand_includes(doc: Document, source: &str, options: &IncludeOptions<'_>
         depth: 0,
         file: options.source_path.clone(),
         used_heading_ids: HashSet::new(),
+        reservation_frames: Vec::new(),
         dependencies: Vec::new(),
         dep_index: HashMap::new(),
         footnotes: Vec::new(),

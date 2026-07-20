@@ -1005,3 +1005,251 @@ mod rules {
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// I7: a rejected directive has NO observable side effects
+// ---------------------------------------------------------------------------
+
+/// A rejected directive must leave the document byte-identical to one where it
+/// had been written as literal text from the start, and must release every
+/// identifier it claimed while the child was being processed.
+///
+/// The second half is what these guard: identifier reservations are made
+/// DURING child processing, before anything knows whether the content can
+/// actually land. A leak is invisible in the rejected directive's own output -
+/// it surfaces only in a LATER include, which silently gets `-2` appended to an
+/// id or footnote label that was never really taken.
+mod rejected_directives_have_no_side_effects {
+    use super::*;
+
+    fn tuned(
+        source: &str,
+        files: &[(&str, &str)],
+        max_depth: Option<usize>,
+        max_bytes: Option<usize>,
+    ) -> Expanded {
+        let mut opts = IncludeOptions::new();
+        if let Some(depth) = max_depth {
+            opts = opts.with_max_depth(depth);
+        }
+        if let Some(bytes) = max_bytes {
+            opts = opts.with_max_bytes(bytes);
+        }
+        expand_opts(source, files, opts)
+    }
+
+    /// Probe 1: the rejected directive ALONE renders exactly as the core does
+    /// with no resolver configured - it really did degrade to literal text.
+    fn assert_literal(source: &str, result: &Expanded) {
+        assert_eq!(
+            result.html,
+            literal_html(source),
+            "rejected directive did not render as plain literal text"
+        );
+    }
+
+    /// A child that claims `dup` and merges successfully, used as the survivor
+    /// in every "the reservation was released" probe below.
+    const GOOD: &str = "{#dup}\n# Good";
+
+    /// Probe 2: a SUCCESSFUL include after a rejected one keeps the explicit id
+    /// the rejected child had also claimed.
+    fn assert_id_released(result: &Expanded) {
+        assert!(
+            result.html.contains("id=\"dup\""),
+            "later include lost the id a rejected directive had reserved: {}",
+            result.html
+        );
+        assert!(
+            !result.html.contains("id=\"dup-2\""),
+            "rejected directive kept its heading id reserved: {}",
+            result.html
+        );
+        assert!(
+            !result.rules().contains(&"include-heading-id-rename"),
+            "rejected directive caused a spurious rename: {:?}",
+            result.rules()
+        );
+    }
+
+    // -- the found case ----------------------------------------------------
+
+    #[test]
+    fn rejected_inline_block_include_releases_the_heading_ids_it_reserved() {
+        // The inline directive resolves, so its explicit ids get claimed, and
+        // only THEN is the content found to be block-level and rejected.
+        let result = expand(
+            "See {{ blocky }} here.\n\n{{ good }}",
+            &[("blocky", "{#dup}\n# One\n\nTwo."), ("good", GOOD)],
+        );
+        assert!(result.rules().contains(&"include-block-in-inline"));
+        assert!(result.html.contains("<p>See {{ blocky }} here.</p>"));
+        assert_id_released(&result);
+    }
+
+    #[test]
+    fn rejected_inline_block_include_releases_the_footnote_labels_it_reserved() {
+        let result = expand(
+            "See {{ blocky }} here.\n\n{{ good }}",
+            &[
+                ("blocky", "One[^n]\n\nTwo.\n\n[^n]: Rejected body."),
+                ("good", "Kept[^n]\n\n[^n]: Kept body."),
+            ],
+        );
+        assert!(result.rules().contains(&"include-block-in-inline"));
+        assert!(
+            !result.rules().contains(&"include-footnote-rename"),
+            "rejected directive kept its footnote label reserved: {:?}",
+            result.rules()
+        );
+        assert!(result.html.contains("Kept body."), "html: {}", result.html);
+        assert!(
+            !result.html.contains("Rejected body."),
+            "rejected child's footnote body leaked into the output: {}",
+            result.html
+        );
+    }
+
+    #[test]
+    fn a_rejection_releases_what_its_successful_nested_includes_reserved() {
+        // The OUTER directive is rejected for block content, but its child had
+        // already expanded a nested include that claimed `dup`. Rolling back
+        // only the outer frame would not be enough.
+        let result = expand(
+            "See {{ blocky }} here.\n\n{{ good }}",
+            &[
+                ("blocky", "{{ nested }}\n\nSecond block."),
+                ("nested", "{#dup}\n# Nested"),
+                ("good", GOOD),
+            ],
+        );
+        assert!(result.rules().contains(&"include-block-in-inline"));
+        assert_id_released(&result);
+    }
+
+    // -- one probe pair per rejection reason --------------------------------
+
+    #[test]
+    fn unresolvable_target_has_no_side_effects() {
+        let source = "{{ missing }}";
+        let result = expand(source, &[]);
+        assert!(result.rules().contains(&"include-unresolved"));
+        assert_literal(source, &result);
+
+        let later = expand("{{ missing }}\n\n{{ good }}", &[("good", GOOD)]);
+        assert_id_released(&later);
+    }
+
+    #[test]
+    fn binary_content_has_no_side_effects() {
+        let source = "{{ blob }}";
+        let result = expand(source, &[("blob", "{#dup}\n# X\0binary")]);
+        assert!(result.rules().contains(&"include-non-text"));
+        assert_literal(source, &result);
+
+        let later = expand(
+            "{{ blob }}\n\n{{ good }}",
+            &[("blob", "{#dup}\n# X\0binary"), ("good", GOOD)],
+        );
+        assert_id_released(&later);
+    }
+
+    #[test]
+    fn both_selections_present_has_no_side_effects() {
+        let source = "{{ child #sec @lines:1-2 }}";
+        let files: &[(&str, &str)] = &[("child", "{#dup}\n# Sec")];
+        let result = expand(source, files);
+        assert!(result.rules().contains(&"include-selection-conflict"));
+        assert_literal(source, &result);
+
+        let later = expand(
+            "{{ child #sec @lines:1-2 }}\n\n{{ good }}",
+            &[("child", "{#dup}\n# Sec"), ("good", GOOD)],
+        );
+        assert_id_released(&later);
+    }
+
+    #[test]
+    fn missing_section_has_no_side_effects() {
+        let source = "{{ child #nope }}";
+        let files: &[(&str, &str)] = &[("child", "{#dup}\n# Sec")];
+        let result = expand(source, files);
+        assert!(result.rules().contains(&"include-section"));
+        assert_literal(source, &result);
+
+        let later = expand(
+            "{{ child #nope }}\n\n{{ good }}",
+            &[("child", "{#dup}\n# Sec"), ("good", GOOD)],
+        );
+        assert_id_released(&later);
+    }
+
+    #[test]
+    fn cycle_has_no_side_effects() {
+        let source = "{{ a }}";
+        let files: &[(&str, &str)] = &[("a", "{{ a }}")];
+        let result = expand(source, files);
+        assert!(result.rules().contains(&"include-cycle"));
+
+        // The OUTER `a` merges and legitimately keeps `dup`; the inner,
+        // cycle-rejected re-entry must not claim it a second time and rename
+        // its own copy to `dup-2`.
+        let later = expand("{{ a }}", &[("a", "{#dup}\n# A\n\n{{ a }}")]);
+        assert!(later.rules().contains(&"include-cycle"));
+        assert!(later.html.contains("id=\"dup\""), "html: {}", later.html);
+        assert!(
+            !later.html.contains("id=\"dup-2\""),
+            "cycle-rejected re-entry reserved a duplicate id: {}",
+            later.html
+        );
+    }
+
+    #[test]
+    fn depth_limit_has_no_side_effects() {
+        let source = "{{ a }}";
+        let files: &[(&str, &str)] = &[("a", "{{ b }}"), ("b", "{#dup}\n# B")];
+        // Depth 0 rejects the directive itself, so the document stays literal.
+        let result = tuned(source, files, Some(0), None);
+        assert!(result.rules().contains(&"include-depth"));
+        assert_literal(source, &result);
+
+        // Depth 1 lets `a` in and rejects its nested `b`, so `a` merges as an
+        // empty passthrough while `b`'s ids must never have been claimed.
+        let later = tuned(
+            "{{ a }}\n\n{{ good }}",
+            &[("a", "{{ b }}"), ("b", "{#dup}\n# B"), ("good", GOOD)],
+            Some(1),
+            None,
+        );
+        assert!(later.rules().contains(&"include-depth"));
+        assert_id_released(&later);
+    }
+
+    #[test]
+    fn size_limit_has_no_side_effects() {
+        let big = format!("{{#dup}}\n# Big\n\n{}", "x".repeat(4096));
+        let source = "{{ big }}";
+        let files: &[(&str, &str)] = &[("big", big.as_str())];
+        // Large enough for `good`, far too small for `big`.
+        let result = tuned(source, files, None, Some(64));
+        assert!(result.rules().contains(&"include-budget"));
+        assert_literal(source, &result);
+
+        let later = tuned(
+            "{{ big }}\n\n{{ good }}",
+            &[("big", big.as_str()), ("good", GOOD)],
+            None,
+            Some(64),
+        );
+        assert_id_released(&later);
+    }
+
+    #[test]
+    fn block_content_in_inline_position_has_no_side_effects() {
+        let source = "See {{ blocky }} here.";
+        let files: &[(&str, &str)] = &[("blocky", "{#dup}\n# One\n\nTwo.")];
+        let result = expand(source, files);
+        assert!(result.rules().contains(&"include-block-in-inline"));
+        assert_literal(source, &result);
+    }
+}
