@@ -58,6 +58,7 @@ impl IncludeResolver for MapResolver {
 
 struct Expanded {
     warnings: Vec<(String, Option<String>)>,
+    messages: Vec<String>,
     dependencies: Vec<IncludeDependency>,
     html: String,
 }
@@ -77,6 +78,7 @@ fn expand_with(source: &str, resolver: &dyn IncludeResolver, opts: IncludeOption
             .iter()
             .map(|w| (w.rule.clone(), w.file.clone()))
             .collect(),
+        messages: result.warnings.iter().map(|w| w.message.clone()).collect(),
         dependencies: result.dependencies,
         html: render_html(&result.doc),
     }
@@ -582,6 +584,55 @@ fn filesystem_resolver_rejects_symlink_and_dot_dot_escapes_from_the_root() {
         result.rules(),
         vec!["include-unresolved", "include-unresolved"]
     );
+    assert!(!result.html.contains("TOP SECRET"));
+}
+
+/// I7 (SECURITY): a warning message is PROCESSOR-generated and names the
+/// failure class plus the path AS WRITTEN - never a resolver's raw error text.
+///
+/// A filesystem resolver knows absolute paths, and its native error strings
+/// embed them. Surfacing one verbatim would leak host filesystem layout into
+/// output a hosted preview may render, so the message must stay independent of
+/// whatever the resolver knows.
+///
+/// rs is structurally immune - `IncludeResolver::resolve` returns
+/// `Option<IncludeResolved>`, so there is no error channel for text to arrive
+/// on at all - but that is a property of the current signature, not a
+/// guarantee. This pins the observable rule so adding an error channel later
+/// cannot quietly start leaking through it.
+#[test]
+fn a_resolver_failure_never_leaks_host_paths_into_the_warning_message() {
+    let tmp = TempDir::new("no-leak");
+    let root = tmp.mkdir("root");
+    tmp.write("secret.crv", "TOP SECRET\n");
+    // Both directives are written RELATIVELY, but the resolver canonicalizes
+    // them into absolute paths under the temp root before denying them - a
+    // containment escape and a plain missing file. Any absolute path in the
+    // resulting message could only have come from the resolver.
+    let source = "{{ ../secret.crv }}\n\n{{ gone.crv }}\n";
+    let result = expand_fs(source, &root, IncludeOptions::new());
+    assert_eq!(
+        result.rules(),
+        vec!["include-unresolved", "include-unresolved"]
+    );
+
+    let root_str = root.to_string_lossy().into_owned();
+    let tmp_str = tmp.path().to_string_lossy().into_owned();
+    for message in &result.messages {
+        assert!(
+            !message.contains(&root_str) && !message.contains(&tmp_str),
+            "warning message leaked a host path: {message:?}"
+        );
+        // The path AS WRITTEN is still named, so the author can act on it.
+        assert!(
+            message.starts_with("Include \""),
+            "warning message is not the processor's own: {message:?}"
+        );
+    }
+    // The path AS WRITTEN is echoed back - that is the author's own text and
+    // is what makes the warning actionable.
+    assert!(result.messages[0].contains("../secret.crv"));
+    assert!(result.messages[1].contains("gone.crv"));
     assert!(!result.html.contains("TOP SECRET"));
 }
 
