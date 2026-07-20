@@ -516,6 +516,9 @@ fn render_inline(node: &InlineNode, ctx: &mut AnsiContext, depth: usize) -> Stri
         InlineNode::Span(span) => render_inlines(&span.children, ctx, depth + 1),
         InlineNode::Math(math) => style(&strip_controls(&math.content), FG_BRIGHT_MAGENTA),
         InlineNode::RawInline(_) => String::new(),
+        // §27: always emitted (unlike raw passthrough above). It is prose, not
+        // code, so it carries no code styling.
+        InlineNode::LiteralInline(lit) => strip_controls(&lit.content),
         InlineNode::Symbol(symbol) => format!(":{}:", symbol.name),
         InlineNode::AutoLink(link) => {
             // Raw autolink content (URI keeps its scheme; email shows address).

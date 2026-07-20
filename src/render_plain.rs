@@ -240,6 +240,8 @@ fn render_inline(node: &InlineNode, state: &mut SmartQuoteState, depth: usize) -
         InlineNode::Span(span) => render_inlines_stateful(&span.children, state, depth + 1),
         InlineNode::Math(math) => strip_controls(&math.content),
         InlineNode::RawInline(_) => String::new(),
+        // §27: always emitted (unlike raw passthrough above), as plain prose.
+        InlineNode::LiteralInline(lit) => strip_controls(&lit.content),
         InlineNode::Symbol(symbol) => format!(":{}:", symbol.name),
         InlineNode::AutoLink(link) => {
             // Raw autolink content: a URI autolink keeps its scheme, an email

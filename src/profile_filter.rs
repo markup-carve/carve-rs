@@ -788,6 +788,7 @@ fn extract_inline_text(node: &InlineNode) -> String {
         InlineNode::Code(c, _) => c.clone(),
         InlineNode::Math(m) => m.content.clone(),
         InlineNode::RawInline(r) => r.content.clone(),
+        InlineNode::LiteralInline(l) => l.content.clone(),
         InlineNode::SoftBreak => " ".to_string(),
         InlineNode::HardBreak => "\n".to_string(),
         InlineNode::Image(img) => image_text(img),
@@ -946,6 +947,7 @@ fn is_empty_inline(node: &InlineNode) -> bool {
         InlineNode::Code(c, _) => c.is_empty(),
         InlineNode::Math(m) => m.content.is_empty(),
         InlineNode::RawInline(r) => r.content.is_empty(),
+        InlineNode::LiteralInline(l) => l.content.is_empty(),
         // Self-contained / structural inline nodes are never "empty containers".
         InlineNode::Image(_)
         | InlineNode::Mention(_)

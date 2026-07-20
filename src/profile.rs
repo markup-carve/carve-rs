@@ -156,6 +156,12 @@ pub fn canonical_inline_type(node: &InlineNode) -> Option<&'static str> {
         InlineNode::Span(_) => Some("span"),
         InlineNode::Math(_) => Some("math"),
         InlineNode::RawInline(_) => Some("raw_inline"),
+        // An inline literal is a code span with the `<code>` wrapper dropped:
+        // same verbatim capture, same escaping, same trailing-attribute surface.
+        // So it classifies as `code` -- allowed exactly where a code span is.
+        // Aliasing to `text` would be wrong: with attributes it renders a
+        // `<span>` carrying class/id just as an attributed code span does.
+        InlineNode::LiteralInline(_) => Some("code"),
         InlineNode::Mention(_) => Some("mention"),
         // carve-php / carve-js treat `#tag` under the mention feature.
         InlineNode::Tag(_) => Some("mention"),

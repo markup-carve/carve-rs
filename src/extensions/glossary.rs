@@ -254,6 +254,9 @@ fn inline_text(nodes: &[InlineNode]) -> String {
         match node {
             InlineNode::Text(s) => out.push_str(s),
             InlineNode::Code(s, _) => out.push_str(s),
+            // An inline literal renders as visible prose (§27), matching carve-js
+            // `inlineText` which folds its content into the flattened term text.
+            InlineNode::LiteralInline(l) => out.push_str(&l.content),
             InlineNode::Emphasis(e) => out.push_str(&inline_text(&e.children)),
             InlineNode::Link(l) => out.push_str(&inline_text(&l.children)),
             InlineNode::Span(s) => out.push_str(&inline_text(&s.children)),

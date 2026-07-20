@@ -570,6 +570,21 @@ fn render_inline(
                 escape_format(&raw.format)
             )
         }
+        InlineNode::LiteralInline(lit) => {
+            // §27: `content`{!} — the sigil is always first, further attributes
+            // follow it separated by a space (the grammar requires that
+            // separation). `render_code` widens the backtick fence when the
+            // content holds backticks, so the round-trip re-parses identically.
+            let attrs = render_attrs(&lit.attrs);
+            let inner = if attrs.is_empty() {
+                "!".to_string()
+            } else {
+                // `render_attrs` returns `{...}`; strip the ASCII braces and
+                // re-wrap after the sigil (`! .cls #id`).
+                format!("! {}", &attrs[1..attrs.len() - 1])
+            };
+            format!("{}{{{}}}", render_code(&lit.content), inner)
+        }
         InlineNode::Symbol(symbol) => format!(
             ":{}:{}",
             escape_symbol_name(&symbol.name),
