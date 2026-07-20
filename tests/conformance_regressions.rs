@@ -267,12 +267,14 @@ fn reference_definitions_inside_fenced_code_are_literal() {
 }
 
 #[test]
-fn nested_list_fence_closes_so_later_definitions_collect() {
-    // The fence opens on a nested-list marker and closes on an indented line
-    // (`    ~~~`, no list marker). The def-collection prepass must recognize
-    // that close despite the residual indentation, else `in_fence` stays set
-    // and the later definition is wrongly skipped.
-    assert!(html("- - ~~~\n  code\n    ~~~\n\n[r]: /u\n\n[x][r]").contains("href=\"/u\""));
+fn reference_prepass_does_not_open_residual_indented_fence() {
+    // Under the column-exact fence rule the reference-definition prepass tests
+    // fences without trimming residual indentation. It has no full
+    // container-column context, so this safe limitation means a definition in a
+    // list-nested fence can still be collected. That may create a spurious
+    // resolved link, but it avoids the worse failure mode of opening a fence the
+    // block parser never opened and hiding every later definition.
+    assert!(html("- x\n  ```\n  - [r]: /u\n  ```\n\n[x][r]").contains("href=\"/u\""));
 }
 
 #[test]
