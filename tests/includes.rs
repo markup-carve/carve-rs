@@ -206,11 +206,37 @@ fn shift_shifts_headings_and_warns_when_clamped() {
     assert!(result.html.contains("<h6>B</h6>"));
 }
 
+/// I11: `resolved` reports ONLY whether the target's source was read.
+///
+/// The file was read here - it simply had no such section - so the dependency
+/// stays RESOLVED. A host that dropped it would stop watching the child, and
+/// then adding the missing section to that child would never invalidate the
+/// preview: the document would stay broken until an unrelated edit happened to
+/// retrigger a build.
 #[test]
-fn a_missing_section_marks_the_dependency_attempted_not_resolved() {
+fn a_missing_section_keeps_the_dependency_resolved_because_the_file_was_read() {
     let result = expand("{{ child #nope }}", &[("child", "# Real")]);
     assert_eq!(result.rules(), vec!["include-section"]);
-    assert_eq!(result.dependencies, vec![dep("child", false)]);
+    assert_eq!(result.dependencies, vec![dep("child", true)]);
+}
+
+/// The dividing line is strictly "did a read happen". The depth limit refuses
+/// the target BEFORE handing it to the resolver, so nothing was read and it is
+/// correctly unresolved - this pins the contrast against the test above so a
+/// future sweep cannot flatten the two cases into one rule.
+#[test]
+fn a_depth_refused_target_stays_unresolved_because_no_read_happened() {
+    let result = expand_opts(
+        "{{ a }}",
+        &[("a", "{{ b }}"), ("b", "deep")],
+        IncludeOptions::new().with_max_depth(1),
+    );
+    assert_eq!(result.rules(), vec!["include-depth"]);
+    assert_eq!(
+        result.dependencies,
+        vec![dep("a", true), dep("b", false)],
+        "the root child was read; the depth-refused grandchild never was"
+    );
 }
 
 #[test]

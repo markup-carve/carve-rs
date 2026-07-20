@@ -181,7 +181,15 @@ pub struct IncludeDependency {
     /// The resolver's canonical id when it supplied one (the identity the
     /// cycle guard uses), otherwise the directive path as written.
     pub id: String,
-    /// True when the resolver produced source text that was actually merged.
+    /// True when the target's SOURCE WAS READ - and nothing more (spec I11).
+    ///
+    /// It is NOT a report on whether the content was merged. A target that was
+    /// read and then rejected (a missing `#section`, a cycle, an exhausted
+    /// byte budget) stays `true`, because the file exists and a host must keep
+    /// watching it: editing the child to fix the problem has to invalidate the
+    /// preview. Only a target whose source was never obtained - unresolvable,
+    /// denied by containment, or refused before any read at the depth limit -
+    /// is `false`.
     pub resolved: bool,
 }
 
@@ -663,15 +671,6 @@ impl State<'_> {
             self.used_heading_ids.remove(&id);
         }
     }
-
-    /// Force an entry back to unresolved, bypassing `note`'s upgrade rule.
-    fn note_forced_unresolved(&mut self, id: &str) {
-        if let Some(&idx) = self.dep_index.get(id) {
-            self.dependencies[idx].resolved = false;
-        } else {
-            self.note(id, false);
-        }
-    }
 }
 
 fn slice_lines(source: &str, range: (usize, usize)) -> String {
@@ -1145,10 +1144,12 @@ fn expand_child(d: &Directive, state: &mut State<'_>) -> Option<ExpandedChild> {
         match select_section(&children, section) {
             Some(selected) => children = selected,
             None => {
-                // Same attempt, not a second one: the file was read but the
-                // include did not expand, so the entry is forced back to
-                // unresolved rather than going through note()'s upgrade rule.
-                state.note_forced_unresolved(&id);
+                // I11: `resolved` reports whether the target's SOURCE WAS READ,
+                // nothing more. The read succeeded here - only the section
+                // selection failed - so the entry stays resolved and the host
+                // keeps watching the file. Downgrading it would stop the watch
+                // at exactly the wrong moment: adding the missing section to
+                // the child would then never invalidate the preview.
                 state.warn(
                     "include-section",
                     format!("Include \"{}\" has no section \"#{section}\".", d.path),
