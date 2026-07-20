@@ -346,6 +346,7 @@ Other options:
 carve --mention-url '/users/{name}' --tag-url '/topics/{name}' social.crv
 carve --symbol 'rocket=🚀' --symbol 'tada=🎉' symbols.crv
 carve --no-raw-html untrusted.crv   # escape =html raw blocks/spans
+carve --include-root ./book book/main.crv   # widen the include containment root
 carve --help
 ```
 
@@ -361,6 +362,72 @@ to source. Pass `--extensions` to enable the bundled interactive extensions
 without it the CLI parses those words as plain containers. Supplying build
 renderers for the diagrams/math requires the library API (`Options::with_mode` +
 `with_renderers`); see `docs/extensions.md` and `examples/static_mode.rs`.
+
+## File inclusion
+
+`{{ path }}` include directives (spec §19) are a **processor-level, opt-in**
+feature. The parser never touches the filesystem and does not know the directive
+exists, so with no resolver configured `{{ … }}` stays literal text.
+
+The CLI enables inclusion for file inputs, with the containment root defaulting
+to the **directory of the input document** — never the process working
+directory. Stdin has no path context and therefore no inferable root, so
+directives stay literal unless `--include-root` names one:
+
+```bash
+carve book/main.crv                       # root defaults to book/
+carve --include-root . book/main.crv      # widen the root to the project
+carve --include-root ./book < main.crv    # required to enable includes on stdin
+```
+
+```
+{{ chapters/intro.crv }}              include a whole file
+{{ chapters/intro.crv #setup }}       include one heading subtree
+{{ notes.crv @lines:10-25 }}          include a physical line range
+{{ chapters/intro.crv @shift:2 }}     shift included heading levels by +2
+{{ chapters/intro.crv @shift:auto }}  shift to sit under the heading in scope
+```
+
+`#section` and `@lines` are the two selection mechanisms and are mutually
+exclusive. Every failure — a missing file, binary content, both selectors, a
+cycle, the depth limit, the size budget — emits a warning on stderr and leaves
+the directive **literal**; inclusion never silently drops a directive.
+
+Paths are checked against the root by **canonicalizing and then testing
+containment**, not by banning `..` lexically. A `../shared/glossary.crv` whose
+target stays inside the root resolves; symlinks out of the root, symlinked
+directory components, and absolute paths outside the root are denied.
+
+From the library, expansion is a pass between parse and render:
+
+```rust
+use carve::{expand_includes, parse, render_html, FileSystemResolver, IncludeOptions};
+
+let source = std::fs::read_to_string("book/main.crv")?;
+let resolver = FileSystemResolver::new("book")?;
+let options = IncludeOptions::new()
+    .with_resolver(&resolver)
+    .with_source_path("book/main.crv");
+
+let result = expand_includes(parse(&source), &source, &options);
+for warning in &result.warnings {
+    eprintln!("{}: {}", warning.rule, warning.message);
+}
+// Every target touched, resolved or not — hosts key file watchers off this.
+for dependency in &result.dependencies {
+    println!("{} (resolved: {})", dependency.id, dependency.resolved);
+}
+let html = render_html(&result.doc);
+```
+
+Implement `IncludeResolver` for a virtual filesystem, an in-memory map, or any
+other source; `FileSystemResolver` is the ready-made one for trusted hosts.
+`prepare_doc_with_includes` runs expansion and then the same extension-hook and
+profile pipeline the `to_*` entry points use, so included content is subject to
+exactly the same sanitization as content the author typed directly.
+
+Source-position remapping for included spans (spec I4) is not implemented in any
+engine yet; warnings carry the identity of the file they arose in instead.
 
 ## Building from source
 

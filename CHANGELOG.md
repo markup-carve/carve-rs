@@ -7,6 +7,16 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- Add processor-level file inclusion (`{{ path }}`, spec section 19 rules
+  I1-I11): `expand_includes` expands directives in a parsed document using a
+  host-supplied `IncludeResolver`, with `#section` / line-range selection,
+  signed and `auto` heading-level shifts, cross-file id and footnote-label
+  rename-on-collision, cycle / depth / byte-budget limits, and dependency
+  reporting for preview invalidation. The core parser is untouched and performs
+  no file I/O: with no resolver configured the directive stays literal.
+  `FileSystemResolver` provides canonicalize-then-contain path checking for
+  trusted hosts, and the CLI gains `--include-root`, defaulting to the input
+  file's directory.
 - BREAKING: rename `Emoji` AST nodes to `Symbol`, the `emoji` render option to
   `symbols`, and the CLI flag `--emoji` to `--symbol`; symbol shortcodes now
   require a leading word boundary, require an ASCII alphanumeric first name
