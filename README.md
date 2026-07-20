@@ -228,7 +228,8 @@ assert_eq!(
 ```
 
 Presets: `FencedRender::mermaid()`, `d2()`, `graphviz()` (claims `dot` +
-`graphviz`), `wavedrom()`, `abc()`, `vega_lite()`, `chart()`; or
+`graphviz`), `wavedrom()`, `abc()`, `plantuml()` (claims `plantuml` + `puml`),
+`vega_lite()`, `chart()`; or
 `FencedRender::with_options` for a custom language set, `cssClass`, `tag`, or
 content mode. `FencedRender::presets()` returns every preset as a `Vec` to
 register in a loop (it claims every preset fence word, so register only those

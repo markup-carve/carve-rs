@@ -174,6 +174,18 @@ impl FencedRender {
         Self::new("abc")
     }
 
+    /// PlantUML preset (text mode); claims both `plantuml` and `puml`. Covers
+    /// the UML shapes Mermaid does not (use case, component, deployment,
+    /// timing). Load a client-side PlantUML build to render the diagrams.
+    pub fn plantuml() -> Self {
+        Self::with_options(FencedRenderOptions::new(
+            vec!["plantuml".into(), "puml".into()],
+            Some("plantuml".into()),
+            None,
+            ContentMode::Text,
+        ))
+    }
+
     /// Vega-Lite preset (json mode, `<div class="vega-lite"><script ...>`).
     pub fn vega_lite() -> Self {
         Self::with_options(FencedRenderOptions::new(
@@ -197,7 +209,8 @@ impl FencedRender {
     /// Every bundled diagram preset as ready-to-register instances.
     ///
     /// Claims every preset fence word (`mermaid`, `d2`, `dot`, `graphviz`,
-    /// `wavedrom`, `abc`, `vega-lite`, `chart`), so a literal code sample in one
+    /// `wavedrom`, `abc`, `plantuml`, `puml`, `vega-lite`, `chart`), so a
+    /// literal code sample in one
     /// of those languages becomes a hydration element; register only the presets
     /// whose client library you actually load if that matters.
     ///
@@ -218,6 +231,7 @@ impl FencedRender {
             Self::graphviz(),
             Self::wavedrom(),
             Self::abc(),
+            Self::plantuml(),
             Self::vega_lite(),
             Self::chart(),
         ]
