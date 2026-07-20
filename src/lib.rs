@@ -21,6 +21,7 @@ mod document_ids;
 mod escape;
 mod extension;
 pub mod extensions;
+mod includes;
 mod index_budget;
 mod parse;
 pub mod profile;
@@ -57,6 +58,10 @@ pub use extensions::{
     ListTable, ListType, MathBlock, MathBlockOptions, Position, Spoiler, SwatchPosition,
     SwatchShape, TabNormalize, TableOfContents, TableOfContentsOptions, TocPlacement, UrlGenerator,
     Wikilinks, WikilinksOptions,
+};
+pub use includes::{
+    expand_includes, FileSystemResolver, IncludeContext, IncludeDependency, IncludeOptions,
+    IncludeResolved, IncludeResolver, IncludeResult, IncludeWarning, DEFAULT_MAX_DEPTH,
 };
 pub use parse::{parse, parse_with_options};
 pub use profile::{DisallowedAction, LinkPolicy, Profile, ProfileViolation, ProfileViolationError};
@@ -293,12 +298,74 @@ fn parsed_doc_with_hooks(
     options: &Options<'_>,
     effective_mode: Mode,
 ) -> ast::Document {
-    let mut doc = parse_with_options(source, options);
+    doc_with_hooks(parse_with_options(source, options), options, effective_mode)
+}
+
+fn doc_with_hooks(
+    mut doc: ast::Document,
+    options: &Options<'_>,
+    effective_mode: Mode,
+) -> ast::Document {
     let ctx = extension::BeforeRenderContext::new(options, effective_mode);
     for ext in &options.extensions {
         doc = ext.before_render(doc, &ctx);
     }
     doc
+}
+
+/// Parse, expand `{{ … }}` includes, then run the same extension-hook and
+/// profile pipeline the `to_*` entry points use, returning the prepared
+/// document alongside the include diagnostics.
+///
+/// Expansion sits between PARSE and the hook/profile stages deliberately:
+/// included content is therefore subject to exactly the same extension
+/// transforms and the same profile filtering as content the author typed
+/// directly, so an include can never be a privilege-escalation channel
+/// (spec §19 I7, §25 "File inclusion").
+///
+/// The profile's `max_length` is checked against the INPUT source, before
+/// expansion; amplification through includes is bounded separately by the
+/// include byte budget ([`IncludeOptions::with_max_bytes`]).
+pub fn prepare_doc_with_includes(
+    source: &str,
+    options: &Options<'_>,
+    include_options: &IncludeOptions<'_>,
+    effective_mode: Mode,
+) -> Result<PreparedWithIncludes, ProfileViolationError> {
+    if let Some(profile) = &options.profile {
+        let max_length = profile.max_length();
+        if max_length > 0 && source.len() > max_length {
+            return Err(ProfileViolationError {
+                violations: vec![ProfileViolation {
+                    node_type: "document".to_string(),
+                    reason: "max_length_exceeded".to_string(),
+                    reason_description: Some(format!(
+                        "Input exceeds the profile's maximum length of {max_length} bytes ({} given).",
+                        source.len()
+                    )),
+                }],
+            });
+        }
+    }
+    let expanded = expand_includes(parse_with_options(source, options), source, include_options);
+    let doc = doc_with_hooks(expanded.doc, options, effective_mode);
+    let doc = match &options.profile {
+        Some(profile) => apply_profile(doc, profile, options.profile_base_host.as_deref())?.doc,
+        None => doc,
+    };
+    Ok(PreparedWithIncludes {
+        doc,
+        warnings: expanded.warnings,
+        dependencies: expanded.dependencies,
+    })
+}
+
+/// Output of [`prepare_doc_with_includes`]: the fully prepared document plus
+/// the include diagnostics a host needs for reporting and file watching.
+pub struct PreparedWithIncludes {
+    pub doc: ast::Document,
+    pub warnings: Vec<IncludeWarning>,
+    pub dependencies: Vec<IncludeDependency>,
 }
 
 /// Infallible HTML entry point. Identical to [`try_to_html_with_options`]
