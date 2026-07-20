@@ -80,6 +80,8 @@ pub struct StaticRenderers {
     pub chart: Option<DiagramRenderer>,
     /// Graphviz / DOT source -> SVG / HTML string.
     pub graphviz: Option<DiagramRenderer>,
+    /// PlantUML source -> SVG / HTML string.
+    pub plantuml: Option<DiagramRenderer>,
     /// Math TeX source -> MathML / HTML string. The `bool` flags display math.
     pub math: Option<MathRenderer>,
 }
@@ -90,6 +92,7 @@ impl std::fmt::Debug for StaticRenderers {
             .field("mermaid", &self.mermaid.as_ref().map(|_| "<fn>"))
             .field("chart", &self.chart.as_ref().map(|_| "<fn>"))
             .field("graphviz", &self.graphviz.as_ref().map(|_| "<fn>"))
+            .field("plantuml", &self.plantuml.as_ref().map(|_| "<fn>"))
             .field("math", &self.math.as_ref().map(|_| "<fn>"))
             .finish()
     }

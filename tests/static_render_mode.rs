@@ -274,6 +274,39 @@ fn graphviz_dot_alias_static_with_renderer_emits_injected_image() {
 }
 
 #[test]
+fn plantuml_static_with_renderer_emits_injected_image() {
+    let ext = FencedRender::plantuml();
+    let opts = Options::new()
+        .with_mode(Mode::Static)
+        .with_extension(&ext)
+        .with_renderers(StaticRenderers {
+            plantuml: Some(Box::new(|_src: &str| {
+                "<img alt=\"plantuml\" src=\"uml.svg\">".to_string()
+            })),
+            ..Default::default()
+        });
+    // Both fence words resolve to the same `plantuml` renderer key.
+    let via_plantuml =
+        carve::to_html_with_options("``` plantuml\n@startuml\nA -> B\n@enduml\n```\n", &opts);
+    assert_eq!(
+        via_plantuml.trim(),
+        "<img alt=\"plantuml\" src=\"uml.svg\">"
+    );
+    let via_puml = carve::to_html_with_options("``` puml\nA -> B\n```\n", &opts);
+    assert_eq!(via_puml.trim(), "<img alt=\"plantuml\" src=\"uml.svg\">");
+}
+
+#[test]
+fn plantuml_static_without_renderer_degrades_to_source() {
+    // No plantuml renderer supplied: it must fall back to the source, never blank.
+    let ext = FencedRender::plantuml();
+    let opts = Options::new().with_mode(Mode::Static).with_extension(&ext);
+    let html = carve::to_html_with_options("``` puml\nA -> B\n```\n", &opts);
+    assert!(html.contains("<pre"));
+    assert!(html.contains("A -&gt; B") || html.contains("A -> B"));
+}
+
+#[test]
 fn other_presets_always_degrade_to_source_even_in_static() {
     // d2 has no static_renderer key, so even with a mermaid renderer supplied it
     // degrades to source (the renderer is not its build hook).

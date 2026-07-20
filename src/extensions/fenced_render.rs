@@ -47,6 +47,8 @@ pub enum StaticRendererKey {
     Chart,
     /// Use `renderers.graphviz`.
     Graphviz,
+    /// Use `renderers.plantuml`.
+    Plantuml,
 }
 
 /// Options for [`FencedRender`].
@@ -178,12 +180,14 @@ impl FencedRender {
     /// the UML shapes Mermaid does not (use case, component, deployment,
     /// timing). Load a client-side PlantUML build to render the diagrams.
     pub fn plantuml() -> Self {
-        Self::with_options(FencedRenderOptions::new(
+        let mut opts = FencedRenderOptions::new(
             vec!["plantuml".into(), "puml".into()],
             Some("plantuml".into()),
             None,
             ContentMode::Text,
-        ))
+        );
+        opts.static_renderer = Some(StaticRendererKey::Plantuml);
+        Self::with_options(opts)
     }
 
     /// Vega-Lite preset (json mode, `<div class="vega-lite"><script ...>`).
@@ -258,6 +262,7 @@ impl CarveExtension for FencedRender {
                 StaticRendererKey::Mermaid => ctx.renderers().mermaid.as_deref(),
                 StaticRendererKey::Chart => ctx.renderers().chart.as_deref(),
                 StaticRendererKey::Graphviz => ctx.renderers().graphviz.as_deref(),
+                StaticRendererKey::Plantuml => ctx.renderers().plantuml.as_deref(),
             })
         } else {
             None

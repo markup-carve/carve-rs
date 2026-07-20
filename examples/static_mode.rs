@@ -92,6 +92,9 @@ fn main() {
             graphviz: Some(Box::new(|_src: &str| {
                 "<img alt=\"graphviz\" src=\"graph.svg\">".to_string()
             })),
+            plantuml: Some(Box::new(|_src: &str| {
+                "<img alt=\"plantuml\" src=\"uml.svg\">".to_string()
+            })),
             math: Some(Box::new(|tex: &str, display: bool| {
                 format!(
                     "<math display=\"{}\"><!-- {} --></math>",
