@@ -4,7 +4,7 @@
 use std::io::{self, Read, Write};
 use std::process::ExitCode;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 enum OutputFormat {
     Html,
     Markdown,
@@ -40,6 +40,7 @@ fn main() -> ExitCode {
     let mut fmt_check = false;
     let mut fmt_stamp = None;
     let mut enable_extensions = false;
+    let mut include_root: Option<String> = None;
     let mut input_paths: Vec<String> = Vec::new();
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
@@ -117,6 +118,13 @@ fn main() -> ExitCode {
             "--static" => options = options.with_mode(carve::Mode::Static),
             "--interactive" => options = options.with_mode(carve::Mode::Interactive),
             "--extensions" => enable_extensions = true,
+            "--include-root" => {
+                let Some(value) = args.next() else {
+                    eprintln!("carve: --include-root requires a directory");
+                    return ExitCode::FAILURE;
+                };
+                include_root = Some(value);
+            }
             "--no-raw-html" | "--safe" => options = options.with_raw_html(false),
             "-" if command == Command::Render => input_paths.clear(),
             "-" if command == Command::Fmt => input_paths.push(arg),
@@ -166,14 +174,111 @@ fn main() -> ExitCode {
             }
         },
     };
-    // Mention/tag URL templates are an HTML-link concern, so they only affect
-    // HTML output. All formats share the same parse + profile pipeline.
-    let output = match format {
-        OutputFormat::Html => carve::to_html_with_options(&source, &options),
-        OutputFormat::Markdown => carve::to_markdown_with_options(&source, &options),
-        OutputFormat::Plain => carve::to_plain_text_with_options(&source, &options),
-        OutputFormat::Ansi => carve::to_ansi_with_options(&source, &options),
-        OutputFormat::Carve => carve::to_carve(&source),
+    // Containment root (spec I10): an explicit --include-root wins, otherwise a
+    // file input defaults to the DIRECTORY OF THE DOCUMENT. Never the process
+    // working directory, which is arbitrary with respect to the document and
+    // may be `/` or a home directory. Stdin has no path context and therefore
+    // no inferable root, so directives stay literal unless --include-root says
+    // otherwise.
+    //
+    // The document path is ABSOLUTIZED first. The resolver looks a nested
+    // relative include up from `root.join(parent)`, so a relative input like
+    // `book/main.crv` (root `book`) would otherwise re-prefix the root and
+    // search `book/book/child.crv`. carve-js absolutizes here for the same
+    // reason.
+    let input_path = input_paths.first().filter(|p| p.as_str() != "-").map(|p| {
+        let path = std::path::Path::new(p);
+        match std::fs::canonicalize(path) {
+            Ok(real) => real,
+            // The file was read successfully above, so this is unreachable
+            // in practice; fall back to cwd-joining rather than to a
+            // relative path, which would reintroduce the re-prefix bug.
+            Err(_) => std::env::current_dir()
+                .map(|cwd| cwd.join(path))
+                .unwrap_or_else(|_| path.to_path_buf()),
+        }
+    });
+    let root = include_root.clone().or_else(|| {
+        input_path.as_deref().and_then(|p| {
+            p.parent()
+                .filter(|d| !d.as_os_str().is_empty())
+                .map(|d| d.to_string_lossy().into_owned())
+        })
+    });
+    // Only pay for the expansion pass when includes could matter: an explicit
+    // --include-root is a user request, otherwise the source must actually
+    // contain a directive opener. `carve fmt` / --carve is excluded on
+    // purpose - the formatter round-trips SOURCE, and inlining files into it
+    // would rewrite the author's document rather than format it.
+    let want_includes = root.is_some()
+        && format != OutputFormat::Carve
+        && (include_root.is_some() || source.contains("{{"));
+
+    let resolver = if want_includes {
+        let root = root.expect("guarded by want_includes");
+        match carve::FileSystemResolver::new(&root) {
+            Ok(resolver) => Some(resolver),
+            Err(err) => {
+                // An explicit root is a user request, so a bad one is fatal; an
+                // inferred one silently falls back to no includes rather than
+                // failing a render the user never asked to change.
+                if include_root.is_some() {
+                    eprintln!("carve: cannot use include root {root}: {err}");
+                    return ExitCode::FAILURE;
+                }
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    let output = if let Some(resolver) = &resolver {
+        let mut include_options = carve::IncludeOptions::new().with_resolver(resolver);
+        if let Some(path) = &input_path {
+            include_options = include_options.with_source_path(path.to_string_lossy());
+        }
+        let mode = match format {
+            OutputFormat::Html => options.mode,
+            _ => carve::Mode::Interactive,
+        };
+        match carve::prepare_doc_with_includes(&source, &options, &include_options, mode) {
+            Ok(prepared) => {
+                for warning in &prepared.warnings {
+                    match &warning.file {
+                        Some(file) => {
+                            eprintln!("carve: {file}: {} ({})", warning.message, warning.rule)
+                        }
+                        None => eprintln!("carve: {} ({})", warning.message, warning.rule),
+                    }
+                }
+                match format {
+                    OutputFormat::Html => carve::render_html_with_options(&prepared.doc, &options),
+                    OutputFormat::Markdown => {
+                        carve::render_markdown_with_options(&prepared.doc, &options)
+                    }
+                    OutputFormat::Plain => {
+                        carve::render_plain_text_with_options(&prepared.doc, &options)
+                    }
+                    OutputFormat::Ansi => carve::render_ansi_with_options(&prepared.doc, &options),
+                    OutputFormat::Carve => unreachable!("excluded by want_includes"),
+                }
+            }
+            // Matches the infallible `to_*_with_options` entry points: a
+            // profile violation renders an empty safe output.
+            Err(_) => String::new(),
+        }
+    } else {
+        // Mention/tag URL templates are an HTML-link concern, so they only
+        // affect HTML output. All formats share the same parse + profile
+        // pipeline.
+        match format {
+            OutputFormat::Html => carve::to_html_with_options(&source, &options),
+            OutputFormat::Markdown => carve::to_markdown_with_options(&source, &options),
+            OutputFormat::Plain => carve::to_plain_text_with_options(&source, &options),
+            OutputFormat::Ansi => carve::to_ansi_with_options(&source, &options),
+            OutputFormat::Carve => carve::to_carve(&source),
+        }
     };
     let mut stdout = io::stdout().lock();
     if let Err(err) = stdout.write_all(output.as_bytes()) {
@@ -304,7 +409,10 @@ fn print_usage() {
          --no-raw-html, --safe       escape =html raw blocks/spans instead of\n                              \
          emitting them (for untrusted input)\n  \
          --profile NAME              restrict features (full|article|comment|minimal)\n  \
-         --profile-base-host HOST    base host for the profile link policy\n\n\
+         --profile-base-host HOST    base host for the profile link policy\n  \
+         --include-root DIR          containment root for {{ path }} includes.\n                              \
+         Defaults to the input file's directory; pass this to widen\n                              \
+         or narrow it, or to enable includes on stdin\n\n\
          Spec: https://markup-carve.github.io/carve/"
     );
 }
