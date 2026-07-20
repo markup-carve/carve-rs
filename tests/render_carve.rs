@@ -221,6 +221,15 @@ mod include_directives_survive_formatting {
         ("lines.crv", "skip\nOne\nTwo\nskip"),
         ("shift.crv", "# Shifted"),
         ("inline.crv", "inline body"),
+        // Two addressable sections, for directives that must BOTH survive in
+        // one run while selecting different parts of the same file.
+        (
+            "two.crv",
+            "{#intro}\n# Intro\n\nIntro body.\n\n{#outro}\n# Outro\n\nOutro body.",
+        ),
+        ("x.crv", "XXX"),
+        ("y.crv", "YYY"),
+        ("z.crv", "ZZZ"),
     ];
 
     struct Expansion {
@@ -411,6 +420,103 @@ mod include_directives_survive_formatting {
         assert_survives("{{ book.crv #nope }}\n");
     }
 
+    // -----------------------------------------------------------------------
+    // More than ONE directive per run
+    // -----------------------------------------------------------------------
+
+    /// Every fixture above uses a SINGLE directive, which is exactly how this
+    /// bug class stays invisible: an implementation that preserves the first
+    /// directive and escapes the rest of the run passes all of them. carve-php
+    /// had precisely that defect - it escaped the remainder wholesale instead
+    /// of rescanning it - so `a {{ x }} b {{ y }} c` silently lost `{{ y }}`
+    /// with two FULLY VALID directives.
+    ///
+    /// rs rescans (`split_run_directives` advances a cursor past each match and
+    /// keeps looking), so it is correct here. These pin that property rather
+    /// than trusting the loop to stay that way. Verified to be load-bearing:
+    /// with the rescan disabled all four tests below fail while every
+    /// single-directive test above still passes.
+    #[test]
+    fn every_directive_in_a_run_is_preserved_not_just_the_first() {
+        for source in [
+            // Two, three, four - prose between each.
+            "a {{ x.crv }} b {{ y.crv }} c\n",
+            "a {{ x.crv }} b {{ y.crv }} c {{ z.crv }} d\n",
+            "{{ x.crv }} a {{ y.crv }} b {{ z.crv }} c {{ chapter.crv }}\n",
+            // No prose between them at all.
+            "{{ x.crv }}{{ y.crv }}\n",
+            "{{ x.crv }} {{ y.crv }}\n",
+            // First and last position in the run, nothing outside them.
+            "{{ x.crv }} middle prose {{ y.crv }}\n",
+        ] {
+            assert_eq!(carve::to_carve(source), source, "not preserved: {source:?}");
+            assert_survives(source);
+        }
+    }
+
+    /// The highest-risk shape: `#section` parses to a Tag and `@option` to a
+    /// Mention, so these runs are Text+Tag+Mention+Text sequences rather than
+    /// one text node. A per-text-node scan finds none of them, and a scan that
+    /// stops after the first match keeps only the leading one.
+    #[test]
+    fn multiple_sectioned_and_optioned_directives_all_survive_one_run() {
+        for source in [
+            "a {{ two.crv #intro }} b {{ two.crv #outro }} c\n",
+            "a {{ lines.crv @lines:2-3 }} b {{ shift.crv @shift:2 }} c\n",
+            "a {{ two.crv #intro }} b {{ shift.crv @shift:auto }} c {{ lines.crv @lines:1-2 }} d\n",
+            "{{ two.crv #intro @shift:1 }} x {{ two.crv #outro @shift:2 }}\n",
+        ] {
+            assert_eq!(carve::to_carve(source), source, "not preserved: {source:?}");
+            assert_survives(source);
+        }
+    }
+
+    /// A run that mixes preservable and non-preservable directives must handle
+    /// each on its own merits: the invalid one is escaped as ordinary text and
+    /// the valid ones AROUND it - including the ones AFTER it - still survive.
+    /// An implementation that bailed out of the run at the first non-match
+    /// would silently drop everything downstream.
+    #[test]
+    fn an_unpreservable_directive_does_not_take_the_rest_of_the_run_with_it() {
+        // Empty path in the middle: escaped, both neighbors intact.
+        assert_eq!(
+            carve::to_carve("a {{ x.crv }} b {{ }} c {{ y.crv }} d\n"),
+            "a {{ x.crv }} b \\{\\{ \\}\\} c {{ y.crv }} d\n"
+        );
+        assert_survives("a {{ x.crv }} b {{ }} c {{ y.crv }} d\n");
+
+        // Unclosed opener trailing a valid directive: only the opener escapes.
+        assert_eq!(
+            carve::to_carve("a {{ x.crv }} b {{ oops\n"),
+            "a {{ x.crv }} b \\{\\{ oops\n"
+        );
+        assert_survives("a {{ x.crv }} b {{ oops\n");
+
+        // A merely mis-OPTIONED directive is shape-well-formed, so all three
+        // are preserved and the middle one keeps its warning.
+        let mixed = "a {{ x.crv }} b {{ z.crv @bogus:1 }} c {{ y.crv }} d\n";
+        assert_eq!(carve::to_carve(mixed), mixed);
+        assert_eq!(expand(mixed).rules, ["include-unknown-option"]);
+        assert_survives(mixed);
+    }
+
+    /// Directives spread across blocks, and across block vs inline position,
+    /// are independent of each other.
+    #[test]
+    fn directives_survive_across_separate_blocks_and_mixed_positions() {
+        for source in [
+            "{{ x.crv }}\n\n{{ y.crv }}\n\n{{ z.crv }}\n",
+            "{{ x.crv }}\n\nprose {{ y.crv }} prose\n",
+            "prose {{ x.crv }} prose\n\n{{ y.crv }}\n",
+            "- a {{ x.crv }} b {{ y.crv }} c\n",
+            "> a {{ x.crv }} b {{ y.crv }} c\n",
+            "# a {{ x.crv }} b {{ y.crv }}\n",
+        ] {
+            assert_eq!(carve::to_carve(source), source, "not preserved: {source:?}");
+            assert_survives(source);
+        }
+    }
+
     #[test]
     fn preserved_directives_are_idempotent_under_repeated_formatting() {
         for source in [
@@ -420,6 +526,11 @@ mod include_directives_survive_formatting {
             "{{ lines.crv @lines:2-3 }}\n",
             "{{ shift.crv @shift:auto }}\n",
             "See {{ inline.crv }} now.\n",
+            // Multi-directive runs must be idempotent too: a formatter that
+            // re-escaped on the second pass would corrupt an already-clean file.
+            "a {{ x.crv }} b {{ y.crv }} c {{ z.crv }} d\n",
+            "a {{ two.crv #intro }} b {{ shift.crv @shift:2 }} c\n",
+            "a {{ x.crv }} b {{ }} c {{ y.crv }} d\n",
         ] {
             let once = carve::to_carve(source);
             assert_eq!(carve::to_carve(&once), once, "not idempotent: {source:?}");
