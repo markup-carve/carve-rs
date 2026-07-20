@@ -231,20 +231,16 @@ fn the_formatter_does_not_expand_includes() {
     // `carve fmt` round-trips SOURCE; inlining a file into it would rewrite the
     // author's document rather than format it.
     //
-    // KNOWN CROSS-ENGINE GAP, pinned here rather than fixed: the formatter
-    // escapes the braces, so `{{ child.crv }}` round-trips as
-    // `\{\{ child\.crv \}\}`. That preserves the core invariant
-    // (carveToHtml(fmt(x)) == carveToHtml(x), since the directive is literal
-    // text to the core) but it does destroy the directive for a downstream
-    // include processor. carve-js `renderCarve` produces the identical bytes,
-    // so this is a spec-level question about whether the formatter should
-    // treat `{{ … }}` as a protected token, NOT an engine divergence.
+    // It must also PRESERVE the directive. This used to emit
+    // `\{\{ child\.crv \}\}`: still literal text to the core, so the round-trip
+    // invariant held, but the include was destroyed and nothing looked wrong
+    // until a resolver ran and the chapter had silently vanished.
     let tmp = TempDir::new("fmt");
     let main = tmp.write("main.crv", "{{ child.crv }}\n");
     tmp.write("child.crv", "Included body.\n");
     let out = run(&["fmt", main.to_str().unwrap()], None);
     assert!(out.success);
-    assert_eq!(out.stdout, "\\{\\{ child\\.crv \\}\\}\n");
+    assert_eq!(out.stdout, "{{ child.crv }}\n");
     assert!(
         !out.stdout.contains("Included body"),
         "stdout: {}",

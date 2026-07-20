@@ -391,7 +391,17 @@ carve --include-root ./book < main.crv    # required to enable includes on stdin
 `#section` and `@lines` are the two selection mechanisms and are mutually
 exclusive. Every failure — a missing file, binary content, both selectors, a
 cycle, the depth limit, the size budget — emits a warning on stderr and leaves
-the directive **literal**; inclusion never silently drops a directive.
+the directive **literal**; inclusion never silently drops a directive. A
+rejected directive has **no observable side effects**: the output is
+byte-identical to the same document with that directive written as literal text
+from the start, so a rejected include can never renumber an id or footnote
+label that a later, successful include claims.
+
+`carve fmt` **preserves** a well-formed directive verbatim rather than escaping
+its braces, so formatting a document never breaks its includes. A run that is
+not a well-formed directive (`{{ oops`, or an unknown `@option`) is ordinary
+text and is escaped as such. To keep a literal `{{ … }}` out of the include
+processor's way, put it in a code span or fence, where directives are inert.
 
 Paths are checked against the root by **canonicalizing and then testing
 containment**, not by banning `..` lexically. A `../shared/glossary.crv` whose

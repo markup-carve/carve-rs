@@ -16,7 +16,12 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   no file I/O: with no resolver configured the directive stays literal.
   `FileSystemResolver` provides canonicalize-then-contain path checking for
   trusted hosts, and the CLI gains `--include-root`, defaulting to the input
-  file's directory.
+  file's directory. A rejected directive has no observable side effects: the
+  output is byte-identical to the same document with that directive written as
+  literal text from the start, so identifiers reserved while processing a child
+  are released when its content does not merge. `carve fmt` preserves a
+  well-formed directive verbatim instead of escaping its braces, so formatting
+  a document no longer destroys its includes.
 - BREAKING: rename `Emoji` AST nodes to `Symbol`, the `emoji` render option to
   `symbols`, and the CLI flag `--emoji` to `--symbol`; symbol shortcodes now
   require a leading word boundary, require an ASCII alphanumeric first name

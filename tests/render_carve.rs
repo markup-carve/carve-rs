@@ -190,3 +190,191 @@ fn adjacent_lists_separated_by_marker_stay_separate() {
         assert_eq!(carve::to_html(&f1), carve::to_html(src));
     }
 }
+
+// ---------------------------------------------------------------------------
+// I1: `carve fmt` preserves include directives
+// ---------------------------------------------------------------------------
+
+/// The core has no directive node - `{{ path }}` is plain TEXT (I1) - so the
+/// serializer used to escape it like any other punctuation-bearing text and
+/// write `\{\{ path \}\}`.
+///
+/// The formatter's existing invariant, `to_html(fmt(x)) == to_html(x)`, cannot
+/// see that: the escaped form renders as the very same literal text, so the
+/// suite stayed green while every include in a formatted document was
+/// destroyed. Nothing looks broken until a resolver runs and the chapters have
+/// silently vanished.
+///
+/// These tests therefore assert the INTENT instead: EXPANDING the formatted
+/// document must give the same result - same HTML and same dependency set - as
+/// expanding the original.
+mod include_directives_survive_formatting {
+    use carve::{expand_includes, parse, render_html, IncludeOptions, IncludeResolved};
+
+    const FILES: &[(&str, &str)] = &[
+        ("chapter.crv", "# Chapter\n\nBody."),
+        ("my chapter.crv", "Spaced body."),
+        (
+            "book.crv",
+            "# A\n\nskip\n\n{#intro}\n# Intro\n\nIntro body.",
+        ),
+        ("lines.crv", "skip\nOne\nTwo\nskip"),
+        ("shift.crv", "# Shifted"),
+        ("inline.crv", "inline body"),
+    ];
+
+    struct Expansion {
+        html: String,
+        dependencies: Vec<(String, bool)>,
+    }
+
+    fn expand(source: &str) -> Expansion {
+        let resolver = |path: &str, _ctx: &carve::IncludeContext<'_>| {
+            FILES
+                .iter()
+                .find(|(name, _)| *name == path)
+                .map(|(_, body)| IncludeResolved::from(*body))
+        };
+        let opts = IncludeOptions::new().with_resolver(&resolver);
+        let result = expand_includes(parse(source), source, &opts);
+        Expansion {
+            html: render_html(&result.doc),
+            dependencies: result
+                .dependencies
+                .into_iter()
+                .map(|d| (d.id, d.resolved))
+                .collect(),
+        }
+    }
+
+    /// The real assertion: formatting must not change what the document
+    /// INCLUDES, which the round-trip invariant could never express.
+    fn assert_survives(source: &str) {
+        let formatted = carve::to_carve(source);
+        let before = expand(source);
+        let after = expand(&formatted);
+        assert_eq!(
+            after.html, before.html,
+            "formatting changed the expanded output of {source:?} (formatted: {formatted:?})"
+        );
+        assert_eq!(
+            after.dependencies, before.dependencies,
+            "formatting changed the dependency set of {source:?} (formatted: {formatted:?})"
+        );
+        assert_eq!(
+            carve::to_carve(&formatted),
+            formatted,
+            "formatting {source:?} is not idempotent"
+        );
+    }
+
+    #[test]
+    fn bare_path_is_preserved() {
+        assert_eq!(
+            carve::to_carve("{{ chapter.crv }}\n"),
+            "{{ chapter.crv }}\n"
+        );
+        assert_survives("{{ chapter.crv }}\n");
+    }
+
+    #[test]
+    fn quoted_path_with_spaces_is_preserved() {
+        // Also pins that the path is NOT run through smart typography, which
+        // would curl the quotes into a path naming a different file.
+        assert_eq!(
+            carve::to_carve("{{ \"my chapter.crv\" }}\n"),
+            "{{ \"my chapter.crv\" }}\n"
+        );
+        assert_survives("{{ \"my chapter.crv\" }}\n");
+    }
+
+    #[test]
+    fn section_selection_is_preserved() {
+        // `#intro` arrives as a Tag node, so recognition has to reassemble the
+        // run exactly as expansion does (I9a).
+        assert_eq!(
+            carve::to_carve("{{ book.crv #intro }}\n"),
+            "{{ book.crv #intro }}\n"
+        );
+        assert_survives("{{ book.crv #intro }}\n");
+    }
+
+    #[test]
+    fn line_range_option_is_preserved() {
+        assert_eq!(
+            carve::to_carve("{{ lines.crv @lines:2-3 }}\n"),
+            "{{ lines.crv @lines:2-3 }}\n"
+        );
+        assert_survives("{{ lines.crv @lines:2-3 }}\n");
+    }
+
+    #[test]
+    fn shift_options_are_preserved() {
+        // `@shift:2` arrives as a Mention node.
+        assert_eq!(
+            carve::to_carve("{{ shift.crv @shift:2 }}\n"),
+            "{{ shift.crv @shift:2 }}\n"
+        );
+        assert_survives("{{ shift.crv @shift:2 }}\n");
+        assert_eq!(
+            carve::to_carve("{{ shift.crv @shift:auto }}\n"),
+            "{{ shift.crv @shift:auto }}\n"
+        );
+        assert_survives("# Top\n\n{{ shift.crv @shift:auto }}\n");
+    }
+
+    #[test]
+    fn inline_directive_within_a_sentence_is_preserved() {
+        assert_eq!(
+            carve::to_carve("See {{ inline.crv }} now.\n"),
+            "See {{ inline.crv }} now\\.\n"
+        );
+        assert_survives("See {{ inline.crv }} now.\n");
+    }
+
+    #[test]
+    fn directives_in_code_are_left_exactly_as_the_core_produces_them() {
+        // I9: code is verbatim and the directive is inert there, so the
+        // serializer must not treat it specially - the code paths already emit
+        // their content raw, and that must not regress into unescaping.
+        assert_eq!(
+            carve::to_carve("`{{ chapter.crv }}`\n"),
+            "`{{ chapter.crv }}`\n"
+        );
+        assert_eq!(
+            carve::to_carve("```txt\n{{ chapter.crv }}\n```\n"),
+            "``` txt\n{{ chapter.crv }}\n```\n"
+        );
+        // And they stay inert after formatting.
+        assert_survives("`{{ chapter.crv }}`\n");
+        assert_survives("```txt\n{{ chapter.crv }}\n```\n");
+    }
+
+    #[test]
+    fn malformed_runs_are_still_escaped_as_ordinary_text() {
+        // Not directive-shaped: no closing `}}`.
+        assert_eq!(carve::to_carve("{{ oops\n"), "\\{\\{ oops\n");
+        // Shaped, but the option tail is not valid per I1, so it is not a
+        // well-formed directive and stays ordinary text.
+        assert_eq!(
+            carve::to_carve("{{ chapter.crv @bogus:1 }}\n"),
+            "\\{\\{ chapter\\.crv @bogus\\:1 \\}\\}\n"
+        );
+        assert_survives("{{ oops\n");
+    }
+
+    #[test]
+    fn preserved_directives_are_idempotent_under_repeated_formatting() {
+        for source in [
+            "{{ chapter.crv }}\n",
+            "{{ \"my chapter.crv\" }}\n",
+            "{{ book.crv #intro }}\n",
+            "{{ lines.crv @lines:2-3 }}\n",
+            "{{ shift.crv @shift:auto }}\n",
+            "See {{ inline.crv }} now.\n",
+        ] {
+            let once = carve::to_carve(source);
+            assert_eq!(carve::to_carve(&once), once, "not idempotent: {source:?}");
+        }
+    }
+}

@@ -490,11 +490,79 @@ fn render_footnote_def_source(label: &str, blocks: &[BlockNode], ctx: &mut Carve
     def_lines.join("\n")
 }
 
+/// A unit of output: an AST node to render, or literal source to emit as-is.
+enum Piece {
+    Node(InlineNode),
+    Verbatim(String),
+}
+
+/// Rewrite an inline sequence so every well-formed include directive becomes a
+/// single verbatim piece (spec I1).
+///
+/// The core deliberately leaves `{{ path }}` as plain TEXT - it has no
+/// directive node and does no I/O - so without this the general text escaper
+/// treats it as ordinary punctuation and writes `\{\{ path \}\}`. That renders
+/// as the same literal text, which is exactly why the formatter's round-trip
+/// invariant never caught it, but it destroys the include: nothing looks wrong
+/// until a resolver runs and the chapters have silently vanished.
+///
+/// Returns `None` when the sequence holds no directive - the common case, kept
+/// clone-free.
+fn split_directive_pieces(nodes: &[InlineNode]) -> Option<Vec<Piece>> {
+    if !nodes
+        .iter()
+        .any(|n| matches!(n, InlineNode::Text(t) if t.contains("{{")))
+    {
+        return None;
+    }
+    let mut pieces: Vec<Piece> = Vec::new();
+    let mut found = false;
+    let mut i = 0usize;
+    while i < nodes.len() {
+        if !crate::includes::is_directive_run_node(&nodes[i]) {
+            pieces.push(Piece::Node(nodes[i].clone()));
+            i += 1;
+            continue;
+        }
+        let mut j = i;
+        while j < nodes.len() && crate::includes::is_directive_run_node(&nodes[j]) {
+            j += 1;
+        }
+        match crate::includes::split_run_directives(&nodes[i..j]) {
+            Some(split) => {
+                found = true;
+                for piece in split {
+                    match piece {
+                        crate::includes::RunPiece::Directive(src) => {
+                            pieces.push(Piece::Verbatim(src));
+                        }
+                        crate::includes::RunPiece::Nodes(run) => {
+                            pieces.extend(run.into_iter().map(Piece::Node));
+                        }
+                    }
+                }
+            }
+            None => pieces.extend(nodes[i..j].iter().cloned().map(Piece::Node)),
+        }
+        i = j;
+    }
+    found.then_some(pieces)
+}
+
 fn render_inlines(nodes: &[InlineNode], ctx: &mut CarveContext) -> String {
     if ctx.inline_depth >= MAX_RENDER_DEPTH {
         return String::new();
     }
     ctx.inline_depth += 1;
+    let out = match split_directive_pieces(nodes) {
+        Some(pieces) => render_pieces(&pieces, ctx),
+        None => render_nodes(nodes, ctx),
+    };
+    ctx.inline_depth -= 1;
+    out
+}
+
+fn render_nodes(nodes: &[InlineNode], ctx: &mut CarveContext) -> String {
     let mut out = String::new();
     for (idx, node) in nodes.iter().enumerate() {
         let prev = idx
@@ -511,8 +579,47 @@ fn render_inlines(nodes: &[InlineNode], ctx: &mut CarveContext) -> String {
         }
         out.push_str(&rendered);
     }
-    ctx.inline_depth -= 1;
     out
+}
+
+fn render_pieces(pieces: &[Piece], ctx: &mut CarveContext) -> String {
+    let mut out = String::new();
+    for (idx, piece) in pieces.iter().enumerate() {
+        let prev = idx
+            .checked_sub(1)
+            .and_then(|i| piece_last_boundary(&pieces[i]))
+            .unwrap_or_default();
+        let next = pieces
+            .get(idx + 1)
+            .and_then(piece_first_boundary)
+            .unwrap_or_default();
+        // A directive is emitted verbatim: no escaping, and no smart
+        // typography either, so a quoted path keeps its straight quotes
+        // instead of being curled into a path that names a different file.
+        let rendered = match piece {
+            Piece::Verbatim(src) => src.clone(),
+            Piece::Node(node) => render_inline(node, ctx, prev, next),
+        };
+        if !rendered.is_empty() {
+            ctx.smart_state.mark_started();
+        }
+        out.push_str(&rendered);
+    }
+    out
+}
+
+fn piece_last_boundary(piece: &Piece) -> Option<char> {
+    match piece {
+        Piece::Node(node) => last_boundary(node),
+        Piece::Verbatim(src) => src.chars().next_back(),
+    }
+}
+
+fn piece_first_boundary(piece: &Piece) -> Option<char> {
+    match piece {
+        Piece::Node(node) => first_boundary(node),
+        Piece::Verbatim(src) => src.chars().next(),
+    }
 }
 
 fn render_inline(
@@ -522,11 +629,7 @@ fn render_inline(
     next_char: char,
 ) -> String {
     match node {
-        InlineNode::Text(text) => {
-            let smart = crate::render_text::clean_smart_text_stateful(text, &mut ctx.smart_state)
-                .replace(crate::NBSP_PLACEHOLDER, "\u{00a0}");
-            escape_text(&smart)
-        }
+        InlineNode::Text(text) => escape_smart_text(text, ctx),
         InlineNode::Emphasis(emphasis) => {
             let content = render_inlines(&emphasis.children, ctx);
             let (delim, body) = match emphasis.kind {
@@ -921,6 +1024,15 @@ fn trim_non_nbsp(text: &str) -> &str {
 
 fn trim_end_non_nbsp(text: &str) -> &str {
     text.trim_end_matches(|ch: char| ch.is_whitespace() && ch != '\u{00a0}')
+}
+
+fn escape_smart_text(text: &str, ctx: &mut CarveContext) -> String {
+    if text.is_empty() {
+        return String::new();
+    }
+    let smart = crate::render_text::clean_smart_text_stateful(text, &mut ctx.smart_state)
+        .replace(crate::NBSP_PLACEHOLDER, "\u{00a0}");
+    escape_text(&smart)
 }
 
 fn escape_text(text: &str) -> String {

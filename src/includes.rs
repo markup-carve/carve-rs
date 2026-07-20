@@ -446,6 +446,83 @@ fn parse_full_directive(text: &str) -> ParsedDirective {
     }
 }
 
+/// Byte range of the first WELL-FORMED directive at or after `from`, if any.
+///
+/// "Well-formed" is exactly what expansion itself accepts: `match_directive_at`
+/// finds the token shape (path, optional `#section`, optional option tail) and
+/// `parse_options` validates it to [`ParsedDirective::Ok`]. A run that only
+/// looks directive-ish - `{{ oops` with no close, or an unknown/malformed
+/// `@key:value` - is NOT well-formed and stays ordinary text.
+///
+/// This exists for the Carve serializer (spec I1): a directive must survive
+/// `carve fmt` verbatim, because escaping it to `\{\{ … \}\}` renders the same
+/// today but silently deletes the include the moment a resolver is wired up.
+/// A serializer cannot tell an authored literal `{{` from a directive - both
+/// parse to the same text - so a literal that happens to be directive-shaped
+/// loses its escaping. That is accepted: per I9 an author who needs a
+/// guaranteed literal puts it in a code span or fence, where the directive is
+/// inert by construction and this scanner is never consulted.
+fn find_directive(text: &str, from: usize) -> Option<(usize, usize)> {
+    let mut i = from;
+    while let Some(offset) = text[i..].find("{{") {
+        let start = i + offset;
+        if let Some((end, raw)) = match_directive_at(text, start) {
+            if matches!(parse_options(raw), ParsedDirective::Ok(_)) {
+                return Some((start, end));
+            }
+        }
+        // `{{` is ASCII, so this stays on a char boundary.
+        i = start + 2;
+    }
+    None
+}
+
+/// One piece of a run split at well-formed directive boundaries.
+pub(crate) enum RunPiece {
+    /// Original nodes, to be rendered normally.
+    Nodes(Vec<InlineNode>),
+    /// Verbatim directive source, to be emitted unescaped.
+    Directive(String),
+}
+
+/// Split a maximal run of literal-text-shaped nodes at every well-formed
+/// directive, or `None` when it holds none.
+///
+/// Recognition MUST happen at run level, exactly as [`expand_run`] does it: a
+/// directive's own syntax overlaps constructs the core already parses, so
+/// `{{ book.crv #intro }}` arrives as Text + Tag + Text and `@shift:2` as a
+/// Mention (I9a). Scanning individual text nodes would miss precisely the
+/// sectioned and optioned forms.
+pub(crate) fn split_run_directives(run: &[InlineNode]) -> Option<Vec<RunPiece>> {
+    let full: String = run.iter().map(run_node_text).collect();
+    if !full.contains("{{") {
+        return None;
+    }
+    let mut pieces = Vec::new();
+    let mut at = 0usize;
+    let mut cursor = 0usize;
+    while let Some((start, end)) = find_directive(&full, cursor) {
+        if start > at {
+            pieces.push(RunPiece::Nodes(slice_run(run, at, start)));
+        }
+        pieces.push(RunPiece::Directive(full[start..end].to_string()));
+        at = end;
+        cursor = end;
+    }
+    if pieces.is_empty() {
+        return None;
+    }
+    if at < full.len() {
+        pieces.push(RunPiece::Nodes(slice_run(run, at, full.len())));
+    }
+    Some(pieces)
+}
+
+/// True for inline nodes the core may produce from literal directive text.
+pub(crate) fn is_directive_run_node(node: &InlineNode) -> bool {
+    is_run_node(node)
+}
+
 /// Loose directive shape: one whole-paragraph `{{…}}` token, valid or not.
 fn is_directive_shaped(text: &str) -> bool {
     let t = text.trim();
