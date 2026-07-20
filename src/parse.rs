@@ -216,11 +216,13 @@ fn extract_footnote_defs(
         let stripped = strip_container_prefixes(lines[i]);
         let in_container = !stripped.structural.is_empty();
         // A footnote definition is NEVER collected from inside a fenced code
-        // block: a `[^x]: ...` line there is literal content. Track the fence on
-        // the prefix-stripped line so a fence inside a blockquote / list item is
-        // recognized too (mirrors `extract_link_defs`). Without this, stripping
-        // the container prefix would expose a fenced `[^x]:` line as a def.
-        let fence_line = stripped.bare.trim_start_matches([' ', '\t']);
+        // block: a `[^x]: ...` line there is literal content. The prepass has
+        // only a prefix-stripped line, not the block parser's container-column
+        // context, so it recognizes fences only with no residual indentation.
+        // This can collect a def from a container-nested fence body, but avoids
+        // opening a fence the block parser never opens and swallowing every
+        // later definition in the document.
+        let fence_line = stripped.bare;
         if let Some(open) = in_fence {
             body.push(lines[i].to_string());
             body_line_map.push(Some(first_source_line + i));
@@ -354,13 +356,15 @@ fn extract_link_defs(source: &str) -> (String, BTreeMap<String, LinkDef>) {
     let mut in_fence: Option<FenceOpen> = None;
     for line in source.lines() {
         let stripped = strip_container_prefixes(line);
-        // The fence open/close markers can sit behind residual indentation that
-        // strip_container_prefixes does not remove (e.g. a nested-list fence
-        // whose closer `    ~~~` carries no list marker, only indent). carve-js
-        // strips all leading whitespace before its fence test, so do the same
-        // here; otherwise the fence would stay open and later definitions would
-        // be wrongly skipped.
-        let fence_line = stripped.bare.trim_start_matches([' ', '\t']);
+        // The reference-definition prepass has no full container-column context
+        // (unlike the block parser, which dedents nested content before parsing
+        // it). Under the strict fence rule, it must only recognize fences with
+        // no residual indentation after container prefixes are stripped. That
+        // safe trade-off may collect a definition that appears inside a
+        // container-nested fence body, causing a spurious resolved link, but it
+        // avoids the unsafe failure mode: opening a fence the block parser never
+        // opened and swallowing every later definition in the document.
+        let fence_line = stripped.bare;
         if let Some(open) = in_fence {
             body.push(line.to_string());
             if is_fence_close(fence_line, open) {
@@ -1090,7 +1094,7 @@ fn is_heading_marker_line(line: &str) -> bool {
 
 /// A fenced-comment opener line (a run of 3+ `%`, nothing else) — ends a heading.
 fn is_comment_fence_line(line: &str) -> bool {
-    let t = line.trim();
+    let t = trim_ascii_end(line);
     t.len() >= 3 && t.bytes().all(|b| b == b'%')
 }
 
@@ -1120,7 +1124,6 @@ fn detect_thematic_break(line: &str) -> bool {
 
 #[derive(Debug, Clone, Copy)]
 struct FenceOpen {
-    indent: usize,
     fence_char: u8,
     fence_len: usize,
     lang_start: usize,
@@ -1134,11 +1137,7 @@ struct FenceOpen {
 fn detect_fence_open(line: &str) -> Option<FenceOpen> {
     let bytes = line.as_bytes();
     let mut i = 0;
-    while i < bytes.len() && (bytes[i] == b' ' || bytes[i] == b'\t') {
-        i += 1;
-    }
-    let indent = i;
-    if i >= bytes.len() {
+    if bytes.is_empty() {
         return None;
     }
     let fence_char = bytes[i];
@@ -1188,7 +1187,6 @@ fn detect_fence_open(line: &str) -> Option<FenceOpen> {
             return None;
         }
         return Some(FenceOpen {
-            indent,
             fence_char,
             fence_len,
             lang_start,
@@ -1275,7 +1273,6 @@ fn detect_fence_open(line: &str) -> Option<FenceOpen> {
         return None;
     }
     Some(FenceOpen {
-        indent,
         fence_char,
         fence_len,
         lang_start,
@@ -1311,9 +1308,7 @@ fn parse_fence(cur: &mut LineCursor, open: FenceOpen) -> BlockNode {
             break;
         }
         cur.consume();
-        // Strip leading whitespace up to the opening fence's indent
-        let strip = leading_ws(line).min(open.indent);
-        content_lines.push(line[strip..].to_string());
+        content_lines.push(line.to_string());
     }
     if let Some(format) = raw_format {
         BlockNode::RawBlock(RawBlock {
@@ -1351,12 +1346,6 @@ fn unescape_quoted_header(s: &str) -> String {
 fn is_fence_close(line: &str, open: FenceOpen) -> bool {
     let bytes = line.as_bytes();
     let mut i = 0;
-    while i < bytes.len() && bytes[i] == b' ' {
-        i += 1;
-    }
-    if i > 3 {
-        return false;
-    }
     let start = i;
     while i < bytes.len() && bytes[i] == open.fence_char {
         i += 1;
@@ -2776,10 +2765,22 @@ fn interrupts_paragraph(cur: &mut LineCursor<'_>, line: &str) -> bool {
     {
         return true;
     }
-    // Fenced code / `:::` interrupt only with a matching closer ahead.
+    // Fenced code / `:::` interrupt only with a matching closer ahead. The
+    // opener `line` has been dedented to its container's content column by the
+    // caller (a list item's lead paragraph dedents by that column), but the
+    // closer probe runs over the RAW remaining lines -- so dedent each by the
+    // same amount before the column-exact `is_fence_close`, or a closer that
+    // carries the container indent is missed and the fence never interrupts.
+    // For a flush (column-0) opener the strip is 0, so top-level fences are
+    // unaffected; a strict opener only matches when `line` is flush, so the
+    // strip comes from the raw current line's own indentation.
     if let Some(open) = detect_fence_open(line) {
+        let strip = leading_ws(cur.lines[cur.pos]);
         let rest = &cur.lines[cur.pos + 1..];
-        if rest.iter().any(|l| is_fence_close(l, open)) {
+        if rest
+            .iter()
+            .any(|l| is_fence_close(&l[leading_ws(l).min(strip)..], open))
+        {
             return true;
         }
     }
