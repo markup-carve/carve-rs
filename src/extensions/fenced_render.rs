@@ -145,6 +145,19 @@ impl FencedRender {
         Self::with_options(opts)
     }
 
+    /// PlantUML preset (text mode); claims both `plantuml` and `puml`, and
+    /// emits `<pre class="plantuml">`. PlantUML has no practical in-browser
+    /// library, so it is client-rendered via a Kroki server (or a local
+    /// instance for offline use).
+    pub fn plantuml() -> Self {
+        Self::with_options(FencedRenderOptions::new(
+            vec!["plantuml".into(), "puml".into()],
+            Some("plantuml".into()),
+            None,
+            ContentMode::Text,
+        ))
+    }
+
     /// D2 preset (text mode, `<pre class="d2">`).
     pub fn d2() -> Self {
         Self::new("d2")
@@ -196,10 +209,11 @@ impl FencedRender {
 
     /// Every bundled diagram preset as ready-to-register instances.
     ///
-    /// Claims every preset fence word (`mermaid`, `d2`, `dot`, `graphviz`,
-    /// `wavedrom`, `abc`, `vega-lite`, `chart`), so a literal code sample in one
-    /// of those languages becomes a hydration element; register only the presets
-    /// whose client library you actually load if that matters.
+    /// Claims every preset fence word (`mermaid`, `plantuml`, `puml`, `d2`,
+    /// `dot`, `graphviz`, `wavedrom`, `abc`, `vega-lite`, `chart`), so a literal
+    /// code sample in one of those languages becomes a hydration element;
+    /// register only the presets whose client library you actually load if that
+    /// matters.
     ///
     /// ```
     /// use carve::{FencedRender, Options};
@@ -214,6 +228,7 @@ impl FencedRender {
     pub fn presets() -> Vec<FencedRender> {
         vec![
             Self::mermaid(),
+            Self::plantuml(),
             Self::d2(),
             Self::graphviz(),
             Self::wavedrom(),

@@ -815,6 +815,20 @@ fn fenced_render_graphviz_claims_dot_and_graphviz() {
 }
 
 #[test]
+fn fenced_render_plantuml_claims_plantuml_and_puml() {
+    let ext = FencedRender::plantuml();
+    let opts = Options::new().with_extension(&ext);
+    assert_eq!(
+        carve::to_html_with_options("``` plantuml\nA -> B\n```\n", &opts),
+        "<pre class=\"plantuml\">A -> B</pre>"
+    );
+    assert_eq!(
+        carve::to_html_with_options("``` puml\nA -> B\n```\n", &opts),
+        "<pre class=\"plantuml\">A -> B</pre>"
+    );
+}
+
+#[test]
 fn fenced_render_json_mode_wraps_in_script_inside_div() {
     let ext = FencedRender::vega_lite();
     let opts = Options::new().with_extension(&ext);
@@ -884,7 +898,7 @@ fn fenced_render_mermaid_preset_matches_manual_instance() {
 #[test]
 fn fenced_render_presets_register_all_languages() {
     let presets = FencedRender::presets();
-    assert_eq!(presets.len(), 7);
+    assert_eq!(presets.len(), 8);
     let mut opts = Options::new();
     for ext in &presets {
         opts = opts.with_extension(ext);
@@ -892,6 +906,10 @@ fn fenced_render_presets_register_all_languages() {
     assert_eq!(
         carve::to_html_with_options("``` mermaid\ngraph TD; A-->B\n```\n", &opts),
         "<pre class=\"mermaid\">graph TD; A-->B</pre>"
+    );
+    assert!(
+        carve::to_html_with_options("``` plantuml\nA -> B\n```\n", &opts)
+            .contains("<pre class=\"plantuml\">")
     );
     assert!(
         carve::to_html_with_options("``` dot\ndigraph { a -> b }\n```\n", &opts)
