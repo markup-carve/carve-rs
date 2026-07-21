@@ -268,13 +268,32 @@ fn reference_definitions_inside_fenced_code_are_literal() {
 
 #[test]
 fn reference_prepass_does_not_open_residual_indented_fence() {
-    // Under the column-exact fence rule the reference-definition prepass tests
-    // fences without trimming residual indentation. It has no full
-    // container-column context, so this safe limitation means a definition in a
-    // list-nested fence can still be collected. That may create a spurious
-    // resolved link, but it avoids the worse failure mode of opening a fence the
-    // block parser never opened and hiding every later definition.
-    assert!(html("- x\n  ```\n  - [r]: /u\n  ```\n\n[x][r]").contains("href=\"/u\""));
+    // A document-level indented run is not a strict fence; the following
+    // definition is still collected.
+    assert!(html("  ```\n[r]: /u\n  ```\n\n[x][r]").contains("href=\"/u\""));
+}
+
+#[test]
+fn reference_prepass_skips_defs_inside_list_nested_fences() {
+    let cases = [
+        "- one\n  ```\n  [r]: /u\n  ```\n\n[r][]",
+        "1. one\n   ```\n   [r]: /u\n   ```\n\n[r][]",
+        "a. one\n   ```\n   [r]: /u\n   ```\n\n[r][]",
+        "i. one\n   ```\n   [r]: /u\n   ```\n\n[r][]",
+        "-{.c} one\n      ```\n      [r]: /u\n      ```\n\n[r][]",
+        "- one\n  - two\n    ```\n    [r]: /u\n    ```\n\n[r][]",
+    ];
+    for src in cases {
+        assert!(
+            !html(src).contains("href=\"/u\""),
+            "definition inside list-nested fence resolved for:\n{src}"
+        );
+    }
+}
+
+#[test]
+fn reference_prepass_keeps_forward_reference_resolution() {
+    assert!(html("[x][r]\n\n[r]: /u").contains("href=\"/u\""));
 }
 
 #[test]
