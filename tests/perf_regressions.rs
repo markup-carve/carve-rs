@@ -1,6 +1,20 @@
 use std::fmt::Write as _;
 use std::time::Instant;
 
+/// Wall-clock ceiling for the DoS guards below.
+///
+/// These tests guard against reintroducing QUADRATIC behavior, not against
+/// small constant-factor drift: on these inputs a per-position rescan costs
+/// tens of seconds to minutes, while the linear implementations finish in
+/// well under a second. The bound therefore needs enough headroom to survive
+/// a loaded, shared CI runner in a debug build - a tight 2s cap flaked
+/// repeatedly on `deeply_nested_list_parse_is_bounded` (2.07s / 2.33s on CI
+/// while taking ~0.8s locally), reddening main on unrelated commits.
+///
+/// A ratio-based check was tried and removed for the same timing noise
+/// (PR 337 / 338); the wall-clock cap stays the guard, calibrated wide.
+const MAX_SECS: f32 = 10.0;
+
 #[test]
 fn many_abbreviations_do_not_scan_every_definition_at_every_position() {
     let mut source = String::new();
@@ -15,7 +29,7 @@ fn many_abbreviations_do_not_scan_every_definition_at_every_position() {
 
     assert!(html.contains(&"z".repeat(80)), "{html}");
     assert!(
-        start.elapsed().as_secs_f32() < 2.0,
+        start.elapsed().as_secs_f32() < MAX_SECS,
         "abbreviation parse took {:?}",
         start.elapsed()
     );
@@ -34,7 +48,7 @@ fn many_unterminated_colon_fence_openers_do_not_rescan_document() {
 
     assert!(html.contains("::: note"), "{html}");
     assert!(
-        start.elapsed().as_secs_f32() < 2.0,
+        start.elapsed().as_secs_f32() < MAX_SECS,
         "unterminated colon-fence parse took {:?}",
         start.elapsed()
     );
@@ -61,7 +75,7 @@ fn distinct_fence_length_openers_do_not_defeat_closer_cache() {
 
     assert!(html.contains(" |"), "expected literal fence text in output");
     assert!(
-        start.elapsed().as_secs_f32() < 2.0,
+        start.elapsed().as_secs_f32() < MAX_SECS,
         "distinct-fence-length colon-fence parse took {:?}",
         start.elapsed()
     );
@@ -81,7 +95,7 @@ fn wide_table_row_colspan_render_is_linear() {
 
     assert!(html.contains("<td>x</td>"), "expected cells in output");
     assert!(
-        start.elapsed().as_secs_f32() < 2.0,
+        start.elapsed().as_secs_f32() < MAX_SECS,
         "wide-table colspan render took {:?}",
         start.elapsed()
     );
@@ -124,7 +138,7 @@ fn deeply_nested_list_parse_is_bounded() {
 
         assert!(html.contains("<li>x"), "expected nested list items");
         assert!(
-            start.elapsed().as_secs_f32() < 2.0,
+            start.elapsed().as_secs_f32() < MAX_SECS,
             "deeply nested list parse took {:?}",
             start.elapsed()
         );
@@ -154,7 +168,7 @@ fn deeply_nested_div_parse_is_bounded() {
 
         assert!(!html.is_empty(), "expected output");
         assert!(
-            start.elapsed().as_secs_f32() < 2.0,
+            start.elapsed().as_secs_f32() < MAX_SECS,
             "deeply nested div parse took {:?}",
             start.elapsed()
         );
