@@ -188,12 +188,9 @@ fn mermaid_static_with_renderer_emits_injected_svg() {
     let opts = Options::new()
         .with_mode(Mode::Static)
         .with_extension(&ext)
-        .with_renderers(StaticRenderers {
-            mermaid: Some(Box::new(|src: &str| {
-                format!("<svg data-src=\"{}\"><!--diagram--></svg>", src.len())
-            })),
-            ..Default::default()
-        });
+        .with_renderers(StaticRenderers::new().diagram("mermaid", |src: &str| {
+            format!("<svg data-src=\"{}\"><!--diagram--></svg>", src.len())
+        }));
     // The closure receives the verbatim source "graph TD; A --> B" (17 bytes).
     let html = carve::to_html_with_options("``` mermaid\ngraph TD; A --> B\n```\n", &opts);
     assert_eq!(html.trim(), "<svg data-src=\"17\"><!--diagram--></svg>");
@@ -218,12 +215,9 @@ fn chart_static_with_renderer_emits_injected_image() {
     let opts = Options::new()
         .with_mode(Mode::Static)
         .with_extension(&ext)
-        .with_renderers(StaticRenderers {
-            chart: Some(Box::new(|_src: &str| {
-                "<img alt=\"chart\" src=\"chart.png\">".to_string()
-            })),
-            ..Default::default()
-        });
+        .with_renderers(StaticRenderers::new().diagram("chart", |_src: &str| {
+            "<img alt=\"chart\" src=\"chart.png\">".to_string()
+        }));
     let html = carve::to_html_with_options("``` chart\n{\"type\":\"bar\"}\n```\n", &opts);
     assert_eq!(html.trim(), "<img alt=\"chart\" src=\"chart.png\">");
 }
@@ -246,12 +240,9 @@ fn graphviz_static_with_renderer_emits_injected_image() {
     let opts = Options::new()
         .with_mode(Mode::Static)
         .with_extension(&ext)
-        .with_renderers(StaticRenderers {
-            graphviz: Some(Box::new(|_src: &str| {
-                "<img alt=\"graphviz\" src=\"graph.svg\">".to_string()
-            })),
-            ..Default::default()
-        });
+        .with_renderers(StaticRenderers::new().diagram("graphviz", |_src: &str| {
+            "<img alt=\"graphviz\" src=\"graph.svg\">".to_string()
+        }));
     let html = carve::to_html_with_options("``` graphviz\ndigraph { A -> B }\n```\n", &opts);
     assert_eq!(html.trim(), "<img alt=\"graphviz\" src=\"graph.svg\">");
 }
@@ -263,12 +254,9 @@ fn graphviz_dot_alias_static_with_renderer_emits_injected_image() {
     let opts = Options::new()
         .with_mode(Mode::Static)
         .with_extension(&ext)
-        .with_renderers(StaticRenderers {
-            graphviz: Some(Box::new(|_src: &str| {
-                "<img alt=\"graphviz\" src=\"graph.svg\">".to_string()
-            })),
-            ..Default::default()
-        });
+        .with_renderers(StaticRenderers::new().diagram("graphviz", |_src: &str| {
+            "<img alt=\"graphviz\" src=\"graph.svg\">".to_string()
+        }));
     let html = carve::to_html_with_options("``` dot\ndigraph { A -> B }\n```\n", &opts);
     assert_eq!(html.trim(), "<img alt=\"graphviz\" src=\"graph.svg\">");
 }
@@ -279,12 +267,9 @@ fn plantuml_static_with_renderer_emits_injected_image() {
     let opts = Options::new()
         .with_mode(Mode::Static)
         .with_extension(&ext)
-        .with_renderers(StaticRenderers {
-            plantuml: Some(Box::new(|_src: &str| {
-                "<img alt=\"plantuml\" src=\"uml.svg\">".to_string()
-            })),
-            ..Default::default()
-        });
+        .with_renderers(StaticRenderers::new().diagram("plantuml", |_src: &str| {
+            "<img alt=\"plantuml\" src=\"uml.svg\">".to_string()
+        }));
     // Both fence words resolve to the same `plantuml` renderer key.
     let via_plantuml =
         carve::to_html_with_options("``` plantuml\n@startuml\nA -> B\n@enduml\n```\n", &opts);
@@ -307,17 +292,34 @@ fn plantuml_static_without_renderer_degrades_to_source() {
 }
 
 #[test]
-fn other_presets_always_degrade_to_source_even_in_static() {
-    // d2 has no static_renderer key, so even with a mermaid renderer supplied it
-    // degrades to source (the renderer is not its build hook).
+fn custom_fence_word_is_static_capable_via_its_css_class() {
+    // The open renderers map means a custom fence word renders statically with
+    // no engine change - keyed by its css class, exactly like the canonical
+    // presets. This is the portability the open map guarantees.
+    let ext = FencedRender::new("myuml");
+    let opts = Options::new()
+        .with_mode(Mode::Static)
+        .with_extension(&ext)
+        .with_renderers(StaticRenderers::new().diagram("myuml", |_src: &str| {
+            "<img alt=\"myuml\" src=\"my.svg\">".to_string()
+        }));
+    let html = carve::to_html_with_options("``` myuml\nA -> B\n```\n", &opts);
+    // The renderer is consulted (not degraded to source) for a custom class -
+    // that is what the open map guarantees. (The exact wrapper shape of a
+    // rendered diagram differs across engines; that is a separate parity issue.)
+    assert_eq!(html.trim(), "<img alt=\"myuml\" src=\"my.svg\">");
+}
+
+#[test]
+fn a_fence_degrades_to_source_when_no_renderer_matches_its_class() {
+    // Under the open map a preset is keyed by its css class: d2 consults
+    // `renderers["d2"]`. With only a `mermaid` renderer supplied, no key matches
+    // d2, so it degrades to source - the renderer is not its build hook.
     let ext = FencedRender::d2();
     let opts = Options::new()
         .with_mode(Mode::Static)
         .with_extension(&ext)
-        .with_renderers(StaticRenderers {
-            mermaid: Some(Box::new(|_: &str| "<svg/>".to_string())),
-            ..Default::default()
-        });
+        .with_renderers(StaticRenderers::new().diagram("mermaid", |_: &str| "<svg/>".to_string()));
     let html = carve::to_html_with_options("``` d2\na -> b\n```\n", &opts);
     // Source fallback uses escape_text (escapes `>`), unlike the interactive
     // text mode which keeps `>` for arrow syntax.
@@ -349,12 +351,9 @@ fn math_block_static_with_renderer_emits_ssr_in_div() {
     let opts = Options::new()
         .with_mode(Mode::Static)
         .with_extension(&ext)
-        .with_renderers(StaticRenderers {
-            math: Some(Box::new(|_tex: &str, display: bool| {
-                format!("<math data-display=\"{display}\">SSR</math>")
-            })),
-            ..Default::default()
-        });
+        .with_renderers(StaticRenderers::new().math(|_tex: &str, display: bool| {
+            format!("<math data-display=\"{display}\">SSR</math>")
+        }));
     let html = carve::to_html_with_options("``` math\n\\int_0^1 x^2\n```\n", &opts);
     // Block math always passes display = true.
     assert_eq!(
@@ -375,14 +374,12 @@ fn core_inline_math_static_no_renderer_keeps_source() {
 
 #[test]
 fn core_inline_math_static_with_renderer_emits_mathml() {
-    let opts = Options::new()
-        .with_mode(Mode::Static)
-        .with_renderers(StaticRenderers {
-            math: Some(Box::new(|tex: &str, display: bool| {
+    let opts =
+        Options::new()
+            .with_mode(Mode::Static)
+            .with_renderers(StaticRenderers::new().math(|tex: &str, display: bool| {
                 format!("<math data-display=\"{display}\">{tex}</math>")
-            })),
-            ..Default::default()
-        });
+            }));
     let html = carve::to_html_with_options("Euler: $`e^{i\\pi}`.", &opts);
     assert!(html.contains(
         "<span class=\"math inline\"><math data-display=\"false\">e^{i\\pi}</math></span>"
@@ -391,14 +388,12 @@ fn core_inline_math_static_with_renderer_emits_mathml() {
 
 #[test]
 fn core_display_math_static_with_renderer_passes_display_true() {
-    let opts = Options::new()
-        .with_mode(Mode::Static)
-        .with_renderers(StaticRenderers {
-            math: Some(Box::new(|tex: &str, display: bool| {
+    let opts =
+        Options::new()
+            .with_mode(Mode::Static)
+            .with_renderers(StaticRenderers::new().math(|tex: &str, display: bool| {
                 format!("<math data-display=\"{display}\">{tex}</math>")
-            })),
-            ..Default::default()
-        });
+            }));
     let html = carve::to_html_with_options("$$`\\frac{a}{b}`", &opts);
     assert!(html.contains(
         "<span class=\"math display\"><math data-display=\"true\">\\frac{a}{b}</math></span>"
@@ -408,14 +403,9 @@ fn core_display_math_static_with_renderer_passes_display_true() {
 #[test]
 fn core_math_renderer_ignored_in_interactive_mode() {
     // The renderers map is consulted ONLY on the static path.
-    let opts = Options::new()
-        .with_mode(Mode::Interactive)
-        .with_renderers(StaticRenderers {
-            math: Some(Box::new(|_t: &str, _d: bool| {
-                "<math>SSR</math>".to_string()
-            })),
-            ..Default::default()
-        });
+    let opts = Options::new().with_mode(Mode::Interactive).with_renderers(
+        StaticRenderers::new().math(|_t: &str, _d: bool| "<math>SSR</math>".to_string()),
+    );
     let html = carve::to_html_with_options("Euler: $`e^{i\\pi}`.", &opts);
     assert!(html.contains("\\(e^{i\\pi}\\)"));
     assert!(!html.contains("<math>"));
@@ -447,12 +437,9 @@ fn static_mode_with_math_renderer_does_not_change_ansi_output() {
     let opts = Options::new()
         .with_mode(Mode::Static)
         .with_extension(&ext)
-        .with_renderers(StaticRenderers {
-            math: Some(Box::new(|_t: &str, _d: bool| {
-                "<math>SSR</math>".to_string()
-            })),
-            ..Default::default()
-        });
+        .with_renderers(
+            StaticRenderers::new().math(|_t: &str, _d: bool| "<math>SSR</math>".to_string()),
+        );
     let interactive_ansi = carve::to_ansi_with_options(src, &Options::new().with_extension(&ext));
     let static_ansi = carve::to_ansi_with_options(src, &opts);
     assert_eq!(interactive_ansi, static_ansi);

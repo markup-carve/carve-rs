@@ -37,20 +37,6 @@ pub enum ContentMode {
     Json,
 }
 
-/// Which build-time renderer in the static [`crate::StaticRenderers`] map
-/// produces a [`FencedRender`] instance's image on the HTML static path.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum StaticRendererKey {
-    /// Use `renderers.mermaid`.
-    Mermaid,
-    /// Use `renderers.chart`.
-    Chart,
-    /// Use `renderers.graphviz`.
-    Graphviz,
-    /// Use `renderers.plantuml`.
-    Plantuml,
-}
-
 /// Options for [`FencedRender`].
 #[derive(Debug, Clone)]
 pub struct FencedRenderOptions {
@@ -66,12 +52,6 @@ pub struct FencedRenderOptions {
     pub wrap_in_figure: bool,
     /// Figure class.
     pub figure_class: String,
-    /// Which build-time renderer (if any) produces this instance's image on the
-    /// HTML static path. When set and a [`crate::Mode::Static`] render supplies
-    /// that renderer, the static path emits the renderer's output (an
-    /// `<svg>` / `<img>`); otherwise it degrades to the source as a
-    /// `<pre><code>` block. `None` means static always degrades to source.
-    pub static_renderer: Option<StaticRendererKey>,
 }
 
 impl FencedRenderOptions {
@@ -100,7 +80,6 @@ impl FencedRenderOptions {
             content_mode,
             wrap_in_figure: false,
             figure_class,
-            static_renderer: None,
         }
     }
 }
@@ -141,10 +120,7 @@ impl FencedRender {
     /// Mermaid is one preset of this factory; load Mermaid.js on the page to
     /// render the diagrams.
     pub fn mermaid() -> Self {
-        let mut opts =
-            FencedRenderOptions::new(vec!["mermaid".into()], None, None, ContentMode::Text);
-        opts.static_renderer = Some(StaticRendererKey::Mermaid);
-        Self::with_options(opts)
+        Self::new("mermaid")
     }
 
     /// D2 preset (text mode, `<pre class="d2">`).
@@ -156,13 +132,12 @@ impl FencedRender {
     /// HTML static path a supplied `renderers.graphviz` pre-renders the source
     /// to an image; absent that, it degrades to the source as a `<pre><code>`.
     pub fn graphviz() -> Self {
-        let mut opts = FencedRenderOptions::new(
+        let opts = FencedRenderOptions::new(
             vec!["dot".into(), "graphviz".into()],
             Some("graphviz".into()),
             None,
             ContentMode::Text,
         );
-        opts.static_renderer = Some(StaticRendererKey::Graphviz);
         Self::with_options(opts)
     }
 
@@ -180,13 +155,12 @@ impl FencedRender {
     /// the UML shapes Mermaid does not (use case, component, deployment,
     /// timing). Load a client-side PlantUML build to render the diagrams.
     pub fn plantuml() -> Self {
-        let mut opts = FencedRenderOptions::new(
+        let opts = FencedRenderOptions::new(
             vec!["plantuml".into(), "puml".into()],
             Some("plantuml".into()),
             None,
             ContentMode::Text,
         );
-        opts.static_renderer = Some(StaticRendererKey::Plantuml);
         Self::with_options(opts)
     }
 
@@ -204,9 +178,7 @@ impl FencedRender {
     /// HTML static path a supplied `renderers.chart` pre-renders the config to
     /// an image; absent that, it degrades to the JSON source as a `<pre><code>`.
     pub fn chart() -> Self {
-        let mut opts =
-            FencedRenderOptions::new(vec!["chart".into()], None, None, ContentMode::Json);
-        opts.static_renderer = Some(StaticRendererKey::Chart);
+        let opts = FencedRenderOptions::new(vec!["chart".into()], None, None, ContentMode::Json);
         Self::with_options(opts)
     }
 
@@ -258,12 +230,7 @@ impl CarveExtension for FencedRender {
         // `Options` across formats leaves Markdown / ANSI output unchanged.
         // Mirrors carve-js `fenced-render.ts` `staticBlockRenderers`.
         let static_build: Option<DiagramRendererRef<'_>> = if ctx.is_static() {
-            self.opts.static_renderer.and_then(|key| match key {
-                StaticRendererKey::Mermaid => ctx.renderers().mermaid.as_deref(),
-                StaticRendererKey::Chart => ctx.renderers().chart.as_deref(),
-                StaticRendererKey::Graphviz => ctx.renderers().graphviz.as_deref(),
-                StaticRendererKey::Plantuml => ctx.renderers().plantuml.as_deref(),
-            })
+            ctx.renderers().get_diagram(&self.opts.css_class)
         } else {
             None
         };
