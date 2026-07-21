@@ -174,10 +174,7 @@ fn a_trailing_attribute_block_chains_onto_the_literal() {
     // matching carve-js (its merge attaches to any non-text node).
     assert_eq!(h("!`x`{.a}{.b}"), "<p><span class=\"a b\">x</span></p>");
     // A space breaks the glue, so the second block stays literal text.
-    assert_eq!(
-        h("!`x`{.a} {.b}"),
-        "<p><span class=\"a\">x</span> {.b}</p>"
-    );
+    assert_eq!(h("!`x`{.a} {.b}"), "<p><span class=\"a\">x</span> {.b}</p>");
     // A `{! …}` block is not an attribute block (`!` is an invalid identifier),
     // so it does not merge -- it stays literal text.
     assert_eq!(
