@@ -337,3 +337,21 @@ fn allowed_wherever_a_code_span_is_allowed_across_all_presets() {
         );
     }
 }
+
+#[test]
+fn color_swatch_flattens_literal_inline_value() {
+    // The literal form is the natural way to pass a hex color whose `#` would
+    // otherwise parse as a tag; the color extension's text flattening must see
+    // the literal content, exactly as it sees a code span's.
+    use carve::{ColorSwatch, Options};
+    let ext = ColorSwatch::new();
+    let opts = Options::new().with_extension(&ext);
+    let bare = carve::to_html_with_options(":color[#ff8800]", &opts);
+    let lit = carve::to_html_with_options(":color[`#ff8800`{!}]", &opts);
+    assert!(
+        lit.contains("swatch-chip"),
+        "literal color should render a swatch: {lit}"
+    );
+    assert!(lit.contains("background-color:#ff8800"), "{lit}");
+    assert_eq!(bare, lit, "literal and bare color forms render identically");
+}
