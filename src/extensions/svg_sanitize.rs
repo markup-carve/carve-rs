@@ -1062,14 +1062,8 @@ fn scan_open_tag(src: &str, name_end: usize) -> Option<(String, bool, usize)> {
             b'>' => {
                 return Some((src[name_end..j].to_string(), false, j + 1));
             }
-            b'"' => match find_bytes(b, b"\"", j + 1) {
-                Some(q) => j = q + 1,
-                None => return None,
-            },
-            b'\'' => match find_bytes(b, b"'", j + 1) {
-                Some(q) => j = q + 1,
-                None => return None,
-            },
+            b'"' => j = find_bytes(b, b"\"", j + 1)? + 1,
+            b'\'' => j = find_bytes(b, b"'", j + 1)? + 1,
             _ => {
                 let c = src[j..].chars().next().unwrap();
                 j += c.len_utf8();
