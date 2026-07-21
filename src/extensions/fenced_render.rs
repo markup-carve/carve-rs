@@ -220,6 +220,13 @@ impl CarveExtension for FencedRender {
     }
 
     fn before_render(&self, mut doc: Document, ctx: &BeforeRenderContext<'_>) -> Document {
+        // Only the HTML renderer emits the hydration / static element. For the
+        // Markdown / plain / ANSI targets, leave the CodeBlock untouched so the
+        // renderer emits it as its source fence (matching carve-php / carve-js),
+        // rather than an escaped `<pre>` raw-HTML block (carve#305).
+        if !ctx.target_is_html() {
+            return doc;
+        }
         // On the HTML static path the client-script diagram cannot be drawn by
         // the engine. Resolve this instance's build renderer (if it declares one
         // and the caller supplied it): a present renderer SSR-renders the source;

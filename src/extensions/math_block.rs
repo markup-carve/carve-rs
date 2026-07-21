@@ -69,6 +69,12 @@ impl CarveExtension for MathBlock {
     }
 
     fn before_render(&self, mut doc: Document, ctx: &BeforeRenderContext<'_>) -> Document {
+        // Only the HTML renderer emits the math `<div>`. For Markdown / plain /
+        // ANSI, leave the CodeBlock so the renderer emits its ```math source
+        // fence, not an escaped raw-HTML block (carve#305).
+        if !ctx.target_is_html() {
+            return doc;
+        }
         // On the HTML static path a supplied `renderers.math` server-renders the
         // body (MathML / HTML) inside the `math display` div so the page needs no
         // client KaTeX / MathJax; absent it, the static output is the same

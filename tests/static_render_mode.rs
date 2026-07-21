@@ -497,3 +497,50 @@ fn caption_floor_holds_in_static_mode_without_group_extension() {
         "<div>\n  <p class=\"div-label\">First</p>\n  <p>First panel.</p>\n</div>"
     );
 }
+
+// --- non-HTML renderers keep client-script blocks as source (carve#305) -------
+
+#[test]
+fn fenced_render_non_html_output_is_the_source_fence_not_raw_html() {
+    // In Markdown / plain / ANSI a FencedRender preset must degrade to its
+    // source fence, NOT the escaped `<pre class="…">` hydration element. Before
+    // the fix these emitted `&lt;pre class="mermaid"&gt;…` (md) and empty (plain).
+    let ext = FencedRender::mermaid();
+    let opts = Options::new().with_extension(&ext);
+    let src = "``` mermaid\ngraph TD; A-->B\n```\n";
+
+    assert_eq!(
+        carve::to_markdown_with_options(src, &opts),
+        "```mermaid\ngraph TD; A-->B\n```\n"
+    );
+    assert_eq!(
+        carve::to_plain_text_with_options(src, &opts).trim(),
+        "graph TD; A-->B"
+    );
+    // Sanity: no raw-HTML leaked into the non-HTML output.
+    assert!(!carve::to_markdown_with_options(src, &opts).contains("<pre"));
+    assert!(!carve::to_ansi_with_options(src, &opts).contains("raw:html"));
+
+    // HTML is unaffected (still the hydration element).
+    assert_eq!(
+        carve::to_html_with_options(src, &opts).trim(),
+        "<pre class=\"mermaid\">graph TD; A-->B</pre>"
+    );
+}
+
+#[test]
+fn math_block_non_html_output_is_the_source_fence_not_raw_html() {
+    let ext = MathBlock::new();
+    let opts = Options::new().with_extension(&ext);
+    let src = "``` math\nE=mc^2\n```\n";
+
+    assert_eq!(
+        carve::to_markdown_with_options(src, &opts),
+        "```math\nE=mc^2\n```\n"
+    );
+    assert_eq!(
+        carve::to_plain_text_with_options(src, &opts).trim(),
+        "E=mc^2"
+    );
+    assert!(!carve::to_markdown_with_options(src, &opts).contains("<div class"));
+}

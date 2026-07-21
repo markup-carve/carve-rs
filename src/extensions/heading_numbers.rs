@@ -378,7 +378,7 @@ mod tests {
         // mistaken for a processed marker that turns the whole pass into a no-op.
         let ext = HeadingNumbers::new();
         let opts = Options::default();
-        let ctx = BeforeRenderContext::new(&opts, Mode::Interactive);
+        let ctx = BeforeRenderContext::new(&opts, Mode::Interactive, true);
         let doc = parse("# [v1]{.section-number} API\n\n## Next\n\nSee </#Next>.\n");
         let out = render_html_with_options(&ext.before_render(doc, &ctx), &opts);
         // Numbering still happened: the second heading is numbered and its

@@ -328,13 +328,19 @@ pub trait CarveExtension {
 pub struct BeforeRenderContext<'a> {
     options: &'a Options<'a>,
     effective_mode: Mode,
+    target_is_html: bool,
 }
 
 impl<'a> BeforeRenderContext<'a> {
-    pub(crate) fn new(options: &'a Options<'a>, effective_mode: Mode) -> Self {
+    pub(crate) fn new(
+        options: &'a Options<'a>,
+        effective_mode: Mode,
+        target_is_html: bool,
+    ) -> Self {
         Self {
             options,
             effective_mode,
+            target_is_html,
         }
     }
 
@@ -351,6 +357,15 @@ impl<'a> BeforeRenderContext<'a> {
     /// True when the effective mode is [`Mode::Static`] (HTML static path).
     pub fn is_static(&self) -> bool {
         self.effective_mode == Mode::Static
+    }
+
+    /// True when the final render target is HTML. The Markdown / plain / ANSI
+    /// renderers set this `false`, so an extension that emits HTML in
+    /// `before_render` (e.g. a client-script hydration element) can skip its
+    /// transform and leave the source node for the non-HTML renderer to emit as
+    /// source.
+    pub fn target_is_html(&self) -> bool {
+        self.target_is_html
     }
 
     /// The build-time [`StaticRenderers`] map (shorthand for
