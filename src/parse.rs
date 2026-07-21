@@ -354,17 +354,50 @@ fn extract_link_defs(source: &str) -> (String, BTreeMap<String, LinkDef>) {
     let mut body: Vec<String> = Vec::new();
     let mut defs = BTreeMap::new();
     let mut in_fence: Option<FenceOpen> = None;
+    // Track enclosing list item content columns so the strict fence test can be
+    // re-based to the item's content column. This remains a line-based
+    // approximation: tab-vs-space marker alignment is char-counted, the
+    // post-blank baseIndent+2 continuation rule is not modeled, and lists
+    // nested inside blockquotes are not fully modeled. Those residual cases can
+    // still produce a spurious link, not content loss; the sound fix is
+    // collecting definitions during block parsing.
+    let mut list_cols: Vec<usize> = Vec::new();
+    let mut prev_blank = true;
     for line in source.lines() {
         let stripped = strip_container_prefixes(line);
-        // The reference-definition prepass has no full container-column context
-        // (unlike the block parser, which dedents nested content before parsing
-        // it). Under the strict fence rule, it must only recognize fences with
-        // no residual indentation after container prefixes are stripped. That
-        // safe trade-off may collect a definition that appears inside a
-        // container-nested fence body, causing a spurious resolved link, but it
-        // avoids the unsafe failure mode: opening a fence the block parser never
-        // opened and swallowing every later definition in the document.
-        let fence_line = stripped.bare;
+        let was_prev_blank = prev_blank;
+        prev_blank = trim_ascii(line).is_empty();
+        if in_fence.is_none() {
+            let indent = leading_ws(line);
+            let raw_trimmed = trim_ascii(line);
+            let starts_block = is_heading_marker_line(raw_trimmed)
+                || raw_trimmed.starts_with('>')
+                || detect_fence_open(raw_trimmed).is_some()
+                || detect_thematic_break(raw_trimmed);
+            if let Some((marker_indent, marker_width)) = detect_prepass_list_marker(line) {
+                while list_cols.last().is_some_and(|col| *col > marker_indent) {
+                    list_cols.pop();
+                }
+                list_cols.push(marker_width);
+            } else if !raw_trimmed.is_empty() && (was_prev_blank || starts_block) {
+                while list_cols.last().is_some_and(|col| *col > indent) {
+                    list_cols.pop();
+                }
+            }
+        }
+        let content_col = list_cols.last().copied().unwrap_or(0);
+        let kept;
+        let fence_line = if content_col == 0 {
+            stripped.bare
+        } else {
+            kept = strip_container_prefixes_keep_indent(line);
+            let kept_indent = leading_ws(&kept);
+            if kept_indent >= content_col {
+                &kept[content_col..]
+            } else {
+                kept.as_str()
+            }
+        };
         if let Some(open) = in_fence {
             body.push(line.to_string());
             if is_fence_close(fence_line, open) {
@@ -399,6 +432,78 @@ fn extract_link_defs(source: &str) -> (String, BTreeMap<String, LinkDef>) {
         }
     }
     (body.join("\n"), defs)
+}
+
+fn detect_prepass_list_marker(line: &str) -> Option<(usize, usize)> {
+    let bytes = line.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() && (bytes[i] == b' ' || bytes[i] == b'\t') {
+        i += 1;
+    }
+    let marker_indent = i;
+    if i >= bytes.len() {
+        return None;
+    }
+    match bytes[i] {
+        b'-' | b'*' => i += 1,
+        b'0'..=b'9' => {
+            while i < bytes.len() && bytes[i].is_ascii_digit() {
+                i += 1;
+            }
+            if !matches!(bytes.get(i), Some(b'.' | b')')) {
+                return None;
+            }
+            i += 1;
+        }
+        b'a'..=b'z' | b'A'..=b'Z' => {
+            let marker_start = i;
+            while i < bytes.len() && bytes[i].is_ascii_alphabetic() {
+                i += 1;
+            }
+            let marker = &line[marker_start..i];
+            let ordered = marker.len() == 1
+                || marker.bytes().all(|b| {
+                    matches!(
+                        b,
+                        b'i' | b'v'
+                            | b'x'
+                            | b'l'
+                            | b'c'
+                            | b'd'
+                            | b'm'
+                            | b'I'
+                            | b'V'
+                            | b'X'
+                            | b'L'
+                            | b'C'
+                            | b'D'
+                            | b'M'
+                    )
+                });
+            if !ordered || !matches!(bytes.get(i), Some(b'.' | b')')) {
+                return None;
+            }
+            i += 1;
+        }
+        _ => return None,
+    }
+    if bytes.get(i) == Some(&b'{') {
+        while i < bytes.len() && bytes[i] != b'}' {
+            i += 1;
+        }
+        if bytes.get(i) != Some(&b'}') {
+            return None;
+        }
+        i += 1;
+    }
+    let spaces_start = i;
+    while bytes.get(i) == Some(&b' ') {
+        i += 1;
+    }
+    if i == spaces_start || !bytes.get(i).is_some_and(|b| !b.is_ascii_whitespace()) {
+        return None;
+    }
+    Some((marker_indent, i))
 }
 
 struct StrippedContainerLine<'a> {
@@ -457,6 +562,26 @@ fn strip_container_prefixes(mut line: &str) -> StrippedContainerLine<'_> {
         bare: line,
         needs_empty_list_content,
     }
+}
+
+fn strip_container_prefixes_keep_indent(mut line: &str) -> String {
+    let mut out = String::new();
+    loop {
+        let before = line;
+        while let Some(rest) = strip_blockquote_prefix(line) {
+            line = rest;
+        }
+        if let Some(marker) = detect_list_marker_full(line) {
+            let marker_width = marker.content.as_ptr() as usize - line.as_ptr() as usize;
+            out.extend(std::iter::repeat(' ').take(marker_width));
+            line = marker.content;
+        }
+        if line.len() == before.len() {
+            break;
+        }
+    }
+    out.push_str(line);
+    out
 }
 
 fn strip_blockquote_prefix(line: &str) -> Option<&str> {
