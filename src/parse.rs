@@ -386,26 +386,47 @@ fn extract_link_defs(source: &str) -> (String, BTreeMap<String, LinkDef>) {
             }
         }
         let content_col = list_cols.last().copied().unwrap_or(0);
-        let kept;
-        let fence_line = if content_col == 0 {
-            stripped.bare
-        } else {
-            kept = strip_container_prefixes_keep_indent(line);
-            let kept_indent = leading_ws(&kept);
-            if kept_indent >= content_col {
-                &kept[content_col..]
-            } else {
-                kept.as_str()
-            }
-        };
+        let raw_is_quoted = prepass_line_is_quoted(line);
         if let Some(open) = in_fence {
             body.push(line.to_string());
-            if is_fence_close(fence_line, open) {
+            // CLOSER: strip a blockquote prefix only when the fence was opened
+            // quoted, and NEVER a list marker. A fence closer is a continuation
+            // line of pure indentation, so a literal marker line inside a
+            // document-level code sample stays content.
+            let close_kept = if open.quoted {
+                strip_prepass_blockquote_prefix(line).unwrap_or(line)
+            } else {
+                line
+            };
+            let close_indent = leading_ws(close_kept);
+            let close_line = if close_indent >= open.content_col {
+                &close_kept[open.content_col..]
+            } else {
+                close_kept
+            };
+            if is_fence_close(close_line, open) {
                 in_fence = None;
             }
             continue;
         }
-        if let Some(open) = detect_fence_open(fence_line) {
+        // OPENER: strip container prefixes (blockquote AND list marker), then
+        // re-base to the current list-item content column. This recognizes a
+        // fence on the marker line (`- ````) and on continuation lines.
+        let opener_kept;
+        let fence_line = if content_col == 0 {
+            stripped.bare
+        } else {
+            opener_kept = strip_container_prefixes_keep_indent(line);
+            let kept_indent = leading_ws(&opener_kept);
+            if kept_indent >= content_col {
+                &opener_kept[content_col..]
+            } else {
+                opener_kept.as_str()
+            }
+        };
+        if let Some(mut open) = detect_fence_open(fence_line) {
+            open.content_col = content_col;
+            open.quoted = raw_is_quoted;
             in_fence = Some(open);
             body.push(line.to_string());
             continue;
@@ -432,6 +453,28 @@ fn extract_link_defs(source: &str) -> (String, BTreeMap<String, LinkDef>) {
         }
     }
     (body.join("\n"), defs)
+}
+
+fn prepass_line_is_quoted(line: &str) -> bool {
+    strip_prepass_blockquote_prefix(line).is_some()
+        || detect_list_marker_full(line)
+            .is_some_and(|marker| strip_prepass_blockquote_prefix(marker.content).is_some())
+}
+
+fn strip_prepass_blockquote_prefix(line: &str) -> Option<&str> {
+    let bytes = line.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() && (bytes[i] == b' ' || bytes[i] == b'\t') {
+        i += 1;
+    }
+    if bytes.get(i) != Some(&b'>') {
+        return None;
+    }
+    i += 1;
+    if bytes.get(i) == Some(&b' ') {
+        i += 1;
+    }
+    Some(&line[i..])
 }
 
 fn detect_prepass_list_marker(line: &str) -> Option<(usize, usize)> {
@@ -1251,6 +1294,8 @@ fn detect_thematic_break(line: &str) -> bool {
 struct FenceOpen {
     fence_char: u8,
     fence_len: usize,
+    content_col: usize,
+    quoted: bool,
     lang_start: usize,
     lang_end: usize,
     title_start: Option<usize>,
@@ -1314,6 +1359,8 @@ fn detect_fence_open(line: &str) -> Option<FenceOpen> {
         return Some(FenceOpen {
             fence_char,
             fence_len,
+            content_col: 0,
+            quoted: false,
             lang_start,
             lang_end,
             title_start: None,
@@ -1400,6 +1447,8 @@ fn detect_fence_open(line: &str) -> Option<FenceOpen> {
     Some(FenceOpen {
         fence_char,
         fence_len,
+        content_col: 0,
+        quoted: false,
         lang_start,
         lang_end,
         title_start,
