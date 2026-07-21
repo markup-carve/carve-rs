@@ -749,7 +749,16 @@ fn is_word_boundary(ch: char) -> bool {
 
 fn render_code(content: &str) -> String {
     let fence = safe_fence(content, 1);
-    if content.starts_with('`') || content.ends_with('`') {
+    // The parser strips one leading and one trailing space from a verbatim span
+    // whose content BOTH begins and ends with a space, and a single space around
+    // backtick-adjacent content. Pad in those cases so the strip is reversible
+    // and fmt stays idempotent; the padding sits inside the fence, so a trailing
+    // attribute block still attaches to the closing run. One-sided space is left
+    // as-is (the parser only strips when both sides are spaces).
+    let needs_pad = content.starts_with('`')
+        || content.ends_with('`')
+        || (content.starts_with(' ') && content.ends_with(' '));
+    if needs_pad {
         format!("{fence} {content} {fence}")
     } else {
         format!("{fence}{content}{fence}")

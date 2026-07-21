@@ -355,3 +355,21 @@ fn color_swatch_flattens_literal_inline_value() {
     assert!(lit.contains("background-color:#ff8800"), "{lit}");
     assert_eq!(bare, lit, "literal and bare color forms render identically");
 }
+
+#[test]
+fn space_surrounded_verbatim_stays_fmt_idempotent() {
+    // A verbatim span whose content both begins and ends with a space is
+    // stripped one space each side at parse; fmt must pad it back so the strip
+    // is reversible. Shared render_code fix -> code spans and literals alike.
+    for src in [
+        "``  x  ``{!}",
+        "``  x  ``{.foo}",
+        "``  x  ``",
+        "`` x``{!}",
+        "``x ``{!}",
+    ] {
+        let once = to_carve(src);
+        assert_eq!(to_html(&once), to_html(src), "fmt invariant: {src}");
+        assert_eq!(to_carve(&once), once, "fmt idempotent: {src}");
+    }
+}
