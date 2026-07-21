@@ -205,9 +205,15 @@ fn prepare_doc(
     source: &str,
     options: &Options<'_>,
     effective_mode: Mode,
+    target_is_html: bool,
 ) -> Result<ast::Document, ProfileViolationError> {
     let Some(profile) = &options.profile else {
-        return Ok(parsed_doc_with_hooks(source, options, effective_mode));
+        return Ok(parsed_doc_with_hooks(
+            source,
+            options,
+            effective_mode,
+            target_is_html,
+        ));
     };
     let max_length = profile.max_length();
     if max_length > 0 && source.len() > max_length {
@@ -225,7 +231,7 @@ fn prepare_doc(
             violations: vec![violation],
         });
     }
-    let doc = parsed_doc_with_hooks(source, options, effective_mode);
+    let doc = parsed_doc_with_hooks(source, options, effective_mode, target_is_html);
     let base_host = options.profile_base_host.as_deref();
     Ok(apply_profile(doc, profile, base_host)?.doc)
 }
@@ -239,7 +245,7 @@ pub fn try_to_html_with_options(
 ) -> Result<String, ProfileViolationError> {
     // HTML honors the configured mode (interactive / static).
     Ok(render_html_with_options(
-        &prepare_doc(source, options, options.mode)?,
+        &prepare_doc(source, options, options.mode, true)?,
         options,
     ))
 }
@@ -253,7 +259,7 @@ pub fn try_to_markdown_with_options(
     options: &Options<'_>,
 ) -> Result<String, ProfileViolationError> {
     Ok(render_markdown_with_options(
-        &prepare_doc(source, options, Mode::Interactive)?,
+        &prepare_doc(source, options, Mode::Interactive, false)?,
         options,
     ))
 }
@@ -266,7 +272,7 @@ pub fn try_to_plain_text_with_options(
     options: &Options<'_>,
 ) -> Result<String, ProfileViolationError> {
     Ok(render_plain_text_with_options(
-        &prepare_doc(source, options, Mode::Interactive)?,
+        &prepare_doc(source, options, Mode::Interactive, false)?,
         options,
     ))
 }
@@ -279,7 +285,7 @@ pub fn try_to_ansi_with_options(
     options: &Options<'_>,
 ) -> Result<String, ProfileViolationError> {
     Ok(render_ansi_with_options(
-        &prepare_doc(source, options, Mode::Interactive)?,
+        &prepare_doc(source, options, Mode::Interactive, false)?,
         options,
     ))
 }
@@ -292,9 +298,10 @@ fn parsed_doc_with_hooks(
     source: &str,
     options: &Options<'_>,
     effective_mode: Mode,
+    target_is_html: bool,
 ) -> ast::Document {
     let mut doc = parse_with_options(source, options);
-    let ctx = extension::BeforeRenderContext::new(options, effective_mode);
+    let ctx = extension::BeforeRenderContext::new(options, effective_mode, target_is_html);
     for ext in &options.extensions {
         doc = ext.before_render(doc, &ctx);
     }
