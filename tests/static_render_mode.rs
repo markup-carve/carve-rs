@@ -193,8 +193,10 @@ fn mermaid_static_with_renderer_emits_injected_svg() {
         }));
     // The closure receives the verbatim source "graph TD; A --> B" (17 bytes).
     let html = carve::to_html_with_options("``` mermaid\ngraph TD; A --> B\n```\n", &opts);
-    assert_eq!(html.trim(), "<svg data-src=\"17\"><!--diagram--></svg>");
-    assert!(!html.contains("<pre"));
+    assert_eq!(
+        html.trim(),
+        "<div class=\"mermaid\"><svg data-src=\"17\"><!--diagram--></svg></div>"
+    );
 }
 
 // --- fenced-render: chart ----------------------------------------------------
@@ -219,7 +221,10 @@ fn chart_static_with_renderer_emits_injected_image() {
             "<img alt=\"chart\" src=\"chart.png\">".to_string()
         }));
     let html = carve::to_html_with_options("``` chart\n{\"type\":\"bar\"}\n```\n", &opts);
-    assert_eq!(html.trim(), "<img alt=\"chart\" src=\"chart.png\">");
+    assert_eq!(
+        html.trim(),
+        "<div class=\"chart\"><img alt=\"chart\" src=\"chart.png\"></div>"
+    );
 }
 
 // --- fenced-render: graphviz -------------------------------------------------
@@ -244,7 +249,10 @@ fn graphviz_static_with_renderer_emits_injected_image() {
             "<img alt=\"graphviz\" src=\"graph.svg\">".to_string()
         }));
     let html = carve::to_html_with_options("``` graphviz\ndigraph { A -> B }\n```\n", &opts);
-    assert_eq!(html.trim(), "<img alt=\"graphviz\" src=\"graph.svg\">");
+    assert_eq!(
+        html.trim(),
+        "<div class=\"graphviz\"><img alt=\"graphviz\" src=\"graph.svg\"></div>"
+    );
 }
 
 #[test]
@@ -258,7 +266,10 @@ fn graphviz_dot_alias_static_with_renderer_emits_injected_image() {
             "<img alt=\"graphviz\" src=\"graph.svg\">".to_string()
         }));
     let html = carve::to_html_with_options("``` dot\ndigraph { A -> B }\n```\n", &opts);
-    assert_eq!(html.trim(), "<img alt=\"graphviz\" src=\"graph.svg\">");
+    assert_eq!(
+        html.trim(),
+        "<div class=\"graphviz\"><img alt=\"graphviz\" src=\"graph.svg\"></div>"
+    );
 }
 
 #[test]
@@ -275,10 +286,13 @@ fn plantuml_static_with_renderer_emits_injected_image() {
         carve::to_html_with_options("``` plantuml\n@startuml\nA -> B\n@enduml\n```\n", &opts);
     assert_eq!(
         via_plantuml.trim(),
-        "<img alt=\"plantuml\" src=\"uml.svg\">"
+        "<div class=\"plantuml\"><img alt=\"plantuml\" src=\"uml.svg\"></div>"
     );
     let via_puml = carve::to_html_with_options("``` puml\nA -> B\n```\n", &opts);
-    assert_eq!(via_puml.trim(), "<img alt=\"plantuml\" src=\"uml.svg\">");
+    assert_eq!(
+        via_puml.trim(),
+        "<div class=\"plantuml\"><img alt=\"plantuml\" src=\"uml.svg\"></div>"
+    );
 }
 
 #[test]
@@ -304,10 +318,12 @@ fn custom_fence_word_is_static_capable_via_its_css_class() {
             "<img alt=\"myuml\" src=\"my.svg\">".to_string()
         }));
     let html = carve::to_html_with_options("``` myuml\nA -> B\n```\n", &opts);
-    // The renderer is consulted (not degraded to source) for a custom class -
-    // that is what the open map guarantees. (The exact wrapper shape of a
-    // rendered diagram differs across engines; that is a separate parity issue.)
-    assert_eq!(html.trim(), "<img alt=\"myuml\" src=\"my.svg\">");
+    // The renderer is consulted (not degraded to source) for a custom class, and
+    // wrapped in a `<div class="myuml">` identical to js/php (carve#302).
+    assert_eq!(
+        html.trim(),
+        "<div class=\"myuml\"><img alt=\"myuml\" src=\"my.svg\"></div>"
+    );
 }
 
 #[test]
