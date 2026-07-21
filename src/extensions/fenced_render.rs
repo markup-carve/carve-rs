@@ -330,7 +330,15 @@ fn static_html(
     build: Option<DiagramRendererRef<'_>>,
 ) -> String {
     if let Some(build) = build {
-        let element = build(&code.content);
+        // Wrap the renderer's output in a `<div>` carrying the fence's merged
+        // attributes (cssClass + author `{#id .class}`), so the class/attrs
+        // survive and the wrapper is identical across engines (carve#302).
+        let attrs = merged_attrs(code, opts);
+        let element = format!(
+            "<div{}>{}</div>",
+            render_attrs(&attrs),
+            build(&code.content)
+        );
         return wrap_figure(element, opts);
     }
     // Source fallback: merge the cssClass ahead of author classes and copy the
