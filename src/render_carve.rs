@@ -571,19 +571,11 @@ fn render_inline(
             )
         }
         InlineNode::LiteralInline(lit) => {
-            // §27: `content`{!} — the sigil is always first, further attributes
-            // follow it separated by a space (the grammar requires that
-            // separation). `render_code` widens the backtick fence when the
-            // content holds backticks, so the round-trip re-parses identically.
-            let attrs = render_attrs(&lit.attrs);
-            let inner = if attrs.is_empty() {
-                "!".to_string()
-            } else {
-                // `render_attrs` returns `{...}`; strip the ASCII braces and
-                // re-wrap after the sigil (`! .cls #id`).
-                format!("! {}", &attrs[1..attrs.len() - 1])
-            };
-            format!("{}{{{}}}", render_code(&lit.content), inner)
+            // §27: `!` prefix on a verbatim span. A trailing attribute block is
+            // the ordinary inline attribute block (same as a code span carries).
+            // `render_code` widens the backtick fence when the content holds
+            // backticks, so the round-trip re-parses identically.
+            format!("!{}{}", render_code(&lit.content), render_attrs(&lit.attrs))
         }
         InlineNode::Symbol(symbol) => format!(
             ":{}:{}",

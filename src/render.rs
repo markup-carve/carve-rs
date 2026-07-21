@@ -713,7 +713,7 @@ pub(crate) fn plain_inlines(nodes: &[InlineNode]) -> String {
             InlineNode::Emphasis(e) => out.push_str(&plain_inlines(&e.children)),
             InlineNode::Code(s, _) => out.push_str(s),
             // An inline literal renders as visible prose (§27), so it contributes
-            // its content to a heading slug -- otherwise `` # `Cat`{!} `` would
+            // its content to a heading slug -- otherwise `` # !`Cat` `` would
             // slug to the empty fallback and `</#cat>` could never resolve.
             InlineNode::LiteralInline(lit) => out.push_str(&lit.content),
             // A `</#id>` cross-reference contributes nothing to a heading id: the

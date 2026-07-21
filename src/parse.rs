@@ -4332,7 +4332,7 @@ fn merge_attrs_into_inline(node: &mut InlineNode, attrs: Attrs) {
         InlineNode::Extension(n) => merge_attrs(&mut n.attrs, attrs),
         InlineNode::Code(_, a) => merge_attrs(a, attrs),
         // A trailing standalone block chains onto an inline literal, promoting a
-        // bare literal to a `<span>` (`` `x`{! .a}{.b} `` -> class="a b"). Matches
+        // bare literal to a `<span>` (`` !`x`{.a}{.b} `` -> class="a b"). Matches
         // carve-js, whose merge attaches to any non-text node.
         InlineNode::LiteralInline(n) => merge_attrs(&mut n.attrs, attrs),
         InlineNode::Footnote(n) => merge_attrs(&mut n.attrs, attrs),
@@ -4607,22 +4607,6 @@ fn parse_inline_context(
                     i += raw_consumed;
                     continue;
                 }
-                // A verbatim span tagged `{!…}` is an inline literal (§27): same
-                // verbatim capture as a code span, but the `<code>` wrapper is
-                // dropped and the content is escaped-and-always-emitted rather
-                // than target-routed like raw passthrough.
-                if let Some((lit, lit_consumed)) = parse_literal_inline_after_code(
-                    bytes,
-                    i,
-                    &value,
-                    consumed,
-                    bounds.last_close_brace,
-                ) {
-                    flush_text(&mut out, &mut buf);
-                    out.push(InlineNode::LiteralInline(lit));
-                    i += lit_consumed;
-                    continue;
-                }
                 flush_text(&mut out, &mut buf);
                 // Push the bare code span. A trailing inline attribute block
                 // (`` `code`{.cls} ``) is attached by the general attr-merge in
@@ -4700,6 +4684,23 @@ fn parse_inline_context(
                     i = next;
                     continue;
                 }
+            }
+        }
+
+        // Inline literal (§27): a `!` prefix on a verbatim code span, mirroring
+        // the `$`-math prefix above. The span content is captured verbatim,
+        // later HTML-escaped and emitted by every renderer with the `<code>`
+        // wrapper dropped; a trailing `{…}` attaches below via the general
+        // attr-merge as an ordinary inline attribute block (no special
+        // first-token sigil). Like math it requires a CLOSED span — a bare `!`
+        // before an unclosed run stays literal and the run becomes an ordinary
+        // (unclosed) code span. Tried before the image case, which needs `[`.
+        if c == b'!' && bytes.get(i + 1) == Some(&b'`') {
+            if let Some((lit, consumed)) = parse_literal_inline(bytes, i) {
+                flush_text(&mut out, &mut buf);
+                out.push(InlineNode::LiteralInline(lit));
+                i += consumed;
+                continue;
             }
         }
 
@@ -5086,128 +5087,67 @@ fn parse_raw_inline_after_code(
     ))
 }
 
-/// Inline literal (`` `…`{!} ``, grammar PART 9 §27, ohm
-/// `litInline = code "{" attrSp* "!" (attrSp+ attrItem)* attrSp* "}"`). Called
-/// right after a code span; recognizes a trailing attribute block whose FIRST
-/// token (after optional inner whitespace) is the `!` sigil. The sigil is
-/// consumed and never rendered. With no further attribute the literal emits
-/// bare escaped text; any id / class / key attribute after it lands in `attrs`
-/// and renders on a `<span>`.
+/// Inline literal (`` !`…` ``, grammar PART 9 §27, `literal_inline = '!',
+/// code_span`). A `!` PREFIX on a verbatim code span, mirroring `parse_math`'s
+/// `$` prefix: the maximal backtick run captures the content verbatim, which is
+/// later HTML-escaped and emitted by every renderer with the `<code>` wrapper
+/// dropped. A CLOSED span is required — a `!` before an unclosed run returns
+/// `None`, leaving the `!` literal and the run to become an ordinary (unclosed)
+/// code span, exactly as `$` before an unclosed run behaves.
 ///
-/// The `!` must be the first token and any further attribute must be separated
-/// from it by whitespace -- so `{!.ipa}` (no separator) does NOT match here and,
-/// `!` being an invalid attribute identifier, stays literal text via the strict
-/// attribute rule (§14). A digit-first / otherwise invalid payload (`{! #1a}`)
-/// likewise fails to parse and falls back to a plain code span. The scan is a
-/// single quote-aware pass to the first `}` (a newline aborts it), so it is O(n)
-/// over the span and never rescans the verbatim content.
-fn parse_literal_inline_after_code(
-    bytes: &[u8],
-    start: usize,
-    value: &str,
-    code_consumed: usize,
-    last_close_brace: Option<usize>,
-) -> Option<(LiteralInline, usize)> {
-    let brace = start + code_consumed;
-    if bytes.get(brace) != Some(&b'{') {
+/// Returns a bare literal; a trailing `{…}` is the ORDINARY inline attribute
+/// block and is attached by the general attr-merge in the scanner (same path a
+/// bare code span uses), so `` !`x`{.ipa} `` and chained `` !`x`{.a}{.b} ``
+/// both work without any special first-token handling here.
+fn parse_literal_inline(bytes: &[u8], start: usize) -> Option<(LiteralInline, usize)> {
+    if bytes.get(start) != Some(&b'!') || bytes.get(start + 1) != Some(&b'`') {
         return None;
     }
-    // Cheap bail (same guard `read_attrs_at` uses): if the document has no `}`
-    // at or after this `{`, the block cannot close.
-    if last_close_brace.map_or(true, |p| p < brace) {
+    let tick = start + 1;
+    // Require a CLOSED span, like `$`-math in carve-js. `parse_inline_code`
+    // itself accepts an unclosed opener (consuming to the end of the block), so
+    // the closedness is checked explicitly here: a `!` before an unclosed run
+    // stays literal and the run becomes an ordinary (unclosed) code span.
+    if !inline_code_is_closed(bytes, tick) {
         return None;
     }
-    // Optional whitespace, then the `!` sigil as the first token.
-    let mut i = brace + 1;
-    while matches!(bytes.get(i), Some(b' ' | b'\t')) {
-        i += 1;
-    }
-    if bytes.get(i) != Some(&b'!') {
-        return None;
-    }
-    i += 1;
-    // After the sigil: either the closing brace (bare literal) or a whitespace
-    // separator introducing the attribute list. A non-ws, non-`}` char here
-    // (e.g. `{!.ipa}`) means this is not an inline literal.
-    match bytes.get(i) {
-        Some(b'}') => {
-            return Some((
-                LiteralInline {
-                    content: value.to_string(),
-                    attrs: None,
-                },
-                i + 1 - start,
-            ));
-        }
-        Some(b' ' | b'\t') => {}
-        _ => return None,
-    }
-    let payload_start = i;
-    // Fast-reject a doomed attribute payload before the full char walk, the same
-    // O(n)-total guard `read_attrs_at` uses. Without it, many invalid literal
-    // openers before a distant `}` (`` `x`{! #1 ``×n + `}`) would each scan to
-    // that far brace -- O(n²). The check starts at the whitespace separator and
-    // is a pure skip filter (it returns `true` only where `parse_attrs` returns
-    // `None` too), so accepted literals and their output stay byte-identical.
-    if attr_payload_provably_invalid(bytes, payload_start - 1) {
-        return None;
-    }
-    // Quote-aware scan to the closing `}`; a newline ends an inline block.
-    let mut quote: Option<u8> = None;
-    let mut escaped = false;
-    while i < bytes.len() {
-        let b = bytes[i];
-        if b == b'\n' {
-            return None;
-        }
-        if escaped {
-            escaped = false;
-            i += 1;
-            continue;
-        }
-        if b == b'\\' {
-            escaped = true;
-            i += 1;
-            continue;
-        }
-        if let Some(q) = quote {
-            if b == q {
-                quote = None;
-            }
-            i += 1;
-            continue;
-        }
-        if b == b'"' || b == b'\'' {
-            quote = Some(b);
-            i += 1;
-            continue;
-        }
-        if b == b'}' {
-            break;
-        }
-        i += 1;
-    }
-    if bytes.get(i) != Some(&b'}') {
-        return None;
-    }
-    // `payload_start..i` slices at ASCII byte boundaries (the leading whitespace
-    // separator and the closing `}` are single-byte), so any multibyte content
-    // inside is never split. An empty / whitespace-only payload is a bare
-    // literal; otherwise the strict attribute parse must succeed, else this is
-    // not a literal (falls back to a code span).
-    let inner = std::str::from_utf8(&bytes[payload_start..i]).ok()?;
-    let attrs = if inner.trim().is_empty() {
-        None
-    } else {
-        Some(parse_attrs(inner)?)
-    };
+    let (content, code_consumed) = parse_inline_code(bytes, tick)?;
     Some((
         LiteralInline {
-            content: value.to_string(),
-            attrs,
+            content,
+            attrs: None,
         },
-        i + 1 - start,
+        tick + code_consumed - start,
     ))
+}
+
+/// True iff a verbatim code span opening at `start` (a backtick) has a matching
+/// equal-length closing run — i.e. it is CLOSED rather than an opener that runs
+/// unclosed to the end of the block. Used to gate the inline literal (§27) to
+/// closed spans only, matching the `$`-math prefix.
+fn inline_code_is_closed(bytes: &[u8], start: usize) -> bool {
+    let mut i = start;
+    while i < bytes.len() && bytes[i] == b'`' {
+        i += 1;
+    }
+    let open_len = i - start;
+    if open_len == 0 {
+        return false;
+    }
+    while i < bytes.len() {
+        if bytes[i] != b'`' {
+            i += 1;
+            continue;
+        }
+        let close_start = i;
+        while i < bytes.len() && bytes[i] == b'`' {
+            i += 1;
+        }
+        if i - close_start == open_len {
+            return true;
+        }
+    }
+    false
 }
 
 fn parse_math(bytes: &[u8], start: usize, bounds: &InlineBounds<'_>) -> Option<(Math, usize)> {
