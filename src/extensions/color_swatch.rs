@@ -616,6 +616,10 @@ fn inline_text(nodes: &[InlineNode]) -> String {
         match node {
             InlineNode::Text(s) => out.push_str(s),
             InlineNode::Code(s, _) => out.push_str(s),
+            // A code span and an inline literal both carry verbatim text; the
+            // literal form is the natural way to pass a color whose `#` would
+            // otherwise parse as a tag, e.g. `:color[!`#ff8800`]`.
+            InlineNode::LiteralInline(l) => out.push_str(&l.content),
             InlineNode::Emphasis(e) => out.push_str(&inline_text(&e.children)),
             InlineNode::Link(l) => out.push_str(&inline_text(&l.children)),
             InlineNode::Span(s) => out.push_str(&inline_text(&s.children)),

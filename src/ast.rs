@@ -308,6 +308,7 @@ pub enum InlineNode {
     Span(Span),
     Math(Math),
     RawInline(RawInline),
+    LiteralInline(LiteralInline),
     Symbol(Symbol),
     AutoLink(AutoLink),
     CrossRef(CrossRef),
@@ -466,6 +467,24 @@ pub struct Math {
 pub struct RawInline {
     pub format: String,
     pub content: String,
+}
+
+/// Inline literal (`` !`…` ``): a `!` prefix on a verbatim code span (grammar
+/// PART 9 §27, `literal_inline = '!', code_span`), mirroring the `$`-math
+/// prefix. `content` is captured verbatim by the backtick run exactly as for a
+/// code span -- no inline construct is recognized inside it and smart
+/// typography does not apply.
+///
+/// Unlike raw passthrough (§20) it is EMITTED BY EVERY RENDERER and never
+/// dropped or target-routed, and its content is HTML-escaped on output. The
+/// `<code>` wrapper is dropped: an inline literal is prose, not code. A
+/// trailing attribute block is the ordinary inline attribute block and lands in
+/// `attrs`, rendered on a `<span>`; with none, the content is emitted as bare
+/// text.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LiteralInline {
+    pub content: String,
+    pub attrs: Option<Attrs>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

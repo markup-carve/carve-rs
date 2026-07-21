@@ -712,6 +712,10 @@ pub(crate) fn plain_inlines(nodes: &[InlineNode]) -> String {
             InlineNode::Text(s) => out.push_str(s),
             InlineNode::Emphasis(e) => out.push_str(&plain_inlines(&e.children)),
             InlineNode::Code(s, _) => out.push_str(s),
+            // An inline literal renders as visible prose (§27), so it contributes
+            // its content to a heading slug -- otherwise `` # !`Cat` `` would
+            // slug to the empty fallback and `</#cat>` could never resolve.
+            InlineNode::LiteralInline(lit) => out.push_str(&lit.content),
             // A `</#id>` cross-reference contributes nothing to a heading id: the
             // id is derived from the heading text as authored, before cross-ref
             // resolution turns the reference into a Link. Skipping it here keeps
@@ -1653,6 +1657,21 @@ fn render_inline_after(
                 } else {
                     out.push_str(&escape_text(&r.content));
                 }
+            }
+        }
+        InlineNode::LiteralInline(lit) => {
+            // §27: content is escaped and ALWAYS emitted (never target-routed
+            // like raw passthrough), with the `<code>` wrapper dropped. A
+            // `<span>` is emitted only when an attribute needs somewhere to live;
+            // otherwise the escaped content is bare prose.
+            if lit.attrs.is_some() {
+                out.push_str("<span");
+                write_attrs(out, &lit.attrs);
+                out.push('>');
+                write_escaped_text_nbsp(out, &lit.content);
+                out.push_str("</span>");
+            } else {
+                write_escaped_text_nbsp(out, &lit.content);
             }
         }
         InlineNode::Symbol(e) => {

@@ -570,6 +570,13 @@ fn render_inline(
                 escape_format(&raw.format)
             )
         }
+        InlineNode::LiteralInline(lit) => {
+            // §27: `!` prefix on a verbatim span. A trailing attribute block is
+            // the ordinary inline attribute block (same as a code span carries).
+            // `render_code` widens the backtick fence when the content holds
+            // backticks, so the round-trip re-parses identically.
+            format!("!{}{}", render_code(&lit.content), render_attrs(&lit.attrs))
+        }
         InlineNode::Symbol(symbol) => format!(
             ":{}:{}",
             escape_symbol_name(&symbol.name),
@@ -734,7 +741,16 @@ fn is_word_boundary(ch: char) -> bool {
 
 fn render_code(content: &str) -> String {
     let fence = safe_fence(content, 1);
-    if content.starts_with('`') || content.ends_with('`') {
+    // The parser strips one leading and one trailing space from a verbatim span
+    // whose content BOTH begins and ends with a space, and a single space around
+    // backtick-adjacent content. Pad in those cases so the strip is reversible
+    // and fmt stays idempotent; the padding sits inside the fence, so a trailing
+    // attribute block still attaches to the closing run. One-sided space is left
+    // as-is (the parser only strips when both sides are spaces).
+    let needs_pad = content.starts_with('`')
+        || content.ends_with('`')
+        || (content.starts_with(' ') && content.ends_with(' '));
+    if needs_pad {
         format!("{fence} {content} {fence}")
     } else {
         format!("{fence}{content}{fence}")

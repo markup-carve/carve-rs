@@ -4506,6 +4506,10 @@ fn merge_attrs_into_inline(node: &mut InlineNode, attrs: Attrs) {
         InlineNode::AutoLink(n) => merge_attrs(&mut n.attrs, attrs),
         InlineNode::Extension(n) => merge_attrs(&mut n.attrs, attrs),
         InlineNode::Code(_, a) => merge_attrs(a, attrs),
+        // A trailing standalone block chains onto an inline literal, promoting a
+        // bare literal to a `<span>` (`` !`x`{.a}{.b} `` -> class="a b"). Matches
+        // carve-js, whose merge attaches to any non-text node.
+        InlineNode::LiteralInline(n) => merge_attrs(&mut n.attrs, attrs),
         InlineNode::Footnote(n) => merge_attrs(&mut n.attrs, attrs),
         InlineNode::CriticInsert(n) => merge_attrs(&mut n.attrs, attrs),
         InlineNode::CriticDelete(n) => merge_attrs(&mut n.attrs, attrs),
@@ -4526,6 +4530,7 @@ fn inline_is_attributable(node: &InlineNode) -> bool {
             | InlineNode::AutoLink(_)
             | InlineNode::Extension(_)
             | InlineNode::Code(_, _)
+            | InlineNode::LiteralInline(_)
             | InlineNode::Footnote(_)
             | InlineNode::CriticInsert(_)
             | InlineNode::CriticDelete(_)
@@ -4854,6 +4859,23 @@ fn parse_inline_context(
                     i = next;
                     continue;
                 }
+            }
+        }
+
+        // Inline literal (§27): a `!` prefix on a verbatim code span, mirroring
+        // the `$`-math prefix above. The span content is captured verbatim,
+        // later HTML-escaped and emitted by every renderer with the `<code>`
+        // wrapper dropped; a trailing `{…}` attaches below via the general
+        // attr-merge as an ordinary inline attribute block (no special
+        // first-token sigil). Like math it requires a CLOSED span — a bare `!`
+        // before an unclosed run stays literal and the run becomes an ordinary
+        // (unclosed) code span. Tried before the image case, which needs `[`.
+        if c == b'!' && bytes.get(i + 1) == Some(&b'`') {
+            if let Some((lit, consumed)) = parse_literal_inline(bytes, i) {
+                flush_text(&mut out, &mut buf);
+                out.push(InlineNode::LiteralInline(lit));
+                i += consumed;
+                continue;
             }
         }
 
@@ -5238,6 +5260,69 @@ fn parse_raw_inline_after_code(
         },
         i + 1 - start,
     ))
+}
+
+/// Inline literal (`` !`…` ``, grammar PART 9 §27, `literal_inline = '!',
+/// code_span`). A `!` PREFIX on a verbatim code span, mirroring `parse_math`'s
+/// `$` prefix: the maximal backtick run captures the content verbatim, which is
+/// later HTML-escaped and emitted by every renderer with the `<code>` wrapper
+/// dropped. A CLOSED span is required — a `!` before an unclosed run returns
+/// `None`, leaving the `!` literal and the run to become an ordinary (unclosed)
+/// code span, exactly as `$` before an unclosed run behaves.
+///
+/// Returns a bare literal; a trailing `{…}` is the ORDINARY inline attribute
+/// block and is attached by the general attr-merge in the scanner (same path a
+/// bare code span uses), so `` !`x`{.ipa} `` and chained `` !`x`{.a}{.b} ``
+/// both work without any special first-token handling here.
+fn parse_literal_inline(bytes: &[u8], start: usize) -> Option<(LiteralInline, usize)> {
+    if bytes.get(start) != Some(&b'!') || bytes.get(start + 1) != Some(&b'`') {
+        return None;
+    }
+    let tick = start + 1;
+    // Require a CLOSED span, like `$`-math in carve-js. `parse_inline_code`
+    // itself accepts an unclosed opener (consuming to the end of the block), so
+    // the closedness is checked explicitly here: a `!` before an unclosed run
+    // stays literal and the run becomes an ordinary (unclosed) code span.
+    if !inline_code_is_closed(bytes, tick) {
+        return None;
+    }
+    let (content, code_consumed) = parse_inline_code(bytes, tick)?;
+    Some((
+        LiteralInline {
+            content,
+            attrs: None,
+        },
+        tick + code_consumed - start,
+    ))
+}
+
+/// True iff a verbatim code span opening at `start` (a backtick) has a matching
+/// equal-length closing run — i.e. it is CLOSED rather than an opener that runs
+/// unclosed to the end of the block. Used to gate the inline literal (§27) to
+/// closed spans only, matching the `$`-math prefix.
+fn inline_code_is_closed(bytes: &[u8], start: usize) -> bool {
+    let mut i = start;
+    while i < bytes.len() && bytes[i] == b'`' {
+        i += 1;
+    }
+    let open_len = i - start;
+    if open_len == 0 {
+        return false;
+    }
+    while i < bytes.len() {
+        if bytes[i] != b'`' {
+            i += 1;
+            continue;
+        }
+        let close_start = i;
+        while i < bytes.len() && bytes[i] == b'`' {
+            i += 1;
+        }
+        if i - close_start == open_len {
+            return true;
+        }
+    }
+    false
 }
 
 fn parse_math(bytes: &[u8], start: usize, bounds: &InlineBounds<'_>) -> Option<(Math, usize)> {
@@ -7421,6 +7506,9 @@ fn plain_inlines_parse(nodes: &[InlineNode]) -> String {
             InlineNode::Text(s) => out.push_str(s),
             InlineNode::Emphasis(e) => out.push_str(&plain_inlines_parse(&e.children)),
             InlineNode::Code(s, _) => out.push_str(s),
+            // An inline literal renders as visible prose (§27), so it feeds the
+            // parse-time cross-reference slug like a code span does.
+            InlineNode::LiteralInline(l) => out.push_str(&l.content),
             InlineNode::Link(l) => out.push_str(&plain_inlines_parse(&l.children)),
             InlineNode::Image(i) => out.push_str(&i.alt),
             InlineNode::Extension(e) => out.push_str(&plain_inlines_parse(&e.children)),

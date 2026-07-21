@@ -442,6 +442,12 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
                 String::new()
             }
         }
+        InlineNode::LiteralInline(lit) => {
+            // §27: emitted by EVERY renderer, never dropped. It is prose, not
+            // code, so no code fence -- the content becomes literal text with
+            // Markdown metacharacters escaped so `*not bold*` stays visible.
+            escape_text(&strip_controls(&lit.content))
+        }
         InlineNode::Symbol(symbol) => format!(":{}:", symbol.name),
         InlineNode::AutoLink(link) => format!(
             "[{}]({})",
@@ -766,6 +772,9 @@ fn plain_inlines(nodes: &[InlineNode]) -> String {
             }
             InlineNode::Emphasis(emphasis) => out.push_str(&plain_inlines(&emphasis.children)),
             InlineNode::Code(code, _) => out.push_str(code),
+            // An inline literal renders as visible prose (§27), so it feeds a
+            // Markdown heading slug like a code span does.
+            InlineNode::LiteralInline(lit) => out.push_str(&lit.content),
             InlineNode::Link(link) => out.push_str(&plain_inlines(&link.children)),
             InlineNode::Image(image) => out.push_str(&image.alt),
             InlineNode::Extension(extension) => out.push_str(&plain_inlines(&extension.children)),
