@@ -77,29 +77,31 @@ fn main() {
     //    / graphviz / math renderers (here stubs) so the static HTML is a finished artifact
     //    with no client scripts. This is the API carve-py will wrap: each
     //    renderer is a boxed closure keyed by extension on StaticRenderers.
-    let mut static_ssr = Options::new()
-        .with_mode(Mode::Static)
-        .with_renderers(StaticRenderers {
-            mermaid: Some(Box::new(|src: &str| {
+    let mut static_ssr = Options::new().with_mode(Mode::Static).with_renderers(
+        StaticRenderers::new()
+            .diagram("mermaid", |src: &str| {
                 format!(
                     "<svg class=\"mermaid\" data-bytes=\"{}\"><!-- pre-rendered --></svg>",
                     src.len()
                 )
-            })),
-            chart: Some(Box::new(|_src: &str| {
+            })
+            .diagram("chart", |_src: &str| {
                 "<img alt=\"chart\" src=\"chart.svg\">".to_string()
-            })),
-            graphviz: Some(Box::new(|_src: &str| {
+            })
+            .diagram("graphviz", |_src: &str| {
                 "<img alt=\"graphviz\" src=\"graph.svg\">".to_string()
-            })),
-            math: Some(Box::new(|tex: &str, display: bool| {
+            })
+            .diagram("plantuml", |_src: &str| {
+                "<img alt=\"plantuml\" src=\"uml.svg\">".to_string()
+            })
+            .math(|tex: &str, display: bool| {
                 format!(
                     "<math display=\"{}\"><!-- {} --></math>",
                     display,
                     tex.trim()
                 )
-            })),
-        });
+            }),
+    );
     for ext in exts {
         static_ssr = static_ssr.with_extension(ext);
     }

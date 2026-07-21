@@ -5,6 +5,7 @@
 //! Implementations register extensions through [`Options`].
 
 use std::collections::BTreeMap;
+use std::collections::HashMap;
 
 use crate::ast::{BlockExtension, BlockNode, Document, InlineExtension, InlineNode};
 use crate::escape::{escape_attr, escape_text};
@@ -58,38 +59,65 @@ pub(crate) type MathRendererRef<'r> = &'r (dyn Fn(&str, bool) -> String + 'stati
 /// diagram, MathML / HTML for math). When the renderer a node needs is absent,
 /// the extension's static path falls back to source - never blank.
 ///
-/// A caller injects a renderer as a boxed closure, for example:
+/// The map is **open**: a diagram renderer is keyed by the fence's css class
+/// (`mermaid`, `chart`, `graphviz`, `plantuml`, or any custom fence word), so a
+/// custom [`FencedRender`] instance is static-capable without any change to this
+/// type. `math` is the one distinct entry (its closure also takes a display
+/// flag). A caller injects renderers with the builder:
 ///
 /// ```
 /// use carve::{Mode, Options, StaticRenderers};
-/// let opts = Options::new()
-///     .with_mode(Mode::Static)
-///     .with_renderers(StaticRenderers {
-///         mermaid: Some(Box::new(|src: &str| format!("<svg data-len=\"{}\"></svg>", src.len()))),
-///         math: Some(Box::new(|tex: &str, display: bool| {
-///             format!("<math data-display=\"{display}\">{tex}</math>")
-///         })),
-///         ..Default::default()
-///     });
+/// let renderers = StaticRenderers::new()
+///     .diagram("mermaid", |src: &str| format!("<svg data-len=\"{}\"></svg>", src.len()))
+///     .diagram("myuml", |src: &str| format!("<img data-len=\"{}\">", src.len()))
+///     .math(|tex: &str, display: bool| format!("<math data-display=\"{display}\">{tex}</math>"));
+/// let opts = Options::new().with_mode(Mode::Static).with_renderers(renderers);
 /// ```
 #[derive(Default)]
 pub struct StaticRenderers {
-    /// Mermaid diagram source -> SVG / HTML string.
-    pub mermaid: Option<DiagramRenderer>,
-    /// Chart config source -> SVG / HTML string.
-    pub chart: Option<DiagramRenderer>,
-    /// Graphviz / DOT source -> SVG / HTML string.
-    pub graphviz: Option<DiagramRenderer>,
+    /// Diagram renderers keyed by fence css class. source -> SVG / HTML string.
+    pub diagrams: HashMap<String, DiagramRenderer>,
     /// Math TeX source -> MathML / HTML string. The `bool` flags display math.
     pub math: Option<MathRenderer>,
 }
 
+impl StaticRenderers {
+    /// An empty renderer set.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Register a diagram renderer under a css-class key (chainable). Any key is
+    /// accepted, including a custom fence word's class.
+    pub fn diagram<F>(mut self, key: impl Into<String>, f: F) -> Self
+    where
+        F: Fn(&str) -> String + 'static,
+    {
+        self.diagrams.insert(key.into(), Box::new(f));
+        self
+    }
+
+    /// Register the math renderer (chainable).
+    pub fn math<F>(mut self, f: F) -> Self
+    where
+        F: Fn(&str, bool) -> String + 'static,
+    {
+        self.math = Some(Box::new(f));
+        self
+    }
+
+    /// Borrow the diagram renderer registered under `key`, if any.
+    pub fn get_diagram(&self, key: &str) -> Option<DiagramRendererRef<'_>> {
+        self.diagrams.get(key).map(|b| b.as_ref())
+    }
+}
+
 impl std::fmt::Debug for StaticRenderers {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut keys: Vec<&str> = self.diagrams.keys().map(String::as_str).collect();
+        keys.sort_unstable();
         f.debug_struct("StaticRenderers")
-            .field("mermaid", &self.mermaid.as_ref().map(|_| "<fn>"))
-            .field("chart", &self.chart.as_ref().map(|_| "<fn>"))
-            .field("graphviz", &self.graphviz.as_ref().map(|_| "<fn>"))
+            .field("diagrams", &keys)
             .field("math", &self.math.as_ref().map(|_| "<fn>"))
             .finish()
     }

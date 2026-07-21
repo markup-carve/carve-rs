@@ -884,7 +884,7 @@ fn fenced_render_mermaid_preset_matches_manual_instance() {
 #[test]
 fn fenced_render_presets_register_all_languages() {
     let presets = FencedRender::presets();
-    assert_eq!(presets.len(), 7);
+    assert_eq!(presets.len(), 8);
     let mut opts = Options::new();
     for ext in &presets {
         opts = opts.with_extension(ext);
@@ -900,6 +900,40 @@ fn fenced_render_presets_register_all_languages() {
     assert!(
         carve::to_html_with_options("``` chart\n{\"type\":\"bar\"}\n```\n", &opts)
             .contains("<div class=\"chart\">")
+    );
+    assert!(
+        carve::to_html_with_options("``` puml\nA -> B\n```\n", &opts)
+            .contains("<pre class=\"plantuml\">")
+    );
+}
+
+#[test]
+fn fenced_render_plantuml_claims_both_fence_words() {
+    let ext = FencedRender::plantuml();
+    let opts = Options::new().with_extension(&ext);
+    assert_eq!(
+        carve::to_html_with_options("``` plantuml\n@startuml\nA -> B\n@enduml\n```\n", &opts),
+        "<pre class=\"plantuml\">@startuml\nA -> B\n@enduml</pre>"
+    );
+    assert_eq!(
+        carve::to_html_with_options("``` puml\nA -> B\n```\n", &opts),
+        "<pre class=\"plantuml\">A -> B</pre>"
+    );
+}
+
+/// PlantUML leans on `<` far harder than Mermaid (`<|--` inheritance,
+/// `<<stereotype>>`). Text mode escapes `&` and `<` but preserves `>`, so a
+/// hydration script reading textContent recovers the original source.
+#[test]
+fn fenced_render_plantuml_escapes_less_than_but_keeps_greater_than() {
+    let ext = FencedRender::plantuml();
+    let opts = Options::new().with_extension(&ext);
+    assert_eq!(
+        carve::to_html_with_options(
+            "``` plantuml\nA <|-- B\nC <<actor>> D\nE --> F\n```\n",
+            &opts
+        ),
+        "<pre class=\"plantuml\">A &lt;|-- B\nC &lt;&lt;actor>> D\nE --> F</pre>"
     );
 }
 

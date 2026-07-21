@@ -346,28 +346,33 @@ with source fallback, and static with build renderers.
 
 ### The renderers map
 
-Client-script extensions (mermaid, chart, math) cannot produce their image
-inside the engine. A static render therefore accepts a **renderers** map of
-boxed closures keyed by extension. When the needed renderer is absent, the
-static path falls back to source - never blank.
+Client-script extensions (mermaid, chart, plantuml, math, …) cannot produce
+their image inside the engine. A static render therefore accepts a **renderers**
+map. It is **open**: a diagram renderer is keyed by the fence's css class, so a
+custom `FencedRender` instance is static-capable with no change to the type.
+When the needed renderer is absent, the static path falls back to source - never
+blank.
 
 ```rust
 use carve::{Mode, Options, StaticRenderers};
 let opts = Options::new()
     .with_mode(Mode::Static)
-    .with_renderers(StaticRenderers {
-        // src -> SVG / <img> for mermaid diagrams
-        mermaid: Some(Box::new(|src: &str| pre_render_mermaid(src))),
-        // config src -> SVG / <img> for charts
-        chart: Some(Box::new(|src: &str| pre_render_chart(src))),
-        // (tex, display) -> MathML / HTML for server-side math
-        math: Some(Box::new(|tex: &str, display: bool| ssr_math(tex, display))),
-    });
+    .with_renderers(
+        StaticRenderers::new()
+            // src -> SVG / <img>, keyed by fence css class
+            .diagram("mermaid", |src: &str| pre_render_mermaid(src))
+            .diagram("chart", |src: &str| pre_render_chart(src))
+            // a custom fence word works the same way, no engine change:
+            .diagram("myuml", |src: &str| pre_render_myuml(src))
+            // (tex, display) -> MathML / HTML for server-side math
+            .math(|tex: &str, display: bool| ssr_math(tex, display)),
+    );
 ```
 
-`mermaid` / `chart` are `Box<dyn Fn(&str) -> String>` (`DiagramRenderer`);
-`math` is `Box<dyn Fn(&str, bool) -> String>` (`MathRenderer`), where the `bool`
-is `true` for display math. Renderer output is trusted and emitted verbatim.
+Diagram renderers are `Box<dyn Fn(&str) -> String>` (`DiagramRenderer`) held in
+an open `diagrams: HashMap<String, _>` keyed by css class; `math` is
+`Box<dyn Fn(&str, bool) -> String>` (`MathRenderer`), where the `bool` is `true`
+for display math. Renderer output is trusted and emitted verbatim.
 
 ### Per-extension static output
 
@@ -385,7 +390,7 @@ bare labeled `:::` div).
 | Spoiler block (`::: spoiler`) | `<details class="spoiler"><summary>T</summary>…</details>` | `<section class="spoiler spoiler-revealed"><h3 class="spoiler-title">T</h3>…</section>` |
 | FencedRender mermaid | `<pre class="mermaid">…</pre>` (client-hydration) | `renderers.mermaid` output, else `<pre class="mermaid"><code class="language-mermaid">…\n</code></pre>` (source, fence attrs preserved) |
 | FencedRender chart | `<div class="chart"><script type="application/json">…</script></div>` | `renderers.chart` output, else `<pre class="chart"><code class="language-chart">…\n</code></pre>` (no `<script>`) |
-| FencedRender other presets (d2, graphviz, …) | `<pre class="lang">…</pre>` | always source `<pre><code>` (no build renderer) |
+| FencedRender other presets / custom (d2, graphviz, plantuml, `myuml`, …) | `<pre class="lang">…</pre>` | `renderers.diagram("lang")` output if supplied (keyed by css class), else source `<pre><code>` |
 | MathBlock (` ```math `) | `<div class="math display">\[…\]</div>` | `renderers.math(src, true)` output inside the div, else the same `\[…\]` source |
 | Core inline / display math (`$…$` / `$$…$$`) | `<span class="math {inline,display}">\(…\)</span>` | `renderers.math(src, display)` output inside the span, else the same `\(…\)` / `\[…\]` source |
 
