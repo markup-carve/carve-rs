@@ -276,6 +276,7 @@ fn reference_prepass_does_not_open_residual_indented_fence() {
 #[test]
 fn reference_prepass_skips_defs_inside_list_nested_fences() {
     let cases = [
+        "- ```\n  [r]: /nope\n  ```\n\n[x][r]",
         "- one\n  ```\n  [r]: /u\n  ```\n\n[r][]",
         "1. one\n   ```\n   [r]: /u\n   ```\n\n[r][]",
         "a. one\n   ```\n   [r]: /u\n   ```\n\n[r][]",
@@ -289,6 +290,40 @@ fn reference_prepass_skips_defs_inside_list_nested_fences() {
             "definition inside list-nested fence resolved for:\n{src}"
         );
     }
+}
+
+#[test]
+fn reference_prepass_fence_closer_never_strips_list_markers() {
+    let cases = [
+        "```\n- ```\n[r]: /u\n```\n\n[r][]",
+        "```\n1. ```\n[r]: /u\n```\n\n[r][]",
+    ];
+    for src in cases {
+        assert!(
+            !html(src).contains("href=\"/u\""),
+            "definition inside document fence resolved for:\n{src}"
+        );
+    }
+}
+
+#[test]
+fn reference_prepass_quoted_fence_closer_is_quote_only() {
+    assert!(
+        !html("```\n> ```\n[r]: /u\n```\n\n[r][]").contains("href=\"/u\""),
+        "literal quoted marker line closed a document fence"
+    );
+    assert!(
+        !html("> ```\n> [r]: /u\n> ```\n\n[r][]").contains("href=\"/u\""),
+        "definition inside quoted fence resolved"
+    );
+    assert!(
+        html("- > ```\n  > code\n  > ```\n\n[r]: /u\n\n[r][]").contains("href=\"/u\""),
+        "definition after quoted fence in bullet item did not resolve"
+    );
+    assert!(
+        html("- [ ] > ```\n  > code\n  > ```\n\n[r]: /u\n\n[r][]").contains("href=\"/u\""),
+        "definition after quoted fence in task item did not resolve"
+    );
 }
 
 #[test]
