@@ -21,10 +21,12 @@ pub mod fenced_render;
 pub mod glossary;
 pub mod heading_numbers;
 pub mod heading_permalinks;
+pub mod img_fence;
 pub mod index_terms;
 pub mod list_table;
 pub mod math_block;
 pub mod spoiler;
+pub mod svg_sanitize;
 pub mod tab_normalize;
 pub mod table_of_contents;
 pub mod wikilinks;
@@ -38,10 +40,12 @@ pub use fenced_render::{ContentMode, FencedRender, FencedRenderOptions};
 pub use glossary::Glossary;
 pub use heading_numbers::{CrossrefStyle, HeadingNumbers, HeadingNumbersOptions};
 pub use heading_permalinks::{HeadingPermalinks, HeadingPermalinksOptions};
+pub use img_fence::ImgFence;
 pub use index_terms::Index;
 pub use list_table::ListTable;
 pub use math_block::{MathBlock, MathBlockOptions};
 pub use spoiler::Spoiler;
+pub use svg_sanitize::{sanitize_svg, SanitizeResult, SanitizeSvgOptions};
 pub use tab_normalize::TabNormalize;
 pub use table_of_contents::{
     ListType, Position, TableOfContents, TableOfContentsOptions, TocPlacement,

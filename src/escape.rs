@@ -117,7 +117,7 @@ pub fn escape_attr(input: &str) -> String {
 /// emitted (link href, image src, autolinks, and `{href=...}`/`{src=...}`
 /// attribute overrides), case-insensitively and after the existing
 /// obfuscation defenses.
-const DANGEROUS_VALUE_SCHEMES: [&str; 23] = [
+pub(crate) const DANGEROUS_VALUE_SCHEMES: [&str; 23] = [
     "javascript",
     "vbscript",
     "data",
