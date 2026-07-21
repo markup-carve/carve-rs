@@ -148,6 +148,8 @@ const IMPLEMENTED: &[&str] = &[
     "133-footnote-definition-separator-must-be-a-space",
     "134-link-reference-definition-separator-must-be-a-space",
     "135-abbreviation-definition-separator-must-be-a-space",
+    "136-unclaimed-openers-stay-literal",
+    "137-include-directive-with-no-resolver-renders-literal",
 ];
 
 fn corpus_dir() -> PathBuf {

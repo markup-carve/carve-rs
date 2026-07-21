@@ -28,6 +28,11 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --all-targets
       - run: cargo test
+      # Cross-engine include-conformance gate: asserts rs == carve-js on every
+      # §19 include vector vendored via the tests/spec submodule. Run explicitly
+      # (not behind any feature flag) so a divergence is an unmistakable, named
+      # CI failure; `cargo test` already covers it, this pins it as a gate.
+      - run: cargo test --test include_conformance
 
   lints:
     name: rustfmt + clippy
