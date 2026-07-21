@@ -190,3 +190,368 @@ fn adjacent_lists_separated_by_marker_stay_separate() {
         assert_eq!(carve::to_html(&f1), carve::to_html(src));
     }
 }
+
+// ---------------------------------------------------------------------------
+// I1: `carve fmt` preserves include directives
+// ---------------------------------------------------------------------------
+
+/// The core has no directive node - `{{ path }}` is plain TEXT (I1) - so the
+/// serializer used to escape it like any other punctuation-bearing text and
+/// write `\{\{ path \}\}`.
+///
+/// The formatter's existing invariant, `to_html(fmt(x)) == to_html(x)`, cannot
+/// see that: the escaped form renders as the very same literal text, so the
+/// suite stayed green while every include in a formatted document was
+/// destroyed. Nothing looks broken until a resolver runs and the chapters have
+/// silently vanished.
+///
+/// These tests therefore assert the INTENT instead: EXPANDING the formatted
+/// document must give the same result - same HTML and same dependency set - as
+/// expanding the original.
+mod include_directives_survive_formatting {
+    use carve::{expand_includes, parse, render_html, IncludeOptions, IncludeResolved};
+
+    const FILES: &[(&str, &str)] = &[
+        ("chapter.crv", "# Chapter\n\nBody."),
+        ("my chapter.crv", "Spaced body."),
+        (
+            "book.crv",
+            "# A\n\nskip\n\n{#intro}\n# Intro\n\nIntro body.",
+        ),
+        ("lines.crv", "skip\nOne\nTwo\nskip"),
+        ("shift.crv", "# Shifted"),
+        ("inline.crv", "inline body"),
+        // Two addressable sections, for directives that must BOTH survive in
+        // one run while selecting different parts of the same file.
+        (
+            "two.crv",
+            "{#intro}\n# Intro\n\nIntro body.\n\n{#outro}\n# Outro\n\nOutro body.",
+        ),
+        ("x.crv", "XXX"),
+        ("y.crv", "YYY"),
+        ("z.crv", "ZZZ"),
+    ];
+
+    struct Expansion {
+        html: String,
+        dependencies: Vec<(String, bool)>,
+        rules: Vec<String>,
+    }
+
+    fn expand(source: &str) -> Expansion {
+        let resolver = |path: &str, _ctx: &carve::IncludeContext<'_>| {
+            FILES
+                .iter()
+                .find(|(name, _)| *name == path)
+                .map(|(_, body)| IncludeResolved::from(*body))
+        };
+        let opts = IncludeOptions::new().with_resolver(&resolver);
+        let result = expand_includes(parse(source), source, &opts);
+        Expansion {
+            html: render_html(&result.doc),
+            dependencies: result
+                .dependencies
+                .iter()
+                .map(|d| (d.id.clone(), d.resolved))
+                .collect(),
+            rules: result.warnings.iter().map(|w| w.rule.clone()).collect(),
+        }
+    }
+
+    /// The real assertion: formatting must not change what the document
+    /// INCLUDES, which the round-trip invariant could never express.
+    fn assert_survives(source: &str) {
+        let formatted = carve::to_carve(source);
+        let before = expand(source);
+        let after = expand(&formatted);
+        assert_eq!(
+            after.html, before.html,
+            "formatting changed the expanded output of {source:?} (formatted: {formatted:?})"
+        );
+        assert_eq!(
+            after.dependencies, before.dependencies,
+            "formatting changed the dependency set of {source:?} (formatted: {formatted:?})"
+        );
+        // A directive that is preserved but whose DIAGNOSTICS are lost is
+        // still a regression: the warning is the only thing that tells the
+        // author their typo is a typo.
+        assert_eq!(
+            after.rules, before.rules,
+            "formatting changed the include warnings of {source:?} (formatted: {formatted:?})"
+        );
+        assert_eq!(
+            carve::to_carve(&formatted),
+            formatted,
+            "formatting {source:?} is not idempotent"
+        );
+    }
+
+    #[test]
+    fn bare_path_is_preserved() {
+        assert_eq!(
+            carve::to_carve("{{ chapter.crv }}\n"),
+            "{{ chapter.crv }}\n"
+        );
+        assert_survives("{{ chapter.crv }}\n");
+    }
+
+    #[test]
+    fn quoted_path_with_spaces_is_preserved() {
+        // Also pins that the path is NOT run through smart typography, which
+        // would curl the quotes into a path naming a different file.
+        assert_eq!(
+            carve::to_carve("{{ \"my chapter.crv\" }}\n"),
+            "{{ \"my chapter.crv\" }}\n"
+        );
+        assert_survives("{{ \"my chapter.crv\" }}\n");
+    }
+
+    #[test]
+    fn section_selection_is_preserved() {
+        // `#intro` arrives as a Tag node, so recognition has to reassemble the
+        // run exactly as expansion does (I9a).
+        assert_eq!(
+            carve::to_carve("{{ book.crv #intro }}\n"),
+            "{{ book.crv #intro }}\n"
+        );
+        assert_survives("{{ book.crv #intro }}\n");
+    }
+
+    #[test]
+    fn line_range_option_is_preserved() {
+        assert_eq!(
+            carve::to_carve("{{ lines.crv @lines:2-3 }}\n"),
+            "{{ lines.crv @lines:2-3 }}\n"
+        );
+        assert_survives("{{ lines.crv @lines:2-3 }}\n");
+    }
+
+    #[test]
+    fn shift_options_are_preserved() {
+        // `@shift:2` arrives as a Mention node.
+        assert_eq!(
+            carve::to_carve("{{ shift.crv @shift:2 }}\n"),
+            "{{ shift.crv @shift:2 }}\n"
+        );
+        assert_survives("{{ shift.crv @shift:2 }}\n");
+        assert_eq!(
+            carve::to_carve("{{ shift.crv @shift:auto }}\n"),
+            "{{ shift.crv @shift:auto }}\n"
+        );
+        assert_survives("# Top\n\n{{ shift.crv @shift:auto }}\n");
+    }
+
+    #[test]
+    fn inline_directive_within_a_sentence_is_preserved() {
+        assert_eq!(
+            carve::to_carve("See {{ inline.crv }} now.\n"),
+            "See {{ inline.crv }} now\\.\n"
+        );
+        assert_survives("See {{ inline.crv }} now.\n");
+    }
+
+    #[test]
+    fn directives_in_code_are_left_exactly_as_the_core_produces_them() {
+        // I9: code is verbatim and the directive is inert there, so the
+        // serializer must not treat it specially - the code paths already emit
+        // their content raw, and that must not regress into unescaping.
+        assert_eq!(
+            carve::to_carve("`{{ chapter.crv }}`\n"),
+            "`{{ chapter.crv }}`\n"
+        );
+        assert_eq!(
+            carve::to_carve("```txt\n{{ chapter.crv }}\n```\n"),
+            "``` txt\n{{ chapter.crv }}\n```\n"
+        );
+        // And they stay inert after formatting.
+        assert_survives("`{{ chapter.crv }}`\n");
+        assert_survives("```txt\n{{ chapter.crv }}\n```\n");
+    }
+
+    #[test]
+    fn runs_that_are_not_shape_well_formed_are_still_escaped_as_ordinary_text() {
+        // No closing `}}`.
+        assert_eq!(carve::to_carve("{{ oops\n"), "\\{\\{ oops\n");
+        // Closes, but carries no path token at all.
+        assert_eq!(carve::to_carve("{{ }}\n"), "\\{\\{ \\}\\}\n");
+        // A section or options but no path is likewise not a directive.
+        assert_eq!(carve::to_carve("{{ #intro }}\n"), "\\{\\{ #intro \\}\\}\n");
+        assert_eq!(
+            carve::to_carve("{{ @lines:2-4 }}\n"),
+            "\\{\\{ @lines\\:2\\-4 \\}\\}\n"
+        );
+        // The quoted form can spell an empty or whitespace-only path where the
+        // bare form cannot; neither is a directive. Their quotes get CURLED,
+        // which is itself the proof that they took the ordinary-text path: the
+        // directive branch bypasses smart typography precisely so a real
+        // quoted path is never curled into a name for a different file.
+        assert_eq!(
+            carve::to_carve("{{ \"\" }}\n"),
+            "\\{\\{ \u{201c}\u{201c} \\}\\}\n"
+        );
+        assert_eq!(
+            carve::to_carve("{{ \"   \" }}\n"),
+            "\\{\\{ \u{201c}   \u{201c} \\}\\}\n"
+        );
+        assert_survives("{{ oops\n");
+        assert_survives("{{ }}\n");
+        assert_survives("{{ #intro }}\n");
+        assert_survives("{{ @lines:2-4 }}\n");
+        assert_survives("{{ \"\" }}\n");
+        assert_survives("{{ \"   \" }}\n");
+        // The empty token between two real directives is escaped without
+        // taking its neighbors: both of those still expand.
+        assert_survives("a {{ x.crv }} b {{ \"\" }} c {{ y.crv }} d\n");
+    }
+
+    /// Preservation is scoped to SHAPE, not validity (spec I1).
+    ///
+    /// `@bogus:1` is an invalid option, but the run is unmistakably a
+    /// directive: it opens, closes, and names a path. Escaping it would freeze
+    /// a one-character typo into permanent literal text AND silently drop the
+    /// `include-unknown-option` warning that names the mistake - turning a
+    /// fixable error into prose that merely looks like an error. Option
+    /// validity is an expansion-time DIAGNOSTIC, never a preservation gate.
+    #[test]
+    fn a_shaped_directive_with_an_invalid_option_is_preserved_with_its_warning() {
+        assert_eq!(
+            carve::to_carve("{{ chapter.crv @bogus:1 }}\n"),
+            "{{ chapter.crv @bogus:1 }}\n"
+        );
+        assert_eq!(
+            expand("{{ chapter.crv @bogus:1 }}\n").rules,
+            ["include-unknown-option"]
+        );
+        assert_survives("{{ chapter.crv @bogus:1 }}\n");
+    }
+
+    /// Same rule for the other selector: a `#section` the target does not have
+    /// is a diagnostic (`include-section`), so the directive round-trips and
+    /// the warning still fires on the formatted document.
+    #[test]
+    fn a_shaped_directive_with_a_missing_section_is_preserved_with_its_warning() {
+        assert_eq!(
+            carve::to_carve("{{ book.crv #nope }}\n"),
+            "{{ book.crv #nope }}\n"
+        );
+        assert_eq!(expand("{{ book.crv #nope }}\n").rules, ["include-section"]);
+        assert_survives("{{ book.crv #nope }}\n");
+    }
+
+    // -----------------------------------------------------------------------
+    // More than ONE directive per run
+    // -----------------------------------------------------------------------
+
+    /// Every fixture above uses a SINGLE directive, which is exactly how this
+    /// bug class stays invisible: an implementation that preserves the first
+    /// directive and escapes the rest of the run passes all of them. carve-php
+    /// had precisely that defect - it escaped the remainder wholesale instead
+    /// of rescanning it - so `a {{ x }} b {{ y }} c` silently lost `{{ y }}`
+    /// with two FULLY VALID directives.
+    ///
+    /// rs rescans (`split_run_directives` advances a cursor past each match and
+    /// keeps looking), so it is correct here. These pin that property rather
+    /// than trusting the loop to stay that way. Verified to be load-bearing:
+    /// with the rescan disabled all four tests below fail while every
+    /// single-directive test above still passes.
+    #[test]
+    fn every_directive_in_a_run_is_preserved_not_just_the_first() {
+        for source in [
+            // Two, three, four - prose between each.
+            "a {{ x.crv }} b {{ y.crv }} c\n",
+            "a {{ x.crv }} b {{ y.crv }} c {{ z.crv }} d\n",
+            "{{ x.crv }} a {{ y.crv }} b {{ z.crv }} c {{ chapter.crv }}\n",
+            // No prose between them at all.
+            "{{ x.crv }}{{ y.crv }}\n",
+            "{{ x.crv }} {{ y.crv }}\n",
+            // First and last position in the run, nothing outside them.
+            "{{ x.crv }} middle prose {{ y.crv }}\n",
+        ] {
+            assert_eq!(carve::to_carve(source), source, "not preserved: {source:?}");
+            assert_survives(source);
+        }
+    }
+
+    /// The highest-risk shape: `#section` parses to a Tag and `@option` to a
+    /// Mention, so these runs are Text+Tag+Mention+Text sequences rather than
+    /// one text node. A per-text-node scan finds none of them, and a scan that
+    /// stops after the first match keeps only the leading one.
+    #[test]
+    fn multiple_sectioned_and_optioned_directives_all_survive_one_run() {
+        for source in [
+            "a {{ two.crv #intro }} b {{ two.crv #outro }} c\n",
+            "a {{ lines.crv @lines:2-3 }} b {{ shift.crv @shift:2 }} c\n",
+            "a {{ two.crv #intro }} b {{ shift.crv @shift:auto }} c {{ lines.crv @lines:1-2 }} d\n",
+            "{{ two.crv #intro @shift:1 }} x {{ two.crv #outro @shift:2 }}\n",
+        ] {
+            assert_eq!(carve::to_carve(source), source, "not preserved: {source:?}");
+            assert_survives(source);
+        }
+    }
+
+    /// A run that mixes preservable and non-preservable directives must handle
+    /// each on its own merits: the invalid one is escaped as ordinary text and
+    /// the valid ones AROUND it - including the ones AFTER it - still survive.
+    /// An implementation that bailed out of the run at the first non-match
+    /// would silently drop everything downstream.
+    #[test]
+    fn an_unpreservable_directive_does_not_take_the_rest_of_the_run_with_it() {
+        // Empty path in the middle: escaped, both neighbors intact.
+        assert_eq!(
+            carve::to_carve("a {{ x.crv }} b {{ }} c {{ y.crv }} d\n"),
+            "a {{ x.crv }} b \\{\\{ \\}\\} c {{ y.crv }} d\n"
+        );
+        assert_survives("a {{ x.crv }} b {{ }} c {{ y.crv }} d\n");
+
+        // Unclosed opener trailing a valid directive: only the opener escapes.
+        assert_eq!(
+            carve::to_carve("a {{ x.crv }} b {{ oops\n"),
+            "a {{ x.crv }} b \\{\\{ oops\n"
+        );
+        assert_survives("a {{ x.crv }} b {{ oops\n");
+
+        // A merely mis-OPTIONED directive is shape-well-formed, so all three
+        // are preserved and the middle one keeps its warning.
+        let mixed = "a {{ x.crv }} b {{ z.crv @bogus:1 }} c {{ y.crv }} d\n";
+        assert_eq!(carve::to_carve(mixed), mixed);
+        assert_eq!(expand(mixed).rules, ["include-unknown-option"]);
+        assert_survives(mixed);
+    }
+
+    /// Directives spread across blocks, and across block vs inline position,
+    /// are independent of each other.
+    #[test]
+    fn directives_survive_across_separate_blocks_and_mixed_positions() {
+        for source in [
+            "{{ x.crv }}\n\n{{ y.crv }}\n\n{{ z.crv }}\n",
+            "{{ x.crv }}\n\nprose {{ y.crv }} prose\n",
+            "prose {{ x.crv }} prose\n\n{{ y.crv }}\n",
+            "- a {{ x.crv }} b {{ y.crv }} c\n",
+            "> a {{ x.crv }} b {{ y.crv }} c\n",
+            "# a {{ x.crv }} b {{ y.crv }}\n",
+        ] {
+            assert_eq!(carve::to_carve(source), source, "not preserved: {source:?}");
+            assert_survives(source);
+        }
+    }
+
+    #[test]
+    fn preserved_directives_are_idempotent_under_repeated_formatting() {
+        for source in [
+            "{{ chapter.crv }}\n",
+            "{{ \"my chapter.crv\" }}\n",
+            "{{ book.crv #intro }}\n",
+            "{{ lines.crv @lines:2-3 }}\n",
+            "{{ shift.crv @shift:auto }}\n",
+            "See {{ inline.crv }} now.\n",
+            // Multi-directive runs must be idempotent too: a formatter that
+            // re-escaped on the second pass would corrupt an already-clean file.
+            "a {{ x.crv }} b {{ y.crv }} c {{ z.crv }} d\n",
+            "a {{ two.crv #intro }} b {{ shift.crv @shift:2 }} c\n",
+            "a {{ x.crv }} b {{ }} c {{ y.crv }} d\n",
+        ] {
+            let once = carve::to_carve(source);
+            assert_eq!(carve::to_carve(&once), once, "not idempotent: {source:?}");
+        }
+    }
+}
