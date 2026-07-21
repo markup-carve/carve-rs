@@ -29,8 +29,9 @@ fn main() -> ExitCode {
     let spoiler = carve::Spoiler::new();
     let code_callouts = carve::CodeCallouts::new();
     let color_swatch = carve::ColorSwatch::new();
-    let mermaid = carve::FencedRender::mermaid();
-    let chart = carve::FencedRender::chart();
+    // Every FencedRender diagram preset (mermaid, plantuml, d2, dot/graphviz,
+    // wavedrom, abc, vega-lite, chart), owned here so it outlives `options`.
+    let fenced_presets = carve::FencedRender::presets();
     let math_block = carve::MathBlock::new();
 
     let mut options = carve::Options::new();
@@ -144,9 +145,10 @@ fn main() -> ExitCode {
             .with_extension(&spoiler)
             .with_extension(&code_callouts)
             .with_extension(&color_swatch)
-            .with_extension(&mermaid)
-            .with_extension(&chart)
             .with_extension(&math_block);
+        for preset in &fenced_presets {
+            options = options.with_extension(preset);
+        }
     }
 
     let source = match input_paths.first().map(String::as_str) {
@@ -296,8 +298,9 @@ fn print_usage() {
          --interactive               live HTML (default)\n\n\
          Options:\n  \
          --extensions                enable the bundled interactive extensions\n                              \
-         (details, spoiler, code-callouts, color, mermaid, chart, math);\n                              \
-         needed for --static to flatten/degrade those constructs\n  \
+         (details, spoiler, code-callouts, color, math, and every diagram\n                              \
+         preset: mermaid, plantuml, d2, graphviz, wavedrom, abc, vega-lite,\n                              \
+         chart); needed for --static to flatten/degrade those constructs\n  \
          --mention-url TEMPLATE      render @mentions as links (HTML only)\n  \
          --tag-url TEMPLATE          render #tags as links (HTML only)\n  \
          --symbol NAME=VALUE         map :NAME: to VALUE (repeatable)\n  \
