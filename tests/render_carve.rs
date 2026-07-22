@@ -198,23 +198,17 @@ fn all_space_verbatim_content_round_trips() {
     // spaces on every fmt pass, breaking both fmt guarantees. Covers the code
     // span, inline literal and math paths, which share one strip helper.
     for src in [
-        "` `",
-        "`  `",
-        "`   `",
-        "!` `",
-        "!`  `",
-        "!`   `",
-        "$` x `",
-        "$`  `",
-        "``  ``",
-        "!``  ``",
-        "`a b`",
-        "` a `",
+        "` `", "`  `", "`   `", "!` `", "!`  `", "!`   `", "$` x `", "$`  `", "``  ``", "!``  ``",
+        "`a b`", "` a `",
     ] {
         let f1 = carve::to_carve(src);
         let f1 = f1.trim_end();
         // fmt(fmt(x)) == fmt(x)
-        assert_eq!(carve::to_carve(f1).trim_end(), f1, "not idempotent: {src:?}");
+        assert_eq!(
+            carve::to_carve(f1).trim_end(),
+            f1,
+            "not idempotent: {src:?}"
+        );
         // to_html(fmt(x)) == to_html(x)
         assert_eq!(
             carve::to_html(f1),
