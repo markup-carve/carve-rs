@@ -151,6 +151,7 @@ const IMPLEMENTED: &[&str] = &[
     "136-unclaimed-openers-stay-literal",
     "137-inline-literal",
     "138-all-space-verbatim-content",
+    "139-trailing-whitespace-boundaries",
 ];
 
 fn corpus_dir() -> PathBuf {
