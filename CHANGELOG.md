@@ -12,6 +12,17 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   require a leading word boundary, require an ASCII alphanumeric first name
   character, and support trailing attrs via an HTML `<span>` wrapper.
 
+### Fixed
+
+- **Never pad all-space verbatim content in `carve fmt`.** A verbatim span whose
+  content is entirely spaces was padded by the serializer even though the parser
+  correctly leaves it unstripped, so every fmt pass grew the span by two spaces
+  (`` ` ` `` → `` `   ` `` → `` `     ` ``) and broke both formatter guarantees,
+  `to_html(fmt(x)) == to_html(x)` and `fmt(fmt(x)) == fmt(x)`. Code spans, the
+  inline literal and math were all affected. The serializer now pads exactly
+  where the parser strips, and the closed and unclosed verbatim paths share one
+  `strip_verbatim_padding` helper so they cannot drift apart.
+
 ### Added
 
 - **Inline literal** via the `` !`…` `` prefix (#245): a `!` immediately before a

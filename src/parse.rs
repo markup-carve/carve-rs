@@ -5462,6 +5462,23 @@ fn is_escapable(b: u8) -> bool {
     )
 }
 
+// The closed-verbatim-span single-space strip: one leading and one trailing
+// space are removed when the content BOTH begins and ends with a space -- but
+// NOT when it consists entirely of spaces. The all-space guard matches the
+// executable spec's `codeText()` and the CommonMark rule it derives from
+// ("...but does not consist entirely of space characters"). Without the guard
+// `` `  ` `` would strip to the empty string, and an empty verbatim span has no
+// representable Carve source (a bare `` `` `` reparses as a two-backtick
+// opener), so `carve fmt` could not round-trip it. Shared by the closed and
+// unclosed verbatim paths so the two cannot drift apart.
+fn strip_verbatim_padding(raw: &str) -> &str {
+    if raw.starts_with(' ') && raw.ends_with(' ') && !raw.chars().all(|c| c == ' ') {
+        &raw[1..raw.len() - 1]
+    } else {
+        raw
+    }
+}
+
 fn parse_inline_code(bytes: &[u8], start: usize) -> Option<(String, usize)> {
     // Count opening backticks
     let mut i = start;
@@ -5486,26 +5503,14 @@ fn parse_inline_code(bytes: &[u8], start: usize) -> Option<(String, usize)> {
         let close_len = i - close_start;
         if close_len == open_len {
             let raw = std::str::from_utf8(&bytes[content_start..close_start]).ok()?;
-            // Per CommonMark/JS: trim one leading and one trailing space if both ends are spaces.
-            let trimmed =
-                if raw.starts_with(' ') && raw.ends_with(' ') && !raw.chars().all(|c| c == ' ') {
-                    &raw[1..raw.len() - 1]
-                } else {
-                    raw
-                };
-            return Some((trimmed.to_string(), i - start));
+            return Some((strip_verbatim_padding(raw).to_string(), i - start));
         }
         // Different length closer — keep scanning past it
     }
     // No matching closer: an unclosed verbatim opener is opaque to the end of
     // the text (matches djot / carve-php / carve-js).
     let raw = std::str::from_utf8(&bytes[content_start..]).ok()?;
-    let trimmed = if raw.starts_with(' ') && raw.ends_with(' ') && !raw.chars().all(|c| c == ' ') {
-        &raw[1..raw.len() - 1]
-    } else {
-        raw
-    };
-    Some((trimmed.to_string(), bytes.len() - start))
+    Some((strip_verbatim_padding(raw).to_string(), bytes.len() - start))
 }
 
 fn parse_image_at(bytes: &[u8], start: usize, bounds: &InlineBounds<'_>) -> Option<(Image, usize)> {
