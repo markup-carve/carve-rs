@@ -207,51 +207,126 @@ fn nested_images(n: usize) -> String {
     s
 }
 
-/// Run each size a few times, take the minimum to damp scheduler noise, and
-/// assert the larger size is well under a quadratic multiple of the smaller
-/// while staying within an absolute wall-clock bound. A quadratic parse gives
-/// ~4x for a 2x input; linear gives ~2x.
+/// Interleaved, median-of-three, PER-BYTE scaling sample.
 ///
-/// NOTE: these sizes (100k / 200k `[`, i.e. ~400 KB / ~800 KB of input) are
-/// chosen to expose a quadratic *constant* -- the old n=4000/8000 sizes ran in
-/// low single-digit milliseconds and could not distinguish linear from
-/// quadratic through scheduler noise. Run against a release build
-/// (`cargo test --release`); a debug build is ~10-20x slower and may exceed the
-/// absolute bound without any regression.
+/// The guards below used to time the small size a few times, then the large
+/// size a few times, and compare the two totals. That is mis-calibrated rather
+/// than merely unlucky: a healthy parse measures ~2x for a 2x input, so a "< 3x"
+/// threshold sat only 1.5x above the expected value, and either sample could be
+/// taken while the runner was busy. carve-js and carve-php hit exactly this and
+/// were reworked the same way.
+///
+/// Three changes make the assertion robust without weakening it:
+///
+/// - Compare cost PER BYTE, not total elapsed. "Linear" means per-byte cost is
+///   constant as input grows, so a healthy parse measures ~1 and a quadratic one
+///   measures the size multiple itself. With the 4x multiple used here the
+///   threshold sits midway between 1 and 4 instead of between 2 and 4. This is
+///   also build-invariant: a debug build is ~10-20x slower per byte, but
+///   uniformly so, and the ratio is unchanged.
+/// - INTERLEAVE the sizes. Timing all the small runs and then all the large runs
+///   lets a runner busy for only part of the test skew one side of the ratio;
+///   alternating means load drift lands on both.
+/// - Take the MEDIAN of the rounds. A mean is still dragged by one stall, and a
+///   minimum throws away the fact that the machine was loaded at all.
+struct Scaling {
+    small_secs: f64,
+    large_secs: f64,
+    small_per_byte: f64,
+    large_per_byte: f64,
+}
+
+impl Scaling {
+    /// Per-byte growth across the size multiple: ~1 when linear, ~SIZE_MULTIPLE
+    /// when quadratic.
+    fn per_byte_ratio(&self) -> f64 {
+        self.large_per_byte / self.small_per_byte.max(f64::MIN_POSITIVE)
+    }
+}
+
+/// Small/large input sizes. A 4x multiple separates linear (~1x per byte) from
+/// quadratic (~4x per byte) far more cleanly than the doubling it replaces, and
+/// costs less total work than the old min-of-5/min-of-7 at 100k/200k did.
+const SCALE_SMALL_N: usize = 50_000;
+const SCALE_LARGE_N: usize = 200_000;
+const SCALE_ROUNDS: usize = 3;
+
+/// A healthy parse measures ~1.0 (worst real shape here measured 1.16); a
+/// quadratic parse measures ~4.0. Sitting at 2.0 leaves roughly a 1.7x margin
+/// above the noisiest healthy shape and a 2x margin below a real regression.
+const SCALE_MAX_PER_BYTE_RATIO: f64 = 2.0;
+
+fn measure_scaling(build: &impl Fn(usize) -> String) -> Scaling {
+    let small = build(SCALE_SMALL_N);
+    let large = build(SCALE_LARGE_N);
+    let small_bytes = small.len() as f64;
+    let large_bytes = large.len() as f64;
+
+    // Prime caches/allocator so round 1 does not measure warm-up.
+    let _ = carve::to_html(&small);
+    let _ = carve::to_html(&large);
+
+    let time_once = |source: &str| {
+        let start = Instant::now();
+        let _ = carve::to_html(source);
+        start.elapsed().as_secs_f64()
+    };
+
+    let mut small_samples = Vec::with_capacity(SCALE_ROUNDS);
+    let mut large_samples = Vec::with_capacity(SCALE_ROUNDS);
+    for _ in 0..SCALE_ROUNDS {
+        small_samples.push(time_once(&small));
+        large_samples.push(time_once(&large));
+    }
+
+    let median = |mut xs: Vec<f64>| -> f64 {
+        xs.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        xs[xs.len() / 2]
+    };
+
+    let small_secs = median(small_samples);
+    let large_secs = median(large_samples);
+
+    Scaling {
+        small_secs,
+        large_secs,
+        small_per_byte: small_secs / small_bytes,
+        large_per_byte: large_secs / large_bytes,
+    }
+}
+
+/// Assert `build(n)` parses without an O(n^2) blowup.
+///
+/// NOTE: these sizes (50k / 200k, i.e. ~200 KB / ~800 KB of input) are chosen to
+/// expose a quadratic *constant* -- the old n=4000/8000 sizes ran in low
+/// single-digit milliseconds and could not distinguish linear from quadratic
+/// through scheduler noise. Run against a release build (`cargo test --release`);
+/// a debug build is ~10-20x slower and may exceed the absolute bound without any
+/// regression, though the per-byte ratio itself is build-invariant.
 fn assert_near_linear(build: impl Fn(usize) -> String, label: &str) {
-    fn min_parse_time(source: &str) -> f64 {
-        (0..5)
-            .map(|_| {
-                let start = Instant::now();
-                let _ = carve::to_html(source);
-                start.elapsed().as_secs_f64()
-            })
-            .fold(f64::INFINITY, f64::min)
-    }
+    let scaling = measure_scaling(&build);
 
-    let small = build(100_000);
-    let large = build(200_000);
-
-    let t_small = min_parse_time(&small);
-    let t_large = min_parse_time(&large);
-
-    if t_small > 0.0 {
-        let ratio = t_large / t_small;
-        assert!(
-            ratio < 3.0,
-            "{label} parse scaling looks super-linear: {t_small:.4}s -> {t_large:.4}s (ratio {ratio:.1}x)"
-        );
-    }
-
-    // Absolute wall-clock guard, catastrophic-only: the ratio check above is the
-    // real (build-invariant) quadratic detector. This bound just backstops a full
-    // O(n^2) reintroduction. CI runs `cargo test` in DEBUG, ~10-20x slower per
-    // byte than release, so n=200000 legitimately takes ~2 s here; a wide 30 s
-    // bound tolerates a loaded debug runner while a reintroduced quadratic (tens
-    // of seconds to minutes at this n) still trips it.
+    let ratio = scaling.per_byte_ratio();
     assert!(
-        t_large < 30.0,
-        "{label} parse for n=200000 took {t_large:.4}s (expected near-instant)"
+        ratio < SCALE_MAX_PER_BYTE_RATIO,
+        "{label} per-byte cost grew {ratio:.2}x at {}x the input (linear ~1x, quadratic ~{}x): \
+         small={:.4}us/byte large={:.4}us/byte",
+        SCALE_LARGE_N / SCALE_SMALL_N,
+        SCALE_LARGE_N / SCALE_SMALL_N,
+        scaling.small_per_byte * 1e6,
+        scaling.large_per_byte * 1e6
+    );
+
+    // Absolute wall-clock guard, catastrophic-only: the per-byte ratio above is
+    // the real (build-invariant) quadratic detector. This bound just backstops a
+    // full O(n^2) reintroduction. CI runs `cargo test` in DEBUG, ~10-20x slower
+    // per byte than release, so n=200000 legitimately takes ~2 s here; a wide
+    // 30 s bound tolerates a loaded debug runner while a reintroduced quadratic
+    // (tens of seconds to minutes at this n) still trips it.
+    assert!(
+        scaling.large_secs < 30.0,
+        "{label} parse for n={SCALE_LARGE_N} took {:.4}s (expected near-instant)",
+        scaling.large_secs
     );
 }
 
@@ -358,43 +433,37 @@ fn deeply_nested_balanced_links_preserve_output() {
 // ---------------------------------------------------------------------------
 
 /// Assert `build(n)` parses without an O(n^2) blowup on an unclosed-construct
-/// shape. A reintroduced quadratic here takes seconds at n=200000, so the
-/// absolute wall-clock bound is the primary guard. The size ratio is a
-/// secondary check, applied only when the smaller sample rises above timing
-/// noise -- several of these fixed shapes parse in microseconds, where a ratio
-/// is pure scheduler jitter (e.g. 1.5ms -> 4.8ms reads as "3x" but is O(1)).
-/// Run against a release build; a debug build is far slower per byte.
+/// shape. The per-byte ratio is the primary, build-invariant detector; the
+/// absolute wall-clock bound backstops a full regression. The ratio is applied
+/// only when the smaller sample rises above timing noise -- several of these
+/// fixed shapes parse in microseconds, where any ratio is pure scheduler jitter
+/// (e.g. 1.5ms -> 4.8ms reads as "3x" but is O(1)).
 fn assert_bounded_scan(build: impl Fn(usize) -> String, label: &str) {
-    fn min_parse_time(source: &str) -> f64 {
-        (0..7)
-            .map(|_| {
-                let start = Instant::now();
-                let _ = carve::to_html(source);
-                start.elapsed().as_secs_f64()
-            })
-            .fold(f64::INFINITY, f64::min)
-    }
-
-    let t_small = min_parse_time(&build(100_000));
-    let t_large = min_parse_time(&build(200_000));
+    let scaling = measure_scaling(&build);
 
     // A reintroduced O(n^2) at n=200000 (~0.6-0.8 MB) runs in tens of seconds to
     // minutes; the fixed parser stays sub-second in release, ~seconds in a debug
     // CI build (~10-20x slower per byte). A wide 30 s bound tolerates a loaded
-    // debug runner while failing hard on regression; the ratio check below is the
-    // build-invariant detector.
+    // debug runner while failing hard on regression.
     assert!(
-        t_large < 30.0,
-        "{label} parse for n=200000 took {t_large:.4}s (expected near-instant; O(n^2) regression?)"
+        scaling.large_secs < 30.0,
+        "{label} parse for n={SCALE_LARGE_N} took {:.4}s (expected near-instant; O(n^2) regression?)",
+        scaling.large_secs
     );
 
-    // Only compare sizes when the signal is above noise (30 ms); below that the
-    // ratio is jitter and the absolute bound above already guards the shape.
-    if t_small > 0.03 {
-        let ratio = t_large / t_small;
+    // Only compare sizes when the signal is above noise (10 ms on the small
+    // sample); below that the ratio is jitter and the absolute bound above
+    // already guards the shape.
+    if scaling.small_secs > 0.01 {
+        let ratio = scaling.per_byte_ratio();
         assert!(
-            ratio < 3.5,
-            "{label} parse scaling looks super-linear: {t_small:.4}s -> {t_large:.4}s (ratio {ratio:.1}x)"
+            ratio < SCALE_MAX_PER_BYTE_RATIO,
+            "{label} per-byte cost grew {ratio:.2}x at {}x the input (linear ~1x, quadratic ~{}x): \
+             small={:.4}us/byte large={:.4}us/byte",
+            SCALE_LARGE_N / SCALE_SMALL_N,
+            SCALE_LARGE_N / SCALE_SMALL_N,
+            scaling.small_per_byte * 1e6,
+            scaling.large_per_byte * 1e6
         );
     }
 }
