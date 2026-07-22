@@ -190,3 +190,39 @@ fn adjacent_lists_separated_by_marker_stay_separate() {
         assert_eq!(carve::to_html(&f1), carve::to_html(src));
     }
 }
+
+#[test]
+fn all_space_verbatim_content_round_trips() {
+    // A verbatim span whose content is entirely spaces must NOT be stripped by
+    // the parser nor padded by the serializer. Padding it grew the span by two
+    // spaces on every fmt pass, breaking both fmt guarantees. Covers the code
+    // span, inline literal and math paths, which share one strip helper.
+    for src in [
+        "` `", "`  `", "`   `", "!` `", "!`  `", "!`   `", "$` x `", "$`  `", "``  ``", "!``  ``",
+        "`a b`", "` a `",
+    ] {
+        let f1 = carve::to_carve(src);
+        let f1 = f1.trim_end();
+        // fmt(fmt(x)) == fmt(x)
+        assert_eq!(
+            carve::to_carve(f1).trim_end(),
+            f1,
+            "not idempotent: {src:?}"
+        );
+        // to_html(fmt(x)) == to_html(x)
+        assert_eq!(
+            carve::to_html(f1),
+            carve::to_html(src),
+            "invariant broken: {src:?}"
+        );
+    }
+}
+
+#[test]
+fn all_space_verbatim_content_is_preserved_not_collapsed() {
+    // The all-space guard matches the executable spec's codeText() and the
+    // CommonMark rule ("...but does not consist entirely of space characters").
+    assert!(carve::to_html("`  `").contains("<code>  </code>"));
+    // A one-sided or non-all-space span still strips exactly one space per side.
+    assert!(carve::to_html("` a `").contains("<code>a</code>"));
+}
