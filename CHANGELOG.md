@@ -12,6 +12,46 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   require a leading word boundary, require an ASCII alphanumeric first name
   character, and support trailing attrs via an HTML `<span>` wrapper.
 
+### Added
+
+- **Inline literal** via the `` !`…` `` prefix (#245): a `!` immediately before a
+  verbatim backtick span renders its content as escaped prose with no `<code>`
+  wrapper, so notation that collides with the bare emphasis delimiters (phonemic
+  `/kaet/`, glob patterns, paths) needs no per-character escaping. Mirrors the
+  `$`-math prefix; a trailing `{…}` is the ordinary attribute block.
+- **PlantUML preset** and an open static-renderers map, so a build-time diagram
+  renderer can be plugged in (#243); the CLI registers every `FencedRender`
+  diagram preset under `--extensions` (#252).
+- **Opt-in source-line tracking** for editor scroll-sync (#224), with nested
+  blocks and list items stamped (#235).
+
+### Fixed
+
+- Static diagram output is wrapped in a uniform `<div>` (#246); `FencedRender`
+  and `MathBlock` degrade to source rather than raw HTML in non-HTML renderers
+  (#247).
+- The definition prepass tracks list content columns (#248); a fence opener
+  strips markers and the closer strips blockquote-only (#250).
+- A fenced-code delimiter sits at its container's content column (#244).
+- A sublist marker at the content column interrupts a continuation paragraph
+  (#238).
+- A trailing backslash at end of input is a hard break; a bare same-level `#`
+  continues a heading (#234).
+- A thematic break is a contiguous column-zero run only (#233).
+- Definition-list djot parity: a blank line may separate a term from its
+  definition (#229); terms fold continuation lines like a heading (#228);
+  descriptions support the `:  +` first-block form (#227) and lazy continuation
+  (#225); definition and footnote bodies continue like list items (#221).
+- Untrusted comment/minimal presets are capped with a default `max_length`
+  (#223).
+
+### Changed
+
+- Eliminated three quadratic scans in inline parsing, so pathological input
+  parses in near-linear time (#220).
+- The formatter preserves the authored list marker (#237) and keeps verbatim
+  content byte-exact through document normalization (#231).
+
 ## [0.1.0] - YYYY-MM-DD
 
 Initial release of **carve-rs**, a zero-dependency Rust crate and CLI for the
