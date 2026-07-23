@@ -103,6 +103,32 @@ fn sets_alt_and_does_not_leak_flag() {
 }
 
 #[test]
+fn alt_falls_back_to_svg_title() {
+    let ext = ImgFence::new();
+    let svg = "<svg viewBox=\"0 0 1 1\"><title>A red square</title><rect width=\"1\" height=\"1\" fill=\"red\"/></svg>";
+    let out = html(&fence("", svg), &ext);
+    assert!(out.contains("alt=\"A red square\""));
+    assert!(!out.contains("alt=\"\""));
+}
+
+#[test]
+fn explicit_alt_beats_svg_title() {
+    let ext = ImgFence::new();
+    let svg =
+        "<svg viewBox=\"0 0 1 1\"><title>title text</title><rect width=\"1\" height=\"1\"/></svg>";
+    let out = html(&fence(" {alt=\"author alt\"}", svg), &ext);
+    assert!(out.contains("alt=\"author alt\""));
+    assert!(!out.contains("title text"));
+}
+
+#[test]
+fn empty_alt_when_no_alt_and_no_title() {
+    let ext = ImgFence::new();
+    let out = html(&fence("", SB), &ext);
+    assert!(out.contains("alt=\"\""));
+}
+
+#[test]
 fn strips_src_srcset_overrides() {
     let ext = ImgFence::new();
     let out = html(
