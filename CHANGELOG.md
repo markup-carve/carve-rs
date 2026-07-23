@@ -14,6 +14,15 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Post-blank list continuation follows the content-column model** (carve#295,
+  PART 9 §24 C3). A block opener or sublist marker must reach the parent item's
+  content_column (`- `=2, `1. `=3, `10. `=4) to belong to the item: below it,
+  a line after a blank ends the item and parses at document level (with no blank
+  it lazily continues the item paragraph); at it, the opener nests; above it, the
+  opener folds in as lazy paragraph text. The continuation boundary was keyed to
+  a fixed `base_indent + 2`, so an ordered item's deeper body column was misjudged
+  and a below-content block opener wrongly nested. Now aligned with the spec, the
+  executable oracle, and carve-js/carve-php.
 - **Never pad all-space verbatim content in `carve fmt`.** A verbatim span whose
   content is entirely spaces was padded by the serializer even though the parser
   correctly leaves it unstripped, so every fmt pass grew the span by two spaces

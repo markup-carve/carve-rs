@@ -1,0 +1,72 @@
+//! Post-blank list continuation follows the content-column model (carve#295,
+//! spec PART 9 §24 C3). A block opener or sublist marker must reach the parent
+//! item's content_column (`- `=2, `1. `=3, `10. `=4) to belong to the item.
+//! Below content_column: after a blank it ends the item and parses at document
+//! level, with no blank it lazily continues the item paragraph. At content_column
+//! it nests. Above content_column it folds in as lazy paragraph text.
+//!
+//! The regression these guard: the boundary was previously keyed to a fixed
+//! `base_indent + 2`, so an ordered item's deeper body column was mis-judged and
+//! a below-content block opener wrongly nested.
+
+// --- B1/B2/B3: below content_column, after a blank -> document level ---
+
+#[test]
+fn ordered_block_opener_below_content_after_blank_goes_to_document_level() {
+    // `> q` at column 2 is BELOW `1. `'s content_column 3.
+    assert_eq!(
+        carve::to_html("1. one\n\n  > q"),
+        "<ol>\n  <li>one</li>\n</ol>\n<p>&gt; q</p>"
+    );
+}
+
+#[test]
+fn ordered_paragraph_below_content_after_blank_goes_to_document_level() {
+    assert_eq!(
+        carve::to_html("1. one\n\n  text"),
+        "<ol>\n  <li>one</li>\n</ol>\n<p>text</p>"
+    );
+}
+
+#[test]
+fn fence_below_content_after_blank_goes_to_document_level() {
+    // Bullet content_column is 2; the 1-column fence is below it.
+    assert_eq!(
+        carve::to_html("- one\n\n ```\n c\n ```"),
+        "<ul>\n  <li>one</li>\n</ul>\n<p><code>\nc\n</code></p>"
+    );
+}
+
+// --- at content_column -> nests ---
+
+#[test]
+fn ordered_block_opener_at_content_column_nests() {
+    // `> q` at column 3 IS `1. `'s content_column, so it nests.
+    assert_eq!(
+        carve::to_html("1. one\n\n   > q"),
+        "<ol>\n  <li>one\n    <blockquote><p>q</p></blockquote>\n  </li>\n</ol>"
+    );
+}
+
+// --- B4: above content_column -> lazy paragraph text (inside the item) ---
+
+#[test]
+fn block_opener_above_content_column_folds_as_lazy_text() {
+    // `# h` at column 3 is above the bullet's content_column 2: no longer a
+    // heading, folds in as lazy paragraph text.
+    assert_eq!(
+        carve::to_html("- one\n\n   # h"),
+        "<ul>\n  <li><p>one</p>\n    <p># h</p>\n  </li>\n</ul>"
+    );
+}
+
+// --- no blank: below content_column -> lazy continuation of the item paragraph ---
+
+#[test]
+fn no_blank_block_opener_below_content_lazily_continues_paragraph() {
+    // `> q` at column 1, no blank: folds into the item's open paragraph.
+    assert_eq!(
+        carve::to_html("1. one\n > q"),
+        "<ol>\n  <li>one\n&gt; q</li>\n</ol>"
+    );
+}
