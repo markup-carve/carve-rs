@@ -3397,7 +3397,15 @@ fn parse_table(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
 }
 
 fn is_table_continuation(line: &str) -> bool {
-    trim_ascii_start(line).starts_with('+')
+    // `continuation_row` ends in `'|'` just like `standard_row`, so the closing
+    // pipe is required here too: `+ c | d` is prose and ends the table. Unlike a
+    // standard row it has no `row_attributes` slot, so a trailing `|{.x}` does
+    // NOT stand in for the closing pipe.
+    let trimmed = line.trim();
+    if trimmed.len() < 2 || !trimmed.starts_with('+') || !trimmed.ends_with('|') {
+        return false;
+    }
+    trimmed != "+|"
 }
 
 /// A GFM delimiter cell: an optional leading colon, one or more dashes, an
