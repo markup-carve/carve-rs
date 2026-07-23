@@ -2177,9 +2177,12 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             let indent = indent_columns(line);
             if indent > base_indent {
                 // After a blank line, lazy continuation no longer applies: a line
-                // must be indented to the item's content column to keep belonging
-                // to it. A shallower line ends the list (corpus 81-list-lazy-5).
-                if pending_blank && indent < base_indent + 2 {
+                // must reach the item's content column to keep belonging to it
+                // (PART 9 §24 C3). A line BELOW content_column ends the list and
+                // parses at document level (corpus 81-list-lazy-5). content_col
+                // is the item's true column (`- `=2, `1. `=3, `10. `=4), NOT a
+                // fixed base+2 -- an ordered item's body sits deeper.
+                if pending_blank && indent < content_col {
                     break;
                 }
                 if let Some(last) = items.last_mut() {
@@ -2228,7 +2231,7 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             // marker BELOW the content column never reaches here -- it folds
             // into the item paragraph in the per-item loop below, §10. Unordered
             // and task markers always interrupt, so they nest at any indent.)
-            if pending_blank && marker.indent < base_indent + 2 {
+            if pending_blank && marker.indent < content_col {
                 break;
             }
             if let Some(last) = items.last_mut() {
@@ -2454,9 +2457,13 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 }
             }
             let indent = indent_columns(next);
-            if indent <= base_indent {
-                // Lazy continuation: a non-indented line that does not start a
-                // block folds into the item's open paragraph (djot/CommonMark).
+            if indent < content_col {
+                // BELOW content_column (§24 C3): a line -- flush-left OR indented
+                // short of the content column -- lazily continues the item's open
+                // paragraph and folds in as text. A block opener here is NOT a
+                // block opener (the residual/absent indent disqualifies it), so it
+                // never interrupts; only a genuine lazy-continuation interrupt
+                // (blank, sibling marker, ...) ends it.
                 let next_owned = next.to_string();
                 if interrupts_lazy_continuation(cur, &next_owned) {
                     break;
@@ -2465,11 +2472,10 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 cur.consume();
                 continue;
             }
-            // An indented block opener (block quote, heading, fence, div, table)
-            // at the item's content column interrupts the lead paragraph and nests
-            // as a child block rather than folding in as lazy text. The interrupt
-            // test keys off column 0, so check the dedented line; true lazy
-            // continuation text does not interrupt and stays in the paragraph.
+            // AT or ABOVE content_column: dedent to the item body's column 0. A
+            // block opener at the content column interrupts the lead paragraph and
+            // nests as a child block; above the content column the residual indent
+            // is handled by the block parser (lazy paragraph text).
             let dedented = slice_columns(next, content_col.min(indent), false);
             if interrupts_paragraph(cur, &dedented) {
                 break;
