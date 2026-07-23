@@ -203,6 +203,41 @@ fn transform_blocks(blocks: &mut [BlockNode], ext: &ImgFence) {
 /// The HTML for a claimed `img` fence: sandboxed `<img>` or (opt-in) inline SVG.
 /// No leading indent / trailing newline - the `RawBlock` renderer adds the
 /// indentation for the node's nesting level, matching carve-js `${pad}…`.
+/// Fall back to the SVG's own `<title>` for the `<img>` alt text when the author
+/// gave no `{alt=…}`, so a sandboxed image is described to assistive tech instead
+/// of being silently decorative (empty alt). The svg is already sanitized, so
+/// this is a plain extraction; the result is escaped again on output. Returns
+/// `None` when there is no non-empty title.
+fn svg_title(svg: &str) -> Option<String> {
+    let lower = svg.to_ascii_lowercase();
+    let open = lower.find("<title")?;
+    let inner_start = lower[open..].find('>')? + open + 1;
+    let inner_end = lower[inner_start..].find("</title>")? + inner_start;
+    // Strip any nested tags, then undo the entity escaping the sanitizer applied.
+    let mut text = String::new();
+    let mut in_tag = false;
+    for c in svg[inner_start..inner_end].chars() {
+        match c {
+            '<' => in_tag = true,
+            '>' => in_tag = false,
+            _ if !in_tag => text.push(c),
+            _ => {}
+        }
+    }
+    let decoded = text
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'")
+        .replace("&amp;", "&");
+    let trimmed = decoded.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
 fn render_code_block(code: &CodeBlock, ext: &ImgFence) -> String {
     let result = sanitize_svg(&code.content, &ext.options);
     if !result.ok {
@@ -215,7 +250,9 @@ fn render_code_block(code: &CodeBlock, ext: &ImgFence) -> String {
     let inline = ext.allow_inline && consumed_value(code, "inline").is_some();
 
     if !inline {
-        let alt = consumed_value(code, "alt").unwrap_or_default();
+        let alt = consumed_value(code, "alt")
+            .or_else(|| svg_title(&result.svg))
+            .unwrap_or_default();
         let src = format!("data:image/svg+xml,{}", encode_uri_component(&result.svg));
         // Sandbox mode promises no fetches: drop any author `src` / `srcset` so
         // it cannot override the sanitized data URI with an external resource.
