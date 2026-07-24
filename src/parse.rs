@@ -1260,6 +1260,24 @@ fn is_heading_marker_line(line: &str) -> bool {
     (1..=6).contains(&hashes) && (hashes == bytes.len() || bytes[hashes] == b' ')
 }
 
+/// A line that opens an ATX heading WITH content: `#`..`######`, then a single
+/// space, then at least one non-whitespace character. Used to decide whether a
+/// list item's marker-line remainder (`- # H`) opens a heading block. Bare (`#`)
+/// or whitespace-only (`# `, `#  `) remainders and a tab separator (`#\tH`) are
+/// NOT headings here -- they stay inline text, matching carve-js / carve-php on
+/// the settled cases (the all-whitespace remainder is tracked separately).
+fn heading_content_starts(line: &str) -> bool {
+    let bytes = line.as_bytes();
+    let mut hashes = 0usize;
+    while hashes < bytes.len() && bytes[hashes] == b'#' {
+        hashes += 1;
+    }
+    if !(1..=6).contains(&hashes) || bytes.get(hashes) != Some(&b' ') {
+        return false;
+    }
+    line[hashes + 1..].bytes().any(|b| b != b' ' && b != b'\t')
+}
+
 /// A fenced-comment opener line (a run of 3+ `%`, nothing else) — ends a heading.
 fn is_comment_fence_line(line: &str) -> bool {
     let t = trim_ascii_end(line);
@@ -2412,20 +2430,58 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         if marker_content_starts_block(marker.content, cur, content_col) {
             let mut stream =
                 MappedSource::new_line(marker.content.to_string(), cur.source_line(cur.pos - 1));
+            let before_block = cur.pos;
             stream.append(collect_indented_block_mapped(cur, base_indent, content_col));
+            // A heading on the marker line (`- # H`) folds its trailing
+            // flush-left plain text as heading continuation (`- # H\nlazy` ->
+            // one `<h1>H\nlazy</h1>` inside the item), matching carve-js /
+            // carve-php and the indented-heading-in-item path above. Only a
+            // heading folds this way; the other marker-line block openers
+            // (fence, table, thematic, container) keep their trailing text as a
+            // separate block, so the guard is heading-only. A blank line closes
+            // the heading (§heading rule 2), so skip the fold once one was
+            // consumed while collecting -- `- # H\n\nsep` keeps `sep` as its own
+            // top-level block.
+            // True only when the block collection ended by swallowing a TRAILING
+            // blank separator -- the single-line marker-line block case (heading,
+            // thematic break), where the last consumed line is that blank. A
+            // blank INSIDE a multiline block (e.g. a fenced code block with an
+            // interior blank) is NOT a separator: there the last consumed line is
+            // block content, and any real trailing separator is left for the
+            // outer loop, so this stays false and tightness is unaffected.
+            let swallowed_blank_separator =
+                cur.pos > before_block && is_blank_line(cur.lines[cur.pos - 1]);
+            if !swallowed_blank_separator && nested_ends_with_heading(&stream.source, options) {
+                collect_trailing_lazy(cur, &mut stream);
+            }
             let children = parse_mapped_source(&stream, options);
             items.push(ListItem {
                 attrs: item_attrs,
                 checked: marker.checked,
                 children,
             });
+            // A single-line marker-line block (heading, thematic break) leaves
+            // no indented continuation, so collect_indented_block_mapped above
+            // swallows the trailing blank separator before the outer loop can
+            // see it. Re-raise pending_blank so a following sibling item still
+            // loosens the list (`- # H\n\n- b` / `- ---\n\n- b` render `<li>` as
+            // loose), matching carve-js / carve-php. A multi-line block (`:::`
+            // container) leaves the blank for the outer loop, so
+            // swallowed_blank_separator is false there and this does not
+            // double-loosen.
+            if swallowed_blank_separator {
+                pending_blank = true;
+            }
             continue;
         }
         // The item's first paragraph is the marker content plus any
         // immediately-following indented prose lines (lazy continuation).
         // It stops at a blank line or a list marker: a nested sublist still
-        // interrupts (the one Carve deviation, grammar §10), while every other
-        // block opener -- heading, fence, etc. -- stays paragraph text.
+        // interrupts (the one Carve deviation, grammar §10). Block openers that
+        // begin ON the marker line are handled above by
+        // marker_content_starts_block (heading, fence, thematic, container,
+        // table); a would-be opener on a LATER lazy-continuation line stays
+        // paragraph text.
         let mut para_lines = vec![marker.content.to_string()];
         let literal_colon_opener = detect_container_open(marker.content)
             .map(|open| open.fence_len)
@@ -2525,6 +2581,13 @@ fn marker_content_starts_block(content: &str, cur: &LineCursor<'_>, content_col:
     // <li><hr></li>), not inline text -- otherwise smart punctuation turns
     // `---` into an em-dash. Matches carve-js / carve-php.
     if detect_thematic_break(content) {
+        return true;
+    }
+    // A heading WITH content as the marker-line first block (`- # H` ->
+    // <li><h1>H</h1></li>), matching carve-js / carve-php. A heading is a single
+    // line, so no multi-line close scan is needed. Bare `#`, a `# ` with no
+    // content, or a tab (not the required space) stay inline text.
+    if heading_content_starts(content) {
         return true;
     }
     if let Some(open) = detect_fence_open(content) {
