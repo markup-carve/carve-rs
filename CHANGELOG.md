@@ -14,6 +14,11 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Colon-fence `:::` obeys the content column in list items** (carve#295, PART 9
+  §24 C3). A `:::` container (admonition / div / line block) below a list item's
+  content column now folds as lazy paragraph text instead of nesting - the last
+  block-opener kind still missing the content-column gate that quote / heading /
+  table / def-list already had.
 - **Definition lists and tables are first-class block openers in list items**
   (carve#295, PART 9 §24 C3). A `:: ` def-list term now interrupts at a list
   item's column 0 and nests at its content column, uniform with quote/heading/

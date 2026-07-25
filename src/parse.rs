@@ -1099,14 +1099,21 @@ fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<BlockNode>
             return Some(parse_hardbreaks_block(cur, options));
         }
     }
-    if let Some(open) = detect_container_open(line) {
-        // A colon fence opens only when a matching closer (a line of at least
-        // `fence_len` colons) exists ahead (grammar §12); an unterminated
-        // `:::` / `::: note` stays literal instead of swallowing the rest of
-        // the document. Matches carve-js.
-        let has_closer = cur.has_colon_closer_after(cur.pos + 1, open.fence_len);
-        if has_closer {
-            return Some(parse_container(cur, options));
+    // FLUSH-LEFT only: `detect_container_open` trims leading whitespace, so an
+    // indented `::: note` below/above a list item's content column must fold as
+    // lazy paragraph text (§24 C3), not open a nested container -- uniform with
+    // the quote/heading/table checks. `line` is already dedented to the content
+    // column here, so a `:::` at the content column opens.
+    if !line.starts_with([' ', '\t']) {
+        if let Some(open) = detect_container_open(line) {
+            // A colon fence opens only when a matching closer (a line of at least
+            // `fence_len` colons) exists ahead (grammar §12); an unterminated
+            // `:::` / `::: note` stays literal instead of swallowing the rest of
+            // the document. Matches carve-js.
+            let has_closer = cur.has_colon_closer_after(cur.pos + 1, open.fence_len);
+            if has_closer {
+                return Some(parse_container(cur, options));
+            }
         }
     }
     if let Some(abbr) = detect_abbreviation_def(line) {
@@ -3055,9 +3062,17 @@ fn interrupts_paragraph(cur: &mut LineCursor<'_>, line: &str) -> bool {
             return true;
         }
     }
-    if let Some(open) = detect_container_open(line) {
-        if cur.has_colon_closer_after(cur.pos + 1, open.fence_len) {
-            return true;
+    // A colon fence interrupts only when FLUSH-LEFT, like the quote/heading/
+    // table checks above -- `detect_container_open` trims leading whitespace, so
+    // without this guard an INDENTED `::: note` would interrupt where an indented
+    // `> q` / `# h` does not. A `:::` below/above a list item's content column is
+    // lazy paragraph text (§24 C3), not a nested container. `line` is already
+    // dedented to the container's content column, so at-content-column opens.
+    if !line.starts_with([' ', '\t']) {
+        if let Some(open) = detect_container_open(line) {
+            if cur.has_colon_closer_after(cur.pos + 1, open.fence_len) {
+                return true;
+            }
         }
     }
     // A `::: |` line block or `::: \` hard-break block interrupts like any
