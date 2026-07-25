@@ -14,6 +14,12 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Definition lists and tables are first-class block openers in list items**
+  (carve#295, PART 9 §24 C3). A `:: ` def-list term now interrupts at a list
+  item's column 0 and nests at its content column, uniform with quote/heading/
+  fence. A table row below or above the content column folds as lazy paragraph
+  text instead of wrongly nesting, and an indented table row is a paragraph, not
+  a table. Above-content lazy continuation lines no longer keep a residual indent.
 - **Post-blank list continuation follows the content-column model** (carve#295,
   PART 9 §24 C3). A block opener or sublist marker must reach the parent item's
   content_column (`- `=2, `1. `=3, `10. `=4) to belong to the item: below it,
