@@ -1071,7 +1071,12 @@ fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<BlockNode>
     if is_list_marker(line) {
         return Some(parse_list(cur, options));
     }
-    if is_table_start(line) {
+    // A table row opens a table only when FLUSH-LEFT (like a heading, quote or
+    // `:: ` def-list term). `is_table_start` trims leading whitespace, so an
+    // INDENTED row (`  |a|`) would otherwise wrongly open a table where the
+    // reference renders a paragraph; a genuine table sits at its container's
+    // content column and is already dedented to column 0 here.
+    if !line.starts_with([' ', '\t']) && is_table_start(line) {
         return Some(parse_table(cur, options));
     }
     if is_definition_list_start(line) {
@@ -2528,11 +2533,24 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 cur.consume();
                 continue;
             }
-            // AT or ABOVE content_column: dedent to the item body's column 0. A
-            // block opener at the content column interrupts the lead paragraph and
-            // nests as a child block; above the content column the residual indent
-            // is handled by the block parser (lazy paragraph text).
-            let dedented = slice_columns(next, content_col.min(indent), false);
+            if indent > content_col {
+                // ABOVE content_column (§24 C3): the line is lazy paragraph text,
+                // never a block opener. Fully strip its indent and fold it into
+                // the lead paragraph (inline-parsed, so a would-be opener like
+                // `> q` renders as literal text, and no residual indent leaks).
+                // A sibling/nesting marker above the content column was already
+                // handled above; only a genuine lazy interrupt ends the fold.
+                let next_owned = next.to_string();
+                if interrupts_lazy_continuation(cur, &next_owned) {
+                    break;
+                }
+                para_lines.push(trim_ascii_start(next).to_string());
+                cur.consume();
+                continue;
+            }
+            // AT content_column: a block opener interrupts the lead paragraph and
+            // nests as a child block; plain text dedents to the body's column 0.
+            let dedented = slice_columns(next, content_col, false);
             if interrupts_paragraph(cur, &dedented) {
                 break;
             }
@@ -3004,7 +3022,17 @@ fn interrupts_paragraph(cur: &mut LineCursor<'_>, line: &str) -> bool {
     if detect_heading(line).is_some()
         || detect_thematic_break(line)
         || line.starts_with('>')
-        || is_table_start(line)
+        // A definition-list term `:: ` is a first-class block opener (§24 C3):
+        // it interrupts at column 0 and nests at the content column, uniform
+        // with quote/heading/fence/table. `is_definition_list_start` requires a
+        // flush-left `:: `, so an indented term folds as lazy text like the rest.
+        || is_definition_list_start(line)
+        // A table row interrupts only when FLUSH-LEFT, like the quote/heading
+        // checks above -- `is_table_start` trims leading whitespace, so without
+        // this guard an INDENTED row (`  |a|`) would interrupt where an indented
+        // `> q` / `# h` does not. An indented row below/above a list item's
+        // content column is lazy paragraph text (§24 C3), not a nested table.
+        || (!line.starts_with([' ', '\t']) && is_table_start(line))
     {
         return true;
     }
@@ -3070,7 +3098,17 @@ fn interrupts_paragraph_with_rest(line: &str, rest: &[&str]) -> bool {
     if detect_heading(line).is_some()
         || detect_thematic_break(line)
         || line.starts_with('>')
-        || is_table_start(line)
+        // A definition-list term `:: ` is a first-class block opener (§24 C3):
+        // it interrupts at column 0 and nests at the content column, uniform
+        // with quote/heading/fence/table. `is_definition_list_start` requires a
+        // flush-left `:: `, so an indented term folds as lazy text like the rest.
+        || is_definition_list_start(line)
+        // A table row interrupts only when FLUSH-LEFT, like the quote/heading
+        // checks above -- `is_table_start` trims leading whitespace, so without
+        // this guard an INDENTED row (`  |a|`) would interrupt where an indented
+        // `> q` / `# h` does not. An indented row below/above a list item's
+        // content column is lazy paragraph text (§24 C3), not a nested table.
+        || (!line.starts_with([' ', '\t']) && is_table_start(line))
     {
         return true;
     }

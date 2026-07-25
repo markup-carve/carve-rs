@@ -70,3 +70,59 @@ fn no_blank_block_opener_below_content_lazily_continues_paragraph() {
         "<ol>\n  <li>one\n&gt; q</li>\n</ol>"
     );
 }
+
+// --- content-column finalize (carve#295 follow-through): above-content lazy text
+// strips residual indent; def-list `::` and table are first-class block openers ---
+
+#[test]
+fn cc_final_para_above_content_strips_residual_indent() {
+    assert_eq!(
+        carve::to_html("- one\n   text\n"),
+        "<ul>\n  <li>one\ntext</li>\n</ul>"
+    );
+}
+
+#[test]
+fn cc_final_quote_above_content_is_lazy_text() {
+    assert_eq!(
+        carve::to_html("- one\n   > q\n"),
+        "<ul>\n  <li>one\n&gt; q</li>\n</ul>"
+    );
+}
+
+#[test]
+fn cc_final_table_below_content_is_lazy_text() {
+    assert_eq!(
+        carve::to_html("- one\n |=H|\n |x|\n"),
+        "<ul>\n  <li>one\n|=H|\n|x|</li>\n</ul>"
+    );
+}
+
+#[test]
+fn cc_final_table_below_content_after_blank_doc_level() {
+    assert_eq!(
+        carve::to_html("- one\n\n |=H|\n |x|\n"),
+        "<ul>\n  <li>one</li>\n</ul>\n<p>|=H|\n|x|</p>"
+    );
+}
+
+#[test]
+fn cc_final_deflist_interrupts_at_column_zero() {
+    assert_eq!(
+        carve::to_html("- one\n:: term\n:  def\n"),
+        "<ul>\n  <li>one</li>\n</ul>\n<dl>\n  <dt>term</dt>\n  <dd>def</dd>\n</dl>"
+    );
+}
+
+#[test]
+fn cc_final_deflist_nests_at_content_column() {
+    assert_eq!(
+        carve::to_html("- one\n  :: term\n  :  def\n"),
+        "<ul>\n  <li>one\n    <dl>\n      <dt>term</dt>\n      <dd>def</dd>\n    </dl>\n  </li>\n</ul>"
+    );
+}
+
+#[test]
+fn cc_final_bare_indented_table_row_is_paragraph() {
+    assert_eq!(carve::to_html(" |=H|\n |x|\n"), "<p>|=H|\n|x|</p>");
+}
