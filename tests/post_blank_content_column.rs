@@ -126,3 +126,29 @@ fn cc_final_deflist_nests_at_content_column() {
 fn cc_final_bare_indented_table_row_is_paragraph() {
     assert_eq!(carve::to_html(" |=H|\n |x|\n"), "<p>|=H|\n|x|</p>");
 }
+
+#[test]
+fn cc_colon_fence_below_content_column_is_lazy() {
+    // §24 C3: a `:::` colon fence below the item's content column folds as lazy
+    // paragraph text, not a nested container (mirrors quote/heading/table).
+    assert_eq!(
+        carve::to_html("- one\n ::: note\n body\n :::\n"),
+        "<ul>\n  <li>one\n::: note\nbody\n:::</li>\n</ul>"
+    );
+}
+
+#[test]
+fn cc_colon_fence_nests_at_content_column() {
+    assert_eq!(
+        carve::to_html("- one\n  ::: note\n  body\n  :::\n"),
+        "<ul>\n  <li>one\n    <aside class=\"admonition note\">\n      <p>body</p>\n    </aside>\n  </li>\n</ul>"
+    );
+}
+
+#[test]
+fn cc_colon_fence_interrupts_at_column_zero() {
+    assert_eq!(
+        carve::to_html("- one\n::: note\nbody\n:::\n"),
+        "<ul>\n  <li>one</li>\n</ul>\n<aside class=\"admonition note\">\n  <p>body</p>\n</aside>"
+    );
+}
