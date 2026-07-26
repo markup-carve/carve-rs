@@ -2789,6 +2789,22 @@ fn block_ends_with_open_paragraph(block: Option<&BlockNode>) -> bool {
         Some(BlockNode::List(l)) => {
             block_ends_with_open_paragraph(l.items.last().and_then(|it| it.children.last()))
         }
+        // A definition list has no explicit closer either: its last item stays
+        // open -- a term still awaiting its `:  ` definition, or a definition
+        // whose body ends in a paragraph. A following flush-left `:  ` line (at
+        // any column at or below the term) attaches as a `<dd>`, and lazy body
+        // text folds into the open definition. This is the lenient def-attach
+        // rule shared with carve-php / carve-js: a definition marker is not
+        // subject to the column-0-exits rule that ends a list item.
+        Some(BlockNode::DefinitionList(dl)) => match dl.items.last() {
+            None => false,
+            // Bare term, no definition yet: open (awaiting `:  def`).
+            Some(item) if item.definitions.is_empty() => true,
+            // Otherwise the last definition's body must end in an open paragraph.
+            Some(item) => block_ends_with_open_paragraph(
+                item.definitions.last().and_then(|d| d.children.last()),
+            ),
+        },
         // A div / admonition is closed by its `:::` fence -- a complete block
         // with no open paragraph -- so a dedented line after it ends the item
         // (like code/table). Matches carve-js.
