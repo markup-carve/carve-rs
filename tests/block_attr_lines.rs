@@ -79,3 +79,23 @@ fn adjacent_attr_block_classes_merge_in_order() {
         "<section id=\"H\">\n  <h1 class=\"a b\">H</h1>\n</section>"
     );
 }
+
+// A COMPLETE single line that is a valid attr block followed by a NON-attr
+// brace (critic markup, empty, etc.) is NOT a standalone attribute line: the
+// multi-line joiner must not "rescue" it by stripping the outer braces and
+// parsing an interior `}{` as an unquoted value. It stays literal, matching
+// carve-js (`{k=v}{+i+}` -> `<p>{k=v}<ins>i</ins></p>`, never a dropped line).
+#[test]
+fn complete_line_with_trailing_non_attr_brace_stays_literal() {
+    assert_eq!(carve::to_html("{k=v}{+i+}"), "<p>{k=v}<ins>i</ins></p>");
+    assert_eq!(carve::to_html("{k=v}{~s~}"), "<p>{k=v}<s>s</s></p>");
+    assert_eq!(carve::to_html("{k=v.w}{-d-}"), "<p>{k=v.w}<del>d</del></p>");
+    assert_eq!(carve::to_html("{k=v}{ }"), "<p>{k=v}{ }</p>");
+    // A genuine two-brace attr chain still floats forward and is dropped.
+    assert_eq!(carve::to_html("{k=v}{#a}"), "");
+    // A genuinely multi-line block (first line does not close) still works.
+    assert_eq!(
+        carve::to_html("{k=v\n .foo}\nT"),
+        "<p k=\"v\" class=\"foo\">T</p>"
+    );
+}

@@ -4474,6 +4474,16 @@ fn parse_standalone_attrs_block(cur: &mut LineCursor) -> Option<Attrs> {
         cur.consume();
         return Some(attrs);
     }
+    // A COMPLETE single line (already closes with `}`) that parse_standalone_attrs
+    // rejected is not a valid attribute block -- do NOT rescue it via the
+    // multi-line strip-outer path below, which would parse an interior `}{` as an
+    // unquoted value (`{k=v}{+i+}` -> k="v}{+i+", swallowing the whole line). The
+    // multi-line join is only for a block that genuinely continues onto later
+    // lines (`{#id` then `.foo}`), i.e. whose first line does not itself close.
+    // Matches carve-js, which keeps such a line literal.
+    if trim_ascii_end(first).ends_with('}') {
+        return None;
+    }
     // Multi-line: join contiguous lines until one closes with `}`.
     let mut joined = String::new();
     let mut count = 0usize;
