@@ -14,6 +14,14 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **An under-indented definition line still attaches as a `<dd>`** (carve#295,
+  PART 9 §24 C3). A `:  def` line below the term's content column - including at
+  column 0 - now attaches to the open definition list inside a list item instead
+  of orphaning to a top-level paragraph. A definition marker is a lenient
+  exception to the column-0-exits rule: only a blank line before it (or a
+  first-class opener such as a new `:: term` or a block opener) ends the entry.
+  Lazy body text after the below-content definition folds into it, matching
+  carve-php / carve-js.
 - **A complete `{…}` line trailing a non-attribute brace no longer drops the
   line.** A line like `{k=v}{+i+}` (a valid attribute block immediately followed
   by critic markup or an empty/other non-attribute brace) was mis-read by the
