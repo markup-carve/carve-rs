@@ -14,6 +14,14 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A complete `{…}` line trailing a non-attribute brace no longer drops the
+  line.** A line like `{k=v}{+i+}` (a valid attribute block immediately followed
+  by critic markup or an empty/other non-attribute brace) was mis-read by the
+  multi-line block-attribute joiner, which stripped the outer braces and parsed
+  the interior `}{` as an unquoted value (`k="v}{+i+"`), swallowing the whole
+  line to empty output. It now stays literal (`<p>{k=v}<ins>i</ins></p>`),
+  matching the reference. The multi-line join now only applies to a block that
+  genuinely continues onto later lines (`{#id` then `.foo}`).
 - **Colon-fence `:::` obeys the content column in list items** (carve#295, PART 9
   §24 C3). A `:::` container (admonition / div / line block) below a list item's
   content column now folds as lazy paragraph text instead of nesting - the last
