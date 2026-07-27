@@ -842,62 +842,74 @@ fn render_list_item(
         Some(false) => "<input type=\"checkbox\" disabled> ",
         Some(true) => "<input type=\"checkbox\" checked disabled> ",
     };
-    if tight && item.children.len() == 1 {
-        if let BlockNode::Paragraph(p) = &item.children[0] {
-            out.push_str(checkbox);
-            render_inlines(out, &p.children, options);
-            out.push_str("</li>");
-            return;
-        }
+    if item.children.is_empty() {
+        out.push_str("</li>");
+        return;
     }
-    if tight && item.children.len() > 1 {
-        if let BlockNode::Paragraph(p) = &item.children[0] {
-            out.push_str(checkbox);
-            render_inlines(out, &p.children, options);
-            for child in item.children.iter().skip(1) {
-                out.push('\n');
-                render_block(out, child, level + 1, options, state);
+    // Each child renders either as inlineable content (a paragraph: bare
+    // inlines when the list is TIGHT, wrapped in <p> when LOOSE) or as a
+    // block. A tight item never wraps ANY of its paragraphs, so trailing text
+    // that follows a closed block (fenced code, `:::` div, admonition, table)
+    // stays bare rather than becoming a fresh <p> -- matching carve-js and the
+    // executable-spec oracle. The first inlineable part shares the <li> line
+    // (after any checkbox); later inlineable parts sit at the child column.
+    enum Part {
+        Inline(String),
+        Block(String),
+    }
+    let parts: Vec<Part> = item
+        .children
+        .iter()
+        .map(|child| {
+            if let BlockNode::Paragraph(p) = child {
+                let mut html = String::new();
+                render_inlines(&mut html, &p.children, options);
+                if tight {
+                    Part::Inline(html)
+                } else {
+                    Part::Inline(format!("<p{}>{html}</p>", render_attrs(&p.attrs)))
+                }
+            } else {
+                let mut block = String::new();
+                render_block(&mut block, child, level + 1, options, state);
+                Part::Block(block)
             }
-            out.push('\n');
-            indent(out, level);
-            out.push_str("</li>");
-            return;
-        }
-    }
-    if !tight && item.children.len() == 1 {
-        if let BlockNode::Paragraph(p) = &item.children[0] {
-            out.push_str(&format!("<p{}>", render_attrs(&p.attrs)));
+        })
+        .collect();
+    match &parts[0] {
+        Part::Inline(html) => {
             out.push_str(checkbox);
-            render_inlines(out, &p.children, options);
-            out.push_str("</p></li>");
-            return;
+            out.push_str(html);
         }
-    }
-    if !tight && item.children.len() > 1 {
-        if let BlockNode::Paragraph(p) = &item.children[0] {
-            out.push_str(&format!("<p{}>", render_attrs(&p.attrs)));
-            out.push_str(checkbox);
-            render_inlines(out, &p.children, options);
-            out.push_str("</p>");
-            for child in item.children.iter().skip(1) {
+        Part::Block(html) => {
+            // A task item whose first child is a block still shows its checkbox
+            // (defensive: no current input yields a block-first task item -- an
+            // empty task marker renders `[ ]` as literal text -- but if one ever
+            // did, dropping the marker would silently lose it).
+            if !checkbox.is_empty() {
                 out.push('\n');
-                render_block(out, child, level + 1, options, state);
+                out.push_str(checkbox);
+            } else {
+                out.push('\n');
             }
-            out.push('\n');
-            indent(out, level);
+            out.push_str(html);
+        }
+    }
+    if parts.len() == 1 {
+        if let Part::Inline(_) = &parts[0] {
             out.push_str("</li>");
             return;
         }
     }
-    out.push('\n');
-    out.push_str(checkbox);
-    let mut first = true;
-    for child in &item.children {
-        if !first {
-            out.push('\n');
+    for part in parts.iter().skip(1) {
+        out.push('\n');
+        match part {
+            Part::Inline(html) => {
+                indent(out, level + 1);
+                out.push_str(html);
+            }
+            Part::Block(html) => out.push_str(html),
         }
-        render_block(out, child, level + 1, options, state);
-        first = false;
     }
     out.push('\n');
     indent(out, level);
