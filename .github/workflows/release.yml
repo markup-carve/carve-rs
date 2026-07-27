@@ -32,14 +32,19 @@ jobs:
           ref: ${{ github.event.release.tag_name }}
           submodules: recursive
 
-      # Guard: the crate version must match the release tag, so a mistyped tag
-      # or a forgotten version bump cannot publish the wrong version.
-      - name: Verify Cargo.toml version matches the release tag
+      # Guard: the crate version AND the CHANGELOG must match the release tag,
+      # so a mistyped tag, a forgotten version bump, or an un-cut changelog
+      # cannot publish the wrong version.
+      - name: Verify version and changelog match the release tag
         run: |
           TAG="${{ github.event.release.tag_name }}"
           VER="$(grep -m1 -E '^version[[:space:]]*=' Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')"
           if [ "$TAG" != "$VER" ]; then
             echo "::error::Release tag $TAG does not match Cargo.toml version $VER."
+            exit 1
+          fi
+          if ! grep -qE "^## \[?${TAG//./\\.}\]?" CHANGELOG.md; then
+            echo "::error::CHANGELOG.md has no '## [$TAG]' section; cut it from [Unreleased] before releasing."
             exit 1
           fi
 
