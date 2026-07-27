@@ -161,6 +161,20 @@ const IMPLEMENTED: &[&str] = &[
     "146-colon-fence-as-a-block-opener-in-a-list-item",
     "147-fence-folds-as-lazy-inline-code-above-the-content-column",
     "148-abbreviation-title-escapes-its-markup-characters",
+    "149-indented-ordered-marker-content-column-includes-the-marker-indent",
+    "150-leading-attribute-brace-before-an-inline-span-stays-literal",
+    "151-attribute-block-after-a-mention-stays-literal",
+    "152-under-indented-definition-attaches-over-indented-definition-folds",
+    "153-image-trailing-attribute-is-strict-about-the-glue",
+    "154-wrapped-definition-term-continuation-below-the-content-column-strips-leading-whitespace",
+    "155-indented-attribute-line-stays-literal",
+    "156-indented-image-and-caption-stay-literal",
+    "157-indented-reference-and-footnote-definitions-stay-literal",
+    "158-indented-colon-fence-blocks-stay-literal",
+    "159-below-content-column-div-body-in-a-list-item-stays-literal",
+    "160-outer-item-with-an-internal-blank-before-an-attached-block-is-loose",
+    "161-unresolved-footnote-reference-with-a-trailing-attribute-stays-literal",
+    "162-tight-list-item-keeps-trailing-text-after-a-block-bare",
 ];
 
 fn corpus_dir() -> PathBuf {
