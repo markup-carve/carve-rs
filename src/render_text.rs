@@ -89,16 +89,13 @@ fn smart_text(input: &str, state: &mut SmartQuoteState) -> String {
         ("(c)", "©"),
         ("(r)", "®"),
         ("(tm)", "™"),
-        ("------", "——"),
-        ("-----", "—–"),
-        ("----", "––"),
-        ("---", "—"),
-        ("--", "–"),
         ("...", "…"),
     ];
-    for (from, to) in replacements {
-        s = s.replace(from, to);
-    }
+    // Per-position, escape-guarded pass shared with the HTML renderer, so the
+    // non-HTML renderers stay byte-parity with it. Runs of 2+ hyphens collapse
+    // via `allocate_dashes` (djot allocation) inside this scan - never a fixed
+    // longest-match table, which used to leave a literal hyphen at n = 7, 13.
+    s = crate::render::apply_smart_ops(&s, &replacements);
     s = s.replace("&#NO_SMART_ARROW;", "->");
     s = s.replace("§NO_SMART_DOTS§", "...");
 
