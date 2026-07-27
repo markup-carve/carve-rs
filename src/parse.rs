@@ -1082,21 +1082,31 @@ fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<BlockNode>
     if is_definition_list_start(line) {
         return Some(parse_definition_list(cur, options));
     }
-    if let Some(fence_len) = detect_line_block_open(line) {
-        // A line block, like any colon fence, opens only when a matching
-        // closer exists ahead (grammar §12/§23); an unterminated `::: |`
-        // stays literal instead of swallowing the rest of the document.
-        let has_closer = cur.has_colon_closer_after(cur.pos + 1, fence_len);
-        if has_closer {
-            return Some(parse_line_block(cur, options));
+    // A `::: |` line block or `::: \` hard-break block opens ONLY flush-left
+    // (at its container's content column), exactly like the div / admonition
+    // container check below. `detect_line_block_open` and
+    // `detect_hardbreaks_block_open` trim leading whitespace, so an INDENTED
+    // colon fence (above the content column) would otherwise still open; the
+    // strict column-0 rule (docs/divergence-from-djot.md §11) requires it to
+    // fold as literal paragraph text instead. `line` is already dedented to
+    // the content column here, so a fence sitting AT that column still opens.
+    if !line.starts_with([' ', '\t']) {
+        if let Some(fence_len) = detect_line_block_open(line) {
+            // A line block, like any colon fence, opens only when a matching
+            // closer exists ahead (grammar §12/§23); an unterminated `::: |`
+            // stays literal instead of swallowing the rest of the document.
+            let has_closer = cur.has_colon_closer_after(cur.pos + 1, fence_len);
+            if has_closer {
+                return Some(parse_line_block(cur, options));
+            }
         }
-    }
-    if let Some(fence_len) = detect_hardbreaks_block_open(line) {
-        // Like a line block, a `::: \` opens only when a matching closer exists
-        // ahead (grammar §12/§23); an unterminated opener stays literal.
-        let has_closer = cur.has_colon_closer_after(cur.pos + 1, fence_len);
-        if has_closer {
-            return Some(parse_hardbreaks_block(cur, options));
+        if let Some(fence_len) = detect_hardbreaks_block_open(line) {
+            // Like a line block, a `::: \` opens only when a matching closer
+            // exists ahead (grammar §12/§23); an unterminated opener stays literal.
+            let has_closer = cur.has_colon_closer_after(cur.pos + 1, fence_len);
+            if has_closer {
+                return Some(parse_hardbreaks_block(cur, options));
+            }
         }
     }
     // FLUSH-LEFT only: `detect_container_open` trims leading whitespace, so an
@@ -1677,8 +1687,15 @@ fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 } else {
                     Vec::new()
                 };
+                // Only a FLUSH-LEFT `:::` container closes the quoted paragraph;
+                // an INDENTED `::: note` / `:::` (above the quote's content
+                // column) is literal paragraph text, so it keeps the paragraph
+                // open and lazy continuation stays in the quote (strict column-0
+                // rule, docs/divergence-from-djot.md §11) -- uniform with the
+                // opener paths in parse_block / interrupts_paragraph.
                 para_open = !is_blank_line(stripped)
-                    && detect_container_open(stripped).is_none()
+                    && (stripped.starts_with([' ', '\t'])
+                        || detect_container_open(stripped).is_none())
                     && !trim_ascii_start(stripped).starts_with("%%")
                     && !interrupts_paragraph_with_rest(stripped, &rest_stripped);
             }
@@ -2311,6 +2328,19 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                     ));
                 }
                 let nested_children = parse_mapped_source(&nested, options);
+                // A blank line INSIDE the outer item -- swallowed into the nested
+                // source by the collection above -- that directly separates the
+                // sub-list from a following PARAGRAPH still attached to the outer
+                // item makes the OUTER item loose. This is the same paragraph-only
+                // rule the plain-continuation branch applies via `pending_blank`
+                // (matches carve-js). The check is precise: the blank must
+                // directly precede outer-item content (not inner-item content or a
+                // sibling marker -- corpus 142: nested looseness does not
+                // propagate) and that content must begin a paragraph (a `<hr>`,
+                // block quote, or other block opener does not loosen).
+                if sublist_source_loosens_outer_item(&nested.source) {
+                    tight = false;
+                }
                 last.children.extend(nested_children);
                 continue;
             }
@@ -2707,6 +2737,76 @@ fn is_ambiguous_roman_letter(m: &str) -> bool {
         )
 }
 
+/// Visual column (tab-aware) at which a list ITEM's continuation content begins,
+/// mirroring `parse_list` exactly: for ordered/unordered it is where the marker
+/// content begins (`- ` -> 2, `1. ` -> 3, `10. ` -> 4); for a TASK the checkbox
+/// counts as content, not marker, so the column is the bullet width (`- ` -> 2).
+/// Returns `None` when `line` is not a list marker.
+fn marker_content_col(line: &str) -> Option<usize> {
+    let m = detect_list_marker_full(line)?;
+    if m.checked.is_some() {
+        return Some(m.indent + 2);
+    }
+    let content_off = (m.content.as_ptr() as usize).saturating_sub(line.as_ptr() as usize);
+    Some(indent_columns(line) + content_off.saturating_sub(leading_ws(line)))
+}
+
+/// Whether `line` (in the dedented sub-list coordinate space) begins a plain
+/// PARAGRAPH rather than a block opener. Any indented line is paragraph text
+/// under the strict column-0 rule; a flush-left line is a paragraph only when it
+/// matches none of the block openers.
+fn line_starts_paragraph(line: &str) -> bool {
+    if is_blank_line(line) {
+        return false;
+    }
+    if line.starts_with([' ', '\t']) {
+        return true;
+    }
+    detect_heading(line).is_none()
+        && !detect_thematic_break(line)
+        && !line.starts_with('>')
+        && detect_fence_open(line).is_none()
+        && detect_container_open(line).is_none()
+        && detect_line_block_open(line).is_none()
+        && detect_hardbreaks_block_open(line).is_none()
+        && detect_abbreviation_def(line).is_none()
+        && !is_table_start(line)
+        && !is_definition_list_start(line)
+        && detect_list_marker_full(line).is_none()
+        && !trim_ascii_start(line).starts_with("%%")
+}
+
+/// True when the dedented sub-list source carries a blank line that DIRECTLY
+/// precedes a PARAGRAPH attached to the OUTER item -- i.e. below the sub-list's
+/// own content column and plain paragraph text. That blank is internal to the
+/// outer item and loosens it. A blank that precedes inner-item content (reaching
+/// the sub-list's content column), a sibling marker, or a non-paragraph outer
+/// block (e.g. a `<hr>` or block quote) does NOT loosen the outer item (corpus
+/// 142: looseness does not propagate; and the paragraph-only rule the plain
+/// continuation branch applies via `pending_blank`).
+fn sublist_source_loosens_outer_item(source: &str) -> bool {
+    let lines: Vec<&str> = source.split('\n').collect();
+    let Some(inner_content_col) = lines
+        .iter()
+        .find(|l| !is_blank_line(l))
+        .and_then(|l| marker_content_col(l))
+    else {
+        return false;
+    };
+    let mut prev_blank = false;
+    for line in &lines {
+        if is_blank_line(line) {
+            prev_blank = true;
+            continue;
+        }
+        if prev_blank && indent_columns(line) < inner_content_col && line_starts_paragraph(line) {
+            return true;
+        }
+        prev_blank = false;
+    }
+    false
+}
+
 fn detect_list_marker_full(line: &str) -> Option<ListMarker<'_>> {
     let indent = indent_columns(line);
     if let Some((checked, content, attrs, marker)) = detect_task(line) {
@@ -3092,10 +3192,18 @@ fn interrupts_paragraph(cur: &mut LineCursor<'_>, line: &str) -> bool {
         }
     }
     // A `::: |` line block or `::: \` hard-break block interrupts like any
-    // colon-fence block, with the same matching-closer lookahead.
-    if let Some(len) = detect_line_block_open(line).or_else(|| detect_hardbreaks_block_open(line)) {
-        if cur.has_colon_closer_after(cur.pos + 1, len) {
-            return true;
+    // colon-fence block, with the same matching-closer lookahead -- but only
+    // FLUSH-LEFT, matching the `detect_container_open` guard above and the
+    // opener path in `parse_block`. An INDENTED colon fence (the detectors trim
+    // leading whitespace) folds as lazy paragraph text instead of splitting the
+    // paragraph (strict column-0 rule, docs/divergence-from-djot.md §11).
+    if !line.starts_with([' ', '\t']) {
+        if let Some(len) =
+            detect_line_block_open(line).or_else(|| detect_hardbreaks_block_open(line))
+        {
+            if cur.has_colon_closer_after(cur.pos + 1, len) {
+                return true;
+            }
         }
     }
     false
@@ -3148,13 +3256,19 @@ fn interrupts_paragraph_with_rest(line: &str, rest: &[&str]) -> bool {
             return true;
         }
     }
-    // Colon-fence family openers (`::: |` line block, `::: \` hard-break block)
-    // interrupt blockquote lazy continuation like any block opener, matching the
-    // plain `:::` div the caller already guards. Without this, an unquoted line
-    // after a quoted opener is wrongly absorbed into the quote. carve-js lags on
+    // A FLUSH-LEFT colon-fence family opener (`::: |` line block, `::: \`
+    // hard-break block) interrupts blockquote lazy continuation like any block
+    // opener, matching the plain `:::` div the caller already guards. Without
+    // this, an unquoted line after a quoted opener is wrongly absorbed into the
+    // quote. An INDENTED colon fence (above the quote's content column) is
+    // literal paragraph text under the strict column-0 rule, so lazy
+    // continuation stays inside the quote -- uniform with the opener and
+    // interrupt paths in parse_block / interrupts_paragraph. carve-js lags on
     // the hard-break block, so the spec corpus (88-line-blocks) -- not carve-js
     // -- is the reference here (carve-rs issue 148).
-    if detect_line_block_open(line).is_some() || detect_hardbreaks_block_open(line).is_some() {
+    if !line.starts_with([' ', '\t'])
+        && (detect_line_block_open(line).is_some() || detect_hardbreaks_block_open(line).is_some())
+    {
         return true;
     }
     false
