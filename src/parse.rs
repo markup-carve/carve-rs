@@ -3152,8 +3152,12 @@ fn interrupts_paragraph(cur: &mut LineCursor<'_>, line: &str) -> bool {
     }
     // A standalone block-attribute line floats forward to the next block (or is
     // dropped when none follows, §15), so it interrupts the paragraph rather
-    // than folding in as literal text.
-    if parse_standalone_attrs(line).is_some() {
+    // than folding in as literal text -- but only FLUSH-LEFT, like the
+    // quote/heading/table checks below. `parse_standalone_attrs` trims leading
+    // whitespace, so without this guard an INDENTED `{...}` line would interrupt
+    // where an indented `> q` / `# h` does not; an indented attr line is lazy
+    // paragraph text under the strict column-0 rule (§24 C3), not a floater.
+    if !line.starts_with([' ', '\t']) && parse_standalone_attrs(line).is_some() {
         return true;
     }
     // Symmetric §10: a list marker (bullet OR task OR ordered) does NOT
@@ -3248,7 +3252,9 @@ fn interrupts_paragraph_with_rest(line: &str, rest: &[&str]) -> bool {
     if trim_ascii_start(line).starts_with("%%") || detect_abbreviation_def(line).is_some() {
         return true;
     }
-    if parse_standalone_attrs(line).is_some() {
+    // Flush-left only (see interrupts_paragraph): an indented `{...}` line is
+    // lazy paragraph text under the strict column-0 rule, not a floating attr.
+    if !line.starts_with([' ', '\t']) && parse_standalone_attrs(line).is_some() {
         return true;
     }
     if detect_heading(line).is_some()

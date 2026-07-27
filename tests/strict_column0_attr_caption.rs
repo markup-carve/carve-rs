@@ -84,3 +84,21 @@ fn flush_reference_image_with_caption_still_forms_figure() {
         "<figure>\n  <img src=\"a.jpg\" alt=\"Apollo\">\n  <figcaption>Figure 1: moon</figcaption>\n</figure>"
     );
 }
+
+// An INDENTED `{...}` line in the MIDDLE of an open paragraph must not interrupt
+// it (the interrupts_paragraph path, not just the block-start path). It folds as
+// literal text, matching carve-php / carve-js / the oracle.
+#[test]
+fn indented_attr_line_does_not_interrupt_a_paragraph() {
+    assert_eq!(
+        carve::to_html("Para\n {.x}\nNext\n"),
+        "<p>Para\n{.x}\nNext</p>"
+    );
+}
+
+// A FLUSH-LEFT `{...}` line still interrupts (floats forward as attrs), so it is
+// not caught by the guard above.
+#[test]
+fn flush_attr_line_still_floats_forward() {
+    assert_eq!(carve::to_html("{.x}\nPara\n"), "<p class=\"x\">Para</p>");
+}
