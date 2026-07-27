@@ -2273,6 +2273,14 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                     {
                         tight = false;
                     }
+                    // A blank ABSORBED inside the collected continuation (e.g. a
+                    // fence/div/table followed by a blank and then trailing text)
+                    // loosens the item when a plain paragraph follows the blank
+                    // (§17 L1). The outer `pending_blank` only sees a blank BEFORE
+                    // this chunk, so this covers the blank-after / blank-both case.
+                    if continuation_source_loosens(&nested.source) {
+                        tight = false;
+                    }
                     pending_blank = false;
                     last.children.extend(nested_children);
                     continue;
@@ -2505,6 +2513,14 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 cur.pos > before_block && is_blank_line(cur.lines[cur.pos - 1]);
             if !swallowed_blank_separator && nested_ends_with_heading(&stream.source, options) {
                 collect_trailing_lazy(cur, &mut stream);
+            }
+            // A blank absorbed inside the marker-line block's continuation that
+            // is followed by a plain paragraph loosens the item (§17 L1), the
+            // same rule the plain-continuation branch applies -- e.g. a
+            // marker-line fence with blank-separated trailing text
+            // (`- ```\n  c\n  ```\n\n  tail`).
+            if continuation_source_loosens(&stream.source) {
+                tight = false;
             }
             let children = parse_mapped_source(&stream, options);
             items.push(ListItem {
@@ -2921,6 +2937,64 @@ fn block_ends_with_open_paragraph(block: Option<&BlockNode>) -> bool {
         // (like code/table). Matches carve-js.
         _ => false,
     }
+}
+
+/// §17 L1/L2: within a list item's collected continuation body, a blank line
+/// that is followed by a PLAIN paragraph (a line that opens no sub-block)
+/// loosens the list, exactly as a blank-separated second paragraph does. A
+/// blank followed by a sub-block opener (fence, `:::` div, table, block quote,
+/// heading, thematic break, definition term, or a nested list marker) keeps the
+/// item tight (§17 L2). This mirrors the executable-spec oracle's line-based
+/// `opensSubBlock` scan, which -- like carve-js -- is purely textual: it does
+/// not track whether a blank sits inside a fenced block, so a fenced block that
+/// contains an interior blank line loosens its item too. `source` is the
+/// continuation dedented to column 0, so block openers are recognized flush.
+fn continuation_source_loosens(source: &str) -> bool {
+    let lines: Vec<&str> = source.split('\n').collect();
+    // Start at 1: a leading blank is not an interior separator between blocks.
+    for i in 1..lines.len() {
+        if !is_blank_line(lines[i]) {
+            continue;
+        }
+        let mut j = i + 1;
+        while j < lines.len() && is_blank_line(lines[j]) {
+            j += 1;
+        }
+        if j >= lines.len() {
+            // Only trailing blank(s) follow: no second block to loosen against.
+            continue;
+        }
+        if !continuation_line_opens_sub_block(lines[j], &lines[j + 1..]) {
+            return true;
+        }
+    }
+    false
+}
+
+/// Whether `line` (already dedented to column 0) begins a sub-block that, when
+/// it follows a blank line inside a list item, keeps the item tight (§17 L2).
+/// A nested list marker counts (a sub-list after a blank attaches tight); a
+/// plain paragraph does not (it loosens, §17 L1). Mirrors the oracle's
+/// `opensSubBlock` plus its marker handling.
+fn continuation_line_opens_sub_block(line: &str, rest: &[&str]) -> bool {
+    if is_list_marker(line) {
+        return true;
+    }
+    if interrupts_paragraph_with_rest(line, rest) {
+        return true;
+    }
+    // `interrupts_paragraph_with_rest` omits the plain `:::` div (it serves
+    // blockquote lazy continuation, where the div is guarded elsewhere). A div
+    // opener with a matching closer ahead is a block here, so check it directly.
+    if let Some(open) = detect_container_open(line) {
+        if rest.iter().any(|l| {
+            let t = trim_ascii(l);
+            !t.is_empty() && t.bytes().all(|b| b == b':') && t.len() >= open.fence_len
+        }) {
+            return true;
+        }
+    }
+    false
 }
 
 fn collect_trailing_lazy(cur: &mut LineCursor, nested: &mut MappedSource) {

@@ -14,6 +14,20 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Trailing text after a closed block in a TIGHT list item now renders BARE,
+  and a blank line that separates a block from trailing text now loosens the
+  item** (matching carve-js and the executable-spec oracle). Previously text
+  that followed a fenced code block, `:::` div, admonition, or table inside a
+  tight list item was wrongly wrapped in a `<p>` (e.g. `- item` then an indented
+  fence then `tail` rendered `<p>tail</p>` instead of a bare `tail`); a tight
+  item never wraps any of its paragraphs, so all direct-child paragraphs now
+  render as bare inlines. Separately, a blank line between a block and following
+  trailing text (`- item` / fence / blank / `tail`) now marks the item loose,
+  wrapping its leading and trailing text in `<p>` (§17 L1); a blank before a
+  single sub-block with no trailing text stays tight (the compact-block rule),
+  and a blank followed by another sub-block opener stays tight. As a side effect
+  the checkbox of a loose task item now sits OUTSIDE its first paragraph
+  (`<input ...> <p>b</p>`), also matching carve-js and the oracle.
 - **A run of 2+ hyphens now decomposes into em/en dashes with no leftover
   literal hyphen** (canonical djot allocation, matching carve-js / carve-php /
   the executable-spec oracle). The old fixed longest-match table (capped at six
