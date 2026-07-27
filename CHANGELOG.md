@@ -7,6 +7,8 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-07-27
+
 - Advance the spec corpus to carve `9c5f53a` (categories 143-162: definition-list
   openers, strict column-0, the dash-run ladder, unresolved footnote-ref
   attributes, tight-item trailing text, and the list-looseness pins) and cover
