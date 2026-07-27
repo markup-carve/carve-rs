@@ -2203,11 +2203,42 @@ fn render_attrs_without_id(attrs: &Option<Attrs>) -> String {
     render_attrs(&attrs)
 }
 
+/// Allocate a run of `n` hyphens (`n >= 2`) into em/en dashes, matching the
+/// canonical carve-js/carve-php/oracle `allocateDashes` (djot allocation): all
+/// em when divisible by 3, all en when divisible by 2, otherwise as many
+/// em-dashes as fit with the remainder as en-dashes - where a remainder of 1
+/// trades one em for two en, so no literal hyphen is ever left over. Examples:
+/// 2->en, 3->em, 4->en+en, 5->em+en, 6->em+em, 7->em+en+en, 8->en*4, 9->em*3.
+pub(crate) fn allocate_dashes(n: usize) -> String {
+    const EM: &str = "\u{2014}";
+    const EN: &str = "\u{2013}";
+    if n % 3 == 0 {
+        return EM.repeat(n / 3);
+    }
+    if n % 2 == 0 {
+        return EN.repeat(n / 2);
+    }
+    // Odd and not divisible by 3: the smallest such n is 5, and for n % 3 == 1
+    // the smallest is 7, so `n / 3 >= 1` (and `>= 2` in the trade case) - the
+    // `em -= 1` below never underflows given the `n >= 2` contract.
+    let (em, en) = if n % 3 == 1 {
+        (n / 3 - 1, 2)
+    } else {
+        (n / 3, 1)
+    };
+    let mut out = String::with_capacity((em + en) * 3);
+    out.push_str(&EM.repeat(em));
+    out.push_str(&EN.repeat(en));
+    out
+}
+
 /// Apply substring replacements, but never across an escape-guarded char (the
 /// U+E000 guard marks the following char as an escaped literal, so it must not
-/// participate in a smart-typography operator like `<=` or `->`).
-fn apply_smart_ops(s: &str, replacements: &[(&str, &str)]) -> String {
+/// participate in a smart-typography operator like `<=` or `->`). A run of 2+
+/// ASCII hyphens between operators collapses via `allocate_dashes`.
+pub(crate) fn apply_smart_ops(s: &str, replacements: &[(&str, &str)]) -> String {
     fn apply_segment(seg: &str, replacements: &[(&str, &str)]) -> String {
+        let bytes = seg.as_bytes();
         let mut out = String::new();
         let mut i = 0;
         while i < seg.len() {
@@ -2217,14 +2248,28 @@ fn apply_smart_ops(s: &str, replacements: &[(&str, &str)]) -> String {
             {
                 out.push_str(to);
                 i += from.len();
-            } else {
-                let ch = seg[i..]
-                    .chars()
-                    .next()
-                    .expect("scanner index must point at a character boundary");
-                out.push(ch);
-                i += ch.len_utf8();
+                continue;
             }
+            // A run of 2+ ASCII hyphens collapses to em/en dashes; a lone `-`
+            // stays literal. The operator table is checked first (above), so an
+            // arrow like `->` still wins at its own position - a run is only
+            // taken when the next byte is also `-` (mirrors carve-js smartToken:
+            // SMART_TOKENS first, then `text[i] === '-' && text[i+1] === '-'`).
+            if bytes[i] == b'-' && i + 1 < seg.len() && bytes[i + 1] == b'-' {
+                let mut n = 1;
+                while i + n < seg.len() && bytes[i + n] == b'-' {
+                    n += 1;
+                }
+                out.push_str(&allocate_dashes(n));
+                i += n;
+                continue;
+            }
+            let ch = seg[i..]
+                .chars()
+                .next()
+                .expect("scanner index must point at a character boundary");
+            out.push(ch);
+            i += ch.len_utf8();
         }
         out
     }
@@ -2289,11 +2334,6 @@ fn smart_text_after<'a>(
         ("(c)", "©"),
         ("(r)", "®"),
         ("(tm)", "™"),
-        ("------", "——"),
-        ("-----", "—–"),
-        ("----", "––"),
-        ("---", "—"),
-        ("--", "–"),
         ("...", "…"),
     ];
     // Apply the operator replacements only OUTSIDE escape-guarded chars, so an

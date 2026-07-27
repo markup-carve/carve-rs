@@ -14,6 +14,19 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A run of 2+ hyphens now decomposes into em/en dashes with no leftover
+  literal hyphen** (canonical djot allocation, matching carve-js / carve-php /
+  the executable-spec oracle). The old fixed longest-match table (capped at six
+  hyphens, `------` -> em em, applied greedily) left a stray literal hyphen at
+  N = 7, 13, ... (N is 1 mod 6) and mis-allocated at N = 8, 10, 13 - e.g. seven
+  hyphens rendered as `——-` (two em plus a hyphen) instead of the canonical
+  `—––` (one em plus two en). Allocation is now: all em when divisible by 3, all
+  en when divisible by 2, otherwise as many em-dashes as fit with the remainder
+  as en-dashes, where a remainder of 1 trades one em for two en. The Markdown,
+  plain-text and ANSI renderers share the same per-position scan as the HTML
+  path, so all outputs stay byte-parity; the arrow operators (`->`, `<-`, ...)
+  still win at their own position, so `<-->` is two arrows and `------->` is a
+  seven-hyphen run followed by a literal `>`.
 - **An indented `{attr}` line and an indented image + `^ caption` pair now stay
   literal** (strict column-0 rule, `docs/divergence-from-djot.md` §11). A
   block-attribute line above its container's content column no longer attaches to
