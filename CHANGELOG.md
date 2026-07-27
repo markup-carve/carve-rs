@@ -14,6 +14,12 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **An indented `{attr}` line and an indented image + `^ caption` pair now stay
+  literal** (strict column-0 rule, `docs/divergence-from-djot.md` §11). A
+  block-attribute line above its container's content column no longer attaches to
+  the following block, and an indented image + caption no longer forms a
+  `<figure>`; both fold as literal paragraph text, matching carve-php and
+  carve-js. A flush-left `{attr}` line or image caption still fires unchanged.
 - **An indented `::: |` line block or `::: \` hard-break block now stays
   literal** (strict column-0 rule, `docs/divergence-from-djot.md` §11). A colon
   fence recognized only at its container's content column (column 0 at the top

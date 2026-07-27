@@ -873,12 +873,19 @@ fn parse_blocks(cur: &mut LineCursor, options: &Options<'_>) -> Vec<BlockNode> {
         return vec![BlockNode::Paragraph(Paragraph {
             attrs: None,
             children: parse_inline_with_options(&text, options),
+            ..Default::default()
         })];
     };
     let mut out = Vec::new();
     let mut pending_attrs: Option<Attrs> = None;
     while !cur.eof() {
         let line = cur.peek().unwrap();
+        // A standalone `{attr}` block opener fires only at the container's
+        // content column (flush-left here, since the caller has dedented to that
+        // column). An INDENTED `{attr}` line does NOT attach to the following
+        // block; it folds as literal paragraph text (strict column-0 rule,
+        // docs/divergence-from-djot.md §11), matching carve-php / carve-js.
+        let line_flush = !line.starts_with([' ', '\t']);
         if is_blank_line(line) {
             cur.consume();
             continue;
@@ -912,9 +919,11 @@ fn parse_blocks(cur: &mut LineCursor, options: &Options<'_>) -> Vec<BlockNode> {
             }));
             continue;
         }
-        if let Some(attrs) = parse_standalone_attrs_block(cur) {
-            merge_attrs(&mut pending_attrs, attrs);
-            continue;
+        if line_flush {
+            if let Some(attrs) = parse_standalone_attrs_block(cur) {
+                merge_attrs(&mut pending_attrs, attrs);
+                continue;
+            }
         }
         let start_line = cur.pos;
         if let Some(node) = parse_block(cur, options) {
@@ -1183,6 +1192,7 @@ fn parse_equation_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<B
     let target = FigureTarget::Paragraph(Paragraph {
         attrs: None,
         children: inline,
+        ..Default::default()
     });
     if let Some(caption) = consume_caption(cur, options) {
         return Some(BlockNode::Figure(Figure {
@@ -2599,6 +2609,7 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         let mut paragraph = BlockNode::Paragraph(Paragraph {
             attrs: None,
             children: parse_inline_with_options(para_text, options),
+            ..Default::default()
         });
         if options.source_lines {
             if let Some(line) = item_source_line {
@@ -3079,6 +3090,11 @@ fn detect_block_image(line: &str) -> Option<Image> {
 }
 
 fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
+    // Whether the first line sits at the container's content column (flush-left
+    // here, since the caller has dedented to that column). Only a content-column
+    // image + `^ caption` promotes to a `<figure>` later; an indented one stays
+    // literal (strict column-0 rule).
+    let at_content_column = cur.peek().is_some_and(|l| !l.starts_with([' ', '\t']));
     let mut lines: Vec<&str> = Vec::new();
     while let Some(line) = cur.peek() {
         if is_blank_line(line) {
@@ -3112,6 +3128,7 @@ fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     BlockNode::Paragraph(Paragraph {
         attrs: None,
         children: parse_inline_with_options(joined, options),
+        at_content_column,
     })
 }
 
@@ -4157,6 +4174,7 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             let mut node = BlockNode::Paragraph(Paragraph {
                 attrs: None,
                 children: inlines,
+                ..Default::default()
             });
             if options.source_lines {
                 if let Some(line) = source_line {
@@ -7279,10 +7297,18 @@ fn promote_block_images(blocks: &mut [BlockNode], figures_only: bool) {
         // (paragraph interruption already stopped the caption at a block opener,
         // so a multi-line caption keeps its interior soft breaks); strip the
         // `^ ` marker from the leading Text.
+        // Strict column-0 (docs/divergence-from-djot.md §11): the image must have
+        // sat at its container's content column. An INDENTED image + caption is
+        // literal paragraph text (a `<p>` with an inline image and a literal
+        // `^ caption` line), matching carve-php / carve-js -- so gate on
+        // `at_content_column`. A flush-left DIRECT image + caption never reaches
+        // here (it became a Figure at parse time); this path serves resolved
+        // REFERENCE images, which likewise promote only when flush-left.
         let ref_figure = matches!(
             block,
             BlockNode::Paragraph(p)
-                if p.children.len() >= 3
+                if p.at_content_column
+                    && p.children.len() >= 3
                     && matches!(&p.children[0], InlineNode::Image(img) if img.ref_label.is_none())
                     && matches!(p.children[1], InlineNode::SoftBreak)
                     && matches!(&p.children[2], InlineNode::Text(t) if caption_marker_len(t).is_some())

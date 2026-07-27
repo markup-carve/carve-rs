@@ -157,6 +157,7 @@ impl CarveExtension for NoteBlock {
             node: BlockNode::Paragraph(Paragraph {
                 attrs: None,
                 children: ctx.parse_inlines(content),
+                ..Default::default()
             }),
             lines_consumed: 1,
         })

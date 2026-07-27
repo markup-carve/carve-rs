@@ -104,6 +104,7 @@ fn non_html_renderers_bound_programmatic_block_depth() {
     let mut block = carve::BlockNode::Paragraph(carve::Paragraph {
         attrs: None,
         children: vec![carve::InlineNode::Text("leaf".to_string())],
+        ..Default::default()
     });
     for _ in 0..500 {
         block = carve::BlockNode::BlockQuote(carve::BlockQuote {
@@ -141,6 +142,7 @@ fn non_html_renderers_bound_programmatic_inline_depth() {
         children: vec![carve::BlockNode::Paragraph(carve::Paragraph {
             attrs: None,
             children: vec![inline],
+            ..Default::default()
         })],
     };
 

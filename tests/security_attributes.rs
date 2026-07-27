@@ -163,6 +163,7 @@ fn drops_invalid_attribute_names_before_rendering() {
         source_len: 0,
         footnote_defs: BTreeMap::new(),
         children: vec![carve::BlockNode::Paragraph(carve::Paragraph {
+            at_content_column: false,
             attrs: Some(carve::Attrs {
                 id: None,
                 classes: Vec::new(),

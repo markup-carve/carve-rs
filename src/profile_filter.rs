@@ -194,6 +194,7 @@ impl ProfileFilter<'_> {
                                     children: vec![BlockNode::Paragraph(Paragraph {
                                         attrs: None,
                                         children: text_with_breaks(&text),
+                                        ..Default::default()
                                     })],
                                 };
                                 i += 1;
@@ -333,12 +334,14 @@ impl ProfileFilter<'_> {
                 fig.target = FigureTarget::Paragraph(Paragraph {
                     attrs: None,
                     children: text_with_breaks(&text),
+                    ..Default::default()
                 });
             }
             None => {
                 fig.target = FigureTarget::Paragraph(Paragraph {
                     attrs: None,
                     children: Vec::new(),
+                    ..Default::default()
                 });
             }
         }
@@ -503,6 +506,7 @@ impl ProfileFilter<'_> {
             DisallowedAction::ToText => Ok(Some(BlockNode::Paragraph(Paragraph {
                 attrs: None,
                 children: text_with_breaks(&image_text(img)),
+                ..Default::default()
             }))),
             DisallowedAction::Error => unreachable!(),
         }
@@ -598,6 +602,7 @@ fn block_to_text(node: &BlockNode) -> Option<BlockNode> {
     Some(BlockNode::Paragraph(Paragraph {
         attrs: None,
         children: text_with_breaks(&text),
+        ..Default::default()
     }))
 }
 
