@@ -46,6 +46,42 @@ fn render_blocks(blocks: &[BlockNode], ctx: &mut CarveContext) -> String {
     out
 }
 
+/// Render a list item's children. A loose item separates every block with a
+/// blank line. A tight item joins its blocks with a single newline so the
+/// re-parse stays tight - EXCEPT it keeps the blank line adjacent to a nested
+/// list child, whose own loose/tight rendering (and the continuation-indent
+/// logic below) needs it. Without the tight join, a tight item with more than
+/// one child (e.g. text after a fenced block, corpus 162) would be loosened by
+/// the blank lines, breaking to_html(fmt(x)) == to_html(x); without the
+/// nested-list exception, a tight item whose child is a nested list (corpus
+/// 142) would stop being idempotent.
+fn render_item_blocks(blocks: &[BlockNode], tight: bool, ctx: &mut CarveContext) -> String {
+    if !tight {
+        return render_blocks(blocks, ctx);
+    }
+    if ctx.block_depth >= MAX_RENDER_DEPTH {
+        return String::new();
+    }
+    ctx.block_depth += 1;
+    let mut out = String::new();
+    let mut prev: Option<&BlockNode> = None;
+    for block in blocks {
+        let rendered = render_block(block, ctx);
+        if rendered.is_empty() {
+            continue;
+        }
+        if let Some(prev_block) = prev {
+            let blank_gap =
+                matches!(prev_block, BlockNode::List(_)) || matches!(block, BlockNode::List(_));
+            out.push_str(if blank_gap { "\n\n" } else { "\n" });
+        }
+        out.push_str(&rendered);
+        prev = Some(block);
+    }
+    ctx.block_depth -= 1;
+    out
+}
+
 fn render_block(node: &BlockNode, ctx: &mut CarveContext) -> String {
     ctx.smart_state = crate::render_text::SmartQuoteState::new();
     match node {
@@ -196,7 +232,7 @@ fn render_list(node: &List, ctx: &mut CarveContext) -> String {
                 format!("{bullet}{item_attrs} ")
             };
         }
-        let mut content = render_blocks(&item.children, ctx);
+        let mut content = render_item_blocks(&item.children, node.tight, ctx);
         let trimmed_content = trim_non_nbsp(&content);
         if trimmed_content.is_empty()
             || (trimmed_content.starts_with("[^") && trimmed_content.contains(": "))

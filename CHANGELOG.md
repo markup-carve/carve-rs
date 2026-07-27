@@ -7,6 +7,14 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- Advance the spec corpus to carve `9c5f53a` (categories 143-162: definition-list
+  openers, strict column-0, the dash-run ladder, unresolved footnote-ref
+  attributes, tight-item trailing text, and the list-looseness pins) and cover
+  them in the corpus test. Fix a `carve fmt` bug the new corpus exposed: a tight
+  list item with more than one child (for example text after a fenced block,
+  category 162) was joined with blank lines and loosened on re-parse. A tight
+  item now joins its blocks with a single newline, keeping the blank only
+  adjacent to a nested list child.
 - BREAKING: rename `Emoji` AST nodes to `Symbol`, the `emoji` render option to
   `symbols`, and the CLI flag `--emoji` to `--symbol`; symbol shortcodes now
   require a leading word boundary, require an ASCII alphanumeric first name
