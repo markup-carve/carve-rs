@@ -119,6 +119,12 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **SVG `img` fence** (Tier-3, opt-in, off by default) (#254, #263): an
+  `` ```img `` block renders a sanitized SVG instead of showing the source.
+  Sandbox by default - the sanitized SVG is encoded into a `data:image/svg+xml`
+  `<img>` the browser isolates (no script, no fetch, no DOM access); a host may
+  opt into a live inline `<svg>` for `currentColor` / CSS theming. When no
+  `{alt=…}` is given, the alt text falls back to the SVG's `<title>`.
 - **Inline literal** via the `` !`…` `` prefix (#245): a `!` immediately before a
   verbatim backtick span renders its content as escaped prose with no `<code>`
   wrapper, so notation that collides with the bare emphasis delimiters (phonemic
@@ -143,6 +149,7 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - A trailing backslash at end of input is a hard break; a bare same-level `#`
   continues a heading (#234).
 - A thematic break is a contiguous column-zero run only (#233).
+- A table continuation row must close with a pipe (#259).
 - Definition-list djot parity: a blank line may separate a term from its
   definition (#229); terms fold continuation lines like a heading (#228);
   descriptions support the `:  +` first-block form (#227) and lazy continuation
