@@ -2951,9 +2951,24 @@ fn block_ends_with_open_paragraph(block: Option<&BlockNode>) -> bool {
 /// continuation dedented to column 0, so block openers are recognized flush.
 fn continuation_source_loosens(source: &str) -> bool {
     let lines: Vec<&str> = source.split('\n').collect();
-    // Start at 1: a leading blank is not an interior separator between blocks.
-    for i in 1..lines.len() {
-        if !is_blank_line(lines[i]) {
+    // Track fenced-code regions: a blank line INSIDE an open fence is verbatim
+    // content, not an interior block separator, so it must not loosen the item
+    // (carve-php#404 family; matches carve-js / carve-php). A blank AFTER the
+    // fence closes still loosens against a following paragraph.
+    let mut fence: Option<FenceOpen> = None;
+    for i in 0..lines.len() {
+        if let Some(open) = fence {
+            if is_fence_close(lines[i], open) {
+                fence = None;
+            }
+            continue;
+        }
+        if let Some(open) = detect_fence_open(lines[i]) {
+            fence = Some(open);
+            continue;
+        }
+        // Start at 1: a leading blank is not an interior separator between blocks.
+        if i == 0 || !is_blank_line(lines[i]) {
             continue;
         }
         let mut j = i + 1;
