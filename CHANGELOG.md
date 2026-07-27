@@ -14,6 +14,21 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **An indented `::: |` line block or `::: \` hard-break block now stays
+  literal** (strict column-0 rule, `docs/divergence-from-djot.md` §11). A colon
+  fence recognized only at its container's content column (column 0 at the top
+  level); an opener above that column no longer fires, so the whole run folds to
+  paragraph text. The line-block and hard-break checks were missing the
+  content-column gate the plain `:::` div / admonition path already had. A
+  flush-left line block or hard-break block still opens unchanged. Matches
+  carve-js.
+- **A blank line inside an outer list item before an attached paragraph now
+  loosens the outer item** even when a nested sublist precedes the blank. `- a`
+  / `  - b` / blank / `   > q` renders the outer item loose
+  (`<li><p>a</p>…</li>`), matching carve-js: the sublist collection swallowed the
+  blank, so the outer item was left tight. Only an attached paragraph loosens; a
+  flush-to-content-column block quote or content that nests into the inner item
+  (corpus 142) leaves the outer item tight.
 - **An under-indented definition line still attaches as a `<dd>`** (carve#295,
   PART 9 §24 C3). A `:  def` line below the term's content column - including at
   column 0 - now attaches to the open definition list inside a list item instead
