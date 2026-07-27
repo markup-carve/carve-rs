@@ -69,10 +69,20 @@ pub struct Heading {
     pub children: Vec<InlineNode>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Paragraph {
     pub attrs: Option<Attrs>,
     pub children: Vec<InlineNode>,
+    /// Whether the paragraph's first source line began at its container's content
+    /// column (column 0 at the top level), i.e. was NOT indented above it. Used
+    /// only by the post-parse image-figure promotion: an image + `^ caption`
+    /// paragraph promotes to a `<figure>` only when the image sat at the content
+    /// column (strict column-0 rule, docs/divergence-from-djot.md §11). An
+    /// indented image + caption stays a literal paragraph, matching carve-php /
+    /// carve-js. Non-parse construction sites leave this `false` (the default);
+    /// none of them build an image + caption paragraph, so it never blocks a
+    /// legitimate promotion.
+    pub at_content_column: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

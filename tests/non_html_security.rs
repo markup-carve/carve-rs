@@ -40,6 +40,7 @@ fn markdown_percent_encodes_destination_breakouts() {
         source_len: 0,
         footnote_defs: BTreeMap::new(),
         children: vec![carve::BlockNode::Paragraph(carve::Paragraph {
+            at_content_column: false,
             attrs: None,
             children: vec![carve::InlineNode::Image(carve::Image {
                 attrs: None,
@@ -136,6 +137,7 @@ fn markdown_escapes_image_alt_label_metacharacters() {
         source_len: 0,
         footnote_defs: BTreeMap::new(),
         children: vec![carve::BlockNode::Paragraph(carve::Paragraph {
+            at_content_column: false,
             attrs: None,
             children: vec![carve::InlineNode::Image(carve::Image {
                 attrs: None,
@@ -158,6 +160,7 @@ fn markdown_strips_control_bytes_from_author_leaf_fields() {
     footnote_defs.insert(
         format!("fn{c}"),
         vec![carve::BlockNode::Paragraph(carve::Paragraph {
+            at_content_column: false,
             attrs: None,
             children: vec![carve::InlineNode::Text(format!("note{c}"))],
         })],
@@ -179,6 +182,7 @@ fn markdown_strips_control_bytes_from_author_leaf_fields() {
                 content: format!("<b>{c}</b>"),
             }),
             carve::BlockNode::Paragraph(carve::Paragraph {
+                at_content_column: false,
                 attrs: None,
                 children: vec![
                     carve::InlineNode::Text(format!("text{c}")),
@@ -250,6 +254,7 @@ fn plain_and_ansi_strip_control_bytes_from_author_leaf_fields() {
     footnote_defs.insert(
         format!("fn{c}"),
         vec![carve::BlockNode::Paragraph(carve::Paragraph {
+            at_content_column: false,
             attrs: None,
             children: vec![carve::InlineNode::CitationGroup(carve::CitationGroup {
                 items: Vec::new(),
@@ -277,6 +282,7 @@ fn plain_and_ansi_strip_control_bytes_from_author_leaf_fields() {
                 raw_ref: None,
             }),
             carve::BlockNode::Paragraph(carve::Paragraph {
+                at_content_column: false,
                 attrs: None,
                 children: vec![
                     carve::InlineNode::Image(carve::Image {

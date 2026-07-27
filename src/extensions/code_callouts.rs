@@ -98,6 +98,7 @@ fn placeholder() -> BlockNode {
     BlockNode::Paragraph(Paragraph {
         attrs: None,
         children: Vec::new(),
+        ..Default::default()
     })
 }
 
