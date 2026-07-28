@@ -3354,7 +3354,14 @@ fn interrupts_paragraph(cur: &mut LineCursor<'_>, line: &str) -> bool {
 }
 
 fn interrupts_lazy_continuation(cur: &mut LineCursor<'_>, line: &str) -> bool {
-    interrupts_paragraph(cur, line) || is_colon_fence_opener_shape(line)
+    // A caption line (`^ …`) ends a list/blockquote item's lazy continuation
+    // rather than folding in: a caption is a heading/figure terminator, not
+    // plain prose the item absorbs. It becomes its own top-level block, matching
+    // carve-js / carve-php (carve#326). Top-level caption-to-figure attachment
+    // runs in the block parser, not this lazy-continuation path.
+    interrupts_paragraph(cur, line)
+        || is_colon_fence_opener_shape(line)
+        || caption_content(line).is_some()
 }
 
 fn is_colon_fence_opener_shape(line: &str) -> bool {

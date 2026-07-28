@@ -48,3 +48,22 @@ fn blank_after_heading_still_ends_it() {
         "<ul>\n  <li>a\n    <ul>\n      <li>\n        <h1 id=\"N\">N</h1>\n      </li>\n    </ul>\n  </li>\n</ul>\n<p>sep</p>"
     );
 }
+
+#[test]
+fn caption_ends_the_item_rather_than_folding_into_the_heading() {
+    // A caption (`^ …`) is a heading/figure terminator, so it ends the item's
+    // lazy continuation instead of folding into the heading; it becomes its own
+    // top-level block, matching carve-js / carve-php.
+    assert_eq!(
+        carve::to_html("- text\n\n  # H\n^ cap\n"),
+        "<ul>\n  <li>text\n    <h1 id=\"H\">H</h1>\n  </li>\n</ul>\n<p>^ cap</p>"
+    );
+}
+
+#[test]
+fn caption_ends_a_plain_paragraph_item_too() {
+    assert_eq!(
+        carve::to_html("- text\n^ cap\n"),
+        "<ul>\n  <li>text</li>\n</ul>\n<p>^ cap</p>"
+    );
+}
