@@ -6,7 +6,7 @@ struct CarveContext {
     block_depth: usize,
     inline_depth: usize,
     list_depth: usize,
-    smart_state: crate::render_text::SmartQuoteState,
+    split_state: crate::smart_split::SplitState,
 }
 
 pub fn render_carve(doc: &Document) -> String {
@@ -14,7 +14,7 @@ pub fn render_carve(doc: &Document) -> String {
         block_depth: 0,
         inline_depth: 0,
         list_depth: 0,
-        smart_state: crate::render_text::SmartQuoteState::new(),
+        split_state: crate::smart_split::SplitState::new(),
     };
     let mut parts = Vec::new();
     if !doc.frontmatter.is_empty() {
@@ -83,7 +83,7 @@ fn render_item_blocks(blocks: &[BlockNode], tight: bool, ctx: &mut CarveContext)
 }
 
 fn render_block(node: &BlockNode, ctx: &mut CarveContext) -> String {
-    ctx.smart_state = crate::render_text::SmartQuoteState::new();
+    ctx.split_state = crate::smart_split::SplitState::new();
     match node {
         BlockNode::Heading(heading) => with_block_attrs(
             &heading.attrs,
@@ -543,7 +543,7 @@ fn render_inlines(nodes: &[InlineNode], ctx: &mut CarveContext) -> String {
             .unwrap_or_default();
         let rendered = render_inline(node, ctx, prev, next);
         if !rendered.is_empty() {
-            ctx.smart_state.mark_started();
+            ctx.split_state.mark_started();
         }
         out.push_str(&rendered);
     }
@@ -559,9 +559,22 @@ fn render_inline(
 ) -> String {
     match node {
         InlineNode::Text(text) => {
-            let smart = crate::render_text::clean_smart_text_stateful(text, &mut ctx.smart_state)
-                .replace(crate::NBSP_PLACEHOLDER, "\u{00a0}");
-            escape_text(&smart)
+            // Split into literal and smart runs: literals still get escaped
+            // (so a line-initial `>` cannot become a blockquote on re-parse),
+            // while a smart run is emitted exactly as typed so it re-derives
+            // to the same glyph instead of being frozen as one.
+            let mut out = String::new();
+            for segment in crate::smart_split::split_smart(text, &mut ctx.split_state) {
+                match segment {
+                    crate::smart_split::SmartSegment::Literal(literal) => {
+                        out.push_str(&escape_text(
+                            &literal.replace(crate::NBSP_PLACEHOLDER, "\u{00a0}"),
+                        ));
+                    }
+                    crate::smart_split::SmartSegment::Smart(source) => out.push_str(&source),
+                }
+            }
+            out
         }
         InlineNode::Emphasis(emphasis) => {
             let content = render_inlines(&emphasis.children, ctx);

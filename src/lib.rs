@@ -31,6 +31,7 @@ mod render_carve;
 mod render_markdown;
 mod render_plain;
 mod render_text;
+mod smart_split;
 mod stamp;
 mod unicode_nfc;
 
