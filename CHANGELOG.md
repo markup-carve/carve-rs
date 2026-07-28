@@ -9,6 +9,18 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **The Markdown renderer no longer escapes intraword underscores.**
+  `company_id` came out as `company\_id`, but CommonMark does not honour an
+  intraword underscore - it renders literally either way - so the escape
+  protected nothing and only littered identifiers in output meant to be read
+  and searched. An asterisk is not symmetric here (`a*b*c` does emphasise), so
+  `*` stays escaped everywhere; only `_` narrows.
+
+  Ships together with the same change in carve-php and carve-js, and the three
+  engines were compared byte-for-byte on the Markdown target.
+
+### Fixed
+
 - **`carve fmt` no longer rewrites the author's smart typography** (carve#339).
   Formatting normalized `...` to the ellipsis glyph, `--` to an en dash and `"`
   to curly quotes in the author's own source. The Carve renderer now splits text

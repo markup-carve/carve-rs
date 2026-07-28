@@ -721,7 +721,46 @@ fn normalize(text: &str) -> String {
             out.push(ch);
         }
     }
-    format!("{}\n", out.trim_matches(|c| c == '\n' || c == ' '))
+    let collapsed = format!("{}\n", out.trim_matches(|c| c == '\n' || c == ' '));
+
+    drop_redundant_underscore_escapes(&collapsed)
+}
+
+/// Drop the backslash from an intraword underscore.
+///
+/// CommonMark does not honour an intraword underscore, so `company_id`
+/// renders literally with or without the escape - the backslash only litters
+/// identifiers in output meant to be read and searched. An asterisk is NOT
+/// symmetric here (`a*b*c` does emphasise), so this applies to `_` alone.
+///
+/// Runs on the assembled output rather than in `escape_text` because whether
+/// an underscore is intraword is a property of the rendered stream, not of one
+/// node: the parser splits `company_id` into the text nodes `company` and
+/// `_id`, so at escape time the underscore looks like it starts a word.
+///
+/// Code spans are unaffected: their content is emitted verbatim and never
+/// carries these escapes to begin with.
+fn drop_redundant_underscore_escapes(text: &str) -> String {
+    let chars: Vec<char> = text.chars().collect();
+    let mut out = String::with_capacity(text.len());
+    let mut i = 0usize;
+
+    while i < chars.len() {
+        let is_escaped_underscore = chars[i] == '\\' && chars.get(i + 1) == Some(&'_');
+        let has_word_before = i > 0 && chars[i - 1].is_alphanumeric();
+        let has_word_after = chars.get(i + 2).is_some_and(|c| c.is_alphanumeric());
+
+        if is_escaped_underscore && has_word_before && has_word_after {
+            out.push('_');
+            i += 2;
+            continue;
+        }
+
+        out.push(chars[i]);
+        i += 1;
+    }
+
+    out
 }
 
 fn flatten_heading_text(text: &str) -> String {
