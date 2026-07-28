@@ -2905,7 +2905,12 @@ fn nested_ends_with_heading(nested: &str, options: &Options<'_>) -> bool {
 fn block_ends_with_heading(block: Option<&BlockNode>) -> bool {
     match block {
         Some(BlockNode::Heading(_)) => true,
-        Some(BlockNode::BlockQuote(q)) => block_ends_with_heading(q.children.last()),
+        // NB: no block-quote descent. A flush-left line does not continue a
+        // heading INSIDE a quote (it is neither a quote line nor, at column 0, a
+        // heading continuation the quote would re-enter), so folding it in would
+        // attach it as stray item text rather than heading text. That case stays
+        // as it was (the line ends the item); only list and definition-list
+        // nesting fold.
         Some(BlockNode::List(l)) => {
             block_ends_with_heading(l.items.last().and_then(|it| it.children.last()))
         }
