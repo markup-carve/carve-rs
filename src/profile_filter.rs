@@ -789,7 +789,8 @@ fn block_children_join(children: &[BlockNode]) -> String {
 /// Render an inline node to source-flavored plain text.
 fn extract_inline_text(node: &InlineNode) -> String {
     match node {
-        InlineNode::Text(t) => t.clone(),
+        InlineNode::Text(t) => t.replace(crate::ESCAPED_CARET_PLACEHOLDER, "^"),
+        InlineNode::SmartPunctuation(s) => smart_punctuation_glyph(s).to_string(),
         InlineNode::Code(c, _) => c.clone(),
         InlineNode::Math(m) => m.content.clone(),
         InlineNode::RawInline(r) => r.content.clone(),
@@ -949,6 +950,7 @@ fn is_empty_block(node: &BlockNode) -> bool {
 fn is_empty_inline(node: &InlineNode) -> bool {
     match node {
         InlineNode::Text(t) => t.is_empty(),
+        InlineNode::SmartPunctuation(_) => false,
         InlineNode::Code(c, _) => c.is_empty(),
         InlineNode::Math(m) => m.content.is_empty(),
         InlineNode::RawInline(r) => r.content.is_empty(),

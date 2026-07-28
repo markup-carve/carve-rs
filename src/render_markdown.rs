@@ -1,8 +1,6 @@
 use crate::ast::*;
 use crate::extension::Options;
-use crate::render_text::{
-    clean_smart_text, clean_smart_text_stateful, strip_controls, SmartQuoteState,
-};
+use crate::render_text::strip_controls;
 use std::collections::HashSet;
 
 const MAX_RENDER_DEPTH: usize = 100;
@@ -58,7 +56,6 @@ pub fn render_markdown(doc: &Document) -> String {
         heading_ids,
         referenced_heading_ids,
         list_depth: 0,
-        smart_quote: SmartQuoteState::new(),
     };
     let out = render_blocks(&doc.children, &mut ctx, 0);
     let footnotes = render_footnote_defs(doc, &mut ctx);
@@ -69,16 +66,9 @@ struct MarkdownContext {
     heading_ids: HashSet<String>,
     referenced_heading_ids: HashSet<String>,
     list_depth: usize,
-    /// Running smart-quote state; reset per block via render_block_inlines.
-    smart_quote: SmartQuoteState,
 }
 
-/// Render a block's inline content with a FRESH smart-quote state (a quote
-/// pair does not carry from one block to the next). Nested inline content
-/// (emphasis/link/span children) keeps using `render_inlines`, which threads
-/// the running state through `ctx.smart_quote`.
 fn render_block_inlines(nodes: &[InlineNode], ctx: &mut MarkdownContext) -> String {
-    ctx.smart_quote = SmartQuoteState::new();
     render_inlines(nodes, ctx, 0)
 }
 
@@ -357,9 +347,6 @@ fn render_inlines(nodes: &[InlineNode], ctx: &mut MarkdownContext, depth: usize)
     let mut out = String::new();
     for node in nodes {
         out.push_str(&render_inline(node, ctx, depth));
-        // Any rendered sibling means a following text node's leading quote is
-        // no longer at the true start of the inline flow.
-        ctx.smart_quote.mark_started();
     }
     out
 }
@@ -377,11 +364,13 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
                 // indent) round-trips to a literal non-breaking space in
                 // Markdown, matching the other renderers' source projection.
                 escape_text(
-                    &strip_controls(&clean_smart_text_stateful(text, &mut ctx.smart_quote))
-                        .replace(crate::NBSP_PLACEHOLDER, "\u{00a0}"),
+                    &strip_controls(text)
+                        .replace(crate::NBSP_PLACEHOLDER, "\u{00a0}")
+                        .replace(crate::ESCAPED_CARET_PLACEHOLDER, "^"),
                 )
             }
         }
+        InlineNode::SmartPunctuation(s) => escape_text(&strip_controls(smart_punctuation_glyph(s))),
         InlineNode::Emphasis(emphasis) => match emphasis.kind {
             EmphasisKind::Italic => {
                 format!("*{}*", render_inlines(&emphasis.children, ctx, depth + 1))
@@ -484,12 +473,7 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
         }
         InlineNode::Footnote(footnote) => {
             if let Some(inline) = &footnote.inline {
-                // Footnote content is its own context: render with a FRESH quote
-                // state and restore the surrounding paragraph's, so quotes in the
-                // note neither inherit nor mutate the outer flow. Matches carve-php.
-                let saved = std::mem::replace(&mut ctx.smart_quote, SmartQuoteState::new());
                 let rendered = render_inlines(inline, ctx, depth + 1);
-                ctx.smart_quote = saved;
                 format!("^[{rendered}]")
             } else {
                 format!(
@@ -757,19 +741,19 @@ fn heading_id(heading: &Heading) -> String {
     slugify(&plain_inlines(&heading.children))
 }
 
-// Markdown-specific flattening: deliberately NOT `render::plain_inlines`.
-// It must apply `clean_smart_text` to `Text` so the Markdown projection of a
-// heading id matches the Markdown text it emits (the HTML core never runs smart
-// typography over its slug source, so the two intentionally differ on that
-// axis). Node coverage is otherwise kept in lockstep with the core, including
-// `CitationGroup` -> `raw`, so a citation heading's id is consistent here too.
+// Markdown-specific flattening. Node coverage is kept in lockstep with the
+// core, including `CitationGroup` -> `raw`, so a citation heading's id is
+// consistent here too.
 fn plain_inlines(nodes: &[InlineNode]) -> String {
     let mut out = String::new();
     for node in nodes {
         match node {
-            InlineNode::Text(text) => {
-                out.push_str(&clean_smart_text(text).replace(crate::NBSP_PLACEHOLDER, " "))
-            }
+            InlineNode::Text(text) => out.push_str(
+                &text
+                    .replace(crate::NBSP_PLACEHOLDER, " ")
+                    .replace(crate::ESCAPED_CARET_PLACEHOLDER, "^"),
+            ),
+            InlineNode::SmartPunctuation(s) => out.push_str(smart_punctuation_glyph(s)),
             InlineNode::Emphasis(emphasis) => out.push_str(&plain_inlines(&emphasis.children)),
             InlineNode::Code(code, _) => out.push_str(code),
             // An inline literal renders as visible prose (§27), so it feeds a

@@ -1,6 +1,6 @@
 use crate::ast::*;
 use crate::extension::Options;
-use crate::render_text::{clean_smart_text_stateful, strip_controls, SmartQuoteState};
+use crate::render_text::strip_controls;
 
 const MAX_RENDER_DEPTH: usize = 100;
 
@@ -40,7 +40,6 @@ pub fn render_ansi(doc: &Document) -> String {
         list_depth: 0,
         block_quote_depth: 0,
         ordered: Vec::new(),
-        smart_quote: SmartQuoteState::new(),
     };
     let out = render_blocks(&doc.children, &mut ctx, 0);
     let footnotes = render_footnote_defs(doc, &mut ctx);
@@ -51,15 +50,9 @@ struct AnsiContext {
     list_depth: usize,
     block_quote_depth: usize,
     ordered: Vec<usize>,
-    /// Running smart-quote state; reset per block via render_block_inlines.
-    smart_quote: SmartQuoteState,
 }
 
-/// Render a block's inline content with a FRESH smart-quote state (quotes do
-/// not carry across blocks). Nested inline content keeps using `render_inlines`,
-/// which threads the running state through `ctx.smart_quote`.
 fn render_block_inlines(nodes: &[InlineNode], ctx: &mut AnsiContext) -> String {
-    ctx.smart_quote = SmartQuoteState::new();
     render_inlines(nodes, ctx, 0)
 }
 
@@ -460,9 +453,6 @@ fn render_inlines(nodes: &[InlineNode], ctx: &mut AnsiContext, depth: usize) -> 
     let mut out = String::new();
     for node in nodes {
         out.push_str(&render_inline(node, ctx, depth));
-        // Any rendered sibling means a following text node's leading quote is
-        // no longer at the true start of the inline flow.
-        ctx.smart_quote.mark_started();
     }
     out
 }
@@ -472,9 +462,8 @@ fn render_inline(node: &InlineNode, ctx: &mut AnsiContext, depth: usize) -> Stri
         return String::new();
     }
     match node {
-        InlineNode::Text(text) => {
-            strip_controls(&clean_smart_text_stateful(text, &mut ctx.smart_quote))
-        }
+        InlineNode::Text(text) => strip_controls(text),
+        InlineNode::SmartPunctuation(s) => strip_controls(smart_punctuation_glyph(s)),
         InlineNode::Emphasis(emphasis) => match emphasis.kind {
             EmphasisKind::Italic => {
                 style(&render_inlines(&emphasis.children, ctx, depth + 1), ITALIC)
@@ -547,11 +536,7 @@ fn render_inline(node: &InlineNode, ctx: &mut AnsiContext, depth: usize) -> Stri
         }
         InlineNode::Footnote(footnote) => {
             if let Some(inline) = &footnote.inline {
-                // Footnote content is its own context: render with a FRESH quote
-                // state and restore the surrounding paragraph's. Matches carve-php.
-                let saved = std::mem::replace(&mut ctx.smart_quote, SmartQuoteState::new());
                 let rendered = render_inlines(inline, ctx, depth + 1);
-                ctx.smart_quote = saved;
                 format!("({rendered})")
             } else {
                 style(
@@ -724,5 +709,7 @@ fn normalize(text: &str) -> String {
     // A generated-NBSP placeholder (escaped space / verse indent) becomes a
     // plain space in display output; a LITERAL U+00A0 typed in the source is
     // preserved as-is. Only the HTML renderer folds both to `&nbsp;`.
-    format!("{trimmed}\n").replace(crate::NBSP_PLACEHOLDER, " ")
+    format!("{trimmed}\n")
+        .replace(crate::NBSP_PLACEHOLDER, " ")
+        .replace(crate::ESCAPED_CARET_PLACEHOLDER, "^")
 }

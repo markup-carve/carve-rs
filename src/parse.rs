@@ -5177,13 +5177,17 @@ fn parse_inline_context(
         }
         if c == b'\\' && i + 1 < bytes.len() {
             let nxt = bytes[i + 1];
+            if nxt == b' ' {
+                buf.push(crate::NBSP_PLACEHOLDER);
+                i += 2;
+                continue;
+            }
             if is_escapable(nxt) {
-                if caption_number_allowed && nxt == b'#' {
-                    buf.push('#');
+                buf.push(if nxt == b'^' {
+                    crate::ESCAPED_CARET_PLACEHOLDER
                 } else {
-                    buf.push('\\');
-                    buf.push(nxt as char);
-                }
+                    nxt as char
+                });
                 i += 2;
                 continue;
             }
@@ -5425,6 +5429,15 @@ fn parse_inline_context(
                 i += consumed;
                 continue;
             }
+        }
+
+        // Smart typography (§8): parsed into AST nodes so renderers can choose
+        // glyph output or source-preserving Carve output without rescanning.
+        if let Some((nodes, consumed)) = parse_smart_punctuation_at(text, i, &buf, &out) {
+            flush_text(&mut out, &mut buf);
+            out.extend(nodes);
+            i += consumed;
+            continue;
         }
 
         // Inline footnote `^[content]`. A `^` anywhere else is literal text
@@ -5856,6 +5869,131 @@ fn flush_text(out: &mut Vec<InlineNode>, buf: &mut String) {
     if !buf.is_empty() {
         out.push(InlineNode::Text(std::mem::take(buf)));
     }
+}
+
+fn parse_smart_punctuation_at(
+    text: &str,
+    i: usize,
+    buf: &str,
+    out: &[InlineNode],
+) -> Option<(Vec<InlineNode>, usize)> {
+    let prev = if buf.is_empty() {
+        last_emitted_glyph(out)
+    } else {
+        buf.chars().last().unwrap_or_default()
+    };
+    if text.as_bytes().get(i) == Some(&b'-') && text.as_bytes().get(i + 1) == Some(&b'-') {
+        let n = text.as_bytes()[i..]
+            .iter()
+            .take_while(|&&b| b == b'-')
+            .count();
+        let glyphs = crate::render::allocate_dashes(n);
+        let mut consumed = 0usize;
+        let mut nodes = Vec::new();
+        for glyph in glyphs.chars() {
+            let (kind, width) = if glyph == '—' {
+                ("em_dash", 3)
+            } else {
+                ("en_dash", 2)
+            };
+            nodes.push(InlineNode::SmartPunctuation(SmartPunctuation {
+                kind: kind.to_string(),
+                value: text[i + consumed..i + consumed + width].to_string(),
+                glyph: None,
+            }));
+            consumed += width;
+        }
+        return Some((nodes, n));
+    }
+
+    for (source, kind) in [
+        ("<->", "left_right_arrow"),
+        ("(tm)", "trademark"),
+        ("...", "ellipsis"),
+        ("->", "rightwards_arrow"),
+        ("<-", "leftwards_arrow"),
+        ("=>", "rightwards_double_arrow"),
+        ("<=", "less_than_or_equal"),
+        (">=", "greater_than_or_equal"),
+        ("!=", "not_equal"),
+        ("+-", "plus_minus"),
+        ("(c)", "copyright"),
+        ("(r)", "registered"),
+    ] {
+        if text[i..].starts_with(source) {
+            return Some((
+                vec![InlineNode::SmartPunctuation(SmartPunctuation {
+                    kind: kind.to_string(),
+                    value: source.to_string(),
+                    glyph: None,
+                })],
+                source.len(),
+            ));
+        }
+    }
+
+    let c = text[i..].chars().next()?;
+    if c == '"' {
+        let open = quote_open_context(prev);
+        let glyph = if open { "“" } else { "”" };
+        let kind = if open {
+            "left_double_quote"
+        } else {
+            "right_double_quote"
+        };
+        return Some((
+            vec![InlineNode::SmartPunctuation(SmartPunctuation {
+                kind: kind.to_string(),
+                value: "\"".to_string(),
+                glyph: Some(glyph.to_string()),
+            })],
+            1,
+        ));
+    }
+    if c == '\'' {
+        let next_digit = text
+            .as_bytes()
+            .get(i + 1)
+            .is_some_and(|b| b.is_ascii_digit());
+        let prev_alnum = prev.is_alphanumeric();
+        let apostrophe = prev_alnum || next_digit || !quote_open_context(prev);
+        let glyph = if apostrophe { "’" } else { "‘" };
+        let kind = if apostrophe {
+            "right_single_quote"
+        } else {
+            "left_single_quote"
+        };
+        return Some((
+            vec![InlineNode::SmartPunctuation(SmartPunctuation {
+                kind: kind.to_string(),
+                value: "'".to_string(),
+                glyph: Some(glyph.to_string()),
+            })],
+            1,
+        ));
+    }
+
+    None
+}
+
+fn last_emitted_glyph(out: &[InlineNode]) -> char {
+    match out.last() {
+        Some(InlineNode::SmartPunctuation(node)) => {
+            smart_punctuation_glyph(node).chars().last().unwrap_or('x')
+        }
+        None => '\0',
+        Some(_) => 'x',
+    }
+}
+
+fn quote_open_context(prev: char) -> bool {
+    prev == '\0'
+        || prev.is_whitespace()
+        || prev == crate::NBSP_PLACEHOLDER
+        || matches!(
+            prev,
+            '(' | '[' | '{' | '=' | ':' | '-' | '/' | '–' | '—' | '“' | '‘'
+        )
 }
 
 fn is_escapable(b: u8) -> bool {
@@ -7950,7 +8088,8 @@ fn plain_inlines_parse(nodes: &[InlineNode]) -> String {
     let mut out = String::new();
     for node in nodes {
         match node {
-            InlineNode::Text(s) => out.push_str(s),
+            InlineNode::Text(s) => out.push_str(&s.replace(crate::ESCAPED_CARET_PLACEHOLDER, "^")),
+            InlineNode::SmartPunctuation(s) => out.push_str(smart_punctuation_glyph(s)),
             InlineNode::Emphasis(e) => out.push_str(&plain_inlines_parse(&e.children)),
             InlineNode::Code(s, _) => out.push_str(s),
             // An inline literal renders as visible prose (§27), so it feeds the

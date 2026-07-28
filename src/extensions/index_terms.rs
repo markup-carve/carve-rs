@@ -15,7 +15,8 @@ use std::cell::RefCell;
 use std::collections::BTreeMap;
 
 use crate::ast::{
-    Attrs, BlockExtension, BlockNode, Document, FigureTarget, InlineExtension, InlineNode,
+    smart_punctuation_glyph, Attrs, BlockExtension, BlockNode, Document, FigureTarget,
+    InlineExtension, InlineNode,
 };
 use crate::extension::{BeforeRenderContext, CarveExtension, RenderContext};
 use crate::parse::slugify_parse;
@@ -378,7 +379,19 @@ fn inline_text(nodes: &[InlineNode]) -> String {
     let mut out = String::new();
     for node in nodes {
         match node {
-            InlineNode::Text(s) => out.push_str(s),
+            // Borrow the term text unless the placeholder is actually present.
+            // A 2MB index term flattens through here (see the large-term
+            // performance test), and an unconditional `replace` would copy the
+            // whole thing on every pass to unescape a caret that is almost
+            // never there.
+            InlineNode::Text(s) => {
+                if s.contains(crate::ESCAPED_CARET_PLACEHOLDER) {
+                    out.push_str(&s.replace(crate::ESCAPED_CARET_PLACEHOLDER, "^"));
+                } else {
+                    out.push_str(s);
+                }
+            }
+            InlineNode::SmartPunctuation(s) => out.push_str(smart_punctuation_glyph(s)),
             InlineNode::Code(s, _) => out.push_str(s),
             // An inline literal renders as visible prose (§27), matching carve-js
             // `inlineText` which folds its content into the flattened term text.

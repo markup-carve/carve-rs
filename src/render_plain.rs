@@ -1,6 +1,6 @@
 use crate::ast::*;
 use crate::extension::Options;
-use crate::render_text::{clean_smart_text_stateful, strip_controls, SmartQuoteState};
+use crate::render_text::strip_controls;
 
 const MAX_RENDER_DEPTH: usize = 100;
 
@@ -201,43 +201,35 @@ fn render_footnote_defs(doc: &Document) -> String {
 }
 
 fn render_inlines(nodes: &[InlineNode]) -> String {
-    // Block-level entry: each block starts with a fresh smart-quote state.
-    let mut state = SmartQuoteState::new();
-    render_inlines_stateful(nodes, &mut state, 0)
+    render_inlines_stateful(nodes, 0)
 }
 
-fn render_inlines_stateful(
-    nodes: &[InlineNode],
-    state: &mut SmartQuoteState,
-    depth: usize,
-) -> String {
+fn render_inlines_stateful(nodes: &[InlineNode], depth: usize) -> String {
     if depth > MAX_RENDER_DEPTH {
         return String::new();
     }
     let mut out = String::new();
     for node in nodes {
-        out.push_str(&render_inline(node, state, depth));
-        // Any rendered sibling means a following text node's leading quote is
-        // no longer at the true start of the inline flow.
-        state.mark_started();
+        out.push_str(&render_inline(node, depth));
     }
     out
 }
 
-fn render_inline(node: &InlineNode, state: &mut SmartQuoteState, depth: usize) -> String {
+fn render_inline(node: &InlineNode, depth: usize) -> String {
     if depth > MAX_RENDER_DEPTH {
         return String::new();
     }
     match node {
-        InlineNode::Text(text) => strip_controls(&clean_smart_text_stateful(text, state)),
+        InlineNode::Text(text) => strip_controls(text),
+        InlineNode::SmartPunctuation(s) => strip_controls(smart_punctuation_glyph(s)),
         InlineNode::Emphasis(emphasis) => match emphasis.kind {
-            EmphasisKind::Strike => render_inlines_stateful(&emphasis.children, state, depth + 1),
-            _ => render_inlines_stateful(&emphasis.children, state, depth + 1),
+            EmphasisKind::Strike => render_inlines_stateful(&emphasis.children, depth + 1),
+            _ => render_inlines_stateful(&emphasis.children, depth + 1),
         },
         InlineNode::Code(code, _) => strip_controls(code),
-        InlineNode::Link(link) => render_inlines_stateful(&link.children, state, depth + 1),
+        InlineNode::Link(link) => render_inlines_stateful(&link.children, depth + 1),
         InlineNode::Image(image) => strip_controls(&image.alt),
-        InlineNode::Span(span) => render_inlines_stateful(&span.children, state, depth + 1),
+        InlineNode::Span(span) => render_inlines_stateful(&span.children, depth + 1),
         InlineNode::Math(math) => strip_controls(&math.content),
         InlineNode::RawInline(_) => String::new(),
         // §27: always emitted (unlike raw passthrough above), as plain prose.
@@ -250,34 +242,23 @@ fn render_inline(node: &InlineNode, state: &mut SmartQuoteState, depth: usize) -
         }
         InlineNode::Mention(mention) => format!("@{}", strip_controls(&mention.user)),
         InlineNode::Tag(tag) => format!("#{}", strip_controls(&tag.name)),
-        InlineNode::Extension(extension) => {
-            render_inlines_stateful(&extension.children, state, depth + 1)
-        }
+        InlineNode::Extension(extension) => render_inlines_stateful(&extension.children, depth + 1),
         InlineNode::Abbreviation(abbr) => strip_controls(&abbr.abbr),
         InlineNode::Footnote(footnote) => {
             if let Some(inline) = &footnote.inline {
                 // Footnote content is its own context: render with a FRESH quote
                 // state so it neither inherits nor mutates the surrounding
                 // paragraph's open quotes. Matches carve-php.
-                let mut footnote_state = SmartQuoteState::new();
-                format!(
-                    "({})",
-                    render_inlines_stateful(inline, &mut footnote_state, depth + 1)
-                )
+                format!("({})", render_inlines_stateful(inline, depth + 1))
             } else {
                 format!("[{}]", strip_controls(footnote.id.as_deref().unwrap_or("")))
             }
         }
         InlineNode::SoftBreak => " ".to_string(),
         InlineNode::HardBreak => "\n".to_string(),
-        InlineNode::CriticInsert(insert) => {
-            render_inlines_stateful(&insert.children, state, depth + 1)
-        }
+        InlineNode::CriticInsert(insert) => render_inlines_stateful(&insert.children, depth + 1),
         InlineNode::CriticDelete(delete) => {
-            format!(
-                "~{}~",
-                render_inlines_stateful(&delete.children, state, depth + 1)
-            )
+            format!("~{}~", render_inlines_stateful(&delete.children, depth + 1))
         }
         InlineNode::CriticSubstitute(sub) => format!(
             "~{}~{}",
@@ -316,5 +297,7 @@ fn normalize(text: &str) -> String {
     // A generated-NBSP placeholder (escaped space / verse indent) becomes a
     // plain space in display output; a LITERAL U+00A0 typed in the source is
     // preserved as-is. Only the HTML renderer folds both to `&nbsp;`.
-    format!("{trimmed}\n").replace(crate::NBSP_PLACEHOLDER, " ")
+    format!("{trimmed}\n")
+        .replace(crate::NBSP_PLACEHOLDER, " ")
+        .replace(crate::ESCAPED_CARET_PLACEHOLDER, "^")
 }

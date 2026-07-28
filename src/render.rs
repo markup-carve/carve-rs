@@ -709,7 +709,8 @@ pub(crate) fn plain_inlines(nodes: &[InlineNode]) -> String {
     let mut out = String::new();
     for node in nodes {
         match node {
-            InlineNode::Text(s) => out.push_str(s),
+            InlineNode::Text(s) => out.push_str(&s.replace(crate::ESCAPED_CARET_PLACEHOLDER, "^")),
+            InlineNode::SmartPunctuation(s) => out.push_str(smart_punctuation_glyph(s)),
             InlineNode::Emphasis(e) => out.push_str(&plain_inlines(&e.children)),
             InlineNode::Code(s, _) => out.push_str(s),
             // An inline literal renders as visible prose (§27), so it contributes
@@ -1514,43 +1515,13 @@ pub(crate) fn render_inlines_with_options(nodes: &[InlineNode], options: &Option
     out
 }
 
-/// Running smart-quote state for one block. `"`/`'` toggle open/closed across
-/// the WHOLE inline flow in document order -- including across emphasis, links,
-/// spans, etc. -- so `"a /b" c/ d` closes the quote inside the emphasis. Reset
-/// per block (a quote does not carry from one paragraph to the next); verbatim
-/// nodes (code, math, raw) do not touch it.
-struct SmartState {
-    open_double: bool,
-    open_single: bool,
-}
-
-impl Default for SmartState {
-    fn default() -> Self {
-        SmartState {
-            open_double: true,
-            open_single: true,
-        }
-    }
-}
-
-// Block-level entry: each block starts with a fresh quote state.
 fn render_inlines(out: &mut String, nodes: &[InlineNode], options: &Options<'_>) {
-    let mut state = SmartState::default();
-    render_inlines_stateful(out, nodes, options, &mut state);
+    render_inlines_stateful(out, nodes, options);
 }
 
-// Recursive entry: threads the running quote state so nested inline content
-// (emphasis/link/span children) shares the parent's open/closed quote context.
-fn render_inlines_stateful(
-    out: &mut String,
-    nodes: &[InlineNode],
-    options: &Options<'_>,
-    state: &mut SmartState,
-) {
-    let mut prev: Option<&InlineNode> = None;
+fn render_inlines_stateful(out: &mut String, nodes: &[InlineNode], options: &Options<'_>) {
     for node in nodes {
-        render_inline_after(out, node, options, prev, state);
-        prev = Some(node);
+        render_inline_after(out, node, options);
     }
 }
 
@@ -1568,6 +1539,7 @@ fn write_escaped_text_nbsp(out: &mut String, input: &str) {
             // Both a literal U+00A0 and the generated-NBSP placeholder render
             // as `&nbsp;` in HTML; they only diverge in plain/ANSI output.
             '\u{00a0}' | crate::NBSP_PLACEHOLDER => "&nbsp;",
+            crate::ESCAPED_CARET_PLACEHOLDER => "^",
             // Trojan-Source bidi-override / isolate controls are REMOVED (not
             // escaped) from rendered text and code: an entity reference decodes
             // back to the raw control and still reorders the DOM, so only
@@ -1586,26 +1558,16 @@ fn write_escaped_text_nbsp(out: &mut String, input: &str) {
     out.push_str(&input[start..]);
 }
 
-fn render_inline_after(
-    out: &mut String,
-    node: &InlineNode,
-    options: &Options<'_>,
-    prev: Option<&InlineNode>,
-    state: &mut SmartState,
-) {
+fn render_inline_after(out: &mut String, node: &InlineNode, options: &Options<'_>) {
     match node {
         InlineNode::Text(s) => {
-            // A leading quote in this text node opens only at the true start
-            // of the inline flow; any preceding sibling makes it word-adjacent
-            // (closing context), matching carve-js. See `quote_open_context`.
-            let has_prev_sibling = prev.is_some();
-            let smart = smart_text_after(s, has_prev_sibling, state);
             // Escape `& < >` AND fold U+00A0 to `&nbsp;` in a single pass over
             // `out`. None of the escaped chars is U+00A0, so the combined pass
             // is byte-identical to `escape_text(..).replace('\u{00a0}', ..)`.
-            write_escaped_text_nbsp(out, &smart);
+            write_escaped_text_nbsp(out, s);
         }
-        InlineNode::Emphasis(e) => render_emphasis(out, e, options, state),
+        InlineNode::SmartPunctuation(s) => write_escaped_text_nbsp(out, smart_punctuation_glyph(s)),
+        InlineNode::Emphasis(e) => render_emphasis(out, e, options),
         InlineNode::Code(s, attrs) => {
             out.push_str("<code");
             write_attrs(out, attrs);
@@ -1616,13 +1578,13 @@ fn render_inline_after(
             write_escaped_text_nbsp(out, s);
             out.push_str("</code>");
         }
-        InlineNode::Link(l) => render_link(out, l, options, state),
+        InlineNode::Link(l) => render_link(out, l, options),
         InlineNode::Image(img) => render_image(out, img),
         InlineNode::Span(s) => {
             out.push_str("<span");
             write_attrs(out, &s.attrs);
             out.push('>');
-            render_inlines_stateful(out, &s.children, options, state);
+            render_inlines_stateful(out, &s.children, options);
             out.push_str("</span>");
         }
         InlineNode::Math(m) => {
@@ -1759,7 +1721,7 @@ fn render_inline_after(
             }
         }
         InlineNode::CitationGroup(g) => render_citation_group(out, g, options),
-        InlineNode::Extension(e) => render_inline_extension(out, e, options, state),
+        InlineNode::Extension(e) => render_inline_extension(out, e, options),
         InlineNode::Abbreviation(a) => {
             // Bound cumulative expansion bytes: once the budget is exhausted,
             // degrade to plain key text (no `<abbr>`, no title) so a large
@@ -1791,14 +1753,14 @@ fn render_inline_after(
             out.push_str("<ins");
             write_attrs(out, &c.attrs);
             out.push('>');
-            render_inlines_stateful(out, &c.children, options, state);
+            render_inlines_stateful(out, &c.children, options);
             out.push_str("</ins>");
         }
         InlineNode::CriticDelete(c) => {
             out.push_str("<del");
             write_attrs(out, &c.attrs);
             out.push('>');
-            render_inlines_stateful(out, &c.children, options, state);
+            render_inlines_stateful(out, &c.children, options);
             out.push_str("</del>");
         }
         InlineNode::CriticSubstitute(c) => {
@@ -1858,7 +1820,8 @@ fn flatten_text(nodes: &[InlineNode]) -> String {
     let mut out = String::new();
     for node in nodes {
         match node {
-            InlineNode::Text(t) => out.push_str(t),
+            InlineNode::Text(t) => out.push_str(&t.replace(crate::ESCAPED_CARET_PLACEHOLDER, "^")),
+            InlineNode::SmartPunctuation(s) => out.push_str(smart_punctuation_glyph(s)),
             InlineNode::Emphasis(e) => out.push_str(&flatten_text(&e.children)),
             InlineNode::Link(l) => out.push_str(&flatten_text(&l.children)),
             InlineNode::Span(s) => out.push_str(&flatten_text(&s.children)),
@@ -1934,7 +1897,7 @@ fn percent_encode(input: &str) -> String {
     out
 }
 
-fn render_emphasis(out: &mut String, e: &Emphasis, options: &Options<'_>, state: &mut SmartState) {
+fn render_emphasis(out: &mut String, e: &Emphasis, options: &Options<'_>) {
     let (open, close) = match e.kind {
         EmphasisKind::Italic => ("em", "em"),
         EmphasisKind::Strong => ("strong", "strong"),
@@ -1947,16 +1910,16 @@ fn render_emphasis(out: &mut String, e: &Emphasis, options: &Options<'_>, state:
     };
     if e.kind == EmphasisKind::BoldItalic {
         out.push_str(open);
-        render_inlines_stateful(out, &e.children, options, state);
+        render_inlines_stateful(out, &e.children, options);
         out.push_str(close);
     } else {
         out.push_str(&format!("<{}{}>", open, render_attrs(&e.attrs)));
-        render_inlines_stateful(out, &e.children, options, state);
+        render_inlines_stateful(out, &e.children, options);
         out.push_str(&format!("</{}>", close));
     }
 }
 
-fn render_link(out: &mut String, l: &Link, options: &Options<'_>, state: &mut SmartState) {
+fn render_link(out: &mut String, l: &Link, options: &Options<'_>) {
     out.push_str(&format!(
         "<a href=\"{}\"{}",
         escape_attr(&sanitize_url(&l.href)),
@@ -1966,16 +1929,11 @@ fn render_link(out: &mut String, l: &Link, options: &Options<'_>, state: &mut Sm
         out.push_str(&format!(" title=\"{}\"", escape_attr(title)));
     }
     out.push('>');
-    render_inlines_stateful(out, &l.children, options, state);
+    render_inlines_stateful(out, &l.children, options);
     out.push_str("</a>");
 }
 
-fn render_inline_extension(
-    out: &mut String,
-    node: &InlineExtension,
-    options: &Options<'_>,
-    state: &mut SmartState,
-) {
+fn render_inline_extension(out: &mut String, node: &InlineExtension, options: &Options<'_>) {
     let ctx = RenderContext::new(options);
     for ext in &options.extensions {
         if let Some(html) = ext.render_inline_extension(node, &ctx) {
@@ -1991,7 +1949,7 @@ fn render_inline_extension(
     ];
     if SEMANTIC_TAGS.contains(&node.name.as_str()) {
         out.push_str(&format!("<{}{}>", node.name, render_attrs(&node.attrs)));
-        render_inlines_stateful(out, &node.children, options, state);
+        render_inlines_stateful(out, &node.children, options);
         out.push_str(&format!("</{}>", node.name));
         return;
     }
@@ -2010,7 +1968,7 @@ fn render_inline_extension(
         None => (base, String::new()),
     };
     out.push_str(&format!("<span class=\"{}\"{}>", escape_attr(&class), rest));
-    render_inlines_stateful(out, &node.children, options, state);
+    render_inlines_stateful(out, &node.children, options);
     out.push_str("</span>");
 }
 
@@ -2242,272 +2200,4 @@ pub(crate) fn allocate_dashes(n: usize) -> String {
     out.push_str(&EM.repeat(em));
     out.push_str(&EN.repeat(en));
     out
-}
-
-/// Apply substring replacements, but never across an escape-guarded char (the
-/// U+E000 guard marks the following char as an escaped literal, so it must not
-/// participate in a smart-typography operator like `<=` or `->`). A run of 2+
-/// ASCII hyphens between operators collapses via `allocate_dashes`.
-pub(crate) fn apply_smart_ops(s: &str, replacements: &[(&str, &str)]) -> String {
-    fn apply_segment(seg: &str, replacements: &[(&str, &str)]) -> String {
-        let bytes = seg.as_bytes();
-        let mut out = String::new();
-        let mut i = 0;
-        while i < seg.len() {
-            if let Some((from, to)) = replacements
-                .iter()
-                .find(|(from, _)| seg[i..].starts_with(*from))
-            {
-                out.push_str(to);
-                i += from.len();
-                continue;
-            }
-            // A run of 2+ ASCII hyphens collapses to em/en dashes; a lone `-`
-            // stays literal. The operator table is checked first (above), so an
-            // arrow like `->` still wins at its own position - a run is only
-            // taken when the next byte is also `-` (mirrors carve-js smartToken:
-            // SMART_TOKENS first, then `text[i] === '-' && text[i+1] === '-'`).
-            if bytes[i] == b'-' && i + 1 < seg.len() && bytes[i + 1] == b'-' {
-                let mut n = 1;
-                while i + n < seg.len() && bytes[i + n] == b'-' {
-                    n += 1;
-                }
-                out.push_str(&allocate_dashes(n));
-                i += n;
-                continue;
-            }
-            let ch = seg[i..]
-                .chars()
-                .next()
-                .expect("scanner index must point at a character boundary");
-            out.push(ch);
-            i += ch.len_utf8();
-        }
-        out
-    }
-
-    let mut out = String::new();
-    let mut seg = String::new();
-    let mut chars = s.chars();
-    while let Some(c) = chars.next() {
-        if c == '\u{e000}' {
-            out.push_str(&apply_segment(&seg, replacements));
-            seg.clear();
-            out.push(c);
-            if let Some(n) = chars.next() {
-                out.push(n);
-            }
-        } else {
-            seg.push(c);
-        }
-    }
-    out.push_str(&apply_segment(&seg, replacements));
-    out
-}
-
-/// True if `input` contains any character that could trigger an unescape, a
-/// smart-typography operator, or curly-quote handling in `smart_text_after`.
-/// When none are present the function is the identity, so the caller can skip
-/// the whole multi-pass pipeline (and its allocations) entirely.
-///
-/// Triggers: `\` (escape), the smart-op opening chars `< - = ! > + ( .`, and
-/// the quote chars `" '`. The intermediate markers (`&#NO_SMART_ARROW;`,
-/// `§NO_SMART_DOTS§`, U+E000) are only ever produced by `unescape_text`, so a
-/// backslash-free input cannot contain them.
-#[inline]
-fn needs_smart_pass(input: &str) -> bool {
-    input.bytes().any(|b| {
-        matches!(
-            b,
-            b'\\' | b'<' | b'-' | b'=' | b'!' | b'>' | b'+' | b'(' | b'.' | b'"' | b'\''
-        )
-    })
-}
-
-fn smart_text_after<'a>(
-    input: &'a str,
-    has_prev_sibling: bool,
-    state: &mut SmartState,
-) -> std::borrow::Cow<'a, str> {
-    if !needs_smart_pass(input) {
-        return std::borrow::Cow::Borrowed(input);
-    }
-    let s = unescape_text(input);
-    let mut s = s;
-    let replacements = [
-        ("<->", "↔"),
-        ("->", "→"),
-        ("<-", "←"),
-        ("=>", "⇒"),
-        ("!=", "≠"),
-        ("<=", "≤"),
-        (">=", "≥"),
-        ("+-", "±"),
-        ("(c)", "©"),
-        ("(r)", "®"),
-        ("(tm)", "™"),
-        ("...", "…"),
-    ];
-    // Apply the operator replacements only OUTSIDE escape-guarded chars, so an
-    // escaped special (`\<= 5`, `\-> x`) does not form a smart-typography
-    // operator. The U+E000 guard precedes each escaped char.
-    s = apply_smart_ops(&s, &replacements);
-    s = s.replace("&#NO_SMART_ARROW;", "->");
-    s = s.replace("§NO_SMART_DOTS§", "...");
-    let chars: Vec<char> = s.chars().collect();
-    let mut out = String::new();
-    // Track the previously EMITTED char (curly-converted), matching carve-js
-    // which decides quote flanking from the output buffer's last char, not the
-    // raw source. So a `'` right after an opening `"` (already emitted as `“`)
-    // correctly opens (`“‘…’”`) instead of being misread as word-adjacent.
-    let mut prev_out: Option<char> = None;
-    for (idx, ch) in chars.iter().copied().enumerate() {
-        if ch == '\u{e000}' {
-            // An escaped space emits nothing here but is whitespace context for
-            // a following quote.
-            prev_out = Some(crate::NBSP_PLACEHOLDER);
-            continue;
-        }
-        let escaped = idx > 0 && chars[idx - 1] == '\u{e000}';
-        if ch == '"' && !escaped {
-            // Normative §8: a double quote OPENS (left `“`) when its preceding
-            // emitted char is an opening context (start-of-content, whitespace/
-            // NBSP, or one of `( [ { = : - /`, an en/em dash, or a nested
-            // opening curly quote); otherwise it CLOSES (right `”`).
-            let opening = quote_open_prev(prev_out, has_prev_sibling);
-            let e = if opening { '“' } else { '”' };
-            out.push(e);
-            state.open_double = !opening;
-            prev_out = Some(e);
-        } else if ch == '\'' && !escaped {
-            // Single quote (§8, matching djot): a closing/apostrophe `’` when
-            // the previous emitted char is alphanumeric (`it's`, `John's`) OR
-            // the next char is a digit (decade elision `'70s`, `'24'`) OR the
-            // preceding context is not an opening one; an opening `‘` only in an
-            // open context with a non-digit next char.
-            let prev_alnum = prev_out.is_some_and(|c| c.is_alphanumeric());
-            let next_digit = chars.get(idx + 1).is_some_and(|c| c.is_ascii_digit());
-            let apostrophe =
-                prev_alnum || next_digit || !quote_open_prev(prev_out, has_prev_sibling);
-            let e = if apostrophe { '’' } else { '‘' };
-            out.push(e);
-            state.open_single = apostrophe;
-            prev_out = Some(e);
-        } else {
-            out.push(ch);
-            prev_out = Some(ch);
-        }
-    }
-    std::borrow::Cow::Owned(out)
-}
-
-/// Normative §8 quote flanking context, decided from the previously EMITTED
-/// char (`None` at the true start of the text node's output). A quote is in an
-/// OPENING context when that char is whitespace/NBSP or one of the opening/
-/// operator chars `( [ { = : - /`, an en/em dash, or a nested opening curly
-/// quote (`“`/`‘`). At a text-node boundary (`None`) the quote opens only when
-/// there is no preceding inline sibling (true start of content); any prior
-/// sibling is treated as word-adjacent (closing context), matching carve-js
-/// (`prevForQuote = out.length ? 'x' : ''`). Using the emitted char (not the
-/// raw source) makes a quote right after another opening quote open too, so
-/// `"'x'"` -> `“‘x’”`.
-fn quote_open_prev(prev: Option<char>, has_prev_sibling: bool) -> bool {
-    match prev {
-        None => !has_prev_sibling,
-        Some(c) => {
-            c.is_whitespace()
-                || c == crate::NBSP_PLACEHOLDER
-                || matches!(
-                    c,
-                    '(' | '[' | '{' | '=' | ':' | '-' | '/' | '–' | '—' | '“' | '‘'
-                )
-        }
-    }
-}
-
-fn unescape_text(input: &str) -> String {
-    let mut out = String::new();
-    let chars: Vec<char> = input.chars().collect();
-    let mut i = 0;
-    while i < chars.len() {
-        if chars[i] == '\\' && i + 1 < chars.len() {
-            if chars[i + 1] == ' ' {
-                out.push('\u{00a0}');
-                i += 2;
-                continue;
-            }
-            if chars[i + 1] == '-' && chars.get(i + 2) == Some(&'>') {
-                out.push_str("&#NO_SMART_ARROW;");
-                i += 3;
-                continue;
-            }
-            if chars[i + 1] == '.' {
-                let mut j = i + 1;
-                let mut dots = 0usize;
-                while chars.get(j) == Some(&'.') {
-                    dots += 1;
-                    j += 1;
-                }
-                if dots >= 3 {
-                    out.push_str("§NO_SMART_DOTS§");
-                } else {
-                    for _ in 0..dots {
-                        out.push('\u{e000}');
-                        out.push('.');
-                    }
-                }
-                i = j;
-                continue;
-            }
-            if !is_render_escapable(chars[i + 1]) {
-                out.push('\\');
-                i += 1;
-                continue;
-            }
-            out.push('\u{e000}');
-            out.push(chars[i + 1]);
-            i += 2;
-            continue;
-        }
-        out.push(chars[i]);
-        i += 1;
-    }
-    out
-}
-
-fn is_render_escapable(ch: char) -> bool {
-    matches!(
-        ch,
-        '\\' | '`'
-            | '*'
-            | '_'
-            | '{'
-            | '}'
-            | '['
-            | ']'
-            | '('
-            | ')'
-            | '"'
-            | '\''
-            | '#'
-            | '+'
-            | '-'
-            | '.'
-            | '!'
-            | '~'
-            | '^'
-            | '/'
-            | '<'
-            | '>'
-            | '@'
-            | '%'
-            | '|'
-            | '='
-            | ','
-            | ':'
-            | ';'
-            | '$'
-            | '&'
-            | '?'
-    )
 }

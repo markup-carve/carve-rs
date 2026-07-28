@@ -11,7 +11,7 @@
 //! The render is configurable via [`ColorSwatch::position`],
 //! [`ColorSwatch::shape`], [`ColorSwatch::tint`] and [`ColorSwatch::reveal`].
 
-use crate::ast::{AttrSlot, Attrs, InlineExtension, InlineNode};
+use crate::ast::{smart_punctuation_glyph, AttrSlot, Attrs, InlineExtension, InlineNode};
 use crate::escape::{escape_attr, escape_text};
 use crate::extension::{CarveExtension, RenderContext};
 use crate::render::render_attrs_after_class;
@@ -614,7 +614,8 @@ fn inline_text(nodes: &[InlineNode]) -> String {
     let mut out = String::new();
     for node in nodes {
         match node {
-            InlineNode::Text(s) => out.push_str(s),
+            InlineNode::Text(s) => out.push_str(&s.replace(crate::ESCAPED_CARET_PLACEHOLDER, "^")),
+            InlineNode::SmartPunctuation(s) => out.push_str(smart_punctuation_glyph(s)),
             InlineNode::Code(s, _) => out.push_str(s),
             // A code span and an inline literal both carry verbatim text; the
             // literal form is the natural way to pass a color whose `#` would

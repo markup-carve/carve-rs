@@ -31,7 +31,6 @@ mod render_carve;
 mod render_markdown;
 mod render_plain;
 mod render_text;
-mod smart_split;
 mod stamp;
 mod unicode_nfc;
 
@@ -41,6 +40,7 @@ mod unicode_nfc;
 /// plain/ANSI renderers turn this placeholder back into an ASCII space while
 /// preserving literal U+00A0. Using a real char would conflate the two.
 pub(crate) const NBSP_PLACEHOLDER: char = '\u{e001}';
+pub(crate) const ESCAPED_CARET_PLACEHOLDER: char = '\u{e002}';
 pub const SPEC_VERSION: &str = "0.1";
 
 pub use ast::*;
