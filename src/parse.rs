@@ -2246,14 +2246,18 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                     let mut nested =
                         collect_item_continuation_block_mapped(cur, base_indent, content_col);
                     // A heading folds its trailing plain text as continuation
-                    // (PART 2 headings). When the indented block ends in a
-                    // heading and the next lines are flush-left lazy text, pull
-                    // them in so the heading parser folds them into the heading
-                    // rather than the list ending and the text floating to the
-                    // top level (matches carve-php). Only headings fold this
-                    // way: a code block or table keeps its trailing text as a
-                    // separate top-level block, so the guard is heading-only.
-                    if !pending_blank && nested_ends_with_heading(&nested.source, options) {
+                    // (PART 2 headings), until a blank line or a block opener --
+                    // unconditionally, per the grammar. When the indented block
+                    // ends in a heading and the next lines are flush-left lazy
+                    // text, pull them in so the heading parser folds them into
+                    // the heading rather than the list ending and the text
+                    // floating to the top level (matches carve-php, carve#326).
+                    // A blank BEFORE the heading is irrelevant to whether text
+                    // AFTER it folds, so this is not gated on pending_blank
+                    // (collect_trailing_lazy still stops at a blank of its own).
+                    // Only headings fold this way: a code block or table keeps
+                    // its trailing text as a separate top-level block.
+                    if nested_ends_with_heading(&nested.source, options) {
                         collect_trailing_lazy(cur, &mut nested);
                     } else if !pending_blank
                         && nested_ends_with_open_paragraph(&nested.source, options)
@@ -2328,10 +2332,13 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                         break;
                     }
                     // Only fold the column-0 lazy line when the collected content
-                    // still ends in an OPEN paragraph. After a CLOSED block
-                    // (fenced code, table, div) there is none, so the dedented
-                    // line ends the item -> top-level (family-D rule).
-                    if !nested_ends_with_open_paragraph(&nested.source, options) {
+                    // still ends in an OPEN paragraph OR a heading (a heading
+                    // folds trailing plain text as continuation, carve#326). After
+                    // a CLOSED block (fenced code, table, div) there is neither, so
+                    // the dedented line ends the item -> top-level (family-D rule).
+                    if !nested_ends_with_open_paragraph(&nested.source, options)
+                        && !nested_ends_with_heading(&nested.source, options)
+                    {
                         break;
                     }
                     let before = cur.pos;
@@ -2887,10 +2894,23 @@ fn detect_list_marker_full(line: &str) -> Option<ListMarker<'_>> {
 /// flush-left lazy text following an indented heading-in-item should fold into
 /// the heading (heading continuation) rather than ending the item.
 fn nested_ends_with_heading(nested: &str, options: &Options<'_>) -> bool {
-    matches!(
-        parse_blocks_with_options(nested, options).last(),
-        Some(BlockNode::Heading(_))
-    )
+    block_ends_with_heading(parse_blocks_with_options(nested, options).last())
+}
+
+/// Whether the deepest trailing block is a heading. A heading folds trailing
+/// plain text as continuation regardless of how deeply it is nested, so the
+/// check descends into a trailing list's last item (and block quote), matching
+/// the open-paragraph descent above (carve#326). `- a` / `  - # N` / `lazy`
+/// folds `lazy` into the sub-item's heading, not out to the top level.
+fn block_ends_with_heading(block: Option<&BlockNode>) -> bool {
+    match block {
+        Some(BlockNode::Heading(_)) => true,
+        Some(BlockNode::BlockQuote(q)) => block_ends_with_heading(q.children.last()),
+        Some(BlockNode::List(l)) => {
+            block_ends_with_heading(l.items.last().and_then(|it| it.children.last()))
+        }
+        _ => false,
+    }
 }
 
 /// Whether the collected nested block ends in an OPEN paragraph -- i.e. its
