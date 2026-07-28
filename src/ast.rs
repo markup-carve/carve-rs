@@ -311,6 +311,7 @@ pub struct BlockExtension {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InlineNode {
     Text(String),
+    SmartPunctuation(SmartPunctuation),
     Emphasis(Emphasis),
     Code(String, Option<Attrs>),
     Link(Link),
@@ -335,6 +336,39 @@ pub enum InlineNode {
     CriticDelete(CriticDelete),
     CriticSubstitute(CriticSubstitute),
     CriticComment(CriticComment),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SmartPunctuation {
+    pub kind: String,
+    pub value: String,
+    pub glyph: Option<String>,
+}
+
+pub const GLYPHS: &[(&str, &str)] = &[
+    ("ellipsis", "…"),
+    ("em_dash", "—"),
+    ("en_dash", "–"),
+    ("left_right_arrow", "↔"),
+    ("rightwards_arrow", "→"),
+    ("leftwards_arrow", "←"),
+    ("rightwards_double_arrow", "⇒"),
+    ("less_than_or_equal", "≤"),
+    ("greater_than_or_equal", "≥"),
+    ("not_equal", "≠"),
+    ("plus_minus", "±"),
+    ("copyright", "©"),
+    ("registered", "®"),
+    ("trademark", "™"),
+];
+
+pub fn smart_punctuation_glyph(node: &SmartPunctuation) -> &str {
+    node.glyph.as_deref().unwrap_or_else(|| {
+        GLYPHS
+            .iter()
+            .find_map(|(kind, glyph)| (*kind == node.kind).then_some(*glyph))
+            .unwrap_or(&node.value)
+    })
 }
 
 pub(crate) fn inline_nodes_without_strong(nodes: &[InlineNode]) -> Vec<InlineNode> {

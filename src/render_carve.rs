@@ -6,7 +6,6 @@ struct CarveContext {
     block_depth: usize,
     inline_depth: usize,
     list_depth: usize,
-    smart_state: crate::render_text::SmartQuoteState,
 }
 
 pub fn render_carve(doc: &Document) -> String {
@@ -14,7 +13,6 @@ pub fn render_carve(doc: &Document) -> String {
         block_depth: 0,
         inline_depth: 0,
         list_depth: 0,
-        smart_state: crate::render_text::SmartQuoteState::new(),
     };
     let mut parts = Vec::new();
     if !doc.frontmatter.is_empty() {
@@ -83,7 +81,6 @@ fn render_item_blocks(blocks: &[BlockNode], tight: bool, ctx: &mut CarveContext)
 }
 
 fn render_block(node: &BlockNode, ctx: &mut CarveContext) -> String {
-    ctx.smart_state = crate::render_text::SmartQuoteState::new();
     match node {
         BlockNode::Heading(heading) => with_block_attrs(
             &heading.attrs,
@@ -94,7 +91,8 @@ fn render_block(node: &BlockNode, ctx: &mut CarveContext) -> String {
             ),
         ),
         BlockNode::Paragraph(paragraph) => {
-            with_block_attrs(&paragraph.attrs, &render_inlines(&paragraph.children, ctx))
+            let body = render_inlines(&paragraph.children, ctx);
+            with_block_attrs(&paragraph.attrs, &body)
         }
         BlockNode::CodeBlock(code) => {
             let fence = safe_fence(&code.content, 3);
@@ -542,9 +540,6 @@ fn render_inlines(nodes: &[InlineNode], ctx: &mut CarveContext) -> String {
             .and_then(first_boundary)
             .unwrap_or_default();
         let rendered = render_inline(node, ctx, prev, next);
-        if !rendered.is_empty() {
-            ctx.smart_state.mark_started();
-        }
         out.push_str(&rendered);
     }
     ctx.inline_depth -= 1;
@@ -558,11 +553,9 @@ fn render_inline(
     next_char: char,
 ) -> String {
     match node {
-        InlineNode::Text(text) => {
-            let smart = crate::render_text::clean_smart_text_stateful(text, &mut ctx.smart_state)
-                .replace(crate::NBSP_PLACEHOLDER, "\u{00a0}");
-            escape_text(&smart)
-        }
+        InlineNode::Text(text) => escape_text(&text.replace(crate::NBSP_PLACEHOLDER, "\u{00a0}"))
+            .replace(crate::ESCAPED_CARET_PLACEHOLDER, "\\^"),
+        InlineNode::SmartPunctuation(s) => s.value.clone(),
         InlineNode::Emphasis(emphasis) => {
             let content = render_inlines(&emphasis.children, ctx);
             let (delim, body) = match emphasis.kind {
@@ -1229,6 +1222,7 @@ fn last_boundary(node: &InlineNode) -> Option<char> {
 fn boundary_text(node: &InlineNode) -> Option<&str> {
     match node {
         InlineNode::Text(text) => Some(text),
+        InlineNode::SmartPunctuation(s) => Some(&s.value),
         InlineNode::Code(text, _) => Some(text),
         InlineNode::Abbreviation(abbr) => Some(&abbr.abbr),
         InlineNode::Mention(mention) => Some(&mention.user),

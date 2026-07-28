@@ -682,21 +682,49 @@ fn csl_year(issued: Option<&CslDate>) -> Option<String> {
 }
 
 fn consume_leading_attrs(def: &mut Def) {
-    let Some(InlineNode::Text(head)) = def.entry.first_mut() else {
+    let Some(first) = def.entry.first() else {
         return;
     };
-    let Some(rest) = head.strip_prefix('{') else {
+    let Some(first_text) = inline_source_text(first) else {
         return;
     };
-    let Some(close) = rest.find('}') else {
+    if !first_text.starts_with('{') {
+        return;
+    }
+
+    let mut source = String::new();
+    let mut close_at: Option<(usize, usize)> = None;
+    for (idx, node) in def.entry.iter().enumerate() {
+        let Some(text) = inline_source_text(node) else {
+            return;
+        };
+        if let Some(close) = text.find('}') {
+            let attr_end = source.len() + close;
+            source.push_str(text);
+            close_at = Some((idx, attr_end));
+            break;
+        }
+        source.push_str(text);
+    }
+
+    let Some((close_node, close)) = close_at else {
         return;
     };
-    let attrs = &rest[..close];
+    let attrs = &source[1..close];
     def.author = attr_value(attrs, "author");
     def.year = attr_value(attrs, "year");
-    *head = rest[close + 1..].trim_start().to_string();
-    if head.is_empty() {
-        def.entry.remove(0);
+    let tail = source[close + 1..].trim_start().to_string();
+    def.entry.drain(0..=close_node);
+    if !tail.is_empty() {
+        def.entry.insert(0, InlineNode::Text(tail));
+    }
+}
+
+fn inline_source_text(node: &InlineNode) -> Option<&str> {
+    match node {
+        InlineNode::Text(text) => Some(text),
+        InlineNode::SmartPunctuation(s) => Some(&s.value),
+        _ => None,
     }
 }
 

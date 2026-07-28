@@ -15,7 +15,8 @@ use std::cell::RefCell;
 use std::collections::BTreeMap;
 
 use crate::ast::{
-    Attrs, BlockExtension, BlockNode, Document, FigureTarget, InlineExtension, InlineNode,
+    smart_punctuation_glyph, Attrs, BlockExtension, BlockNode, Document, FigureTarget,
+    InlineExtension, InlineNode,
 };
 use crate::extension::{BeforeRenderContext, CarveExtension, RenderContext};
 use crate::parse::slugify_parse;
@@ -378,7 +379,8 @@ fn inline_text(nodes: &[InlineNode]) -> String {
     let mut out = String::new();
     for node in nodes {
         match node {
-            InlineNode::Text(s) => out.push_str(s),
+            InlineNode::Text(s) => out.push_str(&s.replace(crate::ESCAPED_CARET_PLACEHOLDER, "^")),
+            InlineNode::SmartPunctuation(s) => out.push_str(smart_punctuation_glyph(s)),
             InlineNode::Code(s, _) => out.push_str(s),
             // An inline literal renders as visible prose (§27), matching carve-js
             // `inlineText` which folds its content into the flattened term text.
