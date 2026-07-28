@@ -30,6 +30,17 @@ fn deeply_nested_indented_heading_folds_lazy() {
 }
 
 #[test]
+fn heading_ending_a_definition_body_folds_lazy() {
+    // A heading that ends a definition list's definition body also folds the
+    // following flush-left line into it (the recursive check descends through
+    // the definition list, not just plain lists).
+    assert_eq!(
+        carve::to_html("- one\n  :: term\n  :  # H\nlazy\n"),
+        "<ul>\n  <li>one\n    <dl>\n      <dt>term</dt>\n      <dd>\n        <h1 id=\"H-lazy\">H\nlazy</h1>\n      </dd>\n    </dl>\n  </li>\n</ul>"
+    );
+}
+
+#[test]
 fn blank_after_heading_still_ends_it() {
     // A blank line closes the heading; the following text is a separate block.
     assert_eq!(

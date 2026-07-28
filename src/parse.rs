@@ -2909,6 +2909,15 @@ fn block_ends_with_heading(block: Option<&BlockNode>) -> bool {
         Some(BlockNode::List(l)) => {
             block_ends_with_heading(l.items.last().and_then(|it| it.children.last()))
         }
+        // A definition list has no explicit closer: a following flush-left line
+        // folds into its last definition's trailing block, so descend when that
+        // block is a heading (a bare term with no definition is not a heading).
+        Some(BlockNode::DefinitionList(dl)) => block_ends_with_heading(
+            dl.items
+                .last()
+                .and_then(|item| item.definitions.last())
+                .and_then(|d| d.children.last()),
+        ),
         _ => false,
     }
 }
