@@ -18,12 +18,18 @@ fn html(source: &str) -> String {
 #[test]
 fn blank_before_a_sublist_keeps_a_following_sibling_tight() {
     let out = html("- fruit\n\n  - apples\n- vegetables\n");
-    assert!(out.contains("<li>fruit"), "outer item should be tight: {out}");
+    assert!(
+        out.contains("<li>fruit"),
+        "outer item should be tight: {out}"
+    );
     assert!(
         out.contains("<li>vegetables</li>"),
         "sibling after the sub-list should be tight: {out}"
     );
-    assert!(!out.contains("<p>fruit</p>"), "item must not be wrapped: {out}");
+    assert!(
+        !out.contains("<p>fruit</p>"),
+        "item must not be wrapped: {out}"
+    );
 }
 
 #[test]
@@ -31,8 +37,14 @@ fn the_sublist_indent_does_not_change_the_outcome() {
     // Four-space nesting sits past the content column but is still the item's
     // sub-block, so L2 applies exactly as at the content column.
     let out = html("- fruit\n\n    - apples\n    - oranges\n- vegetables\n");
-    assert!(out.contains("<li>fruit"), "outer item should be tight: {out}");
-    assert!(!out.contains("<p>vegetables</p>"), "sibling should be tight: {out}");
+    assert!(
+        out.contains("<li>fruit"),
+        "outer item should be tight: {out}"
+    );
+    assert!(
+        !out.contains("<p>vegetables</p>"),
+        "sibling should be tight: {out}"
+    );
 }
 
 #[test]
