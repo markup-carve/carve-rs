@@ -7,6 +7,27 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **`carve fmt` no longer rewrites the author's smart typography** (carve#339).
+  Formatting normalized `...` to the ellipsis glyph, `--` to an en dash and `"`
+  to curly quotes in the author's own source. The Carve renderer now splits text
+  into literal runs and smart-typography runs: literals still go through the
+  escaper, and a smart run is emitted exactly as typed, so it re-derives to the
+  same glyph on the next parse instead of being frozen as one.
+
+  Every other target is unchanged - HTML, Markdown, plain text and ANSI keep
+  resolving smart typography at render time. `to_html(fmt(x)) == to_html(x)` and
+  `fmt` idempotency both still hold, and `fmt` output is now byte-identical to
+  carve-js and carve-php across the full transform matrix.
+
+  Simply dropping the smart pass was not enough: the escaper is doing double
+  duty, protecting block markers (a literal `>` at the start of a line must stay
+  escaped or it re-parses as a blockquote) as well as escaping punctuation smart
+  typography owns. Splitting resolves that conflict. An escape sequence passes
+  through verbatim, since it is already valid source - re-escaping it doubled
+  the backslash, and unescaping it dropped a non-breaking `\ ` entirely.
+
 ## [0.1.1] - 2026-07-27
 
 - Advance the spec corpus to carve `9c5f53a` (categories 143-162: definition-list
