@@ -2366,6 +2366,16 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 if sublist_source_loosens_outer_item(&nested.source) {
                     tight = false;
                 }
+                // The blank BEFORE this sub-list is consumed by it and must not
+                // survive to loosen a later sibling marker (§17 L2: a blank
+                // before an item's sub-block keeps the item tight). Without
+                // this, `- a` / blank / `  - b` / `- c` loosened at `- c`
+                // because pending_blank leaked past the sub-list, while the same
+                // blank before a plain continuation block cleared it below.
+                // Matches carve-js / carve-php (carve-rs#286). A blank AFTER the
+                // sub-list still re-raises pending_blank in the blank branch, so
+                // a genuine blank BETWEEN items keeps loosening.
+                pending_blank = false;
                 last.children.extend(nested_children);
                 continue;
             }
