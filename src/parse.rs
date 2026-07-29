@@ -4002,32 +4002,22 @@ fn parse_table_cell(cell: &str, options: &Options<'_>) -> TableCell {
         cell.trim()
     };
     let mut text = trimmed;
-    let align = if text.len() > 1 {
-        match text.as_bytes()[0] {
-            b'>' if text.as_bytes()[1] == b' ' => {
-                text = text[1..].trim();
-                Some(TableAlign::Right)
-            }
-            b'<' if text.as_bytes()[1] == b' ' => {
-                text = text[1..].trim();
-                Some(TableAlign::Left)
-            }
-            b'~' if text.as_bytes()[1] == b' ' => {
-                text = text[1..].trim();
-                Some(TableAlign::Center)
-            }
-            b'>' | b'<' | b'~' => {
-                text = text[1..].trim();
-                Some(match trimmed.as_bytes()[if header { 1 } else { 0 }] {
-                    b'>' => TableAlign::Right,
-                    b'<' => TableAlign::Left,
-                    _ => TableAlign::Center,
-                })
-            }
-            _ => None,
+    // The marker is the FIRST byte of the cell's content. `trimmed` already has
+    // the header `=` removed, so there is no offset to re-apply: an earlier
+    // version re-indexed the raw cell at `[1]` for a header cell and read the
+    // byte AFTER the marker, which turned `=<\< Note` (left, then an escaped
+    // literal `<`) into centre alignment. carve-js and carve-php both read it as
+    // left. A lone marker is a span cell, not alignment, hence the length guard.
+    let align = match text.as_bytes().first() {
+        Some(&marker @ (b'>' | b'<' | b'~')) if text.len() > 1 => {
+            text = text[1..].trim();
+            Some(match marker {
+                b'>' => TableAlign::Right,
+                b'<' => TableAlign::Left,
+                _ => TableAlign::Center,
+            })
         }
-    } else {
-        None
+        _ => None,
     };
     let span = match text {
         "^" => Some(TableCellSpan::Rowspan),

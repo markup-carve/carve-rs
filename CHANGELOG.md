@@ -28,6 +28,21 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`carve fmt` no longer changes a table's alignment.** A cell's alignment
+  marker is the first byte of its content, but the parser re-indexed the raw
+  cell at `[1]` for a header cell - where the `=` was already stripped - and so
+  read the byte after the marker. A header cell beginning with an escaped marker
+  (`|=<\< Note |`) came out centred where carve-js and carve-php read it as
+  left. Latent until the writer started emitting that shape, at which point the
+  formatter corrupted the document it formatted.
+
+- **Tables are written in the native header form** (`=` cells plus per-cell
+  alignment markers) instead of a GFM delimiter row, closing the table half of
+  carve#359. A delimiter row's alignment applies to the whole column while the
+  AST records it per cell, so an aligned header over unaligned body cells came
+  back with every body cell aligned. The two header shapes with no native
+  spelling (a promoted span marker, a header cell carrying attributes) keep the
+  delimiter row, now emitted bare. Output is byte-identical to carve-js.
 - **`autolink` and `admonition` are deniable by name** (carve#362). Both folded
   into `link` / `div` before the profile's allow/deny check, so naming them was
   a silent no-op - a host restricting untrusted input could deny autolinks, get
