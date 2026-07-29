@@ -179,7 +179,11 @@ fn render_block(node: &BlockNode, ctx: &mut MarkdownContext, depth: usize) -> St
             // Markdown has no admonition; preserve the title (otherwise lost)
             // as a leading bold line, then the body.
             let body = render_blocks(&admonition.children, ctx, depth + 1);
-            let body = match &admonition.title {
+            // The LABEL goes on first so the TITLE ends up above it, which is the
+            // order the source writes them (`::: tip "Pro Tip" [Build]`) and the
+            // order the HTML renderer emits (carve#352, corpus 42-admonitions-4).
+            let body = prepend_label(body, admonition.label.as_deref());
+            match &admonition.title {
                 Some(title) => {
                     let t = render_title_inlines(title, ctx);
                     if t.is_empty() {
@@ -189,8 +193,7 @@ fn render_block(node: &BlockNode, ctx: &mut MarkdownContext, depth: usize) -> St
                     }
                 }
                 None => body,
-            };
-            prepend_label(body, admonition.label.as_deref())
+            }
         }
         BlockNode::LineBlock(lb) => render_blocks(&lb.children, ctx, depth + 1),
         BlockNode::Div(div) => {
