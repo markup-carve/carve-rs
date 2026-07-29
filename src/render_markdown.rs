@@ -1,6 +1,6 @@
 use crate::ast::*;
 use crate::extension::Options;
-use crate::render_text::strip_controls;
+use crate::render_text::strip_controls as strip_control_chars;
 use std::collections::HashSet;
 
 const MAX_RENDER_DEPTH: usize = 100;
@@ -650,13 +650,35 @@ fn escape_text(text: &str) -> String {
                 out.push_str("&gt;");
                 continue;
             }
+            // The underscore escape is emitted as a sentinel rather than a
+            // backslash: whether it survives depends on its neighbours in the
+            // assembled document, which only resolve_underscore_escapes() can
+            // see. See UNDERSCORE_ESCAPE.
+            '_' => {
+                out.push(UNDERSCORE_ESCAPE);
+                continue;
+            }
             // Markdown metacharacters.
-            '\\' | '`' | '*' | '_' | '[' | ']' | '#' => out.push('\\'),
+            '\\' | '`' | '*' | '[' | ']' | '#' => out.push('\\'),
             _ => {}
         }
         out.push(ch);
     }
     out
+}
+
+/// Sentinel standing in for an underscore escape this renderer emitted, so the
+/// final pass can tell those apart from a backslash the author wrote. U+E000 is
+/// the NBSP sentinel and the Carve writer claims U+E001..U+E003; this extends
+/// the scheme. Author content never carries it: strip_controls() drops it on
+/// the way in, and every path to the output runs through strip_controls().
+const UNDERSCORE_ESCAPE: char = '\u{E004}';
+
+/// Drop control characters from author content, and the underscore-escape
+/// sentinel with them: author content that carried it would otherwise be read
+/// as an escape this renderer emitted. Every path to the output passes here.
+fn strip_controls(input: &str) -> String {
+    strip_control_chars(&input.replace(UNDERSCORE_ESCAPE, ""))
 }
 
 /// Escape `<>&` so embedded raw HTML cannot become live markup downstream.
@@ -723,10 +745,10 @@ fn normalize(text: &str) -> String {
     }
     let collapsed = format!("{}\n", out.trim_matches(|c| c == '\n' || c == ' '));
 
-    drop_redundant_underscore_escapes(&collapsed)
+    resolve_underscore_escapes(&collapsed)
 }
 
-/// Drop the backslash from an intraword underscore.
+/// Resolve the underscore escapes, dropping the backslash from an intraword one.
 ///
 /// CommonMark does not honour an intraword underscore, so `company_id`
 /// renders literally with or without the escape - the backslash only litters
@@ -738,21 +760,27 @@ fn normalize(text: &str) -> String {
 /// node: the parser splits `company_id` into the text nodes `company` and
 /// `_id`, so at escape time the underscore looks like it starts a word.
 ///
-/// Code spans are unaffected: their content is emitted verbatim and never
-/// carries these escapes to begin with.
-fn drop_redundant_underscore_escapes(text: &str) -> String {
+/// It decides on the sentinel rather than on `\_` because the assembled
+/// document also contains regions this renderer must reproduce byte-exact -
+/// code spans, code blocks, link destinations, titles, raw HTML - and a
+/// backslash there is content, not an escape. Matching `\_` rewrote those too
+/// (carve-js issue 400).
+fn resolve_underscore_escapes(text: &str) -> String {
     let chars: Vec<char> = text.chars().collect();
     let mut out = String::with_capacity(text.len());
     let mut i = 0usize;
 
     while i < chars.len() {
-        let is_escaped_underscore = chars[i] == '\\' && chars.get(i + 1) == Some(&'_');
         let has_word_before = i > 0 && chars[i - 1].is_alphanumeric();
-        let has_word_after = chars.get(i + 2).is_some_and(|c| c.is_alphanumeric());
+        let has_word_after = chars.get(i + 1).is_some_and(|c| c.is_alphanumeric());
 
-        if is_escaped_underscore && has_word_before && has_word_after {
-            out.push('_');
-            i += 2;
+        if chars[i] == UNDERSCORE_ESCAPE {
+            out.push_str(if has_word_before && has_word_after {
+                "_"
+            } else {
+                "\\_"
+            });
+            i += 1;
             continue;
         }
 
