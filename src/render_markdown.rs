@@ -18,8 +18,7 @@ thread_local! {
 }
 
 fn smart_punctuation_text(node: &crate::ast::SmartPunctuation) -> &str {
-    if SMART_TYPOGRAPHY.with(std::cell::Cell::get)
-        == crate::extension::SmartTypographyMode::Source
+    if SMART_TYPOGRAPHY.with(std::cell::Cell::get) == crate::extension::SmartTypographyMode::Source
     {
         return &node.value;
     }

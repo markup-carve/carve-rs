@@ -10,7 +10,9 @@ fn source_mode(input: &str) -> String {
         ..Options::default()
     };
 
-    carve::to_markdown_with_options(input, &options).trim().to_string()
+    carve::to_markdown_with_options(input, &options)
+        .trim()
+        .to_string()
 }
 
 const CASES: &[(&str, &str)] = &[
