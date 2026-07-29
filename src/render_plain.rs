@@ -4,6 +4,24 @@ use crate::render_text::strip_controls;
 
 const MAX_RENDER_DEPTH: usize = 100;
 
+thread_local! {
+    /// Labels that actually have a definition in the document being rendered.
+    ///
+    /// A footnote reference without one did not form a footnote, so it has to be
+    /// reproduced as source text. The HTML renderer decides that on the node's
+    /// `number`, which numbering assigns -- this target does no numbering, so the
+    /// field is always None here and there was nothing to check. A thread-local
+    /// keeps the answer off every signature in the render tree, matching how
+    /// render_markdown carries its typography mode; it is set once per render
+    /// entry point and read only by the footnote arm.
+    static DEFINED_FOOTNOTES: std::cell::RefCell<std::collections::BTreeSet<String>> =
+        const { std::cell::RefCell::new(std::collections::BTreeSet::new()) };
+}
+
+fn footnote_is_defined(id: &str) -> bool {
+    DEFINED_FOOTNOTES.with(|set| set.borrow().contains(id))
+}
+
 fn trim_block_output(s: &str) -> &str {
     s.trim_matches(|c| c == '\n' || c == ' ')
 }
@@ -15,6 +33,9 @@ pub fn render_plain_text_with_options(doc: &Document, _options: &Options<'_>) ->
 }
 
 pub fn render_plain_text(doc: &Document) -> String {
+    DEFINED_FOOTNOTES.with(|set| {
+        *set.borrow_mut() = doc.footnote_defs.keys().cloned().collect();
+    });
     let out = render_blocks(&doc.children, 0);
     let footnotes = render_footnote_defs(doc);
     normalize(&format!("{out}{footnotes}"))
@@ -252,7 +273,17 @@ fn render_inline(node: &InlineNode, depth: usize) -> String {
                 // paragraph's open quotes. Matches carve-php.
                 format!("({})", render_inlines_stateful(inline, depth + 1))
             } else {
-                format!("[{}]", strip_controls(footnote.id.as_deref().unwrap_or("")))
+                let id = strip_controls(footnote.id.as_deref().unwrap_or(""));
+                // An UNRESOLVED reference stays literal, exactly as the HTML
+                // target renders it: the construct did not form, so `[^a]` is
+                // ordinary text and dropping the caret invented a reference the
+                // document does not have. carve-php already did this
+                // (carve#352, corpus 132/133/157/161).
+                if footnote_is_defined(&id) {
+                    format!("[{id}]")
+                } else {
+                    format!("[^{id}]")
+                }
             }
         }
         InlineNode::SoftBreak => " ".to_string(),
