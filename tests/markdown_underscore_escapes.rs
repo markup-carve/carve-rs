@@ -58,6 +58,13 @@ fn a_backslash_the_renderer_did_not_write_is_kept() {
 }
 
 #[test]
+fn an_authored_escape_is_de_escaped_when_intraword() {
+    // `a\_b` and `a_b` are two spellings of the same document, so they have to
+    // render the same - the escape the author wrote is still an escape.
+    assert_eq!(carve::to_markdown(r"a\_b").trim(), "a_b");
+}
+
+#[test]
 fn underline_emphasis_still_renders() {
     assert_eq!(carve::to_markdown("_underline_").trim(), "<u>underline</u>");
 }
