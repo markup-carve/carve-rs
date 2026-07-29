@@ -293,6 +293,10 @@ impl Seeder {
                 self.reserve_attrs(&d.attrs);
                 self.walk_blocks(&d.children);
             }
+            BlockNode::LineBlock(lb) => {
+                self.reserve_attrs(&lb.attrs);
+                self.walk_blocks(&lb.children);
+            }
             BlockNode::DefinitionList(d) => {
                 self.reserve_attrs(&d.attrs);
                 for item in &d.items {

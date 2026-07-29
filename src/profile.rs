@@ -99,6 +99,7 @@ pub fn canonical_block_type(node: &BlockNode) -> Option<&'static str> {
         // node (it is a Div). Treat it under the `div` feature.
         BlockNode::Admonition(_) => Some("div"),
         BlockNode::Div(_) => Some("div"),
+        BlockNode::LineBlock(_) => Some("line_block"),
         BlockNode::DefinitionList(_) => Some("definition_list"),
         BlockNode::Figure(_) => Some("figure"),
         BlockNode::RawBlock(_) => Some("raw_block"),

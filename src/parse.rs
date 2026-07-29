@@ -4343,15 +4343,9 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         .collect();
 
     // No inline opener attributes (strict djot); a preceding block-attribute
-    // line merges onto this div in parse_blocks.
-    BlockNode::Div(Div {
-        attrs: Some(Attrs {
-            id: None,
-            classes: vec!["line-block".to_string()],
-            key_values: BTreeMap::new(),
-            order: vec![AttrSlot::Class],
-        }),
-        label: None,
+    // line merges onto this node in parse_blocks.
+    BlockNode::LineBlock(LineBlock {
+        attrs: None,
         children,
     })
 }
@@ -4866,6 +4860,7 @@ fn stamp_source_line(node: &mut BlockNode, line: usize) {
         BlockNode::Table(n) => Some(&mut n.attrs),
         BlockNode::Admonition(n) => Some(&mut n.attrs),
         BlockNode::Div(n) => Some(&mut n.attrs),
+        BlockNode::LineBlock(n) => Some(&mut n.attrs),
         BlockNode::DefinitionList(n) => Some(&mut n.attrs),
         BlockNode::Figure(n) => Some(&mut n.attrs),
         BlockNode::Extension(n) => Some(&mut n.attrs),
@@ -4916,6 +4911,7 @@ fn apply_attrs_to_block(node: &mut BlockNode, attrs: Attrs) {
         // id/key conflict (§15) -- merge instead of clobbering.
         BlockNode::Admonition(n) => merge_leading_attrs(&mut n.attrs, attrs),
         BlockNode::Div(n) => merge_leading_attrs(&mut n.attrs, attrs),
+        BlockNode::LineBlock(n) => merge_leading_attrs(&mut n.attrs, attrs),
         BlockNode::DefinitionList(n) => n.attrs = Some(attrs),
         BlockNode::Figure(n) => n.attrs = Some(attrs),
         BlockNode::Extension(n) => n.attrs = Some(attrs),

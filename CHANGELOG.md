@@ -7,6 +7,38 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **BREAKING (AST): a line block is now its own node type.** `::: |` parses to
+  `BlockNode::LineBlock` instead of a `Div` carrying a `.line-block` class.
+  Consumers that matched on the class have to match on the variant instead.
+
+  The class could not express the construct: inside a `::: |` fence every
+  newline is a hard break, while a plain div an author gave that class keeps
+  soft breaks. With only the class to go on, the writer could not tell the two
+  apart, emitted the generic `:::` form, and a formatted line block re-parsed as
+  an ordinary div - one of the four constructs breaking
+  `parse(fmt(x)) == parse(x)` (carve#359). It also brings carve-rs in line with
+  the block vocabulary in the spec's profiles.md, which lists `line_block`, and
+  with carve-php and carve-js, which now both have the node.
+
+  **Rendered output is unchanged** in every target: the HTML is still
+  `<div class="line-block">`, with the structural class trailing the author's
+  own attributes (`{.foo #v}` renders `class="foo line-block" id="v"`).
+
+### Fixed
+
+- **The canonical writer reproduces a line block as a line block** (carve#359).
+  It emitted a bare `:::` plus a `.line-block` class, and resolved the indent
+  placeholder to a literal non-breaking space - which re-parses as text rather
+  than as indentation, so the text node came back different even though the
+  emitted bytes looked identical. `::: |` and its leading spaces now round-trip
+  byte for byte.
+
+- **A leading attribute line reaches a line block.** `{#verse}` before a `::: |`
+  fence was dropped: the block-attribute merge fell through to a catch-all arm
+  that silently ignored the node.
+
 ### Fixed
 
 - **The Markdown renderer no longer de-escapes underscores inside verbatim

@@ -281,6 +281,11 @@ fn collect_footnotes_block(
                 collect_footnotes_block(child, def_labels, label_indices, seen, order);
             }
         }
+        BlockNode::LineBlock(lb) => {
+            for child in &mut lb.children {
+                collect_footnotes_block(child, def_labels, label_indices, seen, order);
+            }
+        }
         BlockNode::Div(d) => {
             for child in &mut d.children {
                 collect_footnotes_block(child, def_labels, label_indices, seen, order);
@@ -449,6 +454,7 @@ fn block_source_line(block: &BlockNode) -> Option<&str> {
         BlockNode::Table(n) => n.attrs.as_ref(),
         BlockNode::Admonition(n) => n.attrs.as_ref(),
         BlockNode::Div(n) => n.attrs.as_ref(),
+        BlockNode::LineBlock(n) => n.attrs.as_ref(),
         BlockNode::DefinitionList(n) => n.attrs.as_ref(),
         BlockNode::Figure(n) => n.attrs.as_ref(),
         BlockNode::Extension(n) => n.attrs.as_ref(),
@@ -606,6 +612,7 @@ fn render_block(
         BlockNode::Table(t) => render_table(out, t, level, options),
         BlockNode::Admonition(a) => render_admonition(out, a, level, options, state),
         BlockNode::Div(d) => render_div(out, d, level, options, state),
+        BlockNode::LineBlock(lb) => render_line_block(out, lb, level, options, state),
         BlockNode::DefinitionList(d) => render_definition_list(out, d, level, options, state),
         BlockNode::Figure(f) => render_figure(out, f, level, options, state),
         BlockNode::AbbreviationDef(_) => {}
@@ -1339,6 +1346,37 @@ fn render_admonition(
     out.push('\n');
     indent(out, level);
     out.push_str(if canonical { "</aside>" } else { "</div>" });
+}
+
+/// A line block renders as a div carrying the `line-block` class. The class is
+/// part of the OUTPUT contract, not of the AST: the node type is what records
+/// that every newline inside is a hard break, so a plain div an author gave
+/// that class stays an ordinary div.
+///
+/// The structural class TRAILS the author's own attributes (`{.foo #v}` renders
+/// `class="foo line-block" id="v"`), matching carve-php and carve-js.
+fn render_line_block(
+    out: &mut String,
+    lb: &LineBlock,
+    level: usize,
+    options: &Options<'_>,
+    state: &mut RenderState,
+) {
+    let mut attrs = lb.attrs.clone().unwrap_or_default();
+    attrs.classes.push("line-block".to_string());
+    if !attrs.order.contains(&AttrSlot::Class) {
+        attrs.order.push(AttrSlot::Class);
+    }
+
+    indent(out, level);
+    out.push_str(&format!("<div{}>", render_attrs(&Some(attrs))));
+    for child in &lb.children {
+        out.push('\n');
+        render_block(out, child, level + 1, options, state);
+    }
+    out.push('\n');
+    indent(out, level);
+    out.push_str("</div>");
 }
 
 fn render_div(
