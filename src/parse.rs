@@ -2804,7 +2804,18 @@ fn line_starts_paragraph(line: &str) -> bool {
         return false;
     }
     if line.starts_with([' ', '\t']) {
-        return true;
+        // An indented line is outer-item paragraph content ONLY if it does not
+        // open a block. An indented sibling marker belongs to the nested list,
+        // not to the outer item, so treating it as paragraph content propagated
+        // the nested list's looseness outwards - which PART 9 section 17 says
+        // it must not (corpus 142). The 2-space form dedents to column 0 and
+        // reached the marker check below; the 4-space form kept its indent and
+        // short-circuited here.
+        // ...but only a LIST MARKER disqualifies it. Unordered and task markers
+        // nest at any indent, so an indented sibling marker belongs to the
+        // nested list. Every other opener needs its own column, so an indented
+        // `> q` or `# h` is literal paragraph text and DOES loosen (corpus 160).
+        return detect_list_marker_full(line).is_none();
     }
     detect_heading(line).is_none()
         && !detect_thematic_break(line)

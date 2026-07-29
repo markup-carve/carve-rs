@@ -6,13 +6,31 @@ struct CarveContext {
     block_depth: usize,
     inline_depth: usize,
     list_depth: usize,
+    escape_mode: EscapeMode,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum EscapeMode {
+    Minimal,
+    Conservative,
 }
 
 pub fn render_carve(doc: &Document) -> String {
+    let minimal = render_with_escapes(doc, EscapeMode::Minimal);
+    let conservative = render_with_escapes(doc, EscapeMode::Conservative);
+    if minimal == conservative || escaping_is_redundant(&minimal, &conservative) {
+        minimal
+    } else {
+        conservative
+    }
+}
+
+fn render_with_escapes(doc: &Document, escape_mode: EscapeMode) -> String {
     let mut ctx = CarveContext {
         block_depth: 0,
         inline_depth: 0,
         list_depth: 0,
+        escape_mode,
     };
     let mut parts = Vec::new();
     if !doc.frontmatter.is_empty() {
@@ -27,6 +45,21 @@ pub fn render_carve(doc: &Document) -> String {
         parts.push(footnotes);
     }
     normalize(&parts.join("\n\n"))
+}
+
+fn escaping_is_redundant(minimal: &str, conservative: &str) -> bool {
+    let parsed = std::panic::catch_unwind(|| {
+        (
+            comparable_document(crate::parse::parse_for_carve(minimal)),
+            comparable_document(crate::parse::parse_for_carve(conservative)),
+        )
+    });
+    parsed.is_ok_and(|(minimal_doc, conservative_doc)| minimal_doc == conservative_doc)
+}
+
+fn comparable_document(mut doc: Document) -> Document {
+    doc.source_len = 0;
+    doc
 }
 
 fn render_blocks(blocks: &[BlockNode], ctx: &mut CarveContext) -> String {
@@ -69,9 +102,13 @@ fn render_item_blocks(blocks: &[BlockNode], tight: bool, ctx: &mut CarveContext)
             continue;
         }
         if let Some(prev_block) = prev {
-            let blank_gap =
-                matches!(prev_block, BlockNode::List(_)) || matches!(block, BlockNode::List(_));
-            out.push_str(if blank_gap { "\n\n" } else { "\n" });
+            // A tight item joins every child with a single newline, including a
+            // nested list. The blank line that used to be kept here existed to
+            // work around nested looseness propagating to the outer item; with
+            // that fixed in line_starts_paragraph, keeping it would insert a
+            // blank the author never wrote and diverge from carve-js/carve-php.
+            let _ = prev_block;
+            out.push('\n');
         }
         out.push_str(&rendered);
         prev = Some(block);
@@ -553,8 +590,11 @@ fn render_inline(
     next_char: char,
 ) -> String {
     match node {
-        InlineNode::Text(text) => escape_text(&text.replace(crate::NBSP_PLACEHOLDER, "\u{00a0}"))
-            .replace(crate::ESCAPED_CARET_PLACEHOLDER, "\\^"),
+        InlineNode::Text(text) => escape_text(
+            &text.replace(crate::NBSP_PLACEHOLDER, "\u{00a0}"),
+            ctx.escape_mode,
+        )
+        .replace(crate::ESCAPED_CARET_PLACEHOLDER, "\\^"),
         InlineNode::SmartPunctuation(s) => s.value.clone(),
         InlineNode::Emphasis(emphasis) => {
             let content = render_inlines(&emphasis.children, ctx);
@@ -628,7 +668,7 @@ fn render_inline(
             render_inlines(&extension.children, ctx),
             render_attrs(&extension.attrs)
         ),
-        InlineNode::Abbreviation(abbr) => escape_text(&abbr.abbr),
+        InlineNode::Abbreviation(abbr) => escape_text(&abbr.abbr, ctx.escape_mode),
         InlineNode::Footnote(footnote) => {
             let body = if let Some(inline) = &footnote.inline {
                 format!("^[{}]", render_inlines(inline, ctx))
@@ -974,18 +1014,17 @@ fn trim_end_non_nbsp(text: &str) -> &str {
     text.trim_end_matches(|ch: char| ch.is_whitespace() && ch != '\u{00a0}')
 }
 
-fn escape_text(text: &str) -> String {
+fn escape_text(text: &str, mode: EscapeMode) -> String {
     let mut out = String::new();
     for ch in text.chars() {
         if matches!(ch, '\u{0000}'..='\u{0008}' | '\u{000b}'..='\u{001f}' | '\u{007f}'..='\u{009f}')
         {
             continue;
         }
-        if matches!(
+        let unconditional = matches!(ch, '\\' | '`' | '"' | '\'' | '^');
+        let candidate = matches!(
             ch,
-            '\\' | '`'
-                | '*'
-                | '_'
+            '*' | '_'
                 | '{'
                 | '}'
                 | '['
@@ -998,7 +1037,6 @@ fn escape_text(text: &str) -> String {
                 | '.'
                 | '!'
                 | '~'
-                | '^'
                 | '/'
                 | '<'
                 | '>'
@@ -1006,13 +1044,10 @@ fn escape_text(text: &str) -> String {
                 | '%'
                 | '|'
                 | '='
-                // no ',' here: there is no bare subscript delimiter, and the
-                // braced `{,` opener is neutralized by the `{` escape
                 | ':'
                 | ';'
-                | '"'
-                | '\''
-        ) {
+        );
+        if unconditional || (mode == EscapeMode::Conservative && candidate) {
             out.push('\\');
         }
         out.push(ch);

@@ -135,6 +135,24 @@ fn literal_caret_escaped_literal_comma_unescaped() {
     );
 }
 
+#[test]
+fn part11_minimal_escaping_spot_checks() {
+    assert_eq!(
+        carve::to_carve(
+            "Carve is a \"post-Markdown\" language - it fixes it. 50% faster: yes (ok).\n"
+        ),
+        "Carve is a \"post-Markdown\" language - it fixes it. 50% faster: yes (ok).\n"
+    );
+    assert_eq!(
+        carve::to_carve("Literal \\-\\- and \\.\\.\\. and \\\" must stay escaped.\n"),
+        "Literal \\-\\- and \\.\\.\\. and \\\" must stay escaped\\.\n"
+    );
+    assert_eq!(
+        carve::to_carve("^sup^ ,sub, stays literal. 50% ok (yes).\n"),
+        "\\^sup\\^ ,sub, stays literal. 50% ok (yes).\n"
+    );
+}
+
 // Verbatim content survives document normalization (carve-js issue 340):
 // trailing whitespace and blank-line runs inside code blocks, raw blocks,
 // frontmatter, and block comments are byte-exact after fmt.

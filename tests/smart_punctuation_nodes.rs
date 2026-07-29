@@ -7,7 +7,7 @@ fn smart_punctuation_renders_glyphs_but_formats_source_runs() {
     assert!(html.contains("– really…"));
 
     let formatted = carve::to_carve(src);
-    assert!(formatted.contains("\"post\\-Markdown\""));
+    assert!(formatted.contains("\"post-Markdown\""));
     assert!(formatted.contains("-- really..."));
 }
 
