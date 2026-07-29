@@ -36,6 +36,27 @@ fn code_spans_are_untouched() {
     assert_eq!(carve::to_markdown("`code_span`").trim(), "`code_span`");
 }
 
+/// A backslash the author typed is content, not an escape this renderer added.
+/// The de-escaping used to run over the assembled document, where it could not
+/// tell the two apart, and rewrote verbatim regions that carry a literal
+/// backslash before an underscore (carve-js issue 400).
+#[test]
+fn a_backslash_the_renderer_did_not_write_is_kept() {
+    for (source, expected) in [
+        (r"`a\_b`", r"`a\_b`"),
+        ("```\ncompany\\_id\n```", "```\ncompany\\_id\n```"),
+        (r"[x](a\_b)", r"[x](a\_b)"),
+        (r"![a](x\_y)", r"![a](x\_y)"),
+        ("```=html\n<i>a\\_b</i>\n```", r"&lt;i&gt;a\_b&lt;/i&gt;"),
+    ] {
+        assert_eq!(
+            carve::to_markdown(source).trim(),
+            expected,
+            "source: {source}"
+        );
+    }
+}
+
 #[test]
 fn underline_emphasis_still_renders() {
     assert_eq!(carve::to_markdown("_underline_").trim(), "<u>underline</u>");
