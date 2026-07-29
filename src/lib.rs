@@ -49,7 +49,7 @@ pub use citations::{
 };
 pub use extension::{
     BeforeRenderContext, BlockMatch, CarveExtension, InlineMatch, MatcherContext, Mode, Options,
-    RenderContext, StaticRenderers,
+    RenderContext, SmartTypographyMode, StaticRenderers,
 };
 pub use extensions::{
     sanitize_svg, Autolink, AutolinkOptions, CodeCallouts, ColorSwatch, ContentMode, CrossrefStyle,
