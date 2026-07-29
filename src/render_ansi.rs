@@ -40,6 +40,7 @@ pub fn render_ansi(doc: &Document) -> String {
         list_depth: 0,
         block_quote_depth: 0,
         ordered: Vec::new(),
+        defined_footnotes: doc.footnote_defs.keys().cloned().collect(),
     };
     let out = render_blocks(&doc.children, &mut ctx, 0);
     let footnotes = render_footnote_defs(doc, &mut ctx);
@@ -50,6 +51,12 @@ struct AnsiContext {
     list_depth: usize,
     block_quote_depth: usize,
     ordered: Vec<usize>,
+    /// Labels that actually have a definition. A reference without one did not
+    /// form a footnote, so it is not a footnote marker. The HTML renderer decides
+    /// this on the node's `number`, which numbering assigns -- this target does no
+    /// numbering, so that field is always None here and there was nothing to
+    /// check (carve#352).
+    defined_footnotes: std::collections::BTreeSet<String>,
 }
 
 fn render_block_inlines(nodes: &[InlineNode], ctx: &mut AnsiContext) -> String {
@@ -540,10 +547,15 @@ fn render_inline(node: &InlineNode, ctx: &mut AnsiContext, depth: usize) -> Stri
                 let rendered = render_inlines(inline, ctx, depth + 1);
                 format!("({rendered})")
             } else {
-                style(
-                    &format!("[{}]", strip_controls(footnote.id.as_deref().unwrap_or(""))),
-                    &(FG_CYAN.to_string() + BOLD),
-                )
+                let id = strip_controls(footnote.id.as_deref().unwrap_or(""));
+                if ctx.defined_footnotes.contains(&id) {
+                    style(&format!("[{id}]"), &(FG_CYAN.to_string() + BOLD))
+                } else {
+                    // UNRESOLVED: literal and UNSTYLED, as the HTML target
+                    // renders it. Styling it announced a footnote the document
+                    // does not have.
+                    format!("[^{id}]")
+                }
             }
         }
         InlineNode::SoftBreak => " ".to_string(),
