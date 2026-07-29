@@ -5180,11 +5180,16 @@ fn parse_inline_context(
                 continue;
             }
             if is_escapable(nxt) {
-                buf.push(if nxt == b'^' {
-                    crate::ESCAPED_CARET_PLACEHOLDER
+                // The escape is its own node: the backslash carries intent the
+                // literal character does not (carve issue 350). The caret keeps
+                // its placeholder inside the node's value, so the checks that
+                // stop `\^` being read as a caption marker still see it.
+                flush_text(&mut out, &mut buf);
+                out.push(InlineNode::EscapedText(if nxt == b'^' {
+                    crate::ESCAPED_CARET_PLACEHOLDER.to_string()
                 } else {
-                    nxt as char
-                });
+                    (nxt as char).to_string()
+                }));
                 i += 2;
                 continue;
             }
@@ -5978,6 +5983,10 @@ fn last_emitted_glyph(out: &[InlineNode]) -> char {
         Some(InlineNode::SmartPunctuation(node)) => {
             smart_punctuation_glyph(node).chars().last().unwrap_or('x')
         }
+        // An escaped character is its own node but still the character before
+        // the quote, and quote flanking reads that character: `\{"quoted"`
+        // opens on the brace exactly as an unescaped `{` would (corpus 163).
+        Some(InlineNode::EscapedText(t)) => t.chars().last().unwrap_or('x'),
         None => '\0',
         Some(_) => 'x',
     }

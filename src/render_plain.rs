@@ -221,7 +221,7 @@ fn render_inline(node: &InlineNode, depth: usize) -> String {
         return String::new();
     }
     match node {
-        InlineNode::Text(text) => strip_controls(text),
+        InlineNode::Text(text) | InlineNode::EscapedText(text) => strip_controls(text),
         InlineNode::SmartPunctuation(s) => strip_controls(smart_punctuation_glyph(s)),
         InlineNode::Emphasis(emphasis) => match emphasis.kind {
             EmphasisKind::Strike => render_inlines_stateful(&emphasis.children, depth + 1),

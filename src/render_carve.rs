@@ -63,7 +63,160 @@ fn escaping_is_redundant(minimal: &str, conservative: &str) -> bool {
 
 fn comparable_document(mut doc: Document) -> Document {
     doc.source_len = 0;
+    for block in &mut doc.children {
+        normalize_escapes_block(block);
+    }
     doc
+}
+
+/// Collapse adjacent text and escaped-text nodes into one text node.
+///
+/// An escape is exactly what this comparison is deciding, so the two renders
+/// must not be told apart BY it. Escaping a character both retypes the node and
+/// SPLITS the run it sat in - `blue.` is one text node, `blue\.` is a text node
+/// plus an escaped-text node - so without this every candidate character would
+/// report a difference and escalate the whole document to conservative
+/// escaping.
+///
+/// What survives the merge is the question worth asking: same characters, same
+/// order, same surrounding structure - does dropping the escapes change
+/// anything ELSE? PART 11 section 1 states this as the invariant's own
+/// definition of equality.
+fn normalize_escapes_inlines(nodes: &mut Vec<InlineNode>) {
+    let mut merged: Vec<InlineNode> = Vec::with_capacity(nodes.len());
+    for node in nodes.drain(..) {
+        let text = match node {
+            InlineNode::Text(t) | InlineNode::EscapedText(t) => Some(t),
+            other => {
+                let mut other = other;
+                normalize_escapes_nested(&mut other);
+                merged.push(other);
+                None
+            }
+        };
+        if let Some(t) = text {
+            if let Some(InlineNode::Text(previous)) = merged.last_mut() {
+                previous.push_str(&t);
+            } else {
+                merged.push(InlineNode::Text(t));
+            }
+        }
+    }
+    *nodes = merged;
+}
+
+/// Recurse into an inline node that carries inline children of its own.
+fn normalize_escapes_nested(node: &mut InlineNode) {
+    match node {
+        InlineNode::Emphasis(e) => normalize_escapes_inlines(&mut e.children),
+        InlineNode::Link(l) => normalize_escapes_inlines(&mut l.children),
+        InlineNode::Span(s) => normalize_escapes_inlines(&mut s.children),
+        InlineNode::Footnote(f) => {
+            if let Some(inline) = &mut f.inline {
+                normalize_escapes_inlines(inline);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn normalize_escapes_block(block: &mut BlockNode) {
+    match block {
+        BlockNode::Heading(h) => normalize_escapes_inlines(&mut h.children),
+        BlockNode::Paragraph(p) => normalize_escapes_inlines(&mut p.children),
+        BlockNode::List(l) => {
+            for item in &mut l.items {
+                for child in &mut item.children {
+                    normalize_escapes_block(child);
+                }
+            }
+        }
+        BlockNode::BlockQuote(b) => {
+            for child in &mut b.children {
+                normalize_escapes_block(child);
+            }
+            if let Some(attr) = &mut b.attribution {
+                normalize_escapes_inlines(attr);
+            }
+        }
+        BlockNode::Table(t) => {
+            if let Some(cap) = &mut t.caption {
+                normalize_escapes_inlines(cap);
+            }
+            for row in &mut t.rows {
+                for cell in &mut row.cells {
+                    normalize_escapes_inlines(&mut cell.children);
+                }
+            }
+        }
+        BlockNode::Admonition(a) => {
+            if let Some(title) = &mut a.title {
+                normalize_escapes_inlines(title);
+            }
+            for child in &mut a.children {
+                normalize_escapes_block(child);
+            }
+        }
+        BlockNode::LineBlock(lb) => {
+            for child in &mut lb.children {
+                normalize_escapes_block(child);
+            }
+        }
+        BlockNode::Div(d) => {
+            for child in &mut d.children {
+                normalize_escapes_block(child);
+            }
+        }
+        BlockNode::DefinitionList(dl) => {
+            for item in &mut dl.items {
+                for term in &mut item.terms {
+                    normalize_escapes_inlines(term);
+                }
+                for def in &mut item.definitions {
+                    for child in def.iter_mut() {
+                        normalize_escapes_block(child);
+                    }
+                }
+            }
+        }
+        BlockNode::Figure(f) => {
+            normalize_escapes_inlines(&mut f.caption);
+            normalize_escapes_figure_target(f);
+        }
+        BlockNode::Extension(e) => {
+            for child in &mut e.children {
+                normalize_escapes_block(child);
+            }
+        }
+        BlockNode::CodeBlock(_)
+        | BlockNode::AbbreviationDef(_)
+        | BlockNode::RawBlock(_)
+        | BlockNode::Comment(_)
+        | BlockNode::BlockImage(_)
+        | BlockNode::ThematicBreak(_) => {}
+    }
+}
+
+fn normalize_escapes_figure_target(f: &mut crate::ast::Figure) {
+    match &mut f.target {
+        FigureTarget::BlockQuote(b) => {
+            for child in &mut b.children {
+                normalize_escapes_block(child);
+            }
+        }
+        FigureTarget::Table(t) => {
+            if let Some(cap) = &mut t.caption {
+                normalize_escapes_inlines(cap);
+            }
+            for row in &mut t.rows {
+                for cell in &mut row.cells {
+                    normalize_escapes_inlines(&mut cell.children);
+                }
+            }
+        }
+        FigureTarget::Paragraph(p) => normalize_escapes_inlines(&mut p.children),
+        FigureTarget::Image(_) | FigureTarget::CodeBlock(_) => {}
+    }
 }
 
 fn render_blocks(blocks: &[BlockNode], ctx: &mut CarveContext) -> String {
@@ -611,6 +764,9 @@ fn render_inline(
             ctx.escape_mode,
         )
         .replace(crate::ESCAPED_CARET_PLACEHOLDER, "\\^"),
+        InlineNode::EscapedText(text) => {
+            format!("\\{}", text.replace(crate::ESCAPED_CARET_PLACEHOLDER, "^"))
+        }
         InlineNode::SmartPunctuation(s) => s.value.clone(),
         InlineNode::Emphasis(emphasis) => {
             let content = render_inlines(&emphasis.children, ctx);
@@ -1367,6 +1523,12 @@ fn last_boundary(node: &InlineNode) -> Option<char> {
 fn boundary_text(node: &InlineNode) -> Option<&str> {
     match node {
         InlineNode::Text(text) => Some(text),
+        // The CHARACTER, not the backslash that precedes it in the output. A
+        // text node holding `_b_` and an escaped-text node holding `_` describe
+        // the same neighbour, and the writer has to brace an adjacent delimiter
+        // the same way for both - otherwise the first pass (plain text) and the
+        // second (escaped text) disagree and `fmt(fmt(x)) != fmt(x)`.
+        InlineNode::EscapedText(text) => Some(text),
         InlineNode::SmartPunctuation(s) => Some(&s.value),
         InlineNode::Code(text, _) => Some(text),
         InlineNode::Abbreviation(abbr) => Some(&abbr.abbr),

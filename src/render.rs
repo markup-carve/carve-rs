@@ -1604,6 +1604,10 @@ fn render_inline_after(out: &mut String, node: &InlineNode, options: &Options<'_
             // is byte-identical to `escape_text(..).replace('\u{00a0}', ..)`.
             write_escaped_text_nbsp(out, s);
         }
+        InlineNode::EscapedText(s) => {
+            // The backslash is authoring syntax; the reader sees the character.
+            write_escaped_text_nbsp(out, &s.replace(crate::ESCAPED_CARET_PLACEHOLDER, "^"));
+        }
         InlineNode::SmartPunctuation(s) => write_escaped_text_nbsp(out, smart_punctuation_glyph(s)),
         InlineNode::Emphasis(e) => render_emphasis(out, e, options),
         InlineNode::Code(s, attrs) => {

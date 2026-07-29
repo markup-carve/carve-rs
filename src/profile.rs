@@ -140,7 +140,9 @@ pub fn canonical_block_type(node: &BlockNode) -> Option<&'static str> {
 /// nodes are denied-by-default by the resolver.
 pub fn canonical_inline_type(node: &InlineNode) -> Option<&'static str> {
     match node {
-        InlineNode::Text(_) | InlineNode::SmartPunctuation(_) => Some("text"),
+        InlineNode::Text(_) | InlineNode::EscapedText(_) | InlineNode::SmartPunctuation(_) => {
+            Some("text")
+        }
         InlineNode::Emphasis(e) => Some(match e.kind {
             EmphasisKind::Italic => "emphasis",
             // BoldItalic is nested strong+emphasis; gate it under `strong`
