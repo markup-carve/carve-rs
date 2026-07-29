@@ -28,6 +28,13 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`autolink` and `admonition` are deniable by name** (carve#362). Both folded
+  into `link` / `div` before the profile's allow/deny check, so naming them was
+  a silent no-op - a host restricting untrusted input could deny autolinks, get
+  no error and no violation, and still emit them. They stay covered by the
+  broader name: denying `link` still strips autolinks and denying `div` still
+  strips admonitions, so no profile written against the broad name is widened.
+
 - **The canonical writer reproduces a line block as a line block** (carve#359).
   It emitted a bare `:::` plus a `.line-block` class, and resolved the indent
   placeholder to a literal non-breaking space - which re-parses as text rather
