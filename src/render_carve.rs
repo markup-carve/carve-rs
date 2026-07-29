@@ -1355,15 +1355,52 @@ fn escape_image_alt(text: &str) -> String {
         .replace(']', "\\]")
 }
 
+/// Which characters the destination scan would read differently if emitted
+/// bare: a parenthesis with no partner, and a backslash sitting in front of one
+/// of the three escapable characters. Balanced parentheses are deliberately
+/// absent -- they re-parse as themselves, and escaping them would be churn
+/// against the minimal-escaping rule in PART 11 section 4.
+fn unbalanced_destination_chars(text: &str) -> std::collections::HashSet<usize> {
+    let mut openers: Vec<usize> = Vec::new();
+    let mut marked = std::collections::HashSet::new();
+    for (i, ch) in text.char_indices() {
+        if ch == '(' {
+            openers.push(i);
+        } else if ch == ')' && openers.pop().is_none() {
+            marked.insert(i);
+        }
+    }
+    marked.extend(openers);
+    marked
+}
+
 fn escape_destination(text: &str) -> String {
     let sanitize_blank = dangerous_destination_scheme(text);
+    // Almost every destination holds neither a parenthesis nor a backslash, so
+    // there is nothing for the scan to misread and nothing to mark. Skipping
+    // the walk keeps that case free of the set entirely.
+    let needs_marking = text
+        .as_bytes()
+        .iter()
+        .any(|&b| matches!(b, b'(' | b')' | b'\\'));
+    let marked = if needs_marking {
+        unbalanced_destination_chars(text)
+    } else {
+        std::collections::HashSet::new()
+    };
+    let bytes = text.as_bytes();
     let mut out = String::new();
-    for ch in text.chars() {
+    for (i, ch) in text.char_indices() {
+        let escapable =
+            ch == '\\' && matches!(bytes.get(i + 1), Some(b'(') | Some(b')') | Some(b'\\'));
+        if (marked.contains(&i) || escapable) && !sanitize_blank {
+            out.push('\\');
+        }
         match ch {
-            // A backslash is a literal destination character (no destination
-            // escapes), emitted verbatim -- escaping it would double on
-            // re-parse. Whitespace is percent-encoded (it would end the
-            // destination otherwise).
+            // Whitespace is percent-encoded (it would end the destination
+            // otherwise). A backslash before anything the scan does not treat
+            // as an escape is emitted verbatim, so URLs carrying backslashes
+            // need no doubling.
             ch if ch.is_whitespace() => {
                 if ch == ' ' {
                     out.push_str("%20");
