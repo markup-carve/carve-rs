@@ -1356,6 +1356,14 @@ fn escape_image_alt(text: &str) -> String {
 }
 
 fn escape_destination(text: &str) -> String {
+    // A parenthesis cannot survive a bare destination: the run stops at the
+    // first `)`, so the href truncates and the rest leaks into the text. The
+    // angle form is the spelling that can hold one, so use it rather than
+    // rewriting the URL (carve#377). It cannot carry `<`, `>` or a newline, so
+    // a destination with those falls through to the bare form below.
+    if text.contains(['(', ')']) && !text.contains(['<', '>', '\n']) {
+        return format!("<{text}>");
+    }
     let sanitize_blank = dangerous_destination_scheme(text);
     let mut out = String::new();
     for ch in text.chars() {
