@@ -7,6 +7,21 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **A blank line inside a marker-line item no longer ends its sub-list**
+  (carve-rs#301). `- - A` opens a sub-list on the marker line; when its first
+  item is loose, the sibling marker after the blank sits at the sub-list's own
+  column, which is shallower than the indented block above it but still inside
+  the item. The collector compared that line's indent against the first
+  collected block's indent rather than against the item's content column, so it
+  ended the block there and the sibling started a second list - splitting one
+  list in two and flipping the following item from loose to tight.
+
+  Reached through `carve fmt`, which emits a blank the source did not have: both
+  PART 11 §1 invariants broke at once, so formatting a document changed what it
+  rendered as. carve-js and carve-php read all of these as one list.
+
 ### Changed
 
 - **BREAKING (AST): an escaped character is now its own node.** `\-` parses to

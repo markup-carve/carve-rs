@@ -3128,7 +3128,14 @@ fn collect_indented_block_mapped_with(
                 while k < cur.lines.len() && is_blank_line(cur.lines[k]) {
                     k += 1;
                 }
-                let continues = k < cur.lines.len() && indent_columns(cur.lines[k]) >= bi;
+                // Against the item's CONTENT COLUMN, not the first collected
+                // block's own indent. A sibling marker sits at the content
+                // column and is therefore shallower than an indented block
+                // above it, but it is still inside the item - comparing against
+                // the block's indent ended the collection there and split one
+                // list into two (carve-rs#301).
+                let threshold = bi.min(strip_cols);
+                let continues = k < cur.lines.len() && indent_columns(cur.lines[k]) >= threshold;
                 if !continues {
                     break;
                 }
@@ -3183,7 +3190,11 @@ fn collect_indented_block_plain_with(
                 while k < cur.lines.len() && is_blank_line(cur.lines[k]) {
                     k += 1;
                 }
-                let continues = k < cur.lines.len() && indent_columns(cur.lines[k]) >= bi;
+                // Against the item's CONTENT COLUMN, not the first collected
+                // block's own indent - see the mapped collector above
+                // (carve-rs#301).
+                let threshold = bi.min(strip_cols);
+                let continues = k < cur.lines.len() && indent_columns(cur.lines[k]) >= threshold;
                 if !continues {
                     break;
                 }
