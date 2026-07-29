@@ -121,6 +121,11 @@ fn normalize_escapes_nested(node: &mut InlineNode) {
         InlineNode::Emphasis(e) => normalize_escapes_inlines(&mut e.children),
         InlineNode::Link(l) => normalize_escapes_inlines(&mut l.children),
         InlineNode::Span(s) => normalize_escapes_inlines(&mut s.children),
+        // An inline extension carries inline children too, and omitting it meant
+        // an escape inside one made the two renders differ and escalated the
+        // WHOLE document: `Press :kbd[Ctrl+C] to copy.` came back
+        // `Press :kbd[Ctrl\+C] to copy\.` (carve#352, corpus 45-inline-extensions).
+        InlineNode::Extension(e) => normalize_escapes_inlines(&mut e.children),
         InlineNode::Footnote(f) => {
             if let Some(inline) = &mut f.inline {
                 normalize_escapes_inlines(inline);
@@ -1168,18 +1173,29 @@ fn align_marker(align: Option<TableAlign>) -> &'static str {
 
 /// Resolve the NBSP placeholder, which stands for two different things.
 ///
-/// An escaped space (`\\ `) resolves to a real non-breaking space. A line
-/// block's leading indentation resolves to ORDINARY spaces: that is the source
-/// form the parser reads back as indentation, whereas a real nbsp re-parses as
-/// literal text and the text node comes back different (carve issue 359).
+/// An escaped space (`\\ `) is written back as an ESCAPED SPACE. Resolving it to
+/// a real non-breaking space instead lost the distinction the parser draws:
+/// `10\\ kg` came back carrying U+00A0, which re-parses as a literal nbsp rather
+/// than as an escape, so the text node differed even though the HTML did not.
+/// carve-js fixed that in carve#369; this engine had not (carve#352, corpus
+/// 29-non-breaking-space).
+///
+/// A line block's leading indentation resolves to ORDINARY spaces: that is the
+/// source form the parser reads back as indentation, whereas a real nbsp
+/// re-parses as literal text and the text node comes back different (carve issue
+/// 359).
 ///
 /// Only a run at the start of a line is indentation, so a mid-line escaped
 /// space inside a line block still resolves to a real nbsp. The leading run is
 /// handed to the verbatim scheme, which restores plain spaces after
 /// `normalize` has run.
+/// Stands in for an escaped space until `normalize` expands it, so the backslash
+/// is not seen by the escaper (which would double it).
+const ESCAPED_SPACE: &str = "\u{e000}";
+
 fn resolve_nbsp_placeholder(text: &str, in_line_block: bool) -> String {
     if !in_line_block {
-        return text.replace(crate::NBSP_PLACEHOLDER, "\u{00a0}");
+        return text.replace(crate::NBSP_PLACEHOLDER, ESCAPED_SPACE);
     }
     text.split('\n')
         .map(|line| {
@@ -1191,7 +1207,7 @@ fn resolve_nbsp_placeholder(text: &str, in_line_block: bool) -> String {
             format!(
                 "{}{}",
                 "\u{e001}".repeat(indent),
-                rest.replace(crate::NBSP_PLACEHOLDER, "\u{00a0}")
+                rest.replace(crate::NBSP_PLACEHOLDER, ESCAPED_SPACE)
             )
         })
         .collect::<Vec<_>>()
@@ -1199,7 +1215,10 @@ fn resolve_nbsp_placeholder(text: &str, in_line_block: bool) -> String {
 }
 
 fn normalize(text: &str) -> String {
-    let text = text.replace('\u{e000}', "\u{00a0}");
+    // U+E000 marks an escaped space, and it resolves HERE rather than during
+    // rendering because the backslash it expands to is itself an unconditional
+    // escape: expanding earlier let escapeText double it, giving `10\\ kg`.
+    let text = text.replace('\u{e000}', "\\ ");
     // Strip a line's trailing whitespace only where it cannot be content. At the
     // end of a paragraph the parser drops it too, so the writer must; before a
     // SOFT BREAK the parser keeps it, and stripping it there changed the
