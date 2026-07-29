@@ -64,7 +64,9 @@ fn maps_block_variants_to_canonical_names() {
         canonical_block_type(&BlockNode::ThematicBreak(ThematicBreak::default())),
         Some("thematic_break")
     );
-    // An admonition is gated under the div feature.
+    // An admonition keeps its own canonical name; profiles.md requires it to
+    // be nameable on its own, and the deny check covers it under `div` too
+    // (carve issue 362).
     assert_eq!(
         canonical_block_type(&BlockNode::Admonition(Admonition {
             attrs: None,
@@ -73,7 +75,7 @@ fn maps_block_variants_to_canonical_names() {
             label: None,
             children: vec![],
         })),
-        Some("div")
+        Some("admonition")
     );
     // No canonical mapping -> denied by default.
     assert_eq!(
@@ -119,7 +121,9 @@ fn maps_inline_variants_to_canonical_names() {
         canonical_inline_type(&emph(EmphasisKind::Highlight)),
         Some("highlight")
     );
-    // tag and autolink fold into their feature families.
+    // A tag folds into `mention` - it is not in the canonical vocabulary. An
+    // autolink IS, so it keeps its own name and is covered by `link` in the
+    // deny check rather than by being renamed (carve issue 362).
     assert_eq!(
         canonical_inline_type(&InlineNode::Tag(Tag { name: "x".into() })),
         Some("mention")
@@ -130,7 +134,7 @@ fn maps_inline_variants_to_canonical_names() {
             href: "https://x".into(),
             text: "https://x".into(),
         })),
-        Some("link")
+        Some("autolink")
     );
     // critic insert/delete fold to insert/delete.
     assert_eq!(
