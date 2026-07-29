@@ -9,15 +9,40 @@ fn trim_block_output(s: &str) -> &str {
     s.trim_matches(|c| c == '\n' || c == ' ')
 }
 
-/// Render a document to Markdown. The Markdown renderer has no option-driven
-/// behavior of its own; this wrapper exists so the profile pipeline can render
-/// every format through a uniform `*_with_options` entry point. The profile
-/// transform is applied to `doc` upstream (see `crate::prepare_doc`).
-pub fn render_markdown_with_options(doc: &Document, _options: &Options<'_>) -> String {
-    render_markdown(doc)
+thread_local! {
+    /// Mode for the current render. A thread-local keeps this off every
+    /// signature in the render tree; it is set once per render entry point
+    /// and read only by the smart-punctuation arms.
+    static SMART_TYPOGRAPHY: std::cell::Cell<crate::extension::SmartTypographyMode> =
+        const { std::cell::Cell::new(crate::extension::SmartTypographyMode::Glyph) };
 }
 
+fn smart_punctuation_text(node: &crate::ast::SmartPunctuation) -> &str {
+    if SMART_TYPOGRAPHY.with(std::cell::Cell::get) == crate::extension::SmartTypographyMode::Source
+    {
+        return &node.value;
+    }
+
+    smart_punctuation_glyph(node)
+}
+
+/// Render a document to Markdown, honouring `Options::smart_typography`. The
+/// profile transform is applied to `doc` upstream (see `crate::prepare_doc`).
+pub fn render_markdown_with_options(doc: &Document, options: &Options<'_>) -> String {
+    render_markdown_inner(doc, options.smart_typography)
+}
+
+/// Render a document to Markdown with the default settings, so smart
+/// typography renders as its glyph.
 pub fn render_markdown(doc: &Document) -> String {
+    render_markdown_inner(doc, crate::extension::SmartTypographyMode::Glyph)
+}
+
+fn render_markdown_inner(
+    doc: &Document,
+    smart_typography: crate::extension::SmartTypographyMode,
+) -> String {
+    SMART_TYPOGRAPHY.with(|cell| cell.set(smart_typography));
     let _abbr_guard = crate::abbr_budget::AbbrBudgetGuard::new(doc.source_len);
     let mut heading_ids = HashSet::new();
     let mut referenced_heading_ids = HashSet::new();
@@ -370,7 +395,12 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
                 )
             }
         }
-        InlineNode::SmartPunctuation(s) => escape_text(&strip_controls(smart_punctuation_glyph(s))),
+        // Not escaped: a smart-typography run is either a glyph (nothing to
+        // escape) or the author's source run, which must survive verbatim so a
+        // reader searching for what was typed finds it. carve-php and carve-js
+        // emit it unescaped for the same reason; escaping here turned `->`
+        // into `-&gt;` in source mode.
+        InlineNode::SmartPunctuation(s) => strip_controls(smart_punctuation_text(s)),
         InlineNode::Emphasis(emphasis) => match emphasis.kind {
             EmphasisKind::Italic => {
                 format!("*{}*", render_inlines(&emphasis.children, ctx, depth + 1))
@@ -820,7 +850,7 @@ fn plain_inlines(nodes: &[InlineNode]) -> String {
                     .replace(crate::NBSP_PLACEHOLDER, " ")
                     .replace(crate::ESCAPED_CARET_PLACEHOLDER, "^"),
             ),
-            InlineNode::SmartPunctuation(s) => out.push_str(smart_punctuation_glyph(s)),
+            InlineNode::SmartPunctuation(s) => out.push_str(smart_punctuation_text(s)),
             InlineNode::Emphasis(emphasis) => out.push_str(&plain_inlines(&emphasis.children)),
             InlineNode::Code(code, _) => out.push_str(code),
             // An inline literal renders as visible prose (§27), so it feeds a

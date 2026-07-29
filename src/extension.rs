@@ -123,6 +123,22 @@ impl std::fmt::Debug for StaticRenderers {
     }
 }
 
+/// Whether smart typography renders as its glyph or as the source run the
+/// author typed.
+///
+/// Presentation output wants the glyph. Output written for a machine to read
+/// is usually better off with the characters that were actually typed: the
+/// glyph is a presentation choice the consumer did not ask for and cannot
+/// undo, and a search for the source spelling misses it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SmartTypographyMode {
+    /// Render the resolved glyph, so `...` becomes an ellipsis. The default.
+    #[default]
+    Glyph,
+    /// Render the author's source run, so `...` stays three periods.
+    Source,
+}
+
 pub struct Options<'a> {
     pub extensions: Vec<&'a dyn CarveExtension>,
     pub mention_url: Option<String>,
@@ -133,6 +149,10 @@ pub struct Options<'a> {
     /// `false` for UNTRUSTED input: raw-HTML content is then escaped to text
     /// instead of emitted, closing the one author-controlled raw-HTML vector.
     pub allow_raw_html: bool,
+    /// Whether the Markdown renderer emits smart-typography glyphs or the
+    /// author's source run. Default `Glyph`; only the Markdown target reads
+    /// this.
+    pub smart_typography: SmartTypographyMode,
     /// When `true`, lowercase the kept characters of an auto-generated heading
     /// id per code point (`char::to_lowercase`). Default `false`: heading ids
     /// are CASE-PRESERVING (`# Getting Started` -> `Getting-Started`), matching
@@ -172,6 +192,7 @@ impl Default for Options<'_> {
             tag_url: None,
             symbols: BTreeMap::new(),
             allow_raw_html: true,
+            smart_typography: SmartTypographyMode::Glyph,
             lowercase_heading_ids: false,
             source_lines: false,
             profile: None,
