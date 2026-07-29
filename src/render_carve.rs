@@ -488,7 +488,14 @@ fn render_list(node: &List, ctx: &mut CarveContext) -> String {
         out.push_str(&format!("{indent}{prefix}{first}\n"));
         let continuation = " ".repeat(prefix.len());
         for line in lines {
-            if is_rendered_list_marker(&line) {
+            if line.is_empty() {
+                // A blank continuation line is emitted EMPTY, never indented to
+                // the content column: PART 11 section 7 forbids a whitespace-only
+                // line, because editors and CI that strip trailing whitespace
+                // rewrite one, and `fmt` would then report a diff on a file
+                // nobody edited (carve#375).
+                out.push('\n');
+            } else if is_rendered_list_marker(&line) {
                 out.push_str(&format!("{indent}  {line}\n"));
             } else {
                 out.push_str(&format!("{indent}{continuation}{line}\n"));
@@ -1194,6 +1201,16 @@ fn normalize(text: &str) -> String {
         .iter()
         .enumerate()
         .map(|(i, line)| {
+            // A line whose only content is ASCII space or tab is emitted EMPTY,
+            // wherever it sits (PART 11 section 7). Editors and CI that strip
+            // trailing whitespace rewrite such a line, so `fmt` would report a
+            // diff on a file nobody edited (carve#375). This is separate from
+            // the block-final rule below, which is about a line WITH content:
+            // that whitespace can be document content, and stripping it before
+            // a soft break changed rendered output (carve#359).
+            if !line.is_empty() && line.trim_matches([' ', '\t']).is_empty() {
+                return String::new();
+            }
             let ends_block = raw.get(i + 1).map_or(true, |next| next.trim().is_empty());
             if ends_block {
                 trim_end_non_nbsp(line).to_string()
