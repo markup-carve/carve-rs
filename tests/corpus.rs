@@ -119,7 +119,7 @@ const IMPLEMENTED: &[&str] = &[
     "104-blocked-span-marker-renders-as-empty-cell",
     "105-colspan-marker-scans-left-past-a-consumed-cell",
     "106-security-hardening",
-    "107-link-destination-stops-at-the-first-parenthesis",
+    "107-link-destination-parentheses-balance",
     "108-empty-link-and-image-titles-are-preserved",
     "109-cross-references-resolve-inside-footnote-bodies",
     "110-unquoted-attribute-values-may-contain-dots-and-colons",
@@ -553,8 +553,8 @@ corpus_test!(
 );
 corpus_test!(c106_security_hardening, "106-security-hardening");
 corpus_test!(
-    c107_link_destination_stops_at_the_first_parenthesis,
-    "107-link-destination-stops-at-the-first-parenthesis"
+    c107_link_destination_parentheses_balance,
+    "107-link-destination-parentheses-balance"
 );
 corpus_test!(
     c108_empty_link_and_image_titles_are_preserved,

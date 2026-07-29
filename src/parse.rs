@@ -6780,6 +6780,40 @@ fn unescape_title(s: &str) -> String {
     out
 }
 
+/// Walk a destination that contains a parenthesis or a backslash, balancing the
+/// parentheses and resolving the three escapes. Returns the destination and the
+/// index the scan stopped at.
+fn scan_balanced_destination(bytes: &[u8], start: usize) -> Option<(String, usize)> {
+    let mut href_bytes: Vec<u8> = Vec::new();
+    let mut depth: usize = 0;
+    let mut i = start;
+    while i < bytes.len() {
+        let b = bytes[i];
+        if b == b'\\' {
+            if let Some(&next) = bytes.get(i + 1) {
+                if matches!(next, b'(' | b')' | b'\\') {
+                    href_bytes.push(next);
+                    i += 2;
+                    continue;
+                }
+            }
+        }
+        if b == b'(' {
+            depth += 1;
+        } else if b == b')' {
+            if depth == 0 {
+                break;
+            }
+            depth -= 1;
+        } else if matches!(b, b' ' | b'\t' | b'\n') {
+            break;
+        }
+        href_bytes.push(b);
+        i += 1;
+    }
+    Some((String::from_utf8(href_bytes).ok()?, i))
+}
+
 fn read_link_target(
     bytes: &[u8],
     start: usize,
@@ -6795,24 +6829,39 @@ fn read_link_target(
     if last_close_paren.map_or(true, |p| start > p) {
         return None;
     }
-    let mut i = start;
-    let href_start = i;
-    // Per the grammar, an inline link destination ends at the first whitespace
-    // or first `)` (no balanced-paren or escape rule). A `)` that needs to live
-    // in a URL comes via a reference definition; the markdown renderer
-    // percent-encodes it on the way out.
-    while i < bytes.len()
-        && bytes[i] != b' '
-        && bytes[i] != b')'
-        && bytes[i] != b'\t'
-        && bytes[i] != b'\n'
+    // Per the grammar, a destination's parentheses BALANCE: the scan ends at
+    // whitespace, which begins a title, or at the first `)` with no opener left
+    // to pair with. So a URL carrying a parenthesis -- Wikipedia and MDN
+    // produce them constantly -- is written plainly. Djot and CommonMark both
+    // balance the same way. The only escapes are an escaped parenthesis and an
+    // escaped backslash, for the unbalanced case; a backslash before anything
+    // else is an ordinary character, so URLs full of backslashes need no
+    // doubling.
+    //
+    // Almost every destination holds none of those three characters, and that
+    // run is a plain slice of the input. Finding it first keeps the common case
+    // copy-free; only a run that actually contains one pays for the balancing
+    // scan, which has to build its string byte by byte to drop the escapes.
+    let mut plain_end = start;
+    while plain_end < bytes.len()
+        && !matches!(bytes[plain_end], b' ' | b'\t' | b'\n' | b'(' | b')' | b'\\')
     {
-        i += 1;
+        plain_end += 1;
     }
-    if i == href_start {
+    let (href, mut i) =
+        if plain_end == bytes.len() || matches!(bytes[plain_end], b' ' | b'\t' | b'\n' | b')') {
+            (
+                std::str::from_utf8(&bytes[start..plain_end])
+                    .ok()?
+                    .to_string(),
+                plain_end,
+            )
+        } else {
+            scan_balanced_destination(bytes, start)?
+        };
+    if href.is_empty() {
         return None;
     }
-    let href = std::str::from_utf8(&bytes[href_start..i]).ok()?.to_string();
     // Skip whitespace
     while i < bytes.len() && (bytes[i] == b' ' || bytes[i] == b'\t') {
         i += 1;
