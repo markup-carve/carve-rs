@@ -382,6 +382,19 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
         return String::new();
     }
     match node {
+        // Reproduce the author's escape. `\-\-` was written precisely so a
+        // downstream processor with smart punctuation on would not read an en
+        // dash; emitting the character bare loses exactly that (carve issue
+        // 350). The underscore still goes through the sentinel so the intraword
+        // rule can drop the backslash where CommonMark ignores it anyway.
+        InlineNode::EscapedText(text) => {
+            let ch = text.replace(crate::ESCAPED_CARET_PLACEHOLDER, "^");
+            if ch == "_" {
+                UNDERSCORE_ESCAPE.to_string()
+            } else {
+                format!("\\{ch}")
+            }
+        }
         InlineNode::Text(text) => {
             if is_literal_crossref(text) {
                 strip_controls(text)

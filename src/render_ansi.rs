@@ -463,7 +463,7 @@ fn render_inline(node: &InlineNode, ctx: &mut AnsiContext, depth: usize) -> Stri
         return String::new();
     }
     match node {
-        InlineNode::Text(text) => strip_controls(text),
+        InlineNode::Text(text) | InlineNode::EscapedText(text) => strip_controls(text),
         InlineNode::SmartPunctuation(s) => strip_controls(smart_punctuation_glyph(s)),
         InlineNode::Emphasis(emphasis) => match emphasis.kind {
             EmphasisKind::Italic => {

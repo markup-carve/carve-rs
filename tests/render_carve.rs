@@ -143,9 +143,14 @@ fn part11_minimal_escaping_spot_checks() {
         ),
         "Carve is a \"post-Markdown\" language - it fixes it. 50% faster: yes (ok).\n"
     );
+    // The AUTHORED escapes survive - they are escaped_text nodes, and the
+    // writer says the escape again. The trailing period is not one of them and
+    // needs no escape, so it stays bare: this assertion used to expect `\.`
+    // there, from the days when one authored escape escalated the whole
+    // document to the conservative form (carve issue 350, carve#370 section 1).
     assert_eq!(
         carve::to_carve("Literal \\-\\- and \\.\\.\\. and \\\" must stay escaped.\n"),
-        "Literal \\-\\- and \\.\\.\\. and \\\" must stay escaped\\.\n"
+        "Literal \\-\\- and \\.\\.\\. and \\\" must stay escaped.\n"
     );
     assert_eq!(
         carve::to_carve("^sup^ ,sub, stays literal. 50% ok (yes).\n"),

@@ -325,6 +325,17 @@ pub struct BlockExtension {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InlineNode {
     Text(String),
+    /// A character the author escaped with a backslash (`\-`, `\"`).
+    ///
+    /// Its own variant rather than plain text, because the escape carries
+    /// intent the literal character alone cannot: the author wrote `\-\-`
+    /// precisely so a downstream processor would NOT turn it into an en dash.
+    /// Flattening it into text lost that, and the Markdown target emitted the
+    /// trigger bare where carve-php reproduced the escape (carve issue 350).
+    /// The inline vocabulary in the spec's profiles.md lists `escaped_text`.
+    ///
+    /// The value is the literal character, without the backslash.
+    EscapedText(String),
     SmartPunctuation(SmartPunctuation),
     Emphasis(Emphasis),
     Code(String, Option<Attrs>),
