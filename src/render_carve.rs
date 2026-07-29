@@ -102,9 +102,13 @@ fn render_item_blocks(blocks: &[BlockNode], tight: bool, ctx: &mut CarveContext)
             continue;
         }
         if let Some(prev_block) = prev {
-            let blank_gap =
-                matches!(prev_block, BlockNode::List(_)) || matches!(block, BlockNode::List(_));
-            out.push_str(if blank_gap { "\n\n" } else { "\n" });
+            // A tight item joins every child with a single newline, including a
+            // nested list. The blank line that used to be kept here existed to
+            // work around nested looseness propagating to the outer item; with
+            // that fixed in line_starts_paragraph, keeping it would insert a
+            // blank the author never wrote and diverge from carve-js/carve-php.
+            let _ = prev_block;
+            out.push('\n');
         }
         out.push_str(&rendered);
         prev = Some(block);
