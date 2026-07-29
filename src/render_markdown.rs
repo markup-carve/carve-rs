@@ -81,6 +81,7 @@ fn render_markdown_inner(
         heading_ids,
         referenced_heading_ids,
         list_depth: 0,
+        defined_footnotes: doc.footnote_defs.keys().cloned().collect(),
     };
     let out = render_blocks(&doc.children, &mut ctx, 0);
     let footnotes = render_footnote_defs(doc, &mut ctx);
@@ -91,6 +92,12 @@ struct MarkdownContext {
     heading_ids: HashSet<String>,
     referenced_heading_ids: HashSet<String>,
     list_depth: usize,
+    /// Labels that actually have a definition. A reference without one did not
+    /// form a footnote, so it is not a footnote marker. The HTML renderer decides
+    /// this on the node's `number`, which numbering assigns -- this target does no
+    /// numbering, so that field is always None here and there was nothing to
+    /// check (carve#352).
+    defined_footnotes: std::collections::BTreeSet<String>,
 }
 
 fn render_block_inlines(nodes: &[InlineNode], ctx: &mut MarkdownContext) -> String {
@@ -538,10 +545,16 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
                 let rendered = render_inlines(inline, ctx, depth + 1);
                 format!("^[{rendered}]")
             } else {
-                format!(
-                    "[^{}]",
-                    strip_controls(footnote.id.as_deref().unwrap_or(""))
-                )
+                let id = strip_controls(footnote.id.as_deref().unwrap_or(""));
+                if ctx.defined_footnotes.contains(&id) {
+                    format!("[^{id}]")
+                } else {
+                    // UNRESOLVED: ordinary text, and its brackets are Markdown
+                    // metacharacters that PART 11 section 8 M1 escapes
+                    // UNCONDITIONALLY. Bare, they hand the re-parser markup the
+                    // document never had.
+                    format!("\\[^{id}\\]")
+                }
             }
         }
         InlineNode::SoftBreak => "\n".to_string(),
