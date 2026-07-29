@@ -172,6 +172,7 @@ fn render_block(node: &BlockNode, ctx: &mut MarkdownContext, depth: usize) -> St
             };
             prepend_label(body, admonition.label.as_deref())
         }
+        BlockNode::LineBlock(lb) => render_blocks(&lb.children, ctx, depth + 1),
         BlockNode::Div(div) => {
             let body = render_blocks(&div.children, ctx, depth + 1);
             prepend_label(body, div.label.as_deref())
@@ -909,6 +910,7 @@ where
                 walk_blocks(&admonition.children, depth + 1, visit);
             }
             BlockNode::Div(div) => walk_blocks(&div.children, depth + 1, visit),
+            BlockNode::LineBlock(lb) => walk_blocks(&lb.children, depth + 1, visit),
             BlockNode::List(list) => {
                 for item in &list.items {
                     walk_blocks(&item.children, depth + 1, visit);

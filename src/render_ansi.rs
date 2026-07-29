@@ -127,6 +127,7 @@ fn render_block(node: &BlockNode, ctx: &mut AnsiContext, depth: usize) -> String
             };
             prepend_label(body, admonition.label.as_deref(), ctx)
         }
+        BlockNode::LineBlock(lb) => render_blocks(&lb.children, ctx, depth + 1),
         BlockNode::Div(div) => {
             let body = render_blocks(&div.children, ctx, depth + 1);
             prepend_label(body, div.label.as_deref(), ctx)

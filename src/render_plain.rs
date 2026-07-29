@@ -64,6 +64,7 @@ fn render_block(node: &BlockNode, depth: usize) -> String {
             };
             prepend_label(body, admonition.label.as_deref())
         }
+        BlockNode::LineBlock(lb) => render_blocks(&lb.children, depth + 1),
         BlockNode::Div(div) => {
             let body = render_blocks(&div.children, depth + 1);
             prepend_label(body, div.label.as_deref())

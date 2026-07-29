@@ -284,6 +284,7 @@ impl ProfileFilter<'_> {
                 self.filter_blocks(&mut adm.children, depth)?;
             }
             BlockNode::Div(div) => self.filter_blocks(&mut div.children, depth)?,
+            BlockNode::LineBlock(lb) => self.filter_blocks(&mut lb.children, depth)?,
             BlockNode::DefinitionList(dl) => {
                 for item in &mut dl.items {
                     for term in &mut item.terms {
@@ -755,6 +756,7 @@ fn extract_block_text(node: &BlockNode) -> String {
         BlockNode::Paragraph(p) => p.children.iter().map(extract_inline_text).collect(),
         BlockNode::Admonition(adm) => block_children_join(&adm.children),
         BlockNode::Div(div) => block_children_join(&div.children),
+        BlockNode::LineBlock(lb) => block_children_join(&lb.children),
         BlockNode::Extension(ext) => block_children_join(&ext.children),
         BlockNode::Figure(fig) => {
             let target = match &fig.target {
@@ -889,6 +891,7 @@ fn cleanup_block_children(block: &mut BlockNode) {
             cleanup_blocks(&mut adm.children);
         }
         BlockNode::Div(div) => cleanup_blocks(&mut div.children),
+        BlockNode::LineBlock(lb) => cleanup_blocks(&mut lb.children),
         BlockNode::DefinitionList(dl) => {
             for item in &mut dl.items {
                 for def in &mut item.definitions {
@@ -941,6 +944,7 @@ fn is_empty_block(node: &BlockNode) -> bool {
         }
         BlockNode::Admonition(adm) => adm.children.is_empty(),
         BlockNode::Div(div) => div.children.is_empty(),
+        BlockNode::LineBlock(lb) => lb.children.is_empty(),
         BlockNode::DefinitionList(dl) => dl.items.is_empty(),
         BlockNode::Figure(_) => false,
         BlockNode::Extension(ext) => ext.children.is_empty(),

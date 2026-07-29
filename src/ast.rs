@@ -46,6 +46,7 @@ pub enum BlockNode {
     Table(Table),
     Admonition(Admonition),
     Div(Div),
+    LineBlock(LineBlock),
     DefinitionList(DefinitionList),
     Figure(Figure),
     AbbreviationDef(AbbreviationDef),
@@ -185,6 +186,19 @@ pub struct Admonition {
 pub struct Div {
     pub attrs: Option<Attrs>,
     pub label: Option<String>,
+    pub children: Vec<BlockNode>,
+}
+
+/// Line block (section 4.4): a `::: |` fence whose every newline is a hard break.
+///
+/// Its own type rather than a [`Div`] carrying a `.line-block` class, because
+/// the two are not the same document: a plain div with that class keeps soft
+/// breaks, and a writer given only the class cannot tell which one to emit. The
+/// block vocabulary in the spec's profiles.md lists `line_block` for the same
+/// reason - a profile denying it must be able to name it.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct LineBlock {
+    pub attrs: Option<Attrs>,
     pub children: Vec<BlockNode>,
 }
 

@@ -6,6 +6,9 @@ struct CarveContext {
     block_depth: usize,
     inline_depth: usize,
     list_depth: usize,
+    /// Depth of line-block nesting, so the inline writer drops the explicit
+    /// backslash: inside a `::: |` fence every newline already IS a hard break.
+    line_block_depth: usize,
     escape_mode: EscapeMode,
 }
 
@@ -30,6 +33,7 @@ fn render_with_escapes(doc: &Document, escape_mode: EscapeMode) -> String {
         block_depth: 0,
         inline_depth: 0,
         list_depth: 0,
+        line_block_depth: 0,
         escape_mode,
     };
     let mut parts = Vec::new();
@@ -181,6 +185,22 @@ fn render_block(node: &BlockNode, ctx: &mut CarveContext) -> String {
                 &admonition.attrs,
                 &format!("{fence} {}{title}{label}\n{body}\n{fence}", admonition.kind),
             )
+        }
+        BlockNode::LineBlock(lb) => {
+            // `::: |` is the line-block opener (PART 3, line_block_open).
+            // Emitting a bare `:::` and tagging the node with a `.line-block`
+            // class instead re-parsed as an ordinary div, so the node type
+            // changed across a format round trip and
+            // `parse(fmt(x)) == parse(x)` did not hold (carve issue 359).
+            //
+            // Inside the fence every newline IS a hard break (PART 3,
+            // line_block_body), so the explicit backslash the inline writer
+            // emits for a HardBreak would double it on re-parse.
+            ctx.line_block_depth += 1;
+            let body = render_blocks(&lb.children, ctx);
+            ctx.line_block_depth -= 1;
+            let fence = colon_fence_for(&lb.children);
+            with_block_attrs(&lb.attrs, &format!("{fence} |\n{body}\n{fence}"))
         }
         BlockNode::Div(div) => {
             let label = div
@@ -384,10 +404,12 @@ fn render_definition_list(items: &[DefinitionItem], ctx: &mut CarveContext) -> S
 }
 
 fn colon_fence_for(children: &[BlockNode]) -> &'static str {
-    if children
-        .iter()
-        .any(|child| matches!(child, BlockNode::Admonition(_) | BlockNode::Div(_)))
-    {
+    if children.iter().any(|child| {
+        matches!(
+            child,
+            BlockNode::Admonition(_) | BlockNode::Div(_) | BlockNode::LineBlock(_)
+        )
+    }) {
         "::::"
     } else {
         ":::"
@@ -591,7 +613,7 @@ fn render_inline(
 ) -> String {
     match node {
         InlineNode::Text(text) => escape_text(
-            &text.replace(crate::NBSP_PLACEHOLDER, "\u{00a0}"),
+            &resolve_nbsp_placeholder(text, ctx.line_block_depth > 0),
             ctx.escape_mode,
         )
         .replace(crate::ESCAPED_CARET_PLACEHOLDER, "\\^"),
@@ -681,7 +703,13 @@ fn render_inline(
             format!("{body}{}", render_attrs(&footnote.attrs))
         }
         InlineNode::SoftBreak => "\n".to_string(),
-        InlineNode::HardBreak => "\\\n".to_string(),
+        InlineNode::HardBreak => {
+            if ctx.line_block_depth > 0 {
+                "\n".to_string()
+            } else {
+                "\\\n".to_string()
+            }
+        }
         InlineNode::CriticInsert(insert) => {
             format!(
                 "{{+{}+}}{}",
@@ -945,6 +973,38 @@ fn align_marker(align: Option<TableAlign>) -> &'static str {
         Some(TableAlign::Center) => "~",
         None => "",
     }
+}
+
+/// Resolve the NBSP placeholder, which stands for two different things.
+///
+/// An escaped space (`\\ `) resolves to a real non-breaking space. A line
+/// block's leading indentation resolves to ORDINARY spaces: that is the source
+/// form the parser reads back as indentation, whereas a real nbsp re-parses as
+/// literal text and the text node comes back different (carve issue 359).
+///
+/// Only a run at the start of a line is indentation, so a mid-line escaped
+/// space inside a line block still resolves to a real nbsp. The leading run is
+/// handed to the verbatim scheme, which restores plain spaces after
+/// `normalize` has run.
+fn resolve_nbsp_placeholder(text: &str, in_line_block: bool) -> String {
+    if !in_line_block {
+        return text.replace(crate::NBSP_PLACEHOLDER, "\u{00a0}");
+    }
+    text.split('\n')
+        .map(|line| {
+            let indent = line
+                .chars()
+                .take_while(|c| *c == crate::NBSP_PLACEHOLDER)
+                .count();
+            let rest = &line[indent * crate::NBSP_PLACEHOLDER.len_utf8()..];
+            format!(
+                "{}{}",
+                "\u{e001}".repeat(indent),
+                rest.replace(crate::NBSP_PLACEHOLDER, "\u{00a0}")
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn normalize(text: &str) -> String {

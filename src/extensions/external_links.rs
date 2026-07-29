@@ -132,6 +132,11 @@ impl ExternalLinks {
                     self.visit_block(child);
                 }
             }
+            BlockNode::LineBlock(lb) => {
+                for child in &mut lb.children {
+                    self.visit_block(child);
+                }
+            }
             BlockNode::Div(d) => {
                 for child in &mut d.children {
                     self.visit_block(child);
