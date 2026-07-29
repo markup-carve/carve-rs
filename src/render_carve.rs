@@ -128,7 +128,7 @@ fn render_block(node: &BlockNode, ctx: &mut CarveContext) -> String {
             ),
         ),
         BlockNode::Paragraph(paragraph) => {
-            let body = render_inlines(&paragraph.children, ctx);
+            let body = guard_thematic_break_lines(&render_inlines(&paragraph.children, ctx));
             with_block_attrs(&paragraph.attrs, &body)
         }
         BlockNode::CodeBlock(code) => {
@@ -949,9 +949,24 @@ fn align_marker(align: Option<TableAlign>) -> &'static str {
 
 fn normalize(text: &str) -> String {
     let text = text.replace('\u{e000}', "\u{00a0}");
-    let lines = trim_non_nbsp(&text)
-        .split('\n')
-        .map(|line| trim_end_non_nbsp(line).to_string())
+    // Strip a line's trailing whitespace only where it cannot be content. At the
+    // end of a paragraph the parser drops it too, so the writer must; before a
+    // SOFT BREAK the parser keeps it, and stripping it there changed the
+    // rendered output (carve#359). A line whose successor is blank ends its
+    // block; one followed by more text is mid-paragraph.
+    let trimmed = trim_non_nbsp(&text);
+    let raw: Vec<&str> = trimmed.split('\n').collect();
+    let lines = raw
+        .iter()
+        .enumerate()
+        .map(|(i, line)| {
+            let ends_block = raw.get(i + 1).map_or(true, |next| next.trim().is_empty());
+            if ends_block {
+                trim_end_non_nbsp(line).to_string()
+            } else {
+                (*line).to_string()
+            }
+        })
         .collect::<Vec<_>>()
         .join("\n");
     format!(
@@ -983,10 +998,51 @@ fn protect_verbatim(content: &str) -> String {
     lines.join("\n")
 }
 
+/// Protect a paragraph line that would re-parse as a thematic break.
+///
+/// Source indentation is not in the AST, so an indented `---` - a paragraph
+/// holding an em dash - is emitted at column 0, where it stops being a
+/// paragraph and becomes a thematic break.
+///
+/// Text nodes are already covered: the conservative form escapes the hyphens,
+/// so the round-trip check sees the difference and picks that form. A
+/// smart-punctuation run is not, because its source run is emitted verbatim in
+/// BOTH forms - that is the point of the node - so the check never has a
+/// difference to act on. Escaping the run in the conservative form does not
+/// work either: it would make that form change the document, after which the
+/// check could never prefer the minimal one.
+///
+/// It marks rather than escapes: escaping would split the run (a leading
+/// escaped hyphen plus an en dash) and change the document just as surely,
+/// while a leading space keeps the line a paragraph and keeps the em dash -
+/// which is what the source said. The marker is a sentinel because normalize()
+/// trims the document's leading whitespace, which would silently undo the guard
+/// whenever the paragraph is the first block.
+fn guard_thematic_break_lines(body: &str) -> String {
+    if !body.contains('-') {
+        return body.to_string();
+    }
+    body.split('\n')
+        .map(|line| {
+            let trimmed = line.trim_end_matches([' ', '\t']);
+            if trimmed.len() >= 3 && trimmed.chars().all(|c| c == '-') {
+                format!("\u{e004}{line}")
+            } else {
+                line.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 fn restore_verbatim(text: &str) -> String {
     text.replace('\u{e001}', " ")
         .replace('\u{e002}', "\t")
         .replace('\u{e003}', "")
+        // U+E004 marks a paragraph line that must not begin at column 0. It
+        // resolves AFTER normalize()'s trims, which would otherwise strip a
+        // plain leading space when the paragraph is the document's first block.
+        .replace('\u{e004}', " ")
 }
 
 fn collapse_blank_lines(text: &str) -> String {
