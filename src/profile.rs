@@ -41,6 +41,7 @@ pub const CANONICAL_BLOCK_TYPES: &[&str] = &[
     "table_cell",
     "thematic_break",
     "div",
+    "admonition",
     "raw_block",
     "footnote",
     "definition_list",
@@ -64,6 +65,7 @@ pub const CANONICAL_INLINE_TYPES: &[&str] = &[
     "mention",
     "code",
     "link",
+    "autolink",
     "image",
     "soft_break",
     "hard_break",
@@ -97,7 +99,7 @@ pub fn canonical_block_type(node: &BlockNode) -> Option<&'static str> {
         BlockNode::Table(_) => Some("table"),
         // An admonition is a typed div; carve-php has no separate admonition
         // node (it is a Div). Treat it under the `div` feature.
-        BlockNode::Admonition(_) => Some("div"),
+        BlockNode::Admonition(_) => Some("admonition"),
         BlockNode::Div(_) => Some("div"),
         BlockNode::LineBlock(_) => Some("line_block"),
         BlockNode::DefinitionList(_) => Some("definition_list"),
@@ -152,7 +154,7 @@ pub fn canonical_inline_type(node: &InlineNode) -> Option<&'static str> {
         }),
         InlineNode::Code(_, _) => Some("code"),
         InlineNode::Link(_) => Some("link"),
-        InlineNode::AutoLink(_) => Some("link"),
+        InlineNode::AutoLink(_) => Some("autolink"),
         InlineNode::Image(_) => Some("image"),
         InlineNode::Span(_) => Some("span"),
         InlineNode::Math(_) => Some("math"),
@@ -529,6 +531,27 @@ fn to_strings(items: &[&str]) -> Vec<String> {
     items.iter().map(|s| s.to_string()).collect()
 }
 
+/// Types that are a SPECIALIZATION of a broader one.
+///
+/// profiles.md requires both to be nameable on their own: an autolink is not a
+/// `link` (folding it in loses the authored form a round trip has to restore),
+/// and an admonition is not a `div` (a profile wanting to deny callouts while
+/// allowing generic containers cannot say so if the kind lives in a class
+/// string). Naming them used to be a silent no-op, because both folded into the
+/// broader name before the check (carve issue 362).
+///
+/// They stay COVERED BY the broader name, though: a profile that denies `link`
+/// must keep stripping autolinks, and one that denies `div` must keep stripping
+/// admonitions. Otherwise unfolding them would quietly widen every profile that
+/// already relies on the broad name - the opposite of what a deny list is for.
+fn with_supertype(ty: &str) -> Vec<&str> {
+    match ty {
+        "autolink" => vec!["autolink", "link"],
+        "admonition" => vec!["admonition", "div"],
+        other => vec![other],
+    }
+}
+
 impl Profile {
     /// Default maximum input length (UTF-8 bytes) for the untrusted `comment`
     /// preset - a DoS backstop enforced pre-parse. Generous for a comment body;
@@ -850,21 +873,31 @@ impl Profile {
     }
 
     fn is_inline_allowed(&self, ty: &str) -> bool {
-        if self.denied_inline.iter().any(|t| t == ty) {
+        let names = with_supertype(ty);
+        if self
+            .denied_inline
+            .iter()
+            .any(|t| names.iter().any(|n| n == t))
+        {
             return false;
         }
         if let Some(allowed) = &self.allowed_inline {
-            return allowed.iter().any(|t| t == ty);
+            return allowed.iter().any(|t| names.iter().any(|n| n == t));
         }
         true
     }
 
     fn is_block_allowed(&self, ty: &str) -> bool {
-        if self.denied_block.iter().any(|t| t == ty) {
+        let names = with_supertype(ty);
+        if self
+            .denied_block
+            .iter()
+            .any(|t| names.iter().any(|n| n == t))
+        {
             return false;
         }
         if let Some(allowed) = &self.allowed_block {
-            return allowed.iter().any(|t| t == ty);
+            return allowed.iter().any(|t| names.iter().any(|n| n == t));
         }
         true
     }
