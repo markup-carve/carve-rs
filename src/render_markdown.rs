@@ -141,6 +141,19 @@ fn render_block(node: &BlockNode, ctx: &mut MarkdownContext, depth: usize) -> St
             if let Some(title) = &code.title {
                 info.push_str(&format!(" \"{}\"", escape_code_title(title)));
             }
+            // A grouping `[label]` rides along after the language and title.
+            // Dropping it was silent data loss: an info string is free-form
+            // after the first word, so every consumer ignores what it does not
+            // understand, and carve-php was already emitting it (carve#352).
+            if let Some(label) = &code.label {
+                if !label.is_empty() {
+                    let cleaned: String = label
+                        .chars()
+                        .filter(|c| !matches!(c, '[' | ']' | '`'))
+                        .collect();
+                    info.push_str(&format!(" [{cleaned}]"));
+                }
+            }
             format!("{}{}\n{}\n{}\n\n", fence, info, content, fence)
         }
         BlockNode::BlockQuote(quote) => {
