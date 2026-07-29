@@ -198,7 +198,6 @@ fn normalize_escapes_block(block: &mut BlockNode) {
 }
 
 fn normalize_escapes_figure_target(f: &mut crate::ast::Figure) {
-    use crate::ast::FigureTarget;
     match &mut f.target {
         FigureTarget::BlockQuote(b) => {
             for child in &mut b.children {
