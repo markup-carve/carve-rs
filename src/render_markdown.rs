@@ -219,6 +219,11 @@ fn render_list(node: &List, ctx: &mut MarkdownContext, depth: usize) -> String {
     ctx.list_depth += 1;
     let mut out = String::new();
     let mut counter = node.start.unwrap_or(1);
+    // The authored bullet, not a normalized one. A change of bullet is what
+    // SEPARATES two adjacent lists in CommonMark, so emitting `-` for a `*` list
+    // merges lists the source kept apart -- the same section 11 rule the AST
+    // records `bullet_char` for and render_carve already honors (carve#352).
+    let bullet = node.bullet_char.unwrap_or('-');
     for item in &node.items {
         let indent = "  ".repeat(ctx.list_depth - 1);
         let prefix = if node.ordered {
@@ -227,12 +232,12 @@ fn render_list(node: &List, ctx: &mut MarkdownContext, depth: usize) -> String {
             prefix
         } else if let Some(checked) = item.checked {
             if checked {
-                "- [x] ".to_string()
+                format!("{bullet} [x] ")
             } else {
-                "- [ ] ".to_string()
+                format!("{bullet} [ ] ")
             }
         } else {
-            "- ".to_string()
+            format!("{bullet} ")
         };
         let content = trim_block_output(&render_blocks(&item.children, ctx, depth + 1)).to_string();
         let mut lines = content.split('\n');
