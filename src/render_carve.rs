@@ -66,6 +66,16 @@ fn comparable_document(mut doc: Document) -> Document {
     for block in &mut doc.children {
         normalize_escapes_block(block);
     }
+    // Footnote definitions are NOT in `children` -- they hang off the document in
+    // their own map. Leaving them un-normalized meant any escape inside one made
+    // the two renders differ, so W4 escalated the WHOLE document to conservative:
+    // `a.` alone formatted as `a.`, but the same paragraph beside a `[^f]: b.`
+    // definition came back `a\.` (carve#352, corpus 22-footnotes).
+    for blocks in doc.footnote_defs.values_mut() {
+        for block in blocks.iter_mut() {
+            normalize_escapes_block(block);
+        }
+    }
     doc
 }
 
