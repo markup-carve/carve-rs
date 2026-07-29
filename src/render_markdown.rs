@@ -295,9 +295,29 @@ fn render_table(node: &Table, ctx: &mut MarkdownContext) -> String {
     let mut header = None;
     let mut rows = Vec::new();
     let mut columns = 0usize;
-    // Per-column alignment from the first non-header row (matching carve-php),
-    // so the Markdown separator preserves `:---` / `:---:` / `---:`.
+    // Per-column alignment for the separator row, which is the only place Markdown
+    // can express it.
+    //
+    // COLUMN alignment is declared on the HEADER cells -- that is where `|=> Age`
+    // puts it, and the HTML renderer applies it to every cell in the column. This
+    // used to read the first NON-header row, where `align` is set only by a
+    // per-CELL override, so an ordinary aligned table lost its alignment outright
+    // and a table with one overridden cell reported that cell's alignment as the
+    // whole column's (carve#352, corpus 48/49/52/53).
+    //
+    // A per-cell override cannot be expressed in a Markdown table at all, so it is
+    // deliberately not consulted here; the column keeps what the header declared.
     let mut aligns: Vec<Option<TableAlign>> = Vec::new();
+    let take_aligns = |aligns: &mut Vec<Option<TableAlign>>, row: &TableRow| {
+        for (i, cell) in row.cells.iter().enumerate() {
+            if aligns.len() <= i {
+                aligns.resize(i + 1, None);
+            }
+            if aligns[i].is_none() {
+                aligns[i] = cell.align;
+            }
+        }
+    };
     for row in &node.rows {
         let cells = row
             .cells
@@ -308,15 +328,13 @@ fn render_table(node: &Table, ctx: &mut MarkdownContext) -> String {
         let rendered = format!("| {} |", cells.join(" | "));
         if row.cells.iter().all(|cell| cell.header) {
             header = Some(rendered);
+            take_aligns(&mut aligns, row);
         } else {
             rows.push(rendered);
-            for (i, cell) in row.cells.iter().enumerate() {
-                if aligns.len() <= i {
-                    aligns.resize(i + 1, None);
-                }
-                if aligns[i].is_none() {
-                    aligns[i] = cell.align;
-                }
+            // A headerless table still declares its columns somewhere, so fall
+            // back to the first row that carries an alignment.
+            if header.is_none() {
+                take_aligns(&mut aligns, row);
             }
         }
     }
