@@ -416,6 +416,29 @@ fn colon_fence_for(children: &[BlockNode]) -> &'static str {
     }
 }
 
+/// Tables prefer the NATIVE header form: an `=` on each header cell, plus the
+/// per-cell `<`/`>`/`~` alignment markers.
+///
+/// The GFM delimiter row is an accepted alias on input, but it says something
+/// the AST does not: its alignment applies to the WHOLE column, header and body
+/// alike (PART 9 T7), while alignment on the AST belongs to each cell. Writing a
+/// delimiter row for the ordinary shape - an aligned header over unaligned body
+/// cells - brought every body cell back aligned, so `parse(fmt(x)) == parse(x)`
+/// did not hold (carve issue 359).
+///
+/// Two header shapes have no native spelling, because `header_cell` in the
+/// grammar is `'=' [alignment_marker] content` and admits neither an attribute
+/// block nor a span marker:
+///
+/// ```text
+/// | < | b |     a span marker promoted to a header cell
+/// |{.x} a | b | a header cell carrying attributes
+/// ```
+///
+/// Those still need a delimiter row to promote the first row. It is emitted BARE
+/// (`|---|---|`), never with colons: the cells keep their own alignment markers,
+/// so the delimiter contributes structure only and cannot spill alignment down
+/// the column.
 fn render_table(node: &Table, ctx: &mut CarveContext) -> String {
     let mut rows = Vec::new();
     let columns = node
@@ -424,29 +447,25 @@ fn render_table(node: &Table, ctx: &mut CarveContext) -> String {
         .map(|row| row.cells.len())
         .max()
         .unwrap_or(0);
-    let gfm_header = node
+    let header_row = node
         .rows
         .first()
         .is_some_and(|row| !row.cells.is_empty() && row.cells.iter().all(|cell| cell.header));
-    let header_aligns: Vec<Option<TableAlign>> = node
-        .rows
-        .first()
-        .map(|row| row.cells.iter().map(|cell| cell.align).collect())
-        .unwrap_or_default();
+    let needs_delimiter = header_row
+        && node.rows.first().is_some_and(|row| {
+            row.cells
+                .iter()
+                .any(|cell| cell.span.is_some() || cell.attrs.is_some())
+        });
+
     for (row_index, row) in node.rows.iter().enumerate() {
         let mut cells = Vec::new();
         for i in 0..columns {
             if let Some(cell) = row.cells.get(i) {
-                let suppress_header = gfm_header && row_index == 0;
-                let suppress_align = gfm_header
-                    && row_index > 0
-                    && Some(cell.align) == header_aligns.get(i).copied();
-                cells.push(render_table_cell(
-                    cell,
-                    ctx,
-                    suppress_header,
-                    suppress_align,
-                ));
+                // In the delimiter form the promoted row is written as ordinary
+                // data cells - the row after it is what makes them headers.
+                let mark_header = !(needs_delimiter && row_index == 0);
+                cells.push(render_table_cell(cell, ctx, mark_header));
             } else {
                 cells.push(RenderedCell {
                     text: String::new(),
@@ -456,11 +475,8 @@ fn render_table(node: &Table, ctx: &mut CarveContext) -> String {
         }
         rows.push(render_table_row(&cells, &render_attrs(&row.attrs)));
     }
-    if gfm_header {
-        let sep = (0..columns)
-            .map(|i| table_separator(node.rows.first().and_then(|row| row.cells.get(i))))
-            .collect::<Vec<_>>()
-            .join("|");
+    if needs_delimiter {
+        let sep = vec!["---"; columns].join("|");
         rows.insert(1, format!("|{sep}|"));
     }
     if let Some(caption) = &node.caption {
@@ -492,12 +508,7 @@ fn render_table_row(cells: &[RenderedCell], attrs: &str) -> String {
     )
 }
 
-fn render_table_cell(
-    cell: &TableCell,
-    ctx: &mut CarveContext,
-    suppress_header: bool,
-    suppress_align: bool,
-) -> RenderedCell {
+fn render_table_cell(cell: &TableCell, ctx: &mut CarveContext, mark_header: bool) -> RenderedCell {
     let attrs = render_attrs(&cell.attrs);
     if cell.span == Some(TableCellSpan::Rowspan) {
         return RenderedCell {
@@ -514,29 +525,12 @@ fn render_table_cell(
     let prefix = format!(
         "{}{}{}",
         attrs,
-        if cell.header && !suppress_header {
-            "="
-        } else {
-            ""
-        },
-        if suppress_align {
-            ""
-        } else {
-            align_marker(cell.align)
-        }
+        if cell.header && mark_header { "=" } else { "" },
+        align_marker(cell.align)
     );
     RenderedCell {
         text: format!("{prefix}{}", render_inlines(&cell.children, ctx)),
         tight: !prefix.is_empty(),
-    }
-}
-
-fn table_separator(cell: Option<&TableCell>) -> &'static str {
-    match cell.and_then(|cell| cell.align) {
-        Some(TableAlign::Left) => ":---",
-        Some(TableAlign::Right) => "---:",
-        Some(TableAlign::Center) => ":---:",
-        None => "---",
     }
 }
 
