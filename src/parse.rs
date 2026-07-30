@@ -3782,11 +3782,18 @@ fn split_row_attrs(content: &str) -> (Option<Attrs>, &str) {
 fn parse_table(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     let mut rows = Vec::new();
     // GFM-style header separator: a delimiter row directly after the first row
-    // turns that row into a header and sets per-column alignment for the whole
-    // column. The colons are read here and applied to every body row that
-    // follows. The first row must not itself be a delimiter row.
+    // turns that row into a header and sets per-column alignment. The colons land
+    // on the HEADER cells only, matching what the native `|=<` markers produce.
+    // The first row must not itself be a delimiter row.
+    //
+    // They used to be applied to every body row as well, so the same logical table
+    // parsed to two different trees depending on which separator syntax the author
+    // used, and the writer then serialized the propagated values as per-cell
+    // markers nobody wrote (carve#352, corpus 09-tables-3). Nothing is lost: the
+    // HTML renderer inherits column alignment for a body cell whose own align is
+    // unset, which is how the native path has always rendered aligned body cells.
+    // A genuine per-cell override sets the cell's own align and is untouched.
     let mut first_is_delim = false;
-    let mut column_aligns: Vec<Option<TableAlign>> = Vec::new();
     let mut saw_separator = false;
     while let Some(line) = cur.peek() {
         // Continue on a `|` row or a `+` multi-line-cell continuation.
@@ -3809,17 +3816,14 @@ fn parse_table(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         } else if rows.len() == 1 && !saw_separator && !first_is_delim && is_delim_row(line) {
             // The separator row: make the first row the header, drop the row.
             saw_separator = true;
-            column_aligns = parse_delim_aligns(line);
+            let column_aligns = parse_delim_aligns(line);
             for cell in &mut rows[0].cells {
                 cell.header = true;
             }
             apply_column_aligns(&mut rows[0], &column_aligns);
             continue;
         }
-        let mut row = parse_table_row(line, options);
-        if saw_separator {
-            apply_column_aligns(&mut row, &column_aligns);
-        }
+        let row = parse_table_row(line, options);
         rows.push(row);
     }
     let table = Table {
