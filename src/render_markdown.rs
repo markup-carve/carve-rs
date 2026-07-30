@@ -145,7 +145,18 @@ fn render_block(node: &BlockNode, ctx: &mut MarkdownContext, depth: usize) -> St
                 .map(sanitize_code_lang)
                 .filter(|lang| !lang.is_empty())
                 .unwrap_or_default();
-            if let Some(title) = &code.title {
+            // The EFFECTIVE title, not the authored header. An attribute line above
+            // the fence overrides a title written in the header, and the HTML
+            // target uses the winner -- so emitting `code.title` here described the
+            // document differently in the two targets, announcing a title that had
+            // lost (carve#352, corpus 11-fenced-code-10). The parser resolves the
+            // override into `attrs`, so that is where the answer already is.
+            let effective_title = code
+                .attrs
+                .as_ref()
+                .and_then(|attrs| attrs.key_values.get("title"))
+                .or(code.title.as_ref());
+            if let Some(title) = effective_title {
                 info.push_str(&format!(" \"{}\"", escape_code_title(title)));
             }
             // A grouping `[label]` rides along after the language and title.
