@@ -31,3 +31,17 @@ fn it_survives_alongside_the_other_editorial_marks() {
     let src = "a {+ins+} {-del-} {~old~>new~} b{# note #}\n";
     assert_eq!(carve::to_plain_text(src), "a ins ~del~ ~old~new b note\n");
 }
+
+#[test]
+fn markdown_keeps_a_critic_comment() {
+    // Markdown has no critic syntax, so the text is what degrades gracefully.
+    assert_eq!(carve::to_markdown("b{# note #}\n"), "b note\n");
+}
+
+#[test]
+fn markdown_escapes_the_comment_text() {
+    // A comment carrying Markdown metacharacters must not become live markup when
+    // the output is re-rendered.
+    let out = carve::to_markdown("b{# *not emphasis* #}\n");
+    assert!(out.contains("\\*not emphasis\\*"), "got: {out:?}");
+}
