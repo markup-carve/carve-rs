@@ -606,7 +606,12 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
             }
         }
         InlineNode::SoftBreak => "\n".to_string(),
-        InlineNode::HardBreak => "  \n".to_string(),
+        // A BACKSLASH, not two trailing spaces (PART 11 section 9). Both mean
+        // `<br />` to a CommonMark reader, but trailing whitespace is removed by
+        // editors that strip on save, by `git apply --whitespace=fix` and by CI
+        // whitespace checks -- and losing ONE of the two spaces is enough for the
+        // break to vanish rather than degrade, silently, in a file nobody edited.
+        InlineNode::HardBreak => "\\\n".to_string(),
         InlineNode::CriticInsert(insert) => {
             format!(
                 "<ins>{}</ins>",
