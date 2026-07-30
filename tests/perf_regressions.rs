@@ -412,13 +412,25 @@ fn unterminated_comment_fence_openers_parse_in_near_linear_time() {
         xs.sort_by(|a, b| a.partial_cmp(b).unwrap());
         xs[xs.len() / 2]
     };
+    let large_samples_for_ceiling = large_samples.clone();
     let small_per_byte = median(small_samples) / small_source.len() as f64;
     let large_per_byte = median(large_samples) / large_source.len() as f64;
 
     let ratio = large_per_byte / small_per_byte.max(f64::MIN_POSITIVE);
+    // Measured on this input: 0.73 answering from the width index, versus just
+    // under 2.0 with a scan to end of input per opener. The old 2.0 bound sat
+    // exactly at that boundary, so it PASSED the scan version - it only took 162
+    // seconds to do it. Hence both a tighter ratio and a wall-clock ceiling: the
+    // ceiling is ~100x the observed time, loose enough not to flake on a shared
+    // runner but nowhere near a full rescan.
     assert!(
-        ratio < 2.0,
+        ratio < 1.2,
         "unterminated-comment-fence per-byte cost grew {ratio:.2}x"
+    );
+    let large_elapsed = median(large_samples_for_ceiling);
+    assert!(
+        large_elapsed < 30.0,
+        "unterminated-comment-fence parse took {large_elapsed:.1}s; a per-opener rescan is likely back"
     );
 }
 

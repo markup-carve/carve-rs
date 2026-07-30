@@ -9,6 +9,21 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Removed a dead negative cache in the comment-closer lookahead.** The
+  lookahead already answers from a width to last-index map, so the per-width
+  "no closer from here onward" cache in front of it could never change an
+  outcome - and its hit condition is unreachable anyway: it needs a second
+  opener of the same width after a proven-no-closer point, but a second line of
+  the same width IS the closer for the first. Found while investigating a patch
+  coverage miss on the same code in carve-php, where those lines were the whole
+  gap.
+
+  The perf test around it was also weakened: its `< 2.0` per-byte bound sat
+  exactly at the boundary for this defect, so a version that rescans to end of
+  input per opener PASSED it - taking 162 seconds instead of 0.6 to do so. The
+  bound is now 1.2 (measured: 0.73 with the index) plus a wall-clock ceiling, so
+  a reintroduced rescan fails instead of merely crawling.
+
 - **A `%%%` comment opener with trailing text no longer leaks the comment body
   and drops the next block.** `%%% html` was not accepted as a fence line, so
   the `%%` line-comment rule ate the opener, the body rendered as an ordinary
