@@ -629,7 +629,15 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
             escape_text(&strip_controls(&sub.old_text)),
             escape_text(&strip_controls(&sub.new_text))
         ),
-        InlineNode::CriticComment(_) => String::new(),
+        // Visible content: the HTML target renders it as
+        // `<span class="critic-comment"> note </span>`, so dropping it here made two
+        // targets of one engine disagree about whether the document says it. Markdown
+        // has no critic syntax, so the text is what degrades gracefully -- escaped
+        // like any other text, since a comment carrying Markdown metacharacters must
+        // not become live markup when the output is re-rendered. carve-php kept it
+        // (carve#352, corpus 33-editorial-markup); plain and ANSI were fixed in
+        // carve-rs#322.
+        InlineNode::CriticComment(c) => escape_text(&strip_controls(&c.text)),
         InlineNode::CrossRef(crossref) => format!("</#{}>", strip_controls(&crossref.target)),
         // Tier-2 ext node; the core renderer has no numbering, so emit the source.
         InlineNode::CitationGroup(group) => strip_controls(&group.raw),
