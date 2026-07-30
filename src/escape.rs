@@ -291,7 +291,7 @@ pub fn sanitize_url(url: &str) -> std::borrow::Cow<'_, str> {
 /// paragraph separators U+2028/U+2029) and the zero-width no-break space / BOM
 /// (U+FEFF). These are not browser-stripped in practice, so this is defense in
 /// depth and parity with the JS/PHP implementations, not an exploitable gap.
-fn is_url_probe_skippable(c: char) -> bool {
+pub(crate) fn is_url_probe_skippable(c: char) -> bool {
     (c as u32) <= 0x20 || c.is_whitespace() || c == '\u{FEFF}'
 }
 
