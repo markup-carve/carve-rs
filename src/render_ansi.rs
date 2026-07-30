@@ -582,7 +582,11 @@ fn render_inline(node: &InlineNode, ctx: &mut AnsiContext, depth: usize) -> Stri
                 &(FG_GREEN.to_string() + UNDERLINE)
             ),
         ),
-        InlineNode::CriticComment(_) => String::new(),
+        // A critic comment is VISIBLE content: the HTML target renders it as
+        // `<span class="critic-comment"> note </span>`, so dropping it here made
+        // two targets of one engine disagree about whether the document says it.
+        // carve-php kept it (carve#352, corpus 33-editorial-markup).
+        InlineNode::CriticComment(c) => strip_controls(&c.text),
         InlineNode::CrossRef(crossref) => format!("</#{}>", strip_controls(&crossref.target)),
         // Tier-2 ext node; the core renderer has no numbering, so emit the source.
         InlineNode::CitationGroup(group) => strip_controls(&group.raw),
