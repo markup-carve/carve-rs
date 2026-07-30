@@ -68,6 +68,39 @@ ANSI-styled text via `carve::to_markdown`, `carve::to_plain_text`, and
 `carve::to_ansi` (each with a matching `render_*` function for a parsed
 `Document`).
 
+## Untrusted input
+
+The normative hardening is always on and needs no configuration: dangerous URL
+schemes are blanked, event-handler attributes like `onclick` are dropped, and the
+bidi override/isolate characters behind Trojan Source are removed from rendered
+text.
+
+Raw passthrough is the deliberate exception. A ` ```=html ` block or a
+`` `…`{=html} `` span renders **verbatim** by design, so it is the one thing input
+you did not author has to switch off:
+
+```rust
+let options = carve::Options::new()
+    .with_raw_html(false)                        // escape =html, do not emit it
+    .with_profile(carve::Profile::comment());    // full | article | comment | minimal
+
+let html = carve::try_to_html_with_options(untrusted, &options)?;
+```
+
+Use the `try_*` entry points here, not `to_html_with_options`. The infallible
+wrappers are `try_…().unwrap_or_default()`, so a profile rejection - input past
+`max_length`, or a denied construct when the profile's action is `Error` - comes
+back as an **empty string**, which a caller cannot tell from a document that
+legitimately rendered to nothing.
+
+`Profile` also carries a link policy; pair it with
+`Options::with_profile_base_host` so the policy can tell internal links from
+external ones.
+
+Runnable version of all of the above, including what a rejection looks like:
+`cargo run --example untrusted_input`. Full recipe, defaults and threat model:
+[Security](https://markup-carve.github.io/carve/security).
+
 ## Extensions
 
 Opt-in extensions implement `CarveExtension` and are passed through `Options`.
@@ -357,6 +390,7 @@ Other options:
 carve --mention-url '/users/{name}' --tag-url '/topics/{name}' social.crv
 carve --symbol 'rocket=🚀' --symbol 'tada=🎉' symbols.crv
 carve --no-raw-html untrusted.crv   # escape =html raw blocks/spans
+carve --safe --profile comment untrusted.crv   # and restrict which constructs are allowed
 carve --help
 ```
 
@@ -364,7 +398,11 @@ carve --help
 the format (last one wins). `--mention-url` / `--tag-url` build HTML links and
 apply to HTML output only. `--no-raw-html` (alias `--safe`) escapes `=html` raw
 blocks and spans instead of emitting them verbatim, which is the safe choice when
-rendering untrusted input; it composes with every format and with `--profile`. `--static` (vs the default `--interactive`) renders
+rendering untrusted input; it composes with every format and with `--profile`.
+`--profile NAME` (`full` | `article` | `comment` | `minimal`) restricts which
+constructs are allowed at all and caps input length, and `--profile-base-host`
+gives its link policy a host to judge internal vs external links against; see
+[Untrusted input](#untrusted-input). `--static` (vs the default `--interactive`) renders
 self-contained HTML: interactive constructs flatten (a `::: details` becomes an
 expanded `<section>`) and client-script visuals (mermaid / chart / math) degrade
 to source. Pass `--extensions` to enable the bundled interactive extensions
