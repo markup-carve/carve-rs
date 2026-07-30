@@ -331,10 +331,19 @@ fn normalize(text: &str) -> String {
             out.push(ch);
         }
     }
-    // Trim only document-edge newlines/ASCII spaces, NOT the generated-NBSP
-    // placeholders that carry line-block / escaped-space indentation (a plain
-    // `.trim()` would strip them too, dropping a first verse line's indent).
-    let trimmed = out.trim_matches(|c| c == '\n' || c == ' ');
+    // The two document edges need different rules.
+    //
+    // At the START, trim only NEWLINES. Whitespace on the first content line is
+    // data: a table row whose first cell is empty renders as ` | b`, and that space
+    // IS the empty field -- eating it leaves a line that reads as a leading pipe and
+    // splits into one field instead of two (carve#352, corpus
+    // 96-table-span-marker-in-first-column and 09-tables-7). The generated-NBSP
+    // placeholders carrying line-block and escaped-space indentation are excluded
+    // for the same reason, and a leading TAB from a code block survived this before
+    // only because the character class happened to omit it.
+    //
+    // At the END, trailing spaces go as before: there they are layout, not content.
+    let trimmed = out.trim_start_matches('\n').trim_end_matches(['\n', ' ']);
     // A generated-NBSP placeholder (escaped space / verse indent) becomes a
     // plain space in display output; a LITERAL U+00A0 typed in the source is
     // preserved as-is. Only the HTML renderer folds both to `&nbsp;`.
