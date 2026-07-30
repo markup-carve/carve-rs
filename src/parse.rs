@@ -6,7 +6,7 @@
 use crate::ast::*;
 use crate::extension::{BlockMatch, InlineMatch, MatcherContext, Options};
 use std::cell::Cell;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 /// Maximum block + inline nesting depth. Pathological input (deeply nested
 /// blockquotes, indented lists, bracketed inlines) recurses one stack frame
@@ -725,6 +725,11 @@ struct LineCursor<'a> {
     /// length. This defeats the distinct-increasing-fence-length cache miss that
     /// turned a per-fence-length cache into an O(N^2) full rescan per line.
     colon_closer_suffix_max: Option<Vec<usize>>,
+    /// Negative cache for comment-fence closer lookahead. For a fence length,
+    /// stores the smallest line index already proven to have no exact-length
+    /// closer at or after it.
+    comment_no_closer_from: HashMap<usize, usize>,
+    comment_closer_last_index: Option<HashMap<usize, usize>>,
 }
 
 impl<'a> LineCursor<'a> {
@@ -734,6 +739,8 @@ impl<'a> LineCursor<'a> {
             line_map,
             pos: 0,
             colon_closer_suffix_max: None,
+            comment_no_closer_from: HashMap::new(),
+            comment_closer_last_index: None,
         }
     }
 
@@ -762,6 +769,32 @@ impl<'a> LineCursor<'a> {
         let suffix_max = self.colon_closer_suffix_max.as_ref().unwrap();
         // `start` may sit one past the end (opener is the last line).
         suffix_max.get(start).copied().unwrap_or(0) >= fence_len
+    }
+
+    fn has_comment_closer_after(&mut self, start: usize, fence_len: usize) -> bool {
+        if self
+            .comment_no_closer_from
+            .get(&fence_len)
+            .is_some_and(|&cached_start| start >= cached_start)
+        {
+            return false;
+        }
+        if self.comment_closer_last_index.is_none() {
+            self.comment_closer_last_index = Some(build_comment_closer_last_index(self.lines));
+        }
+        if self
+            .comment_closer_last_index
+            .as_ref()
+            .and_then(|last_index| last_index.get(&fence_len).copied())
+            .is_some_and(|last| last >= start)
+        {
+            return true;
+        }
+        self.comment_no_closer_from
+            .entry(fence_len)
+            .and_modify(|cached_start| *cached_start = (*cached_start).min(start))
+            .or_insert(start);
+        false
     }
 }
 
@@ -854,6 +887,16 @@ fn build_colon_closer_suffix_max(lines: &[&str]) -> Vec<usize> {
     suffix_max
 }
 
+fn build_comment_closer_last_index(lines: &[&str]) -> HashMap<usize, usize> {
+    let mut last_index = HashMap::new();
+    for (idx, line) in lines.iter().enumerate() {
+        if let Some(open) = detect_comment_fence_line(line) {
+            last_index.insert(open.fence_len, idx);
+        }
+    }
+    last_index
+}
+
 fn parse_blocks(cur: &mut LineCursor, options: &Options<'_>) -> Vec<BlockNode> {
     // Recursion cap (see MAX_NESTING_DEPTH). Over the cap, flatten everything
     // still in the cursor into one paragraph rather than recursing further,
@@ -890,21 +933,29 @@ fn parse_blocks(cur: &mut LineCursor, options: &Options<'_>) -> Vec<BlockNode> {
             cur.consume();
             continue;
         }
-        if is_comment_fence_line(line) {
-            let mut content = Vec::new();
-            cur.consume();
-            while let Some(line) = cur.peek() {
-                cur.consume();
-                if is_comment_fence_line(line) {
-                    break;
+        if let Some(open) = detect_comment_fence_line(line) {
+            if !cur.has_comment_closer_after(cur.pos + 1, open.fence_len) {
+                // No matching closer: degrade to the ordinary `%%` line
+                // comment path below instead of swallowing to EOF.
+            } else {
+                let mut content = Vec::new();
+                if !open.tail.is_empty() {
+                    content.push(open.tail);
                 }
-                content.push(line.to_string());
+                cur.consume();
+                while let Some(line) = cur.peek() {
+                    cur.consume();
+                    if is_comment_fence_close(line, open.fence_len) {
+                        break;
+                    }
+                    content.push(line.to_string());
+                }
+                out.push(BlockNode::Comment(Comment {
+                    block: true,
+                    content: content.join("\n"),
+                }));
+                continue;
             }
-            out.push(BlockNode::Comment(Comment {
-                block: true,
-                content: content.join("\n"),
-            }));
-            continue;
         }
         if trim_ascii_start(line).starts_with("%%") {
             let content = trim_ascii_start(line)
@@ -1044,7 +1095,7 @@ fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<BlockNode>
             }
             if is_heading_marker_line(next)
                 || caption_content(next).is_some()
-                || is_comment_fence_line(next)
+                || detect_comment_fence_line(next).is_some()
             {
                 break;
             }
@@ -1310,10 +1361,31 @@ fn heading_content_starts(line: &str) -> bool {
     line[hashes + 1..].bytes().any(|b| b != b' ' && b != b'\t')
 }
 
-/// A fenced-comment opener line (a run of 3+ `%`, nothing else) — ends a heading.
-fn is_comment_fence_line(line: &str) -> bool {
-    let t = trim_ascii_end(line);
-    t.len() >= 3 && t.bytes().all(|b| b == b'%')
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CommentFenceOpen {
+    fence_len: usize,
+    tail: String,
+}
+
+/// A fenced-comment line is a leading run of 3+ `%`; any following text is
+/// non-structural tail. The opener tail is preserved as comment content.
+fn detect_comment_fence_line(line: &str) -> Option<CommentFenceOpen> {
+    let line = trim_ascii_end(line);
+    let fence_len = line.bytes().take_while(|b| *b == b'%').count();
+    if fence_len < 3 {
+        return None;
+    }
+    Some(CommentFenceOpen {
+        fence_len,
+        tail: trim_ascii_start(&line[fence_len..]).to_string(),
+    })
+}
+
+/// A comment-fence closer matches by exact leading `%` run length; its tail is
+/// ignored and discarded.
+fn is_comment_fence_close(line: &str, fence_len: usize) -> bool {
+    let line = trim_ascii_end(line);
+    line.bytes().take_while(|b| *b == b'%').count() == fence_len
 }
 
 fn detect_thematic_break(line: &str) -> bool {
@@ -2131,6 +2203,16 @@ fn parse_continuation_block(
             end += 1;
             continue;
         }
+        if let Some(open) = detect_comment_fence_line(line) {
+            if cur.has_comment_closer_after(end + 1, open.fence_len) {
+                if let Some(close) = (end + 1..cur.lines.len())
+                    .find(|&j| is_comment_fence_close(cur.lines[j], open.fence_len))
+                {
+                    end = close + 1;
+                    continue;
+                }
+            }
+        }
         // A colon fence (`:::` div / admonition / `::: |` line block) WITH a
         // matching closer ahead is a self-delimiting block; skip the whole
         // region so a `+` inside it is content, not the parent's boundary.
@@ -2695,6 +2777,16 @@ fn marker_content_starts_block(content: &str, cur: &LineCursor<'_>, content_col:
             .map(|line| slice_columns(line, content_col.min(indent_columns(line)), false))
             .any(|line| is_fence_close(&line, open));
     }
+    if let Some(open) = detect_comment_fence_line(content) {
+        return cur.lines[cur.pos..].iter().enumerate().any(|(idx, line)| {
+            let indent = indent_columns(line);
+            if idx > 0 && indent < content_col {
+                return false;
+            }
+            let line = slice_columns(line, content_col.min(indent), false);
+            is_comment_fence_close(&line, open.fence_len)
+        });
+    }
     let colon_fence_len = detect_container_open(content)
         .map(|open| open.fence_len)
         .or_else(|| detect_line_block_open(content))
@@ -2825,6 +2917,7 @@ fn line_starts_paragraph(line: &str) -> bool {
         && detect_line_block_open(line).is_none()
         && detect_hardbreaks_block_open(line).is_none()
         && detect_abbreviation_def(line).is_none()
+        && detect_comment_fence_line(line).is_none()
         && !is_table_start(line)
         && !is_definition_list_start(line)
         && detect_list_marker_full(line).is_none()

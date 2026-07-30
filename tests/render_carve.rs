@@ -176,6 +176,13 @@ fn verbatim_content_survives_normalization() {
 }
 
 #[test]
+fn comment_fence_opener_tail_survives_normalization() {
+    let formatted = carve::to_carve("%%% TODO\nsecret\n%%% done\n");
+    assert_eq!(formatted, "%%%\nTODO\nsecret\n%%%\n");
+    assert_eq!(carve::to_html(&formatted), "");
+}
+
+#[test]
 fn verbatim_content_stable_inside_containers() {
     for src in [
         "> ```\n> a   \n>\n>\n>\n> b\n> ```\n",

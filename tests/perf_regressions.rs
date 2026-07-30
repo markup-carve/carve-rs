@@ -377,6 +377,52 @@ fn flat_unclosed_strong_openers_parse_in_near_linear_time() {
 }
 
 #[test]
+fn unterminated_comment_fence_openers_parse_in_near_linear_time() {
+    let build = |n: usize| {
+        let mut source = String::new();
+        for len in 3..n + 3 {
+            for _ in 0..len {
+                source.push('%');
+            }
+            source.push_str(" x\n");
+        }
+        source
+    };
+
+    let small = 500;
+    let large = 1000;
+    let small_source = build(small);
+    let large_source = build(large);
+
+    let _ = carve::to_html(&small_source);
+    let _ = carve::to_html(&large_source);
+
+    let time_once = |source: &str| {
+        let start = Instant::now();
+        let _ = carve::to_html(source);
+        start.elapsed().as_secs_f64()
+    };
+    let mut small_samples = Vec::new();
+    let mut large_samples = Vec::new();
+    for _ in 0..3 {
+        small_samples.push(time_once(&small_source));
+        large_samples.push(time_once(&large_source));
+    }
+    let median = |mut xs: Vec<f64>| {
+        xs.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        xs[xs.len() / 2]
+    };
+    let small_per_byte = median(small_samples) / small_source.len() as f64;
+    let large_per_byte = median(large_samples) / large_source.len() as f64;
+
+    let ratio = large_per_byte / small_per_byte.max(f64::MIN_POSITIVE);
+    assert!(
+        ratio < 2.0,
+        "unterminated-comment-fence per-byte cost grew {ratio:.2}x"
+    );
+}
+
+#[test]
 fn flat_unclosed_link_destinations_preserve_output() {
     // The `[a](`×n shape never forms a real link: every opener stays literal.
     // The last-`)` short-circuit must not change that.
