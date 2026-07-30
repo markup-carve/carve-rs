@@ -1,4 +1,6 @@
-use carve::{stamp_carve, to_carve, to_html, StampForm};
+use carve::{
+    needs_review, read_stamp, stamp_carve, to_carve, to_html, Stamp, StampForm, SPEC_VERSION,
+};
 
 const GENERATED_BY: &str = "carve-rs 0.1.0";
 const LINE_MARKER: &str = "%% carve-version: 0.1; generated-by: carve-rs 0.1.0";
@@ -65,4 +67,83 @@ fn empty_doc_gets_bare_marker() {
 fn plain_to_carve_preserves_existing_marker_byte_for_byte() {
     let source = format!("a\n\n{LINE_MARKER}\n");
     assert_eq!(to_carve(&source), source);
+}
+
+#[test]
+fn read_stamp_returns_none_for_an_unstamped_document() {
+    assert_eq!(read_stamp("# Title\n\ntext\n"), None);
+    assert_eq!(read_stamp(""), None);
+}
+
+#[test]
+fn read_stamp_recognizes_the_line_form() {
+    assert_eq!(
+        read_stamp(&format!("text\n\n{LINE_MARKER}\n")),
+        Some(Stamp {
+            version: "0.1".to_string(),
+            generated_by: Some(GENERATED_BY.to_string()),
+        })
+    );
+}
+
+#[test]
+fn read_stamp_recognizes_the_block_form() {
+    let source = "text\n\n%%%\ncarve-version: 0.0.9\ngenerated-by: carve-js 0.0.9\n%%%\n";
+
+    assert_eq!(
+        read_stamp(source),
+        Some(Stamp {
+            version: "0.0.9".to_string(),
+            generated_by: Some("carve-js 0.0.9".to_string()),
+        })
+    );
+}
+
+#[test]
+fn read_stamp_ignores_an_unrelated_trailing_comment() {
+    assert_eq!(read_stamp("text\n\n%% just a note\n"), None);
+    assert_eq!(read_stamp("text\n\n%%%\njust a note\n%%%\n"), None);
+}
+
+#[test]
+fn read_stamp_tolerates_a_missing_generated_by() {
+    assert_eq!(
+        read_stamp("text\n\n%% carve-version: 0.1\n"),
+        Some(Stamp {
+            version: "0.1".to_string(),
+            generated_by: None,
+        })
+    );
+}
+
+#[test]
+fn what_stamp_carve_writes_is_what_read_stamp_returns() {
+    // The pair has to agree, or the upgrade procedure reads the wrong version.
+    for form in [StampForm::Line, StampForm::Block] {
+        let stamped = stamp_carve("text\n", GENERATED_BY, form);
+        let stamp = read_stamp(&stamped).expect("stamped output must be readable");
+
+        assert_eq!(stamp.version, SPEC_VERSION);
+        assert_eq!(stamp.generated_by.as_deref(), Some(GENERATED_BY));
+    }
+}
+
+#[test]
+fn needs_review_compares_against_the_targeted_spec_version() {
+    let current = format!("text\n\n%% carve-version: {SPEC_VERSION}; generated-by: x\n");
+    assert!(!needs_review(&current, SPEC_VERSION));
+
+    assert!(needs_review(
+        "text\n\n%% carve-version: 0.0.9; generated-by: x\n",
+        SPEC_VERSION
+    ));
+
+    // Unknown provenance answers true: assuming a document is current is unsafe.
+    assert!(needs_review("text\n", SPEC_VERSION));
+
+    // A document from a future version is not this engine's problem.
+    assert!(!needs_review(
+        "text\n\n%% carve-version: 99.0; generated-by: x\n",
+        SPEC_VERSION
+    ));
 }
