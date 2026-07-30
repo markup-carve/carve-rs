@@ -17,9 +17,12 @@ fn info_string(src: &str) -> String {
 
 #[test]
 fn a_header_title_is_kept() {
+    // With a language in front of it: a title alone is dropped, because in
+    // Markdown the first token of the info string IS the language. See
+    // markdown_title_needs_language.rs.
     assert_eq!(
-        info_string("``` \"notes.txt\"\nremember the milk\n```\n"),
-        "``` \"notes.txt\""
+        info_string("```php \"notes.php\"\nremember the milk\n```\n"),
+        "```php \"notes.php\""
     );
 }
 
