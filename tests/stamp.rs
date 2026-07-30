@@ -147,3 +147,52 @@ fn needs_review_compares_against_the_targeted_spec_version() {
         SPEC_VERSION
     ));
 }
+
+#[test]
+fn version_segments_compare_numerically_and_pad() {
+    // Spec versions carry two segments ("0.1") and engine versions three
+    // ("0.1.0"). Comparing by segment count, or lexically, reports every stamped
+    // document as stale.
+    assert!(!needs_review(
+        "a\n\n%% carve-version: 0.1; generated-by: x\n",
+        "0.1.0"
+    ));
+    assert!(!needs_review(
+        "a\n\n%% carve-version: 0.1.0; generated-by: x\n",
+        "0.1"
+    ));
+
+    // "0.10" sorts before "0.9" as a string, but 10 > 9.
+    assert!(!needs_review(
+        "a\n\n%% carve-version: 0.10; generated-by: x\n",
+        "0.9"
+    ));
+    assert!(needs_review(
+        "a\n\n%% carve-version: 0.9; generated-by: x\n",
+        "0.10"
+    ));
+}
+
+// The point of a provenance marker is that ANOTHER engine can read it. These are
+// the literal bytes carve-php and carve-js write, so a divergence in any writer
+// fails here rather than in the field.
+#[test]
+fn reads_markers_written_by_the_sibling_engines() {
+    let php_line = "# Hi\n\n%% carve-version: 0.1; generated-by: carve-php 0.1.0\n";
+    assert_eq!(
+        read_stamp(php_line).and_then(|s| s.generated_by),
+        Some("carve-php 0.1.0".to_string())
+    );
+
+    let php_block = "# Hi\n\n%%%\ncarve-version: 0.1\ngenerated-by: carve-php 0.1.0\n%%%\n";
+    assert_eq!(
+        read_stamp(php_block).and_then(|s| s.generated_by),
+        Some("carve-php 0.1.0".to_string())
+    );
+
+    let js_line = "# Hi\n\n%% carve-version: 0.1; generated-by: carve-js 0.1.0\n";
+    assert_eq!(
+        read_stamp(js_line).and_then(|s| s.generated_by),
+        Some("carve-js 0.1.0".to_string())
+    );
+}
