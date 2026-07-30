@@ -728,7 +728,6 @@ struct LineCursor<'a> {
     /// Negative cache for comment-fence closer lookahead. For a fence length,
     /// stores the smallest line index already proven to have no exact-length
     /// closer at or after it.
-    comment_no_closer_from: HashMap<usize, usize>,
     comment_closer_last_index: Option<HashMap<usize, usize>>,
 }
 
@@ -739,7 +738,6 @@ impl<'a> LineCursor<'a> {
             line_map,
             pos: 0,
             colon_closer_suffix_max: None,
-            comment_no_closer_from: HashMap::new(),
             comment_closer_last_index: None,
         }
     }
@@ -771,30 +769,26 @@ impl<'a> LineCursor<'a> {
         suffix_max.get(start).copied().unwrap_or(0) >= fence_len
     }
 
+    /// Is there a comment-fence closer of exactly `fence_len` at or after `start`?
+    ///
+    /// A closer must match the opener width EXACTLY, so ANY later line carrying a
+    /// fence of that width IS a valid closer: the question is exactly "last index
+    /// for this width >= start". One pass builds the width -> last index map and
+    /// every lookup after that is O(1).
+    ///
+    /// There used to be a per-width negative cache in front of this map. It could
+    /// never change an outcome: the map already answers in O(1), and its own hit
+    /// condition (a second opener of the same width after a proven-no-closer
+    /// point) is unreachable, because a second line of the same width IS a closer
+    /// for the first.
     fn has_comment_closer_after(&mut self, start: usize, fence_len: usize) -> bool {
-        if self
-            .comment_no_closer_from
-            .get(&fence_len)
-            .is_some_and(|&cached_start| start >= cached_start)
-        {
-            return false;
-        }
         if self.comment_closer_last_index.is_none() {
             self.comment_closer_last_index = Some(build_comment_closer_last_index(self.lines));
         }
-        if self
-            .comment_closer_last_index
+        self.comment_closer_last_index
             .as_ref()
             .and_then(|last_index| last_index.get(&fence_len).copied())
             .is_some_and(|last| last >= start)
-        {
-            return true;
-        }
-        self.comment_no_closer_from
-            .entry(fence_len)
-            .and_modify(|cached_start| *cached_start = (*cached_start).min(start))
-            .or_insert(start);
-        false
     }
 }
 
