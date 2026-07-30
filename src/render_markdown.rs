@@ -234,10 +234,17 @@ fn render_list(node: &List, ctx: &mut MarkdownContext, depth: usize) -> String {
     // merges lists the source kept apart -- the same section 11 rule the AST
     // records `bullet_char` for and render_carve already honors (carve#352).
     let bullet = node.bullet_char.unwrap_or('-');
+    // The authored ordered-list delimiter, for the same reason as the bullet
+    // above: in CommonMark a change of delimiter SEPARATES two adjacent lists, so
+    // emitting `1.` for a `1)` list merges lists the source kept apart. Measured
+    // against commonmark.js -- `1. a` followed by `1) c` gives two `<ol>`
+    // elements, the same input with one delimiter gives one. The AST records
+    // `delim` and render_carve already reproduces it (carve#352, corpus 31).
+    let delim = if node.delim == Some(')') { ')' } else { '.' };
     for item in &node.items {
         let indent = "  ".repeat(ctx.list_depth - 1);
         let prefix = if node.ordered {
-            let prefix = format!("{counter}. ");
+            let prefix = format!("{counter}{delim} ");
             counter += 1;
             prefix
         } else if let Some(checked) = item.checked {
