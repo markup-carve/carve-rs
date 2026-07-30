@@ -816,10 +816,21 @@ fn escape_md_html(text: &str) -> String {
         .replace('>', "&gt;")
 }
 
-/// Blank a URL whose (normalized) scheme is on the dangerous denylist, so a
-/// `javascript:` link/image does not survive into Markdown output.
+/// Blank a URL whose (normalized) scheme is on the dangerous denylist, so it does
+/// not survive into Markdown output and from there into whatever renders it.
+///
+/// The set and the probe filter come from `escape`, not restated here. A local copy
+/// listed only `javascript`, `vbscript`, `data` and `file`, and filtered with an
+/// ASCII-only test -- so the twenty OS protocol-handler schemes (`ms-msdt`,
+/// `search-ms`, `shell`, `vscode`, `jar`, ...) reached the output while the HTML
+/// renderer blanked them. A Markdown destination is resolved by the renderer
+/// downstream, so that is the same sink one step removed (PART 9 section 25,
+/// markup-carve/carve#385).
 fn sanitize_md_url(url: &str) -> String {
-    let probe: String = url.chars().filter(|c| (*c as u32) > 0x20).collect();
+    let probe: String = url
+        .chars()
+        .filter(|c| !crate::escape::is_url_probe_skippable(*c))
+        .collect();
     if let Some(colon) = probe.find(':') {
         let prefix = &probe[..colon];
         let is_scheme = prefix
@@ -830,10 +841,8 @@ fn sanitize_md_url(url: &str) -> String {
                 .chars()
                 .all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '-' || c == '.');
         if is_scheme
-            && matches!(
-                prefix.to_ascii_lowercase().as_str(),
-                "javascript" | "vbscript" | "data" | "file"
-            )
+            && crate::escape::DANGEROUS_VALUE_SCHEMES
+                .contains(&prefix.to_ascii_lowercase().as_str())
         {
             return String::new();
         }
