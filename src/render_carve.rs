@@ -126,12 +126,42 @@ fn normalize_escapes_nested(node: &mut InlineNode) {
         // WHOLE document: `Press :kbd[Ctrl+C] to copy.` came back
         // `Press :kbd[Ctrl\+C] to copy\.` (carve#352, corpus 45-inline-extensions).
         InlineNode::Extension(e) => normalize_escapes_inlines(&mut e.children),
+        // Editorial insert and delete carry inline children too. Omitting them
+        // escalated any document containing an escape inside one: `{++a++}{.a}`
+        // came back `{+\+a\++}{.a}`, over-escaping content the HTML target shows
+        // as a literal `+a+` (carve#352, corpus 126).
+        InlineNode::CriticInsert(i) => normalize_escapes_inlines(&mut i.children),
+        InlineNode::CriticDelete(d) => normalize_escapes_inlines(&mut d.children),
         InlineNode::Footnote(f) => {
             if let Some(inline) = &mut f.inline {
                 normalize_escapes_inlines(inline);
             }
         }
-        _ => {}
+        // Listed rather than caught by `_`, so a new inline node that carries
+        // children fails to compile here instead of being silently skipped. That
+        // catch-all is how the extension gap (carve-rs#310) and the editorial gap
+        // above both survived: adding a node type with children was enough to
+        // introduce an over-escaping bug, with nothing to notice it.
+        InlineNode::Text(_)
+        | InlineNode::EscapedText(_)
+        | InlineNode::SmartPunctuation(_)
+        | InlineNode::Code(..)
+        | InlineNode::Image(_)
+        | InlineNode::Math(_)
+        | InlineNode::RawInline(_)
+        | InlineNode::LiteralInline(_)
+        | InlineNode::Symbol(_)
+        | InlineNode::AutoLink(_)
+        | InlineNode::CrossRef(_)
+        | InlineNode::CaptionNumber(_)
+        | InlineNode::Mention(_)
+        | InlineNode::Tag(_)
+        | InlineNode::CitationGroup(_)
+        | InlineNode::Abbreviation(_)
+        | InlineNode::SoftBreak
+        | InlineNode::HardBreak
+        | InlineNode::CriticSubstitute(_)
+        | InlineNode::CriticComment(_) => {}
     }
 }
 
