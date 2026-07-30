@@ -9,6 +9,23 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A `%%%` comment opener with trailing text no longer leaks the comment body
+  and drops the next block.** `%%% html` was not accepted as a fence line, so
+  the `%%` line-comment rule ate the opener, the body rendered as an ordinary
+  paragraph, and the following `%%%` opened an unterminated block that swallowed
+  the rest of the document. A comment fence is now a delimiter plus an
+  insignificant tail: only the leading run of `%` is structural, so `%%% TODO`
+  opens and `%%% end` closes. Percent fences carry no info string - a raw block
+  is a code fence with `=FORMAT` - so `%%% html` is a comment and its body stays
+  hidden.
+
+  An opener with no matching closer ahead now opens nothing and degrades to a
+  line comment, so following blocks still render. The closer also matches on
+  **exact** delimiter length now: `%%%%` no longer closes a `%%%` block, which
+  is what the spec always required and what carve-js does. The opener's tail is
+  kept as the body's first line so the writer round-trips it; a closer's tail is
+  dropped (carve#463, PART 9 §28).
+
 - **A blank line inside a marker-line item no longer ends its sub-list**
   (carve-rs#301). `- - A` opens a sub-list on the marker line; when its first
   item is loose, the sibling marker after the blank sits at the sub-list's own

@@ -626,19 +626,62 @@ fn reference_definition_empty_destination_and_escaped_title() {
     );
 }
 
-/// A `%%%` comment-block OPENER must be 3+ `%` then only whitespace to end of
-/// line (grammar: `comment_block_open, newline`). A line with trailing TEXT
-/// (`%%% c`) is NOT an opener -- it is ordinary content, matching carve-js /
-/// carve-php. Regression for treating any `%%%`-prefixed line as a comment.
+/// A `%%%` comment-block fence is the leading run of 3+ `%`; any trailing text
+/// on the opener/closer line is insignificant for matching and never renders.
 #[test]
-fn comment_fence_opener_rejects_trailing_text() {
-    // Trailing text -> not a comment; the body is a paragraph.
-    assert_eq!(html("%%% c\nhidden\n%%%"), "<p>hidden</p>");
-    assert_eq!(html("x\n%%% c\nhidden\n%%%"), "<p>x</p>\n<p>hidden</p>");
-    // A clean opener (with optional trailing whitespace) is still a comment.
-    assert_eq!(html("%%%\nhidden\n%%%"), "");
-    assert_eq!(html("%%% \nhidden\n%%%"), "");
-    assert_eq!(html("%%%%\nhidden\n%%%%"), "");
+fn comment_fence_trailing_text_is_insignificant() {
+    for src in [
+        "before\n\n%%%\nsecret\n%%%\n\nafter\n",
+        "before\n\n%%% html\nsecret\n%%%\n\nafter\n",
+        "before\n\n%%% notes\nsecret\n%%%\n\nafter\n",
+        "before\n\n%%%html\nsecret\n%%%\n\nafter\n",
+        "before\n\n%%%\nsecret\n%%% end\n\nafter\n",
+        "before\n\n%%%% html\nhidden %%% inner\n%%%%\n\nafter\n",
+    ] {
+        assert_eq!(html(src), "<p>before</p>\n<p>after</p>", "{src:?}");
+    }
+}
+
+#[test]
+fn unterminated_comment_fence_degrades_to_line_comment() {
+    for src in [
+        "before\n\n%%% TODO\nsecret\n\nafter\n",
+        "before\n\n%%%\nsecret\n\nafter\n",
+        "before\n\n%%%%\nsecret\n%%%\n\nafter\n",
+        "before\n\n%%%\nsecret\n%%%%\n\nafter\n",
+    ] {
+        assert_eq!(
+            html(src),
+            "<p>before</p>\n<p>secret</p>\n<p>after</p>",
+            "{src:?}"
+        );
+    }
+}
+
+#[test]
+fn comment_fence_rules_apply_inside_containers() {
+    let quoted = html("> before\n>\n> %%% note\n> secret\n> %%% done\n>\n> after\n");
+    assert!(quoted.contains("<blockquote>"), "{quoted}");
+    assert!(quoted.contains("<p>before</p>"), "{quoted}");
+    assert!(quoted.contains("<p>after</p>"), "{quoted}");
+    assert!(!quoted.contains("secret"), "{quoted}");
+
+    let listed = html("- before\n\n  %%% note\n  secret\n  %%% done\n\n  after\n");
+    assert!(listed.contains("<ul>"), "{listed}");
+    assert!(listed.contains("<p>before</p>"), "{listed}");
+    assert!(listed.contains("<p>after</p>"), "{listed}");
+    assert!(!listed.contains("secret"), "{listed}");
+}
+
+#[test]
+fn comment_fence_terminates_heading_and_caption() {
+    let heading = html("# Head\n%%% note\nsecret\n%%% done\n");
+    assert!(heading.contains("<h1>Head</h1>"), "{heading}");
+    assert!(!heading.contains("secret"), "{heading}");
+    assert_eq!(
+        html("![x](x.png)\n^ cap\n%%% note\nsecret\n%%% done\n"),
+        "<figure>\n  <img src=\"x.png\" alt=\"x\">\n  <figcaption>cap</figcaption>\n</figure>"
+    );
 }
 
 /// Bold-italic `/*…*/` requires content that starts AND ends with a non-space
