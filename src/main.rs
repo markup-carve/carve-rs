@@ -19,6 +19,15 @@ enum Command {
     Fmt,
 }
 
+/// The stamp modes answer a question about the document rather than rendering
+/// it: report the provenance marker, and optionally fail when the document
+/// predates this engine's spec version.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum StampMode {
+    Info,
+    Check,
+}
+
 fn main() -> ExitCode {
     // Bundled interactive extensions, owned here so they outlive `options`
     // (which borrows them). Registered only when `--extensions` is passed, so
@@ -40,6 +49,7 @@ fn main() -> ExitCode {
     let mut fmt_write = false;
     let mut fmt_check = false;
     let mut fmt_stamp = None;
+    let mut stamp_mode: Option<StampMode> = None;
     let mut enable_extensions = false;
     let mut input_paths: Vec<String> = Vec::new();
     let mut args = std::env::args().skip(1);
@@ -59,6 +69,8 @@ fn main() -> ExitCode {
             "--stamp-block" if command == Command::Fmt => {
                 fmt_stamp = Some(carve::StampForm::Block);
             }
+            "--stamp-info" => stamp_mode = Some(StampMode::Info),
+            "--stamp-check" => stamp_mode = Some(StampMode::Check),
             "--mention-url" => {
                 let Some(value) = args.next() else {
                     eprintln!("carve: --mention-url requires a template");
@@ -168,6 +180,31 @@ fn main() -> ExitCode {
             }
         },
     };
+    if let Some(mode) = stamp_mode {
+        match carve::read_stamp(&source) {
+            None => println!(
+                "unstamped (spec version unknown; this engine targets {})",
+                carve::SPEC_VERSION
+            ),
+            Some(stamp) => println!(
+                "carve-version: {}\ngenerated-by: {}\nthis engine targets: {}",
+                stamp.version,
+                stamp.generated_by.as_deref().unwrap_or("(unrecorded)"),
+                carve::SPEC_VERSION
+            ),
+        }
+
+        if mode == StampMode::Check && carve::needs_review(&source, carve::SPEC_VERSION) {
+            eprintln!(
+                "Review the [behavior] changelog entries between that version and {}.",
+                carve::SPEC_VERSION
+            );
+            return ExitCode::FAILURE;
+        }
+
+        return ExitCode::SUCCESS;
+    }
+
     // Mention/tag URL templates are an HTML-link concern, so they only affect
     // HTML output. All formats share the same parse + profile pipeline.
     let output = match format {
