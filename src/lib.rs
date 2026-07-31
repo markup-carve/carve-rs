@@ -23,7 +23,6 @@ mod extension;
 pub mod extensions;
 mod index_budget;
 mod parse;
-pub mod position;
 pub mod profile;
 pub mod profile_filter;
 mod render;
