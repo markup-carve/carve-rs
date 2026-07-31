@@ -178,6 +178,7 @@ const IMPLEMENTED: &[&str] = &[
     "163-quote-flanking-after-an-escaped-character",
     "164-comment-fence-with-trailing-text",
     "165-unterminated-comment-fence",
+    "166-widened-verbatim-fences",
 ];
 
 fn corpus_dir() -> PathBuf {
