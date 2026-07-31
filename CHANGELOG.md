@@ -9,6 +9,14 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A link label's closing `]` is found past an editorial comment.** The scan
+  already skipped code spans, because a `]` inside one is content. An editorial
+  comment holds literal content too and was not skipped, so `[{#a]b#}](u)`
+  ended the label at the comment's bracket and formed no link - with no
+  spelling that worked, since `{# ... #}` resolves no escapes and `\]` puts a
+  real backslash in the comment. Applied to BOTH the scanner and the
+  precomputed bracket table, which have to agree (carve#403).
+
 - **Unicode whitespace ends a link destination, in both forms.**
   `unicode_url_char` is "any non-whitespace, non-ASCII Unicode character" with
   no qualifier, but the byte scans tested ASCII whitespace only - so a narrow

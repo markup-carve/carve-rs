@@ -6762,6 +6762,9 @@ fn read_bracketed(bytes: &[u8], start: usize) -> Option<(String, usize)> {
                 // after it can close the bracket: the construct is not balanced.
                 i = skip_code_span(bytes, i)?;
             }
+            b'{' if skip_editorial_comment(bytes, i).is_some() => {
+                i = skip_editorial_comment(bytes, i)?;
+            }
             b'[' => {
                 depth += 1;
                 i += 1;
@@ -6778,6 +6781,28 @@ fn read_bracketed(bytes: &[u8], start: usize) -> Option<(String, usize)> {
             }
             _ => i += 1,
         }
+    }
+    None
+}
+
+/// Skip an editorial comment opening at `start` (`{#`), returning the index just
+/// past its `#}`.
+///
+/// Its content is LITERAL (PART 9 `editorial_comment`), so a `]` inside it is
+/// text and cannot be the close of a link label - and no escape can say so
+/// either, because `{# ... #}` resolves none. Returns None when there is no
+/// closer, in which case it is not a comment and the scan continues normally
+/// (carve#403).
+fn skip_editorial_comment(bytes: &[u8], start: usize) -> Option<usize> {
+    if bytes.get(start) != Some(&b'{') || bytes.get(start + 1) != Some(&b'#') {
+        return None;
+    }
+    let mut i = start + 2;
+    while i + 1 < bytes.len() {
+        if bytes[i] == b'#' && bytes[i + 1] == b'}' {
+            return Some(i + 2);
+        }
+        i += 1;
     }
     None
 }
@@ -6811,6 +6836,11 @@ fn compute_bracket_matches(bytes: &[u8]) -> Vec<usize> {
                 Some(next) => i = next,
                 None => break,
             },
+            // Mirrors `read_bracketed`: an editorial comment's content is
+            // literal, so brackets inside it are text.
+            b'{' if skip_editorial_comment(bytes, i).is_some() => {
+                i = skip_editorial_comment(bytes, i).unwrap_or(i + 1);
+            }
             b'[' => {
                 stack.push(i);
                 i += 1;
