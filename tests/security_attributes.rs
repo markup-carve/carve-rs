@@ -45,18 +45,43 @@ fn defeats_scheme_obfuscation() {
 
 #[test]
 fn defeats_unicode_whitespace_before_scheme() {
-    // Finding 5: a leading NBSP / line/paragraph separator / BOM before the
-    // scheme must not survive the scheme probe and let `javascript:` through.
-    for ws in ["\u{00A0}", "\u{2028}", "\u{2029}", "\u{FEFF}"] {
+    // Finding 5: whitespace before the scheme must not let `javascript:`
+    // through. Two different mechanisms now stop it, and which one applies
+    // depends on whether the prefix is whitespace at all.
+
+    // WHITESPACE ends a destination (PART 9 `link_destination`), so there is no
+    // link and therefore no attribute to smuggle a scheme into. A stronger
+    // outcome than blanking, and the assertion has to be about the ATTRIBUTE
+    // rather than the string: the text survives as inert, escaped prose, so
+    // `javascript:` still appears in the output with nothing executable around
+    // it (carve#404, carve#407).
+    for ws in ["\u{00A0}", "\u{2028}", "\u{2029}"] {
         let html = carve::to_html(&format!("[x]({ws}javascript:alert(1))"));
         assert!(
-            html.contains("href=\"\""),
-            "expected blanked href for prefix {:?}, got {html}",
-            ws
+            !html.contains("<a"),
+            "formed a link for prefix {ws:?}: {html}"
+        );
+        assert!(
+            !html.contains("href"),
+            "emitted an href for prefix {ws:?}: {html}"
         );
     }
-    // An already-safe scheme behind the same whitespace stays untouched.
-    assert!(carve::to_html("[x](\u{00A0}https://e.com)").contains("https://e.com"));
+
+    // A BOM is NOT whitespace (it has no Unicode White_Space property), so it
+    // is an ordinary destination character and the link DOES form - which is
+    // exactly why the scheme probe still has to strip it and blank the href.
+    let bom = carve::to_html("[x](\u{FEFF}javascript:alert(1))");
+    assert!(
+        bom.contains("href=\"\""),
+        "expected blanked href, got {bom}"
+    );
+
+    // A safe scheme behind whitespace is not a link either - the rule is about
+    // the destination, not about the scheme.
+    let safe = carve::to_html("[x](\u{00A0}https://e.com)");
+    assert!(!safe.contains("<a"), "{safe}");
+    // ... and an ordinary safe URL still links.
+    assert!(carve::to_html("[x](https://e.com)").contains("href=\"https://e.com\""));
 }
 
 #[test]
