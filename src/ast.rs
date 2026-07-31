@@ -100,6 +100,8 @@ pub enum BlockNode {
 pub struct ThematicBreak {
     /// Attributes from a preceding block-attribute line (`{.x}` then `---`).
     pub attrs: Option<Attrs>,
+    /// Span in the original source, when the parser could determine it.
+    pub pos: Option<Pos>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -136,6 +138,8 @@ pub struct CodeBlock {
     pub title: Option<String>,
     pub label: Option<String>,
     pub content: String,
+    /// Span in the original source, when the parser could determine it.
+    pub pos: Option<Pos>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -223,6 +227,8 @@ pub struct Admonition {
     pub title: Option<Vec<InlineNode>>,
     pub label: Option<String>,
     pub children: Vec<BlockNode>,
+    /// Span in the original source, when the parser could determine it.
+    pub pos: Option<Pos>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -230,6 +236,8 @@ pub struct Div {
     pub attrs: Option<Attrs>,
     pub label: Option<String>,
     pub children: Vec<BlockNode>,
+    /// Span in the original source, when the parser could determine it.
+    pub pos: Option<Pos>,
 }
 
 /// Line block (section 4.4): a `::: |` fence whose every newline is a hard break.
@@ -341,12 +349,16 @@ pub struct AbbreviationDef {
 pub struct RawBlock {
     pub format: String,
     pub content: String,
+    /// Span in the original source, when the parser could determine it.
+    pub pos: Option<Pos>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Comment {
     pub block: bool,
     pub content: String,
+    /// Span in the original source, when the parser could determine it.
+    pub pos: Option<Pos>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -122,6 +122,7 @@ fn markdown_sanitizes_code_fence_info_string() {
             title: None,
             label: None,
             content: "let x = 1;".to_string(),
+            pos: None,
         })],
     };
 
@@ -183,10 +184,12 @@ fn markdown_strips_control_bytes_from_author_leaf_fields() {
                 title: None,
                 label: None,
                 content: format!("code{c}"),
+                pos: None,
             }),
             carve::BlockNode::RawBlock(carve::RawBlock {
                 format: "html".to_string(),
                 content: format!("<b>{c}</b>"),
+                pos: None,
             }),
             carve::BlockNode::Paragraph(carve::Paragraph {
                 pos: None,
@@ -282,6 +285,7 @@ fn plain_and_ansi_strip_control_bytes_from_author_leaf_fields() {
             carve::BlockNode::RawBlock(carve::RawBlock {
                 format: format!("fmt{c}"),
                 content: format!("raw{c}"),
+                pos: None,
             }),
             carve::BlockNode::BlockImage(carve::Image {
                 attrs: None,

@@ -289,6 +289,8 @@ pub(crate) fn transform_blocks(
                 *block = BlockNode::RawBlock(RawBlock {
                     format: "html".into(),
                     content: html,
+                    // Synthesized by an extension: no source span to report (PART 12 §4).
+                    pos: None,
                 });
             }
             BlockNode::List(l) => {

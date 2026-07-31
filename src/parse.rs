@@ -1056,6 +1056,12 @@ fn fill_offsets(blocks: &mut [BlockNode], line_starts: &[usize]) {
         let pos = match block {
             BlockNode::Heading(h) => h.pos.as_mut(),
             BlockNode::Paragraph(p) => p.pos.as_mut(),
+            BlockNode::ThematicBreak(t) => t.pos.as_mut(),
+            BlockNode::CodeBlock(c) => c.pos.as_mut(),
+            BlockNode::RawBlock(r) => r.pos.as_mut(),
+            BlockNode::Comment(c) => c.pos.as_mut(),
+            BlockNode::Div(d) => d.pos.as_mut(),
+            BlockNode::Admonition(a) => a.pos.as_mut(),
             _ => None,
         };
         if let Some(pos) = pos {
@@ -1180,6 +1186,7 @@ fn parse_blocks(cur: &mut LineCursor, options: &Options<'_>) -> Vec<BlockNode> {
                 // No matching closer: degrade to the ordinary `%%` line
                 // comment path below instead of swallowing to EOF.
             } else {
+                let span_start = cur.pos;
                 let mut content = Vec::new();
                 if !open.tail.is_empty() {
                     content.push(open.tail);
@@ -1195,6 +1202,7 @@ fn parse_blocks(cur: &mut LineCursor, options: &Options<'_>) -> Vec<BlockNode> {
                 out.push(BlockNode::Comment(Comment {
                     block: true,
                     content: content.join("\n"),
+                    pos: span_of(cur, span_start, cur.pos, options),
                 }));
                 continue;
             }
@@ -1205,10 +1213,12 @@ fn parse_blocks(cur: &mut LineCursor, options: &Options<'_>) -> Vec<BlockNode> {
                 .unwrap_or_default()
                 .trim_start()
                 .to_string();
+            let span_start = cur.pos;
             cur.consume();
             out.push(BlockNode::Comment(Comment {
                 block: false,
                 content,
+                pos: span_of(cur, span_start, cur.pos, options),
             }));
             continue;
         }
@@ -1289,7 +1299,7 @@ fn resolve_code_title(node: &mut BlockNode) {
 fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<BlockNode> {
     let line = cur.peek()?;
     if let Some(fence_marker) = detect_fence_open(line) {
-        let block = parse_fence(cur, fence_marker);
+        let block = parse_fence(cur, fence_marker, options);
         // A caption immediately after a fenced code block makes it a numbered
         // LISTING: wrap it in a figure like a captioned image/table.
         if let BlockNode::CodeBlock(cb) = block {
@@ -1305,8 +1315,12 @@ fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<BlockNode>
         return Some(block);
     }
     if detect_thematic_break(line) {
+        let span_start = cur.pos;
         cur.consume();
-        return Some(BlockNode::ThematicBreak(ThematicBreak::default()));
+        return Some(BlockNode::ThematicBreak(ThematicBreak {
+            pos: span_of(cur, span_start, cur.pos, options),
+            ..Default::default()
+        }));
     }
     if let Some((level, first_text)) = detect_heading(line) {
         let span_start = cur.pos;
@@ -1825,7 +1839,8 @@ fn detect_fence_open(line: &str) -> Option<FenceOpen> {
     })
 }
 
-fn parse_fence(cur: &mut LineCursor, open: FenceOpen) -> BlockNode {
+fn parse_fence(cur: &mut LineCursor, open: FenceOpen, options: &Options<'_>) -> BlockNode {
+    let span_start = cur.pos;
     let open_line = cur.consume().unwrap();
     let open_trim = open_line[open.lang_start..].trim();
     let raw_format = open_trim.strip_prefix('=').map(|f| f.trim().to_string());
@@ -1851,10 +1866,14 @@ fn parse_fence(cur: &mut LineCursor, open: FenceOpen) -> BlockNode {
         cur.consume();
         content_lines.push(line.to_string());
     }
+    // The span covers the opener, the body and the closer - the whole block as
+    // the author wrote it, not just its content.
+    let pos = span_of(cur, span_start, cur.pos, options);
     if let Some(format) = raw_format {
         BlockNode::RawBlock(RawBlock {
             format,
             content: content_lines.join("\n"),
+            pos,
         })
     } else {
         BlockNode::CodeBlock(CodeBlock {
@@ -1863,6 +1882,7 @@ fn parse_fence(cur: &mut LineCursor, open: FenceOpen) -> BlockNode {
             title,
             label,
             content: content_lines.join("\n"),
+            pos,
         })
     }
 }
@@ -4536,6 +4556,7 @@ fn parse_quoted_metadata(s: &str) -> Option<(String, &str)> {
 
 fn parse_container(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     let open = detect_container_open(cur.peek().unwrap()).unwrap();
+    let span_start = cur.pos;
     cur.consume();
     let mut inner = LineBuffer::default();
     while let Some(line) = cur.peek() {
@@ -4547,6 +4568,8 @@ fn parse_container(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         cur.consume();
     }
     let children = parse_mapped_source(&inner.into_source(), options);
+    // The span covers the opening fence through the closing one.
+    let pos = span_of(cur, span_start, cur.pos, options);
     if let Some(kind) = open.kind {
         BlockNode::Admonition(Admonition {
             attrs: open.attrs,
@@ -4554,12 +4577,14 @@ fn parse_container(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             title: open.title.map(|t| parse_inline_with_options(&t, options)),
             label: open.label,
             children,
+            pos,
         })
     } else {
         BlockNode::Div(Div {
             attrs: open.attrs,
             label: open.label,
             children,
+            pos,
         })
     }
 }
@@ -4795,6 +4820,8 @@ fn parse_hardbreaks_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockN
         }),
         label: None,
         children,
+        // Synthesized wrapper, not a block the author wrote (PART 12 §4).
+        pos: None,
     })
 }
 
