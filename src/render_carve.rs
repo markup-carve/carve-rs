@@ -540,8 +540,6 @@ fn render_list(node: &List, ctx: &mut CarveContext) -> String {
                 // rewrite one, and `fmt` would then report a diff on a file
                 // nobody edited (carve#375).
                 out.push('\n');
-            } else if is_rendered_list_marker(&line) {
-                out.push_str(&format!("{indent}  {line}\n"));
             } else {
                 out.push_str(&format!("{indent}{continuation}{line}\n"));
             }
