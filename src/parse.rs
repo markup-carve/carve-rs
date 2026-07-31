@@ -848,14 +848,26 @@ impl<'a> LineCursor<'a> {
 struct LineBuffer {
     lines: Vec<String>,
     line_map: Vec<Option<usize>>,
+    /// Codepoints the container took from the front of each line, parallel to
+    /// `lines`. Kept in lockstep by `push_at`: a shifted entry would hand a
+    /// nested block a WRONG column, which is worse than the `None` an absent
+    /// entry produces.
+    col_map: Vec<Option<usize>>,
 }
 
 impl LineBuffer {
     fn push(&mut self, line: String, source_line: Option<usize>) {
+        self.push_at(line, source_line, None)
+    }
+
+    /// Like `push`, recording how many codepoints were stripped from the front
+    /// of the line by the enclosing container.
+    fn push_at(&mut self, line: String, source_line: Option<usize>, stripped: Option<usize>) {
         self.lines.push(line);
         if source_line.is_some() || !self.line_map.is_empty() {
             self.line_map.push(source_line);
         }
+        self.col_map.push(stripped);
     }
 
     fn push_synthetic_blank(&mut self) {
@@ -864,7 +876,7 @@ impl LineBuffer {
 
     fn into_source(self) -> MappedSource {
         MappedSource {
-            col_map: vec![None; self.lines.len()],
+            col_map: self.col_map,
             source: self.lines.join("\n"),
             line_map: self.line_map,
         }
@@ -929,6 +941,66 @@ impl MappedSource {
     }
 }
 
+/// Codepoints a container took from the front of a line, when that is knowable.
+///
+/// Only a prefix removal has a knowable width: when the line the parser will
+/// see is a SUFFIX of the source line, the difference between them is what the
+/// container took, and it adds to whatever an outer container already took. A
+/// rewritten line - a tab expansion, a synthesized replacement - has no such
+/// correspondence and yields `None`, so blocks starting there carry no position
+/// rather than a wrong one.
+fn stripped_col(outer: Option<usize>, original: &str, stripped: &str) -> Option<usize> {
+    let outer = outer?;
+    if !original.ends_with(stripped) {
+        return None;
+    }
+    Some(outer + original.chars().count() - stripped.chars().count())
+}
+
+/// Seed a list item's body with its marker line, carrying the column the marker
+/// itself occupied so a block opened on that line lands where the author wrote
+/// it rather than at column 1.
+fn item_marker_source(cur: &LineCursor<'_>, content: &str, at: usize) -> MappedSource {
+    let stripped = cur
+        .lines
+        .get(at)
+        .and_then(|line| stripped_col(cur.source_col(at), line, content));
+    MappedSource::new_line_at(content.to_string(), cur.source_line(at), stripped)
+}
+
+/// Span of a list item's lead paragraph. It starts where the marker's CONTENT
+/// starts - the paragraph is the text, not the bullet - and ends at the last
+/// line folded into it by lazy continuation.
+fn item_paragraph_span(
+    cur: &LineCursor<'_>,
+    start_at: usize,
+    end_at: usize,
+    content: &str,
+    options: &Options<'_>,
+) -> Option<Pos> {
+    if !options.positions {
+        return None;
+    }
+    let start_line = cur.source_line(start_at)?;
+    let line = cur.lines.get(start_at)?;
+    let start_stripped = stripped_col(cur.source_col(start_at), line, content)?;
+    let end_line = cur.source_line(end_at).unwrap_or(start_line);
+    let end_col = cur.source_col(end_at).unwrap_or(0)
+        + cur
+            .lines
+            .get(end_at)
+            .map(|l| l.chars().count())
+            .unwrap_or(0);
+    Some(Pos {
+        start_line,
+        end_line,
+        start_column: start_stripped + 1,
+        end_column: end_col + 1,
+        start_offset: 0,
+        end_offset: 0,
+    })
+}
+
 /// Build a span for the lines `[start, end)` of `cur`, in the ORIGINAL source.
 ///
 /// Returns `None` when the source line or the stripped column width is unknown
@@ -951,7 +1023,7 @@ fn span_of(cur: &LineCursor<'_>, start: usize, end: usize, options: &Options<'_>
     let indent = cur
         .lines
         .get(start)
-        .map(|l| l.len() - l.trim_start().len())
+        .map(|l| l.chars().count() - l.trim_start().chars().count())
         .unwrap_or(0);
     let width = cur.lines.get(last).map(|l| l.chars().count()).unwrap_or(0);
     Some(Pos {
@@ -1878,8 +1950,12 @@ fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     while let Some(line) = cur.peek() {
         if let Some(rest) = line.strip_prefix('>') {
             let source_line = cur.source_line(cur.pos);
+            let at = cur.pos;
             cur.consume();
             let stripped = rest.strip_prefix(' ').unwrap_or(rest);
+            // The quote marker (and its optional space) is a pure prefix, so the
+            // quoted line's columns are knowable in the document.
+            let stripped_at = stripped_col(cur.source_col(at), line, stripped);
             if let Some(open) = in_fence {
                 if is_fence_close(stripped, open) {
                     in_fence = None;
@@ -1942,7 +2018,7 @@ fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                     && !trim_ascii_start(stripped).starts_with("%%")
                     && !interrupts_paragraph_with_rest(stripped, &rest_stripped);
             }
-            inner.push(stripped.to_string(), source_line);
+            inner.push_at(stripped.to_string(), source_line, stripped_at);
             continue;
         }
         // Continuation marker (Carve, PART 9 §17): a lone `+` at column 0 after
@@ -1964,7 +2040,13 @@ fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 {
                     break;
                 }
-                attached.push(next.to_string(), cur.source_line(cur.pos));
+                // Attached lines are spliced in verbatim, so the container took
+                // nothing beyond whatever an outer one already had.
+                attached.push_at(
+                    next.to_string(),
+                    cur.source_line(cur.pos),
+                    cur.source_col(cur.pos),
+                );
                 cur.pos += 1;
             }
             if !attached.lines.is_empty() {
@@ -1973,6 +2055,9 @@ fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 inner.push_synthetic_blank();
                 inner.lines.extend(attached.lines);
                 inner.line_map.extend(attached.line_map);
+                // Must extend in lockstep with `lines`: a col_map that lags by
+                // one entry hands every later block a wrong column.
+                inner.col_map.extend(attached.col_map);
                 inner.push_synthetic_blank();
                 para_open = false;
             }
@@ -1994,8 +2079,11 @@ fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             break;
         }
         let source_line = cur.source_line(cur.pos);
+        // A lazy continuation line carries no quote marker, so nothing was
+        // stripped from it beyond what an outer container already took.
+        let source_col = cur.source_col(cur.pos);
         cur.consume();
-        inner.push(line.to_string(), source_line);
+        inner.push_at(line.to_string(), source_line, source_col);
     }
     let inner = inner.into_source();
     let children = parse_mapped_source(&inner, options);
@@ -2659,6 +2747,7 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             indent_columns(l) + byte_off.saturating_sub(leading_ws(l))
         };
         let item_source_line = cur.source_line(cur.pos);
+        let item_at = cur.pos;
         cur.consume();
         let item_attrs = source_line_attrs(marker.attrs.clone(), item_source_line, options);
         // First-block form `- +` (grammar §17): a lone `+` as the marker
@@ -2691,8 +2780,7 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         // djot. The combined stream reuses the normal nested-list/absorption
         // logic (collect_indented_block + recursive parse) -- no separate path.
         if marker.content.starts_with('>') {
-            let mut stream =
-                MappedSource::new_line(marker.content.to_string(), cur.source_line(cur.pos - 1));
+            let mut stream = item_marker_source(cur, marker.content, item_at);
             stream.append(collect_indented_block_mapped(cur, base_indent, content_col));
             let children = parse_mapped_source(&stream, options);
             items.push(ListItem {
@@ -2703,8 +2791,7 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             continue;
         }
         if detect_list_marker_full(marker.content).is_some() {
-            let mut stream =
-                MappedSource::new_line(marker.content.to_string(), cur.source_line(cur.pos - 1));
+            let mut stream = item_marker_source(cur, marker.content, item_at);
             stream.append(collect_indented_block_mapped(cur, base_indent, content_col));
             // A column-0 lazy-continuation line following the marker-line
             // sub-list folds into its last open paragraph (`- - b` / `lazy` ->
@@ -2748,8 +2835,7 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             continue;
         }
         if marker_content_starts_block(marker.content, cur, content_col) {
-            let mut stream =
-                MappedSource::new_line(marker.content.to_string(), cur.source_line(cur.pos - 1));
+            let mut stream = item_marker_source(cur, marker.content, item_at);
             let before_block = cur.pos;
             stream.append(collect_indented_block_mapped(cur, base_indent, content_col));
             // A heading on the marker line (`- # H`) folds its trailing
@@ -2885,6 +2971,13 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         let mut paragraph = BlockNode::Paragraph(Paragraph {
             attrs: None,
             children: parse_inline_with_options(para_text, options),
+            pos: item_paragraph_span(
+                cur,
+                item_at,
+                cur.pos.saturating_sub(1),
+                marker.content,
+                options,
+            ),
             ..Default::default()
         });
         if options.source_lines {
@@ -4573,6 +4666,9 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 stanzas.push(LineBuffer {
                     lines: std::mem::take(&mut stanza),
                     line_map: std::mem::take(&mut stanza_line_map),
+                    // Verse lines are rewritten (leading whitespace becomes
+                    // NBSP placeholders), so no column here maps back.
+                    col_map: Vec::new(),
                 });
             }
             continue;
@@ -4585,6 +4681,7 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         stanzas.push(LineBuffer {
             lines: stanza,
             line_map: stanza_line_map,
+            col_map: Vec::new(),
         });
     }
 
