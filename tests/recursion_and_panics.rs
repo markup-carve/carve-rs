@@ -115,6 +115,7 @@ fn non_html_renderers_bound_programmatic_block_depth() {
     }
     let doc = carve::Document {
         frontmatter: std::collections::BTreeMap::new(),
+        frontmatter_source: None,
         source_len: 0,
         footnote_defs: std::collections::BTreeMap::new(),
         children: vec![block],
@@ -137,6 +138,7 @@ fn non_html_renderers_bound_programmatic_inline_depth() {
     }
     let doc = carve::Document {
         frontmatter: std::collections::BTreeMap::new(),
+        frontmatter_source: None,
         source_len: 0,
         footnote_defs: std::collections::BTreeMap::new(),
         children: vec![carve::BlockNode::Paragraph(carve::Paragraph {

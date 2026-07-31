@@ -67,6 +67,7 @@ fn blank_line_collapse() {
 fn bullet_marker_normalization() {
     let doc = carve::Document {
         frontmatter: Default::default(),
+        frontmatter_source: None,
         footnote_defs: Default::default(),
         children: vec![carve::BlockNode::List(carve::List {
             attrs: None,

@@ -118,7 +118,7 @@ fn parse_with_options_mode(source: &str, options: &Options<'_>, mode: ParseMode)
     } else {
         source
     };
-    let (frontmatter, body) = split_frontmatter(source);
+    let (frontmatter, frontmatter_source, body) = split_frontmatter(source);
     let body_start_line = source
         [..(body.as_ptr() as usize).saturating_sub(source.as_ptr() as usize)]
         .bytes()
@@ -140,6 +140,7 @@ fn parse_with_options_mode(source: &str, options: &Options<'_>, mode: ParseMode)
     }
     let mut doc = Document {
         frontmatter,
+        frontmatter_source,
         footnote_defs,
         children,
         source_len: source.len(),
@@ -676,18 +677,24 @@ fn parse_link_def_target(target: &str) -> LinkDef {
     LinkDef { href, title }
 }
 
-fn split_frontmatter(source: &str) -> (BTreeMap<String, String>, &str) {
+fn split_frontmatter(
+    source: &str,
+) -> (
+    BTreeMap<String, String>,
+    Option<crate::ast::FrontmatterSource>,
+    &str,
+) {
     // Opening fence: `---` optionally followed by a type token (`---yaml`,
     // `---json`, `---toml`, ...; canonical has no space). Closer is a bare `---`.
     if !source.starts_with("---") {
-        return (BTreeMap::new(), source);
+        return (BTreeMap::new(), None, source);
     }
     let Some(first_nl) = source.find('\n') else {
-        return (BTreeMap::new(), source);
+        return (BTreeMap::new(), None, source);
     };
     let kind = source[3..first_nl].trim();
     if !kind.is_empty() && !kind.chars().all(|c| c.is_ascii_alphanumeric()) {
-        return (BTreeMap::new(), source);
+        return (BTreeMap::new(), None, source);
     }
     let rest = &source[first_nl + 1..];
     // The closer is a line that is exactly `---`. It may be the FIRST line of
@@ -701,7 +708,7 @@ fn split_frontmatter(source: &str) -> (BTreeMap<String, String>, &str) {
     } else if let Some(close) = rest.strip_suffix("\n---").map(|s| s.len()) {
         (close, rest.len())
     } else {
-        return (BTreeMap::new(), source);
+        return (BTreeMap::new(), None, source);
     };
     let frontmatter_src = &rest[..content_len];
     let body = &rest[after..];
@@ -715,7 +722,15 @@ fn split_frontmatter(source: &str) -> (BTreeMap<String, String>, &str) {
             }
         }
     }
-    (frontmatter, body)
+    let source_block = crate::ast::FrontmatterSource {
+        format: if kind.is_empty() {
+            "yaml".to_string()
+        } else {
+            kind.to_string()
+        },
+        content: frontmatter_src.to_string(),
+    };
+    (frontmatter, Some(source_block), body)
 }
 
 pub(crate) fn parse_blocks_with_options(source: &str, options: &Options<'_>) -> Vec<BlockNode> {

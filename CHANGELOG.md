@@ -7,6 +7,22 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **`Document::frontmatter_source`**: the frontmatter block as written, a
+  `FrontmatterSource` carrying `format` (the fence's info word, `yaml` when it
+  carries none) and `content` (the text between the fences, verbatim).
+
+  PART 12 §7 requires a serialized document to carry frontmatter RAW
+  (carve#411). This engine only kept the parsed key/values, and only for the
+  bare/yaml form, so a `---toml` block parsed to an empty map and a serializer
+  had nothing to emit but a claim that the document had no frontmatter. The
+  parsed `frontmatter` map is unchanged; this is the source it came from.
+
+  **Breaking for direct construction**: `Document` gained a field, so a struct
+  literal that lists every field needs `frontmatter_source: None`. Code that
+  goes through `parse` is unaffected.
+
 ### Fixed
 
 - **An auto heading slug no longer collides with an explicit `{#id}`.**

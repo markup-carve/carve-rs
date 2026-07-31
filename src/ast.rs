@@ -43,9 +43,30 @@ pub enum AttrSlot {
     Key(String),
 }
 
+/// Frontmatter exactly as the author wrote it.
+///
+/// PART 12 §7 requires a serialized document to carry frontmatter RAW: the text
+/// between the fences, verbatim, plus the fence's info word. Parsing YAML or
+/// TOML is not the markup parser's job, and a parsed map cannot represent
+/// malformed frontmatter at all - it just comes out empty, which claims the
+/// document had none.
+///
+/// [`Document::frontmatter`] keeps the parsed key/values this engine has always
+/// exposed; this is the source they came from, so a serializer has something
+/// conformant to emit (carve#411).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct FrontmatterSource {
+    /// The info word on the opening fence, or `"yaml"` when it carries none.
+    pub format: String,
+    /// The text between the fences, verbatim and unparsed.
+    pub content: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Document {
     pub frontmatter: BTreeMap<String, String>,
+    /// The frontmatter block as written, when the document has one.
+    pub frontmatter_source: Option<FrontmatterSource>,
     pub footnote_defs: BTreeMap<String, Vec<BlockNode>>,
     pub children: Vec<BlockNode>,
     /// Byte length of the (normalized) source this document was parsed from.
