@@ -97,7 +97,11 @@ impl ProfileFilter<'_> {
                 continue;
             }
 
-            let allowed = canonical.is_some_and(|c| self.profile.is_type_allowed(c));
+            // An unmapped type is outside the vocabulary, NOT disallowed: it
+            // resolves through the same three steps under its own name.
+            let allowed = self
+                .profile
+                .is_type_allowed_on(canonical.unwrap_or("unknown"), true);
             if !allowed {
                 let ty = canonical.unwrap_or("unknown").to_string();
                 match self.handle_block_violation(&blocks[i], &ty, "element_not_allowed")? {
@@ -374,7 +378,11 @@ impl ProfileFilter<'_> {
                 continue;
             }
 
-            let allowed = canonical.is_some_and(|c| self.profile.is_type_allowed(c));
+            // An unmapped type is outside the vocabulary, NOT disallowed: it
+            // resolves through the same three steps under its own name.
+            let allowed = self
+                .profile
+                .is_type_allowed_on(canonical.unwrap_or("unknown"), false);
             if !allowed {
                 let ty = canonical.unwrap_or("unknown").to_string();
                 match self.handle_inline_violation(&inlines[i], &ty, "element_not_allowed")? {
@@ -822,7 +830,9 @@ fn extract_inline_text(node: &InlineNode) -> String {
         InlineNode::Extension(e) => e.children.iter().map(extract_inline_text).collect(),
         InlineNode::CriticInsert(c) => c.children.iter().map(extract_inline_text).collect(),
         InlineNode::CriticDelete(c) => c.children.iter().map(extract_inline_text).collect(),
-        InlineNode::CriticSubstitute(c) => c.new_text.clone(),
+        // Both texts, matching carve-php and carve-js. Returning only the new
+        // one silently dropped the wording the author replaced.
+        InlineNode::CriticSubstitute(c) => format!("{}{}", c.old_text, c.new_text),
         InlineNode::CriticComment(_) => String::new(),
         InlineNode::CrossRef(c) => c.target.clone(),
         InlineNode::CaptionNumber(_) => String::new(),
