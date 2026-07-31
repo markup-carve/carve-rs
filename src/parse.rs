@@ -6762,6 +6762,9 @@ fn read_bracketed(bytes: &[u8], start: usize) -> Option<(String, usize)> {
                 // after it can close the bracket: the construct is not balanced.
                 i = skip_code_span(bytes, i)?;
             }
+            b'{' if skip_editorial_comment(bytes, i).is_some() => {
+                i = skip_editorial_comment(bytes, i)?;
+            }
             b'[' => {
                 depth += 1;
                 i += 1;
@@ -6778,6 +6781,28 @@ fn read_bracketed(bytes: &[u8], start: usize) -> Option<(String, usize)> {
             }
             _ => i += 1,
         }
+    }
+    None
+}
+
+/// Skip an editorial comment opening at `start` (`{#`), returning the index just
+/// past its `#}`.
+///
+/// Its content is LITERAL (PART 9 `editorial_comment`), so a `]` inside it is
+/// text and cannot be the close of a link label - and no escape can say so
+/// either, because `{# ... #}` resolves none. Returns None when there is no
+/// closer, in which case it is not a comment and the scan continues normally
+/// (carve#403).
+fn skip_editorial_comment(bytes: &[u8], start: usize) -> Option<usize> {
+    if bytes.get(start) != Some(&b'{') || bytes.get(start + 1) != Some(&b'#') {
+        return None;
+    }
+    let mut i = start + 2;
+    while i + 1 < bytes.len() {
+        if bytes[i] == b'#' && bytes[i + 1] == b'}' {
+            return Some(i + 2);
+        }
+        i += 1;
     }
     None
 }
@@ -6811,6 +6836,11 @@ fn compute_bracket_matches(bytes: &[u8]) -> Vec<usize> {
                 Some(next) => i = next,
                 None => break,
             },
+            // Mirrors `read_bracketed`: an editorial comment's content is
+            // literal, so brackets inside it are text.
+            b'{' if skip_editorial_comment(bytes, i).is_some() => {
+                i = skip_editorial_comment(bytes, i).unwrap_or(i + 1);
+            }
             b'[' => {
                 stack.push(i);
                 i += 1;
@@ -6906,7 +6936,23 @@ fn scan_balanced_destination(bytes: &[u8], start: usize) -> Option<(String, usiz
         href_bytes.push(b);
         i += 1;
     }
-    Some((String::from_utf8(href_bytes).ok()?, i))
+    let href = String::from_utf8(href_bytes).ok()?;
+    // The byte loop above breaks on ASCII whitespace only. `unicode_url_char`
+    // is "any non-whitespace, non-ASCII Unicode character" with no qualifier,
+    // so a destination carrying a narrow no-break space is not a destination -
+    // exactly as on the plain path.
+    //
+    // The plain path got this check and this one did not, which made the rule
+    // depend on whether the URL happened to contain a PARENTHESIS: only a
+    // destination with one reached here. `[x](<NBSP>https://e.com)` was
+    // rejected while `[x](<NBSP>https://e.com/a(b))` linked with the invisible
+    // character in the href, and `javascript:alert(1)` - parenthesised - slipped
+    // through too, which is what made this look like a scheme-specific
+    // divergence rather than a hole (carve#404, carve#407).
+    if href.chars().any(char::is_whitespace) {
+        return None;
+    }
+    Some((href, i))
 }
 
 fn read_link_target(
