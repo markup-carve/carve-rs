@@ -633,11 +633,15 @@ fn strip_blockquote_prefix(line: &str) -> Option<&str> {
 }
 
 fn parse_link_def_target(target: &str) -> LinkDef {
-    let bytes = target.as_bytes();
-    let mut i = 0;
-    while i < bytes.len() && !bytes[i].is_ascii_whitespace() {
-        i += 1;
-    }
+    // UNICODE whitespace, not just ASCII. `unicode_url_char` is "any
+    // non-whitespace, non-ASCII Unicode character", unqualified, so a narrow
+    // no-break space ends the destination exactly as a plain space does.
+    // Scanning bytes for ASCII whitespace alone left one inside the href
+    // (carve#404).
+    let i = target
+        .char_indices()
+        .find(|(_, c)| c.is_whitespace())
+        .map_or(target.len(), |(idx, _)| idx);
     let href = target[..i].to_string();
     let rest = target[i..].trim();
     // A title needs the opening AND a distinct closing quote: a lone `"` (or
@@ -6941,12 +6945,16 @@ fn read_link_target(
     }
     let (href, mut i) =
         if plain_end == bytes.len() || matches!(bytes[plain_end], b' ' | b'\t' | b'\n' | b')') {
-            (
-                std::str::from_utf8(&bytes[start..plain_end])
-                    .ok()?
-                    .to_string(),
-                plain_end,
-            )
+            let plain = std::str::from_utf8(&bytes[start..plain_end]).ok()?;
+            // The byte scan above stops at ASCII whitespace only, and
+            // `unicode_url_char` is "any non-whitespace, non-ASCII Unicode
+            // character" without a qualifier - so a destination carrying a
+            // narrow no-break space is not a destination at all, and the link
+            // does not form (carve#404).
+            if plain.chars().any(char::is_whitespace) {
+                return None;
+            }
+            (plain.to_string(), plain_end)
         } else {
             scan_balanced_destination(bytes, start)?
         };
