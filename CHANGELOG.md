@@ -7,6 +7,16 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **A source-position index (`carve::position`), the substrate for PART 12 §4.**
+  §4 counts codepoints for both offsets and columns, and this engine indexes
+  `&str` by BYTE - the two agree on ASCII, so a byte-indexed position passes
+  every test that has no multi-byte character in it. The conversion happens once
+  per document and every lookup after is arithmetic on precomputed tables. A
+  span whose ends cannot be placed returns `None` rather than a guess, because
+  §4 forbids emitting a position with invented values (#333).
+
 ### Fixed
 
 - **An auto heading slug no longer collides with an explicit `{#id}`.**
