@@ -77,6 +77,7 @@ fn bullet_marker_normalization() {
             delim: None,
             bullet_char: None,
             tight: true,
+            pos: None,
             items: vec![carve::ListItem {
                 attrs: None,
                 checked: None,
@@ -85,6 +86,7 @@ fn bullet_marker_normalization() {
                     children: vec![carve::InlineNode::Text("a".to_string())],
                     ..Default::default()
                 })],
+                pos: None,
             }],
         })],
         source_len: 0,

@@ -57,6 +57,7 @@ fn maps_block_variants_to_canonical_names() {
             title: None,
             label: None,
             content: String::new(),
+            pos: None,
         })),
         Some("code_block")
     );
@@ -74,6 +75,7 @@ fn maps_block_variants_to_canonical_names() {
             title: None,
             label: None,
             children: vec![],
+            pos: None,
         })),
         Some("admonition")
     );

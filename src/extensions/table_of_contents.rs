@@ -147,6 +147,8 @@ impl CarveExtension for TableOfContents {
         let toc = BlockNode::RawBlock(RawBlock {
             format: "html".into(),
             content: html,
+            // Synthesized by an extension: no source span to report (PART 12 §4).
+            pos: None,
         });
         match self.opts.position {
             Position::Top => doc.children.insert(0, toc),

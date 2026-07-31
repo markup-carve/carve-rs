@@ -196,6 +196,7 @@ impl ProfileFilter<'_> {
                                         children: text_with_breaks(&text),
                                         ..Default::default()
                                     })],
+                                    pos: None,
                                 };
                                 i += 1;
                                 continue;
@@ -238,6 +239,7 @@ impl ProfileFilter<'_> {
                                 table.rows[r] = TableRow {
                                     cells: vec![text_cell(&text)],
                                     attrs: None,
+                                    pos: None,
                                 };
                                 r += 1;
                                 continue;

@@ -100,6 +100,8 @@ pub enum BlockNode {
 pub struct ThematicBreak {
     /// Attributes from a preceding block-attribute line (`{.x}` then `---`).
     pub attrs: Option<Attrs>,
+    /// Span in the original source, when the parser could determine it.
+    pub pos: Option<Pos>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -136,6 +138,8 @@ pub struct CodeBlock {
     pub title: Option<String>,
     pub label: Option<String>,
     pub content: String,
+    /// Span in the original source, when the parser could determine it.
+    pub pos: Option<Pos>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -154,6 +158,8 @@ pub struct List {
     pub bullet_char: Option<char>,
     pub tight: bool,
     pub items: Vec<ListItem>,
+    /// Span in the original source, when the parser could determine it.
+    pub pos: Option<Pos>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -170,6 +176,8 @@ pub struct ListItem {
     /// `None` for plain bullets; `Some(checked)` for task-list items.
     pub checked: Option<bool>,
     pub children: Vec<BlockNode>,
+    /// Span in the original source, when the parser could determine it.
+    pub pos: Option<Pos>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -177,6 +185,8 @@ pub struct BlockQuote {
     pub attrs: Option<Attrs>,
     pub children: Vec<BlockNode>,
     pub attribution: Option<Vec<InlineNode>>,
+    /// Span in the original source, when the parser could determine it.
+    pub pos: Option<Pos>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -184,6 +194,8 @@ pub struct Table {
     pub attrs: Option<Attrs>,
     pub caption: Option<Vec<InlineNode>>,
     pub rows: Vec<TableRow>,
+    /// Span in the original source, when the parser could determine it.
+    pub pos: Option<Pos>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -191,6 +203,8 @@ pub struct TableRow {
     pub cells: Vec<TableCell>,
     /// Row-level attributes from a `{...}` block glued to the closing pipe.
     pub attrs: Option<Attrs>,
+    /// Span in the original source, when the parser could determine it.
+    pub pos: Option<Pos>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -223,6 +237,8 @@ pub struct Admonition {
     pub title: Option<Vec<InlineNode>>,
     pub label: Option<String>,
     pub children: Vec<BlockNode>,
+    /// Span in the original source, when the parser could determine it.
+    pub pos: Option<Pos>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -230,6 +246,8 @@ pub struct Div {
     pub attrs: Option<Attrs>,
     pub label: Option<String>,
     pub children: Vec<BlockNode>,
+    /// Span in the original source, when the parser could determine it.
+    pub pos: Option<Pos>,
 }
 
 /// Line block (section 4.4): a `::: |` fence whose every newline is a hard break.
@@ -243,6 +261,8 @@ pub struct Div {
 pub struct LineBlock {
     pub attrs: Option<Attrs>,
     pub children: Vec<BlockNode>,
+    /// Span in the original source, when the parser could determine it.
+    pub pos: Option<Pos>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -320,6 +340,8 @@ pub struct Figure {
     pub attrs: Option<Attrs>,
     pub target: FigureTarget,
     pub caption: Vec<InlineNode>,
+    /// Span in the original source, when the parser could determine it.
+    pub pos: Option<Pos>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -341,12 +363,16 @@ pub struct AbbreviationDef {
 pub struct RawBlock {
     pub format: String,
     pub content: String,
+    /// Span in the original source, when the parser could determine it.
+    pub pos: Option<Pos>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Comment {
     pub block: bool,
     pub content: String,
+    /// Span in the original source, when the parser could determine it.
+    pub pos: Option<Pos>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

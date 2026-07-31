@@ -111,6 +111,7 @@ fn non_html_renderers_bound_programmatic_block_depth() {
             attrs: None,
             children: vec![block],
             attribution: None,
+            pos: None,
         });
     }
     let doc = carve::Document {
