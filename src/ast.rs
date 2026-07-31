@@ -43,9 +43,28 @@ pub enum AttrSlot {
     Key(String),
 }
 
+/// A frontmatter block as the author wrote it: the format token from the
+/// opening fence, and the raw text between the fences.
+///
+/// Kept alongside the parsed `frontmatter` map because the map cannot be
+/// serialized back to the source - key order, comments, anchors and any
+/// non-`key: value` structure are gone the moment it is built, and a typed
+/// (`---json`, `---toml`) block is not parsed into it at all. Spec PART 12 §2
+/// pins the raw form for exactly that reason.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Frontmatter {
+    /// The token after the opening fence, or `yaml` when the fence is bare -
+    /// matching what the reference publishes.
+    pub format: String,
+    /// The text between the fences, without a trailing newline.
+    pub content: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Document {
     pub frontmatter: BTreeMap<String, String>,
+    /// The frontmatter block as written, when the document has one.
+    pub frontmatter_raw: Option<Frontmatter>,
     pub footnote_defs: BTreeMap<String, Vec<BlockNode>>,
     pub children: Vec<BlockNode>,
     /// Byte length of the (normalized) source this document was parsed from.
