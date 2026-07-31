@@ -263,7 +263,16 @@ impl Seeder {
     fn walk_block(&mut self, block: &BlockNode) {
         match block {
             BlockNode::Heading(h) => {
-                if !self.collect_explicit_only {
+                if self.collect_explicit_only {
+                    // Pass A: a heading's own `{#id}` is an explicit id like any
+                    // other block's, and has to be RECORDED as one. It was only
+                    // reserved, in pass B - so the guard in `reserve_heading_id`
+                    // and in `render::next_heading_id`, which both ask
+                    // "has an explicit id claimed this?", could never see a
+                    // heading's. `{#API-2}` on one heading plus a later
+                    // `# API` then emitted `id="API-2"` twice (#335).
+                    self.reserve_attrs(&h.attrs);
+                } else {
                     self.reserve_heading_id(h);
                 }
                 self.walk_inlines(&h.children);

@@ -7327,9 +7327,26 @@ fn is_word_boundary(text: &str, pos: usize) -> bool {
 fn resolve_crossrefs(doc: &mut Document, lowercase_ids: bool) {
     let mut counts = BTreeMap::new();
     let mut titles = BTreeMap::new();
-    collect_heading_titles(&doc.children, &mut counts, &mut titles, lowercase_ids);
+    let mut explicit_ids = std::collections::BTreeSet::new();
+    collect_explicit_ids(&doc.children, &mut explicit_ids);
     for blocks in doc.footnote_defs.values() {
-        collect_heading_titles(blocks, &mut counts, &mut titles, lowercase_ids);
+        collect_explicit_ids(blocks, &mut explicit_ids);
+    }
+    collect_heading_titles(
+        &doc.children,
+        &mut counts,
+        &mut titles,
+        lowercase_ids,
+        &explicit_ids,
+    );
+    for blocks in doc.footnote_defs.values() {
+        collect_heading_titles(
+            blocks,
+            &mut counts,
+            &mut titles,
+            lowercase_ids,
+            &explicit_ids,
+        );
     }
     let mut caption_counts = BTreeMap::new();
     number_captioned_blocks(&mut doc.children, &mut caption_counts, &mut titles);
@@ -7354,9 +7371,26 @@ fn heading_index(
 ) -> CrossrefIndex {
     let mut counts = BTreeMap::new();
     let mut titles = BTreeMap::new();
-    collect_heading_titles(children, &mut counts, &mut titles, lowercase_ids);
+    let mut explicit_ids = std::collections::BTreeSet::new();
+    collect_explicit_ids(children, &mut explicit_ids);
     for blocks in footnote_defs.values() {
-        collect_heading_titles(blocks, &mut counts, &mut titles, lowercase_ids);
+        collect_explicit_ids(blocks, &mut explicit_ids);
+    }
+    collect_heading_titles(
+        children,
+        &mut counts,
+        &mut titles,
+        lowercase_ids,
+        &explicit_ids,
+    );
+    for blocks in footnote_defs.values() {
+        collect_heading_titles(
+            blocks,
+            &mut counts,
+            &mut titles,
+            lowercase_ids,
+            &explicit_ids,
+        );
     }
     crossref_index(titles)
 }
@@ -7873,11 +7907,51 @@ fn is_collapsed_reference(link: &Link) -> bool {
     label.is_empty()
 }
 
+/// Every explicit `{#id}` in these blocks, for the auto-slug skip below.
+///
+/// Mirrors `document_ids`'s pass A: an auto slug must not land on an id an
+/// explicit one already claims, and deciding that needs the whole document
+/// first, since the explicit id may appear after the heading that would
+/// collide with it (#335).
+fn collect_explicit_ids(blocks: &[BlockNode], out: &mut std::collections::BTreeSet<String>) {
+    for block in blocks {
+        match block {
+            BlockNode::Heading(h) => {
+                if let Some(id) = h.attrs.as_ref().and_then(|a| a.id.as_ref()) {
+                    out.insert(id.clone());
+                }
+            }
+            BlockNode::Paragraph(p) => {
+                if let Some(id) = p.attrs.as_ref().and_then(|a| a.id.as_ref()) {
+                    out.insert(id.clone());
+                }
+            }
+            BlockNode::List(l) => {
+                for item in &l.items {
+                    collect_explicit_ids(&item.children, out);
+                }
+            }
+            BlockNode::BlockQuote(b) => collect_explicit_ids(&b.children, out),
+            BlockNode::Admonition(a) => collect_explicit_ids(&a.children, out),
+            BlockNode::Div(d) => collect_explicit_ids(&d.children, out),
+            BlockNode::DefinitionList(d) => {
+                for item in &d.items {
+                    for definition in &item.definitions {
+                        collect_explicit_ids(definition, out);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
 fn collect_heading_titles(
     blocks: &[BlockNode],
     counts: &mut BTreeMap<String, usize>,
     titles: &mut BTreeMap<String, String>,
     lowercase_ids: bool,
+    explicit_ids: &std::collections::BTreeSet<String>,
 ) {
     for block in blocks {
         match block {
@@ -7888,37 +7962,63 @@ fn collect_heading_titles(
                     .as_ref()
                     .and_then(|attrs| attrs.id.clone())
                     .unwrap_or_else(|| slugify_parse(&title, lowercase_ids));
-                let count = counts.entry(base.clone()).or_insert(0);
-                *count += 1;
-                let id = if *count == 1 {
-                    base
-                } else {
-                    format!("{base}-{count}")
+                // Same numbering the renderer uses, INCLUDING the skip past an
+                // id an explicit `{#id}` already claims. Without it this index
+                // assigned `API-2` to a heading the renderer calls `API-3`, so a
+                // cross-reference resolved to the wrong heading - or, once the
+                // renderer was fixed, to none at all (#335).
+                let has_explicit = h.attrs.as_ref().is_some_and(|a| a.id.is_some());
+                let mut count = counts.get(&base).copied().unwrap_or(0);
+                let id = loop {
+                    count += 1;
+                    let candidate = if count == 1 {
+                        base.clone()
+                    } else {
+                        format!("{base}-{count}")
+                    };
+                    if has_explicit || !explicit_ids.contains(&candidate) {
+                        break candidate;
+                    }
                 };
+                counts.insert(base, count);
                 titles.insert(id, title);
             }
             BlockNode::List(l) => {
                 for item in &l.items {
-                    collect_heading_titles(&item.children, counts, titles, lowercase_ids);
+                    collect_heading_titles(
+                        &item.children,
+                        counts,
+                        titles,
+                        lowercase_ids,
+                        explicit_ids,
+                    );
                 }
             }
             BlockNode::BlockQuote(b) => {
-                collect_heading_titles(&b.children, counts, titles, lowercase_ids)
+                collect_heading_titles(&b.children, counts, titles, lowercase_ids, explicit_ids)
             }
             BlockNode::Admonition(a) => {
-                collect_heading_titles(&a.children, counts, titles, lowercase_ids)
+                collect_heading_titles(&a.children, counts, titles, lowercase_ids, explicit_ids)
             }
-            BlockNode::Div(d) => collect_heading_titles(&d.children, counts, titles, lowercase_ids),
+            BlockNode::Div(d) => {
+                collect_heading_titles(&d.children, counts, titles, lowercase_ids, explicit_ids)
+            }
             BlockNode::DefinitionList(d) => {
                 for item in &d.items {
                     for definition in &item.definitions {
-                        collect_heading_titles(definition, counts, titles, lowercase_ids);
+                        collect_heading_titles(
+                            definition,
+                            counts,
+                            titles,
+                            lowercase_ids,
+                            explicit_ids,
+                        );
                     }
                 }
             }
             BlockNode::Figure(f) => match &f.target {
                 FigureTarget::BlockQuote(b) => {
-                    collect_heading_titles(&b.children, counts, titles, lowercase_ids)
+                    collect_heading_titles(&b.children, counts, titles, lowercase_ids, explicit_ids)
                 }
                 FigureTarget::Table(_)
                 | FigureTarget::Image(_)
