@@ -17,14 +17,14 @@ fn positions(src: &str) -> Vec<(&'static str, Option<Pos>)> {
         .children
         .iter()
         .map(|b| match b {
-            BlockNode::Heading(n) => ("heading", n.pos.clone()),
-            BlockNode::Paragraph(n) => ("paragraph", n.pos.clone()),
-            BlockNode::ThematicBreak(n) => ("thematic_break", n.pos.clone()),
-            BlockNode::CodeBlock(n) => ("code_block", n.pos.clone()),
-            BlockNode::RawBlock(n) => ("raw_block", n.pos.clone()),
-            BlockNode::Comment(n) => ("comment", n.pos.clone()),
-            BlockNode::Div(n) => ("div", n.pos.clone()),
-            BlockNode::Admonition(n) => ("admonition", n.pos.clone()),
+            BlockNode::Heading(n) => ("heading", n.pos),
+            BlockNode::Paragraph(n) => ("paragraph", n.pos),
+            BlockNode::ThematicBreak(n) => ("thematic_break", n.pos),
+            BlockNode::CodeBlock(n) => ("code_block", n.pos),
+            BlockNode::RawBlock(n) => ("raw_block", n.pos),
+            BlockNode::Comment(n) => ("comment", n.pos),
+            BlockNode::Div(n) => ("div", n.pos),
+            BlockNode::Admonition(n) => ("admonition", n.pos),
             _ => ("other", None),
         })
         .collect()
@@ -55,9 +55,7 @@ fn every_span_slices_back_to_its_own_block() {
             .iter()
             .find(|(n, _)| *n == name)
             .unwrap_or_else(|| panic!("no {name} in the tree"));
-        let pos = pos
-            .clone()
-            .unwrap_or_else(|| panic!("{name} has no position"));
+        let pos = pos.unwrap_or_else(|| panic!("{name} has no position"));
         assert_eq!(slice(src, &pos), want, "{name} span points elsewhere");
     }
 }
@@ -80,7 +78,7 @@ fn a_raw_block_reports_its_span() {
         .iter()
         .find(|(n, _)| *n == "raw_block")
         .expect("raw block");
-    assert_eq!(slice(src, &pos.clone().unwrap()), "```=html\n<b>x</b>\n```");
+    assert_eq!(slice(src, &pos.unwrap()), "```=html\n<b>x</b>\n```");
 }
 
 #[test]
@@ -93,7 +91,7 @@ fn offsets_count_codepoints_not_bytes() {
         .iter()
         .find(|(n, _)| *n == "thematic_break")
         .expect("thematic break");
-    assert_eq!(slice(src, &pos.clone().unwrap()), "---");
+    assert_eq!(slice(src, &pos.unwrap()), "---");
 }
 
 #[test]

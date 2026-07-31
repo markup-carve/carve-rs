@@ -1308,6 +1308,7 @@ fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<BlockNode>
                     attrs: None,
                     target: FigureTarget::CodeBlock(cb),
                     caption,
+                    pos: None,
                 }));
             }
             return Some(BlockNode::CodeBlock(cb));
@@ -1457,6 +1458,7 @@ fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<BlockNode>
                     attrs: None,
                     target: FigureTarget::Image(img),
                     caption,
+                    pos: None,
                 }));
             }
             return Some(BlockNode::BlockImage(img));
@@ -1509,6 +1511,7 @@ fn parse_equation_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<B
             attrs: None,
             target,
             caption,
+            pos: None,
         }));
     }
     match target {
@@ -1976,6 +1979,7 @@ fn slice_columns(line: &str, cols: usize, keep_residual: bool) -> String {
 }
 
 fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
+    let span_start = cur.pos;
     let mut inner = LineBuffer::default();
     let mut para_open = false;
     let mut in_fence: Option<FenceOpen> = None;
@@ -2120,6 +2124,7 @@ fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     let inner = inner.into_source();
     let children = parse_mapped_source(&inner, options);
     let quote = BlockQuote {
+        pos: span_of(cur, span_start, cur.pos, options),
         attrs: None,
         children,
         attribution: None,
@@ -2129,6 +2134,7 @@ fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             attrs: None,
             target: FigureTarget::BlockQuote(quote),
             caption,
+            pos: None,
         })
     } else {
         BlockNode::BlockQuote(quote)
@@ -2553,6 +2559,7 @@ fn parse_continuation_block(
 }
 
 fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
+    let span_start = cur.pos;
     let first = cur.peek().unwrap();
     let first_marker = detect_list_marker_full(first).unwrap();
     let base_indent = first_marker.indent;
@@ -2790,6 +2797,8 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 attrs: item_attrs,
                 checked: marker.checked,
                 children: Vec::new(),
+
+                pos: None,
             };
             if let Some(block) = parse_continuation_block(cur, options, base_indent) {
                 item.children.push(block);
@@ -2819,6 +2828,8 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 attrs: item_attrs,
                 checked: marker.checked,
                 children,
+
+                pos: None,
             });
             continue;
         }
@@ -2863,6 +2874,8 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 attrs: item_attrs,
                 checked: marker.checked,
                 children,
+
+                pos: None,
             });
             continue;
         }
@@ -2905,6 +2918,8 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 attrs: item_attrs,
                 checked: marker.checked,
                 children,
+
+                pos: None,
             });
             // A single-line marker-line block (heading, thematic break) leaves
             // no indented continuation, so collect_indented_block_mapped above
@@ -3021,9 +3036,12 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             attrs: item_attrs,
             checked: marker.checked,
             children: vec![paragraph],
+
+            pos: None,
         });
     }
     BlockNode::List(List {
+        pos: span_of(cur, span_start, cur.pos, options),
         attrs: None,
         ordered: is_ordered,
         start,
@@ -4171,6 +4189,7 @@ fn split_row_attrs(content: &str) -> (Option<Attrs>, &str) {
 }
 
 fn parse_table(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
+    let span_start = cur.pos;
     let mut rows = Vec::new();
     // GFM-style header separator: a delimiter row directly after the first row
     // turns that row into a header and sets per-column alignment. The colons land
@@ -4218,6 +4237,7 @@ fn parse_table(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         rows.push(row);
     }
     let table = Table {
+        pos: span_of(cur, span_start, cur.pos, options),
         attrs: None,
         caption: consume_caption(cur, options),
         rows,
@@ -4339,7 +4359,14 @@ fn parse_table_row(line: &str, options: &Options<'_>) -> TableRow {
         .into_iter()
         .map(|cell| parse_table_cell(&cell, options))
         .collect();
-    TableRow { cells, attrs }
+    // No cursor here: `parse_table_row` is handed one already-split line, so it
+    // cannot know where that line sits in the document. PART 12 §4 - refuse
+    // rather than invent (carve-rs#333).
+    TableRow {
+        cells,
+        attrs,
+        pos: None,
+    }
 }
 
 fn split_table_cells(content: &str) -> Vec<String> {
@@ -4680,6 +4707,7 @@ fn expand_line_block_leading_ws(line: &str) -> String {
 /// (blank-line-separated run) is a paragraph whose soft breaks become hard
 /// breaks and whose per-line leading whitespace is preserved (grammar §23).
 fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
+    let span_start = cur.pos;
     let opener = cur.peek().unwrap();
     let fence_len = detect_line_block_open(opener).unwrap();
     // Verse indentation is measured RELATIVE TO THE FENCE (grammar §23
@@ -4750,6 +4778,7 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     // No inline opener attributes (strict djot); a preceding block-attribute
     // line merges onto this node in parse_blocks.
     BlockNode::LineBlock(LineBlock {
+        pos: span_of(cur, span_start, cur.pos, options),
         attrs: None,
         children,
     })
@@ -8180,6 +8209,7 @@ fn promote_block_images(blocks: &mut [BlockNode], figures_only: bool) {
                 attrs,
                 target: FigureTarget::Image(img),
                 caption: children,
+                pos: None,
             });
             continue;
         }
