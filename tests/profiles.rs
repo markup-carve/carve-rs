@@ -230,6 +230,75 @@ fn records_violations_without_error_for_to_text() {
 }
 
 #[test]
+fn to_text_degrades_a_node_whose_extractor_comes_back_empty_instead_of_deleting_it() {
+    // `CaptionNumber` extracts to "" (its `number` field is not text, so
+    // `extract_inline_text` has nothing to say). That is a missing extractor
+    // arm, not "no content" - `to_text` must not delete the node, it must
+    // record a `to_text_yielded_nothing` violation and substitute the literal
+    // marker `[caption_number]`.
+    let doc = carve::Document {
+        frontmatter: Default::default(),
+        frontmatter_raw: None,
+        footnote_defs: Default::default(),
+        children: vec![carve::BlockNode::Paragraph(carve::Paragraph {
+            attrs: None,
+            children: vec![
+                carve::InlineNode::Text("see ".to_string()),
+                carve::InlineNode::CaptionNumber(carve::CaptionNumber { number: None }),
+            ],
+            ..Default::default()
+        })],
+        source_len: 0,
+    };
+    let p = Profile::default().deny_inline(&["caption_number"]);
+    let result = apply_profile(doc, &p, None).unwrap();
+
+    assert!(
+        result
+            .violations
+            .iter()
+            .any(|v| v.node_type == "caption_number" && v.reason == "to_text_yielded_nothing"),
+        "{:?}",
+        result.violations
+    );
+    assert_eq!(result.doc.children.len(), 1, "the paragraph must survive");
+    match &result.doc.children[0] {
+        carve::BlockNode::Paragraph(para) => {
+            let text: String = para
+                .children
+                .iter()
+                .map(|n| match n {
+                    carve::InlineNode::Text(t) => t.clone(),
+                    _ => String::new(),
+                })
+                .collect();
+            assert_eq!(text, "see [caption_number]");
+        }
+        other => panic!("expected a surviving paragraph, got {other:?}"),
+    }
+}
+
+#[test]
+fn to_text_still_drops_a_comment_it_cannot_degrade() {
+    // A comment is the one node that genuinely renders nothing: dropping it
+    // loses no visible content, so it stays a deletion, not a marker.
+    let p = Profile::default().deny_block(&["comment"]);
+    let out = html("text\n\n%% a note\n\nmore", p.clone());
+    assert!(!out.contains("[comment]"), "{out}");
+    assert!(!out.contains("note"), "{out}");
+
+    let result = apply_profile(carve::parse("%% a note"), &p, None).unwrap();
+    assert!(
+        !result
+            .violations
+            .iter()
+            .any(|v| v.reason == "to_text_yielded_nothing"),
+        "{:?}",
+        result.violations
+    );
+}
+
+#[test]
 fn filters_a_denied_figure_target_node() {
     let p = Profile::default()
         .allow_block(Some(&["paragraph", "figure"]))
