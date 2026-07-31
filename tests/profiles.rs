@@ -77,13 +77,15 @@ fn maps_block_variants_to_canonical_names() {
         })),
         Some("admonition")
     );
-    // No canonical mapping -> denied by default.
+    // Outside profiles.md's vocabulary, so a profile cannot name it - but it
+    // reports its own name rather than None, and resolves on its axis like any
+    // unmapped type instead of being denied outright.
     assert_eq!(
         canonical_block_type(&BlockNode::AbbreviationDef(AbbreviationDef {
             abbr: "HTML".into(),
             expansion: "x".into(),
         })),
-        None
+        Some("abbreviation_def")
     );
 }
 
@@ -151,17 +153,18 @@ fn maps_inline_variants_to_canonical_names() {
         })),
         Some("delete")
     );
-    // No canonical mapping.
+    // These are in profiles.md's inline vocabulary. They used to map to None,
+    // which the resolver read as "deny", so `full()` deleted them (carve#419).
     assert_eq!(
         canonical_inline_type(&InlineNode::Symbol(Symbol {
             name: "x".into(),
             attrs: None,
         })),
-        None
+        Some("symbol")
     );
     assert_eq!(
         canonical_inline_type(&InlineNode::CrossRef(CrossRef { target: "x".into() })),
-        None
+        Some("heading_ref")
     );
 }
 

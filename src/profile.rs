@@ -82,6 +82,13 @@ pub const CANONICAL_INLINE_TYPES: &[&str] = &[
     "symbol",
     "math",
     "abbreviation",
+    // Listed in profiles.md's inline vocabulary and missing here, so a profile
+    // could not name them and the resolver denied the nodes outright.
+    "heading_ref",
+    "citation_group",
+    "caption_number",
+    "substitution",
+    "critic_comment",
 ];
 
 /// Map a [`BlockNode`] to its canonical snake_case name.
@@ -129,7 +136,10 @@ pub fn canonical_block_type(node: &BlockNode) -> Option<&'static str> {
         // A block extension is gated under the inline-extension feature, the
         // same name carve-js / carve-php use for both extension axes.
         BlockNode::Extension(_) => Some("inline_extension"),
-        BlockNode::AbbreviationDef(_) => None,
+        // Not in profiles.md's vocabulary (a definition renders nothing, so
+        // denying it would express nothing), but naming it truthfully beats
+        // reporting "unknown": it resolves on its axis like any unmapped type.
+        BlockNode::AbbreviationDef(_) => Some("abbreviation_def"),
     }
 }
 
@@ -171,9 +181,10 @@ pub fn canonical_inline_type(node: &InlineNode) -> Option<&'static str> {
         // carve-php / carve-js treat `#tag` under the mention feature.
         InlineNode::Tag(_) => Some("mention"),
         InlineNode::Extension(_) => Some("inline_extension"),
-        // Citations are delivered as a Tier-2 extension, so they gate under the
-        // inline-extension feature (allowed only where extensions are allowed).
-        InlineNode::CitationGroup(_) => Some("inline_extension"),
+        // `citation_group` is its own entry in profiles.md's vocabulary, so a
+        // profile names it directly rather than reaching it through
+        // `inline_extension`.
+        InlineNode::CitationGroup(_) => Some("citation_group"),
         InlineNode::Abbreviation(_) => Some("abbreviation"),
         // `^[...]` (inline) carries `inline`; `[^id]` is a reference. Both are
         // denied under the footnote family by the presets, but we distinguish
@@ -187,12 +198,15 @@ pub fn canonical_inline_type(node: &InlineNode) -> Option<&'static str> {
         InlineNode::HardBreak => Some("hard_break"),
         InlineNode::CriticInsert(_) => Some("insert"),
         InlineNode::CriticDelete(_) => Some("delete"),
-        // No canonical mapping -> denied by default.
-        InlineNode::Symbol(_)
-        | InlineNode::CrossRef(_)
-        | InlineNode::CaptionNumber(_)
-        | InlineNode::CriticSubstitute(_)
-        | InlineNode::CriticComment(_) => None,
+        // Each of these is in profiles.md's inline vocabulary. Returning None
+        // meant the resolver denied them, so `full()` - a profile that denies
+        // nothing - deleted a symbol, a cross-reference and a caption number
+        // from the output entirely (carve#419).
+        InlineNode::Symbol(_) => Some("symbol"),
+        InlineNode::CrossRef(_) => Some("heading_ref"),
+        InlineNode::CaptionNumber(_) => Some("caption_number"),
+        InlineNode::CriticSubstitute(_) => Some("substitution"),
+        InlineNode::CriticComment(_) => Some("critic_comment"),
     }
 }
 
@@ -861,17 +875,41 @@ impl Profile {
 
     /// Whether a canonical type string is allowed by this profile.
     pub fn is_type_allowed(&self, canonical: &str) -> bool {
+        self.resolve(canonical, None)
+    }
+
+    /// Resolve a type on a KNOWN axis.
+    ///
+    /// The axis is what makes a type outside the vocabulary resolvable at all:
+    /// block-vs-inline cannot be read off a name the vocabulary does not know,
+    /// and it is unambiguous at the node.
+    pub fn is_type_allowed_on(&self, canonical: &str, is_block: bool) -> bool {
+        self.resolve(canonical, Some(is_block))
+    }
+
+    /// profiles.md "Resolution": deny wins, then an allow list is a closed set,
+    /// otherwise allowed. Those three steps are EXHAUSTIVE - an implementation
+    /// must not add a fourth denying unrecognized types, which is what this did.
+    /// A construct whose type the vocabulary does not list rendered as nothing
+    /// under any profile, including one that denies nothing (carve#419).
+    fn resolve(&self, canonical: &str, is_block: Option<bool>) -> bool {
+        if canonical == "document" {
+            return true;
+        }
         if CANONICAL_INLINE_TYPES.contains(&canonical) {
             return self.is_inline_allowed(canonical);
         }
         if CANONICAL_BLOCK_TYPES.contains(&canonical) {
             return self.is_block_allowed(canonical);
         }
-        if canonical == "document" {
-            return true;
+        match is_block {
+            Some(true) => self.is_block_allowed(canonical),
+            Some(false) => self.is_inline_allowed(canonical),
+            // No axis to hand: step 2 would exclude the type on whichever axis
+            // it belongs to, so an allow list on either means denied. Fails
+            // CLOSED, because the caller cannot say which axis it meant.
+            None => self.allowed_inline.is_none() && self.allowed_block.is_none(),
         }
-        // Unknown types are denied by default.
-        false
     }
 
     fn is_inline_allowed(&self, ty: &str) -> bool {
