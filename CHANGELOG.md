@@ -9,6 +9,28 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **The Markdown target emits the heading id a cross-reference needs.** It
+  re-derived every heading's id by slugging the heading text, so it never knew
+  about the `-N` suffix the core adds to a duplicate heading. A reference to
+  `Setup-2` then matched no heading, which cost it BOTH halves at once: the
+  heading lost its `{#id}` suffix, and `render_link` degraded the reference to
+  bare text because it drops a fragment link whose target it does not know. Ids
+  now carry the same disambiguation the core uses (carve#352).
+
+- **A cross-reference no longer feeds the heading slug it sits in.** By the time
+  the Markdown target runs, resolution has turned `</#a>` into a link carrying
+  the target heading's text, so `# A </#a>` slugged as `A-A` and every id
+  derived there disagreed with the one the core assigned before resolution. The
+  core's own `plain_inlines` already skips a resolved cross-reference; this
+  copy did not (carve#352).
+
+- **A continuation line that reads as a list marker is aligned and escaped,
+  not under-indented.** The canonical writer special-cased such a line to a
+  fixed two-space indent instead of the marker-width indent every other
+  continuation gets, which happened to work only while the marker was wider
+  than two columns. Aligning it lets the existing escaping do its job, and
+  matches carve-js and carve-php (carve#352).
+
 - **Removed a dead negative cache in the comment-closer lookahead.** The
   lookahead already answers from a width to last-index map, so the per-width
   "no closer from here onward" cache in front of it could never change an

@@ -1,6 +1,7 @@
 use crate::ast::*;
 use crate::extension::Options;
 use crate::render_text::strip_controls as strip_control_chars;
+use std::collections::HashMap;
 use std::collections::HashSet;
 
 const MAX_RENDER_DEPTH: usize = 100;
@@ -50,9 +51,29 @@ fn render_markdown_inner(
     // headings and crossref links must be part of the heading-id / referenced-id
     // prepass; otherwise a heading referenced only from a footnote loses the
     // `{#id}` suffix needed to keep the link valid on reparse.
+    // Ids are assigned with the SAME duplicate disambiguation the core uses, not
+    // re-slugged per heading. Two headings reading `Setup` are `Setup` and
+    // `Setup-2`; deriving the slug alone gave both `Setup`, so a reference to
+    // `Setup-2` matched no heading - it lost its `{#id}` suffix here AND was
+    // degraded to bare text by `render_link`, which drops a fragment link whose
+    // target it does not know about (carve#352).
+    let mut explicit_ids = HashSet::new();
+    let mut explicit_pass = |block: &BlockNode, _: Option<&[InlineNode]>| {
+        if let BlockNode::Heading(heading) = block {
+            if let Some(id) = heading.attrs.as_ref().and_then(|attrs| attrs.id.as_ref()) {
+                explicit_ids.insert(id.clone());
+            }
+        }
+    };
+    walk_blocks(&doc.children, 0, &mut explicit_pass);
+    for body in doc.footnote_defs.values() {
+        walk_blocks(body, 0, &mut explicit_pass);
+    }
+
+    let mut id_counts: HashMap<String, usize> = HashMap::new();
     let mut heading_pass = |block: &BlockNode, _: Option<&[InlineNode]>| {
         if let BlockNode::Heading(heading) = block {
-            heading_ids.insert(heading_id(heading));
+            heading_ids.insert(next_heading_id(heading, &mut id_counts, &explicit_ids));
         }
     };
     walk_blocks(&doc.children, 0, &mut heading_pass);
@@ -80,6 +101,10 @@ fn render_markdown_inner(
     let mut ctx = MarkdownContext {
         heading_ids,
         referenced_heading_ids,
+        explicit_ids,
+        // Rewound, because rendering walks the same headings in the same order
+        // and has to reproduce the same sequence of ids.
+        id_counts: HashMap::new(),
         list_depth: 0,
         defined_footnotes: doc.footnote_defs.keys().cloned().collect(),
     };
@@ -91,6 +116,8 @@ fn render_markdown_inner(
 struct MarkdownContext {
     heading_ids: HashSet<String>,
     referenced_heading_ids: HashSet<String>,
+    explicit_ids: HashSet<String>,
+    id_counts: HashMap<String, usize>,
     list_depth: usize,
     /// Labels that actually have a definition. A reference without one did not
     /// form a footnote, so it is not a footnote marker. The HTML renderer decides
@@ -125,9 +152,9 @@ fn render_block(node: &BlockNode, ctx: &mut MarkdownContext, depth: usize) -> St
     }
     match node {
         BlockNode::Heading(heading) => {
+            let id = next_heading_id(heading, &mut ctx.id_counts, &ctx.explicit_ids);
             let text = flatten_heading_text(&render_block_inlines(&heading.children, ctx));
             let mut suffix = String::new();
-            let id = heading_id(heading);
             if ctx.referenced_heading_ids.contains(&id) {
                 suffix = format!(" {{#{id}}}");
             }
@@ -944,13 +971,35 @@ fn flatten_heading_text(text: &str) -> String {
         .join(" ")
 }
 
-fn heading_id(heading: &Heading) -> String {
-    if let Some(attrs) = &heading.attrs {
-        if let Some(id) = &attrs.id {
-            return id.clone();
+/// The id this heading gets, with duplicate disambiguation.
+///
+/// Mirrors `render::next_heading_id`: an explicit `{#id}` wins verbatim, an auto
+/// slug takes a `-N` suffix on repeat, and an auto slug never lands on an id an
+/// explicit one already claims. Called once per heading per pass, in document
+/// order, so the prepass and the render agree on every id.
+fn next_heading_id(
+    heading: &Heading,
+    counts: &mut HashMap<String, usize>,
+    explicit_ids: &HashSet<String>,
+) -> String {
+    let explicit = heading.attrs.as_ref().and_then(|attrs| attrs.id.clone());
+    let has_explicit = explicit.is_some();
+    let base = explicit.unwrap_or_else(|| slugify(&plain_inlines(&heading.children)));
+
+    let mut count = counts.get(&base).copied().unwrap_or(0);
+    let id = loop {
+        count += 1;
+        let candidate = if count == 1 {
+            base.clone()
+        } else {
+            format!("{base}-{count}")
+        };
+        if has_explicit || !explicit_ids.contains(&candidate) {
+            break candidate;
         }
-    }
-    slugify(&plain_inlines(&heading.children))
+    };
+    counts.insert(base, count);
+    id
 }
 
 // Markdown-specific flattening. Node coverage is kept in lockstep with the
@@ -971,6 +1020,12 @@ fn plain_inlines(nodes: &[InlineNode]) -> String {
             // An inline literal renders as visible prose (§27), so it feeds a
             // Markdown heading slug like a code span does.
             InlineNode::LiteralInline(lit) => out.push_str(&lit.content),
+            // A cross-reference contributes NOTHING to the slug, exactly as in
+            // `render::plain_inlines`. By this point resolution has turned it
+            // into a Link carrying the target heading's text, so counting it
+            // would slug `# A </#a>` as `A-A` and every id derived here would
+            // disagree with the one the core assigned before resolution.
+            InlineNode::Link(link) if link.from_crossref => {}
             InlineNode::Link(link) => out.push_str(&plain_inlines(&link.children)),
             InlineNode::Image(image) => out.push_str(&image.alt),
             InlineNode::Extension(extension) => out.push_str(&plain_inlines(&extension.children)),
