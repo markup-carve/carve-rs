@@ -473,7 +473,7 @@ impl ProfileFilter<'_> {
         self.record(canonical, reason)?;
         match self.profile.disallowed_action() {
             DisallowedAction::Strip => Ok(None),
-            DisallowedAction::ToText => Ok(block_to_text(node)),
+            DisallowedAction::ToText => self.block_to_text(node, canonical),
             // Error already short-circuited inside `record`.
             DisallowedAction::Error => unreachable!(),
         }
@@ -488,7 +488,7 @@ impl ProfileFilter<'_> {
         self.record(canonical, reason)?;
         match self.profile.disallowed_action() {
             DisallowedAction::Strip => Ok(None),
-            DisallowedAction::ToText => Ok(inline_to_text(node)),
+            DisallowedAction::ToText => self.inline_to_text(node, canonical),
             DisallowedAction::Error => unreachable!(),
         }
     }
@@ -501,7 +501,7 @@ impl ProfileFilter<'_> {
         self.record(canonical, "link_not_allowed")?;
         match self.profile.disallowed_action() {
             DisallowedAction::Strip => Ok(None),
-            DisallowedAction::ToText => Ok(inline_to_text(node)),
+            DisallowedAction::ToText => self.inline_to_text(node, canonical),
             DisallowedAction::Error => unreachable!(),
         }
     }
@@ -534,6 +534,52 @@ impl ProfileFilter<'_> {
             DisallowedAction::ToText => Ok(Some(InlineNode::Text(image_text(img)))),
             DisallowedAction::Error => unreachable!(),
         }
+    }
+
+    /// Convert a disallowed block node to its text replacement. Returns
+    /// `Ok(None)` only for a node that provably renders nothing (a comment);
+    /// any other node is degraded to text, never deleted. When the node's
+    /// payload sits outside `extract_block_text`'s reach and the extraction
+    /// comes back empty, that is a missing extractor arm, not "no content" -
+    /// record a `to_text_yielded_nothing` violation and substitute the
+    /// literal marker `[<canonical>]` rather than silently dropping the node.
+    fn block_to_text(
+        &mut self,
+        node: &BlockNode,
+        canonical: &str,
+    ) -> Result<Option<BlockNode>, ProfileViolationError> {
+        // A comment is never visible content; drop it.
+        if matches!(node, BlockNode::Comment(_)) {
+            return Ok(None);
+        }
+        let mut text = extract_block_text(node);
+        if text.is_empty() {
+            self.record(canonical, "to_text_yielded_nothing")?;
+            text = format!("[{canonical}]");
+        }
+        Ok(Some(BlockNode::Paragraph(Paragraph {
+            attrs: None,
+            children: text_with_breaks(&text),
+            ..Default::default()
+        })))
+    }
+
+    /// Convert a disallowed inline node to its text replacement. No inline
+    /// node renders nothing by definition (unlike `Comment`/`Frontmatter` on
+    /// the block side), so this never deletes a node: an extractor that
+    /// comes back empty gets the `[<canonical>]` marker, same as
+    /// `block_to_text`.
+    fn inline_to_text(
+        &mut self,
+        node: &InlineNode,
+        canonical: &str,
+    ) -> Result<Option<InlineNode>, ProfileViolationError> {
+        let mut text = extract_inline_text(node);
+        if text.is_empty() {
+            self.record(canonical, "to_text_yielded_nothing")?;
+            text = format!("[{canonical}]");
+        }
+        Ok(Some(InlineNode::Text(text)))
     }
 
     /// Record a violation; for the Error action, short-circuit with the error.
@@ -598,33 +644,11 @@ fn apply_rel_attributes(node: &mut InlineNode, policy: &LinkPolicy) {
 }
 
 // ---- to_text conversion ----
-
-/// Convert a disallowed block node to its text replacement. Returns the
-/// replacement block (a wrapping paragraph) or `None` when there is no text.
-fn block_to_text(node: &BlockNode) -> Option<BlockNode> {
-    // A comment is never visible content; drop it.
-    if matches!(node, BlockNode::Comment(_)) {
-        return None;
-    }
-    let text = extract_block_text(node);
-    if text.is_empty() {
-        return None;
-    }
-    Some(BlockNode::Paragraph(Paragraph {
-        attrs: None,
-        children: text_with_breaks(&text),
-        ..Default::default()
-    }))
-}
-
-/// Convert a disallowed inline node to its text replacement.
-fn inline_to_text(node: &InlineNode) -> Option<InlineNode> {
-    let text = extract_inline_text(node);
-    if text.is_empty() {
-        return None;
-    }
-    Some(InlineNode::Text(text))
-}
+//
+// See `ProfileFilter::block_to_text` / `ProfileFilter::inline_to_text` above;
+// they need `&mut self` to record the `to_text_yielded_nothing` violation
+// when an extractor comes back empty for a node that does not provably
+// render nothing.
 
 /// Build inline nodes from content, converting `\n` to hard breaks.
 fn text_with_breaks(content: &str) -> Vec<InlineNode> {
