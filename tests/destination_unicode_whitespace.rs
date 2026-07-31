@@ -57,3 +57,33 @@ fn a_zero_width_character_is_not_whitespace() {
         assert!(out.contains(zw), "{zw:?} was stripped: {out}");
     }
 }
+
+#[test]
+fn a_parenthesised_destination_gets_the_same_rule() {
+    // The balanced-parens scan is a SEPARATE path from the plain one, and it
+    // did not carry this check - so the rule depended on whether the URL
+    // happened to contain a parenthesis. A benign URL with one linked, keeping
+    // the invisible character in its href (carve#407).
+    for space in [NNBSP, THIN, IDEOGRAPHIC, "\u{00A0}"] {
+        let out = carve::to_html(&format!("[x]({space}https://e.com/a(b))\n"));
+        assert!(!out.contains("<a"), "{space:?} formed a link: {out}");
+    }
+}
+
+#[test]
+fn a_parenthesised_destination_still_forms_without_whitespace() {
+    // The guard must not reject the ordinary case the balanced path exists for.
+    let out = carve::to_html("[x](https://e.com/a(b))\n");
+    assert!(out.contains(r#"href="https://e.com/a(b)""#), "{out}");
+}
+
+#[test]
+fn a_dangerous_scheme_behind_whitespace_forms_no_link() {
+    // This looked like a scheme-specific divergence - carve-rs emitting a
+    // blanked anchor where carve-js and carve-php emitted literal text. It was
+    // the parenthesis hole above: `javascript:alert(1)` is parenthesised, so it
+    // reached the unchecked path (carve#407).
+    let out = carve::to_html("[x](\u{00A0}javascript:alert(1))\n");
+    assert!(!out.contains("<a"), "{out}");
+    assert!(!out.contains("href"), "{out}");
+}

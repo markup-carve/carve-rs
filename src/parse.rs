@@ -6936,7 +6936,23 @@ fn scan_balanced_destination(bytes: &[u8], start: usize) -> Option<(String, usiz
         href_bytes.push(b);
         i += 1;
     }
-    Some((String::from_utf8(href_bytes).ok()?, i))
+    let href = String::from_utf8(href_bytes).ok()?;
+    // The byte loop above breaks on ASCII whitespace only. `unicode_url_char`
+    // is "any non-whitespace, non-ASCII Unicode character" with no qualifier,
+    // so a destination carrying a narrow no-break space is not a destination -
+    // exactly as on the plain path.
+    //
+    // The plain path got this check and this one did not, which made the rule
+    // depend on whether the URL happened to contain a PARENTHESIS: only a
+    // destination with one reached here. `[x](<NBSP>https://e.com)` was
+    // rejected while `[x](<NBSP>https://e.com/a(b))` linked with the invisible
+    // character in the href, and `javascript:alert(1)` - parenthesised - slipped
+    // through too, which is what made this look like a scheme-specific
+    // divergence rather than a hole (carve#404, carve#407).
+    if href.chars().any(char::is_whitespace) {
+        return None;
+    }
+    Some((href, i))
 }
 
 fn read_link_target(

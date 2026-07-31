@@ -9,6 +9,15 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A parenthesised destination gets the Unicode-whitespace rule too.** The
+  balanced-parens scan is a separate path from the plain one and did not carry
+  the check added for carve#404, so the rule depended on whether the URL
+  happened to contain a parenthesis: `[x](<NBSP>https://e.com)` was rejected
+  while `[x](<NBSP>https://e.com/a(b))` linked with the invisible character in
+  its href. This is also what made carve-rs look like it treated dangerous
+  schemes specially - `javascript:alert(1)` is parenthesised, so it reached the
+  unchecked path (carve#407).
+
 - **A link label's closing `]` is found past an editorial comment.** The scan
   already skipped code spans, because a `]` inside one is content. An editorial
   comment holds literal content too and was not skipped, so `[{#a]b#}](u)`
