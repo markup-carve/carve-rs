@@ -3,6 +3,7 @@
 //! Block-level reads line by line; inline does a single linear scan
 //! over each block's text. No backtracking.
 
+use crate::ast::Pos;
 use crate::ast::*;
 use crate::extension::{BlockMatch, InlineMatch, MatcherContext, Options};
 use std::cell::Cell;
@@ -131,7 +132,12 @@ fn parse_with_options_mode(source: &str, options: &Options<'_>, mode: ParseMode)
         .into_iter()
         .map(|(label, source)| (label, parse_mapped_source(&source, options)))
         .collect();
-    let children = parse_mapped_source(&body, options);
+    let mut children = parse_mapped_source(&body, options);
+    if options.positions {
+        // Offsets need the original text, which the parser only ever sees as
+        // already-stripped lines, so they are derived here in one pass.
+        fill_offsets(&mut children, &line_start_offsets(source));
+    }
     let mut doc = Document {
         frontmatter,
         footnote_defs,
@@ -189,10 +195,14 @@ fn remap_source(source: String, original: &MappedSource) -> MappedSource {
         return MappedSource {
             source,
             line_map: original.line_map[..source_line_count].to_vec(),
+            col_map: original.col_map[..source_line_count.min(original.col_map.len())].to_vec(),
         };
     }
     MappedSource {
         line_map: (1..=source_line_count).map(Some).collect(),
+        // Top-level source: nothing has been stripped, so every column in this
+        // text is a column in the document.
+        col_map: vec![Some(0); source_line_count],
         source,
     }
 }
@@ -313,6 +323,7 @@ fn extract_footnote_defs(
             // First definition for a label wins (later duplicates are ignored).
             defs.entry(label.to_string())
                 .or_insert_with(|| MappedSource {
+                    col_map: vec![None; def_lines.len()],
                     source: def_lines.join("\n"),
                     line_map: def_line_map,
                 });
@@ -331,6 +342,10 @@ fn extract_footnote_defs(
     }
     (
         MappedSource {
+            // The document body's lines are top-level: the footnote-definition
+            // extraction removes whole lines, never a prefix, so nothing has
+            // been stripped from the front of the ones that remain.
+            col_map: vec![Some(0); body.len()],
             source: body.join("\n"),
             line_map: body_line_map,
         },
@@ -708,18 +723,37 @@ pub(crate) fn parse_blocks_with_options(source: &str, options: &Options<'_>) -> 
     // `lines()` already drops a single trailing newline; nothing more to do.
     let _ = &mut lines;
 
-    let line_map: Vec<Option<usize>> = if options.source_lines {
+    // The line map serves two features now: the source-line render option, and
+    // PART 12 positions. Either one asking for it is enough.
+    let want_lines = options.source_lines || options.positions;
+    let line_map: Vec<Option<usize>> = if want_lines {
         (1..=lines.len()).map(Some).collect()
     } else {
         Vec::new()
     };
-    let mut cursor = LineCursor::new(&lines, options.source_lines.then_some(&line_map));
+    // Nothing has been stripped from a top-level line, so every column here is
+    // a column in the document.
+    let col_map: Vec<Option<usize>> = if options.positions {
+        vec![Some(0); lines.len()]
+    } else {
+        Vec::new()
+    };
+    let mut cursor = LineCursor::new_with_cols(
+        &lines,
+        want_lines.then_some(line_map.as_slice()),
+        options.positions.then_some(col_map.as_slice()),
+    );
     parse_blocks(&mut cursor, options)
 }
 
 struct LineCursor<'a> {
     lines: &'a [&'a str],
     line_map: Option<&'a [Option<usize>]>,
+    /// Columns already stripped from the front of each line by an enclosing
+    /// container, so a nested strip accumulates rather than resetting. `None`
+    /// for a line whose stripped width is not known - a block starting there
+    /// gets no position rather than a wrong one.
+    col_map: Option<&'a [Option<usize>]>,
     pos: usize,
     /// Lazily built suffix-maximum of each line's colon-closer length: entry `i`
     /// holds the largest all-colon line length at any index `>= i` (0 if none).
@@ -737,9 +771,18 @@ struct LineCursor<'a> {
 
 impl<'a> LineCursor<'a> {
     fn new(lines: &'a [&'a str], line_map: Option<&'a [Option<usize>]>) -> Self {
+        Self::new_with_cols(lines, line_map, None)
+    }
+
+    fn new_with_cols(
+        lines: &'a [&'a str],
+        line_map: Option<&'a [Option<usize>]>,
+        col_map: Option<&'a [Option<usize>]>,
+    ) -> Self {
         LineCursor {
             lines,
             line_map,
+            col_map,
             pos: 0,
             colon_closer_suffix_max: None,
             comment_closer_last_index: None,
@@ -762,6 +805,11 @@ impl<'a> LineCursor<'a> {
     fn source_line(&self, pos: usize) -> Option<usize> {
         self.line_map
             .and_then(|map| map.get(pos).copied().flatten())
+    }
+
+    /// Columns stripped from the front of the line at `pos`, when known.
+    fn source_col(&self, pos: usize) -> Option<usize> {
+        self.col_map.and_then(|map| map.get(pos).copied().flatten())
     }
 
     fn has_colon_closer_after(&mut self, start: usize, fence_len: usize) -> bool {
@@ -816,6 +864,7 @@ impl LineBuffer {
 
     fn into_source(self) -> MappedSource {
         MappedSource {
+            col_map: vec![None; self.lines.len()],
             source: self.lines.join("\n"),
             line_map: self.line_map,
         }
@@ -825,17 +874,38 @@ impl LineBuffer {
 struct MappedSource {
     source: String,
     line_map: Vec<Option<usize>>,
+    /// Bytes stripped from the FRONT of each line - a blockquote marker, a list
+    /// indent, a container prefix. Without it a column in `source` cannot be
+    /// mapped back to a column in the document, which is why nested blocks
+    /// could not carry a position (spec PART 12 section 4).
+    col_map: Vec<Option<usize>>,
 }
 
 impl MappedSource {
     fn new_line(line: String, source_line: Option<usize>) -> Self {
+        Self::new_line_at(line, source_line, None)
+    }
+
+    /// Like `new_line`, recording how many bytes were stripped from the front.
+    fn new_line_at(line: String, source_line: Option<usize>, stripped: Option<usize>) -> Self {
         MappedSource {
             source: line,
             line_map: source_line.into_iter().map(Some).collect(),
+            col_map: vec![stripped],
         }
     }
 
     fn push_newline(&mut self, line: String, source_line: Option<usize>) {
+        self.push_newline_at(line, source_line, None)
+    }
+
+    /// Like `push_newline`, recording how many bytes were stripped.
+    fn push_newline_at(
+        &mut self,
+        line: String,
+        source_line: Option<usize>,
+        stripped: Option<usize>,
+    ) {
         if !self.source.is_empty() {
             self.source.push('\n');
         }
@@ -843,6 +913,7 @@ impl MappedSource {
         if source_line.is_some() || !self.line_map.is_empty() {
             self.line_map.push(source_line);
         }
+        self.col_map.push(stripped);
     }
 
     fn append(&mut self, other: MappedSource) {
@@ -854,15 +925,104 @@ impl MappedSource {
         }
         self.source.push_str(&other.source);
         self.line_map.extend(other.line_map);
+        self.col_map.extend(other.col_map);
     }
 }
 
+/// Build a span for the lines `[start, end)` of `cur`, in the ORIGINAL source.
+///
+/// Returns `None` when the source line or the stripped column width is unknown
+/// for the first line - a position that cannot be trusted is worse than no
+/// position, because a consumer cannot tell the difference.
+///
+/// Offsets are left at zero here and filled by `fill_offsets` once the whole
+/// document is parsed: an offset needs the original text, which the parser sees
+/// only as already-stripped lines.
+fn span_of(cur: &LineCursor<'_>, start: usize, end: usize, options: &Options<'_>) -> Option<Pos> {
+    if !options.positions {
+        return None;
+    }
+    let start_line = cur.source_line(start)?;
+    let stripped = cur.source_col(start)?;
+    let last = end.saturating_sub(1).max(start);
+    let end_line = cur.source_line(last).unwrap_or(start_line);
+    // The parser sees the line with its container prefix removed, so the
+    // document column is what the container took plus the indent that remains.
+    let indent = cur
+        .lines
+        .get(start)
+        .map(|l| l.len() - l.trim_start().len())
+        .unwrap_or(0);
+    let width = cur.lines.get(last).map(|l| l.chars().count()).unwrap_or(0);
+    Some(Pos {
+        start_line,
+        end_line,
+        start_column: stripped + indent + 1,
+        end_column: stripped + width + 1,
+        start_offset: 0,
+        end_offset: 0,
+    })
+}
+
+/// Fill the offset fields from the original source, in CODEPOINTS (PART 12
+/// section 4). Runs once per document: the line table is one pass, and the
+/// conversion is the identity for any document without an astral character.
+fn fill_offsets(blocks: &mut [BlockNode], line_starts: &[usize]) {
+    for block in blocks {
+        let pos = match block {
+            BlockNode::Heading(h) => h.pos.as_mut(),
+            BlockNode::Paragraph(p) => p.pos.as_mut(),
+            _ => None,
+        };
+        if let Some(pos) = pos {
+            if let Some(start) = line_starts.get(pos.start_line.saturating_sub(1)) {
+                pos.start_offset = start + pos.start_column.saturating_sub(1);
+            }
+            if let Some(end) = line_starts.get(pos.end_line.saturating_sub(1)) {
+                pos.end_offset = end + pos.end_column.saturating_sub(1);
+            }
+        }
+        // Recurse into the containers that hold blocks.
+        match block {
+            BlockNode::BlockQuote(b) => fill_offsets(&mut b.children, line_starts),
+            BlockNode::Div(d) => fill_offsets(&mut d.children, line_starts),
+            BlockNode::Admonition(a) => fill_offsets(&mut a.children, line_starts),
+            BlockNode::List(l) => {
+                for item in &mut l.items {
+                    fill_offsets(&mut item.children, line_starts);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Codepoint offset of the start of each line.
+fn line_start_offsets(source: &str) -> Vec<usize> {
+    let mut starts = vec![0usize];
+    let mut count = 0usize;
+    for ch in source.chars() {
+        count += 1;
+        if ch == '\n' {
+            starts.push(count);
+        }
+    }
+    starts
+}
+
 fn parse_mapped_source(source: &MappedSource, options: &Options<'_>) -> Vec<BlockNode> {
-    if !options.source_lines {
+    if !options.source_lines && !options.positions {
         return parse_blocks_with_options(&source.source, options);
     }
     let lines: Vec<&str> = source.source.lines().collect();
-    let mut cursor = LineCursor::new(&lines, Some(&source.line_map));
+    // The mapped source carries the widths its container already stripped, so a
+    // nested block's column is measured against the document, not against the
+    // rewritten text the parser sees.
+    let mut cursor = LineCursor::new_with_cols(
+        &lines,
+        Some(&source.line_map),
+        options.positions.then_some(source.col_map.as_slice()),
+    );
     parse_blocks(&mut cursor, options)
 }
 
@@ -1065,6 +1225,7 @@ fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<BlockNode>
         return Some(BlockNode::ThematicBreak(ThematicBreak::default()));
     }
     if let Some((level, first_text)) = detect_heading(line) {
+        let span_start = cur.pos;
         cur.consume();
         // Headings are multi-line: the text spills onto following lines until a
         // blank line. A continuation line may carry EXACTLY the same number of
@@ -1117,10 +1278,12 @@ fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<BlockNode>
         // §756 (NORMATIVE): strip the FINAL line's trailing whitespace only
         // (trim_ascii_end -- ASCII whitespace, so a trailing NBSP survives; an
         // interior trailing run before a soft break is preserved).
+        let pos = span_of(cur, span_start, cur.pos, options);
         return Some(BlockNode::Heading(Heading {
             attrs: None,
             level,
             children: parse_inline_with_options(trim_ascii_end(&joined), options),
+            pos,
         }));
     }
     if line.starts_with('>') {
@@ -3202,10 +3365,12 @@ fn collect_indented_block_mapped_with(
                 stop_at_content_column_marker,
             ),
             line_map: Vec::new(),
+            col_map: Vec::new(),
         };
     }
     let mut lines = Vec::new();
     let mut line_map = Vec::new();
+    let mut col_map: Vec<Option<usize>> = Vec::new();
     let mut block_indent: Option<usize> = None;
     while let Some(line) = cur.peek() {
         if is_blank_line(line) {
@@ -3235,6 +3400,7 @@ fn collect_indented_block_mapped_with(
             if cur.line_map.is_some() {
                 line_map.push(cur.source_line(cur.pos));
             }
+            col_map.push(cur.source_col(cur.pos));
             cur.consume();
             continue;
         }
@@ -3254,13 +3420,18 @@ fn collect_indented_block_mapped_with(
         // dedented residual-aware so tab+space-aligned siblings keep the same
         // visual column (the recursive parse re-derives the child base); other
         // lines use whole-tab dedent so they land flush at column 0.
-        lines.push(slice_columns(line, strip_cols.min(indent), is_marker));
+        let stripped = strip_cols.min(indent);
+        lines.push(slice_columns(line, stripped, is_marker));
         if cur.line_map.is_some() {
             line_map.push(cur.source_line(cur.pos));
         }
+        // The enclosing container may already have stripped something, so the
+        // widths accumulate; an unknown parent width keeps this unknown too.
+        col_map.push(cur.source_col(cur.pos).map(|outer| outer + stripped));
         cur.consume();
     }
     MappedSource {
+        col_map,
         source: lines.join("\n"),
         line_map,
     }
@@ -3336,6 +3507,7 @@ fn detect_block_image(line: &str) -> Option<Image> {
 }
 
 fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
+    let span_start = cur.pos;
     // Whether the first line sits at the container's content column (flush-left
     // here, since the caller has dedented to that column). Only a content-column
     // image + `^ caption` promotes to a `<figure>` later; an indented one stays
@@ -3371,10 +3543,12 @@ fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     // preserved. `trim_end` here acts on the joined buffer, i.e. only the end.
     let joined = lines.join("\n");
     let joined = joined.trim_end_matches([' ', '\t']);
+    let pos = span_of(cur, span_start, cur.pos, options);
     BlockNode::Paragraph(Paragraph {
         attrs: None,
         children: parse_inline_with_options(joined, options),
         at_content_column,
+        pos,
     })
 }
 
@@ -3764,6 +3938,7 @@ fn collect_definition_body(cur: &mut LineCursor) -> MappedSource {
         }
     }
     MappedSource {
+        col_map: vec![None; lines.len()],
         source: lines.join("\n"),
         line_map,
     }

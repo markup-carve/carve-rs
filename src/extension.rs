@@ -164,6 +164,13 @@ pub struct Options<'a> {
     /// editor live-preview can sync scroll to the source. Opt-in (default
     /// `false`) so normal rendering output is unchanged.
     pub source_lines: bool,
+    /// Record a source span on every node that supports one (spec PART 12
+    /// section 4).
+    ///
+    /// Off by default, and the spec allows that: tracking may be gated behind a
+    /// parse option, and must be enabled when serializing. An ordinary parse
+    /// does not pay for spans it never reads.
+    pub positions: bool,
     /// Optional feature-restriction profile. When set, disallowed nodes are
     /// converted to text / stripped / error'd per the profile's action,
     /// link/image URLs are gated by its link policy, and `max_nesting` /
@@ -195,6 +202,7 @@ impl Default for Options<'_> {
             smart_typography: SmartTypographyMode::Glyph,
             lowercase_heading_ids: false,
             source_lines: false,
+            positions: false,
             profile: None,
             profile_base_host: None,
             mode: Mode::Interactive,

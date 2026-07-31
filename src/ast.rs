@@ -8,6 +8,26 @@
 use std::collections::BTreeMap;
 use std::ops::{Deref, DerefMut};
 
+/// A node's span in the ORIGINAL source (spec PART 12 section 4).
+///
+/// Lines and columns are 1-based; offsets are 0-based byte offsets. `end_column`
+/// and `end_offset` are exclusive.
+///
+/// Recording this is not free here: the parser works on lines whose container
+/// prefixes have already been stripped - a blockquote marker, a list indent -
+/// so a column in the text the parser sees is not a column in the document.
+/// `MappedSource` therefore carries the stripped width per line alongside the
+/// line map, and that is what makes the column recoverable.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Pos {
+    pub start_line: usize,
+    pub end_line: usize,
+    pub start_column: usize,
+    pub end_column: usize,
+    pub start_offset: usize,
+    pub end_offset: usize,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Attrs {
     pub id: Option<String>,
@@ -68,6 +88,8 @@ pub struct Heading {
     pub attrs: Option<Attrs>,
     pub level: u8,
     pub children: Vec<InlineNode>,
+    /// Span in the original source, when the parser could determine it.
+    pub pos: Option<Pos>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -84,6 +106,8 @@ pub struct Paragraph {
     /// none of them build an image + caption paragraph, so it never blocks a
     /// legitimate promotion.
     pub at_content_column: bool,
+    /// Span in the original source, when the parser could determine it.
+    pub pos: Option<Pos>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
