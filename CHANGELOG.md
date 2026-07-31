@@ -9,6 +9,15 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Unicode whitespace ends a link destination, in both forms.**
+  `unicode_url_char` is "any non-whitespace, non-ASCII Unicode character" with
+  no qualifier, but the byte scans tested ASCII whitespace only - so a narrow
+  no-break space passed for an ordinary destination character. An inline
+  destination carrying one now forms no link, and a reference definition's
+  destination ends there. Zero-width characters (U+200B, U+FEFF) are not
+  whitespace and stay: the test is the Unicode White_Space property, not "is
+  invisible" (carve#404).
+
 - **Removed a dead negative cache in the comment-closer lookahead.** The
   lookahead already answers from a width to last-index map, so the per-width
   "no closer from here onward" cache in front of it could never change an
