@@ -9,6 +9,15 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **An auto heading slug no longer collides with an explicit `{#id}`.**
+  `{#API-2}` on one heading plus a later `# API` emitted `id="API-2"` twice -
+  invalid HTML, where every `#API-2` anchor resolves to the first match and the
+  second heading is unreachable. A heading's own explicit id was reserved but
+  never RECORDED as explicit, so the guard that skips a claimed id could not see
+  it. The cross-reference index carried a third copy of the numbering rule with
+  no skip at all, so `</#api-2>` resolved to the right id carrying the WRONG
+  heading's title; it now agrees with the renderer (#335).
+
 - **A parenthesised destination gets the Unicode-whitespace rule too.** The
   balanced-parens scan is a separate path from the plain one and did not carry
   the check added for carve#404, so the rule depended on whether the URL
