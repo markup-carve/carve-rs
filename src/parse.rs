@@ -1018,6 +1018,25 @@ fn item_paragraph_span(
     })
 }
 
+fn inline_anchor_for_line(
+    cur: &LineCursor<'_>,
+    pos: usize,
+    inline_line: &str,
+) -> Option<(usize, usize)> {
+    Some((
+        cur.source_line(pos)?,
+        stripped_col(cur.source_col(pos), cur.lines.get(pos)?, inline_line)?,
+    ))
+}
+
+fn parse_inline_lines_with_anchor(
+    text: &str,
+    options: &Options<'_>,
+    lines: Vec<Option<(usize, usize)>>,
+) -> Vec<InlineNode> {
+    parse_inline_with_anchor(text, options, InlineAnchor { lines: &lines })
+}
+
 /// Build a span for the lines `[start, end)` of `cur`, in the ORIGINAL source.
 ///
 /// Returns `None` when the source line or the stripped column width is unknown
@@ -1086,11 +1105,23 @@ fn fill_offsets(blocks: &mut [BlockNode], line_starts: &[usize]) {
         if let Some(pos) = pos {
             apply_offsets(pos, line_starts);
         }
-        // Recurse into the containers that hold blocks.
+        // Recurse into the containers that hold blocks and inline content.
         match block {
-            BlockNode::BlockQuote(b) => fill_offsets(&mut b.children, line_starts),
+            BlockNode::Heading(h) => apply_inline_offsets(&mut h.children, line_starts),
+            BlockNode::Paragraph(p) => apply_inline_offsets(&mut p.children, line_starts),
+            BlockNode::BlockQuote(b) => {
+                if let Some(attribution) = &mut b.attribution {
+                    apply_inline_offsets(attribution, line_starts);
+                }
+                fill_offsets(&mut b.children, line_starts);
+            }
             BlockNode::Div(d) => fill_offsets(&mut d.children, line_starts),
-            BlockNode::Admonition(a) => fill_offsets(&mut a.children, line_starts),
+            BlockNode::Admonition(a) => {
+                if let Some(title) = &mut a.title {
+                    apply_inline_offsets(title, line_starts);
+                }
+                fill_offsets(&mut a.children, line_starts);
+            }
             BlockNode::List(l) => {
                 for item in &mut l.items {
                     // The ITEM's own span too, not only the blocks inside it:
@@ -1102,33 +1133,32 @@ fn fill_offsets(blocks: &mut [BlockNode], line_starts: &[usize]) {
                     fill_offsets(&mut item.children, line_starts);
                 }
             }
-            BlockNode::Table(t) => {
-                for row in &mut t.rows {
-                    if let Some(pos) = row.pos.as_mut() {
-                        apply_offsets(pos, line_starts);
-                    }
-                    for cell in &mut row.cells {
-                        if let Some(pos) = cell.pos.as_mut() {
-                            apply_offsets(pos, line_starts);
-                        }
-                    }
-                }
-            }
+            BlockNode::Table(t) => apply_table_offsets(t, line_starts),
             BlockNode::LineBlock(l) => fill_offsets(&mut l.children, line_starts),
             BlockNode::DefinitionList(d) => {
                 for item in &mut d.items {
+                    for term in &mut item.terms {
+                        apply_inline_offsets(&mut term.children, line_starts);
+                    }
                     for def in &mut item.definitions {
                         fill_offsets(def, line_starts);
                     }
                 }
             }
             BlockNode::Figure(f) => match &mut f.target {
-                FigureTarget::BlockQuote(q) => fill_offsets(&mut q.children, line_starts),
+                FigureTarget::BlockQuote(q) => {
+                    if let Some(attribution) = &mut q.attribution {
+                        apply_inline_offsets(attribution, line_starts);
+                    }
+                    fill_offsets(&mut q.children, line_starts);
+                }
                 FigureTarget::Paragraph(p) => {
                     if let Some(pos) = p.pos.as_mut() {
                         apply_offsets(pos, line_starts);
                     }
+                    apply_inline_offsets(&mut p.children, line_starts);
                 }
+                FigureTarget::Table(t) => apply_table_offsets(t, line_starts),
                 _ => {}
             },
             _ => {}
@@ -1143,6 +1173,95 @@ fn apply_offsets(pos: &mut Pos, line_starts: &[usize]) {
     }
     if let Some(end) = line_starts.get(pos.end_line.saturating_sub(1)) {
         pos.end_offset = end + pos.end_column.saturating_sub(1);
+    }
+}
+
+/// Fill offsets for a table: the rows' and cells' OWN spans, and the inline
+/// content of the caption and of every cell.
+///
+/// Both halves in one place, because they were added a week apart and the
+/// second nearly dropped the first: a span whose offsets are never filled stays
+/// 0..0, which reads as present and selects nothing.
+fn apply_table_offsets(table: &mut Table, line_starts: &[usize]) {
+    if let Some(caption) = &mut table.caption {
+        apply_inline_offsets(caption, line_starts);
+    }
+    for row in &mut table.rows {
+        if let Some(pos) = row.pos.as_mut() {
+            apply_offsets(pos, line_starts);
+        }
+        for cell in &mut row.cells {
+            if let Some(pos) = cell.pos.as_mut() {
+                apply_offsets(pos, line_starts);
+            }
+            apply_inline_offsets(&mut cell.children, line_starts);
+        }
+    }
+}
+
+fn apply_inline_offsets(nodes: &mut [InlineNode], line_starts: &[usize]) {
+    for node in nodes {
+        if let Some(pos) = inline_pos_mut(node) {
+            apply_offsets(pos, line_starts);
+        }
+        match node {
+            InlineNode::Emphasis(e) => apply_inline_offsets(&mut e.children, line_starts),
+            InlineNode::Link(l) => apply_inline_offsets(&mut l.children, line_starts),
+            InlineNode::Span(s) => apply_inline_offsets(&mut s.children, line_starts),
+            InlineNode::Extension(e) => apply_inline_offsets(&mut e.children, line_starts),
+            InlineNode::CitationGroup(g) => {
+                for item in &mut g.items {
+                    if let Some(prefix) = &mut item.prefix {
+                        apply_inline_offsets(prefix, line_starts);
+                    }
+                    if let Some(locator) = &mut item.locator {
+                        apply_inline_offsets(locator, line_starts);
+                    }
+                    if let Some(suffix) = &mut item.suffix {
+                        apply_inline_offsets(suffix, line_starts);
+                    }
+                }
+            }
+            InlineNode::Footnote(f) => {
+                if let Some(inline) = &mut f.inline {
+                    apply_inline_offsets(inline, line_starts);
+                }
+            }
+            InlineNode::CriticInsert(c) => apply_inline_offsets(&mut c.children, line_starts),
+            InlineNode::CriticDelete(c) => apply_inline_offsets(&mut c.children, line_starts),
+            _ => {}
+        }
+    }
+}
+
+fn inline_pos_mut(node: &mut InlineNode) -> Option<&mut Pos> {
+    match node {
+        InlineNode::Text(n) => n.pos.as_mut(),
+        InlineNode::EscapedText(n) => n.pos.as_mut(),
+        InlineNode::SmartPunctuation(n) => n.pos.as_mut(),
+        InlineNode::Emphasis(n) => n.pos.as_mut(),
+        InlineNode::Code(n) => n.pos.as_mut(),
+        InlineNode::Link(n) => n.pos.as_mut(),
+        InlineNode::Image(n) => n.pos.as_mut(),
+        InlineNode::Span(n) => n.pos.as_mut(),
+        InlineNode::Math(n) => n.pos.as_mut(),
+        InlineNode::RawInline(n) => n.pos.as_mut(),
+        InlineNode::LiteralInline(n) => n.pos.as_mut(),
+        InlineNode::Symbol(n) => n.pos.as_mut(),
+        InlineNode::AutoLink(n) => n.pos.as_mut(),
+        InlineNode::CrossRef(n) => n.pos.as_mut(),
+        InlineNode::CaptionNumber(n) => n.pos.as_mut(),
+        InlineNode::Mention(n) => n.pos.as_mut(),
+        InlineNode::Tag(n) => n.pos.as_mut(),
+        InlineNode::CitationGroup(n) => n.pos.as_mut(),
+        InlineNode::Extension(n) => n.pos.as_mut(),
+        InlineNode::Abbreviation(n) => n.pos.as_mut(),
+        InlineNode::Footnote(n) => n.pos.as_mut(),
+        InlineNode::SoftBreak(n) | InlineNode::HardBreak(n) => n.pos.as_mut(),
+        InlineNode::CriticInsert(n) => n.pos.as_mut(),
+        InlineNode::CriticDelete(n) => n.pos.as_mut(),
+        InlineNode::CriticSubstitute(n) => n.pos.as_mut(),
+        InlineNode::CriticComment(n) => n.pos.as_mut(),
     }
 }
 
@@ -1393,6 +1512,9 @@ fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<BlockNode>
         // starts that block, exactly as it interrupts a paragraph (§10); only
         // plain text folds (an ordered marker folds, it never interrupts).
         let mut joined = first_text.to_string();
+        let mut anchors = options
+            .positions
+            .then(|| vec![inline_anchor_for_line(cur, span_start, first_text)]);
         while let Some(next) = cur.peek() {
             if is_blank_line(next) {
                 break;
@@ -1400,6 +1522,9 @@ fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<BlockNode>
             if let Some(cont) = heading_continuation_same_level(next, level) {
                 joined.push('\n');
                 joined.push_str(cont);
+                if let Some(anchors) = &mut anchors {
+                    anchors.push(inline_anchor_for_line(cur, cur.pos, cont));
+                }
                 cur.consume();
                 continue;
             }
@@ -1426,6 +1551,9 @@ fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<BlockNode>
             }
             joined.push('\n');
             joined.push_str(next);
+            if let Some(anchors) = &mut anchors {
+                anchors.push(inline_anchor_for_line(cur, cur.pos, next));
+            }
             cur.consume();
         }
         // djot-strict (spec PART 2 headings; matches carve-js #153): a heading
@@ -1437,10 +1565,16 @@ fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<BlockNode>
         // (trim_ascii_end -- ASCII whitespace, so a trailing NBSP survives; an
         // interior trailing run before a soft break is preserved).
         let pos = span_of(cur, span_start, cur.pos, options);
+        let inline_text = trim_ascii_end(&joined);
+        let children = if let Some(anchors) = anchors {
+            parse_inline_lines_with_anchor(inline_text, options, anchors)
+        } else {
+            parse_inline_with_options(inline_text, options)
+        };
         return Some(BlockNode::Heading(Heading {
             attrs: None,
             level,
-            children: parse_inline_with_options(trim_ascii_end(&joined), options),
+            children,
             pos,
         }));
     }
@@ -1546,7 +1680,16 @@ fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<BlockNode>
 /// line belongs to a normal multi-line paragraph instead).
 fn parse_equation_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<BlockNode> {
     let line = cur.peek()?;
-    let inline = parse_inline_with_options(trim_ascii_start(line), options);
+    let inline_text = trim_ascii_start(line);
+    let inline = if options.positions {
+        parse_inline_lines_with_anchor(
+            inline_text,
+            options,
+            vec![inline_anchor_for_line(cur, cur.pos, inline_text)],
+        )
+    } else {
+        parse_inline_with_options(inline_text, options)
+    };
     if inline.len() != 1 || !matches!(&inline[0], InlineNode::Math(m) if m.display) {
         return None;
     }
@@ -3012,6 +3155,9 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         // table); a would-be opener on a LATER lazy-continuation line stays
         // paragraph text.
         let mut para_lines = vec![marker.content.to_string()];
+        let mut anchors = options
+            .positions
+            .then(|| vec![inline_anchor_for_line(cur, item_at, marker.content)]);
         let literal_colon_opener = detect_container_open(marker.content)
             .map(|open| open.fence_len)
             .or_else(|| detect_line_block_open(marker.content))
@@ -3053,7 +3199,11 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 if interrupts_lazy_continuation(cur, &next_owned) {
                     break;
                 }
-                para_lines.push(trim_ascii_start(next).to_string());
+                let inline_line = trim_ascii_start(next);
+                if let Some(anchors) = &mut anchors {
+                    anchors.push(inline_anchor_for_line(cur, cur.pos, inline_line));
+                }
+                para_lines.push(inline_line.to_string());
                 cur.consume();
                 continue;
             }
@@ -3068,7 +3218,11 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 if interrupts_lazy_continuation(cur, &next_owned) {
                     break;
                 }
-                para_lines.push(trim_ascii_start(next).to_string());
+                let inline_line = trim_ascii_start(next);
+                if let Some(anchors) = &mut anchors {
+                    anchors.push(inline_anchor_for_line(cur, cur.pos, inline_line));
+                }
+                para_lines.push(inline_line.to_string());
                 cur.consume();
                 continue;
             }
@@ -3078,14 +3232,22 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             if interrupts_paragraph(cur, &dedented) {
                 break;
             }
+            if let Some(anchors) = &mut anchors {
+                anchors.push(inline_anchor_for_line(cur, cur.pos, &dedented));
+            }
             para_lines.push(dedented);
             cur.consume();
         }
         let para_text = para_lines.join("\n");
         let para_text = para_text.trim_end_matches([' ', '\t']);
+        let children = if let Some(anchors) = anchors {
+            parse_inline_lines_with_anchor(para_text, options, anchors)
+        } else {
+            parse_inline_with_options(para_text, options)
+        };
         let mut paragraph = BlockNode::Paragraph(Paragraph {
             attrs: None,
-            children: parse_inline_with_options(para_text, options),
+            children,
             pos: item_paragraph_span(
                 cur,
                 item_at,
@@ -3761,10 +3923,20 @@ fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     // preserved. `trim_end` here acts on the joined buffer, i.e. only the end.
     let joined = lines.join("\n");
     let joined = joined.trim_end_matches([' ', '\t']);
+    let children = if options.positions {
+        let anchors = lines
+            .iter()
+            .enumerate()
+            .map(|(idx, line)| inline_anchor_for_line(cur, span_start + idx, line))
+            .collect();
+        parse_inline_lines_with_anchor(joined, options, anchors)
+    } else {
+        parse_inline_with_options(joined, options)
+    };
     let pos = span_of(cur, span_start, cur.pos, options);
     BlockNode::Paragraph(Paragraph {
         attrs: None,
-        children: parse_inline_with_options(joined, options),
+        children,
         at_content_column,
         pos,
     })
@@ -3965,11 +4137,15 @@ fn parse_definition_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNo
             break;
         }
         let term_source_line = cur.source_line(cur.pos);
+        let term_start = cur.pos;
         cur.consume();
         // A term folds a following plain line like a heading (soft break), so a
         // wrapped term line does not strand the definition. A blank line, a new
         // marker (`::` / `:  `), a list marker, or a block opener ends the term.
         let mut term_text = trim_ascii_end(term).to_string();
+        let mut term_anchors = options
+            .positions
+            .then(|| vec![inline_anchor_for_line(cur, term_start, term)]);
         while let Some(next) = cur.peek() {
             if is_blank_line(next)
                 || next.strip_prefix(":: ").is_some()
@@ -3984,11 +4160,19 @@ fn parse_definition_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNo
             }
             term_text.push('\n');
             term_text.push_str(&owned);
+            if let Some(term_anchors) = &mut term_anchors {
+                term_anchors.push(inline_anchor_for_line(cur, cur.pos, &owned));
+            }
             cur.consume();
         }
+        let children = if let Some(term_anchors) = term_anchors {
+            parse_inline_lines_with_anchor(&term_text, options, term_anchors)
+        } else {
+            parse_inline_with_options(&term_text, options)
+        };
         let terms = vec![DefinitionTerm {
             attrs: source_line_attrs(None, term_source_line, options),
-            children: parse_inline_with_options(&term_text, options),
+            children,
             pos: None,
         }];
         let mut defs = Vec::new();
@@ -5690,6 +5874,102 @@ struct InlineBounds<'a> {
     delim_brace: [Option<usize>; DELIM_BRACE_SLOTS],
 }
 
+pub(crate) struct InlineAnchor<'a> {
+    lines: &'a [Option<(usize, usize)>],
+}
+
+struct InlinePositionMap<'a> {
+    lines: &'a [Option<(usize, usize)>],
+    byte_line: Vec<usize>,
+    byte_column: Vec<usize>,
+}
+
+impl<'a> InlinePositionMap<'a> {
+    fn new(text: &str, anchor: InlineAnchor<'a>) -> Self {
+        let mut byte_line = vec![0usize; text.len() + 1];
+        let mut byte_column = vec![0usize; text.len() + 1];
+        let mut line = 0usize;
+        let mut column = 0usize;
+        for (byte, ch) in text.char_indices() {
+            byte_line[byte] = line;
+            byte_column[byte] = column;
+            for idx in byte + 1..byte + ch.len_utf8() {
+                byte_line[idx] = line;
+                byte_column[idx] = column;
+            }
+            if ch == '\n' {
+                line += 1;
+                column = 0;
+            } else {
+                column += 1;
+            }
+        }
+        byte_line[text.len()] = line;
+        byte_column[text.len()] = column;
+        Self {
+            lines: anchor.lines,
+            byte_line,
+            byte_column,
+        }
+    }
+
+    fn pos(&self, start: usize, end: usize) -> Option<Pos> {
+        if start > end || end > self.byte_line.len().saturating_sub(1) {
+            return None;
+        }
+        let start_line_idx = *self.byte_line.get(start)?;
+        let end_line_idx = *self.byte_line.get(end)?;
+        for idx in start_line_idx..=end_line_idx {
+            self.lines.get(idx).copied().flatten()?;
+        }
+        let (start_line, start_stripped) = self.lines.get(start_line_idx).copied().flatten()?;
+        let (end_line, end_stripped) = self.lines.get(end_line_idx).copied().flatten()?;
+        Some(Pos {
+            start_line,
+            end_line,
+            start_column: start_stripped + self.byte_column[start] + 1,
+            end_column: end_stripped + self.byte_column[end] + 1,
+            start_offset: 0,
+            end_offset: 0,
+        })
+    }
+}
+
+fn inline_pos(map: Option<&InlinePositionMap<'_>>, start: usize, end: usize) -> Option<Pos> {
+    map.and_then(|m| m.pos(start, end))
+}
+
+fn set_inline_node_pos(node: &mut InlineNode, pos: Option<Pos>) {
+    match node {
+        InlineNode::Text(n) => n.pos = pos,
+        InlineNode::EscapedText(n) => n.pos = pos,
+        InlineNode::SmartPunctuation(n) => n.pos = pos,
+        InlineNode::Emphasis(n) => n.pos = pos,
+        InlineNode::Code(n) => n.pos = pos,
+        InlineNode::Link(n) => n.pos = pos,
+        InlineNode::Image(n) => n.pos = pos,
+        InlineNode::Span(n) => n.pos = pos,
+        InlineNode::Math(n) => n.pos = pos,
+        InlineNode::RawInline(n) => n.pos = pos,
+        InlineNode::LiteralInline(n) => n.pos = pos,
+        InlineNode::Symbol(n) => n.pos = pos,
+        InlineNode::AutoLink(n) => n.pos = pos,
+        InlineNode::CrossRef(n) => n.pos = pos,
+        InlineNode::CaptionNumber(n) => n.pos = pos,
+        InlineNode::Mention(n) => n.pos = pos,
+        InlineNode::Tag(n) => n.pos = pos,
+        InlineNode::CitationGroup(n) => n.pos = pos,
+        InlineNode::Extension(n) => n.pos = pos,
+        InlineNode::Abbreviation(n) => n.pos = pos,
+        InlineNode::Footnote(n) => n.pos = pos,
+        InlineNode::SoftBreak(n) | InlineNode::HardBreak(n) => n.pos = pos,
+        InlineNode::CriticInsert(n) => n.pos = pos,
+        InlineNode::CriticDelete(n) => n.pos = pos,
+        InlineNode::CriticSubstitute(n) => n.pos = pos,
+        InlineNode::CriticComment(n) => n.pos = pos,
+    }
+}
+
 impl InlineBounds<'_> {
     /// True when a `]` occurs at or after `pos`.
     #[inline]
@@ -5712,11 +5992,23 @@ impl InlineBounds<'_> {
 }
 
 pub(crate) fn parse_inline_with_options(text: &str, options: &Options<'_>) -> Vec<InlineNode> {
-    parse_inline_context(text, options, false, false)
+    parse_inline_context(text, options, false, false, None, 0)
+}
+
+fn parse_inline_with_anchor(
+    text: &str,
+    options: &Options<'_>,
+    anchor: InlineAnchor<'_>,
+) -> Vec<InlineNode> {
+    if !options.positions {
+        return parse_inline_with_options(text, options);
+    }
+    let map = InlinePositionMap::new(text, anchor);
+    parse_inline_context(text, options, false, false, Some(&map), 0)
 }
 
 fn parse_caption_inline_with_options(text: &str, options: &Options<'_>) -> Vec<InlineNode> {
-    parse_inline_context(text, options, true, false)
+    parse_inline_context(text, options, true, false, None, 0)
 }
 
 fn parse_inline_context(
@@ -5724,6 +6016,8 @@ fn parse_inline_context(
     options: &Options<'_>,
     mut caption_number_allowed: bool,
     in_footnote: bool,
+    positions: Option<&InlinePositionMap<'_>>,
+    base: usize,
 ) -> Vec<InlineNode> {
     // Recursion cap (see MAX_NESTING_DEPTH). Nested links/spans/emphasis recurse
     // through here one frame per level; over the cap, keep the remaining text
@@ -5805,6 +6099,8 @@ fn parse_inline_context(
     let mut emphasis_no_close: [Option<usize>; EMPHASIS_DELIM_SLOTS] = [None; EMPHASIS_DELIM_SLOTS];
     let mut out = Vec::new();
     let mut buf = String::new();
+    let mut buf_start: Option<usize> = None;
+    let mut buf_placeable = true;
     let mut i = 0;
     while i < bytes.len() {
         let c = bytes[i];
@@ -5814,14 +6110,27 @@ fn parse_inline_context(
         // hard break, mirroring the `\`-before-newline rule at end of input
         // (`para\` at EOF -> `<br>`), matching djot and the cheatsheet.
         if c == b'\\' && i + 1 >= bytes.len() {
-            flush_text(&mut out, &mut buf);
-            out.push(InlineNode::hard_break());
+            flush_text(
+                &mut out,
+                &mut buf,
+                positions,
+                base,
+                &mut buf_start,
+                &mut buf_placeable,
+            );
+            out.push(InlineNode::HardBreak(Break {
+                pos: inline_pos(positions, base + i, base + i + 1),
+            }));
             i += 1;
             continue;
         }
         if c == b'\\' && i + 1 < bytes.len() {
             let nxt = bytes[i + 1];
             if nxt == b' ' {
+                if buf_start.is_none() {
+                    buf_start = Some(i);
+                }
+                buf_placeable = false;
                 buf.push(crate::NBSP_PLACEHOLDER);
                 i += 2;
                 continue;
@@ -5831,11 +6140,21 @@ fn parse_inline_context(
                 // literal character does not (carve issue 350). The caret keeps
                 // its placeholder inside the node's value, so the checks that
                 // stop `\^` being read as a caption marker still see it.
-                flush_text(&mut out, &mut buf);
-                out.push(InlineNode::escaped_text(if nxt == b'^' {
-                    crate::ESCAPED_CARET_PLACEHOLDER.to_string()
-                } else {
-                    (nxt as char).to_string()
+                flush_text(
+                    &mut out,
+                    &mut buf,
+                    positions,
+                    base,
+                    &mut buf_start,
+                    &mut buf_placeable,
+                );
+                out.push(InlineNode::EscapedText(EscapedText {
+                    value: if nxt == b'^' {
+                        crate::ESCAPED_CARET_PLACEHOLDER.to_string()
+                    } else {
+                        (nxt as char).to_string()
+                    },
+                    pos: inline_pos(positions, base + i, base + i + 2),
                 }));
                 i += 2;
                 continue;
@@ -5849,6 +6168,7 @@ fn parse_inline_context(
             && (i == 0 || bytes[i - 1] == b' ' || bytes[i - 1] == b'\t' || bytes[i - 1] == b'\n')
         {
             while buf.ends_with(' ') || buf.ends_with('\t') {
+                buf_placeable = false;
                 buf.pop();
             }
             match bytes[i..].iter().position(|&b| b == b'\n') {
@@ -5864,18 +6184,41 @@ fn parse_inline_context(
                 if let Some((raw, raw_consumed)) =
                     parse_raw_inline_after_code(bytes, i, &value, consumed)
                 {
-                    flush_text(&mut out, &mut buf);
-                    out.push(InlineNode::RawInline(raw));
+                    flush_text(
+                        &mut out,
+                        &mut buf,
+                        positions,
+                        base,
+                        &mut buf_start,
+                        &mut buf_placeable,
+                    );
+                    let mut node = InlineNode::RawInline(raw);
+                    set_inline_node_pos(
+                        &mut node,
+                        inline_pos(positions, base + i, base + i + raw_consumed),
+                    );
+                    out.push(node);
                     i += raw_consumed;
                     continue;
                 }
-                flush_text(&mut out, &mut buf);
+                flush_text(
+                    &mut out,
+                    &mut buf,
+                    positions,
+                    base,
+                    &mut buf_start,
+                    &mut buf_placeable,
+                );
                 // Push the bare code span. A trailing inline attribute block
                 // (`` `code`{.cls} ``) is attached by the general attr-merge in
                 // the main loop, which runs AFTER the forced-emphasis / critic
                 // checks -- so `` `c`{_u_} `` is a code span + forced underline,
                 // not a bogus `_u_` attribute. Matches carve-js / carve-php.
-                out.push(InlineNode::code(value, None));
+                out.push(InlineNode::Code(Code {
+                    value,
+                    attrs: None,
+                    pos: inline_pos(positions, base + i, base + i + consumed),
+                }));
                 i += consumed;
                 continue;
             }
@@ -5883,8 +6226,20 @@ fn parse_inline_context(
 
         if c == b'$' {
             if let Some((math, consumed)) = parse_math(bytes, i, &bounds) {
-                flush_text(&mut out, &mut buf);
-                out.push(InlineNode::Math(math));
+                flush_text(
+                    &mut out,
+                    &mut buf,
+                    positions,
+                    base,
+                    &mut buf_start,
+                    &mut buf_placeable,
+                );
+                let mut node = InlineNode::Math(math);
+                set_inline_node_pos(
+                    &mut node,
+                    inline_pos(positions, base + i, base + i + consumed),
+                );
+                out.push(node);
                 i += consumed;
                 continue;
             }
@@ -5892,17 +6247,29 @@ fn parse_inline_context(
 
         if c == b'{' {
             if let Some((critic, consumed)) =
-                parse_critic_markup(bytes, i, options, in_footnote, &bounds)
+                parse_critic_markup(bytes, i, options, in_footnote, &bounds, positions, base)
             {
-                flush_text(&mut out, &mut buf);
-                out.push(critic);
+                flush_text(
+                    &mut out,
+                    &mut buf,
+                    positions,
+                    base,
+                    &mut buf_start,
+                    &mut buf_placeable,
+                );
+                let mut node = critic;
+                set_inline_node_pos(
+                    &mut node,
+                    inline_pos(positions, base + i, base + i + consumed),
+                );
+                out.push(node);
                 i += consumed;
                 continue;
             }
             // Forced intraword emphasis `{X…X}` — tried before inline attribute
             // blocks, matching the reference scan order.
             if let Some((mut node, consumed)) =
-                parse_forced_emphasis(bytes, i, options, in_footnote, &bounds)
+                parse_forced_emphasis(bytes, i, options, in_footnote, &bounds, positions, base)
             {
                 let mut consumed = consumed;
                 // A trailing `{...}` attribute block attaches to the forced span,
@@ -5915,7 +6282,18 @@ fn parse_inline_context(
                         consumed = next - i;
                     }
                 }
-                flush_text(&mut out, &mut buf);
+                flush_text(
+                    &mut out,
+                    &mut buf,
+                    positions,
+                    base,
+                    &mut buf_start,
+                    &mut buf_placeable,
+                );
+                set_inline_node_pos(
+                    &mut node,
+                    inline_pos(positions, base + i, base + i + consumed),
+                );
                 out.push(node);
                 i += consumed;
                 continue;
@@ -5959,8 +6337,20 @@ fn parse_inline_context(
         // (unclosed) code span. Tried before the image case, which needs `[`.
         if c == b'!' && bytes.get(i + 1) == Some(&b'`') {
             if let Some((lit, consumed)) = parse_literal_inline(bytes, i) {
-                flush_text(&mut out, &mut buf);
-                out.push(InlineNode::LiteralInline(lit));
+                flush_text(
+                    &mut out,
+                    &mut buf,
+                    positions,
+                    base,
+                    &mut buf_start,
+                    &mut buf_placeable,
+                );
+                let mut node = InlineNode::LiteralInline(lit);
+                set_inline_node_pos(
+                    &mut node,
+                    inline_pos(positions, base + i, base + i + consumed),
+                );
+                out.push(node);
                 i += consumed;
                 continue;
             }
@@ -5969,14 +6359,38 @@ fn parse_inline_context(
         // Image: ![alt](src), then reference image ![alt][ref] / ![alt][].
         if c == b'!' && bytes.get(i + 1) == Some(&b'[') {
             if let Some((img, consumed)) = parse_image_at(bytes, i, &bounds) {
-                flush_text(&mut out, &mut buf);
-                out.push(InlineNode::Image(img));
+                flush_text(
+                    &mut out,
+                    &mut buf,
+                    positions,
+                    base,
+                    &mut buf_start,
+                    &mut buf_placeable,
+                );
+                let mut node = InlineNode::Image(img);
+                set_inline_node_pos(
+                    &mut node,
+                    inline_pos(positions, base + i, base + i + consumed),
+                );
+                out.push(node);
                 i += consumed;
                 continue;
             }
             if let Some((img, consumed)) = parse_reference_image(bytes, i, &bounds) {
-                flush_text(&mut out, &mut buf);
-                out.push(InlineNode::Image(img));
+                flush_text(
+                    &mut out,
+                    &mut buf,
+                    positions,
+                    base,
+                    &mut buf_start,
+                    &mut buf_placeable,
+                );
+                let mut node = InlineNode::Image(img);
+                set_inline_node_pos(
+                    &mut node,
+                    inline_pos(positions, base + i, base + i + consumed),
+                );
+                out.push(node);
                 i += consumed;
                 continue;
             }
@@ -5986,33 +6400,88 @@ fn parse_inline_context(
         if c == b'[' {
             if !in_footnote {
                 if let Some((footnote, consumed)) = parse_footnote_ref(bytes, i, &bounds) {
-                    flush_text(&mut out, &mut buf);
-                    out.push(InlineNode::Footnote(footnote));
+                    flush_text(
+                        &mut out,
+                        &mut buf,
+                        positions,
+                        base,
+                        &mut buf_start,
+                        &mut buf_placeable,
+                    );
+                    let mut node = InlineNode::Footnote(footnote);
+                    set_inline_node_pos(
+                        &mut node,
+                        inline_pos(positions, base + i, base + i + consumed),
+                    );
+                    out.push(node);
                     i += consumed;
                     continue;
                 }
             }
             if has_link_trigger {
-                if let Some((link, consumed)) =
-                    parse_inline_link_with_options(bytes, i, options, in_footnote, &bounds)
-                {
-                    flush_text(&mut out, &mut buf);
-                    out.push(InlineNode::Link(link));
+                if let Some((link, consumed)) = parse_inline_link_with_options(
+                    bytes,
+                    i,
+                    options,
+                    in_footnote,
+                    &bounds,
+                    positions,
+                    base,
+                ) {
+                    flush_text(
+                        &mut out,
+                        &mut buf,
+                        positions,
+                        base,
+                        &mut buf_start,
+                        &mut buf_placeable,
+                    );
+                    let mut node = InlineNode::Link(link);
+                    set_inline_node_pos(
+                        &mut node,
+                        inline_pos(positions, base + i, base + i + consumed),
+                    );
+                    out.push(node);
                     i += consumed;
                     continue;
                 }
                 if let Some((link, consumed)) =
-                    parse_reference_link(bytes, i, options, in_footnote, &bounds)
+                    parse_reference_link(bytes, i, options, in_footnote, &bounds, positions, base)
                 {
-                    flush_text(&mut out, &mut buf);
-                    out.push(InlineNode::Link(link));
+                    flush_text(
+                        &mut out,
+                        &mut buf,
+                        positions,
+                        base,
+                        &mut buf_start,
+                        &mut buf_placeable,
+                    );
+                    let mut node = InlineNode::Link(link);
+                    set_inline_node_pos(
+                        &mut node,
+                        inline_pos(positions, base + i, base + i + consumed),
+                    );
+                    out.push(node);
                     i += consumed;
                     continue;
                 }
-                if let Some((span, consumed)) = parse_span(bytes, i, options, in_footnote, &bounds)
+                if let Some((span, consumed)) =
+                    parse_span(bytes, i, options, in_footnote, &bounds, positions, base)
                 {
-                    flush_text(&mut out, &mut buf);
-                    out.push(InlineNode::Span(span));
+                    flush_text(
+                        &mut out,
+                        &mut buf,
+                        positions,
+                        base,
+                        &mut buf_start,
+                        &mut buf_placeable,
+                    );
+                    let mut node = InlineNode::Span(span);
+                    set_inline_node_pos(
+                        &mut node,
+                        inline_pos(positions, base + i, base + i + consumed),
+                    );
+                    out.push(node);
                     i += consumed;
                     continue;
                 }
@@ -6021,8 +6490,20 @@ fn parse_inline_context(
 
         if c == b'<' {
             if let Some((crossref, consumed)) = parse_crossref(text, i, &bounds) {
-                flush_text(&mut out, &mut buf);
-                out.push(InlineNode::CrossRef(crossref));
+                flush_text(
+                    &mut out,
+                    &mut buf,
+                    positions,
+                    base,
+                    &mut buf_start,
+                    &mut buf_placeable,
+                );
+                let mut node = InlineNode::CrossRef(crossref);
+                set_inline_node_pos(
+                    &mut node,
+                    inline_pos(positions, base + i, base + i + consumed),
+                );
+                out.push(node);
                 i += consumed;
                 continue;
             }
@@ -6030,8 +6511,20 @@ fn parse_inline_context(
 
         if c == b'@' {
             if let Some((mention, consumed)) = parse_mention(text, i) {
-                flush_text(&mut out, &mut buf);
-                out.push(InlineNode::Mention(mention));
+                flush_text(
+                    &mut out,
+                    &mut buf,
+                    positions,
+                    base,
+                    &mut buf_start,
+                    &mut buf_placeable,
+                );
+                let mut node = InlineNode::Mention(mention);
+                set_inline_node_pos(
+                    &mut node,
+                    inline_pos(positions, base + i, base + i + consumed),
+                );
+                out.push(node);
                 i += consumed;
                 continue;
             }
@@ -6039,18 +6532,37 @@ fn parse_inline_context(
 
         if c == b'#' {
             if caption_number_allowed && !bytes.get(i + 1).is_some_and(u8::is_ascii_alphabetic) {
-                flush_text(&mut out, &mut buf);
+                flush_text(
+                    &mut out,
+                    &mut buf,
+                    positions,
+                    base,
+                    &mut buf_start,
+                    &mut buf_placeable,
+                );
                 out.push(InlineNode::CaptionNumber(CaptionNumber {
                     number: None,
-                    pos: None,
+                    pos: inline_pos(positions, base + i, base + i + 1),
                 }));
                 caption_number_allowed = false;
                 i += 1;
                 continue;
             }
             if let Some((tag, consumed)) = parse_tag(text, i) {
-                flush_text(&mut out, &mut buf);
-                out.push(InlineNode::Tag(tag));
+                flush_text(
+                    &mut out,
+                    &mut buf,
+                    positions,
+                    base,
+                    &mut buf_start,
+                    &mut buf_placeable,
+                );
+                let mut node = InlineNode::Tag(tag);
+                set_inline_node_pos(
+                    &mut node,
+                    inline_pos(positions, base + i, base + i + consumed),
+                );
+                out.push(node);
                 i += consumed;
                 continue;
             }
@@ -6058,8 +6570,20 @@ fn parse_inline_context(
 
         if c == b'<' {
             if let Some((autolink, consumed)) = parse_autolink(text, i, &bounds) {
-                flush_text(&mut out, &mut buf);
-                out.push(InlineNode::AutoLink(autolink));
+                flush_text(
+                    &mut out,
+                    &mut buf,
+                    positions,
+                    base,
+                    &mut buf_start,
+                    &mut buf_placeable,
+                );
+                let mut node = InlineNode::AutoLink(autolink);
+                set_inline_node_pos(
+                    &mut node,
+                    inline_pos(positions, base + i, base + i + consumed),
+                );
+                out.push(node);
                 i += consumed;
                 continue;
             }
@@ -6068,16 +6592,40 @@ fn parse_inline_context(
         // Inline extension: :name[content]
         if c == b':' {
             if let Some((node, consumed)) =
-                parse_inline_extension(bytes, i, options, in_footnote, &bounds)
+                parse_inline_extension(bytes, i, options, in_footnote, &bounds, positions, base)
             {
-                flush_text(&mut out, &mut buf);
-                out.push(InlineNode::Extension(node));
+                flush_text(
+                    &mut out,
+                    &mut buf,
+                    positions,
+                    base,
+                    &mut buf_start,
+                    &mut buf_placeable,
+                );
+                let mut node = InlineNode::Extension(node);
+                set_inline_node_pos(
+                    &mut node,
+                    inline_pos(positions, base + i, base + i + consumed),
+                );
+                out.push(node);
                 i += consumed;
                 continue;
             }
             if let Some((symbol, consumed)) = parse_symbol(text, i, &bounds) {
-                flush_text(&mut out, &mut buf);
-                out.push(InlineNode::Symbol(symbol));
+                flush_text(
+                    &mut out,
+                    &mut buf,
+                    positions,
+                    base,
+                    &mut buf_start,
+                    &mut buf_placeable,
+                );
+                let mut node = InlineNode::Symbol(symbol);
+                set_inline_node_pos(
+                    &mut node,
+                    inline_pos(positions, base + i, base + i + consumed),
+                );
+                out.push(node);
                 i += consumed;
                 continue;
             }
@@ -6086,8 +6634,24 @@ fn parse_inline_context(
         // Smart typography (§8): parsed into AST nodes so renderers can choose
         // glyph output or source-preserving Carve output without rescanning.
         if let Some((nodes, consumed)) = parse_smart_punctuation_at(text, i, &buf, &out) {
-            flush_text(&mut out, &mut buf);
-            out.extend(nodes);
+            flush_text(
+                &mut out,
+                &mut buf,
+                positions,
+                base,
+                &mut buf_start,
+                &mut buf_placeable,
+            );
+            let mut local = 0usize;
+            for mut node in nodes {
+                let width = smart_punctuation_source_width(&node);
+                set_inline_node_pos(
+                    &mut node,
+                    inline_pos(positions, base + i + local, base + i + local + width),
+                );
+                local += width;
+                out.push(node);
+            }
             i += consumed;
             continue;
         }
@@ -6095,18 +6659,38 @@ fn parse_inline_context(
         // Inline footnote `^[content]`. A `^` anywhere else is literal text
         // (there is no bare superscript), so `^^[x]` is a literal `^` + a note.
         if !in_footnote && c == b'^' && bytes.get(i + 1) == Some(&b'[') {
-            if let Some((footnote, consumed)) = parse_inline_footnote(bytes, i, options, &bounds) {
-                flush_text(&mut out, &mut buf);
-                out.push(InlineNode::Footnote(footnote));
+            if let Some((footnote, consumed)) =
+                parse_inline_footnote(bytes, i, options, &bounds, positions, base)
+            {
+                flush_text(
+                    &mut out,
+                    &mut buf,
+                    positions,
+                    base,
+                    &mut buf_start,
+                    &mut buf_placeable,
+                );
+                let mut node = InlineNode::Footnote(footnote);
+                set_inline_node_pos(
+                    &mut node,
+                    inline_pos(positions, base + i, base + i + consumed),
+                );
+                out.push(node);
                 i += consumed;
                 continue;
             }
         }
 
         // Bold-italic, sub, highlight, then single-char emphasis
-        if let Some((mut node, consumed)) =
-            match_emphasis(bytes, i, options, in_footnote, &mut emphasis_no_close)
-        {
+        if let Some((mut node, consumed)) = match_emphasis(
+            bytes,
+            i,
+            options,
+            in_footnote,
+            &mut emphasis_no_close,
+            positions,
+            base,
+        ) {
             let mut consumed = consumed;
             if bytes.get(i + consumed) == Some(&b'{') {
                 if let Some((attrs, next)) =
@@ -6116,7 +6700,18 @@ fn parse_inline_context(
                     consumed = next - i;
                 }
             }
-            flush_text(&mut out, &mut buf);
+            flush_text(
+                &mut out,
+                &mut buf,
+                positions,
+                base,
+                &mut buf_start,
+                &mut buf_placeable,
+            );
+            set_inline_node_pos(
+                &mut node,
+                inline_pos(positions, base + i, base + i + consumed),
+            );
             out.push(node);
             i += consumed;
             continue;
@@ -6126,13 +6721,31 @@ fn parse_inline_context(
         if c == b'\n' {
             if buf.ends_with('\\') {
                 buf.pop();
-                flush_text(&mut out, &mut buf);
-                out.push(InlineNode::hard_break());
+                flush_text(
+                    &mut out,
+                    &mut buf,
+                    positions,
+                    base,
+                    &mut buf_start,
+                    &mut buf_placeable,
+                );
+                out.push(InlineNode::HardBreak(Break {
+                    pos: inline_pos(positions, base + i, base + i + 1),
+                }));
                 i += 1;
                 continue;
             }
-            flush_text(&mut out, &mut buf);
-            out.push(InlineNode::soft_break());
+            flush_text(
+                &mut out,
+                &mut buf,
+                positions,
+                base,
+                &mut buf_start,
+                &mut buf_placeable,
+            );
+            out.push(InlineNode::SoftBreak(Break {
+                pos: inline_pos(positions, base + i, base + i + 1),
+            }));
             i += 1;
             continue;
         }
@@ -6141,7 +6754,14 @@ fn parse_inline_context(
             // `end` must land on a char boundary or `text[i..]`/slicing panics;
             // a misbehaving extension matcher must not be able to crash the core.
             if end > i && end <= text.len() && text.is_char_boundary(end) {
-                flush_text(&mut out, &mut buf);
+                flush_text(
+                    &mut out,
+                    &mut buf,
+                    positions,
+                    base,
+                    &mut buf_start,
+                    &mut buf_placeable,
+                );
                 out.push(node);
                 i = end;
                 continue;
@@ -6149,10 +6769,20 @@ fn parse_inline_context(
         }
 
         let ch = text[i..].chars().next().unwrap();
+        if buf_start.is_none() {
+            buf_start = Some(i);
+        }
         buf.push(ch);
         i += ch.len_utf8();
     }
-    flush_text(&mut out, &mut buf);
+    flush_text(
+        &mut out,
+        &mut buf,
+        positions,
+        base,
+        &mut buf_start,
+        &mut buf_placeable,
+    );
     out
 }
 
@@ -6162,6 +6792,8 @@ fn parse_critic_markup(
     options: &Options<'_>,
     in_footnote: bool,
     bounds: &InlineBounds<'_>,
+    positions: Option<&InlinePositionMap<'_>>,
+    base: usize,
 ) -> Option<(InlineNode, usize)> {
     // Match the two-byte opener on raw bytes -- validating `bytes[start..]` as
     // UTF-8 here would be O(n) at every `{`, i.e. O(n^2) over a run of critic
@@ -6183,7 +6815,14 @@ fn parse_critic_markup(
             let inner = std::str::from_utf8(&bytes[content_start..pair]).ok()?;
             Some((
                 InlineNode::CriticInsert(CriticInsert {
-                    children: parse_inline_context(inner, options, false, in_footnote),
+                    children: parse_inline_context(
+                        inner,
+                        options,
+                        false,
+                        in_footnote,
+                        positions,
+                        base + content_start,
+                    ),
                     attrs: None,
                     pos: None,
                 }),
@@ -6198,7 +6837,14 @@ fn parse_critic_markup(
             let inner = std::str::from_utf8(&bytes[content_start..pair]).ok()?;
             Some((
                 InlineNode::CriticDelete(CriticDelete {
-                    children: parse_inline_context(inner, options, false, in_footnote),
+                    children: parse_inline_context(
+                        inner,
+                        options,
+                        false,
+                        in_footnote,
+                        positions,
+                        base + content_start,
+                    ),
                     attrs: None,
                     pos: None,
                 }),
@@ -6289,6 +6935,8 @@ fn parse_inline_footnote(
     start: usize,
     options: &Options<'_>,
     bounds: &InlineBounds<'_>,
+    positions: Option<&InlinePositionMap<'_>>,
+    base: usize,
 ) -> Option<(Footnote, usize)> {
     if bytes.get(start) != Some(&b'^') || bytes.get(start + 1) != Some(&b'[') {
         return None;
@@ -6310,7 +6958,8 @@ fn parse_inline_footnote(
             after = next;
         }
     }
-    let children = parse_inline_context(&content, options, false, true);
+    let children =
+        parse_inline_context(&content, options, false, true, positions, base + start + 2);
     Some((
         Footnote {
             attrs,
@@ -6476,6 +7125,8 @@ fn parse_reference_link(
     options: &Options<'_>,
     in_footnote: bool,
     bounds: &InlineBounds<'_>,
+    positions: Option<&InlinePositionMap<'_>>,
+    base: usize,
 ) -> Option<(Link, usize)> {
     let text_close = bracketed_close(bytes, start, bounds.matches)?;
     let after_text = text_close + 1;
@@ -6512,7 +7163,14 @@ fn parse_reference_link(
             attrs,
             href: String::new(),
             title: None,
-            children: parse_inline_context(&text, options, false, in_footnote),
+            children: parse_inline_context(
+                &text,
+                options,
+                false,
+                in_footnote,
+                positions,
+                base + start + 1,
+            ),
             ref_label: Some(ref_label),
             // `raw_ref` is the literal source emitted only when the
             // reference does not resolve; it must include the consumed
@@ -6527,10 +7185,26 @@ fn parse_reference_link(
     ))
 }
 
-fn flush_text(out: &mut Vec<InlineNode>, buf: &mut String) {
+fn flush_text(
+    out: &mut Vec<InlineNode>,
+    buf: &mut String,
+    positions: Option<&InlinePositionMap<'_>>,
+    base: usize,
+    buf_start: &mut Option<usize>,
+    buf_placeable: &mut bool,
+) {
     if !buf.is_empty() {
-        out.push(InlineNode::text(std::mem::take(buf)));
+        let start = buf_start.take().unwrap_or(0);
+        let end = start + buf.len();
+        out.push(InlineNode::Text(Text {
+            value: std::mem::take(buf),
+            pos: (*buf_placeable)
+                .then(|| inline_pos(positions, base + start, base + end))
+                .flatten(),
+        }));
     }
+    *buf_start = None;
+    *buf_placeable = true;
 }
 
 fn parse_smart_punctuation_at(
@@ -6640,6 +7314,13 @@ fn parse_smart_punctuation_at(
     }
 
     None
+}
+
+fn smart_punctuation_source_width(node: &InlineNode) -> usize {
+    match node {
+        InlineNode::SmartPunctuation(s) => s.value.len(),
+        _ => 0,
+    }
 }
 
 fn last_emitted_glyph(out: &[InlineNode]) -> char {
@@ -6853,6 +7534,8 @@ fn parse_inline_link_with_options(
     options: &Options<'_>,
     in_footnote: bool,
     bounds: &InlineBounds<'_>,
+    positions: Option<&InlinePositionMap<'_>>,
+    base: usize,
 ) -> Option<(Link, usize)> {
     if bytes.get(start) != Some(&b'[') {
         return None;
@@ -6883,7 +7566,14 @@ fn parse_inline_link_with_options(
             attrs,
             href,
             title,
-            children: parse_inline_context(&text, options, false, in_footnote),
+            children: parse_inline_context(
+                &text,
+                options,
+                false,
+                in_footnote,
+                positions,
+                base + start + 1,
+            ),
             ref_label: None,
             raw_ref: None,
             from_crossref: false,
@@ -6899,6 +7589,8 @@ fn parse_inline_extension(
     options: &Options<'_>,
     in_footnote: bool,
     bounds: &InlineBounds<'_>,
+    positions: Option<&InlinePositionMap<'_>>,
+    base: usize,
 ) -> Option<(InlineExtension, usize)> {
     if bytes.get(start) != Some(&b':') {
         return None;
@@ -6942,7 +7634,14 @@ fn parse_inline_extension(
         InlineExtension {
             attrs,
             name,
-            children: parse_inline_context(&content, options, false, in_footnote),
+            children: parse_inline_context(
+                &content,
+                options,
+                false,
+                in_footnote,
+                positions,
+                base + i + 1,
+            ),
             pos: None,
         },
         after - start,
@@ -6955,6 +7654,8 @@ fn parse_span(
     options: &Options<'_>,
     in_footnote: bool,
     bounds: &InlineBounds<'_>,
+    positions: Option<&InlinePositionMap<'_>>,
+    base: usize,
 ) -> Option<(Span, usize)> {
     let content_close = bracketed_close(bytes, start, bounds.matches)?;
     let after_bracket = content_close + 1;
@@ -6986,7 +7687,14 @@ fn parse_span(
     Some((
         Span {
             attrs,
-            children: parse_inline_context(&content, options, false, in_footnote),
+            children: parse_inline_context(
+                &content,
+                options,
+                false,
+                in_footnote,
+                positions,
+                base + start + 1,
+            ),
             pos: None,
         },
         after_attrs - start,
@@ -7617,6 +8325,8 @@ fn match_emphasis(
     options: &Options<'_>,
     in_footnote: bool,
     no_close: &mut [Option<usize>; EMPHASIS_DELIM_SLOTS],
+    positions: Option<&InlinePositionMap<'_>>,
+    base: usize,
 ) -> Option<(InlineNode, usize)> {
     let c = bytes[i];
 
@@ -7640,7 +8350,14 @@ fn match_emphasis(
                         InlineNode::Emphasis(Emphasis {
                             attrs: None,
                             kind: EmphasisKind::BoldItalic,
-                            children: parse_inline_context(inner, options, false, in_footnote),
+                            children: parse_inline_context(
+                                inner,
+                                options,
+                                false,
+                                in_footnote,
+                                positions,
+                                base + start,
+                            ),
                             pos: None,
                         }),
                         close + 2 - i,
@@ -7708,7 +8425,14 @@ fn match_emphasis(
         InlineNode::Emphasis(Emphasis {
             attrs: None,
             kind,
-            children: parse_inline_context(inner, options, false, in_footnote),
+            children: parse_inline_context(
+                inner,
+                options,
+                false,
+                in_footnote,
+                positions,
+                base + i + 1,
+            ),
             pos: None,
         }),
         close + 1 - i,
@@ -9136,6 +9860,8 @@ fn parse_forced_emphasis(
     options: &Options<'_>,
     in_footnote: bool,
     bounds: &InlineBounds<'_>,
+    positions: Option<&InlinePositionMap<'_>>,
+    base: usize,
 ) -> Option<(InlineNode, usize)> {
     let delim = bytes.get(i + 1).copied()?;
     let kind = match delim {
@@ -9165,7 +9891,14 @@ fn parse_forced_emphasis(
                 InlineNode::Emphasis(Emphasis {
                     attrs: None,
                     kind,
-                    children: parse_inline_context(inner, options, false, in_footnote),
+                    children: parse_inline_context(
+                        inner,
+                        options,
+                        false,
+                        in_footnote,
+                        positions,
+                        base + content_start,
+                    ),
                     pos: None,
                 }),
                 j + 2 - i,
