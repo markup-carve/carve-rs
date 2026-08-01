@@ -5556,6 +5556,7 @@ fn detect_hardbreaks_block_open(line: &str) -> Option<usize> {
 /// paragraph child becomes a hard break. Unlike a line block, leading
 /// whitespace is not preserved and nested blocks keep ordinary soft breaks.
 fn parse_hardbreaks_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
+    let span_start = cur.pos;
     let opener = cur.peek().unwrap();
     let fence_len = detect_hardbreaks_block_open(opener).unwrap();
     cur.consume();
@@ -5566,15 +5567,25 @@ fn parse_hardbreaks_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockN
             cur.consume();
             break;
         }
-        inner.push(line.to_string(), cur.source_line(cur.pos));
+        // Unlike a verse line, a line here is taken VERBATIM - this block does
+        // not preserve leading whitespace and rewrites nothing - so the
+        // parent's column widths apply unchanged. Pushing without them left
+        // every block and inline inside unplaced.
+        inner.push_at(
+            line.to_string(),
+            cur.source_line(cur.pos),
+            cur.source_col(cur.pos),
+        );
         cur.consume();
     }
     let mut children = parse_mapped_source(&inner.into_source(), options);
     for child in &mut children {
         if let BlockNode::Paragraph(para) = child {
             for node in &mut para.children {
-                if matches!(node, InlineNode::SoftBreak(_)) {
-                    *node = InlineNode::hard_break();
+                if let InlineNode::SoftBreak(at) = node {
+                    // The break IS the source's line ending; rebuilding it with
+                    // `hard_break()` threw that span away.
+                    *node = InlineNode::HardBreak(Break { pos: at.pos });
                 }
             }
         }
@@ -5590,8 +5601,12 @@ fn parse_hardbreaks_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockN
         }),
         label: None,
         children,
-        // Synthesized wrapper, not a block the author wrote (PART 12 §4).
-        pos: None,
+        // The div's IDENTITY is synthesized - the author wrote a hard-breaks
+        // block, not a div - but its extent is not: it is the fence pair the
+        // author did write, opener through closer. A line block is placed on
+        // exactly that reasoning, and refusing here left the construct with no
+        // span at all.
+        pos: span_of(cur, span_start, cur.pos, options),
     })
 }
 

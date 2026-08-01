@@ -622,6 +622,60 @@ fn a_line_block_stanza_span_excludes_the_blank_that_ends_it() {
     assert_eq!(slice(source, pos), "verse");
 }
 
+/// A `::: \\` hard-breaks block is NOT a verse block: it rewrites nothing, so
+/// every line in it is verbatim and everything inside can be placed. The lines
+/// were pushed without their columns, so none of it was.
+#[test]
+fn a_hardbreaks_block_places_its_contents() {
+    let source = "::: \\\none\ntwo\n:::\n";
+    let doc = parse_with_positions(source);
+
+    let BlockNode::Div(div) = &doc.children[0] else {
+        panic!("a hard-breaks block renders as a div");
+    };
+    // The div's IDENTITY is synthesized; its EXTENT is the fence pair the
+    // author wrote.
+    assert_eq!(
+        slice(source, div.pos.expect("the block is placed")),
+        "::: \\\none\ntwo\n:::"
+    );
+
+    let BlockNode::Paragraph(para) = &div.children[0] else {
+        panic!("it holds a paragraph");
+    };
+    assert_eq!(slice(source, para.pos.expect("placed")), "one\ntwo");
+
+    let spans: Vec<String> = para
+        .children
+        .iter()
+        .map(|inline| match inline {
+            carve::ast::InlineNode::Text(t) => slice(source, t.pos.expect("text placed")),
+            // The break IS the source's line ending, so it spans it.
+            carve::ast::InlineNode::HardBreak(b) => slice(source, b.pos.expect("break placed")),
+            other => panic!("unexpected inline: {other:?}"),
+        })
+        .collect();
+    assert_eq!(spans, vec!["one", "\n", "two"]);
+}
+
+/// A block nested inside one is reached the same way.
+#[test]
+fn a_block_nested_in_a_hardbreaks_block_is_placed() {
+    let source = ":::: \\\n  indented\nnext\n\n::: note\na\nb\n:::\n::::\n";
+    let doc = parse_with_positions(source);
+
+    let BlockNode::Div(div) = &doc.children[0] else {
+        panic!("a hard-breaks block renders as a div");
+    };
+    let BlockNode::Admonition(note) = &div.children[1] else {
+        panic!("the note is its second child");
+    };
+    assert_eq!(
+        slice(source, note.pos.expect("the note is placed")),
+        "::: note\na\nb\n:::"
+    );
+}
+
 /// Frontmatter had no span at all - the struct had no field to put one in.
 /// The span covers the whole block, fences included, which is what the
 /// reference publishes.
