@@ -124,3 +124,28 @@ fn every_inline_in_the_fence_slices_back() {
     }
     assert_eq!(checked, 2, "expected both verse lines");
 }
+
+/// A block NESTED inside the fence is placed too - the recursive half of
+/// the same fix. Threading the columns lets the inner parse map its own
+/// lines, not only the fence's direct paragraphs.
+#[test]
+fn a_block_nested_in_the_fence_is_placed() {
+    let source = concat!(
+        ":::: \\\n",
+        "  indented\nnext\n\n",
+        "::: note\na\nb\n:::\n",
+        "::::\n",
+    );
+    let doc = document(source);
+
+    let BlockNode::Div(div) = &doc.children[0] else {
+        panic!("the fence renders as a div");
+    };
+    let BlockNode::Admonition(note) = &div.children[1] else {
+        panic!("the note is its second child");
+    };
+    assert_eq!(
+        slice(source, note.pos.expect("the nested note is placed")),
+        "::: note\na\nb\n:::"
+    );
+}
