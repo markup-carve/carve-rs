@@ -68,6 +68,35 @@ ANSI-styled text via `carve::to_markdown`, `carve::to_plain_text`, and
 `carve::to_ansi` (each with a matching `render_*` function for a parsed
 `Document`).
 
+### Section wrappers
+
+A top-level heading is wrapped, along with the content following it up to the
+next same-or-shallower heading, in a `<section>` carrying the heading's id (spec
+PART 9 §13). Only the id moves - `{#install .featured}` gives
+`<section id="install"><h2 class="featured">` - and a heading inside a
+blockquote, div, or list item is not wrapped at all.
+
+`with_sections(false)` renders headings flat, with the id back on the `<h*>`:
+
+```rust
+use carve::{to_html_with_options, Options};
+
+let html = to_html_with_options("# A\n\np\n", &Options::new().with_sections(false));
+assert_eq!(html, "<h1 id=\"A\">A</h1>\n<p>p</p>");
+```
+
+This exists for sites whose CSS or JS assumes rendered blocks are direct
+children of the content container - the `.stack > * + *` spacing idiom,
+`:first-child`, `nth-child()` counting, DOM child walks - all of which stop
+matching once a wrapper sits in between. It is the one output change that
+breaks a document whose *source* migrated cleanly.
+
+Nothing else changes when it is off: ids, collision dedup, `</#id>`
+cross-references, implicit `[Heading][]` references and heading numbering all
+resolve against the slug rather than the element carrying it. The endnotes
+`<section role="doc-endnotes">` is a separate construct and is still emitted.
+The option is HTML-only - no other target emits `<section>`.
+
 ## Untrusted input
 
 The normative hardening is always on and needs no configuration: dangerous URL

@@ -189,6 +189,35 @@ pub struct Options<'a> {
     /// Build-time renderers for client-script extensions, consulted only on the
     /// HTML [`Mode::Static`] path. See [`StaticRenderers`].
     pub renderers: StaticRenderers,
+    /// Wrap each top-level heading, and the content following it up to the next
+    /// same-or-shallower heading, in a `<section id="{slug}">` (spec PART 9
+    /// §13). Default `true`, which is what the conformance corpus pins.
+    ///
+    /// Set `false` to render headings flat: the id goes back on the `<h*>`
+    /// alongside its other attributes, and the blocks that would have been the
+    /// section's children stay as siblings - so they also lose the two-space
+    /// indentation they carried as container children.
+    ///
+    /// ```text
+    /// # A          sections: true      sections: false
+    /// p            <section id="A">    <h1 id="A">A</h1>
+    ///                <h1>A</h1>        <p>p</p>
+    ///                <p>p</p>
+    ///              </section>
+    /// ```
+    ///
+    /// For a site whose CSS or JS assumes rendered blocks are direct children
+    /// of the content container (the `.stack > * + *` spacing idiom,
+    /// `:first-child`, `nth-child()` counting, DOM child walks), the wrapper is
+    /// the one output change a clean source migration still breaks.
+    ///
+    /// Nothing else is affected: ids, collision dedup, `</#id>` crossrefs,
+    /// implicit `[Heading][]` references and heading numbering all resolve
+    /// against the slug rather than the element carrying it. The endnotes
+    /// `<section role="doc-endnotes">` is a separate construct and is emitted
+    /// either way. A heading inside a container was never wrapped, so it
+    /// renders identically under both settings.
+    pub sections: bool,
 }
 
 impl Default for Options<'_> {
@@ -207,6 +236,7 @@ impl Default for Options<'_> {
             profile_base_host: None,
             mode: Mode::Interactive,
             renderers: StaticRenderers::default(),
+            sections: true,
         }
     }
 }
@@ -227,6 +257,13 @@ impl<'a> Options<'a> {
     /// (1-based). Opt-in; for editor preview scroll-sync.
     pub fn with_source_lines(mut self, enabled: bool) -> Self {
         self.source_lines = enabled;
+        self
+    }
+
+    /// Wrap top-level headings in `<section>`. Default `true`; pass `false` to
+    /// render headings flat with the id on the `<h*>`. See [`Options::sections`].
+    pub fn with_sections(mut self, enabled: bool) -> Self {
+        self.sections = enabled;
         self
     }
 
