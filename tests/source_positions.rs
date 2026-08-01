@@ -189,3 +189,114 @@ fn a_nested_item_accumulates_the_outer_indent() {
     );
     assert_eq!(slice(source, para), "inner");
 }
+
+#[test]
+fn a_list_item_spans_its_marker_and_body() {
+    // The item includes its bullet - unlike the paragraph inside it, which
+    // starts at the text. Both are right: the marker belongs to the item.
+    let source = "- one\n- two\n";
+    let doc = parse_with_positions(source);
+    let BlockNode::List(list) = &doc.children[0] else {
+        panic!("expected a list");
+    };
+
+    let first = list.items[0].pos.expect("the item carries a position");
+    assert_eq!(slice(source, first), "- one");
+    assert_eq!(
+        slice(source, list.items[1].pos.expect("second item")),
+        "- two"
+    );
+}
+
+#[test]
+fn a_table_row_spans_its_line() {
+    let source = "| a | b |\n|---|---|\n| c | d |\n";
+    let doc = parse_with_positions(source);
+    let BlockNode::Table(table) = &doc.children[0] else {
+        panic!("expected a table");
+    };
+
+    assert_eq!(
+        slice(source, table.rows[0].pos.expect("header row")),
+        "| a | b |"
+    );
+    assert_eq!(
+        slice(source, table.rows[1].pos.expect("body row")),
+        "| c | d |"
+    );
+}
+
+#[test]
+fn a_continued_row_spans_every_line_it_runs_to() {
+    // A `+` continuation extends the row. The row stays ONE contiguous range
+    // that no sibling row overlaps, so it keeps a position - the cell it
+    // extends does not, because that cell's content sits in two column ranges
+    // with another column's content between them.
+    let source = "|= F |= D |\n| Cx | A long |\n+    | that cont |\n| S | one |\n";
+    let doc = parse_with_positions(source);
+    let BlockNode::Table(table) = &doc.children[0] else {
+        panic!("expected a table");
+    };
+
+    let continued = table.rows[1]
+        .pos
+        .expect("the continued row carries a position");
+    assert_eq!(continued.start_line, 2);
+    assert_eq!(continued.end_line, 3);
+    assert!(slice(source, continued).contains("A long"));
+    assert!(slice(source, continued).contains("that cont"));
+}
+
+#[test]
+fn a_table_cell_spans_its_own_columns() {
+    let source = "| a | b |\n|---|---|\n| c | dd |\n";
+    let doc = parse_with_positions(source);
+    let BlockNode::Table(table) = &doc.children[0] else {
+        panic!("expected a table");
+    };
+
+    let cells: Vec<String> = table
+        .rows
+        .iter()
+        .flat_map(|r| r.cells.iter())
+        .map(|c| slice(source, c.pos.expect("every cell carries a position")))
+        .collect();
+
+    assert_eq!(cells, vec![" a ", " b ", " c ", " dd "]);
+}
+
+#[test]
+fn a_cell_holding_an_escaped_pipe_spans_the_source_not_the_text() {
+    // `\|` resolves to one character, so the cell's text is shorter than the
+    // source it came from. A span derived from the text would stop early.
+    let source = "|= A |= B |\n| x \\| y | z |\n";
+    let doc = parse_with_positions(source);
+    let BlockNode::Table(table) = &doc.children[0] else {
+        panic!("expected a table");
+    };
+
+    let cell = table.rows[1].cells[0]
+        .pos
+        .expect("the cell carries a position");
+    assert_eq!(slice(source, cell), " x \\| y ");
+}
+
+#[test]
+fn a_quoted_table_cell_is_measured_in_the_document() {
+    // The parser sees these lines with `> ` already removed; the columns have
+    // to come back from the container's stripped width.
+    let source = "> | x | y |\n> |---|---|\n> | z | w |\n";
+    let doc = parse_with_positions(source);
+    let BlockNode::BlockQuote(quote) = &doc.children[0] else {
+        panic!("expected a blockquote");
+    };
+    let BlockNode::Table(table) = &quote.children[0] else {
+        panic!("expected a quoted table");
+    };
+
+    let cell = table.rows[0].cells[0]
+        .pos
+        .expect("the quoted cell carries a position");
+    assert_eq!(cell.start_column, 4, "past `> |`");
+    assert_eq!(slice(source, cell), " x ");
+}

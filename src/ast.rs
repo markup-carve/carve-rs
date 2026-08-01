@@ -215,7 +215,7 @@ pub struct TableCell {
     /// Author attributes from a `{...}` glued to the cell's opening pipe.
     pub attrs: Option<Attrs>,
     pub children: Vec<InlineNode>,
-    /// Span in the original source, when the parser could determine it.
+    /// Where this cell sits in the source (spec PART 12 §4).
     pub pos: Option<Pos>,
 }
 
