@@ -9,8 +9,37 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`Options::with_sections(false)` renders headings without the `<section>`
+  wrapper** (markup-carve/carve#427, spec PART 9 §13). The id goes back on the
+  `<h*>` alongside its other attributes, and the blocks that would have been
+  section children stay as siblings. Default unchanged, so existing output is
+  byte-identical.
+
+  The wrapper is the one output change that breaks a site whose source migrated
+  cleanly: CSS and JS assuming rendered blocks are direct children of the
+  content container stop matching once a `<section>` sits in between. The
+  endnotes `<section role="doc-endnotes">` is a different construct and is
+  still emitted.
 
 ### Fixed
+
+- **An unwrapped heading no longer puts its id before the author's attributes**
+  (spec PART 10 §1). This engine wrote the id first in every case, so
+  `{a=b .c}` on a heading inside a blockquote rendered
+  `<h1 id="Auto" a="b" class="c">` where carve-js and carve-php both render
+  `<h1 a="b" class="c" id="Auto">`. Authored attributes now keep their source
+  order and a generated id joins at the end; an id the author wrote stays in
+  its authored slot.
+
+  All three engines disagreed here and none could be wrong, because the only
+  way to reach the code was a heading inside a container and no corpus case
+  gave such a heading attributes. carve-js is canonical. The `sections` switch
+  is what forced the question: with it off every heading takes that path.
+
+  `data-source-line` stays last. This engine stamps it as an ordinary
+  key-value at parse time, so it rides along in the authored run; it is a
+  render annotation rather than an authored attribute, and the generated id
+  belongs before it (`<h2 id="Nested" data-source-line="4">`).
 
 - **An auto heading slug no longer collides with an explicit `{#id}`.**
   `{#API-2}` on one heading plus a later `# API` emitted `id="API-2"` twice -

@@ -171,7 +171,7 @@ fn render_document_blocks(
         if !first {
             out.push('\n');
         }
-        if matches!(nodes[i], BlockNode::Heading(_)) {
+        if matches!(nodes[i], BlockNode::Heading(_)) && options.sections {
             i = render_section(&mut out, nodes, i, 0, options, state);
         } else {
             render_block(&mut out, &nodes[i], 0, options, state);
@@ -642,6 +642,19 @@ fn render_block(
     }
 }
 
+/// Pull the `data-source-line` stamp out of an attribute set, returning its
+/// value. It is added by the parser when `source_lines` is on, but it is a
+/// render annotation rather than something the author wrote, so a caller that
+/// appends a generated attribute has to emit it after the stamp is removed and
+/// put the stamp back last.
+fn take_source_line_attr(attrs: &mut Attrs) -> Option<String> {
+    let value = attrs.key_values.remove("data-source-line")?;
+    attrs
+        .order
+        .retain(|slot| !matches!(slot, AttrSlot::Key(k) if k == "data-source-line"));
+    Some(value)
+}
+
 fn render_heading(
     out: &mut String,
     h: &Heading,
@@ -649,18 +662,49 @@ fn render_heading(
     options: &Options<'_>,
     state: &mut RenderState,
 ) {
-    // A heading rendered here is nested inside another block (list item,
-    // blockquote, div, ...). Unlike a top-level heading it carries no
-    // `<section>` wrapper, so it must emit its slug id directly on the tag
-    // (matching carve-php). The id is allocated from the same document-order
-    // counter as top-level headings, so duplicate slugs are numbered
-    // consistently across nesting levels.
+    // A heading rendered here carries no `<section>` wrapper - either because
+    // it is nested inside another block (list item, blockquote, div, ...) or
+    // because the `sections` option is off - so it emits its id directly on the
+    // tag. The id is allocated from the same document-order counter as
+    // top-level headings, so duplicate slugs are numbered consistently across
+    // nesting levels.
+    //
+    // PART 10 §1 decides where that id sits. The author's own attributes keep
+    // their source order, and a GENERATED attribute joins at the end; an id the
+    // author WROTE is not generated, so it stays in the slot they wrote it in.
+    // carve-rs used to put the id first in both cases, which agreed with no
+    // other engine.
     let id = next_heading_id(h, state);
+    let authored_id = h.attrs.as_ref().is_some_and(|attrs| attrs.id.is_some());
     indent(out, level);
-    write!(out, "<h{} id=\"", h.level).unwrap();
-    write_escaped_attr(out, &id);
-    out.push('"');
-    out.push_str(&render_attrs_without_id(&h.attrs));
+    write!(out, "<h{}", h.level).unwrap();
+    if authored_id {
+        // Render through the normal attribute walk so the id lands in its
+        // authored slot. The resolved id is the authored one (an explicit
+        // heading id wins verbatim), but write it back rather than assume so.
+        let mut attrs = h.attrs.clone();
+        if let Some(attrs) = &mut attrs {
+            attrs.id = Some(id.clone());
+        }
+        write_attrs(out, &attrs);
+    } else {
+        // `data-source-line` is a RENDER annotation, not something the author
+        // wrote, and it is emitted last - so the generated id goes before it,
+        // not after. carve-rs stamps it as an ordinary key-value at parse time,
+        // which would otherwise carry it along in the authored run and put the
+        // id behind it (`tests/source_lines.rs` catches exactly that).
+        let mut authored = h.attrs.clone();
+        let stamp = authored.as_mut().and_then(take_source_line_attr);
+        out.push_str(&render_attrs_without_id(&authored));
+        out.push_str(" id=\"");
+        write_escaped_attr(out, &id);
+        out.push('"');
+        if let Some(line) = stamp {
+            out.push_str(" data-source-line=\"");
+            write_escaped_attr(out, &line);
+            out.push('"');
+        }
+    }
     out.push('>');
     render_inlines(out, &h.children, options);
     write!(out, "</h{}>", h.level).unwrap();
