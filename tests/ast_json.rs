@@ -367,9 +367,14 @@ fn from_json_is_bounded_by_the_profile_max_length() {
 fn deeply_nested_json_is_refused_rather_than_overflowing() {
     // The reader is recursive-descent, so nesting depth IS stack depth, and this
     // input is untrusted: 200k nested arrays overflowed the stack and aborted the
-    // process (SIGABRT, not an error a caller can catch). The markup parser bounds
-    // itself the same way and at the same depth, so an AST this deep could not
-    // have been produced by parsing anything.
+    // process (SIGABRT, not an error a caller can catch).
+    //
+    // The reader's budget is NOT the parser's cap, and assuming it was is
+    // carve-rs#389: a node costs two structural levels, so a budget equal to the
+    // parser's 200 nodes refused ASTs this crate had just emitted. It is now
+    // derived from the parser's cap instead. 5000 is far past either, so what
+    // this test pins - deep input is refused rather than overflowing - is
+    // unaffected by where exactly the boundary sits.
     let n = 5_000;
     let src = format!(
         "{{\"type\":\"document\",\"srcByteLength\":0,\"children\":{}{}}}",
@@ -377,7 +382,9 @@ fn deeply_nested_json_is_refused_rather_than_overflowing() {
         "]".repeat(n)
     );
     let err = carve::from_json(&src).expect_err("a 5000-deep tree must be refused");
-    assert!(err.to_string().contains("200"), "{err}");
+    // Matched on the reason, not on a number: the budget is derived now, so
+    // hardcoding it here would break every time the parser's cap moves.
+    assert!(err.to_string().contains("nests deeper"), "{err}");
 
     // The mirror: ordinary nesting still decodes, so the cap cannot pass by
     // refusing everything.
