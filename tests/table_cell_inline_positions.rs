@@ -55,7 +55,9 @@ fn cell_inlines_carry_spans_that_slice_back() {
             _ => continue,
         };
         let pos = pos.unwrap_or_else(|| panic!("no position on {value:?}"));
-        let slice: String = codepoints[pos.start_offset..pos.end_offset].iter().collect();
+        let slice: String = codepoints[pos.start_offset..pos.end_offset]
+            .iter()
+            .collect();
         assert_eq!(slice, value, "the span points somewhere else");
         checked += 1;
     }
@@ -73,8 +75,12 @@ fn an_ordinary_cell_is_placed_as_well() {
     let InlineNode::Text(text) = &children[0] else {
         panic!("expected a text node");
     };
-    let pos = text.pos.expect("an ordinary cell's text must carry a position");
-    let slice: String = codepoints[pos.start_offset..pos.end_offset].iter().collect();
+    let pos = text
+        .pos
+        .expect("an ordinary cell's text must carry a position");
+    let slice: String = codepoints[pos.start_offset..pos.end_offset]
+        .iter()
+        .collect();
     assert_eq!(slice, text.value);
     assert_eq!(pos.start_line, 1);
 }
@@ -98,7 +104,14 @@ fn a_later_cell_is_anchored_at_its_own_column() {
     let InlineNode::Text(text) = &table.rows[0].cells[1].children[0] else {
         panic!("expected a text node in the second cell");
     };
-    let pos = text.pos.expect("the second cell's text must carry a position");
-    let slice: String = codepoints[pos.start_offset..pos.end_offset].iter().collect();
-    assert_eq!(slice, text.value, "the second cell anchored at the wrong column");
+    let pos = text
+        .pos
+        .expect("the second cell's text must carry a position");
+    let slice: String = codepoints[pos.start_offset..pos.end_offset]
+        .iter()
+        .collect();
+    assert_eq!(
+        slice, text.value,
+        "the second cell anchored at the wrong column"
+    );
 }
