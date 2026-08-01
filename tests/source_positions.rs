@@ -342,3 +342,53 @@ fn a_captioned_image_places_the_figure_and_its_target() {
         "![alt](/i.png)"
     );
 }
+
+#[test]
+fn an_unresolved_reference_link_keeps_its_span_when_it_reverts() {
+    // `[text][missing]` has no definition, so it reverts to the literal source
+    // it occupied. That source IS the link's extent - only the node type
+    // changes - and rebuilding it as a bare text node dropped the span.
+    //
+    // The reverted form is where a position is wanted most: it is exactly the
+    // case where an author wrote a reference that does not resolve, and a tool
+    // reporting that has to say where.
+    let source = "see [text][missing] here\n";
+    let doc = parse_with_positions(source);
+    let BlockNode::Paragraph(paragraph) = &doc.children[0] else {
+        panic!("expected a paragraph");
+    };
+
+    let spans: Vec<String> = paragraph
+        .children
+        .iter()
+        .filter_map(|node| match node {
+            carve::ast::InlineNode::Text(t) => Some(slice(source, t.pos.expect("text position"))),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(spans, vec!["see ", "[text][missing]", " here"]);
+}
+
+#[test]
+fn a_resolved_reference_link_is_unaffected() {
+    let source = "see [text][ok] here\n\n[ok]: /u\n";
+    let doc = parse_with_positions(source);
+    let BlockNode::Paragraph(paragraph) = &doc.children[0] else {
+        panic!("expected a paragraph");
+    };
+
+    let link = paragraph
+        .children
+        .iter()
+        .find_map(|node| match node {
+            carve::ast::InlineNode::Link(l) => Some(l),
+            _ => None,
+        })
+        .expect("a link");
+
+    assert_eq!(
+        slice(source, link.pos.expect("link position")),
+        "[text][ok]"
+    );
+}
