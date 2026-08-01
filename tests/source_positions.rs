@@ -517,3 +517,33 @@ fn an_unresolved_cross_reference_keeps_its_span_as_literal_text() {
         "</#nope>"
     );
 }
+
+/// A `+` continuation resets what a blockquote's lines look like, so the cursor
+/// cannot say how wide the stripped prefix was and refuses a span. The items
+/// were placed by other means, and a list that runs from its first item to its
+/// last is not a guess - so the list takes their extent.
+///
+/// Both ends have to exist, or the range would start or stop somewhere
+/// arbitrary: a consumer can handle a missing span, but cannot tell a wrong one
+/// from a right one.
+#[test]
+fn a_list_in_a_continued_blockquote_spans_its_items() {
+    let source = "> quoted\n+\n- item\n> more\n";
+    let doc = parse_with_positions(source);
+
+    let BlockNode::BlockQuote(quote) = &doc.children[0] else {
+        panic!("the document opens with a blockquote");
+    };
+    let list = quote
+        .children
+        .iter()
+        .find_map(|child| match child {
+            BlockNode::List(list) => Some(list),
+            _ => None,
+        })
+        .expect("the list is inside the quote");
+
+    let pos = list.pos.expect("the list is placed by its items");
+    assert_eq!(slice(source, pos), "- item");
+    assert_eq!(pos, list.items[0].pos.expect("the item is placed"));
+}
