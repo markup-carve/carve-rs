@@ -444,6 +444,19 @@ impl InlineNode {
         })
     }
 
+    /// A text node standing in for a node that REVERTED to its own source.
+    ///
+    /// An unresolved reference link or image is rebuilt from `raw_ref`, which
+    /// is its literal source, so the replacement covers exactly the span the
+    /// original node did. Rebuilding it with no position dropped that span for
+    /// no reason: the text is still a verbatim slice of the document.
+    pub fn text_at(value: impl Into<String>, pos: Option<Pos>) -> Self {
+        Self::Text(Text {
+            value: value.into(),
+            pos,
+        })
+    }
+
     pub fn escaped_text(value: impl Into<String>) -> Self {
         Self::EscapedText(EscapedText {
             value: value.into(),

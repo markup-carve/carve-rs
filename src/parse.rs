@@ -133,10 +133,19 @@ fn parse_with_options_mode(source: &str, options: &Options<'_>, mode: ParseMode)
         .map(|(label, source)| (label, parse_mapped_source(&source, options)))
         .collect();
     let mut children = parse_mapped_source(&body, options);
+    let mut footnote_defs: BTreeMap<String, Vec<BlockNode>> = footnote_defs;
     if options.positions {
         // Offsets need the original text, which the parser only ever sees as
         // already-stripped lines, so they are derived here in one pass.
-        fill_offsets(&mut children, &line_start_offsets(source));
+        let starts = line_start_offsets(source);
+        fill_offsets(&mut children, &starts);
+        // Definition BODIES are not in `children` - they live on the document -
+        // so this walk has to reach them explicitly. Missing them left every
+        // block and inline inside a footnote with correct lines and columns and
+        // offsets of 0..0, which reads as present and selects nothing.
+        for blocks in footnote_defs.values_mut() {
+            fill_offsets(blocks, &starts);
+        }
     }
     let mut doc = Document {
         frontmatter,
@@ -252,9 +261,26 @@ fn extract_footnote_defs(
         }
         if let Some((label, first)) = parse_footnote_def_line(stripped.bare) {
             let def_start_line = first_source_line + i;
+            // Bound before the cursor moves: the column below is measured
+            // against this line, and reading it back as `lines[i - 1]` would
+            // silently follow any future change to how far `i` advances here.
+            let def_line = lines[i];
             i += 1;
             let mut def_lines = vec![first.to_string()];
             let mut def_line_map = vec![Some(def_start_line)];
+            // Codepoints taken off the front of each body line, so a block
+            // inside the definition can be mapped back to the document. `first`
+            // is a sub-slice of the line after `[^label]:`, so the byte distance
+            // between the two pointers converts to an exact char offset.
+            // Measured against the ORIGINAL line, not the prefix-stripped one:
+            // a definition can be collected from inside a blockquote or a list
+            // item (`- [^a]: body`), and the column a consumer needs is the
+            // document's, which includes whatever the container took.
+            let first_off = {
+                let bytes = (first.as_ptr() as usize).saturating_sub(def_line.as_ptr() as usize);
+                def_line[..bytes].chars().count()
+            };
+            let mut def_col_map = vec![Some(first_off)];
             // Multi-line continuation (indented >= 2) is only gathered for a
             // TOP-LEVEL definition. A container-nested def is single-line here:
             // its continuation would carry the container prefix and is left to
@@ -275,6 +301,7 @@ fn extract_footnote_defs(
                         {
                             def_lines.push(String::new());
                             def_line_map.push(Some(first_source_line + i));
+                            def_col_map.push(Some(0));
                             i += 1;
                             continue;
                         }
@@ -303,17 +330,22 @@ fn extract_footnote_defs(
                         if !attached.is_empty() {
                             def_lines.push(String::new());
                             def_line_map.push(None);
+                            def_col_map.push(None);
                             let attached_len = attached.len();
                             def_lines.extend(attached);
                             def_line_map.extend(
                                 (attached_start..attached_start + attached_len)
                                     .map(|line_idx| Some(first_source_line + line_idx)),
                             );
+                            // A `+` block is spliced in verbatim, flush left.
+                            def_col_map.extend(std::iter::repeat(Some(0)).take(attached_len));
                         }
                         continue;
                     }
                     if leading_ws(line) >= 2 {
-                        def_lines.push(trim_ascii_start(line).to_string());
+                        let kept = trim_ascii_start(line);
+                        def_col_map.push(Some(line.chars().count() - kept.chars().count()));
+                        def_lines.push(kept.to_string());
                         def_line_map.push(Some(first_source_line + i));
                         i += 1;
                         continue;
@@ -322,12 +354,14 @@ fn extract_footnote_defs(
                 }
             }
             // First definition for a label wins (later duplicates are ignored).
-            defs.entry(label.to_string())
-                .or_insert_with(|| MappedSource {
-                    col_map: vec![None; def_lines.len()],
+            defs.entry(label.to_string()).or_insert_with(|| {
+                debug_assert_eq!(def_col_map.len(), def_lines.len());
+                MappedSource {
+                    col_map: def_col_map,
                     source: def_lines.join("\n"),
                     line_map: def_line_map,
-                });
+                }
+            });
             // Leave the container's structural prefix (or a blank line at top
             // level) where the invisible definition was, so the container still
             // renders and the line still acts as a block boundary -- a following
@@ -8981,12 +9015,18 @@ fn resolve_reference_links_inline(
                         } else if preserve_unresolved {
                             out.push(node);
                         } else {
-                            out.push(InlineNode::text(l.raw_ref.clone().unwrap_or_default()));
+                            out.push(InlineNode::text_at(
+                                l.raw_ref.clone().unwrap_or_default(),
+                                l.pos,
+                            ));
                         }
                     } else if preserve_unresolved {
                         out.push(node);
                     } else {
-                        out.push(InlineNode::text(l.raw_ref.clone().unwrap_or_default()));
+                        out.push(InlineNode::text_at(
+                            l.raw_ref.clone().unwrap_or_default(),
+                            l.pos,
+                        ));
                     }
                 } else {
                     resolve_reference_links_inline(
@@ -9059,7 +9099,10 @@ fn resolve_reference_links_inline(
                     } else {
                         // Unresolved image ref -> literal source. An image ref
                         // never matches heading text (unlike a link ref).
-                        out.push(InlineNode::text(img.raw_ref.clone().unwrap_or_default()));
+                        out.push(InlineNode::text_at(
+                            img.raw_ref.clone().unwrap_or_default(),
+                            img.pos,
+                        ));
                     }
                 } else {
                     out.push(node);
