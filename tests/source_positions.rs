@@ -392,3 +392,65 @@ fn a_resolved_reference_link_is_unaffected() {
         "[text][ok]"
     );
 }
+
+#[test]
+fn a_quoted_figure_spans_the_quote_and_its_caption() {
+    // The image path placed its figure; a blockquote wrapped in one did not.
+    let source = "> Stay hungry\n^ Steve Jobs\n";
+    let doc = parse_with_positions(source);
+    let BlockNode::Figure(figure) = &doc.children[0] else {
+        panic!("expected a figure, got {:?}", doc.children[0]);
+    };
+
+    assert_eq!(
+        slice(source, figure.pos.expect("the figure carries a position")),
+        "> Stay hungry\n^ Steve Jobs"
+    );
+}
+
+#[test]
+fn a_nested_autolink_unwraps_to_text_that_keeps_its_own_span() {
+    // A link cannot contain a link, so the autolink keeps only its DISPLAY
+    // text - a sub-slice of what it occupied. Handing over the autolink's whole
+    // span would cover the `<` and `>` as well, and a text node's span has to
+    // select the text it belongs to.
+    let source = "[pre <http://h> post](/u)\n";
+    let doc = parse_with_positions(source);
+    let BlockNode::Paragraph(paragraph) = &doc.children[0] else {
+        panic!("expected a paragraph");
+    };
+    let carve::ast::InlineNode::Link(link) = &paragraph.children[0] else {
+        panic!("expected a link");
+    };
+
+    let spans: Vec<String> = link
+        .children
+        .iter()
+        .filter_map(|node| match node {
+            carve::ast::InlineNode::Text(t) => Some(slice(source, t.pos.expect("text position"))),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(spans, vec!["pre ", "http://h", " post"]);
+}
+
+#[test]
+fn an_unwrapped_autolink_declines_when_the_text_is_not_the_source() {
+    // `<mailto:x@y.z>` displays `x@y.z`: the source carries a scheme the text
+    // does not, so no sub-slice equals it and the honest answer is none.
+    let source = "[a <mailto:x@y.z> b](/u)\n";
+    let doc = parse_with_positions(source);
+    let BlockNode::Paragraph(paragraph) = &doc.children[0] else {
+        panic!("expected a paragraph");
+    };
+    let carve::ast::InlineNode::Link(link) = &paragraph.children[0] else {
+        panic!("expected a link");
+    };
+
+    let unplaced = link.children.iter().any(|node| match node {
+        carve::ast::InlineNode::Text(t) => t.value == "x@y.z" && t.pos.is_none(),
+        _ => false,
+    });
+    assert!(unplaced, "a rewritten display text must not claim a span");
+}
