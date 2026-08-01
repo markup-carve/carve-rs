@@ -125,10 +125,10 @@ fn parse_with_options_mode(source: &str, options: &Options<'_>, mode: ParseMode)
         .filter(|b| *b == b'\n')
         .count()
         + 1;
-    let (body, footnote_defs_src) = extract_footnote_defs(body, body_start_line);
+    let (body, footnote_defs_src) = extract_footnote_defs(body, body_start_line, options.positions);
     let (body_source, link_defs) = extract_link_defs(&body.source);
     let body = remap_source(body_source, &body);
-    let footnote_defs = footnote_defs_src
+    let mut footnote_defs: BTreeMap<String, Vec<BlockNode>> = footnote_defs_src
         .into_iter()
         .map(|(label, source)| (label, parse_mapped_source(&source, options)))
         .collect();
@@ -136,7 +136,11 @@ fn parse_with_options_mode(source: &str, options: &Options<'_>, mode: ParseMode)
     if options.positions {
         // Offsets need the original text, which the parser only ever sees as
         // already-stripped lines, so they are derived here in one pass.
-        fill_offsets(&mut children, &line_start_offsets(source));
+        let line_starts = line_start_offsets(source);
+        fill_offsets(&mut children, &line_starts);
+        for blocks in footnote_defs.values_mut() {
+            fill_offsets(blocks, &line_starts);
+        }
     }
     let mut doc = Document {
         frontmatter,
@@ -211,6 +215,7 @@ fn remap_source(source: String, original: &MappedSource) -> MappedSource {
 fn extract_footnote_defs(
     source: &str,
     first_source_line: usize,
+    positions: bool,
 ) -> (MappedSource, BTreeMap<String, MappedSource>) {
     let lines: Vec<&str> = source.lines().collect();
     let mut body = Vec::new();
@@ -255,6 +260,15 @@ fn extract_footnote_defs(
             i += 1;
             let mut def_lines = vec![first.to_string()];
             let mut def_line_map = vec![Some(def_start_line)];
+            let mut def_col_map = if positions {
+                vec![stripped_col(
+                    Some(stripped.structural.chars().count()),
+                    stripped.bare,
+                    first,
+                )]
+            } else {
+                Vec::new()
+            };
             // Multi-line continuation (indented >= 2) is only gathered for a
             // TOP-LEVEL definition. A container-nested def is single-line here:
             // its continuation would carry the container prefix and is left to
@@ -275,6 +289,9 @@ fn extract_footnote_defs(
                         {
                             def_lines.push(String::new());
                             def_line_map.push(Some(first_source_line + i));
+                            if positions {
+                                def_col_map.push(stripped_col(Some(0), lines[i], ""));
+                            }
                             i += 1;
                             continue;
                         }
@@ -303,18 +320,28 @@ fn extract_footnote_defs(
                         if !attached.is_empty() {
                             def_lines.push(String::new());
                             def_line_map.push(None);
+                            if positions {
+                                def_col_map.push(None);
+                            }
                             let attached_len = attached.len();
                             def_lines.extend(attached);
                             def_line_map.extend(
                                 (attached_start..attached_start + attached_len)
                                     .map(|line_idx| Some(first_source_line + line_idx)),
                             );
+                            if positions {
+                                def_col_map.extend((0..attached_len).map(|_| Some(0)));
+                            }
                         }
                         continue;
                     }
                     if leading_ws(line) >= 2 {
-                        def_lines.push(trim_ascii_start(line).to_string());
+                        let trimmed = trim_ascii_start(line);
+                        def_lines.push(trimmed.to_string());
                         def_line_map.push(Some(first_source_line + i));
+                        if positions {
+                            def_col_map.push(stripped_col(Some(0), line, trimmed));
+                        }
                         i += 1;
                         continue;
                     }
@@ -324,7 +351,7 @@ fn extract_footnote_defs(
             // First definition for a label wins (later duplicates are ignored).
             defs.entry(label.to_string())
                 .or_insert_with(|| MappedSource {
-                    col_map: vec![None; def_lines.len()],
+                    col_map: def_col_map,
                     source: def_lines.join("\n"),
                     line_map: def_line_map,
                 });
@@ -346,7 +373,11 @@ fn extract_footnote_defs(
             // The document body's lines are top-level: the footnote-definition
             // extraction removes whole lines, never a prefix, so nothing has
             // been stripped from the front of the ones that remain.
-            col_map: vec![Some(0); body.len()],
+            col_map: if positions {
+                vec![Some(0); body.len()]
+            } else {
+                Vec::new()
+            },
             source: body.join("\n"),
             line_map: body_line_map,
         },

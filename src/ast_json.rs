@@ -139,18 +139,20 @@ fn write_document(out: &mut String, doc: &Document) {
             write_comma(out, &mut first);
             write_block(out, child);
         }
-        // Definitions come AFTER the content (PART 12 §7). They used to be
-        // written first, because this engine keeps them in a map and the map
-        // was iterated before `children` - so `a[^r]` followed by its
-        // definition came back with the definition as the document's FIRST
-        // child, where carve-js and carve-php both put it last.
-        //
-        // §7 also asks for SOURCE order among them, and that is not recovered
-        // here: the map is keyed by label, and a definition body carries no
-        // position to sort by (carve-rs#363), so two definitions come out in
-        // label order. Placement is the half that changes what a consumer
-        // renders; ordering between two definitions only shows up in a diff.
-        for (label, children) in &doc.footnote_defs {
+        // Definitions come AFTER the content and in source order (PART 12 §7).
+        // The map is keyed by label, so sort by the first placed body block;
+        // an unplaced body falls back to label order rather than inventing a
+        // source position.
+        let mut footnote_defs: Vec<_> = doc.footnote_defs.iter().collect();
+        footnote_defs.sort_by_key(|(label, children)| {
+            (
+                first_block_pos(children)
+                    .map(|pos| pos.start_offset)
+                    .unwrap_or(usize::MAX),
+                label.as_str(),
+            )
+        });
+        for (label, children) in footnote_defs {
             write_comma(out, &mut first);
             write_footnote_def(out, label, children);
         }
@@ -158,6 +160,32 @@ fn write_document(out: &mut String, doc: &Document) {
     });
     w.field("srcByteLength", |out| write_usize(out, doc.source_len));
     w.finish();
+}
+
+fn first_block_pos(children: &[BlockNode]) -> Option<&Pos> {
+    children.iter().find_map(block_pos)
+}
+
+fn block_pos(node: &BlockNode) -> Option<&Pos> {
+    match node {
+        BlockNode::Heading(n) => n.pos.as_ref(),
+        BlockNode::Paragraph(n) => n.pos.as_ref(),
+        BlockNode::CodeBlock(n) => n.pos.as_ref(),
+        BlockNode::List(n) => n.pos.as_ref(),
+        BlockNode::BlockQuote(n) => n.pos.as_ref(),
+        BlockNode::Table(n) => n.pos.as_ref(),
+        BlockNode::Admonition(n) => n.pos.as_ref(),
+        BlockNode::Div(n) => n.pos.as_ref(),
+        BlockNode::LineBlock(n) => n.pos.as_ref(),
+        BlockNode::DefinitionList(n) => n.pos.as_ref(),
+        BlockNode::Figure(n) => n.pos.as_ref(),
+        BlockNode::AbbreviationDef(n) => n.pos.as_ref(),
+        BlockNode::RawBlock(n) => n.pos.as_ref(),
+        BlockNode::Comment(n) => n.pos.as_ref(),
+        BlockNode::Extension(n) => n.pos.as_ref(),
+        BlockNode::BlockImage(n) => n.pos.as_ref(),
+        BlockNode::ThematicBreak(n) => n.pos.as_ref(),
+    }
 }
 
 fn write_frontmatter(out: &mut String, raw: &Frontmatter) {
@@ -173,6 +201,8 @@ fn write_footnote_def(out: &mut String, label: &str, children: &[BlockNode]) {
     w.field("type", |out| write_string(out, "footnote"));
     w.field("label", |out| write_string(out, label));
     w.field("children", |out| write_blocks(out, children));
+    let pos = first_block_pos(children).copied();
+    write_pos_field(&mut w, &pos);
     w.finish();
 }
 
