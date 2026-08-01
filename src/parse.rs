@@ -2387,7 +2387,10 @@ fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             attrs: None,
             target: FigureTarget::BlockQuote(quote),
             caption,
-            pos: None,
+            // From the quote's first line through the caption the cursor has
+            // just consumed. The image path already did this; a quote wrapped
+            // in a figure went unplaced.
+            pos: span_of(cur, span_start, cur.pos, options),
         })
     } else {
         BlockNode::BlockQuote(quote)
@@ -9753,6 +9756,39 @@ fn apply_no_nesting(nodes: &mut Vec<InlineNode>) {
     *nodes = enforce_no_nesting_inline(taken, false);
 }
 
+/// The span of the text a nested autolink unwraps to.
+///
+/// A link cannot contain a link, so `[pre <http://h> post](/u)` keeps only the
+/// autolink's DISPLAY text - and that text is a sub-slice of what the autolink
+/// occupied, not the whole of it. Handing over the autolink's own span would
+/// cover the `<` and `>` too, so the span would not select the text it belongs
+/// to, which is worse than leaving it unplaced.
+///
+/// The narrowing is only applied when the arithmetic is unambiguous: the source
+/// is either exactly the display text (a bare URL) or the display text inside
+/// one delimiter on each side (`<...>`). Anything else - a `mailto:` the author
+/// wrote out, an unusual spelling - yields None rather than a guess.
+fn unwrapped_autolink_pos(link: &AutoLink, display: &str) -> Option<Pos> {
+    let pos = link.pos?;
+    let width = pos.end_column.checked_sub(pos.start_column)?;
+    let shown = display.chars().count();
+
+    if width == shown {
+        return Some(pos);
+    }
+    if width == shown + 2 && pos.start_line == pos.end_line {
+        return Some(Pos {
+            start_column: pos.start_column + 1,
+            end_column: pos.end_column - 1,
+            start_offset: pos.start_offset + 1,
+            end_offset: pos.end_offset - 1,
+            ..pos
+        });
+    }
+
+    None
+}
+
 fn enforce_no_nesting_inline(nodes: Vec<InlineNode>, inside_link: bool) -> Vec<InlineNode> {
     let mut out = Vec::with_capacity(nodes.len());
     for node in nodes {
@@ -9775,7 +9811,10 @@ fn enforce_no_nesting_inline(nodes: Vec<InlineNode>, inside_link: bool) -> Vec<I
                         .strip_prefix("mailto:")
                         .unwrap_or(&a.href)
                         .to_string();
-                    out.push(InlineNode::text(display));
+                    out.push(InlineNode::Text(Text {
+                        pos: unwrapped_autolink_pos(&a, &display),
+                        value: display,
+                    }));
                 } else {
                     out.push(InlineNode::AutoLink(a));
                 }
