@@ -4224,11 +4224,64 @@ fn parse_definition_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNo
         } else {
             parse_inline_with_options(&term_text, options)
         };
-        let terms = vec![DefinitionTerm {
+        let mut terms = vec![DefinitionTerm {
             attrs: source_line_attrs(None, term_source_line, options),
             children,
             pos: None,
         }];
+
+        // CONSECUTIVE terms share an entry, which is what `:: a` / `:: b` on
+        // adjacent lines means and what the rendered `<dl>` shows - a run of
+        // `<dt>` followed by the `<dd>`s they share. This engine used to open a
+        // new entry per term line, so the same document grouped differently
+        // here and in carve-js while both rendered the same list; the grouping
+        // was an internal nobody could see, until the AST became something
+        // engines hand each other (PART 12).
+        while let Some(next) = cur.peek() {
+            let Some(next_term) = next.strip_prefix(":: ") else {
+                break;
+            };
+            if is_blank_line(next_term) {
+                break;
+            }
+            let next_source_line = cur.source_line(cur.pos);
+            let next_start = cur.pos;
+            cur.consume();
+            let mut text = trim_ascii_end(next_term).to_string();
+            let mut anchors = options
+                .positions
+                .then(|| vec![inline_anchor_for_line(cur, next_start, next_term)]);
+            while let Some(following) = cur.peek() {
+                if is_blank_line(following)
+                    || following.strip_prefix(":: ").is_some()
+                    || following.strip_prefix(":  ").is_some()
+                    || is_list_marker(following)
+                {
+                    break;
+                }
+                let owned = following.to_string();
+                if interrupts_paragraph(cur, &owned) {
+                    break;
+                }
+                text.push('\n');
+                text.push_str(&owned);
+                if let Some(anchors) = &mut anchors {
+                    anchors.push(inline_anchor_for_line(cur, cur.pos, &owned));
+                }
+                cur.consume();
+            }
+            let children = if let Some(anchors) = anchors {
+                parse_inline_lines_with_anchor(&text, options, anchors)
+            } else {
+                parse_inline_with_options(&text, options)
+            };
+            terms.push(DefinitionTerm {
+                attrs: source_line_attrs(None, next_source_line, options),
+                children,
+                pos: None,
+            });
+        }
+
         let mut defs = Vec::new();
 
         loop {

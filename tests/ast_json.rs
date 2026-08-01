@@ -419,3 +419,75 @@ fn footnote_definitions_follow_the_content() {
     assert_eq!(doc.children.len(), 2, "the two paragraphs stay in the tree");
     assert_eq!(doc.footnote_defs.len(), 2, "and both definitions survive");
 }
+
+#[test]
+fn definition_lists_publish_dt_and_dd_nodes() {
+    // PART 12: the wire carries the `<dt>` / `<dd>` sequence, not this engine's
+    // grouping. `definition_term` and `definition_description` are in the
+    // normative block vocabulary - under the grouped form those two entries
+    // named nothing and a profile denying either was a silent no-op - and a
+    // plain `{terms, definitions}` object can carry no `pos`.
+    //
+    // The grouping was also not agreed: on this document this engine produced
+    // three entries and carve-js produced one, while both rendered the same
+    // `<dl>`.
+    let source = ":: Term one\n:: Term two\n:  Def A\n:  Def B\n\n:: Second\n:  Only\n";
+    let json = carve::to_json(&carve::parse_with_options(
+        source,
+        &carve::Options::new().with_positions(true),
+    ));
+
+    let types: Vec<&str> = json
+        .match_indices("\"type\":\"definition_")
+        .map(|(i, _)| {
+            let rest = &json[i + "\"type\":\"".len()..];
+            &rest[..rest.find('"').expect("a type name ends")]
+        })
+        .collect();
+    assert_eq!(
+        types,
+        [
+            "definition_list",
+            "definition_term",
+            "definition_term",
+            "definition_description",
+            "definition_description",
+            "definition_term",
+            "definition_description",
+        ],
+        "{json}"
+    );
+    assert!(
+        !json.contains("\"terms\""),
+        "the grouping is internal: {json}"
+    );
+}
+
+#[test]
+fn definition_lists_round_trip_through_the_flat_form() {
+    // §6. Decoding regroups by the renderer's rule - a run of terms opens an
+    // entry, the descriptions after it belong to it - which is the only rule
+    // all three engines agree on, since it is the one the `<dl>` shows.
+    let source = ":: a\n:: b\n:  x\n:  y\n\n:: c\n:  z\n";
+    let doc = carve::parse_with_options(source, &carve::Options::new().with_positions(true));
+    let decoded = carve::from_json(&carve::to_json(&doc)).expect("decode");
+
+    assert_eq!(carve::to_json(&decoded), carve::to_json(&doc));
+
+    let options = carve::Options::new();
+    assert_eq!(
+        carve::render_html_with_options(&decoded, &options),
+        carve::render_html_with_options(&doc, &options),
+    );
+}
+
+#[test]
+fn the_older_grouped_payload_still_decodes() {
+    // Trees in the previous shape are stored, and this engine wrote them.
+    let json = r#"{"type":"document","srcByteLength":0,"children":[{"type":"definition_list",
+        "items":[{"terms":[[{"type":"text","value":"T"}]],
+        "definitions":[[{"type":"paragraph","children":[{"type":"text","value":"D"}]}]]}]}]}"#;
+    let doc = carve::from_json(json).expect("decode the older form");
+
+    assert!(carve::to_json(&doc).contains("\"type\":\"definition_term\""));
+}
