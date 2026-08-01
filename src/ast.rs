@@ -215,6 +215,8 @@ pub struct TableCell {
     /// Author attributes from a `{...}` glued to the cell's opening pipe.
     pub attrs: Option<Attrs>,
     pub children: Vec<InlineNode>,
+    /// Where this cell sits in the source (spec PART 12 §4).
+    pub pos: Option<Pos>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

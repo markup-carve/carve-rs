@@ -1095,6 +1095,11 @@ fn fill_offsets(blocks: &mut [BlockNode], line_starts: &[usize]) {
                     if let Some(pos) = row.pos.as_mut() {
                         apply_offsets(pos, line_starts);
                     }
+                    for cell in &mut row.cells {
+                        if let Some(pos) = cell.pos.as_mut() {
+                            apply_offsets(pos, line_starts);
+                        }
+                    }
                 }
             }
             BlockNode::LineBlock(l) => fill_offsets(&mut l.children, line_starts),
@@ -4333,7 +4338,14 @@ fn parse_table(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             apply_column_aligns(&mut rows[0], &column_aligns);
             continue;
         }
-        let mut row = parse_table_row(line, options);
+        let mut row = parse_table_row(
+            line,
+            options,
+            options
+                .positions
+                .then(|| (cur.source_line(row_at), cur.source_col(row_at)))
+                .and_then(|(l, c)| Some((l?, c?))),
+        );
         // The row is one line here; a `+` continuation extends it below. The
         // cursor is the only place that knows where this line sits, which is
         // why `parse_table_row` cannot do it itself.
@@ -4449,7 +4461,10 @@ fn apply_table_continuation(row: &mut TableRow, line: &str, options: &Options<'_
     }
 }
 
-fn parse_table_row(line: &str, options: &Options<'_>) -> TableRow {
+/// `base` is the row line's (source line, columns already stripped by an
+/// enclosing container). Without it a cell cannot be placed: this function is
+/// handed an already-split line and cannot know where it sits.
+fn parse_table_row(line: &str, options: &Options<'_>, base: Option<(usize, usize)>) -> TableRow {
     let mut content = line.trim();
     let (attrs, body) = split_row_attrs(content);
     content = body;
@@ -4459,13 +4474,31 @@ fn parse_table_row(line: &str, options: &Options<'_>) -> TableRow {
     if let Some(stripped) = content.strip_suffix('|') {
         content = stripped;
     }
-    let cells = split_table_cells(content)
+    // Where `content` starts inside `line`, in CHARS: it is a slice of `line`
+    // after trimming, the row-attribute split and the outer pipes, so the byte
+    // distance between them is exact.
+    let content_off = base.map(|_| {
+        let bytes = (content.as_ptr() as usize).saturating_sub(line.as_ptr() as usize);
+        line[..bytes].chars().count()
+    });
+    let cells = split_table_cells_ranged(content)
         .into_iter()
-        .map(|cell| parse_table_cell(&cell, options))
+        .map(|slice| {
+            let mut cell = parse_table_cell(&slice.text, options);
+            if let (Some((line_no, stripped)), Some(off)) = (base, content_off) {
+                cell.pos = Some(Pos {
+                    start_line: line_no,
+                    end_line: line_no,
+                    start_column: stripped + off + slice.start + 1,
+                    end_column: stripped + off + slice.end + 1,
+                    // Filled from the line table once the document is parsed.
+                    start_offset: 0,
+                    end_offset: 0,
+                });
+            }
+            cell
+        })
         .collect();
-    // No cursor here: `parse_table_row` is handed one already-split line, so it
-    // cannot know where that line sits in the document. PART 12 §4 - refuse
-    // rather than invent (carve-rs#333).
     TableRow {
         cells,
         attrs,
@@ -4473,12 +4506,33 @@ fn parse_table_row(line: &str, options: &Options<'_>) -> TableRow {
     }
 }
 
+/// A cell as it sits in the row: its resolved text, and the CHAR range of the
+/// source it came from.
+///
+/// The range is not derivable from the text: `\|` resolves to one character, so
+/// a cell holding an escaped pipe is shorter than the source it spans.
+struct CellSlice {
+    text: String,
+    start: usize,
+    end: usize,
+}
+
 fn split_table_cells(content: &str) -> Vec<String> {
+    split_table_cells_ranged(content)
+        .into_iter()
+        .map(|c| c.text)
+        .collect()
+}
+
+fn split_table_cells_ranged(content: &str) -> Vec<CellSlice> {
     let mut cells = Vec::new();
     let mut buf = String::new();
     let mut code_ticks = 0usize;
+    let mut index = 0usize;
+    let mut cell_start = 0usize;
     let mut chars = content.chars().peekable();
     while let Some(ch) = chars.next() {
+        index += 1;
         if ch == '`' {
             code_ticks ^= 1;
             buf.push(ch);
@@ -4492,18 +4546,29 @@ fn split_table_cells(content: &str) -> Vec<String> {
             if chars.peek() == Some(&'|') {
                 buf.push('|');
                 chars.next();
+                index += 1;
             } else {
                 buf.push('\\');
             }
             continue;
         }
         if ch == '|' && code_ticks == 0 {
-            cells.push(std::mem::take(&mut buf));
+            cells.push(CellSlice {
+                text: std::mem::take(&mut buf),
+                start: cell_start,
+                // The separator is not part of the cell.
+                end: index - 1,
+            });
+            cell_start = index;
             continue;
         }
         buf.push(ch);
     }
-    cells.push(buf);
+    cells.push(CellSlice {
+        text: buf,
+        start: cell_start,
+        end: index,
+    });
     cells
 }
 
@@ -4524,6 +4589,8 @@ fn parse_table_cell(cell: &str, options: &Options<'_>) -> TableCell {
                 align: None,
                 attrs: Some(attrs),
                 children: parse_inline_with_options(cell[next..].trim(), options),
+                // The caller places the cell: it knows where the row line sits.
+                pos: None,
             };
         }
     }
@@ -4571,6 +4638,7 @@ fn parse_table_cell(cell: &str, options: &Options<'_>) -> TableCell {
         } else {
             parse_inline_with_options(text, options)
         },
+        pos: None,
     }
 }
 

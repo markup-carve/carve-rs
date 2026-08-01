@@ -246,3 +246,57 @@ fn a_continued_row_spans_every_line_it_runs_to() {
     assert!(slice(source, continued).contains("A long"));
     assert!(slice(source, continued).contains("that cont"));
 }
+
+#[test]
+fn a_table_cell_spans_its_own_columns() {
+    let source = "| a | b |\n|---|---|\n| c | dd |\n";
+    let doc = parse_with_positions(source);
+    let BlockNode::Table(table) = &doc.children[0] else {
+        panic!("expected a table");
+    };
+
+    let cells: Vec<String> = table
+        .rows
+        .iter()
+        .flat_map(|r| r.cells.iter())
+        .map(|c| slice(source, c.pos.expect("every cell carries a position")))
+        .collect();
+
+    assert_eq!(cells, vec![" a ", " b ", " c ", " dd "]);
+}
+
+#[test]
+fn a_cell_holding_an_escaped_pipe_spans_the_source_not_the_text() {
+    // `\|` resolves to one character, so the cell's text is shorter than the
+    // source it came from. A span derived from the text would stop early.
+    let source = "|= A |= B |\n| x \\| y | z |\n";
+    let doc = parse_with_positions(source);
+    let BlockNode::Table(table) = &doc.children[0] else {
+        panic!("expected a table");
+    };
+
+    let cell = table.rows[1].cells[0]
+        .pos
+        .expect("the cell carries a position");
+    assert_eq!(slice(source, cell), " x \\| y ");
+}
+
+#[test]
+fn a_quoted_table_cell_is_measured_in_the_document() {
+    // The parser sees these lines with `> ` already removed; the columns have
+    // to come back from the container's stripped width.
+    let source = "> | x | y |\n> |---|---|\n> | z | w |\n";
+    let doc = parse_with_positions(source);
+    let BlockNode::BlockQuote(quote) = &doc.children[0] else {
+        panic!("expected a blockquote");
+    };
+    let BlockNode::Table(table) = &quote.children[0] else {
+        panic!("expected a quoted table");
+    };
+
+    let cell = table.rows[0].cells[0]
+        .pos
+        .expect("the quoted cell carries a position");
+    assert_eq!(cell.start_column, 4, "past `> |`");
+    assert_eq!(slice(source, cell), " x ");
+}
