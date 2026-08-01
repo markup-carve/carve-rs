@@ -44,6 +44,29 @@ pub fn apply_profile(
         violations: Vec::new(),
     };
     let mut doc = doc;
+    // `frontmatter` lives on the `Document` root (`frontmatter_raw` /
+    // `frontmatter`), not as a walkable `BlockNode`, so the child walk below
+    // never encounters it. Check it here instead, against the same
+    // vocabulary and the same violation reporting every other block type
+    // gets. Denial always STRIPS regardless of `disallowed_action`: the
+    // content is document metadata, and degrading it to text (as `ToText`
+    // would for any other node) would leak `title:`/`author:` values into the
+    // rendered body. carve-php treats it exactly like a comment for this
+    // reason (carve issue 422).
+    //
+    // Checked against EITHER field, not just `frontmatter_raw`: `parse()`
+    // always sets both together, but `Document`'s fields are public, so a
+    // programmatically built document can carry a populated `frontmatter`
+    // map with no `frontmatter_raw`. `render_carve` serializes the map
+    // independently of the raw form, so leaving it behind on that path would
+    // still leak the metadata a denial is supposed to remove.
+    if (doc.frontmatter_raw.is_some() || !doc.frontmatter.is_empty())
+        && !profile.is_type_allowed_on("frontmatter", true)
+    {
+        filter.record("frontmatter", "element_not_allowed")?;
+        doc.frontmatter_raw = None;
+        doc.frontmatter = std::collections::BTreeMap::new();
+    }
     filter.filter_blocks(&mut doc.children, 0)?;
     // Footnote definitions live in a separate map (keyed by label) but every
     // renderer emits them, so a denied node inside a referenced definition

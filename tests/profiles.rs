@@ -711,3 +711,122 @@ fn golden_parity_with_carve_php() {
         );
     }
 }
+
+// ---- frontmatter deniability (carve#422) ----
+//
+// `frontmatter` is in the normative Block vocabulary (docs/profiles.md), so a
+// profile can name it, but carve-rs keeps it on `Document.frontmatter_raw` /
+// `Document.frontmatter` rather than as a walkable child. Before the fix,
+// `deny_block(["frontmatter"])` was a silent no-op: no error, no violation,
+// metadata stayed.
+//
+// The rendered HTML is byte-identical whether frontmatter is allowed or
+// denied - frontmatter renders nothing either way, exactly like `comment`
+// (docs/profiles.md, "Some types are deniable in the tree but invisible in
+// rendered output"). So these tests assert on the serialized AST and the
+// violation report, never on the HTML "changing", and pin the HTML
+// byte-identity itself as a regression guard.
+
+const FRONTMATTER_SOURCE: &str = "---\ntitle: Secret\n---\n\nBody.\n";
+
+#[test]
+fn full_profile_keeps_frontmatter_in_the_serialized_ast_with_no_violation() {
+    let doc = carve::parse(FRONTMATTER_SOURCE);
+    let result = apply_profile(doc, &Profile::full(), None).unwrap();
+
+    assert!(result.doc.frontmatter_raw.is_some());
+    let json = carve::to_json(&result.doc);
+    assert!(json.contains("\"type\":\"frontmatter\""), "{json}");
+    assert!(
+        !result
+            .violations
+            .iter()
+            .any(|v| v.node_type == "frontmatter"),
+        "{:?}",
+        result.violations
+    );
+}
+
+#[test]
+fn denying_frontmatter_strips_it_from_the_serialized_ast_and_records_one_violation() {
+    let doc = carve::parse(FRONTMATTER_SOURCE);
+    let profile = Profile::default().deny_block(&["frontmatter"]);
+    let result = apply_profile(doc, &profile, None).unwrap();
+
+    assert!(result.doc.frontmatter_raw.is_none());
+    assert!(result.doc.frontmatter.is_empty());
+    let json = carve::to_json(&result.doc);
+    assert!(!json.contains("frontmatter"), "{json}");
+
+    let violations: Vec<_> = result
+        .violations
+        .iter()
+        .filter(|v| v.node_type == "frontmatter")
+        .collect();
+    assert_eq!(violations.len(), 1, "{:?}", result.violations);
+    assert_eq!(violations[0].reason, "element_not_allowed");
+}
+
+#[test]
+fn denying_frontmatter_does_not_change_the_rendered_html() {
+    let allowed = html(FRONTMATTER_SOURCE, Profile::full());
+    let denied = html(
+        FRONTMATTER_SOURCE,
+        Profile::default().deny_block(&["frontmatter"]),
+    );
+
+    assert_eq!(allowed, "<p>Body.</p>");
+    assert_eq!(denied, "<p>Body.</p>");
+    assert_eq!(allowed, denied);
+}
+
+#[test]
+fn denying_frontmatter_strips_a_programmatically_built_map_with_no_raw_form() {
+    // `Document`'s fields are public, so a caller can build one with only the
+    // `frontmatter` map populated (no `frontmatter_raw`) - e.g. an extension
+    // that injects metadata directly. `render_carve` serializes that map
+    // independently of the raw form, so the denial must clear it too, not
+    // only the `frontmatter_raw` field the parser normally sets alongside it.
+    let doc = carve::Document {
+        frontmatter: std::collections::BTreeMap::from([(
+            "title".to_string(),
+            "Secret".to_string(),
+        )]),
+        frontmatter_raw: None,
+        footnote_defs: Default::default(),
+        children: vec![carve::BlockNode::Paragraph(carve::Paragraph {
+            attrs: None,
+            children: vec![carve::InlineNode::text("Body.".to_string())],
+            ..Default::default()
+        })],
+        source_len: 0,
+    };
+    let profile = Profile::default().deny_block(&["frontmatter"]);
+    let result = apply_profile(doc, &profile, None).unwrap();
+
+    assert!(result.doc.frontmatter.is_empty());
+    assert_eq!(
+        result
+            .violations
+            .iter()
+            .filter(|v| v.node_type == "frontmatter")
+            .count(),
+        1,
+        "{:?}",
+        result.violations
+    );
+}
+
+#[test]
+fn frontmatter_metadata_never_reaches_rendered_html_either_way() {
+    let allowed = html(FRONTMATTER_SOURCE, Profile::full());
+    let denied = html(
+        FRONTMATTER_SOURCE,
+        Profile::default().deny_block(&["frontmatter"]),
+    );
+
+    assert!(!allowed.contains("Secret"), "{allowed}");
+    assert!(!allowed.contains("title"), "{allowed}");
+    assert!(!denied.contains("Secret"), "{denied}");
+    assert!(!denied.contains("title"), "{denied}");
+}
