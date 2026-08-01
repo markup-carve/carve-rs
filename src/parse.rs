@@ -1131,6 +1131,7 @@ fn fill_offsets(blocks: &mut [BlockNode], line_starts: &[usize]) {
             BlockNode::Table(t) => t.pos.as_mut(),
             BlockNode::LineBlock(l) => l.pos.as_mut(),
             BlockNode::Figure(f) => f.pos.as_mut(),
+            BlockNode::BlockImage(i) => i.pos.as_mut(),
             _ => None,
         };
         if let Some(pos) = pos {
@@ -1196,6 +1197,11 @@ fn fill_offsets(blocks: &mut [BlockNode], line_starts: &[usize]) {
                         apply_inline_offsets(&mut p.children, line_starts);
                     }
                     FigureTarget::Table(t) => apply_table_offsets(t, line_starts),
+                    FigureTarget::Image(i) => {
+                        if let Some(pos) = i.pos.as_mut() {
+                            apply_offsets(pos, line_starts);
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -1681,15 +1687,22 @@ fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<BlockNode>
         cur.consume();
         return Some(BlockNode::AbbreviationDef(abbr));
     }
-    if let Some(img) = detect_block_image(line) {
+    if let Some(mut img) = detect_block_image(line) {
         if image_is_block(cur) {
+            let image_at = cur.pos;
             cur.consume();
+            // The image's own line. An INLINE image gets its span from the
+            // inline parser; a block image never goes through it, so it had
+            // none at all.
+            img.pos = span_of(cur, image_at, image_at + 1, options);
             if let Some(caption) = consume_caption(cur, options) {
                 return Some(BlockNode::Figure(Figure {
                     attrs: None,
                     target: FigureTarget::Image(img),
                     caption,
-                    pos: None,
+                    // The figure runs from the image to the end of the caption
+                    // the cursor just consumed.
+                    pos: span_of(cur, image_at, cur.pos, options),
                 }));
             }
             return Some(BlockNode::BlockImage(img));
