@@ -598,3 +598,61 @@ fn a_definition_list_span_has_real_offsets() {
     assert_ne!(pos.start_offset, 0);
     assert_eq!(slice(source, pos), ":: term\n:  its definition");
 }
+
+/// Each stanza of a line block is its own paragraph, and each was unplaced.
+#[test]
+fn each_line_block_stanza_spans_its_own_lines() {
+    let source = "::: |\nStanza one,\nstill one.\n\nStanza two.\n:::\n";
+    let doc = parse_with_positions(source);
+
+    let BlockNode::LineBlock(block) = &doc.children[0] else {
+        panic!("the document is a line block");
+    };
+    let spans: Vec<String> = block
+        .children
+        .iter()
+        .map(|child| {
+            let pos = pos_of(child).expect("every stanza is placed");
+            slice(source, pos)
+        })
+        .collect();
+    assert_eq!(spans, vec!["Stanza one,\nstill one.", "Stanza two."]);
+}
+
+/// The stanza ends at its last line, not at the blank line that closed it and
+/// not at the `:::` that closed the block.
+#[test]
+fn a_line_block_stanza_span_excludes_the_blank_that_ends_it() {
+    let source = "::: |\nverse\n\n:::\n";
+    let doc = parse_with_positions(source);
+
+    let BlockNode::LineBlock(block) = &doc.children[0] else {
+        panic!("the document is a line block");
+    };
+    let pos = pos_of(&block.children[0]).expect("the stanza is placed");
+    assert_eq!(slice(source, pos), "verse");
+}
+
+/// What is INSIDE a stanza stays unplaced, and that is not an oversight: a
+/// verse line is rewritten before it is parsed (leading whitespace becomes NBSP
+/// placeholders), so no column in it maps back to the source. The lines the
+/// stanza occupies are not in doubt, which is why the paragraph can be placed
+/// while its children cannot.
+#[test]
+fn line_block_inlines_stay_unplaced() {
+    let source = "::: |\nRoses are red,\n  Violets are blue.\n:::\n";
+    let doc = parse_with_positions(source);
+
+    let BlockNode::LineBlock(block) = &doc.children[0] else {
+        panic!("the document is a line block");
+    };
+    let BlockNode::Paragraph(stanza) = &block.children[0] else {
+        panic!("a stanza is a paragraph");
+    };
+    assert!(stanza.pos.is_some());
+    let placed = stanza.children.iter().any(|inline| match inline {
+        carve::ast::InlineNode::Text(t) => t.pos.is_some(),
+        _ => false,
+    });
+    assert!(!placed, "a rewritten verse line cannot place its text");
+}

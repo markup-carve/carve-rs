@@ -5291,9 +5291,14 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     // body line before preserving the author's intra-verse whitespace.
     let base_indent = leading_ws_columns(opener);
     cur.consume();
-    let mut stanzas: Vec<LineBuffer> = Vec::new();
+    let mut stanzas: Vec<(LineBuffer, Option<Pos>)> = Vec::new();
     let mut stanza: Vec<String> = Vec::new();
     let mut stanza_line_map: Vec<Option<usize>> = Vec::new();
+    // Where the open stanza began, and where it ended - the CURSOR's own line
+    // indices, which still point at the source. The rewritten verse text cannot
+    // give a column back, but the lines a stanza occupies are not in doubt.
+    let mut stanza_start: Option<usize> = None;
+    let mut stanza_end = cur.pos;
     while let Some(line) = cur.peek() {
         let t = trim_ascii(line);
         if !t.is_empty() && t.bytes().all(|b| b == b':') && t.len() >= fence_len {
@@ -5301,34 +5306,45 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             break;
         }
         let source_line = cur.source_line(cur.pos);
+        let line_at = cur.pos;
         cur.consume();
         if is_blank_line(line) {
             if !stanza.is_empty() {
-                stanzas.push(LineBuffer {
-                    lines: std::mem::take(&mut stanza),
-                    line_map: std::mem::take(&mut stanza_line_map),
-                    // Verse lines are rewritten (leading whitespace becomes
-                    // NBSP placeholders), so no column here maps back.
-                    col_map: Vec::new(),
-                });
+                let at = stanza_start.take();
+                stanzas.push((
+                    LineBuffer {
+                        lines: std::mem::take(&mut stanza),
+                        line_map: std::mem::take(&mut stanza_line_map),
+                        // Verse lines are rewritten (leading whitespace becomes
+                        // NBSP placeholders), so no column here maps back.
+                        col_map: Vec::new(),
+                    },
+                    at.and_then(|start| span_of(cur, start, stanza_end, options)),
+                ));
             }
             continue;
         }
+        stanza_start.get_or_insert(line_at);
+        stanza_end = cur.pos;
         let stripped = strip_leading_columns(line, base_indent);
         stanza.push(expand_line_block_leading_ws(&stripped));
         stanza_line_map.push(source_line);
     }
     if !stanza.is_empty() {
-        stanzas.push(LineBuffer {
-            lines: stanza,
-            line_map: stanza_line_map,
-            col_map: Vec::new(),
-        });
+        let at = stanza_start.take();
+        stanzas.push((
+            LineBuffer {
+                lines: stanza,
+                line_map: stanza_line_map,
+                col_map: Vec::new(),
+            },
+            at.and_then(|start| span_of(cur, start, stanza_end, options)),
+        ));
     }
 
     let children = stanzas
         .into_iter()
-        .map(|lines| {
+        .map(|(lines, at)| {
             let source_line = lines.line_map.first().copied().flatten();
             let inlines = parse_inline_with_options(&lines.lines.join("\n"), options)
                 .into_iter()
@@ -5340,6 +5356,7 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             let mut node = BlockNode::Paragraph(Paragraph {
                 attrs: None,
                 children: inlines,
+                pos: at,
                 ..Default::default()
             });
             if options.source_lines {
