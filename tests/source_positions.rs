@@ -4,7 +4,7 @@
 //! in the ORIGINAL document (not in the prefix-stripped text the parser sees),
 //! and it is ABSENT rather than wrong when the mapping is unknown.
 
-use carve::ast::{BlockNode, Document, Pos};
+use carve::ast::{BlockNode, Document, FigureTarget, Pos};
 use carve::Options;
 
 fn parse_with_positions(source: &str) -> Document {
@@ -299,4 +299,46 @@ fn a_quoted_table_cell_is_measured_in_the_document() {
         .expect("the quoted cell carries a position");
     assert_eq!(cell.start_column, 4, "past `> |`");
     assert_eq!(slice(source, cell), " x ");
+}
+
+#[test]
+fn a_block_image_carries_its_own_span() {
+    // An INLINE image gets its span from the inline parser. A lone image
+    // paragraph is promoted to a block image and never goes through it, so it
+    // had none at all.
+    let source = "![alt](/i.png)\n";
+    let doc = parse_with_positions(source);
+    let BlockNode::BlockImage(image) = &doc.children[0] else {
+        panic!("expected a block image, got {:?}", doc.children[0]);
+    };
+
+    assert_eq!(
+        slice(source, image.pos.expect("the image carries a position")),
+        "![alt](/i.png)"
+    );
+}
+
+#[test]
+fn a_captioned_image_places_the_figure_and_its_target() {
+    let source = "![alt](/i.png)\n^ cap\n";
+    let doc = parse_with_positions(source);
+    let BlockNode::Figure(figure) = &doc.children[0] else {
+        panic!("expected a figure");
+    };
+
+    // The figure runs from the image through the caption.
+    assert_eq!(
+        slice(source, figure.pos.expect("the figure carries a position")),
+        "![alt](/i.png)\n^ cap"
+    );
+
+    let FigureTarget::Image(image) = &figure.target else {
+        panic!("expected an image target");
+    };
+    // And the target keeps its own, filled rather than left at 0..0 - a span
+    // that reads as present and selects nothing is worse than none.
+    assert_eq!(
+        slice(source, image.pos.expect("the target carries a position")),
+        "![alt](/i.png)"
+    );
 }
