@@ -101,6 +101,52 @@ fn fence_sizing_with_inner_backticks() {
 }
 
 #[test]
+fn colon_container_fence_covers_nested_descendants() {
+    let source = "::::: a\n\n:::: b\n\n::: c\nX\n:::\n\n::::\n\n:::::\n";
+    let formatted = carve::to_carve(source);
+    assert_eq!(carve::to_html(&formatted), carve::to_html(source));
+    assert_eq!(carve::to_carve(&formatted), formatted);
+}
+
+#[test]
+fn colon_container_fence_counts_mixed_container_kinds() {
+    let source = ":::::: note\n\n{.wrap}\n:::::\n\n:::: |\none\ntwo\n::::\n\n:::::\n\n::::::\n";
+    let formatted = carve::to_carve(source);
+    assert_eq!(carve::to_html(&formatted), carve::to_html(source));
+    assert_eq!(carve::to_carve(&formatted), formatted);
+}
+
+#[test]
+fn colon_container_fence_handles_deep_ladder() {
+    fn container_depth(blocks: &[carve::BlockNode]) -> usize {
+        blocks
+            .iter()
+            .find_map(|block| match block {
+                carve::BlockNode::Admonition(node) => Some(1 + container_depth(&node.children)),
+                carve::BlockNode::Div(node) => Some(1 + container_depth(&node.children)),
+                carve::BlockNode::LineBlock(node) => Some(1 + container_depth(&node.children)),
+                _ => None,
+            })
+            .unwrap_or(0)
+    }
+
+    let mut source = String::new();
+    for width in (3..=42).rev() {
+        source.push_str(&format!("{} level{width}\n\n", ":".repeat(width)));
+    }
+    source.push_str("leaf\n");
+    for width in 3..=42 {
+        source.push_str(&format!("\n{}\n", ":".repeat(width)));
+    }
+
+    let formatted = carve::to_carve(&source);
+    assert_eq!(container_depth(&carve::parse(&source).children), 40);
+    assert_eq!(container_depth(&carve::parse(&formatted).children), 40);
+    assert_eq!(carve::to_html(&formatted), carve::to_html(&source));
+    assert_eq!(carve::to_carve(&formatted), formatted);
+}
+
+#[test]
 fn attribute_source_order_is_preserved() {
     assert_eq!(
         carve::to_carve("{k=v .cls #id}\n# H\n"),
@@ -259,4 +305,43 @@ fn all_space_verbatim_content_is_preserved_not_collapsed() {
     assert!(carve::to_html("`  `").contains("<code>  </code>"));
     // A one-sided or non-all-space span still strips exactly one space per side.
     assert!(carve::to_html("` a `").contains("<code>a</code>"));
+}
+
+/// An AST built through the library API can nest far past the depth the parser
+/// (and `from_json`) allow. `render_block` emits nothing past MAX_RENDER_DEPTH,
+/// so a fence sized from those levels would be sized for output that never
+/// appears.
+#[test]
+fn colon_container_fence_ignores_containers_past_the_render_cap() {
+    use carve::ast::{BlockNode, Div, Paragraph};
+
+    let mut node = BlockNode::Paragraph(Paragraph {
+        attrs: None,
+        children: Vec::new(),
+        at_content_column: true,
+        pos: None,
+    });
+    for _ in 0..1000 {
+        node = BlockNode::Div(Div {
+            attrs: None,
+            label: None,
+            children: vec![node],
+            pos: None,
+        });
+    }
+
+    let mut doc = carve::parse("x\n");
+    doc.children = vec![node];
+    let formatted = carve::render_carve(&doc);
+
+    let widest = formatted
+        .lines()
+        .filter(|line| !line.is_empty() && line.chars().all(|c| c == ':'))
+        .map(|line| line.len())
+        .max()
+        .unwrap_or(0);
+    assert!(
+        widest <= 202,
+        "fence widened to {widest} colons past the render cap"
+    );
 }
