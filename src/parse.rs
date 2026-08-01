@@ -2823,9 +2823,19 @@ fn parse_continuation_block(
         .line_map
         .map(|map| map[cur.pos..end].to_vec())
         .unwrap_or_default();
-    let mut sub = LineCursor::new(
+    // The attached lines are taken VERBATIM - nothing is stripped from them -
+    // so the parent's column widths apply unchanged. Without this the sub-cursor
+    // had no column map at all, and every block a `+` attached came out
+    // unplaced: the code block, quote or table after the marker, and everything
+    // inside it.
+    let col_map: Vec<Option<usize>> = cur
+        .col_map
+        .map(|map| map[cur.pos..end].to_vec())
+        .unwrap_or_default();
+    let mut sub = LineCursor::new_with_cols(
         &slice,
         cur.line_map.is_some().then_some(line_map.as_slice()),
+        cur.col_map.is_some().then_some(col_map.as_slice()),
     );
     let mut block = parse_block(&mut sub, options);
     if options.source_lines {

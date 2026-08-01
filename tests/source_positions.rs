@@ -743,3 +743,58 @@ fn an_escaped_title_leaves_its_inlines_unplaced() {
     });
     assert!(!placed, "a rebuilt title cannot place anything");
 }
+
+/// A `+` continuation attaches a flush-left block to the item above it. The
+/// sub-cursor that parsed that block was built with a line map but no COLUMN
+/// map, so the block and everything inside it came out unplaced - a code block,
+/// a quote, a table, its rows, its cells and their text.
+///
+/// The attached lines are taken verbatim, so the parent's widths apply
+/// unchanged.
+#[test]
+fn a_plus_continuation_places_the_block_it_attaches() {
+    let source = "- Build the image\n+\n```sh\ndocker build -t app .\n```\n- Push it\n";
+    let doc = parse_with_positions(source);
+
+    let BlockNode::List(list) = &doc.children[0] else {
+        panic!("the document is a list");
+    };
+    let attached = list.items[0]
+        .children
+        .iter()
+        .find(|child| matches!(child, BlockNode::CodeBlock(_)))
+        .expect("the code block is attached to the first item");
+    let BlockNode::CodeBlock(code) = attached else {
+        unreachable!("just matched")
+    };
+    let pos = code.pos.expect("the attached block is placed");
+    assert_eq!(slice(source, pos), "```sh\ndocker build -t app .\n```");
+}
+
+/// The same for a table, down to its cells - the deepest thing the old
+/// behavior left unplaced.
+#[test]
+fn a_plus_continuation_places_a_table_down_to_its_cells() {
+    let source = "- +\n| a | b |\n| c | d |\n- next\n";
+    let doc = parse_with_positions(source);
+
+    let BlockNode::List(list) = &doc.children[0] else {
+        panic!("the document is a list");
+    };
+    let BlockNode::Table(table) = &list.items[0].children[0] else {
+        panic!("the first item holds the table");
+    };
+    assert_eq!(
+        slice(source, table.pos.expect("the table is placed")),
+        "| a | b |\n| c | d |"
+    );
+    let row = &table.rows[0];
+    assert_eq!(
+        slice(source, row.pos.expect("the row is placed")),
+        "| a | b |"
+    );
+    assert_eq!(
+        slice(source, row.cells[0].pos.expect("the cell is placed")),
+        " a "
+    );
+}
