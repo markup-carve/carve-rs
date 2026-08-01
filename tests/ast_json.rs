@@ -267,13 +267,17 @@ fn footnote_definition_is_labelled_document_child() {
 }
 
 #[test]
-fn block_pos_present_inline_pos_absent() {
+fn block_and_inline_pos_present() {
     let doc = parse_with_positions("Hello *world*.\n");
     let json = carve::to_json(&doc);
     assert!(json.contains("\"type\":\"paragraph\""));
     assert!(json.contains("\"pos\":{\"startLine\":1"));
-    assert!(json
-        .contains("{\"type\":\"strong\",\"children\":[{\"type\":\"text\",\"value\":\"world\"}]}"));
+    assert!(json.contains(
+        "{\"type\":\"text\",\"value\":\"world\",\"pos\":{\"startLine\":1,\"endLine\":1,\"startColumn\":8,\"endColumn\":13,\"startOffset\":7,\"endOffset\":12}}"
+    ));
+    assert!(json.contains(
+        "\"type\":\"strong\",\"children\":[{\"type\":\"text\",\"value\":\"world\",\"pos\""
+    ));
 }
 
 #[test]
