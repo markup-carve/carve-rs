@@ -547,3 +547,54 @@ fn a_list_in_a_continued_blockquote_spans_its_items() {
     assert_eq!(slice(source, pos), "- item");
     assert_eq!(pos, list.items[0].pos.expect("the item is placed"));
 }
+
+/// A definition list was never placed at all, and its items with it.
+#[test]
+fn a_definition_list_spans_its_terms_and_definitions() {
+    let source = ":: term\n:  A definition can now hold\n\n   more than one paragraph.\n";
+    let doc = parse_with_positions(source);
+
+    let BlockNode::DefinitionList(list) = &doc.children[0] else {
+        panic!("the document is a definition list");
+    };
+    let pos = list.pos.expect("the list is placed");
+    assert_eq!(
+        slice(source, pos),
+        ":: term\n:  A definition can now hold\n\n   more than one paragraph."
+    );
+
+    // The ITEM is deliberately not placed: the wire format flattens items into
+    // a flat run of terms and descriptions, so a span here would be lost on the
+    // way back in and the round-trip would stop being an identity.
+    assert!(list.items[0].pos.is_none());
+}
+
+/// The span stops at the last definition, not at the blank line the parser
+/// looked through for another item.
+#[test]
+fn a_definition_list_span_excludes_the_gap_after_it() {
+    let source = ":: term\n:  its definition\n\nA later paragraph.\n";
+    let doc = parse_with_positions(source);
+
+    let BlockNode::DefinitionList(list) = &doc.children[0] else {
+        panic!("the document opens with a definition list");
+    };
+    let pos = list.pos.expect("the list is placed");
+    assert_eq!(slice(source, pos), ":: term\n:  its definition");
+}
+
+/// Offsets are filled in a second pass, so a node the pass does not reach keeps
+/// its line and column but reports 0..0 - present, and selecting nothing. That
+/// is what a definition list did.
+#[test]
+fn a_definition_list_span_has_real_offsets() {
+    let source = "Intro\n\n:: term\n:  its definition\n";
+    let doc = parse_with_positions(source);
+
+    let BlockNode::DefinitionList(list) = &doc.children[1] else {
+        panic!("the definition list follows the paragraph");
+    };
+    let pos = list.pos.expect("the list is placed");
+    assert_ne!(pos.start_offset, 0);
+    assert_eq!(slice(source, pos), ":: term\n:  its definition");
+}

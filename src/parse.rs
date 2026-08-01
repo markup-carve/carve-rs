@@ -1132,6 +1132,7 @@ fn fill_offsets(blocks: &mut [BlockNode], line_starts: &[usize]) {
             BlockNode::LineBlock(l) => l.pos.as_mut(),
             BlockNode::Figure(f) => f.pos.as_mut(),
             BlockNode::BlockImage(i) => i.pos.as_mut(),
+            BlockNode::DefinitionList(d) => d.pos.as_mut(),
             _ => None,
         };
         if let Some(pos) = pos {
@@ -4203,6 +4204,7 @@ fn is_definition_list_start(line: &str) -> bool {
 }
 
 fn parse_definition_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
+    let list_start = cur.pos;
     let mut items = Vec::new();
     while let Some(line) = cur.peek() {
         let Some(term) = line.strip_prefix(":: ") else {
@@ -4373,6 +4375,12 @@ fn parse_definition_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNo
         }
 
         items.push(DefinitionItem {
+            // NOT placed, though the cursor could say where it is. The wire
+            // format flattens items into a flat run of definition_term and
+            // definition_description nodes, so the item is regrouped on the way
+            // back in and any span here would not survive a round-trip
+            // (PART 12 section 6). A field that is Some before a round-trip and
+            // None after is worse than one that is always None.
             terms,
             definitions: defs,
             pos: None,
@@ -4389,8 +4397,11 @@ fn parse_definition_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNo
     }
     BlockNode::DefinitionList(DefinitionList {
         attrs: None,
+        // The cursor has rolled back past the trailing blanks it looked through
+        // for another item, so it points one line past the last definition -
+        // the span stops at the content, not at the gap after it.
+        pos: span_of(cur, list_start, cur.pos, options),
         items,
-        pos: None,
     })
 }
 
