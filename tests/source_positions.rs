@@ -622,30 +622,6 @@ fn a_line_block_stanza_span_excludes_the_blank_that_ends_it() {
     assert_eq!(slice(source, pos), "verse");
 }
 
-/// What is INSIDE a stanza stays unplaced, and that is not an oversight: a
-/// verse line is rewritten before it is parsed (leading whitespace becomes NBSP
-/// placeholders), so no column in it maps back to the source. The lines the
-/// stanza occupies are not in doubt, which is why the paragraph can be placed
-/// while its children cannot.
-#[test]
-fn line_block_inlines_stay_unplaced() {
-    let source = "::: |\nRoses are red,\n  Violets are blue.\n:::\n";
-    let doc = parse_with_positions(source);
-
-    let BlockNode::LineBlock(block) = &doc.children[0] else {
-        panic!("the document is a line block");
-    };
-    let BlockNode::Paragraph(stanza) = &block.children[0] else {
-        panic!("a stanza is a paragraph");
-    };
-    assert!(stanza.pos.is_some());
-    let placed = stanza.children.iter().any(|inline| match inline {
-        carve::ast::InlineNode::Text(t) => t.pos.is_some(),
-        _ => false,
-    });
-    assert!(!placed, "a rewritten verse line cannot place its text");
-}
-
 /// Frontmatter had no span at all - the struct had no field to put one in.
 /// The span covers the whole block, fences included, which is what the
 /// reference publishes.
@@ -826,4 +802,72 @@ fn a_continued_table_cell_places_the_text_it_adds() {
             Some("across lines.".to_string()),
         ]
     );
+}
+
+/// Verse lines were refused their columns WHOLESALE: the stanza's column map
+/// was left empty because leading whitespace becomes NBSP placeholders. But
+/// only a line that CARRIES leading whitespace is rewritten - one without any
+/// is passed through untouched, and its columns are still the document's.
+#[test]
+fn verse_lines_that_were_not_rewritten_keep_their_columns() {
+    let source = "::: |\n*Bold* and /italic/,\nplain line.\n:::\n";
+    let doc = parse_with_positions(source);
+
+    let BlockNode::LineBlock(block) = &doc.children[0] else {
+        panic!("the document is a line block");
+    };
+    let BlockNode::Paragraph(stanza) = &block.children[0] else {
+        panic!("a stanza is a paragraph");
+    };
+    let spans: Vec<Option<String>> = stanza
+        .children
+        .iter()
+        .map(|inline| match inline {
+            carve::ast::InlineNode::Text(t) => t.pos.map(|p| slice(source, p)),
+            carve::ast::InlineNode::Emphasis(e) => e.pos.map(|p| slice(source, p)),
+            carve::ast::InlineNode::HardBreak(b) => b.pos.map(|p| slice(source, p)),
+            other => panic!("unexpected inline: {other:?}"),
+        })
+        .collect();
+    assert_eq!(
+        spans,
+        vec![
+            Some("*Bold*".to_string()),
+            Some(" and ".to_string()),
+            Some("/italic/".to_string()),
+            Some(",".to_string()),
+            // The break IS the source's line ending, so it spans it.
+            Some("\n".to_string()),
+            Some("plain line.".to_string()),
+        ]
+    );
+}
+
+/// A line that IS rewritten stays unplaced, and only that line - its neighbor
+/// keeps its span. Before this, one indented line cost the whole stanza.
+#[test]
+fn an_indented_verse_line_loses_only_its_own_span() {
+    let source = "::: |\nRoses are red,\n  Violets are blue.\n:::\n";
+    let doc = parse_with_positions(source);
+
+    let BlockNode::LineBlock(block) = &doc.children[0] else {
+        panic!("the document is a line block");
+    };
+    let BlockNode::Paragraph(stanza) = &block.children[0] else {
+        panic!("a stanza is a paragraph");
+    };
+    let carve::ast::InlineNode::Text(first) = &stanza.children[0] else {
+        panic!("the stanza opens with text");
+    };
+    assert_eq!(
+        slice(source, first.pos.expect("the plain line is placed")),
+        "Roses are red,"
+    );
+    // The rewritten line's text is not the source - it holds NBSP placeholders
+    // where the indent was - so no span can select it.
+    let last = stanza.children.last().expect("a second line");
+    let carve::ast::InlineNode::Text(indented) = last else {
+        panic!("it ends with text");
+    };
+    assert!(indented.pos.is_none());
 }

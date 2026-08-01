@@ -5406,6 +5406,7 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     let mut stanzas: Vec<(LineBuffer, Option<Pos>)> = Vec::new();
     let mut stanza: Vec<String> = Vec::new();
     let mut stanza_line_map: Vec<Option<usize>> = Vec::new();
+    let mut stanza_col_map: Vec<Option<usize>> = Vec::new();
     // Where the open stanza began, and where it ended - the CURSOR's own line
     // indices, which still point at the source. The rewritten verse text cannot
     // give a column back, but the lines a stanza occupies are not in doubt.
@@ -5427,9 +5428,7 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                     LineBuffer {
                         lines: std::mem::take(&mut stanza),
                         line_map: std::mem::take(&mut stanza_line_map),
-                        // Verse lines are rewritten (leading whitespace becomes
-                        // NBSP placeholders), so no column here maps back.
-                        col_map: Vec::new(),
+                        col_map: std::mem::take(&mut stanza_col_map),
                     },
                     at.and_then(|start| span_of(cur, start, stanza_end, options)),
                 ));
@@ -5439,7 +5438,18 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         stanza_start.get_or_insert(line_at);
         stanza_end = cur.pos;
         let stripped = strip_leading_columns(line, base_indent);
-        stanza.push(expand_line_block_leading_ws(&stripped));
+        let expanded = expand_line_block_leading_ws(&stripped);
+        // A verse line is REWRITTEN only when it carries leading whitespace -
+        // that becomes NBSP placeholders, and then no column in it maps back.
+        // A line without any is passed through untouched, and its columns are
+        // still the document's. Per line, not per stanza: one indented line no
+        // longer costs its neighbors their positions.
+        stanza_col_map.push(if expanded == stripped {
+            stripped_col(cur.source_col(line_at), line, &stripped)
+        } else {
+            None
+        });
+        stanza.push(expanded);
         stanza_line_map.push(source_line);
     }
     if !stanza.is_empty() {
@@ -5448,7 +5458,7 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             LineBuffer {
                 lines: stanza,
                 line_map: stanza_line_map,
-                col_map: Vec::new(),
+                col_map: stanza_col_map,
             },
             at.and_then(|start| span_of(cur, start, stanza_end, options)),
         ));
@@ -5458,10 +5468,19 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         .into_iter()
         .map(|(lines, at)| {
             let source_line = lines.line_map.first().copied().flatten();
-            let inlines = parse_inline_with_options(&lines.lines.join("\n"), options)
+            let anchors: Vec<Option<(usize, usize)>> = lines
+                .line_map
+                .iter()
+                .zip(lines.col_map.iter())
+                .map(|(line_no, col)| Some(((*line_no)?, (*col)?)))
+                .collect();
+            let inlines = parse_inline_lines_with_anchor(&lines.lines.join("\n"), options, anchors)
                 .into_iter()
                 .map(|n| match n {
-                    InlineNode::SoftBreak(_) => InlineNode::hard_break(),
+                    // A hard break here IS the source's line ending, so it
+                    // keeps the soft break's span rather than being rebuilt
+                    // without one.
+                    InlineNode::SoftBreak(b) => InlineNode::HardBreak(b),
                     other => other,
                 })
                 .collect();
