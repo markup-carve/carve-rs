@@ -68,6 +68,7 @@ pub fn from_json(input: &str) -> Result<Document, AstJsonError> {
                 frontmatter_raw = Some(Frontmatter {
                     format: required_string(obj, "frontmatter", "format")?.to_string(),
                     content: required_string(obj, "frontmatter", "content")?.to_string(),
+                    pos: optional_pos(obj, "frontmatter")?,
                 });
             }
             "footnote" => {
@@ -193,6 +194,7 @@ fn write_frontmatter(out: &mut String, raw: &Frontmatter) {
     w.field("type", |out| write_string(out, "frontmatter"));
     w.field("format", |out| write_string(out, &raw.format));
     w.field("content", |out| write_string(out, &raw.content));
+    write_pos_field(&mut w, &raw.pos);
     w.finish();
 }
 

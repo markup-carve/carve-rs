@@ -118,7 +118,7 @@ fn parse_with_options_mode(source: &str, options: &Options<'_>, mode: ParseMode)
     } else {
         source
     };
-    let (frontmatter, frontmatter_raw, body) = split_frontmatter(source);
+    let (frontmatter, frontmatter_raw, body) = split_frontmatter(source, options.positions);
     let body_start_line = source
         [..(body.as_ptr() as usize).saturating_sub(source.as_ptr() as usize)]
         .bytes()
@@ -731,7 +731,25 @@ pub(crate) fn frontmatter_map(format: &str, content: &str) -> BTreeMap<String, S
     map
 }
 
-fn split_frontmatter(source: &str) -> SplitFrontmatter<'_> {
+/// The span of a frontmatter block, fences included. It always starts at the
+/// first character of the document, so only the end has to be worked out - and
+/// the block is taken from the raw source before any line is stripped, so every
+/// column here is a column in the document.
+fn frontmatter_pos(source: &str, block_end: usize) -> Pos {
+    let block = &source[..block_end];
+    let last_line_start = block.rfind('\n').map_or(0, |at| at + 1);
+    Pos {
+        start_line: 1,
+        start_column: 1,
+        start_offset: 0,
+        end_line: block.bytes().filter(|b| *b == b'\n').count() + 1,
+        // Columns and offsets are counted in CODEPOINTS (PART 12 section 4).
+        end_column: block[last_line_start..].chars().count() + 1,
+        end_offset: block.chars().count(),
+    }
+}
+
+fn split_frontmatter(source: &str, positions: bool) -> SplitFrontmatter<'_> {
     // Opening fence: `---` optionally followed by a type token (`---yaml`,
     // `---json`, `---toml`, ...; canonical has no space). Closer is a bare `---`.
     if !source.starts_with("---") {
@@ -769,6 +787,12 @@ fn split_frontmatter(source: &str) -> SplitFrontmatter<'_> {
             kind.to_string()
         },
         content: frontmatter_src.trim_end_matches('\n').to_string(),
+        pos: positions.then(|| {
+            // `after` runs past the closing fence's newline when it has one;
+            // the span stops at the fence, not at the blank after it.
+            let block_end = first_nl + 1 + after;
+            frontmatter_pos(source, source[..block_end].trim_end_matches('\n').len())
+        }),
     };
     (frontmatter, Some(raw), body)
 }
