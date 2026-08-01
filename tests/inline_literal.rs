@@ -297,6 +297,7 @@ fn classified_as_the_code_profile_type() {
     let node = InlineNode::LiteralInline(LiteralInline {
         content: "x".into(),
         attrs: None,
+        pos: None,
     });
     assert_eq!(canonical_inline_type(&node), Some("code"));
 }

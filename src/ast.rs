@@ -215,6 +215,8 @@ pub struct TableCell {
     /// Author attributes from a `{...}` glued to the cell's opening pipe.
     pub attrs: Option<Attrs>,
     pub children: Vec<InlineNode>,
+    /// Span in the original source, when the parser could determine it.
+    pub pos: Option<Pos>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -269,18 +271,24 @@ pub struct LineBlock {
 pub struct DefinitionItem {
     pub terms: Vec<DefinitionTerm>,
     pub definitions: Vec<DefinitionDef>,
+    /// Span in the original source, when the parser could determine it.
+    pub pos: Option<Pos>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DefinitionTerm {
     pub attrs: Option<Attrs>,
     pub children: Vec<InlineNode>,
+    /// Span in the original source, when the parser could determine it.
+    pub pos: Option<Pos>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DefinitionDef {
     pub attrs: Option<Attrs>,
     pub children: Vec<BlockNode>,
+    /// Span in the original source, when the parser could determine it.
+    pub pos: Option<Pos>,
 }
 
 impl Deref for DefinitionTerm {
@@ -333,6 +341,8 @@ impl<'a> IntoIterator for &'a mut DefinitionDef {
 pub struct DefinitionList {
     pub attrs: Option<Attrs>,
     pub items: Vec<DefinitionItem>,
+    /// Span in the original source, when the parser could determine it.
+    pub pos: Option<Pos>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -357,6 +367,8 @@ pub enum FigureTarget {
 pub struct AbbreviationDef {
     pub abbr: String,
     pub expansion: String,
+    /// Span in the original source, when the parser could determine it.
+    pub pos: Option<Pos>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -389,25 +401,17 @@ pub struct BlockExtension {
     /// core caption floor for an unconsumed label). `None` when the source had
     /// no label.
     pub label: Option<String>,
+    /// Span in the original source, when the parser could determine it.
+    pub pos: Option<Pos>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InlineNode {
-    Text(String),
-    /// A character the author escaped with a backslash (`\-`, `\"`).
-    ///
-    /// Its own variant rather than plain text, because the escape carries
-    /// intent the literal character alone cannot: the author wrote `\-\-`
-    /// precisely so a downstream processor would NOT turn it into an en dash.
-    /// Flattening it into text lost that, and the Markdown target emitted the
-    /// trigger bare where carve-php reproduced the escape (carve issue 350).
-    /// The inline vocabulary in the spec's profiles.md lists `escaped_text`.
-    ///
-    /// The value is the literal character, without the backslash.
-    EscapedText(String),
+    Text(Text),
+    EscapedText(EscapedText),
     SmartPunctuation(SmartPunctuation),
     Emphasis(Emphasis),
-    Code(String, Option<Attrs>),
+    Code(Code),
     Link(Link),
     Image(Image),
     Span(Span),
@@ -424,12 +428,97 @@ pub enum InlineNode {
     Extension(InlineExtension),
     Abbreviation(Abbreviation),
     Footnote(Footnote),
-    SoftBreak,
-    HardBreak,
+    SoftBreak(Break),
+    HardBreak(Break),
     CriticInsert(CriticInsert),
     CriticDelete(CriticDelete),
     CriticSubstitute(CriticSubstitute),
     CriticComment(CriticComment),
+}
+
+impl InlineNode {
+    pub fn text(value: impl Into<String>) -> Self {
+        Self::Text(Text {
+            value: value.into(),
+            pos: None,
+        })
+    }
+
+    pub fn escaped_text(value: impl Into<String>) -> Self {
+        Self::EscapedText(EscapedText {
+            value: value.into(),
+            pos: None,
+        })
+    }
+
+    pub fn code(value: impl Into<String>, attrs: Option<Attrs>) -> Self {
+        Self::Code(Code {
+            value: value.into(),
+            attrs,
+            pos: None,
+        })
+    }
+
+    pub fn soft_break() -> Self {
+        Self::SoftBreak(Break { pos: None })
+    }
+
+    pub fn hard_break() -> Self {
+        Self::HardBreak(Break { pos: None })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Text {
+    pub value: String,
+    /// Span in the original source, when the parser could determine it.
+    pub pos: Option<Pos>,
+}
+
+impl From<String> for Text {
+    fn from(value: String) -> Self {
+        Self { value, pos: None }
+    }
+}
+
+impl From<&str> for Text {
+    fn from(value: &str) -> Self {
+        Self {
+            value: value.to_string(),
+            pos: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EscapedText {
+    /// A character the author escaped with a backslash (`\-`, `\"`).
+    ///
+    /// Its own variant rather than plain text, because the escape carries
+    /// intent the literal character alone cannot: the author wrote `\-\-`
+    /// precisely so a downstream processor would NOT turn it into an en dash.
+    /// Flattening it into text lost that, and the Markdown target emitted the
+    /// trigger bare where carve-php reproduced the escape (carve issue 350).
+    /// The inline vocabulary in the spec's profiles.md lists `escaped_text`.
+    ///
+    /// The value is the literal character, without the backslash.
+    pub value: String,
+    /// Span in the original source, when the parser could determine it.
+    pub pos: Option<Pos>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Code {
+    pub value: String,
+    pub attrs: Option<Attrs>,
+    /// Span in the original source, when the parser could determine it.
+    pub pos: Option<Pos>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Break {
+    /// Span in the original source, when the parser could determine it.
+    pub pos: Option<Pos>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -437,6 +526,8 @@ pub struct SmartPunctuation {
     pub kind: String,
     pub value: String,
     pub glyph: Option<String>,
+    /// Span in the original source, when the parser could determine it.
+    pub pos: Option<Pos>,
 }
 
 pub const GLYPHS: &[(&str, &str)] = &[
@@ -535,6 +626,8 @@ pub struct Emphasis {
     pub attrs: Option<Attrs>,
     pub kind: EmphasisKind,
     pub children: Vec<InlineNode>,
+    /// Span in the original source, when the parser could determine it.
+    pub pos: Option<Pos>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -563,6 +656,8 @@ pub struct Link {
     /// extension (HeadingNumbers, #198) rewrite only auto-filled
     /// cross-references without a fragile title-equality guess.
     pub from_crossref: bool,
+    /// Span in the original source, when the parser could determine it.
+    pub pos: Option<Pos>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -579,6 +674,8 @@ pub struct Image {
     /// heading text. `None` for a direct `![alt](src)` image.
     pub ref_label: Option<String>,
     pub raw_ref: Option<String>,
+    /// Span in the original source, when the parser could determine it.
+    pub pos: Option<Pos>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -586,12 +683,16 @@ pub struct InlineExtension {
     pub attrs: Option<Attrs>,
     pub name: String,
     pub children: Vec<InlineNode>,
+    /// Span in the original source, when the parser could determine it.
+    pub pos: Option<Pos>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Span {
     pub attrs: Option<Attrs>,
     pub children: Vec<InlineNode>,
+    /// Span in the original source, when the parser could determine it.
+    pub pos: Option<Pos>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -599,12 +700,16 @@ pub struct Math {
     pub attrs: Option<Attrs>,
     pub display: bool,
     pub content: String,
+    /// Span in the original source, when the parser could determine it.
+    pub pos: Option<Pos>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RawInline {
     pub format: String,
     pub content: String,
+    /// Span in the original source, when the parser could determine it.
+    pub pos: Option<Pos>,
 }
 
 /// Inline literal (`` !`…` ``): a `!` prefix on a verbatim code span (grammar
@@ -623,12 +728,16 @@ pub struct RawInline {
 pub struct LiteralInline {
     pub content: String,
     pub attrs: Option<Attrs>,
+    /// Span in the original source, when the parser could determine it.
+    pub pos: Option<Pos>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Symbol {
     pub name: String,
     pub attrs: Option<Attrs>,
+    /// Span in the original source, when the parser could determine it.
+    pub pos: Option<Pos>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -638,26 +747,36 @@ pub struct AutoLink {
     /// Display text = the raw content between `<>`: a URI autolink keeps its
     /// scheme (`<mailto:a@b>` shows `mailto:a@b`), an email shows the address.
     pub text: String,
+    /// Span in the original source, when the parser could determine it.
+    pub pos: Option<Pos>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CrossRef {
     pub target: String,
+    /// Span in the original source, when the parser could determine it.
+    pub pos: Option<Pos>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CaptionNumber {
     pub number: Option<usize>,
+    /// Span in the original source, when the parser could determine it.
+    pub pos: Option<Pos>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Mention {
     pub user: String,
+    /// Span in the original source, when the parser could determine it.
+    pub pos: Option<Pos>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Tag {
     pub name: String,
+    /// Span in the original source, when the parser could determine it.
+    pub pos: Option<Pos>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -666,6 +785,8 @@ pub struct CitationGroup {
     pub raw: String,
     pub mode: Option<CitationRenderMode>,
     pub integral: bool,
+    /// Span in the original source, when the parser could determine it.
+    pub pos: Option<Pos>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -694,6 +815,8 @@ pub struct Citation {
 pub struct Abbreviation {
     pub abbr: String,
     pub expansion: String,
+    /// Span in the original source, when the parser could determine it.
+    pub pos: Option<Pos>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -703,27 +826,37 @@ pub struct Footnote {
     pub inline: Option<Vec<InlineNode>>,
     pub number: Option<usize>,
     pub ref_id: Option<String>,
+    /// Span in the original source, when the parser could determine it.
+    pub pos: Option<Pos>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CriticInsert {
     pub children: Vec<InlineNode>,
     pub attrs: Option<Attrs>,
+    /// Span in the original source, when the parser could determine it.
+    pub pos: Option<Pos>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CriticDelete {
     pub children: Vec<InlineNode>,
     pub attrs: Option<Attrs>,
+    /// Span in the original source, when the parser could determine it.
+    pub pos: Option<Pos>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CriticSubstitute {
     pub old_text: String,
     pub new_text: String,
+    /// Span in the original source, when the parser could determine it.
+    pub pos: Option<Pos>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CriticComment {
     pub text: String,
+    /// Span in the original source, when the parser could determine it.
+    pub pos: Option<Pos>,
 }

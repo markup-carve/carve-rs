@@ -103,7 +103,7 @@ fn normal_nesting_still_renders() {
 fn non_html_renderers_bound_programmatic_block_depth() {
     let mut block = carve::BlockNode::Paragraph(carve::Paragraph {
         attrs: None,
-        children: vec![carve::InlineNode::Text("leaf".to_string())],
+        children: vec![carve::InlineNode::text("leaf".to_string())],
         ..Default::default()
     });
     for _ in 0..500 {
@@ -129,12 +129,13 @@ fn non_html_renderers_bound_programmatic_block_depth() {
 
 #[test]
 fn non_html_renderers_bound_programmatic_inline_depth() {
-    let mut inline = carve::InlineNode::Text("leaf".to_string());
+    let mut inline = carve::InlineNode::text("leaf".to_string());
     for _ in 0..500 {
         inline = carve::InlineNode::Emphasis(carve::Emphasis {
             attrs: None,
             kind: carve::EmphasisKind::Italic,
             children: vec![inline],
+            pos: None,
         });
     }
     let doc = carve::Document {

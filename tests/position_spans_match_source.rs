@@ -71,7 +71,7 @@ fn anchor(nodes: &[InlineNode]) -> Option<String> {
     for node in nodes {
         let found = match node {
             InlineNode::Text(text) => {
-                let trimmed = text.trim();
+                let trimmed = text.value.trim();
                 if trimmed.is_empty() || trimmed.chars().any(|c| SENTINELS.contains(&c)) {
                     None
                 } else {

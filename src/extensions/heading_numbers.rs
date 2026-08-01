@@ -240,11 +240,12 @@ fn number_heading(h: &mut Heading, in_blockquote: bool, state: &mut NumberState)
             classes: vec!["section-number".to_string()],
             ..Attrs::default()
         }),
-        children: vec![InlineNode::Text(number)],
+        children: vec![InlineNode::text(number)],
+        pos: None,
     });
     let mut new_children = Vec::with_capacity(h.children.len() + 2);
     new_children.push(span);
-    new_children.push(InlineNode::Text(" ".to_string()));
+    new_children.push(InlineNode::text(" ".to_string()));
     new_children.append(&mut h.children);
     h.children = new_children;
 }
@@ -361,7 +362,7 @@ fn maybe_rewrite_link(l: &mut Link, by_id: &BTreeMap<String, Entry>, opts: &Head
         CrossrefStyle::Number => format!("{} {}", opts.label, entry.number),
         _ => format!("{} {} - {}", opts.label, entry.number, entry.title),
     };
-    l.children = vec![InlineNode::Text(text)];
+    l.children = vec![InlineNode::text(text)];
 }
 
 #[cfg(test)]

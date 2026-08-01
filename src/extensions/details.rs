@@ -134,6 +134,7 @@ fn rewrite_blocks(blocks: &mut [BlockNode]) {
                     children: std::mem::take(&mut a.children),
                     summary: a.title.take(),
                     label: a.label.take(),
+                    pos: None,
                 });
             }
             BlockNode::List(l) => {

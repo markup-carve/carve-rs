@@ -716,10 +716,12 @@ pub(crate) fn plain_inlines(nodes: &[InlineNode]) -> String {
     let mut out = String::new();
     for node in nodes {
         match node {
-            InlineNode::Text(s) => out.push_str(&s.replace(crate::ESCAPED_CARET_PLACEHOLDER, "^")),
+            InlineNode::Text(s) => {
+                out.push_str(&s.value.replace(crate::ESCAPED_CARET_PLACEHOLDER, "^"))
+            }
             InlineNode::SmartPunctuation(s) => out.push_str(smart_punctuation_glyph(s)),
             InlineNode::Emphasis(e) => out.push_str(&plain_inlines(&e.children)),
-            InlineNode::Code(s, _) => out.push_str(s),
+            InlineNode::Code(s) => out.push_str(&s.value),
             // An inline literal renders as visible prose (§27), so it contributes
             // its content to a heading slug -- otherwise `` # !`Cat` `` would
             // slug to the empty fallback and `</#cat>` could never resolve.
@@ -745,7 +747,7 @@ pub(crate) fn plain_inlines(nodes: &[InlineNode]) -> String {
             }
             // A soft/hard break (e.g. a multi-line heading) is a word
             // separator for slug/plain-text purposes, not a join.
-            InlineNode::SoftBreak | InlineNode::HardBreak => out.push(' '),
+            InlineNode::SoftBreak(_) | InlineNode::HardBreak(_) => out.push(' '),
             _ => {}
         }
     }
@@ -1602,22 +1604,22 @@ fn render_inline_after(out: &mut String, node: &InlineNode, options: &Options<'_
             // Escape `& < >` AND fold U+00A0 to `&nbsp;` in a single pass over
             // `out`. None of the escaped chars is U+00A0, so the combined pass
             // is byte-identical to `escape_text(..).replace('\u{00a0}', ..)`.
-            write_escaped_text_nbsp(out, s);
+            write_escaped_text_nbsp(out, &s.value);
         }
         InlineNode::EscapedText(s) => {
             // The backslash is authoring syntax; the reader sees the character.
-            write_escaped_text_nbsp(out, &s.replace(crate::ESCAPED_CARET_PLACEHOLDER, "^"));
+            write_escaped_text_nbsp(out, &s.value.replace(crate::ESCAPED_CARET_PLACEHOLDER, "^"));
         }
         InlineNode::SmartPunctuation(s) => write_escaped_text_nbsp(out, smart_punctuation_glyph(s)),
         InlineNode::Emphasis(e) => render_emphasis(out, e, options),
-        InlineNode::Code(s, attrs) => {
+        InlineNode::Code(s) => {
             out.push_str("<code");
-            write_attrs(out, attrs);
+            write_attrs(out, &s.attrs);
             out.push('>');
             // Escape `& < >` AND fold U+00A0 to `&nbsp;`, matching the prose
             // text path: a literal no-break space inside a code span serializes
             // as the named entity in HTML (corpus 49-non-breaking-space-3).
-            write_escaped_text_nbsp(out, s);
+            write_escaped_text_nbsp(out, &s.value);
             out.push_str("</code>");
         }
         InlineNode::Link(l) => render_link(out, l, options),
@@ -1789,8 +1791,8 @@ fn render_inline_after(out: &mut String, node: &InlineNode, options: &Options<'_
                 write_escaped_text(out, &format!("[^{id}]"));
             }
         }
-        InlineNode::SoftBreak => out.push('\n'),
-        InlineNode::HardBreak => out.push_str("<br>\n"),
+        InlineNode::SoftBreak(_) => out.push('\n'),
+        InlineNode::HardBreak(_) => out.push_str("<br>\n"),
         InlineNode::CriticInsert(c) => {
             out.push_str("<ins");
             write_attrs(out, &c.attrs);
@@ -1862,7 +1864,9 @@ fn flatten_text(nodes: &[InlineNode]) -> String {
     let mut out = String::new();
     for node in nodes {
         match node {
-            InlineNode::Text(t) => out.push_str(&t.replace(crate::ESCAPED_CARET_PLACEHOLDER, "^")),
+            InlineNode::Text(t) => {
+                out.push_str(&t.value.replace(crate::ESCAPED_CARET_PLACEHOLDER, "^"))
+            }
             InlineNode::SmartPunctuation(s) => out.push_str(smart_punctuation_glyph(s)),
             InlineNode::Emphasis(e) => out.push_str(&flatten_text(&e.children)),
             InlineNode::Link(l) => out.push_str(&flatten_text(&l.children)),

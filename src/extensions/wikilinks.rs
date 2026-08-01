@@ -139,10 +139,11 @@ impl CarveExtension for Wikilinks {
                 attrs: Some(attrs),
                 href,
                 title: None,
-                children: vec![InlineNode::Text(display_text)],
+                children: vec![InlineNode::text(display_text)],
                 ref_label: None,
                 raw_ref: None,
                 from_crossref: false,
+                pos: None,
             }),
             end,
         })

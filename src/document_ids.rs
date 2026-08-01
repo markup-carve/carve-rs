@@ -370,7 +370,7 @@ impl Seeder {
                     self.reserve_attrs(&e.attrs);
                     self.walk_inlines(&e.children);
                 }
-                InlineNode::Code(_, attrs) => self.reserve_attrs(attrs),
+                InlineNode::Code(code) => self.reserve_attrs(&code.attrs),
                 InlineNode::LiteralInline(lit) => self.reserve_attrs(&lit.attrs),
                 InlineNode::Link(l) => {
                     self.reserve_attrs(&l.attrs);

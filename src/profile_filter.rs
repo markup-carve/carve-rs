@@ -267,7 +267,7 @@ impl ProfileFilter<'_> {
                                         .iter()
                                         .map(extract_inline_text)
                                         .collect();
-                                    row.cells[c].children = vec![InlineNode::Text(text)];
+                                    row.cells[c].children = vec![InlineNode::text(text)];
                                     c += 1;
                                     continue;
                                 }
@@ -531,7 +531,7 @@ impl ProfileFilter<'_> {
         self.record("image", "image_not_allowed")?;
         match self.profile.disallowed_action() {
             DisallowedAction::Strip => Ok(None),
-            DisallowedAction::ToText => Ok(Some(InlineNode::Text(image_text(img)))),
+            DisallowedAction::ToText => Ok(Some(InlineNode::text(image_text(img)))),
             DisallowedAction::Error => unreachable!(),
         }
     }
@@ -579,7 +579,7 @@ impl ProfileFilter<'_> {
             self.record(canonical, "to_text_yielded_nothing")?;
             text = format!("[{canonical}]");
         }
-        Ok(Some(InlineNode::Text(text)))
+        Ok(Some(InlineNode::text(text)))
     }
 
     /// Record a violation; for the Error action, short-circuit with the error.
@@ -657,10 +657,10 @@ fn text_with_breaks(content: &str) -> Vec<InlineNode> {
     let mut out = Vec::new();
     for (idx, line) in lines.iter().enumerate() {
         if !line.is_empty() {
-            out.push(InlineNode::Text(line.to_string()));
+            out.push(InlineNode::text(line.to_string()));
         }
         if idx < last {
-            out.push(InlineNode::HardBreak);
+            out.push(InlineNode::hard_break());
         }
     }
     out
@@ -688,7 +688,8 @@ fn text_cell(text: &str) -> TableCell {
         span: None,
         align: None,
         attrs: None,
-        children: vec![InlineNode::Text(text.to_string())],
+        children: vec![InlineNode::text(text.to_string())],
+        pos: None,
     }
 }
 
@@ -825,16 +826,15 @@ fn block_children_join(children: &[BlockNode]) -> String {
 /// Render an inline node to source-flavored plain text.
 fn extract_inline_text(node: &InlineNode) -> String {
     match node {
-        InlineNode::Text(t) | InlineNode::EscapedText(t) => {
-            t.replace(crate::ESCAPED_CARET_PLACEHOLDER, "^")
-        }
+        InlineNode::Text(t) => t.value.replace(crate::ESCAPED_CARET_PLACEHOLDER, "^"),
+        InlineNode::EscapedText(t) => t.value.replace(crate::ESCAPED_CARET_PLACEHOLDER, "^"),
         InlineNode::SmartPunctuation(s) => smart_punctuation_glyph(s).to_string(),
-        InlineNode::Code(c, _) => c.clone(),
+        InlineNode::Code(c) => c.value.clone(),
         InlineNode::Math(m) => m.content.clone(),
         InlineNode::RawInline(r) => r.content.clone(),
         InlineNode::LiteralInline(l) => l.content.clone(),
-        InlineNode::SoftBreak => " ".to_string(),
-        InlineNode::HardBreak => "\n".to_string(),
+        InlineNode::SoftBreak(_) => " ".to_string(),
+        InlineNode::HardBreak(_) => "\n".to_string(),
         InlineNode::Image(img) => image_text(img),
         InlineNode::Mention(m) => format!("@{}", m.user),
         InlineNode::Tag(t) => format!("#{}", t.name),
@@ -991,9 +991,10 @@ fn is_empty_block(node: &BlockNode) -> bool {
 
 fn is_empty_inline(node: &InlineNode) -> bool {
     match node {
-        InlineNode::Text(t) | InlineNode::EscapedText(t) => t.is_empty(),
+        InlineNode::Text(t) => t.value.is_empty(),
+        InlineNode::EscapedText(t) => t.value.is_empty(),
         InlineNode::SmartPunctuation(_) => false,
-        InlineNode::Code(c, _) => c.is_empty(),
+        InlineNode::Code(c) => c.value.is_empty(),
         InlineNode::Math(m) => m.content.is_empty(),
         InlineNode::RawInline(r) => r.content.is_empty(),
         InlineNode::LiteralInline(l) => l.content.is_empty(),
@@ -1006,8 +1007,8 @@ fn is_empty_inline(node: &InlineNode) -> bool {
         | InlineNode::CrossRef(_)
         | InlineNode::CaptionNumber(_)
         | InlineNode::CitationGroup(_)
-        | InlineNode::SoftBreak
-        | InlineNode::HardBreak
+        | InlineNode::SoftBreak(_)
+        | InlineNode::HardBreak(_)
         | InlineNode::AutoLink(_)
         | InlineNode::CriticSubstitute(_)
         | InlineNode::CriticComment(_) => false,

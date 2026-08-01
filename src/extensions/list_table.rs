@@ -113,6 +113,7 @@ fn rewrite_blocks(blocks: &mut [BlockNode]) {
                         children: std::mem::take(&mut a.children),
                         summary: a.title.take(),
                         label: a.label.take(),
+                        pos: None,
                     });
                 }
             }
@@ -534,7 +535,7 @@ fn marker_of(cell: &ListItem) -> Option<char> {
     let [InlineNode::Text(t)] = p.children.as_slice() else {
         return None;
     };
-    match t.trim() {
+    match t.value.trim() {
         "^" => Some('^'),
         "<" => Some('<'),
         _ => None,

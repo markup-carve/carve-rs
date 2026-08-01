@@ -488,7 +488,7 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
         // 350). The underscore still goes through the sentinel so the intraword
         // rule can drop the backslash where CommonMark ignores it anyway.
         InlineNode::EscapedText(text) => {
-            let ch = text.replace(crate::ESCAPED_CARET_PLACEHOLDER, "^");
+            let ch = text.value.replace(crate::ESCAPED_CARET_PLACEHOLDER, "^");
             if ch == "_" {
                 UNDERSCORE_ESCAPE.to_string()
             } else {
@@ -496,14 +496,14 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
             }
         }
         InlineNode::Text(text) => {
-            if is_literal_crossref(text) {
-                strip_controls(text)
+            if is_literal_crossref(&text.value) {
+                strip_controls(&text.value)
             } else {
                 // The generated-NBSP placeholder (escaped space `\ ` / verse
                 // indent) round-trips to a literal non-breaking space in
                 // Markdown, matching the other renderers' source projection.
                 escape_text(
-                    &strip_controls(text)
+                    &strip_controls(&text.value)
                         .replace(crate::NBSP_PLACEHOLDER, "\u{00a0}")
                         .replace(crate::ESCAPED_CARET_PLACEHOLDER, "^"),
                 )
@@ -556,7 +556,7 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
                 )
             }
         },
-        InlineNode::Code(code, _) => render_code(&strip_controls(code)),
+        InlineNode::Code(code) => render_code(&strip_controls(&code.value)),
         InlineNode::Link(link) => render_link(link, ctx, depth + 1),
         InlineNode::Image(image) => render_image(image),
         InlineNode::Span(span) => render_inlines(&span.children, ctx, depth + 1),
@@ -632,13 +632,13 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
                 }
             }
         }
-        InlineNode::SoftBreak => "\n".to_string(),
+        InlineNode::SoftBreak(_) => "\n".to_string(),
         // A BACKSLASH, not two trailing spaces (PART 11 section 9). Both mean
         // `<br />` to a CommonMark reader, but trailing whitespace is removed by
         // editors that strip on save, by `git apply --whitespace=fix` and by CI
         // whitespace checks -- and losing ONE of the two spaces is enough for the
         // break to vanish rather than degrade, silently, in a file nobody edited.
-        InlineNode::HardBreak => "\\\n".to_string(),
+        InlineNode::HardBreak(_) => "\\\n".to_string(),
         InlineNode::CriticInsert(insert) => {
             format!(
                 "<ins>{}</ins>",
@@ -1011,12 +1011,13 @@ fn plain_inlines(nodes: &[InlineNode]) -> String {
         match node {
             InlineNode::Text(text) => out.push_str(
                 &text
+                    .value
                     .replace(crate::NBSP_PLACEHOLDER, " ")
                     .replace(crate::ESCAPED_CARET_PLACEHOLDER, "^"),
             ),
             InlineNode::SmartPunctuation(s) => out.push_str(smart_punctuation_text(s)),
             InlineNode::Emphasis(emphasis) => out.push_str(&plain_inlines(&emphasis.children)),
-            InlineNode::Code(code, _) => out.push_str(code),
+            InlineNode::Code(code) => out.push_str(&code.value),
             // An inline literal renders as visible prose (§27), so it feeds a
             // Markdown heading slug like a code span does.
             InlineNode::LiteralInline(lit) => out.push_str(&lit.content),
@@ -1038,7 +1039,7 @@ fn plain_inlines(nodes: &[InlineNode]) -> String {
                     out.push_str(&number.to_string());
                 }
             }
-            InlineNode::SoftBreak | InlineNode::HardBreak => out.push(' '),
+            InlineNode::SoftBreak(_) | InlineNode::HardBreak(_) => out.push(' '),
             _ => {}
         }
     }

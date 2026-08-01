@@ -442,6 +442,7 @@ fn rewrite_toc_containers(blocks: &mut [BlockNode]) {
                     children: std::mem::take(&mut a.children),
                     summary: None,
                     label: a.label.take(),
+                    pos: None,
                 });
             }
             BlockNode::List(l) => {

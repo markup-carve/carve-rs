@@ -164,7 +164,7 @@ pub fn canonical_inline_type(node: &InlineNode) -> Option<&'static str> {
             EmphasisKind::Sub => "subscript",
             EmphasisKind::Highlight => "highlight",
         }),
-        InlineNode::Code(_, _) => Some("code"),
+        InlineNode::Code(_) => Some("code"),
         InlineNode::Link(_) => Some("link"),
         InlineNode::AutoLink(_) => Some("autolink"),
         InlineNode::Image(_) => Some("image"),
@@ -194,8 +194,8 @@ pub fn canonical_inline_type(node: &InlineNode) -> Option<&'static str> {
         } else {
             "footnote_ref"
         }),
-        InlineNode::SoftBreak => Some("soft_break"),
-        InlineNode::HardBreak => Some("hard_break"),
+        InlineNode::SoftBreak(_) => Some("soft_break"),
+        InlineNode::HardBreak(_) => Some("hard_break"),
         InlineNode::CriticInsert(_) => Some("insert"),
         InlineNode::CriticDelete(_) => Some("delete"),
         // Each of these is in profiles.md's inline vocabulary. Returning None

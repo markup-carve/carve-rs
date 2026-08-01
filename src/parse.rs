@@ -3950,6 +3950,7 @@ fn parse_definition_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNo
         let terms = vec![DefinitionTerm {
             attrs: source_line_attrs(None, term_source_line, options),
             children: parse_inline_with_options(&term_text, options),
+            pos: None,
         }];
         let mut defs = Vec::new();
 
@@ -4016,12 +4017,14 @@ fn parse_definition_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNo
             defs.push(DefinitionDef {
                 attrs: source_line_attrs(None, def_source_line, options),
                 children: parse_mapped_source(&body, options),
+                pos: None,
             });
         }
 
         items.push(DefinitionItem {
             terms,
             definitions: defs,
+            pos: None,
         });
 
         let saved = cur.pos;
@@ -4033,7 +4036,11 @@ fn parse_definition_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNo
             break;
         }
     }
-    BlockNode::DefinitionList(DefinitionList { attrs: None, items })
+    BlockNode::DefinitionList(DefinitionList {
+        attrs: None,
+        items,
+        pos: None,
+    })
 }
 
 /// A lone `+` (optionally followed by spaces/tabs) is the continuation marker
@@ -4400,7 +4407,7 @@ fn apply_table_continuation(row: &mut TableRow, line: &str, options: &Options<'_
         }
         if let Some(target) = row.cells.get_mut(idx) {
             if !target.children.is_empty() {
-                target.children.push(InlineNode::Text(" ".to_string()));
+                target.children.push(InlineNode::text(" ".to_string()));
             }
             target
                 .children
@@ -4484,6 +4491,7 @@ fn parse_table_cell(cell: &str, options: &Options<'_>) -> TableCell {
                 align: None,
                 attrs: Some(attrs),
                 children: parse_inline_with_options(cell[next..].trim(), options),
+                pos: None,
             };
         }
     }
@@ -4531,6 +4539,7 @@ fn parse_table_cell(cell: &str, options: &Options<'_>) -> TableCell {
         } else {
             parse_inline_with_options(text, options)
         },
+        pos: None,
     }
 }
 
@@ -4830,7 +4839,7 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             let inlines = parse_inline_with_options(&lines.lines.join("\n"), options)
                 .into_iter()
                 .map(|n| match n {
-                    InlineNode::SoftBreak => InlineNode::HardBreak,
+                    InlineNode::SoftBreak(_) => InlineNode::hard_break(),
                     other => other,
                 })
                 .collect();
@@ -4905,8 +4914,8 @@ fn parse_hardbreaks_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockN
     for child in &mut children {
         if let BlockNode::Paragraph(para) = child {
             for node in &mut para.children {
-                if matches!(node, InlineNode::SoftBreak) {
-                    *node = InlineNode::HardBreak;
+                if matches!(node, InlineNode::SoftBreak(_)) {
+                    *node = InlineNode::hard_break();
                 }
             }
         }
@@ -4937,6 +4946,7 @@ fn detect_abbreviation_def(line: &str) -> Option<AbbreviationDef> {
     Some(AbbreviationDef {
         abbr: abbr.to_string(),
         expansion: expansion.trim().to_string(),
+        pos: None,
     })
 }
 
@@ -5455,7 +5465,7 @@ fn merge_attrs_into_inline(node: &mut InlineNode, attrs: Attrs) {
         InlineNode::Math(n) => merge_attrs(&mut n.attrs, attrs),
         InlineNode::AutoLink(n) => merge_attrs(&mut n.attrs, attrs),
         InlineNode::Extension(n) => merge_attrs(&mut n.attrs, attrs),
-        InlineNode::Code(_, a) => merge_attrs(a, attrs),
+        InlineNode::Code(n) => merge_attrs(&mut n.attrs, attrs),
         // A trailing standalone block chains onto an inline literal, promoting a
         // bare literal to a `<span>` (`` !`x`{.a}{.b} `` -> class="a b"). Matches
         // carve-js, whose merge attaches to any non-text node.
@@ -5479,7 +5489,7 @@ fn inline_is_attributable(node: &InlineNode) -> bool {
             | InlineNode::Math(_)
             | InlineNode::AutoLink(_)
             | InlineNode::Extension(_)
-            | InlineNode::Code(_, _)
+            | InlineNode::Code(_)
             | InlineNode::LiteralInline(_)
             | InlineNode::Footnote(_)
             | InlineNode::CriticInsert(_)
@@ -5602,7 +5612,7 @@ fn parse_inline_context(
     // literal rather than recursing further (prevents a stack-overflow abort on
     // input like `[[[[[…x]]]]]`). Shares the depth counter with block parsing.
     let Some(_depth) = DepthGuard::enter() else {
-        return vec![InlineNode::Text(text.to_string())];
+        return vec![InlineNode::text(text.to_string())];
     };
     let bytes = text.as_bytes();
     // A `[` only opens an inline link, reference link, or span when a `](`,
@@ -5687,7 +5697,7 @@ fn parse_inline_context(
         // (`para\` at EOF -> `<br>`), matching djot and the cheatsheet.
         if c == b'\\' && i + 1 >= bytes.len() {
             flush_text(&mut out, &mut buf);
-            out.push(InlineNode::HardBreak);
+            out.push(InlineNode::hard_break());
             i += 1;
             continue;
         }
@@ -5704,7 +5714,7 @@ fn parse_inline_context(
                 // its placeholder inside the node's value, so the checks that
                 // stop `\^` being read as a caption marker still see it.
                 flush_text(&mut out, &mut buf);
-                out.push(InlineNode::EscapedText(if nxt == b'^' {
+                out.push(InlineNode::escaped_text(if nxt == b'^' {
                     crate::ESCAPED_CARET_PLACEHOLDER.to_string()
                 } else {
                     (nxt as char).to_string()
@@ -5747,7 +5757,7 @@ fn parse_inline_context(
                 // the main loop, which runs AFTER the forced-emphasis / critic
                 // checks -- so `` `c`{_u_} `` is a code span + forced underline,
                 // not a bogus `_u_` attribute. Matches carve-js / carve-php.
-                out.push(InlineNode::Code(value, None));
+                out.push(InlineNode::code(value, None));
                 i += consumed;
                 continue;
             }
@@ -5912,7 +5922,10 @@ fn parse_inline_context(
         if c == b'#' {
             if caption_number_allowed && !bytes.get(i + 1).is_some_and(u8::is_ascii_alphabetic) {
                 flush_text(&mut out, &mut buf);
-                out.push(InlineNode::CaptionNumber(CaptionNumber { number: None }));
+                out.push(InlineNode::CaptionNumber(CaptionNumber {
+                    number: None,
+                    pos: None,
+                }));
                 caption_number_allowed = false;
                 i += 1;
                 continue;
@@ -5996,12 +6009,12 @@ fn parse_inline_context(
             if buf.ends_with('\\') {
                 buf.pop();
                 flush_text(&mut out, &mut buf);
-                out.push(InlineNode::HardBreak);
+                out.push(InlineNode::hard_break());
                 i += 1;
                 continue;
             }
             flush_text(&mut out, &mut buf);
-            out.push(InlineNode::SoftBreak);
+            out.push(InlineNode::soft_break());
             i += 1;
             continue;
         }
@@ -6054,6 +6067,7 @@ fn parse_critic_markup(
                 InlineNode::CriticInsert(CriticInsert {
                     children: parse_inline_context(inner, options, false, in_footnote),
                     attrs: None,
+                    pos: None,
                 }),
                 pair + 2 - start,
             ))
@@ -6068,6 +6082,7 @@ fn parse_critic_markup(
                 InlineNode::CriticDelete(CriticDelete {
                     children: parse_inline_context(inner, options, false, in_footnote),
                     attrs: None,
+                    pos: None,
                 }),
                 pair + 2 - start,
             ))
@@ -6086,6 +6101,7 @@ fn parse_critic_markup(
                 InlineNode::CriticSubstitute(CriticSubstitute {
                     old_text: inner[..sep].to_string(),
                     new_text: inner[sep + 2..].to_string(),
+                    pos: None,
                 }),
                 pair + 2 - start,
             ))
@@ -6099,6 +6115,7 @@ fn parse_critic_markup(
             Some((
                 InlineNode::CriticComment(CriticComment {
                     text: inner.to_string(),
+                    pos: None,
                 }),
                 pair + 2 - start,
             ))
@@ -6143,6 +6160,7 @@ fn parse_footnote_ref(
             inline: None,
             number: None,
             ref_id: None,
+            pos: None,
         },
         after - start,
     ))
@@ -6182,6 +6200,7 @@ fn parse_inline_footnote(
             inline: Some(children),
             number: None,
             ref_id: None,
+            pos: None,
         },
         after - start,
     ))
@@ -6225,6 +6244,7 @@ fn parse_raw_inline_after_code(
         RawInline {
             format: format.to_string(),
             content: value.to_string(),
+            pos: None,
         },
         i + 1 - start,
     ))
@@ -6259,6 +6279,7 @@ fn parse_literal_inline(bytes: &[u8], start: usize) -> Option<(LiteralInline, us
         LiteralInline {
             content,
             attrs: None,
+            pos: None,
         },
         tick + code_consumed - start,
     ))
@@ -6325,6 +6346,7 @@ fn parse_math(bytes: &[u8], start: usize, bounds: &InlineBounds<'_>) -> Option<(
             attrs,
             display,
             content,
+            pos: None,
         },
         after - start,
     ))
@@ -6381,6 +6403,7 @@ fn parse_reference_link(
             // reference ignores `raw_ref` and applies `attrs` instead.
             raw_ref: Some(std::str::from_utf8(&bytes[start..after]).ok()?.to_string()),
             from_crossref: false,
+            pos: None,
         },
         after - start,
     ))
@@ -6388,7 +6411,7 @@ fn parse_reference_link(
 
 fn flush_text(out: &mut Vec<InlineNode>, buf: &mut String) {
     if !buf.is_empty() {
-        out.push(InlineNode::Text(std::mem::take(buf)));
+        out.push(InlineNode::text(std::mem::take(buf)));
     }
 }
 
@@ -6421,6 +6444,7 @@ fn parse_smart_punctuation_at(
                 kind: kind.to_string(),
                 value: text[i + consumed..i + consumed + width].to_string(),
                 glyph: None,
+                pos: None,
             }));
             consumed += width;
         }
@@ -6447,6 +6471,7 @@ fn parse_smart_punctuation_at(
                     kind: kind.to_string(),
                     value: source.to_string(),
                     glyph: None,
+                    pos: None,
                 })],
                 source.len(),
             ));
@@ -6467,6 +6492,7 @@ fn parse_smart_punctuation_at(
                 kind: kind.to_string(),
                 value: "\"".to_string(),
                 glyph: Some(glyph.to_string()),
+                pos: None,
             })],
             1,
         ));
@@ -6489,6 +6515,7 @@ fn parse_smart_punctuation_at(
                 kind: kind.to_string(),
                 value: "'".to_string(),
                 glyph: Some(glyph.to_string()),
+                pos: None,
             })],
             1,
         ));
@@ -6505,7 +6532,7 @@ fn last_emitted_glyph(out: &[InlineNode]) -> char {
         // An escaped character is its own node but still the character before
         // the quote, and quote flanking reads that character: `\{"quoted"`
         // opens on the brace exactly as an unescaped `{` would (corpus 163).
-        Some(InlineNode::EscapedText(t)) => t.chars().last().unwrap_or('x'),
+        Some(InlineNode::EscapedText(t)) => t.value.chars().last().unwrap_or('x'),
         None => '\0',
         Some(_) => 'x',
     }
@@ -6642,6 +6669,7 @@ fn parse_image_at(bytes: &[u8], start: usize, bounds: &InlineBounds<'_>) -> Opti
             title,
             ref_label: None,
             raw_ref: None,
+            pos: None,
         },
         after - start,
     ))
@@ -6695,6 +6723,7 @@ fn parse_reference_image(
             title: None,
             ref_label: Some(ref_label),
             raw_ref: Some(std::str::from_utf8(&bytes[start..after]).ok()?.to_string()),
+            pos: None,
         },
         after - start,
     ))
@@ -6740,6 +6769,7 @@ fn parse_inline_link_with_options(
             ref_label: None,
             raw_ref: None,
             from_crossref: false,
+            pos: None,
         },
         after - start,
     ))
@@ -6795,6 +6825,7 @@ fn parse_inline_extension(
             attrs,
             name,
             children: parse_inline_context(&content, options, false, in_footnote),
+            pos: None,
         },
         after - start,
     ))
@@ -6838,6 +6869,7 @@ fn parse_span(
         Span {
             attrs,
             children: parse_inline_context(&content, options, false, in_footnote),
+            pos: None,
         },
         after_attrs - start,
     ))
@@ -6899,6 +6931,7 @@ fn parse_mention(text: &str, pos: usize) -> Option<(Mention, usize)> {
     Some((
         Mention {
             user: rest[..len].to_string(),
+            pos: None,
         },
         len + 1,
     ))
@@ -6919,6 +6952,7 @@ fn parse_tag(text: &str, pos: usize) -> Option<(Tag, usize)> {
     Some((
         Tag {
             name: rest[..len].to_string(),
+            pos: None,
         },
         len + 1,
     ))
@@ -6966,6 +7000,7 @@ fn parse_symbol(text: &str, pos: usize, bounds: &InlineBounds<'_>) -> Option<(Sy
         Symbol {
             name: text[pos + 1..close_pos].to_string(),
             attrs,
+            pos: None,
         },
         consumed,
     ))
@@ -6997,6 +7032,7 @@ fn parse_autolink(text: &str, pos: usize, bounds: &InlineBounds<'_>) -> Option<(
                 attrs,
                 href: target.to_string(),
                 text: target.to_string(),
+                pos: None,
             },
             consumed,
         ));
@@ -7007,6 +7043,7 @@ fn parse_autolink(text: &str, pos: usize, bounds: &InlineBounds<'_>) -> Option<(
                 attrs,
                 href: format!("mailto:{target}"),
                 text: target.to_string(),
+                pos: None,
             },
             consumed,
         ));
@@ -7113,6 +7150,7 @@ fn parse_crossref(text: &str, pos: usize, bounds: &InlineBounds<'_>) -> Option<(
     Some((
         CrossRef {
             target: target.to_string(),
+            pos: None,
         },
         close + 4,
     ))
@@ -7485,6 +7523,7 @@ fn match_emphasis(
                             attrs: None,
                             kind: EmphasisKind::BoldItalic,
                             children: parse_inline_context(inner, options, false, in_footnote),
+                            pos: None,
                         }),
                         close + 2 - i,
                     ));
@@ -7552,6 +7591,7 @@ fn match_emphasis(
             attrs: None,
             kind,
             children: parse_inline_context(inner, options, false, in_footnote),
+            pos: None,
         }),
         close + 1 - i,
     ))
@@ -7663,7 +7703,7 @@ fn apply_abbreviations_inline(nodes: &mut Vec<InlineNode>, index: &AbbreviationI
     for node in std::mem::take(nodes) {
         match node {
             InlineNode::Text(text) => {
-                let mut parts = replace_abbreviations_in_text(&text, index);
+                let mut parts = replace_abbreviations_in_text(&text.value, index);
                 out.append(&mut parts);
             }
             InlineNode::Emphasis(mut e) => {
@@ -7716,13 +7756,14 @@ fn replace_abbreviations_in_text(text: &str, index: &AbbreviationIndex<'_>) -> V
             out.push(InlineNode::Abbreviation(Abbreviation {
                 abbr: abbr.to_string(),
                 expansion: expansion.to_string(),
+                pos: None,
             }));
             i += abbr.len();
             continue;
         }
         match out.last_mut() {
-            Some(InlineNode::Text(existing)) => existing.push(ch),
-            _ => out.push(InlineNode::Text(ch.to_string())),
+            Some(InlineNode::Text(existing)) => existing.value.push(ch),
+            _ => out.push(InlineNode::text(ch.to_string())),
         }
         i += ch.len_utf8();
     }
@@ -8021,12 +8062,12 @@ fn resolve_reference_links_inline(
                         } else if preserve_unresolved {
                             out.push(node);
                         } else {
-                            out.push(InlineNode::Text(l.raw_ref.clone().unwrap_or_default()));
+                            out.push(InlineNode::text(l.raw_ref.clone().unwrap_or_default()));
                         }
                     } else if preserve_unresolved {
                         out.push(node);
                     } else {
-                        out.push(InlineNode::Text(l.raw_ref.clone().unwrap_or_default()));
+                        out.push(InlineNode::text(l.raw_ref.clone().unwrap_or_default()));
                     }
                 } else {
                     resolve_reference_links_inline(
@@ -8099,7 +8140,7 @@ fn resolve_reference_links_inline(
                     } else {
                         // Unresolved image ref -> literal source. An image ref
                         // never matches heading text (unlike a link ref).
-                        out.push(InlineNode::Text(img.raw_ref.clone().unwrap_or_default()));
+                        out.push(InlineNode::text(img.raw_ref.clone().unwrap_or_default()));
                     }
                 } else {
                     out.push(node);
@@ -8175,16 +8216,16 @@ fn has_caption_content(s: &str) -> bool {
 /// first-line caption (`^ ` with content only on later folded lines, or none).
 fn caption_first_line_has_content(children: &[InlineNode]) -> bool {
     if let InlineNode::Text(t) = &children[2] {
-        if let Some(n) = caption_marker_len(t) {
-            if has_caption_content(&t[n..]) {
+        if let Some(n) = caption_marker_len(&t.value) {
+            if has_caption_content(&t.value[n..]) {
                 return true;
             }
         }
     }
     for child in &children[3..] {
         match child {
-            InlineNode::SoftBreak => break,
-            InlineNode::Text(t) if !has_caption_content(t) => continue,
+            InlineNode::SoftBreak(_) => break,
+            InlineNode::Text(t) if !has_caption_content(&t.value) => continue,
             _ => return true,
         }
     }
@@ -8252,8 +8293,8 @@ fn promote_block_images(blocks: &mut [BlockNode], figures_only: bool) {
                 if p.at_content_column
                     && p.children.len() >= 3
                     && matches!(&p.children[0], InlineNode::Image(img) if img.ref_label.is_none())
-                    && matches!(p.children[1], InlineNode::SoftBreak)
-                    && matches!(&p.children[2], InlineNode::Text(t) if caption_marker_len(t).is_some())
+                    && matches!(p.children[1], InlineNode::SoftBreak(_))
+                    && matches!(&p.children[2], InlineNode::Text(t) if caption_marker_len(&t.value).is_some())
                     && caption_first_line_has_content(&p.children)
         );
         if ref_figure {
@@ -8270,12 +8311,12 @@ fn promote_block_images(blocks: &mut [BlockNode], figures_only: bool) {
             };
             children.remove(0); // the soft break
             if let InlineNode::Text(t) = &mut children[0] {
-                let n = caption_marker_len(t).unwrap();
-                let rest = t[n..].to_string();
+                let n = caption_marker_len(&t.value).unwrap();
+                let rest = t.value[n..].to_string();
                 if rest.is_empty() {
                     children.remove(0);
                 } else {
-                    *t = rest;
+                    t.value = rest;
                 }
             }
             *block = BlockNode::Figure(Figure {
@@ -8608,14 +8649,15 @@ fn resolve_crossrefs_inline(nodes: &mut Vec<InlineNode>, index: &CrossrefIndex) 
                         attrs: None,
                         href: format!("#{actual_id}"),
                         title: None,
-                        children: vec![InlineNode::Text(title.to_string())],
+                        children: vec![InlineNode::text(title.to_string())],
                         ref_label: None,
                         raw_ref: None,
                         from_crossref: true,
+                        pos: None,
                     });
                 } else {
                     // Unknown heading id: the cross-reference stays literal text.
-                    *node = InlineNode::Text(format!("</#{}>", c.target));
+                    *node = InlineNode::text(format!("</#{}>", c.target));
                 }
             }
             InlineNode::Emphasis(e) => resolve_crossrefs_inline(&mut e.children, index),
@@ -8770,7 +8812,7 @@ fn enforce_no_nesting_inline(nodes: Vec<InlineNode>, inside_link: bool) -> Vec<I
                         .strip_prefix("mailto:")
                         .unwrap_or(&a.href)
                         .to_string();
-                    out.push(InlineNode::Text(display));
+                    out.push(InlineNode::text(display));
                 } else {
                     out.push(InlineNode::AutoLink(a));
                 }
@@ -8813,10 +8855,12 @@ fn plain_inlines_parse(nodes: &[InlineNode]) -> String {
     let mut out = String::new();
     for node in nodes {
         match node {
-            InlineNode::Text(s) => out.push_str(&s.replace(crate::ESCAPED_CARET_PLACEHOLDER, "^")),
+            InlineNode::Text(s) => {
+                out.push_str(&s.value.replace(crate::ESCAPED_CARET_PLACEHOLDER, "^"))
+            }
             InlineNode::SmartPunctuation(s) => out.push_str(smart_punctuation_glyph(s)),
             InlineNode::Emphasis(e) => out.push_str(&plain_inlines_parse(&e.children)),
-            InlineNode::Code(s, _) => out.push_str(s),
+            InlineNode::Code(s) => out.push_str(&s.value),
             // An inline literal renders as visible prose (§27), so it feeds the
             // parse-time cross-reference slug like a code span does.
             InlineNode::LiteralInline(l) => out.push_str(&l.content),
@@ -8834,7 +8878,7 @@ fn plain_inlines_parse(nodes: &[InlineNode]) -> String {
             }
             // A soft/hard break (multi-line heading) is a word separator, so
             // parse-time cross-reference slugs match the rendered heading id.
-            InlineNode::SoftBreak | InlineNode::HardBreak => out.push(' '),
+            InlineNode::SoftBreak(_) | InlineNode::HardBreak(_) => out.push(' '),
             _ => {}
         }
     }
@@ -9004,6 +9048,7 @@ fn parse_forced_emphasis(
                     attrs: None,
                     kind,
                     children: parse_inline_context(inner, options, false, in_footnote),
+                    pos: None,
                 }),
                 j + 2 - i,
             ));

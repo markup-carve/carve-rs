@@ -473,7 +473,8 @@ fn render_inline(node: &InlineNode, ctx: &mut AnsiContext, depth: usize) -> Stri
         return String::new();
     }
     match node {
-        InlineNode::Text(text) | InlineNode::EscapedText(text) => strip_controls(text),
+        InlineNode::Text(text) => strip_controls(&text.value),
+        InlineNode::EscapedText(text) => strip_controls(&text.value),
         InlineNode::SmartPunctuation(s) => strip_controls(smart_punctuation_glyph(s)),
         InlineNode::Emphasis(emphasis) => match emphasis.kind {
             EmphasisKind::Italic => {
@@ -502,7 +503,7 @@ fn render_inline(node: &InlineNode, ctx: &mut AnsiContext, depth: usize) -> Stri
                 &(BOLD.to_string() + ITALIC),
             ),
         },
-        InlineNode::Code(code, _) => style(&strip_controls(code), FG_BRIGHT_YELLOW),
+        InlineNode::Code(code) => style(&strip_controls(&code.value), FG_BRIGHT_YELLOW),
         InlineNode::Link(link) => {
             let text = render_inlines(&link.children, ctx, depth + 1);
             let href = strip_controls(&link.href);
@@ -561,8 +562,8 @@ fn render_inline(node: &InlineNode, ctx: &mut AnsiContext, depth: usize) -> Stri
                 }
             }
         }
-        InlineNode::SoftBreak => " ".to_string(),
-        InlineNode::HardBreak => "\n".to_string(),
+        InlineNode::SoftBreak(_) => " ".to_string(),
+        InlineNode::HardBreak(_) => "\n".to_string(),
         InlineNode::CriticInsert(insert) => style(
             &render_inlines(&insert.children, ctx, depth + 1),
             &(FG_GREEN.to_string() + UNDERLINE),

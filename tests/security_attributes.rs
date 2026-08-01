@@ -201,7 +201,7 @@ fn drops_invalid_attribute_names_before_rendering() {
                     carve::AttrSlot::Key("data-ok".to_string()),
                 ],
             }),
-            children: vec![carve::InlineNode::Text("x".to_string())],
+            children: vec![carve::InlineNode::text("x".to_string())],
         })],
     };
 
