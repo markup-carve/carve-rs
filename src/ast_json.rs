@@ -274,9 +274,7 @@ fn write_block(out: &mut String, node: &BlockNode) {
         }
         BlockNode::DefinitionList(n) => {
             let mut w = typed(out, "definition_list");
-            w.field("items", |out| {
-                write_array(out, &n.items, write_definition_item)
-            });
+            w.field("items", |out| write_definition_entries(out, &n.items));
             write_attrs_field(&mut w, &n.attrs);
             write_pos_field(&mut w, &n.pos);
             w.finish();
@@ -423,19 +421,42 @@ fn write_table_cell(out: &mut String, n: &TableCell) {
     w.finish();
 }
 
-fn write_definition_item(out: &mut String, n: &DefinitionItem) {
-    let mut w = Writer::new(out);
-    w.field("terms", |out| {
-        write_array(out, &n.terms, |out, term| {
-            write_inlines(out, &term.children)
-        });
-    });
-    w.field("definitions", |out| {
-        write_array(out, &n.definitions, |out, def| {
-            write_blocks(out, &def.children);
-        });
-    });
-    w.finish();
+/// A definition list's entries, FLATTENED into the `<dt>` / `<dd>` sequence the
+/// wire carries (PART 12).
+///
+/// This engine groups terms with their definitions, which is convenient in
+/// memory and not something to publish: `definition_term` and
+/// `definition_description` are in the normative block vocabulary, so a profile
+/// can name them, and a plain `{terms, definitions}` object can carry no `pos` -
+/// leaving a term the only content in a serialized document an editor cannot
+/// navigate to.
+///
+/// The grouping was also not AGREED. Given `:: a` / `:: b` / `:  x` / `:  y`
+/// this engine produced three entries and carve-js produced one, while both
+/// rendered the same `<dl>`. A structure two producers disagree about, which no
+/// output depends on, is an internal.
+fn write_definition_entries(out: &mut String, items: &[DefinitionItem]) {
+    out.push('[');
+    let mut first = true;
+    for item in items {
+        for term in &item.terms {
+            write_comma(out, &mut first);
+            let mut w = typed(out, "definition_term");
+            w.field("children", |out| write_inlines(out, &term.children));
+            write_attrs_field(&mut w, &term.attrs);
+            write_pos_field(&mut w, &term.pos);
+            w.finish();
+        }
+        for definition in &item.definitions {
+            write_comma(out, &mut first);
+            let mut w = typed(out, "definition_description");
+            w.field("children", |out| write_blocks(out, &definition.children));
+            write_attrs_field(&mut w, &definition.attrs);
+            write_pos_field(&mut w, &definition.pos);
+            w.finish();
+        }
+    }
+    out.push(']');
 }
 
 fn write_figure_target(out: &mut String, target: &FigureTarget) {
@@ -976,10 +997,7 @@ fn decode_block(value: &Json) -> Result<BlockNode, AstJsonError> {
         })),
         "definition_list" => Ok(BlockNode::DefinitionList(DefinitionList {
             attrs: optional_attrs(obj)?,
-            items: required_array(obj, "definition_list", "items")?
-                .iter()
-                .map(decode_definition_item)
-                .collect::<Result<_, _>>()?,
+            items: decode_definition_entries(required_array(obj, "definition_list", "items")?)?,
             pos: optional_pos(obj, "definition_list")?,
         })),
         "figure" => Ok(BlockNode::Figure(Figure {
@@ -1075,6 +1093,86 @@ fn decode_table_cell(value: &Json) -> Result<TableCell, AstJsonError> {
         children: decode_inlines(required_array(obj, "table_cell", "children")?)?,
         pos: optional_pos(obj, "table_cell")?,
     })
+}
+
+/// The flat `<dt>` / `<dd>` sequence back to this engine's grouped entries.
+///
+/// The grouping rule is the renderer's, which is the only one all three engines
+/// agree on: a run of terms opens an entry, the descriptions after it belong to
+/// it, and the next term after a description starts the next entry.
+///
+/// A payload in the OLD `{terms, definitions}` form still decodes - trees in
+/// that shape are stored, and this engine wrote them.
+fn decode_definition_entries(values: &[Json]) -> Result<Vec<DefinitionItem>, AstJsonError> {
+    let mut items: Vec<DefinitionItem> = Vec::new();
+
+    for value in values {
+        let obj = value.as_object("definition_list.items[]")?;
+        if obj.contains_key("terms") || obj.contains_key("definitions") {
+            items.push(decode_definition_item(value)?);
+            continue;
+        }
+
+        let ty = required_string(obj, "definition_list.items[]", "type")?;
+        match ty {
+            "definition_term" => {
+                let term = DefinitionTerm {
+                    attrs: optional_attrs(obj)?,
+                    children: decode_inlines(required_array(obj, "definition_term", "children")?)?,
+                    pos: optional_pos(obj, "definition_term")?,
+                };
+                let start_new = items
+                    .last()
+                    .map(|item| !item.definitions.is_empty())
+                    .unwrap_or(true);
+                if start_new {
+                    items.push(DefinitionItem {
+                        terms: Vec::new(),
+                        definitions: Vec::new(),
+                        pos: None,
+                    });
+                }
+                items
+                    .last_mut()
+                    .expect("an entry was just pushed")
+                    .terms
+                    .push(term);
+            }
+            "definition_description" => {
+                let definition = DefinitionDef {
+                    attrs: optional_attrs(obj)?,
+                    children: decode_blocks(required_array(
+                        obj,
+                        "definition_description",
+                        "children",
+                    )?)?,
+                    pos: optional_pos(obj, "definition_description")?,
+                };
+                if items.is_empty() {
+                    // A description with no term before it: the parser cannot
+                    // produce one, a hand-built payload can, and dropping it
+                    // would lose content the caller handed us.
+                    items.push(DefinitionItem {
+                        terms: Vec::new(),
+                        definitions: Vec::new(),
+                        pos: None,
+                    });
+                }
+                items
+                    .last_mut()
+                    .expect("an entry exists")
+                    .definitions
+                    .push(definition);
+            }
+            other => {
+                return Err(AstJsonError::new(format!(
+                "a definition list holds definition_term and definition_description, not {other}"
+            )))
+            }
+        }
+    }
+
+    Ok(items)
 }
 
 fn decode_definition_item(value: &Json) -> Result<DefinitionItem, AstJsonError> {
