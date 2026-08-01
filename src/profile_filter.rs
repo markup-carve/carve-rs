@@ -689,6 +689,8 @@ fn text_cell(text: &str) -> TableCell {
         align: None,
         attrs: None,
         children: vec![InlineNode::Text(text.to_string())],
+        // A cell this filter synthesizes has no source of its own.
+        pos: None,
     }
 }
 
