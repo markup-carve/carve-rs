@@ -5541,6 +5541,7 @@ fn detect_hardbreaks_block_open(line: &str) -> Option<usize> {
 fn parse_hardbreaks_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     let opener = cur.peek().unwrap();
     let fence_len = detect_hardbreaks_block_open(opener).unwrap();
+    let span_start = cur.pos;
     cur.consume();
     let mut inner = LineBuffer::default();
     while let Some(line) = cur.peek() {
@@ -5549,15 +5550,30 @@ fn parse_hardbreaks_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockN
             cur.consume();
             break;
         }
-        inner.push(line.to_string(), cur.source_line(cur.pos));
+        // Record what an ENCLOSING container already took from this line. The
+        // fence strips nothing itself, but without that count no block inside
+        // it can be mapped back to the document and `span_of` refuses - which
+        // left every paragraph in one of these fences unplaced.
+        inner.push_at(
+            line.to_string(),
+            cur.source_line(cur.pos),
+            cur.source_col(cur.pos),
+        );
         cur.consume();
     }
+    // The span covers the opening fence through the closing one, like any other
+    // colon fence.
+    let pos = span_of(cur, span_start, cur.pos, options);
     let mut children = parse_mapped_source(&inner.into_source(), options);
     for child in &mut children {
         if let BlockNode::Paragraph(para) = child {
             for node in &mut para.children {
-                if matches!(node, InlineNode::SoftBreak(_)) {
-                    *node = InlineNode::hard_break();
+                if let InlineNode::SoftBreak(brk) = node {
+                    // Carry the break's span across. Building a fresh
+                    // `hard_break()` here threw it away, and the loss was
+                    // invisible: the two render identically in this block, so
+                    // only the tree showed it.
+                    *node = InlineNode::HardBreak(Break { pos: brk.pos });
                 }
             }
         }
@@ -5573,8 +5589,11 @@ fn parse_hardbreaks_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockN
         }),
         label: None,
         children,
-        // Synthesized wrapper, not a block the author wrote (PART 12 §4).
-        pos: None,
+        // The author DID write this block: the opener is a colon fence carrying
+        // a lone \, and a matching fence closes it. Refusing a position on the
+        // grounds that it is a synthesized wrapper had it backwards - the
+        // `.hardbreaks` class is synthesized, the fence is not.
+        pos,
     })
 }
 
