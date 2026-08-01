@@ -8858,6 +8858,21 @@ fn case_fold(s: &str) -> String {
     out
 }
 
+/// The literal text an unresolved reference link reverts to, keeping the span
+/// the link already had.
+///
+/// `raw_ref` IS the link's source - `[text][missing]` reverts to exactly the
+/// characters the link occupied - so the extent is unchanged and only the node
+/// type differs. Building a bare text node here dropped it, and the reverted
+/// form is precisely where a consumer most wants a position: it is the case
+/// where the author wrote a reference that does not resolve.
+fn reverted_reference_text(link: &Link) -> InlineNode {
+    InlineNode::Text(Text {
+        value: link.raw_ref.clone().unwrap_or_default(),
+        pos: link.pos,
+    })
+}
+
 fn resolve_reference_links(
     doc: &mut Document,
     defs: &BTreeMap<String, LinkDef>,
@@ -9025,12 +9040,12 @@ fn resolve_reference_links_inline(
                         } else if preserve_unresolved {
                             out.push(node);
                         } else {
-                            out.push(InlineNode::text(l.raw_ref.clone().unwrap_or_default()));
+                            out.push(reverted_reference_text(l));
                         }
                     } else if preserve_unresolved {
                         out.push(node);
                     } else {
-                        out.push(InlineNode::text(l.raw_ref.clone().unwrap_or_default()));
+                        out.push(reverted_reference_text(l));
                     }
                 } else {
                     resolve_reference_links_inline(
