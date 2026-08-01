@@ -8669,7 +8669,7 @@ fn apply_abbreviations_inline(nodes: &mut Vec<InlineNode>, index: &AbbreviationI
     for node in std::mem::take(nodes) {
         match node {
             InlineNode::Text(text) => {
-                let mut parts = replace_abbreviations_in_text(&text.value, index);
+                let mut parts = replace_abbreviations_in_text(&text.value, index, text.pos);
                 out.append(&mut parts);
             }
             InlineNode::Emphasis(mut e) => {
@@ -8701,7 +8701,39 @@ fn apply_abbreviations_inline(nodes: &mut Vec<InlineNode>, index: &AbbreviationI
     *nodes = out;
 }
 
-fn replace_abbreviations_in_text(text: &str, index: &AbbreviationIndex<'_>) -> Vec<InlineNode> {
+/// Split a text node around the abbreviations in it.
+///
+/// The pieces are CONTIGUOUS SLICES of the node being split, so when that node
+/// carried a span every piece's span follows from its offset within it - no
+/// re-scanning of the document, and no invention.
+///
+/// The two guards are what keep that true. A text node whose span is a
+/// different length than its value is not a verbatim slice of the source (the
+/// no-break-space sentinel is one character standing in for two), and a node
+/// spanning more than one line has no single column to count from. Either way
+/// the pieces get no position rather than a derived-from-wrong one.
+fn replace_abbreviations_in_text(
+    text: &str,
+    index: &AbbreviationIndex<'_>,
+    pos: Option<Pos>,
+) -> Vec<InlineNode> {
+    let anchor = pos.filter(|p| {
+        p.start_line == p.end_line
+            && p.end_offset.saturating_sub(p.start_offset) == text.chars().count()
+    });
+    // Chars consumed so far, which is the offset of the NEXT piece.
+    let mut chars_done = 0usize;
+    let span_from = |start: usize, len: usize| -> Option<Pos> {
+        let p = anchor?;
+        Some(Pos {
+            start_line: p.start_line,
+            end_line: p.start_line,
+            start_column: p.start_column + start,
+            end_column: p.start_column + start + len,
+            start_offset: p.start_offset + start,
+            end_offset: p.start_offset + start + len,
+        })
+    };
     let mut out = Vec::new();
     let mut i = 0;
     while i < text.len() {
@@ -8719,18 +8751,30 @@ fn replace_abbreviations_in_text(text: &str, index: &AbbreviationIndex<'_>) -> V
             }
         }
         if let Some((abbr, expansion)) = matched {
+            let len = abbr.chars().count();
             out.push(InlineNode::Abbreviation(Abbreviation {
                 abbr: abbr.to_string(),
                 expansion: expansion.to_string(),
-                pos: None,
+                pos: span_from(chars_done, len),
             }));
+            chars_done += len;
             i += abbr.len();
             continue;
         }
         match out.last_mut() {
-            Some(InlineNode::Text(existing)) => existing.value.push(ch),
-            _ => out.push(InlineNode::text(ch.to_string())),
+            Some(InlineNode::Text(existing)) => {
+                existing.value.push(ch);
+                if let Some(p) = existing.pos.as_mut() {
+                    p.end_column += 1;
+                    p.end_offset += 1;
+                }
+            }
+            _ => out.push(InlineNode::Text(Text {
+                value: ch.to_string(),
+                pos: span_from(chars_done, 1),
+            })),
         }
+        chars_done += 1;
         i += ch.len_utf8();
     }
     out
