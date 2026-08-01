@@ -1332,10 +1332,7 @@ fn render_admonition(
         out.push_str(FOOTNOTES_PLACEMENT_SENTINEL);
         return;
     }
-    let canonical = matches!(
-        a.kind.as_str(),
-        "note" | "tip" | "warning" | "danger" | "info" | "success" | "example" | "quote"
-    );
+    let canonical = crate::profile::ADMONITION_TIER1_KINDS.contains(&a.kind.as_str());
     indent(out, level);
     // The type class is structural (`admonition {kind}` for Tier 1, the bare
     // `{kind}` for a Tier-2 div) and emitted first; the opener's own
