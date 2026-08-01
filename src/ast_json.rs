@@ -1537,14 +1537,44 @@ impl Json {
     }
 }
 
+/// Deepest container nesting the reader will follow.
+///
+/// The reader is recursive-descent, so nesting depth is stack depth, and a
+/// document is untrusted input: `[[[[…]]]]` 200000 deep overflowed the stack and
+/// ABORTED the process rather than returning an error. The markup parser bounds
+/// itself the same way (`MAX_NESTING_DEPTH` in parse.rs, also 200, matching
+/// carve-js and carve-php), and an AST that deep is not a document anyone wrote -
+/// the parser could not have produced one, since it refuses to nest that far in
+/// the first place.
+const MAX_JSON_DEPTH: usize = 200;
+
 struct Parser<'a> {
     input: &'a str,
     pos: usize,
+    depth: usize,
 }
 
 impl<'a> Parser<'a> {
     fn new(input: &'a str) -> Self {
-        Self { input, pos: 0 }
+        Self {
+            input,
+            pos: 0,
+            depth: 0,
+        }
+    }
+
+    /// Run `f` one level deeper, refusing past the cap.
+    fn nested<T>(
+        &mut self,
+        f: impl FnOnce(&mut Self) -> Result<T, AstJsonError>,
+    ) -> Result<T, AstJsonError> {
+        if self.depth >= MAX_JSON_DEPTH {
+            return Err(self.err("JSON nests deeper than 200 levels"));
+        }
+        self.depth += 1;
+        let out = f(self);
+        self.depth -= 1;
+        out
     }
 
     fn parse(mut self) -> Result<Json, AstJsonError> {
@@ -1563,8 +1593,8 @@ impl<'a> Parser<'a> {
             Some(b't') => self.parse_literal(b"true", Json::Bool(true)),
             Some(b'f') => self.parse_literal(b"false", Json::Bool(false)),
             Some(b'"') => self.parse_string().map(Json::String),
-            Some(b'[') => self.parse_array(),
-            Some(b'{') => self.parse_object(),
+            Some(b'[') => self.nested(Self::parse_array),
+            Some(b'{') => self.nested(Self::parse_object),
             Some(b'-' | b'0'..=b'9') => self.parse_number().map(Json::Number),
             Some(_) => Err(self.err("unexpected character in JSON value")),
             None => Err(self.err("unexpected end of input")),

@@ -354,3 +354,25 @@ fn from_json_is_bounded_by_the_profile_max_length() {
     assert!(ok, "stderr: {stderr}");
     assert!(stdout.contains("a short comment"), "{stdout}");
 }
+
+#[test]
+fn deeply_nested_json_is_refused_rather_than_overflowing() {
+    // The reader is recursive-descent, so nesting depth IS stack depth, and this
+    // input is untrusted: 200k nested arrays overflowed the stack and aborted the
+    // process (SIGABRT, not an error a caller can catch). The markup parser bounds
+    // itself the same way and at the same depth, so an AST this deep could not
+    // have been produced by parsing anything.
+    let n = 5_000;
+    let src = format!(
+        "{{\"type\":\"document\",\"srcByteLength\":0,\"children\":{}{}}}",
+        "[".repeat(n),
+        "]".repeat(n)
+    );
+    let err = carve::from_json(&src).expect_err("a 5000-deep tree must be refused");
+    assert!(err.to_string().contains("200"), "{err}");
+
+    // The mirror: ordinary nesting still decodes, so the cap cannot pass by
+    // refusing everything.
+    let ok = carve::to_json(&carve::parse("> - /a *b*/\n"));
+    assert!(carve::from_json(&ok).is_ok());
+}
