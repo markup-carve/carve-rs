@@ -787,3 +787,43 @@ fn a_plus_continuation_places_a_table_down_to_its_cells() {
         " a "
     );
 }
+
+/// A `+` line extends the cell above it. The text it adds is a verbatim slice
+/// of that line, but it was parsed with no anchor at all, so every continued
+/// cell's later text came out unplaced.
+#[test]
+fn a_continued_table_cell_places_the_text_it_adds() {
+    let source = concat!(
+        "|= Feature |= Description        |\n",
+        "| Complex  | A long description |\n",
+        "+          | that continues     |\n",
+        "+          | across lines.      |\n",
+    );
+    let doc = parse_with_positions(source);
+
+    let BlockNode::Table(table) = &doc.children[0] else {
+        panic!("the document is a table");
+    };
+    let cell = &table.rows[1].cells[1];
+    let texts: Vec<Option<String>> = cell
+        .children
+        .iter()
+        .map(|inline| match inline {
+            carve::ast::InlineNode::Text(t) => t.pos.map(|pos| slice(source, pos)),
+            other => panic!("unexpected inline: {other:?}"),
+        })
+        .collect();
+
+    assert_eq!(
+        texts,
+        vec![
+            Some("A long description".to_string()),
+            // The joiner is MANUFACTURED - the source has a line break here,
+            // not a space - so it carries no position and must not borrow one.
+            None,
+            Some("that continues".to_string()),
+            None,
+            Some("across lines.".to_string()),
+        ]
+    );
+}

@@ -4709,7 +4709,14 @@ fn parse_table(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             let cont_at = cur.pos;
             cur.consume();
             if let Some(last) = rows.last_mut() {
-                apply_table_continuation(last, line, options);
+                apply_table_continuation(
+                    last,
+                    line,
+                    options,
+                    cur.source_line(cont_at)
+                        .zip(cur.source_col(cont_at))
+                        .filter(|_| options.positions),
+                );
                 // The row now RUNS to this line. It stays one contiguous range
                 // that no sibling row overlaps, so it keeps a position - unlike
                 // the cell the continuation extends, whose content sits in two
@@ -4838,7 +4845,15 @@ fn apply_column_aligns(row: &mut TableRow, aligns: &[Option<TableAlign>]) {
     }
 }
 
-fn apply_table_continuation(row: &mut TableRow, line: &str, options: &Options<'_>) {
+/// `base` is the continuation line's (source line, columns already stripped by
+/// an enclosing container) - the same pair `parse_table_row` takes, and used the
+/// same way. Without it the text a continuation adds cannot be placed.
+fn apply_table_continuation(
+    row: &mut TableRow,
+    line: &str,
+    options: &Options<'_>,
+    base: Option<(usize, usize)>,
+) {
     let mut content = line.trim();
     if let Some(stripped) = content.strip_prefix('+') {
         content = stripped;
@@ -4846,18 +4861,35 @@ fn apply_table_continuation(row: &mut TableRow, line: &str, options: &Options<'_
     if let Some(stripped) = content.strip_suffix('|') {
         content = stripped;
     }
-    for (idx, cell) in split_table_cells(content).into_iter().enumerate() {
-        let text = cell.trim();
+    // Where `content` starts inside `line`, in CHARS - see `parse_table_row`,
+    // which does the same arithmetic on the row line.
+    let content_off = base.map(|_| {
+        let bytes = (content.as_ptr() as usize).saturating_sub(line.as_ptr() as usize);
+        line[..bytes].chars().count()
+    });
+    for (idx, cell) in split_table_cells_ranged(content).into_iter().enumerate() {
+        let text = cell.text.trim();
         if text.is_empty() {
             continue;
         }
+        // Trimming moved the start; count what it took so the anchor lands on
+        // the first character of the text and not on the padding before it.
+        let lead = cell.text.chars().count() - cell.text.trim_start().chars().count();
+        let anchor = match (base, content_off) {
+            (Some((line_no, stripped)), Some(off)) => {
+                Some((line_no, stripped + off + cell.start + lead))
+            }
+            _ => None,
+        };
         if let Some(target) = row.cells.get_mut(idx) {
             if !target.children.is_empty() {
+                // The joiner is MANUFACTURED - the source has a line break
+                // here, not a space - so it carries no position.
                 target.children.push(InlineNode::text(" ".to_string()));
             }
             target
                 .children
-                .extend(parse_inline_with_options(text, options));
+                .extend(parse_inline_lines_with_anchor(text, options, vec![anchor]));
         }
     }
 }
