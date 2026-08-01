@@ -12,7 +12,7 @@ fn trim_block_output(s: &str) -> &str {
 /// for why the options-taking wrapper exists; the profile transform runs
 /// upstream.
 pub fn render_ansi_with_options(doc: &Document, _options: &Options<'_>) -> String {
-    render_ansi(doc)
+    render_ansi_inner(doc, _options.lowercase_heading_ids)
 }
 
 const RESET: &str = "\x1b[0m";
@@ -35,12 +35,17 @@ const FG_BRIGHT_GREEN: &str = "\x1b[92m";
 const FG_BRIGHT_WHITE: &str = "\x1b[97m";
 
 pub fn render_ansi(doc: &Document) -> String {
+    render_ansi_inner(doc, Options::default().lowercase_heading_ids)
+}
+
+fn render_ansi_inner(doc: &Document, lowercase_heading_ids: bool) -> String {
     let _abbr_guard = crate::abbr_budget::AbbrBudgetGuard::new(doc.source_len);
     let mut ctx = AnsiContext {
         list_depth: 0,
         block_quote_depth: 0,
         ordered: Vec::new(),
         defined_footnotes: doc.footnote_defs.keys().cloned().collect(),
+        crossref_index: crate::parse::crossref_index_for_document(doc, lowercase_heading_ids),
     };
     let out = render_blocks(&doc.children, &mut ctx, 0);
     let footnotes = render_footnote_defs(doc, &mut ctx);
@@ -57,6 +62,7 @@ struct AnsiContext {
     /// numbering, so that field is always None here and there was nothing to
     /// check (carve#352).
     defined_footnotes: std::collections::BTreeSet<String>,
+    crossref_index: crate::parse::CrossrefIndex,
 }
 
 fn render_block_inlines(nodes: &[InlineNode], ctx: &mut AnsiContext) -> String {
@@ -588,7 +594,14 @@ fn render_inline(node: &InlineNode, ctx: &mut AnsiContext, depth: usize) -> Stri
         // two targets of one engine disagree about whether the document says it.
         // carve-php kept it (carve#352, corpus 33-editorial-markup).
         InlineNode::CriticComment(c) => strip_controls(&c.text),
-        InlineNode::CrossRef(crossref) => format!("</#{}>", strip_controls(&crossref.target)),
+        // A RESOLVED cross-reference renders exactly like a link to the same
+        // heading, because that is what it is - the href is a fragment, so the
+        // `(href)` suffix a link would add is suppressed there too. Only an
+        // UNRESOLVED one degrades to its literal source.
+        InlineNode::CrossRef(crossref) => match ctx.crossref_index.resolve(&crossref.target) {
+            Some((_, title)) => style(&strip_controls(title), &(UNDERLINE.to_string() + FG_BLUE)),
+            None => format!("</#{}>", strip_controls(&crossref.target)),
+        },
         // Tier-2 ext node; the core renderer has no numbering, so emit the source.
         InlineNode::CitationGroup(group) => strip_controls(&group.raw),
         InlineNode::CaptionNumber(number) => number
