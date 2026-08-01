@@ -58,6 +58,9 @@ pub struct Frontmatter {
     pub format: String,
     /// The text between the fences, without a trailing newline.
     pub content: String,
+    /// Span in the original source, when the caller asked for positions. Covers
+    /// the whole block, fences included - matching the reference.
+    pub pos: Option<Pos>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

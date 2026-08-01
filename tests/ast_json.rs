@@ -252,6 +252,7 @@ fn frontmatter_is_first_child_and_raw() {
         Some(carve::Frontmatter {
             format: "toml".to_string(),
             content: "# keep me\nx = 1".to_string(),
+            pos: None,
         })
     );
 }

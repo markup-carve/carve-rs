@@ -656,3 +656,42 @@ fn line_block_inlines_stay_unplaced() {
     });
     assert!(!placed, "a rewritten verse line cannot place its text");
 }
+
+/// Frontmatter had no span at all - the struct had no field to put one in.
+/// The span covers the whole block, fences included, which is what the
+/// reference publishes.
+#[test]
+fn frontmatter_spans_the_whole_block_including_fences() {
+    let source = "---\ntitle: x\n---\n\nBody\n";
+    let doc = parse_with_positions(source);
+
+    let raw = doc.frontmatter_raw.as_ref().expect("the document has one");
+    let pos = raw.pos.expect("frontmatter is placed");
+    assert_eq!(slice(source, pos), "---\ntitle: x\n---");
+    assert_eq!(pos.start_line, 1);
+    assert_eq!(pos.start_column, 1);
+}
+
+/// The span stops at the closing fence, not at the blank line after it.
+#[test]
+fn frontmatter_span_excludes_the_blank_after_the_fence() {
+    let source = "---\n---\n\n\nBody\n";
+    let doc = parse_with_positions(source);
+
+    let raw = doc.frontmatter_raw.as_ref().expect("the document has one");
+    let pos = raw.pos.expect("frontmatter is placed");
+    assert_eq!(slice(source, pos), "---\n---");
+}
+
+/// Columns and offsets are CODEPOINTS, so an astral character counts once.
+#[test]
+fn frontmatter_offsets_are_codepoints() {
+    let source = "---\ntitle: \u{1f600}\n---\n\nBody\n";
+    let doc = parse_with_positions(source);
+
+    let raw = doc.frontmatter_raw.as_ref().expect("the document has one");
+    let pos = raw.pos.expect("frontmatter is placed");
+    assert_eq!(slice(source, pos), "---\ntitle: \u{1f600}\n---");
+    // 4 + 9 + 3, newlines included - not the 20 a UTF-8 byte count would give.
+    assert_eq!(pos.end_offset, 16);
+}
