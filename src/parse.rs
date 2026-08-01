@@ -5065,6 +5065,11 @@ struct ContainerOpen {
     fence_len: usize,
     kind: Option<String>,
     title: Option<String>,
+    /// Codepoint offset of the title's first character within the opener line,
+    /// when the title is a VERBATIM slice of it. A quoted title carrying an
+    /// escape is rebuilt rather than sliced, so no column in it maps back and
+    /// this stays `None` (PART 12 section 4).
+    title_col: Option<usize>,
     label: Option<String>,
     attrs: Option<Attrs>,
 }
@@ -5085,6 +5090,7 @@ fn detect_container_open(line: &str) -> Option<ContainerOpen> {
             fence_len,
             kind: None,
             title: None,
+            title_col: None,
             label: None,
             attrs: None,
         });
@@ -5094,6 +5100,7 @@ fn detect_container_open(line: &str) -> Option<ContainerOpen> {
             fence_len,
             kind: None,
             title: None,
+            title_col: None,
             label: Some(label),
             attrs: None,
         });
@@ -5116,8 +5123,20 @@ fn detect_container_open(line: &str) -> Option<ContainerOpen> {
         return None;
     }
     let mut after = after_kind.trim_start();
+    let mut title_col = None;
     let title = if after.starts_with('"') {
+        // Where the text after the quote sits in the ORIGINAL line. These are
+        // all subslices of `line`, so the byte offset is a pointer difference;
+        // columns are codepoints (PART 12 section 4).
+        let quote_at = (after.as_ptr() as usize) - (line.as_ptr() as usize);
+        let text_at = quote_at + 1;
         let (title, remainder) = parse_quoted_metadata(after)?;
+        // Only when the title is the source verbatim. An escaped quote makes
+        // `parse_quoted_metadata` build a new string, and then no column in it
+        // maps back.
+        if line[text_at..].starts_with(&title) {
+            title_col = Some(line[..text_at].chars().count());
+        }
         after = remainder.trim_start();
         Some(title)
     } else {
@@ -5140,6 +5159,7 @@ fn detect_container_open(line: &str) -> Option<ContainerOpen> {
         fence_len,
         kind: Some(kind),
         title,
+        title_col,
         label,
         attrs: None,
     })
@@ -5201,7 +5221,19 @@ fn parse_container(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         BlockNode::Admonition(Admonition {
             attrs: open.attrs,
             kind,
-            title: open.title.map(|t| parse_inline_with_options(&t, options)),
+            // The title is a slice of the opener line, so its inlines can be
+            // placed - but only when the opener told us which column it starts
+            // at. `inline_anchor_for_line` cannot: it works by suffix, and a
+            // title sits in the MIDDLE of its line, between quotes.
+            title: open.title.map(|t| {
+                let anchor = open.title_col.and_then(|col| {
+                    Some((
+                        cur.source_line(span_start)?,
+                        cur.source_col(span_start)? + col,
+                    ))
+                });
+                parse_inline_lines_with_anchor(&t, options, vec![anchor])
+            }),
             label: open.label,
             children,
             pos,
