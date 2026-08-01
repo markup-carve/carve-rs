@@ -915,3 +915,52 @@ fn a_comment_after_a_code_span_leaves_both_texts_placed() {
         .collect();
     assert_eq!(placed, vec!["Run ", " then done."]);
 }
+
+/// A captioned code block becomes a numbered listing - a figure wrapping the
+/// block. The figure was built with `pos: None`, and the block inside it kept
+/// offsets of 0..0: the offset pass matched the figure's other targets by name
+/// and let a code block fall through its catch-all arm.
+///
+/// 0..0 is worse than absent. It reads as present and selects the empty string
+/// at the start of the document, and a test asserting only `is_some()` would
+/// have passed.
+#[test]
+fn a_captioned_code_block_places_the_figure_and_the_block() {
+    let source = "```python\ndef greet():\n    return 1\n```\n^ Listing #: a greeting\n";
+    let doc = parse_with_positions(source);
+
+    let BlockNode::Figure(figure) = &doc.children[0] else {
+        panic!("a captioned code block is a figure");
+    };
+    assert_eq!(
+        slice(source, figure.pos.expect("the figure is placed")),
+        "```python\ndef greet():\n    return 1\n```\n^ Listing #: a greeting"
+    );
+
+    let FigureTarget::CodeBlock(code) = &figure.target else {
+        panic!("its target is the code block");
+    };
+    let pos = code.pos.expect("the block is placed");
+    assert_ne!(pos.start_offset, pos.end_offset, "0..0 selects nothing");
+    assert_eq!(
+        slice(source, pos),
+        "```python\ndef greet():\n    return 1\n```"
+    );
+}
+
+/// Standalone display math becomes a paragraph, built with
+/// `..Default::default()` and so with no span - whether or not a caption
+/// follows and turns it into a figure.
+#[test]
+fn standalone_display_math_places_its_paragraph() {
+    let source = "Intro.\n\n$$`\\int_0^1 x\\,dx`\n";
+    let doc = parse_with_positions(source);
+
+    let BlockNode::Paragraph(math) = &doc.children[1] else {
+        panic!("the display math is a paragraph");
+    };
+    assert_eq!(
+        slice(source, math.pos.expect("it is placed")),
+        "$$`\\int_0^1 x\\,dx`"
+    );
+}

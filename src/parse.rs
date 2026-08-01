@@ -1233,7 +1233,15 @@ fn fill_offsets(blocks: &mut [BlockNode], line_starts: &[usize]) {
                             apply_offsets(pos, line_starts);
                         }
                     }
-                    _ => {}
+                    // A code block was reached by the catch-all below and so
+                    // kept offsets of 0..0 - present, and selecting nothing.
+                    // The arms are exhaustive now: a target added later fails to
+                    // compile rather than silently reporting an empty span.
+                    FigureTarget::CodeBlock(c) => {
+                        if let Some(pos) = c.pos.as_mut() {
+                            apply_offsets(pos, line_starts);
+                        }
+                    }
                 }
             }
             _ => {}
@@ -1552,6 +1560,7 @@ fn resolve_code_title(node: &mut BlockNode) {
 fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<BlockNode> {
     let line = cur.peek()?;
     if let Some(fence_marker) = detect_fence_open(line) {
+        let fence_at = cur.pos;
         let block = parse_fence(cur, fence_marker, options);
         // A caption immediately after a fenced code block makes it a numbered
         // LISTING: wrap it in a figure like a captioned image/table.
@@ -1561,7 +1570,9 @@ fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<BlockNode>
                     attrs: None,
                     target: FigureTarget::CodeBlock(cb),
                     caption,
-                    pos: None,
+                    // From the opening fence through the end of the caption -
+                    // the same extent a captioned image's figure takes.
+                    pos: span_of(cur, fence_at, cur.pos, options),
                 }));
             }
             return Some(BlockNode::CodeBlock(cb));
@@ -1784,10 +1795,15 @@ fn parse_equation_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<B
     }
     // Standalone display math: consume the line, then attach a caption if one
     // follows (directly or across a single blank line).
+    let math_at = cur.pos;
     cur.consume();
     let target = FigureTarget::Paragraph(Paragraph {
         attrs: None,
         children: inline,
+        // The paragraph is one line: the display-math line itself. It was built
+        // with `..Default::default()`, so it had no span whether or not a
+        // caption followed.
+        pos: span_of(cur, math_at, math_at + 1, options),
         ..Default::default()
     });
     if let Some(caption) = consume_caption(cur, options) {
@@ -1795,7 +1811,8 @@ fn parse_equation_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<B
             attrs: None,
             target,
             caption,
-            pos: None,
+            // Through the end of the caption, like the listing above.
+            pos: span_of(cur, math_at, cur.pos, options),
         }));
     }
     match target {
