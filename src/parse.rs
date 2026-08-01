@@ -9623,6 +9623,10 @@ fn resolve_crossrefs_inline(nodes: &mut Vec<InlineNode>, index: &CrossrefIndex) 
     for node in nodes {
         match node {
             InlineNode::CrossRef(c) => {
+                // `</#id>` is a real span in the source, and resolving it only
+                // changes what the node IS - not where it sits. Both arms below
+                // rebuilt the node from scratch and dropped it.
+                let at = c.pos;
                 if let Some((actual_id, title)) = index.resolve(&c.target) {
                     // The href uses the ACTUAL (case-preserved) heading id, even
                     // when the reference matched only via the case-fold fallback.
@@ -9630,15 +9634,23 @@ fn resolve_crossrefs_inline(nodes: &mut Vec<InlineNode>, index: &CrossrefIndex) 
                         attrs: None,
                         href: format!("#{actual_id}"),
                         title: None,
+                        // The display text is the HEADING's, pulled from
+                        // elsewhere in the document, so no span here equals it -
+                        // `</#some-title>` does not contain "Some Title". It
+                        // stays unplaced rather than borrowing the link's.
                         children: vec![InlineNode::text(title.to_string())],
                         ref_label: None,
                         raw_ref: None,
                         from_crossref: true,
-                        pos: None,
+                        pos: at,
                     });
                 } else {
                     // Unknown heading id: the cross-reference stays literal text.
-                    *node = InlineNode::text(format!("</#{}>", c.target));
+                    // That text is the source verbatim, so the span still holds.
+                    *node = InlineNode::Text(Text {
+                        value: format!("</#{}>", c.target),
+                        pos: at,
+                    });
                 }
             }
             InlineNode::Emphasis(e) => resolve_crossrefs_inline(&mut e.children, index),

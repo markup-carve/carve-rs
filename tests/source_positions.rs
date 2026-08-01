@@ -454,3 +454,66 @@ fn an_unwrapped_autolink_declines_when_the_text_is_not_the_source() {
     });
     assert!(unplaced, "a rewritten display text must not claim a span");
 }
+
+#[test]
+fn a_resolved_cross_reference_keeps_the_span_of_its_source() {
+    // `</#id>` is a real span. Resolving it changes what the node IS - a link
+    // instead of a cross-reference - not where it sits, and the rebuild dropped
+    // the span.
+    //
+    // Its display text is the HEADING's, pulled from elsewhere in the document,
+    // so no span here equals it: `</#some-title>` does not contain "Some
+    // Title". That text stays unplaced rather than borrowing the link's.
+    let source = "# Some Title\n\nSee </#some-title> here.\n";
+    let doc = parse_with_positions(source);
+    let BlockNode::Paragraph(paragraph) = &doc.children[1] else {
+        panic!("expected a paragraph, got {:?}", doc.children[1]);
+    };
+
+    let link = paragraph
+        .children
+        .iter()
+        .find_map(|node| match node {
+            carve::ast::InlineNode::Link(l) => Some(l),
+            _ => None,
+        })
+        .expect("the resolved cross-reference");
+
+    assert_eq!(
+        slice(source, link.pos.expect("link position")),
+        "</#some-title>"
+    );
+    let carve::ast::InlineNode::Text(display) = &link.children[0] else {
+        panic!("expected the heading text");
+    };
+    assert_eq!(display.value, "Some Title");
+    assert!(
+        display.pos.is_none(),
+        "text pulled from the heading has no span here"
+    );
+}
+
+#[test]
+fn an_unresolved_cross_reference_keeps_its_span_as_literal_text() {
+    // Nothing to resolve, so it stays the characters the author wrote - and
+    // those are exactly the span.
+    let source = "See </#nope> here.\n";
+    let doc = parse_with_positions(source);
+    let BlockNode::Paragraph(paragraph) = &doc.children[0] else {
+        panic!("expected a paragraph");
+    };
+
+    let literal = paragraph
+        .children
+        .iter()
+        .find_map(|node| match node {
+            carve::ast::InlineNode::Text(t) if t.value == "</#nope>" => Some(t),
+            _ => None,
+        })
+        .expect("the literal cross-reference");
+
+    assert_eq!(
+        slice(source, literal.pos.expect("text position")),
+        "</#nope>"
+    );
+}
