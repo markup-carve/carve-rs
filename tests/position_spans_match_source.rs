@@ -37,6 +37,7 @@ fn every_positioned_span_slices_back_to_its_own_text() {
     assert!(!entries.is_empty(), "corpus has no .crv inputs");
 
     let mut checked_blocks = 0usize;
+    let mut checked_footnote_blocks = 0usize;
     let mut checked_inline_text = 0usize;
     let mut wrong: Vec<String> = Vec::new();
 
@@ -59,6 +60,20 @@ fn every_positioned_span_slices_back_to_its_own_text() {
                 &mut wrong,
             );
         }
+        for body in doc.footnote_defs.values() {
+            for block in body {
+                let before = checked_blocks;
+                check(
+                    block,
+                    &codepoints,
+                    &name,
+                    &mut checked_blocks,
+                    &mut checked_inline_text,
+                    &mut wrong,
+                );
+                checked_footnote_blocks += checked_blocks - before;
+            }
+        }
     }
 
     assert!(
@@ -68,6 +83,10 @@ fn every_positioned_span_slices_back_to_its_own_text() {
     assert!(
         checked_inline_text > 400,
         "only {checked_inline_text} positioned inline text nodes seen - the walk stopped finding them"
+    );
+    assert!(
+        checked_footnote_blocks >= 10,
+        "only {checked_footnote_blocks} positioned footnote body blocks seen - the walk stopped finding them"
     );
     assert!(
         wrong.is_empty(),
@@ -111,16 +130,16 @@ fn check(
     checked_inline_text: &mut usize,
     wrong: &mut Vec<String>,
 ) {
-    if let BlockNode::Paragraph(paragraph) = block {
-        if let Some(pos) = paragraph.pos {
-            *checked_blocks += 1;
-            let (start, end) = (pos.start_offset, pos.end_offset);
-            if start > end || end > source.len() {
-                wrong.push(format!(
-                    "{file}: span {start}..{end} is outside the {}-codepoint document",
-                    source.len()
-                ));
-            } else if let Some(want) = anchor(&paragraph.children) {
+    if let Some(pos) = block_pos(block) {
+        *checked_blocks += 1;
+        let (start, end) = (pos.start_offset, pos.end_offset);
+        if start > end || end > source.len() {
+            wrong.push(format!(
+                "{file}: span {start}..{end} is outside the {}-codepoint document",
+                source.len()
+            ));
+        } else if let BlockNode::Paragraph(paragraph) = block {
+            if let Some(want) = anchor(&paragraph.children) {
                 let slice: String = source[start..end].iter().collect();
                 if !slice.contains(&want) {
                     wrong.push(format!(
@@ -182,6 +201,28 @@ fn check(
             }
         }
         _ => {}
+    }
+}
+
+fn block_pos(block: &BlockNode) -> Option<&Pos> {
+    match block {
+        BlockNode::Heading(n) => n.pos.as_ref(),
+        BlockNode::Paragraph(n) => n.pos.as_ref(),
+        BlockNode::CodeBlock(n) => n.pos.as_ref(),
+        BlockNode::List(n) => n.pos.as_ref(),
+        BlockNode::BlockQuote(n) => n.pos.as_ref(),
+        BlockNode::Table(n) => n.pos.as_ref(),
+        BlockNode::Admonition(n) => n.pos.as_ref(),
+        BlockNode::Div(n) => n.pos.as_ref(),
+        BlockNode::LineBlock(n) => n.pos.as_ref(),
+        BlockNode::DefinitionList(n) => n.pos.as_ref(),
+        BlockNode::Figure(n) => n.pos.as_ref(),
+        BlockNode::AbbreviationDef(n) => n.pos.as_ref(),
+        BlockNode::RawBlock(n) => n.pos.as_ref(),
+        BlockNode::Comment(n) => n.pos.as_ref(),
+        BlockNode::Extension(n) => n.pos.as_ref(),
+        BlockNode::BlockImage(n) => n.pos.as_ref(),
+        BlockNode::ThematicBreak(n) => n.pos.as_ref(),
     }
 }
 

@@ -386,15 +386,9 @@ fn deeply_nested_json_is_refused_rather_than_overflowing() {
 
 #[test]
 fn footnote_definitions_follow_the_content() {
-    // PART 12 §7: a definition is a child of the DOCUMENT, written after the
-    // content. This engine keeps definitions in a map and used to iterate it
-    // BEFORE `children`, so `a[^r]` came back with its own definition as the
-    // document's first child - where carve-js and carve-php both put it last.
-    //
-    // Source ORDER among several definitions is not asserted, because it is not
-    // yet recovered: the map is keyed by label and a definition body carries no
-    // position (carve-rs#363). Asserting label order here would pin the
-    // limitation as if it were the rule.
+    // PART 12 §7: definitions are document children, written after the content
+    // and ordered by source position. The stored map is keyed by label, so JSON
+    // serialization has to sort a positioned view of it.
     let json = carve::to_json(&carve::parse_with_options(
         "first[^z]\n\nsecond[^a]\n\n[^z]: zed\n\n[^a]: ay\n",
         &carve::Options::new().with_positions(true),
@@ -410,6 +404,16 @@ fn footnote_definitions_follow_the_content() {
         &json[..json.len().min(120)]
     );
     assert!(json.contains(r#""type":"footnote","label":"z""#), "{json}");
+    let z_at = json
+        .find(r#""type":"footnote","label":"z""#)
+        .expect("z definition");
+    let a_at = json
+        .find(r#""type":"footnote","label":"a""#)
+        .expect("a definition");
+    assert!(
+        z_at < a_at,
+        "definitions must serialize in source order, not label order: {json}"
+    );
 
     let doc = carve::from_json(&json).expect("decode");
     assert_eq!(doc.children.len(), 2, "the two paragraphs stay in the tree");
