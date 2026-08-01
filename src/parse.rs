@@ -2814,6 +2814,22 @@ fn parse_continuation_block(
     block
 }
 
+/// A list's extent, taken from the items it holds.
+///
+/// Used only when the cursor cannot supply one. Both ends have to exist, or the
+/// range would start or stop somewhere arbitrary - so a list whose first or last
+/// item is unplaced stays unplaced itself rather than reporting a partial span.
+fn span_across_items(items: &[ListItem]) -> Option<Pos> {
+    let first = items.first()?.pos?;
+    let last = items.last()?.pos?;
+    Some(Pos {
+        end_line: last.end_line,
+        end_column: last.end_column,
+        end_offset: last.end_offset,
+        ..first
+    })
+}
+
 fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     let span_start = cur.pos;
     let first = cur.peek().unwrap();
@@ -3325,7 +3341,12 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         });
     }
     BlockNode::List(List {
-        pos: span_of(cur, span_start, cur.pos, options),
+        // The cursor's own span when it can give one, else the extent of the
+        // items themselves. A list inside a `+`-continued blockquote sits on
+        // lines whose stripped width is unknown, so `span_of` refuses - but the
+        // items were placed by other means, and a list that runs from its first
+        // item to its last is not a guess.
+        pos: span_of(cur, span_start, cur.pos, options).or_else(|| span_across_items(&items)),
         attrs: None,
         ordered: is_ordered,
         start,
