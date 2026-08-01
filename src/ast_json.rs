@@ -135,13 +135,24 @@ fn write_document(out: &mut String, doc: &Document) {
             write_comma(out, &mut first);
             write_frontmatter(out, raw);
         }
-        for (label, children) in &doc.footnote_defs {
-            write_comma(out, &mut first);
-            write_footnote_def(out, label, children);
-        }
         for child in &doc.children {
             write_comma(out, &mut first);
             write_block(out, child);
+        }
+        // Definitions come AFTER the content (PART 12 §7). They used to be
+        // written first, because this engine keeps them in a map and the map
+        // was iterated before `children` - so `a[^r]` followed by its
+        // definition came back with the definition as the document's FIRST
+        // child, where carve-js and carve-php both put it last.
+        //
+        // §7 also asks for SOURCE order among them, and that is not recovered
+        // here: the map is keyed by label, and a definition body carries no
+        // position to sort by (carve-rs#363), so two definitions come out in
+        // label order. Placement is the half that changes what a consumer
+        // renders; ordering between two definitions only shows up in a diff.
+        for (label, children) in &doc.footnote_defs {
+            write_comma(out, &mut first);
+            write_footnote_def(out, label, children);
         }
         out.push(']');
     });
