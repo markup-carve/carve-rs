@@ -246,6 +246,7 @@ fn rewrite_markers_inline(
                     attrs: Some(attrs),
                     name: MARKER_CARRIER.to_string(),
                     children: Vec::new(),
+                    pos: None,
                 });
             }
             InlineNode::Emphasis(e) => rewrite_markers_inline(&mut e.children, counts, display),
@@ -272,6 +273,7 @@ fn rewrite_containers(blocks: &mut [BlockNode]) {
                     children: std::mem::take(&mut a.children),
                     summary: None,
                     label: a.label.take(),
+                    pos: None,
                 });
             }
             BlockNode::List(l) => {
@@ -385,14 +387,14 @@ fn inline_text(nodes: &[InlineNode]) -> String {
             // whole thing on every pass to unescape a caret that is almost
             // never there.
             InlineNode::Text(s) => {
-                if s.contains(crate::ESCAPED_CARET_PLACEHOLDER) {
-                    out.push_str(&s.replace(crate::ESCAPED_CARET_PLACEHOLDER, "^"));
+                if s.value.contains(crate::ESCAPED_CARET_PLACEHOLDER) {
+                    out.push_str(&s.value.replace(crate::ESCAPED_CARET_PLACEHOLDER, "^"));
                 } else {
-                    out.push_str(s);
+                    out.push_str(&s.value);
                 }
             }
             InlineNode::SmartPunctuation(s) => out.push_str(smart_punctuation_glyph(s)),
-            InlineNode::Code(s, _) => out.push_str(s),
+            InlineNode::Code(s) => out.push_str(&s.value),
             // An inline literal renders as visible prose (§27), matching carve-js
             // `inlineText` which folds its content into the flattened term text.
             InlineNode::LiteralInline(l) => out.push_str(&l.content),

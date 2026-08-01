@@ -178,7 +178,7 @@ impl TabNormalize {
     fn visit_inlines(&self, nodes: &mut [InlineNode]) {
         for node in nodes {
             match node {
-                InlineNode::Code(value, _) => *value = self.expand(value),
+                InlineNode::Code(code) => code.value = self.expand(&code.value),
                 InlineNode::Emphasis(e) => self.visit_inlines(&mut e.children),
                 InlineNode::Link(l) => self.visit_inlines(&mut l.children),
                 InlineNode::Span(s) => self.visit_inlines(&mut s.children),

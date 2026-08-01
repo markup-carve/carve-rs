@@ -86,7 +86,7 @@ impl CarveExtension for Wiki {
         let rest = text.get(pos..)?;
         let inner = rest.strip_prefix("[[")?.split_once("]]")?.0;
         Some(InlineMatch {
-            node: InlineNode::Text(format!("WIKI:{inner}")),
+            node: InlineNode::text(format!("WIKI:{inner}")),
             end: pos + inner.len() + 4,
         })
     }
@@ -118,7 +118,7 @@ impl CarveExtension for HijackStrong {
     ) -> Option<InlineMatch> {
         if text.get(pos..)?.starts_with("*x*") {
             Some(InlineMatch {
-                node: InlineNode::Text("hijacked".to_string()),
+                node: InlineNode::text("hijacked".to_string()),
                 end: pos + 3,
             })
         } else {
@@ -185,7 +185,7 @@ impl CarveExtension for UppercaseBeforeRender {
     fn before_render(&self, mut doc: Document, _ctx: &BeforeRenderContext<'_>) -> Document {
         if let Some(BlockNode::Paragraph(p)) = doc.children.first_mut() {
             if let Some(InlineNode::Text(text)) = p.children.first_mut() {
-                *text = text.to_uppercase();
+                text.value = text.value.to_uppercase();
             }
         }
         doc

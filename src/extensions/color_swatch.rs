@@ -614,9 +614,11 @@ fn inline_text(nodes: &[InlineNode]) -> String {
     let mut out = String::new();
     for node in nodes {
         match node {
-            InlineNode::Text(s) => out.push_str(&s.replace(crate::ESCAPED_CARET_PLACEHOLDER, "^")),
+            InlineNode::Text(s) => {
+                out.push_str(&s.value.replace(crate::ESCAPED_CARET_PLACEHOLDER, "^"))
+            }
             InlineNode::SmartPunctuation(s) => out.push_str(smart_punctuation_glyph(s)),
-            InlineNode::Code(s, _) => out.push_str(s),
+            InlineNode::Code(s) => out.push_str(&s.value),
             // A code span and an inline literal both carry verbatim text; the
             // literal form is the natural way to pass a color whose `#` would
             // otherwise parse as a tag, e.g. `:color[!`#ff8800`]`.
@@ -640,7 +642,7 @@ fn inline_text(nodes: &[InlineNode]) -> String {
                 out.push_str(&e.name);
                 out.push(':');
             }
-            InlineNode::SoftBreak | InlineNode::HardBreak => out.push('\n'),
+            InlineNode::SoftBreak(_) | InlineNode::HardBreak(_) => out.push('\n'),
             _ => {}
         }
     }

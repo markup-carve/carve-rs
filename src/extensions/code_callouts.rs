@@ -109,6 +109,7 @@ fn carrier(name: &str, inner: BlockNode) -> BlockNode {
         children: vec![inner],
         summary: None,
         label: None,
+        pos: None,
     })
 }
 
@@ -139,7 +140,7 @@ fn item_number(line: &[InlineNode]) -> Option<String> {
     let InlineNode::Text(t) = line.first()? else {
         return None;
     };
-    let rest = t.strip_prefix('<')?;
+    let rest = t.value.strip_prefix('<')?;
     let gt = rest.find('>')?;
     let digits = &rest[..gt];
     if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
@@ -221,7 +222,7 @@ fn render_list(node: &BlockExtension, ctx: &RenderContext<'_>) -> String {
             let n = item_number(&line).unwrap_or_default();
             let mut rest: Vec<InlineNode> = Vec::with_capacity(line.len());
             if let Some(InlineNode::Text(t)) = line.first() {
-                rest.push(InlineNode::Text(strip_item_prefix(t)));
+                rest.push(InlineNode::text(strip_item_prefix(&t.value)));
             }
             rest.extend(line.iter().skip(1).cloned());
             format!(
@@ -262,7 +263,7 @@ fn with_base_class(attrs: &Option<Attrs>, base: &str) -> Attrs {
 fn split_lines(nodes: &[InlineNode]) -> Vec<Vec<InlineNode>> {
     let mut lines: Vec<Vec<InlineNode>> = vec![Vec::new()];
     for n in nodes {
-        if matches!(n, InlineNode::SoftBreak) {
+        if matches!(n, InlineNode::SoftBreak(_)) {
             lines.push(Vec::new());
         } else {
             lines.last_mut().unwrap().push(n.clone());

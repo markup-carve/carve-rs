@@ -162,10 +162,11 @@ fn link_node(href: &str, text: &str) -> InlineNode {
         attrs: None,
         href: href.to_string(),
         title: None,
-        children: vec![InlineNode::Text(text.to_string())],
+        children: vec![InlineNode::text(text.to_string())],
         ref_label: None,
         raw_ref: None,
         from_crossref: false,
+        pos: None,
     })
 }
 

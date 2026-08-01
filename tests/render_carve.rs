@@ -83,7 +83,7 @@ fn bullet_marker_normalization() {
                 checked: None,
                 children: vec![carve::BlockNode::Paragraph(carve::Paragraph {
                     attrs: None,
-                    children: vec![carve::InlineNode::Text("a".to_string())],
+                    children: vec![carve::InlineNode::text("a".to_string())],
                     ..Default::default()
                 })],
                 pos: None,

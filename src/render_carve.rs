@@ -96,7 +96,8 @@ fn normalize_escapes_inlines(nodes: &mut Vec<InlineNode>) {
     let mut merged: Vec<InlineNode> = Vec::with_capacity(nodes.len());
     for node in nodes.drain(..) {
         let text = match node {
-            InlineNode::Text(t) | InlineNode::EscapedText(t) => Some(t),
+            InlineNode::Text(t) => Some(t.value),
+            InlineNode::EscapedText(t) => Some(t.value),
             other => {
                 let mut other = other;
                 normalize_escapes_nested(&mut other);
@@ -106,9 +107,9 @@ fn normalize_escapes_inlines(nodes: &mut Vec<InlineNode>) {
         };
         if let Some(t) = text {
             if let Some(InlineNode::Text(previous)) = merged.last_mut() {
-                previous.push_str(&t);
+                previous.value.push_str(&t);
             } else {
-                merged.push(InlineNode::Text(t));
+                merged.push(InlineNode::text(t));
             }
         }
     }
@@ -145,7 +146,7 @@ fn normalize_escapes_nested(node: &mut InlineNode) {
         InlineNode::Text(_)
         | InlineNode::EscapedText(_)
         | InlineNode::SmartPunctuation(_)
-        | InlineNode::Code(..)
+        | InlineNode::Code(_)
         | InlineNode::Image(_)
         | InlineNode::Math(_)
         | InlineNode::RawInline(_)
@@ -158,8 +159,8 @@ fn normalize_escapes_nested(node: &mut InlineNode) {
         | InlineNode::Tag(_)
         | InlineNode::CitationGroup(_)
         | InlineNode::Abbreviation(_)
-        | InlineNode::SoftBreak
-        | InlineNode::HardBreak
+        | InlineNode::SoftBreak(_)
+        | InlineNode::HardBreak(_)
         | InlineNode::CriticSubstitute(_)
         | InlineNode::CriticComment(_) => {}
     }
@@ -834,12 +835,15 @@ fn render_inline(
 ) -> String {
     match node {
         InlineNode::Text(text) => escape_text(
-            &resolve_nbsp_placeholder(text, ctx.line_block_depth > 0),
+            &resolve_nbsp_placeholder(&text.value, ctx.line_block_depth > 0),
             ctx.escape_mode,
         )
         .replace(crate::ESCAPED_CARET_PLACEHOLDER, "\\^"),
         InlineNode::EscapedText(text) => {
-            format!("\\{}", text.replace(crate::ESCAPED_CARET_PLACEHOLDER, "^"))
+            format!(
+                "\\{}",
+                text.value.replace(crate::ESCAPED_CARET_PLACEHOLDER, "^")
+            )
         }
         InlineNode::SmartPunctuation(s) => s.value.clone(),
         InlineNode::Emphasis(emphasis) => {
@@ -861,7 +865,9 @@ fn render_inline(
             let _ = delim;
             format!("{body}{}", render_attrs(&emphasis.attrs))
         }
-        InlineNode::Code(code, attrs) => format!("{}{}", render_code(code), render_attrs(attrs)),
+        InlineNode::Code(code) => {
+            format!("{}{}", render_code(&code.value), render_attrs(&code.attrs))
+        }
         InlineNode::Link(link) => render_link(link, ctx),
         InlineNode::Image(image) => render_image(image),
         InlineNode::Span(span) => {
@@ -926,8 +932,8 @@ fn render_inline(
             };
             format!("{body}{}", render_attrs(&footnote.attrs))
         }
-        InlineNode::SoftBreak => "\n".to_string(),
-        InlineNode::HardBreak => {
+        InlineNode::SoftBreak(_) => "\n".to_string(),
+        InlineNode::HardBreak(_) => {
             if ctx.line_block_depth > 0 {
                 "\n".to_string()
             } else {
@@ -1657,15 +1663,15 @@ fn last_boundary(node: &InlineNode) -> Option<char> {
 
 fn boundary_text(node: &InlineNode) -> Option<&str> {
     match node {
-        InlineNode::Text(text) => Some(text),
+        InlineNode::Text(text) => Some(&text.value),
         // The CHARACTER, not the backslash that precedes it in the output. A
         // text node holding `_b_` and an escaped-text node holding `_` describe
         // the same neighbour, and the writer has to brace an adjacent delimiter
         // the same way for both - otherwise the first pass (plain text) and the
         // second (escaped text) disagree and `fmt(fmt(x)) != fmt(x)`.
-        InlineNode::EscapedText(text) => Some(text),
+        InlineNode::EscapedText(text) => Some(&text.value),
         InlineNode::SmartPunctuation(s) => Some(&s.value),
-        InlineNode::Code(text, _) => Some(text),
+        InlineNode::Code(text) => Some(&text.value),
         InlineNode::Abbreviation(abbr) => Some(&abbr.abbr),
         InlineNode::Mention(mention) => Some(&mention.user),
         InlineNode::Tag(tag) => Some(&tag.name),

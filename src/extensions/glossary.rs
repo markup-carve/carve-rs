@@ -130,6 +130,7 @@ fn rewrite_blocks(blocks: &mut [BlockNode], defined: &mut BTreeSet<String>) {
                     children: std::mem::take(&mut a.children),
                     summary: None,
                     label: a.label.take(),
+                    pos: None,
                 });
             }
             BlockNode::List(l) => {
@@ -255,9 +256,11 @@ fn inline_text(nodes: &[InlineNode]) -> String {
     let mut out = String::new();
     for node in nodes {
         match node {
-            InlineNode::Text(s) => out.push_str(&s.replace(crate::ESCAPED_CARET_PLACEHOLDER, "^")),
+            InlineNode::Text(s) => {
+                out.push_str(&s.value.replace(crate::ESCAPED_CARET_PLACEHOLDER, "^"))
+            }
             InlineNode::SmartPunctuation(s) => out.push_str(smart_punctuation_glyph(s)),
-            InlineNode::Code(s, _) => out.push_str(s),
+            InlineNode::Code(s) => out.push_str(&s.value),
             // An inline literal renders as visible prose (§27), matching carve-js
             // `inlineText` which folds its content into the flattened term text.
             InlineNode::LiteralInline(l) => out.push_str(&l.content),

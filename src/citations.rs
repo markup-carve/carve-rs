@@ -212,6 +212,7 @@ fn match_citation(text: &str, pos: usize, ctx: &MatcherContext<'_>) -> Option<In
             raw: text[pos..close + 1].to_string(),
             mode: None,
             integral,
+            pos: None,
         }),
         end: close + 1,
     })
@@ -555,7 +556,7 @@ fn collect_defs(blocks: Vec<BlockNode>, defs: &mut BTreeMap<String, Def>) -> Vec
 fn split_on_soft_breaks(nodes: Vec<InlineNode>) -> Vec<Vec<InlineNode>> {
     let mut lines = vec![Vec::new()];
     for node in nodes {
-        if matches!(node, InlineNode::SoftBreak) {
+        if matches!(node, InlineNode::SoftBreak(_)) {
             lines.push(Vec::new());
         } else {
             lines.last_mut().unwrap().push(node);
@@ -568,7 +569,7 @@ fn join_with_soft_breaks(lines: Vec<Vec<InlineNode>>) -> Vec<InlineNode> {
     let mut out = Vec::new();
     for (idx, line) in lines.into_iter().enumerate() {
         if idx > 0 {
-            out.push(InlineNode::SoftBreak);
+            out.push(InlineNode::soft_break());
         }
         out.extend(line);
     }
@@ -589,13 +590,13 @@ fn as_definition(line: &[InlineNode]) -> Option<(String, Def)> {
     let InlineNode::Text(second) = line.get(1)? else {
         return None;
     };
-    if !second.starts_with(':') {
+    if !second.value.starts_with(':') {
         return None;
     }
 
     let mut entry = line[1..].to_vec();
     if let InlineNode::Text(head) = &mut entry[0] {
-        *head = head.trim_start_matches(':').trim_start().to_string();
+        head.value = head.value.trim_start_matches(':').trim_start().to_string();
     }
     let mut def = Def {
         entry,
@@ -716,13 +717,13 @@ fn consume_leading_attrs(def: &mut Def) {
     let tail = source[close + 1..].trim_start().to_string();
     def.entry.drain(0..=close_node);
     if !tail.is_empty() {
-        def.entry.insert(0, InlineNode::Text(tail));
+        def.entry.insert(0, InlineNode::text(tail));
     }
 }
 
 fn inline_source_text(node: &InlineNode) -> Option<&str> {
     match node {
-        InlineNode::Text(text) => Some(text),
+        InlineNode::Text(text) => Some(&text.value),
         InlineNode::SmartPunctuation(s) => Some(&s.value),
         _ => None,
     }
@@ -928,6 +929,7 @@ fn inject_references_block(blocks: &mut Vec<BlockNode>) {
         children: Vec::new(),
         summary: None,
         label: None,
+        pos: None,
     });
     for block in blocks.iter_mut() {
         match block {

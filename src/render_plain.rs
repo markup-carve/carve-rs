@@ -247,13 +247,14 @@ fn render_inline(node: &InlineNode, depth: usize) -> String {
         return String::new();
     }
     match node {
-        InlineNode::Text(text) | InlineNode::EscapedText(text) => strip_controls(text),
+        InlineNode::Text(text) => strip_controls(&text.value),
+        InlineNode::EscapedText(text) => strip_controls(&text.value),
         InlineNode::SmartPunctuation(s) => strip_controls(smart_punctuation_glyph(s)),
         InlineNode::Emphasis(emphasis) => match emphasis.kind {
             EmphasisKind::Strike => render_inlines_stateful(&emphasis.children, depth + 1),
             _ => render_inlines_stateful(&emphasis.children, depth + 1),
         },
-        InlineNode::Code(code, _) => strip_controls(code),
+        InlineNode::Code(code) => strip_controls(&code.value),
         InlineNode::Link(link) => render_inlines_stateful(&link.children, depth + 1),
         InlineNode::Image(image) => strip_controls(&image.alt),
         InlineNode::Span(span) => render_inlines_stateful(&span.children, depth + 1),
@@ -291,8 +292,8 @@ fn render_inline(node: &InlineNode, depth: usize) -> String {
                 }
             }
         }
-        InlineNode::SoftBreak => " ".to_string(),
-        InlineNode::HardBreak => "\n".to_string(),
+        InlineNode::SoftBreak(_) => " ".to_string(),
+        InlineNode::HardBreak(_) => "\n".to_string(),
         InlineNode::CriticInsert(insert) => render_inlines_stateful(&insert.children, depth + 1),
         InlineNode::CriticDelete(delete) => {
             format!("~{}~", render_inlines_stateful(&delete.children, depth + 1))

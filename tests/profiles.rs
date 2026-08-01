@@ -86,6 +86,7 @@ fn maps_block_variants_to_canonical_names() {
         canonical_block_type(&BlockNode::AbbreviationDef(AbbreviationDef {
             abbr: "HTML".into(),
             expansion: "x".into(),
+            pos: None,
         })),
         Some("abbreviation_def")
     );
@@ -99,6 +100,7 @@ fn maps_inline_variants_to_canonical_names() {
             attrs: None,
             kind,
             children: vec![],
+            pos: None,
         })
     };
     assert_eq!(
@@ -129,7 +131,10 @@ fn maps_inline_variants_to_canonical_names() {
     // autolink IS, so it keeps its own name and is covered by `link` in the
     // deny check rather than by being renamed (carve issue 362).
     assert_eq!(
-        canonical_inline_type(&InlineNode::Tag(Tag { name: "x".into() })),
+        canonical_inline_type(&InlineNode::Tag(Tag {
+            name: "x".into(),
+            pos: None,
+        })),
         Some("mention")
     );
     assert_eq!(
@@ -137,6 +142,7 @@ fn maps_inline_variants_to_canonical_names() {
             attrs: None,
             href: "https://x".into(),
             text: "https://x".into(),
+            pos: None,
         })),
         Some("autolink")
     );
@@ -144,14 +150,16 @@ fn maps_inline_variants_to_canonical_names() {
     assert_eq!(
         canonical_inline_type(&InlineNode::CriticInsert(CriticInsert {
             children: vec![],
-            attrs: None
+            attrs: None,
+            pos: None,
         })),
         Some("insert")
     );
     assert_eq!(
         canonical_inline_type(&InlineNode::CriticDelete(CriticDelete {
             children: vec![],
-            attrs: None
+            attrs: None,
+            pos: None,
         })),
         Some("delete")
     );
@@ -161,11 +169,15 @@ fn maps_inline_variants_to_canonical_names() {
         canonical_inline_type(&InlineNode::Symbol(Symbol {
             name: "x".into(),
             attrs: None,
+            pos: None,
         })),
         Some("symbol")
     );
     assert_eq!(
-        canonical_inline_type(&InlineNode::CrossRef(CrossRef { target: "x".into() })),
+        canonical_inline_type(&InlineNode::CrossRef(CrossRef {
+            target: "x".into(),
+            pos: None,
+        })),
         Some("heading_ref")
     );
 }
@@ -243,8 +255,11 @@ fn to_text_degrades_a_node_whose_extractor_comes_back_empty_instead_of_deleting_
         children: vec![carve::BlockNode::Paragraph(carve::Paragraph {
             attrs: None,
             children: vec![
-                carve::InlineNode::Text("see ".to_string()),
-                carve::InlineNode::CaptionNumber(carve::CaptionNumber { number: None }),
+                carve::InlineNode::text("see ".to_string()),
+                carve::InlineNode::CaptionNumber(carve::CaptionNumber {
+                    number: None,
+                    pos: None,
+                }),
             ],
             ..Default::default()
         })],
@@ -268,7 +283,7 @@ fn to_text_degrades_a_node_whose_extractor_comes_back_empty_instead_of_deleting_
                 .children
                 .iter()
                 .map(|n| match n {
-                    carve::InlineNode::Text(t) => t.clone(),
+                    carve::InlineNode::Text(t) => t.value.clone(),
                     _ => String::new(),
                 })
                 .collect();

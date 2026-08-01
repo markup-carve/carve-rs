@@ -51,6 +51,7 @@ fn markdown_percent_encodes_destination_breakouts() {
                 title: None,
                 ref_label: None,
                 raw_ref: None,
+                pos: None,
             })],
         })],
     };
@@ -152,6 +153,7 @@ fn markdown_escapes_image_alt_label_metacharacters() {
                 title: None,
                 ref_label: None,
                 raw_ref: None,
+                pos: None,
             })],
         })],
     });
@@ -169,7 +171,7 @@ fn markdown_strips_control_bytes_from_author_leaf_fields() {
             at_content_column: false,
             pos: None,
             attrs: None,
-            children: vec![carve::InlineNode::Text(format!("note{c}"))],
+            children: vec![carve::InlineNode::text(format!("note{c}"))],
         })],
     );
     let doc = carve::Document {
@@ -196,21 +198,23 @@ fn markdown_strips_control_bytes_from_author_leaf_fields() {
                 at_content_column: false,
                 attrs: None,
                 children: vec![
-                    carve::InlineNode::Text(format!("text{c}")),
-                    carve::InlineNode::Code(format!("code{c}"), None),
+                    carve::InlineNode::text(format!("text{c}")),
+                    carve::InlineNode::code(format!("code{c}"), None),
                     carve::InlineNode::Math(carve::Math {
                         attrs: None,
                         display: false,
                         content: format!("math{c}"),
+                        pos: None,
                     }),
                     carve::InlineNode::Link(carve::Link {
                         attrs: None,
                         href: "https://e".to_string(),
                         title: Some(format!("title{c}")),
-                        children: vec![carve::InlineNode::Text("link".to_string())],
+                        children: vec![carve::InlineNode::text("link".to_string())],
                         ref_label: None,
                         raw_ref: None,
                         from_crossref: false,
+                        pos: None,
                     }),
                     carve::InlineNode::Image(carve::Image {
                         attrs: None,
@@ -219,16 +223,20 @@ fn markdown_strips_control_bytes_from_author_leaf_fields() {
                         title: Some(format!("ititle{c}")),
                         ref_label: None,
                         raw_ref: None,
+                        pos: None,
                     }),
                     carve::InlineNode::Abbreviation(carve::Abbreviation {
                         abbr: format!("abbr{c}"),
                         expansion: format!("exp{c}"),
+                        pos: None,
                     }),
                     carve::InlineNode::Mention(carve::Mention {
                         user: format!("user{c}"),
+                        pos: None,
                     }),
                     carve::InlineNode::Tag(carve::Tag {
                         name: format!("tag{c}"),
+                        pos: None,
                     }),
                     carve::InlineNode::Footnote(carve::Footnote {
                         attrs: None,
@@ -236,19 +244,23 @@ fn markdown_strips_control_bytes_from_author_leaf_fields() {
                         inline: None,
                         number: None,
                         ref_id: None,
+                        pos: None,
                     }),
                     carve::InlineNode::CriticSubstitute(carve::CriticSubstitute {
                         old_text: format!("old{c}"),
                         new_text: format!("new{c}"),
+                        pos: None,
                     }),
                     carve::InlineNode::CrossRef(carve::CrossRef {
                         target: format!("target{c}"),
+                        pos: None,
                     }),
                     carve::InlineNode::CitationGroup(carve::CitationGroup {
                         items: Vec::new(),
                         raw: format!("[@key{c}]"),
                         mode: None,
                         integral: false,
+                        pos: None,
                     }),
                 ],
             }),
@@ -273,6 +285,7 @@ fn plain_and_ansi_strip_control_bytes_from_author_leaf_fields() {
                 raw: format!("[@key{c}]"),
                 mode: None,
                 integral: false,
+                pos: None,
             })],
         })],
     );
@@ -294,6 +307,7 @@ fn plain_and_ansi_strip_control_bytes_from_author_leaf_fields() {
                 title: None,
                 ref_label: None,
                 raw_ref: None,
+                pos: None,
             }),
             carve::BlockNode::Paragraph(carve::Paragraph {
                 pos: None,
@@ -307,16 +321,20 @@ fn plain_and_ansi_strip_control_bytes_from_author_leaf_fields() {
                         title: None,
                         ref_label: None,
                         raw_ref: None,
+                        pos: None,
                     }),
                     carve::InlineNode::Abbreviation(carve::Abbreviation {
                         abbr: format!("abbr{c}"),
                         expansion: format!("exp{c}"),
+                        pos: None,
                     }),
                     carve::InlineNode::Mention(carve::Mention {
                         user: format!("user{c}"),
+                        pos: None,
                     }),
                     carve::InlineNode::Tag(carve::Tag {
                         name: format!("tag{c}"),
+                        pos: None,
                     }),
                     carve::InlineNode::Footnote(carve::Footnote {
                         attrs: None,
@@ -324,13 +342,16 @@ fn plain_and_ansi_strip_control_bytes_from_author_leaf_fields() {
                         inline: None,
                         number: None,
                         ref_id: None,
+                        pos: None,
                     }),
                     carve::InlineNode::CriticSubstitute(carve::CriticSubstitute {
                         old_text: format!("old{c}"),
                         new_text: format!("new{c}"),
+                        pos: None,
                     }),
                     carve::InlineNode::CrossRef(carve::CrossRef {
                         target: format!("target{c}"),
+                        pos: None,
                     }),
                 ],
             }),

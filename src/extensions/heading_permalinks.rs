@@ -143,8 +143,9 @@ impl HeadingPermalinks {
         let anchor = InlineNode::RawInline(RawInline {
             format: "html".into(),
             content: marker_html,
+            pos: None,
         });
-        let space = InlineNode::Text(" ".into());
+        let space = InlineNode::text(" ");
         if self.opts.prepend {
             h.children.insert(0, space);
             h.children.insert(0, anchor);
