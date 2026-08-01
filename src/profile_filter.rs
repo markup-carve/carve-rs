@@ -56,6 +56,28 @@ pub fn apply_profile(
             doc.footnote_defs.insert(label, blocks);
         }
     }
+    // The two node types this engine keeps on the Document rather than in the
+    // tree. profiles.md lists `frontmatter` and `footnote` in the Block
+    // vocabulary, so a profile can name them - but the walk above only reaches
+    // `children`, so naming either did nothing at all: no violation, no change
+    // (carve#422). A silent no-op is the specific failure a normative
+    // vocabulary exists to prevent, and it is worst here, because frontmatter
+    // is exactly the content a host restricting untrusted input wants gone.
+    //
+    // Denial REMOVES rather than degrades: both render nothing, so there is no
+    // text form to fall back to. Rendered output is unchanged either way; what
+    // changes is the tree and the violation report.
+    if (doc.frontmatter_raw.is_some() || !doc.frontmatter.is_empty())
+        && !profile.is_type_allowed_on("frontmatter", true)
+    {
+        filter.record("frontmatter", "element_not_allowed")?;
+        doc.frontmatter_raw = None;
+        doc.frontmatter.clear();
+    }
+    if !doc.footnote_defs.is_empty() && !profile.is_type_allowed_on("footnote", true) {
+        filter.record("footnote", "element_not_allowed")?;
+        doc.footnote_defs.clear();
+    }
     cleanup_blocks(&mut doc.children);
     for blocks in doc.footnote_defs.values_mut() {
         cleanup_blocks(blocks);
