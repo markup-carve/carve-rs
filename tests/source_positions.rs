@@ -695,3 +695,51 @@ fn frontmatter_offsets_are_codepoints() {
     // 4 + 9 + 3, newlines included - not the 20 a UTF-8 byte count would give.
     assert_eq!(pos.end_offset, 16);
 }
+
+/// An admonition's title is a slice of the opener line, so its inlines can be
+/// placed - but `inline_anchor_for_line` cannot do it: that helper works by
+/// SUFFIX, and a title sits in the middle of its line, between quotes. The
+/// opener records the column instead.
+#[test]
+fn an_admonition_title_places_its_inlines() {
+    let source = "::: note \"Install *now* via `npm`\"\nBody.\n:::\n";
+    let doc = parse_with_positions(source);
+
+    let BlockNode::Admonition(note) = &doc.children[0] else {
+        panic!("the document is an admonition");
+    };
+    let title = note.title.as_ref().expect("it has a title");
+    let spans: Vec<String> = title
+        .iter()
+        .map(|inline| match inline {
+            carve::ast::InlineNode::Text(t) => slice(source, t.pos.expect("text is placed")),
+            carve::ast::InlineNode::Emphasis(e) => {
+                slice(source, e.pos.expect("emphasis is placed"))
+            }
+            carve::ast::InlineNode::Code(c) => slice(source, c.pos.expect("code is placed")),
+            other => panic!("unexpected inline in the title: {other:?}"),
+        })
+        .collect();
+    assert_eq!(spans, vec!["Install ", "*now*", " via ", "`npm`"]);
+}
+
+/// A title carrying an ESCAPE is rebuilt rather than sliced, so no column in it
+/// maps back and the inlines stay unplaced. Absent beats wrong: the rebuilt
+/// string is shorter than the source it came from, so every column after the
+/// escape would be off by one.
+#[test]
+fn an_escaped_title_leaves_its_inlines_unplaced() {
+    let source = "::: note \"a \\\" b *x*\"\nBody.\n:::\n";
+    let doc = parse_with_positions(source);
+
+    let BlockNode::Admonition(note) = &doc.children[0] else {
+        panic!("the document is an admonition");
+    };
+    let title = note.title.as_ref().expect("it has a title");
+    let placed = title.iter().any(|inline| match inline {
+        carve::ast::InlineNode::Text(t) => t.pos.is_some(),
+        carve::ast::InlineNode::Emphasis(e) => e.pos.is_some(),
+        _ => false,
+    });
+    assert!(!placed, "a rebuilt title cannot place anything");
+}
