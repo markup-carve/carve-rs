@@ -849,10 +849,6 @@ struct LineCursor<'a> {
 }
 
 impl<'a> LineCursor<'a> {
-    fn new(lines: &'a [&'a str], line_map: Option<&'a [Option<usize>]>) -> Self {
-        Self::new_with_cols(lines, line_map, None)
-    }
-
     fn new_with_cols(
         lines: &'a [&'a str],
         line_map: Option<&'a [Option<usize>]>,
