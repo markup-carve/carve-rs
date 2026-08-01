@@ -3133,6 +3133,11 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             if let Some(block) = parse_continuation_block(cur, options, base_indent) {
                 item.children.push(block);
             }
+            // The item runs from its marker line through the block the `+`
+            // attached - it was the only list item built with a hardcoded
+            // `None`, so an item written this way had no span while its
+            // siblings and its own contents did.
+            item.pos = span_of(cur, item_at, cur.pos, options);
             items.push(item);
             continue;
         }

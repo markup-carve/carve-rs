@@ -764,6 +764,31 @@ fn a_plus_continuation_places_a_table_down_to_its_cells() {
     );
 }
 
+/// `- +` means the item's first block IS the attached one - there is no inline
+/// paragraph. That item was built with a hardcoded `None`, so it had no span
+/// while its siblings and its own contents did.
+#[test]
+fn an_item_whose_content_is_only_a_continuation_is_placed() {
+    let source = "- +\n| a | b |\n- next\n";
+    let doc = parse_with_positions(source);
+
+    let BlockNode::List(list) = &doc.children[0] else {
+        panic!("the document is a list");
+    };
+    assert_eq!(
+        slice(
+            source,
+            list.items[0].pos.expect("the bare-plus item is placed")
+        ),
+        "- +\n| a | b |"
+    );
+    // Its sibling is unaffected - the span stops at the attached block.
+    assert_eq!(
+        slice(source, list.items[1].pos.expect("the next item is placed")),
+        "- next"
+    );
+}
+
 /// A `+` line extends the cell above it. The text it adds is a verbatim slice
 /// of that line, but it was parsed with no anchor at all, so every continued
 /// cell's later text came out unplaced.
