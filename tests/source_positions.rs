@@ -312,7 +312,10 @@ fn a_block_image_carries_its_own_span() {
         panic!("expected a block image, got {:?}", doc.children[0]);
     };
 
-    assert_eq!(slice(source, image.pos.expect("the image carries a position")), "![alt](/i.png)");
+    assert_eq!(
+        slice(source, image.pos.expect("the image carries a position")),
+        "![alt](/i.png)"
+    );
 }
 
 #[test]
