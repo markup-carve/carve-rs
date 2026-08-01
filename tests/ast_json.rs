@@ -341,7 +341,10 @@ fn from_json_is_bounded_by_the_profile_max_length() {
     }
     children.pop();
     let hostile = format!(r#"{{"type":"document","children":[{children}],"srcByteLength":0}}"#);
-    assert!(hostile.len() > 100_000, "sample must exceed the comment profile's limit");
+    assert!(
+        hostile.len() > 100_000,
+        "sample must exceed the comment profile's limit"
+    );
 
     let (ok, _stdout, stderr) = run(&["--from-json", "--html", "--profile", "comment"], &hostile);
     assert!(!ok, "an oversize payload must be refused");
