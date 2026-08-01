@@ -1191,10 +1191,20 @@ fn fill_offsets(blocks: &mut [BlockNode], line_starts: &[usize]) {
             BlockNode::DefinitionList(d) => {
                 for item in &mut d.items {
                     for term in &mut item.terms {
+                        // The TERM's own span, not only its inline content. This
+                        // walk reached the children and skipped the node, so a
+                        // `<dt>` carried line and column with offsets of 0..0 -
+                        // present, and selecting nothing. Same for `<dd>` below.
+                        if let Some(pos) = term.pos.as_mut() {
+                            apply_offsets(pos, line_starts);
+                        }
                         apply_inline_offsets(&mut term.children, line_starts);
                     }
                     for def in &mut item.definitions {
-                        fill_offsets(def, line_starts);
+                        if let Some(pos) = def.pos.as_mut() {
+                            apply_offsets(pos, line_starts);
+                        }
+                        fill_offsets(&mut def.children, line_starts);
                     }
                 }
             }
@@ -4277,10 +4287,12 @@ fn parse_definition_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNo
         } else {
             parse_inline_with_options(&term_text, options)
         };
+        // The span covers the `:: ` marker and every line the term folded, the
+        // same way a heading's covers its `#`.
         let mut terms = vec![DefinitionTerm {
             attrs: source_line_attrs(None, term_source_line, options),
             children,
-            pos: None,
+            pos: span_of(cur, term_start, cur.pos, options),
         }];
 
         // CONSECUTIVE terms share an entry, which is what `:: a` / `:: b` on
@@ -4331,7 +4343,7 @@ fn parse_definition_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNo
             terms.push(DefinitionTerm {
                 attrs: source_line_attrs(None, next_source_line, options),
                 children,
-                pos: None,
+                pos: span_of(cur, next_start, cur.pos, options),
             });
         }
 
@@ -4367,6 +4379,7 @@ fn parse_definition_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNo
                 break;
             }
             let def_source_line = cur.source_line(cur.pos);
+            let def_start = cur.pos;
             // The `:  ` marker is three codepoints; add whatever an enclosing
             // container already took so a nested block maps back to the document.
             let def_source_col = cur.source_col(cur.pos).map(|c| c + 3);
@@ -4397,10 +4410,15 @@ fn parse_definition_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNo
                 MappedSource::new_line_at(def_trimmed.to_string(), def_source_line, def_source_col)
             };
             body.append(collect_definition_body(cur));
+            // The span covers the `:  ` marker through the last line the body
+            // consumed, so a multi-line definition is one region rather than
+            // just its opening line. `collect_definition_body` has already
+            // advanced the cursor past those lines.
+            let pos = span_of(cur, def_start, cur.pos, options);
             defs.push(DefinitionDef {
                 attrs: source_line_attrs(None, def_source_line, options),
                 children: parse_mapped_source(&body, options),
-                pos: None,
+                pos,
             });
         }
 
