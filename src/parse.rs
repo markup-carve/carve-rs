@@ -679,6 +679,27 @@ fn parse_link_def_target(target: &str) -> LinkDef {
 
 type SplitFrontmatter<'a> = (BTreeMap<String, String>, Option<Frontmatter>, &'a str);
 
+/// The key/value view of a frontmatter block, derived from its raw text.
+///
+/// Shared with the AST decoder rather than duplicated there. The wire form
+/// carries the RAW block only (PART 12 §7 - a parsed map cannot be serialized
+/// back to the bytes the author wrote), so a decoded document has to rebuild
+/// this the same way a parsed one built it. Deriving it with the same function
+/// is what makes decode(encode(x)) equal x instead of nearly equal.
+pub(crate) fn frontmatter_map(format: &str, content: &str) -> BTreeMap<String, String> {
+    let mut map = BTreeMap::new();
+    // Only the bare / yaml form is key:value; typed blocks (json/toml) are
+    // structured and just stripped.
+    if format.is_empty() || format.eq_ignore_ascii_case("yaml") {
+        for line in content.lines() {
+            if let Some((key, value)) = line.split_once(':') {
+                map.insert(key.trim().to_string(), value.trim().to_string());
+            }
+        }
+    }
+    map
+}
+
 fn split_frontmatter(source: &str) -> SplitFrontmatter<'_> {
     // Opening fence: `---` optionally followed by a type token (`---yaml`,
     // `---json`, `---toml`, ...; canonical has no space). Closer is a bare `---`.
@@ -708,16 +729,7 @@ fn split_frontmatter(source: &str) -> SplitFrontmatter<'_> {
     };
     let frontmatter_src = &rest[..content_len];
     let body = &rest[after..];
-    let mut frontmatter = BTreeMap::new();
-    // Only the bare / yaml form is key:value; typed blocks (json/toml) are
-    // structured and just stripped.
-    if kind.is_empty() || kind.eq_ignore_ascii_case("yaml") {
-        for line in frontmatter_src.lines() {
-            if let Some((key, value)) = line.split_once(':') {
-                frontmatter.insert(key.trim().to_string(), value.trim().to_string());
-            }
-        }
-    }
+    let frontmatter = frontmatter_map(kind, frontmatter_src);
     let raw = Frontmatter {
         // A bare fence is yaml, which is what the reference publishes.
         format: if kind.is_empty() {

@@ -11,6 +11,7 @@ enum OutputFormat {
     Plain,
     Ansi,
     Carve,
+    Json,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -51,6 +52,7 @@ fn main() -> ExitCode {
     let mut fmt_stamp = None;
     let mut stamp_mode: Option<StampMode> = None;
     let mut enable_extensions = false;
+    let mut from_json = false;
     let mut input_paths: Vec<String> = Vec::new();
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
@@ -127,6 +129,8 @@ fn main() -> ExitCode {
             "--plain" | "--plain-text" => format = OutputFormat::Plain,
             "--ansi" => format = OutputFormat::Ansi,
             "--carve" => format = OutputFormat::Carve,
+            "--json" | "--ast" => format = OutputFormat::Json,
+            "--from-json" => from_json = true,
             "--static" => options = options.with_mode(carve::Mode::Static),
             "--interactive" => options = options.with_mode(carve::Mode::Interactive),
             "--extensions" => enable_extensions = true,
@@ -205,14 +209,51 @@ fn main() -> ExitCode {
         return ExitCode::SUCCESS;
     }
 
-    // Mention/tag URL templates are an HTML-link concern, so they only affect
-    // HTML output. All formats share the same parse + profile pipeline.
-    let output = match format {
-        OutputFormat::Html => carve::to_html_with_options(&source, &options),
-        OutputFormat::Markdown => carve::to_markdown_with_options(&source, &options),
-        OutputFormat::Plain => carve::to_plain_text_with_options(&source, &options),
-        OutputFormat::Ansi => carve::to_ansi_with_options(&source, &options),
-        OutputFormat::Carve => carve::to_carve(&source),
+    let output = if from_json {
+        // A profile's max_length bounds UNTRUSTED INPUT, and here the untrusted
+        // input is the JSON payload: it is what gets parsed, held and walked.
+        // The document's own `srcByteLength` cannot stand in for it - that number
+        // arrives inside the payload, so a hostile tree can claim 0 and render
+        // anything. Measured on the payload, which is also the form a host
+        // storing trees actually receives.
+        if let Some(profile) = &options.profile {
+            let max_length = profile.max_length();
+            if max_length > 0 && source.len() > max_length {
+                eprintln!(
+                    "carve: encoded AST exceeds the profile's maximum length of {max_length} bytes ({} bytes of JSON given).",
+                    source.len()
+                );
+                return ExitCode::FAILURE;
+            }
+        }
+        let doc = match carve::from_json(&source) {
+            Ok(doc) => doc,
+            Err(err) => {
+                eprintln!("carve: cannot decode JSON AST: {err}");
+                return ExitCode::FAILURE;
+            }
+        };
+        match render_document(doc, format, &options) {
+            Ok(output) => output,
+            Err(err) => {
+                eprintln!("carve: profile violation: {err}");
+                return ExitCode::FAILURE;
+            }
+        }
+    } else {
+        // Mention/tag URL templates are an HTML-link concern, so they only affect
+        // HTML output. All formats share the same parse + profile pipeline.
+        match format {
+            OutputFormat::Html => carve::to_html_with_options(&source, &options),
+            OutputFormat::Markdown => carve::to_markdown_with_options(&source, &options),
+            OutputFormat::Plain => carve::to_plain_text_with_options(&source, &options),
+            OutputFormat::Ansi => carve::to_ansi_with_options(&source, &options),
+            OutputFormat::Carve => carve::to_carve(&source),
+            OutputFormat::Json => {
+                options = options.with_positions(true);
+                carve::to_json_with_options(&source, &options)
+            }
+        }
     };
     let mut stdout = io::stdout().lock();
     if let Err(err) = stdout.write_all(output.as_bytes()) {
@@ -223,6 +264,26 @@ fn main() -> ExitCode {
         let _ = stdout.write_all(b"\n");
     }
     ExitCode::SUCCESS
+}
+
+fn render_document(
+    doc: carve::Document,
+    format: OutputFormat,
+    options: &carve::Options<'_>,
+) -> Result<String, carve::ProfileViolationError> {
+    let (mode, target_is_html) = match format {
+        OutputFormat::Html => (options.mode, true),
+        _ => (carve::Mode::Interactive, false),
+    };
+    let doc = carve::prepare_document_for_render(doc, options, mode, target_is_html)?;
+    Ok(match format {
+        OutputFormat::Html => carve::render_html_with_options(&doc, options),
+        OutputFormat::Markdown => carve::render_markdown_with_options(&doc, options),
+        OutputFormat::Plain => carve::render_plain_text_with_options(&doc, options),
+        OutputFormat::Ansi => carve::render_ansi_with_options(&doc, options),
+        OutputFormat::Carve => carve::render_carve(&doc),
+        OutputFormat::Json => carve::to_json(&doc),
+    })
 }
 
 fn run_fmt(
@@ -324,6 +385,8 @@ fn print_usage() {
          --plain, --plain-text       plain text\n  \
          --ansi                      ANSI-colored terminal text\n  \
          --carve                     canonical Carve source\n\n\
+         --json, --ast               the parsed AST as JSON\n  \
+         --from-json                 read an encoded AST instead of Carve source\n\n\
          Format options:\n  \
          -w, --write                 write formatted output in place\n  \
          --check                     fail if any file is not formatted\n\n\

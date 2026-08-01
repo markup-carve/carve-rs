@@ -230,6 +230,12 @@ impl<'a> Options<'a> {
         self
     }
 
+    /// Record source spans on AST nodes that support them.
+    pub fn with_positions(mut self, enabled: bool) -> Self {
+        self.positions = enabled;
+        self
+    }
+
     pub fn with_extension(mut self, extension: &'a dyn CarveExtension) -> Self {
         self.extensions.push(extension);
         self

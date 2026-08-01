@@ -16,6 +16,7 @@
 
 mod abbr_budget;
 pub mod ast;
+pub mod ast_json;
 mod citations;
 mod document_ids;
 mod escape;
@@ -44,6 +45,7 @@ pub(crate) const ESCAPED_CARET_PLACEHOLDER: char = '\u{e002}';
 pub const SPEC_VERSION: &str = "0.1";
 
 pub use ast::*;
+pub use ast_json::{from_json, to_json, AstJsonError};
 pub use citations::{
     parse_locator, CitationMode, Citations, CslDate, CslEntry, CslName, ParsedLocator,
 };
@@ -237,6 +239,40 @@ fn prepare_doc(
     Ok(apply_profile(doc, profile, base_host)?.doc)
 }
 
+/// Run render-time extension hooks and the configured feature profile on an
+/// already-built document. Used by `--from-json`, where parsing has happened in
+/// another process but render restrictions must still apply.
+pub fn prepare_document_for_render(
+    mut doc: ast::Document,
+    options: &Options<'_>,
+    effective_mode: Mode,
+    target_is_html: bool,
+) -> Result<ast::Document, ProfileViolationError> {
+    let ctx = extension::BeforeRenderContext::new(options, effective_mode, target_is_html);
+    for ext in &options.extensions {
+        doc = ext.before_render(doc, &ctx);
+    }
+    let Some(profile) = &options.profile else {
+        return Ok(doc);
+    };
+    let max_length = profile.max_length();
+    if max_length > 0 && doc.source_len > max_length {
+        let violation = ProfileViolation {
+            node_type: "document".to_string(),
+            reason: "max_length_exceeded".to_string(),
+            reason_description: Some(format!(
+                "Input exceeds the profile's maximum length of {max_length} bytes ({} given).",
+                doc.source_len
+            )),
+        };
+        return Err(ProfileViolationError {
+            violations: vec![violation],
+        });
+    }
+    let base_host = options.profile_base_host.as_deref();
+    Ok(apply_profile(doc, profile, base_host)?.doc)
+}
+
 /// Parse, run extension hooks, apply the profile, and render to HTML.
 /// Returns an error only when the profile's action is
 /// [`DisallowedAction::Error`] (or `max_length` is exceeded).
@@ -249,6 +285,23 @@ pub fn try_to_html_with_options(
         &prepare_doc(source, options, options.mode, true)?,
         options,
     ))
+}
+
+/// Parse, run extension/profile transforms, and serialize the AST as JSON.
+pub fn try_to_json_with_options(
+    source: &str,
+    options: &Options<'_>,
+) -> Result<String, ProfileViolationError> {
+    Ok(to_json(&prepare_doc(
+        source,
+        options,
+        Mode::Interactive,
+        false,
+    )?))
+}
+
+pub fn to_json_with_options(source: &str, options: &Options<'_>) -> String {
+    try_to_json_with_options(source, options).unwrap_or_default()
 }
 
 /// Parse, run extension hooks, apply the profile, and render to Markdown.
