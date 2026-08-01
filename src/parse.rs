@@ -6524,8 +6524,12 @@ fn parse_inline_context(
             && bytes.get(i + 1) == Some(&b'%')
             && (i == 0 || bytes[i - 1] == b' ' || bytes[i - 1] == b'\t' || bytes[i - 1] == b'\n')
         {
+            // Popping from the END keeps the buffer equal to the source it
+            // started at - `flush_text` measures the span as
+            // `start .. start + buf.len()`, so a shorter buffer is a shorter
+            // span, not a wrong one. Clearing `buf_placeable` here refused a
+            // position for every line ending in a `%%` comment.
             while buf.ends_with(' ') || buf.ends_with('\t') {
-                buf_placeable = false;
                 buf.pop();
             }
             match bytes[i..].iter().position(|&b| b == b'\n') {
