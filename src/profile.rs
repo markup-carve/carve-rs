@@ -28,6 +28,17 @@ pub enum DisallowedAction {
     Error,
 }
 
+/// The Tier-1 admonition kinds: the only `::: kind` fences that are callouts.
+/// A fence opened with any other word is a generic container - it renders as
+/// a plain `<div>` (see `render::render_admonition`'s `canonical` check) and
+/// is classified as `div`, not `admonition`, for profile purposes (see
+/// [`canonical_block_type`]). Both call sites read this ONE list so they
+/// cannot drift (carve issue 431: they had drifted - the renderer already drew
+/// this line, the profile classifier did not).
+pub const ADMONITION_TIER1_KINDS: &[&str] = &[
+    "note", "tip", "warning", "danger", "info", "success", "example", "quote",
+];
+
 /// Canonical block node-type vocabulary (snake_case).
 pub const CANONICAL_BLOCK_TYPES: &[&str] = &[
     "paragraph",
@@ -113,9 +124,19 @@ pub fn canonical_block_type(node: &BlockNode) -> Option<&'static str> {
         BlockNode::List(_) => Some("list"),
         BlockNode::BlockQuote(_) => Some("block_quote"),
         BlockNode::Table(_) => Some("table"),
-        // An admonition is a typed div; carve-php has no separate admonition
-        // node (it is a Div). Treat it under the `div` feature.
-        BlockNode::Admonition(_) => Some("admonition"),
+        // A Tier-1 kind (`note`, `tip`, ...) is a callout: gate it as
+        // `admonition`. Any other named fence (`::: sidebar`) is a generic
+        // container - gate it as `div`, matching the `with_supertype` subtype
+        // rule below (denying `div` still catches every admonition, Tier-1 or
+        // not) and matching what the renderer already does with
+        // `ADMONITION_TIER1_KINDS` (carve issue 431). This is a profile-only
+        // reclassification: the published AST type stays `admonition` for
+        // every kind (see `ast_json::write_block`), same as the `tag` ->
+        // `mention` fold.
+        BlockNode::Admonition(a) if ADMONITION_TIER1_KINDS.contains(&a.kind.as_str()) => {
+            Some("admonition")
+        }
+        BlockNode::Admonition(_) => Some("div"),
         BlockNode::Div(_) => Some("div"),
         BlockNode::LineBlock(_) => Some("line_block"),
         BlockNode::DefinitionList(_) => Some("definition_list"),
