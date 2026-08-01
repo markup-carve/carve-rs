@@ -1145,22 +1145,29 @@ fn fill_offsets(blocks: &mut [BlockNode], line_starts: &[usize]) {
                     }
                 }
             }
-            BlockNode::Figure(f) => match &mut f.target {
-                FigureTarget::BlockQuote(q) => {
-                    if let Some(attribution) = &mut q.attribution {
-                        apply_inline_offsets(attribution, line_starts);
+            BlockNode::Figure(f) => {
+                // The CAPTION first. It was the one part of a figure this walk
+                // never reached, so a caption's inline spans kept line and
+                // column but offsets of 0..0 - which reads as present and
+                // selects nothing, the exact shape section 4 forbids.
+                apply_inline_offsets(&mut f.caption, line_starts);
+                match &mut f.target {
+                    FigureTarget::BlockQuote(q) => {
+                        if let Some(attribution) = &mut q.attribution {
+                            apply_inline_offsets(attribution, line_starts);
+                        }
+                        fill_offsets(&mut q.children, line_starts);
                     }
-                    fill_offsets(&mut q.children, line_starts);
-                }
-                FigureTarget::Paragraph(p) => {
-                    if let Some(pos) = p.pos.as_mut() {
-                        apply_offsets(pos, line_starts);
+                    FigureTarget::Paragraph(p) => {
+                        if let Some(pos) = p.pos.as_mut() {
+                            apply_offsets(pos, line_starts);
+                        }
+                        apply_inline_offsets(&mut p.children, line_starts);
                     }
-                    apply_inline_offsets(&mut p.children, line_starts);
+                    FigureTarget::Table(t) => apply_table_offsets(t, line_starts),
+                    _ => {}
                 }
-                FigureTarget::Table(t) => apply_table_offsets(t, line_starts),
-                _ => {}
-            },
+            }
             _ => {}
         }
     }
@@ -4416,6 +4423,12 @@ fn consume_caption(cur: &mut LineCursor, options: &Options<'_>) -> Option<Vec<In
         return None;
     };
     let mut joined = text.to_string();
+    // One anchor per folded line, the same shape a paragraph builds. The first
+    // entry accounts for the `^ ` marker, which `inline_anchor_for_line`
+    // derives by comparing the full line against the inline text.
+    let mut anchors = options
+        .positions
+        .then(|| vec![inline_anchor_for_line(cur, cur.pos, text)]);
     cur.consume();
     // A caption is multi-line inline content, so it folds following lines like a
     // PARAGRAPH (§10), NOT like a heading: a list marker FOLDS in (djot -- a
@@ -4433,13 +4446,18 @@ fn consume_caption(cur: &mut LineCursor, options: &Options<'_>) -> Option<Vec<In
         }
         joined.push('\n');
         joined.push_str(next);
+        if let Some(anchors) = &mut anchors {
+            anchors.push(inline_anchor_for_line(cur, cur.pos, next));
+        }
         cur.consume();
     }
-    // §756 (NORMATIVE): strip the final line's trailing whitespace only.
-    Some(parse_caption_inline_with_options(
-        trim_ascii_end(&joined),
-        options,
-    ))
+    // §756 (NORMATIVE): strip the final line's trailing whitespace only. This
+    // only shortens the END, so it cannot shift any anchor.
+    let text = trim_ascii_end(&joined);
+    Some(match anchors {
+        Some(anchors) => parse_caption_inline_with_anchor(text, options, anchors),
+        None => parse_caption_inline_with_options(text, options),
+    })
 }
 
 fn is_table_start(line: &str) -> bool {
@@ -6051,6 +6069,23 @@ fn parse_inline_with_anchor(
 
 fn parse_caption_inline_with_options(text: &str, options: &Options<'_>) -> Vec<InlineNode> {
     parse_inline_context(text, options, true, false, None, 0)
+}
+
+/// A caption's inline content, anchored to the source lines it was folded from.
+///
+/// Separate from `parse_inline_with_anchor` only because a caption may contain
+/// a caption NUMBER placeholder and ordinary inline content may not, so the
+/// two cannot share the flag.
+fn parse_caption_inline_with_anchor(
+    text: &str,
+    options: &Options<'_>,
+    lines: Vec<Option<(usize, usize)>>,
+) -> Vec<InlineNode> {
+    if !options.positions {
+        return parse_caption_inline_with_options(text, options);
+    }
+    let map = InlinePositionMap::new(text, InlineAnchor { lines: &lines });
+    parse_inline_context(text, options, true, false, Some(&map), 0)
 }
 
 fn parse_inline_context(
