@@ -44,6 +44,7 @@ pub const CANONICAL_BLOCK_TYPES: &[&str] = &[
     "admonition",
     "raw_block",
     "footnote",
+    "frontmatter",
     "definition_list",
     "definition_term",
     "definition_description",
@@ -96,6 +97,14 @@ pub const CANONICAL_INLINE_TYPES: &[&str] = &[
 /// Returns `None` for nodes that have no canonical mapping (e.g.
 /// `AbbreviationDef`); such nodes are denied-by-default by the resolver,
 /// matching carve-php's "unknown type -> denied" rule.
+///
+/// `frontmatter` has no arm here: carve-rs keeps it on `Document.frontmatter_raw`
+/// rather than as a `BlockNode` variant (spec PART 12 section 4 permits an
+/// internal representation that differs from the published tree, as long as
+/// the mapping happens on the way out - see `ast_json::write_document`). It is
+/// still in [`CANONICAL_BLOCK_TYPES`] and still deniable: `apply_profile`
+/// checks it directly against the `Document` root instead of through this
+/// per-node match (carve issue 422).
 pub fn canonical_block_type(node: &BlockNode) -> Option<&'static str> {
     match node {
         BlockNode::Heading(_) => Some("heading"),
