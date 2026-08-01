@@ -4687,7 +4687,17 @@ fn parse_table_row(line: &str, options: &Options<'_>, base: Option<(usize, usize
     let cells = split_table_cells_ranged(content)
         .into_iter()
         .map(|slice| {
-            let mut cell = parse_table_cell(&slice.text, options);
+            // The cell's own start column, which is also the anchor its inline
+            // content is parsed against: the cell text is a verbatim slice of
+            // the row now that the escaped pipe is preserved, so an offset
+            // inside it maps straight back to the document.
+            let cell_anchor = match (base, content_off) {
+                (Some((line_no, stripped)), Some(off)) => {
+                    Some((line_no, stripped + off + slice.start))
+                }
+                _ => None,
+            };
+            let mut cell = parse_table_cell(&slice.text, options, cell_anchor);
             if let (Some((line_no, stripped)), Some(off)) = (base, content_off) {
                 cell.pos = Some(Pos {
                     start_line: line_no,
@@ -4742,11 +4752,19 @@ fn split_table_cells_ranged(content: &str) -> Vec<CellSlice> {
             continue;
         }
         if ch == '\\' {
-            // Only an escaped PIPE is resolved here (so it does not split the
-            // row); every other backslash escape is PRESERVED for the inline
-            // parser to resolve. That keeps a leading `\{` literal rather than
-            // looking like a cell attribute block. Matches carve-js.
+            // An escaped PIPE does not split the row, but the escape is KEPT
+            // rather than resolved here: the inline parser turns it into an
+            // `escaped_text` node, which is what carve-js publishes and what
+            // the vocabulary defines. Resolving it here produced a single
+            // `text` node holding a bare `|`, losing both the node and the
+            // author's intent - and, because the cell text was then no longer
+            // a verbatim slice of the row, nothing inside the cell could carry
+            // a position either (carve-rs#333).
+            //
+            // Every other backslash escape was already preserved for the same
+            // reason; this only makes the pipe consistent with them.
             if chars.peek() == Some(&'|') {
+                buf.push('\\');
                 buf.push('|');
                 chars.next();
                 index += 1;
@@ -4775,7 +4793,31 @@ fn split_table_cells_ranged(content: &str) -> Vec<CellSlice> {
     cells
 }
 
-fn parse_table_cell(cell: &str, options: &Options<'_>) -> TableCell {
+/// Parse a cell's inline content, anchored when the caller knows where the
+/// cell sits in the document.
+///
+/// `slice` must be a SUB-SLICE of `cell` (it always is here: trimming and
+/// marker removal only ever narrow it), so the byte distance between the two
+/// pointers is exact and converts to a char offset without re-scanning.
+fn parse_cell_inlines(
+    cell: &str,
+    slice: &str,
+    options: &Options<'_>,
+    anchor: Option<(usize, usize)>,
+) -> Vec<InlineNode> {
+    let Some((line_no, base_col)) = anchor else {
+        return parse_inline_with_options(slice, options);
+    };
+    let bytes = (slice.as_ptr() as usize).saturating_sub(cell.as_ptr() as usize);
+    let off = cell[..bytes].chars().count();
+    parse_inline_lines_with_anchor(slice, options, vec![Some((line_no, base_col + off))])
+}
+
+fn parse_table_cell(
+    cell: &str,
+    options: &Options<'_>,
+    anchor: Option<(usize, usize)>,
+) -> TableCell {
     // A `{...}` attribute block GLUED to the opening pipe (no leading space)
     // sets the cell's attributes; the rest, after optional whitespace, is the
     // content. `read_attrs_at` is quote-aware and validates the whole payload,
@@ -4791,7 +4833,7 @@ fn parse_table_cell(cell: &str, options: &Options<'_>) -> TableCell {
                 span: None,
                 align: None,
                 attrs: Some(attrs),
-                children: parse_inline_with_options(cell[next..].trim(), options),
+                children: parse_cell_inlines(cell, cell[next..].trim(), options, anchor),
                 // The caller places the cell: it knows where the row line sits.
                 pos: None,
             };
@@ -4839,7 +4881,7 @@ fn parse_table_cell(cell: &str, options: &Options<'_>) -> TableCell {
         children: if span.is_some() {
             Vec::new()
         } else {
-            parse_inline_with_options(text, options)
+            parse_cell_inlines(cell, text, options, anchor)
         },
         pos: None,
     }
