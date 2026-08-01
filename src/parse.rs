@@ -30,7 +30,7 @@ use std::collections::{BTreeMap, HashMap};
 /// larger frames need more, which is why the worst-case-depth robustness tests
 /// run on a generous worker stack). carve-php's analogous cap relies on PHP
 /// growing its VM stack on the heap.
-const MAX_NESTING_DEPTH: usize = 200;
+pub(crate) const MAX_NESTING_DEPTH: usize = 200;
 
 fn trim_ascii_start(s: &str) -> &str {
     s.trim_start_matches([' ', '\t'])
