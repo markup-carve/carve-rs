@@ -189,3 +189,60 @@ fn a_nested_item_accumulates_the_outer_indent() {
     );
     assert_eq!(slice(source, para), "inner");
 }
+
+#[test]
+fn a_list_item_spans_its_marker_and_body() {
+    // The item includes its bullet - unlike the paragraph inside it, which
+    // starts at the text. Both are right: the marker belongs to the item.
+    let source = "- one\n- two\n";
+    let doc = parse_with_positions(source);
+    let BlockNode::List(list) = &doc.children[0] else {
+        panic!("expected a list");
+    };
+
+    let first = list.items[0].pos.expect("the item carries a position");
+    assert_eq!(slice(source, first), "- one");
+    assert_eq!(
+        slice(source, list.items[1].pos.expect("second item")),
+        "- two"
+    );
+}
+
+#[test]
+fn a_table_row_spans_its_line() {
+    let source = "| a | b |\n|---|---|\n| c | d |\n";
+    let doc = parse_with_positions(source);
+    let BlockNode::Table(table) = &doc.children[0] else {
+        panic!("expected a table");
+    };
+
+    assert_eq!(
+        slice(source, table.rows[0].pos.expect("header row")),
+        "| a | b |"
+    );
+    assert_eq!(
+        slice(source, table.rows[1].pos.expect("body row")),
+        "| c | d |"
+    );
+}
+
+#[test]
+fn a_continued_row_spans_every_line_it_runs_to() {
+    // A `+` continuation extends the row. The row stays ONE contiguous range
+    // that no sibling row overlaps, so it keeps a position - the cell it
+    // extends does not, because that cell's content sits in two column ranges
+    // with another column's content between them.
+    let source = "|= F |= D |\n| Cx | A long |\n+    | that cont |\n| S | one |\n";
+    let doc = parse_with_positions(source);
+    let BlockNode::Table(table) = &doc.children[0] else {
+        panic!("expected a table");
+    };
+
+    let continued = table.rows[1]
+        .pos
+        .expect("the continued row carries a position");
+    assert_eq!(continued.start_line, 2);
+    assert_eq!(continued.end_line, 3);
+    assert!(slice(source, continued).contains("A long"));
+    assert!(slice(source, continued).contains("that cont"));
+}

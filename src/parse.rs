@@ -1081,7 +1081,20 @@ fn fill_offsets(blocks: &mut [BlockNode], line_starts: &[usize]) {
             BlockNode::Admonition(a) => fill_offsets(&mut a.children, line_starts),
             BlockNode::List(l) => {
                 for item in &mut l.items {
+                    // The ITEM's own span too, not only the blocks inside it:
+                    // a span whose offsets are never filled stays 0..0, which
+                    // reads as present and selects nothing.
+                    if let Some(pos) = item.pos.as_mut() {
+                        apply_offsets(pos, line_starts);
+                    }
                     fill_offsets(&mut item.children, line_starts);
+                }
+            }
+            BlockNode::Table(t) => {
+                for row in &mut t.rows {
+                    if let Some(pos) = row.pos.as_mut() {
+                        apply_offsets(pos, line_starts);
+                    }
                 }
             }
             BlockNode::LineBlock(l) => fill_offsets(&mut l.children, line_starts),
@@ -2858,7 +2871,10 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 checked: marker.checked,
                 children,
 
-                pos: None,
+                // The item runs from its marker to the last line its body
+                // consumed - the bullet is part of the item, unlike the
+                // paragraph inside it, which starts at the text.
+                pos: span_of(cur, item_at, cur.pos, options),
             });
             continue;
         }
@@ -2904,7 +2920,10 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 checked: marker.checked,
                 children,
 
-                pos: None,
+                // The item runs from its marker to the last line its body
+                // consumed - the bullet is part of the item, unlike the
+                // paragraph inside it, which starts at the text.
+                pos: span_of(cur, item_at, cur.pos, options),
             });
             continue;
         }
@@ -2948,7 +2967,10 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 checked: marker.checked,
                 children,
 
-                pos: None,
+                // The item runs from its marker to the last line its body
+                // consumed - the bullet is part of the item, unlike the
+                // paragraph inside it, which starts at the text.
+                pos: span_of(cur, item_at, cur.pos, options),
             });
             // A single-line marker-line block (heading, thematic break) leaves
             // no indented continuation, so collect_indented_block_mapped above
@@ -3066,7 +3088,7 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             checked: marker.checked,
             children: vec![paragraph],
 
-            pos: None,
+            pos: span_of(cur, item_at, cur.pos, options),
         });
     }
     BlockNode::List(List {
@@ -4278,12 +4300,26 @@ fn parse_table(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             if saw_separator && rows.len() == 1 {
                 break;
             }
+            let cont_at = cur.pos;
             cur.consume();
             if let Some(last) = rows.last_mut() {
                 apply_table_continuation(last, line, options);
+                // The row now RUNS to this line. It stays one contiguous range
+                // that no sibling row overlaps, so it keeps a position - unlike
+                // the cell the continuation extends, whose content sits in two
+                // column ranges with another column's content between them.
+                if let (Some(pos), Some(end)) = (
+                    last.pos.as_mut(),
+                    span_of(cur, cont_at, cont_at + 1, options),
+                ) {
+                    pos.end_line = end.end_line;
+                    pos.end_column = end.end_column;
+                    pos.end_offset = end.end_offset;
+                }
             }
             continue;
         }
+        let row_at = cur.pos;
         cur.consume();
         if rows.is_empty() {
             first_is_delim = is_delim_row(line);
@@ -4297,7 +4333,11 @@ fn parse_table(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             apply_column_aligns(&mut rows[0], &column_aligns);
             continue;
         }
-        let row = parse_table_row(line, options);
+        let mut row = parse_table_row(line, options);
+        // The row is one line here; a `+` continuation extends it below. The
+        // cursor is the only place that knows where this line sits, which is
+        // why `parse_table_row` cannot do it itself.
+        row.pos = span_of(cur, row_at, row_at + 1, options);
         rows.push(row);
     }
     let table = Table {
