@@ -1145,22 +1145,29 @@ fn fill_offsets(blocks: &mut [BlockNode], line_starts: &[usize]) {
                     }
                 }
             }
-            BlockNode::Figure(f) => match &mut f.target {
-                FigureTarget::BlockQuote(q) => {
-                    if let Some(attribution) = &mut q.attribution {
-                        apply_inline_offsets(attribution, line_starts);
+            BlockNode::Figure(f) => {
+                // The CAPTION first. It was the one part of a figure this walk
+                // never reached, so a caption's inline spans kept line and
+                // column but offsets of 0..0 - which reads as present and
+                // selects nothing, the exact shape section 4 forbids.
+                apply_inline_offsets(&mut f.caption, line_starts);
+                match &mut f.target {
+                    FigureTarget::BlockQuote(q) => {
+                        if let Some(attribution) = &mut q.attribution {
+                            apply_inline_offsets(attribution, line_starts);
+                        }
+                        fill_offsets(&mut q.children, line_starts);
                     }
-                    fill_offsets(&mut q.children, line_starts);
-                }
-                FigureTarget::Paragraph(p) => {
-                    if let Some(pos) = p.pos.as_mut() {
-                        apply_offsets(pos, line_starts);
+                    FigureTarget::Paragraph(p) => {
+                        if let Some(pos) = p.pos.as_mut() {
+                            apply_offsets(pos, line_starts);
+                        }
+                        apply_inline_offsets(&mut p.children, line_starts);
                     }
-                    apply_inline_offsets(&mut p.children, line_starts);
+                    FigureTarget::Table(t) => apply_table_offsets(t, line_starts),
+                    _ => {}
                 }
-                FigureTarget::Table(t) => apply_table_offsets(t, line_starts),
-                _ => {}
-            },
+            }
             _ => {}
         }
     }
@@ -4416,6 +4423,12 @@ fn consume_caption(cur: &mut LineCursor, options: &Options<'_>) -> Option<Vec<In
         return None;
     };
     let mut joined = text.to_string();
+    // One anchor per folded line, the same shape a paragraph builds. The first
+    // entry accounts for the `^ ` marker, which `inline_anchor_for_line`
+    // derives by comparing the full line against the inline text.
+    let mut anchors = options
+        .positions
+        .then(|| vec![inline_anchor_for_line(cur, cur.pos, text)]);
     cur.consume();
     // A caption is multi-line inline content, so it folds following lines like a
     // PARAGRAPH (§10), NOT like a heading: a list marker FOLDS in (djot -- a
@@ -4433,13 +4446,18 @@ fn consume_caption(cur: &mut LineCursor, options: &Options<'_>) -> Option<Vec<In
         }
         joined.push('\n');
         joined.push_str(next);
+        if let Some(anchors) = &mut anchors {
+            anchors.push(inline_anchor_for_line(cur, cur.pos, next));
+        }
         cur.consume();
     }
-    // §756 (NORMATIVE): strip the final line's trailing whitespace only.
-    Some(parse_caption_inline_with_options(
-        trim_ascii_end(&joined),
-        options,
-    ))
+    // §756 (NORMATIVE): strip the final line's trailing whitespace only. This
+    // only shortens the END, so it cannot shift any anchor.
+    let text = trim_ascii_end(&joined);
+    Some(match anchors {
+        Some(anchors) => parse_caption_inline_with_anchor(text, options, anchors),
+        None => parse_caption_inline_with_options(text, options),
+    })
 }
 
 fn is_table_start(line: &str) -> bool {
@@ -4687,7 +4705,17 @@ fn parse_table_row(line: &str, options: &Options<'_>, base: Option<(usize, usize
     let cells = split_table_cells_ranged(content)
         .into_iter()
         .map(|slice| {
-            let mut cell = parse_table_cell(&slice.text, options);
+            // The cell's own start column, which is also the anchor its inline
+            // content is parsed against: the cell text is a verbatim slice of
+            // the row now that the escaped pipe is preserved, so an offset
+            // inside it maps straight back to the document.
+            let cell_anchor = match (base, content_off) {
+                (Some((line_no, stripped)), Some(off)) => {
+                    Some((line_no, stripped + off + slice.start))
+                }
+                _ => None,
+            };
+            let mut cell = parse_table_cell(&slice.text, options, cell_anchor);
             if let (Some((line_no, stripped)), Some(off)) = (base, content_off) {
                 cell.pos = Some(Pos {
                     start_line: line_no,
@@ -4742,11 +4770,19 @@ fn split_table_cells_ranged(content: &str) -> Vec<CellSlice> {
             continue;
         }
         if ch == '\\' {
-            // Only an escaped PIPE is resolved here (so it does not split the
-            // row); every other backslash escape is PRESERVED for the inline
-            // parser to resolve. That keeps a leading `\{` literal rather than
-            // looking like a cell attribute block. Matches carve-js.
+            // An escaped PIPE does not split the row, but the escape is KEPT
+            // rather than resolved here: the inline parser turns it into an
+            // `escaped_text` node, which is what carve-js publishes and what
+            // the vocabulary defines. Resolving it here produced a single
+            // `text` node holding a bare `|`, losing both the node and the
+            // author's intent - and, because the cell text was then no longer
+            // a verbatim slice of the row, nothing inside the cell could carry
+            // a position either (carve-rs#333).
+            //
+            // Every other backslash escape was already preserved for the same
+            // reason; this only makes the pipe consistent with them.
             if chars.peek() == Some(&'|') {
+                buf.push('\\');
                 buf.push('|');
                 chars.next();
                 index += 1;
@@ -4775,7 +4811,31 @@ fn split_table_cells_ranged(content: &str) -> Vec<CellSlice> {
     cells
 }
 
-fn parse_table_cell(cell: &str, options: &Options<'_>) -> TableCell {
+/// Parse a cell's inline content, anchored when the caller knows where the
+/// cell sits in the document.
+///
+/// `slice` must be a SUB-SLICE of `cell` (it always is here: trimming and
+/// marker removal only ever narrow it), so the byte distance between the two
+/// pointers is exact and converts to a char offset without re-scanning.
+fn parse_cell_inlines(
+    cell: &str,
+    slice: &str,
+    options: &Options<'_>,
+    anchor: Option<(usize, usize)>,
+) -> Vec<InlineNode> {
+    let Some((line_no, base_col)) = anchor else {
+        return parse_inline_with_options(slice, options);
+    };
+    let bytes = (slice.as_ptr() as usize).saturating_sub(cell.as_ptr() as usize);
+    let off = cell[..bytes].chars().count();
+    parse_inline_lines_with_anchor(slice, options, vec![Some((line_no, base_col + off))])
+}
+
+fn parse_table_cell(
+    cell: &str,
+    options: &Options<'_>,
+    anchor: Option<(usize, usize)>,
+) -> TableCell {
     // A `{...}` attribute block GLUED to the opening pipe (no leading space)
     // sets the cell's attributes; the rest, after optional whitespace, is the
     // content. `read_attrs_at` is quote-aware and validates the whole payload,
@@ -4791,7 +4851,7 @@ fn parse_table_cell(cell: &str, options: &Options<'_>) -> TableCell {
                 span: None,
                 align: None,
                 attrs: Some(attrs),
-                children: parse_inline_with_options(cell[next..].trim(), options),
+                children: parse_cell_inlines(cell, cell[next..].trim(), options, anchor),
                 // The caller places the cell: it knows where the row line sits.
                 pos: None,
             };
@@ -4839,7 +4899,7 @@ fn parse_table_cell(cell: &str, options: &Options<'_>) -> TableCell {
         children: if span.is_some() {
             Vec::new()
         } else {
-            parse_inline_with_options(text, options)
+            parse_cell_inlines(cell, text, options, anchor)
         },
         pos: None,
     }
@@ -6009,6 +6069,23 @@ fn parse_inline_with_anchor(
 
 fn parse_caption_inline_with_options(text: &str, options: &Options<'_>) -> Vec<InlineNode> {
     parse_inline_context(text, options, true, false, None, 0)
+}
+
+/// A caption's inline content, anchored to the source lines it was folded from.
+///
+/// Separate from `parse_inline_with_anchor` only because a caption may contain
+/// a caption NUMBER placeholder and ordinary inline content may not, so the
+/// two cannot share the flag.
+fn parse_caption_inline_with_anchor(
+    text: &str,
+    options: &Options<'_>,
+    lines: Vec<Option<(usize, usize)>>,
+) -> Vec<InlineNode> {
+    if !options.positions {
+        return parse_caption_inline_with_options(text, options);
+    }
+    let map = InlinePositionMap::new(text, InlineAnchor { lines: &lines });
+    parse_inline_context(text, options, true, false, Some(&map), 0)
 }
 
 fn parse_inline_context(
