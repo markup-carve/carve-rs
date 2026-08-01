@@ -363,6 +363,97 @@ fn from_json_is_bounded_by_the_profile_max_length() {
     assert!(stdout.contains("a short comment"), "{stdout}");
 }
 
+/// Run `f` on a worker thread with an ample stack, like the other worst-case
+/// depth probes (tests/recursion_and_panics.rs): the encoder, the decoder and
+/// the parser all use one native frame per level, and a DEBUG build's frames are
+/// large enough that 200 nested containers do not fit a default test stack. A
+/// release build fits them in 2 MiB, which the release check below pins.
+fn on_big_stack<F: FnOnce() + Send + 'static>(f: F) {
+    std::thread::Builder::new()
+        .stack_size(16 * 1024 * 1024)
+        .spawn(f)
+        .expect("spawn worker")
+        .join()
+        .expect("worker must return, not abort");
+}
+
+fn source_at_parser_cap(shape: &str) -> String {
+    let cap = 200usize;
+    match shape {
+        "div ladder" => {
+            let mut out = String::new();
+            for i in 0..cap {
+                out.push_str(&":".repeat(cap + 2 - i));
+                out.push('\n');
+            }
+            out.push_str("x\n");
+            for i in (0..cap).rev() {
+                out.push_str(&":".repeat(cap + 2 - i));
+                out.push('\n');
+            }
+            out
+        }
+        "blockquotes" => format!("{}x\n", "> ".repeat(cap)),
+        "nested list" => {
+            let mut out = String::new();
+            for i in 0..cap {
+                out.push_str(&" ".repeat(i * 2));
+                out.push_str("- item\n");
+            }
+            out
+        }
+        "table under blockquotes" => {
+            format!("{}\n| =a | =b |\n| 1 | 2 |\n", "> ".repeat(cap))
+        }
+        other => panic!("unknown shape {other}"),
+    }
+}
+
+/// Everything the parser can produce has to survive `to_json` then `from_json`.
+/// The ingest guard bounds JSON STRUCTURAL depth, and it used to do so with the
+/// parser's AST-level cap as the number. One AST level costs two to six
+/// structural levels, so the guard rejected this crate's own output past roughly
+/// 99 nested containers: `carve --json | carve --from-json` failed on a document
+/// `carve` had just parsed.
+#[test]
+fn from_json_accepts_everything_the_parser_can_produce() {
+    on_big_stack(|| {
+        for shape in [
+            "div ladder",
+            "blockquotes",
+            "nested list",
+            "table under blockquotes",
+        ] {
+            let json = carve::to_json(&carve::parse(&source_at_parser_cap(shape)));
+            let decoded = carve::from_json(&json)
+                .unwrap_or_else(|e| panic!("{shape}: parser output must decode, got {e}"));
+            assert_eq!(
+                carve::to_json(&decoded),
+                json,
+                "{shape}: decode must reproduce the encoded AST"
+            );
+        }
+    });
+}
+
+/// The comment on MAX_JSON_DEPTH claims a release build decodes the deepest wire
+/// form the parser can produce inside an ordinary 2 MiB thread stack. Pin it, so
+/// raising the cap again cannot quietly turn a rejection into an abort. Debug
+/// frames are far larger, so the check only runs where the claim is made.
+#[test]
+#[cfg(not(debug_assertions))]
+fn a_release_build_decodes_the_deepest_wire_form_on_a_default_stack() {
+    let json = carve::to_json(&carve::parse(&source_at_parser_cap("nested list")));
+    std::thread::Builder::new()
+        .stack_size(2 * 1024 * 1024)
+        .spawn(move || {
+            carve::from_json(&json).expect("decode on a default-size stack");
+        })
+        .expect("spawn worker")
+        .join()
+        .expect("worker must return, not abort");
+}
+
 #[test]
 fn deeply_nested_json_is_refused_rather_than_overflowing() {
     // The reader is recursive-descent, so nesting depth IS stack depth, and this

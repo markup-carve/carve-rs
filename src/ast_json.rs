@@ -1678,7 +1678,7 @@ impl Json {
     }
 }
 
-/// Deepest container nesting the reader will follow.
+/// Deepest JSON nesting the reader will follow.
 ///
 /// The reader is recursive-descent, so nesting depth is stack depth, and a
 /// document is untrusted input: `[[[[…]]]]` 200000 deep overflowed the stack and
@@ -1687,19 +1687,23 @@ impl Json {
 /// and carve-php).
 ///
 /// The two caps count DIFFERENT THINGS, which is the bug this constant used to
-/// carry (carve-rs#389). The parser's 200 is a NODE depth. This one is a raw
-/// JSON structural depth, and a node costs two of those levels - the object,
-/// then its `children` array - so a budget of 200 admitted only about 99 nested
-/// containers and `from_json` REJECTED ASTs this crate's own `to_json` had just
-/// produced. Measured: 200 containers serialize to a JSON depth of 405, the
-/// ratio converging on 2.02 as the fixed overhead amortizes.
+/// carry (carve-rs#389). The parser's 200 is a NODE depth; this one is a raw
+/// JSON structural depth, and one node costs SEVERAL structural levels.
 ///
-/// So it is derived rather than written down twice. The slack absorbs the
-/// non-container nesting a node carries (`attrs`, `pos`) and keeps this from
-/// sitting exactly on the boundary. Raising the parser's cap raises this one
-/// with it, which is the point - the reader must accept whatever the parser can
+/// How many depends on the node, which is what the first fix got wrong. A div
+/// costs two - its object, then its `children` array - and a bound derived from
+/// that (`* 2 + 16`) covers a div ladder and nested blockquotes. A list costs
+/// four: list, `items`, the item, its `children`. A table costs six. So a
+/// 200-deep LIST ladder reaches 805 and was still rejected: `carve --json |
+/// carve --from-json` failed on a document `carve` had just parsed.
+///
+/// Measured at the parser's cap of 200: div ladder 405, blockquotes 405, table
+/// under blockquotes 402, list ladder 805. The multiplier is the worst node's
+/// cost, so the bound clears the deepest wire form the parser can reach with
+/// room to spare, and stays DERIVED - raising the parser's cap raises this one
+/// with it, which is the point. The reader must accept whatever the parser can
 /// emit, whatever that limit becomes.
-const MAX_JSON_DEPTH: usize = crate::parse::MAX_NESTING_DEPTH * 2 + 16;
+const MAX_JSON_DEPTH: usize = crate::parse::MAX_NESTING_DEPTH * 6 + 16;
 
 struct Parser<'a> {
     input: &'a str,
