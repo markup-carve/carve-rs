@@ -871,3 +871,47 @@ fn an_indented_verse_line_loses_only_its_own_span() {
     };
     assert!(indented.pos.is_none());
 }
+
+/// A trailing `%%` comment is dropped, and the whitespace before it is popped
+/// off the text buffer. That pop used to mark the buffer unplaceable, so every
+/// line ending in a comment lost its text position.
+///
+/// Popping from the END keeps the buffer equal to the source it started at, so
+/// the span is shorter, not wrong.
+#[test]
+fn text_before_a_trailing_comment_keeps_its_span() {
+    let source = "Also visible. %% this tail is a comment\n";
+    let doc = parse_with_positions(source);
+
+    let BlockNode::Paragraph(para) = &doc.children[0] else {
+        panic!("the document is a paragraph");
+    };
+    let carve::ast::InlineNode::Text(text) = &para.children[0] else {
+        panic!("it holds one text node");
+    };
+    let pos = text.pos.expect("the text is placed");
+    assert_eq!(slice(source, pos), "Also visible.");
+    // The span must stop at the text, not run into the dropped comment.
+    assert_eq!(slice(source, pos), text.value);
+}
+
+/// Same for a heading, and for text that follows an inline construct - the
+/// `%%` inside the code span is content, not a comment.
+#[test]
+fn a_comment_after_a_code_span_leaves_both_texts_placed() {
+    let source = "Run `a %% b` then done. %% gone\n";
+    let doc = parse_with_positions(source);
+
+    let BlockNode::Paragraph(para) = &doc.children[0] else {
+        panic!("the document is a paragraph");
+    };
+    let placed: Vec<String> = para
+        .children
+        .iter()
+        .filter_map(|inline| match inline {
+            carve::ast::InlineNode::Text(t) => Some(slice(source, t.pos.expect("text placed"))),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(placed, vec!["Run ", " then done."]);
+}
