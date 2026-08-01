@@ -30,23 +30,29 @@ fn smart_punctuation_text(node: &crate::ast::SmartPunctuation) -> &str {
 /// Render a document to Markdown, honouring `Options::smart_typography`. The
 /// profile transform is applied to `doc` upstream (see `crate::prepare_doc`).
 pub fn render_markdown_with_options(doc: &Document, options: &Options<'_>) -> String {
-    render_markdown_inner(doc, options.smart_typography)
+    render_markdown_inner(doc, options.smart_typography, options.lowercase_heading_ids)
 }
 
 /// Render a document to Markdown with the default settings, so smart
 /// typography renders as its glyph.
 pub fn render_markdown(doc: &Document) -> String {
-    render_markdown_inner(doc, crate::extension::SmartTypographyMode::Glyph)
+    render_markdown_inner(
+        doc,
+        crate::extension::SmartTypographyMode::Glyph,
+        Options::default().lowercase_heading_ids,
+    )
 }
 
 fn render_markdown_inner(
     doc: &Document,
     smart_typography: crate::extension::SmartTypographyMode,
+    lowercase_heading_ids: bool,
 ) -> String {
     SMART_TYPOGRAPHY.with(|cell| cell.set(smart_typography));
     let _abbr_guard = crate::abbr_budget::AbbrBudgetGuard::new(doc.source_len);
     let mut heading_ids = HashSet::new();
     let mut referenced_heading_ids = HashSet::new();
+    let crossref_index = crate::parse::crossref_index_for_document(doc, lowercase_heading_ids);
     // Footnote definition bodies are rendered as block content too, so their
     // headings and crossref links must be part of the heading-id / referenced-id
     // prepass; otherwise a heading referenced only from a footnote loses the
@@ -89,6 +95,10 @@ fn render_markdown_inner(
                             referenced_heading_ids.insert(id.to_string());
                         }
                     }
+                } else if let InlineNode::CrossRef(crossref) = node {
+                    if let Some((id, _)) = crossref_index.resolve(&crossref.target) {
+                        referenced_heading_ids.insert(id.to_string());
+                    }
                 }
             });
         }
@@ -107,6 +117,7 @@ fn render_markdown_inner(
         id_counts: HashMap::new(),
         list_depth: 0,
         defined_footnotes: doc.footnote_defs.keys().cloned().collect(),
+        crossref_index,
     };
     let out = render_blocks(&doc.children, &mut ctx, 0);
     let footnotes = render_footnote_defs(doc, &mut ctx);
@@ -125,6 +136,7 @@ struct MarkdownContext {
     /// numbering, so that field is always None here and there was nothing to
     /// check (carve#352).
     defined_footnotes: std::collections::BTreeSet<String>,
+    crossref_index: crate::parse::CrossrefIndex,
 }
 
 fn render_block_inlines(nodes: &[InlineNode], ctx: &mut MarkdownContext) -> String {
@@ -665,7 +677,28 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
         // (carve#352, corpus 33-editorial-markup); plain and ANSI were fixed in
         // carve-rs#322.
         InlineNode::CriticComment(c) => escape_text(&strip_controls(&c.text)),
-        InlineNode::CrossRef(crossref) => format!("</#{}>", strip_controls(&crossref.target)),
+        // A RESOLVED cross-reference is a link to that target, so it renders as
+        // one - `[Title](#id)` - under exactly the condition `render_link` uses:
+        // only when this target will EMIT that id. A Markdown heading carries
+        // `{#id}`; an image or a table does not, so a reference to a numbered
+        // figure would produce a link to a fragment that is not in the output.
+        // There the title alone is the honest rendering, which is what the
+        // `numbered-figure-crossref` fixture pins.
+        //
+        // Emitting only the title in BOTH cases would silently drop every
+        // heading link from the Markdown export - the mistake this arm was first
+        // written with.
+        InlineNode::CrossRef(crossref) => match ctx.crossref_index.resolve(&crossref.target) {
+            Some((id, title)) => {
+                let title = escape_text(&strip_controls(title));
+                if ctx.heading_ids.contains(id) {
+                    format!("[{title}](#{})", strip_controls(id))
+                } else {
+                    title
+                }
+            }
+            None => format!("</#{}>", strip_controls(&crossref.target)),
+        },
         // Tier-2 ext node; the core renderer has no numbering, so emit the source.
         InlineNode::CitationGroup(group) => strip_controls(&group.raw),
         InlineNode::CaptionNumber(number) => number

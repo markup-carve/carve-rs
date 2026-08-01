@@ -32,6 +32,10 @@ pub fn render_html_with_options(doc: &Document, options: &Options<'_>) -> String
         crate::document_ids::DocumentIdsGuard::new(&doc, options.lowercase_heading_ids);
     let mut state = RenderState {
         lowercase_heading_ids: options.lowercase_heading_ids,
+        crossref_index: crate::parse::crossref_index_for_document(
+            &doc,
+            options.lowercase_heading_ids,
+        ),
         ..RenderState::default()
     };
     let footnotes = collect_footnotes(&mut doc);
@@ -146,6 +150,8 @@ fn render_blocks(
 #[derive(Default)]
 pub(crate) struct RenderState {
     heading_counts: BTreeMap<String, usize>,
+    crossref_index: crate::parse::CrossrefIndex,
+    link_depth: usize,
     /// Mirrors `Options::lowercase_heading_ids` so the `<section id>` derived
     /// here matches the parse-time id index (and the resolved cross-ref hrefs).
     lowercase_heading_ids: bool,
@@ -500,7 +506,7 @@ fn render_footnotes_section(
         if let Some(inline) = &entry.inline {
             out.push('\n');
             out.push_str("      <p>");
-            render_inlines(&mut out, inline, options);
+            render_inlines(&mut out, inline, options, state);
             out.push_str(&render_backlinks(&entry.backrefs));
             out.push_str("</p>");
         } else if let Some(label) = &entry.label {
@@ -566,7 +572,7 @@ fn render_section(
     let section_id = next_heading_id(heading, state);
     indent(out, level);
     out.push_str(&format!("<section id=\"{}\">\n", escape_attr(&section_id)));
-    render_heading_without_section_id(out, heading, level + 1, options);
+    render_heading_without_section_id(out, heading, level + 1, options, state);
     let mut i = start + 1;
     while i < nodes.len() {
         if let BlockNode::Heading(next) = &nodes[i] {
@@ -605,11 +611,11 @@ fn render_block(
     }
     match node {
         BlockNode::Heading(h) => render_heading(out, h, level, options, state),
-        BlockNode::Paragraph(p) => render_paragraph(out, p, level, options),
+        BlockNode::Paragraph(p) => render_paragraph(out, p, level, options, state),
         BlockNode::CodeBlock(c) => render_code_block(out, c, level),
         BlockNode::List(l) => render_list(out, l, level, options, state),
         BlockNode::BlockQuote(b) => render_blockquote(out, b, level, options, state),
-        BlockNode::Table(t) => render_table(out, t, level, options),
+        BlockNode::Table(t) => render_table(out, t, level, options, state),
         BlockNode::Admonition(a) => render_admonition(out, a, level, options, state),
         BlockNode::Div(d) => render_div(out, d, level, options, state),
         BlockNode::LineBlock(lb) => render_line_block(out, lb, level, options, state),
@@ -662,7 +668,7 @@ fn render_heading(
     out.push('"');
     out.push_str(&render_attrs_without_id(&h.attrs));
     out.push('>');
-    render_inlines(out, &h.children, options);
+    render_inlines(out, &h.children, options, state);
     write!(out, "</h{}>", h.level).unwrap();
 }
 
@@ -671,6 +677,7 @@ fn render_heading_without_section_id(
     h: &Heading,
     level: usize,
     options: &Options<'_>,
+    state: &mut RenderState,
 ) {
     let mut attrs = h.attrs.clone();
     if let Some(attrs) = &mut attrs {
@@ -680,7 +687,7 @@ fn render_heading_without_section_id(
     write!(out, "<h{}", h.level).unwrap();
     write_attrs(out, &attrs);
     out.push('>');
-    render_inlines(out, &h.children, options);
+    render_inlines(out, &h.children, options, state);
     write!(out, "</h{}>", h.level).unwrap();
 }
 
@@ -760,12 +767,18 @@ fn slugify(text: &str, lowercase: bool) -> String {
     crate::parse::slugify_parse(text, lowercase)
 }
 
-fn render_paragraph(out: &mut String, p: &Paragraph, level: usize, options: &Options<'_>) {
+fn render_paragraph(
+    out: &mut String,
+    p: &Paragraph,
+    level: usize,
+    options: &Options<'_>,
+    state: &mut RenderState,
+) {
     indent(out, level);
     out.push_str("<p");
     write_attrs(out, &p.attrs);
     out.push('>');
-    render_inlines(out, &p.children, options);
+    render_inlines(out, &p.children, options, state);
     out.push_str("</p>");
 }
 
@@ -873,7 +886,7 @@ fn render_list_item(
         .map(|child| {
             if let BlockNode::Paragraph(p) = child {
                 let mut html = String::new();
-                render_inlines(&mut html, &p.children, options);
+                render_inlines(&mut html, &p.children, options, state);
                 if tight {
                     Part::Inline(html)
                 } else {
@@ -941,7 +954,7 @@ fn render_blockquote(
             out.push_str("><p");
             write_attrs(out, &p.attrs);
             out.push('>');
-            render_inlines(out, &p.children, options);
+            render_inlines(out, &p.children, options, state);
             out.push_str("</p></blockquote>");
             return;
         }
@@ -962,7 +975,13 @@ fn render_blockquote(
     out.push_str("</blockquote>");
 }
 
-fn render_table(out: &mut String, t: &Table, level: usize, options: &Options<'_>) {
+fn render_table(
+    out: &mut String,
+    t: &Table,
+    level: usize,
+    options: &Options<'_>,
+    state: &mut RenderState,
+) {
     indent(out, level);
     out.push_str("<table");
     write_attrs(out, &t.attrs);
@@ -971,7 +990,7 @@ fn render_table(out: &mut String, t: &Table, level: usize, options: &Options<'_>
         out.push('\n');
         indent(out, level + 1);
         out.push_str("<caption>");
-        render_inlines(out, caption, options);
+        render_inlines(out, caption, options, state);
         out.push_str("</caption>");
     }
     // The leading run of rows whose cells are ALL header cells forms <thead>.
@@ -992,7 +1011,7 @@ fn render_table(out: &mut String, t: &Table, level: usize, options: &Options<'_>
         indent(out, level + 1);
         out.push_str("<thead>");
         for (row_idx, header) in t.rows[..header_count].iter().enumerate() {
-            render_table_row(out, header, true, options, row_idx, &rowspan_cols);
+            render_table_row(out, header, true, options, row_idx, &rowspan_cols, state);
         }
         out.push_str("</thead>");
     }
@@ -1002,10 +1021,17 @@ fn render_table(out: &mut String, t: &Table, level: usize, options: &Options<'_>
         out.push('\n');
         indent(out, level + 1);
         out.push_str("<tbody>");
+        let mut body_ctx = TableBodyRenderContext {
+            rowspan_cols: &rowspan_cols,
+            orphan_carets: &orphan_carets,
+            table: t,
+            options,
+            state,
+        };
         for (row_idx, row) in t.rows.iter().enumerate().skip(body_start) {
             out.push('\n');
             indent(out, level + 2);
-            render_table_body_row(out, row, row_idx, &rowspan_cols, &orphan_carets, t, options);
+            render_table_body_row(out, row, row_idx, &mut body_ctx);
         }
         out.push('\n');
         indent(out, level + 1);
@@ -1023,6 +1049,7 @@ fn render_table_row(
     options: &Options<'_>,
     row_idx: usize,
     rowspan_cols: &BTreeMap<(usize, usize), usize>,
+    state: &mut RenderState,
 ) {
     out.push_str("<tr");
     write_attrs(out, &row.attrs);
@@ -1051,7 +1078,7 @@ fn render_table_row(
         out.push_str(&extra);
         out.push_str(&align);
         out.push('>');
-        render_inlines(out, &cell.children, options);
+        render_inlines(out, &cell.children, options, state);
         out.push_str("</");
         out.push_str(tag);
         out.push('>');
@@ -1059,25 +1086,30 @@ fn render_table_row(
     out.push_str("</tr>");
 }
 
+struct TableBodyRenderContext<'a, 'b> {
+    rowspan_cols: &'a BTreeMap<(usize, usize), usize>,
+    orphan_carets: &'a BTreeSet<(usize, usize)>,
+    table: &'a Table,
+    options: &'a Options<'a>,
+    state: &'b mut RenderState,
+}
+
 fn render_table_body_row(
     out: &mut String,
     row: &TableRow,
     source_row_idx: usize,
-    rowspan_cols: &BTreeMap<(usize, usize), usize>,
-    orphan_carets: &BTreeSet<(usize, usize)>,
-    table: &Table,
-    options: &Options<'_>,
+    ctx: &mut TableBodyRenderContext<'_, '_>,
 ) {
     out.push_str("<tr");
     write_attrs(out, &row.attrs);
     out.push('>');
-    let consumed_cols = consumed_rowspan_cols(source_row_idx, rowspan_cols);
+    let consumed_cols = consumed_rowspan_cols(source_row_idx, ctx.rowspan_cols);
     let colspan_counts = compute_colspans(row, &consumed_cols);
     for (cell_index, cell) in row.cells.iter().enumerate() {
         if cell.span == Some(TableCellSpan::Rowspan) {
             // A `^` that merged into a cell above renders nothing; one with
             // nothing to extend (no cell above) renders an EMPTY cell (§5).
-            if orphan_carets.contains(&(source_row_idx, cell_index)) {
+            if ctx.orphan_carets.contains(&(source_row_idx, cell_index)) {
                 let tag = if cell.header { "th" } else { "td" };
                 write!(out, "<{tag}></{tag}>").unwrap();
             }
@@ -1085,7 +1117,7 @@ fn render_table_body_row(
         }
         let mut attrs = String::new();
         let mut emitted: Vec<&str> = Vec::new();
-        if let Some(span) = rowspan_cols.get(&(source_row_idx, cell_index)) {
+        if let Some(span) = ctx.rowspan_cols.get(&(source_row_idx, cell_index)) {
             attrs.push_str(&format!(" rowspan=\"{}\"", span));
             emitted.push("rowspan");
         }
@@ -1104,7 +1136,10 @@ fn render_table_body_row(
             attrs.push_str(&format!(" colspan=\"{}\"", colspan));
             emitted.push("colspan");
         }
-        if let Some(align) = cell.align.or_else(|| table_column_align(table, cell_index)) {
+        if let Some(align) = cell
+            .align
+            .or_else(|| table_column_align(ctx.table, cell_index))
+        {
             attrs.push_str(&align_attr(align));
             emitted.push("style");
         }
@@ -1115,7 +1150,7 @@ fn render_table_body_row(
         out.push_str(&render_cell_author_attrs(&cell.attrs, &emitted));
         out.push_str(&attrs);
         out.push('>');
-        render_inlines(out, &cell.children, options);
+        render_inlines(out, &cell.children, ctx.options, ctx.state);
         out.push_str("</");
         out.push_str(tag);
         out.push('>');
@@ -1321,7 +1356,7 @@ fn render_admonition(
         out.push('\n');
         indent(out, level + 1);
         out.push_str("<p class=\"admonition-title\">");
-        render_inlines(out, title, options);
+        render_inlines(out, title, options, state);
         out.push_str("</p>");
     }
     // Graceful degradation: when no extension consumed the grouping `[label]`,
@@ -1413,7 +1448,7 @@ fn render_definition_list(
     d: &DefinitionList,
     level: usize,
     options: &Options<'_>,
-    _state: &mut RenderState,
+    state: &mut RenderState,
 ) {
     indent(out, level);
     out.push_str(&format!("<dl{}>", render_attrs(&d.attrs)));
@@ -1422,7 +1457,7 @@ fn render_definition_list(
             out.push('\n');
             indent(out, level + 1);
             out.push_str(&format!("<dt{}>", render_attrs(&term.attrs)));
-            render_inlines(out, term, options);
+            render_inlines(out, term, options, state);
             out.push_str("</dt>");
         }
         for def in &item.definitions {
@@ -1431,7 +1466,7 @@ fn render_definition_list(
             if def.len() == 1 {
                 if let BlockNode::Paragraph(p) = &def[0] {
                     out.push_str(&format!("<dd{}>", render_attrs(&def.attrs)));
-                    render_inlines(out, &p.children, options);
+                    render_inlines(out, &p.children, options, state);
                     out.push_str("</dd>");
                     continue;
                 }
@@ -1439,7 +1474,7 @@ fn render_definition_list(
             out.push_str(&format!("<dd{}>", render_attrs(&def.attrs)));
             for block in def {
                 out.push('\n');
-                render_block(out, block, level + 2, options, _state);
+                render_block(out, block, level + 2, options, state);
             }
             out.push('\n');
             indent(out, level + 1);
@@ -1467,7 +1502,7 @@ fn render_figure(
             render_image(out, img);
         }
         FigureTarget::BlockQuote(b) => render_blockquote(out, b, level + 1, options, state),
-        FigureTarget::Table(t) => render_table(out, t, level + 1, options),
+        FigureTarget::Table(t) => render_table(out, t, level + 1, options, state),
         FigureTarget::CodeBlock(cb) => render_block(
             out,
             &BlockNode::CodeBlock(cb.clone()),
@@ -1486,7 +1521,7 @@ fn render_figure(
     out.push('\n');
     indent(out, level + 1);
     out.push_str("<figcaption>");
-    render_inlines(out, &f.caption, options);
+    render_inlines(out, &f.caption, options, state);
     out.push_str("</figcaption>");
     out.push('\n');
     indent(out, level);
@@ -1551,17 +1586,31 @@ fn render_image(out: &mut String, img: &Image) {
 
 pub(crate) fn render_inlines_with_options(nodes: &[InlineNode], options: &Options<'_>) -> String {
     let mut out = String::new();
-    render_inlines(&mut out, nodes, options);
+    let mut state = RenderState {
+        lowercase_heading_ids: options.lowercase_heading_ids,
+        ..RenderState::default()
+    };
+    render_inlines(&mut out, nodes, options, &mut state);
     out
 }
 
-fn render_inlines(out: &mut String, nodes: &[InlineNode], options: &Options<'_>) {
-    render_inlines_stateful(out, nodes, options);
+fn render_inlines(
+    out: &mut String,
+    nodes: &[InlineNode],
+    options: &Options<'_>,
+    state: &mut RenderState,
+) {
+    render_inlines_stateful(out, nodes, options, state);
 }
 
-fn render_inlines_stateful(out: &mut String, nodes: &[InlineNode], options: &Options<'_>) {
+fn render_inlines_stateful(
+    out: &mut String,
+    nodes: &[InlineNode],
+    options: &Options<'_>,
+    state: &mut RenderState,
+) {
     for node in nodes {
-        render_inline_after(out, node, options);
+        render_inline_after(out, node, options, state);
     }
 }
 
@@ -1598,7 +1647,12 @@ fn write_escaped_text_nbsp(out: &mut String, input: &str) {
     out.push_str(&input[start..]);
 }
 
-fn render_inline_after(out: &mut String, node: &InlineNode, options: &Options<'_>) {
+fn render_inline_after(
+    out: &mut String,
+    node: &InlineNode,
+    options: &Options<'_>,
+    state: &mut RenderState,
+) {
     match node {
         InlineNode::Text(s) => {
             // Escape `& < >` AND fold U+00A0 to `&nbsp;` in a single pass over
@@ -1611,7 +1665,7 @@ fn render_inline_after(out: &mut String, node: &InlineNode, options: &Options<'_
             write_escaped_text_nbsp(out, &s.value.replace(crate::ESCAPED_CARET_PLACEHOLDER, "^"));
         }
         InlineNode::SmartPunctuation(s) => write_escaped_text_nbsp(out, smart_punctuation_glyph(s)),
-        InlineNode::Emphasis(e) => render_emphasis(out, e, options),
+        InlineNode::Emphasis(e) => render_emphasis(out, e, options, state),
         InlineNode::Code(s) => {
             out.push_str("<code");
             write_attrs(out, &s.attrs);
@@ -1622,13 +1676,13 @@ fn render_inline_after(out: &mut String, node: &InlineNode, options: &Options<'_
             write_escaped_text_nbsp(out, &s.value);
             out.push_str("</code>");
         }
-        InlineNode::Link(l) => render_link(out, l, options),
+        InlineNode::Link(l) => render_link(out, l, options, state),
         InlineNode::Image(img) => render_image(out, img),
         InlineNode::Span(s) => {
             out.push_str("<span");
             write_attrs(out, &s.attrs);
             out.push('>');
-            render_inlines_stateful(out, &s.children, options);
+            render_inlines_stateful(out, &s.children, options, state);
             out.push_str("</span>");
         }
         InlineNode::Math(m) => {
@@ -1721,11 +1775,19 @@ fn render_inline_after(out: &mut String, node: &InlineNode, options: &Options<'_
             out.push_str("</a>");
         }
         InlineNode::CrossRef(c) => {
-            out.push_str("<a href=\"#");
-            write_escaped_attr(out, &c.target);
-            out.push_str("\">");
-            write_escaped_text(out, &c.target);
-            out.push_str("</a>");
+            if let Some((actual_id, title)) = state.crossref_index.resolve(&c.target) {
+                if state.link_depth == 0 {
+                    out.push_str("<a href=\"#");
+                    write_escaped_attr(out, actual_id);
+                    out.push_str("\">");
+                    write_escaped_text(out, title);
+                    out.push_str("</a>");
+                } else {
+                    write_escaped_text(out, title);
+                }
+            } else {
+                write_escaped_text(out, &format!("</#{}>", c.target));
+            }
         }
         InlineNode::CaptionNumber(n) => {
             if let Some(number) = n.number {
@@ -1764,8 +1826,8 @@ fn render_inline_after(out: &mut String, node: &InlineNode, options: &Options<'_
                 out.push_str("</strong></span>");
             }
         }
-        InlineNode::CitationGroup(g) => render_citation_group(out, g, options),
-        InlineNode::Extension(e) => render_inline_extension(out, e, options),
+        InlineNode::CitationGroup(g) => render_citation_group(out, g, options, state),
+        InlineNode::Extension(e) => render_inline_extension(out, e, options, state),
         InlineNode::Abbreviation(a) => {
             // Bound cumulative expansion bytes: once the budget is exhausted,
             // degrade to plain key text (no `<abbr>`, no title) so a large
@@ -1797,14 +1859,14 @@ fn render_inline_after(out: &mut String, node: &InlineNode, options: &Options<'_
             out.push_str("<ins");
             write_attrs(out, &c.attrs);
             out.push('>');
-            render_inlines_stateful(out, &c.children, options);
+            render_inlines_stateful(out, &c.children, options, state);
             out.push_str("</ins>");
         }
         InlineNode::CriticDelete(c) => {
             out.push_str("<del");
             write_attrs(out, &c.attrs);
             out.push('>');
-            render_inlines_stateful(out, &c.children, options);
+            render_inlines_stateful(out, &c.children, options, state);
             out.push_str("</del>");
         }
         InlineNode::CriticSubstitute(c) => {
@@ -1821,7 +1883,12 @@ fn render_inline_after(out: &mut String, node: &InlineNode, options: &Options<'_
     }
 }
 
-fn render_citation_group(out: &mut String, g: &CitationGroup, options: &Options<'_>) {
+fn render_citation_group(
+    out: &mut String,
+    g: &CitationGroup,
+    options: &Options<'_>,
+    state: &mut RenderState,
+) {
     if g.items.iter().any(|item| item.label.is_none()) {
         out.push_str(&escape_text(&g.raw));
         return;
@@ -1838,7 +1905,7 @@ fn render_citation_group(out: &mut String, g: &CitationGroup, options: &Options<
                 if idx > 0 {
                     out.push_str(", ");
                 }
-                render_citation_item(out, item, options);
+                render_citation_item(out, item, options, state);
             }
             out.push(']');
         }
@@ -1848,7 +1915,7 @@ fn render_citation_group(out: &mut String, g: &CitationGroup, options: &Options<
                 if idx > 0 {
                     out.push_str("; ");
                 }
-                render_citation_item(out, item, options);
+                render_citation_item(out, item, options, state);
             }
             out.push(')');
         }
@@ -1878,9 +1945,14 @@ fn flatten_text(nodes: &[InlineNode]) -> String {
     out
 }
 
-fn render_citation_item(out: &mut String, item: &Citation, options: &Options<'_>) {
+fn render_citation_item(
+    out: &mut String,
+    item: &Citation,
+    options: &Options<'_>,
+    state: &mut RenderState,
+) {
     if let Some(prefix) = &item.prefix {
-        render_inlines(out, prefix, options);
+        render_inlines(out, prefix, options, state);
         out.push(' ');
     }
 
@@ -1927,7 +1999,7 @@ fn render_citation_item(out: &mut String, item: &Citation, options: &Options<'_>
     }
     if let Some(locator) = &item.locator {
         out.push_str(", ");
-        render_inlines(out, locator, options);
+        render_inlines(out, locator, options, state);
     }
 }
 
@@ -1943,7 +2015,7 @@ fn percent_encode(input: &str) -> String {
     out
 }
 
-fn render_emphasis(out: &mut String, e: &Emphasis, options: &Options<'_>) {
+fn render_emphasis(out: &mut String, e: &Emphasis, options: &Options<'_>, state: &mut RenderState) {
     let (open, close) = match e.kind {
         EmphasisKind::Italic => ("em", "em"),
         EmphasisKind::Strong => ("strong", "strong"),
@@ -1956,16 +2028,16 @@ fn render_emphasis(out: &mut String, e: &Emphasis, options: &Options<'_>) {
     };
     if e.kind == EmphasisKind::BoldItalic {
         out.push_str(open);
-        render_inlines_stateful(out, &e.children, options);
+        render_inlines_stateful(out, &e.children, options, state);
         out.push_str(close);
     } else {
         out.push_str(&format!("<{}{}>", open, render_attrs(&e.attrs)));
-        render_inlines_stateful(out, &e.children, options);
+        render_inlines_stateful(out, &e.children, options, state);
         out.push_str(&format!("</{}>", close));
     }
 }
 
-fn render_link(out: &mut String, l: &Link, options: &Options<'_>) {
+fn render_link(out: &mut String, l: &Link, options: &Options<'_>, state: &mut RenderState) {
     out.push_str(&format!(
         "<a href=\"{}\"{}",
         escape_attr(&sanitize_url(&l.href)),
@@ -1975,11 +2047,18 @@ fn render_link(out: &mut String, l: &Link, options: &Options<'_>) {
         out.push_str(&format!(" title=\"{}\"", escape_attr(title)));
     }
     out.push('>');
-    render_inlines_stateful(out, &l.children, options);
+    state.link_depth += 1;
+    render_inlines_stateful(out, &l.children, options, state);
+    state.link_depth -= 1;
     out.push_str("</a>");
 }
 
-fn render_inline_extension(out: &mut String, node: &InlineExtension, options: &Options<'_>) {
+fn render_inline_extension(
+    out: &mut String,
+    node: &InlineExtension,
+    options: &Options<'_>,
+    state: &mut RenderState,
+) {
     let ctx = RenderContext::new(options);
     for ext in &options.extensions {
         if let Some(html) = ext.render_inline_extension(node, &ctx) {
@@ -1995,7 +2074,7 @@ fn render_inline_extension(out: &mut String, node: &InlineExtension, options: &O
     ];
     if SEMANTIC_TAGS.contains(&node.name.as_str()) {
         out.push_str(&format!("<{}{}>", node.name, render_attrs(&node.attrs)));
-        render_inlines_stateful(out, &node.children, options);
+        render_inlines_stateful(out, &node.children, options, state);
         out.push_str(&format!("</{}>", node.name));
         return;
     }
@@ -2014,7 +2093,7 @@ fn render_inline_extension(out: &mut String, node: &InlineExtension, options: &O
         None => (base, String::new()),
     };
     out.push_str(&format!("<span class=\"{}\"{}>", escape_attr(&class), rest));
-    render_inlines_stateful(out, &node.children, options);
+    render_inlines_stateful(out, &node.children, options, state);
     out.push_str("</span>");
 }
 

@@ -162,7 +162,7 @@ fn parse_with_options_mode(source: &str, options: &Options<'_>, mode: ParseMode)
     );
     if matches!(mode, ParseMode::Html) {
         apply_abbreviations(&mut doc);
-        resolve_crossrefs(&mut doc, options.lowercase_heading_ids);
+        number_crossref_captions(&mut doc);
         // A resolved reference image lands as a one-image paragraph (the
         // syntactic block-image check ran before resolution); promote it to a
         // block image like a standalone direct image, matching carve-php.
@@ -8841,7 +8841,16 @@ fn is_word_boundary(text: &str, pos: usize) -> bool {
         || !text.as_bytes()[pos].is_ascii_alphanumeric()
 }
 
-fn resolve_crossrefs(doc: &mut Document, lowercase_ids: bool) {
+fn number_crossref_captions(doc: &mut Document) {
+    let mut caption_counts = BTreeMap::new();
+    let mut titles = BTreeMap::new();
+    number_captioned_blocks(&mut doc.children, &mut caption_counts, &mut titles);
+    for blocks in doc.footnote_defs.values_mut() {
+        number_captioned_blocks(blocks, &mut caption_counts, &mut titles);
+    }
+}
+
+pub(crate) fn crossref_index_for_document(doc: &Document, lowercase_ids: bool) -> CrossrefIndex {
     let mut counts = BTreeMap::new();
     let mut titles = BTreeMap::new();
     let mut explicit_ids = std::collections::BTreeSet::new();
@@ -8865,20 +8874,11 @@ fn resolve_crossrefs(doc: &mut Document, lowercase_ids: bool) {
             &explicit_ids,
         );
     }
-    let mut caption_counts = BTreeMap::new();
-    number_captioned_blocks(&mut doc.children, &mut caption_counts, &mut titles);
-    for blocks in doc.footnote_defs.values_mut() {
-        number_captioned_blocks(blocks, &mut caption_counts, &mut titles);
+    collect_caption_titles(&doc.children, &mut titles);
+    for blocks in doc.footnote_defs.values() {
+        collect_caption_titles(blocks, &mut titles);
     }
-    let index = crossref_index(titles);
-    for block in &mut doc.children {
-        resolve_crossrefs_block(block, &index);
-    }
-    for blocks in doc.footnote_defs.values_mut() {
-        for block in blocks {
-            resolve_crossrefs_block(block, &index);
-        }
-    }
+    crossref_index(titles)
 }
 
 fn heading_index(
@@ -8928,7 +8928,8 @@ fn crossref_index(titles: BTreeMap<String, String>) -> CrossrefIndex {
 /// Heading-id lookup table for `</#id>` cross-references: exact id -> title,
 /// plus a case-folded fallback (folded id -> actual case-preserved id) so a
 /// lowercase reference resolves to a case-preserved heading.
-struct CrossrefIndex {
+#[derive(Default)]
+pub(crate) struct CrossrefIndex {
     titles: BTreeMap<String, String>,
     folded: BTreeMap<String, String>,
 }
@@ -8936,7 +8937,7 @@ struct CrossrefIndex {
 impl CrossrefIndex {
     /// Resolve a cross-reference target to its `(actual_id, title)`. Tries an
     /// exact match first, then a case-folded fallback (first-occurrence wins).
-    fn resolve(&self, target: &str) -> Option<(&str, &str)> {
+    pub(crate) fn resolve(&self, target: &str) -> Option<(&str, &str)> {
         if let Some((id, title)) = self.titles.get_key_value(target) {
             return Some((id.as_str(), title.as_str()));
         }
@@ -9641,126 +9642,32 @@ fn number_caption(
     }
 }
 
-fn resolve_crossrefs_block(block: &mut BlockNode, index: &CrossrefIndex) {
-    match block {
-        BlockNode::Heading(h) => resolve_crossrefs_inline(&mut h.children, index),
-        BlockNode::Paragraph(p) => resolve_crossrefs_inline(&mut p.children, index),
-        BlockNode::List(l) => {
-            for item in &mut l.items {
-                for child in &mut item.children {
-                    resolve_crossrefs_block(child, index);
+fn collect_caption_titles(blocks: &[BlockNode], titles: &mut BTreeMap<String, String>) {
+    for block in blocks {
+        match block {
+            BlockNode::Table(t) => collect_table_caption_title(t, titles),
+            BlockNode::Figure(f) => {
+                collect_caption_title(&f.caption, f.attrs.as_ref(), titles);
+                match &f.target {
+                    FigureTarget::BlockQuote(b) => collect_caption_titles(&b.children, titles),
+                    FigureTarget::Table(t) => collect_table_caption_title(t, titles),
+                    FigureTarget::Image(_)
+                    | FigureTarget::CodeBlock(_)
+                    | FigureTarget::Paragraph(_) => {}
                 }
             }
-        }
-        BlockNode::BlockQuote(b) => {
-            for child in &mut b.children {
-                resolve_crossrefs_block(child, index);
-            }
-        }
-        BlockNode::Admonition(a) => {
-            for child in &mut a.children {
-                resolve_crossrefs_block(child, index);
-            }
-        }
-        BlockNode::Div(d) => {
-            for child in &mut d.children {
-                resolve_crossrefs_block(child, index);
-            }
-        }
-        BlockNode::DefinitionList(d) => {
-            for item in &mut d.items {
-                for term in &mut item.terms {
-                    resolve_crossrefs_inline(term, index);
-                }
-                for definition in &mut item.definitions {
-                    for child in definition {
-                        resolve_crossrefs_block(child, index);
-                    }
+            BlockNode::List(l) => {
+                for item in &l.items {
+                    collect_caption_titles(&item.children, titles);
                 }
             }
-        }
-        BlockNode::Table(t) => {
-            if let Some(caption) = &mut t.caption {
-                resolve_crossrefs_inline(caption, index);
-            }
-            for row in &mut t.rows {
-                for cell in &mut row.cells {
-                    resolve_crossrefs_inline(&mut cell.children, index);
-                }
-            }
-        }
-        BlockNode::Figure(f) => {
-            resolve_crossrefs_inline(&mut f.caption, index);
-            match &mut f.target {
-                FigureTarget::BlockQuote(b) => {
-                    for child in &mut b.children {
-                        resolve_crossrefs_block(child, index);
-                    }
-                }
-                FigureTarget::Table(t) => {
-                    if let Some(caption) = &mut t.caption {
-                        resolve_crossrefs_inline(caption, index);
-                    }
-                    for row in &mut t.rows {
-                        for cell in &mut row.cells {
-                            resolve_crossrefs_inline(&mut cell.children, index);
-                        }
-                    }
-                }
-                FigureTarget::Image(_)
-                | FigureTarget::CodeBlock(_)
-                | FigureTarget::Paragraph(_) => {}
-            }
-        }
-        _ => {}
-    }
-}
-
-fn resolve_crossrefs_inline(nodes: &mut Vec<InlineNode>, index: &CrossrefIndex) {
-    for node in nodes {
-        match node {
-            InlineNode::CrossRef(c) => {
-                // `</#id>` is a real span in the source, and resolving it only
-                // changes what the node IS - not where it sits. Both arms below
-                // rebuilt the node from scratch and dropped it.
-                let at = c.pos;
-                if let Some((actual_id, title)) = index.resolve(&c.target) {
-                    // The href uses the ACTUAL (case-preserved) heading id, even
-                    // when the reference matched only via the case-fold fallback.
-                    *node = InlineNode::Link(Link {
-                        attrs: None,
-                        href: format!("#{actual_id}"),
-                        title: None,
-                        // The display text is the HEADING's, pulled from
-                        // elsewhere in the document, so no span here equals it -
-                        // `</#some-title>` does not contain "Some Title". It
-                        // stays unplaced rather than borrowing the link's.
-                        children: vec![InlineNode::text(title.to_string())],
-                        ref_label: None,
-                        raw_ref: None,
-                        from_crossref: true,
-                        pos: at,
-                    });
-                } else {
-                    // Unknown heading id: the cross-reference stays literal text.
-                    // That text is the source verbatim, so the span still holds.
-                    *node = InlineNode::Text(Text {
-                        value: format!("</#{}>", c.target),
-                        pos: at,
-                    });
-                }
-            }
-            InlineNode::Emphasis(e) => resolve_crossrefs_inline(&mut e.children, index),
-            InlineNode::Link(l) => resolve_crossrefs_inline(&mut l.children, index),
-            InlineNode::Span(s) => resolve_crossrefs_inline(&mut s.children, index),
-            InlineNode::Extension(e) => resolve_crossrefs_inline(&mut e.children, index),
-            InlineNode::CitationGroup(g) => {
-                for item in &mut g.items {
-                    if let Some(prefix) = &mut item.prefix {
-                        resolve_crossrefs_inline(prefix, index);
-                    }
-                    if let Some(locator) = &mut item.locator {
-                        resolve_crossrefs_inline(locator, index);
+            BlockNode::BlockQuote(b) => collect_caption_titles(&b.children, titles),
+            BlockNode::Admonition(a) => collect_caption_titles(&a.children, titles),
+            BlockNode::Div(d) => collect_caption_titles(&d.children, titles),
+            BlockNode::DefinitionList(d) => {
+                for item in &d.items {
+                    for definition in &item.definitions {
+                        collect_caption_titles(definition, titles);
                     }
                 }
             }
@@ -9769,13 +9676,44 @@ fn resolve_crossrefs_inline(nodes: &mut Vec<InlineNode>, index: &CrossrefIndex) 
     }
 }
 
+fn collect_table_caption_title(table: &Table, titles: &mut BTreeMap<String, String>) {
+    if let Some(caption) = &table.caption {
+        collect_caption_title(caption, table.attrs.as_ref(), titles);
+    }
+}
+
+fn collect_caption_title(
+    caption: &[InlineNode],
+    attrs: Option<&Attrs>,
+    titles: &mut BTreeMap<String, String>,
+) {
+    let Some(idx) = caption
+        .iter()
+        .position(|node| matches!(node, InlineNode::CaptionNumber(_)))
+    else {
+        return;
+    };
+    let Some(number) = caption.get(idx).and_then(|node| match node {
+        InlineNode::CaptionNumber(n) => n.number,
+        _ => None,
+    }) else {
+        return;
+    };
+    if let Some(id) = attrs.and_then(|attrs| attrs.id.as_ref()) {
+        let label = plain_inlines_parse(&caption[..idx])
+            .trim_end_matches(char::is_whitespace)
+            .to_string();
+        titles
+            .entry(id.clone())
+            .or_insert_with(|| format!("{label} {number}"));
+    }
+}
+
 /// Enforce "links never nest" (CommonMark: a link may not contain another
 /// link). This is a single post-resolution pass: it runs AFTER reference-link
-/// and cross-reference resolution because both turn into `Link` nodes only at
-/// that stage, so a `</#id>` cross-reference or a resolved reference inside a
-/// link's text would otherwise survive as a nested anchor. A link found inside
-/// another link is unwrapped to its (recursively cleaned) text, so only the
-/// outermost destination applies; an autolink inside a link becomes plain text
+/// resolution because reference links turn into `Link` nodes at that stage. A
+/// link found inside another link is unwrapped to its (recursively cleaned)
+/// text, so only the outermost destination applies; an autolink inside a link becomes plain text
 /// (the display form the renderer would emit, with a leading `mailto:` scheme
 /// stripped). A footnote body renders in the endnotes section, outside any
 /// anchor, so its links are not nested -- the walk re-enters a footnote body

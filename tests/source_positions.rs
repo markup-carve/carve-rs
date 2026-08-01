@@ -457,63 +457,52 @@ fn an_unwrapped_autolink_declines_when_the_text_is_not_the_source() {
 
 #[test]
 fn a_resolved_cross_reference_keeps_the_span_of_its_source() {
-    // `</#id>` is a real span. Resolving it changes what the node IS - a link
-    // instead of a cross-reference - not where it sits, and the rebuild dropped
-    // the span.
-    //
-    // Its display text is the HEADING's, pulled from elsewhere in the document,
-    // so no span here equals it: `</#some-title>` does not contain "Some
-    // Title". That text stays unplaced rather than borrowing the link's.
+    // `</#id>` is a real span. Resolving it is render-time behavior now, so the
+    // parsed node and its position survive unchanged.
     let source = "# Some Title\n\nSee </#some-title> here.\n";
     let doc = parse_with_positions(source);
     let BlockNode::Paragraph(paragraph) = &doc.children[1] else {
         panic!("expected a paragraph, got {:?}", doc.children[1]);
     };
 
-    let link = paragraph
+    let crossref = paragraph
         .children
         .iter()
         .find_map(|node| match node {
-            carve::ast::InlineNode::Link(l) => Some(l),
+            carve::ast::InlineNode::CrossRef(c) => Some(c),
             _ => None,
         })
-        .expect("the resolved cross-reference");
+        .expect("the cross-reference");
 
     assert_eq!(
-        slice(source, link.pos.expect("link position")),
+        slice(source, crossref.pos.expect("crossref position")),
         "</#some-title>"
     );
-    let carve::ast::InlineNode::Text(display) = &link.children[0] else {
-        panic!("expected the heading text");
-    };
-    assert_eq!(display.value, "Some Title");
-    assert!(
-        display.pos.is_none(),
-        "text pulled from the heading has no span here"
-    );
+    assert_eq!(crossref.target, "some-title");
 }
 
 #[test]
-fn an_unresolved_cross_reference_keeps_its_span_as_literal_text() {
-    // Nothing to resolve, so it stays the characters the author wrote - and
-    // those are exactly the span.
+fn an_unresolved_cross_reference_keeps_its_span() {
+    // Nothing to resolve at parse time, so the cross-reference node survives
+    // with the exact characters the author wrote as its span.
     let source = "See </#nope> here.\n";
     let doc = parse_with_positions(source);
     let BlockNode::Paragraph(paragraph) = &doc.children[0] else {
         panic!("expected a paragraph");
     };
 
-    let literal = paragraph
+    let crossref = paragraph
         .children
         .iter()
         .find_map(|node| match node {
-            carve::ast::InlineNode::Text(t) if t.value == "</#nope>" => Some(t),
+            carve::ast::InlineNode::CrossRef(c) => Some(c),
             _ => None,
         })
-        .expect("the literal cross-reference");
+        .expect("the cross-reference");
 
     assert_eq!(
-        slice(source, literal.pos.expect("text position")),
+        slice(source, crossref.pos.expect("crossref position")),
         "</#nope>"
     );
+    assert_eq!(crossref.target, "nope");
 }
