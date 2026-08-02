@@ -173,38 +173,41 @@ fn marker_line_colon_blocks_nest_inside_list_item() {
 }
 
 #[test]
-fn unindented_admonition_body_lazy_continues_list_item_literal_opener() {
+fn marker_line_colon_fence_below_content_column_stays_literal() {
     assert_eq!(
         html("- ::: note\nbody\n:::"),
-        "<ul>\n  <li>::: note\nbody</li>\n</ul>\n<p>:::</p>"
+        "<ul>\n  <li>::: note\nbody</li>\n</ul>\n<div>\n</div>"
     );
     assert_eq!(
         html("- :::\n:::"),
-        "<ul>\n  <li>:::</li>\n</ul>\n<p>:::</p>"
+        "<ul>\n  <li>:::</li>\n</ul>\n<div>\n</div>"
     );
     assert_eq!(html("- a\nb"), "<ul>\n  <li>a\nb</li>\n</ul>");
 }
 
 #[test]
 fn flush_left_colon_fence_shape_ends_lazy_continuation() {
-    assert_eq!(html("- a\n:::"), "<ul>\n  <li>a</li>\n</ul>\n<p>:::</p>");
+    assert_eq!(html("- a\n:::"), "<ul>\n  <li>a</li>\n</ul>\n<div>\n</div>");
     assert_eq!(
         html("- a\n::: note\nno"),
-        "<ul>\n  <li>a</li>\n</ul>\n<p>::: note\nno</p>"
+        "<ul>\n  <li>a</li>\n</ul>\n<aside class=\"admonition note\">\n  <p>no</p>\n</aside>"
     );
     assert_eq!(
         html("- a\n:::\nb"),
-        "<ul>\n  <li>a</li>\n</ul>\n<p>:::\nb</p>"
+        "<ul>\n  <li>a</li>\n</ul>\n<div>\n  <p>b</p>\n</div>"
     );
-    assert_eq!(html("1. a\n:::"), "<ol>\n  <li>a</li>\n</ol>\n<p>:::</p>");
+    assert_eq!(
+        html("1. a\n:::"),
+        "<ol>\n  <li>a</li>\n</ol>\n<div>\n</div>"
+    );
     assert_eq!(
         html("> a\n:::"),
-        "<blockquote><p>a</p></blockquote>\n<p>:::</p>"
+        "<blockquote><p>a</p></blockquote>\n<div>\n</div>"
     );
 
     assert_eq!(
         html("- ::: note\nbody\n:::"),
-        "<ul>\n  <li>::: note\nbody</li>\n</ul>\n<p>:::</p>"
+        "<ul>\n  <li>::: note\nbody</li>\n</ul>\n<div>\n</div>"
     );
     assert_eq!(
         html("- ::: note\n  body\n  :::"),
@@ -467,37 +470,58 @@ fn quote_after_non_breaking_space_opens() {
     assert_eq!(carve::to_plain_text("a\\ 'tis").trim_end(), "a \u{2018}tis");
 }
 
-// carve-rs issue 148: a colon-fence-family opener on a quoted line must end the
-// blockquote's lazy continuation, so an unquoted line after it is NOT absorbed
-// into the quote. This already held for the plain `:::` div; it now holds for
-// the `::: |` line block and the `::: \` hard-break block too. (carve-js lags on
-// the hard-break block, so the spec corpus is the reference, not carve-js.)
+// A colon-fence-family opener on a quoted line must end the blockquote's lazy
+// continuation, so an unquoted line after it is NOT absorbed into the quote.
+// The opener is a real block even without a later closer; remaining containers
+// close at end of input.
 #[test]
 fn colon_fence_openers_end_blockquote_lazy_continuation() {
-    let expect = concat!(
-        "<blockquote><p>{OPENER}</p></blockquote>\n",
-        "<p>outside</p>\n",
-        "<blockquote><p>:::</p></blockquote>"
-    );
     assert_eq!(
         html("> ::: |\noutside\n> :::"),
-        expect.replace("{OPENER}", "::: |")
+        concat!(
+            "<blockquote>\n",
+            "  <div class=\"line-block\">\n",
+            "  </div>\n",
+            "</blockquote>\n",
+            "<p>outside</p>\n",
+            "<blockquote>\n",
+            "  <div>\n",
+            "  </div>\n",
+            "</blockquote>"
+        )
     );
-    // The degraded `::: \` opener is a paragraph ending in a backslash, so the
-    // trailing `\` renders as a hard break (djot / trailing-backslash rule).
     assert_eq!(
         html("> ::: \\\noutside\n> :::"),
-        expect.replace("{OPENER}", "::: <br>\n")
+        concat!(
+            "<blockquote>\n",
+            "  <div class=\"hardbreaks\">\n",
+            "  </div>\n",
+            "</blockquote>\n",
+            "<p>outside</p>\n",
+            "<blockquote>\n",
+            "  <div>\n",
+            "  </div>\n",
+            "</blockquote>"
+        )
     );
-    // Plain div (the case that already worked -- regression guard).
     assert_eq!(
         html("> ::: note\noutside\n> :::"),
-        expect.replace("{OPENER}", "::: note")
+        concat!(
+            "<blockquote>\n",
+            "  <aside class=\"admonition note\">\n",
+            "\n",
+            "  </aside>\n",
+            "</blockquote>\n",
+            "<p>outside</p>\n",
+            "<blockquote>\n",
+            "  <div>\n",
+            "  </div>\n",
+            "</blockquote>"
+        )
     );
-    // No closer in the rest: the opener still ends the quote.
     assert_eq!(
         html("> ::: |\noutside"),
-        "<blockquote><p>::: |</p></blockquote>\n<p>outside</p>"
+        "<blockquote>\n  <div class=\"line-block\">\n  </div>\n</blockquote>\n<p>outside</p>"
     );
 }
 

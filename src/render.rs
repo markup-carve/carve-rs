@@ -14,7 +14,7 @@ use crate::extension::{Options, RenderContext};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fmt::Write as _;
 
-const MAX_RENDER_DEPTH: usize = 80;
+const MAX_RENDER_DEPTH: usize = crate::parse::MAX_NESTING_DEPTH;
 
 pub fn render_html(doc: &Document) -> String {
     render_html_with_options(doc, &Options::default())

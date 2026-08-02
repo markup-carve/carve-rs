@@ -118,13 +118,17 @@ fn inline_attribute_block_is_single_line() {
 }
 
 #[test]
-fn unterminated_colon_fence_stays_literal() {
+fn colon_fence_opener_spacing_and_eof_close() {
     assert_eq!(
         carve::to_html(":::note\nbody no closer"),
         "<p>:::note\nbody no closer</p>"
     );
-    // a closed fence still parses.
-    assert!(carve::to_html(":::note\nbody\n:::").contains("<aside class=\"admonition note\">"));
+    // A typed admonition needs whitespace after the fence, and an opener no
+    // longer needs lookahead: it closes cleanly at end of input.
+    assert!(
+        carve::to_html("::: note\nbody no closer").contains("<aside class=\"admonition note\">")
+    );
+    assert!(carve::to_html("::: note\nbody\n:::").contains("<aside class=\"admonition note\">"));
 }
 
 #[test]
@@ -193,8 +197,8 @@ fn consecutive_plus_continuations_attach_separate_blocks() {
             .count(),
         1
     );
-    // an UNTERMINATED colon fence is literal (no closer to skip to), so the
-    // following `+` still bounds it and attaches the next block to the item.
+    // an unterminated colon fence closes at end of input, so the following `+`
+    // is content inside the div and the quoted line becomes the attached block.
     assert!(carve::to_html("- a\n+\n:::\n+\n> q").contains("<li>a"));
     assert_eq!(
         carve::to_html("- a\n+\n:::\n+\n> q")

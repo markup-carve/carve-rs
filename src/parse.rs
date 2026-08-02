@@ -834,17 +834,6 @@ struct LineCursor<'a> {
     /// gets no position rather than a wrong one.
     col_map: Option<&'a [Option<usize>]>,
     pos: usize,
-    /// Lazily built suffix-maximum of each line's colon-closer length: entry `i`
-    /// holds the largest all-colon line length at any index `>= i` (0 if none).
-    /// A closer for a fence of length `k` is any all-colon line of length `>= k`,
-    /// so "a closer of length `>= k` exists at or after `start`" is exactly
-    /// `colon_closer_suffix_max[start] >= k` -- independent of the exact fence
-    /// length. This defeats the distinct-increasing-fence-length cache miss that
-    /// turned a per-fence-length cache into an O(N^2) full rescan per line.
-    colon_closer_suffix_max: Option<Vec<usize>>,
-    /// Negative cache for comment-fence closer lookahead. For a fence length,
-    /// stores the smallest line index already proven to have no exact-length
-    /// closer at or after it.
     comment_closer_last_index: Option<HashMap<usize, usize>>,
 }
 
@@ -859,7 +848,6 @@ impl<'a> LineCursor<'a> {
             line_map,
             col_map,
             pos: 0,
-            colon_closer_suffix_max: None,
             comment_closer_last_index: None,
         }
     }
@@ -885,15 +873,6 @@ impl<'a> LineCursor<'a> {
     /// Columns stripped from the front of the line at `pos`, when known.
     fn source_col(&self, pos: usize) -> Option<usize> {
         self.col_map.and_then(|map| map.get(pos).copied().flatten())
-    }
-
-    fn has_colon_closer_after(&mut self, start: usize, fence_len: usize) -> bool {
-        if self.colon_closer_suffix_max.is_none() {
-            self.colon_closer_suffix_max = Some(build_colon_closer_suffix_max(self.lines));
-        }
-        let suffix_max = self.colon_closer_suffix_max.as_ref().unwrap();
-        // `start` may sit one past the end (opener is the last line).
-        suffix_max.get(start).copied().unwrap_or(0) >= fence_len
     }
 
     /// Is there a comment-fence closer of exactly `fence_len` at or after `start`?
@@ -1363,6 +1342,9 @@ fn line_start_offsets(source: &str) -> Vec<usize> {
 
 fn parse_mapped_source(source: &MappedSource, options: &Options<'_>) -> Vec<BlockNode> {
     if !options.source_lines && !options.positions {
+        if let Some(blocks) = parse_eof_closed_colon_ladder(source, options) {
+            return blocks;
+        }
         return parse_blocks_with_options(&source.source, options);
     }
     let lines: Vec<&str> = source.source.lines().collect();
@@ -1377,23 +1359,102 @@ fn parse_mapped_source(source: &MappedSource, options: &Options<'_>) -> Vec<Bloc
     parse_blocks(&mut cursor, options)
 }
 
-/// Build the suffix-maximum of each line's colon-closer length (see
-/// `LineCursor::colon_closer_suffix_max`). A line contributes its trimmed length
-/// when it is a non-empty all-colon line, else 0. Single O(N) right-to-left pass.
-fn build_colon_closer_suffix_max(lines: &[&str]) -> Vec<usize> {
-    let mut suffix_max = vec![0usize; lines.len()];
-    let mut running = 0usize;
-    for idx in (0..lines.len()).rev() {
-        let t = trim_ascii(lines[idx]);
-        let len = if !t.is_empty() && t.bytes().all(|b| b == b':') {
-            t.len()
-        } else {
-            0
-        };
-        running = running.max(len);
-        suffix_max[idx] = running;
+fn parse_eof_closed_colon_ladder(
+    source: &MappedSource,
+    options: &Options<'_>,
+) -> Option<Vec<BlockNode>> {
+    let lines: Vec<&str> = source.source.lines().collect();
+    if lines.is_empty()
+        || lines
+            .iter()
+            .any(|line| exact_colon_fence_len(line).is_some())
+    {
+        return None;
     }
-    suffix_max
+
+    let mut opens = Vec::new();
+    for line in &lines {
+        if line.starts_with([' ', '\t']) {
+            break;
+        }
+        let Some(open) = detect_container_open(line) else {
+            break;
+        };
+        opens.push(open);
+    }
+    if opens.is_empty() {
+        return None;
+    }
+
+    let current_depth = NESTING_DEPTH.with(Cell::get);
+    let available = MAX_NESTING_DEPTH.saturating_sub(current_depth);
+    let take = opens.len().min(available);
+
+    let tail = &lines[take..];
+    let mut children = if tail.iter().all(|line| is_blank_line(line)) {
+        Vec::new()
+    } else {
+        if opens.len() > available {
+            let body_start = tail
+                .iter()
+                .position(|line| detect_container_open(trim_ascii_start(line)).is_none());
+            if let Some(body_start) = body_start {
+                let tail_source = tail[body_start..].join("\n");
+                vec![BlockNode::Paragraph(Paragraph {
+                    attrs: None,
+                    children: parse_inline_with_options(&tail_source, options),
+                    ..Default::default()
+                })]
+            } else {
+                Vec::new()
+            }
+        } else {
+            let tail_source = tail.join("\n");
+            parse_blocks_with_options(&tail_source, options)
+        }
+    };
+
+    for open in opens.into_iter().take(take).rev() {
+        children = vec![if let Some(kind) = open.kind {
+            BlockNode::Admonition(Admonition {
+                attrs: open.attrs,
+                kind,
+                title: open
+                    .title
+                    .map(|title| parse_inline_with_options(&title, options)),
+                label: open.label,
+                children,
+                pos: None,
+            })
+        } else {
+            BlockNode::Div(Div {
+                attrs: open.attrs,
+                label: open.label,
+                children,
+                pos: None,
+            })
+        }];
+    }
+
+    Some(children)
+}
+
+fn parse_capped_colon_body(inner: LineBuffer, options: &Options<'_>) -> Vec<BlockNode> {
+    let source = inner.into_source();
+    if NESTING_DEPTH.with(|d| d.get() < MAX_NESTING_DEPTH) {
+        return parse_mapped_source(&source, options);
+    }
+
+    let lines: Vec<&str> = source.source.lines().collect();
+    if lines.iter().all(|line| is_blank_line(line)) {
+        return Vec::new();
+    }
+
+    vec![BlockNode::Paragraph(Paragraph {
+        attrs: None,
+        children: parse_inline_with_options(&source.source, options),
+        ..Default::default()
+    })]
 }
 
 fn build_comment_closer_last_index(lines: &[&str]) -> HashMap<usize, usize> {
@@ -1648,22 +1709,11 @@ fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<BlockNode>
     // fold as literal paragraph text instead. `line` is already dedented to
     // the content column here, so a fence sitting AT that column still opens.
     if !line.starts_with([' ', '\t']) {
-        if let Some(fence_len) = detect_line_block_open(line) {
-            // A line block, like any colon fence, opens only when a matching
-            // closer exists ahead (grammar §12/§23); an unterminated `::: |`
-            // stays literal instead of swallowing the rest of the document.
-            let has_closer = cur.has_colon_closer_after(cur.pos + 1, fence_len);
-            if has_closer {
-                return Some(parse_line_block(cur, options));
-            }
+        if detect_line_block_open(line).is_some() {
+            return Some(parse_line_block(cur, options));
         }
-        if let Some(fence_len) = detect_hardbreaks_block_open(line) {
-            // Like a line block, a `::: \` opens only when a matching closer
-            // exists ahead (grammar §12/§23); an unterminated opener stays literal.
-            let has_closer = cur.has_colon_closer_after(cur.pos + 1, fence_len);
-            if has_closer {
-                return Some(parse_hardbreaks_block(cur, options));
-            }
+        if detect_hardbreaks_block_open(line).is_some() {
+            return Some(parse_hardbreaks_block(cur, options));
         }
     }
     // FLUSH-LEFT only: `detect_container_open` trims leading whitespace, so an
@@ -1671,17 +1721,8 @@ fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<BlockNode>
     // lazy paragraph text (§24 C3), not open a nested container -- uniform with
     // the quote/heading/table checks. `line` is already dedented to the content
     // column here, so a `:::` at the content column opens.
-    if !line.starts_with([' ', '\t']) {
-        if let Some(open) = detect_container_open(line) {
-            // A colon fence opens only when a matching closer (a line of at least
-            // `fence_len` colons) exists ahead (grammar §12); an unterminated
-            // `:::` / `::: note` stays literal instead of swallowing the rest of
-            // the document. Matches carve-js.
-            let has_closer = cur.has_colon_closer_after(cur.pos + 1, open.fence_len);
-            if has_closer {
-                return Some(parse_container(cur, options));
-            }
-        }
+    if !line.starts_with([' ', '\t']) && detect_container_open(line).is_some() {
+        return Some(parse_container(cur, options));
     }
     if let Some(abbr) = detect_abbreviation_def(line) {
         cur.consume();
@@ -2135,6 +2176,225 @@ fn is_fence_close(line: &str, open: FenceOpen) -> bool {
         i += 1;
     }
     i == bytes.len()
+}
+
+fn exact_colon_fence_len(line: &str) -> Option<usize> {
+    let t = trim_ascii_end(line);
+    if !t.is_empty() && t.bytes().all(|b| b == b':') {
+        Some(t.len())
+    } else {
+        None
+    }
+}
+
+fn is_invalid_colon_fence_opener_text(line: &str) -> bool {
+    let trimmed = trim_ascii_start(line);
+    let fence_len = trimmed.bytes().take_while(|b| *b == b':').count();
+    if fence_len < 3 {
+        return false;
+    }
+    if exact_colon_fence_len(trimmed).is_some() {
+        return false;
+    }
+    detect_container_open(trimmed).is_none()
+        && detect_line_block_open(trimmed).is_none()
+        && detect_hardbreaks_block_open(trimmed).is_none()
+}
+
+fn code_fence_interrupts_paragraph(cur: &LineCursor<'_>, open: FenceOpen) -> bool {
+    let strip = leading_ws(cur.lines[cur.pos]);
+    cur.lines[cur.pos + 1..]
+        .iter()
+        .any(|l| is_fence_close(&l[leading_ws(l).min(strip)..], open))
+}
+
+fn push_current_line(inner: &mut LineBuffer, cur: &LineCursor<'_>) {
+    inner.push_at(
+        cur.peek().unwrap().to_string(),
+        cur.source_line(cur.pos),
+        cur.source_col(cur.pos),
+    );
+}
+
+fn skip_opaque_span_into(
+    inner: &mut LineBuffer,
+    cur: &mut LineCursor<'_>,
+    para_open: bool,
+) -> bool {
+    let Some(line) = cur.peek() else {
+        return false;
+    };
+    if let Some(open) = detect_fence_open(line) {
+        if !para_open || code_fence_interrupts_paragraph(cur, open) {
+            while let Some(line) = cur.peek() {
+                push_current_line(inner, cur);
+                cur.consume();
+                if is_fence_close(line, open) {
+                    break;
+                }
+            }
+            return true;
+        }
+    }
+    if let Some(open) = detect_comment_fence_line(line) {
+        if cur.has_comment_closer_after(cur.pos + 1, open.fence_len) {
+            while let Some(line) = cur.peek() {
+                push_current_line(inner, cur);
+                cur.consume();
+                if is_comment_fence_close(line, open.fence_len) {
+                    break;
+                }
+            }
+            return true;
+        }
+    }
+    false
+}
+
+fn collect_colon_container_body(cur: &mut LineCursor<'_>, opener_len: usize) -> LineBuffer {
+    let mut inner = LineBuffer::default();
+    let mut stack = vec![opener_len];
+    let mut para_open = false;
+    let mut para_has_glued_colon = false;
+    while cur.peek().is_some() {
+        let top = *stack.last().unwrap();
+        if exact_colon_fence_len(cur.peek().unwrap()) == Some(top) && !para_has_glued_colon {
+            if stack.len() == 1 {
+                cur.consume();
+                break;
+            }
+            push_current_line(&mut inner, cur);
+            cur.consume();
+            stack.pop();
+            para_open = false;
+            para_has_glued_colon = false;
+            continue;
+        }
+        if skip_opaque_span_into(&mut inner, cur, para_open) {
+            para_open = false;
+            para_has_glued_colon = false;
+            continue;
+        }
+        let line = cur.peek().unwrap();
+        if !line.starts_with([' ', '\t']) {
+            if stack.len() < MAX_NESTING_DEPTH {
+                if let Some(len) = detect_container_open(line)
+                    .map(|open| open.fence_len)
+                    .or_else(|| detect_line_block_open(line))
+                    .or_else(|| detect_hardbreaks_block_open(line))
+                {
+                    stack.push(len);
+                    push_current_line(&mut inner, cur);
+                    cur.consume();
+                    para_open = false;
+                    para_has_glued_colon = false;
+                    continue;
+                }
+            } else if detect_container_open(line).is_some()
+                || detect_line_block_open(line).is_some()
+                || detect_hardbreaks_block_open(line).is_some()
+            {
+                cur.consume();
+                para_open = true;
+                continue;
+            }
+        }
+        if is_blank_line(line) {
+            para_open = false;
+            para_has_glued_colon = false;
+        } else {
+            para_has_glued_colon = para_has_glued_colon || is_invalid_colon_fence_opener_text(line);
+            let line = line.to_string();
+            let suppress_colon_interrupt =
+                para_has_glued_colon && is_colon_fence_opener_shape(&line);
+            para_open = para_open || !interrupts_paragraph(cur, &line) || suppress_colon_interrupt;
+        }
+        push_current_line(&mut inner, cur);
+        cur.consume();
+    }
+    inner
+}
+
+fn find_line_block_end(lines: &[&str], start: usize, fence_len: usize) -> usize {
+    let mut idx = start + 1;
+    while idx < lines.len() {
+        if exact_colon_fence_len(lines[idx]) == Some(fence_len) {
+            return idx + 1;
+        }
+        idx += 1;
+    }
+    lines.len()
+}
+
+fn find_colon_container_end(lines: &[&str], start: usize, fence_len: usize) -> usize {
+    let mut stack = vec![fence_len];
+    let mut idx = start + 1;
+    let mut para_open = false;
+    let mut para_has_glued_colon = false;
+    while idx < lines.len() {
+        let line = lines[idx];
+        let top = *stack.last().unwrap();
+        if exact_colon_fence_len(line) == Some(top) && !para_has_glued_colon {
+            stack.pop();
+            idx += 1;
+            if stack.is_empty() {
+                return idx;
+            }
+            para_open = false;
+            para_has_glued_colon = false;
+            continue;
+        }
+        if let Some(open) = detect_fence_open(line) {
+            let has_closer = lines[idx + 1..]
+                .iter()
+                .any(|candidate| is_fence_close(candidate, open));
+            if !para_open || has_closer {
+                idx += 1;
+                while idx < lines.len() {
+                    let candidate = lines[idx];
+                    idx += 1;
+                    if is_fence_close(candidate, open) {
+                        break;
+                    }
+                }
+                para_open = false;
+                para_has_glued_colon = false;
+                continue;
+            }
+        }
+        if let Some(open) = detect_comment_fence_line(line) {
+            if let Some(close) =
+                (idx + 1..lines.len()).find(|&j| is_comment_fence_close(lines[j], open.fence_len))
+            {
+                idx = close + 1;
+                para_open = false;
+                para_has_glued_colon = false;
+                continue;
+            }
+        }
+        if !line.starts_with([' ', '\t']) && stack.len() < MAX_NESTING_DEPTH {
+            if let Some(len) = detect_container_open(line)
+                .map(|open| open.fence_len)
+                .or_else(|| detect_line_block_open(line))
+                .or_else(|| detect_hardbreaks_block_open(line))
+            {
+                stack.push(len);
+                idx += 1;
+                para_open = false;
+                para_has_glued_colon = false;
+                continue;
+            }
+        }
+        if is_blank_line(line) {
+            para_open = false;
+            para_has_glued_colon = false;
+        } else {
+            para_has_glued_colon = para_has_glued_colon || is_invalid_colon_fence_opener_text(line);
+            para_open = true;
+        }
+        idx += 1;
+    }
+    lines.len()
 }
 
 fn leading_ws(line: &str) -> usize {
@@ -2673,9 +2933,9 @@ fn parse_continuation_block(
 ) -> Option<BlockNode> {
     // A nested list manages its OWN `+` continuations -- the boundary scan
     // cannot tell a child list's `+` from the parent's, so a list is parsed
-    // unbounded. (Code / colon fences are handled INSIDE the scan: a fence with
-    // a matching closer is skipped so its inner `+` is content, while an
-    // unterminated one is not, so a following `+` still bounds the block.)
+    // unbounded. (Code / colon fences are handled INSIDE the scan: code fences
+    // with matching closers are skipped, and colon fences close at their closer
+    // or EOF, so inner `+` lines are content rather than parent boundaries.)
     if let Some(line) = cur.peek() {
         if let Some(nm) = detect_list_marker_full(line) {
             // A marker indented past the base nests as a child list of THIS
@@ -2717,26 +2977,20 @@ fn parse_continuation_block(
                 }
             }
         }
-        // A colon fence (`:::` div / admonition / `::: |` line block) WITH a
-        // matching closer ahead is a self-delimiting block; skip the whole
-        // region so a `+` inside it is content, not the parent's boundary.
-        // (An UNTERMINATED `:::` is literal -- no closer to skip to.)
-        if detect_container_open(line).is_some()
-            || detect_line_block_open(line).is_some()
-            || detect_hardbreaks_block_open(line).is_some()
-        {
-            let fence_len = trim_ascii_start(line)
-                .bytes()
-                .take_while(|b| *b == b':')
-                .count();
-            let closer = (end + 1..cur.lines.len()).find(|&j| {
-                let t = trim_ascii(cur.lines[j]);
-                !t.is_empty() && t.bytes().all(|b| b == b':') && t.len() >= fence_len
-            });
-            if let Some(close) = closer {
-                end = close + 1;
-                continue;
-            }
+        // A colon fence is a self-delimiting block; skip the whole region so a
+        // `+` inside it is content, not the parent's boundary. Unterminated
+        // colon containers close at end of input.
+        if let Some(fence_len) = detect_line_block_open(line) {
+            end = find_line_block_end(cur.lines, end, fence_len);
+            continue;
+        }
+        if let Some(fence_len) = detect_hardbreaks_block_open(line) {
+            end = find_colon_container_end(cur.lines, end, fence_len);
+            continue;
+        }
+        if let Some(open) = detect_container_open(line) {
+            end = find_colon_container_end(cur.lines, end, open.fence_len);
+            continue;
         }
         if end > cur.pos && trim_ascii(line) == "+" && indent_columns(line) == base_indent {
             break;
@@ -3215,11 +3469,8 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 break;
             }
             if let Some(fence_len) = literal_colon_opener {
-                let trimmed = trim_ascii(next);
                 if indent_columns(next) <= base_indent
-                    && !trimmed.is_empty()
-                    && trimmed.bytes().all(|b| b == b':')
-                    && trimmed.len() >= fence_len
+                    && exact_colon_fence_len(next) == Some(fence_len)
                 {
                     break;
                 }
@@ -3237,6 +3488,16 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             }
             let indent = indent_columns(next);
             if indent < content_col {
+                if para_lines
+                    .iter()
+                    .any(|line| is_invalid_colon_fence_opener_text(line))
+                    && para_lines
+                        .last()
+                        .is_some_and(|line| exact_colon_fence_len(line).is_some())
+                    && indent <= base_indent
+                {
+                    break;
+                }
                 // BELOW content_column (§24 C3): a line -- flush-left OR indented
                 // short of the content column -- lazily continues the item's open
                 // paragraph and folds in as text. A block opener here is NOT a
@@ -3277,7 +3538,12 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             // AT content_column: a block opener interrupts the lead paragraph and
             // nests as a child block; plain text dedents to the body's column 0.
             let dedented = slice_columns(next, content_col, false);
-            if interrupts_paragraph(cur, &dedented) {
+            let suppress_colon_interrupt = para_lines
+                .iter()
+                .any(|line| is_invalid_colon_fence_opener_text(line));
+            if interrupts_paragraph(cur, &dedented)
+                && !(suppress_colon_interrupt && is_colon_fence_opener_shape(&dedented))
+            {
                 break;
             }
             if let Some(anchors) = &mut anchors {
@@ -3378,16 +3644,11 @@ fn marker_content_starts_block(content: &str, cur: &LineCursor<'_>, content_col:
         .map(|open| open.fence_len)
         .or_else(|| detect_line_block_open(content))
         .or_else(|| detect_hardbreaks_block_open(content));
-    if let Some(fence_len) = colon_fence_len {
-        return cur.lines[cur.pos..].iter().enumerate().any(|(idx, line)| {
-            let indent = indent_columns(line);
-            if idx > 0 && indent < content_col {
-                return false;
-            }
-            let line = slice_columns(line, content_col.min(indent), false);
-            let trimmed = trim_ascii(&line);
-            !trimmed.is_empty() && trimmed.bytes().all(|b| b == b':') && trimmed.len() >= fence_len
-        });
+    if colon_fence_len.is_some() {
+        return cur.lines[cur.pos..]
+            .iter()
+            .find(|line| !is_blank_line(line))
+            .is_some_and(|line| indent_columns(line) >= content_col);
     }
     if is_table_start(content) {
         return cur.lines.get(cur.pos).is_some_and(|line| {
@@ -3755,17 +4016,6 @@ fn continuation_line_opens_sub_block(line: &str, rest: &[&str]) -> bool {
     if interrupts_paragraph_with_rest(line, rest) {
         return true;
     }
-    // `interrupts_paragraph_with_rest` omits the plain `:::` div (it serves
-    // blockquote lazy continuation, where the div is guarded elsewhere). A div
-    // opener with a matching closer ahead is a block here, so check it directly.
-    if let Some(open) = detect_container_open(line) {
-        if rest.iter().any(|l| {
-            let t = trim_ascii(l);
-            !t.is_empty() && t.bytes().all(|b| b == b':') && t.len() >= open.fence_len
-        }) {
-            return true;
-        }
-    }
     false
 }
 
@@ -3976,7 +4226,13 @@ fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         // First line is always part of the paragraph; from the second on, a
         // visible block opener interrupts (§10).
         let line_owned = line.to_string();
-        if !lines.is_empty() && interrupts_paragraph(cur, &line_owned) {
+        let suppress_colon_interrupt = lines
+            .iter()
+            .any(|line| is_invalid_colon_fence_opener_text(line));
+        if !lines.is_empty()
+            && interrupts_paragraph(cur, &line_owned)
+            && !(suppress_colon_interrupt && is_colon_fence_opener_shape(&line_owned))
+        {
             break;
         }
         cur.consume();
@@ -4022,8 +4278,8 @@ fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
 ///
 /// A VISIBLE block interrupts an open paragraph with no blank line, at the top
 /// level and nested: heading, thematic break, block quote, bullet/task list, a
-/// valid table row, and a fenced code / `:::` block that has a matching closer
-/// ahead (`rest` is the lines after the current one). INVISIBLE constructs
+/// valid table row, a fenced code block that has a matching closer ahead, and
+/// a valid flush-left colon-fence block. INVISIBLE constructs
 /// (comments, abbreviation definitions) interrupt too. ORDERED lists do NOT
 /// interrupt, `+` is the continuation marker not a bullet, and a bare image
 /// stays inline.
@@ -4065,7 +4321,7 @@ fn interrupts_paragraph(cur: &mut LineCursor<'_>, line: &str) -> bool {
     {
         return true;
     }
-    // Fenced code / `:::` interrupt only with a matching closer ahead. The
+    // Fenced code interrupts only with a matching closer ahead. The
     // opener `line` has been dedented to its container's content column by the
     // caller (a list item's lead paragraph dedents by that column), but the
     // closer probe runs over the RAW remaining lines -- so dedent each by the
@@ -4084,33 +4340,8 @@ fn interrupts_paragraph(cur: &mut LineCursor<'_>, line: &str) -> bool {
             return true;
         }
     }
-    // A colon fence interrupts only when FLUSH-LEFT, like the quote/heading/
-    // table checks above -- `detect_container_open` trims leading whitespace, so
-    // without this guard an INDENTED `::: note` would interrupt where an indented
-    // `> q` / `# h` does not. A `:::` below/above a list item's content column is
-    // lazy paragraph text (§24 C3), not a nested container. `line` is already
-    // dedented to the container's content column, so at-content-column opens.
-    if !line.starts_with([' ', '\t']) {
-        if let Some(open) = detect_container_open(line) {
-            if cur.has_colon_closer_after(cur.pos + 1, open.fence_len) {
-                return true;
-            }
-        }
-    }
-    // A `::: |` line block or `::: \` hard-break block interrupts like any
-    // colon-fence block, with the same matching-closer lookahead -- but only
-    // FLUSH-LEFT, matching the `detect_container_open` guard above and the
-    // opener path in `parse_block`. An INDENTED colon fence (the detectors trim
-    // leading whitespace) folds as lazy paragraph text instead of splitting the
-    // paragraph (strict column-0 rule, docs/divergence-from-djot.md §11).
-    if !line.starts_with([' ', '\t']) {
-        if let Some(len) =
-            detect_line_block_open(line).or_else(|| detect_hardbreaks_block_open(line))
-        {
-            if cur.has_colon_closer_after(cur.pos + 1, len) {
-                return true;
-            }
-        }
+    if is_colon_fence_opener_shape(line) {
+        return true;
     }
     false
 }
@@ -4127,11 +4358,10 @@ fn interrupts_lazy_continuation(cur: &mut LineCursor<'_>, line: &str) -> bool {
 }
 
 fn is_colon_fence_opener_shape(line: &str) -> bool {
-    // Only a FLUSH-LEFT colon fence ends lazy continuation regardless of a
-    // closer (grammar PART 9 §10). An INDENTED colon-shaped line (the detectors
-    // trim leading whitespace) is still within the container; it keeps the
-    // normal closer-lookahead via interrupts_paragraph, so an unterminated
-    // indented `  ::: note` folds as lazy text instead of escaping the container.
+    // Only a FLUSH-LEFT colon fence ends lazy continuation (grammar PART 9
+    // §10). An INDENTED colon-shaped line (the detectors trim leading
+    // whitespace) is still within the container, so it folds as lazy text
+    // instead of escaping the container.
     if line.starts_with(' ') || line.starts_with('\t') {
         return false;
     }
@@ -4171,18 +4401,14 @@ fn interrupts_paragraph_with_rest(line: &str, rest: &[&str]) -> bool {
             return true;
         }
     }
-    // A FLUSH-LEFT colon-fence family opener (`::: |` line block, `::: \`
-    // hard-break block) interrupts blockquote lazy continuation like any block
-    // opener, matching the plain `:::` div the caller already guards. Without
-    // this, an unquoted line after a quoted opener is wrongly absorbed into the
-    // quote. An INDENTED colon fence (above the quote's content column) is
-    // literal paragraph text under the strict column-0 rule, so lazy
-    // continuation stays inside the quote -- uniform with the opener and
-    // interrupt paths in parse_block / interrupts_paragraph. carve-js lags on
-    // the hard-break block, so the spec corpus (88-line-blocks) -- not carve-js
-    // -- is the reference here (carve-rs issue 148).
+    // A FLUSH-LEFT colon-fence family opener interrupts blockquote lazy
+    // continuation like any block opener. An INDENTED colon fence (above the
+    // quote's content column) is literal paragraph text under the strict
+    // column-0 rule, so lazy continuation stays inside the quote.
     if !line.starts_with([' ', '\t'])
-        && (detect_line_block_open(line).is_some() || detect_hardbreaks_block_open(line).is_some())
+        && (detect_container_open(line).is_some()
+            || detect_line_block_open(line).is_some()
+            || detect_hardbreaks_block_open(line).is_some())
     {
         return true;
     }
@@ -5095,7 +5321,8 @@ fn detect_container_open(line: &str) -> Option<ContainerOpen> {
     if fence_len < 3 {
         return None;
     }
-    let rest = trimmed[fence_len..].trim();
+    let after_fence = &trimmed[fence_len..];
+    let rest = after_fence.trim();
     // STRICT (djot): the opener is the colon fence, an optional type word,
     // and an optional quoted title -- and NOTHING else. A trailing `{...}`
     // (or any other non-title text) makes the line an ordinary paragraph,
@@ -5119,6 +5346,12 @@ fn detect_container_open(line: &str) -> Option<ContainerOpen> {
             label: Some(label),
             attrs: None,
         });
+    }
+    // A type word must be separated from the fence by at least one space or
+    // tab. A typeless label may still be glued to the fence (`:::[x]`), but
+    // `:::note` is ordinary paragraph text.
+    if !after_fence.starts_with([' ', '\t']) {
+        return None;
     }
     // A type word is a grammar identifier: `(letter | '_'), {letter | digit
     // | '_' | '-'}`. It must START with a letter or underscore, so a
@@ -5211,25 +5444,8 @@ fn parse_container(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     let open = detect_container_open(cur.peek().unwrap()).unwrap();
     let span_start = cur.pos;
     cur.consume();
-    let mut inner = LineBuffer::default();
-    while let Some(line) = cur.peek() {
-        if line.trim().bytes().all(|b| b == b':') && line.trim().len() >= open.fence_len {
-            cur.consume();
-            break;
-        }
-        // Record what the ENCLOSING container already took from this line.
-        // A colon fence strips nothing itself, but its body inherits whatever
-        // an outer blockquote or list item removed - without that count a
-        // nested block's column cannot be mapped back to the document, and
-        // `span_of` refuses rather than invent one (PART 12 section 4).
-        inner.push_at(
-            line.to_string(),
-            cur.source_line(cur.pos),
-            cur.source_col(cur.pos),
-        );
-        cur.consume();
-    }
-    let children = parse_mapped_source(&inner.into_source(), options);
+    let inner = collect_colon_container_body(cur, open.fence_len);
+    let children = parse_capped_colon_body(inner, options);
     // The span covers the opening fence through the closing one.
     let pos = span_of(cur, span_start, cur.pos, options);
     if let Some(kind) = open.kind {
@@ -5372,8 +5588,7 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     let mut stanza_start: Option<usize> = None;
     let mut stanza_end = cur.pos;
     while let Some(line) = cur.peek() {
-        let t = trim_ascii(line);
-        if !t.is_empty() && t.bytes().all(|b| b == b':') && t.len() >= fence_len {
+        if exact_colon_fence_len(line) == Some(fence_len) {
             cur.consume();
             break;
         }
@@ -5515,28 +5730,11 @@ fn parse_hardbreaks_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockN
     let fence_len = detect_hardbreaks_block_open(opener).unwrap();
     let span_start = cur.pos;
     cur.consume();
-    let mut inner = LineBuffer::default();
-    while let Some(line) = cur.peek() {
-        let t = line.trim();
-        if !t.is_empty() && t.bytes().all(|b| b == b':') && t.len() >= fence_len {
-            cur.consume();
-            break;
-        }
-        // Record what an ENCLOSING container already took from this line. The
-        // fence strips nothing itself, but without that count no block inside
-        // it can be mapped back to the document and `span_of` refuses - which
-        // left every paragraph in one of these fences unplaced.
-        inner.push_at(
-            line.to_string(),
-            cur.source_line(cur.pos),
-            cur.source_col(cur.pos),
-        );
-        cur.consume();
-    }
+    let inner = collect_colon_container_body(cur, fence_len);
     // The span covers the opening fence through the closing one, like any other
     // colon fence.
     let pos = span_of(cur, span_start, cur.pos, options);
-    let mut children = parse_mapped_source(&inner.into_source(), options);
+    let mut children = parse_capped_colon_body(inner, options);
     for child in &mut children {
         if let BlockNode::Paragraph(para) = child {
             for node in &mut para.children {

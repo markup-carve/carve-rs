@@ -37,30 +37,30 @@ fn many_abbreviations_do_not_scan_every_definition_at_every_position() {
 
 #[test]
 fn many_unterminated_colon_fence_openers_do_not_rescan_document() {
-    let mut source = String::new();
-    source.push_str("intro\n");
-    for _ in 0..8_000 {
-        source.push_str("::: note\n");
-    }
+    on_big_stack(|| {
+        let mut source = String::new();
+        source.push_str("intro\n");
+        for _ in 0..8_000 {
+            source.push_str("::: note\n");
+        }
 
-    let start = Instant::now();
-    let html = carve::to_html(&source);
+        let start = Instant::now();
+        let html = carve::to_html(&source);
 
-    assert!(html.contains("::: note"), "{html}");
-    assert!(
-        start.elapsed().as_secs_f32() < MAX_SECS,
-        "unterminated colon-fence parse took {:?}",
-        start.elapsed()
-    );
+        assert!(!html.is_empty(), "expected bounded output");
+        assert!(
+            start.elapsed().as_secs_f32() < MAX_SECS,
+            "unterminated colon-fence parse took {:?}",
+            start.elapsed()
+        );
+    });
 }
 
 #[test]
-fn distinct_fence_length_openers_do_not_defeat_closer_cache() {
-    // Finding 2: every line opens an unterminated colon fence of a DISTINCT
-    // length, so a cache keyed by exact fence length missed every line and did
-    // a full forward scan to EOF per line (O(N^2)). Fence lengths cycle in a
-    // bounded range so total input bytes stay linear -- any super-linear time
-    // here is the per-line rescan, not the input size.
+fn distinct_fence_length_openers_parse_bounded() {
+    // Every line opens an unterminated colon fence of a DISTINCT length. Fence
+    // lengths cycle in a bounded range so total input bytes stay linear; this
+    // guards the colon-body scan and nesting cap under the EOF-close rule.
     let mut source = String::from("intro\n");
     for i in 0..20_000 {
         let len = 3 + (i % 60);
@@ -73,7 +73,7 @@ fn distinct_fence_length_openers_do_not_defeat_closer_cache() {
     let start = Instant::now();
     let html = carve::to_html(&source);
 
-    assert!(html.contains(" |"), "expected literal fence text in output");
+    assert!(html.contains(" |"), "expected fence body text in output");
     assert!(
         start.elapsed().as_secs_f32() < MAX_SECS,
         "distinct-fence-length colon-fence parse took {:?}",
@@ -149,11 +149,10 @@ fn deeply_nested_list_parse_is_bounded() {
 fn deeply_nested_div_parse_is_bounded() {
     on_big_stack(|| {
         // Finding 4: deeply nested divs collect-and-reparse per level, and each
-        // opener is an unterminated colon fence of a distinct length. With the
-        // colon-closer suffix-max cache (Finding 2) and the MAX_NESTING_DEPTH
-        // cap, the work stays linear in the input bytes. 600 levels is well past
-        // the depth cap while the input stays small enough to hold the bound in
-        // debug.
+        // opener is an unterminated colon fence of a distinct length. The
+        // colon-body nesting cap bounds recursion even though each opener is a
+        // real block that closes at EOF. 600 levels is well past the cap while
+        // the input stays small enough to hold the bound in debug.
         let mut source = String::new();
         for i in 0..600 {
             for _ in 0..(3 + i) {
