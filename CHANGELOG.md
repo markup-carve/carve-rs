@@ -7,7 +7,32 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **BREAKING: a heading ends at the newline** (spec markup-carve/carve#451,
+  markup-carve/carve#434). Nothing folds into a heading any more - neither a
+  plain line nor a same-count `#` line - so `# Title` with prose beneath is a
+  heading plus a paragraph, and its id comes from the heading line alone
+  (`Title`, not `Title-Some-text`). Documents that relied on the fold change
+  meaning; anything with a blank line after the heading is unaffected.
+
+  The fold was a silent corruption for anyone arriving from Markdown: the title
+  text and the derived id were both wrong, `</#id>` cross-references and TOC
+  anchors broke, and the intended body paragraph disappeared into the title with
+  nothing to report. Lazy continuation now means one thing across the language -
+  it continues an open paragraph - and a heading is not a paragraph.
+
+  A flush-left line after a heading nested in a list item still belongs to that
+  item; it is now the item's own content beside the heading instead of title
+  text (corpus 73-list-nesting-and-looseness-4).
+
 ### Fixed
+
+- **Braces alone on a list-item marker line are a block-attribute line**
+  (spec markup-carve/carve#457, corpus 170). `- {a=b .c}` followed by an
+  indented `# H` attributes the heading, exactly as those two lines do at
+  document level; it used to render the braces as the item's lead paragraph.
+  Braces followed by text (`- {.c} literal text`) stay literal.
 
 - **An implicit `[Heading][]` reference no longer resolves into a blockquote**
   (#410, spec PART 11 R1). Quoted text names the quoted document's headings,

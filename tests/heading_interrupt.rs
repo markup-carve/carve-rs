@@ -1,9 +1,9 @@
-//! Heading continuation (§10). A block-opener that interrupts a paragraph also
-//! ends a multi-line heading and starts that block. Symmetric list
-//! interruption: a LIST marker (bullet OR ordered) ENDS the heading and starts
-//! a sibling list -- it does NOT fold in (a list marker folds only into a
-//! PARAGRAPH). Plain text folds into the heading. Matches carve-js, carve-php,
-//! and canonical djot.
+//! What follows a heading (§10). A heading ends at its newline (PART 2
+//! SINGLE-LINE HEADINGS, carve#451), so every following line simply begins
+//! whatever block it begins: a list marker starts a sibling list, a quote
+//! starts a quote, and plain text starts a paragraph. Nothing folds in, which
+//! is the point -- the fold used to swallow the paragraph and the heading id
+//! with it. Matches carve-js and carve-php; diverges from canonical djot.
 
 #[test]
 fn list_marker_ends_heading_and_starts_sibling_list() {
@@ -25,30 +25,29 @@ fn list_marker_ends_heading_and_starts_sibling_list() {
 }
 
 #[test]
-fn plain_text_still_folds_into_heading() {
+fn plain_text_after_a_heading_is_a_paragraph() {
     assert_eq!(
         carve::to_html("# H\nplain words"),
-        "<section id=\"H-plain-words\">\n  <h1>H\nplain words</h1>\n</section>"
+        "<section id=\"H\">\n  <h1>H</h1>\n  <p>plain words</p>\n</section>"
     );
 }
 
 #[test]
-fn only_same_level_hash_marker_continues_a_heading() {
-    // A continuation line with EXACTLY the same number of `#` continues the
-    // heading (markers stripped). Matches Djot: "may be preceded by the same
-    // number of `#` characters".
+fn no_hash_marker_line_continues_a_heading() {
+    // A same-count `#` line was Djot's explicit continuation form. It is now
+    // simply the next heading, at that level.
     assert_eq!(
         carve::to_html("## H\n## more"),
-        "<section id=\"H-more\">\n  <h2>H\nmore</h2>\n</section>"
+        "<section id=\"H\">\n  <h2>H</h2>\n</section>\n<section id=\"more\">\n  <h2>more</h2>\n</section>"
     );
     assert_eq!(
         carve::to_html("# H\n# more"),
-        "<section id=\"H-more\">\n  <h1>H\nmore</h1>\n</section>"
+        "<section id=\"H\">\n  <h1>H</h1>\n</section>\n<section id=\"more\">\n  <h1>more</h1>\n</section>"
     );
-    // A no-`#` plain-text line still folds in.
+    // A no-`#` plain-text line is a paragraph in the section.
     assert_eq!(
         carve::to_html("## H\nmore"),
-        "<section id=\"H-more\">\n  <h2>H\nmore</h2>\n</section>"
+        "<section id=\"H\">\n  <h2>H</h2>\n  <p>more</p>\n</section>"
     );
 
     // A DIFFERENT `#` count (fewer) ends the heading and starts a NEW one. A

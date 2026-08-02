@@ -1651,66 +1651,23 @@ fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<BlockNode>
     if let Some((level, first_text)) = detect_heading(line) {
         let span_start = cur.pos;
         cur.consume();
-        // Headings are multi-line: the text spills onto following lines until a
-        // blank line. A continuation line may carry EXACTLY the same number of
-        // `#` (stripped) or none; a different `#` count (more or fewer) starts a
-        // new heading, and a caption or a fenced comment (`%%%`) ends it. A
-        // block-opener (list/quote/table/fence/div/thematic break) ends it and
-        // starts that block, exactly as it interrupts a paragraph (§10); only
-        // plain text folds (an ordered marker folds, it never interrupts).
-        let mut joined = first_text.to_string();
-        let mut anchors = options
+        // SINGLE-LINE HEADINGS (NORMATIVE, diverges from Djot): a heading ENDS
+        // AT THE NEWLINE. Nothing folds into it -- not a plain line, not a
+        // same-count `#` line -- so the following line begins whatever block it
+        // begins, exactly as after any other closed block. Lazy continuation
+        // therefore means one thing across the language: it continues an open
+        // PARAGRAPH, and a heading is not one.
+        let joined = first_text.to_string();
+        let anchors = options
             .positions
             .then(|| vec![inline_anchor_for_line(cur, span_start, first_text)]);
-        while let Some(next) = cur.peek() {
-            if is_blank_line(next) {
-                break;
-            }
-            if let Some(cont) = heading_continuation_same_level(next, level) {
-                joined.push('\n');
-                joined.push_str(cont);
-                if let Some(anchors) = &mut anchors {
-                    anchors.push(inline_anchor_for_line(cur, cur.pos, cont));
-                }
-                cur.consume();
-                continue;
-            }
-            // A bare same-level marker line continues the heading, contributing
-            // no content (checked before is_heading_marker_line, which would
-            // otherwise treat it as the start of a new heading).
-            if is_bare_same_level_marker(next, level) {
-                cur.consume();
-                continue;
-            }
-            if is_heading_marker_line(next)
-                || caption_content(next).is_some()
-                || detect_comment_fence_line(next).is_some()
-            {
-                break;
-            }
-            // A list marker ENDS the heading and starts a sibling list (it does
-            // not fold in). Symmetric §10: a list marker does not interrupt a
-            // PARAGRAPH (it folds), but a heading is ended by it -- matching djot
-            // (`# T` / `- x` -> heading + list). Bullet and ordered alike.
-            let next_owned = next.to_string();
-            if is_list_marker(next) || interrupts_paragraph(cur, &next_owned) {
-                break;
-            }
-            joined.push('\n');
-            joined.push_str(next);
-            if let Some(anchors) = &mut anchors {
-                anchors.push(inline_anchor_for_line(cur, cur.pos, next));
-            }
-            cur.consume();
-        }
         // djot-strict (spec PART 2 headings; matches carve-js #153): a heading
         // line carries NO trailing `{...}` attribute block -- a trailing brace
         // block is ordinary inline content, and the heading id derives from
         // the full literal text. Attributes attach via a PRECEDING
         // block-attribute line (the pending-attrs loop, PART 9 §15).
-        // §756 (NORMATIVE): strip the FINAL line's trailing whitespace only
-        // (trim_ascii_end -- ASCII whitespace, so a trailing NBSP survives; an
-        // interior trailing run before a soft break is preserved).
+        // §756 (NORMATIVE): strip the line's trailing whitespace (trim_ascii_end
+        // -- ASCII whitespace, so a trailing NBSP survives).
         let pos = span_of(cur, span_start, cur.pos, options);
         let inline_text = trim_ascii_end(&joined);
         let children = if let Some(anchors) = anchors {
@@ -1889,51 +1846,6 @@ fn detect_heading(line: &str) -> Option<(u8, &str)> {
         return None;
     }
     Some((hashes as u8, rest))
-}
-
-/// A heading continuation line carrying EXACTLY `level` `#` markers, a space,
-/// then non-empty text. Returns the text after the markers (markers stripped),
-/// as in Djot ("may be preceded by the same number of `#` characters"). A
-/// different count (more or fewer) returns None, so that line starts a NEW
-/// heading instead of continuing the current one.
-fn heading_continuation_same_level(line: &str, level: u8) -> Option<&str> {
-    let bytes = line.as_bytes();
-    let mut hashes = 0usize;
-    while hashes < bytes.len() && bytes[hashes] == b'#' {
-        hashes += 1;
-    }
-    if hashes != level as usize {
-        return None;
-    }
-    if hashes >= bytes.len() || bytes[hashes] != b' ' {
-        return None;
-    }
-    // Skip all spaces after the marker, mirroring detect_heading.
-    let mut start = hashes;
-    while start < bytes.len() && bytes[start] == b' ' {
-        start += 1;
-    }
-    // Verbatim content (see detect_heading): a continuation line's trailing is
-    // interior, so only the final assembled content is trailing-stripped (§756).
-    let rest = &line[start..];
-    if trim_ascii_end(rest).is_empty() {
-        return None;
-    }
-    Some(rest)
-}
-
-/// A bare SAME-level marker line (`#` / `# ` for a level-1 heading): exactly
-/// `level` `#`s followed by only spaces. It continues the heading but adds no
-/// content, so the surrounding marker lines join with a single newline (djot;
-/// "same number of `#` ... or none"). A DIFFERENT count is left to
-/// is_heading_marker_line, which ends the heading and starts a new one.
-fn is_bare_same_level_marker(line: &str, level: u8) -> bool {
-    let bytes = line.as_bytes();
-    let mut hashes = 0usize;
-    while hashes < bytes.len() && bytes[hashes] == b'#' {
-        hashes += 1;
-    }
-    hashes == level as usize && bytes[hashes..].iter().all(|&b| b == b' ')
 }
 
 /// Any ATX heading marker line (`#`..`######` followed by a space or EOL) —
@@ -3199,18 +3111,20 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 if let Some(last) = items.last_mut() {
                     let mut nested =
                         collect_item_continuation_block_mapped(cur, base_indent, content_col);
-                    // A heading folds its trailing plain text as continuation
-                    // (PART 2 headings), until a blank line or a block opener --
-                    // unconditionally, per the grammar. When the indented block
-                    // ends in a heading and the next lines are flush-left lazy
-                    // text, pull them in so the heading parser folds them into
-                    // the heading rather than the list ending and the text
-                    // floating to the top level (matches carve-php, carve#326).
-                    // A blank BEFORE the heading is irrelevant to whether text
-                    // AFTER it folds, so this is not gated on pending_blank
+                    // A heading keeps the item open for flush-left lazy text.
+                    // The heading itself ends at its newline and absorbs
+                    // nothing (PART 2 SINGLE-LINE HEADINGS), but when the
+                    // indented block ends in a heading the following flush-left
+                    // lines still belong to the ITEM, so pull them in: they
+                    // become the item's own content beside the heading rather
+                    // than the list ending and the text floating to the top
+                    // level (corpus 73-list-nesting-and-looseness-4; matches
+                    // carve-php / carve-js, carve#326). A blank BEFORE the
+                    // heading is irrelevant to whether text AFTER it belongs to
+                    // the item, so this is not gated on pending_blank
                     // (collect_trailing_lazy still stops at a blank of its own).
-                    // Only headings fold this way: a code block or table keeps
-                    // its trailing text as a separate top-level block.
+                    // Only headings keep the item open this way: a code block or
+                    // table leaves its trailing text a separate top-level block.
                     if nested_ends_with_heading(&nested.source, options) {
                         collect_trailing_lazy(cur, &mut nested);
                     } else if !pending_blank
@@ -3421,6 +3335,25 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 // The item runs from its marker to the last line its body
                 // consumed - the bullet is part of the item, unlike the
                 // paragraph inside it, which starts at the text.
+                pos: span_of(cur, item_at, cur.pos, options),
+            });
+            continue;
+        }
+        // Braces ALONE on the marker line are a block-attribute line for the
+        // item's first block, not lead text (corpus 170). `- {a=b .c}` +
+        // `  # H` therefore attributes the heading, exactly as the same two
+        // lines do at document level. Braces followed by TEXT stay literal
+        // (`- {.c} literal text`), which is why the whole content must parse as
+        // a standalone attribute line. Routed through the block stream so the
+        // pending-attribute machinery, not this lead-paragraph path, sees it.
+        if parse_standalone_attrs(marker.content).is_some() {
+            let mut stream = item_marker_source(cur, marker.content, item_at);
+            stream.append(collect_indented_block_mapped(cur, base_indent, content_col));
+            let children = parse_mapped_source(&stream, options);
+            items.push(ListItem {
+                attrs: item_attrs,
+                checked: marker.checked,
+                children,
                 pos: span_of(cur, item_at, cur.pos, options),
             });
             continue;
