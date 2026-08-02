@@ -48,7 +48,6 @@ mod unicode_nfc;
 /// something a consumer can be expected to absorb (carve-rs#404). The writer's
 /// own staging markers moved to U+E010.. to free it.
 pub(crate) const NBSP_PLACEHOLDER: char = '\u{e000}';
-pub(crate) const ESCAPED_CARET_PLACEHOLDER: char = '\u{e002}';
 pub const SPEC_VERSION: &str = "0.1";
 
 pub use ast::*;

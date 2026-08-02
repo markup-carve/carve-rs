@@ -893,14 +893,8 @@ fn render_inline(
         InlineNode::Text(text) => escape_text(
             &resolve_nbsp_placeholder(&text.value, ctx.line_block_depth > 0),
             ctx.escape_mode,
-        )
-        .replace(crate::ESCAPED_CARET_PLACEHOLDER, "\\^"),
-        InlineNode::EscapedText(text) => {
-            format!(
-                "\\{}",
-                text.value.replace(crate::ESCAPED_CARET_PLACEHOLDER, "^")
-            )
-        }
+        ),
+        InlineNode::EscapedText(text) => format!("\\{}", text.value),
         InlineNode::SmartPunctuation(s) => s.value.clone(),
         InlineNode::Emphasis(emphasis) => {
             let content = render_inlines(&emphasis.children, ctx);

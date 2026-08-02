@@ -767,9 +767,7 @@ pub(crate) fn plain_inlines(nodes: &[InlineNode]) -> String {
     let mut out = String::new();
     for node in nodes {
         match node {
-            InlineNode::Text(s) => {
-                out.push_str(&s.value.replace(crate::ESCAPED_CARET_PLACEHOLDER, "^"))
-            }
+            InlineNode::Text(s) => out.push_str(&s.value),
             InlineNode::SmartPunctuation(s) => out.push_str(smart_punctuation_glyph(s)),
             InlineNode::Emphasis(e) => out.push_str(&plain_inlines(&e.children)),
             InlineNode::Code(s) => out.push_str(&s.value),
@@ -1669,7 +1667,6 @@ fn write_escaped_text_nbsp(out: &mut String, input: &str) {
             // Both a literal U+00A0 and the generated-NBSP placeholder render
             // as `&nbsp;` in HTML; they only diverge in plain/ANSI output.
             '\u{00a0}' | crate::NBSP_PLACEHOLDER => "&nbsp;",
-            crate::ESCAPED_CARET_PLACEHOLDER => "^",
             // Trojan-Source bidi-override / isolate controls are REMOVED (not
             // escaped) from rendered text and code: an entity reference decodes
             // back to the raw control and still reorders the DOM, so only
@@ -1703,7 +1700,7 @@ fn render_inline_after(
         }
         InlineNode::EscapedText(s) => {
             // The backslash is authoring syntax; the reader sees the character.
-            write_escaped_text_nbsp(out, &s.value.replace(crate::ESCAPED_CARET_PLACEHOLDER, "^"));
+            write_escaped_text_nbsp(out, &s.value);
         }
         InlineNode::SmartPunctuation(s) => write_escaped_text_nbsp(out, smart_punctuation_glyph(s)),
         InlineNode::Emphasis(e) => render_emphasis(out, e, options, state),
@@ -1972,9 +1969,7 @@ fn flatten_text(nodes: &[InlineNode]) -> String {
     let mut out = String::new();
     for node in nodes {
         match node {
-            InlineNode::Text(t) => {
-                out.push_str(&t.value.replace(crate::ESCAPED_CARET_PLACEHOLDER, "^"))
-            }
+            InlineNode::Text(t) => out.push_str(&t.value),
             InlineNode::SmartPunctuation(s) => out.push_str(smart_punctuation_glyph(s)),
             InlineNode::Emphasis(e) => out.push_str(&flatten_text(&e.children)),
             InlineNode::Link(l) => out.push_str(&flatten_text(&l.children)),

@@ -743,7 +743,5 @@ fn normalize(text: &str) -> String {
     // A generated-NBSP placeholder (escaped space / verse indent) becomes a
     // plain space in display output; a LITERAL U+00A0 typed in the source is
     // preserved as-is. Only the HTML renderer folds both to `&nbsp;`.
-    format!("{trimmed}\n")
-        .replace(crate::NBSP_PLACEHOLDER, " ")
-        .replace(crate::ESCAPED_CARET_PLACEHOLDER, "^")
+    format!("{trimmed}\n").replace(crate::NBSP_PLACEHOLDER, " ")
 }

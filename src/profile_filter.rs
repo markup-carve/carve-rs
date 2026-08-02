@@ -872,8 +872,8 @@ fn block_children_join(children: &[BlockNode]) -> String {
 /// Render an inline node to source-flavored plain text.
 fn extract_inline_text(node: &InlineNode) -> String {
     match node {
-        InlineNode::Text(t) => t.value.replace(crate::ESCAPED_CARET_PLACEHOLDER, "^"),
-        InlineNode::EscapedText(t) => t.value.replace(crate::ESCAPED_CARET_PLACEHOLDER, "^"),
+        InlineNode::Text(t) => t.value.clone(),
+        InlineNode::EscapedText(t) => t.value.clone(),
         InlineNode::SmartPunctuation(s) => smart_punctuation_glyph(s).to_string(),
         InlineNode::Code(c) => c.value.clone(),
         InlineNode::Math(m) => m.content.clone(),

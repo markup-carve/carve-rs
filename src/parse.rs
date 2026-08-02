@@ -6557,11 +6557,13 @@ fn parse_inline_context(
                     &mut buf_src_delta,
                 );
                 out.push(InlineNode::EscapedText(EscapedText {
-                    value: if nxt == b'^' {
-                        crate::ESCAPED_CARET_PLACEHOLDER.to_string()
-                    } else {
-                        (nxt as char).to_string()
-                    },
+                    // The CHARACTER, not a marker standing in for it. PART 12
+                    // section 1 requires mapping internals on the way out, and
+                    // the node type already carries the only thing the marker
+                    // was distinguishing: an `escaped_text` node IS an escape,
+                    // so the writer emits a backslash plus this value without
+                    // needing the value to say so again (carve-rs#408).
+                    value: (nxt as char).to_string(),
                     pos: inline_pos(positions, base + i, base + i + 2),
                 }));
                 i += 2;
@@ -10188,9 +10190,7 @@ fn plain_inlines_parse(nodes: &[InlineNode]) -> String {
     let mut out = String::new();
     for node in nodes {
         match node {
-            InlineNode::Text(s) => {
-                out.push_str(&s.value.replace(crate::ESCAPED_CARET_PLACEHOLDER, "^"))
-            }
+            InlineNode::Text(s) => out.push_str(&s.value),
             InlineNode::SmartPunctuation(s) => out.push_str(smart_punctuation_glyph(s)),
             InlineNode::Emphasis(e) => out.push_str(&plain_inlines_parse(&e.children)),
             InlineNode::Code(s) => out.push_str(&s.value),
