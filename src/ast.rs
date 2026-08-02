@@ -770,6 +770,7 @@ pub struct CaptionNumber {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Mention {
+    pub attrs: Option<Attrs>,
     pub user: String,
     /// Span in the original source, when the parser could determine it.
     pub pos: Option<Pos>,
@@ -777,6 +778,7 @@ pub struct Mention {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Tag {
+    pub attrs: Option<Attrs>,
     pub name: String,
     /// Span in the original source, when the parser could determine it.
     pub pos: Option<Pos>,

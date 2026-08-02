@@ -132,6 +132,7 @@ fn maps_inline_variants_to_canonical_names() {
     // deny check rather than by being renamed (carve issue 362).
     assert_eq!(
         canonical_inline_type(&InlineNode::Tag(Tag {
+            attrs: None,
             name: "x".into(),
             pos: None,
         })),

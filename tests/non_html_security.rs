@@ -231,10 +231,12 @@ fn markdown_strips_control_bytes_from_author_leaf_fields() {
                         pos: None,
                     }),
                     carve::InlineNode::Mention(carve::Mention {
+                        attrs: None,
                         user: format!("user{c}"),
                         pos: None,
                     }),
                     carve::InlineNode::Tag(carve::Tag {
+                        attrs: None,
                         name: format!("tag{c}"),
                         pos: None,
                     }),
@@ -329,10 +331,12 @@ fn plain_and_ansi_strip_control_bytes_from_author_leaf_fields() {
                         pos: None,
                     }),
                     carve::InlineNode::Mention(carve::Mention {
+                        attrs: None,
                         user: format!("user{c}"),
                         pos: None,
                     }),
                     carve::InlineNode::Tag(carve::Tag {
+                        attrs: None,
                         name: format!("tag{c}"),
                         pos: None,
                     }),
