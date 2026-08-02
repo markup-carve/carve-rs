@@ -1683,11 +1683,23 @@ impl Json {
 /// The reader is recursive-descent, so nesting depth is stack depth, and a
 /// document is untrusted input: `[[[[…]]]]` 200000 deep overflowed the stack and
 /// ABORTED the process rather than returning an error. The markup parser bounds
-/// itself the same way (`MAX_NESTING_DEPTH` in parse.rs, also 200, matching
-/// carve-js and carve-php), and an AST that deep is not a document anyone wrote -
-/// the parser could not have produced one, since it refuses to nest that far in
-/// the first place.
-const MAX_JSON_DEPTH: usize = 200;
+/// itself the same way (`MAX_NESTING_DEPTH` in parse.rs, 200, matching carve-js
+/// and carve-php).
+///
+/// The two caps count DIFFERENT THINGS, which is the bug this constant used to
+/// carry (carve-rs#389). The parser's 200 is a NODE depth. This one is a raw
+/// JSON structural depth, and a node costs two of those levels - the object,
+/// then its `children` array - so a budget of 200 admitted only about 99 nested
+/// containers and `from_json` REJECTED ASTs this crate's own `to_json` had just
+/// produced. Measured: 200 containers serialize to a JSON depth of 405, the
+/// ratio converging on 2.02 as the fixed overhead amortizes.
+///
+/// So it is derived rather than written down twice. The slack absorbs the
+/// non-container nesting a node carries (`attrs`, `pos`) and keeps this from
+/// sitting exactly on the boundary. Raising the parser's cap raises this one
+/// with it, which is the point - the reader must accept whatever the parser can
+/// emit, whatever that limit becomes.
+const MAX_JSON_DEPTH: usize = crate::parse::MAX_NESTING_DEPTH * 2 + 16;
 
 struct Parser<'a> {
     input: &'a str,
@@ -1710,7 +1722,7 @@ impl<'a> Parser<'a> {
         f: impl FnOnce(&mut Self) -> Result<T, AstJsonError>,
     ) -> Result<T, AstJsonError> {
         if self.depth >= MAX_JSON_DEPTH {
-            return Err(self.err("JSON nests deeper than 200 levels"));
+            return Err(self.err("JSON nests deeper than the reader's depth budget"));
         }
         self.depth += 1;
         let out = f(self);

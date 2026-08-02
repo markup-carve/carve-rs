@@ -30,7 +30,7 @@ use std::collections::{BTreeMap, HashMap};
 /// larger frames need more, which is why the worst-case-depth robustness tests
 /// run on a generous worker stack). carve-php's analogous cap relies on PHP
 /// growing its VM stack on the heap.
-const MAX_NESTING_DEPTH: usize = 200;
+pub(crate) const MAX_NESTING_DEPTH: usize = 200;
 
 fn trim_ascii_start(s: &str) -> &str {
     s.trim_start_matches([' ', '\t'])
@@ -162,7 +162,7 @@ fn parse_with_options_mode(source: &str, options: &Options<'_>, mode: ParseMode)
     );
     if matches!(mode, ParseMode::Html) {
         apply_abbreviations(&mut doc);
-        resolve_crossrefs(&mut doc, options.lowercase_heading_ids);
+        number_crossref_captions(&mut doc);
         // A resolved reference image lands as a one-image paragraph (the
         // syntactic block-image check ran before resolution); promote it to a
         // block image like a standalone direct image, matching carve-php.
@@ -849,10 +849,6 @@ struct LineCursor<'a> {
 }
 
 impl<'a> LineCursor<'a> {
-    fn new(lines: &'a [&'a str], line_map: Option<&'a [Option<usize>]>) -> Self {
-        Self::new_with_cols(lines, line_map, None)
-    }
-
     fn new_with_cols(
         lines: &'a [&'a str],
         line_map: Option<&'a [Option<usize>]>,
@@ -1195,10 +1191,20 @@ fn fill_offsets(blocks: &mut [BlockNode], line_starts: &[usize]) {
             BlockNode::DefinitionList(d) => {
                 for item in &mut d.items {
                     for term in &mut item.terms {
+                        // The TERM's own span, not only its inline content. This
+                        // walk reached the children and skipped the node, so a
+                        // `<dt>` carried line and column with offsets of 0..0 -
+                        // present, and selecting nothing. Same for `<dd>` below.
+                        if let Some(pos) = term.pos.as_mut() {
+                            apply_offsets(pos, line_starts);
+                        }
                         apply_inline_offsets(&mut term.children, line_starts);
                     }
                     for def in &mut item.definitions {
-                        fill_offsets(def, line_starts);
+                        if let Some(pos) = def.pos.as_mut() {
+                            apply_offsets(pos, line_starts);
+                        }
+                        fill_offsets(&mut def.children, line_starts);
                     }
                 }
             }
@@ -1227,7 +1233,15 @@ fn fill_offsets(blocks: &mut [BlockNode], line_starts: &[usize]) {
                             apply_offsets(pos, line_starts);
                         }
                     }
-                    _ => {}
+                    // A code block was reached by the catch-all below and so
+                    // kept offsets of 0..0 - present, and selecting nothing.
+                    // The arms are exhaustive now: a target added later fails to
+                    // compile rather than silently reporting an empty span.
+                    FigureTarget::CodeBlock(c) => {
+                        if let Some(pos) = c.pos.as_mut() {
+                            apply_offsets(pos, line_starts);
+                        }
+                    }
                 }
             }
             _ => {}
@@ -1546,6 +1560,7 @@ fn resolve_code_title(node: &mut BlockNode) {
 fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<BlockNode> {
     let line = cur.peek()?;
     if let Some(fence_marker) = detect_fence_open(line) {
+        let fence_at = cur.pos;
         let block = parse_fence(cur, fence_marker, options);
         // A caption immediately after a fenced code block makes it a numbered
         // LISTING: wrap it in a figure like a captioned image/table.
@@ -1555,7 +1570,9 @@ fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<BlockNode>
                     attrs: None,
                     target: FigureTarget::CodeBlock(cb),
                     caption,
-                    pos: None,
+                    // From the opening fence through the end of the caption -
+                    // the same extent a captioned image's figure takes.
+                    pos: span_of(cur, fence_at, cur.pos, options),
                 }));
             }
             return Some(BlockNode::CodeBlock(cb));
@@ -1778,10 +1795,15 @@ fn parse_equation_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<B
     }
     // Standalone display math: consume the line, then attach a caption if one
     // follows (directly or across a single blank line).
+    let math_at = cur.pos;
     cur.consume();
     let target = FigureTarget::Paragraph(Paragraph {
         attrs: None,
         children: inline,
+        // The paragraph is one line: the display-math line itself. It was built
+        // with `..Default::default()`, so it had no span whether or not a
+        // caption followed.
+        pos: span_of(cur, math_at, math_at + 1, options),
         ..Default::default()
     });
     if let Some(caption) = consume_caption(cur, options) {
@@ -1789,7 +1811,8 @@ fn parse_equation_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<B
             attrs: None,
             target,
             caption,
-            pos: None,
+            // Through the end of the caption, like the listing above.
+            pos: span_of(cur, math_at, cur.pos, options),
         }));
     }
     match target {
@@ -2823,9 +2846,19 @@ fn parse_continuation_block(
         .line_map
         .map(|map| map[cur.pos..end].to_vec())
         .unwrap_or_default();
-    let mut sub = LineCursor::new(
+    // The attached lines are taken VERBATIM - nothing is stripped from them -
+    // so the parent's column widths apply unchanged. Without this the sub-cursor
+    // had no column map at all, and every block a `+` attached came out
+    // unplaced: the code block, quote or table after the marker, and everything
+    // inside it.
+    let col_map: Vec<Option<usize>> = cur
+        .col_map
+        .map(|map| map[cur.pos..end].to_vec())
+        .unwrap_or_default();
+    let mut sub = LineCursor::new_with_cols(
         &slice,
         cur.line_map.is_some().then_some(line_map.as_slice()),
+        cur.col_map.is_some().then_some(col_map.as_slice()),
     );
     let mut block = parse_block(&mut sub, options);
     if options.source_lines {
@@ -3100,6 +3133,11 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             if let Some(block) = parse_continuation_block(cur, options, base_indent) {
                 item.children.push(block);
             }
+            // The item runs from its marker line through the block the `+`
+            // attached - it was the only list item built with a hardcoded
+            // `None`, so an item written this way had no span while its
+            // siblings and its own contents did.
+            item.pos = span_of(cur, item_at, cur.pos, options);
             items.push(item);
             continue;
         }
@@ -4271,10 +4309,12 @@ fn parse_definition_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNo
         } else {
             parse_inline_with_options(&term_text, options)
         };
+        // The span covers the `:: ` marker and every line the term folded, the
+        // same way a heading's covers its `#`.
         let mut terms = vec![DefinitionTerm {
             attrs: source_line_attrs(None, term_source_line, options),
             children,
-            pos: None,
+            pos: span_of(cur, term_start, cur.pos, options),
         }];
 
         // CONSECUTIVE terms share an entry, which is what `:: a` / `:: b` on
@@ -4325,7 +4365,7 @@ fn parse_definition_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNo
             terms.push(DefinitionTerm {
                 attrs: source_line_attrs(None, next_source_line, options),
                 children,
-                pos: None,
+                pos: span_of(cur, next_start, cur.pos, options),
             });
         }
 
@@ -4361,6 +4401,7 @@ fn parse_definition_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNo
                 break;
             }
             let def_source_line = cur.source_line(cur.pos);
+            let def_start = cur.pos;
             // The `:  ` marker is three codepoints; add whatever an enclosing
             // container already took so a nested block maps back to the document.
             let def_source_col = cur.source_col(cur.pos).map(|c| c + 3);
@@ -4391,10 +4432,15 @@ fn parse_definition_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNo
                 MappedSource::new_line_at(def_trimmed.to_string(), def_source_line, def_source_col)
             };
             body.append(collect_definition_body(cur));
+            // The span covers the `:  ` marker through the last line the body
+            // consumed, so a multi-line definition is one region rather than
+            // just its opening line. `collect_definition_body` has already
+            // advanced the cursor past those lines.
+            let pos = span_of(cur, def_start, cur.pos, options);
             defs.push(DefinitionDef {
                 attrs: source_line_attrs(None, def_source_line, options),
                 children: parse_mapped_source(&body, options),
-                pos: None,
+                pos,
             });
         }
 
@@ -4685,7 +4731,14 @@ fn parse_table(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             let cont_at = cur.pos;
             cur.consume();
             if let Some(last) = rows.last_mut() {
-                apply_table_continuation(last, line, options);
+                apply_table_continuation(
+                    last,
+                    line,
+                    options,
+                    cur.source_line(cont_at)
+                        .zip(cur.source_col(cont_at))
+                        .filter(|_| options.positions),
+                );
                 // The row now RUNS to this line. It stays one contiguous range
                 // that no sibling row overlaps, so it keeps a position - unlike
                 // the cell the continuation extends, whose content sits in two
@@ -4814,7 +4867,15 @@ fn apply_column_aligns(row: &mut TableRow, aligns: &[Option<TableAlign>]) {
     }
 }
 
-fn apply_table_continuation(row: &mut TableRow, line: &str, options: &Options<'_>) {
+/// `base` is the continuation line's (source line, columns already stripped by
+/// an enclosing container) - the same pair `parse_table_row` takes, and used the
+/// same way. Without it the text a continuation adds cannot be placed.
+fn apply_table_continuation(
+    row: &mut TableRow,
+    line: &str,
+    options: &Options<'_>,
+    base: Option<(usize, usize)>,
+) {
     let mut content = line.trim();
     if let Some(stripped) = content.strip_prefix('+') {
         content = stripped;
@@ -4822,18 +4883,35 @@ fn apply_table_continuation(row: &mut TableRow, line: &str, options: &Options<'_
     if let Some(stripped) = content.strip_suffix('|') {
         content = stripped;
     }
-    for (idx, cell) in split_table_cells(content).into_iter().enumerate() {
-        let text = cell.trim();
+    // Where `content` starts inside `line`, in CHARS - see `parse_table_row`,
+    // which does the same arithmetic on the row line.
+    let content_off = base.map(|_| {
+        let bytes = (content.as_ptr() as usize).saturating_sub(line.as_ptr() as usize);
+        line[..bytes].chars().count()
+    });
+    for (idx, cell) in split_table_cells_ranged(content).into_iter().enumerate() {
+        let text = cell.text.trim();
         if text.is_empty() {
             continue;
         }
+        // Trimming moved the start; count what it took so the anchor lands on
+        // the first character of the text and not on the padding before it.
+        let lead = cell.text.chars().count() - cell.text.trim_start().chars().count();
+        let anchor = match (base, content_off) {
+            (Some((line_no, stripped)), Some(off)) => {
+                Some((line_no, stripped + off + cell.start + lead))
+            }
+            _ => None,
+        };
         if let Some(target) = row.cells.get_mut(idx) {
             if !target.children.is_empty() {
+                // The joiner is MANUFACTURED - the source has a line break
+                // here, not a space - so it carries no position.
                 target.children.push(InlineNode::text(" ".to_string()));
             }
             target
                 .children
-                .extend(parse_inline_with_options(text, options));
+                .extend(parse_inline_lines_with_anchor(text, options, vec![anchor]));
         }
     }
 }
@@ -5065,6 +5143,11 @@ struct ContainerOpen {
     fence_len: usize,
     kind: Option<String>,
     title: Option<String>,
+    /// Codepoint offset of the title's first character within the opener line,
+    /// when the title is a VERBATIM slice of it. A quoted title carrying an
+    /// escape is rebuilt rather than sliced, so no column in it maps back and
+    /// this stays `None` (PART 12 section 4).
+    title_col: Option<usize>,
     label: Option<String>,
     attrs: Option<Attrs>,
 }
@@ -5085,6 +5168,7 @@ fn detect_container_open(line: &str) -> Option<ContainerOpen> {
             fence_len,
             kind: None,
             title: None,
+            title_col: None,
             label: None,
             attrs: None,
         });
@@ -5094,6 +5178,7 @@ fn detect_container_open(line: &str) -> Option<ContainerOpen> {
             fence_len,
             kind: None,
             title: None,
+            title_col: None,
             label: Some(label),
             attrs: None,
         });
@@ -5116,8 +5201,20 @@ fn detect_container_open(line: &str) -> Option<ContainerOpen> {
         return None;
     }
     let mut after = after_kind.trim_start();
+    let mut title_col = None;
     let title = if after.starts_with('"') {
+        // Where the text after the quote sits in the ORIGINAL line. These are
+        // all subslices of `line`, so the byte offset is a pointer difference;
+        // columns are codepoints (PART 12 section 4).
+        let quote_at = (after.as_ptr() as usize) - (line.as_ptr() as usize);
+        let text_at = quote_at + 1;
         let (title, remainder) = parse_quoted_metadata(after)?;
+        // Only when the title is the source verbatim. An escaped quote makes
+        // `parse_quoted_metadata` build a new string, and then no column in it
+        // maps back.
+        if line[text_at..].starts_with(&title) {
+            title_col = Some(line[..text_at].chars().count());
+        }
         after = remainder.trim_start();
         Some(title)
     } else {
@@ -5140,6 +5237,7 @@ fn detect_container_open(line: &str) -> Option<ContainerOpen> {
         fence_len,
         kind: Some(kind),
         title,
+        title_col,
         label,
         attrs: None,
     })
@@ -5201,7 +5299,19 @@ fn parse_container(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         BlockNode::Admonition(Admonition {
             attrs: open.attrs,
             kind,
-            title: open.title.map(|t| parse_inline_with_options(&t, options)),
+            // The title is a slice of the opener line, so its inlines can be
+            // placed - but only when the opener told us which column it starts
+            // at. `inline_anchor_for_line` cannot: it works by suffix, and a
+            // title sits in the MIDDLE of its line, between quotes.
+            title: open.title.map(|t| {
+                let anchor = open.title_col.and_then(|col| {
+                    Some((
+                        cur.source_line(span_start)?,
+                        cur.source_col(span_start)? + col,
+                    ))
+                });
+                parse_inline_lines_with_anchor(&t, options, vec![anchor])
+            }),
             label: open.label,
             children,
             pos,
@@ -5318,6 +5428,7 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     let mut stanzas: Vec<(LineBuffer, Option<Pos>)> = Vec::new();
     let mut stanza: Vec<String> = Vec::new();
     let mut stanza_line_map: Vec<Option<usize>> = Vec::new();
+    let mut stanza_col_map: Vec<Option<usize>> = Vec::new();
     // Where the open stanza began, and where it ended - the CURSOR's own line
     // indices, which still point at the source. The rewritten verse text cannot
     // give a column back, but the lines a stanza occupies are not in doubt.
@@ -5339,9 +5450,7 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                     LineBuffer {
                         lines: std::mem::take(&mut stanza),
                         line_map: std::mem::take(&mut stanza_line_map),
-                        // Verse lines are rewritten (leading whitespace becomes
-                        // NBSP placeholders), so no column here maps back.
-                        col_map: Vec::new(),
+                        col_map: std::mem::take(&mut stanza_col_map),
                     },
                     at.and_then(|start| span_of(cur, start, stanza_end, options)),
                 ));
@@ -5351,7 +5460,18 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         stanza_start.get_or_insert(line_at);
         stanza_end = cur.pos;
         let stripped = strip_leading_columns(line, base_indent);
-        stanza.push(expand_line_block_leading_ws(&stripped));
+        let expanded = expand_line_block_leading_ws(&stripped);
+        // A verse line is REWRITTEN only when it carries leading whitespace -
+        // that becomes NBSP placeholders, and then no column in it maps back.
+        // A line without any is passed through untouched, and its columns are
+        // still the document's. Per line, not per stanza: one indented line no
+        // longer costs its neighbors their positions.
+        stanza_col_map.push(if expanded == stripped {
+            stripped_col(cur.source_col(line_at), line, &stripped)
+        } else {
+            None
+        });
+        stanza.push(expanded);
         stanza_line_map.push(source_line);
     }
     if !stanza.is_empty() {
@@ -5360,7 +5480,7 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             LineBuffer {
                 lines: stanza,
                 line_map: stanza_line_map,
-                col_map: Vec::new(),
+                col_map: stanza_col_map,
             },
             at.and_then(|start| span_of(cur, start, stanza_end, options)),
         ));
@@ -5370,10 +5490,19 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         .into_iter()
         .map(|(lines, at)| {
             let source_line = lines.line_map.first().copied().flatten();
-            let inlines = parse_inline_with_options(&lines.lines.join("\n"), options)
+            let anchors: Vec<Option<(usize, usize)>> = lines
+                .line_map
+                .iter()
+                .zip(lines.col_map.iter())
+                .map(|(line_no, col)| Some(((*line_no)?, (*col)?)))
+                .collect();
+            let inlines = parse_inline_lines_with_anchor(&lines.lines.join("\n"), options, anchors)
                 .into_iter()
                 .map(|n| match n {
-                    InlineNode::SoftBreak(_) => InlineNode::hard_break(),
+                    // A hard break here IS the source's line ending, so it
+                    // keeps the soft break's span rather than being rebuilt
+                    // without one.
+                    InlineNode::SoftBreak(b) => InlineNode::HardBreak(b),
                     other => other,
                 })
                 .collect();
@@ -5434,6 +5563,7 @@ fn detect_hardbreaks_block_open(line: &str) -> Option<usize> {
 fn parse_hardbreaks_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     let opener = cur.peek().unwrap();
     let fence_len = detect_hardbreaks_block_open(opener).unwrap();
+    let span_start = cur.pos;
     cur.consume();
     let mut inner = LineBuffer::default();
     while let Some(line) = cur.peek() {
@@ -5442,15 +5572,30 @@ fn parse_hardbreaks_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockN
             cur.consume();
             break;
         }
-        inner.push(line.to_string(), cur.source_line(cur.pos));
+        // Record what an ENCLOSING container already took from this line. The
+        // fence strips nothing itself, but without that count no block inside
+        // it can be mapped back to the document and `span_of` refuses - which
+        // left every paragraph in one of these fences unplaced.
+        inner.push_at(
+            line.to_string(),
+            cur.source_line(cur.pos),
+            cur.source_col(cur.pos),
+        );
         cur.consume();
     }
+    // The span covers the opening fence through the closing one, like any other
+    // colon fence.
+    let pos = span_of(cur, span_start, cur.pos, options);
     let mut children = parse_mapped_source(&inner.into_source(), options);
     for child in &mut children {
         if let BlockNode::Paragraph(para) = child {
             for node in &mut para.children {
-                if matches!(node, InlineNode::SoftBreak(_)) {
-                    *node = InlineNode::hard_break();
+                if let InlineNode::SoftBreak(brk) = node {
+                    // Carry the break's span across. Building a fresh
+                    // `hard_break()` here threw it away, and the loss was
+                    // invisible: the two render identically in this block, so
+                    // only the tree showed it.
+                    *node = InlineNode::HardBreak(Break { pos: brk.pos });
                 }
             }
         }
@@ -5466,8 +5611,11 @@ fn parse_hardbreaks_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockN
         }),
         label: None,
         children,
-        // Synthesized wrapper, not a block the author wrote (PART 12 §4).
-        pos: None,
+        // The author DID write this block: the opener is a colon fence carrying
+        // a lone \, and a matching fence closes it. Refusing a position on the
+        // grounds that it is a synthesized wrapper had it backwards - the
+        // `.hardbreaks` class is synthesized, the fence is not.
+        pos,
     })
 }
 
@@ -6417,8 +6565,12 @@ fn parse_inline_context(
             && bytes.get(i + 1) == Some(&b'%')
             && (i == 0 || bytes[i - 1] == b' ' || bytes[i - 1] == b'\t' || bytes[i - 1] == b'\n')
         {
+            // Popping from the END keeps the buffer equal to the source it
+            // started at - `flush_text` measures the span as
+            // `start .. start + buf.len()`, so a shorter buffer is a shorter
+            // span, not a wrong one. Clearing `buf_placeable` here refused a
+            // position for every line ending in a `%%` comment.
             while buf.ends_with(' ') || buf.ends_with('\t') {
-                buf_placeable = false;
                 buf.pop();
             }
             match bytes[i..].iter().position(|&b| b == b'\n') {
@@ -8914,7 +9066,16 @@ fn is_word_boundary(text: &str, pos: usize) -> bool {
         || !text.as_bytes()[pos].is_ascii_alphanumeric()
 }
 
-fn resolve_crossrefs(doc: &mut Document, lowercase_ids: bool) {
+fn number_crossref_captions(doc: &mut Document) {
+    let mut caption_counts = BTreeMap::new();
+    let mut titles = BTreeMap::new();
+    number_captioned_blocks(&mut doc.children, &mut caption_counts, &mut titles);
+    for blocks in doc.footnote_defs.values_mut() {
+        number_captioned_blocks(blocks, &mut caption_counts, &mut titles);
+    }
+}
+
+pub(crate) fn crossref_index_for_document(doc: &Document, lowercase_ids: bool) -> CrossrefIndex {
     let mut counts = BTreeMap::new();
     let mut titles = BTreeMap::new();
     let mut explicit_ids = std::collections::BTreeSet::new();
@@ -8938,20 +9099,11 @@ fn resolve_crossrefs(doc: &mut Document, lowercase_ids: bool) {
             &explicit_ids,
         );
     }
-    let mut caption_counts = BTreeMap::new();
-    number_captioned_blocks(&mut doc.children, &mut caption_counts, &mut titles);
-    for blocks in doc.footnote_defs.values_mut() {
-        number_captioned_blocks(blocks, &mut caption_counts, &mut titles);
+    collect_caption_titles(&doc.children, &mut titles);
+    for blocks in doc.footnote_defs.values() {
+        collect_caption_titles(blocks, &mut titles);
     }
-    let index = crossref_index(titles);
-    for block in &mut doc.children {
-        resolve_crossrefs_block(block, &index);
-    }
-    for blocks in doc.footnote_defs.values_mut() {
-        for block in blocks {
-            resolve_crossrefs_block(block, &index);
-        }
-    }
+    crossref_index(titles)
 }
 
 fn heading_index(
@@ -9001,7 +9153,8 @@ fn crossref_index(titles: BTreeMap<String, String>) -> CrossrefIndex {
 /// Heading-id lookup table for `</#id>` cross-references: exact id -> title,
 /// plus a case-folded fallback (folded id -> actual case-preserved id) so a
 /// lowercase reference resolves to a case-preserved heading.
-struct CrossrefIndex {
+#[derive(Default)]
+pub(crate) struct CrossrefIndex {
     titles: BTreeMap<String, String>,
     folded: BTreeMap<String, String>,
 }
@@ -9009,7 +9162,7 @@ struct CrossrefIndex {
 impl CrossrefIndex {
     /// Resolve a cross-reference target to its `(actual_id, title)`. Tries an
     /// exact match first, then a case-folded fallback (first-occurrence wins).
-    fn resolve(&self, target: &str) -> Option<(&str, &str)> {
+    pub(crate) fn resolve(&self, target: &str) -> Option<(&str, &str)> {
         if let Some((id, title)) = self.titles.get_key_value(target) {
             return Some((id.as_str(), title.as_str()));
         }
@@ -9714,126 +9867,32 @@ fn number_caption(
     }
 }
 
-fn resolve_crossrefs_block(block: &mut BlockNode, index: &CrossrefIndex) {
-    match block {
-        BlockNode::Heading(h) => resolve_crossrefs_inline(&mut h.children, index),
-        BlockNode::Paragraph(p) => resolve_crossrefs_inline(&mut p.children, index),
-        BlockNode::List(l) => {
-            for item in &mut l.items {
-                for child in &mut item.children {
-                    resolve_crossrefs_block(child, index);
+fn collect_caption_titles(blocks: &[BlockNode], titles: &mut BTreeMap<String, String>) {
+    for block in blocks {
+        match block {
+            BlockNode::Table(t) => collect_table_caption_title(t, titles),
+            BlockNode::Figure(f) => {
+                collect_caption_title(&f.caption, f.attrs.as_ref(), titles);
+                match &f.target {
+                    FigureTarget::BlockQuote(b) => collect_caption_titles(&b.children, titles),
+                    FigureTarget::Table(t) => collect_table_caption_title(t, titles),
+                    FigureTarget::Image(_)
+                    | FigureTarget::CodeBlock(_)
+                    | FigureTarget::Paragraph(_) => {}
                 }
             }
-        }
-        BlockNode::BlockQuote(b) => {
-            for child in &mut b.children {
-                resolve_crossrefs_block(child, index);
-            }
-        }
-        BlockNode::Admonition(a) => {
-            for child in &mut a.children {
-                resolve_crossrefs_block(child, index);
-            }
-        }
-        BlockNode::Div(d) => {
-            for child in &mut d.children {
-                resolve_crossrefs_block(child, index);
-            }
-        }
-        BlockNode::DefinitionList(d) => {
-            for item in &mut d.items {
-                for term in &mut item.terms {
-                    resolve_crossrefs_inline(term, index);
-                }
-                for definition in &mut item.definitions {
-                    for child in definition {
-                        resolve_crossrefs_block(child, index);
-                    }
+            BlockNode::List(l) => {
+                for item in &l.items {
+                    collect_caption_titles(&item.children, titles);
                 }
             }
-        }
-        BlockNode::Table(t) => {
-            if let Some(caption) = &mut t.caption {
-                resolve_crossrefs_inline(caption, index);
-            }
-            for row in &mut t.rows {
-                for cell in &mut row.cells {
-                    resolve_crossrefs_inline(&mut cell.children, index);
-                }
-            }
-        }
-        BlockNode::Figure(f) => {
-            resolve_crossrefs_inline(&mut f.caption, index);
-            match &mut f.target {
-                FigureTarget::BlockQuote(b) => {
-                    for child in &mut b.children {
-                        resolve_crossrefs_block(child, index);
-                    }
-                }
-                FigureTarget::Table(t) => {
-                    if let Some(caption) = &mut t.caption {
-                        resolve_crossrefs_inline(caption, index);
-                    }
-                    for row in &mut t.rows {
-                        for cell in &mut row.cells {
-                            resolve_crossrefs_inline(&mut cell.children, index);
-                        }
-                    }
-                }
-                FigureTarget::Image(_)
-                | FigureTarget::CodeBlock(_)
-                | FigureTarget::Paragraph(_) => {}
-            }
-        }
-        _ => {}
-    }
-}
-
-fn resolve_crossrefs_inline(nodes: &mut Vec<InlineNode>, index: &CrossrefIndex) {
-    for node in nodes {
-        match node {
-            InlineNode::CrossRef(c) => {
-                // `</#id>` is a real span in the source, and resolving it only
-                // changes what the node IS - not where it sits. Both arms below
-                // rebuilt the node from scratch and dropped it.
-                let at = c.pos;
-                if let Some((actual_id, title)) = index.resolve(&c.target) {
-                    // The href uses the ACTUAL (case-preserved) heading id, even
-                    // when the reference matched only via the case-fold fallback.
-                    *node = InlineNode::Link(Link {
-                        attrs: None,
-                        href: format!("#{actual_id}"),
-                        title: None,
-                        // The display text is the HEADING's, pulled from
-                        // elsewhere in the document, so no span here equals it -
-                        // `</#some-title>` does not contain "Some Title". It
-                        // stays unplaced rather than borrowing the link's.
-                        children: vec![InlineNode::text(title.to_string())],
-                        ref_label: None,
-                        raw_ref: None,
-                        from_crossref: true,
-                        pos: at,
-                    });
-                } else {
-                    // Unknown heading id: the cross-reference stays literal text.
-                    // That text is the source verbatim, so the span still holds.
-                    *node = InlineNode::Text(Text {
-                        value: format!("</#{}>", c.target),
-                        pos: at,
-                    });
-                }
-            }
-            InlineNode::Emphasis(e) => resolve_crossrefs_inline(&mut e.children, index),
-            InlineNode::Link(l) => resolve_crossrefs_inline(&mut l.children, index),
-            InlineNode::Span(s) => resolve_crossrefs_inline(&mut s.children, index),
-            InlineNode::Extension(e) => resolve_crossrefs_inline(&mut e.children, index),
-            InlineNode::CitationGroup(g) => {
-                for item in &mut g.items {
-                    if let Some(prefix) = &mut item.prefix {
-                        resolve_crossrefs_inline(prefix, index);
-                    }
-                    if let Some(locator) = &mut item.locator {
-                        resolve_crossrefs_inline(locator, index);
+            BlockNode::BlockQuote(b) => collect_caption_titles(&b.children, titles),
+            BlockNode::Admonition(a) => collect_caption_titles(&a.children, titles),
+            BlockNode::Div(d) => collect_caption_titles(&d.children, titles),
+            BlockNode::DefinitionList(d) => {
+                for item in &d.items {
+                    for definition in &item.definitions {
+                        collect_caption_titles(definition, titles);
                     }
                 }
             }
@@ -9842,13 +9901,44 @@ fn resolve_crossrefs_inline(nodes: &mut Vec<InlineNode>, index: &CrossrefIndex) 
     }
 }
 
+fn collect_table_caption_title(table: &Table, titles: &mut BTreeMap<String, String>) {
+    if let Some(caption) = &table.caption {
+        collect_caption_title(caption, table.attrs.as_ref(), titles);
+    }
+}
+
+fn collect_caption_title(
+    caption: &[InlineNode],
+    attrs: Option<&Attrs>,
+    titles: &mut BTreeMap<String, String>,
+) {
+    let Some(idx) = caption
+        .iter()
+        .position(|node| matches!(node, InlineNode::CaptionNumber(_)))
+    else {
+        return;
+    };
+    let Some(number) = caption.get(idx).and_then(|node| match node {
+        InlineNode::CaptionNumber(n) => n.number,
+        _ => None,
+    }) else {
+        return;
+    };
+    if let Some(id) = attrs.and_then(|attrs| attrs.id.as_ref()) {
+        let label = plain_inlines_parse(&caption[..idx])
+            .trim_end_matches(char::is_whitespace)
+            .to_string();
+        titles
+            .entry(id.clone())
+            .or_insert_with(|| format!("{label} {number}"));
+    }
+}
+
 /// Enforce "links never nest" (CommonMark: a link may not contain another
 /// link). This is a single post-resolution pass: it runs AFTER reference-link
-/// and cross-reference resolution because both turn into `Link` nodes only at
-/// that stage, so a `</#id>` cross-reference or a resolved reference inside a
-/// link's text would otherwise survive as a nested anchor. A link found inside
-/// another link is unwrapped to its (recursively cleaned) text, so only the
-/// outermost destination applies; an autolink inside a link becomes plain text
+/// resolution because reference links turn into `Link` nodes at that stage. A
+/// link found inside another link is unwrapped to its (recursively cleaned)
+/// text, so only the outermost destination applies; an autolink inside a link becomes plain text
 /// (the display form the renderer would emit, with a leading `mailto:` scheme
 /// stripped). A footnote body renders in the endnotes section, outside any
 /// anchor, so its links are not nested -- the walk re-enters a footnote body

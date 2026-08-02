@@ -23,6 +23,27 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A profile's `admonition` deny list now matches only the eight Tier-1
+  callout kinds, not every named fence** (markup-carve/carve#431). The
+  renderer already drew this line - `::: sidebar` has always rendered a plain
+  `<div>`, not `<aside>` - but `canonical_block_type` classified every
+  `::: kind` fence as `admonition` for profile purposes regardless of kind, so
+  `deny_block(["admonition"])` silently stripped `::: sidebar` and any other
+  non-Tier-1 fence too. Only `note`, `tip`, `warning`, `danger`, `info`,
+  `success`, `example` and `quote` are callouts now; any other named fence
+  (`::: sidebar`, `::: details` before its extension rewrite applies, etc.) is
+  classified as `div`.
+
+  `deny_block(["div"])` still catches every admonition, Tier-1 or not,
+  through the existing supertype rule - so this narrows `admonition` alone
+  without opening a gap. A host that wants the old blanket behavior back
+  denies both `["admonition", "div"]`.
+
+  This is a profile-classification change only: the published AST is
+  unaffected, and `::: sidebar` still serializes as `{"type":"admonition",
+  "kind":"sidebar"}`, matching carve-js and `resources/ast-schema.json`.
+  carve-php made the matching change in markup-carve/carve-php#513.
+
 - **An unwrapped heading no longer puts its id before the author's attributes**
   (spec PART 10 §1). This engine wrote the id first in every case, so
   `{a=b .c}` on a heading inside a blockquote rendered

@@ -457,65 +457,54 @@ fn an_unwrapped_autolink_declines_when_the_text_is_not_the_source() {
 
 #[test]
 fn a_resolved_cross_reference_keeps_the_span_of_its_source() {
-    // `</#id>` is a real span. Resolving it changes what the node IS - a link
-    // instead of a cross-reference - not where it sits, and the rebuild dropped
-    // the span.
-    //
-    // Its display text is the HEADING's, pulled from elsewhere in the document,
-    // so no span here equals it: `</#some-title>` does not contain "Some
-    // Title". That text stays unplaced rather than borrowing the link's.
+    // `</#id>` is a real span. Resolving it is render-time behavior now, so the
+    // parsed node and its position survive unchanged.
     let source = "# Some Title\n\nSee </#some-title> here.\n";
     let doc = parse_with_positions(source);
     let BlockNode::Paragraph(paragraph) = &doc.children[1] else {
         panic!("expected a paragraph, got {:?}", doc.children[1]);
     };
 
-    let link = paragraph
+    let crossref = paragraph
         .children
         .iter()
         .find_map(|node| match node {
-            carve::ast::InlineNode::Link(l) => Some(l),
+            carve::ast::InlineNode::CrossRef(c) => Some(c),
             _ => None,
         })
-        .expect("the resolved cross-reference");
+        .expect("the cross-reference");
 
     assert_eq!(
-        slice(source, link.pos.expect("link position")),
+        slice(source, crossref.pos.expect("crossref position")),
         "</#some-title>"
     );
-    let carve::ast::InlineNode::Text(display) = &link.children[0] else {
-        panic!("expected the heading text");
-    };
-    assert_eq!(display.value, "Some Title");
-    assert!(
-        display.pos.is_none(),
-        "text pulled from the heading has no span here"
-    );
+    assert_eq!(crossref.target, "some-title");
 }
 
 #[test]
-fn an_unresolved_cross_reference_keeps_its_span_as_literal_text() {
-    // Nothing to resolve, so it stays the characters the author wrote - and
-    // those are exactly the span.
+fn an_unresolved_cross_reference_keeps_its_span() {
+    // Nothing to resolve at parse time, so the cross-reference node survives
+    // with the exact characters the author wrote as its span.
     let source = "See </#nope> here.\n";
     let doc = parse_with_positions(source);
     let BlockNode::Paragraph(paragraph) = &doc.children[0] else {
         panic!("expected a paragraph");
     };
 
-    let literal = paragraph
+    let crossref = paragraph
         .children
         .iter()
         .find_map(|node| match node {
-            carve::ast::InlineNode::Text(t) if t.value == "</#nope>" => Some(t),
+            carve::ast::InlineNode::CrossRef(c) => Some(c),
             _ => None,
         })
-        .expect("the literal cross-reference");
+        .expect("the cross-reference");
 
     assert_eq!(
-        slice(source, literal.pos.expect("text position")),
+        slice(source, crossref.pos.expect("crossref position")),
         "</#nope>"
     );
+    assert_eq!(crossref.target, "nope");
 }
 
 /// A `+` continuation resets what a blockquote's lines look like, so the cursor
@@ -633,30 +622,6 @@ fn a_line_block_stanza_span_excludes_the_blank_that_ends_it() {
     assert_eq!(slice(source, pos), "verse");
 }
 
-/// What is INSIDE a stanza stays unplaced, and that is not an oversight: a
-/// verse line is rewritten before it is parsed (leading whitespace becomes NBSP
-/// placeholders), so no column in it maps back to the source. The lines the
-/// stanza occupies are not in doubt, which is why the paragraph can be placed
-/// while its children cannot.
-#[test]
-fn line_block_inlines_stay_unplaced() {
-    let source = "::: |\nRoses are red,\n  Violets are blue.\n:::\n";
-    let doc = parse_with_positions(source);
-
-    let BlockNode::LineBlock(block) = &doc.children[0] else {
-        panic!("the document is a line block");
-    };
-    let BlockNode::Paragraph(stanza) = &block.children[0] else {
-        panic!("a stanza is a paragraph");
-    };
-    assert!(stanza.pos.is_some());
-    let placed = stanza.children.iter().any(|inline| match inline {
-        carve::ast::InlineNode::Text(t) => t.pos.is_some(),
-        _ => false,
-    });
-    assert!(!placed, "a rewritten verse line cannot place its text");
-}
-
 /// Frontmatter had no span at all - the struct had no field to put one in.
 /// The span covers the whole block, fences included, which is what the
 /// reference publishes.
@@ -694,4 +659,333 @@ fn frontmatter_offsets_are_codepoints() {
     assert_eq!(slice(source, pos), "---\ntitle: \u{1f600}\n---");
     // 4 + 9 + 3, newlines included - not the 20 a UTF-8 byte count would give.
     assert_eq!(pos.end_offset, 16);
+}
+
+/// An admonition's title is a slice of the opener line, so its inlines can be
+/// placed - but `inline_anchor_for_line` cannot do it: that helper works by
+/// SUFFIX, and a title sits in the middle of its line, between quotes. The
+/// opener records the column instead.
+#[test]
+fn an_admonition_title_places_its_inlines() {
+    let source = "::: note \"Install *now* via `npm`\"\nBody.\n:::\n";
+    let doc = parse_with_positions(source);
+
+    let BlockNode::Admonition(note) = &doc.children[0] else {
+        panic!("the document is an admonition");
+    };
+    let title = note.title.as_ref().expect("it has a title");
+    let spans: Vec<String> = title
+        .iter()
+        .map(|inline| match inline {
+            carve::ast::InlineNode::Text(t) => slice(source, t.pos.expect("text is placed")),
+            carve::ast::InlineNode::Emphasis(e) => {
+                slice(source, e.pos.expect("emphasis is placed"))
+            }
+            carve::ast::InlineNode::Code(c) => slice(source, c.pos.expect("code is placed")),
+            other => panic!("unexpected inline in the title: {other:?}"),
+        })
+        .collect();
+    assert_eq!(spans, vec!["Install ", "*now*", " via ", "`npm`"]);
+}
+
+/// A title carrying an ESCAPE is rebuilt rather than sliced, so no column in it
+/// maps back and the inlines stay unplaced. Absent beats wrong: the rebuilt
+/// string is shorter than the source it came from, so every column after the
+/// escape would be off by one.
+#[test]
+fn an_escaped_title_leaves_its_inlines_unplaced() {
+    let source = "::: note \"a \\\" b *x*\"\nBody.\n:::\n";
+    let doc = parse_with_positions(source);
+
+    let BlockNode::Admonition(note) = &doc.children[0] else {
+        panic!("the document is an admonition");
+    };
+    let title = note.title.as_ref().expect("it has a title");
+    let placed = title.iter().any(|inline| match inline {
+        carve::ast::InlineNode::Text(t) => t.pos.is_some(),
+        carve::ast::InlineNode::Emphasis(e) => e.pos.is_some(),
+        _ => false,
+    });
+    assert!(!placed, "a rebuilt title cannot place anything");
+}
+
+/// A `+` continuation attaches a flush-left block to the item above it. The
+/// sub-cursor that parsed that block was built with a line map but no COLUMN
+/// map, so the block and everything inside it came out unplaced - a code block,
+/// a quote, a table, its rows, its cells and their text.
+///
+/// The attached lines are taken verbatim, so the parent's widths apply
+/// unchanged.
+#[test]
+fn a_plus_continuation_places_the_block_it_attaches() {
+    let source = "- Build the image\n+\n```sh\ndocker build -t app .\n```\n- Push it\n";
+    let doc = parse_with_positions(source);
+
+    let BlockNode::List(list) = &doc.children[0] else {
+        panic!("the document is a list");
+    };
+    let attached = list.items[0]
+        .children
+        .iter()
+        .find(|child| matches!(child, BlockNode::CodeBlock(_)))
+        .expect("the code block is attached to the first item");
+    let BlockNode::CodeBlock(code) = attached else {
+        unreachable!("just matched")
+    };
+    let pos = code.pos.expect("the attached block is placed");
+    assert_eq!(slice(source, pos), "```sh\ndocker build -t app .\n```");
+}
+
+/// The same for a table, down to its cells - the deepest thing the old
+/// behavior left unplaced.
+#[test]
+fn a_plus_continuation_places_a_table_down_to_its_cells() {
+    let source = "- +\n| a | b |\n| c | d |\n- next\n";
+    let doc = parse_with_positions(source);
+
+    let BlockNode::List(list) = &doc.children[0] else {
+        panic!("the document is a list");
+    };
+    let BlockNode::Table(table) = &list.items[0].children[0] else {
+        panic!("the first item holds the table");
+    };
+    assert_eq!(
+        slice(source, table.pos.expect("the table is placed")),
+        "| a | b |\n| c | d |"
+    );
+    let row = &table.rows[0];
+    assert_eq!(
+        slice(source, row.pos.expect("the row is placed")),
+        "| a | b |"
+    );
+    assert_eq!(
+        slice(source, row.cells[0].pos.expect("the cell is placed")),
+        " a "
+    );
+}
+
+/// `- +` means the item's first block IS the attached one - there is no inline
+/// paragraph. That item was built with a hardcoded `None`, so it had no span
+/// while its siblings and its own contents did.
+#[test]
+fn an_item_whose_content_is_only_a_continuation_is_placed() {
+    let source = "- +\n| a | b |\n- next\n";
+    let doc = parse_with_positions(source);
+
+    let BlockNode::List(list) = &doc.children[0] else {
+        panic!("the document is a list");
+    };
+    assert_eq!(
+        slice(
+            source,
+            list.items[0].pos.expect("the bare-plus item is placed")
+        ),
+        "- +\n| a | b |"
+    );
+    // Its sibling is unaffected - the span stops at the attached block.
+    assert_eq!(
+        slice(source, list.items[1].pos.expect("the next item is placed")),
+        "- next"
+    );
+}
+
+/// A `+` line extends the cell above it. The text it adds is a verbatim slice
+/// of that line, but it was parsed with no anchor at all, so every continued
+/// cell's later text came out unplaced.
+#[test]
+fn a_continued_table_cell_places_the_text_it_adds() {
+    let source = concat!(
+        "|= Feature |= Description        |\n",
+        "| Complex  | A long description |\n",
+        "+          | that continues     |\n",
+        "+          | across lines.      |\n",
+    );
+    let doc = parse_with_positions(source);
+
+    let BlockNode::Table(table) = &doc.children[0] else {
+        panic!("the document is a table");
+    };
+    let cell = &table.rows[1].cells[1];
+    let texts: Vec<Option<String>> = cell
+        .children
+        .iter()
+        .map(|inline| match inline {
+            carve::ast::InlineNode::Text(t) => t.pos.map(|pos| slice(source, pos)),
+            other => panic!("unexpected inline: {other:?}"),
+        })
+        .collect();
+
+    assert_eq!(
+        texts,
+        vec![
+            Some("A long description".to_string()),
+            // The joiner is MANUFACTURED - the source has a line break here,
+            // not a space - so it carries no position and must not borrow one.
+            None,
+            Some("that continues".to_string()),
+            None,
+            Some("across lines.".to_string()),
+        ]
+    );
+}
+
+/// Verse lines were refused their columns WHOLESALE: the stanza's column map
+/// was left empty because leading whitespace becomes NBSP placeholders. But
+/// only a line that CARRIES leading whitespace is rewritten - one without any
+/// is passed through untouched, and its columns are still the document's.
+#[test]
+fn verse_lines_that_were_not_rewritten_keep_their_columns() {
+    let source = "::: |\n*Bold* and /italic/,\nplain line.\n:::\n";
+    let doc = parse_with_positions(source);
+
+    let BlockNode::LineBlock(block) = &doc.children[0] else {
+        panic!("the document is a line block");
+    };
+    let BlockNode::Paragraph(stanza) = &block.children[0] else {
+        panic!("a stanza is a paragraph");
+    };
+    let spans: Vec<Option<String>> = stanza
+        .children
+        .iter()
+        .map(|inline| match inline {
+            carve::ast::InlineNode::Text(t) => t.pos.map(|p| slice(source, p)),
+            carve::ast::InlineNode::Emphasis(e) => e.pos.map(|p| slice(source, p)),
+            carve::ast::InlineNode::HardBreak(b) => b.pos.map(|p| slice(source, p)),
+            other => panic!("unexpected inline: {other:?}"),
+        })
+        .collect();
+    assert_eq!(
+        spans,
+        vec![
+            Some("*Bold*".to_string()),
+            Some(" and ".to_string()),
+            Some("/italic/".to_string()),
+            Some(",".to_string()),
+            // The break IS the source's line ending, so it spans it.
+            Some("\n".to_string()),
+            Some("plain line.".to_string()),
+        ]
+    );
+}
+
+/// A line that IS rewritten stays unplaced, and only that line - its neighbor
+/// keeps its span. Before this, one indented line cost the whole stanza.
+#[test]
+fn an_indented_verse_line_loses_only_its_own_span() {
+    let source = "::: |\nRoses are red,\n  Violets are blue.\n:::\n";
+    let doc = parse_with_positions(source);
+
+    let BlockNode::LineBlock(block) = &doc.children[0] else {
+        panic!("the document is a line block");
+    };
+    let BlockNode::Paragraph(stanza) = &block.children[0] else {
+        panic!("a stanza is a paragraph");
+    };
+    let carve::ast::InlineNode::Text(first) = &stanza.children[0] else {
+        panic!("the stanza opens with text");
+    };
+    assert_eq!(
+        slice(source, first.pos.expect("the plain line is placed")),
+        "Roses are red,"
+    );
+    // The rewritten line's text is not the source - it holds NBSP placeholders
+    // where the indent was - so no span can select it.
+    let last = stanza.children.last().expect("a second line");
+    let carve::ast::InlineNode::Text(indented) = last else {
+        panic!("it ends with text");
+    };
+    assert!(indented.pos.is_none());
+}
+
+/// A trailing `%%` comment is dropped, and the whitespace before it is popped
+/// off the text buffer. That pop used to mark the buffer unplaceable, so every
+/// line ending in a comment lost its text position.
+///
+/// Popping from the END keeps the buffer equal to the source it started at, so
+/// the span is shorter, not wrong.
+#[test]
+fn text_before_a_trailing_comment_keeps_its_span() {
+    let source = "Also visible. %% this tail is a comment\n";
+    let doc = parse_with_positions(source);
+
+    let BlockNode::Paragraph(para) = &doc.children[0] else {
+        panic!("the document is a paragraph");
+    };
+    let carve::ast::InlineNode::Text(text) = &para.children[0] else {
+        panic!("it holds one text node");
+    };
+    let pos = text.pos.expect("the text is placed");
+    assert_eq!(slice(source, pos), "Also visible.");
+    // The span must stop at the text, not run into the dropped comment.
+    assert_eq!(slice(source, pos), text.value);
+}
+
+/// Same for a heading, and for text that follows an inline construct - the
+/// `%%` inside the code span is content, not a comment.
+#[test]
+fn a_comment_after_a_code_span_leaves_both_texts_placed() {
+    let source = "Run `a %% b` then done. %% gone\n";
+    let doc = parse_with_positions(source);
+
+    let BlockNode::Paragraph(para) = &doc.children[0] else {
+        panic!("the document is a paragraph");
+    };
+    let placed: Vec<String> = para
+        .children
+        .iter()
+        .filter_map(|inline| match inline {
+            carve::ast::InlineNode::Text(t) => Some(slice(source, t.pos.expect("text placed"))),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(placed, vec!["Run ", " then done."]);
+}
+
+/// A captioned code block becomes a numbered listing - a figure wrapping the
+/// block. The figure was built with `pos: None`, and the block inside it kept
+/// offsets of 0..0: the offset pass matched the figure's other targets by name
+/// and let a code block fall through its catch-all arm.
+///
+/// 0..0 is worse than absent. It reads as present and selects the empty string
+/// at the start of the document, and a test asserting only `is_some()` would
+/// have passed.
+#[test]
+fn a_captioned_code_block_places_the_figure_and_the_block() {
+    let source = "```python\ndef greet():\n    return 1\n```\n^ Listing #: a greeting\n";
+    let doc = parse_with_positions(source);
+
+    let BlockNode::Figure(figure) = &doc.children[0] else {
+        panic!("a captioned code block is a figure");
+    };
+    assert_eq!(
+        slice(source, figure.pos.expect("the figure is placed")),
+        "```python\ndef greet():\n    return 1\n```\n^ Listing #: a greeting"
+    );
+
+    let FigureTarget::CodeBlock(code) = &figure.target else {
+        panic!("its target is the code block");
+    };
+    let pos = code.pos.expect("the block is placed");
+    assert_ne!(pos.start_offset, pos.end_offset, "0..0 selects nothing");
+    assert_eq!(
+        slice(source, pos),
+        "```python\ndef greet():\n    return 1\n```"
+    );
+}
+
+/// Standalone display math becomes a paragraph, built with
+/// `..Default::default()` and so with no span - whether or not a caption
+/// follows and turns it into a figure.
+#[test]
+fn standalone_display_math_places_its_paragraph() {
+    let source = "Intro.\n\n$$`\\int_0^1 x\\,dx`\n";
+    let doc = parse_with_positions(source);
+
+    let BlockNode::Paragraph(math) = &doc.children[1] else {
+        panic!("the display math is a paragraph");
+    };
+    assert_eq!(
+        slice(source, math.pos.expect("it is placed")),
+        "$$`\\int_0^1 x\\,dx`"
+    );
 }

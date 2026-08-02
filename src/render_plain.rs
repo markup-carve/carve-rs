@@ -16,6 +16,8 @@ thread_local! {
     /// entry point and read only by the footnote arm.
     static DEFINED_FOOTNOTES: std::cell::RefCell<std::collections::BTreeSet<String>> =
         const { std::cell::RefCell::new(std::collections::BTreeSet::new()) };
+    static CROSSREF_INDEX: std::cell::RefCell<crate::parse::CrossrefIndex> =
+        std::cell::RefCell::new(crate::parse::CrossrefIndex::default());
 }
 
 fn footnote_is_defined(id: &str) -> bool {
@@ -28,17 +30,34 @@ fn trim_block_output(s: &str) -> &str {
 
 /// Render a document to plain text. See `render_markdown_with_options` for why
 /// the options-taking wrapper exists; the profile transform runs upstream.
-pub fn render_plain_text_with_options(doc: &Document, _options: &Options<'_>) -> String {
-    render_plain_text(doc)
+pub fn render_plain_text_with_options(doc: &Document, options: &Options<'_>) -> String {
+    render_plain_text_inner(doc, options.lowercase_heading_ids)
 }
 
 pub fn render_plain_text(doc: &Document) -> String {
+    render_plain_text_inner(doc, Options::default().lowercase_heading_ids)
+}
+
+fn render_plain_text_inner(doc: &Document, lowercase_heading_ids: bool) -> String {
     DEFINED_FOOTNOTES.with(|set| {
         *set.borrow_mut() = doc.footnote_defs.keys().cloned().collect();
+    });
+    CROSSREF_INDEX.with(|index| {
+        *index.borrow_mut() = crate::parse::crossref_index_for_document(doc, lowercase_heading_ids);
     });
     let out = render_blocks(&doc.children, 0);
     let footnotes = render_footnote_defs(doc);
     normalize(&format!("{out}{footnotes}"))
+}
+
+fn render_crossref(target: &str) -> String {
+    CROSSREF_INDEX.with(|index| {
+        index
+            .borrow()
+            .resolve(target)
+            .map(|(_, title)| strip_controls(title))
+            .unwrap_or_else(|| format!("</#{}>", strip_controls(target)))
+    })
 }
 
 fn render_blocks(blocks: &[BlockNode], depth: usize) -> String {
@@ -308,7 +327,7 @@ fn render_inline(node: &InlineNode, depth: usize) -> String {
         // two targets of one engine disagree about whether the document says it.
         // carve-php kept it (carve#352, corpus 33-editorial-markup).
         InlineNode::CriticComment(c) => strip_controls(&c.text),
-        InlineNode::CrossRef(crossref) => format!("</#{}>", strip_controls(&crossref.target)),
+        InlineNode::CrossRef(crossref) => render_crossref(&crossref.target),
         // Tier-2 ext node; the core renderer has no numbering, so emit the source.
         InlineNode::CitationGroup(group) => strip_controls(&group.raw),
         InlineNode::CaptionNumber(number) => number
