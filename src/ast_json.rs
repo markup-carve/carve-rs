@@ -1678,7 +1678,7 @@ impl Json {
     }
 }
 
-/// Deepest container nesting the reader will follow.
+/// Deepest JSON nesting the reader will follow.
 ///
 /// The reader is recursive-descent, so nesting depth is stack depth, and a
 /// document is untrusted input: `[[[[…]]]]` 200000 deep overflowed the stack and
@@ -1686,20 +1686,34 @@ impl Json {
 /// itself the same way (`MAX_NESTING_DEPTH` in parse.rs, 200, matching carve-js
 /// and carve-php).
 ///
-/// The two caps count DIFFERENT THINGS, which is the bug this constant used to
-/// carry (carve-rs#389). The parser's 200 is a NODE depth. This one is a raw
-/// JSON structural depth, and a node costs two of those levels - the object,
-/// then its `children` array - so a budget of 200 admitted only about 99 nested
-/// containers and `from_json` REJECTED ASTs this crate's own `to_json` had just
-/// produced. Measured: 200 containers serialize to a JSON depth of 405, the
-/// ratio converging on 2.02 as the fixed overhead amortizes.
+/// THE UNIT IS NOT THE PARSER'S. This bound counts JSON structural levels; the
+/// parser's `MAX_NESTING_DEPTH` counts AST levels. The conversion between them
+/// is not a property of the format - it is a property of whichever container
+/// has the LONGEST FIELD CHAIN on the wire, so it changes whenever a node type
+/// gains a field:
 ///
-/// So it is derived rather than written down twice. The slack absorbs the
-/// non-container nesting a node carries (`attrs`, `pos`) and keeps this from
-/// sitting exactly on the boundary. Raising the parser's cap raises this one
-/// with it, which is the point - the reader must accept whatever the parser can
-/// emit, whatever that limit becomes.
-const MAX_JSON_DEPTH: usize = crate::parse::MAX_NESTING_DEPTH * 2 + 16;
+/// - a div is `object` + `children` array, 2 structural levels per AST level
+/// - a list is `object` + `items` + `list_item` + `children`, about 4
+/// - a table is 6, the deepest chain any container has
+///
+/// Measured at the parser's cap of 200: 405 structural levels for a div ladder,
+/// 405 for blockquotes, 805 for a list ladder (the worst that SCALES, ~4.1 per
+/// level), 402 for a table under a deep chain, where an innermost table adds a
+/// constant rather than scaling.
+///
+/// Getting this wrong is how the reader came to reject ASTs its own encoder had
+/// produced (carve-rs#389): the bound was once the parser's 200 read as if it
+/// were structural, which fits only about 99 containers, and a first fix
+/// generalised a 2:1 ratio off the div shape and still rejected a 200-deep
+/// list.
+///
+/// The lesson is the RATIO, not the deriving. This stays a function of the
+/// parser's cap - raise that and this rises with it, which is the point, since
+/// the reader must accept whatever the parser can emit whatever that limit
+/// becomes. What is derived from measurement is the multiplier: the longest
+/// field chain, not a ratio read off one shape.
+const LONGEST_FIELD_CHAIN: usize = 6;
+const MAX_JSON_DEPTH: usize = crate::parse::MAX_NESTING_DEPTH * LONGEST_FIELD_CHAIN + 16;
 
 struct Parser<'a> {
     input: &'a str,
