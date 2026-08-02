@@ -7,6 +7,25 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **An implicit `[Heading][]` reference no longer resolves into a blockquote**
+  (#410, spec PART 11 R1). Quoted text names the quoted document's headings,
+  not this one's, so a heading with a blockquote ancestor is declined from the
+  implicit-reference index - in either nesting order, a quote inside a div and
+  a div inside a quote alike.
+
+  The cause was one index serving two lookups. A `</#id>` crossref DOES resolve
+  into quoted material, because it addresses a heading by id rather than by
+  wording, and the implicit path shared that index and inherited its inclusion.
+  The quoted ids are now recorded, and only the reference lookup declines them;
+  crossrefs are unchanged, which the tests pin.
+
+  Found by the combinatorial check in markup-carve/carve#452: the corpus
+  covered implicit references and covered headings in blockquotes, and never
+  put both in one document, so three engines declined and this one resolved
+  with every suite green.
+
 ### Added
 
 - **`Options::with_sections(false)` renders headings without the `<section>`
