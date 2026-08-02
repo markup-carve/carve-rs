@@ -6499,6 +6499,7 @@ fn parse_inline_context(
     let mut buf = String::new();
     let mut buf_start: Option<usize> = None;
     let mut buf_placeable = true;
+    let mut buf_src_delta: isize = 0;
     let mut i = 0;
     while i < bytes.len() {
         let c = bytes[i];
@@ -6515,6 +6516,7 @@ fn parse_inline_context(
                 base,
                 &mut buf_start,
                 &mut buf_placeable,
+                &mut buf_src_delta,
             );
             out.push(InlineNode::HardBreak(Break {
                 pos: inline_pos(positions, base + i, base + i + 1),
@@ -6528,7 +6530,14 @@ fn parse_inline_context(
                 if buf_start.is_none() {
                     buf_start = Some(i);
                 }
-                buf_placeable = false;
+                // Two source bytes become one placeholder character, so the
+                // buffer no longer measures the source. Record the difference
+                // rather than refusing a position: the span covers exactly the
+                // source this run came from, which is what the reference
+                // publishes too. Only the VALUE differs from the slice, and a
+                // slice holding a backslash is already exempt from that
+                // comparison for this reason.
+                buf_src_delta += 2 - crate::NBSP_PLACEHOLDER.len_utf8() as isize;
                 buf.push(crate::NBSP_PLACEHOLDER);
                 i += 2;
                 continue;
@@ -6545,6 +6554,7 @@ fn parse_inline_context(
                     base,
                     &mut buf_start,
                     &mut buf_placeable,
+                    &mut buf_src_delta,
                 );
                 out.push(InlineNode::EscapedText(EscapedText {
                     value: if nxt == b'^' {
@@ -6593,6 +6603,7 @@ fn parse_inline_context(
                         base,
                         &mut buf_start,
                         &mut buf_placeable,
+                        &mut buf_src_delta,
                     );
                     let mut node = InlineNode::RawInline(raw);
                     set_inline_node_pos(
@@ -6610,6 +6621,7 @@ fn parse_inline_context(
                     base,
                     &mut buf_start,
                     &mut buf_placeable,
+                    &mut buf_src_delta,
                 );
                 // Push the bare code span. A trailing inline attribute block
                 // (`` `code`{.cls} ``) is attached by the general attr-merge in
@@ -6635,6 +6647,7 @@ fn parse_inline_context(
                     base,
                     &mut buf_start,
                     &mut buf_placeable,
+                    &mut buf_src_delta,
                 );
                 let mut node = InlineNode::Math(math);
                 set_inline_node_pos(
@@ -6658,6 +6671,7 @@ fn parse_inline_context(
                     base,
                     &mut buf_start,
                     &mut buf_placeable,
+                    &mut buf_src_delta,
                 );
                 let mut node = critic;
                 set_inline_node_pos(
@@ -6691,6 +6705,7 @@ fn parse_inline_context(
                     base,
                     &mut buf_start,
                     &mut buf_placeable,
+                    &mut buf_src_delta,
                 );
                 set_inline_node_pos(
                     &mut node,
@@ -6746,6 +6761,7 @@ fn parse_inline_context(
                     base,
                     &mut buf_start,
                     &mut buf_placeable,
+                    &mut buf_src_delta,
                 );
                 let mut node = InlineNode::LiteralInline(lit);
                 set_inline_node_pos(
@@ -6768,6 +6784,7 @@ fn parse_inline_context(
                     base,
                     &mut buf_start,
                     &mut buf_placeable,
+                    &mut buf_src_delta,
                 );
                 let mut node = InlineNode::Image(img);
                 set_inline_node_pos(
@@ -6786,6 +6803,7 @@ fn parse_inline_context(
                     base,
                     &mut buf_start,
                     &mut buf_placeable,
+                    &mut buf_src_delta,
                 );
                 let mut node = InlineNode::Image(img);
                 set_inline_node_pos(
@@ -6809,6 +6827,7 @@ fn parse_inline_context(
                         base,
                         &mut buf_start,
                         &mut buf_placeable,
+                        &mut buf_src_delta,
                     );
                     let mut node = InlineNode::Footnote(footnote);
                     set_inline_node_pos(
@@ -6837,6 +6856,7 @@ fn parse_inline_context(
                         base,
                         &mut buf_start,
                         &mut buf_placeable,
+                        &mut buf_src_delta,
                     );
                     let mut node = InlineNode::Link(link);
                     set_inline_node_pos(
@@ -6857,6 +6877,7 @@ fn parse_inline_context(
                         base,
                         &mut buf_start,
                         &mut buf_placeable,
+                        &mut buf_src_delta,
                     );
                     let mut node = InlineNode::Link(link);
                     set_inline_node_pos(
@@ -6877,6 +6898,7 @@ fn parse_inline_context(
                         base,
                         &mut buf_start,
                         &mut buf_placeable,
+                        &mut buf_src_delta,
                     );
                     let mut node = InlineNode::Span(span);
                     set_inline_node_pos(
@@ -6899,6 +6921,7 @@ fn parse_inline_context(
                     base,
                     &mut buf_start,
                     &mut buf_placeable,
+                    &mut buf_src_delta,
                 );
                 let mut node = InlineNode::CrossRef(crossref);
                 set_inline_node_pos(
@@ -6920,6 +6943,7 @@ fn parse_inline_context(
                     base,
                     &mut buf_start,
                     &mut buf_placeable,
+                    &mut buf_src_delta,
                 );
                 let mut node = InlineNode::Mention(mention);
                 set_inline_node_pos(
@@ -6941,6 +6965,7 @@ fn parse_inline_context(
                     base,
                     &mut buf_start,
                     &mut buf_placeable,
+                    &mut buf_src_delta,
                 );
                 out.push(InlineNode::CaptionNumber(CaptionNumber {
                     number: None,
@@ -6958,6 +6983,7 @@ fn parse_inline_context(
                     base,
                     &mut buf_start,
                     &mut buf_placeable,
+                    &mut buf_src_delta,
                 );
                 let mut node = InlineNode::Tag(tag);
                 set_inline_node_pos(
@@ -6979,6 +7005,7 @@ fn parse_inline_context(
                     base,
                     &mut buf_start,
                     &mut buf_placeable,
+                    &mut buf_src_delta,
                 );
                 let mut node = InlineNode::AutoLink(autolink);
                 set_inline_node_pos(
@@ -7003,6 +7030,7 @@ fn parse_inline_context(
                     base,
                     &mut buf_start,
                     &mut buf_placeable,
+                    &mut buf_src_delta,
                 );
                 let mut node = InlineNode::Extension(node);
                 set_inline_node_pos(
@@ -7021,6 +7049,7 @@ fn parse_inline_context(
                     base,
                     &mut buf_start,
                     &mut buf_placeable,
+                    &mut buf_src_delta,
                 );
                 let mut node = InlineNode::Symbol(symbol);
                 set_inline_node_pos(
@@ -7043,6 +7072,7 @@ fn parse_inline_context(
                 base,
                 &mut buf_start,
                 &mut buf_placeable,
+                &mut buf_src_delta,
             );
             let mut local = 0usize;
             for mut node in nodes {
@@ -7071,6 +7101,7 @@ fn parse_inline_context(
                     base,
                     &mut buf_start,
                     &mut buf_placeable,
+                    &mut buf_src_delta,
                 );
                 let mut node = InlineNode::Footnote(footnote);
                 set_inline_node_pos(
@@ -7109,6 +7140,7 @@ fn parse_inline_context(
                 base,
                 &mut buf_start,
                 &mut buf_placeable,
+                &mut buf_src_delta,
             );
             set_inline_node_pos(
                 &mut node,
@@ -7130,6 +7162,7 @@ fn parse_inline_context(
                     base,
                     &mut buf_start,
                     &mut buf_placeable,
+                    &mut buf_src_delta,
                 );
                 out.push(InlineNode::HardBreak(Break {
                     pos: inline_pos(positions, base + i, base + i + 1),
@@ -7144,6 +7177,7 @@ fn parse_inline_context(
                 base,
                 &mut buf_start,
                 &mut buf_placeable,
+                &mut buf_src_delta,
             );
             out.push(InlineNode::SoftBreak(Break {
                 pos: inline_pos(positions, base + i, base + i + 1),
@@ -7163,6 +7197,7 @@ fn parse_inline_context(
                     base,
                     &mut buf_start,
                     &mut buf_placeable,
+                    &mut buf_src_delta,
                 );
                 out.push(node);
                 i = end;
@@ -7184,6 +7219,7 @@ fn parse_inline_context(
         base,
         &mut buf_start,
         &mut buf_placeable,
+        &mut buf_src_delta,
     );
     out
 }
@@ -7594,10 +7630,17 @@ fn flush_text(
     base: usize,
     buf_start: &mut Option<usize>,
     buf_placeable: &mut bool,
+    buf_src_delta: &mut isize,
 ) {
     if !buf.is_empty() {
         let start = buf_start.take().unwrap_or(0);
-        let end = start + buf.len();
+        // The span ends where the SOURCE run ends, which is not
+        // `start + buf.len()` whenever a substitution made the buffer a
+        // different length than the bytes it came from. `buf_src_delta` carries
+        // that difference so the end stays anchored to the source; without it a
+        // run holding one no-break-space escape reported a span one byte short.
+        let end =
+            (start as isize + buf.len() as isize + *buf_src_delta).max(start as isize) as usize;
         out.push(InlineNode::Text(Text {
             value: std::mem::take(buf),
             pos: (*buf_placeable)
@@ -7607,6 +7650,7 @@ fn flush_text(
     }
     *buf_start = None;
     *buf_placeable = true;
+    *buf_src_delta = 0;
 }
 
 fn parse_smart_punctuation_at(
