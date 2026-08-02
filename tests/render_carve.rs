@@ -74,6 +74,7 @@ fn bullet_marker_normalization() {
             ordered: false,
             start: None,
             ol_type: None,
+            bare_marker: false,
             delim: None,
             bullet_char: None,
             tight: true,

@@ -2757,7 +2757,11 @@ fn detect_ordered_full(
         i += 1;
     }
     if i == marker_start {
-        return None;
+        if bytes.get(i) != Some(&b'.') {
+            return None;
+        }
+        let (content, attrs) = marker_tail(line, i + 1)?;
+        return Some((content, None, None, attrs, b'.', ""));
     }
     if bytes.get(i) != Some(&b'.') && bytes.get(i) != Some(&b')') {
         return None;
@@ -3629,6 +3633,7 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         ordered: is_ordered,
         start,
         ol_type,
+        bare_marker: is_ordered && first_marker.marker.is_empty(),
         delim: first_delim.map(char::from),
         bullet_char: if is_ordered {
             None
@@ -3745,6 +3750,9 @@ fn ol_dialect(ol_type: Option<OrderedListType>) -> OlDialect {
 /// roman-letter is compatible with EITHER a roman or an alpha list of the same
 /// case (it continues as that dialect), but never a decimal list.
 fn dialect_compatible(first: OlDialect, marker: &ListMarker<'_>) -> bool {
+    if marker.marker.is_empty() {
+        return first == OlDialect::Decimal;
+    }
     if is_ambiguous_roman_letter(marker.marker) {
         let upper = marker.marker.chars().all(|c| c.is_ascii_uppercase());
         match first {
