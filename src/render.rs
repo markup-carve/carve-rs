@@ -1857,13 +1857,23 @@ fn render_inline_after(
                 let href = template
                     .replace("{name}", &encoded)
                     .replace("{user}", &encoded);
-                out.push_str("<a class=\"mention\" href=\"");
+                let (class, _) = structural_attrs("mention", &m.attrs);
+                out.push_str("<a class=\"");
+                write_escaped_attr(out, &class);
+                out.push_str("\" href=\"");
                 write_escaped_attr(out, &sanitize_url(&href));
-                out.push_str("\">@");
+                out.push('"');
+                out.push_str(&render_attrs_after_class_without_keys(&m.attrs, &["href"]));
+                out.push_str(">@");
                 write_escaped_text(out, &m.user);
                 out.push_str("</a>");
             } else {
-                out.push_str("<span class=\"mention\"><strong>@");
+                let (class, rest) = structural_attrs("mention", &m.attrs);
+                out.push_str("<span class=\"");
+                write_escaped_attr(out, &class);
+                out.push('"');
+                out.push_str(&rest);
+                out.push_str("><strong>@");
                 write_escaped_text(out, &m.user);
                 out.push_str("</strong></span>");
             }
@@ -1872,13 +1882,23 @@ fn render_inline_after(
             if let Some(template) = &options.tag_url {
                 let encoded = percent_encode(&t.name);
                 let href = template.replace("{name}", &encoded);
-                out.push_str("<a class=\"tag\" href=\"");
+                let (class, _) = structural_attrs("tag", &t.attrs);
+                out.push_str("<a class=\"");
+                write_escaped_attr(out, &class);
+                out.push_str("\" href=\"");
                 write_escaped_attr(out, &sanitize_url(&href));
-                out.push_str("\">#");
+                out.push('"');
+                out.push_str(&render_attrs_after_class_without_keys(&t.attrs, &["href"]));
+                out.push_str(">#");
                 write_escaped_text(out, &t.name);
                 out.push_str("</a>");
             } else {
-                out.push_str("<span class=\"tag\"><strong>#");
+                let (class, rest) = structural_attrs("tag", &t.attrs);
+                out.push_str("<span class=\"");
+                write_escaped_attr(out, &class);
+                out.push('"');
+                out.push_str(&rest);
+                out.push_str("><strong>#");
                 write_escaped_text(out, &t.name);
                 out.push_str("</strong></span>");
             }
@@ -2194,6 +2214,17 @@ fn dedup_class_str(s: &str) -> String {
     seen.join(" ")
 }
 
+fn structural_attrs(base: &str, attrs: &Option<Attrs>) -> (String, String) {
+    match attrs {
+        Some(a) if !a.classes.is_empty() => (
+            dedup_class_str(&format!("{} {}", base, a.classes.join(" "))),
+            render_attrs_after_class(a),
+        ),
+        Some(a) => (base.to_string(), render_attrs_after_class(a)),
+        None => (base.to_string(), String::new()),
+    }
+}
+
 /// Write a ` key="value"` slot, applying the value sanitizer.
 #[inline]
 fn write_attr_key_value(out: &mut String, key: &str, value: &str) {
@@ -2342,6 +2373,23 @@ pub(crate) fn render_attrs_after_class(attrs: &Attrs) -> String {
         }
     }
     out
+}
+
+fn render_attrs_after_class_without_keys(attrs: &Option<Attrs>, blocked: &[&str]) -> String {
+    let Some(attrs) = attrs else {
+        return String::new();
+    };
+    let is_blocked = |key: &str| blocked.contains(&key.to_ascii_lowercase().as_str());
+    if !attrs.key_values.keys().any(|key| is_blocked(key)) {
+        return render_attrs_after_class(attrs);
+    }
+    let mut filtered = attrs.clone();
+    filtered.key_values.retain(|key, _| !is_blocked(key));
+    filtered.order.retain(|slot| match slot {
+        AttrSlot::Key(key) => !is_blocked(key),
+        _ => true,
+    });
+    render_attrs_after_class(&filtered)
 }
 
 fn render_attrs_without_id(attrs: &Option<Attrs>) -> String {

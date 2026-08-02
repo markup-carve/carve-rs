@@ -574,12 +574,14 @@ fn write_inline(out: &mut String, node: &InlineNode) {
         }
         InlineNode::Mention(n) => {
             let mut w = typed(out, "mention");
+            write_attrs_field(&mut w, &n.attrs);
             w.field("user", |out| write_string(out, &n.user));
             write_pos_field(&mut w, &n.pos);
             w.finish();
         }
         InlineNode::Tag(n) => {
             let mut w = typed(out, "tag");
+            write_attrs_field(&mut w, &n.attrs);
             w.field("name", |out| write_string(out, &n.name));
             write_pos_field(&mut w, &n.pos);
             w.finish();
@@ -1311,10 +1313,12 @@ fn decode_inline(value: &Json) -> Result<InlineNode, AstJsonError> {
             pos: optional_pos(obj, "caption_number")?,
         })),
         "mention" => Ok(InlineNode::Mention(Mention {
+            attrs: optional_attrs(obj)?,
             user: required_string(obj, "mention", "user")?.to_string(),
             pos: optional_pos(obj, "mention")?,
         })),
         "tag" => Ok(InlineNode::Tag(Tag {
+            attrs: optional_attrs(obj)?,
             name: required_string(obj, "tag", "name")?.to_string(),
             pos: optional_pos(obj, "tag")?,
         })),

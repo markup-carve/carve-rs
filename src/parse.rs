@@ -8361,6 +8361,7 @@ fn parse_mention(text: &str, pos: usize) -> Option<(Mention, usize)> {
     }
     Some((
         Mention {
+            attrs: None,
             user: rest[..len].to_string(),
             pos: None,
         },
@@ -8382,6 +8383,7 @@ fn parse_tag(text: &str, pos: usize) -> Option<(Tag, usize)> {
     }
     Some((
         Tag {
+            attrs: None,
             name: rest[..len].to_string(),
             pos: None,
         },
