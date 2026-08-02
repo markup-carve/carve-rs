@@ -198,12 +198,14 @@ fn remap_source(source: String, original: &MappedSource) -> MappedSource {
     let source_line_count = source.lines().count();
     if source_line_count <= original.line_map.len() {
         return MappedSource {
+            lazy_map: Vec::new(),
             source,
             line_map: original.line_map[..source_line_count].to_vec(),
             col_map: original.col_map[..source_line_count.min(original.col_map.len())].to_vec(),
         };
     }
     MappedSource {
+        lazy_map: Vec::new(),
         line_map: (1..=source_line_count).map(Some).collect(),
         // Top-level source: nothing has been stripped, so every column in this
         // text is a column in the document.
@@ -351,6 +353,7 @@ fn extract_footnote_defs(
             // First definition for a label wins (later duplicates are ignored).
             defs.entry(label.to_string())
                 .or_insert_with(|| MappedSource {
+                    lazy_map: Vec::new(),
                     col_map: def_col_map,
                     source: def_lines.join("\n"),
                     line_map: def_line_map,
@@ -370,6 +373,7 @@ fn extract_footnote_defs(
     }
     (
         MappedSource {
+            lazy_map: Vec::new(),
             // The document body's lines are top-level: the footnote-definition
             // extraction removes whole lines, never a prefix, so nothing has
             // been stripped from the front of the ones that remain.
@@ -833,6 +837,15 @@ struct LineCursor<'a> {
     /// for a line whose stripped width is not known - a block starting there
     /// gets no position rather than a wrong one.
     col_map: Option<&'a [Option<usize>]>,
+    /// Lines that reached this buffer by LAZY CONTINUATION - folded in from
+    /// BELOW the item's content column - and therefore may not open a block:
+    /// they are paragraph text wherever they land (carve#439, corpus 159).
+    ///
+    /// Laziness decides this, not indentation. An indented bullet inside a
+    /// container DOES open a list; the same line folded lazily into a list item
+    /// does not. Carried out of band rather than as a marker character, which
+    /// would shift every source offset on the line.
+    lazy_map: Option<&'a [bool]>,
     pos: usize,
     /// Negative cache for comment-fence closer lookahead. For a fence length,
     /// stores the smallest line index already proven to have no exact-length
@@ -847,6 +860,7 @@ impl<'a> LineCursor<'a> {
         col_map: Option<&'a [Option<usize>]>,
     ) -> Self {
         LineCursor {
+            lazy_map: None,
             lines,
             line_map,
             col_map,
@@ -874,6 +888,13 @@ impl<'a> LineCursor<'a> {
     }
 
     /// Columns stripped from the front of the line at `pos`, when known.
+    /// Did the line at `pos` fold in by LAZY CONTINUATION (carve#439)?
+    fn is_lazy(&self, pos: usize) -> bool {
+        self.lazy_map
+            .and_then(|m| m.get(pos).copied())
+            .unwrap_or(false)
+    }
+
     fn source_col(&self, pos: usize) -> Option<usize> {
         self.col_map.and_then(|map| map.get(pos).copied().flatten())
     }
@@ -905,6 +926,15 @@ impl<'a> LineCursor<'a> {
 struct LineBuffer {
     lines: Vec<String>,
     line_map: Vec<Option<usize>>,
+    /// Lines that reached this buffer by LAZY CONTINUATION - folded in from
+    /// BELOW the item's content column - and therefore may not open a block:
+    /// they are paragraph text wherever they land (carve#439, corpus 159).
+    ///
+    /// Laziness decides this, not indentation. An indented bullet inside a
+    /// container DOES open a list; the same line folded lazily into a list item
+    /// does not. Carried out of band rather than as a marker character, which
+    /// would shift every source offset on the line.
+    lazy_map: Vec<bool>,
     /// Codepoints the container took from the front of each line, parallel to
     /// `lines`. Kept in lockstep by `push_at`: a shifted entry would hand a
     /// nested block a WRONG column, which is worse than the `None` an absent
@@ -919,6 +949,21 @@ impl LineBuffer {
 
     /// Like `push`, recording how many codepoints were stripped from the front
     /// of the line by the enclosing container.
+    /// Like `push_at`, carrying whether the line folded in LAZILY.
+    fn push_lazy_at(
+        &mut self,
+        line: String,
+        source_line: Option<usize>,
+        stripped: Option<usize>,
+        lazy: bool,
+    ) {
+        self.push_at(line, source_line, stripped);
+        while self.lazy_map.len() < self.lines.len() - 1 {
+            self.lazy_map.push(false);
+        }
+        self.lazy_map.push(lazy);
+    }
+
     fn push_at(&mut self, line: String, source_line: Option<usize>, stripped: Option<usize>) {
         self.lines.push(line);
         if source_line.is_some() || !self.line_map.is_empty() {
@@ -936,6 +981,7 @@ impl LineBuffer {
             col_map: self.col_map,
             source: self.lines.join("\n"),
             line_map: self.line_map,
+            lazy_map: self.lazy_map,
         }
     }
 }
@@ -943,6 +989,15 @@ impl LineBuffer {
 struct MappedSource {
     source: String,
     line_map: Vec<Option<usize>>,
+    /// Lines that reached this buffer by LAZY CONTINUATION - folded in from
+    /// BELOW the item's content column - and therefore may not open a block:
+    /// they are paragraph text wherever they land (carve#439, corpus 159).
+    ///
+    /// Laziness decides this, not indentation. An indented bullet inside a
+    /// container DOES open a list; the same line folded lazily into a list item
+    /// does not. Carried out of band rather than as a marker character, which
+    /// would shift every source offset on the line.
+    lazy_map: Vec<bool>,
     /// Bytes stripped from the FRONT of each line - a blockquote marker, a list
     /// indent, a container prefix. Without it a column in `source` cannot be
     /// mapped back to a column in the document, which is why nested blocks
@@ -954,6 +1009,7 @@ impl MappedSource {
     /// Like `new_line`, recording how many bytes were stripped from the front.
     fn new_line_at(line: String, source_line: Option<usize>, stripped: Option<usize>) -> Self {
         MappedSource {
+            lazy_map: Vec::new(),
             source: line,
             line_map: source_line.into_iter().map(Some).collect(),
             col_map: vec![stripped],
@@ -986,6 +1042,19 @@ impl MappedSource {
             self.source.push('\n');
         }
         self.source.push_str(&other.source);
+        // Keep `lazy_map` parallel to the LINES, not to whichever side happened
+        // to record flags: the left side may have none (a marker-line stream),
+        // and a shifted entry would mark the wrong line as lazy.
+        let lines_before = self.source[..self.source.len() - other.source.len()]
+            .lines()
+            .count();
+        while self.lazy_map.len() < lines_before {
+            self.lazy_map.push(false);
+        }
+        let other_lines = other.source.lines().count();
+        let mut other_lazy = other.lazy_map;
+        other_lazy.resize(other_lines, false);
+        self.lazy_map.extend(other_lazy);
         self.line_map.extend(other.line_map);
         self.col_map.extend(other.col_map);
     }
@@ -1344,7 +1413,12 @@ fn line_start_offsets(source: &str) -> Vec<usize> {
 }
 
 fn parse_mapped_source(source: &MappedSource, options: &Options<'_>) -> Vec<BlockNode> {
-    if !options.source_lines && !options.positions {
+    let has_lazy = source.lazy_map.iter().any(|lazy| *lazy);
+    // The fast path drops the per-line maps, so it can only be taken when there
+    // is no laziness to carry: a lazily folded line must not open a block
+    // wherever it lands (carve#439, corpus 159), and that is independent of
+    // whether positions were requested.
+    if !options.source_lines && !options.positions && !has_lazy {
         return parse_blocks_with_options(&source.source, options);
     }
     let lines: Vec<&str> = source.source.lines().collect();
@@ -1356,6 +1430,9 @@ fn parse_mapped_source(source: &MappedSource, options: &Options<'_>) -> Vec<Bloc
         Some(&source.line_map),
         options.positions.then_some(source.col_map.as_slice()),
     );
+    if has_lazy {
+        cursor.lazy_map = Some(&source.lazy_map);
+    }
     parse_blocks(&mut cursor, options)
 }
 
@@ -1522,6 +1599,13 @@ fn resolve_code_title(node: &mut BlockNode) {
 
 fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<BlockNode> {
     let line = cur.peek()?;
+    // A line that folded in by LAZY CONTINUATION is paragraph text wherever it
+    // lands, so it never opens a block (carve#439, corpus 159). Laziness decides
+    // this, not indentation: an indented bullet inside a container DOES open a
+    // list, while the same line folded lazily into a list item does not.
+    if cur.is_lazy(cur.pos) {
+        return Some(parse_paragraph(cur, options));
+    }
     if let Some(fence_marker) = detect_fence_open(line) {
         let fence_at = cur.pos;
         let block = parse_fence(cur, fence_marker, options);
@@ -3853,13 +3937,15 @@ fn collect_indented_block_mapped_with(
     stop_at_content_column_marker: bool,
 ) -> MappedSource {
     if cur.line_map.is_none() {
+        let (source, lazy_map) = collect_indented_block_plain_with(
+            cur,
+            parent_indent,
+            strip_cols,
+            stop_at_content_column_marker,
+        );
         return MappedSource {
-            source: collect_indented_block_plain_with(
-                cur,
-                parent_indent,
-                strip_cols,
-                stop_at_content_column_marker,
-            ),
+            lazy_map,
+            source,
             line_map: Vec::new(),
             col_map: Vec::new(),
         };
@@ -3867,6 +3953,7 @@ fn collect_indented_block_mapped_with(
     let mut lines = Vec::new();
     let mut line_map = Vec::new();
     let mut col_map: Vec<Option<usize>> = Vec::new();
+    let mut lazy_map: Vec<bool> = Vec::new();
     let mut block_indent: Option<usize> = None;
     while let Some(line) = cur.peek() {
         if is_blank_line(line) {
@@ -3893,6 +3980,8 @@ fn collect_indented_block_mapped_with(
                 }
             }
             lines.push(String::new());
+            lazy_map.push(false);
+            lazy_map.push(false);
             if cur.line_map.is_some() {
                 line_map.push(cur.source_line(cur.pos));
             }
@@ -3917,6 +4006,10 @@ fn collect_indented_block_mapped_with(
         // visual column (the recursive parse re-derives the child base); other
         // lines use whole-tab dedent so they land flush at column 0.
         let stripped = strip_cols.min(indent);
+        // BELOW the item's content column: the line folded in lazily, so it is
+        // paragraph text wherever it lands and may not open a block
+        // (carve#439, corpus 159).
+        lazy_map.push(indent < strip_cols);
         lines.push(slice_columns(line, stripped, is_marker));
         if cur.line_map.is_some() {
             line_map.push(cur.source_line(cur.pos));
@@ -3927,6 +4020,7 @@ fn collect_indented_block_mapped_with(
         cur.consume();
     }
     MappedSource {
+        lazy_map,
         col_map,
         source: lines.join("\n"),
         line_map,
@@ -3938,8 +4032,9 @@ fn collect_indented_block_plain_with(
     parent_indent: usize,
     strip_cols: usize,
     stop_at_content_column_marker: bool,
-) -> String {
+) -> (String, Vec<bool>) {
     let mut lines = Vec::new();
+    let mut lazy_map: Vec<bool> = Vec::new();
     let mut block_indent: Option<usize> = None;
     while let Some(line) = cur.peek() {
         if is_blank_line(line) {
@@ -3972,10 +4067,12 @@ fn collect_indented_block_plain_with(
         if block_indent.is_none() {
             block_indent = Some(indent);
         }
+        // BELOW the item's content column: folded in lazily (carve#439).
+        lazy_map.push(indent < strip_cols);
         lines.push(slice_columns(line, strip_cols.min(indent), is_marker));
         cur.consume();
     }
-    lines.join("\n")
+    (lines.join("\n"), lazy_map)
 }
 
 fn detect_block_image(line: &str) -> Option<Image> {
@@ -4017,7 +4114,9 @@ fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         // First line is always part of the paragraph; from the second on, a
         // visible block opener interrupts (§10).
         let line_owned = line.to_string();
-        if !lines.is_empty() && interrupts_paragraph(cur, &line_owned) {
+        // A LAZILY folded line is text, so it cannot interrupt either - the run
+        // of folded lines is ONE paragraph (carve#439, corpus 159).
+        if !lines.is_empty() && !cur.is_lazy(cur.pos) && interrupts_paragraph(cur, &line_owned) {
             break;
         }
         cur.consume();
@@ -4559,6 +4658,7 @@ fn collect_definition_body(cur: &mut LineCursor) -> MappedSource {
     }
     debug_assert_eq!(col_map.len(), lines.len());
     MappedSource {
+        lazy_map: Vec::new(),
         col_map,
         source: lines.join("\n"),
         line_map,
@@ -5274,7 +5374,11 @@ fn parse_container(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     let mut depth = 1usize;
     while let Some(line) = cur.peek() {
         let t = line.trim();
-        if !t.is_empty() && t.bytes().all(|b| b == b':') && t.len() == open.fence_len {
+        // A LAZILY folded line is text, so it neither closes this container nor
+        // opens a nested one - it is body content like any other line
+        // (carve#439, corpus 159).
+        let lazy = cur.is_lazy(cur.pos);
+        if !lazy && !t.is_empty() && t.bytes().all(|b| b == b':') && t.len() == open.fence_len {
             depth -= 1;
             if depth == 0 {
                 cur.consume();
@@ -5288,10 +5392,11 @@ fn parse_container(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         // an outer blockquote or list item removed - without that count a
         // nested block's column cannot be mapped back to the document, and
         // `span_of` refuses rather than invent one (PART 12 section 4).
-        inner.push_at(
+        inner.push_lazy_at(
             line.to_string(),
             cur.source_line(cur.pos),
             cur.source_col(cur.pos),
+            cur.is_lazy(cur.pos),
         );
         cur.consume();
     }
@@ -5451,6 +5556,7 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 let at = stanza_start.take();
                 stanzas.push((
                     LineBuffer {
+                        lazy_map: Vec::new(),
                         lines: std::mem::take(&mut stanza),
                         line_map: std::mem::take(&mut stanza_line_map),
                         col_map: std::mem::take(&mut stanza_col_map),
@@ -5494,6 +5600,7 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         let at = stanza_start.take();
         stanzas.push((
             LineBuffer {
+                lazy_map: Vec::new(),
                 lines: stanza,
                 line_map: stanza_line_map,
                 col_map: stanza_col_map,
