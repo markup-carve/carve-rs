@@ -32,13 +32,17 @@ fn inline_attribute_on_generic_div_is_a_paragraph() {
         "::: box {.x}\nb\n:::",
     ] {
         let html = carve::to_html(src);
+        // The OPENER is still not a fence, which is what this pins. The
+        // trailing bare fence is a separate, empty container closed at end of
+        // file (carve#439), so a `<div` in the output no longer disproves the
+        // opener's strictness.
         assert!(
             html.starts_with("<p>"),
             "{src:?} should be a paragraph: {html}"
         );
         assert!(
-            !html.contains("<div"),
-            "{src:?} should not be a div: {html}"
+            html.contains("b"),
+            "{src:?} should keep its body text: {html}"
         );
     }
 }
@@ -79,13 +83,17 @@ fn digit_first_type_word_is_not_a_fence() {
     // (matches carve-js / carve-php; a `class="123"` would be invalid CSS).
     for src in ["::: 123\nb\n:::", "::: 1a\nb\n:::"] {
         let html = carve::to_html(src);
+        // The OPENER is still not a fence, which is what this pins. The
+        // trailing bare fence is a separate, empty container closed at end of
+        // file (carve#439), so a `<div` in the output no longer disproves the
+        // opener's strictness.
         assert!(
             html.starts_with("<p>"),
             "{src:?} should be a paragraph: {html}"
         );
         assert!(
-            !html.contains("<div"),
-            "{src:?} should not be a div: {html}"
+            html.contains("b"),
+            "{src:?} should keep its body text: {html}"
         );
     }
 }

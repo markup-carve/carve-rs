@@ -213,6 +213,30 @@ fn corpus_pairs() -> Vec<String> {
     out
 }
 
+/// Fixtures this engine deliberately renders differently from the PINNED spec,
+/// because the engine landed a decided change first (carve#439: container
+/// closers must match their opener's width exactly, and an unclosed container
+/// is closed at the end of its enclosing scope instead of degrading to literal
+/// text). The spec side is markup-carve/carve#456.
+///
+/// These are asserted to STILL DIFFER, not skipped. A skip would go quietly
+/// stale the moment the spec bump lands; this fails instead, which is what
+/// forces the name back off the list.
+const AHEAD_OF_SPEC: &[&str] = &[
+    "114-fence-opener-with-a-nested-list-body-inside-a-list-item-5",
+    "114-fence-opener-with-a-nested-list-body-inside-a-list-item-6",
+    "159-below-content-column-div-body-in-a-list-item-stays-literal",
+    "24-generic-divs-2",
+    "24-generic-divs-4",
+    "41-line-blocks-5",
+    "68-nested-containers-2",
+    "68-nested-containers-3",
+    "68-nested-containers-4",
+    "68-nested-containers-5",
+    "79-paragraph-interruption-11",
+    "79-paragraph-interruption-19",
+];
+
 fn check_pair(slug: &str) {
     let dir = corpus_dir();
     let crv = dir.join(format!("{slug}.crv"));
@@ -221,6 +245,14 @@ fn check_pair(slug: &str) {
     let expected =
         fs::read_to_string(&html).unwrap_or_else(|e| panic!("read {}: {e}", html.display()));
     let actual = carve::to_html(&source);
+    if AHEAD_OF_SPEC.contains(&slug) {
+        assert_ne!(
+            expected.trim(),
+            actual.trim(),
+            "corpus pair `{slug}` now MATCHES the pinned spec - drop it from AHEAD_OF_SPEC",
+        );
+        return;
+    }
     pretty_assert_eq(slug, expected.trim(), actual.trim());
 }
 

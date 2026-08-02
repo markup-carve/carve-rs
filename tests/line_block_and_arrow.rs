@@ -89,15 +89,17 @@ fn indented_colon_fence_in_quote_keeps_lazy_continuation() {
 
 #[test]
 fn flush_colon_fence_in_quote_ends_lazy_continuation() {
-    // Regression anchor: a colon fence at the quote's content column (`> ::: |`,
-    // one space after `>`) IS a real opener, so it ends lazy continuation and
-    // `lazy` detaches to the document level. Matches the oracle.
+    // Regression anchor: a colon fence at the quote's content column (one space
+    // after the marker) IS a real opener, so it ends lazy continuation and
+    // `lazy` detaches to the document level. That is what this pins, and it is
+    // unchanged; since carve#439 the opener also OPENS its container (closed at
+    // the end of the quote) instead of degrading to quoted text.
     assert_eq!(
         carve::to_html("> a\n> ::: |\nlazy\n"),
-        "<blockquote><p>a\n::: |</p></blockquote>\n<p>lazy</p>"
+        "<blockquote>\n  <p>a</p>\n  <div class=\"line-block\">\n  </div>\n</blockquote>\n<p>lazy</p>"
     );
     assert_eq!(
         carve::to_html("> a\n> ::: note\nlazy\n"),
-        "<blockquote><p>a\n::: note</p></blockquote>\n<p>lazy</p>"
+        "<blockquote>\n  <p>a</p>\n  <aside class=\"admonition note\">\n\n  </aside>\n</blockquote>\n<p>lazy</p>"
     );
 }

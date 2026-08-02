@@ -1,5 +1,4 @@
 use crate::ast::*;
-use std::collections::HashMap;
 
 const MAX_RENDER_DEPTH: usize = 200;
 
@@ -11,7 +10,8 @@ struct CarveContext {
     /// backslash: inside a `::: |` fence every newline already IS a hard break.
     line_block_depth: usize,
     escape_mode: EscapeMode,
-    fence_widths: HashMap<(*const BlockNode, usize, usize), usize>,
+    /// Enclosing containers at THIS content column, for the canonical fence width.
+    colon_depth: usize,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -37,7 +37,7 @@ fn render_with_escapes(doc: &Document, escape_mode: EscapeMode) -> String {
         list_depth: 0,
         line_block_depth: 0,
         escape_mode,
-        fence_widths: HashMap::new(),
+        colon_depth: 0,
     };
     let mut parts = Vec::new();
     if !doc.frontmatter.is_empty() {
@@ -392,8 +392,10 @@ fn render_block(node: &BlockNode, ctx: &mut CarveContext) -> String {
                 .as_ref()
                 .map(|label| format!(" [{}]", escape_bracket_text(label)))
                 .unwrap_or_default();
+            let fence = colon_fence_for(ctx);
+            ctx.colon_depth += 1;
             let body = render_blocks(&admonition.children, ctx);
-            let fence = colon_fence_for(&admonition.children, ctx);
+            ctx.colon_depth -= 1;
             with_block_attrs(
                 &admonition.attrs,
                 &format!("{fence} {}{title}{label}\n{body}\n{fence}", admonition.kind),
@@ -409,10 +411,12 @@ fn render_block(node: &BlockNode, ctx: &mut CarveContext) -> String {
             // Inside the fence every newline IS a hard break (PART 3,
             // line_block_body), so the explicit backslash the inline writer
             // emits for a HardBreak would double it on re-parse.
+            let fence = colon_fence_for(ctx);
             ctx.line_block_depth += 1;
+            ctx.colon_depth += 1;
             let body = render_blocks(&lb.children, ctx);
+            ctx.colon_depth -= 1;
             ctx.line_block_depth -= 1;
-            let fence = colon_fence_for(&lb.children, ctx);
             with_block_attrs(&lb.attrs, &format!("{fence} |\n{body}\n{fence}"))
         }
         BlockNode::Div(div) => {
@@ -421,8 +425,10 @@ fn render_block(node: &BlockNode, ctx: &mut CarveContext) -> String {
                 .as_ref()
                 .map(|label| format!(" [{}]", escape_bracket_text(label)))
                 .unwrap_or_default();
+            let fence = colon_fence_for(ctx);
+            ctx.colon_depth += 1;
             let body = render_blocks(&div.children, ctx);
-            let fence = colon_fence_for(&div.children, ctx);
+            ctx.colon_depth -= 1;
             with_block_attrs(&div.attrs, &format!("{fence}{label}\n{body}\n{fence}"))
         }
         BlockNode::DefinitionList(list) => {
@@ -634,70 +640,19 @@ fn render_definition_list(items: &[DefinitionItem], ctx: &mut CarveContext) -> S
     out.join("\n")
 }
 
-fn colon_fence_for(children: &[BlockNode], ctx: &mut CarveContext) -> String {
-    // Only the levels this pass will actually render may widen the fence: past
-    // MAX_RENDER_DEPTH render_block emits nothing, so counting deeper
-    // containers would size a fence for output that does not exist. A
-    // hand-built AST (a `--from-json` document, say) can nest far past the cap
-    // the parser enforces.
-    let budget = MAX_RENDER_DEPTH.saturating_sub(ctx.block_depth);
-    ":".repeat(colon_fence_width(children, ctx, budget))
-}
-
-/// A colon fence closes on a bare fence of equal-or-greater length, so an
-/// enclosing container must outrank every container below it, including ones
-/// hidden inside list items, blockquotes and definition bodies.
-fn colon_fence_width(children: &[BlockNode], ctx: &mut CarveContext, budget: usize) -> usize {
-    if budget == 0 {
-        return 3;
-    }
-    let key = (children.as_ptr(), children.len(), budget);
-    if let Some(width) = ctx.fence_widths.get(&key) {
-        return *width;
-    }
-
-    let widest = widest_descendant_container_fence(children, ctx, budget);
-    let width = if widest == 0 { 3 } else { widest + 1 };
-    ctx.fence_widths.insert(key, width);
-    width
-}
-
-fn widest_descendant_container_fence(
-    children: &[BlockNode],
-    ctx: &mut CarveContext,
-    budget: usize,
-) -> usize {
-    children
-        .iter()
-        .map(|child| match child {
-            BlockNode::Admonition(node) => colon_fence_width(&node.children, ctx, budget - 1),
-            BlockNode::Div(node) => colon_fence_width(&node.children, ctx, budget - 1),
-            BlockNode::LineBlock(node) => colon_fence_width(&node.children, ctx, budget - 1),
-            // An extension block writes no fence of its own: its children land
-            // at the enclosing container's content column, so they collide with
-            // its fence exactly as direct children would.
-            BlockNode::Extension(node) => {
-                widest_descendant_container_fence(&node.children, ctx, budget)
-            }
-            // Everything else either holds no block at all, or holds it behind a
-            // prefix or an indent (blockquote, list item, definition body), and
-            // an indented or quoted bare fence cannot close an ancestor fence.
-            BlockNode::Heading(_)
-            | BlockNode::Paragraph(_)
-            | BlockNode::BlockQuote(_)
-            | BlockNode::List(_)
-            | BlockNode::DefinitionList(_)
-            | BlockNode::Figure(_)
-            | BlockNode::CodeBlock(_)
-            | BlockNode::Table(_)
-            | BlockNode::AbbreviationDef(_)
-            | BlockNode::RawBlock(_)
-            | BlockNode::Comment(_)
-            | BlockNode::BlockImage(_)
-            | BlockNode::ThematicBreak(_) => 0,
-        })
-        .max()
-        .unwrap_or(0)
+/// The canonical container fence: three colons outermost, one wider per level.
+///
+/// Since carve#439 a closer must match its opener EXACTLY, so a fence no
+/// longer has to outrank anything - it pairs like a tag. That removed the
+/// reason to size a fence from a container's DESCENDANTS (it had to be wider
+/// than everything nested inside it, so adding a level meant rewriting the
+/// whole chain) and lets the width come from the container's own depth.
+///
+/// A container inside a blockquote, a list item or a definition body starts
+/// over at three colons: its fence lines carry that host's prefix or indent,
+/// so they cannot pair with an ancestor's fence.
+fn colon_fence_for(ctx: &CarveContext) -> String {
+    ":".repeat(3 + ctx.colon_depth)
 }
 
 /// Tables prefer the NATIVE header form: an `=` on each header cell, plus the

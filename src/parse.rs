@@ -834,14 +834,6 @@ struct LineCursor<'a> {
     /// gets no position rather than a wrong one.
     col_map: Option<&'a [Option<usize>]>,
     pos: usize,
-    /// Lazily built suffix-maximum of each line's colon-closer length: entry `i`
-    /// holds the largest all-colon line length at any index `>= i` (0 if none).
-    /// A closer for a fence of length `k` is any all-colon line of length `>= k`,
-    /// so "a closer of length `>= k` exists at or after `start`" is exactly
-    /// `colon_closer_suffix_max[start] >= k` -- independent of the exact fence
-    /// length. This defeats the distinct-increasing-fence-length cache miss that
-    /// turned a per-fence-length cache into an O(N^2) full rescan per line.
-    colon_closer_suffix_max: Option<Vec<usize>>,
     /// Negative cache for comment-fence closer lookahead. For a fence length,
     /// stores the smallest line index already proven to have no exact-length
     /// closer at or after it.
@@ -859,7 +851,6 @@ impl<'a> LineCursor<'a> {
             line_map,
             col_map,
             pos: 0,
-            colon_closer_suffix_max: None,
             comment_closer_last_index: None,
         }
     }
@@ -885,15 +876,6 @@ impl<'a> LineCursor<'a> {
     /// Columns stripped from the front of the line at `pos`, when known.
     fn source_col(&self, pos: usize) -> Option<usize> {
         self.col_map.and_then(|map| map.get(pos).copied().flatten())
-    }
-
-    fn has_colon_closer_after(&mut self, start: usize, fence_len: usize) -> bool {
-        if self.colon_closer_suffix_max.is_none() {
-            self.colon_closer_suffix_max = Some(build_colon_closer_suffix_max(self.lines));
-        }
-        let suffix_max = self.colon_closer_suffix_max.as_ref().unwrap();
-        // `start` may sit one past the end (opener is the last line).
-        suffix_max.get(start).copied().unwrap_or(0) >= fence_len
     }
 
     /// Is there a comment-fence closer of exactly `fence_len` at or after `start`?
@@ -1377,25 +1359,6 @@ fn parse_mapped_source(source: &MappedSource, options: &Options<'_>) -> Vec<Bloc
     parse_blocks(&mut cursor, options)
 }
 
-/// Build the suffix-maximum of each line's colon-closer length (see
-/// `LineCursor::colon_closer_suffix_max`). A line contributes its trimmed length
-/// when it is a non-empty all-colon line, else 0. Single O(N) right-to-left pass.
-fn build_colon_closer_suffix_max(lines: &[&str]) -> Vec<usize> {
-    let mut suffix_max = vec![0usize; lines.len()];
-    let mut running = 0usize;
-    for idx in (0..lines.len()).rev() {
-        let t = trim_ascii(lines[idx]);
-        let len = if !t.is_empty() && t.bytes().all(|b| b == b':') {
-            t.len()
-        } else {
-            0
-        };
-        running = running.max(len);
-        suffix_max[idx] = running;
-    }
-    suffix_max
-}
-
 fn build_comment_closer_last_index(lines: &[&str]) -> HashMap<usize, usize> {
     let mut last_index = HashMap::new();
     for (idx, line) in lines.iter().enumerate() {
@@ -1690,22 +1653,14 @@ fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<BlockNode>
     // fold as literal paragraph text instead. `line` is already dedented to
     // the content column here, so a fence sitting AT that column still opens.
     if !line.starts_with([' ', '\t']) {
-        if let Some(fence_len) = detect_line_block_open(line) {
-            // A line block, like any colon fence, opens only when a matching
-            // closer exists ahead (grammar §12/§23); an unterminated `::: |`
-            // stays literal instead of swallowing the rest of the document.
-            let has_closer = cur.has_colon_closer_after(cur.pos + 1, fence_len);
-            if has_closer {
-                return Some(parse_line_block(cur, options));
-            }
+        // A colon fence opens whether or not a closer follows: since carve#439
+        // an unclosed container is CLOSED AT THE END OF ITS ENCLOSING SCOPE
+        // rather than degrading the rest of the document to literal text.
+        if detect_line_block_open(line).is_some() {
+            return Some(parse_line_block(cur, options));
         }
-        if let Some(fence_len) = detect_hardbreaks_block_open(line) {
-            // Like a line block, a `::: \` opens only when a matching closer
-            // exists ahead (grammar §12/§23); an unterminated opener stays literal.
-            let has_closer = cur.has_colon_closer_after(cur.pos + 1, fence_len);
-            if has_closer {
-                return Some(parse_hardbreaks_block(cur, options));
-            }
+        if detect_hardbreaks_block_open(line).is_some() {
+            return Some(parse_hardbreaks_block(cur, options));
         }
     }
     // FLUSH-LEFT only: `detect_container_open` trims leading whitespace, so an
@@ -1713,17 +1668,8 @@ fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<BlockNode>
     // lazy paragraph text (§24 C3), not open a nested container -- uniform with
     // the quote/heading/table checks. `line` is already dedented to the content
     // column here, so a `:::` at the content column opens.
-    if !line.starts_with([' ', '\t']) {
-        if let Some(open) = detect_container_open(line) {
-            // A colon fence opens only when a matching closer (a line of at least
-            // `fence_len` colons) exists ahead (grammar §12); an unterminated
-            // `:::` / `::: note` stays literal instead of swallowing the rest of
-            // the document. Matches carve-js.
-            let has_closer = cur.has_colon_closer_after(cur.pos + 1, open.fence_len);
-            if has_closer {
-                return Some(parse_container(cur, options));
-            }
-        }
+    if !line.starts_with([' ', '\t']) && detect_container_open(line).is_some() {
+        return Some(parse_container(cur, options));
     }
     if let Some(abbr) = detect_abbreviation_def(line) {
         cur.consume();
@@ -3227,10 +3173,16 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             // A heading on the marker line (`- # H`) folds its trailing
             // flush-left plain text as heading continuation (`- # H\nlazy` ->
             // one `<h1>H\nlazy</h1>` inside the item), matching carve-js /
-            // carve-php and the indented-heading-in-item path above. Only a
-            // heading folds this way; the other marker-line block openers
-            // (fence, table, thematic, container) keep their trailing text as a
-            // separate block, so the guard is heading-only. A blank line closes
+            // carve-php and the indented-heading-in-item path above.
+            //
+            // An UNCLOSED container on the marker line folds the same way, for
+            // a different reason: since carve#439 it stays open to the end of
+            // the item, so flush-left text after it is its BODY. This used to be
+            // heading-only because a container with no closer degraded to
+            // literal text, and there was nothing open to fold into.
+            //
+            // A fence, table or thematic break still keeps its trailing text as
+            // a separate block. A blank line closes
             // the heading (§heading rule 2), so skip the fold once one was
             // consumed while collecting -- `- # H\n\nsep` keeps `sep` as its own
             // top-level block.
@@ -3243,7 +3195,10 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             // outer loop, so this stays false and tightness is unaffected.
             let swallowed_blank_separator =
                 cur.pos > before_block && is_blank_line(cur.lines[cur.pos - 1]);
-            if !swallowed_blank_separator && nested_ends_with_heading(&stream.source, options) {
+            if !swallowed_blank_separator
+                && (nested_ends_with_heading(&stream.source, options)
+                    || marker_line_container_is_open(marker.content, &stream.source))
+            {
                 collect_trailing_lazy(cur, &mut stream);
             }
             // A blank absorbed inside the marker-line block's continuation that
@@ -3429,6 +3384,32 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     })
 }
 
+/// Did a container opened on the marker line reach the end of the collected
+/// item body still UNCLOSED?
+///
+/// Since carve#439 such a container runs to the end of the item, so flush-left
+/// text after it is its body rather than a sibling block. Only the marker-line
+/// opener is considered: a container opened deeper inside the item body is
+/// closed by that body's own structure.
+fn marker_line_container_is_open(marker_content: &str, collected: &str) -> bool {
+    let Some(open) = detect_container_open(marker_content) else {
+        return false;
+    };
+    let mut depth = 1usize;
+    for line in collected.lines().skip(1) {
+        let t = trim_ascii(line);
+        if !t.is_empty() && t.bytes().all(|b| b == b':') && t.len() == open.fence_len {
+            depth -= 1;
+            if depth == 0 {
+                return false;
+            }
+        } else if opens_same_width_container(line, open.fence_len) {
+            depth += 1;
+        }
+    }
+    true
+}
+
 fn marker_content_starts_block(content: &str, cur: &LineCursor<'_>, content_col: usize) -> bool {
     // A thematic break as the marker-line content is a block (`1. ---` ->
     // <li><hr></li>), not inline text -- otherwise smart punctuation turns
@@ -3459,20 +3440,17 @@ fn marker_content_starts_block(content: &str, cur: &LineCursor<'_>, content_col:
             is_comment_fence_close(&line, open.fence_len)
         });
     }
-    let colon_fence_len = detect_container_open(content)
-        .map(|open| open.fence_len)
-        .or_else(|| detect_line_block_open(content))
-        .or_else(|| detect_hardbreaks_block_open(content));
-    if let Some(fence_len) = colon_fence_len {
-        return cur.lines[cur.pos..].iter().enumerate().any(|(idx, line)| {
-            let indent = indent_columns(line);
-            if idx > 0 && indent < content_col {
-                return false;
-            }
-            let line = slice_columns(line, content_col.min(indent), false);
-            let trimmed = trim_ascii(&line);
-            !trimmed.is_empty() && trimmed.bytes().all(|b| b == b':') && trimmed.len() >= fence_len
-        });
+    // A colon fence on the marker line starts a block whether or not a closer
+    // follows it: since carve#439 an unclosed container is closed at the end of
+    // its enclosing scope -- here the end of the item -- so the collected
+    // content-column lines are its BODY. Requiring a closer used to be right
+    // because the opener degraded to literal text without one; now it would
+    // leave the container open and its body outside it.
+    if detect_container_open(content).is_some()
+        || detect_line_block_open(content).is_some()
+        || detect_hardbreaks_block_open(content).is_some()
+    {
+        return true;
     }
     if is_table_start(content) {
         return cur.lines.get(cur.pos).is_some_and(|line| {
@@ -4154,26 +4132,23 @@ fn interrupts_paragraph(cur: &mut LineCursor<'_>, line: &str) -> bool {
     // lazy paragraph text (§24 C3), not a nested container. `line` is already
     // dedented to the container's content column, so at-content-column opens.
     if !line.starts_with([' ', '\t']) {
-        if let Some(open) = detect_container_open(line) {
-            if cur.has_colon_closer_after(cur.pos + 1, open.fence_len) {
-                return true;
-            }
+        // No closer lookahead: since carve#439 an unclosed container closes
+        // at the end of its enclosing scope, so whether a closer follows no
+        // longer decides whether this line opens a block.
+        if detect_container_open(line).is_some() {
+            return true;
         }
     }
     // A `::: |` line block or `::: \` hard-break block interrupts like any
-    // colon-fence block, with the same matching-closer lookahead -- but only
+    // colon-fence block -- but only
     // FLUSH-LEFT, matching the `detect_container_open` guard above and the
     // opener path in `parse_block`. An INDENTED colon fence (the detectors trim
     // leading whitespace) folds as lazy paragraph text instead of splitting the
     // paragraph (strict column-0 rule, docs/divergence-from-djot.md §11).
-    if !line.starts_with([' ', '\t']) {
-        if let Some(len) =
-            detect_line_block_open(line).or_else(|| detect_hardbreaks_block_open(line))
-        {
-            if cur.has_colon_closer_after(cur.pos + 1, len) {
-                return true;
-            }
-        }
+    if !line.starts_with([' ', '\t'])
+        && (detect_line_block_open(line).is_some() || detect_hardbreaks_block_open(line).is_some())
+    {
+        return true;
     }
     false
 }
@@ -5270,15 +5245,43 @@ fn parse_quoted_metadata(s: &str) -> Option<(String, &str)> {
     None
 }
 
+/// Does `line` OPEN a container whose colon run is exactly `fence_len` wide?
+///
+/// Equal-width nesting is legal since carve#439, so a body scan that stopped at
+/// the first same-width bare fence would end the OUTER container on the inner
+/// one's closer and leave the outer's own closer to open a stray empty div. A
+/// bare fence is deliberately not counted: it is a CLOSER whenever a container
+/// of that width is open, which is what makes the two runs pair like a tag.
+fn opens_same_width_container(line: &str, fence_len: usize) -> bool {
+    let t = line.trim_start();
+    let run = t.bytes().take_while(|b| *b == b':').count();
+    if run != fence_len {
+        return false;
+    }
+    if t.trim_end().len() == run {
+        return false; // bare fence: a closer, not an opener
+    }
+    detect_container_open(t).is_some()
+        || detect_line_block_open(t).is_some()
+        || detect_hardbreaks_block_open(t).is_some()
+}
+
 fn parse_container(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     let open = detect_container_open(cur.peek().unwrap()).unwrap();
     let span_start = cur.pos;
     cur.consume();
     let mut inner = LineBuffer::default();
+    let mut depth = 1usize;
     while let Some(line) = cur.peek() {
-        if line.trim().bytes().all(|b| b == b':') && line.trim().len() >= open.fence_len {
-            cur.consume();
-            break;
+        let t = line.trim();
+        if !t.is_empty() && t.bytes().all(|b| b == b':') && t.len() == open.fence_len {
+            depth -= 1;
+            if depth == 0 {
+                cur.consume();
+                break;
+            }
+        } else if opens_same_width_container(line, open.fence_len) {
+            depth += 1;
         }
         // Record what the ENCLOSING container already took from this line.
         // A colon fence strips nothing itself, but its body inherits whatever
@@ -5436,7 +5439,7 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     let mut stanza_end = cur.pos;
     while let Some(line) = cur.peek() {
         let t = trim_ascii(line);
-        if !t.is_empty() && t.bytes().all(|b| b == b':') && t.len() >= fence_len {
+        if !t.is_empty() && t.bytes().all(|b| b == b':') && t.len() == fence_len {
             cur.consume();
             break;
         }
@@ -5581,7 +5584,7 @@ fn parse_hardbreaks_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockN
     let mut inner = LineBuffer::default();
     while let Some(line) = cur.peek() {
         let t = line.trim();
-        if !t.is_empty() && t.bytes().all(|b| b == b':') && t.len() >= fence_len {
+        if !t.is_empty() && t.bytes().all(|b| b == b':') && t.len() == fence_len {
             cur.consume();
             break;
         }

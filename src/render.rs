@@ -14,7 +14,13 @@ use crate::extension::{Options, RenderContext};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fmt::Write as _;
 
-const MAX_RENDER_DEPTH: usize = 80;
+/// Matches the PARSER's cap (`parse::MAX_NESTING_DEPTH`) rather than sitting
+/// below it. At 80 against a parser that admits 200, every block nested deeper
+/// than 80 was dropped with no output and no report - and carve#439 made that
+/// reachable from ordinary input, because an unclosed container now nests
+/// instead of degrading to text. Two caps for one limit is the same
+/// written-down-twice defect the ingest bound had (PART 12 §9).
+const MAX_RENDER_DEPTH: usize = crate::parse::MAX_NESTING_DEPTH;
 
 pub fn render_html(doc: &Document) -> String {
     render_html_with_options(doc, &Options::default())

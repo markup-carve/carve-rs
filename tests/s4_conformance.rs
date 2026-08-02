@@ -118,10 +118,14 @@ fn inline_attribute_block_is_single_line() {
 }
 
 #[test]
-fn unterminated_colon_fence_stays_literal() {
+fn unterminated_colon_fence_closes_at_end_of_file() {
+    // carve#439: an unclosed container is CLOSED AT END OF FILE, matching djot,
+    // rather than degrading the rest of the document to literal text. The
+    // degrade was the louder failure - one mistyped closer turned the whole tail
+    // into a paragraph - and exact-width closers make that typo likelier.
     assert_eq!(
         carve::to_html(":::note\nbody no closer"),
-        "<p>:::note\nbody no closer</p>"
+        "<aside class=\"admonition note\">\n  <p>body no closer</p>\n</aside>"
     );
     // a closed fence still parses.
     assert!(carve::to_html(":::note\nbody\n:::").contains("<aside class=\"admonition note\">"));

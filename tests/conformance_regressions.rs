@@ -174,37 +174,48 @@ fn marker_line_colon_blocks_nest_inside_list_item() {
 
 #[test]
 fn unindented_admonition_body_lazy_continues_list_item_literal_opener() {
+    // carve#439: the marker-line opener is no longer literal - it opens and runs
+    // to the end of the item, so the flush-left body folds INTO it rather than
+    // beside it. The lazy fold itself is what this pins, and it still happens.
     assert_eq!(
         html("- ::: note\nbody\n:::"),
-        "<ul>\n  <li>::: note\nbody</li>\n</ul>\n<p>:::</p>"
+        "<ul>\n  <li>\n    <aside class=\"admonition note\">\n      <p>body</p>\n    </aside>\n  </li>\n</ul>\n<div>\n</div>"
     );
     assert_eq!(
         html("- :::\n:::"),
-        "<ul>\n  <li>:::</li>\n</ul>\n<p>:::</p>"
+        "<ul>\n  <li>\n    <div>\n    </div>\n  </li>\n</ul>\n<div>\n</div>"
     );
     assert_eq!(html("- a\nb"), "<ul>\n  <li>a\nb</li>\n</ul>");
 }
 
 #[test]
 fn flush_left_colon_fence_shape_ends_lazy_continuation() {
-    assert_eq!(html("- a\n:::"), "<ul>\n  <li>a</li>\n</ul>\n<p>:::</p>");
+    // carve#439: the flush-left fence still ENDS the item or quote - which is
+    // what this pins - but it now opens a container instead of staying literal.
+    assert_eq!(html("- a\n:::"), "<ul>\n  <li>a</li>\n</ul>\n<div>\n</div>");
     assert_eq!(
         html("- a\n::: note\nno"),
-        "<ul>\n  <li>a</li>\n</ul>\n<p>::: note\nno</p>"
+        "<ul>\n  <li>a</li>\n</ul>\n<aside class=\"admonition note\">\n  <p>no</p>\n</aside>"
     );
     assert_eq!(
         html("- a\n:::\nb"),
-        "<ul>\n  <li>a</li>\n</ul>\n<p>:::\nb</p>"
+        "<ul>\n  <li>a</li>\n</ul>\n<div>\n  <p>b</p>\n</div>"
     );
-    assert_eq!(html("1. a\n:::"), "<ol>\n  <li>a</li>\n</ol>\n<p>:::</p>");
+    assert_eq!(
+        html("1. a\n:::"),
+        "<ol>\n  <li>a</li>\n</ol>\n<div>\n</div>"
+    );
     assert_eq!(
         html("> a\n:::"),
-        "<blockquote><p>a</p></blockquote>\n<p>:::</p>"
+        "<blockquote><p>a</p></blockquote>\n<div>\n</div>"
     );
 
+    // Flush-left body folds INTO the marker-line container now that it stays
+    // open to the end of the item (carve#439); the indented form below already
+    // did, and the two now agree.
     assert_eq!(
         html("- ::: note\nbody\n:::"),
-        "<ul>\n  <li>::: note\nbody</li>\n</ul>\n<p>:::</p>"
+        "<ul>\n  <li>\n    <aside class=\"admonition note\">\n      <p>body</p>\n    </aside>\n  </li>\n</ul>\n<div>\n</div>"
     );
     assert_eq!(
         html("- ::: note\n  body\n  :::"),
@@ -474,30 +485,31 @@ fn quote_after_non_breaking_space_opens() {
 // the hard-break block, so the spec corpus is the reference, not carve-js.)
 #[test]
 fn colon_fence_openers_end_blockquote_lazy_continuation() {
-    let expect = concat!(
-        "<blockquote><p>{OPENER}</p></blockquote>\n",
+    // carve#439: these openers now OPEN (closed at the end of the quote) rather
+    // than degrading to a quoted paragraph. What this test pins is unchanged and
+    // is the regression it exists for: the unquoted line still ENDS the quote
+    // instead of being absorbed into it.
+    let tail = concat!(
         "<p>outside</p>\n",
-        "<blockquote><p>:::</p></blockquote>"
+        "<blockquote>\n  <div>\n  </div>\n</blockquote>"
     );
     assert_eq!(
         html("> ::: |\noutside\n> :::"),
-        expect.replace("{OPENER}", "::: |")
+        format!("<blockquote>\n  <div class=\"line-block\">\n  </div>\n</blockquote>\n{tail}")
     );
-    // The degraded `::: \` opener is a paragraph ending in a backslash, so the
-    // trailing `\` renders as a hard break (djot / trailing-backslash rule).
     assert_eq!(
         html("> ::: \\\noutside\n> :::"),
-        expect.replace("{OPENER}", "::: <br>\n")
+        format!("<blockquote>\n  <div class=\"hardbreaks\">\n  </div>\n</blockquote>\n{tail}")
     );
-    // Plain div (the case that already worked -- regression guard).
+    // Plain admonition (the case that already worked -- regression guard).
     assert_eq!(
         html("> ::: note\noutside\n> :::"),
-        expect.replace("{OPENER}", "::: note")
+        format!("<blockquote>\n  <aside class=\"admonition note\">\n\n  </aside>\n</blockquote>\n{tail}")
     );
     // No closer in the rest: the opener still ends the quote.
     assert_eq!(
         html("> ::: |\noutside"),
-        "<blockquote><p>::: |</p></blockquote>\n<p>outside</p>"
+        "<blockquote>\n  <div class=\"line-block\">\n  </div>\n</blockquote>\n<p>outside</p>"
     );
 }
 
