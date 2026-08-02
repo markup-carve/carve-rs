@@ -147,6 +147,31 @@ fn render_blocks(
     out
 }
 
+/// Render a container's children, dropping the ones that render to nothing.
+///
+/// A comment, a comment block, an abbreviation definition and a non-HTML raw
+/// block all render as the empty string. Pushing the separating newline before
+/// knowing that leaves a blank line where the block stood - a divergence from
+/// carve-php, which never wrote one. A container whose whole body renders to
+/// nothing gets an empty Vec, which each caller hands to the same path it uses
+/// for a childless container.
+fn rendered_children(
+    nodes: &[BlockNode],
+    level: usize,
+    options: &Options<'_>,
+    state: &mut RenderState,
+) -> Vec<String> {
+    let mut out = Vec::new();
+    for child in nodes {
+        let mut buf = String::new();
+        render_block(&mut buf, child, level, options, state);
+        if !buf.is_empty() {
+            out.push(buf);
+        }
+    }
+    out
+}
+
 #[derive(Default)]
 pub(crate) struct RenderState {
     heading_counts: BTreeMap<String, usize>,
@@ -1024,11 +1049,11 @@ fn render_blockquote(
     write_attrs(out, &b.attrs);
     out.push_str(">\n");
     let mut first = true;
-    for child in &b.children {
+    for child in rendered_children(&b.children, level + 1, options, state) {
         if !first {
             out.push('\n');
         }
-        render_block(out, child, level + 1, options, state);
+        out.push_str(&child);
         first = false;
     }
     out.push('\n');
@@ -1431,12 +1456,13 @@ fn render_admonition(
     // so an admonition with NO title, label, or children still emits one blank
     // line between the open and close tags (corpus 114-7). Mirror that: when the
     // body is otherwise empty, the missing content is a single empty line.
-    if a.title.is_none() && a.label.is_none() && a.children.is_empty() {
+    let children = rendered_children(&a.children, level + 1, options, state);
+    if a.title.is_none() && a.label.is_none() && children.is_empty() {
         out.push('\n');
     }
-    for child in &a.children {
+    for child in &children {
         out.push('\n');
-        render_block(out, child, level + 1, options, state);
+        out.push_str(child);
     }
     out.push('\n');
     indent(out, level);
@@ -1465,9 +1491,9 @@ fn render_line_block(
 
     indent(out, level);
     out.push_str(&format!("<div{}>", render_attrs(&Some(attrs))));
-    for child in &lb.children {
+    for child in rendered_children(&lb.children, level + 1, options, state) {
         out.push('\n');
-        render_block(out, child, level + 1, options, state);
+        out.push_str(&child);
     }
     out.push('\n');
     indent(out, level);
@@ -1492,9 +1518,9 @@ fn render_div(
         out.push_str(&escape_text(label));
         out.push_str("</p>");
     }
-    for child in &d.children {
+    for child in rendered_children(&d.children, level + 1, options, state) {
         out.push('\n');
-        render_block(out, child, level + 1, options, state);
+        out.push_str(&child);
     }
     out.push('\n');
     indent(out, level);
@@ -1529,10 +1555,17 @@ fn render_definition_list(
                     continue;
                 }
             }
+            let blocks = rendered_children(def, level + 2, options, state);
             out.push_str(&format!("<dd{}>", render_attrs(&def.attrs)));
-            for block in def {
+            // A definition whose whole body renders to nothing closes on its
+            // own line, like the single-paragraph form above.
+            if blocks.is_empty() {
+                out.push_str("</dd>");
+                continue;
+            }
+            for block in &blocks {
                 out.push('\n');
-                render_block(out, block, level + 2, options, state);
+                out.push_str(block);
             }
             out.push('\n');
             indent(out, level + 1);
@@ -1611,14 +1644,15 @@ fn render_block_extension(
     let mut state = shared.borrow_mut();
     indent(out, level);
     out.push_str(&format!("<div class=\"{}\">", escape_attr(&node.name)));
-    if !node.children.is_empty() {
+    let children = rendered_children(&node.children, level + 1, options, &mut state);
+    if !children.is_empty() {
         out.push('\n');
         let mut first = true;
-        for child in &node.children {
+        for child in &children {
             if !first {
                 out.push('\n');
             }
-            render_block(out, child, level + 1, options, &mut state);
+            out.push_str(child);
             first = false;
         }
         out.push('\n');
