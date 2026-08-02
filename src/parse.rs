@@ -2215,6 +2215,29 @@ fn push_current_line(inner: &mut LineBuffer, cur: &LineCursor<'_>) {
     );
 }
 
+/// Copy the opener line, then every line up to and including its closer.
+///
+/// The opener is taken BEFORE the first closer test on purpose. An opener with
+/// no info string is closer-shaped itself - a bare ``` or a `%%%` - so testing
+/// it would end the span on its own line and hand the span's contents back to
+/// the block parser, where a fence-shaped line inside it closes the container
+/// around it (carve#450).
+fn take_opaque_span_into(
+    inner: &mut LineBuffer,
+    cur: &mut LineCursor<'_>,
+    is_close: impl Fn(&str) -> bool,
+) {
+    push_current_line(inner, cur);
+    cur.consume();
+    while let Some(line) = cur.peek() {
+        push_current_line(inner, cur);
+        cur.consume();
+        if is_close(line) {
+            break;
+        }
+    }
+}
+
 fn skip_opaque_span_into(
     inner: &mut LineBuffer,
     cur: &mut LineCursor<'_>,
@@ -2225,25 +2248,16 @@ fn skip_opaque_span_into(
     };
     if let Some(open) = detect_fence_open(line) {
         if !para_open || code_fence_interrupts_paragraph(cur, open) {
-            while let Some(line) = cur.peek() {
-                push_current_line(inner, cur);
-                cur.consume();
-                if is_fence_close(line, open) {
-                    break;
-                }
-            }
+            take_opaque_span_into(inner, cur, |candidate| is_fence_close(candidate, open));
             return true;
         }
     }
     if let Some(open) = detect_comment_fence_line(line) {
         if cur.has_comment_closer_after(cur.pos + 1, open.fence_len) {
-            while let Some(line) = cur.peek() {
-                push_current_line(inner, cur);
-                cur.consume();
-                if is_comment_fence_close(line, open.fence_len) {
-                    break;
-                }
-            }
+            let fence_len = open.fence_len;
+            take_opaque_span_into(inner, cur, move |candidate| {
+                is_comment_fence_close(candidate, fence_len)
+            });
             return true;
         }
     }
