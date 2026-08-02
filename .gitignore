@@ -6,3 +6,9 @@ Cargo.lock
 
 # stray local build artifact
 /check
+
+# Scratch: one-off patch scripts, notes and plans, by convention `_`-prefixed.
+# They are working files for a single change and are worthless once it lands -
+# `_fence.py` sat in the tree for months after the fix it applied was merged,
+# and an automated PR later tried to "fix" the repo by editing it.
+/_*
