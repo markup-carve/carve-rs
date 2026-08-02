@@ -39,8 +39,15 @@ mod unicode_nfc;
 /// (an escaped space `\ ` or line-block leading indent). It is distinct from a
 /// LITERAL U+00A0 typed in the source: HTML folds both to `&nbsp;`, but the
 /// plain/ANSI renderers turn this placeholder back into an ASCII space while
-/// preserving literal U+00A0. Using a real char would conflate the two.
-pub(crate) const NBSP_PLACEHOLDER: char = '\u{e001}';
+/// preserving literal U+00A0. Using a real char would conflate the two, and
+/// `fmt` could no longer tell `a\ b` from a typed no-break space.
+///
+/// U+E000 because this value is PUBLISHED - it reaches a consumer in a text
+/// node - and the reference implementation publishes U+E000 for it. Two engines
+/// spelling the same resolved space with different private-use characters is not
+/// something a consumer can be expected to absorb (carve-rs#404). The writer's
+/// own staging markers moved to U+E010.. to free it.
+pub(crate) const NBSP_PLACEHOLDER: char = '\u{e000}';
 pub(crate) const ESCAPED_CARET_PLACEHOLDER: char = '\u{e002}';
 pub const SPEC_VERSION: &str = "0.1";
 

@@ -1281,7 +1281,17 @@ fn align_marker(align: Option<TableAlign>) -> &'static str {
 /// `normalize` has run.
 /// Stands in for an escaped space until `normalize` expands it, so the backslash
 /// is not seen by the escaper (which would double it).
-const ESCAPED_SPACE: &str = "\u{e000}";
+const ESCAPED_SPACE: &str = "\u{e010}";
+
+/// Writer-internal staging for a space and a tab that must survive escaping.
+///
+/// These live in U+E010.. deliberately. U+E000 is a PUBLISHED value - it is the
+/// no-break-space placeholder a parsed document carries - so a writer marker
+/// sharing that code point would be indistinguishable from document content.
+/// They used to sit at U+E001 and U+E002, which is why the published placeholder
+/// could not move there (carve-rs#404).
+const STAGED_SPACE: char = '\u{e011}';
+const STAGED_TAB: char = '\u{e012}';
 
 fn resolve_nbsp_placeholder(text: &str, in_line_block: bool) -> String {
     if !in_line_block {
@@ -1296,7 +1306,7 @@ fn resolve_nbsp_placeholder(text: &str, in_line_block: bool) -> String {
             let rest = &line[indent * crate::NBSP_PLACEHOLDER.len_utf8()..];
             format!(
                 "{}{}",
-                "\u{e001}".repeat(indent),
+                STAGED_SPACE.to_string().repeat(indent),
                 rest.replace(crate::NBSP_PLACEHOLDER, ESCAPED_SPACE)
             )
         })
@@ -1308,7 +1318,7 @@ fn normalize(text: &str) -> String {
     // U+E000 marks an escaped space, and it resolves HERE rather than during
     // rendering because the backslash it expands to is itself an unconditional
     // escape: expanding earlier let escapeText double it, giving `10\\ kg`.
-    let text = text.replace('\u{e000}', "\\ ");
+    let text = text.replace(ESCAPED_SPACE, "\\ ");
     // Strip a line's trailing whitespace only where it cannot be content. At the
     // end of a paragraph the parser drops it too, so the writer must; before a
     // SOFT BREAK the parser keeps it, and stripping it there changed the
@@ -1361,7 +1371,7 @@ fn protect_verbatim(content: &str) -> String {
         let stripped = line.trim_end_matches([' ', '\t']);
         let tail: String = line[stripped.len()..]
             .chars()
-            .map(|ch| if ch == ' ' { '\u{e001}' } else { '\u{e002}' })
+            .map(|ch| if ch == ' ' { STAGED_SPACE } else { STAGED_TAB })
             .collect();
         lines.push(format!("{stripped}{tail}"));
     }
@@ -1406,8 +1416,8 @@ fn guard_thematic_break_lines(body: &str) -> String {
 }
 
 fn restore_verbatim(text: &str) -> String {
-    text.replace('\u{e001}', " ")
-        .replace('\u{e002}', "\t")
+    text.replace(STAGED_SPACE, " ")
+        .replace(STAGED_TAB, "\t")
         .replace('\u{e003}', "")
         // U+E004 marks a paragraph line that must not begin at column 0. It
         // resolves AFTER normalize()'s trims, which would otherwise strip a
