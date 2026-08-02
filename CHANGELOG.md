@@ -25,6 +25,17 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A block that renders to nothing no longer leaves a blank line inside its
+  container.** A comment, a comment block, an abbreviation definition or a
+  non-HTML raw block renders as the empty string, and the container pushed the
+  separating newline before it knew that, so `::: note` holding a `%%%` block
+  came out as `<aside …>` then an empty line then `<p>body</p>`. The div,
+  admonition, line block, block quote, definition body and the extension div
+  each had their own copy of the loop; they now share one helper that drops
+  empty renders. Output matches carve-php everywhere. A container whose whole
+  body renders to nothing still renders exactly as a childless one does, so
+  genuinely empty containers are unchanged.
+
 - **A fence-shaped line inside an opaque span no longer closes the container
   the span sits in** (spec markup-carve/carve#450). A `:::` written inside a
   code fence or a comment block inside a `::: note` ended the note there, and
