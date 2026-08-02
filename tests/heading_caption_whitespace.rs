@@ -25,14 +25,14 @@ fn heading_keeps_leading_tab_as_content() {
 }
 
 #[test]
-fn heading_keeps_interior_trailing_strips_final() {
+fn heading_strips_trailing_whitespace_and_does_not_merge_lines() {
     assert_eq!(
         carve::to_html("# a \nb"),
-        "<section id=\"a-b\">\n  <h1>a \nb</h1>\n</section>"
+        "<section id=\"a\">\n  <h1>a</h1>\n  <p>b</p>\n</section>"
     );
     assert_eq!(
         carve::to_html("# a\nb "),
-        "<section id=\"a-b\">\n  <h1>a\nb</h1>\n</section>"
+        "<section id=\"a\">\n  <h1>a</h1>\n  <p>b</p>\n</section>"
     );
 }
 

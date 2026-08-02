@@ -7,6 +7,38 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **BREAKING: a heading ends at the newline.** A heading no longer folds the
+  following line into its text. `# Title` with prose on the next line is now a
+  heading plus a paragraph, and `## A` / `## B` is two headings, matching
+  CommonMark and the SINGLE-LINE HEADINGS rule in grammar PART 2 (carve#434,
+  carve#451). Folding was a silent corruption for anyone arriving from Markdown:
+  the title text was wrong and so was the auto-generated id, which broke
+  `[Heading][]` cross-references and TOC anchors with nothing to lint.
+
+  **Migration:** a heading that was deliberately wrapped over several source
+  lines must be joined onto one line. `carve lint --from-djot` (carve-js) reports
+  every such line as `djot-heading-continuation`.
+
+- **Braces alone on a list-item marker line are a block-attribute line.**
+  `- {a=b .c}` followed by an indented block attributes that block, instead of
+  leaving the braces as literal item text and dropping the attributes (grammar
+  PART 9 §15 A8, carve#454/#457). The discriminator is whether content follows
+  the braces: `- {.c} text` is still literal, and `-{.c} text` still attributes
+  the item. carve-rs was the only engine reading the brace-only form as text.
+
+- `fmt` collapses a break inside a heading to a space instead of emitting it.
+  No parse produces such a heading, but an ingested AST can (PART 12 permits any
+  inline in a heading), and writing it out verbatim split the heading and moved
+  text out of the title on re-parse.
+
+### Fixed
+
+- A tight list item's paragraph is wrapped in `<p>` when it carries authored
+  attributes, which otherwise had nowhere to go and were dropped. Reachable via
+  the new attribute-line rule above.
+
 ### Fixed
 
 - **An implicit `[Heading][]` reference no longer resolves into a blockquote**

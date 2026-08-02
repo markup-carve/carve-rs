@@ -17,11 +17,13 @@ fn complete_row_is_a_table() {
 }
 
 #[test]
-fn incomplete_row_does_not_interrupt_paragraph_or_heading() {
+fn incomplete_row_does_not_interrupt_a_paragraph() {
     assert_eq!(carve::to_html("para\n| a"), "<p>para\n| a</p>");
+    // A heading ends at the newline (single-line headings), so the incomplete
+    // row is not folded in either - it becomes the paragraph that follows.
     assert_eq!(
         carve::to_html("# H\n| a"),
-        "<section id=\"H-a\">\n  <h1>H\n| a</h1>\n</section>"
+        "<section id=\"H\">\n  <h1>H</h1>\n  <p>| a</p>\n</section>"
     );
 }
 

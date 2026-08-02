@@ -653,6 +653,19 @@ fn render_block(
 /// render annotation rather than something the author wrote, so a caller that
 /// appends a generated attribute has to emit it after the stamp is removed and
 /// put the stamp back last.
+/// Whether an attribute set holds anything the AUTHOR wrote. The
+/// `data-source-line` stamp is a render annotation the parser injects for
+/// editor scroll-sync, so a block carrying only that is, for authoring
+/// purposes, unattributed -- otherwise turning `source_lines` on would change
+/// the HTML structure of every tight list item.
+fn has_authored_attrs(attrs: &Option<Attrs>) -> bool {
+    attrs.as_ref().is_some_and(|a| {
+        a.id.is_some()
+            || !a.classes.is_empty()
+            || a.key_values.keys().any(|k| k != "data-source-line")
+    })
+}
+
 fn take_source_line_attr(attrs: &mut Attrs) -> Option<String> {
     let value = attrs.key_values.remove("data-source-line")?;
     attrs
@@ -929,7 +942,12 @@ fn render_list_item(
             if let BlockNode::Paragraph(p) = child {
                 let mut html = String::new();
                 render_inlines(&mut html, &p.children, options, state);
-                if tight {
+                // A tight item's paragraph renders bare -- unless it carries
+                // AUTHORED attributes, which have nowhere to go without the
+                // `<p>`. Reachable since a brace-only list-marker line became a
+                // block attribute line (§15 A8): `- {.c}` / `  text` must not
+                // silently drop the class. Matches carve-js.
+                if tight && !has_authored_attrs(&p.attrs) {
                     Part::Inline(html)
                 } else {
                     Part::Inline(format!("<p{}>{html}</p>", render_attrs(&p.attrs)))

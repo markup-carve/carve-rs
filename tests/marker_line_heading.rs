@@ -55,13 +55,13 @@ fn tab_separated_hash_on_marker_line_stays_text() {
 }
 
 #[test]
-fn flush_left_lazy_text_folds_into_marker_line_heading() {
-    // A heading folds trailing flush-left plain text as continuation, so the
-    // lazy line stays INSIDE the item and inside the heading (matches carve-js
-    // / carve-php), rather than floating out to a top-level paragraph.
+fn flush_left_lazy_text_stays_in_the_marker_line_item() {
+    // The lazy line still belongs to the ITEM rather than floating out to a
+    // top-level paragraph (matches carve-js / carve-php). It is no longer part
+    // of the heading: a heading ends at the newline (PART 2).
     assert_eq!(
         carve::to_html("- # H\nlazy\n"),
-        "<ul>\n  <li>\n    <h1 id=\"H-lazy\">H\nlazy</h1>\n  </li>\n</ul>"
+        "<ul>\n  <li>\n    <h1 id=\"H\">H</h1>\n    lazy\n  </li>\n</ul>"
     );
 }
 

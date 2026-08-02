@@ -94,7 +94,7 @@ const IMPLEMENTED: &[&str] = &[
     "79-paragraph-interruption",
     "80-blockquote-lazy-continuation",
     "81-fenced-code-language-with-punctuation",
-    "82-multi-line-headings",
+    "82-single-line-headings",
     "83-blockquote-lazy-continuation-stops-at-a-fenced-block",
     "84-list-lazy-continuation",
     "85-compact-list-blocks",
@@ -182,6 +182,8 @@ const IMPLEMENTED: &[&str] = &[
     "167-only-the-id-hoists-to-the-section-wrapper",
     "168-headings-inside-containers-are-not-wrapped",
     "169-attribute-order-on-an-unwrapped-heading",
+    "170-attribute-braces-on-a-list-item-marker-line",
+    "171-implicit-heading-references-with-no-definition",
 ];
 
 fn corpus_dir() -> PathBuf {
@@ -491,7 +493,7 @@ corpus_test!(
     c81_fenced_code_language_with_punctuation,
     "81-fenced-code-language-with-punctuation"
 );
-corpus_test!(c82_multi_line_headings, "82-multi-line-headings");
+corpus_test!(c82_single_line_headings, "82-single-line-headings");
 corpus_test!(
     c83_blockquote_lazy_continuation_stops_at_a_fenced_block,
     "83-blockquote-lazy-continuation-stops-at-a-fenced-block"

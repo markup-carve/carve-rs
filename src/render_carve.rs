@@ -325,14 +325,21 @@ fn render_item_blocks(blocks: &[BlockNode], tight: bool, ctx: &mut CarveContext)
 
 fn render_block(node: &BlockNode, ctx: &mut CarveContext) -> String {
     match node {
-        BlockNode::Heading(heading) => with_block_attrs(
-            &heading.attrs,
-            &format!(
-                "{} {}",
-                "#".repeat(heading.level as usize),
-                trim_non_nbsp(&render_inlines(&heading.children, ctx))
-            ),
-        ),
+        BlockNode::Heading(heading) => {
+            // A heading is SINGLE-LINE (PART 2), so its text must not contain a
+            // newline: emitting one would end the heading and silently re-parse
+            // the remainder as a following block. No parse builds such a
+            // heading, but an ingested AST can - PART 12 lets any inline sit in
+            // a heading, break nodes included - so a break collapses to a
+            // single space here rather than corrupting the document it is
+            // written back to. Matches carve-js.
+            let rendered = render_inlines(&heading.children, ctx);
+            let text = collapse_breaks(trim_non_nbsp(&rendered));
+            with_block_attrs(
+                &heading.attrs,
+                &format!("{} {}", "#".repeat(heading.level as usize), text),
+            )
+        }
         BlockNode::Paragraph(paragraph) => {
             let body = guard_thematic_break_lines(&render_inlines(&paragraph.children, ctx));
             with_block_attrs(&paragraph.attrs, &body)
@@ -1434,6 +1441,42 @@ fn collapse_blank_lines(text: &str) -> String {
         }
     }
     out
+}
+
+/// Fold every line break in `text` (a hard break's `\` included) to one space,
+/// then trim. Used where the target construct occupies exactly one line, so a
+/// break in the tree would otherwise be written out as a real newline and
+/// change the block structure on re-parse.
+fn collapse_breaks(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut chars = text.chars().peekable();
+    let mut slashes = 0usize;
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            slashes += 1;
+            out.push(c);
+            continue;
+        }
+        if c != '\n' {
+            slashes = 0;
+            out.push(c);
+            continue;
+        }
+        // Only an ODD run of backslashes before the newline is a hard break's
+        // marker; an even run is literal backslashes that happen to end the
+        // line. Dropping one unconditionally turned `a\` plus a soft break into
+        // `a\ b`, where the escape swallows the space and the backslash is lost.
+        if slashes % 2 == 1 {
+            out.pop();
+        }
+        slashes = 0;
+        // Emit one space for the break and swallow the next line's indentation.
+        out.push(' ');
+        while chars.peek().is_some_and(|c| *c == ' ' || *c == '\t') {
+            chars.next();
+        }
+    }
+    trim_non_nbsp(&out).to_string()
 }
 
 fn trim_non_nbsp(text: &str) -> &str {

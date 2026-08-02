@@ -1590,66 +1590,24 @@ fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<BlockNode>
     if let Some((level, first_text)) = detect_heading(line) {
         let span_start = cur.pos;
         cur.consume();
-        // Headings are multi-line: the text spills onto following lines until a
-        // blank line. A continuation line may carry EXACTLY the same number of
-        // `#` (stripped) or none; a different `#` count (more or fewer) starts a
-        // new heading, and a caption or a fenced comment (`%%%`) ends it. A
-        // block-opener (list/quote/table/fence/div/thematic break) ends it and
-        // starts that block, exactly as it interrupts a paragraph (§10); only
-        // plain text folds (an ordered marker folds, it never interrupts).
-        let mut joined = first_text.to_string();
-        let mut anchors = options
+        // SINGLE-LINE HEADINGS (spec PART 2, NORMATIVE): a heading ENDS AT THE
+        // NEWLINE. Nothing folds into it -- not a plain line, not a same-count
+        // `#` line -- so whatever follows simply begins its own block, exactly
+        // as it would after any other closed block. This diverges from Djot on
+        // purpose: folding silently corrupted both the title text and the
+        // auto-generated id for anyone writing Markdown habits, and
+        // `carve lint --from-djot` reports a Djot continuation line instead.
+        let joined = first_text.to_string();
+        let anchors = options
             .positions
             .then(|| vec![inline_anchor_for_line(cur, span_start, first_text)]);
-        while let Some(next) = cur.peek() {
-            if is_blank_line(next) {
-                break;
-            }
-            if let Some(cont) = heading_continuation_same_level(next, level) {
-                joined.push('\n');
-                joined.push_str(cont);
-                if let Some(anchors) = &mut anchors {
-                    anchors.push(inline_anchor_for_line(cur, cur.pos, cont));
-                }
-                cur.consume();
-                continue;
-            }
-            // A bare same-level marker line continues the heading, contributing
-            // no content (checked before is_heading_marker_line, which would
-            // otherwise treat it as the start of a new heading).
-            if is_bare_same_level_marker(next, level) {
-                cur.consume();
-                continue;
-            }
-            if is_heading_marker_line(next)
-                || caption_content(next).is_some()
-                || detect_comment_fence_line(next).is_some()
-            {
-                break;
-            }
-            // A list marker ENDS the heading and starts a sibling list (it does
-            // not fold in). Symmetric §10: a list marker does not interrupt a
-            // PARAGRAPH (it folds), but a heading is ended by it -- matching djot
-            // (`# T` / `- x` -> heading + list). Bullet and ordered alike.
-            let next_owned = next.to_string();
-            if is_list_marker(next) || interrupts_paragraph(cur, &next_owned) {
-                break;
-            }
-            joined.push('\n');
-            joined.push_str(next);
-            if let Some(anchors) = &mut anchors {
-                anchors.push(inline_anchor_for_line(cur, cur.pos, next));
-            }
-            cur.consume();
-        }
         // djot-strict (spec PART 2 headings; matches carve-js #153): a heading
         // line carries NO trailing `{...}` attribute block -- a trailing brace
         // block is ordinary inline content, and the heading id derives from
         // the full literal text. Attributes attach via a PRECEDING
         // block-attribute line (the pending-attrs loop, PART 9 §15).
-        // §756 (NORMATIVE): strip the FINAL line's trailing whitespace only
-        // (trim_ascii_end -- ASCII whitespace, so a trailing NBSP survives; an
-        // interior trailing run before a soft break is preserved).
+        // §756 (NORMATIVE): strip the heading line's trailing whitespace
+        // (trim_ascii_end -- ASCII whitespace, so a trailing NBSP survives).
         let pos = span_of(cur, span_start, cur.pos, options);
         let inline_text = trim_ascii_end(&joined);
         let children = if let Some(anchors) = anchors {
@@ -1848,51 +1806,6 @@ fn detect_heading(line: &str) -> Option<(u8, &str)> {
         return None;
     }
     Some((hashes as u8, rest))
-}
-
-/// A heading continuation line carrying EXACTLY `level` `#` markers, a space,
-/// then non-empty text. Returns the text after the markers (markers stripped),
-/// as in Djot ("may be preceded by the same number of `#` characters"). A
-/// different count (more or fewer) returns None, so that line starts a NEW
-/// heading instead of continuing the current one.
-fn heading_continuation_same_level(line: &str, level: u8) -> Option<&str> {
-    let bytes = line.as_bytes();
-    let mut hashes = 0usize;
-    while hashes < bytes.len() && bytes[hashes] == b'#' {
-        hashes += 1;
-    }
-    if hashes != level as usize {
-        return None;
-    }
-    if hashes >= bytes.len() || bytes[hashes] != b' ' {
-        return None;
-    }
-    // Skip all spaces after the marker, mirroring detect_heading.
-    let mut start = hashes;
-    while start < bytes.len() && bytes[start] == b' ' {
-        start += 1;
-    }
-    // Verbatim content (see detect_heading): a continuation line's trailing is
-    // interior, so only the final assembled content is trailing-stripped (§756).
-    let rest = &line[start..];
-    if trim_ascii_end(rest).is_empty() {
-        return None;
-    }
-    Some(rest)
-}
-
-/// A bare SAME-level marker line (`#` / `# ` for a level-1 heading): exactly
-/// `level` `#`s followed by only spaces. It continues the heading but adds no
-/// content, so the surrounding marker lines join with a single newline (djot;
-/// "same number of `#` ... or none"). A DIFFERENT count is left to
-/// is_heading_marker_line, which ends the heading and starts a new one.
-fn is_bare_same_level_marker(line: &str, level: u8) -> bool {
-    let bytes = line.as_bytes();
-    let mut hashes = 0usize;
-    while hashes < bytes.len() && bytes[hashes] == b'#' {
-        hashes += 1;
-    }
-    hashes == level as usize && bytes[hashes..].iter().all(|&b| b == b' ')
 }
 
 /// Any ATX heading marker line (`#`..`######` followed by a space or EOL) —
@@ -3220,7 +3133,9 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             });
             continue;
         }
-        if marker_content_starts_block(marker.content, cur, content_col) {
+        if marker_content_starts_block(marker.content, cur, content_col)
+            || marker_content_is_attr_line(marker.content)
+        {
             let mut stream = item_marker_source(cur, marker.content, item_at);
             let before_block = cur.pos;
             stream.append(collect_indented_block_mapped(cur, base_indent, content_col));
@@ -3481,6 +3396,28 @@ fn marker_content_starts_block(content: &str, cur: &LineCursor<'_>, content_col:
         });
     }
     false
+}
+
+/// A marker-line remainder that is a block-attribute LINE rather than item
+/// content: braces ALONE on the line (grammar PART 9 §15 A8, corpus 170).
+///
+/// The discriminator is whether CONTENT FOLLOWS the braces, not the column they
+/// sit in -- so `- {.c} text` is NOT one (the braces are part of that text,
+/// corpus 88-7) and neither is the abutting `-{.c} text`, where the block
+/// attributes the ITEM. Braces alone are a line of their own that happens to
+/// begin after a marker, and §15 A1/A2 apply to it exactly as at the top level:
+/// a container does not get its own attribute rules. Routing it through the
+/// marker-line block path re-parses the item as a normal block stream, which is
+/// what makes the attributes float onto the following block.
+/// Only a COMPLETE, VALID single-line block counts. The multi-line form (`{#id`
+/// on the marker line, `.foo}` on the next) is deliberately excluded: routing it
+/// here on the guess that it closes later would send an invalid run
+/// (`- {not attrs` / `lazy`) down the block path, where the lazy line is not
+/// collected and escapes the item as a top-level paragraph. It stays literal, as
+/// it was before this rule existed -- a pre-existing divergence from carve-js,
+/// which attaches it, and one no corpus case pins.
+fn marker_content_is_attr_line(content: &str) -> bool {
+    trim_ascii(content).starts_with('{') && parse_standalone_attrs(content).is_some()
 }
 
 #[derive(Clone)]

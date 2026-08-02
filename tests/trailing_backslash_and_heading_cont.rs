@@ -1,5 +1,6 @@
-//! djot.js PR137 / djot-php #264 parity: trailing backslash at EOF is a hard
-//! break, and a bare same-level `#` continues a heading.
+//! djot.js PR137 / djot-php #264 parity: a trailing backslash at EOF is a hard
+//! break. A bare same-level `#` used to continue a heading; under SINGLE-LINE
+//! HEADINGS (PART 2) it does not, which is pinned here as the guard.
 
 use carve::to_html;
 
@@ -19,9 +20,11 @@ fn trailing_escaped_punctuation_unchanged() {
 }
 
 #[test]
-fn bare_same_level_hash_continues_heading() {
+fn bare_same_level_hash_does_not_continue_a_heading() {
+    // This used to join `h` and `x` into one title with the id `h-x`. Each `#`
+    // line now stands alone, and the content-less one is not a heading at all.
     assert_eq!(
         to_html("# h\n#\n# x\n"),
-        "<section id=\"h-x\">\n  <h1>h\nx</h1>\n</section>"
+        "<section id=\"h\">\n  <h1>h</h1>\n  <p>#</p>\n</section>\n<section id=\"x\">\n  <h1>x</h1>\n</section>"
     );
 }
