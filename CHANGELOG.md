@@ -25,6 +25,16 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A fence-shaped line inside an opaque span no longer closes the container
+  the span sits in** (spec markup-carve/carve#450). A `:::` written inside a
+  code fence or a comment block inside a `::: note` ended the note there, and
+  the real closer, the rest of the body and the following blocks reparsed
+  outside it. The body collector copies opaque spans through verbatim, but it
+  tested the span's own opener against the closer pattern, so an opener with no
+  info string - a bare ` ``` `, a bare `~~~`, a `%%%` - ended the span on its
+  own line. The opener is now taken before the first closer test. This shows up
+  exactly when documenting Carve in Carve.
+
 - A tight list item's paragraph is wrapped in `<p>` when it carries authored
   attributes, which otherwise had nowhere to go and were dropped. Reachable via
   the attribute-line rule above.
