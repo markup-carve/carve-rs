@@ -955,6 +955,7 @@ fn decode_block(value: &Json) -> Result<BlockNode, AstJsonError> {
             ol_type: optional_string(obj, "olType")?
                 .map(decode_ol_type)
                 .transpose()?,
+            bare_marker: false,
             delim: optional_marker_char(obj, "delim")?,
             bullet_char: optional_marker_char(obj, "bulletChar")?,
             pos: optional_pos(obj, "list")?,

@@ -520,7 +520,11 @@ fn render_list(node: &List, ctx: &mut CarveContext) -> String {
     for (idx, item) in node.items.iter().enumerate() {
         let indent = "  ".repeat(ctx.list_depth - 1);
         let mut prefix = if node.ordered {
-            let marker = ordered_marker(counter, node.ol_type);
+            let marker = if node.bare_marker {
+                String::new()
+            } else {
+                ordered_marker(counter, node.ol_type)
+            };
             counter += 1;
             format!("{marker}{delim} ")
         } else if let Some(checked) = item.checked {

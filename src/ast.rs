@@ -151,6 +151,9 @@ pub struct List {
     pub ordered: bool,
     pub start: Option<usize>,
     pub ol_type: Option<OrderedListType>,
+    /// Runtime-only authoring flag for ordered lists opened with the bare-dot
+    /// marker (`. item`). It stays out of PART 12 JSON until the schema names it.
+    pub bare_marker: bool,
     /// Ordered-marker delimiter as authored: `.` or `)`. The marker is
     /// semantic (§11: a sibling with a different delimiter starts a new
     /// list), so the formatter preserves it (carve issue 286). `None`
