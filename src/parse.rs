@@ -3407,7 +3407,9 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             });
             continue;
         }
-        if marker_content_starts_block(marker.content, cur, content_col) {
+        if marker_content_starts_block(marker.content, cur, content_col)
+            || marker_content_is_attr_line(marker.content)
+        {
             let mut stream = item_marker_source(cur, marker.content, item_at);
             let before_block = cur.pos;
             stream.append(collect_indented_block_mapped(cur, base_indent, content_col));
@@ -3675,6 +3677,17 @@ fn marker_content_starts_block(content: &str, cur: &LineCursor<'_>, content_col:
         });
     }
     false
+}
+
+/// Only a COMPLETE, VALID single-line block counts. The multi-line form (`{#id`
+/// on the marker line, `.foo}` on the next) is deliberately excluded: routing it
+/// here on the guess that it closes later would send an invalid run
+/// (`- {not attrs` / `lazy`) down the block path, where the lazy line is not
+/// collected and escapes the item as a top-level paragraph. It stays literal, as
+/// it was before this rule existed -- a pre-existing divergence from carve-js,
+/// which attaches it, and one no corpus case pins.
+fn marker_content_is_attr_line(content: &str) -> bool {
+    trim_ascii(content).starts_with('{') && parse_standalone_attrs(content).is_some()
 }
 
 #[derive(Clone)]

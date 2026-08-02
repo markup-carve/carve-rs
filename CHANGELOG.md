@@ -9,6 +9,28 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Braces alone on a list-item marker line are a block-attribute line.**
+  `- {a=b .c}` followed by an indented block attributes that block, instead of
+  leaving the braces as literal item text and dropping the attributes (grammar
+  PART 9 §15 A8, carve#454/#457). The discriminator is whether content follows
+  the braces: `- {.c} text` is still literal, and `-{.c} text` still attributes
+  the item. carve-rs was the only engine reading the brace-only form as text.
+
+- `fmt` collapses a break inside a heading to a space instead of emitting it.
+  No parse produces such a heading, but an ingested AST can (PART 12 permits any
+  inline in a heading), and writing it out verbatim split the heading and moved
+  text out of the title on re-parse. Only an odd run of backslashes before the
+  newline is a hard break's marker, so a literal backslash ending a line
+  survives.
+
+### Fixed
+
+- A tight list item's paragraph is wrapped in `<p>` when it carries authored
+  attributes, which otherwise had nowhere to go and were dropped. Reachable via
+  the attribute-line rule above.
+
+### Changed
+
 - **BREAKING: a heading ends at the newline** (spec markup-carve/carve#451,
   markup-carve/carve#434). Nothing folds into a heading any more - neither a
   plain line nor a same-count `#` line - so `# Title` with prose beneath is a
