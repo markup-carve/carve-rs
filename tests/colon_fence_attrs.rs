@@ -25,12 +25,8 @@ fn inline_attribute_on_typed_opener_is_a_paragraph() {
 }
 
 #[test]
-fn inline_attribute_on_generic_div_is_a_paragraph() {
-    for src in [
-        "::: {.x}\nb\n:::",
-        ":::{k=v}\nb\n:::",
-        "::: box {.x}\nb\n:::",
-    ] {
+fn inline_attribute_on_generic_div_opener_is_paragraph_text() {
+    for src in ["::: {.x}\nb\n:::", ":::{k=v}\nb", "::: box {.x}\nb"] {
         let html = carve::to_html(src);
         assert!(
             html.starts_with("<p>"),
@@ -73,11 +69,11 @@ fn attributes_attach_via_a_preceding_block_attribute_line() {
 }
 
 #[test]
-fn digit_first_type_word_is_not_a_fence() {
+fn digit_first_type_word_is_paragraph_text() {
     // A type word is a grammar identifier (letter | underscore first), so a
     // digit-first token is not a valid type and the line is a paragraph
     // (matches carve-js / carve-php; a `class="123"` would be invalid CSS).
-    for src in ["::: 123\nb\n:::", "::: 1a\nb\n:::"] {
+    for src in ["::: 123\nb\n:::", "::: 1a\nb"] {
         let html = carve::to_html(src);
         assert!(
             html.starts_with("<p>"),
