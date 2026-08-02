@@ -14,13 +14,18 @@ use crate::extension::{Options, RenderContext};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fmt::Write as _;
 
-/// Matches the PARSER's cap (`parse::MAX_NESTING_DEPTH`) rather than sitting
-/// below it. At 80 against a parser that admits 200, every block nested deeper
-/// than 80 was dropped with no output and no report - and carve#439 made that
-/// reachable from ordinary input, because an unclosed container now nests
-/// instead of degrading to text. Two caps for one limit is the same
-/// written-down-twice defect the ingest bound had (PART 12 §9).
-const MAX_RENDER_DEPTH: usize = crate::parse::MAX_NESTING_DEPTH;
+/// Deliberately BELOW the parser's `MAX_NESTING_DEPTH` of 200: this renderer
+/// recurses once per block level with large frames, and at 200 it overflows a
+/// 2 MB test thread's stack outright.
+///
+/// The cost is real and is NOT fixed here: a block nested deeper than this is
+/// dropped with no output and no report, which carve#439 made reachable from
+/// ordinary input (an unclosed container now nests instead of degrading to
+/// text). Raising the cap to match the parser trades that silent truncation for
+/// a crash, which is worse. The fix is to stop recursing, or to degrade the
+/// over-cap subtree to literal text the way the parser does - tracked in
+/// carve-rs#418, deliberately not attempted inside the #439 change.
+const MAX_RENDER_DEPTH: usize = 80;
 
 pub fn render_html(doc: &Document) -> String {
     render_html_with_options(doc, &Options::default())

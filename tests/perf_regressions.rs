@@ -46,7 +46,24 @@ fn many_unterminated_colon_fence_openers_do_not_rescan_document() {
     let start = Instant::now();
     let html = carve::to_html(&source);
 
-    assert!(html.contains("::: note"), "{html}");
+    // What this test guards is the absence of a per-opener rescan, and that
+    // still holds: 8000 openers parse in well under the budget.
+    //
+    // It used to assert the openers stayed LITERAL. Since carve#439 they nest
+    // instead, and the HTML renderer's depth cap (80, below the parser's 200)
+    // then drops everything past it - so the output is TRUNCATED rather than
+    // literal. That truncation is silent and is a real defect, tracked in
+    // carve-rs#418; it is pinned here rather than papered over, so the day it
+    // is fixed this assertion fails and gets updated deliberately.
+    assert!(
+        html.contains("admonition note"),
+        "openers should nest, not stay literal: {}",
+        &html[..html.len().min(200)]
+    );
+    assert!(
+        !html.contains("::: note"),
+        "no literal opener survives the render cap today (carve-rs#418)"
+    );
     assert!(
         start.elapsed().as_secs_f32() < MAX_SECS,
         "unterminated colon-fence parse took {:?}",
