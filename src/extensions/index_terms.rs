@@ -386,13 +386,7 @@ fn inline_text(nodes: &[InlineNode]) -> String {
             // performance test), and an unconditional `replace` would copy the
             // whole thing on every pass to unescape a caret that is almost
             // never there.
-            InlineNode::Text(s) => {
-                if s.value.contains(crate::ESCAPED_CARET_PLACEHOLDER) {
-                    out.push_str(&s.value.replace(crate::ESCAPED_CARET_PLACEHOLDER, "^"));
-                } else {
-                    out.push_str(&s.value);
-                }
-            }
+            InlineNode::Text(s) => out.push_str(&s.value),
             InlineNode::SmartPunctuation(s) => out.push_str(smart_punctuation_glyph(s)),
             InlineNode::Code(s) => out.push_str(&s.value),
             // An inline literal renders as visible prose (§27), matching carve-js

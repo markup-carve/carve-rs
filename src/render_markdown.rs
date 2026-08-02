@@ -500,7 +500,7 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
         // 350). The underscore still goes through the sentinel so the intraword
         // rule can drop the backslash where CommonMark ignores it anyway.
         InlineNode::EscapedText(text) => {
-            let ch = text.value.replace(crate::ESCAPED_CARET_PLACEHOLDER, "^");
+            let ch = &text.value;
             if ch == "_" {
                 UNDERSCORE_ESCAPE.to_string()
             } else {
@@ -515,9 +515,7 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
                 // indent) round-trips to a literal non-breaking space in
                 // Markdown, matching the other renderers' source projection.
                 escape_text(
-                    &strip_controls(&text.value)
-                        .replace(crate::NBSP_PLACEHOLDER, "\u{00a0}")
-                        .replace(crate::ESCAPED_CARET_PLACEHOLDER, "^"),
+                    &strip_controls(&text.value).replace(crate::NBSP_PLACEHOLDER, "\u{00a0}"),
                 )
             }
         }
@@ -1042,12 +1040,9 @@ fn plain_inlines(nodes: &[InlineNode]) -> String {
     let mut out = String::new();
     for node in nodes {
         match node {
-            InlineNode::Text(text) => out.push_str(
-                &text
-                    .value
-                    .replace(crate::NBSP_PLACEHOLDER, " ")
-                    .replace(crate::ESCAPED_CARET_PLACEHOLDER, "^"),
-            ),
+            InlineNode::Text(text) => {
+                out.push_str(&text.value.replace(crate::NBSP_PLACEHOLDER, " "))
+            }
             InlineNode::SmartPunctuation(s) => out.push_str(smart_punctuation_text(s)),
             InlineNode::Emphasis(emphasis) => out.push_str(&plain_inlines(&emphasis.children)),
             InlineNode::Code(code) => out.push_str(&code.value),

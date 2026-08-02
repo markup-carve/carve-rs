@@ -256,9 +256,7 @@ fn inline_text(nodes: &[InlineNode]) -> String {
     let mut out = String::new();
     for node in nodes {
         match node {
-            InlineNode::Text(s) => {
-                out.push_str(&s.value.replace(crate::ESCAPED_CARET_PLACEHOLDER, "^"))
-            }
+            InlineNode::Text(s) => out.push_str(&s.value),
             InlineNode::SmartPunctuation(s) => out.push_str(smart_punctuation_glyph(s)),
             InlineNode::Code(s) => out.push_str(&s.value),
             // An inline literal renders as visible prose (§27), matching carve-js
