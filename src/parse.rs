@@ -5461,12 +5461,25 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         stanza_end = cur.pos;
         let stripped = strip_leading_columns(line, base_indent);
         let expanded = expand_line_block_leading_ws(&stripped);
-        // A verse line is REWRITTEN only when it carries leading whitespace -
-        // that becomes NBSP placeholders, and then no column in it maps back.
-        // A line without any is passed through untouched, and its columns are
-        // still the document's. Per line, not per stanza: one indented line no
-        // longer costs its neighbors their positions.
-        stanza_col_map.push(if expanded == stripped {
+        // A verse line is REWRITTEN when it carries leading whitespace: each
+        // space becomes one placeholder, so its columns still map back ONE TO
+        // ONE and the line stays placeable. A TAB does not - it expands to up
+        // to four placeholders from one source character, and every column
+        // after it would be reported too far right - so that line alone
+        // refuses. Per line, not per stanza: one tab-indented line no longer
+        // costs its neighbours their positions.
+        let placeable_indent = expanded == stripped || {
+            let source_ws = stripped
+                .chars()
+                .take_while(|c| *c == ' ' || *c == '\t')
+                .count();
+            let expanded_ws = expanded
+                .chars()
+                .take_while(|c| *c == crate::NBSP_PLACEHOLDER)
+                .count();
+            source_ws == expanded_ws
+        };
+        stanza_col_map.push(if placeable_indent {
             stripped_col(cur.source_col(line_at), line, &stripped)
         } else {
             None
