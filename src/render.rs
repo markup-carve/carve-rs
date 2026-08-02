@@ -807,8 +807,9 @@ pub(crate) fn plain_inlines(nodes: &[InlineNode]) -> String {
                     out.push_str(&number.to_string());
                 }
             }
-            // A soft/hard break (e.g. a multi-line heading) is a word
-            // separator for slug/plain-text purposes, not a join.
+            // A soft/hard break is a word separator for slug/plain-text
+            // purposes, not a join. (No parse puts one in a heading now;
+            // an ingested AST still can, PART 12.)
             InlineNode::SoftBreak(_) | InlineNode::HardBreak(_) => out.push(' '),
             _ => {}
         }

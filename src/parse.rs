@@ -10443,8 +10443,10 @@ fn plain_inlines_parse(nodes: &[InlineNode]) -> String {
                     out.push_str(&number.to_string());
                 }
             }
-            // A soft/hard break (multi-line heading) is a word separator, so
-            // parse-time cross-reference slugs match the rendered heading id.
+            // A soft/hard break is a word separator, so parse-time
+            // cross-reference slugs match the rendered heading id. (A heading
+            // cannot hold one from a parse any more -- headings end at the
+            // newline -- but an ingested AST can carry any inline, PART 12.)
             InlineNode::SoftBreak(_) | InlineNode::HardBreak(_) => out.push(' '),
             _ => {}
         }
