@@ -307,6 +307,25 @@ fn all_space_verbatim_content_is_preserved_not_collapsed() {
     assert!(carve::to_html("` a `").contains("<code>a</code>"));
 }
 
+/// A container inside a blockquote, a list item or a definition body writes its
+/// fence lines with that host's prefix or indent, so they cannot close an
+/// ancestor fence. Widening for them would only make the source noisier.
+#[test]
+fn colon_container_fence_ignores_containers_behind_a_prefix() {
+    for source in [
+        "::: outer\n\n- item\n\n  ::: inner\n  x\n  :::\n\n:::\n",
+        "::: outer\n\n> ::: inner\n> x\n> :::\n\n:::\n",
+        "::: outer\n\n:: term\n:  ::: inner\n   x\n   :::\n\n:::\n",
+    ] {
+        let formatted = carve::to_carve(source);
+        assert_eq!(carve::to_html(&formatted), carve::to_html(source));
+        assert!(
+            formatted.starts_with("::: outer"),
+            "fence widened needlessly: {formatted}"
+        );
+    }
+}
+
 /// An AST built through the library API can nest far past the depth the parser
 /// (and `from_json`) allow. `render_block` emits nothing past MAX_RENDER_DEPTH,
 /// so a fence sized from those levels would be sized for output that never

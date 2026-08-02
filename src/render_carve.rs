@@ -673,36 +673,21 @@ fn widest_descendant_container_fence(
             BlockNode::Admonition(node) => colon_fence_width(&node.children, ctx, budget - 1),
             BlockNode::Div(node) => colon_fence_width(&node.children, ctx, budget - 1),
             BlockNode::LineBlock(node) => colon_fence_width(&node.children, ctx, budget - 1),
-            BlockNode::BlockQuote(node) => {
-                widest_descendant_container_fence(&node.children, ctx, budget)
-            }
-            BlockNode::List(node) => node
-                .items
-                .iter()
-                .map(|item| widest_descendant_container_fence(&item.children, ctx, budget))
-                .max()
-                .unwrap_or(0),
-            BlockNode::DefinitionList(node) => node
-                .items
-                .iter()
-                .flat_map(|item| &item.definitions)
-                .map(|definition| widest_descendant_container_fence(definition, ctx, budget))
-                .max()
-                .unwrap_or(0),
-            BlockNode::Figure(node) => match &node.target {
-                FigureTarget::BlockQuote(quote) => {
-                    widest_descendant_container_fence(&quote.children, ctx, budget)
-                }
-                FigureTarget::Image(_)
-                | FigureTarget::Table(_)
-                | FigureTarget::CodeBlock(_)
-                | FigureTarget::Paragraph(_) => 0,
-            },
+            // An extension block writes no fence of its own: its children land
+            // at the enclosing container's content column, so they collide with
+            // its fence exactly as direct children would.
             BlockNode::Extension(node) => {
                 widest_descendant_container_fence(&node.children, ctx, budget)
             }
+            // Everything else either holds no block at all, or holds it behind a
+            // prefix or an indent (blockquote, list item, definition body), and
+            // an indented or quoted bare fence cannot close an ancestor fence.
             BlockNode::Heading(_)
             | BlockNode::Paragraph(_)
+            | BlockNode::BlockQuote(_)
+            | BlockNode::List(_)
+            | BlockNode::DefinitionList(_)
+            | BlockNode::Figure(_)
             | BlockNode::CodeBlock(_)
             | BlockNode::Table(_)
             | BlockNode::AbbreviationDef(_)
