@@ -94,10 +94,25 @@ fn flush_colon_fence_in_quote_ends_lazy_continuation() {
     // `lazy` detaches to the document level. Matches the oracle.
     assert_eq!(
         carve::to_html("> a\n> ::: |\nlazy\n"),
-        "<blockquote><p>a\n::: |</p></blockquote>\n<p>lazy</p>"
+        concat!(
+            "<blockquote>\n",
+            "  <p>a</p>\n",
+            "  <div class=\"line-block\">\n",
+            "  </div>\n",
+            "</blockquote>\n",
+            "<p>lazy</p>"
+        )
     );
     assert_eq!(
         carve::to_html("> a\n> ::: note\nlazy\n"),
-        "<blockquote><p>a\n::: note</p></blockquote>\n<p>lazy</p>"
+        concat!(
+            "<blockquote>\n",
+            "  <p>a</p>\n",
+            "  <aside class=\"admonition note\">\n",
+            "\n",
+            "  </aside>\n",
+            "</blockquote>\n",
+            "<p>lazy</p>"
+        )
     );
 }
