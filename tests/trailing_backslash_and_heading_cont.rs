@@ -19,9 +19,11 @@ fn trailing_escaped_punctuation_unchanged() {
 }
 
 #[test]
-fn bare_same_level_hash_continues_heading() {
+fn bare_same_level_hash_does_not_continue_a_heading() {
+    // Nothing folds into a heading any more, and a bare `#` has no content so
+    // it is not a heading itself: it is a paragraph between two of them.
     assert_eq!(
         to_html("# h\n#\n# x\n"),
-        "<section id=\"h-x\">\n  <h1>h\nx</h1>\n</section>"
+        "<section id=\"h\">\n  <h1>h</h1>\n  <p>#</p>\n</section>\n<section id=\"x\">\n  <h1>x</h1>\n</section>"
     );
 }
