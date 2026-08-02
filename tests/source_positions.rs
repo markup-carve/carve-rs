@@ -888,13 +888,51 @@ fn an_indented_verse_line_loses_only_its_own_span() {
         slice(source, first.pos.expect("the plain line is placed")),
         "Roses are red,"
     );
-    // The rewritten line's text is not the source - it holds NBSP placeholders
-    // where the indent was - so no span can select it.
+    // The rewritten line IS placed. Its value holds a placeholder where each
+    // indent space was, and that is a ONE-FOR-ONE substitution, so the span
+    // covers exactly the same code points the line occupies - reading each
+    // placeholder back as a space gives the slice verbatim.
+    //
+    // This used to assert the opposite, on the reasoning that a value differing
+    // from its slice cannot be placed. That conflated two different things: a
+    // value that differs because a character was SUBSTITUTED still spans the
+    // same region, unlike one that differs because characters were CONSUMED (an
+    // escape) or INVENTED (a resolved title). Only the latter two have no span.
     let last = stanza.children.last().expect("a second line");
     let carve::ast::InlineNode::Text(indented) = last else {
         panic!("it ends with text");
     };
-    assert!(indented.pos.is_none());
+    let pos = indented.pos.expect("the rewritten line is placed");
+    assert_eq!(slice(source, pos), "  Violets are blue.");
+    assert_eq!(
+        indented.value.replace('\u{e000}', " "),
+        slice(source, pos),
+        "the placeholders do not stand one-for-one for the indent they replaced"
+    );
+}
+
+/// A TAB in the indent is the case that genuinely cannot be placed: it expands
+/// to up to four placeholders from one source character, so every column after
+/// it would be reported too far right.
+#[test]
+fn a_tab_indented_verse_line_still_declines() {
+    let source = "::: |\nRoses are red,\n\tViolets are blue.\n:::\n";
+    let doc = parse_with_positions(source);
+
+    let BlockNode::LineBlock(block) = &doc.children[0] else {
+        panic!("the document is a line block");
+    };
+    let BlockNode::Paragraph(stanza) = &block.children[0] else {
+        panic!("a stanza is a paragraph");
+    };
+    let last = stanza.children.last().expect("a second line");
+    let carve::ast::InlineNode::Text(indented) = last else {
+        panic!("it ends with text");
+    };
+    assert!(
+        indented.pos.is_none(),
+        "a tab indent is not a one-for-one substitution, so it has no honest span"
+    );
 }
 
 /// A trailing `%%` comment is dropped, and the whitespace before it is popped
