@@ -161,6 +161,26 @@ fn split_inline_comment(line: &str) -> Option<(&str, &str)> {
             && bytes[i + 1] == b'%'
             && (i == 0 || matches!(bytes[i - 1], b' ' | b'\t'))
         {
+            // A run of three or more `%` opening the line's CONTENT is a
+            // comment-BLOCK fence, not an inline comment - `%%%` on its own
+            // line delimits a block (PART 9 SS28), and only `%%` inside a line
+            // is the trailing-comment marker.
+            //
+            // Treating a fence as an inline comment made this function graft
+            // the fence text onto an unrelated formatted line. Inside a
+            // blockquote `> %%%` split into `>` plus `%%%`, and `>` renders as
+            // the blank quoted line, so the fence was appended THERE - which
+            // unbalanced the real fence and republished the commented-out body
+            // as visible text (carve-rs#432).
+            //
+            // Only the top-level case escaped, and by accident: there the part
+            // before the fence is empty, so the caller's `before.trim()` guard
+            // skipped it.
+            let run = bytes[i..].iter().take_while(|b| **b == b'%').count();
+            let content_starts_here = line[..i].bytes().all(|b| matches!(b, b' ' | b'\t' | b'>'));
+            if run >= 3 && content_starts_here {
+                return None;
+            }
             return Some((line[..i].trim_end(), &line[i..]));
         }
         i += 1;
