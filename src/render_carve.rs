@@ -1262,20 +1262,49 @@ fn resolve_nbsp_placeholder(text: &str, in_line_block: bool) -> String {
         return text.replace(crate::NBSP_PLACEHOLDER, ESCAPED_SPACE);
     }
     text.split('\n')
-        .map(|line| {
-            let indent = line
-                .chars()
-                .take_while(|c| *c == crate::NBSP_PLACEHOLDER)
-                .count();
-            let rest = &line[indent * crate::NBSP_PLACEHOLDER.len_utf8()..];
-            format!(
-                "{}{}",
-                STAGED_SPACE.to_string().repeat(indent),
-                rest.replace(crate::NBSP_PLACEHOLDER, ESCAPED_SPACE)
-            )
-        })
+        .map(stage_line_block_layout)
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+/// Write a line block's preserved whitespace back as plain spaces.
+///
+/// The runs staged here are exactly the ones the parser reproduces from plain
+/// spaces: a LEADING run of any width, and a medial or trailing run of two or
+/// more (grammar §23). A lone medial placeholder can then only have come from
+/// an escaped space, so `a\ b` still round-trips as written. Two ADJACENT
+/// escaped spaces are the one form that changes - `a\ \ b` is written back as
+/// `a  b` - because inside a line block those are the same document: both parse
+/// to the same pair of placeholders.
+fn stage_line_block_layout(line: &str) -> String {
+    let mut out = String::with_capacity(line.len());
+    let mut seen_content = false;
+    let mut chars = line.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        if ch != crate::NBSP_PLACEHOLDER {
+            out.push(ch);
+            seen_content = true;
+            continue;
+        }
+
+        let mut run = 1usize;
+        while chars.peek() == Some(&crate::NBSP_PLACEHOLDER) {
+            chars.next();
+            run += 1;
+        }
+
+        if !seen_content || run >= 2 {
+            for _ in 0..run {
+                out.push(STAGED_SPACE);
+            }
+        } else {
+            // A single placeholder mid-line is an escaped space, not layout.
+            out.push_str(ESCAPED_SPACE);
+        }
+    }
+
+    out
 }
 
 fn normalize(text: &str) -> String {

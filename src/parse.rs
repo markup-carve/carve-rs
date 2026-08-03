@@ -5571,30 +5571,53 @@ fn strip_leading_columns(line: &str, cols: usize) -> String {
     String::new()
 }
 
-/// Expand a line's LEADING whitespace to non-breaking spaces so a verse line's
-/// indentation survives; tabs advance to the next 4-column stop. The rest of
-/// the line is left untouched. Uses the generated-NBSP placeholder (HTML folds
-/// it to `&nbsp;`; plain/ANSI turn it back into an ASCII space), so it stays
-/// distinct from a literal U+00A0 typed in the source.
-fn expand_line_block_leading_ws(line: &str) -> String {
+/// Expand the whitespace a line block preserves to non-breaking spaces, so a
+/// verse line's layout survives; tabs advance to the next 4-column stop.
+///
+/// Leading whitespace is preserved down to a single column. An INNER or
+/// TRAILING run of TWO OR MORE columns is a medial gap - the alignment a
+/// caesura or a column of aligned text is made of - and is preserved too
+/// (grammar §23). A lone inner space stays an ordinary, collapsible space so a
+/// long line can still wrap between words.
+///
+/// Uses the generated-NBSP placeholder (HTML folds it to `&nbsp;`; plain/ANSI
+/// turn it back into an ASCII space), so it stays distinct from a literal
+/// U+00A0 typed in the source.
+fn expand_line_block_ws(line: &str) -> String {
+    let mut out = String::with_capacity(line.len());
     let mut columns = 0usize;
-    let mut idx = 0usize;
-    for (i, ch) in line.char_indices() {
-        match ch {
-            ' ' => columns += 1,
-            '\t' => columns += 4 - (columns % 4),
-            _ => {
-                idx = i;
-                break;
-            }
+    let mut seen_content = false;
+    let mut chars = line.char_indices().peekable();
+
+    while let Some((_, ch)) = chars.next() {
+        if ch != ' ' && ch != '\t' {
+            out.push(ch);
+            seen_content = true;
+            columns += 1;
+            continue;
         }
-        idx = i + ch.len_utf8();
+
+        let mut width = if ch == '\t' { 4 - (columns % 4) } else { 1 };
+        while let Some((_, next)) = chars.peek() {
+            match next {
+                ' ' => width += 1,
+                '\t' => width += 4 - ((columns + width) % 4),
+                _ => break,
+            }
+            chars.next();
+        }
+        columns += width;
+
+        if !seen_content || width >= 2 {
+            for _ in 0..width {
+                out.push(crate::NBSP_PLACEHOLDER);
+            }
+        } else {
+            out.push(' ');
+        }
     }
-    format!(
-        "{}{}",
-        crate::NBSP_PLACEHOLDER.to_string().repeat(columns),
-        &line[idx..]
-    )
+
+    out
 }
 
 /// Parse a `::: |` line block into a `<div class="line-block">`: each stanza
@@ -5643,7 +5666,7 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         stanza_start.get_or_insert(line_at);
         stanza_end = cur.pos;
         let stripped = strip_leading_columns(line, base_indent);
-        let expanded = expand_line_block_leading_ws(&stripped);
+        let expanded = expand_line_block_ws(&stripped);
         // A verse line is REWRITTEN when it carries leading whitespace: each
         // space becomes one placeholder, so its columns still map back ONE TO
         // ONE and the line stays placeable. A TAB does not - it expands to up
