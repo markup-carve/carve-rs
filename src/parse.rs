@@ -3871,6 +3871,18 @@ fn marker_content_starts_block(content: &str, cur: &LineCursor<'_>, content_col:
             indent >= content_col && is_table_start(&slice_columns(line, content_col, false))
         });
     }
+    // A definition TERM. PART 9 §24 C3 names it in the same uniform block-opener
+    // set as the branches above - "block quote, heading, thematic break, fenced
+    // code, colon fence / admonition, TABLE, and DEFINITION LIST (a `:: term`
+    // opener)" - and it was the one member missing here, so `* :: t` kept the
+    // term as literal item text where carve-js and carve-php open a list.
+    //
+    // No lookahead: a term stands alone as a `<dl>` holding only a `<dt>`, and
+    // `is_definition_list_start` already requires the `:: ` separator and
+    // non-blank content, so `:::` (a div) and a bare `::` are both excluded.
+    if is_definition_list_start(content) {
+        return true;
+    }
     false
 }
 
