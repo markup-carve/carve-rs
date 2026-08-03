@@ -3770,7 +3770,16 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         }
         if detect_list_marker_full(marker.content).is_some() {
             let mut stream = item_marker_source(cur, marker.content, item_at);
+            let before_block = cur.pos;
             stream.append(collect_indented_block_mapped(cur, base_indent, content_col));
+            // A blank line closes the sub-list's last paragraph, so the next
+            // flush-left line starts a NEW top-level block instead of folding in
+            // (carve-rs#490). The collected source keeps no trace of a trailing
+            // blank, so `nested_ends_with_open_paragraph` below still reports the
+            // paragraph as open and the lazy loop swallowed `- - a` / blank / `b`
+            // into the inner item, where carve-js and carve-php end the list.
+            let mut ended_on_blank =
+                cur.pos > before_block && is_blank_line(cur.lines[cur.pos - 1]);
             // A column-0 lazy-continuation line following the marker-line
             // sub-list folds into its last open paragraph (`- - b` / `lazy` ->
             // `<li>b\nlazy</li>`), and a following sibling marker at the
@@ -3778,6 +3787,9 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             // lazy-fold / resume loop the following-line nested-list path runs
             // above; reused here so the marker-line sub-list behaves identically.
             loop {
+                if ended_on_blank {
+                    break;
+                }
                 let has_lazy = if let Some(line) = cur.peek() {
                     let line = line.to_string();
                     !is_blank_line(&line)
@@ -3798,11 +3810,26 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 if cur.pos == before {
                     break;
                 }
+                let before_block = cur.pos;
                 stream.append(collect_indented_block_mapped(
                     cur,
                     content_col - 1,
                     content_col,
                 ));
+                ended_on_blank = cur.pos > before_block && is_blank_line(cur.lines[cur.pos - 1]);
+            }
+            // A blank line between the item's blocks loosens the list, and a
+            // sub-list lead is no exception: the item holds the sub-list and
+            // whatever follows the blank at THIS item's content column
+            // (carve-rs#490). #476 fixed the attribute-block, quote and heading
+            // leads beside this one and left the sub-list lead open, because
+            // carve-php agreed with this engine at the time and carve-js did not.
+            // Content at or past the SUB-LIST's content column is the sub-list's
+            // own business - `sublist_source_loosens_outer_item` is the same
+            // non-propagating test the following-line sub-list path uses, not the
+            // blanket `continuation_source_loosens` the other leads can afford.
+            if sublist_source_loosens_outer_item(&stream.source) {
+                tight = false;
             }
             let children = parse_mapped_source(&stream, options);
             items.push(ListItem {

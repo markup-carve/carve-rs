@@ -9,6 +9,21 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A glued colon fence holds back only a bare fence, not every opener** (#496).
+  A colon fence with something glued to it (`:::note`, `:::]`) is paragraph
+  text, and it used to disable colon-fence interruption for the rest of that
+  paragraph - so a real opener on the next line was swallowed as text, at the
+  top level, in a block quote, in a container and in a list item's lead. Only
+  the BARE closer shape is held back now, which is the case the rule exists for
+  and the one all three engines agree on.
+
+- **A sub-list lead does not exempt its item from the looseness rule** (PART 9
+  §11, #490). `- - a` / blank / `  b` stayed tight where `- x` / blank / `  b`
+  went loose, on the same blank line; the outer item holds two blocks either
+  way. Looseness still does not propagate outwards from the sub-list. The same
+  shape with the body flush left (`- - a` / blank / `b`) folded across the
+  blank into the inner item instead of ending the list.
+
 - **A hard break in a line block is placed even when the stanza's text is not**
   (#480). A tab expands to placeholders and shifts every column after it within
   the line, so the anchor machinery refuses that line and its inlines come out
