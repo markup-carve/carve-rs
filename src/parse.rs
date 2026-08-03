@@ -2996,6 +2996,18 @@ fn detect_task(line: &str) -> Option<(bool, &str, Option<Attrs>, &str)> {
     if ab.len() < 4 || ab[0] != b'[' || ab[2] != b']' || ab[3] != b' ' {
         return None;
     }
+    // PART 9 enumerates the states exhaustively:
+    //
+    //   task_state = ' ' | 'x' | 'X' | '-' | '_' | '>' | '?' ;
+    //
+    // The bracket shape was checked and the state byte was not, so any single
+    // character opened a task item - and `- [!] urgent` did not merely
+    // reinterpret the marker, it DELETED the `[!]` and rendered a checkbox
+    // nobody wrote (carve-rs#471). Two characters were already rejected by the
+    // `ab[2] != b']'` test; only the one-character case was open.
+    if !matches!(ab[1], b' ' | b'x' | b'X' | b'-' | b'_' | b'>' | b'?') {
+        return None;
+    }
     let checked = matches!(ab[1], b'x' | b'X');
     Some((checked, trim_ascii_end(&after[4..]), attrs, &line[i..i + 1]))
 }
