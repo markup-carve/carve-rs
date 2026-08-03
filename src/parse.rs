@@ -191,6 +191,9 @@ fn parse_with_options_mode(source: &str, options: &Options<'_>, mode: ParseMode)
     for ext in &options.extensions {
         doc = ext.after_parse(doc);
     }
+    // Last, so it also covers runs an extension left behind: §1a is about the
+    // tree that gets published, whoever produced it.
+    coalesce_text_runs(&mut doc);
     doc
 }
 
@@ -10258,6 +10261,200 @@ fn collect_caption_title(
 /// stripped). A footnote body renders in the endnotes section, outside any
 /// anchor, so its links are not nested -- the walk re-enters a footnote body
 /// with `inside_link = false`.
+/// PART 12 §1a: no node's children hold two adjacent `text` nodes.
+///
+/// The parser splits a run wherever it had to make a decision -- a reference
+/// that never resolved and reverted to its source, an autolink unwrapped
+/// because links do not nest, a table cell rebuilt from several lines. Those
+/// splits are bookkeeping, not the document: publishing them lets two engines
+/// put out 1 node and 4 for the same characters, both valid against the schema,
+/// which is what §1's "read another's output" exists to rule out.
+///
+/// This runs on the TREE rather than on the way out, because §6 requires
+/// `parse(x)` serialized and deserialized to equal `parse(x)`. Merging only at
+/// the encoder would satisfy §1a and break §6 on the same document.
+///
+/// Runs merge only where they are CONTIGUOUS in the source. A span covering
+/// text the node does not contain -- the `<`/`>` of an unwrapped autolink, the
+/// delimiter between two halves of a wrapped table cell -- would not select its
+/// own value, which §4 rates worse than no span at all.
+fn coalesce_text_runs(doc: &mut Document) {
+    for block in &mut doc.children {
+        coalesce_block(block);
+    }
+    for body in doc.footnote_defs.values_mut() {
+        for block in body {
+            coalesce_block(block);
+        }
+    }
+}
+
+fn coalesce_block(block: &mut BlockNode) {
+    match block {
+        BlockNode::Heading(h) => coalesce_inlines(&mut h.children),
+        BlockNode::Paragraph(p) => coalesce_inlines(&mut p.children),
+        BlockNode::List(l) => {
+            for item in &mut l.items {
+                for child in &mut item.children {
+                    coalesce_block(child);
+                }
+            }
+        }
+        BlockNode::BlockQuote(b) => {
+            if let Some(attribution) = &mut b.attribution {
+                coalesce_inlines(attribution);
+            }
+            for child in &mut b.children {
+                coalesce_block(child);
+            }
+        }
+        BlockNode::Admonition(a) => {
+            if let Some(title) = &mut a.title {
+                coalesce_inlines(title);
+            }
+            for child in &mut a.children {
+                coalesce_block(child);
+            }
+        }
+        BlockNode::Div(d) => {
+            for child in &mut d.children {
+                coalesce_block(child);
+            }
+        }
+        BlockNode::LineBlock(l) => {
+            for child in &mut l.children {
+                coalesce_block(child);
+            }
+        }
+        BlockNode::DefinitionList(d) => {
+            for item in &mut d.items {
+                for term in &mut item.terms {
+                    coalesce_inlines(&mut term.children);
+                }
+                for definition in &mut item.definitions {
+                    for child in &mut definition.children {
+                        coalesce_block(child);
+                    }
+                }
+            }
+        }
+        BlockNode::Table(t) => {
+            if let Some(caption) = &mut t.caption {
+                coalesce_inlines(caption);
+            }
+            for row in &mut t.rows {
+                for cell in &mut row.cells {
+                    coalesce_inlines(&mut cell.children);
+                }
+            }
+        }
+        BlockNode::Extension(e) => {
+            // Inline content does not only live in `children`: a `before_render`
+            // rewrite stashes a parsed title in `summary`, and an extension can
+            // wrap already-parsed blocks. A walk that stops at the carrier node
+            // leaves both uncoalesced.
+            if let Some(summary) = &mut e.summary {
+                coalesce_inlines(summary);
+            }
+            for child in &mut e.children {
+                coalesce_block(child);
+            }
+        }
+        BlockNode::Figure(f) => {
+            coalesce_inlines(&mut f.caption);
+            match &mut f.target {
+                FigureTarget::BlockQuote(b) => {
+                    if let Some(attribution) = &mut b.attribution {
+                        coalesce_inlines(attribution);
+                    }
+                    for child in &mut b.children {
+                        coalesce_block(child);
+                    }
+                }
+                FigureTarget::Table(t) => {
+                    if let Some(caption) = &mut t.caption {
+                        coalesce_inlines(caption);
+                    }
+                    for row in &mut t.rows {
+                        for cell in &mut row.cells {
+                            coalesce_inlines(&mut cell.children);
+                        }
+                    }
+                }
+                FigureTarget::Paragraph(p) => coalesce_inlines(&mut p.children),
+                FigureTarget::Image(_) | FigureTarget::CodeBlock(_) => {}
+            }
+        }
+        _ => {}
+    }
+}
+
+fn coalesce_inlines(nodes: &mut Vec<InlineNode>) {
+    for node in nodes.iter_mut() {
+        match node {
+            InlineNode::Emphasis(n) => coalesce_inlines(&mut n.children),
+            InlineNode::Link(n) => coalesce_inlines(&mut n.children),
+            InlineNode::Span(n) => coalesce_inlines(&mut n.children),
+            InlineNode::Extension(n) => coalesce_inlines(&mut n.children),
+            InlineNode::CriticInsert(n) => coalesce_inlines(&mut n.children),
+            InlineNode::CriticDelete(n) => coalesce_inlines(&mut n.children),
+            InlineNode::Footnote(n) => {
+                if let Some(inline) = &mut n.inline {
+                    coalesce_inlines(inline);
+                }
+            }
+            // A citation item carries THREE inline arrays beside `children`:
+            // `prefix`, `locator` and `suffix`. `[see [missing][nope] @a]`
+            // publishes a prefix of two adjacent text nodes without this.
+            InlineNode::CitationGroup(group) => {
+                for item in &mut group.items {
+                    for field in [&mut item.prefix, &mut item.locator, &mut item.suffix]
+                        .into_iter()
+                        .flatten()
+                    {
+                        coalesce_inlines(field);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    if nodes.len() < 2 {
+        return;
+    }
+    let taken = std::mem::take(nodes);
+    let mut out: Vec<InlineNode> = Vec::with_capacity(taken.len());
+    for node in taken {
+        match node {
+            InlineNode::Text(text) => {
+                if let Some(InlineNode::Text(previous)) = out.last_mut() {
+                    previous.pos = merged_text_pos(previous.pos, text.pos);
+                    previous.value.push_str(&text.value);
+                    continue;
+                }
+                out.push(InlineNode::Text(text));
+            }
+            other => out.push(other),
+        }
+    }
+    *nodes = out;
+}
+
+/// The span of two merged text runs, or None when it would not be truthful.
+fn merged_text_pos(left: Option<Pos>, right: Option<Pos>) -> Option<Pos> {
+    let (left, right) = (left?, right?);
+    if left.end_offset != right.start_offset {
+        return None;
+    }
+    Some(Pos {
+        end_line: right.end_line,
+        end_column: right.end_column,
+        end_offset: right.end_offset,
+        ..left
+    })
+}
+
 fn enforce_no_nesting(doc: &mut Document) {
     for block in &mut doc.children {
         enforce_no_nesting_block(block);

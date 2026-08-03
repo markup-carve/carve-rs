@@ -352,6 +352,10 @@ fn an_unresolved_reference_link_keeps_its_span_when_it_reverts() {
     // The reverted form is where a position is wanted most: it is exactly the
     // case where an author wrote a reference that does not resolve, and a tool
     // reporting that has to say where.
+    // PART 12 §1a joins the three pieces the parser produced here (before it,
+    // the reverted source, after it) into one published node. They are
+    // contiguous, so the merged span is exact and still covers the reverted
+    // reference -- which is the guarantee this test is about.
     let source = "see [text][missing] here\n";
     let doc = parse_with_positions(source);
     let BlockNode::Paragraph(paragraph) = &doc.children[0] else {
@@ -367,7 +371,7 @@ fn an_unresolved_reference_link_keeps_its_span_when_it_reverts() {
         })
         .collect();
 
-    assert_eq!(spans, vec!["see ", "[text][missing]", " here"]);
+    assert_eq!(spans, vec!["see [text][missing] here"]);
 }
 
 #[test]
@@ -414,7 +418,12 @@ fn a_nested_autolink_unwraps_to_text_that_keeps_its_own_span() {
     // text - a sub-slice of what it occupied. Handing over the autolink's whole
     // span would cover the `<` and `>` as well, and a text node's span has to
     // select the text it belongs to.
-    let source = "[pre <http://h> post](/u)\n";
+    //
+    // The autolink is the WHOLE label here, so no neighbouring run merges with
+    // it (PART 12 §1a) and the narrowed span stays visible. With neighbours the
+    // merged run spans a gap -- the `<` and `>` -- and publishes no span at
+    // all; `a_nested_autolink_with_neighbours_publishes_no_span` covers that.
+    let source = "[<http://h>](/u)\n";
     let doc = parse_with_positions(source);
     let BlockNode::Paragraph(paragraph) = &doc.children[0] else {
         panic!("expected a paragraph");
@@ -432,14 +441,40 @@ fn a_nested_autolink_unwraps_to_text_that_keeps_its_own_span() {
         })
         .collect();
 
-    assert_eq!(spans, vec!["pre ", "http://h", " post"]);
+    assert_eq!(spans, vec!["http://h"]);
+}
+
+#[test]
+fn a_nested_autolink_with_neighbours_publishes_no_span() {
+    // `[pre <http://h> post](/u)`: the unwrapped display text joins the runs on
+    // either side of it, and the source between them carries `<` and `>` that
+    // the merged value does not. A span across that gap would not select its
+    // own text, so there is none -- absent beats wrong (§4).
+    let source = "[pre <http://h> post](/u)\n";
+    let doc = parse_with_positions(source);
+    let BlockNode::Paragraph(paragraph) = &doc.children[0] else {
+        panic!("expected a paragraph");
+    };
+    let carve::ast::InlineNode::Link(link) = &paragraph.children[0] else {
+        panic!("expected a link");
+    };
+    match &link.children[..] {
+        [carve::ast::InlineNode::Text(t)] => {
+            assert_eq!(t.value, "pre http://h post");
+            assert!(t.pos.is_none(), "expected no span, got {:?}", t.pos);
+        }
+        other => panic!("expected one merged text node, got {other:?}"),
+    }
 }
 
 #[test]
 fn an_unwrapped_autolink_declines_when_the_text_is_not_the_source() {
     // `<mailto:x@y.z>` displays `x@y.z`: the source carries a scheme the text
     // does not, so no sub-slice equals it and the honest answer is none.
-    let source = "[a <mailto:x@y.z> b](/u)\n";
+    //
+    // The autolink is the whole label, so the node stands alone and its missing
+    // span is its own statement rather than a consequence of merging (§1a).
+    let source = "[<mailto:x@y.z>](/u)\n";
     let doc = parse_with_positions(source);
     let BlockNode::Paragraph(paragraph) = &doc.children[0] else {
         panic!("expected a paragraph");
@@ -815,18 +850,11 @@ fn a_continued_table_cell_places_the_text_it_adds() {
         })
         .collect();
 
-    assert_eq!(
-        texts,
-        vec![
-            Some("A long description".to_string()),
-            // The joiner is MANUFACTURED - the source has a line break here,
-            // not a space - so it carries no position and must not borrow one.
-            None,
-            Some("that continues".to_string()),
-            None,
-            Some("across lines.".to_string()),
-        ]
-    );
+    // PART 12 §1a publishes the cell as ONE text node. The joiners between the
+    // lines are MANUFACTURED - the source has a line break there, not a space -
+    // so the merged value is not a slice of the source at any offset, and the
+    // node carries no position rather than borrowing one it does not own.
+    assert_eq!(texts, vec![None]);
 }
 
 /// Verse lines were refused their columns WHOLESALE: the stanza's column map

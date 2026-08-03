@@ -101,7 +101,15 @@ fn every_positioned_span_slices_back_to_its_own_text() {
 fn anchor(nodes: &[InlineNode]) -> Option<String> {
     for node in nodes {
         let found = match node {
-            InlineNode::Text(text) => {
+            // A node with NO span makes no claim about where it came from, so
+            // it cannot anchor one. PART 12 §1a merges adjacent text runs, and
+            // a run joined across a gap in the source -- the `<`/`>` of an
+            // autolink unwrapped inside a link label, the delimiter between two
+            // halves of a wrapped table cell -- deliberately publishes no
+            // position, because its value is not a verbatim slice. Using it as
+            // an anchor asked the source to contain text that was never
+            // contiguous in it.
+            InlineNode::Text(text) if text.pos.is_some() => {
                 let trimmed = text.value.trim();
                 if trimmed.is_empty()
                     || trimmed.chars().any(|c| BLOCK_ANCHOR_SENTINELS.contains(&c))
