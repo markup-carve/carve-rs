@@ -4,15 +4,7 @@ use crate::render_text::strip_controls as strip_control_chars;
 use std::collections::HashMap;
 use std::collections::HashSet;
 
-/// The renderer's recursion bound, and it must sit ABOVE the parser's.
-///
-/// The guard is for hand-built ASTs, which nest without limit. It is not a
-/// language rule, and a number at or below `parse::MAX_NESTING_DEPTH` made it
-/// one: the renderer then emitted nothing for the innermost blocks of a
-/// document the parser had just accepted, deleting content with no error
-/// (issue 517). Same reasoning as `MAX_JSON_DEPTH` in ast_json.rs, which is
-/// above the parser cap because the two counts measure different things.
-const MAX_RENDER_DEPTH: usize = crate::parse::MAX_NESTING_DEPTH + 32;
+use crate::render::MAX_RENDER_DEPTH;
 
 fn trim_block_output(s: &str) -> &str {
     s.trim_matches(|c| c == '\n' || c == ' ')
