@@ -221,6 +221,11 @@ fn extract_footnote_defs(
     let mut body_line_map = Vec::new();
     let mut defs = BTreeMap::new();
     let mut in_fence: Option<FenceOpen> = None;
+    // A LINE BLOCK's body is inline content, so a definition-shaped line inside
+    // one is text. Without this the line was extracted here and never reached
+    // the block parser, so it vanished from the output (#491). carve-js keeps it
+    // and does NOT register the footnote; this matches that.
+    let mut in_line_block: Option<usize> = None;
     let mut i = 0;
     while i < lines.len() {
         // A footnote definition is collected at the top level AND from inside a
@@ -238,6 +243,19 @@ fn extract_footnote_defs(
         // opening a fence the block parser never opens and swallowing every
         // later definition in the document.
         let fence_line = stripped.bare;
+        if let Some(fence_len) = in_line_block {
+            body.push(lines[i].to_string());
+            body_line_map.push(Some(first_source_line + i));
+            // The RAW line, not the prefix-stripped one: a literal `- :::` or `> :::`
+            // is verse text, and the block parser does not close on it. Stripping
+            // here ended the block early and lost every definition-shaped line
+            // between there and the real closer.
+            if exact_colon_fence_len(lines[i]) == Some(fence_len) {
+                in_line_block = None;
+            }
+            i += 1;
+            continue;
+        }
         if let Some(open) = in_fence {
             body.push(lines[i].to_string());
             body_line_map.push(Some(first_source_line + i));
@@ -246,6 +264,30 @@ fn extract_footnote_defs(
             }
             i += 1;
             continue;
+        }
+        // Only a TOP-LEVEL, unindented opener. Two things this pre-pass cannot
+        // do are both fatal if it guesses:
+        //
+        // `detect_line_block_open` trims, so it says yes to an indented `  ::: |`
+        // where the block parser says no - entering there would swallow every
+        // later definition in the document.
+        //
+        // And a line block opened on a marker line (`- ::: |`) is closed at the
+        // item's content column (`  :::`), which this line-based pass cannot
+        // recognise, so the state would never end.
+        //
+        // A nested line block therefore still loses definition-shaped lines,
+        // exactly as it does today. That is the same limitation the comment on
+        // this function already records, and the same answer: the sound fix is
+        // collecting definitions during block parsing.
+        if !in_container && !fence_line.starts_with([' ', '\t']) {
+            if let Some(fence_len) = detect_line_block_open(fence_line) {
+                in_line_block = Some(fence_len);
+                body.push(lines[i].to_string());
+                body_line_map.push(Some(first_source_line + i));
+                i += 1;
+                continue;
+            }
         }
         if let Some(open) = detect_fence_open(fence_line) {
             in_fence = Some(open);
@@ -423,6 +465,16 @@ fn extract_link_defs(source: &str) -> (String, BTreeMap<String, LinkDef>) {
     let mut body: Vec<String> = Vec::new();
     let mut defs = BTreeMap::new();
     let mut in_fence: Option<FenceOpen> = None;
+    // A LINE BLOCK's body is inline content (`line_block_line = {whitespace},
+    // inline_content, newline`), so a definition-shaped line inside one is text,
+    // not a definition. Without this the line was extracted here and never
+    // reached the block parser, so it vanished from the output entirely -
+    // carve-js and carve-php both render it (#491).
+    //
+    // Tracked the same way the code fence above is, and for the same reason: this
+    // pre-pass is line-based, so the only thing it can do is refuse to look inside
+    // a region whose contents are not blocks.
+    let mut in_line_block: Option<usize> = None;
     // Track enclosing list item content columns so the strict fence test can be
     // re-based to the item's content column. This remains a line-based
     // approximation: tab-vs-space marker alignment is char-counted, the
@@ -436,7 +488,10 @@ fn extract_link_defs(source: &str) -> (String, BTreeMap<String, LinkDef>) {
         let stripped = strip_container_prefixes(line);
         let was_prev_blank = prev_blank;
         prev_blank = trim_ascii(line).is_empty();
-        if in_fence.is_none() {
+        // Verse text is opaque: a line-block body line like `- verse` is not a
+        // list marker, and letting it push a content column left the NEXT
+        // top-level opener unprotected.
+        if in_fence.is_none() && in_line_block.is_none() {
             let indent = leading_ws(line);
             let raw_trimmed = trim_ascii(line);
             let starts_block = is_heading_marker_line(raw_trimmed)
@@ -456,6 +511,32 @@ fn extract_link_defs(source: &str) -> (String, BTreeMap<String, LinkDef>) {
         }
         let content_col = list_cols.last().copied().unwrap_or(0);
         let raw_is_quoted = prepass_line_is_quoted(line);
+        if let Some(fence_len) = in_line_block {
+            // The line is KEPT whatever it looks like - that is the whole point.
+            // A definition-shaped line inside a line block is inline content, so
+            // it renders; blanking it here is what made it disappear (#491).
+            //
+            // It is still REGISTERED, which is what carve-js and carve-php do.
+            // Whether any of the three should is markup-carve/carve#557; this
+            // change is only about the line surviving, which is the part the
+            // other two already agree on.
+            if let Some((label_part, target_part)) =
+                parse_link_def_line(strip_container_prefixes(line).bare)
+            {
+                if !label_part.starts_with('@') && !target_part.trim().is_empty() {
+                    defs.insert(
+                        label_part.to_string(),
+                        parse_link_def_target(target_part.trim()),
+                    );
+                }
+            }
+            body.push(line.to_string());
+            // The RAW line - see the note in extract_footnote_defs.
+            if exact_colon_fence_len(line) == Some(fence_len) {
+                in_line_block = None;
+            }
+            continue;
+        }
         if let Some(open) = in_fence {
             body.push(line.to_string());
             // CLOSER: strip a blockquote prefix only when the fence was opened
@@ -493,6 +574,18 @@ fn extract_link_defs(source: &str) -> (String, BTreeMap<String, LinkDef>) {
                 opener_kept.as_str()
             }
         };
+        // Top-level and unindented only - see the note in extract_footnote_defs
+        // for why a nested opener is refused rather than guessed at.
+        if stripped.structural.is_empty()
+            && content_col == 0
+            && !fence_line.starts_with([' ', '\t'])
+        {
+            if let Some(fence_len) = detect_line_block_open(fence_line) {
+                in_line_block = Some(fence_len);
+                body.push(line.to_string());
+                continue;
+            }
+        }
         if let Some(mut open) = detect_fence_open(fence_line) {
             open.content_col = content_col;
             open.quoted = raw_is_quoted;
