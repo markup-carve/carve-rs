@@ -5799,6 +5799,19 @@ fn expand_line_block_ws(line: &str) -> String {
 /// Parse a `::: |` line block into a `<div class="line-block">`: each stanza
 /// (blank-line-separated run) is a paragraph whose soft breaks become hard
 /// breaks and whose per-line leading whitespace is preserved (grammar §23).
+/// One line-block stanza: its lines, its own span, and the SOURCE columns each
+/// line starts and ends at.
+///
+/// The two column vectors are recorded whatever `placeable_indent` decided,
+/// because a break's span is line geometry and survives a tab that makes the
+/// line's TEXT unplaceable (carve-rs#480).
+struct Stanza {
+    lines: LineBuffer,
+    at: Option<Pos>,
+    end_cols: Vec<Option<usize>>,
+    start_cols: Vec<Option<usize>>,
+}
+
 /// Give every line-block hard break a span, even where the stanza's TEXT has
 /// none.
 ///
@@ -5868,12 +5881,7 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     // body line before preserving the author's intra-verse whitespace.
     let base_indent = leading_ws_columns(opener);
     cur.consume();
-    let mut stanzas: Vec<(
-        LineBuffer,
-        Option<Pos>,
-        Vec<Option<usize>>,
-        Vec<Option<usize>>,
-    )> = Vec::new();
+    let mut stanzas: Vec<Stanza> = Vec::new();
     let mut stanza: Vec<String> = Vec::new();
     let mut stanza_line_map: Vec<Option<usize>> = Vec::new();
     let mut stanza_col_map: Vec<Option<usize>> = Vec::new();
@@ -5897,16 +5905,16 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 let at = stanza_start.take();
                 let end_cols = std::mem::take(&mut stanza_end_cols);
                 let start_cols = std::mem::take(&mut stanza_start_cols);
-                stanzas.push((
-                    LineBuffer {
+                stanzas.push(Stanza {
+                    lines: LineBuffer {
                         lines: std::mem::take(&mut stanza),
                         line_map: std::mem::take(&mut stanza_line_map),
                         col_map: std::mem::take(&mut stanza_col_map),
                     },
-                    at.and_then(|start| span_of(cur, start, stanza_end, options)),
+                    at: at.and_then(|start| span_of(cur, start, stanza_end, options)),
                     end_cols,
                     start_cols,
-                ));
+                });
             }
             continue;
         }
@@ -5959,52 +5967,61 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     }
     if !stanza.is_empty() {
         let at = stanza_start.take();
-        stanzas.push((
-            LineBuffer {
+        stanzas.push(Stanza {
+            lines: LineBuffer {
                 lines: stanza,
                 line_map: stanza_line_map,
                 col_map: stanza_col_map,
             },
-            at.and_then(|start| span_of(cur, start, stanza_end, options)),
-            stanza_end_cols,
-            stanza_start_cols,
-        ));
+            at: at.and_then(|start| span_of(cur, start, stanza_end, options)),
+            end_cols: stanza_end_cols,
+            start_cols: stanza_start_cols,
+        });
     }
 
     let children = stanzas
         .into_iter()
-        .map(|(lines, at, end_cols, start_cols)| {
-            let source_line = lines.line_map.first().copied().flatten();
-            let anchors: Vec<Option<(usize, usize)>> = lines
-                .line_map
-                .iter()
-                .zip(lines.col_map.iter())
-                .map(|(line_no, col)| Some(((*line_no)?, (*col)?)))
-                .collect();
-            let inlines = parse_inline_lines_with_anchor(&lines.lines.join("\n"), options, anchors)
-                .into_iter()
-                .map(|n| match n {
-                    // A hard break here IS the source's line ending, so it
-                    // keeps the soft break's span rather than being rebuilt
-                    // without one.
-                    InlineNode::SoftBreak(b) => InlineNode::HardBreak(b),
-                    other => other,
-                })
-                .collect();
-            let inlines = place_line_block_breaks(inlines, &lines, &end_cols, &start_cols, options);
-            let mut node = BlockNode::Paragraph(Paragraph {
-                attrs: None,
-                children: inlines,
-                pos: at,
-                ..Default::default()
-            });
-            if options.source_lines {
-                if let Some(line) = source_line {
-                    stamp_source_line(&mut node, line);
+        .map(
+            |Stanza {
+                 lines,
+                 at,
+                 end_cols,
+                 start_cols,
+             }| {
+                let source_line = lines.line_map.first().copied().flatten();
+                let anchors: Vec<Option<(usize, usize)>> = lines
+                    .line_map
+                    .iter()
+                    .zip(lines.col_map.iter())
+                    .map(|(line_no, col)| Some(((*line_no)?, (*col)?)))
+                    .collect();
+                let inlines =
+                    parse_inline_lines_with_anchor(&lines.lines.join("\n"), options, anchors)
+                        .into_iter()
+                        .map(|n| match n {
+                            // A hard break here IS the source's line ending, so it
+                            // keeps the soft break's span rather than being rebuilt
+                            // without one.
+                            InlineNode::SoftBreak(b) => InlineNode::HardBreak(b),
+                            other => other,
+                        })
+                        .collect();
+                let inlines =
+                    place_line_block_breaks(inlines, &lines, &end_cols, &start_cols, options);
+                let mut node = BlockNode::Paragraph(Paragraph {
+                    attrs: None,
+                    children: inlines,
+                    pos: at,
+                    ..Default::default()
+                });
+                if options.source_lines {
+                    if let Some(line) = source_line {
+                        stamp_source_line(&mut node, line);
+                    }
                 }
-            }
-            node
-        })
+                node
+            },
+        )
         .collect();
 
     // No inline opener attributes (strict djot); a preceding block-attribute
