@@ -375,6 +375,27 @@ fn flat_unclosed_strong_openers_parse_in_near_linear_time() {
     assert_near_linear(flat_unclosed_strong, "flat-unclosed-strong");
 }
 
+/// The code-fence twin of the `%%%` case below.
+///
+/// `comment_closer_last_index` was added to make an unterminated `%%%` opener
+/// answer from an index instead of scanning to the end of the input. Code
+/// fences shared the defect and never got the index, so a document of
+/// unterminated ``` openers inside a container stayed quadratic - with no test
+/// to say so, because this file only covered `%%%` (carve#515).
+#[test]
+fn unterminated_code_fence_openers_in_a_container_parse_in_near_linear_time() {
+    let build = |n: usize| {
+        let mut source = String::from(":::\n");
+        for _ in 0..n {
+            source.push_str("``` x\n");
+        }
+        source.push_str(":::\n");
+        source
+    };
+
+    assert_near_linear(build, "unterminated-code-fence-in-container");
+}
+
 #[test]
 fn unterminated_comment_fence_openers_parse_in_near_linear_time() {
     let build = |n: usize| {
