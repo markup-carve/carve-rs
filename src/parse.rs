@@ -3478,6 +3478,15 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         if marker.content.starts_with('>') {
             let mut stream = item_marker_source(cur, marker.content, item_at);
             stream.append(collect_indented_block_mapped(cur, base_indent, content_col));
+            // A blank line between the item's blocks loosens the list, whatever
+            // the marker-line lead happens to be. This branch and the two beside
+            // it build their item and `continue` past the loosening test the
+            // normal path runs, so `- {a=b}` / `x` / blank / `Body.` stayed tight
+            // where `- x` / blank / `Body.` went loose - on the same blank line
+            // (carve-rs#476).
+            if continuation_source_loosens(&stream.source) {
+                tight = false;
+            }
             let children = parse_mapped_source(&stream, options);
             items.push(ListItem {
                 attrs: item_attrs,
@@ -3501,6 +3510,15 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         if parse_standalone_attrs(marker.content).is_some() {
             let mut stream = item_marker_source(cur, marker.content, item_at);
             stream.append(collect_indented_block_mapped(cur, base_indent, content_col));
+            // A blank line between the item's blocks loosens the list, whatever
+            // the marker-line lead happens to be. This branch and the two beside
+            // it build their item and `continue` past the loosening test the
+            // normal path runs, so `- {a=b}` / `x` / blank / `Body.` stayed tight
+            // where `- x` / blank / `Body.` went loose - on the same blank line
+            // (carve-rs#476).
+            if continuation_source_loosens(&stream.source) {
+                tight = false;
+            }
             let children = parse_mapped_source(&stream, options);
             items.push(ListItem {
                 attrs: item_attrs,
