@@ -616,7 +616,21 @@ impl StrippedContainerLine<'_> {
 }
 
 fn parse_link_def_line(line: &str) -> Option<(&str, &str)> {
-    line.strip_prefix('[').and_then(|s| s.split_once("]: "))
+    let (label, target) = line.strip_prefix('[').and_then(|s| s.split_once("]: "))?;
+    // The grammar requires at least one character:
+    //
+    //     reference_label = (character - ']' - '@'), {character - ']'} ;
+    //
+    // So `[]` is not a label and `[]: u` is a paragraph. Without this the line
+    // was consumed as a definition and rendered nothing, so it DISAPPEARED -
+    // carve-js and carve-php both keep it as text (carve-rs#451).
+    //
+    // Only EMPTY is rejected. A space is a `character`, so `[ ]` is a legal
+    // one-character label, which is what all three engines already do.
+    if label.is_empty() {
+        return None;
+    }
+    Some((label, target))
 }
 
 fn strip_container_prefixes(mut line: &str) -> StrippedContainerLine<'_> {
