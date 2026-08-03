@@ -3789,11 +3789,14 @@ fn marker_content_starts_block(content: &str, cur: &LineCursor<'_>, content_col:
     if heading_content_starts(content) {
         return true;
     }
-    if let Some(open) = detect_fence_open(content) {
-        return cur.lines[cur.pos..]
-            .iter()
-            .map(|line| slice_columns(line, content_col.min(indent_columns(line)), false))
-            .any(|line| is_fence_close(&line, open));
+    // A fence is the item's FIRST content, so there is no open paragraph for it
+    // to interrupt and the I4 closer lookahead does not apply: an unterminated
+    // fence opens a code block that runs to the end, exactly as it does at the
+    // top level and inside a block quote. Requiring a closer here made a list
+    // item the one container that rendered it as inline verbatim, disagreeing
+    // with carve-rs's own handling of the other two (carve-rs#458).
+    if detect_fence_open(content).is_some() {
+        return true;
     }
     if let Some(open) = detect_comment_fence_line(content) {
         return cur.lines[cur.pos..].iter().enumerate().any(|(idx, line)| {
