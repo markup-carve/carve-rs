@@ -226,6 +226,12 @@ fn extract_footnote_defs(
     // the block parser, so it vanished from the output (#491). carve-js keeps it
     // and does NOT register the footnote; this matches that.
     let mut in_line_block: Option<usize> = None;
+    // A `%%%` comment fence is opaque, so a literal `::: |` inside one is not
+    // an opener. Entering the state there left it open past the comment's own
+    // closer - which is not a colon fence - and every later definition in the
+    // document was skipped. Tracked only to gate the opener.
+    let mut in_comment_fence: Option<usize> = None;
+    let comment_closers = comment_fence_close_index(&lines);
     let mut i = 0;
     while i < lines.len() {
         // A footnote definition is collected at the top level AND from inside a
@@ -280,7 +286,19 @@ fn extract_footnote_defs(
         // exactly as it does today. That is the same limitation the comment on
         // this function already records, and the same answer: the sound fix is
         // collecting definitions during block parsing.
-        if !in_container && !fence_line.starts_with([' ', '\t']) {
+        if let Some(fence_len) = in_comment_fence {
+            if is_comment_fence_close(lines[i], fence_len) {
+                in_comment_fence = None;
+            }
+        } else if let Some(open) = detect_comment_fence_line(lines[i]) {
+            if comment_closers
+                .get(&open.fence_len)
+                .is_some_and(|close_at| *close_at > i)
+            {
+                in_comment_fence = Some(open.fence_len);
+            }
+        }
+        if in_comment_fence.is_none() && !in_container && !fence_line.starts_with([' ', '\t']) {
             if let Some(fence_len) = detect_line_block_open(fence_line) {
                 in_line_block = Some(fence_len);
                 body.push(lines[i].to_string());
@@ -475,6 +493,11 @@ fn extract_link_defs(source: &str) -> (String, BTreeMap<String, LinkDef>) {
     // pre-pass is line-based, so the only thing it can do is refuse to look inside
     // a region whose contents are not blocks.
     let mut in_line_block: Option<usize> = None;
+    // A `%%%` comment fence is opaque, so a literal `::: |` inside one is not
+    // an opener. Entering the state there left it open past the comment's own
+    // closer - which is not a colon fence - and every later definition in the
+    // document was skipped. Tracked only to gate the opener.
+    let mut in_comment_fence: Option<usize> = None;
     // Track enclosing list item content columns so the strict fence test can be
     // re-based to the item's content column. This remains a line-based
     // approximation: tab-vs-space marker alignment is char-counted, the
@@ -484,7 +507,11 @@ fn extract_link_defs(source: &str) -> (String, BTreeMap<String, LinkDef>) {
     // collecting definitions during block parsing.
     let mut list_cols: Vec<usize> = Vec::new();
     let mut prev_blank = true;
-    for line in source.lines() {
+    // Collected so an unterminated `%%%` can be told from a real fenced comment
+    // before the state is entered - see comment_fence_closes.
+    let all_lines: Vec<&str> = source.lines().collect();
+    let comment_closers = comment_fence_close_index(&all_lines);
+    for (line_index, line) in all_lines.iter().copied().enumerate() {
         let stripped = strip_container_prefixes(line);
         let was_prev_blank = prev_blank;
         prev_blank = trim_ascii(line).is_empty();
@@ -576,7 +603,20 @@ fn extract_link_defs(source: &str) -> (String, BTreeMap<String, LinkDef>) {
         };
         // Top-level and unindented only - see the note in extract_footnote_defs
         // for why a nested opener is refused rather than guessed at.
-        if stripped.structural.is_empty()
+        if let Some(fence_len) = in_comment_fence {
+            if is_comment_fence_close(line, fence_len) {
+                in_comment_fence = None;
+            }
+        } else if let Some(open) = detect_comment_fence_line(line) {
+            if comment_closers
+                .get(&open.fence_len)
+                .is_some_and(|close_at| *close_at > line_index)
+            {
+                in_comment_fence = Some(open.fence_len);
+            }
+        }
+        if in_comment_fence.is_none()
+            && stripped.structural.is_empty()
             && content_col == 0
             && !fence_line.starts_with([' ', '\t'])
         {
@@ -2101,6 +2141,38 @@ struct CommentFenceOpen {
 
 /// A fenced-comment line is a leading run of 3+ `%`; any following text is
 /// non-structural tail. The opener tail is preserved as comment content.
+/// The last line index at which a comment fence of each length closes.
+///
+/// An UNTERMINATED comment fence is not a fenced comment: the block parser
+/// degrades it to a single-line comment. A pre-pass that treats it as an open
+/// fence stays open for the rest of the document, which suppressed every later
+/// line block and took the definitions inside them with it.
+///
+/// Keyed by EXACT length, because that is what `is_comment_fence_close` tests -
+/// a `%%%%` line does not close a `%%%` fence. And recorded for any line whose
+/// leading `%` run is long enough, not only the bare ones: `%%% trailing` is a
+/// closer to that function, so filtering to all-`%` lines missed real closers.
+///
+/// Precomputed because the forward scan it replaces is quadratic on exactly the
+/// input the perf suite guards: `%%% x`, `%%%% x`, ... is all openers and no
+/// closers, so every line scans to the end.
+fn comment_fence_close_index(lines: &[&str]) -> std::collections::HashMap<usize, usize> {
+    let mut last: std::collections::HashMap<usize, usize> = std::collections::HashMap::new();
+    for (i, line) in lines.iter().enumerate() {
+        // The RAW line. This index only ever answers for a TOP-LEVEL opener -
+        // the line-block state is entered nowhere else - so a `> %%%` inside a
+        // container is not a closer for it, and stripping the prefix made one.
+        let run = trim_ascii_end(line)
+            .bytes()
+            .take_while(|b| *b == b'%')
+            .count();
+        if run >= 3 {
+            last.insert(run, i);
+        }
+    }
+    last
+}
+
 fn detect_comment_fence_line(line: &str) -> Option<CommentFenceOpen> {
     let line = trim_ascii_end(line);
     let fence_len = line.bytes().take_while(|b| *b == b'%').count();

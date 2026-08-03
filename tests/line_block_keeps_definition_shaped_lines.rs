@@ -123,3 +123,66 @@ fn verse_text_does_not_move_the_list_column_tracker() {
         "the second line block lost its definition-shaped line: {html}"
     );
 }
+
+/// A `%%%` comment fence is opaque, so a literal `::: |` inside one is not an
+/// opener.
+///
+/// #494 entered the pre-pass's line-block state there. The comment's own closer
+/// is not a colon fence, so the state stayed open for the rest of the document
+/// and every later definition was skipped - a regression that shipped, and was
+/// found only when the equivalent carve-php change hit the same hole in review.
+#[test]
+fn a_line_block_opener_inside_a_comment_fence_is_not_one() {
+    let html = carve::to_html("%%%\n::: |\n%%%\n\n[^a]: note\n\nsee [^a]\n");
+
+    assert!(
+        !html.contains("[^a]: note"),
+        "the definition after the comment stayed visible: {html}"
+    );
+    assert!(
+        html.contains("doc-noteref"),
+        "the footnote after the comment stopped resolving: {html}"
+    );
+}
+
+/// The same for the reference form, which goes through the other pre-pass.
+#[test]
+fn a_reference_definition_after_a_commented_opener_still_registers() {
+    let html = carve::to_html("%%%\n::: |\n%%%\n\n[e]: http://e.de\n\nsee [e][]\n");
+
+    assert!(!html.contains("[e]: http://e.de"), "{html}");
+    assert!(html.contains("href=\"http://e.de\""), "{html}");
+}
+
+/// An UNTERMINATED `%%%` is not a fenced comment - the block parser degrades it
+/// to a single-line comment - so the pre-pass must not treat it as an open
+/// fence. Doing so stayed open for the rest of the document and suppressed
+/// every later line block, taking the definitions inside them with it.
+#[test]
+fn an_unterminated_comment_fence_does_not_suppress_later_line_blocks() {
+    let html = carve::to_html("%%%\n\n::: |\n[^a]: note\n:::\n\nsee [^a]\n");
+
+    assert!(
+        html.contains("[^a]: note"),
+        "the verse line was extracted after an unterminated comment: {html}"
+    );
+    assert!(
+        !html.contains("doc-noteref"),
+        "a footnote formed from a line block's verse: {html}"
+    );
+}
+
+/// A comment fence's closer may carry trailing text: `%%% end` closes a `%%%`
+/// fence, and the length must match EXACTLY - `%%%%` does not close `%%%`.
+///
+/// The first version of the closer lookup recorded only bare `%` lines, so a
+/// closer like this was invisible and the comment read as unterminated.
+#[test]
+fn a_comment_closer_may_carry_trailing_text() {
+    let html = carve::to_html("%%% trailing\n::: |\n%%% end\n\n[^a]: note\n\nsee [^a]\n");
+
+    assert!(
+        html.contains("doc-noteref"),
+        "the footnote after a comment closed with trailing text did not resolve: {html}"
+    );
+}
