@@ -203,7 +203,19 @@ fn write_footnote_def(out: &mut String, label: &str, children: &[BlockNode]) {
     w.field("type", |out| write_string(out, "footnote"));
     w.field("label", |out| write_string(out, label));
     w.field("children", |out| write_blocks(out, children));
-    let pos = first_block_pos(children).copied();
+    // FIRST block's start through the LAST placed block's end. Taking the
+    // first block's span alone left every later block - a `+` continuation, an
+    // indented second paragraph - outside its own footnote (carve#565).
+    let pos = first_block_pos(children).copied().map(|mut pos| {
+        if let Some(last) = children.iter().rev().find_map(block_pos) {
+            if last.end_offset > pos.end_offset {
+                pos.end_offset = last.end_offset;
+                pos.end_line = last.end_line;
+                pos.end_column = last.end_column;
+            }
+        }
+        pos
+    });
     write_pos_field(&mut w, &pos);
     w.finish();
 }
