@@ -1398,19 +1398,19 @@ fn parse_eof_closed_colon_ladder(
         Vec::new()
     } else {
         if opens.len() > available {
-            let body_start = tail
-                .iter()
-                .position(|line| detect_container_open(trim_ascii_start(line)).is_none());
-            if let Some(body_start) = body_start {
-                let tail_source = tail[body_start..].join("\n");
-                vec![BlockNode::Paragraph(Paragraph {
-                    attrs: None,
-                    children: parse_inline_with_options(&tail_source, options),
-                    ..Default::default()
-                })]
-            } else {
-                Vec::new()
-            }
+            // PART 9 §25: past the cap an opener "becomes literal paragraph
+            // text" - it degrades, it does not vanish. This used to locate the
+            // first non-opener line and keep only the body from there, so every
+            // opener past the cap was discarded with no text, no marker and no
+            // diagnostic: the output for 205 openers and for 8000 was
+            // byte-identical, which made the amount dropped invisible
+            // (carve-rs#418). carve-php keeps them, and now so does this.
+            let tail_source = tail.join("\n");
+            vec![BlockNode::Paragraph(Paragraph {
+                attrs: None,
+                children: parse_inline_with_options(&tail_source, options),
+                ..Default::default()
+            })]
         } else {
             let tail_source = tail.join("\n");
             parse_blocks_with_options(&tail_source, options)
