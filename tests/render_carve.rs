@@ -333,42 +333,44 @@ fn colon_container_fence_ignores_containers_behind_a_prefix() {
 /// appears.
 #[test]
 fn colon_container_fence_ignores_containers_past_the_render_cap() {
-    use carve::ast::{BlockNode, Div, Paragraph};
+    on_big_stack(|| {
+        use carve::ast::{BlockNode, Div, Paragraph};
 
-    let mut node = BlockNode::Paragraph(Paragraph {
-        attrs: None,
-        children: Vec::new(),
-        at_content_column: true,
-        pos: None,
-    });
-    for _ in 0..1000 {
-        node = BlockNode::Div(Div {
+        let mut node = BlockNode::Paragraph(Paragraph {
             attrs: None,
-            label: None,
-            children: vec![node],
+            children: Vec::new(),
+            at_content_column: true,
             pos: None,
         });
-    }
+        for _ in 0..1000 {
+            node = BlockNode::Div(Div {
+                attrs: None,
+                label: None,
+                children: vec![node],
+                pos: None,
+            });
+        }
 
-    let mut doc = carve::parse("x\n");
-    doc.children = vec![node];
-    let formatted = carve::render_carve(&doc);
+        let mut doc = carve::parse("x\n");
+        doc.children = vec![node];
+        let formatted = carve::render_carve(&doc);
 
-    let widest = formatted
-        .lines()
-        .filter(|line| !line.is_empty() && line.chars().all(|c| c == ':'))
-        .map(|line| line.len())
-        .max()
-        .unwrap_or(0);
-    // Derived, not pinned: the outermost fence is `:::` and each level inward
-    // adds a colon, so the widest a bounded writer can emit is fixed by the cap
-    // itself. Writing the number out made this test track the old cap rather
-    // than the rule (issue 517).
-    let bound = 3 + carve::MAX_RENDER_DEPTH - 1;
-    assert!(
-        widest <= bound,
-        "fence widened to {widest} colons past the render cap"
-    );
+        let widest = formatted
+            .lines()
+            .filter(|line| !line.is_empty() && line.chars().all(|c| c == ':'))
+            .map(|line| line.len())
+            .max()
+            .unwrap_or(0);
+        // Derived, not pinned: the outermost fence is `:::` and each level inward
+        // adds a colon, so the widest a bounded writer can emit is fixed by the cap
+        // itself. Writing the number out made this test track the old cap rather
+        // than the rule (issue 517).
+        let bound = 3 + carve::MAX_RENDER_DEPTH - 1;
+        assert!(
+            widest <= bound,
+            "fence widened to {widest} colons past the render cap"
+        );
+    });
 }
 
 /// A document nested at exactly the parser's cap parses fine, and every target
@@ -377,10 +379,12 @@ fn colon_container_fence_ignores_containers_past_the_render_cap() {
 /// same document rendered with content in HTML and without it everywhere else
 /// (issue 517).
 /// Run on a generous stack, the way the other worst-case-depth probes in this
-/// crate do (`recursion_and_panics.rs`): a debug build's un-inlined frames put
-/// two live 200-deep trees plus five render walks over the 2 MiB a test thread
-/// gets by default. The property under test is which content survives, not the
-/// per-frame size.
+/// crate do (`recursion_and_panics.rs`). A test thread gets 2 MiB by default,
+/// and a debug build's un-inlined frames put these depths over it - the render
+/// walk, and the recursive Drop of the tree afterwards. Frame size also varies
+/// by toolchain: raising the render bound pushed the fence-width probe over on
+/// Rust 1.75 while stable still passed. The property under test is which
+/// content survives, not the per-frame size, so the depth probes get room.
 fn on_big_stack<F: FnOnce() + Send + 'static>(f: F) {
     std::thread::Builder::new()
         .stack_size(16 * 1024 * 1024)
@@ -426,43 +430,45 @@ fn every_target_keeps_the_innermost_content_at_the_parser_cap() {
 /// deeper the input goes.
 #[test]
 fn the_render_cap_still_bounds_a_hand_built_ast() {
-    use carve::ast::{BlockNode, Div, Paragraph, Text};
+    on_big_stack(|| {
+        use carve::ast::{BlockNode, Div, Paragraph, Text};
 
-    let build = |depth: usize| {
-        let mut node = BlockNode::Paragraph(Paragraph {
-            attrs: None,
-            children: vec![carve::ast::InlineNode::Text(Text {
-                value: "body".to_string(),
-                pos: None,
-            })],
-            at_content_column: true,
-            pos: None,
-        });
-        for _ in 0..depth {
-            node = BlockNode::Div(Div {
+        let build = |depth: usize| {
+            let mut node = BlockNode::Paragraph(Paragraph {
                 attrs: None,
-                label: None,
-                children: vec![node],
+                children: vec![carve::ast::InlineNode::Text(Text {
+                    value: "body".to_string(),
+                    pos: None,
+                })],
+                at_content_column: true,
                 pos: None,
             });
-        }
-        let mut doc = carve::parse("x\n");
-        doc.children = vec![node];
-        doc
-    };
+            for _ in 0..depth {
+                node = BlockNode::Div(Div {
+                    attrs: None,
+                    label: None,
+                    children: vec![node],
+                    pos: None,
+                });
+            }
+            let mut doc = carve::parse("x\n");
+            doc.children = vec![node];
+            doc
+        };
 
-    let under = carve::render_carve(&build(carve::MAX_RENDER_DEPTH - 2));
-    assert!(under.contains("body"), "truncated below the cap");
+        let under = carve::render_carve(&build(carve::MAX_RENDER_DEPTH - 2));
+        assert!(under.contains("body"), "truncated below the cap");
 
-    let over = carve::render_carve(&build(carve::MAX_RENDER_DEPTH + 1));
-    // 1_000, not something enormous: a deeply nested AST overflows the stack on
-    // its recursive Drop long before any renderer sees it, which is a property
-    // of the tree type rather than of this cap.
-    let far_over = carve::render_carve(&build(1_000));
-    assert!(!over.contains("body"), "the cap no longer truncates");
-    assert_eq!(
-        over.len(),
-        far_over.len(),
-        "output still grows past the cap"
-    );
+        let over = carve::render_carve(&build(carve::MAX_RENDER_DEPTH + 1));
+        // 1_000, not something enormous: a deeply nested AST overflows the stack on
+        // its recursive Drop long before any renderer sees it, which is a property
+        // of the tree type rather than of this cap.
+        let far_over = carve::render_carve(&build(1_000));
+        assert!(!over.contains("body"), "the cap no longer truncates");
+        assert_eq!(
+            over.len(),
+            far_over.len(),
+            "output still grows past the cap"
+        );
+    });
 }
