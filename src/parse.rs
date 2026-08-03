@@ -2563,7 +2563,6 @@ fn skip_opaque_span_into(inner: &mut LineBuffer, cur: &mut LineCursor<'_>) -> bo
 fn collect_colon_container_body(cur: &mut LineCursor<'_>, opener_len: usize) -> LineBuffer {
     let mut inner = LineBuffer::default();
     let mut stack = vec![opener_len];
-    let mut para_open = false;
     let mut para_has_glued_colon = false;
     while cur.peek().is_some() {
         let top = *stack.last().unwrap();
@@ -2575,12 +2574,10 @@ fn collect_colon_container_body(cur: &mut LineCursor<'_>, opener_len: usize) -> 
             push_current_line(&mut inner, cur);
             cur.consume();
             stack.pop();
-            para_open = false;
             para_has_glued_colon = false;
             continue;
         }
         if skip_opaque_span_into(&mut inner, cur) {
-            para_open = false;
             para_has_glued_colon = false;
             continue;
         }
@@ -2595,7 +2592,6 @@ fn collect_colon_container_body(cur: &mut LineCursor<'_>, opener_len: usize) -> 
                     stack.push(len);
                     push_current_line(&mut inner, cur);
                     cur.consume();
-                    para_open = false;
                     para_has_glued_colon = false;
                     continue;
                 }
@@ -2604,19 +2600,18 @@ fn collect_colon_container_body(cur: &mut LineCursor<'_>, opener_len: usize) -> 
                 || detect_hardbreaks_block_open(line).is_some()
             {
                 cur.consume();
-                para_open = true;
                 continue;
             }
         }
+        // Only the glued-colon state survives a line here: this walk decides
+        // where the container ENDS, and the one thing a line can change about
+        // that is whether a following bare fence still closes (§10 / carve#455).
+        // Whether the line leaves a paragraph open never mattered - the tracking
+        // that used to answer it fed nothing but itself.
         if is_blank_line(line) {
-            para_open = false;
             para_has_glued_colon = false;
         } else {
             para_has_glued_colon = para_has_glued_colon || is_invalid_colon_fence_opener_text(line);
-            let line = line.to_string();
-            let suppress_colon_interrupt =
-                para_has_glued_colon && is_colon_fence_opener_shape(&line);
-            para_open = para_open || !interrupts_paragraph(cur, &line) || suppress_colon_interrupt;
         }
         push_current_line(&mut inner, cur);
         cur.consume();
@@ -3775,7 +3770,16 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         }
         if detect_list_marker_full(marker.content).is_some() {
             let mut stream = item_marker_source(cur, marker.content, item_at);
+            let before_block = cur.pos;
             stream.append(collect_indented_block_mapped(cur, base_indent, content_col));
+            // A blank line closes the sub-list's last paragraph, so the next
+            // flush-left line starts a NEW top-level block instead of folding in
+            // (carve-rs#490). The collected source keeps no trace of a trailing
+            // blank, so `nested_ends_with_open_paragraph` below still reports the
+            // paragraph as open and the lazy loop swallowed `- - a` / blank / `b`
+            // into the inner item, where carve-js and carve-php end the list.
+            let mut ended_on_blank =
+                cur.pos > before_block && is_blank_line(cur.lines[cur.pos - 1]);
             // A column-0 lazy-continuation line following the marker-line
             // sub-list folds into its last open paragraph (`- - b` / `lazy` ->
             // `<li>b\nlazy</li>`), and a following sibling marker at the
@@ -3783,6 +3787,9 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             // lazy-fold / resume loop the following-line nested-list path runs
             // above; reused here so the marker-line sub-list behaves identically.
             loop {
+                if ended_on_blank {
+                    break;
+                }
                 let has_lazy = if let Some(line) = cur.peek() {
                     let line = line.to_string();
                     !is_blank_line(&line)
@@ -3803,11 +3810,26 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 if cur.pos == before {
                     break;
                 }
+                let before_block = cur.pos;
                 stream.append(collect_indented_block_mapped(
                     cur,
                     content_col - 1,
                     content_col,
                 ));
+                ended_on_blank = cur.pos > before_block && is_blank_line(cur.lines[cur.pos - 1]);
+            }
+            // A blank line between the item's blocks loosens the list, and a
+            // sub-list lead is no exception: the item holds the sub-list and
+            // whatever follows the blank at THIS item's content column
+            // (carve-rs#490). #476 fixed the attribute-block, quote and heading
+            // leads beside this one and left the sub-list lead open, because
+            // carve-php agreed with this engine at the time and carve-js did not.
+            // Content at or past the SUB-LIST's content column is the sub-list's
+            // own business - `sublist_source_loosens_outer_item` is the same
+            // non-propagating test the following-line sub-list path uses, not the
+            // blanket `continuation_source_loosens` the other leads can afford.
+            if sublist_source_loosens_outer_item(&stream.source) {
+                tight = false;
             }
             let children = parse_mapped_source(&stream, options);
             items.push(ListItem {
@@ -3977,7 +3999,7 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 .iter()
                 .any(|line| is_invalid_colon_fence_opener_text(line));
             if interrupts_paragraph(cur, &dedented)
-                && !(suppress_colon_interrupt && is_colon_fence_opener_shape(&dedented))
+                && !(suppress_colon_interrupt && is_suppressed_colon_fence_line(&dedented))
             {
                 break;
             }
@@ -4673,7 +4695,7 @@ fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         let line_owned = line.to_string();
         if !lines.is_empty()
             && interrupts_paragraph(cur, &line_owned)
-            && !(suppress_colon_interrupt && is_colon_fence_opener_shape(&line_owned))
+            && !(suppress_colon_interrupt && is_suppressed_colon_fence_line(&line_owned))
         {
             break;
         }
@@ -4820,6 +4842,18 @@ fn is_colon_fence_opener_shape(line: &str) -> bool {
     detect_container_open(line).is_some()
         || detect_line_block_open(line).is_some()
         || detect_hardbreaks_block_open(line).is_some()
+}
+
+/// Whether a glued colon fence earlier in the paragraph (`:::note`, `:::]`)
+/// keeps THIS line from interrupting it.
+///
+/// Only a BARE fence (`:::`, nothing after the colons) is held back: it is
+/// closer-shaped, and the paragraph it would close is literal text, so it stays
+/// literal text too. A real opener - a type word, `::: |`, `::: \` - opens its
+/// block as usual, glued predecessor or not (carve-rs#496). Matches carve-js
+/// (`RE_ADMONITION_CLOSE` + `isLiteralColonFenceLine`) and carve-php.
+fn is_suppressed_colon_fence_line(line: &str) -> bool {
+    is_colon_fence_opener_shape(line) && exact_colon_fence_len(line).is_some()
 }
 
 fn interrupts_paragraph_with_rest(line: &str, rest: &[&str]) -> bool {
