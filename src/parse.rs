@@ -9627,8 +9627,19 @@ fn resolve_reference_links_inline(
                         if let Some((actual_id, _)) = heading_index.resolve_ref(&slug) {
                             l.href = format!("#{actual_id}");
                             l.title = None;
-                            l.ref_label = None;
-                            l.raw_ref = None;
+                            // KEEP `ref_label` / `raw_ref`. The href is what the
+                            // HTML needs; the reference is what the AUTHOR wrote,
+                            // and the canonical writer has to reproduce it. Clearing
+                            // them turned `[getting started][]` into
+                            // `[getting started](#Getting-Started)` on every fmt
+                            // pass, baking a generated id into the source and
+                            // disagreeing with carve-js, which keeps the reference
+                            // form (carve#478).
+                            //
+                            // An EXPLICIT definition above still clears them: there
+                            // both engines write the resolved link, so the authored
+                            // `[x][]` plus its `[x]: url` line is not reproducible
+                            // from the tree either way.
                             out.push(node);
                         } else if preserve_unresolved {
                             out.push(node);
