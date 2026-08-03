@@ -396,7 +396,11 @@ fn parse_footnote_def_line(line: &str) -> Option<(&str, &str)> {
     // reference-label production at every position, so the line is a paragraph.
     // This is the case a first fix on the link-def side missed (carve-rs#456);
     // this function got neither fix.
-    if label.contains(']') {
+    // `footnote_label = {character - ']'}+` - one or more. `[^]: x` has an EMPTY
+    // label, so it is not a footnote definition. It is a valid LINK reference
+    // definition whose label is `^`, and claiming it here kept the link path
+    // from ever seeing it - `[text][^]` then never resolved (carve#552).
+    if label.is_empty() || label.contains(']') {
         return None;
     }
     // No content after the separator is not a definition either. `[^a]: ` was
@@ -406,8 +410,6 @@ fn parse_footnote_def_line(line: &str) -> Option<(&str, &str)> {
     if body.is_empty() {
         return None;
     }
-    // An EMPTY label with content (`[^]: x`) is consumed by all three engines.
-    // Left as is deliberately - that is an agreement, not a divergence.
     Some((label, body))
 }
 
@@ -7878,6 +7880,12 @@ fn parse_footnote_ref(
         return None;
     }
     let id = std::str::from_utf8(&bytes[start + 2..i]).ok()?.to_string();
+    // Same production, reference side: `[^]` is not a `reference_footnote`.
+    // Carve has no shortcut reference either, so it is literal text - which is
+    // what it already was here until a `[^]: …` line existed for it to bind to.
+    if id.is_empty() {
+        return None;
+    }
     let mut attrs = None;
     let mut after = i + 1;
     if bytes.get(after) == Some(&b'{') {
