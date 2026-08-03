@@ -13,6 +13,9 @@ use std::fs;
 use std::path::PathBuf;
 
 const IMPLEMENTED: &[&str] = &[
+    "opaque-spans-inside-a-container",
+    "blocks-that-render-to-nothing",
+    "bare-dot-ordered-markers",
     "emphasis",
     "headings",
     "links",
@@ -673,3 +676,12 @@ corpus_test!(
     c135_abbreviation_definition_separator_must_be_a_space,
     "abbreviation-definition-separator-must-be-a-space"
 );
+corpus_test!(
+    c_opaque_spans_inside_a_container,
+    "opaque-spans-inside-a-container"
+);
+corpus_test!(
+    c_blocks_that_render_to_nothing,
+    "blocks-that-render-to-nothing"
+);
+corpus_test!(c_bare_dot_ordered_markers, "bare-dot-ordered-markers");
