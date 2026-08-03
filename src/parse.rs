@@ -5781,6 +5781,14 @@ fn expand_line_block_ws(line: &str) -> String {
 /// Parse a `::: |` line block into a `<div class="line-block">`: each stanza
 /// (blank-line-separated run) is a paragraph whose soft breaks become hard
 /// breaks and whose per-line leading whitespace is preserved (grammar §23).
+/// A collected stanza: its lines, its own span, and where each line ENDS as
+/// (source line, 1-based end column).
+///
+/// The third element exists because the first cannot supply it - `LineBuffer`
+/// holds lines already expanded to placeholders, so their width is no longer the
+/// source's. A break needs only the line's end, which a tab does not move.
+type Stanza = (LineBuffer, Option<Pos>, Vec<Option<(usize, usize)>>);
+
 fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     let span_start = cur.pos;
     let opener = cur.peek().unwrap();
@@ -5790,10 +5798,16 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     // body line before preserving the author's intra-verse whitespace.
     let base_indent = leading_ws_columns(opener);
     cur.consume();
-    let mut stanzas: Vec<(LineBuffer, Option<Pos>)> = Vec::new();
+    let mut stanzas: Vec<Stanza> = Vec::new();
     let mut stanza: Vec<String> = Vec::new();
     let mut stanza_line_map: Vec<Option<usize>> = Vec::new();
     let mut stanza_col_map: Vec<Option<usize>> = Vec::new();
+    // Where each stanza line ENDS, as (source line, 1-based end column), taken
+    // from the RAW line. A break is the newline terminating its line, so this is
+    // all it needs - and unlike `stanza_col_map` it survives a tab, which shifts
+    // offsets WITHIN a line without moving the line's own end. `lines.lines`
+    // cannot supply it: those are already expanded to placeholders.
+    let mut stanza_line_ends: Vec<Option<(usize, usize)>> = Vec::new();
     // Where the open stanza began, and where it ended - the CURSOR's own line
     // indices, which still point at the source. The rewritten verse text cannot
     // give a column back, but the lines a stanza occupies are not in doubt.
@@ -5817,6 +5831,7 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                         col_map: std::mem::take(&mut stanza_col_map),
                     },
                     at.and_then(|start| span_of(cur, start, stanza_end, options)),
+                    std::mem::take(&mut stanza_line_ends),
                 ));
             }
             continue;
@@ -5854,6 +5869,10 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         } else {
             None
         });
+        stanza_line_ends.push(match (source_line, cur.source_col(line_at)) {
+            (Some(l), Some(c)) => Some((l, c + line.chars().count() + 1)),
+            _ => None,
+        });
         stanza.push(expanded);
         stanza_line_map.push(source_line);
     }
@@ -5866,12 +5885,13 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 col_map: stanza_col_map,
             },
             at.and_then(|start| span_of(cur, start, stanza_end, options)),
+            stanza_line_ends,
         ));
     }
 
     let children = stanzas
         .into_iter()
-        .map(|(lines, at)| {
+        .map(|(lines, at, line_ends)| {
             let source_line = lines.line_map.first().copied().flatten();
             let anchors: Vec<Option<(usize, usize)>> = lines
                 .line_map
@@ -5879,13 +5899,39 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 .zip(lines.col_map.iter())
                 .map(|(line_no, col)| Some(((*line_no)?, (*col)?)))
                 .collect();
+            let mut break_index = 0usize;
             let inlines = parse_inline_lines_with_anchor(&lines.lines.join("\n"), options, anchors)
                 .into_iter()
                 .map(|n| match n {
                     // A hard break here IS the source's line ending, so it
                     // keeps the soft break's span rather than being rebuilt
                     // without one.
-                    InlineNode::SoftBreak(b) => InlineNode::HardBreak(b),
+                    //
+                    // Where the line carried a TAB the whole line is unanchored,
+                    // so the soft break arrived with no span - but the break is
+                    // not inline content in that sense. The stanza's text is its
+                    // lines joined by newline and holds no other, so the k-th
+                    // break IS the newline ending line k, which line geometry
+                    // knows regardless of what a tab did inside the line (#480).
+                    InlineNode::SoftBreak(b) => {
+                        let k = break_index;
+                        break_index += 1;
+                        let pos = b.pos.or_else(|| {
+                            if !options.positions {
+                                return None;
+                            }
+                            let (line, end_col) = (*line_ends.get(k)?)?;
+                            Some(Pos {
+                                start_line: line,
+                                end_line: line,
+                                start_column: end_col,
+                                end_column: end_col + 1,
+                                start_offset: 0,
+                                end_offset: 0,
+                            })
+                        });
+                        InlineNode::HardBreak(Break { pos })
+                    }
                     other => other,
                 })
                 .collect();
