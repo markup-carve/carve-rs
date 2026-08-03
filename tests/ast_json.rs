@@ -77,6 +77,14 @@ fn normalize(mut doc: carve::Document) -> carve::Document {
                 carve::BlockNode::LineBlock(l) => blocks(&mut l.children),
                 carve::BlockNode::Extension(e) => blocks(&mut e.children),
                 carve::BlockNode::List(l) => {
+                    // Runtime-only, like `at_content_column` above: which
+                    // spelling opened the list (`. a` vs `1. a`) is not on the
+                    // wire, because the schema pins it with
+                    // additionalProperties: false and no other engine
+                    // publishes the field. A decoded document therefore comes
+                    // back with the default, and comparing it against a parsed
+                    // one would fail for every bare-dot document in the corpus.
+                    l.bare_marker = false;
                     for item in &mut l.items {
                         blocks(&mut item.children);
                     }
