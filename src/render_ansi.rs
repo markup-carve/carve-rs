@@ -46,6 +46,7 @@ fn render_ansi_inner(doc: &Document, lowercase_heading_ids: bool) -> String {
         ordered: Vec::new(),
         defined_footnotes: doc.footnote_defs.keys().cloned().collect(),
         crossref_index: crate::parse::crossref_index_for_document(doc, lowercase_heading_ids),
+        link_depth: 0,
     };
     let out = render_blocks(&doc.children, &mut ctx, 0);
     let footnotes = render_footnote_defs(doc, &mut ctx);
@@ -63,6 +64,13 @@ struct AnsiContext {
     /// check (carve#352).
     defined_footnotes: std::collections::BTreeSet<String>,
     crossref_index: crate::parse::CrossrefIndex,
+    /// Nonzero while rendering a link's label. Links never nest, and the parser
+    /// enforces that -- but a cross-reference becomes a link only HERE, after
+    /// the parser has run, so this target has to apply the rule itself. A
+    /// nested link sequence ends with its own reset, which closes the OUTER
+    /// link's styling early and leaves the rest of the label unstyled
+    /// (carve-rs#436).
+    link_depth: usize,
 }
 
 fn render_block_inlines(nodes: &[InlineNode], ctx: &mut AnsiContext) -> String {
@@ -511,7 +519,14 @@ fn render_inline(node: &InlineNode, ctx: &mut AnsiContext, depth: usize) -> Stri
         },
         InlineNode::Code(code) => style(&strip_controls(&code.value), FG_BRIGHT_YELLOW),
         InlineNode::Link(link) => {
+            ctx.link_depth += 1;
             let text = render_inlines(&link.children, ctx, depth + 1);
+            ctx.link_depth -= 1;
+            if ctx.link_depth > 0 {
+                // Already inside a link: the label is styled by the outer one,
+                // and a second sequence here would reset it early.
+                return text;
+            }
             let href = strip_controls(&link.href);
             let mut out = style(&text, &(UNDERLINE.to_string() + FG_BLUE));
             if !href.starts_with('#') && href != strip_ansi(&text) {
@@ -554,7 +569,12 @@ fn render_inline(node: &InlineNode, ctx: &mut AnsiContext, depth: usize) -> Stri
         }
         InlineNode::Footnote(footnote) => {
             if let Some(inline) = &footnote.inline {
+                // A footnote body is an aside, not part of the label it sits in
+                // -- the HTML target renders it outside the anchor entirely. So
+                // a reference inside one is not nested and still links.
+                let outer = std::mem::replace(&mut ctx.link_depth, 0);
                 let rendered = render_inlines(inline, ctx, depth + 1);
+                ctx.link_depth = outer;
                 format!("({rendered})")
             } else {
                 let id = strip_controls(footnote.id.as_deref().unwrap_or(""));
@@ -599,6 +619,7 @@ fn render_inline(node: &InlineNode, ctx: &mut AnsiContext, depth: usize) -> Stri
         // `(href)` suffix a link would add is suppressed there too. Only an
         // UNRESOLVED one degrades to its literal source.
         InlineNode::CrossRef(crossref) => match ctx.crossref_index.resolve(&crossref.target) {
+            Some((_, title)) if ctx.link_depth > 0 => strip_controls(title),
             Some((_, title)) => style(&strip_controls(title), &(UNDERLINE.to_string() + FG_BLUE)),
             None => format!("</#{}>", strip_controls(&crossref.target)),
         },

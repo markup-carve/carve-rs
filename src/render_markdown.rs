@@ -88,7 +88,15 @@ fn render_markdown_inner(
     }
     let mut ref_pass = |_: &BlockNode, inlines: Option<&[InlineNode]>| {
         if let Some(inlines) = inlines {
-            walk_inlines(inlines, 0, &mut |node| {
+            walk_inlines(inlines, 0, false, &mut |node, in_link| {
+                // A reference inside a link label is flattened to text by the
+                // renderer, so it does not link anywhere and must not keep the
+                // target heading's `{#id}` suffix alive: `# H {#H}` is not
+                // Markdown, and with the reference gone the suffix anchors
+                // nothing (carve-rs#436).
+                if in_link {
+                    return;
+                }
                 if let InlineNode::Link(link) = node {
                     if let Some(id) = fragment_id(&link.href) {
                         if heading_ids.contains(id) {
@@ -118,6 +126,7 @@ fn render_markdown_inner(
         list_depth: 0,
         defined_footnotes: doc.footnote_defs.keys().cloned().collect(),
         crossref_index,
+        link_depth: 0,
     };
     let out = render_blocks(&doc.children, &mut ctx, 0);
     let footnotes = render_footnote_defs(doc, &mut ctx);
@@ -137,6 +146,12 @@ struct MarkdownContext {
     /// check (carve#352).
     defined_footnotes: std::collections::BTreeSet<String>,
     crossref_index: crate::parse::CrossrefIndex,
+    /// Nonzero while rendering a link's label. Links never nest, and the parser
+    /// enforces that -- but a cross-reference becomes a link only HERE, after
+    /// the parser has run, so this target has to apply the rule itself.
+    /// `[see </#H>](/outer)` must render as `[see H](/outer)`, not as a link
+    /// inside a link, which is not valid Markdown (carve-rs#436).
+    link_depth: usize,
 }
 
 fn render_block_inlines(nodes: &[InlineNode], ctx: &mut MarkdownContext) -> String {
@@ -627,7 +642,12 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
         }
         InlineNode::Footnote(footnote) => {
             if let Some(inline) = &footnote.inline {
+                // A footnote body is an aside, not part of the label it sits in
+                // -- the HTML target renders it outside the anchor entirely. So
+                // a reference inside one is not nested and still links.
+                let outer = std::mem::replace(&mut ctx.link_depth, 0);
                 let rendered = render_inlines(inline, ctx, depth + 1);
+                ctx.link_depth = outer;
                 format!("^[{rendered}]")
             } else {
                 let id = strip_controls(footnote.id.as_deref().unwrap_or(""));
@@ -689,7 +709,11 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
         InlineNode::CrossRef(crossref) => match ctx.crossref_index.resolve(&crossref.target) {
             Some((id, title)) => {
                 let title = escape_text(&strip_controls(title));
-                if ctx.heading_ids.contains(id) {
+                // Inside a link label the reference is already surrounded by an
+                // anchor, so it degrades to its display text -- the same rule
+                // the parser applies to every link it produces itself, and the
+                // HTML target applies to this node (carve-rs#436).
+                if ctx.link_depth == 0 && ctx.heading_ids.contains(id) {
                     format!("[{title}](#{})", strip_controls(id))
                 } else {
                     title
@@ -707,7 +731,9 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
 }
 
 fn render_link(node: &Link, ctx: &mut MarkdownContext, depth: usize) -> String {
+    ctx.link_depth += 1;
     let text = render_inlines(&node.children, ctx, depth);
+    ctx.link_depth -= 1;
     if let Some(id) = fragment_id(&node.href) {
         if !ctx.heading_ids.contains(id) {
             return text;
@@ -1155,27 +1181,40 @@ where
     }
 }
 
-fn walk_inlines<F>(nodes: &[InlineNode], depth: usize, visit: &mut F)
+/// Walks inline content, telling the visitor whether the node sits inside a
+/// link label. The flag matters because a reference inside a label renders as
+/// plain text (links never nest), so it is not a live reference and must not
+/// keep a heading's `{#id}` suffix alive. It resets at a footnote body, which
+/// renders outside the anchor.
+fn walk_inlines<F>(nodes: &[InlineNode], depth: usize, in_link: bool, visit: &mut F)
 where
-    F: FnMut(&InlineNode),
+    F: FnMut(&InlineNode, bool),
 {
     if depth > MAX_RENDER_DEPTH {
         return;
     }
     for node in nodes {
-        visit(node);
+        visit(node, in_link);
         match node {
-            InlineNode::Emphasis(emphasis) => walk_inlines(&emphasis.children, depth + 1, visit),
-            InlineNode::Link(link) => walk_inlines(&link.children, depth + 1, visit),
-            InlineNode::Span(span) => walk_inlines(&span.children, depth + 1, visit),
-            InlineNode::Extension(extension) => walk_inlines(&extension.children, depth + 1, visit),
+            InlineNode::Emphasis(emphasis) => {
+                walk_inlines(&emphasis.children, depth + 1, in_link, visit)
+            }
+            InlineNode::Link(link) => walk_inlines(&link.children, depth + 1, true, visit),
+            InlineNode::Span(span) => walk_inlines(&span.children, depth + 1, in_link, visit),
+            InlineNode::Extension(extension) => {
+                walk_inlines(&extension.children, depth + 1, in_link, visit)
+            }
             InlineNode::Footnote(footnote) => {
                 if let Some(inline) = &footnote.inline {
-                    walk_inlines(inline, depth + 1, visit);
+                    walk_inlines(inline, depth + 1, false, visit);
                 }
             }
-            InlineNode::CriticInsert(insert) => walk_inlines(&insert.children, depth + 1, visit),
-            InlineNode::CriticDelete(delete) => walk_inlines(&delete.children, depth + 1, visit),
+            InlineNode::CriticInsert(insert) => {
+                walk_inlines(&insert.children, depth + 1, in_link, visit)
+            }
+            InlineNode::CriticDelete(delete) => {
+                walk_inlines(&delete.children, depth + 1, in_link, visit)
+            }
             _ => {}
         }
     }
