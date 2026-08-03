@@ -9525,24 +9525,33 @@ pub(crate) fn crossref_index_for_document(doc: &Document, lowercase_ids: bool) -
     // This index serves `</#id>` crossrefs only, which DO resolve into a
     // blockquote, so the quoted set it fills is discarded.
     let mut quoted = std::collections::BTreeSet::new();
+    // This index serves `</#id>` only, which looks up by id, so the text index
+    // it fills is discarded with the quoted set above.
+    let mut by_text = BTreeMap::new();
     collect_heading_titles(
         &doc.children,
-        &mut counts,
-        &mut titles,
+        &mut HeadingScan {
+            counts: &mut counts,
+            titles: &mut titles,
+            quoted: &mut quoted,
+            by_text: &mut by_text,
+        },
         lowercase_ids,
         &explicit_ids,
         false,
-        &mut quoted,
     );
     for blocks in doc.footnote_defs.values() {
         collect_heading_titles(
             blocks,
-            &mut counts,
-            &mut titles,
+            &mut HeadingScan {
+                counts: &mut counts,
+                titles: &mut titles,
+                quoted: &mut quoted,
+                by_text: &mut by_text,
+            },
             lowercase_ids,
             &explicit_ids,
             false,
-            &mut quoted,
         );
     }
     collect_caption_titles(&doc.children, &mut titles);
@@ -9565,28 +9574,36 @@ fn heading_index(
         collect_explicit_ids(blocks, &mut explicit_ids);
     }
     let mut quoted = std::collections::BTreeSet::new();
+    let mut by_text = BTreeMap::new();
     collect_heading_titles(
         children,
-        &mut counts,
-        &mut titles,
+        &mut HeadingScan {
+            counts: &mut counts,
+            titles: &mut titles,
+            quoted: &mut quoted,
+            by_text: &mut by_text,
+        },
         lowercase_ids,
         &explicit_ids,
         false,
-        &mut quoted,
     );
     for blocks in footnote_defs.values() {
         collect_heading_titles(
             blocks,
-            &mut counts,
-            &mut titles,
+            &mut HeadingScan {
+                counts: &mut counts,
+                titles: &mut titles,
+                quoted: &mut quoted,
+                by_text: &mut by_text,
+            },
             lowercase_ids,
             &explicit_ids,
             false,
-            &mut quoted,
         );
     }
     let mut index = crossref_index(titles);
     index.quoted = quoted;
+    index.by_text = by_text;
     index
 }
 
@@ -9603,6 +9620,7 @@ fn crossref_index(titles: BTreeMap<String, String>) -> CrossrefIndex {
     CrossrefIndex {
         titles,
         folded,
+        by_text: BTreeMap::new(),
         quoted: std::collections::BTreeSet::new(),
     }
 }
@@ -9614,6 +9632,13 @@ fn crossref_index(titles: BTreeMap<String, String>) -> CrossrefIndex {
 pub(crate) struct CrossrefIndex {
     titles: BTreeMap<String, String>,
     folded: BTreeMap<String, String>,
+    /// Normalized heading TEXT -> that heading's id, in document order (first
+    /// occurrence wins). PART 11 R1 keys the implicit `[label][]` index by "the
+    /// document's headings keyed by their rendered plain text"; looking the
+    /// label up among the IDS agrees with that only while the id is the slug of
+    /// the text, and stops the moment an author sets one explicitly
+    /// (carve-rs#477).
+    by_text: BTreeMap<String, String>,
     /// Ids belonging to a heading with a blockquote ancestor. They resolve as
     /// `</#id>` crossrefs like any other, and are DECLINED as implicit
     /// `[label][]` reference targets (PART 11 R1).
@@ -9630,7 +9655,20 @@ impl CrossrefIndex {
     /// make the heading unreachable: `</#id>` still addresses it, by id rather
     /// than by wording.
     pub(crate) fn resolve_ref(&self, target: &str) -> Option<(&str, &str)> {
-        let (id, title) = self.resolve(target)?;
+        // By TEXT first (R1's index), then the id lookup the `</#id>` path uses.
+        // The fallback keeps every document whose id IS the slug of its heading
+        // text resolving exactly as before.
+        if let Some(id) = self.by_text.get(&normalize_heading_label(target)) {
+            if !self.quoted.contains(id) {
+                if let Some((id, title)) = self.titles.get_key_value(id) {
+                    return Some((id.as_str(), title.as_str()));
+                }
+            }
+        }
+        // Fallback: the slug of the label against the id index, which is what
+        // this did before the text index existed. It still answers every
+        // document whose heading id IS the slug of its text.
+        let (id, title) = self.resolve(&slugify_parse(target, false))?;
         if self.quoted.contains(id) {
             return None;
         }
@@ -9645,6 +9683,17 @@ impl CrossrefIndex {
         let title = self.titles.get(id)?;
         Some((id.as_str(), title.as_str()))
     }
+}
+
+/// The comparison PART 11 R1 specifies for the implicit heading fallback: the
+/// label and the heading text are "both trimmed, their internal whitespace runs
+/// collapsed to one space, and then compared case-INSENSITIVELY".
+///
+/// Deliberately looser than the exact, case-sensitive matching `linkDefs` uses:
+/// a linkDefs label is an identifier the author wrote twice, while a heading ref
+/// is prose quoted from elsewhere in the document.
+fn normalize_heading_label(s: &str) -> String {
+    case_fold(&s.split_whitespace().collect::<Vec<_>>().join(" "))
 }
 
 /// Per-code-point lowercase fold, used for case-insensitive `</#id>` lookup.
@@ -9843,15 +9892,17 @@ fn resolve_reference_links_inline(
                         l.ref_label = None;
                         l.raw_ref = None;
                     } else if is_collapsed_reference(l) {
-                        // Implicit heading reference: slugify the label the same
-                        // way heading ids are generated, then resolve against the
-                        // heading slug index (resolve() handles case-folding).
-                        let slug = slugify_parse(label, false);
+                        // Implicit heading reference. The LABEL goes in, not a
+                        // slug of it: PART 11 R1 keys this index by the heading's
+                        // rendered text, and `resolve_ref` slugifies only for its
+                        // fallback. Slugifying here first hid every heading whose
+                        // id is not the slug of its text (carve-rs#477).
+                        //
                         // `resolve_ref` declines a heading with a blockquote
                         // ancestor; the plain `resolve` used by `</#id>` does
                         // not. Sharing one index for both lookups is what made
                         // this engine resolve into quoted material (#410).
-                        if let Some((actual_id, _)) = heading_index.resolve_ref(&slug) {
+                        if let Some((actual_id, _)) = heading_index.resolve_ref(label) {
                             l.href = format!("#{actual_id}");
                             l.title = None;
                             // KEEP `ref_label` / `raw_ref`. The href is what the
@@ -10173,14 +10224,23 @@ fn collect_explicit_ids(blocks: &[BlockNode], out: &mut std::collections::BTreeS
 /// but PART 11 R1 declines it from the implicit `[label][]` reference index -
 /// quoted text names the QUOTED document's headings, not this one's. Recorded
 /// rather than skipped, because the two lookups share one walk.
+/// The four accumulators `collect_heading_titles` threads through its walk,
+/// grouped so the recursion carries one `&mut` rather than a widening argument
+/// list.
+struct HeadingScan<'a> {
+    counts: &'a mut BTreeMap<String, usize>,
+    titles: &'a mut BTreeMap<String, String>,
+    quoted: &'a mut std::collections::BTreeSet<String>,
+    /// Normalized heading text -> id, first occurrence wins (PART 11 R1).
+    by_text: &'a mut BTreeMap<String, String>,
+}
+
 fn collect_heading_titles(
     blocks: &[BlockNode],
-    counts: &mut BTreeMap<String, usize>,
-    titles: &mut BTreeMap<String, String>,
+    scan: &mut HeadingScan<'_>,
     lowercase_ids: bool,
     explicit_ids: &std::collections::BTreeSet<String>,
     in_blockquote: bool,
-    quoted: &mut std::collections::BTreeSet<String>,
 ) {
     for block in blocks {
         match block {
@@ -10197,7 +10257,7 @@ fn collect_heading_titles(
                 // cross-reference resolved to the wrong heading - or, once the
                 // renderer was fixed, to none at all (#335).
                 let has_explicit = h.attrs.as_ref().is_some_and(|a| a.id.is_some());
-                let mut count = counts.get(&base).copied().unwrap_or(0);
+                let mut count = scan.counts.get(&base).copied().unwrap_or(0);
                 let id = loop {
                     count += 1;
                     let candidate = if count == 1 {
@@ -10209,77 +10269,66 @@ fn collect_heading_titles(
                         break candidate;
                     }
                 };
-                counts.insert(base, count);
+                scan.counts.insert(base, count);
                 if in_blockquote {
-                    quoted.insert(id.clone());
+                    scan.quoted.insert(id.clone());
+                } else {
+                    // First occurrence wins - R1 resolves to "the FIRST heading
+                    // with that text". This walk is in document order, so an
+                    // `or_insert` is that rule. A scan.quoted heading is not indexed
+                    // at all, so a later unquoted one with the same text still
+                    // wins rather than being shadowed by a declined entry.
+                    scan.by_text
+                        .entry(normalize_heading_label(&title))
+                        .or_insert_with(|| id.clone());
                 }
-                titles.insert(id, title);
+                scan.titles.insert(id, title);
             }
             BlockNode::List(l) => {
                 for item in &l.items {
                     collect_heading_titles(
                         &item.children,
-                        counts,
-                        titles,
+                        scan,
                         lowercase_ids,
                         explicit_ids,
                         in_blockquote,
-                        quoted,
                     );
                 }
             }
-            BlockNode::BlockQuote(b) => collect_heading_titles(
-                &b.children,
-                counts,
-                titles,
-                lowercase_ids,
-                explicit_ids,
-                true,
-                quoted,
-            ),
+            BlockNode::BlockQuote(b) => {
+                collect_heading_titles(&b.children, scan, lowercase_ids, explicit_ids, true)
+            }
             BlockNode::Admonition(a) => collect_heading_titles(
                 &a.children,
-                counts,
-                titles,
+                scan,
                 lowercase_ids,
                 explicit_ids,
                 in_blockquote,
-                quoted,
             ),
             BlockNode::Div(d) => collect_heading_titles(
                 &d.children,
-                counts,
-                titles,
+                scan,
                 lowercase_ids,
                 explicit_ids,
                 in_blockquote,
-                quoted,
             ),
             BlockNode::DefinitionList(d) => {
                 for item in &d.items {
                     for definition in &item.definitions {
                         collect_heading_titles(
                             definition,
-                            counts,
-                            titles,
+                            scan,
                             lowercase_ids,
                             explicit_ids,
                             in_blockquote,
-                            quoted,
                         );
                     }
                 }
             }
             BlockNode::Figure(f) => match &f.target {
-                FigureTarget::BlockQuote(b) => collect_heading_titles(
-                    &b.children,
-                    counts,
-                    titles,
-                    lowercase_ids,
-                    explicit_ids,
-                    true,
-                    quoted,
-                ),
+                FigureTarget::BlockQuote(b) => {
+                    collect_heading_titles(&b.children, scan, lowercase_ids, explicit_ids, true)
+                }
                 FigureTarget::Table(_)
                 | FigureTarget::Image(_)
                 | FigureTarget::CodeBlock(_)
