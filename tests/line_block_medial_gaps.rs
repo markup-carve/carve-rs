@@ -94,3 +94,47 @@ fn a_lone_escaped_space_still_round_trips_as_written() {
     let source = "::: |\na\\ b\n:::\n";
     assert_eq!(carve::to_carve(source), source);
 }
+
+#[test]
+fn a_line_holding_a_tab_refuses_a_position() {
+    // A rewrite is placeable only while it promotes a SPACE IN PLACE: one space
+    // becomes one placeholder, so every column still maps one to one and the
+    // node's value is still the source read differently.
+    //
+    // A tab is not that. It expands to up to four placeholders from one source
+    // character, and even where the arithmetic yields exactly one column the
+    // CHARACTER changed - `tab\tgap` published a position while its value read
+    // `tab gap`, so a consumer asked to highlight that span got source the node
+    // does not contain. carve-js publishes no position for the same lines.
+    //
+    // Per line: the tab-free neighbour keeps its position.
+    let options = carve::Options {
+        positions: true,
+        ..Default::default()
+    };
+    let doc = carve::parse_with_options("::: |\ntab\tgap\nplain gap\n:::\n", &options);
+    let carve::ast::BlockNode::LineBlock(block) = &doc.children[0] else {
+        panic!("expected a line block, got {:?}", doc.children[0]);
+    };
+    let carve::ast::BlockNode::Paragraph(paragraph) = &block.children[0] else {
+        panic!("expected a paragraph inside the line block");
+    };
+
+    let placed: Vec<(String, bool)> = paragraph
+        .children
+        .iter()
+        .filter_map(|node| match node {
+            carve::ast::InlineNode::Text(text) => Some((text.value.clone(), text.pos.is_some())),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(
+        placed,
+        vec![
+            ("tab gap".to_string(), false),
+            ("plain gap".to_string(), true)
+        ],
+        "the tab-bearing line must refuse a position, and only that line"
+    );
+}
