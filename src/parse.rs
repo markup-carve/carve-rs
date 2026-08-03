@@ -858,6 +858,7 @@ struct LineCursor<'a> {
     col_map: Option<&'a [Option<usize>]>,
     pos: usize,
     comment_closer_last_index: Option<HashMap<usize, usize>>,
+    code_closer_last_index: Option<HashMap<u8, Vec<usize>>>,
 }
 
 impl<'a> LineCursor<'a> {
@@ -872,6 +873,7 @@ impl<'a> LineCursor<'a> {
             col_map,
             pos: 0,
             comment_closer_last_index: None,
+            code_closer_last_index: None,
         }
     }
 
@@ -910,6 +912,24 @@ impl<'a> LineCursor<'a> {
     /// condition (a second opener of the same width after a proven-no-closer
     /// point) is unreachable, because a second line of the same width IS a closer
     /// for the first.
+    /// Whether any line after `start` could close a code fence of this char and
+    /// width. Deliberately OVER-approximate: it ignores indentation, which the
+    /// real closer test does not. A `false` is therefore final and a `true` only
+    /// means "worth scanning", so the caller keeps its exact scan behind this.
+    ///
+    /// Without it the exact scan runs from every opener to the end of the
+    /// document, which is quadratic in the number of unterminated openers - the
+    /// same shape `comment_closer_last_index` was added to remove for `%%%`.
+    /// Code fences never got the equivalent.
+    fn has_code_closer_after(&mut self, start: usize, fence_char: u8, fence_len: usize) -> bool {
+        if self.code_closer_last_index.is_none() {
+            self.code_closer_last_index = Some(build_code_closer_last_index(self.lines));
+        }
+        self.code_closer_last_index
+            .as_ref()
+            .is_some_and(|index| code_closer_exists_after(index, start, fence_char, fence_len))
+    }
+
     fn has_comment_closer_after(&mut self, start: usize, fence_len: usize) -> bool {
         if self.comment_closer_last_index.is_none() {
             self.comment_closer_last_index = Some(build_comment_closer_last_index(self.lines));
@@ -1478,6 +1498,53 @@ fn parse_capped_colon_body(inner: LineBuffer, options: &Options<'_>) -> Vec<Bloc
         children: parse_inline_with_options(&source.source, options),
         ..Default::default()
     })]
+}
+
+/// For each fence char, `vec[len]` is one past the index of the LAST line that
+/// is closer-shaped with a run of at least `len` - suffix-maxed so a single
+/// lookup answers "at least this wide", which is what a code fence closer needs
+/// (unlike a comment fence, which matches its width exactly).
+fn build_code_closer_last_index(lines: &[&str]) -> HashMap<u8, Vec<usize>> {
+    let mut per_char: HashMap<u8, Vec<usize>> = HashMap::new();
+    for (idx, line) in lines.iter().enumerate() {
+        let trimmed = line.trim_start();
+        let bytes = trimmed.as_bytes();
+        let Some(&fence_char) = bytes.first() else {
+            continue;
+        };
+        if fence_char != b'`' && fence_char != b'~' {
+            continue;
+        }
+        let run = bytes.iter().take_while(|&&b| b == fence_char).count();
+        if !bytes[run..].iter().all(|&b| b == b' ') {
+            continue;
+        }
+        let by_len = per_char.entry(fence_char).or_default();
+        if by_len.len() <= run {
+            by_len.resize(run + 1, 0);
+        }
+        by_len[run] = by_len[run].max(idx + 1);
+    }
+    for by_len in per_char.values_mut() {
+        for len in (0..by_len.len().saturating_sub(1)).rev() {
+            by_len[len] = by_len[len].max(by_len[len + 1]);
+        }
+    }
+    per_char
+}
+
+/// Query the index built by `build_code_closer_last_index`. `false` is final;
+/// `true` only means an exact scan is worth running.
+fn code_closer_exists_after(
+    index: &HashMap<u8, Vec<usize>>,
+    start: usize,
+    fence_char: u8,
+    fence_len: usize,
+) -> bool {
+    index
+        .get(&fence_char)
+        .and_then(|by_len| by_len.get(fence_len).copied())
+        .is_some_and(|last| last > start + 1)
 }
 
 fn build_comment_closer_last_index(lines: &[&str]) -> HashMap<usize, usize> {
@@ -2223,7 +2290,10 @@ fn is_invalid_colon_fence_opener_text(line: &str) -> bool {
         && detect_hardbreaks_block_open(trimmed).is_none()
 }
 
-fn code_fence_interrupts_paragraph(cur: &LineCursor<'_>, open: FenceOpen) -> bool {
+fn code_fence_has_closer(cur: &mut LineCursor<'_>, open: FenceOpen) -> bool {
+    if !cur.has_code_closer_after(cur.pos, open.fence_char, open.fence_len) {
+        return false;
+    }
     let strip = leading_ws(cur.lines[cur.pos]);
     cur.lines[cur.pos + 1..]
         .iter()
@@ -2261,16 +2331,21 @@ fn take_opaque_span_into(
     }
 }
 
-fn skip_opaque_span_into(
-    inner: &mut LineBuffer,
-    cur: &mut LineCursor<'_>,
-    para_open: bool,
-) -> bool {
+fn skip_opaque_span_into(inner: &mut LineBuffer, cur: &mut LineCursor<'_>) -> bool {
     let Some(line) = cur.peek() else {
         return false;
     };
     if let Some(open) = detect_fence_open(line) {
-        if !para_open || code_fence_interrupts_paragraph(cur, open) {
+        // A closer is required whether or not a paragraph is open. Only a fence
+        // that closes is opaque; an unterminated one would otherwise consume the
+        // container's own `:::` as content and run to the end of the document,
+        // dragging every following block inside (carve#515, carve-rs#458).
+        //
+        // The comment-fence branch below has always required its closer. This
+        // one asked only when a paragraph was open, so the rule held for a fence
+        // that interrupted prose and lapsed for one that opened a body - which
+        // is why the parameter that carried that state is gone.
+        if code_fence_has_closer(cur, open) {
             take_opaque_span_into(inner, cur, |candidate| is_fence_close(candidate, open));
             return true;
         }
@@ -2306,7 +2381,7 @@ fn collect_colon_container_body(cur: &mut LineCursor<'_>, opener_len: usize) -> 
             para_has_glued_colon = false;
             continue;
         }
-        if skip_opaque_span_into(&mut inner, cur, para_open) {
+        if skip_opaque_span_into(&mut inner, cur) {
             para_open = false;
             para_has_glued_colon = false;
             continue;
@@ -2363,9 +2438,13 @@ fn find_line_block_end(lines: &[&str], start: usize, fence_len: usize) -> usize 
 }
 
 fn find_colon_container_end(lines: &[&str], start: usize, fence_len: usize) -> usize {
+    // Built on the first code fence seen, not up front: this function is called
+    // often, and an unconditional O(lines) build here made a document of
+    // unterminated `%%%` openers - which never reach the fence branch at all -
+    // quadratic, as tests/perf_regressions.rs caught.
+    let mut closer_index: Option<HashMap<u8, Vec<usize>>> = None;
     let mut stack = vec![fence_len];
     let mut idx = start + 1;
-    let mut para_open = false;
     let mut para_has_glued_colon = false;
     while idx < lines.len() {
         let line = lines[idx];
@@ -2376,15 +2455,24 @@ fn find_colon_container_end(lines: &[&str], start: usize, fence_len: usize) -> u
             if stack.is_empty() {
                 return idx;
             }
-            para_open = false;
             para_has_glued_colon = false;
             continue;
         }
         if let Some(open) = detect_fence_open(line) {
-            let has_closer = lines[idx + 1..]
-                .iter()
-                .any(|candidate| is_fence_close(candidate, open));
-            if !para_open || has_closer {
+            // Same rule as `skip_opaque_span_into`, which walks this body for
+            // real: only a fence that closes is opaque (carve#515). This copy
+            // used to accept an unterminated one whenever no paragraph was
+            // open, so the two walks disagreed about where the container ends.
+            //
+            // The index makes the `any` below skip-able. Without it this scan
+            // runs from every opener to the end of the input, which is
+            // quadratic in the number of unterminated openers.
+            let index = closer_index.get_or_insert_with(|| build_code_closer_last_index(lines));
+            let has_closer = code_closer_exists_after(index, idx, open.fence_char, open.fence_len)
+                && lines[idx + 1..]
+                    .iter()
+                    .any(|candidate| is_fence_close(candidate, open));
+            if has_closer {
                 idx += 1;
                 while idx < lines.len() {
                     let candidate = lines[idx];
@@ -2393,7 +2481,6 @@ fn find_colon_container_end(lines: &[&str], start: usize, fence_len: usize) -> u
                         break;
                     }
                 }
-                para_open = false;
                 para_has_glued_colon = false;
                 continue;
             }
@@ -2403,7 +2490,6 @@ fn find_colon_container_end(lines: &[&str], start: usize, fence_len: usize) -> u
                 (idx + 1..lines.len()).find(|&j| is_comment_fence_close(lines[j], open.fence_len))
             {
                 idx = close + 1;
-                para_open = false;
                 para_has_glued_colon = false;
                 continue;
             }
@@ -2416,17 +2502,14 @@ fn find_colon_container_end(lines: &[&str], start: usize, fence_len: usize) -> u
             {
                 stack.push(len);
                 idx += 1;
-                para_open = false;
                 para_has_glued_colon = false;
                 continue;
             }
         }
         if is_blank_line(line) {
-            para_open = false;
             para_has_glued_colon = false;
         } else {
             para_has_glued_colon = para_has_glued_colon || is_invalid_colon_fence_opener_text(line);
-            para_open = true;
         }
         idx += 1;
     }
@@ -4404,6 +4487,14 @@ fn interrupts_paragraph(cur: &mut LineCursor<'_>, line: &str) -> bool {
     // unaffected; a strict opener only matches when `line` is flush, so the
     // strip comes from the raw current line's own indentation.
     if let Some(open) = detect_fence_open(line) {
+        // The index answers "no closer anywhere ahead" in constant time. The
+        // exact probe below still decides, but without this gate it runs from
+        // every opener to the end of the document, so a file of unterminated
+        // openers costs O(n^2) - the shape `comment_closer_last_index` already
+        // removed for `%%%`.
+        if !cur.has_code_closer_after(cur.pos, open.fence_char, open.fence_len) {
+            return false;
+        }
         let strip = leading_ws(cur.lines[cur.pos]);
         let rest = &cur.lines[cur.pos + 1..];
         if rest
