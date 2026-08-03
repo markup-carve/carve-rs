@@ -154,3 +154,52 @@ fn non_html_renderers_bound_programmatic_inline_depth() {
     let _ = carve::render_plain_text(&doc);
     let _ = carve::render_ansi(&doc);
 }
+
+/// The HTML renderer's ceiling had to move off the parse cap too (issue 517).
+///
+/// `from_json` accepts trees a good deal deeper than the parser produces, and
+/// past its ceiling this renderer returns without emitting - so a tree one
+/// level past the cap rendered its containers and silently lost everything
+/// inside them. The other four renderers were moved off the cap in #462; this
+/// one kept the old shape because its constant was already symbolic.
+#[test]
+fn html_render_ceiling_sits_above_the_parse_cap() {
+    on_big_stack(|| {
+        let build = |depth: usize| {
+            let mut node = carve::BlockNode::Paragraph(carve::Paragraph {
+                attrs: None,
+                children: vec![carve::InlineNode::text("body".to_string())],
+                ..Default::default()
+            });
+            for _ in 0..depth {
+                node = carve::BlockNode::Div(carve::Div {
+                    attrs: None,
+                    label: None,
+                    children: vec![node],
+                    pos: None,
+                });
+            }
+            let mut doc = carve::parse("x\n");
+            doc.children = vec![node];
+            doc
+        };
+
+        // 201 is one past the parse cap (MAX_NESTING_DEPTH = 200, not public),
+        // which is the depth that used to lose its content.
+        let past_cap = carve::render_html(&build(201));
+        assert!(
+            past_cap.contains("body"),
+            "content lost one level past the parse cap"
+        );
+
+        // The ceiling is still load-bearing: output stops growing past it.
+        let over = carve::render_html(&build(carve::MAX_RENDER_DEPTH + 8));
+        let far_over = carve::render_html(&build(carve::MAX_RENDER_DEPTH + 500));
+        assert!(!over.contains("body"), "the ceiling no longer truncates");
+        assert_eq!(
+            over.len(),
+            far_over.len(),
+            "output still grows past the ceiling"
+        );
+    });
+}

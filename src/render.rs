@@ -14,7 +14,21 @@ use crate::extension::{Options, RenderContext};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fmt::Write as _;
 
-const MAX_RENDER_DEPTH: usize = crate::parse::MAX_NESTING_DEPTH;
+/// The recursion bound every renderer shares, and it MUST sit ABOVE the
+/// parser's (§25).
+///
+/// The guard is for trees that did not come from the parser: `from_json`
+/// accepts a good deal deeper than the parser produces, and a tree built
+/// through the API has no limit at all. It is not a language rule, and
+/// equality with `parse::MAX_NESTING_DEPTH` made it one - a renderer past its
+/// bound emits nothing, where the parser degrades an over-cap opener to
+/// literal text, so the render path deleted content the parse path kept
+/// (issue 517).
+///
+/// ONE constant, not one per renderer. Five copies of the same number is how
+/// the HTML renderer kept the old bound through the first sweep: its copy was
+/// already spelled symbolically, so a search for the literal missed it.
+pub const MAX_RENDER_DEPTH: usize = crate::parse::MAX_NESTING_DEPTH + 32;
 
 pub fn render_html(doc: &Document) -> String {
     render_html_with_options(doc, &Options::default())
