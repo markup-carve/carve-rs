@@ -5425,30 +5425,43 @@ fn parse_table_cell(
     // literal `<td>`, matching carve-js / carve-php; check the RAW cell, not
     // the trimmed one.
     let header = cell.starts_with('=');
-    let trimmed = if header {
-        cell[1..].trim()
-    } else {
-        cell.trim()
-    };
+    // NOT trimmed: the alignment marker is GLUED to the opening `|` (grammar
+    // §20, `data_cell` / `header_cell`), so whether whitespace precedes it is
+    // the whole distinction. Reading the marker off the TRIMMED cell threw that
+    // away and made `| < x |` left-aligned where carve-js and carve-php both
+    // render a literal `<`, and made `| << |` a colspan by stripping the first
+    // `<` as alignment and matching the second as a lone span marker
+    // (carve-rs#459).
+    let body = if header { &cell[1..] } else { cell };
+    let trimmed = body.trim();
     let mut text = trimmed;
-    // The marker is the FIRST byte of the cell's content. `trimmed` already has
-    // the header `=` removed, so there is no offset to re-apply: an earlier
-    // version re-indexed the raw cell at `[1]` for a header cell and read the
-    // byte AFTER the marker, which turned `=<\< Note` (left, then an escaped
-    // literal `<`) into centre alignment. carve-js and carve-php both read it as
-    // left. A lone marker is a span cell, not alignment, hence the length guard.
-    let align = match text.as_bytes().first() {
-        Some(&marker @ (b'>' | b'<' | b'~')) if text.len() > 1 => {
-            text = text[1..].trim();
-            Some(match marker {
-                b'>' => TableAlign::Right,
-                b'<' => TableAlign::Left,
-                _ => TableAlign::Center,
-            })
+    // A whitespace-delimited lone marker is a span cell rather than alignment,
+    // which is the one case a glued marker does not win: `|<|` is a colspan in
+    // every engine. A header cell is already marked by its `=`, so a marker
+    // glued after it is alignment even when it is the whole content (`|=<|`).
+    let lone_span = !header && (trimmed == "<" || trimmed == "^");
+    let align = if lone_span {
+        None
+    } else {
+        match body.as_bytes().first() {
+            Some(&marker @ (b'>' | b'<' | b'~')) => {
+                text = body[1..].trim();
+                Some(match marker {
+                    b'>' => TableAlign::Right,
+                    b'<' => TableAlign::Left,
+                    _ => TableAlign::Center,
+                })
+            }
+            _ => None,
         }
-        _ => None,
     };
+    // `span_cell` is an ALTERNATIVE to `data_cell` in the grammar, not a suffix
+    // of one, so a cell that already carried an alignment marker cannot also be
+    // a span: whatever follows the marker is content. Without this, `|<<|` read
+    // its first `<` as alignment and its second as a lone colspan marker and
+    // emitted an empty cell (carve-rs#459).
     let span = match text {
+        _ if align.is_some() => None,
         "^" => Some(TableCellSpan::Rowspan),
         "<" => Some(TableCellSpan::Colspan),
         _ => None,
