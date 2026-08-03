@@ -1676,6 +1676,10 @@ fn render_block_extension(
 }
 
 fn render_image(out: &mut String, img: &Image) {
+    if img.ref_label.is_some() && img.src.is_empty() {
+        out.push_str(&escape_text(img.raw_ref.as_deref().unwrap_or_default()));
+        return;
+    }
     out.push_str(&format!(
         "<img src=\"{}\" alt=\"{}\"",
         escape_attr(&sanitize_url(&img.src)),
@@ -2161,6 +2165,10 @@ fn render_emphasis(out: &mut String, e: &Emphasis, options: &Options<'_>, state:
 }
 
 fn render_link(out: &mut String, l: &Link, options: &Options<'_>, state: &mut RenderState) {
+    if l.ref_label.is_some() && l.href.is_empty() {
+        out.push_str(&escape_text(l.raw_ref.as_deref().unwrap_or_default()));
+        return;
+    }
     out.push_str(&format!(
         "<a href=\"{}\"{}",
         escape_attr(&sanitize_url(&l.href)),

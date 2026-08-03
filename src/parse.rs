@@ -155,12 +155,7 @@ fn parse_with_options_mode(source: &str, options: &Options<'_>, mode: ParseMode)
         options.lowercase_heading_ids,
     );
     hoist_abbreviation_defs(&mut doc);
-    resolve_reference_links(
-        &mut doc,
-        &link_defs,
-        &heading_index,
-        matches!(mode, ParseMode::Carve),
-    );
+    resolve_reference_links(&mut doc, &link_defs, &heading_index);
     if matches!(mode, ParseMode::Html) {
         apply_abbreviations(&mut doc);
         number_crossref_captions(&mut doc);
@@ -9664,21 +9659,6 @@ fn case_fold(s: &str) -> String {
     out
 }
 
-/// The literal text an unresolved reference link reverts to, keeping the span
-/// the link already had.
-///
-/// `raw_ref` IS the link's source - `[text][missing]` reverts to exactly the
-/// characters the link occupied - so the extent is unchanged and only the node
-/// type differs. Building a bare text node here dropped it, and the reverted
-/// form is precisely where a consumer most wants a position: it is the case
-/// where the author wrote a reference that does not resolve.
-fn reverted_reference_text(link: &Link) -> InlineNode {
-    InlineNode::Text(Text {
-        value: link.raw_ref.clone().unwrap_or_default(),
-        pos: link.pos,
-    })
-}
-
 /// Move every `abbreviation_def` authored inside a container up to the document.
 ///
 /// PART 12 section 7: a definition is a child of the DOCUMENT even when it was
@@ -9747,14 +9727,13 @@ fn resolve_reference_links(
     doc: &mut Document,
     defs: &BTreeMap<String, LinkDef>,
     heading_index: &CrossrefIndex,
-    preserve_unresolved: bool,
 ) {
     for block in &mut doc.children {
-        resolve_reference_links_block(block, defs, heading_index, preserve_unresolved);
+        resolve_reference_links_block(block, defs, heading_index);
     }
     for blocks in doc.footnote_defs.values_mut() {
         for block in blocks {
-            resolve_reference_links_block(block, defs, heading_index, preserve_unresolved);
+            resolve_reference_links_block(block, defs, heading_index);
         }
     }
 }
@@ -9763,110 +9742,73 @@ fn resolve_reference_links_block(
     block: &mut BlockNode,
     defs: &BTreeMap<String, LinkDef>,
     heading_index: &CrossrefIndex,
-    preserve_unresolved: bool,
 ) {
     match block {
-        BlockNode::Heading(h) => resolve_reference_links_inline(
-            &mut h.children,
-            defs,
-            heading_index,
-            preserve_unresolved,
-        ),
-        BlockNode::Paragraph(p) => resolve_reference_links_inline(
-            &mut p.children,
-            defs,
-            heading_index,
-            preserve_unresolved,
-        ),
+        BlockNode::Heading(h) => {
+            resolve_reference_links_inline(&mut h.children, defs, heading_index)
+        }
+        BlockNode::Paragraph(p) => {
+            resolve_reference_links_inline(&mut p.children, defs, heading_index)
+        }
         BlockNode::List(l) => {
             for item in &mut l.items {
                 for child in &mut item.children {
-                    resolve_reference_links_block(child, defs, heading_index, preserve_unresolved);
+                    resolve_reference_links_block(child, defs, heading_index);
                 }
             }
         }
         BlockNode::BlockQuote(b) => {
             for child in &mut b.children {
-                resolve_reference_links_block(child, defs, heading_index, preserve_unresolved);
+                resolve_reference_links_block(child, defs, heading_index);
             }
         }
         BlockNode::Table(t) => {
             if let Some(caption) = &mut t.caption {
-                resolve_reference_links_inline(caption, defs, heading_index, preserve_unresolved);
+                resolve_reference_links_inline(caption, defs, heading_index);
             }
             for row in &mut t.rows {
                 for cell in &mut row.cells {
-                    resolve_reference_links_inline(
-                        &mut cell.children,
-                        defs,
-                        heading_index,
-                        preserve_unresolved,
-                    );
+                    resolve_reference_links_inline(&mut cell.children, defs, heading_index);
                 }
             }
         }
         BlockNode::Admonition(a) => {
             for child in &mut a.children {
-                resolve_reference_links_block(child, defs, heading_index, preserve_unresolved);
+                resolve_reference_links_block(child, defs, heading_index);
             }
         }
         BlockNode::Div(d) => {
             for child in &mut d.children {
-                resolve_reference_links_block(child, defs, heading_index, preserve_unresolved);
+                resolve_reference_links_block(child, defs, heading_index);
             }
         }
         BlockNode::DefinitionList(d) => {
             for item in &mut d.items {
                 for term in &mut item.terms {
-                    resolve_reference_links_inline(term, defs, heading_index, preserve_unresolved);
+                    resolve_reference_links_inline(term, defs, heading_index);
                 }
                 for definition in &mut item.definitions {
                     for child in definition {
-                        resolve_reference_links_block(
-                            child,
-                            defs,
-                            heading_index,
-                            preserve_unresolved,
-                        );
+                        resolve_reference_links_block(child, defs, heading_index);
                     }
                 }
             }
         }
         BlockNode::Figure(f) => {
-            resolve_reference_links_inline(
-                &mut f.caption,
-                defs,
-                heading_index,
-                preserve_unresolved,
-            );
+            resolve_reference_links_inline(&mut f.caption, defs, heading_index);
             match &mut f.target {
                 FigureTarget::BlockQuote(b) => {
                     for child in &mut b.children {
-                        resolve_reference_links_block(
-                            child,
-                            defs,
-                            heading_index,
-                            preserve_unresolved,
-                        );
+                        resolve_reference_links_block(child, defs, heading_index);
                     }
                 }
                 FigureTarget::Table(t) => {
                     if let Some(caption) = &mut t.caption {
-                        resolve_reference_links_inline(
-                            caption,
-                            defs,
-                            heading_index,
-                            preserve_unresolved,
-                        );
+                        resolve_reference_links_inline(caption, defs, heading_index);
                     }
                     for row in &mut t.rows {
                         for cell in &mut row.cells {
-                            resolve_reference_links_inline(
-                                &mut cell.children,
-                                defs,
-                                heading_index,
-                                preserve_unresolved,
-                            );
+                            resolve_reference_links_inline(&mut cell.children, defs, heading_index);
                         }
                     }
                 }
@@ -9883,19 +9825,23 @@ fn resolve_reference_links_inline(
     nodes: &mut Vec<InlineNode>,
     defs: &BTreeMap<String, LinkDef>,
     heading_index: &CrossrefIndex,
-    preserve_unresolved: bool,
 ) {
     let mut out = Vec::new();
     for mut node in std::mem::take(nodes) {
         match &mut node {
             InlineNode::Link(l) => {
                 if let Some(label) = &l.ref_label {
+                    // Every branch below KEEPS the node: an unresolved reference
+                    // is still a link (PART 12 §3a), so the only question is
+                    // whether a destination gets filled in. Reverting it to text
+                    // is what §3a forbids - it discarded the fact that the
+                    // author wrote a reference, and it did so only on the HTML
+                    // path, so one document had two shapes (carve#486).
                     if let Some(def) = defs.get(label) {
                         l.href = def.href.clone();
                         l.title = def.title.clone();
                         l.ref_label = None;
                         l.raw_ref = None;
-                        out.push(node);
                     } else if is_collapsed_reference(l) {
                         // Implicit heading reference: slugify the label the same
                         // way heading ids are generated, then resolve against the
@@ -9921,71 +9867,33 @@ fn resolve_reference_links_inline(
                             // both engines write the resolved link, so the authored
                             // `[x][]` plus its `[x]: url` line is not reproducible
                             // from the tree either way.
-                            out.push(node);
-                        } else if preserve_unresolved {
-                            out.push(node);
-                        } else {
-                            out.push(reverted_reference_text(l));
                         }
-                    } else if preserve_unresolved {
-                        out.push(node);
-                    } else {
-                        out.push(reverted_reference_text(l));
                     }
+                    out.push(node);
                 } else {
-                    resolve_reference_links_inline(
-                        &mut l.children,
-                        defs,
-                        heading_index,
-                        preserve_unresolved,
-                    );
+                    resolve_reference_links_inline(&mut l.children, defs, heading_index);
                     out.push(node);
                 }
             }
             InlineNode::Emphasis(e) => {
-                resolve_reference_links_inline(
-                    &mut e.children,
-                    defs,
-                    heading_index,
-                    preserve_unresolved,
-                );
+                resolve_reference_links_inline(&mut e.children, defs, heading_index);
                 out.push(node);
             }
             InlineNode::Span(s) => {
-                resolve_reference_links_inline(
-                    &mut s.children,
-                    defs,
-                    heading_index,
-                    preserve_unresolved,
-                );
+                resolve_reference_links_inline(&mut s.children, defs, heading_index);
                 out.push(node);
             }
             InlineNode::Extension(e) => {
-                resolve_reference_links_inline(
-                    &mut e.children,
-                    defs,
-                    heading_index,
-                    preserve_unresolved,
-                );
+                resolve_reference_links_inline(&mut e.children, defs, heading_index);
                 out.push(node);
             }
             InlineNode::CitationGroup(g) => {
                 for item in &mut g.items {
                     if let Some(prefix) = &mut item.prefix {
-                        resolve_reference_links_inline(
-                            prefix,
-                            defs,
-                            heading_index,
-                            preserve_unresolved,
-                        );
+                        resolve_reference_links_inline(prefix, defs, heading_index);
                     }
                     if let Some(locator) = &mut item.locator {
-                        resolve_reference_links_inline(
-                            locator,
-                            defs,
-                            heading_index,
-                            preserve_unresolved,
-                        );
+                        resolve_reference_links_inline(locator, defs, heading_index);
                     }
                 }
                 out.push(node);
@@ -9998,12 +9906,11 @@ fn resolve_reference_links_inline(
                         img.ref_label = None;
                         img.raw_ref = None;
                         out.push(node);
-                    } else if preserve_unresolved {
-                        out.push(node);
                     } else {
-                        // Unresolved image ref -> literal source. An image ref
-                        // never matches heading text (unlike a link ref).
-                        out.push(InlineNode::text(img.raw_ref.clone().unwrap_or_default()));
+                        // Unresolved image references stay as Image nodes. They
+                        // render from `raw_ref`, preserving the fact that the
+                        // author wrote a reference at all (PART 12 §3a).
+                        out.push(node);
                     }
                 } else {
                     out.push(node);
@@ -10015,10 +9922,9 @@ fn resolve_reference_links_inline(
     *nodes = out;
 }
 
-/// Promote a paragraph whose sole child is a (resolved) image to a block-level
-/// image, matching the standalone inline-image rule (`detect_block_image`) and
-/// carve-php. Recurses into container blocks. An unresolved reference image
-/// already became a `Text` node, so its paragraph is left untouched.
+/// Promote a paragraph whose sole child is a direct or resolved image to a
+/// block-level image, matching the standalone inline-image rule
+/// (`detect_block_image`) and carve-php. Recurses into container blocks.
 /// Length (in bytes) of a leading `^` + one-or-more whitespace caption marker
 /// (`RE_CAPTION = /^\^\s+/`), or `None` when the text does not open a caption.
 /// A caption line mirrors a heading's first line (`detect_heading`): `^` +
@@ -10106,9 +10012,8 @@ fn promote_block_images(blocks: &mut [BlockNode], figures_only: bool) {
         //
         // Only a REAL image (direct or resolved reference) promotes. An
         // unresolved reference image keeps its `ref_label` and renders as
-        // literal text; in HTML mode it is already a Text node here, so the
-        // guard only matters for the parse-only formatter path, where the
-        // unresolved Image survives.
+        // literal source inside the paragraph; promoting it would drop that
+        // required `<p>` wrapper.
         let single_image = !figures_only
             && matches!(
                 block,
@@ -10138,8 +10043,8 @@ fn promote_block_images(blocks: &mut [BlockNode], figures_only: bool) {
         // becomes a Figure, matching a direct-image figure and carve-php. A
         // reference image arrives here as `Paragraph[Image, SoftBreak,
         // "^ caption…"]` (the syntactic block-image/caption pass only knows the
-        // inline `![…](…)` form); an unresolved ref is a Text node (not an
-        // Image) so it stays literal. The caption inlines are already parsed
+        // inline `![…](…)` form); an unresolved ref keeps `ref_label` and stays
+        // literal. The caption inlines are already parsed
         // (paragraph interruption already stopped the caption at a block opener,
         // so a multi-line caption keeps its interior soft breaks); strip the
         // `^ ` marker from the leading Text.
@@ -10542,7 +10447,7 @@ fn collect_caption_title(
 /// PART 12 §1a: no node's children hold two adjacent `text` nodes.
 ///
 /// The parser splits a run wherever it had to make a decision -- a reference
-/// that never resolved and reverted to its source, an autolink unwrapped
+/// that never resolved and stayed as its reference node, an autolink unwrapped
 /// because links do not nest, a table cell rebuilt from several lines. Those
 /// splits are bookkeeping, not the document: publishing them lets two engines
 /// put out 1 node and 4 for the same characters, both valid against the schema,
@@ -10871,8 +10776,9 @@ fn enforce_no_nesting_inline(nodes: Vec<InlineNode>, inside_link: bool) -> Vec<I
     for node in nodes {
         match node {
             InlineNode::Link(mut link) => {
+                let unresolved = link.ref_label.is_some();
                 let children = enforce_no_nesting_inline(link.children, true);
-                if inside_link {
+                if inside_link && !unresolved {
                     // A nested link is dropped; only its (cleaned) text remains
                     // because the outermost destination already applies.
                     out.extend(children);

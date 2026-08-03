@@ -731,6 +731,9 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
 }
 
 fn render_link(node: &Link, ctx: &mut MarkdownContext, depth: usize) -> String {
+    if node.ref_label.is_some() && node.href.is_empty() {
+        return escape_text(&strip_controls(node.raw_ref.as_deref().unwrap_or_default()));
+    }
     ctx.link_depth += 1;
     let text = render_inlines(&node.children, ctx, depth);
     ctx.link_depth -= 1;
@@ -761,6 +764,9 @@ fn render_link(node: &Link, ctx: &mut MarkdownContext, depth: usize) -> String {
 }
 
 fn render_image(node: &Image) -> String {
+    if node.ref_label.is_some() && node.src.is_empty() {
+        return escape_text(&strip_controls(node.raw_ref.as_deref().unwrap_or_default()));
+    }
     let src = encode_markdown_destination(&node.src);
     let alt = escape_md_label(&strip_controls(&node.alt));
     if let Some(title) = &node.title {
