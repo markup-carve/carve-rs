@@ -569,12 +569,22 @@ fn render_list(node: &List, ctx: &mut CarveContext) -> String {
         out.push_str(&format!("{indent}{prefix}{first}\n"));
         let continuation = " ".repeat(prefix.len());
         for line in lines {
-            if line.is_empty() {
+            if line.is_empty() || line.chars().eq([VERBATIM_BLANK]) {
                 // A blank continuation line is emitted EMPTY, never indented to
                 // the content column: PART 11 section 7 forbids a whitespace-only
                 // line, because editors and CI that strip trailing whitespace
                 // rewrite one, and `fmt` would then report a diff on a file
                 // nobody edited (carve#375).
+                //
+                // A blank line INSIDE verbatim content arrives as the sentinel
+                // rather than as "", because `protect_verbatim` encodes it to
+                // keep whole-document normalization off it. That made it look
+                // like content here, so it was indented, and the indent stayed
+                // behind when the sentinel was restored to nothing - a
+                // whitespace-only line, from a code block in a list item
+                // (carve-rs#440). The sentinel is written through UNindented so
+                // it keeps protecting the line it stands for.
+                out.push_str(&line);
                 out.push('\n');
             } else {
                 out.push_str(&format!("{indent}{continuation}{line}\n"));
@@ -1256,6 +1266,10 @@ const ESCAPED_SPACE: &str = "\u{e010}";
 /// could not move there (carve-rs#404).
 const STAGED_SPACE: char = '\u{e011}';
 const STAGED_TAB: char = '\u{e012}';
+/// A blank line inside verbatim content, encoded so whole-document
+/// normalization leaves it alone. `restore_verbatim` turns it back into
+/// nothing.
+const VERBATIM_BLANK: char = '\u{e003}';
 
 fn resolve_nbsp_placeholder(text: &str, in_line_block: bool) -> String {
     if !in_line_block {
@@ -1329,7 +1343,7 @@ fn protect_verbatim(content: &str) -> String {
     let mut lines = Vec::new();
     for line in content.split('\n') {
         if line.is_empty() {
-            lines.push("\u{e003}".to_string());
+            lines.push(VERBATIM_BLANK.to_string());
             continue;
         }
         let stripped = line.trim_end_matches([' ', '\t']);
@@ -1382,7 +1396,7 @@ fn guard_thematic_break_lines(body: &str) -> String {
 fn restore_verbatim(text: &str) -> String {
     text.replace(STAGED_SPACE, " ")
         .replace(STAGED_TAB, "\t")
-        .replace('\u{e003}', "")
+        .replace(VERBATIM_BLANK, "")
         // U+E004 marks a paragraph line that must not begin at column 0. It
         // resolves AFTER normalize()'s trims, which would otherwise strip a
         // plain leading space when the paragraph is the document's first block.

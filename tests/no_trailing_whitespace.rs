@@ -91,3 +91,25 @@ fn a_blank_line_inside_a_list_item_is_empty() {
     assert_eq!(carve::to_html(&out), carve::to_html(src));
     assert_eq!(carve::to_carve(&out), out, "fmt is not idempotent");
 }
+
+/// A blank line inside verbatim content reaches the list-item writer as a
+/// SENTINEL, not as `""` - `protect_verbatim` encodes it so whole-document
+/// normalization leaves it alone. That made it look like content, so it was
+/// indented to the item's content column, and the indent stayed behind when the
+/// sentinel was restored to nothing (carve-rs#440).
+///
+/// The corpus sweep above covers this now that a document exercises it, but
+/// only by accident of one case existing. This pins the shape directly.
+#[test]
+fn a_blank_line_in_a_fenced_block_in_a_list_item_stays_empty() {
+    let out = carve::to_carve("- ```\n  a\n\n  b\n  ```\n- c\n");
+
+    assert_eq!(
+        offending_lines(&out),
+        Vec::<(usize, String)>::new(),
+        "fmt emitted a whitespace-only line for {out:?}"
+    );
+    assert_eq!(out, "- ```\n  a\n\n  b\n  ```\n- c\n");
+    // And it survives its own output, which is the property the indent broke.
+    assert_eq!(carve::to_carve(&out), out, "fmt is not idempotent");
+}
