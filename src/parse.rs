@@ -3636,6 +3636,21 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         if marker.content.starts_with('>') {
             let mut stream = item_marker_source(cur, marker.content, item_at);
             stream.append(collect_indented_block_mapped(cur, base_indent, content_col));
+            // A column-0 line after the item folds into the quote's open
+            // paragraph, exactly as it does when the quote is written on the
+            // NEXT line - the shape this branch used to disagree with itself
+            // about, ending the list where every other path continued it
+            // (carve#572). PART 1 S4 folds a lazy continuation into the
+            // innermost OPEN paragraph, and the guard is that there is one: an
+            // empty quote has none, so `- >` + text still ends the item.
+            // A BLANK line ends the item, so a line after one is not lazy.
+            // The collector consumes a trailing blank when the item collected
+            // nothing indented, so the test is the LINE JUST CONSUMED rather
+            // than the collected text, which no longer shows it.
+            let after_blank = cur.pos > 0 && is_blank_line(cur.lines[cur.pos - 1]);
+            if !after_blank && nested_ends_with_open_paragraph(&stream.source, options) {
+                collect_trailing_lazy(cur, &mut stream);
+            }
             // A blank line between the item's blocks loosens the list, whatever
             // the marker-line lead happens to be. This branch and the two beside
             // it build their item and `continue` past the loosening test the
