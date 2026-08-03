@@ -27,7 +27,11 @@ fn a_lone_marker_is_still_a_span_cell() {
     // The one case a glued marker does not win: `|<|` is a colspan in every
     // engine, and the whitespace-delimited `| < |` is the form the corpus pins
     // (98-table-span-marker-in-first-column).
-    assert!(body_row("|<|").contains("<td></td>"), "got {}", body_row("|<|"));
+    assert!(
+        body_row("|<|").contains("<td></td>"),
+        "got {}",
+        body_row("|<|")
+    );
     assert!(
         body_row("| < |").contains("<td></td>"),
         "got {}",
