@@ -167,7 +167,7 @@ fn first_block_pos(children: &[BlockNode]) -> Option<&Pos> {
     children.iter().find_map(block_pos)
 }
 
-fn block_pos(node: &BlockNode) -> Option<&Pos> {
+pub(crate) fn block_pos(node: &BlockNode) -> Option<&Pos> {
     match node {
         BlockNode::Heading(n) => n.pos.as_ref(),
         BlockNode::Paragraph(n) => n.pos.as_ref(),

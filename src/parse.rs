@@ -1355,6 +1355,15 @@ fn fill_offsets(blocks: &mut [BlockNode], line_starts: &[usize]) {
                 apply_inline_offsets(&mut f.caption, line_starts);
                 match &mut f.target {
                     FigureTarget::BlockQuote(q) => {
+                        // The quote's OWN span, which this arm skipped while
+                        // filling everything inside it: it kept line and column
+                        // and offsets of 0..0, so the quote selected nothing and
+                        // every block within it fell outside its own parent
+                        // (carve#565). Same defect the code-block arm below
+                        // records, one target along.
+                        if let Some(pos) = q.pos.as_mut() {
+                            apply_offsets(pos, line_starts);
+                        }
                         if let Some(attribution) = &mut q.attribution {
                             apply_inline_offsets(attribution, line_starts);
                         }
@@ -3322,6 +3331,39 @@ fn span_across_items(items: &[ListItem]) -> Option<Pos> {
     })
 }
 
+/// Widen each item's span to cover the blocks inside it.
+///
+/// An item's span is fixed when the item is BUILT, and the loop then attaches
+/// later blocks - an indented paragraph, a nested list, a quote, a `+`
+/// continuation - to `items.last_mut()`. Every one of those landed after the
+/// span was taken, so the item claimed its marker line and the rest of the item
+/// sat outside it: 55 nodes across the spec corpus, all of them invisible,
+/// because a span is compared against source text for `text` nodes alone
+/// (carve#565).
+///
+/// Widening after the fact rather than re-taking the span at each of the six
+/// push sites: the sites disagree about what they have in scope, and a rule
+/// that runs once cannot be half-applied by the next branch someone adds.
+fn widen_items_over_children(items: &mut [ListItem]) {
+    for item in items.iter_mut() {
+        let Some(mut pos) = item.pos else { continue };
+        for child in &item.children {
+            let Some(child_pos) = crate::ast_json::block_pos(child) else {
+                continue;
+            };
+            // LINE and COLUMN, not offsets: a span carries the pair at parse
+            // time and `fill_offsets` turns it into offsets afterwards, so
+            // comparing offsets here compares two zeroes and widens nothing.
+            if (child_pos.end_line, child_pos.end_column) > (pos.end_line, pos.end_column) {
+                pos.end_line = child_pos.end_line;
+                pos.end_column = child_pos.end_column;
+                pos.end_offset = child_pos.end_offset;
+            }
+        }
+        item.pos = Some(pos);
+    }
+}
+
 fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     let span_start = cur.pos;
     let first = cur.peek().unwrap();
@@ -3890,6 +3932,7 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             pos: span_of(cur, item_at, cur.pos, options),
         });
     }
+    widen_items_over_children(&mut items);
     BlockNode::List(List {
         // The cursor's own span when it can give one, else the extent of the
         // items themselves. A list inside a `+`-continued blockquote sits on
