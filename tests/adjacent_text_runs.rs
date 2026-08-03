@@ -1,8 +1,8 @@
 //! PART 12 §1a: a serialized node's children hold no two adjacent `text`
-//! nodes. Where the parser's internal tree has a run of them -- a reference
-//! that never resolved and reverted to its source, an autolink unwrapped
-//! because links do not nest, a table cell rebuilt from several lines -- they
-//! join into one on the way to the wire.
+//! nodes. Where the parser's internal tree has a run of them -- an autolink
+//! unwrapped because links do not nest, a nested link dropped to its own text,
+//! a table cell rebuilt from several lines -- they join into one on the way to
+//! the wire.
 //!
 //! The merge happens in the tree, not on the way out, because §6 requires
 //! `parse(x)` serialized and deserialized to equal `parse(x)`: an encoder that
@@ -39,14 +39,24 @@ fn paragraph_inlines(doc: &Document) -> &[InlineNode] {
 }
 
 #[test]
-fn an_unresolved_reference_link_is_published_as_one_text_node() {
-    // The reference never resolved, so it is literal text -- but the parser
-    // knows it as three pieces (before it, the reverted source, after it).
+fn an_unresolved_reference_link_is_published_as_a_link_between_two_runs() {
+    // It reverted to one text node before PART 12 section 3a, which is why this
+    // lived here as a coalescing case at all. It is a LINK now -- the tree
+    // records what the author wrote -- so the document is three nodes and none
+    // of them are adjacent text runs. The characters either side are still one
+    // run each, which is what section 1a has to say about it.
     let doc = published("A [missing][nope] ref stays literal.\n");
-    assert_eq!(
-        text_values(paragraph_inlines(&doc)),
-        vec!["A [missing][nope] ref stays literal."]
-    );
+    let inlines = paragraph_inlines(&doc);
+
+    assert_eq!(text_values(inlines), vec!["A ", " ref stays literal."]);
+    match &inlines[1] {
+        InlineNode::Link(l) => {
+            assert_eq!(l.href, "");
+            assert_eq!(l.ref_label.as_deref(), Some("nope"));
+            assert_eq!(l.raw_ref.as_deref(), Some("[missing][nope]"));
+        }
+        other => panic!("expected the unresolved reference to stay a link, got {other:?}"),
+    }
 }
 
 #[test]
@@ -93,21 +103,44 @@ fn an_escape_does_not_merge_into_the_text_around_it() {
 }
 
 #[test]
-fn a_merged_run_spans_from_the_first_piece_to_the_last() {
-    // The three pieces are contiguous, so the merged span is real: it selects
-    // exactly the text the node carries.
+fn a_published_run_beside_a_reference_selects_exactly_its_own_text() {
+    // This measured a MERGED run's span while an unresolved reference reverted
+    // to text and made the whole line one node. Under PART 12 section 3a the
+    // line is three nodes, so what is worth pinning is that each published span
+    // still selects exactly the characters its node carries -- including the
+    // link's, which is where a consumer most wants one: the author wrote a
+    // reference that does not resolve, and `raw_ref` has to BE that source.
     let source = "A [missing][nope] ref stays literal.\n";
     let doc = published(source);
-    let (value, pos) = match &paragraph_inlines(&doc)[0] {
-        InlineNode::Text(t) => (
-            t.value.clone(),
-            t.pos.expect("a contiguous run keeps its span"),
-        ),
-        other => panic!("expected text, got {other:?}"),
+    let inlines = paragraph_inlines(&doc);
+
+    let selects = |node: &InlineNode| -> (String, String) {
+        let (value, pos) = match node {
+            InlineNode::Text(t) => (t.value.clone(), t.pos.expect("a run keeps its span")),
+            InlineNode::Link(l) => (
+                l.raw_ref
+                    .clone()
+                    .expect("an unresolved reference keeps its source"),
+                l.pos.expect("a link keeps its span"),
+            ),
+            other => panic!("unexpected node {other:?}"),
+        };
+        (source[pos.start_offset..pos.end_offset].to_string(), value)
     };
-    assert_eq!(&source[pos.start_offset..pos.end_offset], value);
-    assert_eq!(pos.start_offset, 0);
-    assert_eq!(pos.start_column, 1);
+
+    for node in inlines {
+        let (selected, value) = selects(node);
+        assert_eq!(selected, value);
+    }
+
+    match &inlines[0] {
+        InlineNode::Text(t) => {
+            let pos = t.pos.expect("a run keeps its span");
+            assert_eq!(pos.start_offset, 0);
+            assert_eq!(pos.start_column, 1);
+        }
+        other => panic!("expected text, got {other:?}"),
+    }
 }
 
 #[test]
@@ -136,11 +169,19 @@ fn the_merge_happens_in_the_tree_because_section_6_requires_it() {
     // the merge cannot be a serialization step -- an encoder that joined runs
     // on the way out would satisfy §1a and break §6 on the same document,
     // because decoding its output could not reproduce the split tree behind it.
-    let source = "A [missing][nope] ref stays literal.\n";
+    // An autolink unwrapped inside a link label: links do not nest, so the
+    // parser leaves three runs behind where the document has one. (The
+    // unresolved reference that used to stand here splits nothing any more -
+    // it stays a link node, PART 12 section 3a.)
+    let source = "[pre <http://h> post](/u)\n";
     let doc = carve::parse_with_options(source, &carve::Options::new().with_positions(true));
+    let link = match &paragraph_inlines(&doc)[0] {
+        InlineNode::Link(l) => l,
+        other => panic!("expected a link, got {other:?}"),
+    };
     assert_eq!(
-        text_values(paragraph_inlines(&doc)),
-        vec!["A [missing][nope] ref stays literal."],
+        text_values(&link.children),
+        vec!["pre http://h post"],
         "parse() itself must already hold the merged run"
     );
     let decoded = carve::from_json(&carve::to_json(&doc)).expect("decodable");
@@ -364,11 +405,8 @@ const ONCE_SPLIT: [(&str, &str); 4] = [
     // An autolink unwrapped inside a link label (corpus 03-links-12), which is
     // where the corpus scan found the surviving run.
     ("[pre <http://h> post](/u)\n", "pre http://h post"),
-    // A reference that never resolved and reverted to its source.
-    (
-        "A [missing][nope] ref stays literal.\n",
-        "A [missing][nope] ref stays literal.",
-    ),
+    // A nested link inside a label, dropped to its text between two runs.
+    ("[pre [in](/i) post](/o)\n", "pre in post"),
     // A nested link dropped down to its own text.
     ("[a [b](/i) c](/o)\n", "a b c"),
     // Plain prose, which must not be split in the first place.

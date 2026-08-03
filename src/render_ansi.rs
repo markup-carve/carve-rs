@@ -519,6 +519,9 @@ fn render_inline(node: &InlineNode, ctx: &mut AnsiContext, depth: usize) -> Stri
         },
         InlineNode::Code(code) => style(&strip_controls(&code.value), FG_BRIGHT_YELLOW),
         InlineNode::Link(link) => {
+            if link.ref_label.is_some() && link.href.is_empty() {
+                return strip_controls(link.raw_ref.as_deref().unwrap_or_default());
+            }
             ctx.link_depth += 1;
             let text = render_inlines(&link.children, ctx, depth + 1);
             ctx.link_depth -= 1;
@@ -633,6 +636,9 @@ fn render_inline(node: &InlineNode, ctx: &mut AnsiContext, depth: usize) -> Stri
 }
 
 fn render_image(node: &Image) -> String {
+    if node.ref_label.is_some() && node.src.is_empty() {
+        return strip_controls(node.raw_ref.as_deref().unwrap_or_default());
+    }
     format!(
         "{}{}{}",
         style("[img:", FG_MAGENTA),

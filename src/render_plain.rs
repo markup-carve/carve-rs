@@ -117,7 +117,7 @@ fn render_block(node: &BlockNode, depth: usize) -> String {
         BlockNode::DefinitionList(list) => render_definition_list(&list.items, true, depth + 1),
         BlockNode::Figure(figure) => render_figure(figure, depth + 1),
         // Terminate the block image so the next block is not glued onto it.
-        BlockNode::BlockImage(image) => format!("{}\n\n", strip_controls(&image.alt)),
+        BlockNode::BlockImage(image) => format!("{}\n\n", render_image(image)),
         BlockNode::Extension(extension) => render_blocks(&extension.children, depth + 1),
         BlockNode::RawBlock(_) | BlockNode::AbbreviationDef(_) | BlockNode::Comment(_) => {
             String::new()
@@ -208,7 +208,7 @@ fn render_figure(node: &Figure, depth: usize) -> String {
         return String::new();
     }
     let target = match &node.target {
-        FigureTarget::Image(image) => strip_controls(&image.alt),
+        FigureTarget::Image(image) => render_image(image),
         FigureTarget::Table(table) => render_table(table).trim().to_string(),
         FigureTarget::BlockQuote(quote) => {
             render_block(&BlockNode::BlockQuote(quote.clone()), depth + 1)
@@ -274,8 +274,14 @@ fn render_inline(node: &InlineNode, depth: usize) -> String {
             _ => render_inlines_stateful(&emphasis.children, depth + 1),
         },
         InlineNode::Code(code) => strip_controls(&code.value),
-        InlineNode::Link(link) => render_inlines_stateful(&link.children, depth + 1),
-        InlineNode::Image(image) => strip_controls(&image.alt),
+        InlineNode::Link(link) => {
+            if link.ref_label.is_some() && link.href.is_empty() {
+                strip_controls(link.raw_ref.as_deref().unwrap_or_default())
+            } else {
+                render_inlines_stateful(&link.children, depth + 1)
+            }
+        }
+        InlineNode::Image(image) => render_image(image),
         InlineNode::Span(span) => render_inlines_stateful(&span.children, depth + 1),
         InlineNode::Math(math) => strip_controls(&math.content),
         InlineNode::RawInline(_) => String::new(),
@@ -334,6 +340,14 @@ fn render_inline(node: &InlineNode, depth: usize) -> String {
             .number
             .map(|n| n.to_string())
             .unwrap_or_else(|| "#".to_string()),
+    }
+}
+
+fn render_image(image: &Image) -> String {
+    if image.ref_label.is_some() && image.src.is_empty() {
+        strip_controls(image.raw_ref.as_deref().unwrap_or_default())
+    } else {
+        strip_controls(&image.alt)
     }
 }
 

@@ -344,18 +344,13 @@ fn a_captioned_image_places_the_figure_and_its_target() {
 }
 
 #[test]
-fn an_unresolved_reference_link_keeps_its_span_when_it_reverts() {
-    // `[text][missing]` has no definition, so it reverts to the literal source
-    // it occupied. That source IS the link's extent - only the node type
-    // changes - and rebuilding it as a bare text node dropped the span.
-    //
-    // The reverted form is where a position is wanted most: it is exactly the
-    // case where an author wrote a reference that does not resolve, and a tool
-    // reporting that has to say where.
-    // PART 12 §1a joins the three pieces the parser produced here (before it,
-    // the reverted source, after it) into one published node. They are
-    // contiguous, so the merged span is exact and still covers the reverted
-    // reference -- which is the guarantee this test is about.
+fn an_unresolved_reference_link_keeps_its_span() {
+    // `[text][missing]` has no definition, and under PART 12 section 3a it stays
+    // a LINK rather than reverting to the source it occupied. The span question
+    // is unchanged and is where a position is wanted most: an author wrote a
+    // reference that does not resolve, and a tool reporting that has to say
+    // where. So the link carries the extent, and the text either side carries
+    // its own -- three exact spans instead of one merged one.
     let source = "see [text][missing] here\n";
     let doc = parse_with_positions(source);
     let BlockNode::Paragraph(paragraph) = &doc.children[0] else {
@@ -365,13 +360,24 @@ fn an_unresolved_reference_link_keeps_its_span_when_it_reverts() {
     let spans: Vec<String> = paragraph
         .children
         .iter()
-        .filter_map(|node| match node {
-            carve::ast::InlineNode::Text(t) => Some(slice(source, t.pos.expect("text position"))),
-            _ => None,
+        .map(|node| match node {
+            carve::ast::InlineNode::Text(t) => slice(source, t.pos.expect("text position")),
+            carve::ast::InlineNode::Link(l) => slice(source, l.pos.expect("link position")),
+            other => panic!("unexpected node {other:?}"),
         })
         .collect();
 
-    assert_eq!(spans, vec!["see [text][missing] here"]);
+    assert_eq!(spans, vec!["see ", "[text][missing]", " here"]);
+
+    // And the span selects exactly what `raw_ref` says the author wrote.
+    let carve::ast::InlineNode::Link(link) = &paragraph.children[1] else {
+        panic!("expected the unresolved reference to stay a link");
+    };
+    assert_eq!(link.raw_ref.as_deref(), Some("[text][missing]"));
+    assert_eq!(
+        slice(source, link.pos.expect("link position")),
+        "[text][missing]"
+    );
 }
 
 #[test]

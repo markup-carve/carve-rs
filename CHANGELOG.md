@@ -9,6 +9,23 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **An unresolved reference is a link node, not reverted text** (PART 12 §3a,
+  carve#486, carve-php#624). A reference nothing defines reverted to a `Text`
+  node holding its source - but only on the HTML path; the formatter path kept
+  the node. So one document had two shapes depending on which entry point
+  produced it, the serialized tree published text where carve-js and carve-php
+  publish a link, and `fmt` rewrote `[a][]` as `\[a\]\[\]`, escaping brackets
+  the parser never interpreted. `[missing][nope]` now stays a `link` (an `image`
+  for `![alt][nope]`) carrying `ref` and `rawRef`, and the HTML, Markdown,
+  plain-text and ANSI writers reproduce that source the way the Carve writer
+  already did. No rendered output changes for any corpus document.
+
+  Two passes had to learn that such a node is not a link on the surface: a lone
+  unresolved reference image is NOT promoted to a block image, so it keeps its
+  `<p>`; and the links-never-nest pass leaves it alone, where unwrapping it to
+  its label discarded the source and made `[[x][missing]](/z)` link the word
+  `x`. The resolved-form half of §3a is open as carve#524 and is untouched here.
+
 - **An abbreviation defined inside a container now expands.** Two defects met
   here. `apply_abbreviations` collects definitions from the document's children
   alone, so one written inside a div, list item or block quote was never
