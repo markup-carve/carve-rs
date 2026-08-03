@@ -10,8 +10,13 @@
 //! reached neither the definition map's output nor the page. carve-js and
 //! carve-php both render these lines (#491).
 
-/// The reference-definition form. carve-js and carve-php both render the line
-/// AND resolve `[d]` elsewhere; this matches that.
+/// The reference-definition form. The line RENDERS and DEFINES NOTHING.
+///
+/// This test used to require the opposite of its second half: all three
+/// engines registered the definition while rendering the line, so it pinned
+/// that pairing and pointed at carve#557 for whether any of them should.
+/// carve#574 answered it - nothing inside verse is claimed - and carve-js and
+/// carve-php have both stopped registering here, so the assertion flipped.
 #[test]
 fn a_reference_definition_inside_a_line_block_is_text() {
     let html = carve::to_html("::: |\n[d]: http://x.de\n:::\n\nsee [d][]\n");
@@ -21,8 +26,8 @@ fn a_reference_definition_inside_a_line_block_is_text() {
         "the line disappeared: {html}"
     );
     assert!(
-        html.contains("href=\"http://x.de\""),
-        "the reference stopped resolving: {html}"
+        !html.contains("href=\"http://x.de\""),
+        "a definition inside verse registered: {html}"
     );
 }
 
