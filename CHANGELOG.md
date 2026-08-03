@@ -9,6 +9,16 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A hard break in a line block is placed even when the stanza's text is not**
+  (#480). A tab expands to placeholders and shifts every column after it within
+  the line, so the anchor machinery refuses that line and its inlines come out
+  unplaced - right for text, whose value stops being a slice of the source. A
+  break is not content on the line, though: it is the newline ENDING it, and tab
+  expansion does not move a line ending. Both breaks in a tab-bearing stanza had
+  no position where all 8 elsewhere in the corpus did.
+
+### Fixed
+
 - **An unresolved reference is a link node, not reverted text** (PART 12 §3a,
   carve#486, carve-php#624). A reference nothing defines reverted to a `Text`
   node holding its source - but only on the HTML path; the formatter path kept
