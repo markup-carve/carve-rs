@@ -96,9 +96,11 @@ fn resolved_reference_link_in_label_unwraps_to_display_text() {
 
 #[test]
 fn crossref_in_label_becomes_text_no_nested_anchor() {
-    // # H  then  [see </#H>](/outer): the crossref resolves to a Link only
-    // during resolution, so the post-resolution pass flattens it to its display
-    // text. carve-rs default heading ids are case-preserving, so the would-be
+    // # H  then  [see </#H>](/outer): a crossref is NOT resolved by the parser,
+    // so `enforce_no_nesting` never sees it -- it stays a `heading_ref` node and
+    // becomes a link only in the renderer, which is why each renderer that can
+    // emit a link has to apply the rule itself (carve-rs#436). carve-rs default
+    // heading ids are case-preserving, so the would-be
     // href is "#H"; what matters is that NO nested anchor survives and the inner
     // crossref became text inside the outer link.
     let html = carve::to_html("# H\n\n[see </#H>](/outer)");
@@ -152,5 +154,62 @@ fn autolink_nested_in_emphasis_in_label_unwraps() {
     assert_eq!(
         carve::to_html_with_options("[*em https://x.com*](/u)", &opts),
         "<p><a href=\"/u\"><strong>em https://x.com</strong></a></p>"
+    );
+}
+
+// The rule above is a property of the DOCUMENT, not of the HTML target, but
+// every test in this file asserted on `to_html` -- so when the Markdown and
+// ANSI renderers grew their own cross-reference resolution, neither inherited
+// it and nothing here could fail (carve-rs#436). These pin the same rule on the
+// other two targets that can express a link.
+
+#[test]
+fn crossref_in_label_does_not_nest_in_markdown() {
+    // A link inside a link is not valid Markdown: a consumer reparsing
+    // `[see [H](#H)](/outer)` gets something other than what the document says.
+    assert_eq!(
+        carve::to_markdown("# H\n\n[see </#H>](/outer)"),
+        "# H\n\n[see H](/outer)\n"
+    );
+}
+
+#[test]
+fn crossref_in_label_does_not_nest_in_ansi() {
+    // A nested link sequence ends with its own reset, which closes the OUTER
+    // link's styling early and leaves the rest of the label unstyled.
+    let ansi = carve::to_ansi("# H\n\n[see </#H>](/outer)");
+    assert!(
+        ansi.contains("\x1b[4m\x1b[34msee H\x1b[0m"),
+        "label should be one unbroken link sequence, got: {ansi:?}"
+    );
+    assert_eq!(
+        ansi.matches("\x1b[4m").count(),
+        1,
+        "exactly one link sequence expected, got: {ansi:?}"
+    );
+}
+
+#[test]
+fn unreferenced_heading_keeps_plain_markdown() {
+    // The `{#id}` suffix exists to keep a Markdown link's target resolvable on
+    // reparse. Once the crossref in the label is flattened to text there is no
+    // link to it left, so the suffix is dead weight -- and `# H {#H}` is not
+    // Markdown: a standard processor renders the braces literally.
+    let md = carve::to_markdown("# H\n\n[see </#H>](/outer)");
+    assert!(
+        !md.contains("{#H}"),
+        "no reference survives, so no id suffix should be emitted, got: {md:?}"
+    );
+}
+
+#[test]
+fn crossref_in_a_footnote_body_in_a_label_still_links() {
+    // A footnote body is not part of the anchor in the HTML target, and the
+    // other targets render it as a bracketed aside rather than inside the outer
+    // link text. So the depth resets at a footnote body and the inner reference
+    // survives -- matching carve-js.
+    assert_eq!(
+        carve::to_markdown("# H\n\n[x ^[see </#H>]](/outer)"),
+        "# H {#H}\n\n[x ^[see [H](#H)]](/outer)\n"
     );
 }
