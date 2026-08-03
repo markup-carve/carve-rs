@@ -7,7 +7,25 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **An abbreviation defined inside a container now expands.** Two defects met
+  here. `apply_abbreviations` collects definitions from the document's children
+  alone, so one written inside a div, list item or block quote was never
+  collected; and `apply_abbreviations_block` had no arm for a `:::` div, a block
+  extension or a definition list, so an abbreviation never expanded inside one
+  even when the definition sat at the top level where collection was never in
+  doubt. Both rendered as plain text where carve-js renders `<abbr>`.
+
 ### Changed
+
+- **An abbreviation definition written inside a container is a child of the
+  document** (carve-php#631, spec markup-carve/carve#518). PART 12 §7 puts a
+  definition at document level even when it was authored inside a container,
+  because its scope is the document wherever it sits - a footnote definition
+  already worked that way here. `fmt` therefore writes it after the container,
+  as it already does for a footnote definition. `pos` still records where the
+  author wrote it.
 
 - **Braces alone on a list-item marker line are a block-attribute line.**
   `- {a=b .c}` followed by an indented block attributes that block, instead of
