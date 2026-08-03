@@ -187,6 +187,9 @@ const IMPLEMENTED: &[&str] = &[
     "attribute-order-on-an-unwrapped-heading",
     "attribute-braces-on-a-list-item-marker-line",
     "implicit-heading-references-with-no-definition",
+    "a-marker-separator-is-a-space-never-a-tab",
+    "a-repeated-definition-which-one-wins",
+    "two-abbreviation-definitions",
 ];
 
 fn corpus_dir() -> PathBuf {
