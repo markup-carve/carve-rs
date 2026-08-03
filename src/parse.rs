@@ -7697,8 +7697,18 @@ fn parse_inline_context(
                     &mut buf_placeable,
                     &mut buf_src_delta,
                 );
+                // `hard_break = '\', newline`, so the span covers BOTH
+                // characters. Placing the newline alone left the backslash in
+                // no node at all: a break reporting one character where the
+                // construct is two, which nothing rendered differently and no
+                // checker could see (carve#549).
+                let backslash = if i > 0 && bytes[i - 1] == b'\\' {
+                    i - 1
+                } else {
+                    i
+                };
                 out.push(InlineNode::HardBreak(Break {
-                    pos: inline_pos(positions, base + i, base + i + 1),
+                    pos: inline_pos(positions, base + backslash, base + i + 1),
                 }));
                 i += 1;
                 continue;
