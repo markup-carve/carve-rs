@@ -5670,24 +5670,30 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         stanza_end = cur.pos;
         let stripped = strip_leading_columns(line, base_indent);
         let expanded = expand_line_block_ws(&stripped);
-        // A verse line is REWRITTEN when it carries leading whitespace: each
-        // space becomes one placeholder, so its columns still map back ONE TO
-        // ONE and the line stays placeable. A TAB does not - it expands to up
-        // to four placeholders from one source character, and every column
-        // after it would be reported too far right - so that line alone
-        // refuses. Per line, not per stanza: one tab-indented line no longer
-        // costs its neighbours their positions.
-        let placeable_indent = expanded == stripped || {
-            let source_ws = stripped
+        // A verse line stays placeable only while the rewrite is a SPACE
+        // PROMOTED IN PLACE: one space becomes one placeholder, so every column
+        // still maps back one to one and the node's value is still the source
+        // read differently. Anything else refuses.
+        //
+        // A TAB is the case that refuses. It expands to up to four placeholders
+        // from one source character, which pushes every column after it too far
+        // right - and even where the arithmetic happens to yield exactly one
+        // column, the character changed, so the value stops being a slice of
+        // the source and a consumer asked to highlight it gets a mismatch.
+        // carve-js publishes no position for the same lines.
+        //
+        // The check used to look only at the LEADING run, which was right while
+        // the rule only preserved the indent. Medial and trailing gaps are
+        // preserved too now (PART 9 §23), so a tab anywhere in the line has to
+        // count - `tab\tgap` kept a position while its value read `tab gap`.
+        //
+        // Per line, not per stanza: one tab-bearing line does not cost its
+        // neighbours their positions.
+        let placeable_indent = expanded.chars().count() == stripped.chars().count()
+            && expanded
                 .chars()
-                .take_while(|c| *c == ' ' || *c == '\t')
-                .count();
-            let expanded_ws = expanded
-                .chars()
-                .take_while(|c| *c == crate::NBSP_PLACEHOLDER)
-                .count();
-            source_ws == expanded_ws
-        };
+                .zip(stripped.chars())
+                .all(|(e, s)| e == s || (s == ' ' && e == crate::NBSP_PLACEHOLDER));
         stanza_col_map.push(if placeable_indent {
             stripped_col(cur.source_col(line_at), line, &stripped)
         } else {
