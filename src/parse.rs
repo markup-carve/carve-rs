@@ -5310,16 +5310,23 @@ fn parse_table(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         row.pos = span_of(cur, row_at, row_at + 1, options);
         rows.push(row);
     }
-    let table = Table {
+    // The caption FIRST, then the span: a caption is one of the table's
+    // children and sits after the last row, so a span taken before it is
+    // consumed stops short and leaves the caption's inlines outside their own
+    // parent. Struct-field order made that the default, and nothing could see
+    // it - a span is compared against source text for `text` nodes alone
+    // (carve#565).
+    let caption = consume_caption(cur, options);
+    // The `if caption.is_some()` that stood here returned `BlockNode::Table`
+    // and fell through to `BlockNode::Table`: two arms, one behavior, no way to
+    // fail. Removed rather than corrected, since the two are now genuinely the
+    // same.
+    BlockNode::Table(Table {
         pos: span_of(cur, span_start, cur.pos, options),
         attrs: None,
-        caption: consume_caption(cur, options),
+        caption,
         rows,
-    };
-    if table.caption.is_some() {
-        return BlockNode::Table(table);
-    }
-    BlockNode::Table(table)
+    })
 }
 
 fn is_table_continuation(line: &str) -> bool {
