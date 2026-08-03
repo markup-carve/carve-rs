@@ -154,6 +154,7 @@ fn parse_with_options_mode(source: &str, options: &Options<'_>, mode: ParseMode)
         &doc.footnote_defs,
         options.lowercase_heading_ids,
     );
+    hoist_abbreviation_defs(&mut doc);
     resolve_reference_links(
         &mut doc,
         &link_defs,
@@ -9307,6 +9308,31 @@ fn apply_abbreviations_block(block: &mut BlockNode, index: &AbbreviationIndex<'_
                 apply_abbreviations_block(child, index);
             }
         }
+        // A `:::` div and a block extension were missing, so an abbreviation
+        // never expanded inside one -- even with the definition at the top
+        // level, where collection was never in doubt. carve-js expands it.
+        BlockNode::Div(d) => {
+            for child in &mut d.children {
+                apply_abbreviations_block(child, index);
+            }
+        }
+        BlockNode::Extension(e) => {
+            for child in &mut e.children {
+                apply_abbreviations_block(child, index);
+            }
+        }
+        BlockNode::DefinitionList(dl) => {
+            for item in &mut dl.items {
+                for term in &mut item.terms {
+                    apply_abbreviations_inline(&mut term.children, index);
+                }
+                for def in &mut item.definitions {
+                    for child in &mut def.children {
+                        apply_abbreviations_block(child, index);
+                    }
+                }
+            }
+        }
         BlockNode::Figure(f) => {
             apply_abbreviations_inline(&mut f.caption, index);
             match &mut f.target {
@@ -9622,6 +9648,70 @@ fn reverted_reference_text(link: &Link) -> InlineNode {
         value: link.raw_ref.clone().unwrap_or_default(),
         pos: link.pos,
     })
+}
+
+/// Move every `abbreviation_def` authored inside a container up to the document.
+///
+/// PART 12 section 7: a definition is a child of the DOCUMENT even when it was
+/// written inside a div, a list item or a block quote, because its scope is the
+/// document wherever it sits. A footnote definition already worked that way
+/// here; an abbreviation definition did not (carve-php#631, spec carve#518).
+///
+/// This is not only a tree-shape question. `apply_abbreviations` collects
+/// definitions from `doc.children` alone, so an abbreviation written inside a
+/// container was never collected and never expanded -- carve-js and carve-php
+/// render `<abbr>` for it and this engine rendered plain text. Hoisting before
+/// that pass fixes the rendering along with the shape.
+///
+/// Appended at the end, which is where a footnote definition already lands.
+/// `pos` is untouched: it still records where the author wrote it, which is
+/// what section 7 relies on for nothing being lost by the move.
+fn hoist_abbreviation_defs(doc: &mut Document) {
+    let mut hoisted = Vec::new();
+    for block in &mut doc.children {
+        hoist_abbreviation_defs_block(block, &mut hoisted);
+    }
+    doc.children.append(&mut hoisted);
+}
+
+/// Strip definitions out of one block's children, recursing so a definition
+/// nested several containers deep still reaches the document.
+fn hoist_abbreviation_defs_block(block: &mut BlockNode, hoisted: &mut Vec<BlockNode>) {
+    match block {
+        BlockNode::BlockQuote(n) => hoist_from_blocks(&mut n.children, hoisted),
+        BlockNode::Div(n) => hoist_from_blocks(&mut n.children, hoisted),
+        BlockNode::Admonition(n) => hoist_from_blocks(&mut n.children, hoisted),
+        BlockNode::Extension(n) => hoist_from_blocks(&mut n.children, hoisted),
+        BlockNode::List(n) => {
+            for item in &mut n.items {
+                hoist_from_blocks(&mut item.children, hoisted);
+            }
+        }
+        BlockNode::DefinitionList(n) => {
+            for item in &mut n.items {
+                for def in &mut item.definitions {
+                    hoist_from_blocks(&mut def.children, hoisted);
+                }
+            }
+        }
+        // The rest hold no block children: a figure's target is a single node
+        // that cannot be a definition, and a table cell holds inlines.
+        _ => {}
+    }
+}
+
+/// Remove every definition from one block list, recursing into what stays.
+fn hoist_from_blocks(blocks: &mut Vec<BlockNode>, hoisted: &mut Vec<BlockNode>) {
+    let mut kept = Vec::with_capacity(blocks.len());
+    for mut child in std::mem::take(blocks) {
+        if matches!(child, BlockNode::AbbreviationDef(_)) {
+            hoisted.push(child);
+            continue;
+        }
+        hoist_abbreviation_defs_block(&mut child, hoisted);
+        kept.push(child);
+    }
+    *blocks = kept;
 }
 
 fn resolve_reference_links(
