@@ -353,3 +353,127 @@ fn a_block_extension_body_and_summary_are_coalesced() {
         "an extension's wrapped blocks and summary must be coalesced too"
     );
 }
+
+/// The documents whose parse tree used to hold a run of adjacent text nodes.
+///
+/// Read through `parse` DIRECTLY, not through the wire. Every test above goes
+/// via `from_json`, which is satisfied by an encoder-side merge and so could
+/// never fail while §6 was broken - `parse(x)` kept the split that
+/// `decode(encode(parse(x)))` removed. These are the checks that can fail.
+const ONCE_SPLIT: [(&str, &str); 4] = [
+    // An autolink unwrapped inside a link label (corpus 03-links-12), which is
+    // where the corpus scan found the surviving run.
+    ("[pre <http://h> post](/u)\n", "pre http://h post"),
+    // A reference that never resolved and reverted to its source.
+    (
+        "A [missing][nope] ref stays literal.\n",
+        "A [missing][nope] ref stays literal.",
+    ),
+    // A nested link dropped down to its own text.
+    ("[a [b](/i) c](/o)\n", "a b c"),
+    // Plain prose, which must not be split in the first place.
+    ("just one run\n", "just one run"),
+];
+
+#[test]
+fn parse_itself_coalesces_adjacent_runs() {
+    for (source, want) in ONCE_SPLIT {
+        let doc = carve::parse_with_options(source, &carve::Options::new().with_positions(true));
+        let mut runs = 0usize;
+        walk_document(&doc, &mut |inlines| {
+            for pair in inlines.windows(2) {
+                if matches!(pair[0], InlineNode::Text(_)) && matches!(pair[1], InlineNode::Text(_))
+                {
+                    runs += 1;
+                }
+            }
+        });
+        assert_eq!(runs, 0, "parse left an adjacent text run in {source:?}");
+        assert!(
+            find_text(&doc, want),
+            "expected one text node {want:?} in {source:?}"
+        );
+    }
+}
+
+#[test]
+fn parse_and_the_round_trip_agree_on_the_text_runs() {
+    // PART 12 §6 as it reads: the two sides are the SAME tree, not two shapes
+    // that serialize alike.
+    //
+    // Comparing `to_json(doc)` with `to_json(round_tripped)` would NOT do:
+    // under an encoder-side merge both sides pass through the encoder, so both
+    // come out merged and the comparison is satisfied while §6 is broken. Read
+    // the values off each TREE instead.
+    for (source, _) in ONCE_SPLIT {
+        let doc = carve::parse_with_options(source, &carve::Options::new().with_positions(true));
+        let round_tripped = carve::from_json(&carve::to_json(&doc)).expect("decodable");
+        assert_eq!(
+            all_text_values(&doc),
+            all_text_values(&round_tripped),
+            "decode(encode(parse(x))) != parse(x) for {source:?}"
+        );
+    }
+}
+
+fn all_text_values(doc: &Document) -> Vec<String> {
+    let mut values = Vec::new();
+    walk_document(doc, &mut |inlines| {
+        values.extend(text_values(inlines).into_iter().map(str::to_string));
+    });
+    values
+}
+
+#[test]
+fn a_merged_run_keeps_a_span_only_where_the_source_is_contiguous() {
+    // The unwrapped autolink leaves its `<` and `>` behind, so the joined value
+    // is not a slice of the source at any offset. PART 12 §4 rates a wrong span
+    // as worse than none, so the merged node publishes no position.
+    let doc = carve::parse_with_options(
+        "[pre <http://h> post](/u)\n",
+        &carve::Options::new().with_positions(true),
+    );
+    let mut checked = 0usize;
+    walk_document(&doc, &mut |inlines| {
+        for node in inlines {
+            if let InlineNode::Text(text) = node {
+                if text.value == "pre http://h post" {
+                    assert!(
+                        text.pos.is_none(),
+                        "a run joined across a gap must publish no span, got {:?}",
+                        text.pos
+                    );
+                    checked += 1;
+                }
+            }
+        }
+    });
+    assert_eq!(checked, 1, "the merged run was not found");
+
+    // A run that WAS contiguous keeps its span, so the rule above is a
+    // narrowing rather than "merged runs never place".
+    let plain = carve::parse_with_options(
+        "just one run\n",
+        &carve::Options::new().with_positions(true),
+    );
+    let mut placed = 0usize;
+    walk_document(&plain, &mut |inlines| {
+        for node in inlines {
+            if let InlineNode::Text(text) = node {
+                assert!(text.pos.is_some(), "an unsplit run lost its span");
+                placed += 1;
+            }
+        }
+    });
+    assert_eq!(placed, 1);
+}
+
+fn find_text(doc: &Document, want: &str) -> bool {
+    let mut found = false;
+    walk_document(doc, &mut |inlines| {
+        if text_values(inlines).contains(&want) {
+            found = true;
+        }
+    });
+    found
+}
