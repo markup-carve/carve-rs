@@ -65,16 +65,32 @@ fn runtime_field_is_set_only_from_bare_opened_list() {
 }
 
 #[test]
-fn serialized_ast_does_not_publish_runtime_field() {
+fn serialized_ast_publishes_the_bare_marker() {
+    // carve#480 gave the bare form a field beside `delim` and `bulletChar` -
+    // the author-choice fields it is exactly like. Before that every engine
+    // published an IDENTICAL payload for `. a` and `1. a`, so the spelling was
+    // lost on decode and none of them could do better: there was nowhere to put
+    // the distinction. This test used to assert that loss.
     let json = carve::to_json(&carve::parse(". a\n"));
-    assert!(!json.contains("bareMarker"), "{json}");
+    assert!(json.contains("\"bareMarker\":true"), "{json}");
+    // The RUST field name never rides the wire; only the JSON spelling does.
     assert!(!json.contains("bare_marker"), "{json}");
 
     let decoded = carve::from_json(&json).expect("decode json");
     let carve::BlockNode::List(list) = &decoded.children[0] else {
         panic!("decoded first block is not a list");
     };
-    assert!(!list.bare_marker);
+    assert!(list.bare_marker);
+    assert_eq!(carve::render_carve(&decoded), ". a\n");
+}
+
+#[test]
+fn a_numbered_list_publishes_no_bare_marker() {
+    // Absent at the default, matching how `delim` and `bulletChar` behave.
+    let json = carve::to_json(&carve::parse("1. a\n"));
+    assert!(!json.contains("bareMarker"), "{json}");
+
+    let decoded = carve::from_json(&json).expect("decode json");
     assert_eq!(carve::render_carve(&decoded), "1. a\n");
 }
 

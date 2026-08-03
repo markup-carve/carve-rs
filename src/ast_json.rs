@@ -237,6 +237,14 @@ fn write_block(out: &mut String, node: &BlockNode) {
             if let Some(bullet) = n.bullet_char {
                 w.field("bulletChar", |out| write_string(out, &bullet.to_string()));
             }
+            // Author choice like `delim` and `bulletChar`, so it rides the wire
+            // beside them (PART 12 §3, carve#480). Absent at the default, which
+            // is why this is `true`-only rather than a boolean field: without it
+            // `. a` decoded as `1. a` and no engine could do better, because
+            // none of them had anywhere to put the distinction.
+            if n.bare_marker {
+                w.field("bareMarker", |out| out.push_str("true"));
+            }
             write_attrs_field(&mut w, &n.attrs);
             write_pos_field(&mut w, &n.pos);
             w.finish();
@@ -955,7 +963,7 @@ fn decode_block(value: &Json) -> Result<BlockNode, AstJsonError> {
             ol_type: optional_string(obj, "olType")?
                 .map(decode_ol_type)
                 .transpose()?,
-            bare_marker: false,
+            bare_marker: optional_bool(obj, "bareMarker")?.unwrap_or(false),
             delim: optional_marker_char(obj, "delim")?,
             bullet_char: optional_marker_char(obj, "bulletChar")?,
             pos: optional_pos(obj, "list")?,
