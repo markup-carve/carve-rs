@@ -52,3 +52,23 @@ fn a_citation_definition_is_still_not_a_link_definition() {
     let html = carve::to_html("[@k]: v\n");
     assert!(html.contains("@k"), "the line should survive, got: {html}");
 }
+
+// The first fix rejected only the empty label and left these consumed. Both
+// have a `]` inside the label, which the production excludes at EVERY position:
+//
+//     reference_label = (character - ']' - '@'), {character - ']'} ;
+//
+// Found by re-running the same differential fuzz after that fix landed.
+
+#[test]
+fn a_label_of_one_bracket_is_not_a_definition() {
+    assert_eq!(carve::to_html("[]]: u\n\nZ\n"), "<p>[]]: u</p>\n<p>Z</p>");
+}
+
+#[test]
+fn a_label_containing_a_bracket_is_not_a_definition() {
+    assert_eq!(
+        carve::to_html("[a]b]: u\n\nZ\n"),
+        "<p>[a]b]: u</p>\n<p>Z</p>"
+    );
+}

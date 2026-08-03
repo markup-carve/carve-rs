@@ -625,9 +625,15 @@ fn parse_link_def_line(line: &str) -> Option<(&str, &str)> {
     // was consumed as a definition and rendered nothing, so it DISAPPEARED -
     // carve-js and carve-php both keep it as text (carve-rs#451).
     //
-    // Only EMPTY is rejected. A space is a `character`, so `[ ]` is a legal
-    // one-character label, which is what all three engines already do.
-    if label.is_empty() {
+    // Validate against the WHOLE production, not just the empty case. The first
+    // fix here rejected only `[]`, and left `[]]: u` and `[a]b]: u` consumed -
+    // both have a `]` inside the label, which the production excludes at every
+    // position, and both vanished the same way (carve-rs#451).
+    //
+    // A space IS a `character`, so `[ ]` is a legal one-character label, which
+    // is what all three engines do.
+    let first = label.chars().next()?;
+    if first == '@' || label.contains(']') {
         return None;
     }
     Some((label, target))
