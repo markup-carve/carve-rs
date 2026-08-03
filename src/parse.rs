@@ -387,7 +387,28 @@ fn extract_footnote_defs(
 fn parse_footnote_def_line(line: &str) -> Option<(&str, &str)> {
     let rest = line.strip_prefix("[^")?;
     let (label, body) = rest.split_once("]: ")?;
-    Some((label, trim_ascii_start(body)))
+    // The same two validations `parse_link_def_line` below carries, for the
+    // same reason: a line that is NOT a definition must stay on the page.
+    // Consuming it as one renders nothing, so the line disappears from the
+    // document entirely.
+    //
+    // A `]` inside the label - `[^a]b]: x`, `[^]]: x` - is excluded by the
+    // reference-label production at every position, so the line is a paragraph.
+    // This is the case a first fix on the link-def side missed (carve-rs#456);
+    // this function got neither fix.
+    if label.contains(']') {
+        return None;
+    }
+    // No content after the separator is not a definition either. `[^a]: ` was
+    // consumed with an empty body and vanished; carve-js and carve-php both
+    // keep it as `<p>[^a]:</p>`.
+    let body = trim_ascii_start(body);
+    if body.is_empty() {
+        return None;
+    }
+    // An EMPTY label with content (`[^]: x`) is consumed by all three engines.
+    // Left as is deliberately - that is an agreement, not a divergence.
+    Some((label, body))
 }
 
 #[derive(Clone)]
