@@ -6145,6 +6145,16 @@ fn detect_abbreviation_def(line: &str) -> Option<AbbreviationDef> {
     if abbr.is_empty() || !abbr.chars().all(char::is_alphanumeric) {
         return None;
     }
+    // `abbreviation_expansion = {character - newline}+` - ONE or more. An empty
+    // expansion is not a definition, and consuming the line DELETED it from the
+    // document (carve-js keeps it as `<p>*[A]:</p>`).
+    //
+    // Deliberately `is_empty()` and not a trimmed test: a space is a character,
+    // so `*[A]:··` has a one-character expansion and IS a definition. That is
+    // the production as written, and it is what carve-js does.
+    if expansion.is_empty() {
+        return None;
+    }
     Some(AbbreviationDef {
         abbr: abbr.to_string(),
         expansion: expansion.trim().to_string(),
