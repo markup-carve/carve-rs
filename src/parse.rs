@@ -10348,6 +10348,18 @@ fn coalesce_block(block: &mut BlockNode) {
                 }
             }
         }
+        BlockNode::Extension(e) => {
+            // Inline content does not only live in `children`: a `before_render`
+            // rewrite stashes a parsed title in `summary`, and an extension can
+            // wrap already-parsed blocks. A walk that stops at the carrier node
+            // leaves both uncoalesced.
+            if let Some(summary) = &mut e.summary {
+                coalesce_inlines(summary);
+            }
+            for child in &mut e.children {
+                coalesce_block(child);
+            }
+        }
         BlockNode::Figure(f) => {
             coalesce_inlines(&mut f.caption);
             match &mut f.target {
@@ -10389,6 +10401,19 @@ fn coalesce_inlines(nodes: &mut Vec<InlineNode>) {
             InlineNode::Footnote(n) => {
                 if let Some(inline) = &mut n.inline {
                     coalesce_inlines(inline);
+                }
+            }
+            // A citation item carries THREE inline arrays beside `children`:
+            // `prefix`, `locator` and `suffix`. `[see [missing][nope] @a]`
+            // publishes a prefix of two adjacent text nodes without this.
+            InlineNode::CitationGroup(group) => {
+                for item in &mut group.items {
+                    for field in [&mut item.prefix, &mut item.locator, &mut item.suffix]
+                        .into_iter()
+                        .flatten()
+                    {
+                        coalesce_inlines(field);
+                    }
                 }
             }
             _ => {}

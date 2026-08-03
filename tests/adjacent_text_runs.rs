@@ -251,6 +251,12 @@ fn walk_block(block: &BlockNode, visit: &mut impl FnMut(&[InlineNode])) {
             }
         }
         BlockNode::Figure(n) => inline_lists.push(&n.caption),
+        BlockNode::Extension(n) => {
+            if let Some(summary) = &n.summary {
+                inline_lists.push(summary);
+            }
+            child_blocks.extend(n.children.iter());
+        }
         _ => {}
     }
     for inlines in inline_lists {
@@ -272,6 +278,18 @@ fn walk_inlines(nodes: &[InlineNode], visit: &mut impl FnMut(&[InlineNode])) {
             InlineNode::CriticInsert(n) => Some(&n.children),
             InlineNode::CriticDelete(n) => Some(&n.children),
             InlineNode::Footnote(n) => n.inline.as_deref(),
+            InlineNode::CitationGroup(group) => {
+                for item in &group.items {
+                    for field in [&item.prefix, &item.locator, &item.suffix]
+                        .into_iter()
+                        .flatten()
+                    {
+                        visit(field);
+                        walk_inlines(field, visit);
+                    }
+                }
+                None
+            }
             _ => None,
         };
         if let Some(children) = children {
@@ -279,4 +297,59 @@ fn walk_inlines(nodes: &[InlineNode], visit: &mut impl FnMut(&[InlineNode])) {
             walk_inlines(children, visit);
         }
     }
+}
+
+// Coverage gaps found by review after the first pass landed: inline content
+// does not only live in `children`. Two node kinds carry it in fields the
+// original walk never reached, and both are reachable from a built-in
+// extension -- so the invariant held for the corpus and not for the vocabulary.
+
+#[test]
+fn a_citation_prefix_is_coalesced() {
+    // `prefix`, `locator` and `suffix` are inline arrays on a citation item,
+    // not `children`, so a walk that only follows `children` publishes runs
+    // inside them.
+    let citations = carve::Citations::new();
+    let options = carve::Options::new()
+        .with_extension(&citations)
+        .with_positions(true);
+    let doc = carve::parse_with_options("[see [missing][nope] @a, p. 3].\n\n[@a]: A.\n", &options);
+    let decoded = carve::from_json(&carve::to_json(&doc)).expect("decodable");
+    let mut runs = 0usize;
+    walk_document(&decoded, &mut |inlines| {
+        for pair in inlines.windows(2) {
+            if matches!(pair[0], InlineNode::Text(_)) && matches!(pair[1], InlineNode::Text(_)) {
+                runs += 1;
+            }
+        }
+    });
+    assert_eq!(runs, 0, "a citation's inline fields must be coalesced too");
+}
+
+#[test]
+fn a_block_extension_body_and_summary_are_coalesced() {
+    // An extension that wraps parsed blocks in `BlockNode::Extension` puts them
+    // behind a node the walk has to descend through; its `summary` is a second
+    // inline field beside `children`.
+    let details = carve::Details::new();
+    let options = carve::Options::new()
+        .with_extension(&details)
+        .with_positions(true);
+    let doc = carve::parse_with_options(
+        "::: details \"see [missing][nope] here\"\nA [missing][nope] ref stays literal.\n:::\n",
+        &options,
+    );
+    let decoded = carve::from_json(&carve::to_json(&doc)).expect("decodable");
+    let mut runs = 0usize;
+    walk_document(&decoded, &mut |inlines| {
+        for pair in inlines.windows(2) {
+            if matches!(pair[0], InlineNode::Text(_)) && matches!(pair[1], InlineNode::Text(_)) {
+                runs += 1;
+            }
+        }
+    });
+    assert_eq!(
+        runs, 0,
+        "an extension's wrapped blocks and summary must be coalesced too"
+    );
 }
