@@ -1,5 +1,13 @@
 use crate::ast::*;
-const MAX_RENDER_DEPTH: usize = 200;
+/// The renderer's recursion bound, and it must sit ABOVE the parser's.
+///
+/// The guard is for hand-built ASTs, which nest without limit. It is not a
+/// language rule, and a number at or below `parse::MAX_NESTING_DEPTH` made it
+/// one: the renderer then emitted nothing for the innermost blocks of a
+/// document the parser had just accepted, deleting content with no error
+/// (issue 517). Same reasoning as `MAX_JSON_DEPTH` in ast_json.rs, which is
+/// above the parser cap because the two counts measure different things.
+pub const MAX_RENDER_DEPTH: usize = crate::parse::MAX_NESTING_DEPTH + 32;
 
 struct CarveContext {
     block_depth: usize,

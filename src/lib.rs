@@ -72,7 +72,7 @@ pub use profile::{DisallowedAction, LinkPolicy, Profile, ProfileViolation, Profi
 pub use profile_filter::{apply_profile, ProfileFilterResult};
 pub use render::{render_html, render_html_with_options};
 pub use render_ansi::{render_ansi, render_ansi_with_options};
-pub use render_carve::render_carve;
+pub use render_carve::{render_carve, MAX_RENDER_DEPTH};
 pub use render_markdown::{render_markdown, render_markdown_with_options};
 pub use render_plain::{render_plain_text, render_plain_text_with_options};
 pub use stamp::{needs_review, read_stamp, stamp_carve, Stamp, StampForm};
