@@ -62,7 +62,7 @@ fn on_big_stack<F: FnOnce() + Send + 'static>(f: F) {
 #[test]
 fn deeply_nested_blockquote_degrades_without_overflow() {
     on_big_stack(|| {
-        let src = ">".repeat(5000) + " x\n";
+        let src = "> ".repeat(5000) + "x\n";
         let html = carve::to_html(&src); // must return, not abort
         assert!(html.contains("blockquote"), "expected some quote nesting");
     });

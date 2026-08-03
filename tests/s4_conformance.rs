@@ -173,9 +173,9 @@ fn consecutive_plus_continuations_attach_separate_blocks() {
     // Each `+` attaches its own block, bounded to the lines before the next `+`
     // marker, so two quotes stay separate (matching carve-js / carve-php).
     let two_quotes = |s: &str| carve::to_html(s).matches("<blockquote>").count() == 2;
-    assert!(two_quotes("- a\n+\n>q1\n+\n>q2"));
+    assert!(two_quotes("- a\n+\n> q1\n+\n> q2"));
     // first-block form `- +` is bounded the same way.
-    assert!(two_quotes("- +\n>q1\n+\n>q2"));
+    assert!(two_quotes("- +\n> q1\n+\n> q2"));
     // the bounding is fence-aware: a `+` INSIDE a fenced code block is content,
     // so the whole fence (with its `+` line) is one attached code block.
     // a continuation block that IS a list keeps its own `+` continuations:

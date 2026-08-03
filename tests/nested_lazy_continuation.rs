@@ -2,7 +2,7 @@
 //! many containers it failed to match.
 //!
 //! This engine applied that at depth 1 and not at depth 2: `> a` / `b` folded,
-//! `> a` / `>> b` / `c` closed both quotes and started a sibling paragraph.
+//! `> a` / `> > b` / `c` closed both quotes and started a sibling paragraph.
 //! carve-js and carve-php fold at both depths (carve-rs#452).
 //!
 //! The depth-1 behavior is what settles it. Read strictly, PART 1 S4 ("the
@@ -15,18 +15,16 @@
 #[test]
 fn a_lazy_line_continues_a_nested_quote() {
     assert_eq!(
-        carve::to_html("> a\n>> b\nc\n"),
+        carve::to_html("> a\n> > b\nc\n"),
         "<blockquote>\n  <p>a</p>\n  <blockquote><p>b\nc</p></blockquote>\n</blockquote>"
     );
 }
 
 #[test]
-fn the_spaced_spelling_behaves_the_same() {
-    // `> > b` and `>> b` are the same document; the divergence was about depth,
-    // not about the marker spelling.
+fn the_unspaced_spelling_stays_literal() {
     assert_eq!(
-        carve::to_html("> a\n> > b\nc\n"),
-        carve::to_html("> a\n>> b\nc\n")
+        carve::to_html("> a\n>> b\nc\n"),
+        "<blockquote><p>a\n&gt;&gt; b\nc</p></blockquote>"
     );
 }
 
@@ -42,7 +40,7 @@ fn depth_one_is_unchanged() {
 
 #[test]
 fn three_levels_fold_into_the_innermost() {
-    let html = carve::to_html("> a\n>> b\n>>> c\nd\n");
+    let html = carve::to_html("> a\n> > b\n> > > c\nd\n");
     assert!(
         html.contains("c\nd"),
         "the lazy line should join the innermost paragraph, got: {html}"
@@ -53,7 +51,7 @@ fn three_levels_fold_into_the_innermost() {
 fn a_block_opener_still_ends_the_quote() {
     // Laziness folds PLAIN text. A visible opener after a nested quote closes
     // it and starts that block outside, exactly as at depth 1.
-    let html = carve::to_html("> a\n>> b\n# H\n");
+    let html = carve::to_html("> a\n> > b\n# H\n");
     assert!(
         html.contains("</blockquote>") && html.contains("<h1"),
         "a heading must end the quote, got: {html}"
@@ -66,7 +64,7 @@ fn a_block_opener_still_ends_the_quote() {
 
 #[test]
 fn a_blank_line_still_ends_the_quote() {
-    let html = carve::to_html("> a\n>> b\n\nc\n");
+    let html = carve::to_html("> a\n> > b\n\nc\n");
     assert!(
         html.contains("<p>c</p>") && !html.contains("b\nc"),
         "a blank line ends the quote, got: {html}"
