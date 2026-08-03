@@ -543,20 +543,11 @@ fn extract_link_defs(source: &str) -> (String, BTreeMap<String, LinkDef>) {
             // A definition-shaped line inside a line block is inline content, so
             // it renders; blanking it here is what made it disappear (#491).
             //
-            // It is still REGISTERED, which is what carve-js and carve-php do.
-            // Whether any of the three should is markup-carve/carve#557; this
-            // change is only about the line surviving, which is the part the
-            // other two already agree on.
-            if let Some((label_part, target_part)) =
-                parse_link_def_line(strip_container_prefixes(line).bare)
-            {
-                if !label_part.starts_with('@') && !target_part.trim().is_empty() {
-                    defs.insert(
-                        label_part.to_string(),
-                        parse_link_def_target(target_part.trim()),
-                    );
-                }
-            }
+            // It is not REGISTERED either. That was left in deliberately while
+            // carve#557 was open - the three engines all registered here, and
+            // this change was only about the line surviving. carve#574 answered
+            // it: nothing inside verse is claimed, so a definition-shaped line
+            // renders and defines nothing.
             body.push(line.to_string());
             // The RAW line - see the note in extract_footnote_defs.
             if exact_colon_fence_len(line) == Some(fence_len) {
