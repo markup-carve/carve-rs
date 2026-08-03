@@ -522,8 +522,10 @@ fn strip_prepass_blockquote_prefix(line: &str) -> Option<&str> {
         return None;
     }
     i += 1;
-    if bytes.get(i) == Some(&b' ') {
-        i += 1;
+    match bytes.get(i) {
+        None => {}
+        Some(b' ') => i += 1,
+        _ => return None,
     }
     Some(&line[i..])
 }
@@ -700,7 +702,10 @@ fn strip_container_prefixes_keep_indent(mut line: &str) -> String {
 
 fn strip_blockquote_prefix(line: &str) -> Option<&str> {
     let rest = line.strip_prefix('>')?;
-    Some(rest.strip_prefix(' ').unwrap_or(rest))
+    if rest.is_empty() {
+        return Some(rest);
+    }
+    rest.strip_prefix(' ')
 }
 
 fn parse_link_def_target(target: &str) -> LinkDef {
@@ -1773,7 +1778,7 @@ fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<BlockNode>
             pos,
         }));
     }
-    if line.starts_with('>') {
+    if strip_blockquote_prefix(line).is_some() {
         return Some(parse_blockquote(cur, options));
     }
     if is_list_marker(line) {
@@ -2578,11 +2583,10 @@ fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     let mut para_open = false;
     let mut in_fence: Option<FenceOpen> = None;
     while let Some(line) = cur.peek() {
-        if let Some(rest) = line.strip_prefix('>') {
+        if let Some(stripped) = strip_blockquote_prefix(line) {
             let source_line = cur.source_line(cur.pos);
             let at = cur.pos;
             cur.consume();
-            let stripped = rest.strip_prefix(' ').unwrap_or(rest);
             // The quote marker (and its optional space) is a pure prefix, so the
             // quoted line's columns are knowable in the document.
             let stripped_at = stripped_col(cur.source_col(at), line, stripped);
@@ -2601,10 +2605,10 @@ fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                     // matching closer ahead (§10); else it is inline verbatim.
                     let has_closer = cur.lines[cur.pos..]
                         .iter()
-                        .take_while(|l| l.starts_with('>'))
+                        .take_while(|l| strip_blockquote_prefix(l).is_some())
                         .any(|l| {
-                            let s = l.strip_prefix('>').unwrap_or(l);
-                            is_fence_close(s.strip_prefix(' ').unwrap_or(s), open)
+                            let s = strip_blockquote_prefix(l).unwrap_or(l);
+                            is_fence_close(s, open)
                         });
                     if has_closer {
                         in_fence = Some(open);
@@ -2627,11 +2631,8 @@ fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 let rest_stripped: Vec<&str> = if detect_fence_open(stripped).is_some() {
                     cur.lines[cur.pos..]
                         .iter()
-                        .take_while(|l| l.starts_with('>'))
-                        .map(|l| {
-                            let s = l.strip_prefix('>').unwrap_or(l);
-                            s.strip_prefix(' ').unwrap_or(s)
-                        })
+                        .take_while(|l| strip_blockquote_prefix(l).is_some())
+                        .map(|l| strip_blockquote_prefix(l).unwrap_or(l))
                         .collect()
                 } else {
                     Vec::new()
@@ -2684,7 +2685,7 @@ fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             let mut attached = LineBuffer::default();
             while let Some(&next) = cur.lines.get(cur.pos) {
                 if is_blank_line(next)
-                    || next.starts_with('>')
+                    || strip_blockquote_prefix(next).is_some()
                     || (trim_ascii(next) == "+" && indent_columns(next) == 0)
                 {
                     break;
@@ -4466,7 +4467,7 @@ fn interrupts_paragraph(cur: &mut LineCursor<'_>, line: &str) -> bool {
     // other visible blocks interrupt.
     if detect_heading(line).is_some()
         || detect_thematic_break(line)
-        || line.starts_with('>')
+        || strip_blockquote_prefix(line).is_some()
         // A definition-list term `:: ` is a first-class block opener (§24 C3):
         // it interrupts at column 0 and nests at the content column, uniform
         // with quote/heading/fence/table. `is_definition_list_start` requires a
@@ -4549,7 +4550,7 @@ fn interrupts_paragraph_with_rest(line: &str, rest: &[&str]) -> bool {
     }
     if detect_heading(line).is_some()
         || detect_thematic_break(line)
-        || line.starts_with('>')
+        || strip_blockquote_prefix(line).is_some()
         // A definition-list term `:: ` is a first-class block opener (§24 C3):
         // it interrupts at column 0 and nests at the content column, uniform
         // with quote/heading/fence/table. `is_definition_list_start` requires a
