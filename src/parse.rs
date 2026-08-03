@@ -2552,11 +2552,30 @@ fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 // open and lazy continuation stays in the quote (strict column-0
                 // rule, docs/divergence-from-djot.md §11) -- uniform with the
                 // opener paths in parse_block / interrupts_paragraph.
-                para_open = !is_blank_line(stripped)
-                    && (stripped.starts_with([' ', '\t'])
-                        || detect_container_open(stripped).is_none())
-                    && !trim_ascii_start(stripped).starts_with("%%")
-                    && !interrupts_paragraph_with_rest(stripped, &rest_stripped);
+                // Look THROUGH any further quote markers before deciding.
+                // A lazy line continues the innermost OPEN PARAGRAPH, however
+                // many containers it failed to match, so what matters is
+                // whether the innermost quoted content leaves a paragraph open
+                // - not whether this line opens another quote.
+                //
+                // Without this, `>> b` stripped to `> b`, which reads as a
+                // container opener, so the paragraph closed and a following
+                // bare line could not fold. That made laziness work at depth 1
+                // and not at depth 2, which is not a reading of any rule: PART
+                // 1 S4's strict wording would close the quote at depth 1 too,
+                // and nothing does that (markup-carve/carve#506).
+                let innermost = {
+                    let mut line = stripped;
+                    while let Some(rest) = strip_blockquote_prefix(line) {
+                        line = rest;
+                    }
+                    line
+                };
+                para_open = !is_blank_line(innermost)
+                    && (innermost.starts_with([' ', '\t'])
+                        || detect_container_open(innermost).is_none())
+                    && !trim_ascii_start(innermost).starts_with("%%")
+                    && !interrupts_paragraph_with_rest(innermost, &rest_stripped);
             }
             inner.push_at(stripped.to_string(), source_line, stripped_at);
             continue;
