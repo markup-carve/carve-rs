@@ -4380,6 +4380,7 @@ fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     // literal (strict column-0 rule).
     let at_content_column = cur.peek().is_some_and(|l| !l.starts_with([' ', '\t']));
     let mut lines: Vec<&str> = Vec::new();
+    let mut suppress_colon_interrupt = false;
     while let Some(line) = cur.peek() {
         if is_blank_line(line) {
             break;
@@ -4387,9 +4388,6 @@ fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         // First line is always part of the paragraph; from the second on, a
         // visible block opener interrupts (§10).
         let line_owned = line.to_string();
-        let suppress_colon_interrupt = lines
-            .iter()
-            .any(|line| is_invalid_colon_fence_opener_text(line));
         if !lines.is_empty()
             && interrupts_paragraph(cur, &line_owned)
             && !(suppress_colon_interrupt && is_colon_fence_opener_shape(&line_owned))
@@ -4400,7 +4398,9 @@ fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         // Leading indentation is not significant in a paragraph (djot has no
         // indented code blocks); strip it so an indented line like ` c` renders
         // as `<p>c</p>`, matching list-item continuation handling.
-        lines.push(trim_ascii_start(line));
+        let trimmed = trim_ascii_start(line);
+        suppress_colon_interrupt |= is_invalid_colon_fence_opener_text(trimmed);
+        lines.push(trimmed);
     }
     // A paragraph never carries its OWN trailing attribute block: a standalone
     // `{...}` line floats forward (handled via interrupts_paragraph + the

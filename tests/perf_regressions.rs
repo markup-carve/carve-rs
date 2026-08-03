@@ -57,6 +57,27 @@ fn many_unterminated_colon_fence_openers_do_not_rescan_document() {
 }
 
 #[test]
+fn long_single_paragraph_does_not_rescan_prior_lines() {
+    let mut source = String::new();
+    for i in 0..20_000 {
+        writeln!(source, "continuation line {i} of one big paragraph here").unwrap();
+    }
+
+    let start = Instant::now();
+    let html = carve::to_html(&source);
+
+    assert!(
+        html.contains("one big paragraph"),
+        "expected paragraph output"
+    );
+    assert!(
+        start.elapsed().as_secs_f32() < MAX_SECS,
+        "long single-paragraph parse took {:?}",
+        start.elapsed()
+    );
+}
+
+#[test]
 fn distinct_fence_length_openers_parse_bounded() {
     // Every line opens an unterminated colon fence of a DISTINCT length. Fence
     // lengths cycle in a bounded range so total input bytes stay linear; this
