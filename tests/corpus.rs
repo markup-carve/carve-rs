@@ -194,6 +194,8 @@ const IMPLEMENTED: &[&str] = &[
     "two-abbreviation-definitions",
     "an-abbreviation-definition-is-recognized-only-at-document-level",
     "a-list-item-does-not-define-an-abbreviation-either",
+    "a-comment-is-recognized-at-any-column",
+    "a-definition-below-every-content-column-folds-as-text",
 ];
 
 fn corpus_dir() -> PathBuf {
@@ -699,4 +701,8 @@ corpus_test!(
 corpus_test!(
     c_flush_left_line_needs_an_open_paragraph,
     "a-flush-left-line-needs-an-open-paragraph-to-fold-into"
+);
+corpus_test!(
+    c_comment_is_recognized_at_any_column,
+    "a-comment-is-recognized-at-any-column"
 );

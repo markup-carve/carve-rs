@@ -4731,7 +4731,32 @@ fn block_ends_with_heading(block: Option<&BlockNode>) -> bool {
 /// and must stay INSIDE the item rather than ending it. A code block or table
 /// has no open paragraph, so it does NOT fold (the dedented line ends the item).
 fn nested_ends_with_open_paragraph(nested: &str, options: &Options<'_>) -> bool {
-    block_ends_with_open_paragraph(parse_blocks_with_options(nested, options).last())
+    let blocks = parse_blocks_with_options(nested, options);
+    // A comment renders NOTHING, so it closes no paragraph and must not end the
+    // item either (§24 C3, carve#624). `- a` / ` %% c` / `b` folds `b` into the
+    // item, where a VISIBLE block in the comment's place would end it - the
+    // comment is consumed without the lazy frame, which keeps it invisible and
+    // leaves the item open. Look past a trailing run of comments at whatever
+    // they were sitting on.
+    //
+    // Comments ONLY, unlike the two `renders_nothing` checks elsewhere in this
+    // file, which also count an abbreviation definition. Inside an item there is
+    // no such node to count: a definition written there is not a definition at
+    // all (carve#611), it is the literal text the author typed, so it is visible
+    // and closes nothing to look past. Both engines agree byte for byte -
+    // `- a` / `  *[HTML]: x` / `b` is one item holding all three lines.
+    let mut end = blocks.len();
+    while end > 0 && matches!(blocks[end - 1], BlockNode::Comment(_)) {
+        end -= 1;
+    }
+    if end == 0 {
+        // Everything collected renders nothing, so the still-open paragraph is
+        // the one on the MARKER line. An empty collection is a different thing
+        // and keeps the old answer.
+        return !blocks.is_empty();
+    }
+
+    block_ends_with_open_paragraph(blocks.get(end - 1))
 }
 
 fn block_ends_with_open_paragraph(block: Option<&BlockNode>) -> bool {
