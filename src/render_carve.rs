@@ -18,6 +18,9 @@ struct CarveContext {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum EscapeMode {
     Minimal,
+    /// Minimal, plus the escape for a caption marker - `^` followed by a space
+    /// at the start of a block line. The middle step in `render_carve`.
+    MinimalWithCaptionMarkers,
     Conservative,
 }
 
@@ -25,10 +28,32 @@ pub fn render_carve(doc: &Document) -> String {
     let minimal = render_with_escapes(doc, EscapeMode::Minimal);
     let conservative = render_with_escapes(doc, EscapeMode::Conservative);
     if minimal == conservative || escaping_is_redundant(&minimal, &conservative) {
-        minimal
-    } else {
-        conservative
+        return minimal;
     }
+    // The minimal form changed the parse, and the blunt answer is to escape
+    // EVERY candidate in the document. One dangerous character then pulls
+    // escapes onto characters that were never at risk: that is how
+    // `\^ Figure 1: moon` became `\^ Figure 1\: moon`, a colon escape that
+    // changes no parse in any engine.
+    //
+    // So try one step in between - minimal, plus the escape for the construct
+    // a line-initial `^ ` forms. If that reproduces the conservative parse it
+    // is the least escaping that preserves meaning, which is what PART 11 §4
+    // asks for.
+    //
+    // This replaces an UNCONDITIONAL caption escape (carve-rs#558, mine). That
+    // could not tell corpus 158, where the caret is load-bearing because the
+    // writer dedents the image to column 0, from `![a][nope]` + `^ cap`, where
+    // the image resolves to nothing, the caption promotes nothing, and the bare
+    // caret changes no parse. Asking the parser tells them apart; a rule about
+    // position cannot (carve-rs#559).
+    let with_caption_escapes = render_with_escapes(doc, EscapeMode::MinimalWithCaptionMarkers);
+    if with_caption_escapes != minimal
+        && escaping_is_redundant(&with_caption_escapes, &conservative)
+    {
+        return with_caption_escapes;
+    }
+    conservative
 }
 
 fn render_with_escapes(doc: &Document, escape_mode: EscapeMode) -> String {
@@ -1560,7 +1585,8 @@ fn escape_text(text: &str, mode: EscapeMode, opens_block_line: bool) -> String {
         let caret_opens_a_caption =
             ch == '^' && at_line_start && chars.peek().is_some_and(|c| *c == ' ' || *c == '\t');
         at_line_start = ch == '\n';
-        let unconditional = matches!(ch, '\\' | '`' | '"' | '\'') || caret_opens_a_caption;
+        let force_caption = caret_opens_a_caption && mode != EscapeMode::Minimal;
+        let unconditional = matches!(ch, '\\' | '`' | '"' | '\'') || force_caption;
         let candidate = matches!(
             ch,
             '*' | '_'
