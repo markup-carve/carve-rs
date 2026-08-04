@@ -168,13 +168,23 @@ fn a_marker_at_the_sublists_own_column_is_still_a_sibling() {
 }
 
 #[test]
-fn two_columns_in_still_nests() {
-    // Rule B: a bullet opens a list at any indent from two columns on, which is
-    // where carve-js draws the line too. (The executable spec folds here
-    // instead - carve#603 - and neither engine moves until that is settled.)
+fn two_columns_in_folds_as_well() {
+    // §24 C3 does not ask how deep the indent is: below the content column a
+    // marker folds as lazy item text, at any depth. Every engine used to nest
+    // this one under `a`, because the folded line kept its own indentation and
+    // that reached the SUB-list's content column on the reparse (carve#603).
     assert_eq!(
         carve::to_html("-   x\n    - a\n  - b"),
-        "<ul>\n  <li>x\n    <ul>\n      <li>a\n        <ul>\n          <li>b</li>\n        </ul>\n      </li>\n    </ul>\n  </li>\n</ul>"
+        "<ul>\n  <li>x\n    <ul>\n      <li>a\n- b</li>\n    </ul>\n  </li>\n</ul>"
+    );
+    // Three columns in, and with the whole list indented, are the same line.
+    assert_eq!(
+        carve::to_html("-   x\n    - a\n   - b"),
+        "<ul>\n  <li>x\n    <ul>\n      <li>a\n- b</li>\n    </ul>\n  </li>\n</ul>"
+    );
+    assert_eq!(
+        carve::to_html("  - x\n    - a\n   - b"),
+        "<ul>\n  <li>x\n    <ul>\n      <li>a\n- b</li>\n    </ul>\n  </li>\n</ul>"
     );
 }
 
