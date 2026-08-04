@@ -5128,7 +5128,6 @@ fn collect_indented_block_mapped_with(
     let mut line_map = Vec::new();
     let mut col_map: Vec<Option<usize>> = Vec::new();
     let mut block_indent: Option<usize> = None;
-    let mut collecting_comment_fence: Option<usize> = None;
     while let Some(line) = cur.peek() {
         if is_blank_line(line) {
             // Lazy continuation does not cross a blank line: after a blank, only
@@ -5150,13 +5149,18 @@ fn collect_indented_block_mapped_with(
                 while k < cur.lines.len() && is_blank_line(cur.lines[k]) {
                     k += 1;
                 }
-                // Against the item's CONTENT COLUMN, not the first collected
-                // block's own indent. A sibling marker sits at the content
-                // column and is therefore shallower than an indented block
-                // above it, but it is still inside the item - comparing against
-                // the block's indent ended the collection there and split one
-                // list into two (carve-rs#301).
-                let threshold = bi.min(strip_cols);
+                // The item's CONTENT COLUMN outright. It used to be
+                // `min(block_indent, content_col)`, for the sibling-marker case
+                // (carve-rs#301): the collected block is indented DEEPER than
+                // the column and a marker below it still belongs to the item.
+                // But there both spellings give the column, so the min only ever
+                // differed when the block was SHALLOWER - and a block below the
+                // content column is text, not a block (§24 C3). Taking the
+                // column directly is the same rule with nothing left to get
+                // wrong, and it is what made the comment special-casing this
+                // guard once needed redundant.
+                let threshold = strip_cols;
+                let _ = bi;
                 let continues = k < cur.lines.len() && indent_columns(cur.lines[k]) >= threshold;
                 if !continues {
                     break;
@@ -5183,19 +5187,7 @@ fn collect_indented_block_mapped_with(
         // taking its column here lowered the post-blank threshold below the
         // content column - which is how `- - a` / ` %% c` / blank / ` b` kept
         // `b` in the item after the bare form had been fixed (#578, corpus 190).
-        // The fence form needs its BODY excluded too, not just its delimiters:
-        // the body is as invisible as they are, so a `hidden` line one column in
-        // would set the indent the opener above it was skipped for.
-        let is_comment_delimiter = trim_ascii_start(line).starts_with("%%");
-        let inside_comment = collecting_comment_fence.is_some();
-        if let Some(fence_len) = collecting_comment_fence {
-            if is_comment_fence_close_any_column(line, fence_len) {
-                collecting_comment_fence = None;
-            }
-        } else if let Some(open) = detect_comment_fence_line_any_column(line) {
-            collecting_comment_fence = Some(open.fence_len);
-        }
-        if block_indent.is_none() && !is_comment_delimiter && !inside_comment {
+        if block_indent.is_none() {
             block_indent = Some(indent);
         }
         // Dedent by the item's content column so a nested block (sub-list, block
@@ -5228,7 +5220,6 @@ fn collect_indented_block_plain_with(
 ) -> String {
     let mut lines = Vec::new();
     let mut block_indent: Option<usize> = None;
-    let mut collecting_comment_fence: Option<usize> = None;
     while let Some(line) = cur.peek() {
         if is_blank_line(line) {
             {
@@ -5245,10 +5236,10 @@ fn collect_indented_block_plain_with(
                 while k < cur.lines.len() && is_blank_line(cur.lines[k]) {
                     k += 1;
                 }
-                // Against the item's CONTENT COLUMN, not the first collected
-                // block's own indent - see the mapped collector above
-                // (carve-rs#301).
-                let threshold = bi.min(strip_cols);
+                // The item's CONTENT COLUMN outright - see the mapped
+                // collector above (carve-rs#301).
+                let threshold = strip_cols;
+                let _ = bi;
                 let continues = k < cur.lines.len() && indent_columns(cur.lines[k]) >= threshold;
                 if !continues {
                     break;
@@ -5271,19 +5262,7 @@ fn collect_indented_block_plain_with(
         // taking its column here lowered the post-blank threshold below the
         // content column - which is how `- - a` / ` %% c` / blank / ` b` kept
         // `b` in the item after the bare form had been fixed (#578, corpus 190).
-        // The fence form needs its BODY excluded too, not just its delimiters:
-        // the body is as invisible as they are, so a `hidden` line one column in
-        // would set the indent the opener above it was skipped for.
-        let is_comment_delimiter = trim_ascii_start(line).starts_with("%%");
-        let inside_comment = collecting_comment_fence.is_some();
-        if let Some(fence_len) = collecting_comment_fence {
-            if is_comment_fence_close_any_column(line, fence_len) {
-                collecting_comment_fence = None;
-            }
-        } else if let Some(open) = detect_comment_fence_line_any_column(line) {
-            collecting_comment_fence = Some(open.fence_len);
-        }
-        if block_indent.is_none() && !is_comment_delimiter && !inside_comment {
+        if block_indent.is_none() {
             block_indent = Some(indent);
         }
         lines.push(slice_columns(
