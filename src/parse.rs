@@ -434,13 +434,16 @@ fn extract_footnote_defs(
         // both stash the def and leave the container empty, matching carve-js
         // (which recognizes the def inside the container's sub-lexer). Strip the
         // container prefix first, then test the bare content (corpus 115).
-        let stripped = strip_container_prefixes(lines[i]);
         // The footnote prepass asks per LINE which column a definition reaches
         // (see `reached_by`), so the innermost column alone is not enough here.
         let _ = columns.observe(
             without_blockquote_prefixes(lines[i]),
             in_fence.is_some() || in_line_block.is_some() || in_comment_fence.is_some(),
         );
+        // A quote nested in a list item sits AT the item's content column, so
+        // the prefix scan needs that column to see it (carve-rs#588).
+        let stripped =
+            strip_container_prefixes_at(lines[i], columns.reached_by(leading_ws(lines[i])));
         let in_container = !stripped.structural.is_empty();
         // A footnote definition is NEVER collected from inside a fenced code
         // block: a `[^x]: ...` line there is literal content. The prepass has
@@ -755,7 +758,6 @@ fn extract_link_defs(source: &str) -> (String, BTreeMap<String, LinkDef>) {
     let all_lines: Vec<&str> = source.lines().collect();
     let comment_closers = comment_fence_close_index(&all_lines);
     for (line_index, line) in all_lines.iter().copied().enumerate() {
-        let stripped = strip_container_prefixes(line);
         // Verse text is opaque: a line-block body line like `- verse` is not a
         // list marker, and letting it push a content column left the NEXT
         // top-level opener unprotected. A COMMENT body is opaque the same way,
@@ -768,6 +770,9 @@ fn extract_link_defs(source: &str) -> (String, BTreeMap<String, LinkDef>) {
             without_blockquote_prefixes(line),
             in_fence.is_some() || in_line_block.is_some() || in_comment_fence.is_some(),
         );
+        // A quote nested in a list item sits AT the item's content column, so
+        // the prefix scan needs that column to see it (carve-rs#588).
+        let stripped = strip_container_prefixes_at(line, columns.reached_by(leading_ws(line)));
         let raw_is_quoted = prepass_line_is_quoted(line);
         if let Some(fence_len) = in_line_block {
             // The line is KEPT whatever it looks like - that is the whole point.
@@ -1111,6 +1116,33 @@ fn strip_container_prefixes(mut line: &str) -> StrippedContainerLine<'_> {
         bare: line,
         needs_empty_list_content,
     }
+}
+
+/// `strip_container_prefixes`, but a quote marker AT an item's content column
+/// counts as a container prefix.
+///
+/// A block quote nested in a list item is indented to that column (`- a` /
+/// `  > [r]: /u`), and the plain stripper only reads a marker at position 0 - so
+/// the definition inside such a quote was never collected, while at TOP level
+/// the same `> [r]: /u` is collected by every engine (carve-rs#588).
+///
+/// EXACTLY that column, never arbitrary indentation: a top-level
+/// `    > [r]: /u` is indented text, not a quote, and stays uncollected.
+fn strip_container_prefixes_at<'a>(line: &'a str, content_col: usize) -> StrippedContainerLine<'a> {
+    if content_col > 0
+        && line.len() > content_col
+        && line.as_bytes()[..content_col].iter().all(|b| *b == b' ')
+        && line.as_bytes()[content_col] == b'>'
+    {
+        let inner = strip_container_prefixes(&line[content_col..]);
+        let structural_len = inner.bare.as_ptr() as usize - line.as_ptr() as usize;
+        return StrippedContainerLine {
+            structural: &line[..structural_len],
+            bare: inner.bare,
+            needs_empty_list_content: inner.needs_empty_list_content,
+        };
+    }
+    strip_container_prefixes(line)
 }
 
 fn strip_container_prefixes_keep_indent(mut line: &str) -> String {
