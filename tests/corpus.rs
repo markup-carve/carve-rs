@@ -196,6 +196,8 @@ const IMPLEMENTED: &[&str] = &[
     "a-list-item-does-not-define-an-abbreviation-either",
     "a-comment-is-recognized-at-any-column",
     "a-definition-below-every-content-column-folds-as-text",
+    "a-caret-is-a-reference-label-not-an-empty-footnote",
+    "an-invisible-line-does-not-cancel-a-blank-line-separation",
 ];
 
 fn corpus_dir() -> PathBuf {
