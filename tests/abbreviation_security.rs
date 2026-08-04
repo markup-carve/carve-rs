@@ -1,5 +1,18 @@
 //! Security regressions for abbreviation definition parsing.
 
+/// Wall-clock ceiling, matching `perf_regressions.rs`.
+///
+/// This test guards the OUTPUT BUDGET - the length assertion above it is the
+/// real check. The timing assertion only catches a rewrite that made expansion
+/// quadratic, and on this input the bounded implementation finishes in about a
+/// quarter of a second, so the ceiling needs headroom rather than precision.
+///
+/// It was 2.0, which is the exact value `perf_regressions.rs` records as having
+/// flaked repeatedly on a loaded runner ("2.07s / 2.33s on CI while taking
+/// ~0.8s locally, reddening main on unrelated commits"). It did it here too, at
+/// 2.29s, during a full parallel `cargo test` while the machine was busy.
+const MAX_SECS: f32 = 10.0;
+
 #[test]
 fn empty_abbreviation_definition_is_literal_text() {
     let doc = carve::parse("*[]: x\n\nA");
@@ -49,7 +62,7 @@ fn abbr_expansion_output_is_bounded_for_html() {
         input_len
     );
     assert!(
-        elapsed.as_secs_f32() < 2.0,
+        elapsed.as_secs_f32() < MAX_SECS,
         "bounded abbr render took {elapsed:?}"
     );
 }
