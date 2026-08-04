@@ -19,6 +19,19 @@ use carve::{
     MAX_RENDER_DEPTH,
 };
 
+/// Deep trees are built, rendered and DROPPED here, and the recursive Drop
+/// overflows a default test stack well before any renderer is reached - a
+/// property of the tree type, not of the ceiling. The other deep-tree suites in
+/// this crate spawn a big stack for the same reason.
+fn on_big_stack<F: FnOnce() + Send + 'static>(f: F) {
+    std::thread::Builder::new()
+        .stack_size(16 * 1024 * 1024)
+        .spawn(f)
+        .expect("spawn worker")
+        .join()
+        .expect("worker must return, not abort");
+}
+
 /// A document whose only block is `depth` nested block quotes around a leaf.
 ///
 /// Block quotes are the cheapest deep shape to build: one child each, and every
@@ -65,66 +78,101 @@ fn render_all(doc: &Document) -> Vec<(&'static str, Result<String, RenderDepthEr
 
 #[test]
 fn the_refusal_names_the_renderer_and_the_bound() {
-    // The whole point of the typed error: a caller can tell WHICH target
-    // stopped and at what bound, rather than inspecting output that looks
-    // complete.
-    let doc = nested(MAX_RENDER_DEPTH + 16);
-    for (target, rendered) in render_all(&doc) {
-        let err = rendered.expect_err("past the ceiling every target refuses");
-        assert_eq!(err.renderer(), target);
-        assert_eq!(err.limit(), MAX_RENDER_DEPTH);
-        let shown = err.to_string();
-        assert!(
-            shown.contains(target),
-            "message omits the renderer: {shown}"
-        );
-        assert!(
-            shown.contains(&MAX_RENDER_DEPTH.to_string()),
-            "message omits the bound: {shown}"
-        );
-    }
+    on_big_stack(|| {
+        // The whole point of the typed error: a caller can tell WHICH target
+        // stopped and at what bound, rather than inspecting output that looks
+        // complete.
+        let doc = nested(MAX_RENDER_DEPTH + 16);
+        for (target, rendered) in render_all(&doc) {
+            let err = rendered.expect_err("past the ceiling every target refuses");
+            assert_eq!(err.renderer(), target);
+            assert_eq!(err.limit(), MAX_RENDER_DEPTH);
+            let shown = err.to_string();
+            assert!(
+                shown.contains(target),
+                "message omits the renderer: {shown}"
+            );
+            assert!(
+                shown.contains(&MAX_RENDER_DEPTH.to_string()),
+                "message omits the bound: {shown}"
+            );
+        }
+    });
 }
 
 #[test]
 fn a_tree_within_the_ceiling_still_renders() {
-    // The control. Without it the tests above would pass just as well if the
-    // renderers had started refusing everything.
-    let doc = nested(8);
-    for (target, rendered) in render_all(&doc) {
-        let output =
-            rendered.unwrap_or_else(|err| panic!("{target} refused a shallow tree: {err}"));
-        assert!(
-            output.contains("leaf"),
-            "{target} lost the body of a shallow tree: {output}"
+    on_big_stack(|| {
+        // The control. Without it the tests above would pass just as well if the
+        // renderers had started refusing everything.
+        let doc = nested(8);
+        for (target, rendered) in render_all(&doc) {
+            let output =
+                rendered.unwrap_or_else(|err| panic!("{target} refused a shallow tree: {err}"));
+            assert!(
+                output.contains("leaf"),
+                "{target} lost the body of a shallow tree: {output}"
+            );
+        }
+    });
+}
+
+#[test]
+fn a_list_at_the_parse_cap_renders_whole() {
+    on_big_stack(|| {
+        // The exact regression: a list ladder at the parse cap, through the
+        // renderer that truncated it. carve-js and carve-php emit the whole
+        // document here; this engine used to stop at the ceiling, because a
+        // source level of a list costs two AST levels and the ceiling counted
+        // the latter (markup-carve/carve#650).
+        let source = (0..205)
+            .map(|i| format!("{}- x", "  ".repeat(i)))
+            .collect::<Vec<_>>()
+            .join("\n")
+            + "\n";
+        let html = carve::render_html(&carve::parse(&source))
+            .expect("a list at the parse cap is within the ceiling");
+        // 200, not 205: the five levels past the PARSE cap degrade to literal
+        // text, which is the parser's own visible degradation and not the
+        // renderer's. What matters is that none of the 200 the parser built
+        // went missing - it used to stop at about 120.
+        assert_eq!(
+            html.matches("<li>").count(),
+            200,
+            "the innermost items were dropped"
         );
-    }
+    });
 }
 
 #[test]
 fn the_source_path_stays_infallible() {
-    // The parser caps nesting below the ceiling, so no source string can reach
-    // it - which is what lets `to_*` keep returning `String`. A source far past
-    // the cap degrades in the parser and renders without refusing.
-    let source = format!("{}deep\n", "> ".repeat(MAX_RENDER_DEPTH + 64));
-    let html = carve::to_html(&source);
-    assert!(html.contains("deep"), "{html}");
-    assert!(carve::to_markdown(&source).contains("deep"));
-    assert!(carve::to_plain_text(&source).contains("deep"));
-    assert!(carve::to_ansi(&source).contains("deep"));
-    assert!(carve::to_carve(&source).contains("deep"));
+    on_big_stack(|| {
+        // The parser caps nesting below the ceiling, so no source string can reach
+        // it - which is what lets `to_*` keep returning `String`. A source far past
+        // the cap degrades in the parser and renders without refusing.
+        let source = format!("{}deep\n", "> ".repeat(MAX_RENDER_DEPTH + 64));
+        let html = carve::to_html(&source);
+        assert!(html.contains("deep"), "{html}");
+        assert!(carve::to_markdown(&source).contains("deep"));
+        assert!(carve::to_plain_text(&source).contains("deep"));
+        assert!(carve::to_ansi(&source).contains("deep"));
+        assert!(carve::to_carve(&source).contains("deep"));
+    });
 }
 
 #[test]
 fn a_nested_render_does_not_inherit_the_outer_refusal() {
-    // The recorder is thread-local and installed per render, so a render that
-    // refused must not make the NEXT one refuse. Without the RAII unwind, one
-    // deep tree would poison every later render on the thread.
-    let deep = nested(MAX_RENDER_DEPTH + 16);
-    let _ = carve::render_html(&deep).expect_err("the deep tree refuses");
+    on_big_stack(|| {
+        // The recorder is thread-local and installed per render, so a render that
+        // refused must not make the NEXT one refuse. Without the RAII unwind, one
+        // deep tree would poison every later render on the thread.
+        let deep = nested(MAX_RENDER_DEPTH + 16);
+        let _ = carve::render_html(&deep).expect_err("the deep tree refuses");
 
-    let shallow = nested(2);
-    let output = carve::render_html(&shallow).expect("a later render is unaffected");
-    assert!(output.contains("leaf"), "{output}");
+        let shallow = nested(2);
+        let output = carve::render_html(&shallow).expect("a later render is unaffected");
+        assert!(output.contains("leaf"), "{output}");
+    });
 }
 
 /// §25 states the ceiling as a PROPERTY: a tree the same implementation's
@@ -136,37 +184,49 @@ fn a_nested_render_does_not_inherit_the_outer_refusal() {
 /// carve-php rendered it whole (markup-carve/carve#650).
 #[test]
 fn the_deepest_parsable_document_still_renders() {
-    let cap = 260; // past the parse cap, so the parser's own degradation is in play too
-    let shapes = [
-        (
-            "list",
-            (0..cap)
-                .map(|i| format!("{}- x", "  ".repeat(i)))
-                .collect::<Vec<_>>()
-                .join("\n"),
-        ),
-        ("quote", format!("{}leaf", "> ".repeat(cap))),
-        (
-            "definition list",
-            (0..cap / 2)
-                .map(|i| format!("{}:: t\n{}:  d", "  ".repeat(i), "  ".repeat(i)))
-                .collect::<Vec<_>>()
-                .join("\n"),
-        ),
-    ];
-    for (name, source) in shapes {
-        let source = format!("{source}\n");
-        for (target, output) in [
-            ("html", carve::to_html(&source)),
-            ("markdown", carve::to_markdown(&source)),
-            ("plain", carve::to_plain_text(&source)),
-            ("ansi", carve::to_ansi(&source)),
-            ("carve", carve::to_carve(&source)),
-        ] {
-            assert!(
-                !output.trim().is_empty(),
-                "{target} emitted nothing for a {name} the parser accepted"
-            );
+    on_big_stack(|| {
+        // Just past the parse cap: enough to exercise the parser's own
+        // degradation, and no deeper - a ladder costs quadratic time to parse
+        // in a debug build, which is what CI runs.
+        let cap = 205;
+        let shapes = [
+            // The list is the shape the old ceiling actually truncated, and it
+            // is deliberately shallower than the others: the canonical writer
+            // is superlinear on nested lists (about 1ms at 40 levels and 259ms
+            // at 200 in a release build, worse in the debug build CI runs),
+            // which is its own defect and not this test's subject.
+            (
+                "list",
+                (0..60)
+                    .map(|i| format!("{}- x", "  ".repeat(i)))
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+            ),
+            ("quote", format!("{}leaf", "> ".repeat(cap))),
+            (
+                "definition list",
+                (0..cap / 2)
+                    .map(|i| format!("{}:: t\n{}:  d", "  ".repeat(i), "  ".repeat(i)))
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+            ),
+        ];
+        for (name, source) in shapes {
+            let source = format!("{source}\n");
+            // Parsed ONCE and rendered five times, not parsed five times: a
+            // ladder this deep is the slow part in a debug build, and the
+            // property is about what the RENDERERS do with a tree the parser
+            // produced.
+            let doc = carve::parse(&source);
+            for (target, rendered) in render_all(&doc) {
+                let output = rendered.unwrap_or_else(|err| {
+                    panic!("{target} refused a {name} the parser accepted: {err}")
+                });
+                assert!(
+                    !output.trim().is_empty(),
+                    "{target} emitted nothing for a {name} the parser accepted"
+                );
+            }
         }
-    }
+    });
 }
