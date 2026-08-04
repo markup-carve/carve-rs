@@ -528,10 +528,36 @@ fn write_inline(out: &mut String, node: &InlineNode) {
                 // with no emphasis at all and the italic was silently lost
                 // (#513). The nesting is materialised here, at the boundary,
                 // rather than changing the internal representation.
+                // The materialised node needs its own span, or it is the one
+                // node in the tree without one (PART 12 §4). The combined form
+                // is `/*` CONTENT `*/`, both delimiters two ASCII characters,
+                // so the inner span is this node's with two trimmed off each
+                // end - lines are unchanged, because the delimiters sit on the
+                // first and last line of the run. Checked against carve-js on
+                // the single-run, nested-strong, mid-paragraph and multi-line
+                // shapes.
+                //
+                // NOT when the node carries attributes. This engine's span for
+                // an attributed inline covers the attribute block too, so
+                // `/*x*/{#id}` ends at the `}` and trimming two lands inside
+                // the attributes rather than at the content boundary. Omitting
+                // is what §4 allows for a node with no honest span, and
+                // inventing one that selects `x*/{#` is worse than none. The
+                // outer span is the thing that is actually wrong there, and it
+                // is not specific to this form - carve-rs#521.
+                let inner_pos = n.pos.as_ref().filter(|_| n.attrs.is_none()).map(|p| Pos {
+                    start_line: p.start_line,
+                    end_line: p.end_line,
+                    start_column: p.start_column + 2,
+                    end_column: p.end_column.saturating_sub(2),
+                    start_offset: p.start_offset + 2,
+                    end_offset: p.end_offset.saturating_sub(2),
+                });
                 w.field("children", |out| {
                     out.push('[');
                     let mut inner = typed(out, "emphasis");
                     inner.field("children", |out| write_inlines(out, &n.children));
+                    write_pos_field(&mut inner, &inner_pos);
                     inner.finish();
                     out.push(']');
                 });
