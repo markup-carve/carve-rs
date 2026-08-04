@@ -4983,6 +4983,15 @@ fn continuation_line_opens_sub_block(line: &str, rest: &[&str]) -> bool {
 /// recognizes at any column that leaves its container open. A comment FENCE
 /// (`%%%`) is NOT one: it opens a multi-line block, and all three engines let it
 /// end the list it follows.
+/// A line comment at ANY column. `is_flush_line_comment` answers the
+/// column-0 question; the continuation collectors need the same test without
+/// the column, because a comment renders nothing wherever it sits (§24 C3).
+fn is_line_comment_any_column(line: &str) -> bool {
+    let trimmed = line.trim_start_matches([' ', '\t']);
+
+    trimmed.starts_with("%%") && detect_comment_fence_line(trimmed).is_none()
+}
+
 fn is_flush_line_comment(line: &str) -> bool {
     line.starts_with("%%") && detect_comment_fence_line(line).is_none()
 }
@@ -5094,7 +5103,16 @@ fn collect_indented_block_mapped_with(
             // block's own level. A shallower line (e.g. a dedent landing below a
             // sublist) ends the block and is left for the caller, so it can close
             // the list rather than fold in (grammar §10, corpus 81-list-lazy-5).
-            if let Some(bi) = block_indent {
+            {
+                // `block_indent` is None when nothing has been collected yet -
+                // the item's whole content sat on the marker line, as in
+                // `- - a`. Skipping the test in that case let ANY indented line
+                // after the blank join the item, so `- - a` / blank / ` b` kept
+                // `b` inside the outer item where carve-js, carve-php and the
+                // executable spec all end the list and parse it at document
+                // level (carve-rs#578, corpus 190). With no collected block the
+                // item's content column IS the threshold.
+                let bi = block_indent.unwrap_or(strip_cols);
                 let mut k = cur.pos + 1;
                 while k < cur.lines.len() && is_blank_line(cur.lines[k]) {
                     k += 1;
@@ -5127,7 +5145,11 @@ fn collect_indented_block_mapped_with(
         if stop_at_content_column_marker && is_marker && indent >= strip_cols {
             break;
         }
-        if block_indent.is_none() {
+        if block_indent.is_none() && !is_line_comment_any_column(line) {
+            // A comment renders nothing, so it does not establish the column
+            // the item's continuation is measured against. Letting it do so
+            // made an indented comment pull a BELOW-column line into the item
+            // after a blank (carve-rs#578, corpus 190).
             block_indent = Some(indent);
         }
         // Dedent by the item's content column so a nested block (sub-list, block
@@ -5162,7 +5184,16 @@ fn collect_indented_block_plain_with(
     let mut block_indent: Option<usize> = None;
     while let Some(line) = cur.peek() {
         if is_blank_line(line) {
-            if let Some(bi) = block_indent {
+            {
+                // `block_indent` is None when nothing has been collected yet -
+                // the item's whole content sat on the marker line, as in
+                // `- - a`. Skipping the test in that case let ANY indented line
+                // after the blank join the item, so `- - a` / blank / ` b` kept
+                // `b` inside the outer item where carve-js, carve-php and the
+                // executable spec all end the list and parse it at document
+                // level (carve-rs#578, corpus 190). With no collected block the
+                // item's content column IS the threshold.
+                let bi = block_indent.unwrap_or(strip_cols);
                 let mut k = cur.pos + 1;
                 while k < cur.lines.len() && is_blank_line(cur.lines[k]) {
                     k += 1;
@@ -5188,7 +5219,11 @@ fn collect_indented_block_plain_with(
         if stop_at_content_column_marker && is_marker && indent >= strip_cols {
             break;
         }
-        if block_indent.is_none() {
+        if block_indent.is_none() && !is_line_comment_any_column(line) {
+            // A comment renders nothing, so it does not establish the column
+            // the item's continuation is measured against. Letting it do so
+            // made an indented comment pull a BELOW-column line into the item
+            // after a blank (carve-rs#578, corpus 190).
             block_indent = Some(indent);
         }
         lines.push(slice_columns(
