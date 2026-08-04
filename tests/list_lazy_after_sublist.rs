@@ -123,3 +123,95 @@ fn blank_before_non_paragraph_outer_block_stays_tight() {
         "<ul>\n  <li>a\n    <ul>\n      <li>b</li>\n    </ul>\n    <hr>\n    p\n  </li>\n</ul>"
     );
 }
+
+// --- Below every content column: lazy text, not a block (carve-rs#512) ---
+
+#[test]
+fn a_below_column_heading_after_a_marker_line_sublist_folds_as_text() {
+    // One column in, `# H` reaches no content column, so it opens nothing and
+    // folds into the sub-item's open paragraph. This engine published an `<h1>`
+    // attached to the OUTER item, because collection dedented the line to the
+    // body's column 0 and the recursive parse then read a heading.
+    assert_eq!(
+        carve::to_html("- - a\n # H"),
+        "<ul>\n  <li>\n    <ul>\n      <li>a\n# H</li>\n    </ul>\n  </li>\n</ul>"
+    );
+}
+
+#[test]
+fn a_below_column_marker_after_a_marker_line_sublist_folds_as_text() {
+    assert_eq!(
+        carve::to_html("- - a\n - b"),
+        "<ul>\n  <li>\n    <ul>\n      <li>a\n- b</li>\n    </ul>\n  </li>\n</ul>"
+    );
+}
+
+#[test]
+fn the_same_holds_for_a_following_line_sublist() {
+    assert_eq!(
+        carve::to_html("- x\n  - a\n - b"),
+        "<ul>\n  <li>x\n    <ul>\n      <li>a\n- b</li>\n    </ul>\n  </li>\n</ul>"
+    );
+    assert_eq!(
+        carve::to_html("- x\n  - a\n # H"),
+        "<ul>\n  <li>x\n    <ul>\n      <li>a\n# H</li>\n    </ul>\n  </li>\n</ul>"
+    );
+}
+
+#[test]
+fn a_marker_at_the_sublists_own_column_is_still_a_sibling() {
+    // The fold is about being BELOW every content column, not about the marker.
+    assert_eq!(
+        carve::to_html("- - a\n  - b"),
+        "<ul>\n  <li>\n    <ul>\n      <li>a</li>\n      <li>b</li>\n    </ul>\n  </li>\n</ul>"
+    );
+}
+
+#[test]
+fn two_columns_in_still_nests() {
+    // Rule B: a bullet opens a list at any indent from two columns on, which is
+    // where carve-js draws the line too. (The executable spec folds here
+    // instead - carve#603 - and neither engine moves until that is settled.)
+    assert_eq!(
+        carve::to_html("-   x\n    - a\n  - b"),
+        "<ul>\n  <li>x\n    <ul>\n      <li>a\n        <ul>\n          <li>b</li>\n        </ul>\n      </li>\n    </ul>\n  </li>\n</ul>"
+    );
+}
+
+#[test]
+fn an_under_indented_definition_still_attaches() {
+    // The documented exception: a definition marker attaches to the term above
+    // it from ANY column, so it keeps dedenting to the body's column 0 rather
+    // than folding as text (corpus 154).
+    assert_eq!(
+        carve::to_html("- one\n  :: term\n :  def\n"),
+        "<ul>\n  <li>one\n    <dl>\n      <dt>term</dt>\n      <dd>def</dd>\n    </dl>\n  </li>\n</ul>"
+    );
+}
+
+#[test]
+fn a_below_column_definition_term_folds_but_its_definition_still_attaches() {
+    // The TERM is not lenient: one column in it is text like any other opener.
+    assert_eq!(
+        carve::to_html("- - a\n :: term"),
+        "<ul>\n  <li>\n    <ul>\n      <li>a\n:: term</li>\n    </ul>\n  </li>\n</ul>"
+    );
+    // Its DEFINITION is: `:  def` attaches to the term above it from any
+    // column, which is corpus 154 and the reason the two are separated here.
+    assert_eq!(
+        carve::to_html("- one\n  :: term\n :  def\n"),
+        "<ul>\n  <li>one\n    <dl>\n      <dt>term</dt>\n      <dd>def</dd>\n    </dl>\n  </li>\n</ul>"
+    );
+}
+
+#[test]
+fn a_below_column_quote_and_table_row_fold_as_text() {
+    assert_eq!(
+        carve::to_html("- - a\n > q"),
+        "<ul>\n  <li>\n    <ul>\n      <li>a\n&gt; q</li>\n    </ul>\n  </li>\n</ul>"
+    );
+    assert_eq!(
+        carve::to_html("- - a\n | c |"),
+        "<ul>\n  <li>\n    <ul>\n      <li>a\n| c |</li>\n    </ul>\n  </li>\n</ul>"
+    );
+}

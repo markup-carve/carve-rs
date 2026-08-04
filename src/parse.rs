@@ -4543,6 +4543,39 @@ fn collect_item_continuation_block_mapped(
     collect_indented_block_mapped_with(cur, parent_indent, content_col, true)
 }
 
+/// How far to dedent a collected line, given the container's content column.
+///
+/// At or past that column the line IS item content and lands flush at column 0.
+/// Below it the line never reached the column, so it is lazy paragraph text: it
+/// keeps its OWN indentation instead, since dedenting it to 0 is what let the
+/// recursive parse read it as a block. `- - a` / ` # H` published an `<h1>`, and
+/// ` - b` a sibling item, where a below-column line at the TOP level already
+/// folded as text (carve-rs#512).
+fn dedent_for_collection(line: &str, indent: usize, strip_cols: usize) -> usize {
+    if indent >= strip_cols {
+        return strip_cols;
+    }
+    // Two exceptions dedent all the way. A DEFINITION (`:  `) attaches to the
+    // term above it from ANY column, which is why an under-indented one is a
+    // `<dd>` and not lazy text (corpus 154) - its TERM (`:: `) is not lenient
+    // and folds like everything else. And a comment is invisible wherever it
+    // sits: this engine finds it after trimming, so keeping the column would
+    // leave its blank line in a different place without making it text.
+    let trimmed = trim_ascii_start(line);
+    if trimmed.starts_with(":  ") || trimmed.starts_with("%%") {
+        return indent;
+    }
+    // Plain text dedents all the way too: its leading whitespace is not
+    // significant, and keeping it would publish a `<dt>term\n wrapped</dt>`
+    // where the corpus wants the wrapped line flush (corpus 156). Only a
+    // block-SHAPED line needs its column back - that column is the whole
+    // reason it is text rather than the block it looks like.
+    if line_starts_paragraph(trimmed) {
+        return indent;
+    }
+    0
+}
+
 fn collect_indented_block_mapped(
     cur: &mut LineCursor,
     parent_indent: usize,
@@ -4621,7 +4654,7 @@ fn collect_indented_block_mapped_with(
         // dedented residual-aware so tab+space-aligned siblings keep the same
         // visual column (the recursive parse re-derives the child base); other
         // lines use whole-tab dedent so they land flush at column 0.
-        let stripped = strip_cols.min(indent);
+        let stripped = dedent_for_collection(line, indent, strip_cols);
         lines.push(slice_columns(line, stripped, is_marker));
         if cur.line_map.is_some() {
             line_map.push(cur.source_line(cur.pos));
@@ -4677,7 +4710,11 @@ fn collect_indented_block_plain_with(
         if block_indent.is_none() {
             block_indent = Some(indent);
         }
-        lines.push(slice_columns(line, strip_cols.min(indent), is_marker));
+        lines.push(slice_columns(
+            line,
+            dedent_for_collection(line, indent, strip_cols),
+            is_marker,
+        ));
         cur.consume();
     }
     lines.join("\n")
