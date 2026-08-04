@@ -9,6 +9,34 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A definition after an indented comment closer registers** (#574 follow-up).
+  #574 taught the block parser that a `%%%` closer sits at any column and left
+  the two line-based definition prepasses on the strict test, so they disagreed
+  with the pass that decides: the block parser closed the comment, the prepasses
+  did not, and every definition after the closer went unregistered - then came
+  back as VISIBLE text, which is the one outcome a definition may never have.
+
+  ```
+  %%%
+  hidden
+    %%%
+  [r]: /u
+  [r][]
+  ```
+
+  published `<p>[r]: /u` and an unresolved `[r][]`; it now resolves, matching
+  carve-js. Nothing in the corpus pairs an indented closer with a definition
+  after it, which is why the suite stayed green.
+
+- **A comment body seeds no list content column** (found while fixing the
+  above). `extract_link_defs` tracked columns through a comment's body where
+  `extract_footnote_defs` already treated it as opaque, so a `- hidden` inside a
+  comment left a content column that outlived the fence and the indented line
+  after it was stripped to that phantom column and registered - while the block
+  parser reads the same line as top-level text. Registered AND visible is the
+  worst of the two answers. Reachable on main through a flush-left closer; the
+  indented-closer fix above only removed the accident that was hiding the rest.
+
 - **A comment below a list item's content column keeps the item open**
   (PART 9 §24 C3, markup-carve/carve#624, corpus
   `182-a-comment-is-recognized-at-any-column`). Below that column every other

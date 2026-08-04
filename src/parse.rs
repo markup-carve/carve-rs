@@ -445,7 +445,14 @@ fn extract_footnote_defs(
         // this function already records, and the same answer: the sound fix is
         // collecting definitions during block parsing.
         if let Some(fence_len) = in_comment_fence {
-            if is_comment_fence_close(lines[i], fence_len) {
+            // ANY column, matching `comment_fence_close_index` and the block
+            // parser. A comment fence closes at whatever indent its closer sits
+            // at (PART 9 §24 C3, markup-carve/carve#629), so testing the strict
+            // form here made this pass disagree with the one that decides: the
+            // block parser closed the comment, this scan did not, and every
+            // definition after it went unregistered and came back as visible
+            // text (#574 regression).
+            if is_comment_fence_close_any_column(lines[i], fence_len) {
                 in_comment_fence = None;
             }
             // A comment's body is OPAQUE: a `[^a]: note` inside one is comment
@@ -690,8 +697,16 @@ fn extract_link_defs(source: &str) -> (String, BTreeMap<String, LinkDef>) {
         let stripped = strip_container_prefixes(line);
         // Verse text is opaque: a line-block body line like `- verse` is not a
         // list marker, and letting it push a content column left the NEXT
-        // top-level opener unprotected.
-        let content_col = columns.observe(line, in_fence.is_some() || in_line_block.is_some());
+        // top-level opener unprotected. A COMMENT body is opaque the same way,
+        // and was missing here where `extract_footnote_defs` already had it: a
+        // `- hidden` inside a comment seeded a content column that outlived the
+        // fence, so `  [r]: /u` after it was stripped to that phantom column and
+        // registered, where the block parser sees a top-level line two columns
+        // in and reads it as text.
+        let content_col = columns.observe(
+            line,
+            in_fence.is_some() || in_line_block.is_some() || in_comment_fence.is_some(),
+        );
         let raw_is_quoted = prepass_line_is_quoted(line);
         if let Some(fence_len) = in_line_block {
             // The line is KEPT whatever it looks like - that is the whole point.
@@ -750,7 +765,8 @@ fn extract_link_defs(source: &str) -> (String, BTreeMap<String, LinkDef>) {
         // Top-level and unindented only - see the note in extract_footnote_defs
         // for why a nested opener is refused rather than guessed at.
         if let Some(fence_len) = in_comment_fence {
-            if is_comment_fence_close(line, fence_len) {
+            // ANY column - see the note in `extract_footnote_defs`.
+            if is_comment_fence_close_any_column(line, fence_len) {
                 in_comment_fence = None;
             }
             // A comment's body is OPAQUE, so a definition-shaped line inside
