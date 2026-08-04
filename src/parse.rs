@@ -557,10 +557,20 @@ fn extract_footnote_defs(
             } else {
                 Vec::new()
             };
-            // Multi-line continuation (indented >= 2) is only gathered for a
-            // TOP-LEVEL definition. A container-nested def is single-line here:
-            // its continuation would carry the container prefix and is left to
+            // Multi-line continuation is only gathered for a TOP-LEVEL
+            // definition. A container-nested def is single-line here: its
+            // continuation would carry the container prefix and is left to
             // normal block parsing, which the spec corpus does not pin.
+            //
+            // "Indented >= 2" is RELATIVE to the definition line (PART 9 §16).
+            // Measured from column 0 instead, an INDENTED definition swallowed
+            // anything at column 2 - including a `:::` closer that belongs to
+            // the container the definition sits in, which then rendered as an
+            // empty `<div>` inside the endnote and pushed the backlink out of
+            // its paragraph (carve-rs#591). carve-js and carve-php both measure
+            // it relative: `  [^f]: x` takes a `    more` continuation and
+            // leaves a `  more` alone.
+            let body_indent = leading_ws(lines[def_start_line - first_source_line]) + 2;
             if !in_container {
                 while i < lines.len() {
                     let line = lines[i];
@@ -573,7 +583,8 @@ fn extract_footnote_defs(
                         // are allowed between chunks. A `+` continuation marker
                         // also keeps the body open (PART 9 §17).
                         if i + 1 < lines.len()
-                            && (leading_ws(lines[i + 1]) >= 2 || is_plus_marker(lines[i + 1]))
+                            && (leading_ws(lines[i + 1]) >= body_indent
+                                || is_plus_marker(lines[i + 1]))
                         {
                             def_lines.push(String::new());
                             def_line_map.push(Some(first_source_line + i));
@@ -623,7 +634,7 @@ fn extract_footnote_defs(
                         }
                         continue;
                     }
-                    if leading_ws(line) >= 2 {
+                    if leading_ws(line) >= body_indent {
                         let trimmed = trim_ascii_start(line);
                         def_lines.push(trimmed.to_string());
                         def_line_map.push(Some(first_source_line + i));
