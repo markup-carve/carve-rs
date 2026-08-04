@@ -1,5 +1,11 @@
-//! Bare-dot ordered markers: `. item` is decimal ordered shorthand, but the
-//! authored spelling is runtime-only state and is not published in PART 12 JSON.
+//! Bare-dot ordered markers: `. item` is decimal ordered shorthand, and the
+//! authored spelling IS published, as `bareMarker` on the list node (PART 11
+//! §6, carve#480). `serialized_ast_publishes_the_bare_marker` below asserts it.
+//!
+//! This header said the opposite - "runtime-only state and is not published in
+//! PART 12 JSON" - from before the field existed, two lines above the test that
+//! contradicts it. A stale claim about the format is how the round-trip test
+//! came to erase the same field on the same grounds (carve-rs#526).
 
 fn html(src: &str) -> String {
     carve::to_html(src)
