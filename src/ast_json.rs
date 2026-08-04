@@ -1350,6 +1350,10 @@ fn decode_inline(value: &Json) -> Result<InlineNode, AstJsonError> {
             ref_label: optional_string(obj, "ref")?.map(str::to_string),
             raw_ref: optional_string(obj, "rawRef")?.map(str::to_string),
             from_crossref: optional_bool(obj, "fromCrossref")?.unwrap_or(false),
+            // Not on the wire: it is a writer's concern, like `from_crossref`
+            // before it, and a decoded document rebuilds it from the heading
+            // index the same way a parse does.
+            from_heading_reference: false,
             pos: optional_pos(obj, "link")?,
         })),
         "image" => Ok(InlineNode::Image(decode_image(obj)?)),

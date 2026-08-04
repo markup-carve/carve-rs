@@ -67,24 +67,52 @@ fn run(args: &[&str], input: &str) -> (bool, String, String) {
 /// other test, and a type whose `eq` quietly ignores a field stops reporting a
 /// difference everywhere - including where that field is what a test is about.
 fn normalize(mut doc: carve::Document) -> carve::Document {
+    /// `from_heading_reference` is a WRITER's concern and is not on the wire:
+    /// it records that a reference resolved against a heading rather than a
+    /// `[label]: url` line, which the canonical writer needs to reproduce the
+    /// authored `[H][]` (PART 11 R1, carve#478). Nothing in PART 12 defines a
+    /// field for it and no other engine publishes one, so a decoded document
+    /// comes back with the default.
+    ///
+    /// The consequence is real and shared: a document that has been through the
+    /// wire format writes `[H](#H)` where the original writes `[H][]`. carve-php
+    /// has the same gap (carve-php#711). Erased here so the round trip measures
+    /// what the FORMAT carries, with the gap stated rather than hidden.
+    fn inlines(nodes: &mut [carve::InlineNode]) {
+        for node in nodes {
+            match node {
+                carve::InlineNode::Link(l) => {
+                    l.from_heading_reference = false;
+                    inlines(&mut l.children);
+                }
+                carve::InlineNode::Emphasis(e) => inlines(&mut e.children),
+                carve::InlineNode::Span(sp) => inlines(&mut sp.children),
+                _ => {}
+            }
+        }
+    }
+
     fn blocks(nodes: &mut [carve::BlockNode]) {
         for node in nodes {
             match node {
-                carve::BlockNode::Paragraph(p) => p.at_content_column = false,
+                carve::BlockNode::Paragraph(p) => {
+                    p.at_content_column = false;
+                    inlines(&mut p.children);
+                }
+                carve::BlockNode::Heading(h) => inlines(&mut h.children),
                 carve::BlockNode::BlockQuote(b) => blocks(&mut b.children),
                 carve::BlockNode::Div(d) => blocks(&mut d.children),
                 carve::BlockNode::Admonition(a) => blocks(&mut a.children),
                 carve::BlockNode::LineBlock(l) => blocks(&mut l.children),
                 carve::BlockNode::Extension(e) => blocks(&mut e.children),
                 carve::BlockNode::List(l) => {
-                    // Runtime-only, like `at_content_column` above: which
-                    // spelling opened the list (`. a` vs `1. a`) is not on the
-                    // wire, because the schema pins it with
-                    // additionalProperties: false and no other engine
-                    // publishes the field. A decoded document therefore comes
-                    // back with the default, and comparing it against a parsed
-                    // one would fail for every bare-dot document in the corpus.
-                    l.bare_marker = false;
+                    // `bare_marker` used to be erased here, on the grounds that
+                    // the schema forbade it and no other engine published it.
+                    // Both halves stopped being true: the schema names
+                    // `bareMarker`, this engine publishes and decodes it, and a
+                    // bare-dot document round-trips through the wire unchanged
+                    // (carve#480). Erasing it now hides a property that holds -
+                    // a regression dropping the field would have passed here.
                     for item in &mut l.items {
                         blocks(&mut item.children);
                     }

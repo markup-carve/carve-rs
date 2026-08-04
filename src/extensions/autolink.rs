@@ -166,6 +166,7 @@ fn link_node(href: &str, text: &str) -> InlineNode {
         ref_label: None,
         raw_ref: None,
         from_crossref: false,
+        from_heading_reference: false,
         pos: None,
     })
 }

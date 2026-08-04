@@ -143,6 +143,7 @@ impl CarveExtension for Wikilinks {
                 ref_label: None,
                 raw_ref: None,
                 from_crossref: false,
+                from_heading_reference: false,
                 pos: None,
             }),
             end,

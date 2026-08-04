@@ -214,6 +214,7 @@ fn markdown_strips_control_bytes_from_author_leaf_fields() {
                         ref_label: None,
                         raw_ref: None,
                         from_crossref: false,
+                        from_heading_reference: false,
                         pos: None,
                     }),
                     carve::InlineNode::Image(carve::Image {
