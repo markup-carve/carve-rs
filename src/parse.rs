@@ -10376,10 +10376,17 @@ fn resolve_reference_links_inline(
                     // author wrote a reference, and it did so only on the HTML
                     // path, so one document had two shapes (carve#486).
                     if let Some(def) = defs.get(label) {
+                        // PART 12 §3a, A RESOLVED REFERENCE KEEPS ITS
+                        // DESTINATION: `ref` and `raw_ref` stay BESIDE `href`,
+                        // the same way §5 has footnote numbering added
+                        // alongside rather than in place of the reference.
+                        // Clearing them made `[a][]` and `[a](/url)` the same
+                        // tree - the distinction the clause protects
+                        // (carve#597). Every renderer already asks whether the
+                        // DESTINATION is empty, so nothing downstream reads the
+                        // label as "unresolved".
                         l.href = def.href.clone();
                         l.title = def.title.clone();
-                        l.ref_label = None;
-                        l.raw_ref = None;
                     } else if is_collapsed_reference(l) {
                         // Implicit heading reference. The LABEL goes in, not a
                         // slug of it: PART 11 R1 keys this index by the heading's
@@ -10441,10 +10448,9 @@ fn resolve_reference_links_inline(
             InlineNode::Image(img) => {
                 if let Some(label) = &img.ref_label {
                     if let Some(def) = defs.get(label) {
+                        // PART 12 §3a - see the note on the link branch above.
                         img.src = def.href.clone();
                         img.title = def.title.clone();
-                        img.ref_label = None;
-                        img.raw_ref = None;
                         out.push(node);
                     } else {
                         // Unresolved image references stay as Image nodes. They
@@ -10559,7 +10565,7 @@ fn promote_block_images(blocks: &mut [BlockNode], figures_only: bool) {
                 block,
                 BlockNode::Paragraph(p)
                     if p.children.len() == 1
-                        && matches!(&p.children[0], InlineNode::Image(img) if img.ref_label.is_none())
+                        && matches!(&p.children[0], InlineNode::Image(img) if !is_unresolved_image(img))
             );
         if single_image {
             // Take the children out first so the paragraph borrow ends before
@@ -10600,7 +10606,7 @@ fn promote_block_images(blocks: &mut [BlockNode], figures_only: bool) {
             BlockNode::Paragraph(p)
                 if p.at_content_column
                     && p.children.len() >= 3
-                    && matches!(&p.children[0], InlineNode::Image(img) if img.ref_label.is_none())
+                    && matches!(&p.children[0], InlineNode::Image(img) if !is_unresolved_image(img))
                     && matches!(p.children[1], InlineNode::SoftBreak(_))
                     && matches!(&p.children[2], InlineNode::Text(t) if caption_marker_len(&t.value).is_some())
                     && caption_first_line_has_content(&p.children)
@@ -10654,6 +10660,15 @@ fn promote_block_images(blocks: &mut [BlockNode], figures_only: bool) {
             _ => {}
         }
     }
+}
+
+/// An image the document never resolved: it carries a reference and no source.
+///
+/// PART 12 §3a keeps `ref` and `raw_ref` on a RESOLVED reference as well, so the
+/// presence of a label stopped answering this on its own - a resolved reference
+/// image stopped promoting to a figure (carve#597).
+fn is_unresolved_image(image: &Image) -> bool {
+    image.ref_label.is_some() && image.src.is_empty()
 }
 
 fn is_collapsed_reference(link: &Link) -> bool {
@@ -11314,7 +11329,7 @@ fn enforce_no_nesting_inline(nodes: Vec<InlineNode>, inside_link: bool) -> Vec<I
     for node in nodes {
         match node {
             InlineNode::Link(mut link) => {
-                let unresolved = link.ref_label.is_some();
+                let unresolved = link.ref_label.is_some() && link.href.is_empty();
                 let children = enforce_no_nesting_inline(link.children, true);
                 if inside_link && !unresolved {
                     // A nested link is dropped; only its (cleaned) text remains

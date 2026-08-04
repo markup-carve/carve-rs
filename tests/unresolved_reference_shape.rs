@@ -148,8 +148,15 @@ fn unresolved_link_inside_link_is_not_unwrapped() {
     );
 }
 
+/// PART 12 §3a's second half: A RESOLVED REFERENCE KEEPS ITS DESTINATION - the
+/// authored `ref` and `raw_ref` survive BESIDE `href`, the same way §5 has
+/// footnote numbering added alongside rather than in place of the reference.
+///
+/// This asserted the pair was CLEARED on a successful resolve, which made
+/// `[gs][]` and `[gs](/start)` the same tree - the distinction the clause
+/// exists to protect (carve#597).
 #[test]
-fn explicit_definition_resolves_and_clears_reference_metadata() {
+fn explicit_definition_resolves_and_keeps_reference_metadata() {
     let doc = carve::parse("See [gs][] here.\n\n[gs]: /start");
     let [carve::InlineNode::Text(before), carve::InlineNode::Link(link), carve::InlineNode::Text(after)] =
         paragraph_children(&doc)
@@ -162,8 +169,8 @@ fn explicit_definition_resolves_and_clears_reference_metadata() {
 
     assert_eq!(before.value, "See ");
     assert_eq!(link.href, "/start");
-    assert_eq!(link.ref_label, None);
-    assert_eq!(link.raw_ref, None);
+    assert_eq!(link.ref_label.as_deref(), Some("gs"));
+    assert_eq!(link.raw_ref.as_deref(), Some("[gs][]"));
     assert_eq!(after.value, " here.");
     assert_eq!(
         h("See [gs][] here.\n\n[gs]: /start"),

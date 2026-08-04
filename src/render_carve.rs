@@ -1003,7 +1003,11 @@ fn render_inline(
 }
 
 fn render_link(node: &Link, ctx: &mut CarveContext) -> String {
-    if node.ref_label.is_some() && node.raw_ref.is_some() {
+    // UNRESOLVED means no destination, not "carries a label": PART 12 §3a keeps
+    // `ref` and `raw_ref` on a RESOLVED reference too, so the label alone no
+    // longer answers this and a working reference round-tripped as its own
+    // source instead of normalizing to the inline form (carve#597).
+    if node.ref_label.is_some() && node.raw_ref.is_some() && node.href.is_empty() {
         return node.raw_ref.clone().unwrap_or_default();
     }
     if node.from_crossref {
@@ -1028,7 +1032,7 @@ fn render_image(node: &Image) -> String {
     // An unresolved reference image round-trips via its verbatim source, exactly
     // like an unresolved reference link (render_link); `![alt]()` would change
     // the rendered text and break the to_html(fmt(x)) == to_html(x) invariant.
-    if node.ref_label.is_some() && node.raw_ref.is_some() {
+    if node.ref_label.is_some() && node.raw_ref.is_some() && node.src.is_empty() {
         return node.raw_ref.clone().unwrap_or_default();
     }
     let title = node
