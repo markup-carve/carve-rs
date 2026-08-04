@@ -1349,7 +1349,14 @@ fn fill_offsets(blocks: &mut [BlockNode], line_starts: &[usize]) {
             BlockNode::Figure(f) => f.pos.as_mut(),
             BlockNode::BlockImage(i) => i.pos.as_mut(),
             BlockNode::DefinitionList(d) => d.pos.as_mut(),
-            _ => None,
+            BlockNode::AbbreviationDef(a) => a.pos.as_mut(),
+            BlockNode::Extension(e) => e.pos.as_mut(),
+            // EXHAUSTIVE on purpose. A `_ => None` arm here is why an
+            // `abbreviation_def` shipped with a correct line and column and
+            // offsets of `0..0` - present, and selecting nothing. That is the
+            // fourth node family to fail exactly that way, after figure
+            // captions, footnote definition bodies and definition terms. A new
+            // variant is now a compile error rather than a silent 0..0.
         };
         if let Some(pos) = pos {
             apply_offsets(pos, line_starts);
@@ -1996,8 +2003,14 @@ fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<BlockNode>
     if !line.starts_with([' ', '\t']) && detect_container_open(line).is_some() {
         return Some(parse_container(cur, options));
     }
-    if let Some(abbr) = detect_abbreviation_def(line) {
+    if let Some(mut abbr) = detect_abbreviation_def(line) {
+        let abbr_at = cur.pos;
         cur.consume();
+        // Its own line, the same way the block image below takes one. #517
+        // started publishing this node and it went out with no span at all,
+        // which PART 12 §4 allows only for a node that was reassembled and has
+        // no honest one - a definition the author wrote on line 1 has one.
+        abbr.pos = span_of(cur, abbr_at, abbr_at + 1, options);
         return Some(BlockNode::AbbreviationDef(abbr));
     }
     if let Some(mut img) = detect_block_image(line) {
