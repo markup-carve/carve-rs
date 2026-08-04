@@ -33,6 +33,20 @@ fn corpus_sources() -> Vec<(String, String)> {
 
 #[test]
 fn corpus_formatter_semantic_idempotent_and_reparseable() {
+    // On a thread with room: the corpus holds a document nested to the parser's
+    // cap (200 containers), and one debug-build frame per level overflows the
+    // 2 MiB a test thread gets. The library handles the document - parse,
+    // encode, decode, render and format all complete - so this buys the sweep,
+    // not a behaviour change (carve-rs#530).
+    std::thread::Builder::new()
+        .stack_size(32 * 1024 * 1024)
+        .spawn(corpus_formatter_semantic_idempotent_and_reparseable_inner)
+        .expect("thread spawns")
+        .join()
+        .expect("the sweep finishes");
+}
+
+fn corpus_formatter_semantic_idempotent_and_reparseable_inner() {
     for (slug, source) in corpus_sources() {
         let formatted = carve::to_carve(&source);
         if !formatted.contains("\n\n    -")

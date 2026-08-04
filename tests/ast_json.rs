@@ -229,6 +229,20 @@ where
 
 #[test]
 fn corpus_round_trip() {
+    // On a thread with room: the corpus holds a document nested to the parser's
+    // cap (200 containers), and one debug-build frame per level overflows the
+    // 2 MiB a test thread gets. The library handles the document - parse,
+    // encode, decode, render and format all complete - so this buys the sweep,
+    // not a behaviour change (carve-rs#530).
+    std::thread::Builder::new()
+        .stack_size(32 * 1024 * 1024)
+        .spawn(corpus_round_trip_inner)
+        .expect("thread spawns")
+        .join()
+        .expect("the sweep finishes");
+}
+
+fn corpus_round_trip_inner() {
     let paths = corpus_sources();
     assert!(!paths.is_empty());
     for path in &paths {
