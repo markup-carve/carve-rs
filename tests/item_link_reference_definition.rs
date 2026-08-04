@@ -54,3 +54,33 @@ fn a_blockquote_definition_still_works() {
     assert!(!out.contains("[r]: /u"), "{out}");
     assert!(out.contains(r#"<a href="/u">text</a>"#), "{out}");
 }
+
+#[test]
+fn a_footnote_definition_at_the_content_column_is_collected() {
+    // The same gap as the link-reference case above, in the OTHER prepass: an
+    // item's continuation line carries no marker, so the indentation stayed in
+    // front of the `[` and the definition was neither collected nor rendered -
+    // the author's line disappeared and a reference to it stayed literal
+    // (carve-rs#568). carve-js and the executable spec both collect it.
+    let out = carve::to_html("- a\n  [^f]: x\n\nsee[^f]\n");
+    assert!(!out.contains("[^f]: x"), "definition leaked:\n{out}");
+    assert!(
+        out.contains("doc-noteref"),
+        "reference did not resolve:\n{out}"
+    );
+    assert!(out.contains("doc-endnotes"), "no endnotes section:\n{out}");
+}
+
+#[test]
+fn a_footnote_definition_below_the_content_column_is_text() {
+    // One column left it is outside the item body: it folds as paragraph text
+    // and registers nothing, which is what carve#624 settled for every
+    // definition kind. The strip must be exactly the content column so these
+    // two cases stay apart.
+    let out = carve::to_html("- a\n [^f]: x\n\nsee[^f]\n");
+    assert!(out.contains("[^f]: x"), "{out}");
+    assert!(
+        out.contains("see[^f]"),
+        "reference should stay literal:\n{out}"
+    );
+}

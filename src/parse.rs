@@ -296,6 +296,70 @@ fn remap_source(source: String, original: &MappedSource) -> MappedSource {
     }
 }
 
+/// The content column of the innermost list item a line-based prepass is inside.
+///
+/// Both definition prepasses need it for the same reason: a definition on an
+/// item's CONTINUATION line carries no marker, so `strip_container_prefixes`
+/// leaves the item's indentation in front of the `[` and the line stops looking
+/// like a definition. Stripping exactly this many columns - never more - is what
+/// separates a definition AT the content column (collected) from one below it
+/// (paragraph text that registers nothing, PART 9 §24 C3 as carve#624 states it).
+///
+/// A line-based approximation, as the note in `extract_link_defs` says: tab-vs-
+/// space marker alignment is char-counted, the post-blank `baseIndent + 2` rule
+/// is not modeled, and lists inside blockquotes are not fully modeled.
+#[derive(Default)]
+struct ContentColumns {
+    cols: Vec<usize>,
+    prev_blank: bool,
+}
+
+impl ContentColumns {
+    fn new() -> Self {
+        Self {
+            cols: Vec::new(),
+            prev_blank: true,
+        }
+    }
+
+    /// Feed the next raw line. `opaque` suppresses tracking inside a fence or a
+    /// line block, where `- verse` is content rather than a marker.
+    fn observe(&mut self, line: &str, opaque: bool) -> usize {
+        let was_prev_blank = self.prev_blank;
+        self.prev_blank = trim_ascii(line).is_empty();
+        if !opaque {
+            let indent = leading_ws(line);
+            let raw_trimmed = trim_ascii(line);
+            let starts_block = is_heading_marker_line(raw_trimmed)
+                || raw_trimmed.starts_with('>')
+                || detect_fence_open(raw_trimmed).is_some()
+                || detect_thematic_break(raw_trimmed);
+            if let Some((marker_indent, marker_width)) = detect_prepass_list_marker(line) {
+                while self.cols.last().is_some_and(|col| *col > marker_indent) {
+                    self.cols.pop();
+                }
+                self.cols.push(marker_width);
+            } else if !raw_trimmed.is_empty() && (was_prev_blank || starts_block) {
+                while self.cols.last().is_some_and(|col| *col > indent) {
+                    self.cols.pop();
+                }
+            }
+        }
+        self.cols.last().copied().unwrap_or(0)
+    }
+}
+
+/// A definition line with the enclosing item's content column removed, so a
+/// continuation line reads as the definition it is. Exactly the column, never
+/// more: past it the line is item paragraph text and defines nothing.
+fn at_content_column<'a>(bare: &'a str, structural: &str, content_col: usize) -> &'a str {
+    if content_col > 0 && structural.is_empty() {
+        bare.strip_prefix(&" ".repeat(content_col)).unwrap_or(bare)
+    } else {
+        bare
+    }
+}
+
 fn extract_footnote_defs(
     source: &str,
     first_source_line: usize,
@@ -317,6 +381,11 @@ fn extract_footnote_defs(
     // document was skipped. Tracked only to gate the opener.
     let mut in_comment_fence: Option<usize> = None;
     let comment_closers = comment_fence_close_index(&lines);
+    // See ContentColumns: a definition on an item's CONTINUATION line carries no
+    // marker, so without this the line kept its indentation, stopped looking
+    // like a definition, and was neither collected nor rendered - the author's
+    // line disappeared and a reference to it stayed literal (carve-rs#568).
+    let mut columns = ContentColumns::new();
     let mut i = 0;
     while i < lines.len() {
         // A footnote definition is collected at the top level AND from inside a
@@ -325,6 +394,10 @@ fn extract_footnote_defs(
         // (which recognizes the def inside the container's sub-lexer). Strip the
         // container prefix first, then test the bare content (corpus 115).
         let stripped = strip_container_prefixes(lines[i]);
+        let content_col = columns.observe(
+            lines[i],
+            in_fence.is_some() || in_line_block.is_some() || in_comment_fence.is_some(),
+        );
         let in_container = !stripped.structural.is_empty();
         // A footnote definition is NEVER collected from inside a fenced code
         // block: a `[^x]: ...` line there is literal content. The prepass has
@@ -412,7 +485,8 @@ fn extract_footnote_defs(
             i += 1;
             continue;
         }
-        if let Some((label, first)) = parse_footnote_def_line(stripped.bare) {
+        let def_line = at_content_column(stripped.bare, stripped.structural, content_col);
+        if let Some((label, first)) = parse_footnote_def_line(def_line) {
             let def_start_line = first_source_line + i;
             i += 1;
             let mut def_lines = vec![first.to_string()];
@@ -607,38 +681,17 @@ fn extract_link_defs(source: &str) -> (String, BTreeMap<String, LinkDef>) {
     // nested inside blockquotes are not fully modeled. Those residual cases can
     // still produce a spurious link, not content loss; the sound fix is
     // collecting definitions during block parsing.
-    let mut list_cols: Vec<usize> = Vec::new();
-    let mut prev_blank = true;
+    let mut columns = ContentColumns::new();
     // Collected so an unterminated `%%%` can be told from a real fenced comment
     // before the state is entered - see comment_fence_closes.
     let all_lines: Vec<&str> = source.lines().collect();
     let comment_closers = comment_fence_close_index(&all_lines);
     for (line_index, line) in all_lines.iter().copied().enumerate() {
         let stripped = strip_container_prefixes(line);
-        let was_prev_blank = prev_blank;
-        prev_blank = trim_ascii(line).is_empty();
         // Verse text is opaque: a line-block body line like `- verse` is not a
         // list marker, and letting it push a content column left the NEXT
         // top-level opener unprotected.
-        if in_fence.is_none() && in_line_block.is_none() {
-            let indent = leading_ws(line);
-            let raw_trimmed = trim_ascii(line);
-            let starts_block = is_heading_marker_line(raw_trimmed)
-                || raw_trimmed.starts_with('>')
-                || detect_fence_open(raw_trimmed).is_some()
-                || detect_thematic_break(raw_trimmed);
-            if let Some((marker_indent, marker_width)) = detect_prepass_list_marker(line) {
-                while list_cols.last().is_some_and(|col| *col > marker_indent) {
-                    list_cols.pop();
-                }
-                list_cols.push(marker_width);
-            } else if !raw_trimmed.is_empty() && (was_prev_blank || starts_block) {
-                while list_cols.last().is_some_and(|col| *col > indent) {
-                    list_cols.pop();
-                }
-            }
-        }
-        let content_col = list_cols.last().copied().unwrap_or(0);
+        let content_col = columns.observe(line, in_fence.is_some() || in_line_block.is_some());
         let raw_is_quoted = prepass_line_is_quoted(line);
         if let Some(fence_len) = in_line_block {
             // The line is KEPT whatever it looks like - that is the whole point.
@@ -751,14 +804,7 @@ fn extract_link_defs(source: &str) -> (String, BTreeMap<String, LinkDef>) {
         // implementations agree it defines nothing there. Zero columns is the
         // top-level case, where `text` / `  [r]: /u` is likewise text
         // everywhere - so this only ever fires inside a list item.
-        let def_line = if content_col > 0 && stripped.structural.is_empty() {
-            stripped
-                .bare
-                .strip_prefix(&" ".repeat(content_col))
-                .unwrap_or(stripped.bare)
-        } else {
-            stripped.bare
-        };
+        let def_line = at_content_column(stripped.bare, stripped.structural, content_col);
         if let Some((label_part, target_part)) = parse_link_def_line(def_line) {
             // A reference definition needs a non-empty destination (carve-js
             // `RE_LINK_DEF` requires `(\S+)` after the colon). An empty target
