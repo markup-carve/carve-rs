@@ -9,6 +9,19 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A colon fence on a marker line opens** (#511 item 4). `- :::` published
+  `<li>:::</li>` unless item-owned content followed it. An opener opens, closer
+  or no closer (carve#514), and an empty body is a container with nothing in it
+  (carve#570) - what can stop it is the strict content-column rule, so `- :::`
+  / `x` is still the literal `::: x` because `x` is lazy item text that folds
+  the fence in with it.
+
+- **A floating attribute skips an abbreviation definition** (§15 A2a, #511
+  item 2). It attaches to the next VISIBLE block, and the other invisible kinds
+  were already skipped - a definition produced a node, so the pending
+  attributes were taken and then dropped. `{#i}` / `*[A]: b` / blank / `e` now
+  publishes `<p id="i">e</p>`.
+
 - **A trailing line comment is published** (PART 12, #513). `text %% note`
   produced a paragraph holding one `text` node, where carve-js and carve-php
   publish `text` then `comment`. Every rendered target was already right - a

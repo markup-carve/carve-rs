@@ -178,9 +178,14 @@ fn marker_line_colon_fence_below_content_column_stays_literal() {
         html("- ::: note\nbody\n:::"),
         "<ul>\n  <li>::: note\nbody</li>\n</ul>\n<div>\n</div>"
     );
+    // With NOTHING below the content column to fold it into, the opener opens:
+    // the flush-left `:::` is a sibling of the list, not the item's body, so the
+    // marker-line fence stands on its own with an empty body (carve#514 /
+    // carve#570). carve-js, carve-php and the executable spec all publish this,
+    // and this engine kept the opener literal until carve-rs#511 item 4.
     assert_eq!(
         html("- :::\n:::"),
-        "<ul>\n  <li>:::</li>\n</ul>\n<div>\n</div>"
+        "<ul>\n  <li>\n    <div>\n    </div>\n  </li>\n</ul>\n<div>\n</div>"
     );
     assert_eq!(html("- a\nb"), "<ul>\n  <li>a\nb</li>\n</ul>");
 }
