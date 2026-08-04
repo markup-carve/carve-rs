@@ -1006,7 +1006,22 @@ fn render_list_item(
                 Part::Block(block)
             }
         })
+        .filter(|part| match part {
+            // A block that renders to NOTHING contributes no line (#429), and
+            // an item is not the exception: a comment or an abbreviation
+            // definition inside one used to leave the `\n` and the child
+            // indentation behind, so `- a` / `  %% c` published
+            // `<li>a    </li>` where carve-js, carve-php and the spec publish
+            // `<li>a</li>` (carve-rs#532).
+            Part::Block(html) => !html.trim().is_empty(),
+            Part::Inline(_) => true,
+        })
         .collect();
+    if parts.is_empty() {
+        out.push_str(checkbox);
+        out.push_str("</li>");
+        return;
+    }
     match &parts[0] {
         Part::Inline(html) => {
             out.push_str(checkbox);
