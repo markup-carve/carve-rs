@@ -524,3 +524,27 @@ fn the_render_cap_still_bounds_a_hand_built_ast() {
         );
     });
 }
+
+#[test]
+fn a_literal_marker_escapes_only_the_character_that_opens_it() {
+    // PART 11 §4: escape what would change the parse, and nothing else. A `:`
+    // opens a definition marker or a colon fence only at the START of a line,
+    // so the first colon of a run carries the escape and the rest cannot open
+    // anything. This engine escaped the whole class - `\:\:\:` for a literal
+    // `:::` - which is what carve-rs#566 is about; carve-js and carve-php both
+    // write one escape.
+    assert_eq!(
+        carve::to_carve(" :::\n A box.\n :::\n"),
+        "\\:::\nA box\\.\n\\:::\n"
+    );
+    assert_eq!(
+        carve::to_carve("- one\n :: term\n :  def\n"),
+        "- one\n  \\:: term\n  \\:  def\n"
+    );
+    // A colon that is not at a line start opens nothing, escaped or not - here
+    // the `[` escape is what keeps the definition from forming.
+    assert_eq!(
+        carve::to_carve(" Read [intro][x].\n\n [x]: /intro \"T\"\n"),
+        "Read [intro][x]\\.\n\n\\[x\\]: \\/intro \"T\"\n"
+    );
+}
