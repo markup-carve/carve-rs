@@ -117,6 +117,27 @@ fn main() -> ExitCode {
                 };
                 options = options.with_profile(profile);
             }
+            "--smart-typography" => {
+                // The switch the spec documents as document-global
+                // (divergence-from-djot section 12). Source mode is for
+                // machine-facing output, which is exactly what a CLI pipes
+                // into something else, so the flag belongs here rather than
+                // only in the library API.
+                let Some(value) = args.next() else {
+                    eprintln!("carve: --smart-typography requires a mode (glyph|source)");
+                    return ExitCode::FAILURE;
+                };
+                options.smart_typography = match value.as_str() {
+                    "glyph" => carve::SmartTypographyMode::Glyph,
+                    "source" => carve::SmartTypographyMode::Source,
+                    other => {
+                        eprintln!(
+                            "carve: unknown smart typography mode: {other} (expected glyph|source)"
+                        );
+                        return ExitCode::FAILURE;
+                    }
+                };
+            }
             "--profile-base-host" => {
                 let Some(value) = args.next() else {
                     eprintln!("carve: --profile-base-host requires a host");
@@ -407,7 +428,9 @@ fn print_usage() {
          --no-raw-html, --safe       escape =html raw blocks/spans instead of\n                              \
          emitting them (for untrusted input)\n  \
          --profile NAME              restrict features (full|article|comment|minimal)\n  \
-         --profile-base-host HOST    base host for the profile link policy\n\n\
+         --profile-base-host HOST    base host for the profile link policy\n  \
+         --smart-typography MODE     glyph (default) or source: emit the runs\n                              \
+         the author typed instead of the resolved glyphs\n\n\
          Spec: https://markup-carve.github.io/carve/"
     );
 }
