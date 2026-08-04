@@ -9,6 +9,16 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`fmt` writes a nested list with the indentation it read** (#594). Each level
+  was indented twice - once by an absolute `"  " * (list_depth - 1)` and again by
+  the parent item's continuation prefix - with a two-space strip of the child's
+  output as partial compensation. The parent's prefix IS the child's
+  indentation, so the absolute term was redundant: output grew as O(depth^3)
+  where the source is O(depth^2), and `05-lists-5` came back with four spaces
+  where it was written with two. A nested list now round-trips byte for byte at
+  every depth. Idempotence and the parse round trip held throughout, which is
+  why nothing caught it.
+
 - **An unterminated comment fence opens no span** (§28, #586). A fence with no
   closer degrades to a `%%` line comment, so the lines after it are ordinary
   lines - but the item collector opened a span anyway and dedented the next one
