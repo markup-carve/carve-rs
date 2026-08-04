@@ -338,7 +338,23 @@ impl ContentColumns {
                 while self.cols.last().is_some_and(|col| *col > marker_indent) {
                     self.cols.pop();
                 }
-                self.cols.push(marker_width);
+                // One line can open SEVERAL items: `- - a` opens an outer item
+                // whose content is another item, so BOTH content columns are
+                // live under it (2 and 4). Recording only the outer one left a
+                // definition at the INNER column looking like text, so it
+                // registered nothing here while carve-js and carve-php read it
+                // as that item's block (carve#655).
+                let mut offset = marker_width;
+                self.cols.push(offset);
+                while let Some((nested_indent, nested_width)) =
+                    detect_prepass_list_marker(&line[offset..])
+                {
+                    if nested_indent != 0 {
+                        break;
+                    }
+                    offset += nested_width;
+                    self.cols.push(offset);
+                }
             } else if !raw_trimmed.is_empty() && (was_prev_blank || starts_block) {
                 while self.cols.last().is_some_and(|col| *col > indent) {
                     self.cols.pop();
@@ -347,11 +363,26 @@ impl ContentColumns {
         }
         self.cols.last().copied().unwrap_or(0)
     }
+
+    /// The content column of the open item a line at `indent` actually reaches:
+    /// the deepest one at or below it, or 0 when it reaches none.
+    ///
+    /// Not always the innermost. Under `- - a` a definition written at column 2
+    /// belongs to the outer item and one at column 4 to the inner one; between
+    /// them it reaches neither and folds as text (PART 9 §24 C3).
+    fn reached_by(&self, indent: usize) -> usize {
+        self.cols
+            .iter()
+            .copied()
+            .filter(|col| *col <= indent)
+            .max()
+            .unwrap_or(0)
+    }
 }
 
 /// A definition line with the enclosing item's content column removed, so a
-/// continuation line reads as the definition it is. Exactly the column, never
-/// more: past it the line is item paragraph text and defines nothing.
+/// continuation line reads as the definition it is. Exactly a column, never
+/// between two: past one the line is item paragraph text and defines nothing.
 fn at_content_column<'a>(bare: &'a str, structural: &str, content_col: usize) -> &'a str {
     if content_col > 0 && structural.is_empty() {
         bare.strip_prefix(&" ".repeat(content_col)).unwrap_or(bare)
@@ -394,7 +425,9 @@ fn extract_footnote_defs(
         // (which recognizes the def inside the container's sub-lexer). Strip the
         // container prefix first, then test the bare content (corpus 115).
         let stripped = strip_container_prefixes(lines[i]);
-        let content_col = columns.observe(
+        // The footnote prepass asks per LINE which column a definition reaches
+        // (see `reached_by`), so the innermost column alone is not enough here.
+        let _ = columns.observe(
             lines[i],
             in_fence.is_some() || in_line_block.is_some() || in_comment_fence.is_some(),
         );
@@ -492,7 +525,11 @@ fn extract_footnote_defs(
             i += 1;
             continue;
         }
-        let def_line = at_content_column(stripped.bare, stripped.structural, content_col);
+        let def_line = at_content_column(
+            stripped.bare,
+            stripped.structural,
+            columns.reached_by(leading_ws(stripped.bare)),
+        );
         if let Some((label, first)) = parse_footnote_def_line(def_line) {
             let def_start_line = first_source_line + i;
             i += 1;
@@ -820,7 +857,11 @@ fn extract_link_defs(source: &str) -> (String, BTreeMap<String, LinkDef>) {
         // implementations agree it defines nothing there. Zero columns is the
         // top-level case, where `text` / `  [r]: /u` is likewise text
         // everywhere - so this only ever fires inside a list item.
-        let def_line = at_content_column(stripped.bare, stripped.structural, content_col);
+        let def_line = at_content_column(
+            stripped.bare,
+            stripped.structural,
+            columns.reached_by(leading_ws(stripped.bare)),
+        );
         if let Some((label_part, target_part)) = parse_link_def_line(def_line) {
             // A reference definition needs a non-empty destination (carve-js
             // `RE_LINK_DEF` requires `(\S+)` after the colon). An empty target
