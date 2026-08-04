@@ -9,6 +9,29 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A comment below a list item's content column keeps the item open**
+  (PART 9 §24 C3, markup-carve/carve#624, corpus
+  `182-a-comment-is-recognized-at-any-column`). Below that column every other
+  construct folds as the text it looks like, and a comment does not: it is the
+  one construct each engine finds after trimming the line, wherever it sits.
+  Being invisible it also closes nothing, so
+
+  ```
+  - a
+   %% c
+  b
+  ```
+
+  is one item holding `a` and `b`. The comment was ending the item here and `b`
+  came back as a top-level paragraph.
+
+  The exemption is comments only, unlike the two other `renders_nothing` checks
+  in the parser, which also count an abbreviation definition. Inside an item
+  there is no such node to count: a definition written there is not a definition
+  at all (markup-carve/carve#611), it is the literal text the author typed, so
+  it is visible and closes nothing to look past. Both engines agree byte for
+  byte on that shape.
+
 - **A blank line before a sibling item still loosens the list when an invisible
   construct sits in the gap** (§17, #557). `- a` / blank / `  %% note` / `- b`
   came out tight: the comment is not the item's second block, correctly, but
