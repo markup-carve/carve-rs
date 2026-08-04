@@ -1,9 +1,9 @@
 //! A block that renders to nothing contributes no line to its parent's body.
 //!
-//! A comment, a comment block, an abbreviation definition and a non-HTML raw
-//! block all render as the empty string. Pushing the separating newline before
-//! knowing that left a blank line where the block stood. carve-php is the
-//! oracle here; carve-js carried the same divergence.
+//! A comment, a comment block and a non-HTML raw block all render as the empty
+//! string. Pushing the separating newline before knowing that left a blank line
+//! where the block stood. carve-php is the oracle here; carve-js carried the
+//! same divergence.
 
 fn html(src: &str) -> String {
     carve::to_html(src).trim_end().to_string()
@@ -45,7 +45,7 @@ fn a_definition_body_that_renders_to_nothing_closes_on_its_own_line() {
 fn an_abbreviation_definition_inside_a_div() {
     assert_eq!(
         html(":::\n*[HTML]: HyperText Markup Language\n\nbody\n:::\n"),
-        "<div>\n  <p>body</p>\n</div>"
+        "<div>\n  <p>*[HTML]: HyperText Markup Language</p>\n  <p>body</p>\n</div>"
     );
 }
 
