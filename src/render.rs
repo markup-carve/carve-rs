@@ -1781,7 +1781,24 @@ fn render_inline_after(
             // The backslash is authoring syntax; the reader sees the character.
             write_escaped_text_nbsp(out, &s.value);
         }
-        InlineNode::SmartPunctuation(s) => write_escaped_text_nbsp(out, smart_punctuation_glyph(s)),
+        InlineNode::SmartPunctuation(s) => {
+            // Source mode reproduces what the author typed; the glyph is a
+            // presentation choice a machine consumer cannot reverse. The node
+            // carries both halves, so this is a rendering decision and the
+            // tree is the same either way (divergence-from-djot section 12).
+            //
+            // Heading ids are deliberately NOT affected: they slug from
+            // `plain_inlines`, which keeps reading the glyph and normalizes it
+            // back to ASCII, so `# Don't repeat yourself` gives the same id in
+            // both modes.
+            let text = if options.smart_typography == crate::extension::SmartTypographyMode::Source
+            {
+                s.value.as_str()
+            } else {
+                smart_punctuation_glyph(s)
+            };
+            write_escaped_text_nbsp(out, text);
+        }
         InlineNode::Emphasis(e) => render_emphasis(out, e, options, state),
         InlineNode::Code(s) => {
             out.push_str("<code");

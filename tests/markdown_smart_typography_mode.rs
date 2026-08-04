@@ -60,7 +60,10 @@ fn markdown_structure_still_renders() {
 }
 
 #[test]
-fn other_targets_are_unaffected() {
+fn every_target_defaults_to_the_glyph() {
+    // Not "other targets ignore the mode": HTML honours it too
+    // (tests/html_smart_typography_mode.rs). What is pinned here is the
+    // DEFAULT, which is the glyph everywhere.
     assert_eq!(carve::to_html("a...b").trim(), "<p>a…b</p>");
     assert_eq!(carve::to_plain_text("a...b").trim(), "a…b");
 }
