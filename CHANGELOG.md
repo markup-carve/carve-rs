@@ -9,6 +9,11 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A link writes its title before its attributes** (#543). `[E](/u "T"){.x}`
+  published `class` before `title`, the opposite order from carve-js, carve-php
+  and the executable spec. No corpus document pairs a title with an attribute
+  block, so nothing compared them. Images were already right.
+
 - **A comment on a marker line is a block, and an invisible block leaves no
   line in the item** (#511 item 7, #532). `- %% c` routed to the lead-paragraph
   path, where the inline scanner consumed the comment and left the item holding
