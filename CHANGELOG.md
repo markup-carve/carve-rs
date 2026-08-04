@@ -37,6 +37,26 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   worst of the two answers. Reachable on main through a flush-left closer; the
   indented-closer fix above only removed the accident that was hiding the rest.
 
+- **An invisible line does not cancel a blank-line separation** (PART 9 §17 L1b,
+  markup-carve/carve#630, corpus
+  `185-an-invisible-line-does-not-cancel-a-blank-line-separation`). carve#621
+  settled that an invisible construct is not the second PARAGRAPH that loosens
+  an item, because it renders nothing. It cannot stand BETWEEN the blank and the
+  paragraph after it either, because it is not a separator - so
+
+  ```
+  - a
+
+    %% n
+    text
+  ```
+
+  is loose. Reading only the FIRST collected block found the comment and called
+  the item tight; the check now looks past what renders nothing for the first
+  VISIBLE block. Both controls still hold: an invisible line with no paragraph
+  behind it keeps the item tight (§17 L1), and a sub-list behind one keeps it
+  tight too (§17 L2).
+
 - **A comment below a list item's content column keeps the item open**
   (PART 9 §24 C3, markup-carve/carve#624, corpus
   `182-a-comment-is-recognized-at-any-column`). Below that column every other
@@ -67,7 +87,6 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   follows - and a blank before a sibling loosens the list whatever sits between
   them. Corpus `87-compact-list-blocks-6` pins it.
 
-<<<<<<< Updated upstream
 - **A colon fence on a marker line opens** (#511 item 4). `- :::` published
   `<li>:::</li>` unless item-owned content followed it. An opener opens, closer
   or no closer (carve#514), and an empty body is a container with nothing in it
@@ -89,7 +108,7 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   pandoc bridge, anything formatting over the wire) lost the comment. It is an
   `InlineNode::Comment` now, encoded and decoded as `comment` with
   `block: false`.
-=======
+
 - **Past the nesting cap, an opener degrades instead of vanishing - and a blank
   line still ends the run** (PART 9 §25, #530). An over-cap opener with a
   CLOSER anywhere after it was consumed and never emitted, so 203 openers plus
@@ -103,7 +122,6 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   too and published the run verbatim - a canonical `\:\: x` kept its
   backslashes, and `fmt` stopped round-tripping the corpus document that
   reaches the cap.
->>>>>>> Stashed changes
 
 - **A link writes its title before its attributes** (#543). `[E](/u "T"){.x}`
   published `class` before `title`, the opposite order from carve-js, carve-php
