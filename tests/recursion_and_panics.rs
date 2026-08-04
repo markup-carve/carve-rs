@@ -101,58 +101,84 @@ fn normal_nesting_still_renders() {
 
 #[test]
 fn non_html_renderers_bound_programmatic_block_depth() {
-    let mut block = carve::BlockNode::Paragraph(carve::Paragraph {
-        attrs: None,
-        children: vec![carve::InlineNode::text("leaf".to_string())],
-        ..Default::default()
-    });
-    for _ in 0..500 {
-        block = carve::BlockNode::BlockQuote(carve::BlockQuote {
+    // A 648-deep tree is built and DROPPED here, and the recursive Drop
+    // is what overflows a default test stack - the same property the
+    // other deep-tree tests in this file spawn a big stack for.
+    on_big_stack(|| {
+        let mut block = carve::BlockNode::Paragraph(carve::Paragraph {
             attrs: None,
-            children: vec![block],
-            attribution: None,
-            pos: None,
+            children: vec![carve::InlineNode::text("leaf".to_string())],
+            ..Default::default()
         });
-    }
-    let doc = carve::Document {
-        frontmatter: std::collections::BTreeMap::new(),
-        frontmatter_raw: None,
-        source_len: 0,
-        footnote_defs: std::collections::BTreeMap::new(),
-        children: vec![block],
-    };
+        for _ in 0..carve::MAX_RENDER_DEPTH + 16 {
+            block = carve::BlockNode::BlockQuote(carve::BlockQuote {
+                attrs: None,
+                children: vec![block],
+                attribution: None,
+                pos: None,
+            });
+        }
+        let doc = carve::Document {
+            frontmatter: std::collections::BTreeMap::new(),
+            frontmatter_raw: None,
+            source_len: 0,
+            footnote_defs: std::collections::BTreeMap::new(),
+            children: vec![block],
+        };
 
-    let _ = carve::render_markdown(&doc);
-    let _ = carve::render_plain_text(&doc);
-    let _ = carve::render_ansi(&doc);
+        // Past the ceiling, so the bound now shows as a REFUSAL rather than
+        // as truncated output (PART 9 §25, carve-rs#511 item 5). Both properties
+        // still hold: the recursion stayed bounded (no overflow to get here) and
+        // the caller is told which renderer stopped and where.
+        for (target, rendered) in [
+            ("markdown", carve::render_markdown(&doc)),
+            ("plain", carve::render_plain_text(&doc)),
+            ("ansi", carve::render_ansi(&doc)),
+        ] {
+            let err = rendered.expect_err("a tree past the ceiling refuses");
+            assert_eq!(err.renderer(), target);
+            assert_eq!(err.limit(), carve::MAX_RENDER_DEPTH);
+        }
+    });
 }
 
 #[test]
 fn non_html_renderers_bound_programmatic_inline_depth() {
-    let mut inline = carve::InlineNode::text("leaf".to_string());
-    for _ in 0..500 {
-        inline = carve::InlineNode::Emphasis(carve::Emphasis {
-            attrs: None,
-            kind: carve::EmphasisKind::Italic,
-            children: vec![inline],
-            pos: None,
-        });
-    }
-    let doc = carve::Document {
-        frontmatter: std::collections::BTreeMap::new(),
-        frontmatter_raw: None,
-        source_len: 0,
-        footnote_defs: std::collections::BTreeMap::new(),
-        children: vec![carve::BlockNode::Paragraph(carve::Paragraph {
-            attrs: None,
-            children: vec![inline],
-            ..Default::default()
-        })],
-    };
+    // A 648-deep tree is built and DROPPED here, and the recursive Drop
+    // is what overflows a default test stack - the same property the
+    // other deep-tree tests in this file spawn a big stack for.
+    on_big_stack(|| {
+        let mut inline = carve::InlineNode::text("leaf".to_string());
+        for _ in 0..carve::MAX_RENDER_DEPTH + 16 {
+            inline = carve::InlineNode::Emphasis(carve::Emphasis {
+                attrs: None,
+                kind: carve::EmphasisKind::Italic,
+                children: vec![inline],
+                pos: None,
+            });
+        }
+        let doc = carve::Document {
+            frontmatter: std::collections::BTreeMap::new(),
+            frontmatter_raw: None,
+            source_len: 0,
+            footnote_defs: std::collections::BTreeMap::new(),
+            children: vec![carve::BlockNode::Paragraph(carve::Paragraph {
+                attrs: None,
+                children: vec![inline],
+                ..Default::default()
+            })],
+        };
 
-    let _ = carve::render_markdown(&doc);
-    let _ = carve::render_plain_text(&doc);
-    let _ = carve::render_ansi(&doc);
+        for (target, rendered) in [
+            ("markdown", carve::render_markdown(&doc)),
+            ("plain", carve::render_plain_text(&doc)),
+            ("ansi", carve::render_ansi(&doc)),
+        ] {
+            let err = rendered.expect_err("an inline chain past the ceiling refuses");
+            assert_eq!(err.renderer(), target);
+            assert_eq!(err.limit(), carve::MAX_RENDER_DEPTH);
+        }
+    });
 }
 
 /// The HTML renderer's ceiling had to move off the parse cap too (issue 517).
@@ -186,20 +212,21 @@ fn html_render_ceiling_sits_above_the_parse_cap() {
 
         // 201 is one past the parse cap (MAX_NESTING_DEPTH = 200, not public),
         // which is the depth that used to lose its content.
-        let past_cap = carve::render_html(&build(201));
+        let past_cap = carve::render_html(&build(201))
+            .expect("the tree under test is within the render ceiling");
         assert!(
             past_cap.contains("body"),
             "content lost one level past the parse cap"
         );
 
-        // The ceiling is still load-bearing: output stops growing past it.
-        let over = carve::render_html(&build(carve::MAX_RENDER_DEPTH + 8));
-        let far_over = carve::render_html(&build(carve::MAX_RENDER_DEPTH + 500));
-        assert!(!over.contains("body"), "the ceiling no longer truncates");
-        assert_eq!(
-            over.len(),
-            far_over.len(),
-            "output still grows past the ceiling"
-        );
+        // The ceiling is still load-bearing, and now says so: past it the
+        // renderer refuses instead of returning output with the body deleted
+        // (PART 9 §25, carve-rs#511 item 5).
+        for depth in [carve::MAX_RENDER_DEPTH + 8, carve::MAX_RENDER_DEPTH + 500] {
+            let err = carve::render_html(&build(depth))
+                .expect_err("past the ceiling the HTML renderer refuses");
+            assert_eq!(err.renderer(), "html");
+            assert_eq!(err.limit(), carve::MAX_RENDER_DEPTH);
+        }
     });
 }

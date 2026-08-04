@@ -339,7 +339,8 @@ fn markdown_target_keeps_source_fence() {
     let ext = ImgFence::new();
     let opts = Options::new().with_extension(&ext);
     let doc = carve::parse(&fence("", SB));
-    let md = carve::render_markdown_with_options(&doc, &opts);
+    let md = carve::render_markdown_with_options(&doc, &opts)
+        .expect("the tree under test is within the render ceiling");
     // The SVG source survives verbatim as a fenced code block (not an <img>).
     assert!(md.contains("```img"));
     assert!(md.contains(SB));

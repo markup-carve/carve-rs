@@ -24,7 +24,18 @@ enum EscapeMode {
     Conservative,
 }
 
-pub fn render_carve(doc: &Document) -> String {
+/// Render a tree that did NOT come from the parser, refusing at the ceiling.
+///
+/// `Err` when the tree nests deeper than [`crate::MAX_RENDER_DEPTH`], naming the
+/// renderer and the bound (PART 9 §25). A parser-produced tree cannot reach it -
+/// the parse cap sits below the ceiling - so this fails only for a tree built
+/// through the API or read by `from_json`, which is the caller who can act on it.
+pub fn render_carve(doc: &Document) -> Result<String, crate::RenderDepthError> {
+    let watch = crate::render_depth::RenderDepthWatch::new();
+    watch.into_result(render_carve_unguarded(doc))
+}
+
+fn render_carve_unguarded(doc: &Document) -> String {
     let minimal = render_with_escapes(doc, EscapeMode::Minimal);
     let conservative = render_with_escapes(doc, EscapeMode::Conservative);
     if minimal == conservative || escaping_is_redundant(&minimal, &conservative) {
@@ -298,6 +309,7 @@ fn normalize_escapes_figure_target(f: &mut crate::ast::Figure) {
 
 fn render_blocks(blocks: &[BlockNode], ctx: &mut CarveContext) -> String {
     if ctx.block_depth >= MAX_RENDER_DEPTH {
+        crate::render_depth::record("carve");
         return String::new();
     }
     ctx.block_depth += 1;
@@ -343,6 +355,7 @@ fn render_item_blocks(blocks: &[BlockNode], tight: bool, ctx: &mut CarveContext)
         return render_blocks(blocks, ctx);
     }
     if ctx.block_depth >= MAX_RENDER_DEPTH {
+        crate::render_depth::record("carve");
         return String::new();
     }
     ctx.block_depth += 1;
@@ -876,6 +889,7 @@ fn render_footnote_def_source(label: &str, blocks: &[BlockNode], ctx: &mut Carve
 
 fn render_inlines(nodes: &[InlineNode], ctx: &mut CarveContext) -> String {
     if ctx.inline_depth >= MAX_RENDER_DEPTH {
+        crate::render_depth::record("carve");
         return String::new();
     }
     ctx.inline_depth += 1;

@@ -87,7 +87,10 @@ fn serialized_ast_publishes_the_bare_marker() {
         panic!("decoded first block is not a list");
     };
     assert!(list.bare_marker);
-    assert_eq!(carve::render_carve(&decoded), ". a\n");
+    assert_eq!(
+        carve::render_carve(&decoded).expect("the tree under test is within the render ceiling"),
+        ". a\n"
+    );
 }
 
 #[test]
@@ -97,7 +100,10 @@ fn a_numbered_list_publishes_no_bare_marker() {
     assert!(!json.contains("bareMarker"), "{json}");
 
     let decoded = carve::from_json(&json).expect("decode json");
-    assert_eq!(carve::render_carve(&decoded), "1. a\n");
+    assert_eq!(
+        carve::render_carve(&decoded).expect("the tree under test is within the render ceiling"),
+        "1. a\n"
+    );
 }
 
 #[test]

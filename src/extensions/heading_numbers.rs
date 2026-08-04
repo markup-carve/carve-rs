@@ -443,7 +443,8 @@ mod tests {
         let opts = Options::default();
         let ctx = BeforeRenderContext::new(&opts, Mode::Interactive, true);
         let doc = parse("# [v1]{.section-number} API\n\n## Next\n\nSee </#Next>.\n");
-        let out = render_html_with_options(&ext.before_render(doc, &ctx), &opts);
+        let out = render_html_with_options(&ext.before_render(doc, &ctx), &opts)
+            .expect("the tree under test is within the render ceiling");
         // Numbering still happened: the second heading is numbered and its
         // cross-reference is rewritten.
         assert!(out.contains("<span class=\"section-number\">1.1</span> Next"));

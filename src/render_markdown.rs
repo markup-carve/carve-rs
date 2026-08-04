@@ -29,18 +29,39 @@ fn smart_punctuation_text(node: &crate::ast::SmartPunctuation) -> &str {
 
 /// Render a document to Markdown, honouring `Options::smart_typography`. The
 /// profile transform is applied to `doc` upstream (see `crate::prepare_doc`).
-pub fn render_markdown_with_options(doc: &Document, options: &Options<'_>) -> String {
-    render_markdown_inner(doc, options.smart_typography, options.lowercase_heading_ids)
+/// Render a tree that did NOT come from the parser, refusing at the ceiling.
+///
+/// `Err` when the tree nests deeper than [`crate::MAX_RENDER_DEPTH`], naming the
+/// renderer and the bound (PART 9 §25). A parser-produced tree cannot reach it -
+/// the parse cap sits below the ceiling - so this fails only for a tree built
+/// through the API or read by `from_json`, which is the caller who can act on it.
+pub fn render_markdown_with_options(
+    doc: &Document,
+    options: &Options<'_>,
+) -> Result<String, crate::RenderDepthError> {
+    let watch = crate::render_depth::RenderDepthWatch::new();
+    watch.into_result(render_markdown_inner(
+        doc,
+        options.smart_typography,
+        options.lowercase_heading_ids,
+    ))
 }
 
 /// Render a document to Markdown with the default settings, so smart
 /// typography renders as its glyph.
-pub fn render_markdown(doc: &Document) -> String {
-    render_markdown_inner(
+/// Render a tree that did NOT come from the parser, refusing at the ceiling.
+///
+/// `Err` when the tree nests deeper than [`crate::MAX_RENDER_DEPTH`], naming the
+/// renderer and the bound (PART 9 §25). A parser-produced tree cannot reach it -
+/// the parse cap sits below the ceiling - so this fails only for a tree built
+/// through the API or read by `from_json`, which is the caller who can act on it.
+pub fn render_markdown(doc: &Document) -> Result<String, crate::RenderDepthError> {
+    let watch = crate::render_depth::RenderDepthWatch::new();
+    watch.into_result(render_markdown_inner(
         doc,
         crate::extension::SmartTypographyMode::Glyph,
         Options::default().lowercase_heading_ids,
-    )
+    ))
 }
 
 fn render_markdown_inner(
@@ -165,6 +186,7 @@ fn render_title_inlines(nodes: &[InlineNode], ctx: &mut MarkdownContext) -> Stri
 
 fn render_blocks(blocks: &[BlockNode], ctx: &mut MarkdownContext, depth: usize) -> String {
     if depth > MAX_RENDER_DEPTH {
+        crate::render_depth::record("markdown");
         return String::new();
     }
     blocks
@@ -175,6 +197,7 @@ fn render_blocks(blocks: &[BlockNode], ctx: &mut MarkdownContext, depth: usize) 
 
 fn render_block(node: &BlockNode, ctx: &mut MarkdownContext, depth: usize) -> String {
     if depth > MAX_RENDER_DEPTH {
+        crate::render_depth::record("markdown");
         return String::new();
     }
     match node {
@@ -308,6 +331,7 @@ fn render_block(node: &BlockNode, ctx: &mut MarkdownContext, depth: usize) -> St
 
 fn render_list(node: &List, ctx: &mut MarkdownContext, depth: usize) -> String {
     if depth > MAX_RENDER_DEPTH {
+        crate::render_depth::record("markdown");
         return String::new();
     }
     ctx.list_depth += 1;
@@ -365,6 +389,7 @@ fn render_definition_list(
     depth: usize,
 ) -> String {
     if depth > MAX_RENDER_DEPTH {
+        crate::render_depth::record("markdown");
         return String::new();
     }
     let mut out = String::new();
@@ -454,6 +479,7 @@ fn render_table(node: &Table, ctx: &mut MarkdownContext) -> String {
 
 fn render_figure(node: &Figure, ctx: &mut MarkdownContext, depth: usize) -> String {
     if depth > MAX_RENDER_DEPTH {
+        crate::render_depth::record("markdown");
         return String::new();
     }
     let target = match &node.target {
@@ -505,6 +531,7 @@ fn render_footnote_defs(doc: &Document, ctx: &mut MarkdownContext) -> String {
 
 fn render_inlines(nodes: &[InlineNode], ctx: &mut MarkdownContext, depth: usize) -> String {
     if depth > MAX_RENDER_DEPTH {
+        crate::render_depth::record("markdown");
         return String::new();
     }
     let mut out = String::new();
@@ -516,6 +543,7 @@ fn render_inlines(nodes: &[InlineNode], ctx: &mut MarkdownContext, depth: usize)
 
 fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> String {
     if depth > MAX_RENDER_DEPTH {
+        crate::render_depth::record("markdown");
         return String::new();
     }
     match node {
@@ -1134,6 +1162,7 @@ where
     F: FnMut(&BlockNode, Option<&[InlineNode]>),
 {
     if depth > MAX_RENDER_DEPTH {
+        crate::render_depth::record("markdown");
         return;
     }
     for block in blocks {
@@ -1208,6 +1237,7 @@ where
     F: FnMut(&InlineNode, bool),
 {
     if depth > MAX_RENDER_DEPTH {
+        crate::render_depth::record("markdown");
         return;
     }
     for node in nodes {

@@ -83,5 +83,9 @@ fn rendered_output_is_unchanged_either_way() {
     let profile = Profile::full().deny_block(&["frontmatter"]);
     let filtered = apply_profile(doc, &profile, None).expect("to_text action must not raise");
 
-    assert_eq!(carve::render_html(&filtered.doc), plain);
+    assert_eq!(
+        carve::render_html(&filtered.doc)
+            .expect("the tree under test is within the render ceiling"),
+        plain
+    );
 }

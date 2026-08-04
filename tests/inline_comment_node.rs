@@ -45,5 +45,5 @@ fn it_survives_a_json_round_trip() {
 }
 
 fn to_carve_doc(doc: &carve::Document) -> String {
-    carve::render_carve(doc)
+    carve::render_carve(doc).expect("the tree under test is within the render ceiling")
 }

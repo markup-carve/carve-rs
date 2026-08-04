@@ -56,7 +56,9 @@ fn markdown_percent_encodes_destination_breakouts() {
         })],
     };
     assert_eq!(
-        carve::render_markdown(&image_doc).trim(),
+        carve::render_markdown(&image_doc)
+            .expect("the tree under test is within the render ceiling")
+            .trim(),
         "![x](https://e.com/a%20b%3Cc%3E)"
     );
     assert_eq!(
@@ -130,7 +132,9 @@ fn markdown_sanitizes_code_fence_info_string() {
     // First whitespace-delimited token (`rs`) survives; the rest (backticks +
     // injected line) is dropped. Byte-identical with carve-js / carve-php.
     assert_eq!(
-        carve::render_markdown(&doc).trim(),
+        carve::render_markdown(&doc)
+            .expect("the tree under test is within the render ceiling")
+            .trim(),
         "```rs\nlet x = 1;\n```"
     );
 }
@@ -156,7 +160,8 @@ fn markdown_escapes_image_alt_label_metacharacters() {
                 pos: None,
             })],
         })],
-    });
+    })
+    .expect("the tree under test is within the render ceiling");
 
     assert_eq!(out.trim(), r"![x\](javascript:alert(1))!\[y\\z](/safe)");
 }
@@ -271,7 +276,9 @@ fn markdown_strips_control_bytes_from_author_leaf_fields() {
         ],
     };
 
-    assert_no_author_controls(&carve::render_markdown(&doc));
+    assert_no_author_controls(
+        &carve::render_markdown(&doc).expect("the tree under test is within the render ceiling"),
+    );
 }
 
 #[test]
@@ -365,6 +372,10 @@ fn plain_and_ansi_strip_control_bytes_from_author_leaf_fields() {
         ],
     };
 
-    assert_no_author_controls(&carve::render_plain_text(&doc));
-    assert_no_author_osc(&carve::render_ansi(&doc));
+    assert_no_author_controls(
+        &carve::render_plain_text(&doc).expect("the tree under test is within the render ceiling"),
+    );
+    assert_no_author_osc(
+        &carve::render_ansi(&doc).expect("the tree under test is within the render ceiling"),
+    );
 }
