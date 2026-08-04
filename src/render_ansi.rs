@@ -174,7 +174,19 @@ fn render_block(node: &BlockNode, ctx: &mut AnsiContext, depth: usize) -> String
             )
         ),
         BlockNode::Extension(extension) => render_blocks(&extension.children, ctx, depth + 1),
-        BlockNode::AbbreviationDef(_) | BlockNode::Comment(_) => String::new(),
+        // PART 10 §10a - see the note in render_markdown.
+        BlockNode::AbbreviationDef(def) => format!(
+            "{}\n\n",
+            style(
+                &format!(
+                    "*[{}]: {}",
+                    strip_controls(&def.abbr),
+                    strip_controls(&def.expansion)
+                ),
+                DIM
+            )
+        ),
+        BlockNode::Comment(_) => String::new(),
     }
 }
 
@@ -461,8 +473,9 @@ fn render_footnote_defs(doc: &Document, ctx: &mut AnsiContext) -> String {
     for (label, blocks) in &doc.footnote_defs {
         out.push_str(&format!(
             "{} {}\n",
+            // The marker as written (PART 10 §10a): the caret is the construct.
             style(
-                &format!("[{}]", strip_controls(label)),
+                &format!("[^{}]", strip_controls(label)),
                 &(FG_CYAN.to_string() + DIM)
             ),
             render_blocks(blocks, ctx, 0).trim()

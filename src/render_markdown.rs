@@ -292,7 +292,17 @@ fn render_block(node: &BlockNode, ctx: &mut MarkdownContext, depth: usize) -> St
             }
         }
         BlockNode::Extension(extension) => render_blocks(&extension.children, ctx, depth + 1),
-        BlockNode::AbbreviationDef(_) | BlockNode::Comment(_) => String::new(),
+        // PART 10 §10a: a definition NOTHING references still reaches this
+        // target. HTML drops it because it has nowhere to put one; Markdown,
+        // plain text and the terminal do not get to drop content the author
+        // wrote, and dropping it made the output depend on whether a reference
+        // exists elsewhere in the document (carve#589).
+        BlockNode::AbbreviationDef(def) => format!(
+            "*[{}]: {}\n\n",
+            strip_controls(&def.abbr),
+            strip_controls(&def.expansion)
+        ),
+        BlockNode::Comment(_) => String::new(),
     }
 }
 

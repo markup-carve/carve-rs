@@ -119,9 +119,13 @@ fn render_block(node: &BlockNode, depth: usize) -> String {
         // Terminate the block image so the next block is not glued onto it.
         BlockNode::BlockImage(image) => format!("{}\n\n", render_image(image)),
         BlockNode::Extension(extension) => render_blocks(&extension.children, depth + 1),
-        BlockNode::RawBlock(_) | BlockNode::AbbreviationDef(_) | BlockNode::Comment(_) => {
-            String::new()
-        }
+        // PART 10 §10a - see the note in render_markdown.
+        BlockNode::AbbreviationDef(def) => format!(
+            "*[{}]: {}\n\n",
+            strip_controls(&def.abbr),
+            strip_controls(&def.expansion)
+        ),
+        BlockNode::RawBlock(_) | BlockNode::Comment(_) => String::new(),
     }
 }
 
@@ -237,8 +241,11 @@ fn render_figure(node: &Figure, depth: usize) -> String {
 fn render_footnote_defs(doc: &Document) -> String {
     let mut out = String::new();
     for (label, blocks) in &doc.footnote_defs {
+        // The MARKER AS WRITTEN (PART 10 §10a): `[n]: …` is a LINK reference
+        // definition, so emitting one where the author wrote a footnote
+        // definition turns it into a different construct on the way back.
         out.push_str(&format!(
-            "[{}]: {}\n",
+            "[^{}]: {}\n",
             strip_controls(label),
             render_blocks(blocks, 0).trim()
         ));
