@@ -310,58 +310,115 @@ fn remap_source(source: String, original: &MappedSource) -> MappedSource {
 /// is not modeled, and lists inside blockquotes are not fully modeled.
 #[derive(Default)]
 struct ContentColumns {
-    cols: Vec<usize>,
+    /// One frame per open BLOCKQUOTE level, `frames[0]` being document level.
+    /// Each frame holds the list content columns live inside that container.
+    ///
+    /// A flat stack could not answer this: cases 1 and 2 of carve-rs#593 need an
+    /// item's columns DISCARDED when a quote opens under it, cases 3 and 4 need
+    /// them KEPT across a quote nested at the item's own column - and the indent
+    /// a flat stack compares against is in a different coordinate system
+    /// depending on how deep the quote nesting is. Scoping by container answers
+    /// "which columns are live" from structure instead of from an indent
+    /// measured in whichever coordinate the caller happened to strip to.
+    frames: Vec<Vec<usize>>,
     prev_blank: bool,
 }
 
 impl ContentColumns {
     fn new() -> Self {
         Self {
-            cols: Vec::new(),
+            frames: vec![Vec::new()],
             prev_blank: true,
         }
     }
 
-    /// Feed the next raw line. `opaque` suppresses tracking inside a fence or a
-    /// line block, where `- verse` is content rather than a marker.
-    fn observe(&mut self, line: &str, opaque: bool) -> usize {
+    /// The number of blockquote prefixes a line opens with.
+    ///
+    /// Only FLUSH-LEFT markers count, and each one is stripped before the next
+    /// is looked for - which is what a container prefix is. An INDENTED `>` is
+    /// not a container the line sits in; it is a quote OPENING inside the
+    /// current one, and the column it is written at is what decides whose block
+    /// it is (§24 C3). That distinction is what makes case 3 keep the item's
+    /// column while case 1 discards it.
+    fn quote_depth(line: &str) -> usize {
+        let mut depth = 0;
+        let mut rest = line;
+        while let Some(inner) = strip_blockquote_prefix(rest) {
+            depth += 1;
+            rest = inner;
+        }
+        depth
+    }
+
+    /// Feed the next RAW line (quote markers included). `opaque` suppresses
+    /// tracking inside a fence or a line block, where `- verse` is content
+    /// rather than a marker and a `>` is text rather than a container.
+    fn observe(&mut self, raw_line: &str, opaque: bool) -> usize {
+        let bare = without_blockquote_prefixes(raw_line);
         let was_prev_blank = self.prev_blank;
-        self.prev_blank = trim_ascii(line).is_empty();
-        if !opaque {
-            let indent = leading_ws(line);
-            let raw_trimmed = trim_ascii(line);
-            let starts_block = is_heading_marker_line(raw_trimmed)
-                || raw_trimmed.starts_with('>')
-                || detect_fence_open(raw_trimmed).is_some()
-                || detect_thematic_break(raw_trimmed);
-            if let Some((marker_indent, marker_width)) = detect_prepass_list_marker(line) {
-                while self.cols.last().is_some_and(|col| *col > marker_indent) {
-                    self.cols.pop();
-                }
-                // One line can open SEVERAL items: `- - a` opens an outer item
-                // whose content is another item, so BOTH content columns are
-                // live under it (2 and 4). Recording only the outer one left a
-                // definition at the INNER column looking like text, so it
-                // registered nothing here while carve-js and carve-php read it
-                // as that item's block (carve#655).
-                let mut offset = marker_width;
-                self.cols.push(offset);
-                while let Some((nested_indent, nested_width)) =
-                    detect_prepass_list_marker(&line[offset..])
-                {
-                    if nested_indent != 0 {
-                        break;
-                    }
-                    offset += nested_width;
-                    self.cols.push(offset);
-                }
-            } else if !raw_trimmed.is_empty() && (was_prev_blank || starts_block) {
-                while self.cols.last().is_some_and(|col| *col > indent) {
-                    self.cols.pop();
-                }
+        self.prev_blank = trim_ascii(bare).is_empty();
+        if opaque {
+            return self.current().last().copied().unwrap_or(0);
+        }
+        // A blank line does not open or close a container: a quote's blank
+        // continuation is commonly written without the `>`, and treating its
+        // absence as leaving the quote would drop the columns of the item the
+        // next line still belongs to.
+        if !trim_ascii(bare).is_empty() {
+            let depth = Self::quote_depth(raw_line);
+            self.frames.truncate(depth + 1);
+            while self.frames.len() < depth + 1 {
+                self.frames.push(Vec::new());
             }
         }
-        self.cols.last().copied().unwrap_or(0)
+        let line = bare;
+        let indent = leading_ws(line);
+        let raw_trimmed = trim_ascii(line);
+        let starts_block = is_heading_marker_line(raw_trimmed)
+            || raw_trimmed.starts_with('>')
+            || detect_fence_open(raw_trimmed).is_some()
+            || detect_thematic_break(raw_trimmed);
+        if let Some((marker_indent, marker_width)) = detect_prepass_list_marker(line) {
+            let cols = self.current_mut();
+            while cols.last().is_some_and(|col| *col > marker_indent) {
+                cols.pop();
+            }
+            // One line can open SEVERAL items: `- - a` opens an outer item
+            // whose content is another item, so BOTH content columns are
+            // live under it (2 and 4). Recording only the outer one left a
+            // definition at the INNER column looking like text, so it
+            // registered nothing here while carve-js and carve-php read it
+            // as that item's block (carve#655).
+            let mut offset = marker_width;
+            cols.push(offset);
+            while let Some((nested_indent, nested_width)) =
+                detect_prepass_list_marker(&line[offset..])
+            {
+                if nested_indent != 0 {
+                    break;
+                }
+                offset += nested_width;
+                self.current_mut().push(offset);
+            }
+        } else if !raw_trimmed.is_empty() && (was_prev_blank || starts_block) {
+            let cols = self.current_mut();
+            while cols.last().is_some_and(|col| *col > indent) {
+                cols.pop();
+            }
+        }
+        self.current().last().copied().unwrap_or(0)
+    }
+
+    fn current(&self) -> &Vec<usize> {
+        self.frames
+            .last()
+            .expect("the document frame is never popped")
+    }
+
+    fn current_mut(&mut self) -> &mut Vec<usize> {
+        self.frames
+            .last_mut()
+            .expect("the document frame is never popped")
     }
 
     /// The content column of the open item a line at `indent` actually reaches:
@@ -370,8 +427,11 @@ impl ContentColumns {
     /// Not always the innermost. Under `- - a` a definition written at column 2
     /// belongs to the outer item and one at column 4 to the inner one; between
     /// them it reaches neither and folds as text (PART 9 §24 C3).
+    ///
+    /// Only the INNERMOST container's columns are consulted: a column measured
+    /// outside the quote a line sits in is not a column that line can reach.
     fn reached_by(&self, indent: usize) -> usize {
-        self.cols
+        self.current()
             .iter()
             .copied()
             .filter(|col| *col <= indent)
@@ -437,7 +497,7 @@ fn extract_footnote_defs(
         // The footnote prepass asks per LINE which column a definition reaches
         // (see `reached_by`), so the innermost column alone is not enough here.
         let _ = columns.observe(
-            without_blockquote_prefixes(lines[i]),
+            lines[i],
             in_fence.is_some() || in_line_block.is_some() || in_comment_fence.is_some(),
         );
         // A quote nested in a list item sits AT the item's content column, so
@@ -778,7 +838,7 @@ fn extract_link_defs(source: &str) -> (String, BTreeMap<String, LinkDef>) {
         // registered, where the block parser sees a top-level line two columns
         // in and reads it as text.
         let content_col = columns.observe(
-            without_blockquote_prefixes(line),
+            line,
             in_fence.is_some() || in_line_block.is_some() || in_comment_fence.is_some(),
         );
         // A quote nested in a list item sits AT the item's content column, so
