@@ -176,12 +176,36 @@ fn inline_delimiter_emission() {
 }
 
 #[test]
-fn literal_caret_escaped_literal_comma_unescaped() {
-    // `^sup^` / `,sub,` are plain text (no bare sup/sub delimiter): the comma
-    // needs no escape; the caret keeps one (footnote/caption channels).
+fn a_literal_caret_and_comma_both_stay_unescaped() {
+    // `^sup^` / `,sub,` are plain text: superscript and subscript are
+    // braced-only, so neither delimiter opens anything.
+    //
+    // This test used to expect `\^sup\^`, on the grounds that the caret "keeps
+    // one (footnote/caption channels)". Neither channel is open here: an inline
+    // footnote is `^[`, and a caption marker is `^` plus a SPACE at the start of
+    // a block line. carve-js and carve-php both write this bare, and PART 11 §4
+    // asks for the minimal form when dropping the escape changes nothing - it
+    // changes nothing, in all three engines (carve-rs#555).
     assert_eq!(
         carve::to_carve("^sup^ ,sub, stays literal\n"),
-        "\\^sup\\^ ,sub, stays literal\n"
+        "^sup^ ,sub, stays literal\n"
+    );
+}
+
+#[test]
+fn a_caption_marker_in_literal_text_keeps_its_escape() {
+    // The one shape where a line-initial caret IS dangerous: `^` + space at the
+    // start of a block line is a caption marker, so the escape is load-bearing
+    // and stays whatever the mode.
+    assert_eq!(
+        carve::to_carve("![Apollo](a.jpg)\n\\^ Figure 1: moon\n"),
+        "![Apollo](a.jpg)\n\\^ Figure 1: moon\n"
+    );
+    // Inside a table cell the same characters cannot open a caption - a cell's
+    // content is not a block line - so nothing is forced there.
+    assert_eq!(
+        carve::to_carve("| Value |\n| ^2^ |\n"),
+        "| Value |\n| ^2^ |\n"
     );
 }
 
@@ -204,7 +228,7 @@ fn part11_minimal_escaping_spot_checks() {
     );
     assert_eq!(
         carve::to_carve("^sup^ ,sub, stays literal. 50% ok (yes).\n"),
-        "\\^sup\\^ ,sub, stays literal. 50% ok (yes).\n"
+        "^sup^ ,sub, stays literal. 50% ok (yes).\n"
     );
 }
 
