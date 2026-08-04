@@ -3892,6 +3892,37 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                     continue;
                 }
             }
+            // §24 C3: a comment is recognized at ANY column and renders nothing,
+            // so a FLUSH-LEFT one does not close the item it follows - nor the
+            // list. `- a` / `%% c` / `b` keeps `b` in the item as a second
+            // paragraph, and a following sibling marker resumes the SAME list,
+            // as carve-js, carve-php and the executable spec all have it
+            // (carve-rs#562). Collecting the comment into the item also stops a
+            // TRAILING one from being hoisted to document level, where the other
+            // engines leave it inside the item that preceded it.
+            //
+            // Two neighbours are deliberately excluded, both measured against
+            // all three: a comment FENCE (`%%%`) ends the list, and so does a
+            // comment after a BLANK line - past a blank the item is closed
+            // already, and nothing reopens it.
+            if !pending_blank && is_flush_line_comment(line) {
+                if let Some(last) = items.last_mut() {
+                    let mut nested = MappedSource::new_line_at(
+                        line.to_string(),
+                        cur.source_line(cur.pos),
+                        cur.source_col(cur.pos),
+                    );
+                    cur.consume();
+                    // The lazy text after the comment belongs to the item too,
+                    // and parsing it TOGETHER with the comment is what makes it
+                    // a second paragraph rather than a continuation of the
+                    // first: a comment ends the paragraph above it (§10) while
+                    // leaving its container open.
+                    collect_trailing_lazy(cur, &mut nested);
+                    last.children.extend(parse_mapped_source(&nested, options));
+                    continue;
+                }
+            }
             break;
         };
         if marker.indent < base_indent {
@@ -4899,6 +4930,14 @@ fn continuation_line_opens_sub_block(line: &str, rest: &[&str]) -> bool {
         return true;
     }
     false
+}
+
+/// A flush-left single-line comment (`%% ...`), the one construct §24 C3
+/// recognizes at any column that leaves its container open. A comment FENCE
+/// (`%%%`) is NOT one: it opens a multi-line block, and all three engines let it
+/// end the list it follows.
+fn is_flush_line_comment(line: &str) -> bool {
+    line.starts_with("%%") && detect_comment_fence_line(line).is_none()
 }
 
 fn collect_trailing_lazy(cur: &mut LineCursor, nested: &mut MappedSource) {
