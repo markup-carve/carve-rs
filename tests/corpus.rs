@@ -200,6 +200,7 @@ const IMPLEMENTED: &[&str] = &[
     "an-invisible-line-does-not-cancel-a-blank-line-separation",
     "a-comment-fence-is-a-comment-at-any-column-too",
     "a-floating-attribute-stops-at-the-item-boundary",
+    "a-comment-under-a-nested-item-does-not-close-it",
 ];
 
 fn corpus_dir() -> PathBuf {
