@@ -1731,6 +1731,7 @@ fn inline_pos_mut(node: &mut InlineNode) -> Option<&mut Pos> {
         InlineNode::CriticInsert(n) => n.pos.as_mut(),
         InlineNode::CriticDelete(n) => n.pos.as_mut(),
         InlineNode::CriticSubstitute(n) => n.pos.as_mut(),
+        InlineNode::Comment(n) => n.pos.as_mut(),
         InlineNode::CriticComment(n) => n.pos.as_mut(),
     }
 }
@@ -7449,6 +7450,7 @@ fn set_inline_node_pos(node: &mut InlineNode, pos: Option<Pos>) {
         InlineNode::CriticInsert(n) => n.pos = pos,
         InlineNode::CriticDelete(n) => n.pos = pos,
         InlineNode::CriticSubstitute(n) => n.pos = pos,
+        InlineNode::Comment(n) => n.pos = pos,
         InlineNode::CriticComment(n) => n.pos = pos,
     }
 }
@@ -7687,10 +7689,33 @@ fn parse_inline_context(
             while buf.ends_with(' ') || buf.ends_with('\t') {
                 buf.pop();
             }
+            let comment_start = i;
             match bytes[i..].iter().position(|&b| b == b'\n') {
                 Some(p) => i += p,
                 None => i = bytes.len(),
             }
+            // The comment renders to nothing, but it is PUBLISHED: PART 12 has a
+            // `comment` node and carve-js and carve-php both emit one here, so a
+            // tree that records what the author wrote cannot drop it
+            // (carve-rs#513). Flush the text before it so the node lands in
+            // source order.
+            flush_text(
+                &mut out,
+                &mut buf,
+                positions,
+                base,
+                &mut buf_start,
+                &mut buf_placeable,
+                &mut buf_src_delta,
+            );
+            let content = String::from_utf8_lossy(&bytes[comment_start + 2..i])
+                .trim_start()
+                .to_string();
+            out.push(InlineNode::Comment(Comment {
+                block: false,
+                content,
+                pos: inline_pos(positions, base + comment_start, base + i),
+            }));
             continue;
         }
 

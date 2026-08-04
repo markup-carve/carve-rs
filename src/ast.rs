@@ -440,6 +440,12 @@ pub enum InlineNode {
     CriticDelete(CriticDelete),
     CriticSubstitute(CriticSubstitute),
     CriticComment(CriticComment),
+    /// A trailing line comment inside a paragraph (`text %% note`). It renders
+    /// to nothing on every target but the canonical Carve writer, and PART 12
+    /// publishes it: a tree that records what the author wrote cannot drop it
+    /// (carve-rs#513). Shares `Comment` with the block form, which carries
+    /// `block: false` here.
+    Comment(Comment),
 }
 
 impl InlineNode {

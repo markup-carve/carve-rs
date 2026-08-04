@@ -741,6 +741,13 @@ fn write_inline(out: &mut String, node: &InlineNode) {
             write_pos_field(&mut w, &n.pos);
             w.finish();
         }
+        InlineNode::Comment(n) => {
+            let mut w = typed(out, "comment");
+            w.field("block", |out| write_bool(out, false));
+            w.field("content", |out| write_string(out, &n.content));
+            write_pos_field(&mut w, &n.pos);
+            w.finish();
+        }
         InlineNode::CriticComment(n) => {
             let mut w = typed(out, "critic_comment");
             w.field("text", |out| write_string(out, &n.text));
@@ -1484,6 +1491,13 @@ fn decode_inline(value: &Json) -> Result<InlineNode, AstJsonError> {
         "critic_comment" => Ok(InlineNode::CriticComment(CriticComment {
             text: required_string(obj, "critic_comment", "text")?.to_string(),
             pos: optional_pos(obj, "critic_comment")?,
+        })),
+        // The inline half of `comment`. The block half decodes in the block
+        // table above; `block` says which one a payload names.
+        "comment" => Ok(InlineNode::Comment(Comment {
+            block: required_bool(obj, "comment", "block")?,
+            content: required_string(obj, "comment", "content")?.to_string(),
+            pos: optional_pos(obj, "comment")?,
         })),
         other => Err(AstJsonError::new(format!(
             "unknown inline node type {other:?}"

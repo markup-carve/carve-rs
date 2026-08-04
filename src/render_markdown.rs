@@ -704,6 +704,7 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
         // not become live markup when the output is re-rendered. carve-php kept it
         // (carve#352, corpus 33-editorial-markup); plain and ANSI were fixed in
         // carve-rs#322.
+        InlineNode::Comment(_) => String::new(),
         InlineNode::CriticComment(c) => escape_text(&strip_controls(&c.text)),
         // A RESOLVED cross-reference is a link to that target, so it renders as
         // one - `[Title](#id)` - under exactly the condition `render_link` uses:

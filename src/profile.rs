@@ -236,6 +236,7 @@ pub fn canonical_inline_type(node: &InlineNode) -> Option<&'static str> {
         InlineNode::CrossRef(_) => Some("heading_ref"),
         InlineNode::CaptionNumber(_) => Some("caption_number"),
         InlineNode::CriticSubstitute(_) => Some("substitution"),
+        InlineNode::Comment(_) => Some("comment"),
         InlineNode::CriticComment(_) => Some("critic_comment"),
     }
 }

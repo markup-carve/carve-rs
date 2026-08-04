@@ -120,6 +120,7 @@ fn normalize_escapes_inlines(nodes: &mut Vec<InlineNode>) {
 /// Recurse into an inline node that carries inline children of its own.
 fn normalize_escapes_nested(node: &mut InlineNode) {
     match node {
+        InlineNode::Comment(_) => {}
         InlineNode::Emphasis(e) => normalize_escapes_inlines(&mut e.children),
         InlineNode::Link(l) => normalize_escapes_inlines(&mut l.children),
         InlineNode::Span(s) => normalize_escapes_inlines(&mut s.children),
@@ -870,6 +871,20 @@ fn render_inline(
     next_char: char,
 ) -> String {
     match node {
+        // The one target that publishes it: the author wrote `%% note`, and
+        // the canonical form writes it back verbatim. The parser drops the
+        // whitespace before the marker (it is not part of the text), so put a
+        // single space back unless the comment opens the line - `%%` only
+        // starts a comment at the start of a line or after whitespace, so
+        // gluing it to the word before would re-parse as literal text.
+        InlineNode::Comment(c) => {
+            let lead = if prev_char == '\0' || prev_char == '\n' {
+                ""
+            } else {
+                " "
+            };
+            format!("{lead}%% {}", c.content)
+        }
         InlineNode::Text(text) => escape_text(
             &resolve_nbsp_placeholder(&text.value, ctx.line_block_depth > 0),
             ctx.escape_mode,
