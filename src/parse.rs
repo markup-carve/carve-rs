@@ -290,12 +290,25 @@ fn extract_footnote_defs(
             if is_comment_fence_close(lines[i], fence_len) {
                 in_comment_fence = None;
             }
+            // A comment's body is OPAQUE: a `[^a]: note` inside one is comment
+            // text and defines nothing. The state was tracked here already, but
+            // only to gate the line-block opener below, so the scan still walked
+            // in and registered the footnote - producing an endnote nobody wrote
+            // and a live reference for a later `see [^a]` (#504).
+            body.push(lines[i].to_string());
+            body_line_map.push(Some(first_source_line + i));
+            i += 1;
+            continue;
         } else if let Some(open) = detect_comment_fence_line(lines[i]) {
             if comment_closers
                 .get(&open.fence_len)
                 .is_some_and(|close_at| *close_at > i)
             {
                 in_comment_fence = Some(open.fence_len);
+                body.push(lines[i].to_string());
+                body_line_map.push(Some(first_source_line + i));
+                i += 1;
+                continue;
             }
         }
         if in_comment_fence.is_none() && !in_container && !fence_line.starts_with([' ', '\t']) {
@@ -598,12 +611,25 @@ fn extract_link_defs(source: &str) -> (String, BTreeMap<String, LinkDef>) {
             if is_comment_fence_close(line, fence_len) {
                 in_comment_fence = None;
             }
+            // A comment's body is OPAQUE, so a definition-shaped line inside
+            // one is comment text and registers nothing. The state was already
+            // tracked here, but only to gate the line-block opener below - the
+            // scan still walked into the body and registered from it, so
+            // `%%%` / `[^a]: note` / `%%%` produced an endnote nobody wrote and
+            // a live reference for `see [^a]` after it (#504).
+            //
+            // carve-js has never registered from inside a comment and carve-php
+            // stopped (carve-php#698); this brings the third engine into line.
+            body.push(line.to_string());
+            continue;
         } else if let Some(open) = detect_comment_fence_line(line) {
             if comment_closers
                 .get(&open.fence_len)
                 .is_some_and(|close_at| *close_at > line_index)
             {
                 in_comment_fence = Some(open.fence_len);
+                body.push(line.to_string());
+                continue;
             }
         }
         if in_comment_fence.is_none()
