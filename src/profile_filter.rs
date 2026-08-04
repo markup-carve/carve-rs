@@ -903,6 +903,7 @@ fn extract_inline_text(node: &InlineNode) -> String {
         // Both texts, matching carve-php and carve-js. Returning only the new
         // one silently dropped the wording the author replaced.
         InlineNode::CriticSubstitute(c) => format!("{}{}", c.old_text, c.new_text),
+        InlineNode::Comment(_) => String::new(),
         InlineNode::CriticComment(_) => String::new(),
         InlineNode::CrossRef(c) => c.target.clone(),
         InlineNode::CaptionNumber(_) => String::new(),
@@ -1038,6 +1039,7 @@ fn is_empty_block(node: &BlockNode) -> bool {
 fn is_empty_inline(node: &InlineNode) -> bool {
     match node {
         InlineNode::Text(t) => t.value.is_empty(),
+        InlineNode::Comment(_) => false,
         InlineNode::EscapedText(t) => t.value.is_empty(),
         InlineNode::SmartPunctuation(_) => false,
         InlineNode::Code(c) => c.value.is_empty(),

@@ -339,6 +339,7 @@ fn render_inline(node: &InlineNode, depth: usize) -> String {
         // `<span class="critic-comment"> note </span>`, so dropping it here made
         // two targets of one engine disagree about whether the document says it.
         // carve-php kept it (carve#352, corpus 33-editorial-markup).
+        InlineNode::Comment(_) => String::new(),
         InlineNode::CriticComment(c) => strip_controls(&c.text),
         InlineNode::CrossRef(crossref) => render_crossref(&crossref.target),
         // Tier-2 ext node; the core renderer has no numbering, so emit the source.

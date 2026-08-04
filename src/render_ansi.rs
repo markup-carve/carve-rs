@@ -629,6 +629,7 @@ fn render_inline(node: &InlineNode, ctx: &mut AnsiContext, depth: usize) -> Stri
         // `<span class="critic-comment"> note </span>`, so dropping it here made
         // two targets of one engine disagree about whether the document says it.
         // carve-php kept it (carve#352, corpus 33-editorial-markup).
+        InlineNode::Comment(_) => String::new(),
         InlineNode::CriticComment(c) => strip_controls(&c.text),
         // A RESOLVED cross-reference renders exactly like a link to the same
         // heading, because that is what it is - the href is a fragment, so the

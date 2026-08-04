@@ -9,6 +9,15 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A trailing line comment is published** (PART 12, #513). `text %% note`
+  produced a paragraph holding one `text` node, where carve-js and carve-php
+  publish `text` then `comment`. Every rendered target was already right - a
+  comment renders to nothing, and the canonical writer reproduced it - but the
+  tree dropped what the author wrote, so a consumer reading it (carve-lsp, the
+  pandoc bridge, anything formatting over the wire) lost the comment. It is an
+  `InlineNode::Comment` now, encoded and decoded as `comment` with
+  `block: false`.
+
 - **A link writes its title before its attributes** (#543). `[E](/u "T"){.x}`
   published `class` before `title`, the opposite order from carve-js, carve-php
   and the executable spec. No corpus document pairs a title with an attribute

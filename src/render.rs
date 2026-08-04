@@ -1786,6 +1786,9 @@ fn render_inline_after(
     state: &mut RenderState,
 ) {
     match node {
+        // A comment renders to nothing on every target but the canonical
+        // Carve writer, which is where the author gets it back.
+        InlineNode::Comment(_) => {}
         InlineNode::Text(s) => {
             // Escape `& < >` AND fold U+00A0 to `&nbsp;` in a single pass over
             // `out`. None of the escaped chars is U+00A0, so the combined pass
