@@ -2045,8 +2045,20 @@ fn parse_blocks(cur: &mut LineCursor, options: &Options<'_>) -> Vec<BlockNode> {
         let start_line = cur.pos;
         if let Some(node) = parse_block(cur, options) {
             let mut node = node;
-            if let Some(attrs) = pending_attrs.take() {
-                apply_attrs_to_block(&mut node, attrs);
+            // §15 A2a: a floating attribute skips what renders NOTHING and
+            // attaches to the next VISIBLE block. The other invisible kinds -
+            // comments, reference and footnote definitions - never reach here
+            // (they are consumed earlier, leaving the pending attrs alone), so
+            // an abbreviation definition was the one that took them and, having
+            // nowhere to put them, dropped them: `{#i}` / `*[A]: b` / blank /
+            // `e` lost the id where carve-js and the spec publish
+            // `<p id="i">e</p>` (carve-rs#511 item 2).
+            let renders_nothing =
+                matches!(node, BlockNode::AbbreviationDef(_) | BlockNode::Comment(_));
+            if !renders_nothing {
+                if let Some(attrs) = pending_attrs.take() {
+                    apply_attrs_to_block(&mut node, attrs);
+                }
             }
             // Resolve a code fence's opener title to the `title` attribute (after
             // the preceding {title=...} line was applied, so that line wins), so
@@ -4362,10 +4374,34 @@ fn marker_content_starts_block(content: &str, cur: &LineCursor<'_>, content_col:
         .or_else(|| detect_line_block_open(content))
         .or_else(|| detect_hardbreaks_block_open(content));
     if colon_fence_len.is_some() {
-        return cur.lines[cur.pos..]
-            .iter()
-            .find(|line| !is_blank_line(line))
-            .is_some_and(|line| indent_columns(line) >= content_col);
+        // An opener OPENS, closer or no closer (carve#514), and an empty body
+        // is a container with nothing in it (carve#570). What can stop it is
+        // the STRICT CONTENT-COLUMN rule: a following line BELOW the content
+        // column is lazy item text, and it folds the fence in with it, so
+        // `- :::` / `x` is the literal `::: x`.
+        //
+        // Only a line that would fold counts. Nothing following at all, a blank
+        // (which ends the item's content), a sibling marker, or a flush-left
+        // block opener all leave the fence standing on its own - and `- :::`
+        // alone published `<li>:::</li>` here where carve-js, carve-php and the
+        // executable spec publish an empty `<div>` (carve-rs#511 item 4).
+        let Some(next) = cur.lines.get(cur.pos) else {
+            return true;
+        };
+        if is_blank_line(next) {
+            return true;
+        }
+        if indent_columns(next) >= content_col {
+            return true;
+        }
+        // Only a FLUSH-LEFT line ends the item. An indented one is item-lazy
+        // text whatever its shape - corpus 161 is `- ::: note` / ` - para text`
+        // / ` :::`, where the marker one column in folds and takes the fence
+        // with it.
+        if indent_columns(next) > 0 {
+            return false;
+        }
+        return is_list_marker(next) || interrupts_paragraph_with_rest(next, &[]);
     }
     if is_table_start(content) {
         return cur.lines.get(cur.pos).is_some_and(|line| {
