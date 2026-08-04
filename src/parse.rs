@@ -5128,6 +5128,8 @@ fn collect_indented_block_mapped_with(
     let mut line_map = Vec::new();
     let mut col_map: Vec<Option<usize>> = Vec::new();
     let mut block_indent: Option<usize> = None;
+    let mut comment_fence: Option<(usize, usize)> = None;
+    let mut comment_fence_strip: Option<usize> = None;
     while let Some(line) = cur.peek() {
         if is_blank_line(line) {
             // Lazy continuation does not cross a blank line: after a blank, only
@@ -5195,7 +5197,35 @@ fn collect_indented_block_mapped_with(
         // dedented residual-aware so tab+space-aligned siblings keep the same
         // visual column (the recursive parse re-derives the child base); other
         // lines use whole-tab dedent so they land flush at column 0.
-        let stripped = dedent_for_collection(line, indent, strip_cols);
+        // A comment fence travels as ONE span, opener through closer, at ONE
+        // dedent. Per-line dedenting takes the opener's whole indent (the `%%`
+        // exception in `dedent_for_collection` matches `%%%` too) and leaves it
+        // on the frame's base column, where it ends the list nested there:
+        // `- - a` / ` %%% c` / ` %%%` / ` b` closed the inner item and moved `b`
+        // out of it. Dedenting the opener but not its body is no better - the
+        // body then sits outside its own fence and renders as item text
+        // (carve-rs#581, corpus 191).
+        //
+        // Below the content column the fence reached no container, so the span
+        // keeps its columns; at or past it the span is item content and dedents
+        // like everything else.
+        let was_in_comment_span = comment_fence_strip.is_some();
+        if let Some((fence_len, _)) = comment_fence {
+            if is_comment_fence_close_any_column(line, fence_len) {
+                comment_fence = None;
+            }
+        } else if let Some(open) = detect_comment_fence_line_any_column(line) {
+            comment_fence = Some((open.fence_len, indent));
+            comment_fence_strip = Some(if indent < strip_cols { 0 } else { strip_cols });
+        }
+        let in_comment_span = was_in_comment_span || comment_fence.is_some();
+        let stripped = match (in_comment_span, comment_fence_strip) {
+            (true, Some(span_strip)) => span_strip.min(indent),
+            _ => dedent_for_collection(line, indent, strip_cols),
+        };
+        if comment_fence.is_none() {
+            comment_fence_strip = None;
+        }
         lines.push(slice_columns(line, stripped, is_marker));
         if cur.line_map.is_some() {
             line_map.push(cur.source_line(cur.pos));
@@ -5220,6 +5250,8 @@ fn collect_indented_block_plain_with(
 ) -> String {
     let mut lines = Vec::new();
     let mut block_indent: Option<usize> = None;
+    let mut comment_fence: Option<(usize, usize)> = None;
+    let mut comment_fence_strip: Option<usize> = None;
     while let Some(line) = cur.peek() {
         if is_blank_line(line) {
             {
@@ -5265,11 +5297,25 @@ fn collect_indented_block_plain_with(
         if block_indent.is_none() {
             block_indent = Some(indent);
         }
-        lines.push(slice_columns(
-            line,
-            dedent_for_collection(line, indent, strip_cols),
-            is_marker,
-        ));
+        // Same one-dedent-per-span rule as the mapped collector above.
+        let was_in_comment_span = comment_fence_strip.is_some();
+        if let Some((fence_len, _)) = comment_fence {
+            if is_comment_fence_close_any_column(line, fence_len) {
+                comment_fence = None;
+            }
+        } else if let Some(open) = detect_comment_fence_line_any_column(line) {
+            comment_fence = Some((open.fence_len, indent));
+            comment_fence_strip = Some(if indent < strip_cols { 0 } else { strip_cols });
+        }
+        let in_comment_span = was_in_comment_span || comment_fence.is_some();
+        let stripped = match (in_comment_span, comment_fence_strip) {
+            (true, Some(span_strip)) => span_strip.min(indent),
+            _ => dedent_for_collection(line, indent, strip_cols),
+        };
+        if comment_fence.is_none() {
+            comment_fence_strip = None;
+        }
+        lines.push(slice_columns(line, stripped, is_marker));
         cur.consume();
     }
     lines.join("\n")
