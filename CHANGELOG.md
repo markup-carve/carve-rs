@@ -9,6 +9,13 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **An unterminated comment fence opens no span** (§28, #586). A fence with no
+  closer degrades to a `%%` line comment, so the lines after it are ordinary
+  lines - but the item collector opened a span anyway and dedented the next one
+  by the span's strip, which lifted a BELOW-column line to the body's column 0
+  and parsed it as a block. `- a` / `  %%% x` / ` # h` published an `<h1>` where
+  every other engine keeps `# h` as text.
+
 - **A post-blank line below the content column ends the list** (PART 9 §24 C3,
   #578, corpus `190-a-blank-after-a-comment-still-ends-the-item`). The rule was
   applied against the first COLLECTED block's indent and skipped entirely when

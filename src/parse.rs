@@ -5311,8 +5311,17 @@ fn collect_indented_block_mapped_with(
                 comment_fence = None;
             }
         } else if let Some(open) = detect_comment_fence_line_any_column(line) {
-            comment_fence = Some((open.fence_len, indent));
-            comment_fence_strip = Some(if indent < strip_cols { 0 } else { strip_cols });
+            // §28: a fence with NO closer ahead is not a fence - it degrades to
+            // an ordinary `%%` line comment, and the lines after it are just
+            // lines. Opening the span anyway dedented the next one by the span's
+            // strip, which lifted a BELOW-column line to the body's column 0 and
+            // parsed it as a block: `- a` / `  %%% x` / ` # h` published an
+            // `<h1>` where every other engine keeps `# h` as text
+            // (carve-rs#586).
+            if cur.has_comment_closer_after(cur.pos + 1, open.fence_len) {
+                comment_fence = Some((open.fence_len, indent));
+                comment_fence_strip = Some(if indent < strip_cols { 0 } else { strip_cols });
+            }
         }
         let in_comment_span = was_in_comment_span || comment_fence.is_some();
         let stripped = match (in_comment_span, comment_fence_strip) {
@@ -5400,8 +5409,12 @@ fn collect_indented_block_plain_with(
                 comment_fence = None;
             }
         } else if let Some(open) = detect_comment_fence_line_any_column(line) {
-            comment_fence = Some((open.fence_len, indent));
-            comment_fence_strip = Some(if indent < strip_cols { 0 } else { strip_cols });
+            // See the mapped collector: a fence with no closer ahead degrades to
+            // a line comment (§28), so it opens no span (carve-rs#586).
+            if cur.has_comment_closer_after(cur.pos + 1, open.fence_len) {
+                comment_fence = Some((open.fence_len, indent));
+                comment_fence_strip = Some(if indent < strip_cols { 0 } else { strip_cols });
+            }
         }
         let in_comment_span = was_in_comment_span || comment_fence.is_some();
         let stripped = match (in_comment_span, comment_fence_strip) {
