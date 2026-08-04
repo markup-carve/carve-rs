@@ -30,6 +30,17 @@ fn offending_lines(out: &str) -> Vec<(usize, String)> {
 
 #[test]
 fn the_writer_never_emits_trailing_whitespace() {
+    // A cap-deep corpus document costs one debug frame per level, and a test
+    // thread gets 2 MiB (carve-rs#530).
+    std::thread::Builder::new()
+        .stack_size(32 * 1024 * 1024)
+        .spawn(the_writer_never_emits_trailing_whitespace_inner)
+        .expect("thread spawns")
+        .join()
+        .expect("the sweep finishes");
+}
+
+fn the_writer_never_emits_trailing_whitespace_inner() {
     let dir = Path::new("tests/spec/tests/corpus");
     let entries = fs::read_dir(dir).expect("the corpus directory");
     let mut checked = 0;

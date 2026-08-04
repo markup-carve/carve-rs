@@ -190,6 +190,21 @@ fn the_merge_happens_in_the_tree_because_section_6_requires_it() {
 
 #[test]
 fn no_document_in_the_spec_corpus_publishes_an_adjacent_text_run() {
+    // On a thread with room: the corpus now holds a document nested to the
+    // parser's cap (200 containers), and the encode/decode pass over it needs
+    // more than the 2 MiB a test thread gets by default in a debug build. The
+    // library is fine with it - the same document parses, encodes, decodes and
+    // renders on the main thread - so what this buys is the sweep, not a
+    // behaviour change. `MAX_NESTING_DEPTH` is what bounds the depth itself.
+    std::thread::Builder::new()
+        .stack_size(32 * 1024 * 1024)
+        .spawn(sweep_the_corpus_for_adjacent_runs)
+        .expect("thread spawns")
+        .join()
+        .expect("the sweep finishes");
+}
+
+fn sweep_the_corpus_for_adjacent_runs() {
     // The rule is a property of every published tree, so the corpus is where it
     // is measured. Six documents violated it before this landed, which is why
     // this sweeps the corpus rather than pinning three hand-written cases.
@@ -236,17 +251,27 @@ fn no_document_in_the_spec_corpus_publishes_an_adjacent_text_run() {
 
 /// Visits every inline child list in the document, including footnote bodies.
 fn walk_document(doc: &Document, visit: &mut impl FnMut(&[InlineNode])) {
-    for block in &doc.children {
-        walk_block(block, visit);
-    }
+    // An explicit worklist, not recursion: the corpus now holds a document
+    // nested to the parser's cap (200 containers, `181-openers-past-the-
+    // nesting-cap-are-one-paragraph`), and one debug-build frame per level
+    // overflowed the thread stack here. The library itself walks it fine -
+    // parse, encode, decode and render all complete - so the limit was this
+    // test's own recursion, and it is the test that had to stop recursing.
+    let mut queue: Vec<&BlockNode> = Vec::new();
+    queue.extend(doc.children.iter());
     for body in doc.footnote_defs.values() {
-        for block in body {
-            walk_block(block, visit);
-        }
+        queue.extend(body.iter());
+    }
+    while let Some(block) = queue.pop() {
+        walk_block(block, visit, &mut queue);
     }
 }
 
-fn walk_block(block: &BlockNode, visit: &mut impl FnMut(&[InlineNode])) {
+fn walk_block<'a>(
+    block: &'a BlockNode,
+    visit: &mut impl FnMut(&[InlineNode]),
+    queue: &mut Vec<&'a BlockNode>,
+) {
     let mut inline_lists: Vec<&[InlineNode]> = Vec::new();
     let mut child_blocks: Vec<&BlockNode> = Vec::new();
     match block {
@@ -304,9 +329,7 @@ fn walk_block(block: &BlockNode, visit: &mut impl FnMut(&[InlineNode])) {
         visit(inlines);
         walk_inlines(inlines, visit);
     }
-    for child in child_blocks {
-        walk_block(child, visit);
-    }
+    queue.extend(child_blocks);
 }
 
 fn walk_inlines(nodes: &[InlineNode], visit: &mut impl FnMut(&[InlineNode])) {

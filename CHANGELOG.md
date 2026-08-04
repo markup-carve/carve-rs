@@ -9,6 +9,14 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A blank line before a sibling item still loosens the list when an invisible
+  construct sits in the gap** (§17, #557). `- a` / blank / `  %% note` / `- b`
+  came out tight: the comment is not the item's second block, correctly, but
+  clearing the pending blank with it hid the blank from the sibling that
+  follows - and a blank before a sibling loosens the list whatever sits between
+  them. Corpus `87-compact-list-blocks-6` pins it.
+
+<<<<<<< Updated upstream
 - **A colon fence on a marker line opens** (#511 item 4). `- :::` published
   `<li>:::</li>` unless item-owned content followed it. An opener opens, closer
   or no closer (carve#514), and an empty body is a container with nothing in it
@@ -30,6 +38,21 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   pandoc bridge, anything formatting over the wire) lost the comment. It is an
   `InlineNode::Comment` now, encoded and decoded as `comment` with
   `block: false`.
+=======
+- **Past the nesting cap, an opener degrades instead of vanishing - and a blank
+  line still ends the run** (PART 9 §25, #530). An over-cap opener with a
+  CLOSER anywhere after it was consumed and never emitted, so 203 openers plus
+  three closers published 200 titles and no trace of the other three, while the
+  same input without the closers kept them. And the flattened run was one
+  paragraph holding the whole tail, blank lines included - a paragraph nothing
+  else in the language can produce - which swallowed the block after the blank.
+  The run now ends at the first blank like any other paragraph. And the
+  flattened text is inline-parsed with the depth budget handed back: the block
+  and inline passes share one counter, so at the cap the inline pass refused
+  too and published the run verbatim - a canonical `\:\: x` kept its
+  backslashes, and `fmt` stopped round-tripping the corpus document that
+  reaches the cap.
+>>>>>>> Stashed changes
 
 - **A link writes its title before its attributes** (#543). `[E](/u "T"){.x}`
   published `class` before `title`, the opposite order from carve-js, carve-php

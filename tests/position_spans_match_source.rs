@@ -18,6 +18,17 @@ const BLOCK_ANCHOR_SENTINELS: [char; 3] = ['\u{e000}', '\u{e001}', '\u{e002}'];
 
 #[test]
 fn every_positioned_span_slices_back_to_its_own_text() {
+    // A cap-deep corpus document costs one debug frame per level, and a test
+    // thread gets 2 MiB (carve-rs#530).
+    std::thread::Builder::new()
+        .stack_size(32 * 1024 * 1024)
+        .spawn(every_positioned_span_slices_back_to_its_own_text_inner)
+        .expect("thread spawns")
+        .join()
+        .expect("the sweep finishes");
+}
+
+fn every_positioned_span_slices_back_to_its_own_text_inner() {
     let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus");
     // No early return on a missing corpus: a test that quietly passes when it
     // cannot find its inputs reads exactly like one that checked everything.

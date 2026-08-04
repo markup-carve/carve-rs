@@ -1847,12 +1847,12 @@ fn parse_eof_closed_colon_ladder(
             // diagnostic: the output for 205 openers and for 8000 was
             // byte-identical, which made the amount dropped invisible
             // (carve-rs#418). carve-php keeps them, and now so does this.
-            let tail_source = tail.join("\n");
-            vec![BlockNode::Paragraph(Paragraph {
-                attrs: None,
-                children: parse_inline_with_options(&tail_source, options),
-                ..Default::default()
-            })]
+            // §25: the flattened run and the text after it are ONE paragraph
+            // "ending at the first blank line like any other". Joining the whole
+            // tail put a literal blank line inside a paragraph - which nothing
+            // else in the language can hold - and swallowed the block after it
+            // (carve-rs#530).
+            flattened_paragraphs(tail, options)
         } else {
             let tail_source = tail.join("\n");
             parse_blocks_with_options(&tail_source, options)
@@ -1884,6 +1884,46 @@ fn parse_eof_closed_colon_ladder(
     Some(children)
 }
 
+/// Inline-parse flattened over-cap text with the depth budget handed back.
+///
+/// The block and inline parsers share `NESTING_DEPTH`, so AT the cap the inline
+/// pass refuses too and returns the run verbatim - escapes included, so a
+/// canonical `\\:\\: x` published its backslashes where every other engine
+/// publishes `:: x`, and `fmt` stopped round-tripping the corpus document that
+/// reaches the cap. Flattening is the LAST step at that depth: nothing recurses
+/// after it, so the inline pass can have the budget back (carve-rs#530).
+fn parse_flattened_inline(text: &str, options: &Options<'_>) -> Vec<InlineNode> {
+    let saved = NESTING_DEPTH.with(Cell::get);
+    NESTING_DEPTH.with(|d| d.set(0));
+    let out = parse_inline_with_options(text, options);
+    NESTING_DEPTH.with(|d| d.set(saved));
+    out
+}
+
+/// Split flattened over-cap lines into paragraphs at every blank line (§25).
+fn flattened_paragraphs(lines: &[&str], options: &Options<'_>) -> Vec<BlockNode> {
+    let mut out = Vec::new();
+    let mut idx = 0;
+    while idx < lines.len() {
+        while idx < lines.len() && is_blank_line(lines[idx]) {
+            idx += 1;
+        }
+        if idx >= lines.len() {
+            break;
+        }
+        let start = idx;
+        while idx < lines.len() && !is_blank_line(lines[idx]) {
+            idx += 1;
+        }
+        out.push(BlockNode::Paragraph(Paragraph {
+            attrs: None,
+            children: parse_flattened_inline(&lines[start..idx].join("\n"), options),
+            ..Default::default()
+        }));
+    }
+    out
+}
+
 fn parse_capped_colon_body(inner: LineBuffer, options: &Options<'_>) -> Vec<BlockNode> {
     let source = inner.into_source();
     if NESTING_DEPTH.with(|d| d.get() < MAX_NESTING_DEPTH) {
@@ -1895,11 +1935,7 @@ fn parse_capped_colon_body(inner: LineBuffer, options: &Options<'_>) -> Vec<Bloc
         return Vec::new();
     }
 
-    vec![BlockNode::Paragraph(Paragraph {
-        attrs: None,
-        children: parse_inline_with_options(&source.source, options),
-        ..Default::default()
-    })]
+    flattened_paragraphs(&lines, options)
 }
 
 /// For each fence char, `vec[len]` is one past the index of the LAST line that
@@ -1977,7 +2013,7 @@ fn parse_blocks(cur: &mut LineCursor, options: &Options<'_>) -> Vec<BlockNode> {
         }
         return vec![BlockNode::Paragraph(Paragraph {
             attrs: None,
-            children: parse_inline_with_options(&text, options),
+            children: parse_flattened_inline(&text, options),
             ..Default::default()
         })];
     };
@@ -2855,6 +2891,13 @@ fn collect_colon_container_body(cur: &mut LineCursor<'_>, opener_len: usize) -> 
                 || detect_line_block_open(line).is_some()
                 || detect_hardbreaks_block_open(line).is_some()
             {
+                // Past the cap an opener DEGRADES to literal paragraph text
+                // (§25) - it does not vanish. Consuming the line without
+                // pushing it dropped every over-cap opener that had a closer
+                // somewhere after it: 203 openers plus three closers published
+                // 200 titles and no trace of the other three, while the same
+                // input without the closers kept them (carve-rs#530).
+                push_current_line(&mut inner, cur);
                 cur.consume();
                 continue;
             }
@@ -3786,7 +3829,19 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                     if continuation_source_loosens(&nested.source) {
                         tight = false;
                     }
-                    pending_blank = false;
+                    // An INVISIBLE continuation is not the item's second block
+                    // (§17 L2 - it renders nothing), but it does not consume the
+                    // blank either: the blank still sits between this item and
+                    // whatever follows, and a blank before a SIBLING loosens the
+                    // list. Clearing it here made `- a` / blank / `  %% note` /
+                    // `- b` tight, where carve-js and the corpus have it loose
+                    // (carve-rs#557, corpus 87-compact-list-blocks-6).
+                    let renders_nothing = nested_children.iter().all(|block| {
+                        matches!(block, BlockNode::Comment(_) | BlockNode::AbbreviationDef(_))
+                    });
+                    if !renders_nothing {
+                        pending_blank = false;
+                    }
                     last.children.extend(nested_children);
                     continue;
                 }
