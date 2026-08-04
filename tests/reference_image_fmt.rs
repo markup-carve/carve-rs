@@ -52,10 +52,20 @@ fn direct_image_escaped_quote_title_caption_is_unescaped() {
 }
 
 #[test]
-fn unresolved_reference_image_caption_stays_escaped() {
-    // Not a figure (unresolved ref is literal text), so the caret is escaped.
+fn unresolved_reference_image_caption_needs_no_escape() {
+    // Not a figure - `[nope]` resolves to nothing - so the caption line
+    // promotes nothing and the bare caret changes no parse. This test asserted
+    // `\^ cap` from the same premise ("not a figure, SO the caret is
+    // escaped"), which does not follow: PART 11 §4 escapes a character only
+    // where omitting it changes the re-parse, and the assertion on the next
+    // line is what proves it does not. carve-js pins the same shape bare.
+    //
+    // This depends on an unresolved image NOT being captionable, which is
+    // currently what this engine and carve-js do and carve-php does not
+    // (carve#623). If that question resolves the other way, the caret becomes
+    // load-bearing here and this expectation flips back.
     let src = "![a][nope]\n^ cap";
-    assert_eq!(carve::to_carve(src).trim(), "![a][nope]\n\\^ cap");
+    assert_eq!(carve::to_carve(src).trim(), "![a][nope]\n^ cap");
     assert_eq!(carve::to_html(&carve::to_carve(src)), carve::to_html(src));
 }
 

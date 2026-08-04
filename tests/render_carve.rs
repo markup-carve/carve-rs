@@ -207,6 +207,20 @@ fn a_literal_caret_and_comma_both_stay_unescaped() {
 }
 
 #[test]
+fn a_caret_after_an_unresolved_image_needs_no_escape() {
+    // `[nope]` resolves to nothing, so the image is not an image and the
+    // caption line promotes nothing - the bare caret changes no parse, and
+    // PART 11 §4 wants it bare. The escape here was forced unconditionally by
+    // carve-rs#558 (mine); the three-step choice in `render_carve` tells this
+    // case from the one below by ASKING THE PARSER rather than by position
+    // (carve-rs#559).
+    assert_eq!(
+        carve::to_carve("![a][nope]\n^ cap\n"),
+        "![a][nope]\n^ cap\n"
+    );
+}
+
+#[test]
 fn a_caption_marker_in_literal_text_keeps_its_escape() {
     // The one shape where a line-initial caret IS dangerous: `^` + space at the
     // start of a block line is a caption marker, so the escape is load-bearing
