@@ -489,6 +489,10 @@ fn parse_footnote_def_line(line: &str) -> Option<(&str, &str)> {
 struct LinkDef {
     href: String,
     title: Option<String>,
+    /// A TRAILING attribute block on the definition line. PART 9R's symbol
+    /// table is `label -> (url, title?, attrs?)`, and R1 transfers these to
+    /// every link that resolves the label (carve#604).
+    attrs: Option<Attrs>,
 }
 
 fn extract_link_defs(source: &str) -> (String, BTreeMap<String, LinkDef>) {
@@ -660,7 +664,7 @@ fn extract_link_defs(source: &str) -> (String, BTreeMap<String, LinkDef>) {
             }
             defs.insert(
                 label_part.to_string(),
-                parse_link_def_target(target_part.trim()),
+                parse_link_def_target_with_attrs(target_part.trim()),
             );
             // Leave a blank line in place of the (invisible) definition so it
             // still acts as a block boundary (matches carve-js, where a
@@ -901,7 +905,82 @@ fn parse_link_def_target(target: &str) -> LinkDef {
     } else {
         None
     };
-    LinkDef { href, title }
+    LinkDef {
+        href,
+        title,
+        attrs: None,
+    }
+}
+
+/// `parse_link_def_target`, with a trailing attribute block split off first
+/// (carve#604). The block comes off BEFORE the destination/title scan, so
+/// widening the parse cannot change what counts as a definition.
+fn parse_link_def_target_with_attrs(target: &str) -> LinkDef {
+    let (rest, attr_text) = split_trailing_attr_block(target);
+    let mut def = parse_link_def_target(rest);
+    // `parse_attrs` takes the INNER content, not the braces (see the block
+    // attribute-line caller, which strips them the same way).
+    def.attrs = attr_text.and_then(|t| parse_attrs(&t[1..t.len() - 1]));
+    def
+}
+
+/// Split a TRAILING attribute block off a definition's target (carve#604).
+///
+/// Scanned rather than matched: an attribute value may hold a `}` inside
+/// quotes (`{data-x="}"}`), and stopping at the first `}` drops every attribute
+/// on the line silently. Only a `}` outside quotes closes the block.
+///
+/// The block must be preceded by whitespace and end the target, so
+/// `[a]: /u{.x}` keeps the braces in the DESTINATION, matching the
+/// production's `space, attributes`.
+fn split_trailing_attr_block(target: &str) -> (&str, Option<&str>) {
+    let end = target.trim_end();
+    if !end.ends_with('}') {
+        return (target, None);
+    }
+    let mut quote: Option<char> = None;
+    let mut open: Option<usize> = None;
+    let mut escaped = false;
+    let last = end.len() - '}'.len_utf8();
+    for (i, c) in end.char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match quote {
+            Some(q) => {
+                if c == '\\' {
+                    escaped = true;
+                } else if c == q {
+                    quote = None;
+                }
+            }
+            None => match c {
+                '"' | '\'' => quote = Some(c),
+                '{' => {
+                    if open.is_none() {
+                        open = Some(i);
+                    }
+                }
+                '}' if i == last => {
+                    let Some(start) = open else {
+                        return (target, None);
+                    };
+                    if start == 0
+                        || !end[..start]
+                            .chars()
+                            .next_back()
+                            .is_some_and(char::is_whitespace)
+                    {
+                        return (target, None);
+                    }
+                    return (end[..start].trim_end(), Some(&end[start..]));
+                }
+                _ => {}
+            },
+        }
+    }
+    (target, None)
 }
 
 type SplitFrontmatter<'a> = (BTreeMap<String, String>, Option<Frontmatter>, &'a str);
@@ -10412,6 +10491,20 @@ fn resolve_reference_links_inline(
                         // DESTINATION is empty, so nothing downstream reads the
                         // label as "unresolved".
                         l.href = def.href.clone();
+                        // PART 9R R1: the definition's attributes transfer to
+                        // the link, and the link's own override per key. "Per
+                        // key" is §15 A3's merge - the one stacked attribute
+                        // lists already use - so a repeated id or key takes the
+                        // LAST value (the link's) and classes ACCUMULATE across
+                        // the two. Definition first, link second (carve#604).
+                        if let Some(def_attrs) = &def.attrs {
+                            let own = l.attrs.take();
+                            let mut merged = Some(def_attrs.clone());
+                            if let Some(own) = own {
+                                merge_attrs(&mut merged, own);
+                            }
+                            l.attrs = merged;
+                        }
                         l.title = def.title.clone();
                     } else if is_collapsed_reference(l) {
                         // Implicit heading reference. The LABEL goes in, not a
