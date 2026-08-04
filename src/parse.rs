@@ -5135,7 +5135,13 @@ fn collect_indented_block_mapped_with(
             // block's own level. A shallower line (e.g. a dedent landing below a
             // sublist) ends the block and is left for the caller, so it can close
             // the list rather than fold in (grammar §10, corpus 81-list-lazy-5).
-            if let Some(bi) = block_indent {
+            {
+                // Unconditional, not gated on `block_indent`: a COMPACT item
+                // (`- - a`) puts its content on the marker line, so nothing has
+                // been collected when the blank arrives and the guard below
+                // never ran. The line after the blank then joined the item
+                // whatever its column, where carve-js and carve-php end the
+                // list and parse it at document level (corpus 190).
                 let mut k = cur.pos + 1;
                 while k < cur.lines.len() && is_blank_line(cur.lines[k]) {
                     k += 1;
@@ -5146,7 +5152,18 @@ fn collect_indented_block_mapped_with(
                 // above it, but it is still inside the item - comparing against
                 // the block's indent ended the collection there and split one
                 // list into two (carve-rs#301).
-                let threshold = bi.min(strip_cols);
+                // Against the CONTENT COLUMN itself, not `min(block_indent,
+                // content_col)`. The min was for the sibling-marker case
+                // (carve-rs#301), where the collected block is indented DEEPER
+                // than the column and a marker below it still belongs to the
+                // item - there both spellings give the column. But a COMPACT
+                // item (`- - a`) starts its content on the marker line, so
+                // `block_indent` is 0 in this frame and the min collapsed the
+                // threshold to 0: after a blank, ANY line continued the item,
+                // including one below every content column, which should end
+                // the list and parse at document level (carve-rs#581, corpus
+                // 190).
+                let threshold = strip_cols;
                 let continues = k < cur.lines.len() && indent_columns(cur.lines[k]) >= threshold;
                 if !continues {
                     break;
@@ -5203,7 +5220,13 @@ fn collect_indented_block_plain_with(
     let mut block_indent: Option<usize> = None;
     while let Some(line) = cur.peek() {
         if is_blank_line(line) {
-            if let Some(bi) = block_indent {
+            {
+                // Unconditional, not gated on `block_indent`: a COMPACT item
+                // (`- - a`) puts its content on the marker line, so nothing has
+                // been collected when the blank arrives and the guard below
+                // never ran. The line after the blank then joined the item
+                // whatever its column, where carve-js and carve-php end the
+                // list and parse it at document level (corpus 190).
                 let mut k = cur.pos + 1;
                 while k < cur.lines.len() && is_blank_line(cur.lines[k]) {
                     k += 1;
@@ -5211,7 +5234,18 @@ fn collect_indented_block_plain_with(
                 // Against the item's CONTENT COLUMN, not the first collected
                 // block's own indent - see the mapped collector above
                 // (carve-rs#301).
-                let threshold = bi.min(strip_cols);
+                // Against the CONTENT COLUMN itself, not `min(block_indent,
+                // content_col)`. The min was for the sibling-marker case
+                // (carve-rs#301), where the collected block is indented DEEPER
+                // than the column and a marker below it still belongs to the
+                // item - there both spellings give the column. But a COMPACT
+                // item (`- - a`) starts its content on the marker line, so
+                // `block_indent` is 0 in this frame and the min collapsed the
+                // threshold to 0: after a blank, ANY line continued the item,
+                // including one below every content column, which should end
+                // the list and parse at document level (carve-rs#581, corpus
+                // 190).
+                let threshold = strip_cols;
                 let continues = k < cur.lines.len() && indent_columns(cur.lines[k]) >= threshold;
                 if !continues {
                     break;
