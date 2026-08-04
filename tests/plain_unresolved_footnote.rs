@@ -6,6 +6,12 @@
 //! there and every reference rendered the same way -- dropping the caret and
 //! inventing a reference the document does not have. carve-php was the only
 //! engine getting this right (carve#352, corpus 132/133/157/161).
+//!
+//! The DEFINITION lines below carry their caret for a different rule:
+//! PART 10 §10a emits the marker as written, and `[a]: …` is a link
+//! reference definition rather than this construct. Whether the
+//! REFERENCE marker should keep its caret on this target is carve#550,
+//! still open, so these pin it as it stands.
 
 #[test]
 fn an_unresolved_reference_keeps_its_caret() {
@@ -24,7 +30,7 @@ fn it_agrees_with_the_html_target_about_the_same_input() {
 fn a_resolved_reference_still_renders_as_a_marker() {
     assert_eq!(
         carve::to_plain_text("Use [^a].\n\n[^a]: A real note.\n"),
-        "Use [a].\n\n[a]: A real note.\n"
+        "Use [a].\n\n[^a]: A real note.\n"
     );
 }
 
@@ -32,7 +38,7 @@ fn a_resolved_reference_still_renders_as_a_marker() {
 fn a_definition_for_another_label_does_not_resolve_it() {
     assert_eq!(
         carve::to_plain_text("Use [^a].\n\n[^b]: Other.\n"),
-        "Use [^a].\n\n[b]: Other.\n"
+        "Use [^a].\n\n[^b]: Other.\n"
     );
 }
 
@@ -47,7 +53,7 @@ fn the_label_set_does_not_leak_between_renders() {
     // make a later document without one resolve.
     assert_eq!(
         carve::to_plain_text("Use [^a].\n\n[^a]: A real note.\n"),
-        "Use [a].\n\n[a]: A real note.\n"
+        "Use [a].\n\n[^a]: A real note.\n"
     );
     assert_eq!(carve::to_plain_text("Use [^a].\n"), "Use [^a].\n");
 }
