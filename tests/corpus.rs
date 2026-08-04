@@ -201,6 +201,7 @@ const IMPLEMENTED: &[&str] = &[
     "a-comment-fence-is-a-comment-at-any-column-too",
     "a-floating-attribute-stops-at-the-item-boundary",
     "a-comment-under-a-nested-item-does-not-close-it",
+    "a-definition-inside-a-comment-registers-nothing",
 ];
 
 fn corpus_dir() -> PathBuf {
