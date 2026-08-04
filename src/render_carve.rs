@@ -1584,6 +1584,21 @@ fn escape_text(text: &str, mode: EscapeMode, opens_block_line: bool) -> String {
         // pinned.
         let caret_opens_a_caption =
             ch == '^' && at_line_start && chars.peek().is_some_and(|c| *c == ' ' || *c == '\t');
+        // A `:` opens something only where a marker can START: `:: term`,
+        // `:  def` and `::: fence` are all recognized at the beginning of a
+        // line, so the FIRST colon of that run is the one that has to be
+        // escaped and the rest cannot open anything.
+        //
+        // The conservative pass used to escape every candidate character it
+        // saw, so a literal `:::` came out `\:\:\:` where carve-js and
+        // carve-php write `\:::`, and `\[x\]: /u` picked up an escape on a
+        // colon that no rule can read (carve-rs#566). PART 11 §4 asks for the
+        // minimal form when dropping the escape changes nothing, and it
+        // changes nothing for every colon but the first.
+        //
+        // Same shape as the caret above: ask what the character could open
+        // HERE, rather than escaping the class it belongs to.
+        let colon_cannot_open = ch == ':' && !at_line_start;
         at_line_start = ch == '\n';
         let force_caption = caret_opens_a_caption && mode != EscapeMode::Minimal;
         let unconditional = matches!(ch, '\\' | '`' | '"' | '\'') || force_caption;
@@ -1613,7 +1628,7 @@ fn escape_text(text: &str, mode: EscapeMode, opens_block_line: bool) -> String {
                 | ';'
                 | '^'
         );
-        if unconditional || (mode == EscapeMode::Conservative && candidate) {
+        if unconditional || (mode == EscapeMode::Conservative && candidate && !colon_cannot_open) {
             out.push('\\');
         }
         out.push(ch);
