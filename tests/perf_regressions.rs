@@ -1,5 +1,30 @@
 use std::fmt::Write as _;
+use std::sync::Mutex;
 use std::time::Instant;
+
+/// Serializes the TIMING tests in this file against each other.
+///
+/// Every test here measures wall clock, and `cargo test` runs the tests in a
+/// binary on parallel threads - so 34 timing tests spend their measurements
+/// competing with each other for cores. That is the whole cause of the flake in
+/// carve-rs#523: `unterminated_comment_fence_openers_parse_in_near_linear_time`
+/// failed 2 of 8 full-file runs and 0 of 6 with `--test-threads=1`.
+///
+/// More rounds does not fix it, which is worth recording because it is the
+/// obvious move: median-of-five measured 3 of 8 failures against main's 2 of 8.
+/// The contention is sustained for the whole run rather than a transient spike,
+/// so every sample is contaminated and the median moves with them.
+///
+/// The estimator and the bounds are untouched. This removes the cause instead
+/// of widening the tolerance - a ratio bound that had to be loosened to survive
+/// its own test suite would no longer be measuring the engine.
+static PERF_LOCK: Mutex<()> = Mutex::new(());
+
+/// Take the timing lock, ignoring poisoning: a panic in one perf test must not
+/// cascade into every other one reporting a lock error instead of its result.
+fn perf_guard() -> std::sync::MutexGuard<'static, ()> {
+    PERF_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+}
 
 /// Wall-clock ceiling for the DoS guards below.
 ///
@@ -277,6 +302,7 @@ const SCALE_ROUNDS: usize = 3;
 const SCALE_MAX_PER_BYTE_RATIO: f64 = 2.0;
 
 fn measure_scaling(build: &impl Fn(usize) -> String) -> Scaling {
+    let _guard = perf_guard();
     let small = build(SCALE_SMALL_N);
     let large = build(SCALE_LARGE_N);
     let small_bytes = small.len() as f64;
@@ -430,6 +456,7 @@ fn unterminated_comment_fence_openers_parse_in_near_linear_time() {
         source
     };
 
+    let _guard = perf_guard();
     let small = 500;
     let large = 1000;
     let small_source = build(small);
