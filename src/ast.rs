@@ -662,6 +662,19 @@ pub struct Link {
     /// extension (HeadingNumbers, #198) rewrite only auto-filled
     /// cross-references without a fragile title-equality guess.
     pub from_crossref: bool,
+    /// Set when this reference resolved against a HEADING rather than a
+    /// `[label]: url` definition (PART 11 R1).
+    ///
+    /// The canonical writer needs it: a heading-derived reference has no
+    /// definition line, so `[H][]` is the only record of the authored form and
+    /// writing `[H](#H)` bakes a generated id into the source. An explicit
+    /// definition normalizes instead, because its definition line is dropped
+    /// either way.
+    ///
+    /// This used to be carried by "the node still has a ref" - the explicit
+    /// branch cleared it, the heading branch did not. PART 12 §3a made both
+    /// keep it (carve#597), so the distinction needs a field of its own.
+    pub from_heading_reference: bool,
     /// Span in the original source, when the parser could determine it.
     pub pos: Option<Pos>,
 }

@@ -1007,7 +1007,16 @@ fn render_link(node: &Link, ctx: &mut CarveContext) -> String {
     // `ref` and `raw_ref` on a RESOLVED reference too, so the label alone no
     // longer answers this and a working reference round-tripped as its own
     // source instead of normalizing to the inline form (carve#597).
-    if node.ref_label.is_some() && node.raw_ref.is_some() && node.href.is_empty() {
+    // The AUTHORED source, in two cases. UNRESOLVED: there is no destination to
+    // write instead. HEADING-DERIVED (PART 11 R1, carve#478): there is no
+    // definition line, so the reference is the only record of what the author
+    // wrote, and resolving it bakes a generated id into the source on every fmt
+    // pass. An explicit definition normalizes to the inline form - its
+    // definition line is dropped either way.
+    if node.ref_label.is_some()
+        && node.raw_ref.is_some()
+        && (node.href.is_empty() || node.from_heading_reference)
+    {
         return node.raw_ref.clone().unwrap_or_default();
     }
     if node.from_crossref {

@@ -8470,6 +8470,7 @@ fn parse_reference_link(
             // reference ignores `raw_ref` and applies `attrs` instead.
             raw_ref: Some(std::str::from_utf8(&bytes[start..after]).ok()?.to_string()),
             from_crossref: false,
+            from_heading_reference: false,
             pos: None,
         },
         after - start,
@@ -8876,6 +8877,7 @@ fn parse_inline_link_with_options(
             ref_label: None,
             raw_ref: None,
             from_crossref: false,
+            from_heading_reference: false,
             pos: None,
         },
         after - start,
@@ -10401,6 +10403,7 @@ fn resolve_reference_links_inline(
                         if let Some((actual_id, _)) = heading_index.resolve_ref(label) {
                             l.href = format!("#{actual_id}");
                             l.title = None;
+                            l.from_heading_reference = true;
                             // KEEP `ref_label` / `raw_ref`. The href is what the
                             // HTML needs; the reference is what the AUTHOR wrote,
                             // and the canonical writer has to reproduce it. Clearing

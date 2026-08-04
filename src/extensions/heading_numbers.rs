@@ -336,6 +336,7 @@ fn rewrite_links_inlines(
                             ref_label: None,
                             raw_ref: None,
                             from_crossref: true,
+                            from_heading_reference: false,
                             pos: c.pos,
                         });
                     }
