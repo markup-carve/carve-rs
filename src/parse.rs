@@ -3901,9 +3901,17 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                     let nested_children = parse_mapped_source(&nested, options);
                     // A blank before an indented sub-block loosens only when it
                     // is a genuine second paragraph (#74 compact list blocks).
-                    if pending_blank
-                        && matches!(nested_children.first(), Some(BlockNode::Paragraph(_)))
-                    {
+                    // Skip what renders NOTHING when looking for that
+                    // paragraph. An invisible line does not cancel the blank
+                    // line above it (PART 9 §17 L1b, markup-carve/carve#630):
+                    // `- a` / blank / `  %% n` / `  text` holds a second
+                    // paragraph with a comment in front of it, and reading only
+                    // the FIRST child found the comment and called the item
+                    // tight. Matches carve-js.
+                    let first_visible = nested_children
+                        .iter()
+                        .find(|block| !matches!(block, BlockNode::Comment(_)));
+                    if pending_blank && matches!(first_visible, Some(BlockNode::Paragraph(_))) {
                         tight = false;
                     }
                     // A blank ABSORBED inside the collected continuation (e.g. a
