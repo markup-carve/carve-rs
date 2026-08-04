@@ -739,7 +739,27 @@ fn extract_link_defs(source: &str) -> (String, BTreeMap<String, LinkDef>) {
             body.push(line.to_string());
             continue;
         }
-        if let Some((label_part, target_part)) = parse_link_def_line(stripped.bare) {
+        // A definition on an item's CONTINUATION line carries no marker, so
+        // `strip_container_prefixes` (which strips blockquote markers and list
+        // MARKERS) leaves the item's indentation in front of the `[` and the
+        // line reads as text. carve-js, carve-php and the executable spec all
+        // collect it; this engine rendered the line AND failed to resolve the
+        // reference (carve-rs#552).
+        //
+        // Exactly the tracked content column is stripped, never more: a line
+        // indented PAST the column is item paragraph text, and all four
+        // implementations agree it defines nothing there. Zero columns is the
+        // top-level case, where `text` / `  [r]: /u` is likewise text
+        // everywhere - so this only ever fires inside a list item.
+        let def_line = if content_col > 0 && stripped.structural.is_empty() {
+            stripped
+                .bare
+                .strip_prefix(&" ".repeat(content_col))
+                .unwrap_or(stripped.bare)
+        } else {
+            stripped.bare
+        };
+        if let Some((label_part, target_part)) = parse_link_def_line(def_line) {
             // A reference definition needs a non-empty destination (carve-js
             // `RE_LINK_DEF` requires `(\S+)` after the colon). An empty target
             // (`[r]:` + only whitespace) is NOT a definition -- the line stays
