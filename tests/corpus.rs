@@ -198,6 +198,8 @@ const IMPLEMENTED: &[&str] = &[
     "a-definition-below-every-content-column-folds-as-text",
     "a-caret-is-a-reference-label-not-an-empty-footnote",
     "an-invisible-line-does-not-cancel-a-blank-line-separation",
+    "a-comment-fence-is-a-comment-at-any-column-too",
+    "a-floating-attribute-stops-at-the-item-boundary",
 ];
 
 fn corpus_dir() -> PathBuf {
