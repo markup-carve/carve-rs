@@ -4573,7 +4573,16 @@ fn dedent_for_collection(line: &str, indent: usize, strip_cols: usize) -> usize 
     if line_starts_paragraph(trimmed) {
         return indent;
     }
-    0
+    // A block-shaped line keeps exactly ONE column, whatever it was indented
+    // by. §24 C3: BELOW the content column a marker folds as lazy item text and
+    // no other opener nests either - the depth of the indent does not enter
+    // into it, and Rule B's "any indent" is scoped to where a TOP-LEVEL list
+    // may open (C4), not to nesting. Keeping the ORIGINAL column let a line two
+    // columns in reach the SUB-list's content column inside the re-parsed
+    // stream and open a list there, which is what all three engines used to do
+    // (carve#603). One column can reach no content column at all, so the fold
+    // holds at every depth.
+    indent.saturating_sub(1)
 }
 
 fn collect_indented_block_mapped(
