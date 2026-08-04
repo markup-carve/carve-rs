@@ -28,13 +28,49 @@ use std::fmt::Write as _;
 /// ONE constant, not one per renderer. Five copies of the same number is how
 /// the HTML renderer kept the old bound through the first sweep: its copy was
 /// already spelled symbolically, so a search for the literal missed it.
-pub const MAX_RENDER_DEPTH: usize = crate::parse::MAX_NESTING_DEPTH + 32;
+///
+/// THE UNIT IS NOT THE PARSER'S, which is why the margin is a FACTOR and not
+/// `+ 32`. §25 states the bound as a property - a parsed tree must not be able
+/// to reach it - and these renderers count AST LEVELS while the parse cap
+/// counts SOURCE nesting levels. One source level of a list costs two AST
+/// levels (`list`, then `list_item`) before its body, so `MAX_NESTING_DEPTH +
+/// 32` was reachable at about 120 nested items: this engine truncated a
+/// document its own parser had just accepted, where carve-js and carve-php -
+/// which count CONTAINER depth, one per level - rendered it whole. Same shape
+/// as the ingest bound's unit trap (PART 12 §9(b), `MAX_JSON_DEPTH`).
+///
+/// The factor covers the deepest AST-per-source ratio the parser can produce
+/// (a list or definition list at two levels each, plus the leaf paragraph),
+/// with the same absolute margin on top for the blocks a container subtree adds.
+pub const MAX_RENDER_DEPTH: usize = crate::parse::MAX_NESTING_DEPTH * 3 + 32;
 
-pub fn render_html(doc: &Document) -> String {
+/// Render a tree that did NOT come from the parser, refusing at the ceiling.
+///
+/// `Err` when the tree nests deeper than [`MAX_RENDER_DEPTH`], naming the
+/// renderer and the bound (PART 9 §25). A tree the parser produced cannot reach
+/// it - the parser caps nesting lower - so this fails only for a tree built
+/// through the API or read by `from_json`, where the caller is the one who can
+/// act on it.
+pub fn render_html(doc: &Document) -> Result<String, crate::RenderDepthError> {
     render_html_with_options(doc, &Options::default())
 }
 
-pub fn render_html_with_options(doc: &Document, options: &Options<'_>) -> String {
+/// Render a tree that did NOT come from the parser, refusing at the ceiling.
+///
+/// `Err` when the tree nests deeper than [`MAX_RENDER_DEPTH`], naming the
+/// renderer and the bound (PART 9 §25). A tree the parser produced cannot reach
+/// it - the parser caps nesting lower - so this fails only for a tree built
+/// through the API or read by `from_json`, where the caller is the one who can
+/// act on it.
+pub fn render_html_with_options(
+    doc: &Document,
+    options: &Options<'_>,
+) -> Result<String, crate::RenderDepthError> {
+    let watch = crate::render_depth::RenderDepthWatch::new();
+    watch.into_result(render_html_inner(doc, options))
+}
+
+fn render_html_inner(doc: &Document, options: &Options<'_>) -> String {
     let mut doc = doc.clone();
     let _abbr_guard = AbbrBudgetGuard::new(doc.source_len);
     let _index_guard = crate::index_budget::IndexBudgetGuard::new(doc.source_len);
@@ -654,6 +690,7 @@ fn render_block(
     state: &mut RenderState,
 ) {
     if level > MAX_RENDER_DEPTH {
+        crate::render_depth::record("html");
         return;
     }
     match node {

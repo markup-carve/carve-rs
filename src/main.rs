@@ -257,7 +257,7 @@ fn main() -> ExitCode {
         match render_document(doc, format, &options) {
             Ok(output) => output,
             Err(err) => {
-                eprintln!("carve: profile violation: {err}");
+                eprintln!("carve: {err}");
                 return ExitCode::FAILURE;
             }
         }
@@ -287,22 +287,54 @@ fn main() -> ExitCode {
     ExitCode::SUCCESS
 }
 
+/// What can stop `--from-json` from producing output.
+///
+/// This path is the one where a renderer's §25 ceiling is reachable: the JSON
+/// reader accepts trees deeper than the markup parser can build, so a decoded
+/// document may exceed a bound the source path cannot. The refusal is reported
+/// and exits non-zero, like every other CLI failure.
+enum RenderError {
+    Profile(carve::ProfileViolationError),
+    Depth(carve::RenderDepthError),
+}
+
+impl std::fmt::Display for RenderError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RenderError::Profile(err) => write!(f, "profile violation: {err}"),
+            RenderError::Depth(err) => write!(f, "{err}"),
+        }
+    }
+}
+
+impl From<carve::ProfileViolationError> for RenderError {
+    fn from(err: carve::ProfileViolationError) -> Self {
+        RenderError::Profile(err)
+    }
+}
+
+impl From<carve::RenderDepthError> for RenderError {
+    fn from(err: carve::RenderDepthError) -> Self {
+        RenderError::Depth(err)
+    }
+}
+
 fn render_document(
     doc: carve::Document,
     format: OutputFormat,
     options: &carve::Options<'_>,
-) -> Result<String, carve::ProfileViolationError> {
+) -> Result<String, RenderError> {
     let (mode, target_is_html) = match format {
         OutputFormat::Html => (options.mode, true),
         _ => (carve::Mode::Interactive, false),
     };
     let doc = carve::prepare_document_for_render(doc, options, mode, target_is_html)?;
     Ok(match format {
-        OutputFormat::Html => carve::render_html_with_options(&doc, options),
-        OutputFormat::Markdown => carve::render_markdown_with_options(&doc, options),
-        OutputFormat::Plain => carve::render_plain_text_with_options(&doc, options),
-        OutputFormat::Ansi => carve::render_ansi_with_options(&doc, options),
-        OutputFormat::Carve => carve::render_carve(&doc),
+        OutputFormat::Html => carve::render_html_with_options(&doc, options)?,
+        OutputFormat::Markdown => carve::render_markdown_with_options(&doc, options)?,
+        OutputFormat::Plain => carve::render_plain_text_with_options(&doc, options)?,
+        OutputFormat::Ansi => carve::render_ansi_with_options(&doc, options)?,
+        OutputFormat::Carve => carve::render_carve(&doc)?,
         OutputFormat::Json => carve::to_json(&doc),
     })
 }

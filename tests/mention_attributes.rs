@@ -11,7 +11,7 @@ fn doc_json(node_type: &str, name_key: &str, name: &str, attrs: &str) -> String 
 
 fn render_node(node_type: &str, name_key: &str, name: &str, attrs: &str) -> String {
     let doc = carve::from_json(&doc_json(node_type, name_key, name, attrs)).expect("decode node");
-    carve::render_html(&doc)
+    carve::render_html(&doc).expect("a one-node tree is within the render ceiling")
 }
 
 fn render_node_with_links(node_type: &str, name_key: &str, name: &str, attrs: &str) -> String {
@@ -20,6 +20,7 @@ fn render_node_with_links(node_type: &str, name_key: &str, name: &str, attrs: &s
         .with_mention_url("/u/{name}")
         .with_tag_url("/t/{name}");
     carve::render_html_with_options(&doc, &options)
+        .expect("a one-node tree is within the render ceiling")
 }
 
 #[test]

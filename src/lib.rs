@@ -29,6 +29,7 @@ pub mod profile_filter;
 mod render;
 mod render_ansi;
 mod render_carve;
+mod render_depth;
 mod render_markdown;
 mod render_plain;
 mod render_text;
@@ -73,28 +74,49 @@ pub use profile_filter::{apply_profile, ProfileFilterResult};
 pub use render::{render_html, render_html_with_options, MAX_RENDER_DEPTH};
 pub use render_ansi::{render_ansi, render_ansi_with_options};
 pub use render_carve::render_carve;
+pub use render_depth::RenderDepthError;
 pub use render_markdown::{render_markdown, render_markdown_with_options};
 pub use render_plain::{render_plain_text, render_plain_text_with_options};
 pub use stamp::{needs_review, read_stamp, stamp_carve, Stamp, StampForm};
 
 /// Parse a Carve source string and render it as HTML in one call.
+///
+/// Infallible: the parser caps nesting at its own bound, which sits BELOW the
+/// renderers' ceiling, so the §25 refusal is unreachable from a source string
+/// (see [`RenderDepthError`], which the tree-taking renderers return).
 pub fn to_html(source: &str) -> String {
     render_html(&parse(source))
+        .expect("the parse cap sits below the render ceiling, so a parsed tree never reaches it")
 }
 
 /// Parse a Carve source string and render it as Markdown in one call.
+///
+/// Infallible: the parser caps nesting at its own bound, which sits BELOW the
+/// renderers' ceiling, so the §25 refusal is unreachable from a source string
+/// (see [`RenderDepthError`], which the tree-taking renderers return).
 pub fn to_markdown(source: &str) -> String {
     render_markdown(&parse(source))
+        .expect("the parse cap sits below the render ceiling, so a parsed tree never reaches it")
 }
 
 /// Parse a Carve source string and render it as plain text in one call.
+///
+/// Infallible: the parser caps nesting at its own bound, which sits BELOW the
+/// renderers' ceiling, so the §25 refusal is unreachable from a source string
+/// (see [`RenderDepthError`], which the tree-taking renderers return).
 pub fn to_plain_text(source: &str) -> String {
     render_plain_text(&parse(source))
+        .expect("the parse cap sits below the render ceiling, so a parsed tree never reaches it")
 }
 
 /// Parse a Carve source string and render it as ANSI-styled text in one call.
+///
+/// Infallible: the parser caps nesting at its own bound, which sits BELOW the
+/// renderers' ceiling, so the §25 refusal is unreachable from a source string
+/// (see [`RenderDepthError`], which the tree-taking renderers return).
 pub fn to_ansi(source: &str) -> String {
     render_ansi(&parse(source))
+        .expect("the parse cap sits below the render ceiling, so a parsed tree never reaches it")
 }
 
 /// Parse a Carve source string and render canonical Carve source in one call.
@@ -107,7 +129,9 @@ pub fn to_carve(source: &str) -> String {
     if frontmatter.is_some() {
         doc.frontmatter.clear();
     }
-    let body = restore_inline_comments(source, &render_carve(&doc));
+    let rendered = render_carve(&doc)
+        .expect("the parse cap sits below the render ceiling, so a parsed tree never reaches it");
+    let body = restore_inline_comments(source, &rendered);
     match frontmatter {
         Some(frontmatter) if body.trim().is_empty() => format!("{frontmatter}\n"),
         Some(frontmatter) => format!("{frontmatter}\n\n{body}"),
@@ -128,7 +152,9 @@ fn restore_inline_comments(source: &str, formatted: &str) -> String {
         if before.trim().is_empty() {
             continue;
         }
-        let marker = render_carve(&parse::parse_for_carve(before));
+        let marker = render_carve(&parse::parse_for_carve(before)).expect(
+            "the parse cap sits below the render ceiling, so a parsed tree never reaches it",
+        );
         let marker = marker.trim_end();
         if marker.is_empty() {
             continue;
@@ -307,10 +333,12 @@ pub fn try_to_html_with_options(
     options: &Options<'_>,
 ) -> Result<String, ProfileViolationError> {
     // HTML honors the configured mode (interactive / static).
-    Ok(render_html_with_options(
-        &prepare_doc(source, options, options.mode, true)?,
-        options,
-    ))
+    Ok(
+        render_html_with_options(&prepare_doc(source, options, options.mode, true)?, options)
+            .expect(
+                "the parse cap sits below the render ceiling, so a parsed tree never reaches it",
+            ),
+    )
 }
 
 /// Parse, run extension/profile transforms, and serialize the AST as JSON.
@@ -341,7 +369,8 @@ pub fn try_to_markdown_with_options(
     Ok(render_markdown_with_options(
         &prepare_doc(source, options, Mode::Interactive, false)?,
         options,
-    ))
+    )
+    .expect("the parse cap sits below the render ceiling, so a parsed tree never reaches it"))
 }
 
 /// Parse, run extension hooks, apply the profile, and render to plain text.
@@ -354,7 +383,8 @@ pub fn try_to_plain_text_with_options(
     Ok(render_plain_text_with_options(
         &prepare_doc(source, options, Mode::Interactive, false)?,
         options,
-    ))
+    )
+    .expect("the parse cap sits below the render ceiling, so a parsed tree never reaches it"))
 }
 
 /// Parse, run extension hooks, apply the profile, and render to ANSI text.
@@ -367,7 +397,8 @@ pub fn try_to_ansi_with_options(
     Ok(render_ansi_with_options(
         &prepare_doc(source, options, Mode::Interactive, false)?,
         options,
-    ))
+    )
+    .expect("the parse cap sits below the render ceiling, so a parsed tree never reaches it"))
 }
 
 /// Parse and run `before_render` extension hooks, WITHOUT applying the profile.

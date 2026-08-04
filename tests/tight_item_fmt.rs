@@ -11,7 +11,7 @@ fn parse(src: &str) -> carve::Document {
 }
 
 fn fmt(src: &str) -> String {
-    render_carve(&parse(src))
+    render_carve(&parse(src)).expect("the tree under test is within the render ceiling")
 }
 
 #[test]

@@ -106,7 +106,10 @@ fn bullet_marker_normalization() {
         })],
         source_len: 0,
     };
-    assert_eq!(carve::render_carve(&doc), "- a\n");
+    assert_eq!(
+        carve::render_carve(&doc).expect("the tree under test is within the render ceiling"),
+        "- a\n"
+    );
 }
 
 #[test]
@@ -394,7 +397,10 @@ fn colon_container_fence_ignores_containers_past_the_render_cap() {
             at_content_column: true,
             pos: None,
         });
-        for _ in 0..1000 {
+        // Just under the ceiling: past it the writer refuses outright, and the
+        // property under test here is the FENCE WIDTH a bounded writer emits,
+        // which needs output to inspect.
+        for _ in 0..carve::MAX_RENDER_DEPTH - 1 {
             node = BlockNode::Div(Div {
                 attrs: None,
                 label: None,
@@ -405,7 +411,7 @@ fn colon_container_fence_ignores_containers_past_the_render_cap() {
 
         let mut doc = carve::parse("x\n");
         doc.children = vec![node];
-        let formatted = carve::render_carve(&doc);
+        let formatted = carve::render_carve(&doc).expect("a tree below the ceiling renders");
 
         let widest = formatted
             .lines()
@@ -455,11 +461,29 @@ fn every_target_keeps_the_innermost_content_at_the_parser_cap() {
         let doc = carve::parse(&src);
 
         for (target, out) in [
-            ("html", carve::render_html(&doc)),
-            ("markdown", carve::render_markdown(&doc)),
-            ("plain", carve::render_plain_text(&doc)),
-            ("ansi", carve::render_ansi(&doc)),
-            ("carve", carve::render_carve(&doc)),
+            (
+                "html",
+                carve::render_html(&doc).expect("the tree under test is within the render ceiling"),
+            ),
+            (
+                "markdown",
+                carve::render_markdown(&doc)
+                    .expect("the tree under test is within the render ceiling"),
+            ),
+            (
+                "plain",
+                carve::render_plain_text(&doc)
+                    .expect("the tree under test is within the render ceiling"),
+            ),
+            (
+                "ansi",
+                carve::render_ansi(&doc).expect("the tree under test is within the render ceiling"),
+            ),
+            (
+                "carve",
+                carve::render_carve(&doc)
+                    .expect("the tree under test is within the render ceiling"),
+            ),
         ] {
             assert!(
                 out.contains("body"),
@@ -468,10 +492,12 @@ fn every_target_keeps_the_innermost_content_at_the_parser_cap() {
         }
 
         // PART 11: the canonical writer preserves meaning.
-        let written = carve::render_carve(&doc);
+        let written =
+            carve::render_carve(&doc).expect("the tree under test is within the render ceiling");
         assert_eq!(
-            carve::render_html(&carve::parse(&written)),
-            carve::render_html(&doc)
+            carve::render_html(&carve::parse(&written))
+                .expect("the tree under test is within the render ceiling"),
+            carve::render_html(&doc).expect("the tree under test is within the render ceiling")
         );
     });
 }
@@ -508,20 +534,21 @@ fn the_render_cap_still_bounds_a_hand_built_ast() {
             doc
         };
 
-        let under = carve::render_carve(&build(carve::MAX_RENDER_DEPTH - 2));
+        let under = carve::render_carve(&build(carve::MAX_RENDER_DEPTH - 2))
+            .expect("a tree below the ceiling renders");
         assert!(under.contains("body"), "truncated below the cap");
 
-        let over = carve::render_carve(&build(carve::MAX_RENDER_DEPTH + 1));
-        // 1_000, not something enormous: a deeply nested AST overflows the stack on
-        // its recursive Drop long before any renderer sees it, which is a property
-        // of the tree type rather than of this cap.
-        let far_over = carve::render_carve(&build(1_000));
-        assert!(!over.contains("body"), "the cap no longer truncates");
-        assert_eq!(
-            over.len(),
-            far_over.len(),
-            "output still grows past the cap"
-        );
+        // Past the cap the writer REFUSES rather than returning a document with
+        // its body deleted (PART 9 §25, carve-rs#511 item 5). The depths are
+        // derived from the constant so this tracks the rule, not a number; the
+        // larger one stays modest because a deeply nested AST overflows the
+        // stack on its recursive Drop long before any renderer sees it.
+        for depth in [carve::MAX_RENDER_DEPTH + 1, carve::MAX_RENDER_DEPTH + 200] {
+            let err = carve::render_carve(&build(depth))
+                .expect_err("past the ceiling the canonical writer refuses");
+            assert_eq!(err.renderer(), "carve");
+            assert_eq!(err.limit(), carve::MAX_RENDER_DEPTH);
+        }
     });
 }
 

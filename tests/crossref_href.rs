@@ -69,11 +69,9 @@ fn the_wire_survives_a_round_trip() {
     let json = carve::to_json(&carve::parse(source));
     let decoded = carve::from_json(&json).expect("decode");
     assert_eq!(carve::to_json(&decoded), json);
-    assert!(
-        carve::render_carve(&decoded).contains("See </#intro>."),
-        "{}",
-        carve::render_carve(&decoded)
-    );
+    let rendered =
+        carve::render_carve(&decoded).expect("the decoded tree is within the render ceiling");
+    assert!(rendered.contains("See </#intro>."), "{rendered}");
 }
 
 #[test]

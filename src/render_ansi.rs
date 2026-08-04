@@ -11,8 +11,18 @@ fn trim_block_output(s: &str) -> &str {
 /// Render a document to ANSI-styled text. See `render_markdown_with_options`
 /// for why the options-taking wrapper exists; the profile transform runs
 /// upstream.
-pub fn render_ansi_with_options(doc: &Document, _options: &Options<'_>) -> String {
-    render_ansi_inner(doc, _options.lowercase_heading_ids)
+/// Render a tree that did NOT come from the parser, refusing at the ceiling.
+///
+/// `Err` when the tree nests deeper than [`crate::MAX_RENDER_DEPTH`], naming the
+/// renderer and the bound (PART 9 §25). A parser-produced tree cannot reach it -
+/// the parse cap sits below the ceiling - so this fails only for a tree built
+/// through the API or read by `from_json`, which is the caller who can act on it.
+pub fn render_ansi_with_options(
+    doc: &Document,
+    _options: &Options<'_>,
+) -> Result<String, crate::RenderDepthError> {
+    let watch = crate::render_depth::RenderDepthWatch::new();
+    watch.into_result(render_ansi_inner(doc, _options.lowercase_heading_ids))
 }
 
 const RESET: &str = "\x1b[0m";
@@ -34,8 +44,18 @@ const FG_BRIGHT_BLUE: &str = "\x1b[94m";
 const FG_BRIGHT_GREEN: &str = "\x1b[92m";
 const FG_BRIGHT_WHITE: &str = "\x1b[97m";
 
-pub fn render_ansi(doc: &Document) -> String {
-    render_ansi_inner(doc, Options::default().lowercase_heading_ids)
+/// Render a tree that did NOT come from the parser, refusing at the ceiling.
+///
+/// `Err` when the tree nests deeper than [`crate::MAX_RENDER_DEPTH`], naming the
+/// renderer and the bound (PART 9 §25). A parser-produced tree cannot reach it -
+/// the parse cap sits below the ceiling - so this fails only for a tree built
+/// through the API or read by `from_json`, which is the caller who can act on it.
+pub fn render_ansi(doc: &Document) -> Result<String, crate::RenderDepthError> {
+    let watch = crate::render_depth::RenderDepthWatch::new();
+    watch.into_result(render_ansi_inner(
+        doc,
+        Options::default().lowercase_heading_ids,
+    ))
 }
 
 fn render_ansi_inner(doc: &Document, lowercase_heading_ids: bool) -> String {
@@ -88,6 +108,7 @@ fn style(text: &str, codes: &str) -> String {
 
 fn render_blocks(blocks: &[BlockNode], ctx: &mut AnsiContext, depth: usize) -> String {
     if depth > MAX_RENDER_DEPTH {
+        crate::render_depth::record("ansi");
         return String::new();
     }
     blocks
@@ -98,6 +119,7 @@ fn render_blocks(blocks: &[BlockNode], ctx: &mut AnsiContext, depth: usize) -> S
 
 fn render_block(node: &BlockNode, ctx: &mut AnsiContext, depth: usize) -> String {
     if depth > MAX_RENDER_DEPTH {
+        crate::render_depth::record("ansi");
         return String::new();
     }
     match node {
@@ -265,6 +287,7 @@ fn prefix_lines(content: &str, prefix: &str) -> String {
 
 fn render_list(node: &List, ctx: &mut AnsiContext, depth: usize) -> String {
     if depth > MAX_RENDER_DEPTH {
+        crate::render_depth::record("ansi");
         return String::new();
     }
     ctx.list_depth += 1;
@@ -309,6 +332,7 @@ fn render_definition_list(
     depth: usize,
 ) -> String {
     if depth > MAX_RENDER_DEPTH {
+        crate::render_depth::record("ansi");
         return String::new();
     }
     let mut out = String::new();
@@ -430,6 +454,7 @@ fn table_row(cells: &[RenderedCell], widths: &[usize]) -> String {
 
 fn render_figure(node: &Figure, ctx: &mut AnsiContext, depth: usize) -> String {
     if depth > MAX_RENDER_DEPTH {
+        crate::render_depth::record("ansi");
         return String::new();
     }
     let target = match &node.target {
@@ -486,6 +511,7 @@ fn render_footnote_defs(doc: &Document, ctx: &mut AnsiContext) -> String {
 
 fn render_inlines(nodes: &[InlineNode], ctx: &mut AnsiContext, depth: usize) -> String {
     if depth > MAX_RENDER_DEPTH {
+        crate::render_depth::record("ansi");
         return String::new();
     }
     let mut out = String::new();
@@ -497,6 +523,7 @@ fn render_inlines(nodes: &[InlineNode], ctx: &mut AnsiContext, depth: usize) -> 
 
 fn render_inline(node: &InlineNode, ctx: &mut AnsiContext, depth: usize) -> String {
     if depth > MAX_RENDER_DEPTH {
+        crate::render_depth::record("ansi");
         return String::new();
     }
     match node {

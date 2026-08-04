@@ -205,5 +205,10 @@ fn drops_invalid_attribute_names_before_rendering() {
         })],
     };
 
-    assert_eq!(carve::render_html(&doc).trim(), "<p data-ok=\"1\">x</p>");
+    assert_eq!(
+        carve::render_html(&doc)
+            .expect("the tree under test is within the render ceiling")
+            .trim(),
+        "<p data-ok=\"1\">x</p>"
+    );
 }

@@ -11,6 +11,7 @@ use carve::ast::{BlockNode, InlineNode};
 
 fn html(source: &str) -> String {
     carve::render_html(&carve::parse(source))
+        .expect("the tree under test is within the render ceiling")
 }
 
 fn term_text(source: &str) -> String {

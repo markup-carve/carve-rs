@@ -30,12 +30,32 @@ fn trim_block_output(s: &str) -> &str {
 
 /// Render a document to plain text. See `render_markdown_with_options` for why
 /// the options-taking wrapper exists; the profile transform runs upstream.
-pub fn render_plain_text_with_options(doc: &Document, options: &Options<'_>) -> String {
-    render_plain_text_inner(doc, options.lowercase_heading_ids)
+/// Render a tree that did NOT come from the parser, refusing at the ceiling.
+///
+/// `Err` when the tree nests deeper than [`crate::MAX_RENDER_DEPTH`], naming the
+/// renderer and the bound (PART 9 §25). A parser-produced tree cannot reach it -
+/// the parse cap sits below the ceiling - so this fails only for a tree built
+/// through the API or read by `from_json`, which is the caller who can act on it.
+pub fn render_plain_text_with_options(
+    doc: &Document,
+    options: &Options<'_>,
+) -> Result<String, crate::RenderDepthError> {
+    let watch = crate::render_depth::RenderDepthWatch::new();
+    watch.into_result(render_plain_text_inner(doc, options.lowercase_heading_ids))
 }
 
-pub fn render_plain_text(doc: &Document) -> String {
-    render_plain_text_inner(doc, Options::default().lowercase_heading_ids)
+/// Render a tree that did NOT come from the parser, refusing at the ceiling.
+///
+/// `Err` when the tree nests deeper than [`crate::MAX_RENDER_DEPTH`], naming the
+/// renderer and the bound (PART 9 §25). A parser-produced tree cannot reach it -
+/// the parse cap sits below the ceiling - so this fails only for a tree built
+/// through the API or read by `from_json`, which is the caller who can act on it.
+pub fn render_plain_text(doc: &Document) -> Result<String, crate::RenderDepthError> {
+    let watch = crate::render_depth::RenderDepthWatch::new();
+    watch.into_result(render_plain_text_inner(
+        doc,
+        Options::default().lowercase_heading_ids,
+    ))
 }
 
 fn render_plain_text_inner(doc: &Document, lowercase_heading_ids: bool) -> String {
@@ -62,6 +82,7 @@ fn render_crossref(target: &str) -> String {
 
 fn render_blocks(blocks: &[BlockNode], depth: usize) -> String {
     if depth > MAX_RENDER_DEPTH {
+        crate::render_depth::record("plain");
         return String::new();
     }
     blocks
@@ -72,6 +93,7 @@ fn render_blocks(blocks: &[BlockNode], depth: usize) -> String {
 
 fn render_block(node: &BlockNode, depth: usize) -> String {
     if depth > MAX_RENDER_DEPTH {
+        crate::render_depth::record("plain");
         return String::new();
     }
     match node {
@@ -148,6 +170,7 @@ fn prepend_label(body: String, label: Option<&str>) -> String {
 
 fn render_list(node: &List, depth: usize) -> String {
     if depth > MAX_RENDER_DEPTH {
+        crate::render_depth::record("plain");
         return String::new();
     }
     let mut out = String::new();
@@ -168,6 +191,7 @@ fn render_list(node: &List, depth: usize) -> String {
 
 fn render_definition_list(items: &[DefinitionItem], trailing_blank: bool, depth: usize) -> String {
     if depth > MAX_RENDER_DEPTH {
+        crate::render_depth::record("plain");
         return String::new();
     }
     let mut out = String::new();
@@ -209,6 +233,7 @@ fn render_table(node: &Table) -> String {
 
 fn render_figure(node: &Figure, depth: usize) -> String {
     if depth > MAX_RENDER_DEPTH {
+        crate::render_depth::record("plain");
         return String::new();
     }
     let target = match &node.target {
@@ -259,6 +284,7 @@ fn render_inlines(nodes: &[InlineNode]) -> String {
 
 fn render_inlines_stateful(nodes: &[InlineNode], depth: usize) -> String {
     if depth > MAX_RENDER_DEPTH {
+        crate::render_depth::record("plain");
         return String::new();
     }
     let mut out = String::new();
@@ -270,6 +296,7 @@ fn render_inlines_stateful(nodes: &[InlineNode], depth: usize) -> String {
 
 fn render_inline(node: &InlineNode, depth: usize) -> String {
     if depth > MAX_RENDER_DEPTH {
+        crate::render_depth::record("plain");
         return String::new();
     }
     match node {

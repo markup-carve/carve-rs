@@ -264,8 +264,10 @@ fn corpus_round_trip_inner() {
         );
         let options = carve::Options::new();
         assert_eq!(
-            carve::render_html_with_options(&decoded, &options),
-            carve::render_html_with_options(&doc, &options),
+            carve::render_html_with_options(&decoded, &options)
+                .expect("the tree under test is within the render ceiling"),
+            carve::render_html_with_options(&doc, &options)
+                .expect("the tree under test is within the render ceiling"),
             "a decoded document rendered differently for {}",
             path.display()
         );
@@ -625,8 +627,10 @@ fn definition_lists_round_trip_through_the_flat_form() {
 
     let options = carve::Options::new();
     assert_eq!(
-        carve::render_html_with_options(&decoded, &options),
-        carve::render_html_with_options(&doc, &options),
+        carve::render_html_with_options(&decoded, &options)
+            .expect("the tree under test is within the render ceiling"),
+        carve::render_html_with_options(&doc, &options)
+            .expect("the tree under test is within the render ceiling"),
     );
 }
 
