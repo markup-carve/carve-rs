@@ -384,7 +384,17 @@ impl ContentColumns {
 /// continuation line reads as the definition it is. Exactly a column, never
 /// between two: past one the line is item paragraph text and defines nothing.
 fn at_content_column<'a>(bare: &'a str, structural: &str, content_col: usize) -> &'a str {
-    if content_col > 0 && structural.is_empty() {
+    // A BLOCKQUOTE prefix does not disqualify the strip: columns are measured
+    // inside the quote, so `> - a` / `>   [r]: /u` is the same shape as its
+    // unquoted twin and the definition is the item's block either way
+    // (carve#658). A LIST marker in the structural prefix does disqualify it -
+    // there the marker already consumed the column, and stripping again would
+    // eat the item's own content.
+    let quoted_only = !structural.is_empty()
+        && structural
+            .chars()
+            .all(|c| c == '>' || c == ' ' || c == '\t');
+    if content_col > 0 && (structural.is_empty() || quoted_only) {
         bare.strip_prefix(&" ".repeat(content_col)).unwrap_or(bare)
     } else {
         bare
@@ -428,7 +438,7 @@ fn extract_footnote_defs(
         // The footnote prepass asks per LINE which column a definition reaches
         // (see `reached_by`), so the innermost column alone is not enough here.
         let _ = columns.observe(
-            lines[i],
+            without_blockquote_prefixes(lines[i]),
             in_fence.is_some() || in_line_block.is_some() || in_comment_fence.is_some(),
         );
         let in_container = !stripped.structural.is_empty();
@@ -635,7 +645,21 @@ fn extract_footnote_defs(
             // renders and the line still acts as a block boundary -- a following
             // paragraph or a lazy blockquote continuation does not absorb across
             // it.
-            body.push(stripped.replacement());
+            // A definition matched through the CONTENT-COLUMN strip leaves the
+            // container prefix behind, and inside a quoted list item that
+            // prefix alone is a BLANK line - which loosens the list (§17 L1).
+            // The definition rendered nothing, so it is not the item's second
+            // block and must not loosen it (§17 L2), exactly as the
+            // marker-consuming case above keeps the item non-empty. `%%` is
+            // invisible at any column and closes nothing (§24 C3).
+            let mut replacement = stripped.replacement();
+            if def_line != stripped.bare
+                && !stripped.structural.is_empty()
+                && !replacement.ends_with("%%")
+            {
+                replacement.push_str("%%");
+            }
+            body.push(replacement);
             body_line_map.push(Some(def_start_line));
         } else {
             body.push(lines[i].to_string());
@@ -741,7 +765,7 @@ fn extract_link_defs(source: &str) -> (String, BTreeMap<String, LinkDef>) {
         // registered, where the block parser sees a top-level line two columns
         // in and reads it as text.
         let content_col = columns.observe(
-            line,
+            without_blockquote_prefixes(line),
             in_fence.is_some() || in_line_block.is_some() || in_comment_fence.is_some(),
         );
         let raw_is_quoted = prepass_line_is_quoted(line);
@@ -878,7 +902,21 @@ fn extract_link_defs(source: &str) -> (String, BTreeMap<String, LinkDef>) {
             // Leave a blank line in place of the (invisible) definition so it
             // still acts as a block boundary (matches carve-js, where a
             // definition interrupts a paragraph / ends a lazy blockquote).
-            body.push(stripped.replacement());
+            // A definition matched through the CONTENT-COLUMN strip leaves the
+            // container prefix behind, and inside a quoted list item that
+            // prefix alone is a BLANK line - which loosens the list (§17 L1).
+            // The definition rendered nothing, so it is not the item's second
+            // block and must not loosen it (§17 L2), exactly as the
+            // marker-consuming case above keeps the item non-empty. `%%` is
+            // invisible at any column and closes nothing (§24 C3).
+            let mut replacement = stripped.replacement();
+            if def_line != stripped.bare
+                && !stripped.structural.is_empty()
+                && !replacement.ends_with("%%")
+            {
+                replacement.push_str("%%");
+            }
+            body.push(replacement);
         } else {
             body.push(line.to_string());
         }
@@ -1020,6 +1058,21 @@ fn parse_link_def_line(line: &str) -> Option<(&str, &str)> {
         return None;
     }
     Some((label, target))
+}
+
+/// A line with its blockquote prefixes removed, for CONTENT-COLUMN purposes.
+///
+/// Columns are measured inside the quote: `> - a` puts the item's content
+/// column at 2 of the quoted content, not of the raw line - which carries the
+/// `> ` and matches no marker, so the tracker saw no item at all and a
+/// definition written at that column registered nothing while the item consumed
+/// the line (carve#658).
+fn without_blockquote_prefixes(line: &str) -> &str {
+    let mut rest = line;
+    while let Some(inner) = strip_blockquote_prefix(rest) {
+        rest = inner;
+    }
+    rest
 }
 
 fn strip_container_prefixes(mut line: &str) -> StrippedContainerLine<'_> {
