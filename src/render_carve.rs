@@ -9,6 +9,9 @@ struct CarveContext {
     /// backslash: inside a `::: |` fence every newline already IS a hard break.
     line_block_depth: usize,
     colon_fence_depth: usize,
+    /// Inside a table cell, where a leading `^` cannot open a caption: a
+    /// caption marker is a BLOCK line, and a cell's content is not one.
+    table_cell_depth: usize,
     escape_mode: EscapeMode,
 }
 
@@ -35,6 +38,7 @@ fn render_with_escapes(doc: &Document, escape_mode: EscapeMode) -> String {
         list_depth: 0,
         line_block_depth: 0,
         colon_fence_depth: 0,
+        table_cell_depth: 0,
         escape_mode,
     };
     let mut parts = Vec::new();
@@ -793,8 +797,11 @@ fn render_table_cell(cell: &TableCell, ctx: &mut CarveContext, mark_header: bool
         if cell.header && mark_header { "=" } else { "" },
         align_marker(cell.align)
     );
+    ctx.table_cell_depth += 1;
+    let content = render_inlines(&cell.children, ctx);
+    ctx.table_cell_depth -= 1;
     RenderedCell {
-        text: format!("{prefix}{}", render_inlines(&cell.children, ctx)),
+        text: format!("{prefix}{content}"),
         tight: !prefix.is_empty(),
     }
 }
@@ -888,6 +895,9 @@ fn render_inline(
         InlineNode::Text(text) => escape_text(
             &resolve_nbsp_placeholder(&text.value, ctx.line_block_depth > 0),
             ctx.escape_mode,
+            // Does this node's first character sit at the start of a block
+            // line? Only there can a `^` be read back as a caption marker.
+            (prev_char == '\0' || prev_char == '\n') && ctx.table_cell_depth == 0,
         ),
         InlineNode::EscapedText(text) => format!("\\{}", text.value),
         InlineNode::SmartPunctuation(s) => s.value.clone(),
@@ -965,7 +975,7 @@ fn render_inline(
             render_inlines(&extension.children, ctx),
             render_attrs(&extension.attrs)
         ),
-        InlineNode::Abbreviation(abbr) => escape_text(&abbr.abbr, ctx.escape_mode),
+        InlineNode::Abbreviation(abbr) => escape_text(&abbr.abbr, ctx.escape_mode, false),
         InlineNode::Footnote(footnote) => {
             let body = if let Some(inline) = &footnote.inline {
                 format!("^[{}]", render_inlines(inline, ctx))
@@ -1521,14 +1531,36 @@ fn trim_end_non_nbsp(text: &str) -> &str {
     text.trim_end_matches(|ch: char| ch.is_whitespace() && ch != '\u{00a0}')
 }
 
-fn escape_text(text: &str, mode: EscapeMode) -> String {
+fn escape_text(text: &str, mode: EscapeMode, opens_block_line: bool) -> String {
     let mut out = String::new();
-    for ch in text.chars() {
+    // A `^` is only dangerous where a caption marker could be read: at the
+    // start of a line. Anywhere else it is literal text - superscript is
+    // braced-only (`{^x^}`), so `10^6^` carries no markup - and forcing the
+    // escape there put `10\^6\^` in the output where the other two engines
+    // write `10^6^`. PART 11 §4 asks for the minimal form when dropping the
+    // escape changes nothing, and this one changed nothing (carve-rs#555).
+    //
+    // Line-initial stays forced rather than left to the minimal/conservative
+    // vote, because that vote is per DOCUMENT: letting `^ Figure 1` render
+    // unescaped in the minimal pass makes it a caption, the two passes differ,
+    // and the whole document escalates to conservative - which then escapes
+    // every candidate in it, including the `:` that needs nothing. The corpus
+    // pins that exact shape at 158-indented-image-and-caption-stay-literal.
+    let mut at_line_start = opens_block_line;
+    let mut chars = text.chars().peekable();
+    while let Some(ch) = chars.next() {
         if matches!(ch, '\u{0000}'..='\u{0008}' | '\u{000b}'..='\u{001f}' | '\u{007f}'..='\u{009f}')
         {
             continue;
         }
-        let unconditional = matches!(ch, '\\' | '`' | '"' | '\'' | '^');
+        // The caption marker is `^` followed by a SPACE. `^sup^` at the start
+        // of a line is not one - superscript is braced-only, so it is literal
+        // text and needs no escape, which two of this repo's own tests already
+        // pinned.
+        let caret_opens_a_caption =
+            ch == '^' && at_line_start && chars.peek().is_some_and(|c| *c == ' ' || *c == '\t');
+        at_line_start = ch == '\n';
+        let unconditional = matches!(ch, '\\' | '`' | '"' | '\'') || caret_opens_a_caption;
         let candidate = matches!(
             ch,
             '*' | '_'
@@ -1553,6 +1585,7 @@ fn escape_text(text: &str, mode: EscapeMode) -> String {
                 | '='
                 | ':'
                 | ';'
+                | '^'
         );
         if unconditional || (mode == EscapeMode::Conservative && candidate) {
             out.push('\\');
