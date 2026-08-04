@@ -9,6 +9,15 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A line below every content column is text, not the block it looks like**
+  (PART 0 S4, #512). Collecting an item's body dedented a line that never
+  reached the content column by its own indent, landing it flush at column 0 -
+  so `- - a` / ` # H` published an `<h1>` on the outer item and ` - b` became a
+  second sub-item, where carve-js, carve-php and the spec fold both into the
+  sub-item's paragraph (as this engine already did for the same line at the top
+  level). Such a line keeps its own indentation now. A definition marker still
+  attaches from any column, and plain text still dedents fully.
+
 - **A glued colon fence holds back only a bare fence, not every opener** (#496).
   A colon fence with something glued to it (`:::note`, `:::]`) is paragraph
   text, and it used to disable colon-fence interruption for the rest of that
