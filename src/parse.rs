@@ -2034,7 +2034,9 @@ fn code_closer_exists_after(
 fn build_comment_closer_last_index(lines: &[&str]) -> HashMap<usize, usize> {
     let mut last_index = HashMap::new();
     for (idx, line) in lines.iter().enumerate() {
-        if let Some(open) = detect_comment_fence_line(line) {
+        // Any column: the consumption sites read an indented fence, so the
+        // index that tells them whether a closer exists has to see one too.
+        if let Some(open) = detect_comment_fence_line_any_column(line) {
             last_index.insert(open.fence_len, idx);
         }
     }
@@ -2077,7 +2079,7 @@ fn parse_blocks(cur: &mut LineCursor, options: &Options<'_>) -> Vec<BlockNode> {
             cur.consume();
             continue;
         }
-        if let Some(open) = detect_comment_fence_line(line) {
+        if let Some(open) = detect_comment_fence_line_any_column(line) {
             if !cur.has_comment_closer_after(cur.pos + 1, open.fence_len) {
                 // No matching closer: degrade to the ordinary `%%` line
                 // comment path below instead of swallowing to EOF.
@@ -2090,7 +2092,7 @@ fn parse_blocks(cur: &mut LineCursor, options: &Options<'_>) -> Vec<BlockNode> {
                 cur.consume();
                 while let Some(line) = cur.peek() {
                     cur.consume();
-                    if is_comment_fence_close(line, open.fence_len) {
+                    if is_comment_fence_close_any_column(line, open.fence_len) {
                         break;
                     }
                     content.push(line.to_string());
@@ -2500,7 +2502,10 @@ fn comment_fence_close_index(lines: &[&str]) -> std::collections::HashMap<usize,
         // The RAW line. This index only ever answers for a TOP-LEVEL opener -
         // the line-block state is entered nowhere else - so a `> %%%` inside a
         // container is not a closer for it, and stripping the prefix made one.
-        let run = trim_ascii_end(line)
+        // Leading whitespace is not part of the delimiter (an indented closer
+        // closes an indented opener), but nothing else is stripped: the note
+        // above is why a `> %%%` must not answer for a top-level opener.
+        let run = trim_ascii_end(trim_ascii_start(line))
             .bytes()
             .take_while(|b| *b == b'%')
             .count();
@@ -2509,6 +2514,24 @@ fn comment_fence_close_index(lines: &[&str]) -> std::collections::HashMap<usize,
         }
     }
     last
+}
+
+/// The same fence seen from a position that CONSUMES it.
+///
+/// A comment is recognized at ANY column (carve#624), but the strict form above
+/// still decides where a line ENDS an item or OPENS a block, so an indented
+/// fence does not close the list it sits in. Reading it only at column 0 where
+/// it is consumed left an indented opener to the `%%` line-comment path, which
+/// took the opener and the closer one line at a time and rendered everything
+/// between them - a comment that hid its delimiters and showed its contents
+/// (carve-rs#573, the same defect carve-js#630 reported there).
+fn detect_comment_fence_line_any_column(line: &str) -> Option<CommentFenceOpen> {
+    detect_comment_fence_line(trim_ascii_start(line))
+}
+
+/// The closer counterpart of `detect_comment_fence_line_any_column`.
+fn is_comment_fence_close_any_column(line: &str, fence_len: usize) -> bool {
+    is_comment_fence_close(trim_ascii_start(line), fence_len)
 }
 
 fn detect_comment_fence_line(line: &str) -> Option<CommentFenceOpen> {
