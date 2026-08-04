@@ -177,6 +177,7 @@ fn maps_inline_variants_to_canonical_names() {
     assert_eq!(
         canonical_inline_type(&InlineNode::CrossRef(CrossRef {
             target: "x".into(),
+            href: None,
             pos: None,
         })),
         Some("heading_ref")
