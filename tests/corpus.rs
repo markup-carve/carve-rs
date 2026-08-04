@@ -13,6 +13,7 @@ use std::fs;
 use std::path::PathBuf;
 
 const IMPLEMENTED: &[&str] = &[
+    "a-flush-left-line-needs-an-open-paragraph-to-fold-into",
     "opaque-spans-inside-a-container",
     "blocks-that-render-to-nothing",
     "bare-dot-ordered-markers",
@@ -688,3 +689,7 @@ corpus_test!(
     "blocks-that-render-to-nothing"
 );
 corpus_test!(c_bare_dot_ordered_markers, "bare-dot-ordered-markers");
+corpus_test!(
+    c_flush_left_line_needs_an_open_paragraph,
+    "a-flush-left-line-needs-an-open-paragraph-to-fold-into"
+);
