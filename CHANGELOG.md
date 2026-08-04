@@ -9,6 +9,22 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A post-blank line below the content column ends the list** (PART 9 §24 C3,
+  #578, corpus `190-a-blank-after-a-comment-still-ends-the-item`). The rule was
+  applied against the first COLLECTED block's indent and skipped entirely when
+  nothing had been collected yet - which is exactly an item whose content is all
+  on the marker line, so `- - a` / blank / ` b` kept `b` in the outer item where
+  every other engine ends the list.
+
+  A comment made it worse rather than causing it. Being invisible it may sit
+  below the content column, and taking ITS indent as the block indent lowered
+  the threshold under the content column again once the bare form was fixed. The
+  fence form needs its BODY excluded too, not only its delimiters: the body is as
+  invisible as they are.
+
+  The single-level form was always right, and a block indented PAST the content
+  column still belongs to the item (#301) - both are pinned.
+
 - **A definition after an indented comment closer registers** (#574 follow-up).
   #574 taught the block parser that a `%%%` closer sits at any column and left
   the two line-based definition prepasses on the strict test, so they disagreed
