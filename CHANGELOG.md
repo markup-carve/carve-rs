@@ -9,6 +9,16 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A comment on a marker line is a block, and an invisible block leaves no
+  line in the item** (#511 item 7, #532). `- %% c` routed to the lead-paragraph
+  path, where the inline scanner consumed the comment and left the item holding
+  an EMPTY paragraph: the AST had no `comment` node where carve-js publishes
+  one, the canonical writer saw an item with no content and wrote the
+  CONTINUATION MARKER instead (`- +`, a construct that takes a body), and the
+  empty paragraph published a whitespace-only line inside the `<li>`. A block
+  that renders to nothing now contributes no line inside an item either, so
+  `- a` / `  %% c` is `<li>a</li>` as it is in the other two engines.
+
 - **A below-column line folds at every depth, not only one column in**
   (PART 9 §24 C3, carve#603). The previous fix kept such a line's own
   indentation, which two columns in REACHED the sub-list's content column

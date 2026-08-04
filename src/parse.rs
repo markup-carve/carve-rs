@@ -4325,6 +4325,17 @@ fn marker_content_starts_block(content: &str, cur: &LineCursor<'_>, content_col:
             is_comment_fence_close(&line, open.fence_len)
         });
     }
+    // A LINE comment, like the comment FENCE just above it. Left out, `- %% c`
+    // routed to the lead-PARAGRAPH path, where the inline scanner consumed the
+    // comment and left the item holding an EMPTY paragraph: the comment was
+    // absent from the AST where carve-js publishes a `comment` node, the
+    // canonical writer saw an item with no content and substituted the
+    // CONTINUATION MARKER (`- +` - a different construct, one that takes a
+    // body), and the empty paragraph rendered a blank line inside the item
+    // (carve-rs#511 item 7, carve-rs#532).
+    if trim_ascii_start(content).starts_with("%%") {
+        return true;
+    }
     let colon_fence_len = detect_container_open(content)
         .map(|open| open.fence_len)
         .or_else(|| detect_line_block_open(content))
