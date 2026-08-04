@@ -561,7 +561,13 @@ fn render_list(node: &List, ctx: &mut CarveContext) -> String {
     let delim = node.delim.unwrap_or('.');
     let bullet = node.bullet_char.unwrap_or('-');
     for (idx, item) in node.items.iter().enumerate() {
-        let indent = "  ".repeat(ctx.list_depth - 1);
+        // NO absolute depth term. The parent item's continuation prefix is
+        // already the child list's indentation, so adding `"  " * (depth - 1)`
+        // on top indented every level twice - and the two-space strip below was
+        // compensating for it. Output grew as O(depth^3) where the source is
+        // O(depth^2), and `05-lists-5` came back with four spaces where it was
+        // written with two (carve-rs#594, the same defect carve-js fixed in its
+        // #653).
         let mut prefix = if node.ordered {
             let marker = if node.bare_marker {
                 String::new()
@@ -595,21 +601,14 @@ fn render_list(node: &List, ctx: &mut CarveContext) -> String {
         {
             content = "+".to_string();
         }
-        let mut content = trim_non_nbsp(&content).to_string();
-        if item.children.len() == 1 && matches!(item.children.first(), Some(BlockNode::List(_))) {
-            content = content
-                .lines()
-                .map(|line| line.strip_prefix("  ").unwrap_or(line))
-                .collect::<Vec<_>>()
-                .join("\n");
-        }
+        let content = trim_non_nbsp(&content).to_string();
         let mut lines = if content.is_empty() {
             vec!["".to_string()]
         } else {
             content.split('\n').map(str::to_string).collect()
         };
         let first = lines.remove(0);
-        out.push_str(&format!("{indent}{prefix}{first}\n"));
+        out.push_str(&format!("{prefix}{first}\n"));
         let continuation = " ".repeat(prefix.len());
         for line in lines {
             if line.is_empty() || line.chars().eq([VERBATIM_BLANK]) {
@@ -630,7 +629,7 @@ fn render_list(node: &List, ctx: &mut CarveContext) -> String {
                 out.push_str(&line);
                 out.push('\n');
             } else {
-                out.push_str(&format!("{indent}{continuation}{line}\n"));
+                out.push_str(&format!("{continuation}{line}\n"));
             }
         }
         let ends_with_nested_list = content.lines().last().is_some_and(|line| {
