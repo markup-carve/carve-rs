@@ -773,7 +773,15 @@ pub struct AutoLink {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CrossRef {
+    /// The raw id between `</#` and `>`, as the author spelled it. Ids resolve
+    /// case-insensitively, so this is not necessarily the id it resolved to -
+    /// which is why PART 12 section 3a keeps it beside `href` rather than
+    /// letting the resolution replace it.
     pub target: String,
+    /// The resolved destination (`#` + the heading's id), set where the
+    /// crossref resolved against a heading in this document. `None` says it
+    /// resolved against nothing, which is what makes it render literally.
+    pub href: Option<String>,
     /// Span in the original source, when the parser could determine it.
     pub pos: Option<Pos>,
 }

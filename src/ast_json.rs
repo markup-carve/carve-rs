@@ -624,7 +624,13 @@ fn write_inline(out: &mut String, node: &InlineNode) {
         }
         InlineNode::CrossRef(n) => {
             let mut w = typed(out, "heading_ref");
+            // The authored construct and its resolution, side by side
+            // (PART 12 section 3a). `href` is absent where the crossref
+            // resolved against nothing, which is what says so.
             w.field("target", |out| write_string(out, &n.target));
+            if let Some(href) = &n.href {
+                w.field("href", |out| write_string(out, href));
+            }
             write_pos_field(&mut w, &n.pos);
             w.finish();
         }
@@ -1391,6 +1397,7 @@ fn decode_inline(value: &Json) -> Result<InlineNode, AstJsonError> {
         })),
         "heading_ref" => Ok(InlineNode::CrossRef(CrossRef {
             target: required_string(obj, "heading_ref", "target")?.to_string(),
+            href: optional_string(obj, "href")?.map(str::to_string),
             pos: optional_pos(obj, "heading_ref")?,
         })),
         "caption_number" => Ok(InlineNode::CaptionNumber(CaptionNumber {

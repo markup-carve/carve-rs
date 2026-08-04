@@ -189,7 +189,93 @@ fn parse_with_options_mode(source: &str, options: &Options<'_>, mode: ParseMode)
     // Last, so it also covers runs an extension left behind: §1a is about the
     // tree that gets published, whoever produced it.
     coalesce_text_runs(&mut doc);
+    // After every extension has had its say, so a heading an extension added is
+    // a crossref target like any other.
+    fill_crossref_hrefs(&mut doc, options.lowercase_heading_ids);
     doc
+}
+
+/// Publish each crossref's resolution BESIDE its authored target
+/// (PART 12 section 3a).
+///
+/// This engine resolves `</#id>` at RENDER time, from an index built per
+/// render, which is why the tree carried only what the author wrote. That is
+/// half of what section 3a asks for: a consumer decoding the published tree
+/// had to rebuild the heading table and re-run the case-insensitive match
+/// before it could render a crossref, which is the recomputation section 5
+/// exists to prevent.
+///
+/// The renderers keep using their index rather than this field. Both come from
+/// the same builder, so they cannot disagree, and the render path stays able to
+/// resolve a tree that arrived without hrefs at all.
+fn fill_crossref_hrefs(doc: &mut Document, lowercase_ids: bool) {
+    let index = crossref_index_for_document(doc, lowercase_ids);
+
+    fn inlines(nodes: &mut [InlineNode], index: &CrossrefIndex) {
+        for node in nodes {
+            match node {
+                InlineNode::CrossRef(c) => {
+                    c.href = index.resolve(&c.target).map(|(id, _)| format!("#{id}"));
+                }
+                InlineNode::Emphasis(e) => inlines(&mut e.children, index),
+                InlineNode::Span(sp) => inlines(&mut sp.children, index),
+                InlineNode::Link(l) => inlines(&mut l.children, index),
+                InlineNode::Footnote(f) => {
+                    if let Some(inline) = &mut f.inline {
+                        inlines(inline, index);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    fn blocks(nodes: &mut [BlockNode], index: &CrossrefIndex) {
+        for node in nodes {
+            match node {
+                BlockNode::Paragraph(p) => inlines(&mut p.children, index),
+                BlockNode::Heading(h) => inlines(&mut h.children, index),
+                BlockNode::BlockQuote(b) => blocks(&mut b.children, index),
+                BlockNode::Div(d) => blocks(&mut d.children, index),
+                BlockNode::Figure(f) => inlines(&mut f.caption, index),
+                BlockNode::List(l) => {
+                    for item in &mut l.items {
+                        blocks(&mut item.children, index);
+                    }
+                }
+                BlockNode::DefinitionList(d) => {
+                    for entry in &mut d.items {
+                        for term in &mut entry.terms {
+                            inlines(&mut term.children, index);
+                        }
+                        for description in &mut entry.definitions {
+                            blocks(&mut description.children, index);
+                        }
+                    }
+                }
+                BlockNode::Table(t) => {
+                    for row in &mut t.rows {
+                        for cell in &mut row.cells {
+                            inlines(&mut cell.children, index);
+                        }
+                    }
+                    if let Some(caption) = &mut t.caption {
+                        inlines(caption, index);
+                    }
+                }
+                BlockNode::LineBlock(l) => blocks(&mut l.children, index),
+                _ => {}
+            }
+        }
+    }
+
+    blocks(&mut doc.children, &index);
+    let labels: Vec<String> = doc.footnote_defs.keys().cloned().collect();
+    for label in labels {
+        if let Some(body) = doc.footnote_defs.get_mut(&label) {
+            blocks(body, &index);
+        }
+    }
 }
 
 fn remap_source(source: String, original: &MappedSource) -> MappedSource {
@@ -9370,6 +9456,9 @@ fn parse_crossref(text: &str, pos: usize, bounds: &InlineBounds<'_>) -> Option<(
     Some((
         CrossRef {
             target: target.to_string(),
+            // Filled by `fill_crossref_hrefs` once the whole document exists:
+            // resolution needs the heading table, which is not built yet here.
+            href: None,
             pos: None,
         },
         close + 4,

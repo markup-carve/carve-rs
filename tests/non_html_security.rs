@@ -256,6 +256,7 @@ fn markdown_strips_control_bytes_from_author_leaf_fields() {
                     }),
                     carve::InlineNode::CrossRef(carve::CrossRef {
                         target: format!("target{c}"),
+                        href: None,
                         pos: None,
                     }),
                     carve::InlineNode::CitationGroup(carve::CitationGroup {
@@ -356,6 +357,7 @@ fn plain_and_ansi_strip_control_bytes_from_author_leaf_fields() {
                     }),
                     carve::InlineNode::CrossRef(carve::CrossRef {
                         target: format!("target{c}"),
+                        href: None,
                         pos: None,
                     }),
                 ],
