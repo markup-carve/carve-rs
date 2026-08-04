@@ -132,7 +132,7 @@ fn parse_with_options_mode(source: &str, options: &Options<'_>, mode: ParseMode)
         .into_iter()
         .map(|(label, source)| (label, parse_mapped_source(&source, options)))
         .collect();
-    let mut children = parse_mapped_source(&body, options);
+    let mut children = parse_mapped_source_at_document_level(&body, options);
     if options.positions {
         // Offsets need the original text, which the parser only ever sees as
         // already-stripped lines, so they are derived here in one pass.
@@ -154,7 +154,6 @@ fn parse_with_options_mode(source: &str, options: &Options<'_>, mode: ParseMode)
         &doc.footnote_defs,
         options.lowercase_heading_ids,
     );
-    hoist_abbreviation_defs(&mut doc);
     resolve_reference_links(&mut doc, &link_defs, &heading_index);
     if matches!(mode, ParseMode::Html) {
         apply_abbreviations(&mut doc);
@@ -995,6 +994,14 @@ fn split_frontmatter(source: &str, positions: bool) -> SplitFrontmatter<'_> {
 }
 
 pub(crate) fn parse_blocks_with_options(source: &str, options: &Options<'_>) -> Vec<BlockNode> {
+    parse_blocks_with_options_at_level(source, options, false)
+}
+
+fn parse_blocks_with_options_at_level(
+    source: &str,
+    options: &Options<'_>,
+    at_document_level: bool,
+) -> Vec<BlockNode> {
     let mut lines: Vec<&str> = source.lines().collect();
     // `lines()` already drops a single trailing newline; nothing more to do.
     let _ = &mut lines;
@@ -1019,6 +1026,7 @@ pub(crate) fn parse_blocks_with_options(source: &str, options: &Options<'_>) -> 
         want_lines.then_some(line_map.as_slice()),
         options.positions.then_some(col_map.as_slice()),
     );
+    cursor.at_document_level = at_document_level;
     parse_blocks(&mut cursor, options)
 }
 
@@ -1031,6 +1039,7 @@ struct LineCursor<'a> {
     /// gets no position rather than a wrong one.
     col_map: Option<&'a [Option<usize>]>,
     pos: usize,
+    at_document_level: bool,
     comment_closer_last_index: Option<HashMap<usize, usize>>,
     code_closer_last_index: Option<HashMap<u8, Vec<usize>>>,
 }
@@ -1046,6 +1055,7 @@ impl<'a> LineCursor<'a> {
             line_map,
             col_map,
             pos: 0,
+            at_document_level: false,
             comment_closer_last_index: None,
             code_closer_last_index: None,
         }
@@ -1574,11 +1584,26 @@ fn line_start_offsets(source: &str) -> Vec<usize> {
 }
 
 fn parse_mapped_source(source: &MappedSource, options: &Options<'_>) -> Vec<BlockNode> {
+    parse_mapped_source_at_level(source, options, false)
+}
+
+fn parse_mapped_source_at_document_level(
+    source: &MappedSource,
+    options: &Options<'_>,
+) -> Vec<BlockNode> {
+    parse_mapped_source_at_level(source, options, true)
+}
+
+fn parse_mapped_source_at_level(
+    source: &MappedSource,
+    options: &Options<'_>,
+    at_document_level: bool,
+) -> Vec<BlockNode> {
     if !options.source_lines && !options.positions {
         if let Some(blocks) = parse_eof_closed_colon_ladder(source, options) {
             return blocks;
         }
-        return parse_blocks_with_options(&source.source, options);
+        return parse_blocks_with_options_at_level(&source.source, options, at_document_level);
     }
     let lines: Vec<&str> = source.source.lines().collect();
     // The mapped source carries the widths its container already stripped, so a
@@ -1589,6 +1614,7 @@ fn parse_mapped_source(source: &MappedSource, options: &Options<'_>) -> Vec<Bloc
         Some(&source.line_map),
         options.positions.then_some(source.col_map.as_slice()),
     );
+    cursor.at_document_level = at_document_level;
     parse_blocks(&mut cursor, options)
 }
 
@@ -2003,15 +2029,17 @@ fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<BlockNode>
     if !line.starts_with([' ', '\t']) && detect_container_open(line).is_some() {
         return Some(parse_container(cur, options));
     }
-    if let Some(mut abbr) = detect_abbreviation_def(line) {
-        let abbr_at = cur.pos;
-        cur.consume();
-        // Its own line, the same way the block image below takes one. #517
-        // started publishing this node and it went out with no span at all,
-        // which PART 12 §4 allows only for a node that was reassembled and has
-        // no honest one - a definition the author wrote on line 1 has one.
-        abbr.pos = span_of(cur, abbr_at, abbr_at + 1, options);
-        return Some(BlockNode::AbbreviationDef(abbr));
+    if cur.at_document_level {
+        if let Some(mut abbr) = detect_abbreviation_def(line) {
+            let abbr_at = cur.pos;
+            cur.consume();
+            // Its own line, the same way the block image below takes one. #517
+            // started publishing this node and it went out with no span at all,
+            // which PART 12 §4 allows only for a node that was reassembled and has
+            // no honest one - a definition the author wrote on line 1 has one.
+            abbr.pos = span_of(cur, abbr_at, abbr_at + 1, options);
+            return Some(BlockNode::AbbreviationDef(abbr));
+        }
     }
     if let Some(mut img) = detect_block_image(line) {
         if image_is_block(cur) {
@@ -3992,7 +4020,7 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 // never interrupts; only a genuine lazy-continuation interrupt
                 // (blank, sibling marker, ...) ends it.
                 let next_owned = next.to_string();
-                if interrupts_lazy_continuation(cur, &next_owned) {
+                if interrupts_lazy_continuation_as_container(cur, &next_owned) {
                     break;
                 }
                 let inline_line = trim_ascii_start(next);
@@ -4011,7 +4039,7 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 // A sibling/nesting marker above the content column was already
                 // handled above; only a genuine lazy interrupt ends the fold.
                 let next_owned = next.to_string();
-                if interrupts_lazy_continuation(cur, &next_owned) {
+                if interrupts_lazy_continuation_as_container(cur, &next_owned) {
                     break;
                 }
                 let inline_line = trim_ascii_start(next);
@@ -4028,7 +4056,7 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             let suppress_colon_interrupt = para_lines
                 .iter()
                 .any(|line| is_invalid_colon_fence_opener_text(line));
-            if interrupts_paragraph(cur, &dedented)
+            if interrupts_paragraph_as_container(cur, &dedented)
                 && !(suppress_colon_interrupt && is_suppressed_colon_fence_line(&dedented))
             {
                 break;
@@ -4282,7 +4310,6 @@ fn line_starts_paragraph(line: &str) -> bool {
         && detect_container_open(line).is_none()
         && detect_line_block_open(line).is_none()
         && detect_hardbreaks_block_open(line).is_none()
-        && detect_abbreviation_def(line).is_none()
         && detect_comment_fence_line(line).is_none()
         && !is_table_start(line)
         && !is_definition_list_start(line)
@@ -4830,7 +4857,9 @@ fn interrupts_paragraph(cur: &mut LineCursor<'_>, line: &str) -> bool {
     // with no blank line. Invisible constructs (comments, abbreviation defs)
     // interrupt too. Ordered lists do NOT interrupt, `+` is the continuation
     // marker not a bullet, and a bare image stays inline.
-    if trim_ascii_start(line).starts_with("%%") || detect_abbreviation_def(line).is_some() {
+    if trim_ascii_start(line).starts_with("%%")
+        || (cur.at_document_level && detect_abbreviation_def(line).is_some())
+    {
         return true;
     }
     // A standalone block-attribute line floats forward to the next block (or is
@@ -4907,6 +4936,22 @@ fn interrupts_lazy_continuation(cur: &mut LineCursor<'_>, line: &str) -> bool {
         || caption_content(line).is_some()
 }
 
+fn interrupts_paragraph_as_container(cur: &mut LineCursor<'_>, line: &str) -> bool {
+    let saved = cur.at_document_level;
+    cur.at_document_level = false;
+    let interrupts = interrupts_paragraph(cur, line);
+    cur.at_document_level = saved;
+    interrupts
+}
+
+fn interrupts_lazy_continuation_as_container(cur: &mut LineCursor<'_>, line: &str) -> bool {
+    let saved = cur.at_document_level;
+    cur.at_document_level = false;
+    let interrupts = interrupts_lazy_continuation(cur, line);
+    cur.at_document_level = saved;
+    interrupts
+}
+
 fn is_colon_fence_opener_shape(line: &str) -> bool {
     // Only a FLUSH-LEFT colon fence ends lazy continuation (grammar PART 9
     // §10). An INDENTED colon-shaped line (the detectors trim leading
@@ -4933,7 +4978,7 @@ fn is_suppressed_colon_fence_line(line: &str) -> bool {
 }
 
 fn interrupts_paragraph_with_rest(line: &str, rest: &[&str]) -> bool {
-    if trim_ascii_start(line).starts_with("%%") || detect_abbreviation_def(line).is_some() {
+    if trim_ascii_start(line).starts_with("%%") {
         return true;
     }
     // Flush-left only (see interrupts_paragraph): an indented `{...}` line is
@@ -9814,12 +9859,9 @@ fn apply_abbreviations(doc: &mut Document) {
     if defs.is_empty() {
         return;
     }
-    // The definitions STAY in the tree. PART 12 §7 makes an `abbreviation_def`
-    // a child of the DOCUMENT, exactly as a `footnote` is, and carve-js and
-    // carve-php both publish it. Dropping it here after harvesting the
-    // expansions left this engine the only one whose serialized tree lost the
-    // node - invisible to every gate, because it renders nothing either way
-    // and the corpus pins HTML (#513).
+    // The definitions stay in the tree. HTML uses document children as the
+    // abbreviation table, while the non-HTML renderers need the authored
+    // definition line to survive as source.
     let index = abbreviation_index(&defs);
     for block in &mut doc.children {
         apply_abbreviations_block(block, &index);
@@ -10243,70 +10285,6 @@ fn case_fold(s: &str) -> String {
         }
     }
     out
-}
-
-/// Move every `abbreviation_def` authored inside a container up to the document.
-///
-/// PART 12 section 7: a definition is a child of the DOCUMENT even when it was
-/// written inside a div, a list item or a block quote, because its scope is the
-/// document wherever it sits. A footnote definition already worked that way
-/// here; an abbreviation definition did not (carve-php#631, spec carve#518).
-///
-/// This is not only a tree-shape question. `apply_abbreviations` collects
-/// definitions from `doc.children` alone, so an abbreviation written inside a
-/// container was never collected and never expanded -- carve-js and carve-php
-/// render `<abbr>` for it and this engine rendered plain text. Hoisting before
-/// that pass fixes the rendering along with the shape.
-///
-/// Appended at the end, which is where a footnote definition already lands.
-/// `pos` is untouched: it still records where the author wrote it, which is
-/// what section 7 relies on for nothing being lost by the move.
-fn hoist_abbreviation_defs(doc: &mut Document) {
-    let mut hoisted = Vec::new();
-    for block in &mut doc.children {
-        hoist_abbreviation_defs_block(block, &mut hoisted);
-    }
-    doc.children.append(&mut hoisted);
-}
-
-/// Strip definitions out of one block's children, recursing so a definition
-/// nested several containers deep still reaches the document.
-fn hoist_abbreviation_defs_block(block: &mut BlockNode, hoisted: &mut Vec<BlockNode>) {
-    match block {
-        BlockNode::BlockQuote(n) => hoist_from_blocks(&mut n.children, hoisted),
-        BlockNode::Div(n) => hoist_from_blocks(&mut n.children, hoisted),
-        BlockNode::Admonition(n) => hoist_from_blocks(&mut n.children, hoisted),
-        BlockNode::Extension(n) => hoist_from_blocks(&mut n.children, hoisted),
-        BlockNode::List(n) => {
-            for item in &mut n.items {
-                hoist_from_blocks(&mut item.children, hoisted);
-            }
-        }
-        BlockNode::DefinitionList(n) => {
-            for item in &mut n.items {
-                for def in &mut item.definitions {
-                    hoist_from_blocks(&mut def.children, hoisted);
-                }
-            }
-        }
-        // The rest hold no block children: a figure's target is a single node
-        // that cannot be a definition, and a table cell holds inlines.
-        _ => {}
-    }
-}
-
-/// Remove every definition from one block list, recursing into what stays.
-fn hoist_from_blocks(blocks: &mut Vec<BlockNode>, hoisted: &mut Vec<BlockNode>) {
-    let mut kept = Vec::with_capacity(blocks.len());
-    for mut child in std::mem::take(blocks) {
-        if matches!(child, BlockNode::AbbreviationDef(_)) {
-            hoisted.push(child);
-            continue;
-        }
-        hoist_abbreviation_defs_block(&mut child, hoisted);
-        kept.push(child);
-    }
-    *blocks = kept;
 }
 
 fn resolve_reference_links(

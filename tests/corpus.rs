@@ -191,6 +191,8 @@ const IMPLEMENTED: &[&str] = &[
     "a-marker-separator-is-a-space-never-a-tab",
     "a-repeated-definition-which-one-wins",
     "two-abbreviation-definitions",
+    "an-abbreviation-definition-is-recognized-only-at-document-level",
+    "a-list-item-does-not-define-an-abbreviation-either",
 ];
 
 fn corpus_dir() -> PathBuf {
