@@ -9,6 +9,18 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A list item's content column is live only inside the container it was
+  measured in** (#593). Measuring content columns inside a block quote (#587)
+  left the tracker unable to tell one container from another: `- a` / blank /
+  `>   [r]: /u` registered a definition from a line inside a quote, at the
+  column of a list that had already closed. Columns are scoped per container
+  now - one frame per open quote level - so whether a column is live is answered
+  by structure rather than by comparing indents measured in whichever coordinate
+  the caller stripped to. Quote depth counts FLUSH-LEFT markers only: an
+  indented `>` is a quote opening inside the current container, not one the line
+  sits in, which is what keeps an item's column across a quote written at that
+  item's own column.
+
 - **`fmt` writes a nested list with the indentation it read** (#594). Each level
   was indented twice - once by an absolute `"  " * (list_depth - 1)` and again by
   the parent item's continuation prefix - with a two-space strip of the child's
