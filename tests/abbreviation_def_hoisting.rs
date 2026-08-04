@@ -81,11 +81,18 @@ fn a_container_holding_only_a_definition_is_left_empty_not_removed() {
 }
 
 #[test]
-fn the_document_still_parses_the_definition_out_of_the_container() {
-    // The tree the HTML pipeline sees has no definition left in the div: it was
-    // hoisted, then consumed by `apply_abbreviations`.
+fn the_definition_is_hoisted_out_of_the_container_and_survives() {
+    // Hoisted to the DOCUMENT and kept there. PART 12 §7 makes an
+    // `abbreviation_def` a document child exactly as a `footnote` is, and
+    // carve-js and carve-php both publish it.
+    //
+    // This asserted `["div"]` until #513: the node was hoisted and then
+    // CONSUMED by `apply_abbreviations` once its expansion had been harvested,
+    // so the serialized tree lost it. Nothing caught that, because it renders
+    // nothing either way and the corpus pins HTML - the test pinned the
+    // consumption rather than the rule.
     let doc = parse(":::\n*[HTML]: HyperText\n\nbody\n:::\n");
-    assert_eq!(types(&doc.children), vec!["div"]);
+    assert_eq!(types(&doc.children), vec!["div", "abbreviation_def"]);
 }
 
 #[test]

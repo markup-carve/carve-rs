@@ -149,7 +149,7 @@ fn render_blocks(
     let mut out = String::new();
     let mut first = true;
     for block in nodes {
-        if matches!(block, BlockNode::Comment(_)) {
+        if matches!(block, BlockNode::Comment(_) | BlockNode::AbbreviationDef(_)) {
             continue;
         }
         if !first {
@@ -209,7 +209,15 @@ fn render_document_blocks(
     let mut i = 0;
     let mut first = true;
     while i < nodes.len() {
-        if matches!(nodes[i], BlockNode::Comment(_)) {
+        // Skipped BEFORE the separating newline, or a block that renders to
+        // nothing leaves a blank line where it stood. An abbreviation
+        // definition joined this list when it started SURVIVING into the tree
+        // (#513): it was previously deleted once its expansions were
+        // harvested, so nothing here had ever seen one.
+        if matches!(
+            nodes[i],
+            BlockNode::Comment(_) | BlockNode::AbbreviationDef(_)
+        ) {
             i += 1;
             continue;
         }

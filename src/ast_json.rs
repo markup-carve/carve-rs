@@ -517,9 +517,27 @@ fn write_inline(out: &mut String, node: &InlineNode) {
         }
         InlineNode::Emphasis(n) => {
             let mut w = typed(out, emphasis_type(n.kind));
-            w.field("children", |out| write_inlines(out, &n.children));
             if n.kind == EmphasisKind::BoldItalic {
+                // PART 11 §6: `/*x*/` and `*/x/*` BOTH yield a `strong`
+                // wrapping an `emphasis`. `boldItalic` records which spelling
+                // the author used; it does not replace the nesting.
+                //
+                // This engine holds the combined form as ONE node, which is
+                // fine internally and wrong on the wire: the published tree had
+                // `strong` > `text`, so carve-js decoding it produced a strong
+                // with no emphasis at all and the italic was silently lost
+                // (#513). The nesting is materialised here, at the boundary,
+                // rather than changing the internal representation.
+                w.field("children", |out| {
+                    out.push('[');
+                    let mut inner = typed(out, "emphasis");
+                    inner.field("children", |out| write_inlines(out, &n.children));
+                    inner.finish();
+                    out.push(']');
+                });
                 w.field("boldItalic", |out| write_bool(out, true));
+            } else {
+                w.field("children", |out| write_inlines(out, &n.children));
             }
             write_attrs_field(&mut w, &n.attrs);
             write_pos_field(&mut w, &n.pos);
@@ -1271,12 +1289,28 @@ fn decode_inline(value: &Json) -> Result<InlineNode, AstJsonError> {
             pos: optional_pos(obj, "smart_punctuation")?,
         })),
         "emphasis" | "strong" | "underline" | "strike" | "superscript" | "subscript"
-        | "highlight" => Ok(InlineNode::Emphasis(Emphasis {
-            attrs: optional_attrs(obj)?,
-            kind: decode_emphasis_kind(ty, obj)?,
-            children: decode_inlines(required_array(obj, ty, "children")?)?,
-            pos: optional_pos(obj, ty)?,
-        })),
+        | "highlight" => {
+            let kind = decode_emphasis_kind(ty, obj)?;
+            let mut children = decode_inlines(required_array(obj, ty, "children")?)?;
+            // The combined form is ONE node here and TWO on the wire: a
+            // `strong` marked `boldItalic` wrapping an `emphasis` (PART 11 §6).
+            // Unwrap that single emphasis child on the way in, or the kind and
+            // the child both add italic and `/*x*/` round-trips to
+            // `<strong><em><em>` (#513).
+            if kind == EmphasisKind::BoldItalic && children.len() == 1 {
+                if let InlineNode::Emphasis(inner) = &children[0] {
+                    if inner.kind == EmphasisKind::Italic && inner.attrs.is_none() {
+                        children = inner.children.clone();
+                    }
+                }
+            }
+            Ok(InlineNode::Emphasis(Emphasis {
+                attrs: optional_attrs(obj)?,
+                kind,
+                children,
+                pos: optional_pos(obj, ty)?,
+            }))
+        }
         "code" => Ok(InlineNode::Code(Code {
             value: required_string(obj, "code", "value")?.to_string(),
             attrs: optional_attrs(obj)?,

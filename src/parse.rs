@@ -9743,8 +9743,12 @@ fn apply_abbreviations(doc: &mut Document) {
     if defs.is_empty() {
         return;
     }
-    doc.children
-        .retain(|node| !matches!(node, BlockNode::AbbreviationDef(_)));
+    // The definitions STAY in the tree. PART 12 §7 makes an `abbreviation_def`
+    // a child of the DOCUMENT, exactly as a `footnote` is, and carve-js and
+    // carve-php both publish it. Dropping it here after harvesting the
+    // expansions left this engine the only one whose serialized tree lost the
+    // node - invisible to every gate, because it renders nothing either way
+    // and the corpus pins HTML (#513).
     let index = abbreviation_index(&defs);
     for block in &mut doc.children {
         apply_abbreviations_block(block, &index);
