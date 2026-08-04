@@ -5128,6 +5128,7 @@ fn collect_indented_block_mapped_with(
     let mut line_map = Vec::new();
     let mut col_map: Vec<Option<usize>> = Vec::new();
     let mut block_indent: Option<usize> = None;
+    let mut collecting_comment_fence: Option<usize> = None;
     while let Some(line) = cur.peek() {
         if is_blank_line(line) {
             // Lazy continuation does not cross a blank line: after a blank, only
@@ -5135,7 +5136,16 @@ fn collect_indented_block_mapped_with(
             // block's own level. A shallower line (e.g. a dedent landing below a
             // sublist) ends the block and is left for the caller, so it can close
             // the list rather than fold in (grammar §10, corpus 81-list-lazy-5).
-            if let Some(bi) = block_indent {
+            {
+                // No block collected yet means the item's content is all on the
+                // MARKER line (`- - a`, `- # H`), so there is no block indent to
+                // compare against - and this guard used to be skipped entirely,
+                // letting a post-blank line BELOW the content column be collected
+                // as part of the item. `- - a` / blank / ` b` put `b` in the
+                // outer item where carve-js and the executable spec end the list
+                // (#578, corpus 190). The content column is the right floor: it
+                // is what a line has to reach to still belong to the item.
+                let bi = block_indent.unwrap_or(strip_cols);
                 let mut k = cur.pos + 1;
                 while k < cur.lines.len() && is_blank_line(cur.lines[k]) {
                     k += 1;
@@ -5168,7 +5178,24 @@ fn collect_indented_block_mapped_with(
         if stop_at_content_column_marker && is_marker && indent >= strip_cols {
             break;
         }
-        if block_indent.is_none() {
+        // A comment is not a block, so it does not set the block indent. It
+        // renders nothing and may sit BELOW the content column (§24 C3), and
+        // taking its column here lowered the post-blank threshold below the
+        // content column - which is how `- - a` / ` %% c` / blank / ` b` kept
+        // `b` in the item after the bare form had been fixed (#578, corpus 190).
+        // The fence form needs its BODY excluded too, not just its delimiters:
+        // the body is as invisible as they are, so a `hidden` line one column in
+        // would set the indent the opener above it was skipped for.
+        let is_comment_delimiter = trim_ascii_start(line).starts_with("%%");
+        let inside_comment = collecting_comment_fence.is_some();
+        if let Some(fence_len) = collecting_comment_fence {
+            if is_comment_fence_close_any_column(line, fence_len) {
+                collecting_comment_fence = None;
+            }
+        } else if let Some(open) = detect_comment_fence_line_any_column(line) {
+            collecting_comment_fence = Some(open.fence_len);
+        }
+        if block_indent.is_none() && !is_comment_delimiter && !inside_comment {
             block_indent = Some(indent);
         }
         // Dedent by the item's content column so a nested block (sub-list, block
@@ -5201,9 +5228,19 @@ fn collect_indented_block_plain_with(
 ) -> String {
     let mut lines = Vec::new();
     let mut block_indent: Option<usize> = None;
+    let mut collecting_comment_fence: Option<usize> = None;
     while let Some(line) = cur.peek() {
         if is_blank_line(line) {
-            if let Some(bi) = block_indent {
+            {
+                // No block collected yet means the item's content is all on the
+                // MARKER line (`- - a`, `- # H`), so there is no block indent to
+                // compare against - and this guard used to be skipped entirely,
+                // letting a post-blank line BELOW the content column be collected
+                // as part of the item. `- - a` / blank / ` b` put `b` in the
+                // outer item where carve-js and the executable spec end the list
+                // (#578, corpus 190). The content column is the right floor: it
+                // is what a line has to reach to still belong to the item.
+                let bi = block_indent.unwrap_or(strip_cols);
                 let mut k = cur.pos + 1;
                 while k < cur.lines.len() && is_blank_line(cur.lines[k]) {
                     k += 1;
@@ -5229,7 +5266,24 @@ fn collect_indented_block_plain_with(
         if stop_at_content_column_marker && is_marker && indent >= strip_cols {
             break;
         }
-        if block_indent.is_none() {
+        // A comment is not a block, so it does not set the block indent. It
+        // renders nothing and may sit BELOW the content column (§24 C3), and
+        // taking its column here lowered the post-blank threshold below the
+        // content column - which is how `- - a` / ` %% c` / blank / ` b` kept
+        // `b` in the item after the bare form had been fixed (#578, corpus 190).
+        // The fence form needs its BODY excluded too, not just its delimiters:
+        // the body is as invisible as they are, so a `hidden` line one column in
+        // would set the indent the opener above it was skipped for.
+        let is_comment_delimiter = trim_ascii_start(line).starts_with("%%");
+        let inside_comment = collecting_comment_fence.is_some();
+        if let Some(fence_len) = collecting_comment_fence {
+            if is_comment_fence_close_any_column(line, fence_len) {
+                collecting_comment_fence = None;
+            }
+        } else if let Some(open) = detect_comment_fence_line_any_column(line) {
+            collecting_comment_fence = Some(open.fence_len);
+        }
+        if block_indent.is_none() && !is_comment_delimiter && !inside_comment {
             block_indent = Some(indent);
         }
         lines.push(slice_columns(
