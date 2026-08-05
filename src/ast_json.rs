@@ -100,8 +100,26 @@ pub fn from_json(input: &str) -> Result<Document, AstJsonError> {
     };
 
     clear_unbacked_footnote_numbers(&mut doc);
+    renumber_captions(&mut doc);
 
     Ok(doc)
+}
+
+/// Re-derive `caption_number.number` for an ingested tree.
+///
+/// The other half of PART 12 §5's "resolution results ARE serialized", and the
+/// worse half: a stale footnote number contradicted the renderer, a stale
+/// caption number is what the renderer PRINTS. Delete the first of two numbered
+/// figures from a published tree and the survivor still rendered
+/// `Figure 2: two`, where a fresh parse of the same document gives `Figure 1`
+/// (carve#758).
+///
+/// The same pass the parse runs, for the same reason as the footnote one above:
+/// numbering happens during `parse` in this engine, so an ingested tree numbered
+/// the same way agrees with a parsed one and §6's round trip holds. It builds
+/// its counters fresh, so on an unedited tree it reproduces what was there.
+fn renumber_captions(doc: &mut Document) {
+    crate::parse::number_crossref_captions(doc);
 }
 
 /// Drop `number` from any footnote REFERENCE whose definition is not in the tree.
