@@ -190,6 +190,7 @@ const IMPLEMENTED: &[&str] = &[
     "attribute-braces-on-a-list-item-marker-line",
     "implicit-heading-references-with-no-definition",
     "a-marker-separator-is-a-space-never-a-tab",
+    "a-tab-as-the-first-character-of-a-definition-term",
     "a-repeated-definition-which-one-wins",
     "two-abbreviation-definitions",
     "an-abbreviation-definition-is-recognized-only-at-document-level",
