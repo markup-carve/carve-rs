@@ -126,9 +126,15 @@ pub struct Paragraph {
     /// paragraph promotes to a `<figure>` only when the image sat at the content
     /// column (strict column-0 rule, docs/divergence-from-djot.md §11). An
     /// indented image + caption stays a literal paragraph, matching carve-php /
-    /// carve-js. Non-parse construction sites leave this `false` (the default);
-    /// none of them build an image + caption paragraph, so it never blocks a
-    /// legitimate promotion.
+    /// carve-js.
+    ///
+    /// EVERY construction site must set this deliberately. The claim that used to
+    /// stand here - that the sites leaving it `false` never build an image +
+    /// caption paragraph - was untrue: the list item's LEAD paragraph is built by
+    /// hand in `parse_list`, left it at the default, and so blocked the promotion
+    /// for every list item in every document (carve-rs#610). Prefer naming all
+    /// four fields over `..Default::default()` at a parse site, so a paragraph
+    /// that begins at its content column cannot silently claim otherwise.
     pub at_content_column: bool,
     /// Span in the original source, when the parser could determine it.
     pub pos: Option<Pos>,

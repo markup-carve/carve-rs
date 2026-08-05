@@ -4774,6 +4774,14 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         let mut paragraph = BlockNode::Paragraph(Paragraph {
             attrs: None,
             children,
+            // This paragraph BEGINS at the item's content column by construction:
+            // its first line is the marker line's own content. Leaving the field
+            // at its `false` default gated off the image + `^ caption` promotion
+            // in `promote_block_images`, so a caption inside a list item rendered
+            // as literal text (carve-rs#610). Lines folded in from BELOW the
+            // content column are lazy continuations and never start this
+            // paragraph, so the flag describes the first line correctly.
+            at_content_column: true,
             pos: item_paragraph_span(
                 cur,
                 item_at,
@@ -4781,7 +4789,6 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 marker.content,
                 options,
             ),
-            ..Default::default()
         });
         if options.source_lines {
             if let Some(line) = item_source_line {
