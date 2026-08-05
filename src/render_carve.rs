@@ -42,37 +42,31 @@ fn render_carve_unguarded(doc: &Document) -> String {
     // document that actually holds a private-use sentinel pays for the second
     // pass, and nothing else changes: the retry runs the same code.
     let first = render_carve_once(doc);
-    let (blank, guard) = SENTINELS.with(|s| s.get());
-    let (n_blank, n_guard) = INSERTED.with(|c| c.get());
-    let (seen_blank, seen_guard) = SEEN.with(|c| c.get());
-    let authored_blank = seen_blank > n_blank;
-    let authored_guard = seen_guard > n_guard;
-    if !authored_blank && !authored_guard {
+    let current = SENTINELS.with(|s| s.get());
+    let inserted = INSERTED.with(|c| c.get());
+    let seen = SEEN.with(|c| c.get());
+    if (0..5).all(|i| seen[i] <= inserted[i]) {
         return first;
     }
-    // Choose against the STAGED text: `first` has been through restore, so the
-    // authored occurrence it is avoiding is no longer visible in it.
+    // Choose against the STAGED text: `first` has been through restore, so an
+    // authored occurrence is no longer visible in it.
     let staged = STAGED.with(|c| c.borrow().clone());
-    let next_blank = if authored_blank {
-        free_sentinel(&staged, guard)
-    } else {
-        blank
-    };
-    let next_guard = if authored_guard {
-        free_sentinel(&staged, next_blank)
-    } else {
-        guard
-    };
-    SENTINELS.with(|s| s.set((next_blank, next_guard)));
+    let mut next = current;
+    for i in 0..5 {
+        if seen[i] > inserted[i] {
+            next[i] = free_sentinel(&staged, &next);
+        }
+    }
+    SENTINELS.with(|s| s.set(next));
     let second = render_carve_once(doc);
-    SENTINELS.with(|s| s.set((VERBATIM_BLANK_DEFAULT, THEMATIC_GUARD_DEFAULT)));
+    SENTINELS.with(|s| s.set(SENTINEL_DEFAULTS));
     second
 }
 
 /// One full render, with the insertion counters reset for it.
 fn render_carve_once(doc: &Document) -> String {
-    INSERTED.with(|c| c.set((0, 0)));
-    SEEN.with(|c| c.set((0, 0)));
+    INSERTED.with(|c| c.set([0; 5]));
+    SEEN.with(|c| c.set([0; 5]));
     STAGED.with(|c| c.borrow_mut().clear());
     let minimal = render_with_escapes(doc, EscapeMode::Minimal);
     let conservative = render_with_escapes(doc, EscapeMode::Conservative);
@@ -1370,114 +1364,113 @@ fn align_marker(align: Option<TableAlign>) -> &'static str {
     }
 }
 
-/// Resolve the NBSP placeholder, which stands for two different things.
+/// The staging characters an AUTHORED occurrence can be mistaken for.
 ///
-/// An escaped space (`\\ `) is written back as an ESCAPED SPACE. Resolving it to
-/// a real non-breaking space instead lost the distinction the parser draws:
-/// `10\\ kg` came back carrying U+00A0, which re-parses as a literal nbsp rather
-/// than as an escape, so the text node differed even though the HTML did not.
-/// carve-js fixed that in carve#369; this engine had not (carve#352, corpus
-/// 29-non-breaking-space).
+/// Five, in two groups, and both groups have the same failure:
 ///
-/// A line block's leading indentation resolves to ORDINARY spaces: that is the
-/// source form the parser reads back as indentation, whereas a real nbsp
-/// re-parses as literal text and the text node comes back different (carve issue
-/// 359).
+///   VERBATIM_BLANK  a line that was blank inside verbatim content
+///   THEMATIC_GUARD  prefixes a line that would re-parse as a thematic break
+///   ESCAPED_SPACE   stands in for `\ ` until normalize expands it
+///   STAGED_SPACE    a space that must survive escaping
+///   STAGED_TAB      a tab that must survive escaping
 ///
-/// Only a run at the start of a line is indentation, so a mid-line escaped
-/// space inside a line block still resolves to a real nbsp. The leading run is
-/// handed to the verbatim scheme, which restores plain spaces after
-/// `normalize` has run.
-/// Stands in for an escaped space until `normalize` expands it, so the backslash
-/// is not seen by the escaper (which would double it).
-const ESCAPED_SPACE: &str = "\u{e010}";
+/// Why `ESCAPED_SPACE` exists at all: an escaped space is written back AS an
+/// escape, not as a real U+00A0. Resolving it to the character lost the
+/// distinction the parser draws - `10\ kg` came back carrying a literal nbsp,
+/// which re-parses as text rather than as an escape, so the node differed even
+/// though the HTML did not (carve#352, corpus 29-non-breaking-space). It
+/// resolves in `normalize` rather than during rendering because the backslash
+/// it expands to is itself an unconditional escape, and expanding earlier let
+/// the escaper double it.
+///
+/// The last three live at U+E010 and up deliberately. U+E000 is a PUBLISHED
+/// value - the no-break-space placeholder a parsed document carries - so a
+/// writer marker sharing it would be indistinguishable from document content.
+/// They used to sit at U+E001 and U+E002 (carve-rs#404).
+///
+/// The first two are undone BY POSITION - a line that is nothing but the
+/// marker, and a line prefix. The last three are undone by a GLOBAL replace,
+/// because each has more than one insertion site. Either way a character the
+/// author wrote is indistinguishable from one the writer inserted, and restore
+/// ate it: carve-rs#607 for the positional pair, carve-rs#630 for the rest.
+///
+/// Narrowing the positional pair to its exact sites (carve-rs#613) fixed every
+/// INLINE placement and could not fix the line-alone one, because that
+/// ambiguity IS positional. The global three have no narrowing available at
+/// all. So the CHARACTER moves instead: the writer counts what it inserts, and
+/// if the document holds more than that, the extra ones are the author's and
+/// the render repeats with characters the document does not contain. carve-js
+/// reached the same place from the other side in markup-carve/carve-js#666.
+///
+/// A document with no private-use character - every real one - takes the first
+/// render and pays five integer compares.
+const SENTINEL_DEFAULTS: [char; 5] = ['\u{e003}', '\u{e004}', '\u{e010}', '\u{e011}', '\u{e012}'];
 
-/// Writer-internal staging for a space and a tab that must survive escaping.
-///
-/// These live in U+E010.. deliberately. U+E000 is a PUBLISHED value - it is the
-/// no-break-space placeholder a parsed document carries - so a writer marker
-/// sharing that code point would be indistinguishable from document content.
-/// They used to sit at U+E001 and U+E002, which is why the published placeholder
-/// could not move there (carve-rs#404).
-const STAGED_SPACE: char = '\u{e011}';
-const STAGED_TAB: char = '\u{e012}';
-/// A blank line inside verbatim content, encoded so whole-document
-/// normalization leaves it alone. `restore_verbatim` turns it back into
-/// nothing.
-/// The two sentinels whose restore position an AUTHORED occurrence can occupy.
-///
-/// `VERBATIM_BLANK` marks a line that was blank inside verbatim content, and
-/// `THEMATIC_GUARD` prefixes a line that would otherwise re-parse as a thematic
-/// break. Both are undone by POSITION - a line that is nothing but the marker,
-/// and a line prefix - so a character the AUTHOR wrote in that same position is
-/// indistinguishable from one the writer inserted, and restore ate it. That is
-/// carve-rs#607: an authored U+E003 alone on a line came back as an empty line,
-/// in a paragraph and a block quote as well as in a code block, because restore
-/// runs over the whole joined document and not only over what was encoded.
-///
-/// Position-narrowing cannot fix that last shape; the ambiguity IS positional
-/// (carve-rs#613 took it as far as it goes). So the CHARACTER moves instead.
-/// The writer counts how many markers it inserted; if the document holds more
-/// than that, the extra ones are the author's, and the render is repeated with
-/// a sentinel the document does not contain. carve-js reached the same place
-/// from the other side in markup-carve/carve-js#666.
-///
-/// The common case costs one integer compare: no authored occurrence means the
-/// counts match and the first render stands.
-const VERBATIM_BLANK_DEFAULT: char = '\u{e003}';
-const THEMATIC_GUARD_DEFAULT: char = '\u{e004}';
+const S_BLANK: usize = 0;
+const S_GUARD: usize = 1;
+const S_ESCAPED_SPACE: usize = 2;
+const S_STAGED_SPACE: usize = 3;
+const S_STAGED_TAB: usize = 4;
 
 thread_local! {
-    static SENTINELS: std::cell::Cell<(char, char)> =
-        const { std::cell::Cell::new((VERBATIM_BLANK_DEFAULT, THEMATIC_GUARD_DEFAULT)) };
+    static SENTINELS: std::cell::Cell<[char; 5]> = const { std::cell::Cell::new(SENTINEL_DEFAULTS) };
     /// How many of each the writer inserted during the current render.
-    static INSERTED: std::cell::Cell<(usize, usize)> = const { std::cell::Cell::new((0, 0)) };
+    static INSERTED: std::cell::Cell<[usize; 5]> = const { std::cell::Cell::new([0; 5]) };
     /// How many of each were actually PRESENT just before restore ran. Counted
     /// there and not at the end, because restore is what consumes them: by the
     /// time the render returns, an authored one has already been eaten and is
     /// indistinguishable from never having been there.
-    static SEEN: std::cell::Cell<(usize, usize)> = const { std::cell::Cell::new((0, 0)) };
-    /// The pre-restore text, kept so a replacement sentinel can be chosen
-    /// against what the document actually holds.
+    static SEEN: std::cell::Cell<[usize; 5]> = const { std::cell::Cell::new([0; 5]) };
+    /// The pre-restore text, kept so a replacement can be chosen against what
+    /// the document actually holds.
     static STAGED: std::cell::RefCell<String> = const { std::cell::RefCell::new(String::new()) };
 }
 
+fn sentinel(which: usize) -> char {
+    SENTINELS.with(|s| s.get()[which])
+}
+
+fn note_inserted(which: usize) {
+    INSERTED.with(|c| {
+        let mut n = c.get();
+        n[which] += 1;
+        c.set(n);
+    });
+}
+
 fn verbatim_blank() -> char {
-    SENTINELS.with(|s| s.get().0)
+    sentinel(S_BLANK)
 }
 
 fn thematic_guard() -> char {
-    SENTINELS.with(|s| s.get().1)
+    sentinel(S_GUARD)
 }
 
-fn note_inserted_blank() {
-    INSERTED.with(|c| {
-        let (b, t) = c.get();
-        c.set((b + 1, t));
-    });
+fn escaped_space() -> String {
+    sentinel(S_ESCAPED_SPACE).to_string()
 }
 
-fn note_inserted_guard() {
-    INSERTED.with(|c| {
-        let (b, t) = c.get();
-        c.set((b, t + 1));
-    });
+fn staged_space() -> char {
+    sentinel(S_STAGED_SPACE)
 }
 
-/// A private-use code point the rendered document does not contain.
-///
-/// Searched from U+E020 up, past the writer's own staging range, and skipping
-/// anything already in the text. The BMP private-use area holds 6400, so a
-/// document would have to contain almost all of them to exhaust this.
-fn free_sentinel(text: &str, avoid: char) -> char {
+fn staged_tab() -> char {
+    sentinel(S_STAGED_TAB)
+}
+
+fn free_sentinel(text: &str, taken: &[char; 5]) -> char {
     ('\u{e020}'..='\u{f8ff}')
-        .find(|c| *c != avoid && !text.contains(*c))
+        .find(|c| !taken.contains(c) && !text.contains(*c))
         .unwrap_or('\u{f8ff}')
 }
 
 fn resolve_nbsp_placeholder(text: &str, in_line_block: bool) -> String {
     if !in_line_block {
-        return text.replace(crate::NBSP_PLACEHOLDER, ESCAPED_SPACE);
+        let marker = escaped_space();
+        for _ in text.matches(crate::NBSP_PLACEHOLDER) {
+            note_inserted(S_ESCAPED_SPACE);
+        }
+        return text.replace(crate::NBSP_PLACEHOLDER, &marker);
     }
     text.split('\n')
         .map(stage_line_block_layout)
@@ -1514,11 +1507,13 @@ fn stage_line_block_layout(line: &str) -> String {
 
         if !seen_content || run >= 2 {
             for _ in 0..run {
-                out.push(STAGED_SPACE);
+                note_inserted(S_STAGED_SPACE);
+                out.push(staged_space());
             }
         } else {
             // A single placeholder mid-line is an escaped space, not layout.
-            out.push_str(ESCAPED_SPACE);
+            note_inserted(S_ESCAPED_SPACE);
+            out.push_str(&escaped_space());
         }
     }
 
@@ -1526,10 +1521,22 @@ fn stage_line_block_layout(line: &str) -> String {
 }
 
 fn normalize(text: &str) -> String {
-    // U+E000 marks an escaped space, and it resolves HERE rather than during
+    // Count the escaped-space marker BEFORE the replace below consumes it.
+    // Everything else is counted further down, just before `restore_verbatim`,
+    // but this one is resolved first and would already be gone by then - which
+    // is exactly how an authored U+E010 went on being eaten after the other
+    // four were fixed (carve-rs#630).
+    let marker = escaped_space();
+    STAGED.with(|c| c.borrow_mut().push_str(text));
+    SEEN.with(|c| {
+        let mut n = c.get();
+        n[S_ESCAPED_SPACE] += text.matches(&marker).count();
+        c.set(n);
+    });
+    // U+E010 marks an escaped space, and it resolves HERE rather than during
     // rendering because the backslash it expands to is itself an unconditional
     // escape: expanding earlier let escapeText double it, giving `10\\ kg`.
-    let text = text.replace(ESCAPED_SPACE, "\\ ");
+    let text = text.replace(&marker, "\\ ");
     // Strip a line's trailing whitespace only where it cannot be content. At the
     // end of a paragraph the parser drops it too, so the writer must; before a
     // SOFT BREAK the parser keeps it, and stripping it there changed the
@@ -1561,14 +1568,18 @@ fn normalize(text: &str) -> String {
         .collect::<Vec<_>>()
         .join("\n");
     let staged = trim_non_nbsp(&collapse_blank_lines(&lines)).to_string();
-    let (blank, guard) = SENTINELS.with(|s| s.get());
+    let current = SENTINELS.with(|s| s.get());
     STAGED.with(|c| c.borrow_mut().push_str(&staged));
     SEEN.with(|c| {
-        let (b, t) = c.get();
-        c.set((
-            b + staged.matches(blank).count(),
-            t + staged.matches(guard).count(),
-        ));
+        let mut n = c.get();
+        for i in 0..5 {
+            // The escaped-space marker was counted at the top of `normalize`,
+            // before the replace that consumes it.
+            if i != S_ESCAPED_SPACE {
+                n[i] += staged.matches(current[i]).count();
+            }
+        }
+        c.set(n);
     });
     format!("{}\n", restore_verbatim(&staged))
 }
@@ -1583,14 +1594,22 @@ fn protect_verbatim(content: &str) -> String {
     let mut lines = Vec::new();
     for line in content.split('\n') {
         if line.is_empty() {
-            note_inserted_blank();
+            note_inserted(S_BLANK);
             lines.push(verbatim_blank().to_string());
             continue;
         }
         let stripped = line.trim_end_matches([' ', '\t']);
         let tail: String = line[stripped.len()..]
             .chars()
-            .map(|ch| if ch == ' ' { STAGED_SPACE } else { STAGED_TAB })
+            .map(|ch| {
+                if ch == ' ' {
+                    note_inserted(S_STAGED_SPACE);
+                    staged_space()
+                } else {
+                    note_inserted(S_STAGED_TAB);
+                    staged_tab()
+                }
+            })
             .collect();
         lines.push(format!("{stripped}{tail}"));
     }
@@ -1625,7 +1644,7 @@ fn guard_thematic_break_lines(body: &str) -> String {
         .map(|line| {
             let trimmed = line.trim_end_matches([' ', '\t']);
             if trimmed.len() >= 3 && trimmed.chars().all(|c| c == '-') {
-                note_inserted_guard();
+                note_inserted(S_GUARD);
                 format!("{}{line}", thematic_guard())
             } else {
                 line.to_string()
@@ -1720,7 +1739,7 @@ fn restore_verbatim(text: &str) -> String {
 /// makes a few lines above.
 fn restore_staged_runs(line: &str) -> String {
     let chars: Vec<char> = line.chars().collect();
-    let staged = |c: char| c == STAGED_SPACE || c == STAGED_TAB;
+    let staged = |c: char| c == staged_space() || c == staged_tab();
     let prefix_end = chars
         .iter()
         .position(|&c| !(c == ' ' || c == '\t' || c == '>'))
@@ -1741,7 +1760,7 @@ fn restore_staged_runs(line: &str) -> String {
         let writer_inserted = start == prefix_end || i == chars.len() || run >= 2;
         for &ch in &chars[start..i] {
             if writer_inserted {
-                out.push(if ch == STAGED_SPACE { ' ' } else { '\t' });
+                out.push(if ch == staged_space() { ' ' } else { '\t' });
             } else {
                 out.push(ch);
             }
