@@ -230,6 +230,9 @@ const IMPLEMENTED: &[&str] = &[
     "an-unresolved-image-reference-stays-literal",
     "an-unresolved-reference-image-takes-no-caption",
     "one-definition-serves-a-link-and-an-image",
+    "a-definition-below-a-footnote-body-s-column-is-the-document-s-own-text",
+    "a-definition-past-a-footnote-body-s-column-is-the-body-s-own-text",
+    "a-footnote-body-s-own-column-is-two-and-a-third-column-is-its-text",
 ];
 
 fn corpus_dir() -> PathBuf {
