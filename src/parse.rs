@@ -11583,6 +11583,22 @@ fn promote_block_images(blocks: &mut [BlockNode], figures_only: bool) {
                     children.remove(0);
                 } else {
                     t.value = rest;
+                    // The SPAN moves with the value. Stripping the marker from
+                    // the text and leaving the position covering it left a node
+                    // whose span did not slice back to its own content - span
+                    // 9..14 reading `^ cap` for the value `cap` (carve-rs#620,
+                    // corpus 207). The direct-image path never had this: it
+                    // parses the caption from the text after the marker, so its
+                    // anchor is right to begin with, and only this post-parse
+                    // promotion edits a node the parser already positioned.
+                    //
+                    // The marker is `^` plus spaces, so bytes and codepoints
+                    // advance together and one `n` serves both the offset and
+                    // the column.
+                    if let Some(pos) = &mut t.pos {
+                        pos.start_offset += n;
+                        pos.start_column += n;
+                    }
                 }
             }
             *block = BlockNode::Figure(Figure {
