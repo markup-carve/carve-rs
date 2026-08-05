@@ -9,6 +9,14 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`fmt` keeps a lone table span marker padded.** Glued to the opening pipe,
+  `<` is also the LEFT-ALIGNMENT sigil, and the two readings differ: the
+  executable spec reads `|<|` as alignment on an empty cell where all three
+  engines read a colspan (markup-carve/carve#710). The writer was turning the
+  unambiguous `| < |` the author wrote into the ambiguous form, so a table
+  formatted here and read anywhere else could change meaning. `^` takes the same
+  shape; a cell attribute stays glued to the pipe, where the grammar puts it.
+
 - **A list item's content column is live only inside the container it was
   measured in** (#593). Measuring content columns inside a block quote (#587)
   left the tracker unable to tell one container from another: `- a` / blank /
