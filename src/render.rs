@@ -785,10 +785,31 @@ fn render_footnotes_section(
                     render_block(&mut rendered, block, 3, options, state);
                     if block_idx + 1 == blocks.len() {
                         let backlink = render_backlinks(&entry.backrefs);
-                        if let Some(pos) = rendered.rfind("</p>") {
-                            rendered.insert_str(pos, &backlink);
+                        // The backlink goes INSIDE the body's last paragraph -
+                        // but only when that last block IS a paragraph. When it
+                        // is anything else the body gets a synthesized paragraph
+                        // to carry it (PART 9 §16, spec markup-carve/carve#799,
+                        // corpus 225).
+                        //
+                        // Searching the rendered string for the last `</p>` was
+                        // wrong twice over: it appended a bare anchor after
+                        // `</pre>` for a body ending in a fence, leaving the
+                        // endnote ending in something that is not a block; and
+                        // for a body ending in a quote or a list it found the
+                        // paragraph nested INSIDE that block and put the
+                        // backlink there, which reads as part of the quotation.
+                        if matches!(block, BlockNode::Paragraph(_)) {
+                            if let Some(pos) = rendered.rfind("</p>") {
+                                rendered.insert_str(pos, &backlink);
+                            } else {
+                                rendered.push_str(&backlink);
+                            }
                         } else {
+                            rendered.push('\n');
+                            indent(&mut rendered, 3);
+                            rendered.push_str("<p>");
                             rendered.push_str(&backlink);
+                            rendered.push_str("</p>");
                         }
                     }
                     out.push_str(&rendered);
