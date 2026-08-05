@@ -38,3 +38,33 @@ fn fenced_render_extension_carries_the_title() {
     assert!(html.contains("class=\"mermaid\""), "{html}");
     assert!(html.contains("title=\"Arch\""), "{html}");
 }
+
+#[test]
+fn a_synthesized_title_key_records_no_order_slot() {
+    // `order` records where the AUTHOR wrote each attribute slot. A fence title
+    // is written after the language word, not as `{title=...}`, so there is no
+    // authored slot to record and the key carries no `order` entry (carve#785).
+    let json = carve::to_json(&carve::parse(
+        "``` php \"src/Auth.php\"\n$ok = true;\n```\n",
+    ));
+    assert!(json.contains("\"title\":\"src/Auth.php\""), "{json}");
+    assert!(!json.contains("\"order\""), "{json}");
+}
+
+#[test]
+fn an_authored_slot_still_records_its_order_beside_a_synthesized_title() {
+    // The authored `#id` keeps its slot; only the synthesized `title` is absent.
+    let json = carve::to_json(&carve::parse(
+        "{#auth}\n``` php \"src/Auth.php\"\n$ok = true;\n```\n",
+    ));
+    assert!(json.contains("\"order\":[\"#id\"]"), "{json}");
+}
+
+#[test]
+fn an_authored_title_attribute_keeps_its_order_slot() {
+    // `{title=...}` IS an authored slot and is unaffected.
+    let json = carve::to_json(&carve::parse(
+        "{title=\"attr\"}\n``` php \"src/Auth.php\"\n$ok = true;\n```\n",
+    ));
+    assert!(json.contains("\"order\":[\"title\"]"), "{json}");
+}

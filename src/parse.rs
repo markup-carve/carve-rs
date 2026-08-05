@@ -2690,7 +2690,10 @@ fn copy_title_to_attr(cb: &mut CodeBlock) {
     }
     let attrs = cb.attrs.get_or_insert_with(Attrs::default);
     attrs.key_values.insert("title".to_string(), title);
-    attrs.order.push(AttrSlot::Key("title".to_string()));
+    // No `order` slot: `order` is the SOURCE-APPEARANCE order of authored
+    // attribute slots, and a fence title is written after the language word
+    // rather than as `{title=...}`, so there is no authored position to record
+    // (carve#785). Both writers append a key that `order` does not mention.
 }
 
 /// Resolve a code fence's opener title onto the node attrs so it renders
