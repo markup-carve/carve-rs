@@ -596,6 +596,13 @@ fn collect_footnotes_inline(
                     continue;
                 }
 
+                // CLEAR FIRST, so that either gate below leaves the reference
+                // unnumbered rather than keeping a number from an earlier run.
+                // This pass is re-run on a document whose definitions the
+                // profile filter took away, and a reference that no longer
+                // resolves must not keep the number it had while it did
+                // (carve-rs#641). The resolved path overwrites this.
+                f.number = None;
                 let Some(id) = &f.id else {
                     continue;
                 };
