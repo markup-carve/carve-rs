@@ -606,8 +606,27 @@ impl ProfileFilter<'_> {
         node: &BlockNode,
         canonical: &str,
     ) -> Result<Option<BlockNode>, ProfileViolationError> {
-        // A comment is never visible content; drop it.
-        if matches!(node, BlockNode::Comment(_)) {
+        // Nodes that render NOTHING where they were written are removed rather
+        // than degraded: there is no text to substitute, so degrading them means
+        // putting something on the page the author never wrote there. The
+        // violation is still recorded by the caller, so the denial is not silent.
+        //
+        // A comment is never visible content.
+        //
+        // The two DEFINITION kinds are the same shape, and both were reaching
+        // the diagnostic path instead (carve-rs#645). An abbreviation definition
+        // found something to extract - its expansion - so denying it published
+        // `HyperText` as a paragraph. A link reference definition found nothing,
+        // so it took the missing-extractor branch and printed the engine's own
+        // marker, `[link_reference_definition]`, onto the page. profiles.md names
+        // the two together: the definition line renders nothing in HTML, and the
+        // `link`, `image` or `abbreviation` it FEEDS is the node a profile denies.
+        if matches!(
+            node,
+            BlockNode::Comment(_)
+                | BlockNode::AbbreviationDef(_)
+                | BlockNode::LinkReferenceDefinition(_)
+        ) {
             return Ok(None);
         }
         let mut text = extract_block_text(node);
