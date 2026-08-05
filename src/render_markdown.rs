@@ -1066,8 +1066,18 @@ fn resolve_underscore_escapes(text: &str) -> String {
 }
 
 fn flatten_heading_text(text: &str) -> String {
+    // ASCII layout whitespace only. `str::trim` uses `char::is_whitespace`, which
+    // includes U+00A0 - so a heading whose text began with a NO-BREAK SPACE lost
+    // it here, on the Markdown target alone, while every other target in this
+    // engine and both other engines kept it (carve-rs#614). A no-break space is
+    // CONTENT: the author typed a character, not indentation.
+    //
+    // Mid-text was never affected, because only the ends are trimmed; this is
+    // specifically the leading and trailing position.
+    let layout = |c: char| c == ' ' || c == '\t' || c == '\r';
+
     text.split('\n')
-        .map(str::trim)
+        .map(|part| part.trim_matches(layout))
         .filter(|part| !part.is_empty())
         .collect::<Vec<_>>()
         .join(" ")
