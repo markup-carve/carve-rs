@@ -710,7 +710,7 @@ fn extract_footnote_defs(
                         // are allowed between chunks. A `+` continuation marker
                         // also keeps the body open (PART 9 §17).
                         if i + 1 < lines.len()
-                            && (leading_ws(lines[i + 1]) >= body_indent
+                            && (indent_columns(lines[i + 1]) >= body_indent
                                 || is_plus_marker(lines[i + 1]))
                         {
                             def_lines.push(String::new());
@@ -761,7 +761,13 @@ fn extract_footnote_defs(
                         }
                         continue;
                     }
-                    if leading_ws(line) >= body_indent {
+                    // COLUMNS, not a byte count. §16 asks for >= 2 columns and
+                    // §24 C1 gives a tab a column value, so a bare tab reaches
+                    // the body's column exactly as two spaces do. Counting
+                    // bytes made this half disagree with the dedent below, which
+                    // has always used `strip_leading_columns`: a bare tab
+                    // counted as one and was refused (carve#796).
+                    if indent_columns(line) >= body_indent {
                         // Strip EXACTLY the body's own indent, not all leading
                         // whitespace. A full trim flattened everything the
                         // relative indentation says: a nested list marker
