@@ -2690,7 +2690,12 @@ fn copy_title_to_attr(cb: &mut CodeBlock) {
     }
     let attrs = cb.attrs.get_or_insert_with(Attrs::default);
     attrs.key_values.insert("title".to_string(), title);
-    attrs.order.push(AttrSlot::Key("title".to_string()));
+    // NO ORDER SLOT. `attrs.order` is the source-appearance order of the slots
+    // in a `{#id .class key=value}` block, and this title was written as fence
+    // metadata - ``` rust "Example" - not as a slot in one. Recording it
+    // claimed a position in a block the author never wrote (carve#785).
+    // A title written in a real attribute block still takes its slot, because
+    // that one goes through the attribute parser rather than here.
 }
 
 /// Resolve a code fence's opener title onto the node attrs so it renders
