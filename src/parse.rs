@@ -189,6 +189,22 @@ fn parse_with_options_mode(source: &str, options: &Options<'_>, mode: ParseMode)
     if matches!(mode, ParseMode::Html) {
         apply_abbreviations(&mut doc);
         number_crossref_captions(&mut doc);
+        // PART 12 §5: footnote numbering is a resolution result that IS
+        // serialized, "because recomputing them requires reimplementing PART 9R".
+        // Caption numbers were assigned here and reached the wire; footnote
+        // numbers were assigned only inside the HTML renderer, so `--ast` and
+        // every other consumer of the tree saw none (carve-rs#638).
+        //
+        // The existing pass is reused rather than a second numbering rule
+        // written: first-use order, a repeat reusing its number, and a reference
+        // to an undefined label left unnumbered. Its endnote list is discarded
+        // here - only the numbers it writes onto the refs are wanted.
+        // `ref_id` is NOT assigned here. It is an HTML backlink anchor; the
+        // schema permits the field and carve-js does not publish it, so writing
+        // it would add something to the wire no other engine emits. The flag is a
+        // parameter rather than a second walk - this tree has 51 inline variants
+        // and a hand-written sweep to undo it would silently miss one.
+        let _ = crate::render::collect_footnotes(&mut doc, false);
         // A resolved reference image lands as a one-image paragraph (the
         // syntactic block-image check ran before resolution); promote it to a
         // block image like a standalone direct image, matching carve-php.
