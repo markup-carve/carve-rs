@@ -572,10 +572,23 @@ fn render_inline(node: &InlineNode, ctx: &mut AnsiContext, depth: usize) -> Stri
                 // and a second sequence here would reset it early.
                 return text;
             }
-            let href = strip_controls(&link.href);
+            // PART 9 §25 binds every target that emits a resolvable URL, and this
+            // parenthetical IS the destination: a terminal autolinks it and hands
+            // the scheme to the OS handler on click, which is the same "deferred
+            // by one step" the clause describes for Markdown. It printed
+            // `javascript:` and the OS protocol-handler schemes verbatim, in all
+            // three engines, where Markdown already blanked them (carve-rs#651).
+            //
+            // WHETHER to show the parenthetical is decided from the AUTHORED
+            // destination, WHAT goes in it from the sanitized one. Deciding both
+            // from the sanitized value turns a denied autolink - whose text IS the
+            // URL, so no parenthetical was ever shown - into
+            // `javascript:alert(1) ()`.
+            let authored = strip_controls(&link.href);
             let mut out = style(&text, &(UNDERLINE.to_string() + FG_BLUE));
-            if !href.starts_with('#') && href != strip_ansi(&text) {
-                out.push_str(&style(&format!(" ({href})"), DIM));
+            if !authored.starts_with('#') && authored != strip_ansi(&text) {
+                let shown = crate::escape::sanitize_url(&authored);
+                out.push_str(&style(&format!(" ({shown})"), DIM));
             }
             out
         }
