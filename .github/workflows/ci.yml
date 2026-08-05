@@ -29,6 +29,18 @@ jobs:
       - run: cargo build --all-targets
       - run: cargo test
 
+      # `cargo test` already fails when a corpus category is missing from
+      # IMPLEMENTED - that guard is why a spec bump lands red. This says whether
+      # the missing ones are a LIST problem or an ENGINE problem, which is the
+      # part a human otherwise has to work out by hand (carve#729):
+      # a category whose pairs already render byte-exact is the first, and
+      # `tools/sync-implemented.py` (no --check) adds exactly those.
+      - name: Is the allowlist behind the corpus, or is the engine?
+        if: always()
+        run: |
+          cargo build --release
+          python3 tools/sync-implemented.py --check
+
   lints:
     name: rustfmt + clippy
     runs-on: ubuntu-latest
