@@ -2298,6 +2298,18 @@ fn parse_blocks(cur: &mut LineCursor, options: &Options<'_>) -> Vec<BlockNode> {
                 // comment path below instead of swallowing to EOF.
             } else {
                 let span_start = cur.pos;
+                // A body line's indentation is measured FROM ITS FENCE, not from
+                // column 0. Stored absolute, a fence that sits at a column - which
+                // it may, since #585 keeps a below-content-column span's own
+                // columns - hands the writer a body already carrying the fence's
+                // indent, and the writer adds the fence column on top: corpus 186
+                // came back with `x` one column deeper than carve-js and
+                // carve-php write it (carve-rs#601, markup-carve/carve#653).
+                //
+                // The strip is capped at each line's own indent, so a body line
+                // shallower than its fence keeps what it has rather than eating
+                // into its text.
+                let fence_indent = indent_columns(line);
                 let mut content = Vec::new();
                 if !open.tail.is_empty() {
                     content.push(open.tail);
@@ -2308,7 +2320,11 @@ fn parse_blocks(cur: &mut LineCursor, options: &Options<'_>) -> Vec<BlockNode> {
                     if is_comment_fence_close_any_column(line, open.fence_len) {
                         break;
                     }
-                    content.push(line.to_string());
+                    content.push(slice_columns(
+                        line,
+                        fence_indent.min(indent_columns(line)),
+                        false,
+                    ));
                 }
                 out.push(BlockNode::Comment(Comment {
                     block: true,
