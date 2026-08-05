@@ -36,6 +36,44 @@ pub fn render_carve(doc: &Document) -> Result<String, crate::RenderDepthError> {
 }
 
 fn render_carve_unguarded(doc: &Document) -> String {
+    // One render with the default sentinels. If the document turns out to
+    // contain one of them itself, the counts disagree and the whole render is
+    // repeated with a character it does not contain (see SENTINELS). Only a
+    // document that actually holds a private-use sentinel pays for the second
+    // pass, and nothing else changes: the retry runs the same code.
+    let first = render_carve_once(doc);
+    let (blank, guard) = SENTINELS.with(|s| s.get());
+    let (n_blank, n_guard) = INSERTED.with(|c| c.get());
+    let (seen_blank, seen_guard) = SEEN.with(|c| c.get());
+    let authored_blank = seen_blank > n_blank;
+    let authored_guard = seen_guard > n_guard;
+    if !authored_blank && !authored_guard {
+        return first;
+    }
+    // Choose against the STAGED text: `first` has been through restore, so the
+    // authored occurrence it is avoiding is no longer visible in it.
+    let staged = STAGED.with(|c| c.borrow().clone());
+    let next_blank = if authored_blank {
+        free_sentinel(&staged, guard)
+    } else {
+        blank
+    };
+    let next_guard = if authored_guard {
+        free_sentinel(&staged, next_blank)
+    } else {
+        guard
+    };
+    SENTINELS.with(|s| s.set((next_blank, next_guard)));
+    let second = render_carve_once(doc);
+    SENTINELS.with(|s| s.set((VERBATIM_BLANK_DEFAULT, THEMATIC_GUARD_DEFAULT)));
+    second
+}
+
+/// One full render, with the insertion counters reset for it.
+fn render_carve_once(doc: &Document) -> String {
+    INSERTED.with(|c| c.set((0, 0)));
+    SEEN.with(|c| c.set((0, 0)));
+    STAGED.with(|c| c.borrow_mut().clear());
     let minimal = render_with_escapes(doc, EscapeMode::Minimal);
     let conservative = render_with_escapes(doc, EscapeMode::Conservative);
     if minimal == conservative || escaping_is_redundant(&minimal, &conservative) {
@@ -611,7 +649,7 @@ fn render_list(node: &List, ctx: &mut CarveContext) -> String {
         out.push_str(&format!("{prefix}{first}\n"));
         let continuation = " ".repeat(prefix.len());
         for line in lines {
-            if line.is_empty() || line.chars().eq([VERBATIM_BLANK]) {
+            if line.is_empty() || line.chars().eq([verbatim_blank()]) {
                 // A blank continuation line is emitted EMPTY, never indented to
                 // the content column: PART 11 section 7 forbids a whitespace-only
                 // line, because editors and CI that strip trailing whitespace
@@ -1366,7 +1404,76 @@ const STAGED_TAB: char = '\u{e012}';
 /// A blank line inside verbatim content, encoded so whole-document
 /// normalization leaves it alone. `restore_verbatim` turns it back into
 /// nothing.
-const VERBATIM_BLANK: char = '\u{e003}';
+/// The two sentinels whose restore position an AUTHORED occurrence can occupy.
+///
+/// `VERBATIM_BLANK` marks a line that was blank inside verbatim content, and
+/// `THEMATIC_GUARD` prefixes a line that would otherwise re-parse as a thematic
+/// break. Both are undone by POSITION - a line that is nothing but the marker,
+/// and a line prefix - so a character the AUTHOR wrote in that same position is
+/// indistinguishable from one the writer inserted, and restore ate it. That is
+/// carve-rs#607: an authored U+E003 alone on a line came back as an empty line,
+/// in a paragraph and a block quote as well as in a code block, because restore
+/// runs over the whole joined document and not only over what was encoded.
+///
+/// Position-narrowing cannot fix that last shape; the ambiguity IS positional
+/// (carve-rs#613 took it as far as it goes). So the CHARACTER moves instead.
+/// The writer counts how many markers it inserted; if the document holds more
+/// than that, the extra ones are the author's, and the render is repeated with
+/// a sentinel the document does not contain. carve-js reached the same place
+/// from the other side in markup-carve/carve-js#666.
+///
+/// The common case costs one integer compare: no authored occurrence means the
+/// counts match and the first render stands.
+const VERBATIM_BLANK_DEFAULT: char = '\u{e003}';
+const THEMATIC_GUARD_DEFAULT: char = '\u{e004}';
+
+thread_local! {
+    static SENTINELS: std::cell::Cell<(char, char)> =
+        const { std::cell::Cell::new((VERBATIM_BLANK_DEFAULT, THEMATIC_GUARD_DEFAULT)) };
+    /// How many of each the writer inserted during the current render.
+    static INSERTED: std::cell::Cell<(usize, usize)> = const { std::cell::Cell::new((0, 0)) };
+    /// How many of each were actually PRESENT just before restore ran. Counted
+    /// there and not at the end, because restore is what consumes them: by the
+    /// time the render returns, an authored one has already been eaten and is
+    /// indistinguishable from never having been there.
+    static SEEN: std::cell::Cell<(usize, usize)> = const { std::cell::Cell::new((0, 0)) };
+    /// The pre-restore text, kept so a replacement sentinel can be chosen
+    /// against what the document actually holds.
+    static STAGED: std::cell::RefCell<String> = const { std::cell::RefCell::new(String::new()) };
+}
+
+fn verbatim_blank() -> char {
+    SENTINELS.with(|s| s.get().0)
+}
+
+fn thematic_guard() -> char {
+    SENTINELS.with(|s| s.get().1)
+}
+
+fn note_inserted_blank() {
+    INSERTED.with(|c| {
+        let (b, t) = c.get();
+        c.set((b + 1, t));
+    });
+}
+
+fn note_inserted_guard() {
+    INSERTED.with(|c| {
+        let (b, t) = c.get();
+        c.set((b, t + 1));
+    });
+}
+
+/// A private-use code point the rendered document does not contain.
+///
+/// Searched from U+E020 up, past the writer's own staging range, and skipping
+/// anything already in the text. The BMP private-use area holds 6400, so a
+/// document would have to contain almost all of them to exhaust this.
+fn free_sentinel(text: &str, avoid: char) -> char {
+    ('\u{e020}'..='\u{f8ff}')
+        .find(|c| *c != avoid && !text.contains(*c))
+        .unwrap_or('\u{f8ff}')
+}
 
 fn resolve_nbsp_placeholder(text: &str, in_line_block: bool) -> String {
     if !in_line_block {
@@ -1453,10 +1560,17 @@ fn normalize(text: &str) -> String {
         })
         .collect::<Vec<_>>()
         .join("\n");
-    format!(
-        "{}\n",
-        restore_verbatim(trim_non_nbsp(&collapse_blank_lines(&lines)))
-    )
+    let staged = trim_non_nbsp(&collapse_blank_lines(&lines)).to_string();
+    let (blank, guard) = SENTINELS.with(|s| s.get());
+    STAGED.with(|c| c.borrow_mut().push_str(&staged));
+    SEEN.with(|c| {
+        let (b, t) = c.get();
+        c.set((
+            b + staged.matches(blank).count(),
+            t + staged.matches(guard).count(),
+        ));
+    });
+    format!("{}\n", restore_verbatim(&staged))
 }
 
 /// Whole-document normalization (trailing-whitespace strip, blank-line
@@ -1469,7 +1583,8 @@ fn protect_verbatim(content: &str) -> String {
     let mut lines = Vec::new();
     for line in content.split('\n') {
         if line.is_empty() {
-            lines.push(VERBATIM_BLANK.to_string());
+            note_inserted_blank();
+            lines.push(verbatim_blank().to_string());
             continue;
         }
         let stripped = line.trim_end_matches([' ', '\t']);
@@ -1510,7 +1625,8 @@ fn guard_thematic_break_lines(body: &str) -> String {
         .map(|line| {
             let trimmed = line.trim_end_matches([' ', '\t']);
             if trimmed.len() >= 3 && trimmed.chars().all(|c| c == '-') {
-                format!("\u{e004}{line}")
+                note_inserted_guard();
+                format!("{}{line}", thematic_guard())
             } else {
                 line.to_string()
             }
@@ -1553,7 +1669,7 @@ fn restore_verbatim(text: &str) -> String {
             // Drop the marker and KEEP the indentation, which is what the global
             // replace did; a later trim removes a whitespace-only line. A marker
             // sitting next to real text is left alone, which is the point.
-            let prefix = line.trim_end_matches(VERBATIM_BLANK);
+            let prefix = line.trim_end_matches(verbatim_blank());
             if prefix.len() != line.len()
                 && prefix.chars().all(|c| c == ' ' || c == '\t' || c == '>')
             {
@@ -1566,7 +1682,7 @@ fn restore_verbatim(text: &str) -> String {
                 // stands for, at any nesting.
                 return prefix.to_string();
             }
-            let line = match line.strip_prefix('\u{e004}') {
+            let line = match line.strip_prefix(thematic_guard()) {
                 Some(rest) => format!(" {rest}"),
                 None => line.to_string(),
             };
