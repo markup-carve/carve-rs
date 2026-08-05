@@ -236,6 +236,7 @@ fn block_pos(block: &BlockNode) -> Option<&Pos> {
         BlockNode::LineBlock(n) => n.pos.as_ref(),
         BlockNode::DefinitionList(n) => n.pos.as_ref(),
         BlockNode::Figure(n) => n.pos.as_ref(),
+        BlockNode::LinkReferenceDefinition(n) => n.pos.as_ref(),
         BlockNode::AbbreviationDef(n) => n.pos.as_ref(),
         BlockNode::RawBlock(n) => n.pos.as_ref(),
         BlockNode::Comment(n) => n.pos.as_ref(),

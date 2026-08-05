@@ -143,7 +143,8 @@ impl TabNormalize {
                     self.visit_block(child);
                 }
             }
-            BlockNode::AbbreviationDef(_)
+            BlockNode::LinkReferenceDefinition(_)
+            | BlockNode::AbbreviationDef(_)
             | BlockNode::RawBlock(_)
             | BlockNode::Comment(_)
             | BlockNode::BlockImage(_)

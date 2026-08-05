@@ -32,7 +32,11 @@ fn an_emptied_item_is_written_with_the_continuation_marker() {
     // only because the placeholder made the item look non-empty.
     assert_eq!(
         to_carve("- [ref]: /url\n\nSee [it][ref].\n"),
-        "- +\n\nSee [it](/url).\n"
+        // The reference is no longer inlined and the definition line is written
+        // back, hoisted to the document (PART 12 §10, carve-rs#631). Byte-identical
+        // to carve-js. The `- +` continuation marker - what this test is about -
+        // is unchanged.
+        "- +\n\nSee [it][ref].\n\n[ref]: /url\n"
     );
 }
 
@@ -42,7 +46,9 @@ fn an_item_that_keeps_its_content_gets_no_filler() {
     // hoisted definition - there was never a hole to fill.
     assert_eq!(
         to_carve("> - a\n>   [r]: /u\n\nsee [t][r]\n"),
-        "> - a\n\nsee [t](/u)\n"
+        // Same change; the point here is that the item keeps `a` and gains no
+        // filler, which still holds.
+        "> - a\n\nsee [t][r]\n\n[r]: /u\n"
     );
 }
 

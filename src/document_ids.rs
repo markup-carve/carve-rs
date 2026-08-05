@@ -337,7 +337,10 @@ impl Seeder {
             }
             BlockNode::BlockImage(i) => self.reserve_attrs(&i.attrs),
             BlockNode::ThematicBreak(t) => self.reserve_attrs(&t.attrs),
-            BlockNode::AbbreviationDef(_) | BlockNode::RawBlock(_) | BlockNode::Comment(_) => {}
+            BlockNode::LinkReferenceDefinition(_)
+            | BlockNode::AbbreviationDef(_)
+            | BlockNode::RawBlock(_)
+            | BlockNode::Comment(_) => {}
         }
     }
 

@@ -169,6 +169,7 @@ fn first_block_pos(children: &[BlockNode]) -> Option<&Pos> {
 
 pub(crate) fn block_pos(node: &BlockNode) -> Option<&Pos> {
     match node {
+        BlockNode::LinkReferenceDefinition(n) => n.pos.as_ref(),
         BlockNode::Heading(n) => n.pos.as_ref(),
         BlockNode::Paragraph(n) => n.pos.as_ref(),
         BlockNode::CodeBlock(n) => n.pos.as_ref(),
@@ -305,6 +306,19 @@ fn write_block(out: &mut String, node: &BlockNode) {
             let mut w = typed(out, "figure");
             w.field("target", |out| write_figure_target(out, &n.target));
             w.field("caption", |out| write_inlines(out, &n.caption));
+            write_attrs_field(&mut w, &n.attrs);
+            write_pos_field(&mut w, &n.pos);
+            w.finish();
+        }
+        BlockNode::LinkReferenceDefinition(n) => {
+            // PART 12 §10: `label` and `href` are required, `title` and `attrs`
+            // ride along when the definition line carried them.
+            let mut w = typed(out, "link_reference_definition");
+            w.field("label", |out| write_string(out, &n.label));
+            w.field("href", |out| write_string(out, &n.href));
+            if let Some(title) = &n.title {
+                w.field("title", |out| write_string(out, title));
+            }
             write_attrs_field(&mut w, &n.attrs);
             write_pos_field(&mut w, &n.pos);
             w.finish();
@@ -1088,6 +1102,15 @@ fn decode_block(value: &Json) -> Result<BlockNode, AstJsonError> {
             caption: decode_inlines(required_array(obj, "figure", "caption")?)?,
             pos: optional_pos(obj, "figure")?,
         })),
+        "link_reference_definition" => Ok(BlockNode::LinkReferenceDefinition(
+            LinkReferenceDefinition {
+                label: required_string(obj, "link_reference_definition", "label")?.to_string(),
+                href: required_string(obj, "link_reference_definition", "href")?.to_string(),
+                title: optional_string(obj, "title")?.map(str::to_string),
+                attrs: optional_attrs(obj)?,
+                pos: optional_pos(obj, "link_reference_definition")?,
+            },
+        )),
         "abbreviation_def" => Ok(BlockNode::AbbreviationDef(AbbreviationDef {
             abbr: required_string(obj, "abbreviation_def", "abbr")?.to_string(),
             expansion: required_string(obj, "abbreviation_def", "expansion")?.to_string(),

@@ -3,7 +3,19 @@ fn h(source: &str) -> String {
 }
 
 fn paragraph_children(doc: &carve::Document) -> &[carve::InlineNode] {
-    let [carve::BlockNode::Paragraph(p)] = doc.children.as_slice() else {
+    // FIND the paragraph rather than require it to be the only child: a document
+    // with a `[label]: /url` line also carries the hoisted definition node now
+    // (PART 12 §10, carve-rs#631). What these tests inspect is the LINK's
+    // metadata, which is unaffected.
+    let paragraphs: Vec<&carve::Paragraph> = doc
+        .children
+        .iter()
+        .filter_map(|b| match b {
+            carve::BlockNode::Paragraph(p) => Some(p),
+            _ => None,
+        })
+        .collect();
+    let [p] = paragraphs.as_slice() else {
         panic!("expected one paragraph, got {:#?}", doc.children);
     };
     &p.children

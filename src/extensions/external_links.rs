@@ -164,6 +164,7 @@ impl ExternalLinks {
                 }
             }
             BlockNode::CodeBlock(_)
+            | BlockNode::LinkReferenceDefinition(_)
             | BlockNode::AbbreviationDef(_)
             | BlockNode::RawBlock(_)
             | BlockNode::Comment(_)

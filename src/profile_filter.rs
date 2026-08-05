@@ -197,6 +197,7 @@ impl ProfileFilter<'_> {
             | BlockNode::RawBlock(_)
             | BlockNode::Comment(_)
             | BlockNode::ThematicBreak(_)
+            | BlockNode::LinkReferenceDefinition(_)
             | BlockNode::AbbreviationDef(_)
             | BlockNode::BlockImage(_) => {}
             BlockNode::List(list) => {
@@ -751,6 +752,8 @@ fn image_text(img: &Image) -> String {
 /// `extractTextContent`), so to_text output matches byte-for-byte.
 fn extract_block_text(node: &BlockNode) -> String {
     match node {
+        // The definition line renders nothing, so it contributes no text.
+        BlockNode::LinkReferenceDefinition(_) => String::new(),
         BlockNode::Heading(h) => {
             let prefix = "#".repeat(h.level as usize) + " ";
             let text: String = h.children.iter().map(extract_inline_text).collect();
@@ -1010,6 +1013,9 @@ fn cleanup_inline_children(node: &mut InlineNode) {
 /// Whether a block node is now an empty container that should be removed.
 fn is_empty_block(node: &BlockNode) -> bool {
     match node {
+        // A definition always carries a label and a destination, so it is never
+        // the empty node this asks about.
+        BlockNode::LinkReferenceDefinition(_) => false,
         // Content-bearing nodes are non-empty if they have content.
         BlockNode::CodeBlock(c) => c.content.is_empty(),
         BlockNode::RawBlock(r) => r.content.is_empty(),

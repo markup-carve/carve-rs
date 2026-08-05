@@ -58,9 +58,14 @@ fn round_trips(src: &str) {
     assert_eq!(carve::to_carve(&out), out, "fmt is not idempotent");
 }
 
+// These drove the writer through a REFERENCE plus a definition, because a
+// resolved reference was inlined and the destination therefore ended up inside
+// `(...)`. It is not inlined any more (carve-rs#631), so the vehicle is an INLINE
+// link - the claim is unchanged: the writer escapes a parenthesis exactly when the
+// destination scan would misread it. The definition-line case is asserted below.
 #[test]
 fn the_writer_leaves_a_balanced_pair_bare() {
-    let src = "[wiki][w]\n\n[w]:  https://en.wikipedia.org/wiki/Foo_(bar)\n";
+    let src = "[wiki](https://en.wikipedia.org/wiki/Foo_(bar))\n";
     let out = carve::to_carve(src);
     assert!(
         out.contains("(https://en.wikipedia.org/wiki/Foo_(bar))"),
@@ -70,12 +75,22 @@ fn the_writer_leaves_a_balanced_pair_bare() {
 }
 
 #[test]
+fn the_writer_leaves_a_definition_destination_unescaped() {
+    // On a definition line the destination is not inside `(...)`, so a
+    // parenthesis needs no escape and must not gain one. Byte-identical to
+    // carve-js and carve-php.
+    let src = "[x][w]\n\n[w]: http://a/b)c\n";
+    assert_eq!(carve::to_carve(src), "[x][w]\n\n[w]: http://a/b)c\n");
+    round_trips(src);
+}
+
+#[test]
 fn the_writer_escapes_an_unbalanced_parenthesis() {
-    let src = "[x][w]\n\n[w]:  http://a/b)c\n";
+    let src = "[x](http://a/b\\)c)\n";
     assert!(carve::to_carve(src).contains("(http://a/b\\)c)"));
     round_trips(src);
 
-    let src = "[x][w]\n\n[w]:  http://a/b(c\n";
+    let src = "[x](http://a/b\\(c)\n";
     assert!(carve::to_carve(src).contains("(http://a/b\\(c)"));
     round_trips(src);
 }

@@ -242,6 +242,8 @@ fn normalize_escapes_nested(node: &mut InlineNode) {
 
 fn normalize_escapes_block(block: &mut BlockNode) {
     match block {
+        // No inline children: the label, destination and title are plain strings.
+        BlockNode::LinkReferenceDefinition(_) => {}
         BlockNode::Heading(h) => normalize_escapes_inlines(&mut h.children),
         BlockNode::Paragraph(p) => normalize_escapes_inlines(&mut p.children),
         BlockNode::List(l) => {
@@ -416,6 +418,23 @@ fn render_item_blocks(blocks: &[BlockNode], tight: bool, ctx: &mut CarveContext)
 
 fn render_block(node: &BlockNode, ctx: &mut CarveContext) -> String {
     match node {
+        BlockNode::LinkReferenceDefinition(def) => {
+            // PART 12 §10 gave this a node precisely so the writer can put the
+            // line back. Before that there was nowhere to write it from, which is
+            // why every resolved reference was INLINED instead (carve-rs#631).
+            let title = def
+                .title
+                .as_ref()
+                .map(|t| format!(" \"{}\"", escape_quoted(t)))
+                .unwrap_or_default();
+            let attrs = render_attrs(&def.attrs);
+            let attrs = if attrs.is_empty() {
+                String::new()
+            } else {
+                format!(" {attrs}")
+            };
+            format!("[{}]: {}{title}{attrs}", def.label, def.href)
+        }
         BlockNode::Heading(heading) => {
             // A heading is SINGLE-LINE (PART 2), so its text must not contain a
             // newline: emitting one would end the heading and silently re-parse
@@ -1129,10 +1148,14 @@ fn render_link(node: &Link, ctx: &mut CarveContext) -> String {
     // wrote, and resolving it bakes a generated id into the source on every fmt
     // pass. An explicit definition normalizes to the inline form - its
     // definition line is dropped either way.
-    if node.ref_label.is_some()
-        && node.raw_ref.is_some()
-        && (node.href.is_empty() || node.from_heading_reference)
-    {
+    //
+    // A RESOLVED explicit reference now takes this path too. Inlining it
+    // satisfied to_html(fmt(x)) == to_html(x) and broke PART 11 §1: `ref` and
+    // `raw_ref` were absent from the reparse, and one destination became N after
+    // a single pass - the duplication the definition form exists to avoid. The
+    // definition line is no longer "dropped either way": §10 gives it a node and
+    // render_block above writes it (carve-rs#631, carve#642).
+    if node.ref_label.is_some() && node.raw_ref.is_some() {
         return node.raw_ref.clone().unwrap_or_default();
     }
     if node.from_crossref {
@@ -1157,7 +1180,12 @@ fn render_image(node: &Image) -> String {
     // An unresolved reference image round-trips via its verbatim source, exactly
     // like an unresolved reference link (render_link); `![alt]()` would change
     // the rendered text and break the to_html(fmt(x)) == to_html(x) invariant.
-    if node.ref_label.is_some() && node.raw_ref.is_some() && node.src.is_empty() {
+    //
+    // A RESOLVED reference image keeps its authored form too, for the same reason
+    // as a link: §10 gives the definition a node and render_block writes the line,
+    // so there is no longer anything to gain by inlining - and inlining lost
+    // `ref`/`raw_ref` and duplicated the destination (carve-rs#631).
+    if node.ref_label.is_some() && node.raw_ref.is_some() {
         return node.raw_ref.clone().unwrap_or_default();
     }
     let title = node

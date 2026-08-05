@@ -92,6 +92,7 @@ pub enum BlockNode {
     DefinitionList(DefinitionList),
     Figure(Figure),
     AbbreviationDef(AbbreviationDef),
+    LinkReferenceDefinition(LinkReferenceDefinition),
     RawBlock(RawBlock),
     Comment(Comment),
     Extension(BlockExtension),
@@ -379,6 +380,33 @@ pub enum FigureTarget {
 pub struct AbbreviationDef {
     pub abbr: String,
     pub expansion: String,
+    /// Span in the original source, when the parser could determine it.
+    pub pos: Option<Pos>,
+}
+
+/// The `[label]: /url "title" {attrs}` definition line.
+///
+/// PART 12 §10 (NORMATIVE): a link reference definition is a NODE, so a writer can
+/// reproduce it. Before it had one, the canonical writer had nowhere to write the
+/// definition back from and INLINED every resolved reference instead - which lost
+/// `ref`/`raw_ref` on the reparse and duplicated one destination into N
+/// (carve-rs#631, carve#642).
+///
+/// It HOISTS to the document exactly as §7 requires of the other definition kinds:
+/// a definition authored inside a block quote or list item is a child of the
+/// document, and `pos` still says where it was written.
+///
+/// Renders nothing itself; it feeds every link or image that resolves the label
+/// (PART 9R R1).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LinkReferenceDefinition {
+    /// The label as the AUTHOR wrote it, before any folding.
+    pub label: String,
+    /// Present and non-empty: a definition with an empty destination is not one.
+    pub href: String,
+    pub title: Option<String>,
+    /// A trailing attribute block on the definition line (§15 A2b).
+    pub attrs: Option<Attrs>,
     /// Span in the original source, when the parser could determine it.
     pub pos: Option<Pos>,
 }
