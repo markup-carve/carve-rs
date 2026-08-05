@@ -105,6 +105,18 @@ pub fn apply_profile(
     for blocks in doc.footnote_defs.values_mut() {
         cleanup_blocks(blocks);
     }
+    // The numbers were assigned during the parse, BEFORE this filter ran, so a
+    // denied definition or a dropped reference leaves the survivors numbered for
+    // a document that no longer exists. The HTML renderer numbers off the
+    // filtered tree, so without this the published AST claims a numbered
+    // reference where the rendered output has literal text (carve-rs#641).
+    //
+    // Unconditional, unlike carve-js, which has to gate the same call: its
+    // numbering pass carries the renderers' depth ceiling and its filter does
+    // not, so renumbering every profiled document there would refuse deep trees
+    // that filter fine. This pass has no ceiling of its own, and `parse` already
+    // runs it over every document that can reach this point.
+    let _ = crate::render::collect_footnotes(&mut doc, false);
     Ok(ProfileFilterResult {
         doc,
         violations: filter.violations,
