@@ -19,6 +19,9 @@ use carve::{to_carve, to_html};
 
 const VERBATIM_BLANK: char = '\u{e003}';
 const THEMATIC_GUARD: char = '\u{e004}';
+const ESCAPED_SPACE: char = '\u{e010}';
+const STAGED_SPACE: char = '\u{e011}';
+const STAGED_TAB: char = '\u{e012}';
 
 /// PART 11 §1: formatting may change the spelling, never the document.
 fn round_trips(src: &str) -> bool {
@@ -121,4 +124,64 @@ fn a_document_with_no_private_use_character_is_unaffected() {
     // must be exactly what it was before the retry existed.
     assert_eq!(to_carve("# H\n\ntext\n"), "# H\n\ntext\n");
     assert_eq!(to_carve("```\na\n\nb\n```\n"), "```\na\n\nb\n```\n");
+}
+
+#[test]
+fn the_globally_restored_markers_survive_too() {
+    // carve-rs#630. These three are undone by a GLOBAL replace rather than by
+    // position - each has more than one insertion site - so an authored one was
+    // eaten in EVERY placement, not only alone on a line. The same counting
+    // covers them.
+    for marker in [ESCAPED_SPACE, STAGED_SPACE, STAGED_TAB] {
+        for (label, src) in [
+            ("code block, alone", format!("```\na\n{marker}\nb\n```\n")),
+            ("code block, inline", format!("```\na{marker}b\n```\n")),
+            ("paragraph, alone", format!("a\n{marker}\nb\n")),
+            ("paragraph, inline", format!("x{marker}y\n")),
+        ] {
+            assert!(
+                round_trips(&src),
+                "fmt changed the document for U+{:04X} in a {label}",
+                marker as u32
+            );
+        }
+    }
+}
+
+#[test]
+fn no_private_use_code_point_is_corrupted() {
+    // The property worth being able to state, rather than one codepoint at a
+    // time. U+E000..U+E0FF covers every marker this writer stages and the
+    // published no-break-space placeholder, with room either side.
+    let mut broken = Vec::new();
+    for cp in 0xe000u32..=0xe0ff {
+        let c = char::from_u32(cp).unwrap();
+        for src in [format!("```\na\n{c}\nb\n```\n"), format!("x{c}y\n")] {
+            if !round_trips(&src) {
+                broken.push(format!("U+{cp:04X}"));
+                break;
+            }
+        }
+    }
+    assert!(broken.is_empty(), "corrupted: {}", broken.join(", "));
+}
+
+#[test]
+fn the_staged_markers_still_do_their_job() {
+    // The controls for the three added above. Each exists to carry something
+    // through escaping, and the retry must not disable any of them.
+    //
+    // An escaped space stays an escape rather than becoming a literal nbsp.
+    assert_eq!(to_carve("10\\ kg\n"), "10\\ kg\n");
+    // Trailing whitespace inside verbatim content is preserved.
+    let code = "```\na   \nb\n```\n";
+    assert!(round_trips(code));
+    assert!(
+        to_html(code).contains("a   "),
+        "trailing run lost: {}",
+        to_html(code)
+    );
+    // A line block's leading indentation survives.
+    let lb = "::: |\n  Violets are blue.\n:::\n";
+    assert!(round_trips(lb));
 }
