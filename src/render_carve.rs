@@ -1498,14 +1498,68 @@ fn guard_thematic_break_lines(body: &str) -> String {
         .join("\n")
 }
 
+/// Undo `protect_verbatim` and the thematic-break guard, POSITIONALLY.
+///
+/// This used to be four global `replace` calls, which cannot tell a sentinel the
+/// writer inserted from one the AUTHOR wrote. So an authored U+E003 was deleted
+/// and an authored U+E004 became a space - in 16 of 17 constructs measured, not
+/// just in a code block (carve-rs#607).
+///
+/// Each sentinel is only ever inserted in ONE position, so each is only undone
+/// there:
+///
+///   VERBATIM_BLANK  a line consisting of nothing else (protect_verbatim emits it
+///                   for an empty line, and never inside one)
+///   U+E004          a line PREFIX (guard_thematic_break_lines prepends it)
+///   STAGED_SPACE    within the TRAILING whitespace run of a line, which is the
+///   STAGED_TAB      only place protect_verbatim stages them
+///
+/// That leaves a much smaller residue than the global form: an authored sentinel
+/// still collides if it sits in the exact position the writer uses one. Closing
+/// that needs the insertion COUNTS, which is the design sketched on carve-rs#607
+/// - this is the part that needs no bookkeeping and no AST traversal.
 fn restore_verbatim(text: &str) -> String {
-    text.replace(STAGED_SPACE, " ")
-        .replace(STAGED_TAB, "\t")
-        .replace(VERBATIM_BLANK, "")
-        // U+E004 marks a paragraph line that must not begin at column 0. It
-        // resolves AFTER normalize()'s trims, which would otherwise strip a
-        // plain leading space when the paragraph is the document's first block.
-        .replace('\u{e004}', " ")
+    text.split('\n')
+        .map(|line| {
+            // The marker may arrive INDENTED: inside a container the host adds
+            // its columns before this runs, so the line is `  ` + marker rather
+            // than the marker alone. Testing for the marker by itself missed
+            // those and left a raw U+E003 in the output - caught by
+            // `verbatim_content_stable_inside_containers` and by the corpus
+            // formatter's semantic check on
+            // `69-opaque-spans-inside-a-container-6`.
+            //
+            // Drop the marker and KEEP the indentation, which is what the global
+            // replace did; a later trim removes a whitespace-only line. A marker
+            // sitting next to real text is left alone, which is the point.
+            let prefix = line.trim_end_matches(VERBATIM_BLANK);
+            if prefix.len() != line.len()
+                && prefix.chars().all(|c| c == ' ' || c == '\t' || c == '>')
+            {
+                // `>` belongs in the set: inside a block quote the line reaching
+                // here is `> ` + marker, not the marker alone, and requiring pure
+                // whitespace left a raw U+E003 in the output - which
+                // `verbatim_content_stable_inside_containers` and the corpus
+                // formatter's semantic check both caught. A line that is nothing
+                // but container prefix plus the marker is the blank the marker
+                // stands for, at any nesting.
+                return prefix.to_string();
+            }
+            let line = match line.strip_prefix('\u{e004}') {
+                Some(rest) => format!(" {rest}"),
+                None => line.to_string(),
+            };
+            // The staged pair stays GLOBAL. It has TWO insertion positions, not
+            // one: protect_verbatim stages a line's TRAILING run, and the line
+            // block layout path stages a LEADING or MEDIAL run of non-breaking
+            // spaces. A trailing-only rule silently dropped the medial case and
+            // broke `line_block_medial_gaps` - the suite caught it, and it is the
+            // reason this half is not positional. Giving the two purposes
+            // separate sentinels would let it be; that is not this change.
+            line.replace(STAGED_SPACE, " ").replace(STAGED_TAB, "\t")
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn collapse_blank_lines(text: &str) -> String {
