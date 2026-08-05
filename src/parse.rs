@@ -745,7 +745,17 @@ fn extract_footnote_defs(
                         continue;
                     }
                     if leading_ws(line) >= body_indent {
-                        let trimmed = trim_ascii_start(line);
+                        // Strip EXACTLY the body's own indent, not all leading
+                        // whitespace. A full trim flattened everything the
+                        // relative indentation says: a nested list marker
+                        // landed at its parent's column and the sublist became
+                        // siblings, and a code block's interior indentation -
+                        // which is content, not layout - was eaten with it
+                        // (#611). Every other container strips its own prefix
+                        // and leaves the rest, which is why the same two lines
+                        // nest in a quote, a div and a list item.
+                        let dedented = strip_leading_columns(line, body_indent);
+                        let trimmed: &str = &dedented;
                         // A CODE FENCE inside the body is opaque, so a
                         // definition-shaped line in it is content. Every engine
                         // already agrees about that at the top level - none
