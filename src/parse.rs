@@ -11249,8 +11249,34 @@ impl CrossrefIndex {
 /// Deliberately looser than the exact, case-sensitive matching `linkDefs` uses:
 /// a linkDefs label is an identifier the author wrote twice, while a heading ref
 /// is prose quoted from elsewhere in the document.
+/// The key R1's heading index is built on and looked up by: whitespace runs
+/// collapsed, NFC-normalized, then case-folded.
+///
+/// NFC is here because heading IDS are already NFC (section 25), so without it a
+/// document publishes a precomposed id and then declines a reference spelling
+/// that exact string. This engine LOOKED right before the fold was added, but
+/// only through `resolve_ref`'s slug fallback - which answers a cross-spelling
+/// reference solely when the heading's id IS the slug of its text. Give the
+/// heading an id of its own and the accident stops working:
+///
+/// ```text
+/// {#custom}
+/// # Cafe + U+0301
+///
+/// see [precomposed Cafe][]
+/// ```
+///
+/// resolved in the executable spec, carve-js and carve-php and stayed literal
+/// here (carve#725). The fold belongs on the TEXT index, which is the index R1
+/// describes.
+///
+/// NFC and not NFKC: a ligature heading must not be reached by its ASCII
+/// spelling - compatibility folding changes which text the author is quoting,
+/// not how it is spelled.
 fn normalize_heading_label(s: &str) -> String {
-    case_fold(&s.split_whitespace().collect::<Vec<_>>().join(" "))
+    case_fold(&crate::unicode_nfc::nfc(
+        &s.split_whitespace().collect::<Vec<_>>().join(" "),
+    ))
 }
 
 /// Per-code-point lowercase fold, used for case-insensitive `</#id>` lookup.
