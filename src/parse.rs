@@ -568,8 +568,12 @@ fn extract_footnote_defs(
         );
         // A quote nested in a list item sits AT the item's content column, so
         // the prefix scan needs that column to see it (carve-rs#588).
-        let stripped =
-            strip_container_prefixes_at(lines[i], columns.reached_by(leading_ws(lines[i])));
+        let after_term = i > 0 && opens_definition_entry(lines[i - 1]);
+        let stripped = strip_container_prefixes_at(
+            lines[i],
+            columns.reached_by(leading_ws(lines[i])),
+            after_term,
+        );
         let in_container = !stripped.structural.is_empty();
         // A footnote definition is NEVER collected from inside a fenced code
         // block: a `[^x]: ...` line there is literal content. The prepass has
@@ -974,7 +978,9 @@ fn extract_link_defs(source: &str) -> (String, BTreeMap<String, LinkDef>) {
         );
         // A quote nested in a list item sits AT the item's content column, so
         // the prefix scan needs that column to see it (carve-rs#588).
-        let stripped = strip_container_prefixes_at(line, columns.reached_by(leading_ws(line)));
+        let after_term = line_index > 0 && opens_definition_entry(all_lines[line_index - 1]);
+        let stripped =
+            strip_container_prefixes_at(line, columns.reached_by(leading_ws(line)), after_term);
         let raw_is_quoted = prepass_line_is_quoted(line);
         if let Some(fence_len) = in_line_block {
             // The line is KEPT whatever it looks like - that is the whole point.
@@ -1284,7 +1290,48 @@ fn without_blockquote_prefixes(line: &str) -> &str {
     rest
 }
 
-fn strip_container_prefixes(mut line: &str) -> StrippedContainerLine<'_> {
+/// Does a `:` line here open a definition list's DESCRIPTION?
+///
+/// Only when a term opened the entry above it. A description line with no term
+/// above it is not a description at all - it is paragraph text, and a
+/// definition in it defines nothing (corpus
+/// `216-a-description-line-needs-a-term-above-it`). Stripping the marker from
+/// every `: ` line collects that one too, which is the opposite of what 216
+/// pins.
+///
+/// The previous line decides it: a `::` term opens an entry and a further
+/// description continues one.
+fn opens_definition_entry(previous: &str) -> bool {
+    let t = previous.trim_start_matches([' ', '\t']);
+    let rest = match t.strip_prefix("::") {
+        Some(after) if !after.starts_with(':') => after,
+        Some(_) => return false,
+        None => match t.strip_prefix(':') {
+            Some(after) => after,
+            None => return false,
+        },
+    };
+    rest.starts_with(' ') || rest.starts_with('\t')
+}
+
+/// The description marker itself: `:` then whitespace, at the start of a line.
+///
+/// `::` is the TERM marker and a `:::` fence opener is a fence; both need
+/// whitespace after a SINGLE colon and neither has it, so neither matches here.
+fn strip_description_prefix(line: &str) -> Option<&str> {
+    let trimmed = line.trim_start_matches([' ', '\t']);
+    let rest = trimmed.strip_prefix(':')?;
+    if !(rest.starts_with(' ') || rest.starts_with('\t')) {
+        return None;
+    }
+    let content = rest.trim_start_matches([' ', '\t']);
+    if content.is_empty() {
+        return None;
+    }
+    Some(content)
+}
+
+fn strip_container_prefixes(mut line: &str, after_term: bool) -> StrippedContainerLine<'_> {
     let original = line;
     let mut needs_empty_list_content = false;
     loop {
@@ -1300,6 +1347,19 @@ fn strip_container_prefixes(mut line: &str) -> StrippedContainerLine<'_> {
         if let Some(marker) = detect_list_marker_full(line) {
             if marker.ol_type.is_none() {
                 line = marker.content;
+                needs_empty_list_content = true;
+            }
+        }
+        // A definition list's DESCRIPTION marker opens entry content exactly as
+        // a bullet does, so a definition written on that line is collected from
+        // it (carve-rs#668, spec markup-carve/carve#801).
+        if after_term {
+            if let Some(content) = strip_description_prefix(line) {
+                line = content;
+                // The entry must survive the line's removal as an EMPTY
+                // description, the same way an item does when its only content
+                // was a definition - otherwise the marker is left behind as a
+                // stray paragraph and the `dd` disappears entirely.
                 needs_empty_list_content = true;
             }
         }
@@ -1332,13 +1392,17 @@ fn strip_container_prefixes(mut line: &str) -> StrippedContainerLine<'_> {
 ///
 /// EXACTLY that column, never arbitrary indentation: a top-level
 /// `    > [r]: /u` is indented text, not a quote, and stays uncollected.
-fn strip_container_prefixes_at<'a>(line: &'a str, content_col: usize) -> StrippedContainerLine<'a> {
+fn strip_container_prefixes_at<'a>(
+    line: &'a str,
+    content_col: usize,
+    after_term: bool,
+) -> StrippedContainerLine<'a> {
     if content_col > 0
         && line.len() > content_col
         && line.as_bytes()[..content_col].iter().all(|b| *b == b' ')
         && line.as_bytes()[content_col] == b'>'
     {
-        let inner = strip_container_prefixes(&line[content_col..]);
+        let inner = strip_container_prefixes(&line[content_col..], after_term);
         let structural_len = inner.bare.as_ptr() as usize - line.as_ptr() as usize;
         return StrippedContainerLine {
             structural: &line[..structural_len],
@@ -1346,7 +1410,7 @@ fn strip_container_prefixes_at<'a>(line: &'a str, content_col: usize) -> Strippe
             needs_empty_list_content: inner.needs_empty_list_content,
         };
     }
-    strip_container_prefixes(line)
+    strip_container_prefixes(line, after_term)
 }
 
 fn strip_container_prefixes_keep_indent(mut line: &str) -> String {
