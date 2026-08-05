@@ -233,6 +233,11 @@ const IMPLEMENTED: &[&str] = &[
     "a-definition-below-a-footnote-body-s-column-is-the-document-s-own-text",
     "a-definition-past-a-footnote-body-s-column-is-the-body-s-own-text",
     "a-footnote-body-s-own-column-is-two-and-a-third-column-is-its-text",
+    // The `[Café][]` half folds NFC, the `[file][]` half must NOT fold
+    // compatibility - `# ﬁle` (U+FB01) stays unreachable. This engine already
+    // produced the fixture byte-for-byte, so the entry is the whole change
+    // (carve#725, carve#729).
+    "a-heading-reference-folds-unicode-normalization-but-not-compatibility",
 ];
 
 fn corpus_dir() -> PathBuf {
