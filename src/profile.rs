@@ -118,6 +118,7 @@ pub const CANONICAL_INLINE_TYPES: &[&str] = &[
 /// per-node match (carve issue 422).
 pub fn canonical_block_type(node: &BlockNode) -> Option<&'static str> {
     match node {
+        BlockNode::LinkReferenceDefinition(_) => Some("link_reference_definition"),
         BlockNode::Heading(_) => Some("heading"),
         BlockNode::Paragraph(_) => Some("paragraph"),
         BlockNode::CodeBlock(_) => Some("code_block"),

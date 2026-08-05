@@ -22,10 +22,14 @@ fn a_heading_reference_keeps_its_authored_form() {
 }
 
 #[test]
-fn an_explicit_definition_still_normalizes() {
+fn an_explicit_definition_is_preserved_not_normalized() {
+    // This asserted the INLINED form, from when a link reference definition had
+    // nowhere in the tree to live so the writer had nothing to write back. PART 12
+    // §10 gives it a node, so the reference and its definition both survive
+    // (carve-rs#631) - byte-identical to carve-js and carve-php.
     assert_eq!(
         carve::to_carve("see [t][r].\n\n[r]: /u\n"),
-        "see [t](/u).\n",
+        "see [t][r].\n\n[r]: /u\n",
     );
 }
 

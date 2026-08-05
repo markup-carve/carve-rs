@@ -2,6 +2,13 @@
 //! to_html(to_carve(x)) == to_html(x). An UNRESOLVED reference image round-trips
 //! via its verbatim source, exactly like an unresolved reference link - emitting
 //! `![alt]()` would change the rendered text and break the invariant.
+//!
+//! A resolved reference is no longer INLINED: PART 12 §10 gives the definition
+//! a node, so the reference and its definition line both survive (carve-rs#631).
+//! Every expectation below was re-measured against carve-js, which is
+//! byte-identical. The `{#f}` rows are the one exception on purpose - carve-php
+//! DROPS that attribute line and loses `id="f"` on the reparse
+//! (markup-carve/carve-php#831), so those are matched against carve-js only.
 
 #[test]
 fn unresolved_reference_image_round_trips_verbatim() {
@@ -18,10 +25,14 @@ fn unresolved_reference_image_in_text_round_trips() {
 }
 
 #[test]
-fn resolved_reference_image_formats_to_inline() {
+fn resolved_reference_image_keeps_its_reference_form() {
     let src = "![alt][ref]\n\n[ref]: /u \"t\"";
-    // A resolved reference image normalizes to the inline form.
-    assert_eq!(carve::to_carve(src).trim(), "![alt](/u \"t\")");
+    // A resolved reference image KEEPS its reference form, and the definition
+    // line is written back (PART 12 §10, carve-rs#631).
+    assert_eq!(
+        carve::to_carve(src).trim(),
+        "![alt][ref]\n\n[ref]: /u \"t\""
+    );
     assert_eq!(carve::to_html(&carve::to_carve(src)), carve::to_html(src));
 }
 
@@ -33,14 +44,14 @@ fn resolved_reference_image_formats_to_inline() {
 #[test]
 fn resolved_reference_image_caption_is_unescaped() {
     let src = "![a][r]\n^ cap\n\n[r]: /u";
-    assert_eq!(carve::to_carve(src).trim(), "![a](/u)\n^ cap");
+    assert_eq!(carve::to_carve(src).trim(), "![a][r]\n^ cap\n\n[r]: /u");
     assert_eq!(carve::to_html(&carve::to_carve(src)), carve::to_html(src));
 }
 
 #[test]
 fn reference_image_with_attrs_caption_is_unescaped() {
     let src = "![a][r]{.c}\n^ cap\n\n[r]: /u";
-    assert_eq!(carve::to_carve(src).trim(), "![a](/u){.c}\n^ cap");
+    assert_eq!(carve::to_carve(src).trim(), "![a][r]{.c}\n^ cap\n\n[r]: /u");
     assert_eq!(carve::to_html(&carve::to_carve(src)), carve::to_html(src));
 }
 
@@ -75,7 +86,10 @@ fn unresolved_reference_image_caption_needs_no_escape() {
 #[test]
 fn reference_figure_keeps_leading_attribute_line() {
     let src = "{#f}\n![a][r]\n^ cap\n\n[r]: /u";
-    assert_eq!(carve::to_carve(src).trim(), "{#f}\n![a](/u)\n^ cap");
+    assert_eq!(
+        carve::to_carve(src).trim(),
+        "{#f}\n![a][r]\n^ cap\n\n[r]: /u"
+    );
     assert_eq!(carve::to_html(&carve::to_carve(src)), carve::to_html(src));
 }
 
@@ -87,5 +101,5 @@ fn captionless_reference_image_keeps_leading_attribute_line() {
     // attributed reference sole-image has a PRE-EXISTING HTML divergence, so the
     // round-trip changes the id independently of this change.)
     let src = "{#f}\n![a][r]\n\n[r]: /u";
-    assert_eq!(carve::to_carve(src).trim(), "{#f}\n![a](/u)");
+    assert_eq!(carve::to_carve(src).trim(), "{#f}\n![a][r]\n\n[r]: /u");
 }

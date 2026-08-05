@@ -201,6 +201,8 @@ fn render_block(node: &BlockNode, ctx: &mut MarkdownContext, depth: usize) -> St
         return String::new();
     }
     match node {
+        // Renders nothing, same as carve-js and carve-php on this target.
+        BlockNode::LinkReferenceDefinition(_) => String::new(),
         BlockNode::Heading(heading) => {
             let id = next_heading_id(heading, &mut ctx.id_counts, &ctx.explicit_ids);
             let text = flatten_heading_text(&render_block_inlines(&heading.children, ctx));

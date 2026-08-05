@@ -97,6 +97,8 @@ fn render_block(node: &BlockNode, depth: usize) -> String {
         return String::new();
     }
     match node {
+        // Renders nothing: a definition line is not prose.
+        BlockNode::LinkReferenceDefinition(_) => String::new(),
         BlockNode::Heading(heading) => format!("{}\n\n", render_inlines(&heading.children)),
         BlockNode::Paragraph(paragraph) => {
             format!("{}\n\n", render_inlines(&paragraph.children))

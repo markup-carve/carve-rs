@@ -185,7 +185,12 @@ fn render_blocks(
     let mut out = String::new();
     let mut first = true;
     for block in nodes {
-        if matches!(block, BlockNode::Comment(_) | BlockNode::AbbreviationDef(_)) {
+        if matches!(
+            block,
+            BlockNode::Comment(_)
+                | BlockNode::AbbreviationDef(_)
+                | BlockNode::LinkReferenceDefinition(_)
+        ) {
             continue;
         }
         if !first {
@@ -252,7 +257,9 @@ fn render_document_blocks(
         // harvested, so nothing here had ever seen one.
         if matches!(
             nodes[i],
-            BlockNode::Comment(_) | BlockNode::AbbreviationDef(_)
+            BlockNode::Comment(_)
+                | BlockNode::AbbreviationDef(_)
+                | BlockNode::LinkReferenceDefinition(_)
         ) {
             i += 1;
             continue;
@@ -534,6 +541,7 @@ fn collect_footnotes_inline(
 /// endnote `<li>` to its definition's line (carve-php / carve-js parity).
 fn block_source_line(block: &BlockNode) -> Option<&str> {
     let attrs = match block {
+        BlockNode::LinkReferenceDefinition(n) => n.attrs.as_ref(),
         BlockNode::Heading(n) => n.attrs.as_ref(),
         BlockNode::Paragraph(n) => n.attrs.as_ref(),
         BlockNode::ThematicBreak(n) => n.attrs.as_ref(),
@@ -666,6 +674,19 @@ fn render_section(
             i = render_section(out, nodes, i, level + 1, options, state);
             continue;
         }
+        // A node that renders NOTHING contributes no separator either - otherwise a
+        // hoisted definition inside a section left a blank line before
+        // `</section>` (corpus 173, carve-rs#631). Same skip the two loops above
+        // make.
+        if matches!(
+            nodes[i],
+            BlockNode::Comment(_)
+                | BlockNode::AbbreviationDef(_)
+                | BlockNode::LinkReferenceDefinition(_)
+        ) {
+            i += 1;
+            continue;
+        }
         out.push('\n');
         render_block(out, &nodes[i], level + 1, options, state);
         i += 1;
@@ -694,6 +715,10 @@ fn render_block(
         return;
     }
     match node {
+        // PART 12 §10: the definition line renders NOTHING itself - it feeds every
+        // link or image that resolves the label (PART 9R R1). carve-js and
+        // carve-php emit nothing for it here too.
+        BlockNode::LinkReferenceDefinition(_) => {}
         BlockNode::Heading(h) => render_heading(out, h, level, options, state),
         BlockNode::Paragraph(p) => render_paragraph(out, p, level, options, state),
         BlockNode::CodeBlock(c) => render_code_block(out, c, level),

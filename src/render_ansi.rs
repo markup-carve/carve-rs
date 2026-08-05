@@ -123,6 +123,8 @@ fn render_block(node: &BlockNode, ctx: &mut AnsiContext, depth: usize) -> String
         return String::new();
     }
     match node {
+        // Renders nothing: a definition line is not prose.
+        BlockNode::LinkReferenceDefinition(_) => String::new(),
         BlockNode::Heading(heading) => {
             render_heading(heading.level, &render_block_inlines(&heading.children, ctx))
         }

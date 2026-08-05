@@ -185,6 +185,7 @@ fn parse_with_options_mode(source: &str, options: &Options<'_>, mode: ParseMode)
         options.lowercase_heading_ids,
     );
     resolve_reference_links(&mut doc, &link_defs, &heading_index);
+    append_link_reference_definitions(&mut doc, &link_defs, source, options);
     if matches!(mode, ParseMode::Html) {
         apply_abbreviations(&mut doc);
         number_crossref_captions(&mut doc);
@@ -888,6 +889,11 @@ fn parse_footnote_def_line(line: &str) -> Option<(&str, &str)> {
 struct LinkDef {
     href: String,
     title: Option<String>,
+    /// Zero-based index of the line the definition was written on. Kept so PART
+    /// 12 §10's node can carry a `pos`, and so the hoisted definitions come out
+    /// in SOURCE order rather than the label order of the map (carve-rs#631).
+    /// `None` for a definition that did not come from a source line.
+    line: Option<usize>,
     /// A TRAILING attribute block on the definition line. PART 9R's symbol
     /// table is `label -> (url, title?, attrs?)`, and R1 transfers these to
     /// every link that resolves the label (carve#604).
@@ -1068,10 +1074,11 @@ fn extract_link_defs(source: &str) -> (String, BTreeMap<String, LinkDef>) {
                 body.push(line.to_string());
                 continue;
             }
-            defs.insert(
-                label_part.to_string(),
-                parse_link_def_target_with_attrs(target_part.trim()),
-            );
+            let mut def = parse_link_def_target_with_attrs(target_part.trim());
+            // The line the author wrote it on, for PART 12 §10's node: its `pos`
+            // and the SOURCE order of the hoisted definitions both come from here.
+            def.line = Some(line_index);
+            defs.insert(label_part.to_string(), def);
             // Leave a blank line in place of the (invisible) definition so it
             // still acts as a block boundary (matches carve-js, where a
             // definition interrupts a paragraph / ends a lazy blockquote).
@@ -1372,12 +1379,83 @@ fn parse_link_def_target(target: &str) -> LinkDef {
         href,
         title,
         attrs: None,
+        line: None,
     }
 }
 
 /// `parse_link_def_target`, with a trailing attribute block split off first
 /// (carve#604). The block comes off BEFORE the destination/title scan, so
 /// widening the parse cannot change what counts as a definition.
+/// Hoist every authored `[label]: /url` definition into the document as a
+/// `LinkReferenceDefinition` node (PART 12 §10, NORMATIVE).
+///
+/// §10 wants a NODE rather than a root field because §4 requires a `pos` on
+/// everything but the root and a root field cannot carry one - a definition
+/// occupies real bytes, and an editor, a formatter and a language server all need
+/// to find them. Without it the canonical writer had nowhere to write a definition
+/// back from and INLINED every resolved reference instead, which lost
+/// `ref`/`raw_ref` on the reparse and turned one destination into N (carve-rs#631).
+///
+/// SOURCE ORDER, not the label order of the map: §10 answers "which definition
+/// wins" by document order, and the writer has to put the lines back where the
+/// author had them.
+///
+/// A definition lifted out of a FOOTNOTE BODY has no document line to point at -
+/// the index it was found at belongs to the lifted body, not the source. It still
+/// hoists, with no `pos`: §4 allows omitting a position the parser cannot
+/// determine, and says a position pointing somewhere else is worse than none.
+/// Dropping the node instead would lose the line from `fmt` entirely.
+fn append_link_reference_definitions(
+    doc: &mut Document,
+    link_defs: &BTreeMap<String, LinkDef>,
+    source: &str,
+    options: &Options<'_>,
+) {
+    // Nothing to hoist is the common case, and both scans below are O(source) -
+    // so a document with no definitions must not pay for them at all.
+    if link_defs.is_empty() {
+        return;
+    }
+    let line_starts = line_start_offsets(source);
+    let lines: Vec<&str> = source.split('\n').collect();
+    let mut authored: Vec<(Option<usize>, LinkReferenceDefinition)> = Vec::new();
+    for (label, def) in link_defs {
+        let pos = match (options.positions, def.line) {
+            (true, Some(line)) => {
+                let text = lines.get(line).copied().unwrap_or("");
+                let start = line_starts.get(line).copied().unwrap_or(0);
+                Some(Pos {
+                    start_line: line + 1,
+                    end_line: line + 1,
+                    start_column: 1,
+                    end_column: text.chars().count() + 1,
+                    start_offset: start,
+                    end_offset: start + text.chars().count(),
+                })
+            }
+            _ => None,
+        };
+        authored.push((
+            def.line,
+            LinkReferenceDefinition {
+                label: label.clone(),
+                href: def.href.clone(),
+                title: def.title.clone(),
+                attrs: def.attrs.clone(),
+                pos,
+            },
+        ));
+    }
+    // A definition with no line sorts last, and keeps the map's label order among
+    // its peers - there is nothing better to order it by.
+    authored.sort_by_key(|(line, _)| line.unwrap_or(usize::MAX));
+    doc.children.extend(
+        authored
+            .into_iter()
+            .map(|(_, node)| BlockNode::LinkReferenceDefinition(node)),
+    );
+}
+
 fn parse_link_def_target_with_attrs(target: &str) -> LinkDef {
     let (rest, attr_text) = split_trailing_attr_block(target);
     let mut def = parse_link_def_target(rest);
@@ -1886,6 +1964,7 @@ fn span_of(cur: &LineCursor<'_>, start: usize, end: usize, options: &Options<'_>
 fn fill_offsets(blocks: &mut [BlockNode], line_starts: &[usize]) {
     for block in blocks {
         let pos = match block {
+            BlockNode::LinkReferenceDefinition(d) => d.pos.as_mut(),
             BlockNode::Heading(h) => h.pos.as_mut(),
             BlockNode::Paragraph(p) => p.pos.as_mut(),
             BlockNode::ThematicBreak(t) => t.pos.as_mut(),
@@ -4250,7 +4329,12 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                     // `- b` tight, where carve-js and the corpus have it loose
                     // (carve-rs#557, corpus 87-compact-list-blocks-6).
                     let renders_nothing = nested_children.iter().all(|block| {
-                        matches!(block, BlockNode::Comment(_) | BlockNode::AbbreviationDef(_))
+                        matches!(
+                            block,
+                            BlockNode::Comment(_)
+                                | BlockNode::AbbreviationDef(_)
+                                | BlockNode::LinkReferenceDefinition(_)
+                        )
                     });
                     if !renders_nothing {
                         pending_blank = false;
@@ -7843,6 +7927,9 @@ fn merge_leading_attrs(target: &mut Option<Attrs>, leading: Attrs) {
 /// abbreviation definition).
 fn stamp_source_line(node: &mut BlockNode, line: usize) {
     let slot: Option<&mut Option<Attrs>> = match node {
+        // §15 A2b puts a definition's attributes on its own line, not from a
+        // preceding block-attribute line, so there is no slot to fill here.
+        BlockNode::LinkReferenceDefinition(_) => None,
         BlockNode::Heading(n) => Some(&mut n.attrs),
         BlockNode::Paragraph(n) => Some(&mut n.attrs),
         BlockNode::ThematicBreak(n) => Some(&mut n.attrs),
