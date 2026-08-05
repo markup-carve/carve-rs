@@ -784,10 +784,16 @@ fn extract_footnote_defs(
                             // top-level definition still beats both, and that
                             // precedence is applied by the caller.
                             if !label_part.starts_with('@') && !target_part.trim().is_empty() {
-                                note_link_defs.insert(
-                                    label_part.to_string(),
-                                    parse_link_def_target_with_attrs(target_part.trim()),
-                                );
+                                let mut def = parse_link_def_target_with_attrs(target_part.trim());
+                                // The DOCUMENT line, so the hoisted node gets a
+                                // `pos` like every other definition (§4, §10).
+                                // `first_source_line` is 1-BASED - it is built as
+                                // a newline count plus one - while `LinkDef.line`
+                                // is the 0-based index `extract_link_defs`
+                                // records, so the conversion is explicit here
+                                // rather than off by one (carve-rs#636).
+                                def.line = Some(first_source_line + i - 1);
+                                note_link_defs.insert(label_part.to_string(), def);
                                 i += 1;
                                 continue;
                             }
