@@ -1274,7 +1274,17 @@ fn render_list_item(
             // `<li>a    </li>` where carve-js, carve-php and the spec publish
             // `<li>a</li>` (carve-rs#532).
             Part::Block(html) => !html.trim().is_empty(),
-            Part::Inline(_) => true,
+            // A PARAGRAPH that renders to nothing is the same case (#429), and
+            // the exemption here was the reason it still showed: a `+`-attached
+            // block whose whole content was a collected definition or a comment
+            // parses to an empty paragraph, which survived as an empty Inline
+            // and published a stray blank line inside the `<li>` - the "trace" a
+            // collected definition must not leave (carve-rs#670, corpus 226).
+            //
+            // `is_empty`, NOT `trim().is_empty()`: Rust's `trim` takes Unicode
+            // whitespace, so a no-break space would be dropped as blank, and an
+            // item holding one is an item with content.
+            Part::Inline(html) => !html.is_empty(),
         })
         .collect();
     if parts.is_empty() {
