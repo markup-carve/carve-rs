@@ -1553,17 +1553,68 @@ fn restore_verbatim(text: &str) -> String {
                 Some(rest) => format!(" {rest}"),
                 None => line.to_string(),
             };
-            // The staged pair stays GLOBAL. It has TWO insertion positions, not
-            // one: protect_verbatim stages a line's TRAILING run, and the line
-            // block layout path stages a LEADING or MEDIAL run of non-breaking
-            // spaces. A trailing-only rule silently dropped the medial case and
-            // broke `line_block_medial_gaps` - the suite caught it, and it is the
-            // reason this half is not positional. Giving the two purposes
-            // separate sentinels would let it be; that is not this change.
-            line.replace(STAGED_SPACE, " ").replace(STAGED_TAB, "\t")
+            // The staged pair IS positional, once you read both insertion sites
+            // together rather than looking for one position:
+            //
+            //   protect_verbatim stages a line's TRAILING run (any length)
+            //   the line-block layout path stages a LEADING run (any length) or
+            //     any run of TWO OR MORE - `!seen_content || run >= 2`
+            //
+            // So a run the writer inserted is always leading, trailing, or at
+            // least two long. A SINGLE staged character sitting mid-line is
+            // therefore never the writer's, and is left alone - which is the case
+            // an author hits by typing one U+E011 or U+E012 in a code block.
+            //
+            // My earlier attempt at this restored only the trailing run, dropped
+            // the medial case and broke `line_block_medial_gaps`; the note left
+            // behind said separate sentinels were needed. They are not - the
+            // run-length half of the layout condition is what was missing.
+            //
+            // RESIDUE, stated rather than implied: an authored run of two or more,
+            // or a single one at the start or end of a line, still collides. That
+            // needs the insertion counts.
+            restore_staged_runs(&line)
         })
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+/// Undo the staged whitespace pair only where the writer inserts it: a LEADING
+/// run, a TRAILING run, or any run of two or more (see `restore_verbatim`).
+///
+/// A leading run is measured past the container prefix the host may have added
+/// before this runs (spaces, tabs, `>`), the same allowance the blank-line marker
+/// makes a few lines above.
+fn restore_staged_runs(line: &str) -> String {
+    let chars: Vec<char> = line.chars().collect();
+    let staged = |c: char| c == STAGED_SPACE || c == STAGED_TAB;
+    let prefix_end = chars
+        .iter()
+        .position(|&c| !(c == ' ' || c == '\t' || c == '>'))
+        .unwrap_or(chars.len());
+    let mut out = String::with_capacity(line.len());
+    let mut i = 0usize;
+    while i < chars.len() {
+        if !staged(chars[i]) {
+            out.push(chars[i]);
+            i += 1;
+            continue;
+        }
+        let start = i;
+        while i < chars.len() && staged(chars[i]) {
+            i += 1;
+        }
+        let run = i - start;
+        let writer_inserted = start == prefix_end || i == chars.len() || run >= 2;
+        for &ch in &chars[start..i] {
+            if writer_inserted {
+                out.push(if ch == STAGED_SPACE { ' ' } else { '\t' });
+            } else {
+                out.push(ch);
+            }
+        }
+    }
+    out
 }
 
 fn collapse_blank_lines(text: &str) -> String {

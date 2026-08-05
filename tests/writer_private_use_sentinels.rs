@@ -13,19 +13,29 @@
 //! undoes those two only there: VERBATIM_BLANK as a whole line, and U+E004 as a
 //! line PREFIX. No traversal and no bookkeeping.
 //!
-//! TWO KINDS OF RESIDUE, both stated rather than hidden.
+//! RESIDUE, stated rather than hidden.
 //!
 //! An authored U+E003 alone on its own line, or a U+E004 at a line start, still
 //! collides - those are exactly the positions the writer uses. Closing that needs
 //! the insertion COUNTS, which is the design sketched on carve-rs#607.
 //!
-//! And the STAGED PAIR (U+E011/U+E012) is untouched by this change, so an
-//! authored one is still rewritten to a space or a tab. It has TWO insertion
-//! positions rather than one: `protect_verbatim` stages a line's TRAILING run,
-//! and the line-block layout path stages a LEADING or MEDIAL run. I made that
-//! half positional too on the first attempt and `line_block_medial_gaps` failed -
-//! the medial case was being dropped. Separate sentinels for the two purposes
-//! would let it be positional; that is a different change.
+//! The STAGED PAIR (U+E011/U+E012) is now positional too, which this file used to
+//! record as impossible. The note said the pair had "TWO insertion positions
+//! rather than one" and that separate sentinels would be needed. That was wrong:
+//! reading both sites together gives one rule.
+//!
+//!   protect_verbatim stages a line's TRAILING run, any length
+//!   the line-block layout path stages a LEADING run, or any run of TWO OR MORE
+//!     (`!seen_content || run >= 2`)
+//!
+//! So a run the writer inserted is always leading, trailing, or at least two
+//! long, and a SINGLE staged character mid-line is never the writer's. My first
+//! attempt restored only the trailing run, dropped the medial case and broke
+//! `line_block_medial_gaps`; the missing piece was the run-length half of the
+//! layout condition, not a second sentinel.
+//!
+//! What still collides for the pair: an authored run of two or more, or a single
+//! one at the very start or end of a line. Same remedy as above - counts.
 
 use carve::{parse, render_carve};
 
@@ -123,4 +133,40 @@ fn a_thematic_break_still_round_trips() {
 
 fn to_html(src: &str) -> String {
     carve::to_html(src)
+}
+
+#[test]
+fn an_authored_staged_space_survives_every_construct() {
+    // U+E011. Was rewritten to a space in every construct while the restore was
+    // global; the positional rule leaves a single mid-line one alone.
+    assert_eq!(survives_everywhere('\u{e011}'), Vec::<&str>::new());
+}
+
+#[test]
+fn an_authored_staged_tab_survives_every_construct() {
+    // U+E012, the same for a tab.
+    assert_eq!(survives_everywhere('\u{e012}'), Vec::<&str>::new());
+}
+
+#[test]
+fn a_writer_inserted_staged_run_is_still_restored() {
+    // The other direction: the three positions the writer actually uses must
+    // still come back as real whitespace, or this "fix" would just leak sentinels.
+    //
+    // TRAILING run - what protect_verbatim stages.
+    let trailing = "```\na \t\nb\n```\n";
+    assert_eq!(fmt(trailing), trailing, "trailing whitespace was lost");
+
+    // A single trailing space, the shortest trailing run there is.
+    let one = "```\na \nb\n```\n";
+    assert_eq!(fmt(one), one, "a single trailing space was lost");
+
+    // And no sentinel may reach the output in either case.
+    for src in [trailing, one] {
+        let out = fmt(src);
+        assert!(
+            !out.contains('\u{e011}') && !out.contains('\u{e012}'),
+            "a staged sentinel leaked: {out:?}"
+        );
+    }
 }
