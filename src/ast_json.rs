@@ -702,9 +702,6 @@ fn write_inline(out: &mut String, node: &InlineNode) {
                 if let Some(number) = n.number {
                     w.field("number", |out| write_usize(out, number));
                 }
-                if let Some(ref_id) = &n.ref_id {
-                    w.field("refId", |out| write_string(out, ref_id));
-                }
                 write_attrs_field(&mut w, &n.attrs);
                 write_pos_field(&mut w, &n.pos);
                 w.finish();
@@ -715,9 +712,6 @@ fn write_inline(out: &mut String, node: &InlineNode) {
                 }
                 if let Some(number) = n.number {
                     w.field("number", |out| write_usize(out, number));
-                }
-                if let Some(ref_id) = &n.ref_id {
-                    w.field("refId", |out| write_string(out, ref_id));
                 }
                 write_attrs_field(&mut w, &n.attrs);
                 write_pos_field(&mut w, &n.pos);
@@ -1475,7 +1469,14 @@ fn decode_inline(value: &Json) -> Result<InlineNode, AstJsonError> {
             id: optional_string(obj, "id")?.map(str::to_string),
             inline: None,
             number: optional_usize(obj, "number")?,
-            ref_id: optional_string(obj, "refId")?.map(str::to_string),
+            // NOT read from the wire. `refId` is a rendering convention -
+            // `fnref1`, the anchor an endnotes section links back to - and
+            // carve#762 removed it from the schema, so a tree carrying one is
+            // invalid under `additionalProperties: false`. Reading it echoed a
+            // payload's value straight back out, and an inherited anchor would
+            // carry the previous document's numbering (carve-rs#648). The HTML
+            // renderer assigns this itself while numbering.
+            ref_id: None,
             pos: optional_pos(obj, "footnote_ref")?,
         })),
         "inline_footnote" => Ok(InlineNode::Footnote(Footnote {
@@ -1487,7 +1488,14 @@ fn decode_inline(value: &Json) -> Result<InlineNode, AstJsonError> {
                 "inline",
             )?)?),
             number: optional_usize(obj, "number")?,
-            ref_id: optional_string(obj, "refId")?.map(str::to_string),
+            // NOT read from the wire. `refId` is a rendering convention -
+            // `fnref1`, the anchor an endnotes section links back to - and
+            // carve#762 removed it from the schema, so a tree carrying one is
+            // invalid under `additionalProperties: false`. Reading it echoed a
+            // payload's value straight back out, and an inherited anchor would
+            // carry the previous document's numbering (carve-rs#648). The HTML
+            // renderer assigns this itself while numbering.
+            ref_id: None,
             pos: optional_pos(obj, "inline_footnote")?,
         })),
         "soft_break" => Ok(InlineNode::SoftBreak(Break {
