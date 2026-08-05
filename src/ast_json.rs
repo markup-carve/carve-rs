@@ -84,7 +84,7 @@ pub fn from_json(input: &str) -> Result<Document, AstJsonError> {
             _ => children.push(decode_block(child)?),
         }
     }
-    Ok(Document {
+    let mut doc = Document {
         // Rebuilt from the raw block, with the same function the parser uses.
         // The wire carries the raw text only, so leaving this empty would make
         // a decoded document differ from the parsed one in a field neither the
@@ -97,7 +97,40 @@ pub fn from_json(input: &str) -> Result<Document, AstJsonError> {
         footnote_defs,
         children,
         source_len: src_byte_length,
-    })
+    };
+
+    clear_unbacked_footnote_numbers(&mut doc);
+
+    Ok(doc)
+}
+
+/// Drop `number` from any footnote REFERENCE whose definition is not in the tree.
+///
+/// PART 12 §5 serializes footnote numbering, and on a parsed document the number
+/// always describes the document it came from. On an INGESTED one it need not:
+/// delete a definition from a published tree - what an editor does when a user
+/// removes one - and the reference no longer resolves, so every renderer emits
+/// the literal `[^a]`, while the number copied off the payload still claimed a
+/// footnote that is not there (carve#758). carve-php already drops it.
+///
+/// CLEARS, NEVER ASSIGNS. Numbering an ingested tree outright would break §6:
+/// that round trip is `parse(x)` serialized and deserialized, and parsing alone
+/// does no numbering, so a tree that legitimately carries none would come back
+/// carrying them.
+///
+/// An INLINE footnote carries its own body and cannot be orphaned by a missing
+/// definition; the pass leaves those numbered.
+///
+/// THE SAME PASS `parse` RUNS, not a second implementation. It assigns as well as
+/// clears, which is right here and would be wrong in carve-js: `parse` numbers
+/// footnotes in this engine, so an ingested tree numbered the same way agrees
+/// with the parsed one and §6's round trip holds. carve-js does its numbering in
+/// resolution instead, so there the pass has to clear without assigning.
+///
+/// `assign_ref_ids` stays false: `ref_id` is a rendering anchor and carve#762
+/// removed it from the schema entirely (carve-rs#648).
+fn clear_unbacked_footnote_numbers(doc: &mut Document) {
+    let _ = crate::render::collect_footnotes(doc, false);
 }
 
 struct Writer<'a> {
