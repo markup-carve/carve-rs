@@ -88,7 +88,7 @@ fn render_html_inner(doc: &Document, options: &Options<'_>) -> String {
         ),
         ..RenderState::default()
     };
-    let footnotes = collect_footnotes(&mut doc);
+    let footnotes = collect_footnotes(&mut doc, true);
     let mut html = render_document_blocks(doc.children.as_slice(), options, &mut state);
     if !footnotes.is_empty() {
         let section = render_footnotes_section(&doc, &footnotes, options, &mut state);
@@ -279,13 +279,13 @@ fn render_document_blocks(
 }
 
 #[derive(Clone)]
-struct FootnoteEntry {
+pub(crate) struct FootnoteEntry {
     label: Option<String>,
     inline: Option<Vec<InlineNode>>,
     backrefs: Vec<String>,
 }
 
-fn collect_footnotes(doc: &mut Document) -> Vec<FootnoteEntry> {
+pub(crate) fn collect_footnotes(doc: &mut Document, assign_ref_ids: bool) -> Vec<FootnoteEntry> {
     let mut order = Vec::new();
     let mut seen: BTreeMap<String, usize> = BTreeMap::new();
     let def_labels: HashSet<String> = doc.footnote_defs.keys().cloned().collect();
@@ -293,6 +293,7 @@ fn collect_footnotes(doc: &mut Document) -> Vec<FootnoteEntry> {
 
     for block in &mut doc.children {
         collect_footnotes_block(
+            assign_ref_ids,
             block,
             &def_labels,
             &mut label_indices,
@@ -310,6 +311,7 @@ fn collect_footnotes(doc: &mut Document) -> Vec<FootnoteEntry> {
         if let Some(blocks) = doc.footnote_defs.get_mut(&label) {
             for block in blocks {
                 collect_footnotes_block(
+                    assign_ref_ids,
                     block,
                     &def_labels,
                     &mut label_indices,
@@ -325,6 +327,7 @@ fn collect_footnotes(doc: &mut Document) -> Vec<FootnoteEntry> {
 }
 
 fn collect_footnotes_block(
+    assign_ref_ids: bool,
     block: &mut BlockNode,
     def_labels: &HashSet<String>,
     label_indices: &mut HashMap<String, usize>,
@@ -332,34 +335,75 @@ fn collect_footnotes_block(
     order: &mut Vec<FootnoteEntry>,
 ) {
     match block {
-        BlockNode::Heading(h) => {
-            collect_footnotes_inline(&mut h.children, def_labels, label_indices, seen, order)
-        }
+        BlockNode::Heading(h) => collect_footnotes_inline(
+            assign_ref_ids,
+            &mut h.children,
+            def_labels,
+            label_indices,
+            seen,
+            order,
+        ),
         BlockNode::Paragraph(p) => {
-            collect_footnotes_inline(&mut p.children, def_labels, label_indices, seen, order);
+            collect_footnotes_inline(
+                assign_ref_ids,
+                &mut p.children,
+                def_labels,
+                label_indices,
+                seen,
+                order,
+            );
         }
         BlockNode::List(l) => {
             for item in &mut l.items {
                 for child in &mut item.children {
-                    collect_footnotes_block(child, def_labels, label_indices, seen, order);
+                    collect_footnotes_block(
+                        assign_ref_ids,
+                        child,
+                        def_labels,
+                        label_indices,
+                        seen,
+                        order,
+                    );
                 }
             }
         }
         BlockNode::BlockQuote(b) => {
             if let Some(attribution) = &mut b.attribution {
-                collect_footnotes_inline(attribution, def_labels, label_indices, seen, order);
+                collect_footnotes_inline(
+                    assign_ref_ids,
+                    attribution,
+                    def_labels,
+                    label_indices,
+                    seen,
+                    order,
+                );
             }
             for child in &mut b.children {
-                collect_footnotes_block(child, def_labels, label_indices, seen, order);
+                collect_footnotes_block(
+                    assign_ref_ids,
+                    child,
+                    def_labels,
+                    label_indices,
+                    seen,
+                    order,
+                );
             }
         }
         BlockNode::Table(t) => {
             if let Some(caption) = &mut t.caption {
-                collect_footnotes_inline(caption, def_labels, label_indices, seen, order);
+                collect_footnotes_inline(
+                    assign_ref_ids,
+                    caption,
+                    def_labels,
+                    label_indices,
+                    seen,
+                    order,
+                );
             }
             for row in &mut t.rows {
                 for cell in &mut row.cells {
                     collect_footnotes_inline(
+                        assign_ref_ids,
                         &mut cell.children,
                         def_labels,
                         label_indices,
@@ -371,40 +415,90 @@ fn collect_footnotes_block(
         }
         BlockNode::Admonition(a) => {
             if let Some(title) = &mut a.title {
-                collect_footnotes_inline(title, def_labels, label_indices, seen, order);
+                collect_footnotes_inline(
+                    assign_ref_ids,
+                    title,
+                    def_labels,
+                    label_indices,
+                    seen,
+                    order,
+                );
             }
             for child in &mut a.children {
-                collect_footnotes_block(child, def_labels, label_indices, seen, order);
+                collect_footnotes_block(
+                    assign_ref_ids,
+                    child,
+                    def_labels,
+                    label_indices,
+                    seen,
+                    order,
+                );
             }
         }
         BlockNode::LineBlock(lb) => {
             for child in &mut lb.children {
-                collect_footnotes_block(child, def_labels, label_indices, seen, order);
+                collect_footnotes_block(
+                    assign_ref_ids,
+                    child,
+                    def_labels,
+                    label_indices,
+                    seen,
+                    order,
+                );
             }
         }
         BlockNode::Div(d) => {
             for child in &mut d.children {
-                collect_footnotes_block(child, def_labels, label_indices, seen, order);
+                collect_footnotes_block(
+                    assign_ref_ids,
+                    child,
+                    def_labels,
+                    label_indices,
+                    seen,
+                    order,
+                );
             }
         }
         BlockNode::DefinitionList(d) => {
             for item in &mut d.items {
                 for term in &mut item.terms {
-                    collect_footnotes_inline(term, def_labels, label_indices, seen, order);
+                    collect_footnotes_inline(
+                        assign_ref_ids,
+                        term,
+                        def_labels,
+                        label_indices,
+                        seen,
+                        order,
+                    );
                 }
                 for definition in &mut item.definitions {
                     for child in definition {
-                        collect_footnotes_block(child, def_labels, label_indices, seen, order);
+                        collect_footnotes_block(
+                            assign_ref_ids,
+                            child,
+                            def_labels,
+                            label_indices,
+                            seen,
+                            order,
+                        );
                     }
                 }
             }
         }
         BlockNode::Figure(f) => {
-            collect_footnotes_inline(&mut f.caption, def_labels, label_indices, seen, order);
+            collect_footnotes_inline(
+                assign_ref_ids,
+                &mut f.caption,
+                def_labels,
+                label_indices,
+                seen,
+                order,
+            );
             match &mut f.target {
                 FigureTarget::BlockQuote(b) => {
                     if let Some(attribution) = &mut b.attribution {
                         collect_footnotes_inline(
+                            assign_ref_ids,
                             attribution,
                             def_labels,
                             label_indices,
@@ -413,16 +507,31 @@ fn collect_footnotes_block(
                         );
                     }
                     for child in &mut b.children {
-                        collect_footnotes_block(child, def_labels, label_indices, seen, order);
+                        collect_footnotes_block(
+                            assign_ref_ids,
+                            child,
+                            def_labels,
+                            label_indices,
+                            seen,
+                            order,
+                        );
                     }
                 }
                 FigureTarget::Table(t) => {
                     if let Some(caption) = &mut t.caption {
-                        collect_footnotes_inline(caption, def_labels, label_indices, seen, order);
+                        collect_footnotes_inline(
+                            assign_ref_ids,
+                            caption,
+                            def_labels,
+                            label_indices,
+                            seen,
+                            order,
+                        );
                     }
                     for row in &mut t.rows {
                         for cell in &mut row.cells {
                             collect_footnotes_inline(
+                                assign_ref_ids,
                                 &mut cell.children,
                                 def_labels,
                                 label_indices,
@@ -434,6 +543,7 @@ fn collect_footnotes_block(
                 }
                 FigureTarget::Paragraph(p) => {
                     collect_footnotes_inline(
+                        assign_ref_ids,
                         &mut p.children,
                         def_labels,
                         label_indices,
@@ -446,7 +556,14 @@ fn collect_footnotes_block(
         }
         BlockNode::Extension(e) => {
             for child in &mut e.children {
-                collect_footnotes_block(child, def_labels, label_indices, seen, order);
+                collect_footnotes_block(
+                    assign_ref_ids,
+                    child,
+                    def_labels,
+                    label_indices,
+                    seen,
+                    order,
+                );
             }
         }
         _ => {}
@@ -454,6 +571,7 @@ fn collect_footnotes_block(
 }
 
 fn collect_footnotes_inline(
+    assign_ref_ids: bool,
     nodes: &mut [InlineNode],
     def_labels: &HashSet<String>,
     label_indices: &mut HashMap<String, usize>,
@@ -467,7 +585,9 @@ fn collect_footnotes_inline(
                     let number = order.len() + 1;
                     let ref_id = format!("fnref{number}");
                     f.number = Some(number);
-                    f.ref_id = Some(ref_id.clone());
+                    if assign_ref_ids {
+                        f.ref_id = Some(ref_id.clone());
+                    }
                     order.push(FootnoteEntry {
                         label: None,
                         inline: Some(inline.clone()),
@@ -501,34 +621,84 @@ fn collect_footnotes_inline(
                     format!("fnref{number}-{occurrence}")
                 };
                 f.number = Some(number);
-                f.ref_id = Some(ref_id.clone());
+                if assign_ref_ids {
+                    f.ref_id = Some(ref_id.clone());
+                }
                 order[idx].backrefs.push(ref_id);
             }
-            InlineNode::Emphasis(e) => {
-                collect_footnotes_inline(&mut e.children, def_labels, label_indices, seen, order)
-            }
-            InlineNode::Link(l) => {
-                collect_footnotes_inline(&mut l.children, def_labels, label_indices, seen, order)
-            }
-            InlineNode::Span(s) => {
-                collect_footnotes_inline(&mut s.children, def_labels, label_indices, seen, order)
-            }
-            InlineNode::Extension(e) => {
-                collect_footnotes_inline(&mut e.children, def_labels, label_indices, seen, order)
-            }
+            InlineNode::Emphasis(e) => collect_footnotes_inline(
+                assign_ref_ids,
+                &mut e.children,
+                def_labels,
+                label_indices,
+                seen,
+                order,
+            ),
+            InlineNode::Link(l) => collect_footnotes_inline(
+                assign_ref_ids,
+                &mut l.children,
+                def_labels,
+                label_indices,
+                seen,
+                order,
+            ),
+            InlineNode::Span(s) => collect_footnotes_inline(
+                assign_ref_ids,
+                &mut s.children,
+                def_labels,
+                label_indices,
+                seen,
+                order,
+            ),
+            InlineNode::Extension(e) => collect_footnotes_inline(
+                assign_ref_ids,
+                &mut e.children,
+                def_labels,
+                label_indices,
+                seen,
+                order,
+            ),
             InlineNode::CriticInsert(c) => {
-                collect_footnotes_inline(&mut c.children, def_labels, label_indices, seen, order);
+                collect_footnotes_inline(
+                    assign_ref_ids,
+                    &mut c.children,
+                    def_labels,
+                    label_indices,
+                    seen,
+                    order,
+                );
             }
             InlineNode::CriticDelete(c) => {
-                collect_footnotes_inline(&mut c.children, def_labels, label_indices, seen, order);
+                collect_footnotes_inline(
+                    assign_ref_ids,
+                    &mut c.children,
+                    def_labels,
+                    label_indices,
+                    seen,
+                    order,
+                );
             }
             InlineNode::CitationGroup(g) => {
                 for item in &mut g.items {
                     if let Some(prefix) = &mut item.prefix {
-                        collect_footnotes_inline(prefix, def_labels, label_indices, seen, order);
+                        collect_footnotes_inline(
+                            assign_ref_ids,
+                            prefix,
+                            def_labels,
+                            label_indices,
+                            seen,
+                            order,
+                        );
                     }
                     if let Some(locator) = &mut item.locator {
-                        collect_footnotes_inline(locator, def_labels, label_indices, seen, order);
+                        collect_footnotes_inline(
+                            assign_ref_ids,
+                            locator,
+                            def_labels,
+                            label_indices,
+                            seen,
+                            order,
+                        );
                     }
                 }
             }
