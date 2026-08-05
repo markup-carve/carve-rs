@@ -11084,7 +11084,14 @@ fn is_word_boundary(text: &str, pos: usize) -> bool {
         || !text.as_bytes()[pos].is_ascii_alphanumeric()
 }
 
-fn number_crossref_captions(doc: &mut Document) {
+/// Assign `caption_number.number` per label, in document order.
+///
+/// Called by the parse and by `ast_json::from_json`, which is why it is visible
+/// to the crate: a published number has to describe THIS document, and an
+/// ingested tree may have had a captioned element removed since it was written
+/// (carve#758). Counters are built fresh on every call, so re-running it on an
+/// unedited tree reproduces the same numbering.
+pub(crate) fn number_crossref_captions(doc: &mut Document) {
     let mut caption_counts = BTreeMap::new();
     let mut titles = BTreeMap::new();
     number_captioned_blocks(&mut doc.children, &mut caption_counts, &mut titles);
