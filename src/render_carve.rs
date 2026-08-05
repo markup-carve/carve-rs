@@ -816,16 +816,33 @@ fn render_table_row(cells: &[RenderedCell], attrs: &str) -> String {
 
 fn render_table_cell(cell: &TableCell, ctx: &mut CarveContext, mark_header: bool) -> RenderedCell {
     let attrs = render_attrs(&cell.attrs);
-    if cell.span == Some(TableCellSpan::Rowspan) {
-        return RenderedCell {
-            text: format!("{attrs}^"),
-            tight: true,
+    // A lone span marker keeps a SPACE before it. Glued to the opening pipe, `<`
+    // is also the left-alignment sigil, and the two readings differ: the
+    // executable spec reads `|<|` as alignment on an empty cell where all three
+    // engines read a colspan (markup-carve/carve#710). `alignment_marker` is defined
+    // as glued and `colspan_marker` may carry surrounding whitespace, so the
+    // padded form means the same thing to every reader and the writer must not
+    // emit the ambiguous one. `^` is not an alignment sigil, but takes the same
+    // shape so a row of span cells stays readable.
+    //
+    // A cell attribute stays GLUED to the pipe, where the grammar puts it; the
+    // space goes between it and the marker.
+    if let Some(span) = cell.span {
+        let marker = if span == TableCellSpan::Rowspan {
+            "^"
+        } else {
+            "<"
         };
-    }
-    if cell.span == Some(TableCellSpan::Colspan) {
-        return RenderedCell {
-            text: format!("{attrs}<"),
-            tight: true,
+        return if attrs.is_empty() {
+            RenderedCell {
+                text: marker.to_string(),
+                tight: false,
+            }
+        } else {
+            RenderedCell {
+                text: format!("{attrs} {marker}"),
+                tight: true,
+            }
         };
     }
     let prefix = format!(
