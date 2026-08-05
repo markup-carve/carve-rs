@@ -147,8 +147,16 @@ fn parse_with_options_mode(source: &str, options: &Options<'_>, mode: ParseMode)
         .filter(|b| *b == b'\n')
         .count()
         + 1;
-    let (body, footnote_defs_src) = extract_footnote_defs(body, body_start_line, options.positions);
-    let (body_source, link_defs) = extract_link_defs(&body.source);
+    let (body, footnote_defs_src, note_link_defs) =
+        extract_footnote_defs(body, body_start_line, options.positions);
+    let (body_source, mut link_defs) = extract_link_defs(&body.source);
+    // A definition written inside a footnote body is document-level metadata,
+    // and a definition at the top level WINS over one of the same label there -
+    // measured on carve-js and carve-php, which both resolve `[t][r]` to the
+    // outer target when both exist.
+    for (label, def) in note_link_defs {
+        link_defs.entry(label).or_insert(def);
+    }
     let body = remap_source(body_source, &body);
     let mut footnote_defs: BTreeMap<String, Vec<BlockNode>> = footnote_defs_src
         .into_iter()
@@ -483,15 +491,34 @@ fn at_content_column<'a>(bare: &'a str, structural: &str, content_col: usize) ->
     }
 }
 
+/// Footnote definitions, and the LINK DEFINITIONS written inside their bodies.
+///
+/// A note body is lifted out of the document here, before `extract_link_defs`
+/// runs - so a `[r]: /u` on a body continuation line was never offered to that
+/// pass at all. It stayed in the body and rendered as text, and the reference
+/// below it never resolved (carve-rs#599). carve-js, carve-php and the
+/// executable spec all collect it.
+///
+/// Collected here rather than by re-running the link pass over the extracted
+/// body: the body's `line_map` is built line by line in this loop, and a pass
+/// that removes a line from the middle of a finished body would have to rebuild
+/// that mapping from nothing.
 fn extract_footnote_defs(
     source: &str,
     first_source_line: usize,
     positions: bool,
-) -> (MappedSource, BTreeMap<String, MappedSource>) {
+) -> (
+    MappedSource,
+    BTreeMap<String, MappedSource>,
+    BTreeMap<String, LinkDef>,
+) {
     let lines: Vec<&str> = source.lines().collect();
     let mut body = Vec::new();
     let mut body_line_map = Vec::new();
     let mut defs = BTreeMap::new();
+    let mut note_link_defs: BTreeMap<String, LinkDef> = BTreeMap::new();
+    // Fence state for the note-body walk below, declared per definition since a
+    // fence cannot span two notes.
     let mut in_fence: Option<FenceOpen> = None;
     // A LINE BLOCK's body is inline content, so a definition-shaped line inside
     // one is text. Without this the line was extracted here and never reached
@@ -653,6 +680,7 @@ fn extract_footnote_defs(
             // it relative: `  [^f]: x` takes a `    more` continuation and
             // leaves a `  more` alone.
             let body_indent = leading_ws(lines[def_start_line - first_source_line]) + 2;
+            let mut note_fence: Option<FenceOpen> = None;
             if !in_container {
                 while i < lines.len() {
                     let line = lines[i];
@@ -718,6 +746,41 @@ fn extract_footnote_defs(
                     }
                     if leading_ws(line) >= body_indent {
                         let trimmed = trim_ascii_start(line);
+                        // A CODE FENCE inside the body is opaque, so a
+                        // definition-shaped line in it is content. Every engine
+                        // already agrees about that at the top level - none
+                        // registers `[r]: /u` written inside ``` - and the
+                        // top-level pass in `extract_link_defs` tracks fences
+                        // for exactly this reason. Without the state here the
+                        // line was consumed as a definition and vanished from
+                        // the code block.
+                        if let Some(open) = note_fence {
+                            if is_fence_close(trimmed, open) {
+                                note_fence = None;
+                            }
+                        } else if let Some(open) = detect_fence_open(trimmed) {
+                            note_fence = Some(open);
+                        } else if let Some((label_part, target_part)) = parse_link_def_line(trimmed)
+                        {
+                            // A LINK DEFINITION inside the body is
+                            // document-level metadata like any other, so it is
+                            // collected and the line renders nothing - the same
+                            // answer §16 already gives a definition inside a
+                            // list item or a quote.
+                            //
+                            // LAST one wins among note bodies, which is what
+                            // `extract_link_defs` does for the document; a
+                            // top-level definition still beats both, and that
+                            // precedence is applied by the caller.
+                            if !label_part.starts_with('@') && !target_part.trim().is_empty() {
+                                note_link_defs.insert(
+                                    label_part.to_string(),
+                                    parse_link_def_target_with_attrs(target_part.trim()),
+                                );
+                                i += 1;
+                                continue;
+                            }
+                        }
                         def_lines.push(trimmed.to_string());
                         def_line_map.push(Some(first_source_line + i));
                         if positions {
@@ -778,6 +841,7 @@ fn extract_footnote_defs(
             line_map: body_line_map,
         },
         defs,
+        note_link_defs,
     )
 }
 
