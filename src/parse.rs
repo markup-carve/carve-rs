@@ -7509,7 +7509,15 @@ fn detect_abbreviation_def(line: &str) -> Option<AbbreviationDef> {
     let rest = line.strip_prefix("*[")?;
     let (abbr, expansion) = rest.split_once("]:")?;
     let expansion = expansion.strip_prefix(' ')?;
-    if abbr.is_empty() || !abbr.chars().all(char::is_alphanumeric) {
+    // ASCII, because `letter` is: the grammar enumerates it as `a`..`z` plus
+    // `A`..`Z`, and `digit` as `0`..`9`. `char::is_alphanumeric` is
+    // Unicode-aware, so `*[ß]:` and `*[日本]:` were definitions here and
+    // paragraph text in carve-js and carve-php - and a definition renders
+    // nothing, so the document lost either the line or the expansion when it
+    // moved (carve#791). Same reading that makes `*[e.g.]:` a paragraph, which
+    // all three already agree on, and the same ASCII rule
+    // `is_attr_ident_start` below applies to attribute identifiers.
+    if abbr.is_empty() || !abbr.chars().all(|c| c.is_ascii_alphanumeric()) {
         return None;
     }
     // `abbreviation_expansion = {character - newline}+` - ONE or more. An empty
