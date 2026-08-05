@@ -9,6 +9,28 @@ use crate::extension::{BlockMatch, InlineMatch, MatcherContext, Options};
 use std::cell::Cell;
 use std::collections::{BTreeMap, HashMap};
 
+/// The line a collected definition leaves behind, and the marker that says it
+/// is ours rather than something the author wrote.
+///
+/// A definition removed from a container cannot leave a blank line: inside a
+/// quoted list item the leftover structural prefix IS blank, and a blank there
+/// loosens the list (§17 L1) even though the definition rendered nothing. `%%`
+/// is the one construct that is invisible at any column and closes nothing
+/// (§24 C3), so the line is replaced with a comment rather than emptied.
+///
+/// It must not become a comment NODE. An authored `%%` and this placeholder are
+/// otherwise the same thing, so the writer serialized a comment the author never
+/// typed - carve-rs#602, corpus 194 - and an item holding one is not empty, so
+/// the writer's emptied-item branch never fired and it wrote `- %%` where the
+/// other two engines write `- +` (markup-carve/carve#620).
+///
+/// The private-use suffix is what tells them apart. It reaches only the block
+/// parser's `%%` arm, which drops the line instead of building a node; nothing
+/// downstream sees it, and the line is still non-blank for every collection and
+/// tightness decision made before that point. Same device as `VERBATIM_BLANK`
+/// in the writer.
+const DEFINITION_PLACEHOLDER: &str = "%%\u{E005}";
+
 /// Maximum block + inline nesting depth. Pathological input (deeply nested
 /// blockquotes, indented lists, bracketed inlines) recurses one stack frame
 /// per level; without a cap a ~1000-deep document aborts the process with a
@@ -730,8 +752,9 @@ fn extract_footnote_defs(
             if def_line != stripped.bare
                 && !stripped.structural.is_empty()
                 && !replacement.ends_with("%%")
+                && !replacement.ends_with(DEFINITION_PLACEHOLDER)
             {
-                replacement.push_str("%%");
+                replacement.push_str(DEFINITION_PLACEHOLDER);
             }
             body.push(replacement);
             body_line_map.push(Some(def_start_line));
@@ -989,8 +1012,9 @@ fn extract_link_defs(source: &str) -> (String, BTreeMap<String, LinkDef>) {
             if def_line != stripped.bare
                 && !stripped.structural.is_empty()
                 && !replacement.ends_with("%%")
+                && !replacement.ends_with(DEFINITION_PLACEHOLDER)
             {
-                replacement.push_str("%%");
+                replacement.push_str(DEFINITION_PLACEHOLDER);
             }
             body.push(replacement);
         } else {
@@ -1106,7 +1130,7 @@ impl StrippedContainerLine<'_> {
     fn replacement(&self) -> String {
         let mut replacement = self.structural.to_string();
         if self.needs_empty_list_content {
-            replacement.push_str("%%");
+            replacement.push_str(DEFINITION_PLACEHOLDER);
         }
         replacement
     }
@@ -2335,6 +2359,15 @@ fn parse_blocks(cur: &mut LineCursor, options: &Options<'_>) -> Vec<BlockNode> {
             }
         }
         if trim_ascii_start(line).starts_with("%%") {
+            // The line a collected definition left behind is consumed here and
+            // produces nothing. It did its work earlier - it was non-blank
+            // through collection, so the item did not loosen - and an author
+            // never typed it, so it is not a comment node. See
+            // DEFINITION_PLACEHOLDER.
+            if trim_ascii_start(line) == DEFINITION_PLACEHOLDER {
+                cur.consume();
+                continue;
+            }
             let content = trim_ascii_start(line)
                 .strip_prefix("%%")
                 .unwrap_or_default()
