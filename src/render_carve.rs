@@ -881,7 +881,11 @@ fn render_footnote_def_source(label: &str, blocks: &[BlockNode], ctx: &mut Carve
         lines.next().unwrap_or_default()
     )];
     for line in lines {
-        def_lines.push(format!("   {line}"));
+        // TWO spaces, the body's own column (PART 9 §16). A wider indent is legal
+        // continuation but leaves the body's blocks at a relative column above
+        // zero, and an indented block opener does not open a block - so a table
+        // or a quote written at three came back as a paragraph.
+        def_lines.push(format!("  {line}"));
     }
     def_lines.join("\n")
 }
