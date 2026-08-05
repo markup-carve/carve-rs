@@ -696,7 +696,12 @@ fn extract_footnote_defs(
             // its paragraph (carve-rs#591). carve-js and carve-php both measure
             // it relative: `  [^f]: x` takes a `    more` continuation and
             // leaves a `  more` alone.
-            let body_indent = leading_ws(lines[def_start_line - first_source_line]) + 2;
+            // The body's column, in COLUMNS - the def line's own indent plus the
+            // two §16 asks of a continuation. Measured with `indent_columns` so
+            // the def line's own tab counts as the column it reaches, matching
+            // the `strip_leading_columns` dedent below, which was already
+            // column-based while the gates were not (carve-rs#663).
+            let body_indent = indent_columns(lines[def_start_line - first_source_line]) + 2;
             let mut note_fence: Option<FenceOpen> = None;
             if !in_container {
                 while i < lines.len() {
@@ -710,7 +715,7 @@ fn extract_footnote_defs(
                         // are allowed between chunks. A `+` continuation marker
                         // also keeps the body open (PART 9 §17).
                         if i + 1 < lines.len()
-                            && (leading_ws(lines[i + 1]) >= body_indent
+                            && (indent_columns(lines[i + 1]) >= body_indent
                                 || is_plus_marker(lines[i + 1]))
                         {
                             def_lines.push(String::new());
@@ -761,7 +766,15 @@ fn extract_footnote_defs(
                         }
                         continue;
                     }
-                    if leading_ws(line) >= body_indent {
+                    // COLUMNS, not characters. §24 C1 gives a tab a column
+                    // value - to the next multiple of 4 from wherever it starts
+                    // - so a bare tab reaches column 4 and continues the note
+                    // exactly as two spaces do. Counting characters made ` \t`
+                    // two (accepted by accident) and `\t` one (rejected), and a
+                    // rejected continuation does not indent differently: it
+                    // LEAVES the note and lands in the document body
+                    // (carve-rs#663, spec markup-carve/carve#796).
+                    if indent_columns(line) >= body_indent {
                         // Strip EXACTLY the body's own indent, not all leading
                         // whitespace. A full trim flattened everything the
                         // relative indentation says: a nested list marker
