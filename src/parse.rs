@@ -718,6 +718,44 @@ fn extract_footnote_defs(
                     }
                     if leading_ws(line) >= body_indent {
                         let trimmed = trim_ascii_start(line);
+                        // A note body is a container, and a definition at a
+                        // container's OWN content column is collected (§7) -
+                        // the rule block quotes and list items already follow.
+                        // The note body's content column is `body_indent`, so a
+                        // definition exactly there is a definition, and this
+                        // engine was the only one rendering it as note text
+                        // (carve-rs#599, carve#669).
+                        //
+                        // ONLY exactly there. One column deeper it is below the
+                        // body's own column 0, where §24 C3 folds it as text -
+                        // which is what this engine and the executable spec
+                        // already do, and what carve#664 is left open to
+                        // settle. Widening this to `>=` would trade a fixed
+                        // divergence for a new one.
+                        //
+                        // The line is handed to the DOCUMENT stream rather than
+                        // registered here: the link prepass runs after this one
+                        // and over what this one leaves behind, so a line kept
+                        // in the note body is a line it never sees. Trimmed, it
+                        // is an ordinary column-0 definition there, and the note
+                        // keeps only its own text.
+                        //
+                        // Definition-SHAPED is not enough. The link pass this
+                        // hands the line to requires a non-empty destination
+                        // and keeps the line as literal text without one, so
+                        // extracting on shape alone moved `[r]:` out of the note
+                        // and into a document-level paragraph - relocating
+                        // visible content, which is worse than the bug fixed
+                        // here. The other three engines keep it as note text.
+                        if leading_ws(line) == body_indent
+                            && parse_link_def_line(trimmed)
+                                .is_some_and(|(_, target)| !target.trim().is_empty())
+                        {
+                            body.push(trimmed.to_string());
+                            body_line_map.push(Some(first_source_line + i));
+                            i += 1;
+                            continue;
+                        }
                         def_lines.push(trimmed.to_string());
                         def_line_map.push(Some(first_source_line + i));
                         if positions {
