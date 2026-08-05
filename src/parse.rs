@@ -11383,6 +11383,26 @@ fn resolve_reference_links_inline(
                         // PART 12 §3a - see the note on the link branch above.
                         img.src = def.href.clone();
                         img.title = def.title.clone();
+                        // AN IMAGE REFERENCE RESOLVES THE SAME ENTRY -
+                        // NORMATIVE. It looks the label up in the same table and
+                        // takes the same three fields, so a definition's
+                        // attributes reach the image exactly as they reach a
+                        // link: `[ex]: /i.png {.wide}` gives `class="wide"`.
+                        // This branch took `href` and `title` and stopped, which
+                        // is not a rule, it is where the implementation stopped -
+                        // and the clause says so by name (carve#697).
+                        //
+                        // Same §15 A3 merge as the link branch above: definition
+                        // first, use site second, so a repeated key takes the
+                        // LAST value and classes ACCUMULATE in source order.
+                        if let Some(def_attrs) = &def.attrs {
+                            let own = img.attrs.take();
+                            let mut merged = Some(def_attrs.clone());
+                            if let Some(own) = own {
+                                merge_attrs(&mut merged, own);
+                            }
+                            img.attrs = merged;
+                        }
                         out.push(node);
                     } else {
                         // Unresolved image references stay as Image nodes. They
