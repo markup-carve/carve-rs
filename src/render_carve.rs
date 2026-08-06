@@ -282,6 +282,22 @@ fn emptied_description_lines(blocks: &[BlockNode], into: &mut HashSet<usize>) {
             }
             BlockNode::List(list) => {
                 for item in &list.items {
+                    // A definition the author wrote BETWEEN two of an item's
+                    // blocks is the same case one level over: collecting it
+                    // empties the line, and here that emptied line is what
+                    // SPLIT one paragraph into two (corpus 228). Dropping it
+                    // rejoins them, which is a different document. Nothing is
+                    // left to carry the line, so the GAP between the two
+                    // neighbours names it.
+                    for pair in item.children.windows(2) {
+                        let (Some(from), Some(to)) = (block_pos(&pair[0]), block_pos(&pair[1]))
+                        else {
+                            continue;
+                        };
+                        for line in (from.end_line + 1)..to.start_line {
+                            into.insert(line);
+                        }
+                    }
                     emptied_description_lines(&item.children, into);
                 }
             }
@@ -294,6 +310,9 @@ fn emptied_description_lines(blocks: &[BlockNode], into: &mut HashSet<usize>) {
 }
 
 /// Hoisted definitions that sit on one of those lines, keyed by the line.
+///
+/// "Those lines" is both cases: an emptied description's own line, and a line
+/// inside an item's gap. A definition on either belongs back on it.
 fn definitions_by_description_line(doc: &Document) -> HashMap<usize, DefinitionAtLine> {
     let mut lines = HashSet::new();
     emptied_description_lines(&doc.children, &mut lines);
@@ -646,6 +665,42 @@ fn render_inside_colon_container(blocks: &[BlockNode], ctx: &mut CarveContext) -
 /// the blank lines, breaking to_html(fmt(x)) == to_html(x); without the
 /// nested-list exception, a tight item whose child is a nested list (corpus
 /// 142) would stop being idempotent.
+/// The definition the author wrote on a line strictly between two blocks.
+///
+/// The description case can ask its own node for the line; here the node is
+/// gone, so the neighbours' spans name it. Marked written the same way, so the
+/// document-level pass skips it and the label is not defined twice.
+fn definition_in_gap(
+    before: &BlockNode,
+    after: &BlockNode,
+    ctx: &mut CarveContext,
+) -> Option<String> {
+    let from = block_pos(before)?.end_line;
+    let to = block_pos(after)?.start_line;
+    let (line, definition) = ((from + 1)..to).find_map(|line| {
+        ctx.definitions_by_line
+            .get(&line)
+            .filter(|_| !ctx.written_in_place.contains(&line))
+            .cloned()
+            .map(|definition| (line, definition))
+    })?;
+    // MARKED AFTER RENDERING, not before. `render_block` returns an empty
+    // string for a definition already marked written, so marking it first made
+    // the gap render nothing and the document-level pass skip it too - the
+    // definition disappeared from the document entirely.
+    let written = match definition {
+        DefinitionAtLine::Link(def) => render_block(&BlockNode::LinkReferenceDefinition(*def), ctx),
+        DefinitionAtLine::Footnote(label, blocks) => {
+            render_footnote_def_source(&label, &blocks, ctx)
+        }
+    };
+    if written.is_empty() {
+        return None;
+    }
+    ctx.written_in_place.insert(line);
+    Some(written)
+}
+
 fn render_item_blocks(blocks: &[BlockNode], tight: bool, ctx: &mut CarveContext) -> String {
     if !tight {
         return render_blocks(blocks, ctx);
@@ -668,8 +723,11 @@ fn render_item_blocks(blocks: &[BlockNode], tight: bool, ctx: &mut CarveContext)
             // work around nested looseness propagating to the outer item; with
             // that fixed in line_starts_paragraph, keeping it would insert a
             // blank the author never wrote and diverge from carve-js/carve-php.
-            let _ = prev_block;
             out.push('\n');
+            if let Some(written) = definition_in_gap(prev_block, block, ctx) {
+                out.push_str(&written);
+                out.push('\n');
+            }
         }
         out.push_str(&rendered);
         prev = Some(block);

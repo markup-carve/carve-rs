@@ -63,7 +63,7 @@ pub(crate) const WIRE_FIELDS: &[(&str, &[&str])] = &[
     ("table_cell", &["align", "attrs", "children", "header", "pos", "span", "type"]),
     ("table_row", &["attrs", "cells", "pos", "type"]),
     ("tag", &["attrs", "name", "pos", "type"]),
-    ("text", &["attrs", "escapedLeadingCaret", "pos", "type", "value"]),
+    ("text", &["attrs", "pos", "type", "value"]),
     ("thematic_break", &["attrs", "pos", "type"]),
     ("underline", &["attrs", "children", "pos", "type"]),
 ];

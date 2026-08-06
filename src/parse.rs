@@ -888,11 +888,30 @@ fn extract_footnote_defs(
             // marker-consuming case above keeps the item non-empty. `%%` is
             // invisible at any column and closes nothing (§24 C3).
             let mut replacement = stripped.replacement();
+            // NOT gated on a container prefix. The hazard is the blank the
+            // removal leaves, and a definition at an item's content column with
+            // no marker or quote in front of it - `- a` / `  [^f]: x` / `  more`
+            // - leaves exactly the same blank. That read as an interior
+            // separator and loosened the item, so corpus 228 rendered
+            // `<p>a</p>` and `<p>more</p>` where the other two engines render
+            // both bare (carve#801, the `list.tight` divergence).
+            //
+            // `def_line != stripped.bare` is what says the definition was matched
+            // through the CONTENT-COLUMN strip, which is the case that needs it;
+            // requiring a non-empty prefix on top of that only narrowed it to
+            // definitions that happened to sit inside a quote or a nested marker.
             if def_line != stripped.bare
-                && !stripped.structural.is_empty()
                 && !replacement.ends_with("%%")
                 && !replacement.ends_with(DEFINITION_PLACEHOLDER)
             {
+                // AND IT HAS TO STAND AT THE DEFINITION'S OWN COLUMN. Inside a
+                // container the structural prefix already carries it; at top
+                // level that prefix is empty, so an unindented placeholder
+                // lands at column 0 and CLOSES the item it exists to keep
+                // open - the line after it leaves the list entirely.
+                if replacement.is_empty() {
+                    replacement.push_str(&stripped.bare[..leading_ws(stripped.bare)]);
+                }
                 replacement.push_str(DEFINITION_PLACEHOLDER);
             }
             body.push(replacement);
@@ -1157,11 +1176,30 @@ fn extract_link_defs(source: &str) -> (String, BTreeMap<String, LinkDef>) {
             // marker-consuming case above keeps the item non-empty. `%%` is
             // invisible at any column and closes nothing (§24 C3).
             let mut replacement = stripped.replacement();
+            // NOT gated on a container prefix. The hazard is the blank the
+            // removal leaves, and a definition at an item's content column with
+            // no marker or quote in front of it - `- a` / `  [^f]: x` / `  more`
+            // - leaves exactly the same blank. That read as an interior
+            // separator and loosened the item, so corpus 228 rendered
+            // `<p>a</p>` and `<p>more</p>` where the other two engines render
+            // both bare (carve#801, the `list.tight` divergence).
+            //
+            // `def_line != stripped.bare` is what says the definition was matched
+            // through the CONTENT-COLUMN strip, which is the case that needs it;
+            // requiring a non-empty prefix on top of that only narrowed it to
+            // definitions that happened to sit inside a quote or a nested marker.
             if def_line != stripped.bare
-                && !stripped.structural.is_empty()
                 && !replacement.ends_with("%%")
                 && !replacement.ends_with(DEFINITION_PLACEHOLDER)
             {
+                // AND IT HAS TO STAND AT THE DEFINITION'S OWN COLUMN. Inside a
+                // container the structural prefix already carries it; at top
+                // level that prefix is empty, so an unindented placeholder
+                // lands at column 0 and CLOSES the item it exists to keep
+                // open - the line after it leaves the list entirely.
+                if replacement.is_empty() {
+                    replacement.push_str(&stripped.bare[..leading_ws(stripped.bare)]);
+                }
                 replacement.push_str(DEFINITION_PLACEHOLDER);
             }
             body.push(replacement);
