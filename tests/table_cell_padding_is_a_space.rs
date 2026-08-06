@@ -223,6 +223,39 @@ fn a_tab_then_a_space_closing_a_delimiter_cell_unmakes_it_too() {
 }
 
 // ---------------------------------------------------------------------------
+// data_cell - the slot AFTER a per-cell alignment marker
+// ---------------------------------------------------------------------------
+
+#[test]
+fn a_tab_after_a_per_cell_alignment_marker_is_content() {
+    // NOT a corpus document either. `data_cell` reads
+    // `[cell_attributes], [alignment_marker], {space}, cell_content, {space}`,
+    // so a cell carrying a GLUED `<` / `>` / `~` marker has its padding slot
+    // AFTER that marker - a fourth trim site, on its own branch, that no
+    // document in the category exercises.
+    //
+    // Found by mutation: reverting that branch alone left all 24 other
+    // assertions green. The cell still aligns, because the marker is glued to
+    // the pipe and the narrowing does not touch it; only the padding after it
+    // changes, so the tab survives into the cell.
+    assert_eq!(
+        html("|<\tx |>\ty |\n"),
+        "<table>\n  <tbody>\n    <tr><td style=\"text-align: left;\">\tx</td><td style=\"text-align: right;\">\ty</td></tr>\n  </tbody>\n</table>"
+    );
+}
+
+#[test]
+fn control_a_space_after_a_per_cell_alignment_marker_is_padding() {
+    // CONTROL for the case above: with a space the slot is padding as always,
+    // so the alignment and the bare content both survive. This is what fails if
+    // the marker branch is narrowed to something stricter than a space run.
+    assert_eq!(
+        html("|< x |> y |\n"),
+        "<table>\n  <tbody>\n    <tr><td style=\"text-align: left;\">x</td><td style=\"text-align: right;\">y</td></tr>\n  </tbody>\n</table>"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // rowspan_marker / colspan_marker - forced, not optional
 // ---------------------------------------------------------------------------
 

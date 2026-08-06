@@ -7183,7 +7183,16 @@ fn parse_delim_aligns(line: &str) -> Vec<Option<TableAlign>> {
     split_table_cells(content)
         .iter()
         .map(|c| {
-            let t = trim_cell_padding(c); // PART 7: cell padding is U+0020 only.
+            // PART 7: cell padding is U+0020 only. UNREACHABLE-BY-CONSTRUCTION
+            // today -- this runs only behind `is_delim_row`, whose own
+            // space-only trim already rejected any row with a tab in a cell's
+            // padding, so no tab can arrive here. It is spelled the same way
+            // anyway rather than left as `.trim()`: one rule spelled two ways in
+            // two functions is how this family drifts (markup-carve/carve#755),
+            // and if the gate above is ever restructured this site is already
+            // right. Reverting it alone is a GREEN mutation, recorded as such
+            // rather than pinned by a test that could not fail.
+            let t = trim_cell_padding(c);
             match (t.starts_with(':'), t.ends_with(':')) {
                 (true, true) => Some(TableAlign::Center),
                 (false, true) => Some(TableAlign::Right),
