@@ -9,6 +9,27 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Every slot on a colon-fence opener line is a space** (#722). PART 7 decides
+  these terminals by position: a tab is syntax only inside a line's leading
+  indentation run, so from the fence onward neither a tab nor a Unicode space
+  belongs. Three shapes changed. The admonition title slot admitted a tab, and
+  the slot between the title and the label admitted a tab and every Unicode
+  whitespace character besides - `::: note "T"` followed by U+00A0 and a
+  `[label]` opened an admonition. The separator itself was checked only at its
+  first character, so a lone tab was rejected while a space followed by a tab
+  was not:
+
+  ```
+  ::: 	note
+  x
+  :::
+  ```
+
+  opened an admonition and now stays a paragraph, as does the same shape with a
+  bare label. A run of spaces still separates and still pads, so `:::  note` is
+  unchanged, and a bare label glued to the fence (`:::[lbl]`) still opens a div.
+  The fenced-code, frontmatter and raw-block openers are untouched.
+
 - **`fmt` keeps a lone table span marker padded.** Glued to the opening pipe,
   `<` is also the LEFT-ALIGNMENT sigil, and the two readings differ: the
   executable spec reads `|<|` as alignment on an empty cell where all three
