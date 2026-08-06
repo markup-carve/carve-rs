@@ -108,6 +108,9 @@ fn the_lines_under_a_rejected_opener_are_ordinary_blocks() {
     assert!(out.contains("<hr>"), "no thematic break: {out}");
 }
 
+/// CONTROL. No mutation of this slot breaks it - it states what the fix must
+/// leave alone rather than what the fix changed, and it is not evidence that the
+/// narrowing works.
 #[test]
 fn a_space_still_pads_the_format_slot() {
     assert_frontmatter("one space", "--- yaml\na: 1\n---\nx\n", "yaml");
@@ -121,6 +124,8 @@ fn the_slot_is_a_run_not_a_single_space() {
     assert_frontmatter("two spaces", "---  toml\na = 1\n---\nx\n", "toml");
 }
 
+/// CONTROL, like `a_space_still_pads_the_format_slot`: neither opener carries a
+/// padding run at all, so no mutation of the run can reach them.
 #[test]
 fn the_canonical_and_bare_openers_are_unchanged() {
     assert_frontmatter("glued", "---toml\na = 1\n---\nx\n", "toml");
