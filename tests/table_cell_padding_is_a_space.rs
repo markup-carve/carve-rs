@@ -104,6 +104,24 @@ fn a_space_then_a_tab_closing_a_data_cell_is_content() {
     );
 }
 
+#[test]
+fn a_tab_then_a_space_closing_a_data_cell_keeps_the_tab() {
+    // NOT a corpus document, and it should be. The category carries both mixed
+    // runs at the LEADING end (256-2, 256-3) but only `<SP><TAB>` at the
+    // trailing one (256-5), and `<SP><TAB>` is the run a trailing
+    // first-character test happens to get right: the tab is last, so the test
+    // never fires. `<TAB><SP>` is the one that catches it - the trailing space
+    // IS padding, and the tab before it ends the run and stays.
+    //
+    // Found by mutation: narrowing the helper to a first-character test killed
+    // only the two leading mixed-run assertions, leaving the trailing end's run
+    // property unpinned by this file and by the corpus both.
+    assert_eq!(
+        html("| a\t | b\t |\n"),
+        "<table>\n  <tbody>\n    <tr><td>a\t</td><td>b\t</td></tr>\n  </tbody>\n</table>"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // header_cell - both ends, both mixed runs
 // ---------------------------------------------------------------------------
@@ -146,6 +164,17 @@ fn a_space_then_a_tab_closing_a_header_cell_is_content() {
     );
 }
 
+#[test]
+fn a_tab_then_a_space_closing_a_header_cell_keeps_the_tab() {
+    // The header cell's copy of the gap above; it is a separate code path from
+    // the plain cell's, so a half-fix at this end shows up here and nowhere
+    // else.
+    assert_eq!(
+        html("|= a\t |= b\t |\n| 1 | 2 |\n"),
+        "<table>\n  <thead><tr><th>a\t</th><th>b\t</th></tr></thead>\n  <tbody>\n    <tr><td>1</td><td>2</td></tr>\n  </tbody>\n</table>"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // delimiter_cell - where the failure is structural
 // ---------------------------------------------------------------------------
@@ -178,6 +207,17 @@ fn a_tab_closing_a_delimiter_cell_unmakes_it_too() {
     // independently of its leading one exactly as the data cell's does.
     assert_eq!(
         html("| a | b |\n| ---\t| ---\t|\n| 1 | 2 |\n"),
+        "<table>\n  <tbody>\n    <tr><td>a</td><td>b</td></tr>\n    <tr><td>—\t</td><td>—\t</td></tr>\n    <tr><td>1</td><td>2</td></tr>\n  </tbody>\n</table>"
+    );
+}
+
+#[test]
+fn a_tab_then_a_space_closing_a_delimiter_cell_unmakes_it_too() {
+    // The delimiter cell's copy of the same gap, and the one where getting it
+    // wrong is loudest: a trailing first-character test would trim the tab away,
+    // leave `---`, and promote a header row that the rule says is not there.
+    assert_eq!(
+        html("| a | b |\n| ---\t | ---\t |\n| 1 | 2 |\n"),
         "<table>\n  <tbody>\n    <tr><td>a</td><td>b</td></tr>\n    <tr><td>—\t</td><td>—\t</td></tr>\n    <tr><td>1</td><td>2</td></tr>\n  </tbody>\n</table>"
     );
 }
