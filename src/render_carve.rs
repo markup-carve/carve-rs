@@ -399,6 +399,30 @@ fn render_with_escapes(doc: &Document, escape_mode: EscapeMode) -> String {
             rendered.push(text);
         }
     }
+    // A THEMATIC BREAK THAT OPENS THE DOCUMENT IS NOT WRITTEN `---`, because at
+    // that one position `---` is the frontmatter opener. `---` is the canonical
+    // spelling everywhere else and stays; only the first line of the output can
+    // be misread, since the opener test is anchored at byte 0.
+    //
+    // Without this the writer MANUFACTURED frontmatter. `***` / blank / `a` /
+    // blank / `---` / blank / `b` holds two thematic breaks and no frontmatter;
+    // `fmt` wrote the first break as `---`, and the next parse read everything
+    // down to the second `---` as a frontmatter block. Three lines are enough
+    // to lose the whole document: `***` / blank / `---` formatted to `---` /
+    // blank / `---`, which reparses as an EMPTY frontmatter block and renders
+    // nothing where the input rendered two rules (carve-rs#732).
+    //
+    // Only the bare string is rewritten. A break carrying block attributes
+    // renders its `{...}` line first, so `---` is not on line 1 and the opener
+    // test cannot reach it; and when the document has frontmatter of its own,
+    // `parts` already holds it, so the break is not first either.
+    if parts.is_empty() {
+        if let Some(first) = rendered.first_mut() {
+            if first == "---" {
+                *first = "***".to_string();
+            }
+        }
+    }
     if !rendered.is_empty() {
         parts.push(rendered.join("\n\n"));
     }
