@@ -218,6 +218,7 @@ const IMPLEMENTED: &[&str] = &[
     "a-continuation-marker-after-a-blank-line-in-the-item",
     "a-continuation-marker-after-a-blank-line-in-a-loose-item",
     "an-attribute-name-admits-no-colon",
+    "an-inline-attribute-block-does-not-span-lines-but-an-attribute-line-does",
     "trailing-whitespace-after-a-block-marker",
     "a-multi-line-raw-block-is-placed-at-its-opening-and-verbatim-after-it",
     "a-tab-as-the-first-character-of-a-definition-term",
@@ -790,4 +791,8 @@ corpus_test!(
 corpus_test!(
     c_tab_separates_two_attributes,
     "a-tab-separates-two-attributes-and-pads-a-block-as-a-space-does"
+);
+corpus_test!(
+    c_inline_attribute_block_does_not_span_lines,
+    "an-inline-attribute-block-does-not-span-lines-but-an-attribute-line-does"
 );

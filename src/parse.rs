@@ -5109,16 +5109,16 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             }
             let indent = indent_columns(next);
             if indent < content_col {
-                if para_lines
-                    .iter()
-                    .any(|line| is_invalid_colon_fence_opener_text(line))
-                    && para_lines
-                        .last()
-                        .is_some_and(|line| exact_colon_fence_len(line).is_some())
-                    && indent <= base_indent
-                {
-                    break;
-                }
+                // NO SPECIAL CASE FOR AN ABSORBED FENCE. This used to break
+                // when the paragraph held an invalid colon fence and ended in a
+                // bare one, which ended the item and made the flush-left line a
+                // document paragraph. PART 1 S4 says the opposite: `:::note`
+                // fails §12's opener test so it is paragraph text, §12 then has
+                // the paragraph absorb the bare fence below it as text too, and
+                // a paragraph nothing ever interrupted is still OPEN when the
+                // flush-left line arrives (carve#891, corpus
+                // `86-list-lazy-continuation-9`). What decides is whether a
+                // block was opened, never the shape of the line that tried.
                 // BELOW content_column (§24 C3): a line -- flush-left OR indented
                 // short of the content column -- lazily continues the item's open
                 // paragraph and folds in as text. A block opener here is NOT a
