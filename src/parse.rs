@@ -3747,6 +3747,20 @@ fn indent_columns(line: &str) -> usize {
 // sibling markers keep the same visual column and the recursive parse re-derives
 // the child base from it. For space-only indentation there is never a residual.
 fn slice_columns(line: &str, cols: usize, keep_residual: bool) -> String {
+    slice_columns_mapped(line, cols, keep_residual).0
+}
+
+/// `slice_columns`, plus whether the result begins with SYNTHESIZED spaces.
+///
+/// The residual of a straddling tab is written as spaces that are not in the
+/// source, so a caller that maps output columns back to source columns cannot
+/// treat this line as a suffix of the original: every offset after the
+/// synthesized run would be charged to characters that do not exist, and a span
+/// near the end of the document runs past its end (markup-carve/carve-rs#700).
+/// `stripped_col` already refuses that mapping for a rewritten line, with the
+/// reason spelled out there; this reports the same fact for the one rewrite the
+/// column collector performs itself.
+fn slice_columns_mapped(line: &str, cols: usize, keep_residual: bool) -> (String, bool) {
     let bytes = line.as_bytes();
     let mut col = 0;
     let mut i = 0;
@@ -3766,9 +3780,9 @@ fn slice_columns(line: &str, cols: usize, keep_residual: bool) -> String {
     if keep_residual && col > cols {
         let mut s = " ".repeat(col - cols);
         s.push_str(&line[i..]);
-        s
+        (s, true)
     } else {
-        line[i..].to_string()
+        (line[i..].to_string(), false)
     }
 }
 
@@ -5856,13 +5870,24 @@ fn collect_indented_block_mapped_with(
         if comment_fence.is_none() {
             comment_fence_strip = None;
         }
-        lines.push(slice_columns(line, stripped, is_marker));
+        let (sliced, synthesized) = slice_columns_mapped(line, stripped, is_marker);
+        lines.push(sliced);
         if cur.line_map.is_some() {
             line_map.push(cur.source_line(cur.pos));
         }
         // The enclosing container may already have stripped something, so the
         // widths accumulate; an unknown parent width keeps this unknown too.
-        col_map.push(cur.source_col(cur.pos).map(|outer| outer + stripped));
+        //
+        // A line whose front was REWRITTEN - the residual of a straddling tab,
+        // re-emitted as spaces - has no such width: the synthesized characters
+        // are not in the source, so charging offsets past them produced spans
+        // outside the document (carve-rs#700). It maps to None, which is what
+        // `stripped_col` already answers for every other rewritten line.
+        col_map.push(if synthesized {
+            None
+        } else {
+            cur.source_col(cur.pos).map(|outer| outer + stripped)
+        });
         cur.consume();
     }
     MappedSource {
