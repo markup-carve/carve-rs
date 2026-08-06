@@ -94,9 +94,17 @@ pub fn to_html(source: &str) -> String {
 /// Infallible: the parser caps nesting at its own bound, which sits BELOW the
 /// renderers' ceiling, so the §25 refusal is unreachable from a source string
 /// (see [`RenderDepthError`], which the tree-taking renderers return).
+/// Positions are ON for this convenience wrapper: §7 orders collected
+/// definitions by source position, and the footnote map is a BTreeMap, so
+/// without spans the definitions print in LABEL order (carve-rs#686). A caller
+/// that builds its own document and calls the tree-taking renderer keeps
+/// whatever it parsed with; label order is the only order available there.
 pub fn to_markdown(source: &str) -> String {
-    render_markdown(&parse(source))
-        .expect("the parse cap sits below the render ceiling, so a parsed tree never reaches it")
+    render_markdown(&parse_with_options(
+        source,
+        &Options::default().with_positions(true),
+    ))
+    .expect("the parse cap sits below the render ceiling, so a parsed tree never reaches it")
 }
 
 /// Parse a Carve source string and render it as plain text in one call.
@@ -104,9 +112,17 @@ pub fn to_markdown(source: &str) -> String {
 /// Infallible: the parser caps nesting at its own bound, which sits BELOW the
 /// renderers' ceiling, so the §25 refusal is unreachable from a source string
 /// (see [`RenderDepthError`], which the tree-taking renderers return).
+/// Positions are ON for this convenience wrapper: §7 orders collected
+/// definitions by source position, and the footnote map is a BTreeMap, so
+/// without spans the definitions print in LABEL order (carve-rs#686). A caller
+/// that builds its own document and calls the tree-taking renderer keeps
+/// whatever it parsed with; label order is the only order available there.
 pub fn to_plain_text(source: &str) -> String {
-    render_plain_text(&parse(source))
-        .expect("the parse cap sits below the render ceiling, so a parsed tree never reaches it")
+    render_plain_text(&parse_with_options(
+        source,
+        &Options::default().with_positions(true),
+    ))
+    .expect("the parse cap sits below the render ceiling, so a parsed tree never reaches it")
 }
 
 /// Parse a Carve source string and render it as ANSI-styled text in one call.
@@ -114,9 +130,17 @@ pub fn to_plain_text(source: &str) -> String {
 /// Infallible: the parser caps nesting at its own bound, which sits BELOW the
 /// renderers' ceiling, so the §25 refusal is unreachable from a source string
 /// (see [`RenderDepthError`], which the tree-taking renderers return).
+/// Positions are ON for this convenience wrapper: §7 orders collected
+/// definitions by source position, and the footnote map is a BTreeMap, so
+/// without spans the definitions print in LABEL order (carve-rs#686). A caller
+/// that builds its own document and calls the tree-taking renderer keeps
+/// whatever it parsed with; label order is the only order available there.
 pub fn to_ansi(source: &str) -> String {
-    render_ansi(&parse(source))
-        .expect("the parse cap sits below the render ceiling, so a parsed tree never reaches it")
+    render_ansi(&parse_with_options(
+        source,
+        &Options::default().with_positions(true),
+    ))
+    .expect("the parse cap sits below the render ceiling, so a parsed tree never reaches it")
 }
 
 /// Parse a Carve source string and render canonical Carve source in one call.

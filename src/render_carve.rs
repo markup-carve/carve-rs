@@ -236,15 +236,7 @@ fn render_with_escapes(doc: &Document, escape_mode: EscapeMode) -> String {
     // `[^a]` (carve-rs#682). The ordering is the encoder's own
     // `ordered_document_entries`, reused rather than reimplemented, so the
     // written source and the published tree cannot disagree.
-    let mut footnote_defs: Vec<(&String, &Vec<BlockNode>)> = doc.footnote_defs.iter().collect();
-    footnote_defs.sort_by_key(|(label, children)| {
-        (
-            crate::ast_json::first_block_pos(children)
-                .map(|pos| pos.start_offset)
-                .unwrap_or(usize::MAX),
-            label.as_str(),
-        )
-    });
+    let footnote_defs = crate::ast_json::footnote_defs_in_source_order(doc);
     let mut rendered = Vec::new();
     for entry in crate::ast_json::ordered_document_entries(&doc.children, &footnote_defs) {
         let text = match entry {
