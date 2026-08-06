@@ -111,8 +111,31 @@ pub fn parse_with_options(source: &str, options: &Options<'_>) -> Document {
     parse_with_options_mode(source, options, ParseMode::Html)
 }
 
-pub(crate) fn parse_for_carve(source: &str) -> Document {
+/// The fmt parse WITHOUT positions, for comparing two renders' shapes.
+///
+/// `escaping_is_redundant` asks whether the minimal and conservative forms parse
+/// to the same document. Two renders that differ only in escape bytes have
+/// different offsets, so comparing position-bearing trees answers "no" for every
+/// document carrying an escapable character, and the writer escalates to
+/// conservative escaping - `See [it][ref].` came back `See [it][ref]\.`
+/// (carve-rs#682, found the moment positions were enabled for the ordering
+/// parse).
+pub(crate) fn parse_for_carve_shape(source: &str) -> Document {
     parse_with_options_mode(source, &Options::default(), ParseMode::Carve)
+}
+
+pub(crate) fn parse_for_carve(source: &str) -> Document {
+    // POSITIONS ON. The writer orders hoisted definitions by source position
+    // (§7, PART 11 §6), and this parse is the only view of the document it
+    // gets - without `pos` every definition reports usize::MAX and the order
+    // falls back to "children, then footnotes by label", which is what put a
+    // link definition ahead of the footnote it was written inside
+    // (carve-rs#682).
+    parse_with_options_mode(
+        source,
+        &Options::default().with_positions(true),
+        ParseMode::Carve,
+    )
 }
 
 #[derive(Clone, Copy)]

@@ -225,13 +225,40 @@ fn render_with_escapes(doc: &Document, escape_mode: EscapeMode) -> String {
     if !doc.frontmatter.is_empty() {
         parts.push(render_frontmatter(&doc.frontmatter));
     }
-    let body = render_blocks(&doc.children, &mut ctx);
-    if !body.is_empty() {
-        parts.push(body);
+    // §7 puts hoisted definitions after the body, ordered among themselves by
+    // source position, and PART 11 §6 binds the writer to the order the tree
+    // holds: "fmt does not reorder ... those are the author's choices and the
+    // AST records them".
+    //
+    // Rendering `children` and then the footnote map wrote every link definition
+    // ahead of every footnote, and the footnotes themselves in LABEL order,
+    // because the map is a BTreeMap - so `[^b]` written first came out after
+    // `[^a]` (carve-rs#682). The ordering is the encoder's own
+    // `ordered_document_entries`, reused rather than reimplemented, so the
+    // written source and the published tree cannot disagree.
+    let mut footnote_defs: Vec<(&String, &Vec<BlockNode>)> = doc.footnote_defs.iter().collect();
+    footnote_defs.sort_by_key(|(label, children)| {
+        (
+            crate::ast_json::first_block_pos(children)
+                .map(|pos| pos.start_offset)
+                .unwrap_or(usize::MAX),
+            label.as_str(),
+        )
+    });
+    let mut rendered = Vec::new();
+    for entry in crate::ast_json::ordered_document_entries(&doc.children, &footnote_defs) {
+        let text = match entry {
+            crate::ast_json::DocEntry::Block(child) => render_block(child, &mut ctx),
+            crate::ast_json::DocEntry::FootnoteDef(label, blocks) => {
+                render_footnote_def_source(label, blocks, &mut ctx)
+            }
+        };
+        if !text.is_empty() {
+            rendered.push(text);
+        }
     }
-    let footnotes = render_footnote_defs(doc, &mut ctx);
-    if !footnotes.is_empty() {
-        parts.push(footnotes);
+    if !rendered.is_empty() {
+        parts.push(rendered.join("\n\n"));
     }
     normalize(&parts.join("\n\n"))
 }
@@ -239,8 +266,8 @@ fn render_with_escapes(doc: &Document, escape_mode: EscapeMode) -> String {
 fn escaping_is_redundant(minimal: &str, conservative: &str) -> bool {
     let parsed = std::panic::catch_unwind(|| {
         (
-            comparable_document(crate::parse::parse_for_carve(minimal)),
-            comparable_document(crate::parse::parse_for_carve(conservative)),
+            comparable_document(crate::parse::parse_for_carve_shape(minimal)),
+            comparable_document(crate::parse::parse_for_carve_shape(conservative)),
         )
     });
     parsed.is_ok_and(|(minimal_doc, conservative_doc)| minimal_doc == conservative_doc)
@@ -1049,14 +1076,6 @@ fn render_figure(node: &Figure, ctx: &mut CarveContext) -> String {
         }
     };
     format!("{target}\n^ {}", render_inlines(&node.caption, ctx))
-}
-
-fn render_footnote_defs(doc: &Document, ctx: &mut CarveContext) -> String {
-    let mut out = Vec::new();
-    for (label, blocks) in &doc.footnote_defs {
-        out.push(render_footnote_def_source(label, blocks, ctx));
-    }
-    out.join("\n\n")
 }
 
 fn render_footnote_def_source(label: &str, blocks: &[BlockNode], ctx: &mut CarveContext) -> String {
