@@ -144,28 +144,41 @@ enum ParseMode {
     Carve,
 }
 
+/// The text every entry point must read, normalized once (matching carve-js /
+/// carve-php), allocating only when there is something to change:
+///
+///  - strip a single leading UTF-8 BOM (U+FEFF) so `\u{feff}# T` is a heading;
+///  - collapse CRLF / CR to LF;
+///  - replace a NUL (U+0000) with the U+FFFD replacement char so a control byte
+///    never reaches output (WHATWG-style).
+///
+/// This lived inline in `parse_with_options_mode` and was the parser's alone,
+/// so `to_carve` scanned the RAW source for the frontmatter block while the
+/// parser scanned this copy. On a CRLF or BOM'd document the two disagreed
+/// about whether the file HAD frontmatter, and the writer lost the block's
+/// format token or dropped the block entirely (carve-rs#732). It is a function
+/// so there is one answer to that question rather than one per caller - the
+/// same reason carve-rs#725 had to unify the frontmatter OPENER test between
+/// these two callers.
+pub(crate) fn normalize_source(source: &str) -> std::borrow::Cow<'_, str> {
+    if !(source.starts_with('\u{feff}') || source.contains('\r') || source.contains('\0')) {
+        return std::borrow::Cow::Borrowed(source);
+    }
+    let trimmed = source.strip_prefix('\u{feff}').unwrap_or(source);
+    std::borrow::Cow::Owned(
+        trimmed
+            .replace("\r\n", "\n")
+            .replace('\r', "\n")
+            .replace('\0', "\u{fffd}"),
+    )
+}
+
 fn parse_with_options_mode(source: &str, options: &Options<'_>, mode: ParseMode) -> Document {
     // Kept for the offset table below: normalization rewrites the text the
     // parser sees, and PART 12 §4 positions index the ORIGINAL file.
     let original = source;
-    // Normalize input up front (matching carve-js / carve-php), only allocating
-    // when needed:
-    //  - strip a single leading UTF-8 BOM (U+FEFF) so `﻿# T` is a heading;
-    //  - collapse CRLF / CR to LF;
-    //  - replace a NUL (U+0000) with the U+FFFD replacement char so a control
-    //    byte never reaches output (WHATWG-style).
-    let normalized;
-    let source = if source.starts_with('\u{feff}') || source.contains('\r') || source.contains('\0')
-    {
-        let trimmed = source.strip_prefix('\u{feff}').unwrap_or(source);
-        normalized = trimmed
-            .replace("\r\n", "\n")
-            .replace('\r', "\n")
-            .replace('\0', "\u{fffd}");
-        normalized.as_str()
-    } else {
-        source
-    };
+    let normalized = normalize_source(source);
+    let source = normalized.as_ref();
     let (frontmatter, frontmatter_raw, body) = split_frontmatter(source, options.positions);
     let body_start_line = source
         [..(body.as_ptr() as usize).saturating_sub(source.as_ptr() as usize)]

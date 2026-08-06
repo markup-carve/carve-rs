@@ -149,6 +149,18 @@ pub fn to_ansi(source: &str) -> String {
 /// This formatter is intentionally parse-only: it does not run extension hooks,
 /// profile filtering, heading-id enrichment, or other render-time transforms.
 pub fn to_carve(source: &str) -> String {
+    // The SAME text the parser reads. `raw_frontmatter` scans for the block's
+    // closing `---` line and `restore_inline_comments` walks the source lines;
+    // both ran on the RAW string while `parse_for_carve` ran on a normalized
+    // copy. On CRLF input the closer scan (`\n---\n`) missed, so `to_carve`
+    // concluded there was no frontmatter while the parser had already found it
+    // - and the document fell through to `render_frontmatter`, which rebuilds
+    // the block from the parsed key/value map. That map has no format token, so
+    // `---toml` came back `---`; and a format the map cannot represent parses
+    // into an EMPTY map, so the whole block was dropped. A lone CR and a leading
+    // BOM reached the same fall-through (carve-rs#732).
+    let normalized = parse::normalize_source(source);
+    let source = normalized.as_ref();
     let (frontmatter, _) = raw_frontmatter(source);
     let mut doc = parse::parse_for_carve(source);
     if frontmatter.is_some() {
