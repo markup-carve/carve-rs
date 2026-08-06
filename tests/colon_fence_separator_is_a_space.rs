@@ -1,18 +1,19 @@
-//! The colon fence's separator is a literal space; its metadata slots are not.
+//! The colon fence's separator is a RUN of literal spaces.
 //!
 //! `resources/grammar.ebnf` PART 7, MARKER SEPARATORS AND PADDING SLOTS, is
-//! normative and splits the opener line into two roles that must NOT be swept
-//! together (carve#878 step 2, spec edit carve#886):
+//! normative. It decides the terminal by POSITION: a tab is syntax only inside
+//! a line's leading indentation run, and from the first non-whitespace
+//! character onward it is not syntax at all. The slot immediately after the
+//! fence run is therefore `space`, U+0020 and nothing else, and so are the
+//! opener's metadata slots - those live in
+//! `colon_fence_metadata_slots_are_a_space.rs`.
 //!
-//! - The slot immediately after the fence run is a MARKER SEPARATOR: `space`,
-//!   U+0020 only, because the token after it selects which of the four blocks
-//!   the line opens.
-//! - The admonition opener's title and label slots are PADDING: `whitespace`,
-//!   which the grammar defines as a space or a tab and nothing else.
-//!
-//! Both were wrong here, in opposite directions: the separator admitted a tab,
-//! and the padding slots used `char::is_whitespace`, which is every Unicode
-//! whitespace character - a form feed and a vertical tab among them.
+//! carve-rs#712 fixed the FIRST character of this slot and stopped there:
+//! `detect_container_open` tested `after_fence.starts_with(' ')` and then read
+//! the token out of `after_fence.trim()`, whose Unicode trim swallowed
+//! whatever followed that space. A lone tab was rejected while `::: <TAB>note`
+//! still opened an admonition. Only a MIXED run exposes it, which is why every
+//! test below runs both directions (carve-rs#722, corpus category 254).
 
 fn html(source: &str) -> String {
     carve::to_html(source)
@@ -27,22 +28,64 @@ const OPENER_TOKENS: [(&str, &str); 4] = [
     ("local hard break", "\\"),
 ];
 
+/// Asserted as "the opener line survives as text" rather than "there is a
+/// paragraph": a div and a line block BOTH wrap a paragraph, so a paragraph
+/// check passes for a container that should not have opened at all.
+fn assert_opened_nothing(label: &str, out: &str) {
+    assert!(
+        out.contains(":::"),
+        "{label}: opener did not survive as text: {out}"
+    );
+    assert!(
+        !out.contains("<aside"),
+        "{label}: opened an admonition: {out}"
+    );
+    assert!(!out.contains("<div"), "{label}: opened a div: {out}");
+}
+
 #[test]
 fn a_tab_after_the_fence_run_opens_nothing() {
     for (label, token) in OPENER_TOKENS {
-        let out = html(&format!(":::\t{token}\nx\n:::\n"));
-        // Asserted as "the opener line survives as text" rather than "there is
-        // a paragraph": a div and a line block BOTH wrap a paragraph, so a
-        // paragraph check passes for a container that should not have opened.
-        assert!(
-            out.contains(":::"),
-            "{label}: opener did not survive as text: {out}"
+        assert_opened_nothing(label, &html(&format!(":::\t{token}\nx\n:::\n")));
+    }
+}
+
+#[test]
+fn a_tab_anywhere_in_the_separator_run_opens_nothing() {
+    // Both directions, per token. A tab-FIRST run is caught by a check on the
+    // separator's first character; a space-then-tab run is caught only by a
+    // check on the whole run, and that is the one carve-rs#712 left open for
+    // the admonition and the bare label.
+    for (label, token) in OPENER_TOKENS {
+        assert_opened_nothing(
+            &format!("{label}, space then tab"),
+            &html(&format!("::: \t{token}\nx\n:::\n")),
         );
-        assert!(
-            !out.contains("<aside"),
-            "{label}: opened an admonition: {out}"
+        assert_opened_nothing(
+            &format!("{label}, tab then space"),
+            &html(&format!(":::\t {token}\nx\n:::\n")),
         );
-        assert!(!out.contains("<div"), "{label}: opened a div: {out}");
+    }
+}
+
+#[test]
+fn a_unicode_space_in_the_separator_run_opens_nothing() {
+    // The same run check, reached with a character that is neither a space nor
+    // a tab. `str::trim` is `char::is_whitespace`, so reading the token out of
+    // a trimmed copy admitted these too.
+    for (label, ws) in [
+        ("no-break space", '\u{00a0}'),
+        ("em space", '\u{2003}'),
+        ("form feed", '\u{000c}'),
+    ] {
+        assert_opened_nothing(
+            &format!("{label}, leading"),
+            &html(&format!(":::{ws}note\nx\n:::\n")),
+        );
+        assert_opened_nothing(
+            &format!("{label}, after a space"),
+            &html(&format!("::: {ws}note\nx\n:::\n")),
+        );
     }
 }
 
@@ -58,29 +101,27 @@ fn a_space_there_still_opens_it() {
 }
 
 #[test]
-fn a_tab_pads_the_metadata_slots() {
-    assert!(html("::: note\t\"Title\"\nx\n:::\n").contains("admonition-title"));
-    assert!(html("::: note\t\"T\"\t[lbl]\nx\n:::\n").contains("admonition-title"));
-}
-
-#[test]
-fn the_space_spelling_is_unchanged() {
-    assert!(html("::: note \"Title\"\nx\n:::\n").contains("admonition-title"));
-}
-
-#[test]
-fn only_a_space_or_tab_pads() {
-    // `whitespace` is a space or a tab, exhaustively. `char::is_whitespace`
-    // admits a great deal more, none of which the grammar names.
-    for (label, ws) in [
-        ("form feed", '\u{000c}'),
-        ("vertical tab", '\u{000b}'),
-        ("en quad", '\u{2000}'),
-    ] {
-        let out = html(&format!("::: note{ws}\"Title\"\nx\n:::\n"));
-        assert!(
-            !out.contains("admonition-title"),
-            "{label} padded the title: {out}"
+fn the_separator_is_a_run_not_a_single_space() {
+    // Load-bearing rather than a control: narrowing this slot to exactly one
+    // U+0020 passes every case above and breaks only this one. Corpus
+    // 254-colon-fence-separator-must-be-a-space-10 pins the same shape.
+    for (label, token) in OPENER_TOKENS {
+        let one = html(&format!("::: {token}\nx\n:::\n"));
+        let two = html(&format!(":::  {token}\nx\n:::\n"));
+        assert_eq!(
+            two, one,
+            "{label}: a two-space separator opened something else"
         );
     }
+}
+
+#[test]
+fn a_label_glued_to_the_fence_still_opens_a_div() {
+    // `div_open = colon_fence, [[space], label]` - the separator is OPTIONAL
+    // before a bare label, so a zero-length run is legal here and only here.
+    let out = html(":::[lbl]\nx\n:::\n");
+    assert!(
+        out.contains("div-label"),
+        "glued label did not open a div: {out}"
+    );
 }

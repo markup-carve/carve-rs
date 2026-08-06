@@ -270,6 +270,13 @@ const IMPLEMENTED: &[&str] = &[
     // produced the fixture byte-for-byte, so the entry is the whole change
     // (carve#725, carve#729).
     "a-heading-reference-folds-unicode-normalization-but-not-compatibility",
+    // PART 7 decides these terminals by POSITION: a tab is syntax only in a
+    // line's leading indentation run, so every slot on a colon-fence opener is
+    // spelled `space`. The separator category enrolls the two-space opener as
+    // well, which is what keeps the run from being narrowed to one space
+    // (carve#908, carve-rs#722).
+    "colon-fence-separator-must-be-a-space",
+    "colon-fence-metadata-slots-must-be-a-space-too",
 ];
 
 fn corpus_dir() -> PathBuf {
@@ -795,4 +802,12 @@ corpus_test!(
 corpus_test!(
     c_inline_attribute_block_does_not_span_lines,
     "an-inline-attribute-block-does-not-span-lines-but-an-attribute-line-does"
+);
+corpus_test!(
+    c_colon_fence_separator_must_be_a_space,
+    "colon-fence-separator-must-be-a-space"
+);
+corpus_test!(
+    c_colon_fence_metadata_slots_must_be_a_space_too,
+    "colon-fence-metadata-slots-must-be-a-space-too"
 );

@@ -7248,7 +7248,24 @@ fn detect_container_open(line: &str) -> Option<ContainerOpen> {
         return None;
     }
     let after_fence = &trimmed[fence_len..];
-    let rest = after_fence.trim();
+    // THE SEPARATOR IS A RUN OF U+0020, and the token starts where that run
+    // ends. #720 tested only the FIRST character (`after_fence.starts_with(' ')`)
+    // and then read the token out of `after_fence.trim()`, whose Unicode trim
+    // swallowed whatever came after that space. So a lone leading tab was
+    // rejected while `::: <TAB>note` still opened an admonition, and
+    // `::: <NBSP>note` did too - a first-character test wearing a run test's
+    // clothes, the same shape found in carve-php's copy of this rule (#722,
+    // corpus 254-2 and 254-5). Splitting the run here is what makes the check
+    // about the rule: `rest` now begins at the token, so every test below sees
+    // the character the grammar actually puts there.
+    //
+    // A RUN, not one space: `:::  note` is a two-space opener and a valid
+    // admonition (corpus 254-10), so narrowing this to a single U+0020 would
+    // break it alone.
+    // `trimmed` is `line.trim()`, so there is no trailing whitespace left to
+    // strip here and `rest` is exactly the token and what follows it.
+    let sep_len = after_fence.bytes().take_while(|b| *b == b' ').count();
+    let rest = &after_fence[sep_len..];
     // STRICT (djot): the opener is the colon fence, an optional type word,
     // and an optional quoted title -- and NOTHING else. A trailing `{...}`
     // (or any other non-title text) makes the line an ordinary paragraph,
@@ -7264,23 +7281,23 @@ fn detect_container_open(line: &str) -> Option<ContainerOpen> {
         });
     }
     // `div_open = colon_fence, [[space], label]` - the label is either GLUED to
-    // the fence or separated by a space, and a tab is neither. This branch runs
-    // before the separator check below and matches against the TRIMMED rest, so
-    // it saw a tabbed opener with the tab already gone and opened a labelled
-    // div where the grammar makes the line a paragraph. The same rule decided in
-    // two places, which is the shape that hid it (#712).
-    let label_separator_ok = after_fence.starts_with('[') || after_fence.starts_with(' ');
-    if label_separator_ok {
-        if let Some(label) = parse_bare_label(rest) {
-            return Some(ContainerOpen {
-                fence_len,
-                kind: None,
-                title: None,
-                title_col: None,
-                label: Some(label),
-                attrs: None,
-            });
-        }
+    // the fence or separated from it by spaces, and nothing else. This branch
+    // runs before the separator check below, so it used to match against a
+    // Unicode-trimmed copy and open a labelled div for a tabbed opener; #720
+    // guarded it with its own copy of the separator test instead. With `rest`
+    // now starting where the space run ends, `parse_bare_label`'s own
+    // `starts_with('[')` decides it: a tab or any other character between the
+    // fence and the bracket is simply still there, so the label does not parse.
+    // The extra guard would be a check that can no longer fail (#722).
+    if let Some(label) = parse_bare_label(rest) {
+        return Some(ContainerOpen {
+            fence_len,
+            kind: None,
+            title: None,
+            title_col: None,
+            label: Some(label),
+            attrs: None,
+        });
     }
     // THE SEPARATOR IS A SPACE, U+0020 and nothing else. PART 7's MARKER
     // SEPARATORS AND PADDING SLOTS is normative: this slot stands between the
@@ -7292,8 +7309,9 @@ fn detect_container_open(line: &str) -> Option<ContainerOpen> {
     //
     // A typeless label may still be glued to the fence (`:::[x]`), and
     // `:::note` is ordinary paragraph text. The opener's METADATA slots are
-    // the other role and keep the tab - see `after_kind` below.
-    if !after_fence.starts_with(' ') {
+    // the other role, and PART 7 on carve main spells those `space` too - see
+    // `after_kind` below.
+    if sep_len == 0 {
         return None;
     }
     // A type word is a grammar identifier: `(letter | '_'), {letter | digit
@@ -7310,14 +7328,22 @@ fn detect_container_open(line: &str) -> Option<ContainerOpen> {
         .unwrap_or(rest.len());
     let kind = rest[..id_end].to_string();
     let after_kind = &rest[id_end..];
-    // PADDING, not a separator: `whitespace` is a space or a tab and nothing
-    // else. `char::is_whitespace` is every Unicode whitespace character - a
-    // form feed, a vertical tab and every Unicode space among them - so those
-    // padded a title the grammar does not admit them in.
-    if !after_kind.is_empty() && !after_kind.starts_with([' ', '\t']) {
+    // THE TITLE SLOT IS SPACES. PART 7 decides this terminal by POSITION, not
+    // by the slot's role: a tab is syntax only inside a line's leading
+    // indentation run, and from the first non-whitespace character onward it is
+    // not syntax at all. Every metadata slot on this line sits after the fence,
+    // so `admonition_open = colon_fence, space, admonition_type,
+    // [space+, quoted_title], [space+, label]` spells all of them `space`.
+    //
+    // #720 read carve#886, which said a padding slot took `whitespace`, and
+    // narrowed this from `char::is_whitespace` to `[' ', '\t']`. carve#901
+    // landed as carve#905 and reverted that clause; the Unicode half of the
+    // narrowing was right and is kept by going to `' '`, which admits neither
+    // a tab nor U+00A0 nor a form feed (#722, corpus 255 and 255-2).
+    if !after_kind.is_empty() && !after_kind.starts_with(' ') {
         return None;
     }
-    let mut after = after_kind.trim_start_matches([' ', '\t']);
+    let mut after = after_kind.trim_start_matches(' ');
     let mut title_col = None;
     let title = if after.starts_with('"') {
         // Where the text after the quote sits in the ORIGINAL line. These are
@@ -7332,7 +7358,13 @@ fn detect_container_open(line: &str) -> Option<ContainerOpen> {
         if line[text_at..].starts_with(&title) {
             title_col = Some(line[..text_at].chars().count());
         }
-        after = remainder.trim_start();
+        // THE LABEL SLOT IS SPACES, for the same reason as the title slot
+        // above. This one was missed entirely by #720, which narrowed only the
+        // slot before the title: `trim_start` is `char::is_whitespace`, so this
+        // admitted a tab AND every Unicode space. `::: note "T"` followed by
+        // U+00A0 or U+2003 and a `[label]` opened an admonition here (#722,
+        // corpus 255-3 and 255-4).
+        after = remainder.trim_start_matches(' ');
         Some(title)
     } else {
         None
