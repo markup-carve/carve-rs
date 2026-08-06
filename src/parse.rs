@@ -4362,7 +4362,19 @@ fn parse_continuation_block(
             end = find_colon_container_end(cur.lines, end, open.fence_len);
             continue;
         }
-        if end > cur.pos && trim_ascii(line) == "+" && indent_columns(line) == base_indent {
+        // A FURTHER `+` ends this attachment, on the first line as on any other.
+        // §17 L3 lists the terminators as "the next blank line, sibling marker,
+        // or a further `+`" and makes no exception for an attachment that has
+        // taken nothing yet. Requiring `end > cur.pos` here swallowed the
+        // second marker as CONTENT of the first, so `- a` / `+` / `+` / `b`
+        // rendered a literal `+` in the item where carve-js, carve-php and the
+        // executable spec all attach `b` (carve-rs#704). The first marker
+        // simply attaches an empty block, which adds nothing.
+        //
+        // The sibling-marker guard below keeps its `end > cur.pos` for a
+        // different reason: a list marker on the first attached line is a
+        // sibling ITEM, and ending the attachment there is what makes it one.
+        if trim_ascii(line) == "+" && indent_columns(line) == base_indent {
             break;
         }
         // A list marker at (or below) the base column is a SIBLING item of the
