@@ -77,3 +77,29 @@ fn an_item_whose_only_content_renders_to_nothing_is_empty_not_blank() {
         "an item of nothing published a blank line:\n{html}"
     );
 }
+
+/// The empty paragraph must not be in the TREE either, not merely filtered out
+/// of the HTML (carve-rs#670 was fixed in the renderer; the node stayed).
+///
+/// Spec markup-carve/carve#801 says the item keeps no trace of a collected
+/// definition, and a block node the author never wrote is a trace - a consumer
+/// reading the AST sees an empty paragraph in the item. The three-way shape
+/// comparison in the spec repo showed this engine standing alone on corpus 226
+/// for exactly that reason while its HTML already matched.
+#[test]
+fn the_item_carries_no_empty_paragraph_in_the_tree() {
+    let json = carve::to_json(&carve::parse("- a\n+\n[r]: /u\n\nsee [t][r]\n"));
+    // The item holds ONE block - its own paragraph - and the definition leaves
+    // nothing behind it.
+    let item_blocks = json.matches("\"type\":\"paragraph\"").count();
+    assert!(
+        json.contains("\"type\":\"list_item\""),
+        "expected a list item:\n{json}"
+    );
+    // Two paragraphs in the whole document: the item's `a`, and the `see …`
+    // line. A third would be the empty one.
+    assert_eq!(
+        item_blocks, 2,
+        "expected exactly two paragraphs in the document, got {item_blocks}:\n{json}"
+    );
+}
