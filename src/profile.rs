@@ -64,6 +64,12 @@ pub const CANONICAL_BLOCK_TYPES: &[&str] = &[
     "comment",
     "figure",
     "caption",
+    // Both definition kinds are in the normative Block vocabulary
+    // (markup-carve/carve#771, ruled by markup-carve/carve#826). Without them
+    // here, the string API takes its "outside the vocabulary" branch and
+    // answers allowed for a type the same profile denies on the node path.
+    "abbreviation_def",
+    "link_reference_definition",
 ];
 
 /// Canonical inline node-type vocabulary (snake_case).
