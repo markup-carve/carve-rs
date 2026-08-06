@@ -177,12 +177,42 @@ pub(crate) fn ref_id(key: &str) -> String {
 /// as `render::next_heading_id`, since carve-rs resolves heading ids at render
 /// time rather than storing them in the AST). Citation use sites are collected
 /// along the way so their ids can be reserved lazily on first lookup.
+/// The id the renderer will assign to each heading, in document order.
+///
+/// Runs the same two passes `seed_registry` does - explicit ids first, then
+/// numbering - so the answer cannot differ from the one the HTML render uses.
+/// The AST encoder publishes these as `attrs.id` where the source wrote none
+/// (PART 12 §5: a generated heading id is a resolution result, because dedup
+/// makes it a function of the whole document rather than of the heading).
+pub(crate) fn assigned_heading_ids(doc: &Document, lowercase_heading_ids: bool) -> Vec<String> {
+    let mut seeder = Seeder {
+        registry: DocumentIdRegistry::default(),
+        heading_counts: BTreeMap::new(),
+        citation_index: BTreeMap::new(),
+        lowercase_heading_ids,
+        assigned: Vec::new(),
+        collect_explicit_only: true,
+    };
+    seeder.walk_blocks(&doc.children);
+    for blocks in doc.footnote_defs.values() {
+        seeder.walk_blocks(blocks);
+    }
+    seeder.collect_explicit_only = false;
+    seeder.walk_blocks(&doc.children);
+    for blocks in doc.footnote_defs.values() {
+        seeder.walk_blocks(blocks);
+    }
+
+    seeder.assigned
+}
+
 fn seed_registry(doc: &Document, lowercase_heading_ids: bool) -> DocumentIdRegistry {
     let mut seeder = Seeder {
         registry: DocumentIdRegistry::default(),
         heading_counts: BTreeMap::new(),
         citation_index: BTreeMap::new(),
         lowercase_heading_ids,
+        assigned: Vec::new(),
         collect_explicit_only: true,
     };
     // Pass A: reserve every explicit id across the whole document (body then
@@ -210,6 +240,11 @@ struct Seeder {
     /// Citation key -> index into `registry.pending_citations`.
     citation_index: BTreeMap<String, usize>,
     lowercase_heading_ids: bool,
+    /// The id assigned to each heading, in document order. Written in pass B
+    /// and read by [`assigned_heading_ids`], which is how the AST encoder
+    /// publishes a generated id (PART 12 §5, carve#750) without a second
+    /// implementation of slug + dedup to drift from this one.
+    assigned: Vec<String>,
     /// Pass A only reserves EXPLICIT ids (so the whole explicit-id set is known
     /// before any heading is numbered); heading + citation reservation run in
     /// pass B.
@@ -252,6 +287,7 @@ impl Seeder {
         };
         self.heading_counts.insert(base, count);
         self.registry.reserve(&id);
+        self.assigned.push(id);
     }
 
     fn walk_blocks(&mut self, blocks: &[BlockNode]) {

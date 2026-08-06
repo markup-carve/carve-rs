@@ -35,6 +35,116 @@ pub fn render_carve(doc: &Document) -> Result<String, crate::RenderDepthError> {
     watch.into_result(render_carve_unguarded(doc))
 }
 
+thread_local! {
+    /// Heading ids that a fresh parse would re-derive, so the writer must not
+    /// turn them into source.
+    ///
+    /// PART 12 §5 publishes a heading's slugged id and PART 11 §1 writes the
+    /// DOCUMENT back, so the two have to be told apart: an AUTHORED id carries
+    /// an `#id` slot, a GENERATED one carries none. Dropping every unslotted id
+    /// would be wrong as well - an ingested tree whose heading text was edited
+    /// carries an id the text no longer slugs to, and there the id is the only
+    /// place that information lives. So the test is MINIMAL FORM, the same one
+    /// PART 11 §4 uses for escapes: write it only where dropping it would
+    /// change the document (carve-js#741).
+    static REDUNDANT_IDS: std::cell::RefCell<std::collections::BTreeSet<String>> =
+        const { std::cell::RefCell::new(std::collections::BTreeSet::new()) };
+}
+
+/// The ids a fresh parse would assign, for headings that carry an unslotted id.
+///
+/// Computed with `assigned_heading_ids` - the pass the renderer itself uses -
+/// over a copy with those ids removed, so this cannot answer differently from
+/// the parse it is predicting.
+fn redundant_heading_ids(doc: &Document) -> std::collections::BTreeSet<String> {
+    let mut stripped = doc.clone();
+    let mut had_any = false;
+    strip_generated_ids(&mut stripped.children, &mut had_any);
+    if !had_any {
+        return std::collections::BTreeSet::new();
+    }
+    let fresh = crate::document_ids::assigned_heading_ids(&stripped, false);
+    let mut present = Vec::new();
+    collect_heading_ids(&doc.children, &mut present);
+    present
+        .into_iter()
+        .zip(fresh)
+        .filter_map(|(current, fresh)| match current {
+            Some(id) if id == fresh => Some(id),
+            _ => None,
+        })
+        .collect()
+}
+
+fn strip_generated_ids(blocks: &mut [BlockNode], had_any: &mut bool) {
+    for block in blocks.iter_mut() {
+        if let BlockNode::Heading(h) = block {
+            if let Some(attrs) = h.attrs.as_mut() {
+                let unslotted = attrs.id.is_some()
+                    && !attrs.order.iter().any(|slot| matches!(slot, AttrSlot::Id));
+                if unslotted {
+                    attrs.id = None;
+                    *had_any = true;
+                }
+            }
+        }
+        match block {
+            BlockNode::BlockQuote(b) => strip_generated_ids(&mut b.children, had_any),
+            BlockNode::Div(d) => strip_generated_ids(&mut d.children, had_any),
+            BlockNode::Admonition(a) => strip_generated_ids(&mut a.children, had_any),
+            BlockNode::List(l) => {
+                for item in l.items.iter_mut() {
+                    strip_generated_ids(&mut item.children, had_any);
+                }
+            }
+            BlockNode::Figure(f) => {
+                if let FigureTarget::BlockQuote(b) = &mut f.target {
+                    strip_generated_ids(&mut b.children, had_any);
+                }
+            }
+            BlockNode::DefinitionList(dl) => {
+                for entry in dl.items.iter_mut() {
+                    for definition in entry.definitions.iter_mut() {
+                        strip_generated_ids(&mut definition.children, had_any);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn collect_heading_ids(blocks: &[BlockNode], out: &mut Vec<Option<String>>) {
+    for block in blocks {
+        if let BlockNode::Heading(h) = block {
+            out.push(h.attrs.as_ref().and_then(|a| a.id.clone()));
+        }
+        match block {
+            BlockNode::BlockQuote(b) => collect_heading_ids(&b.children, out),
+            BlockNode::Div(d) => collect_heading_ids(&d.children, out),
+            BlockNode::Admonition(a) => collect_heading_ids(&a.children, out),
+            BlockNode::List(l) => {
+                for item in l.items.iter() {
+                    collect_heading_ids(&item.children, out);
+                }
+            }
+            BlockNode::Figure(f) => {
+                if let FigureTarget::BlockQuote(b) = &f.target {
+                    collect_heading_ids(&b.children, out);
+                }
+            }
+            BlockNode::DefinitionList(dl) => {
+                for entry in dl.items.iter() {
+                    for definition in entry.definitions.iter() {
+                        collect_heading_ids(&definition.children, out);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
 fn render_carve_unguarded(doc: &Document) -> String {
     // One render with the default sentinels. If the document turns out to
     // contain one of them itself, the counts disagree and the whole render is
@@ -65,6 +175,8 @@ fn render_carve_unguarded(doc: &Document) -> String {
 
 /// One full render, with the insertion counters reset for it.
 fn render_carve_once(doc: &Document) -> String {
+    let redundant = redundant_heading_ids(doc);
+    REDUNDANT_IDS.with(|cell| *cell.borrow_mut() = redundant);
     INSERTED.with(|c| c.set([0; 5]));
     SEEN.with(|c| c.set([0; 5]));
     STAGED.with(|c| c.borrow_mut().clear());
@@ -445,10 +557,25 @@ fn render_block(node: &BlockNode, ctx: &mut CarveContext) -> String {
             // written back to. Matches carve-js.
             let rendered = render_inlines(&heading.children, ctx);
             let text = collapse_breaks(trim_non_nbsp(&rendered));
-            with_block_attrs(
-                &heading.attrs,
-                &format!("{} {}", "#".repeat(heading.level as usize), text),
-            )
+            let body = format!("{} {}", "#".repeat(heading.level as usize), text);
+            // A generated id a fresh parse would re-derive is not the author's
+            // source (carve-js#741); one it would not - an edited ingested tree -
+            // is written, because the id lives nowhere else.
+            let attrs = match heading.attrs.as_ref() {
+                Some(attrs) => match attrs.id.as_ref() {
+                    Some(id)
+                        if !attrs.order.iter().any(|slot| matches!(slot, AttrSlot::Id))
+                            && REDUNDANT_IDS.with(|cell| cell.borrow().contains(id)) =>
+                    {
+                        let mut without = attrs.clone();
+                        without.id = None;
+                        Some(without)
+                    }
+                    _ => Some(attrs.clone()),
+                },
+                None => None,
+            };
+            with_block_attrs(&attrs, &body)
         }
         BlockNode::Paragraph(paragraph) => {
             let body = guard_thematic_break_lines(&render_inlines(&paragraph.children, ctx));
