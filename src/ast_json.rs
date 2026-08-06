@@ -218,7 +218,7 @@ fn write_document(out: &mut String, doc: &Document) {
 /// A footnote definition is a map on the runtime document and only becomes a
 /// sibling on the wire, so the two kinds have to be lined up before either is
 /// written.
-enum DocEntry<'a> {
+pub(crate) enum DocEntry<'a> {
     Block(&'a BlockNode),
     FootnoteDef(&'a String, &'a Vec<BlockNode>),
 }
@@ -241,7 +241,7 @@ enum DocEntry<'a> {
 /// occupy, so no other child moves, and the sort is stable, so two definitions
 /// reporting the same offset keep the order they arrived in (which for
 /// footnotes is the label tie-break applied by the caller).
-fn ordered_document_entries<'a>(
+pub(crate) fn ordered_document_entries<'a>(
     children: &'a [BlockNode],
     footnote_defs: &[(&'a String, &'a Vec<BlockNode>)],
 ) -> Vec<DocEntry<'a>> {
@@ -289,7 +289,7 @@ fn collected_definition_offset(entry: &DocEntry<'_>) -> Option<usize> {
     }
 }
 
-fn first_block_pos(children: &[BlockNode]) -> Option<&Pos> {
+pub(crate) fn first_block_pos(children: &[BlockNode]) -> Option<&Pos> {
     children.iter().find_map(block_pos)
 }
 
