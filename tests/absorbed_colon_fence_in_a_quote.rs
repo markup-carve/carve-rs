@@ -138,6 +138,8 @@ fn a_valid_opener_after_the_malformed_one_leaves_nothing_open() {
     // is not redundant with the one above. carve-js 3d95e94 and carve-php
     // 876e312 both fold `tail` into the admonition instead; that divergence is
     // theirs and predates this fix, which does not move this shape.
+    // markup-carve/carve#920 shape A has since ruled the answer below correct
+    // and the two folding engines wrong.
     assert_eq!(
         html("> quote\n> :::note\n> ::: note\ntail\n"),
         "<blockquote>\n  <p>quote\n:::note</p>\n  <aside class=\"admonition note\">\n\n  </aside>\n</blockquote>\n<p>tail</p>"
@@ -149,7 +151,8 @@ fn a_valid_opener_with_no_malformed_one_before_it_is_unchanged() {
     // CONTROL, and the boundary of what this fix touches: with no absorbed
     // fence there is no absorption to carry, so the quoted opener ends the
     // window exactly as it did before. Matches the oracle; carve-js and
-    // carve-php fold `tail` in here too, the same divergence as above.
+    // carve-php fold `tail` in here too, the same divergence as above, and
+    // markup-carve/carve#920 shape A ruled against them.
     assert_eq!(
         html("> quote\n> ::: note\ntail\n"),
         "<blockquote>\n  <p>quote</p>\n  <aside class=\"admonition note\">\n\n  </aside>\n</blockquote>\n<p>tail</p>"
@@ -182,9 +185,10 @@ fn a_blank_line_ends_the_absorption() {
     // open paragraph anywhere in the stack -- is a top-level block (S4, "NO OPEN
     // PARAGRAPH, NO LAZY LINE").
     //
-    // Recorded, not decided here: the oracle folds `tail` into that div. All
-    // three engines agree on the answer below and predate this fix, which does
-    // not move the shape.
+    // Since decided: this is markup-carve/carve#920 shape C, and the ruling is
+    // that S4 is read as written -- the empty div holds no open paragraph, so
+    // the answer below is correct and the oracle's fold is not. All three
+    // engines already agreed here; this fix does not move the shape.
     assert_eq!(
         html("> quote\n> :::note\n>\n> :::\ntail\n"),
         "<blockquote>\n  <p>quote\n:::note</p>\n  <div>\n  </div>\n</blockquote>\n<p>tail</p>"
@@ -208,8 +212,10 @@ fn a_flush_left_fence_still_ends_the_quote() {
     // 0 carries no quote marker, so it is a lazy-continuation candidate, and a
     // fence-shaped line interrupts there under the strict column-0 rule -- the
     // quote ends and the fence opens its own div. carve-js and carve-php agree;
-    // the oracle absorbs it into the quoted paragraph instead. Recorded, and
-    // untouched by this fix.
+    // the oracle absorbs it into the quoted paragraph instead. markup-carve/carve#920
+    // shape B ruled the oracle wrong here: §12's absorption is written about a
+    // paragraph's OWN lines, and this line is not one of the quote's. Untouched
+    // by this fix.
     assert_eq!(
         html("> quote\n> :::note\n> body\n:::\n"),
         "<blockquote><p>quote\n:::note\nbody</p></blockquote>\n<div>\n</div>"
