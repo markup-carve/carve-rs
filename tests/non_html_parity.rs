@@ -1,8 +1,30 @@
-//! Parity oracle for the non-HTML renderers. There is no cross-impl corpus for
-//! non-HTML output, so carve-php's Markdown / PlainText / ANSI output (captured
-//! per case in tests/fixtures/golden/<name>.{md,plain,ansi}) is the reference
-//! these must reproduce byte-for-byte. carve-js's merged renderers match the
-//! same golden, so all three impls agree.
+//! SELF-REGRESSION snapshots for the non-HTML renderers: this engine's own
+//! Markdown / PlainText / ANSI output, captured per case in
+//! tests/fixtures/golden/<name>.{md,plain,ansi}, which it must keep
+//! reproducing byte-for-byte.
+//!
+//! IT DOES NOT CHECK CROSS-ENGINE AGREEMENT, and it used to say it did: the
+//! header called the golden "carve-php's output" and concluded "so all three
+//! impls agree". Nothing here invokes carve-php or carve-js. A committed
+//! snapshot cannot enforce a statement about another engine in either
+//! direction - carve-php could move away from it with nothing failing, and the
+//! file could be regenerated from this engine with nothing checking that
+//! carve-php still produces it. Both happened: carve-php ran a block image
+//! into the following paragraph on the plain and ANSI targets while these
+//! tests stayed green, and the twin copy in carve-js had drifted to a
+//! different case list and different inputs under the same names
+//! (carve-rs#692, carve-js#762).
+//!
+//! THE THREE-WAY PROPERTY LIVES IN `npm run compare:impls` in the spec repo,
+//! which runs markdown, plain and ansi through all three engines over the
+//! whole corpus and reports engine-to-engine diffs per target. That is a gate
+//! that can fail, and it is where a shape has to be COVERED for the property
+//! to mean anything - the block-image case above was invisible to it only
+//! because no corpus document had a block image followed by another block
+//! (fixed in markup-carve/carve#849).
+//!
+//! So: keep adding cases here to pin THIS engine against its own regressions.
+//! To assert that the engines agree, put the shape in the spec corpus.
 
 use std::fs;
 use std::path::{Path, PathBuf};
