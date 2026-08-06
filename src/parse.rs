@@ -1547,7 +1547,25 @@ fn parse_link_def_target(target: &str) -> LinkDef {
         .find(|(_, c)| c.is_whitespace())
         .map_or(target.len(), |(idx, _)| idx);
     let href = target[..i].to_string();
-    let rest = target[i..].trim();
+    // THE TITLE'S PADDING RUN IS SPACES HERE TOO. `reference_definition` reuses
+    // `link_title`, which PART 7 spells `space`: the slot sits after the first
+    // non-whitespace character of the line, where a tab is not syntax
+    // (carve#901, carve-rs#726). This copy was a full Unicode `trim`, so it
+    // admitted a tab in either direction and U+00A0 besides.
+    //
+    // A run holding anything but a space means NO TITLE, not "no definition".
+    // The production tolerates trailing junk after the destination - `[r]: /u x`
+    // is a definition whose `x` is ignored - so the line stays a definition and
+    // only the title is dropped.
+    let after_dest = &target[i..];
+    let run_len = after_dest
+        .find(|c: char| !c.is_whitespace())
+        .unwrap_or(after_dest.len());
+    let rest = if after_dest[..run_len].chars().all(|c| c == ' ') {
+        after_dest[run_len..].trim_end()
+    } else {
+        ""
+    };
     // A title needs the opening AND a distinct closing quote: a lone `"` (or
     // `'`) satisfies both starts_with and ends_with on the same byte, so guard
     // len >= 2 before `rest[1..len-1]` underflows (begin > end panic).
@@ -1694,12 +1712,19 @@ fn split_trailing_attr_block(target: &str) -> (&str, Option<&str>) {
                     let Some(start) = open else {
                         return (target, None);
                     };
-                    if start == 0
-                        || !end[..start]
-                            .chars()
-                            .next_back()
-                            .is_some_and(char::is_whitespace)
-                    {
+                    // THE WHOLE SEPARATOR RUN, not the character adjacent to the
+                    // `{`. PART 7 names "the reference-definition slot before
+                    // its trailing `attributes`" as a padding slot spelled
+                    // `space`, and this test read only `chars().next_back()` -
+                    // so `[a]: /u<TAB><SP>{.c}` put a space next to the brace
+                    // while the run still held a tab, and the block attached
+                    // anyway. A last-character test standing in for a run test
+                    // is the mirror of the first-character test found in
+                    // carve-rs#722 (carve#901, carve-rs#726).
+                    let sep_len = end[..start].len()
+                        - end[..start].trim_end_matches(char::is_whitespace).len();
+                    let sep = &end[start - sep_len..start];
+                    if sep.is_empty() || !sep.chars().all(|c| c == ' ') {
                         return (target, None);
                     }
                     return (end[..start].trim_end(), Some(&end[start..]));
@@ -11067,8 +11092,28 @@ fn read_link_target(
     if href.is_empty() {
         return None;
     }
-    // Skip whitespace
-    while i < bytes.len() && (bytes[i] == b' ' || bytes[i] == b'\t') {
+    // THE TITLE'S PADDING RUN IS SPACES. `link_title` is spelled `space` in the
+    // grammar, and `image_title = link_title`, so this one run serves both
+    // callers. The slot is PADDING rather than a marker separator - a link is
+    // already a link once its destination has been read - but PART 7's MARKER
+    // SEPARATORS AND PADDING SLOTS decides the terminal by POSITION, and an
+    // inline destination is about as far from a leading indentation run as a
+    // slot gets. The executable grammar spells it `destTitle = titleSp+ (quoted
+    // | squoted)` with `titleSp = " "` (carve#901, carve-rs#726).
+    //
+    // The run is tested rather than its first character: a check on the first
+    // character rejects `[t](/u<TAB>"T")` and passes `[t](/u<SP><TAB>"T")`, and
+    // the rule is about the run.
+    //
+    // A run holding a tab therefore leaves `i` short of the `)` this production
+    // requires below, and the whole construct falls back to literal text -
+    // which is already what a U+00A0 in the same slot does, since the
+    // destination scan rejects a non-ASCII space outright.
+    //
+    // CARDINALITY IS UNCHANGED. `link_title` spells the slot as exactly one
+    // character while every engine reads a run, and `resources/carve-core.ohm`
+    // keeps `titleSp+` deliberately for that reason.
+    while i < bytes.len() && bytes[i] == b' ' {
         i += 1;
     }
     let mut title: Option<String> = None;
