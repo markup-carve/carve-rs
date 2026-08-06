@@ -35,6 +35,7 @@ mod render_plain;
 mod render_text;
 mod stamp;
 mod unicode_nfc;
+mod wire_fields;
 
 /// Private-use sentinel for a parser/renderer-GENERATED non-breaking space
 /// (an escaped space `\ ` or line-block leading indent). It is distinct from a

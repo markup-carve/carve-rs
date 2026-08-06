@@ -45,8 +45,92 @@ pub fn to_json(doc: &Document) -> String {
     out
 }
 
+/// A property this engine READS that the schema does not name.
+///
+/// PART 12 §11's one carve-out. `label` is the spec spelling for a footnote
+/// definition's label, and `id` is what carve-js and carve-php published before
+/// §7 settled it; trees written then are stored, and a decoder that maps the
+/// old spelling onto the named field understands them exactly. §11 refuses what
+/// an ingest CANNOT understand, so refusing these would not protect a caller
+/// from a half-read tree.
+///
+/// One entry, not an escape hatch: the alias is honored only on the type that
+/// carried it.
+const LEGACY_ALIASES: &[(&str, &[&str])] = &[("footnote", &["id"])];
+
+fn named_fields(
+    table: &'static [(&'static str, &'static [&'static str])],
+    key: &str,
+) -> Option<&'static [&'static str]> {
+    table
+        .iter()
+        .find(|(name, _)| *name == key)
+        .map(|(_, fields)| *fields)
+}
+
+/// PART 12 §11: refuse a property the schema does not name.
+///
+/// This engine's codec reads field by field, so an unknown property was simply
+/// not carried - conformant on OUTPUT, and silent on INPUT. The clause rules
+/// that out for the reason §9(b) gives about depth: a caller told the tree was
+/// accepted learns nothing about what went missing (carve-rs#691).
+fn refuse_unknown_fields(node: &Json, path: &str) -> Result<(), AstJsonError> {
+    match node {
+        Json::Array(items) => {
+            for (index, item) in items.iter().enumerate() {
+                refuse_unknown_fields(item, &format!("{path}[{index}]"))?;
+            }
+        }
+        Json::Object(obj) => {
+            // A node kind the schema does not name at all is NOT this check's
+            // business: the decoder turns an unusable kind away on its own
+            // terms, and naming a field on a type nobody knows would send the
+            // caller after the wrong thing.
+            if let Some(Json::String(ty)) = obj.get("type") {
+                if let Some(known) = named_fields(crate::wire_fields::WIRE_FIELDS, ty) {
+                    let legacy = named_fields(LEGACY_ALIASES, ty).unwrap_or(&[]);
+                    for key in obj.keys() {
+                        if !known.contains(&key.as_str()) && !legacy.contains(&key.as_str()) {
+                            return Err(AstJsonError::new(format!(
+                                "{ty} at {path} carries {key:?}, which the schema does not name (PART 12 §11)"
+                            )));
+                        }
+                    }
+                    // The objects that hang off a node without a `type` of
+                    // their own. They are closed in the schema too, and every
+                    // node kind can carry them - which makes them the easiest
+                    // place to slip a key past a type-keyed check.
+                    for (helper, allowed) in crate::wire_fields::WIRE_HELPER_FIELDS {
+                        let Some(Json::Object(value)) = obj.get(*helper) else {
+                            continue;
+                        };
+                        for key in value.keys() {
+                            if !allowed.contains(&key.as_str()) {
+                                return Err(AstJsonError::new(format!(
+                                    "{helper} at {path}.{helper} carries {key:?}, which the schema does not name (PART 12 §11)"
+                                )));
+                            }
+                        }
+                    }
+                }
+            }
+            for (key, value) in obj {
+                let child = if path.is_empty() {
+                    key.clone()
+                } else {
+                    format!("{path}.{key}")
+                };
+                refuse_unknown_fields(value, &child)?;
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
 pub fn from_json(input: &str) -> Result<Document, AstJsonError> {
     let json = Parser::new(input).parse()?;
+    refuse_unknown_fields(&json, "")?;
     let root = json.as_object("document root")?;
     let root_type = required_string(root, "document", "type")?;
     if root_type != "document" {
