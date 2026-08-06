@@ -189,6 +189,16 @@ fn parse_with_options_mode(source: &str, options: &Options<'_>, mode: ParseMode)
     if matches!(mode, ParseMode::Html) {
         apply_abbreviations(&mut doc);
         number_crossref_captions(&mut doc);
+        // PART 12 §5 again: a heading's GENERATED id is a resolution result and
+        // is serialized. It is not recomputable from the heading - dedup assigns
+        // the next free suffix in DOCUMENT ORDER, so `Notes-2` needs every
+        // heading before it.
+        //
+        // Assigned HERE rather than in `ast_json::to_json`, because §6 asks that
+        // `from_json(to_json(parse(x))) == parse(x)`: a field added at encode
+        // time comes back on decode and the trees no longer match. carve-js
+        // assigns it in its parse for the same reason (carve#750).
+        stamp_generated_heading_ids(&mut doc, options.lowercase_heading_ids);
         // PART 12 §5: footnote numbering is a resolution result that IS
         // serialized, "because recomputing them requires reimplementing PART 9R".
         // Caption numbers were assigned here and reached the wire; footnote
@@ -12670,6 +12680,64 @@ fn is_id_strippable(c: char) -> bool {
 /// NFC-normalize, then drop the invisible/dangerous controls (see
 /// `is_id_strippable`). The pre-slug transform that makes a generated id
 /// deterministic and Trojan-Source-safe (corpus 117). Parity with carve-js
+/// Give every heading the id the renderer will assign it, where the source
+/// wrote none.
+///
+/// The id takes no `order` slot: `order` is the source-appearance order of the
+/// slots in a `{#id .class key=value}` block, and a slugged id never appeared in
+/// one. `render_carve` reads that back - an id with no slot, that a fresh parse
+/// would re-derive, is not written into the source it produces.
+fn stamp_generated_heading_ids(doc: &mut Document, lowercase: bool) {
+    let ids = crate::document_ids::assigned_heading_ids(doc, lowercase);
+    if ids.is_empty() {
+        return;
+    }
+    let mut next = ids.into_iter();
+    stamp_heading_ids_in(&mut doc.children, &mut next);
+    let keys: Vec<String> = doc.footnote_defs.keys().cloned().collect();
+    for key in keys {
+        if let Some(blocks) = doc.footnote_defs.get_mut(&key) {
+            stamp_heading_ids_in(blocks, &mut next);
+        }
+    }
+}
+
+fn stamp_heading_ids_in(blocks: &mut [BlockNode], next: &mut impl Iterator<Item = String>) {
+    for block in blocks.iter_mut() {
+        match block {
+            BlockNode::Heading(h) => {
+                let Some(id) = next.next() else {
+                    return;
+                };
+                if h.attrs.as_ref().and_then(|a| a.id.as_ref()).is_none() {
+                    h.attrs.get_or_insert_with(Attrs::default).id = Some(id);
+                }
+            }
+            BlockNode::BlockQuote(b) => stamp_heading_ids_in(&mut b.children, next),
+            BlockNode::Div(d) => stamp_heading_ids_in(&mut d.children, next),
+            BlockNode::Admonition(a) => stamp_heading_ids_in(&mut a.children, next),
+            BlockNode::List(l) => {
+                for item in l.items.iter_mut() {
+                    stamp_heading_ids_in(&mut item.children, next);
+                }
+            }
+            BlockNode::Figure(f) => {
+                if let FigureTarget::BlockQuote(b) = &mut f.target {
+                    stamp_heading_ids_in(&mut b.children, next);
+                }
+            }
+            BlockNode::DefinitionList(dl) => {
+                for entry in dl.items.iter_mut() {
+                    for definition in entry.definitions.iter_mut() {
+                        stamp_heading_ids_in(&mut definition.children, next);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
 /// `sanitizeIdSource`.
 fn sanitize_id_source(text: &str) -> String {
     crate::unicode_nfc::nfc(text)

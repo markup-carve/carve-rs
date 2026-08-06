@@ -1001,7 +1001,14 @@ fn render_heading(
     // carve-rs used to put the id first in both cases, which agreed with no
     // other engine.
     let id = next_heading_id(h, state);
-    let authored_id = h.attrs.as_ref().is_some_and(|attrs| attrs.id.is_some());
+    // AUTHORED means the id took a SLOT in an attribute block, not merely that
+    // the node carries one. Since carve#750 the parse stamps a heading's
+    // GENERATED id onto the node, so presence no longer distinguishes them - and
+    // testing for it put the generated id in the authored run, ahead of
+    // `data-source-line`, which section_wrapping.rs pins the other way round.
+    let authored_id = h.attrs.as_ref().is_some_and(|attrs| {
+        attrs.id.is_some() && attrs.order.iter().any(|slot| matches!(slot, AttrSlot::Id))
+    });
     indent(out, level);
     write!(out, "<h{}", h.level).unwrap();
     if authored_id {
