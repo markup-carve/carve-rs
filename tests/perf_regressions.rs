@@ -320,9 +320,20 @@ fn measure_scaling(build: &impl Fn(usize) -> String) -> Scaling {
 
     let mut small_samples = Vec::with_capacity(SCALE_ROUNDS);
     let mut large_samples = Vec::with_capacity(SCALE_ROUNDS);
-    for _ in 0..SCALE_ROUNDS {
-        small_samples.push(time_once(&small));
-        large_samples.push(time_once(&large));
+    for round in 0..SCALE_ROUNDS {
+        // ALTERNATE which size is timed first, which is what the doc comment
+        // above already promises. Measuring small then large every round leaves
+        // exactly the bias it describes: the second sample is always taken
+        // later, so load that ramps during the test lands on `large`
+        // systematically and inflates the ratio in the one direction the
+        // threshold is watching.
+        if round % 2 == 0 {
+            small_samples.push(time_once(&small));
+            large_samples.push(time_once(&large));
+        } else {
+            large_samples.push(time_once(&large));
+            small_samples.push(time_once(&small));
+        }
     }
 
     let median = |mut xs: Vec<f64>| -> f64 {
