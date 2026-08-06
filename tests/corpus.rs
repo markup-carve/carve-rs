@@ -215,6 +215,7 @@ const IMPLEMENTED: &[&str] = &[
     "sibling-markers-that-reach-one-column-are-one-list",
     "the-continuation-marker-at-an-item-s-own-column-and-what-follows-it",
     "a-continuation-marker-after-a-blank-line-in-the-item",
+    "a-continuation-marker-after-a-blank-line-in-a-loose-item",
     "an-attribute-name-admits-no-colon",
     "trailing-whitespace-after-a-block-marker",
     "a-multi-line-raw-block-is-placed-at-its-opening-and-verbatim-after-it",
@@ -780,4 +781,8 @@ corpus_test!(
 corpus_test!(
     c_line_endings_and_a_byte_order_mark,
     "line-endings-and-a-byte-order-mark"
+);
+corpus_test!(
+    c_continuation_marker_after_a_blank_line_in_a_loose_item,
+    "a-continuation-marker-after-a-blank-line-in-a-loose-item"
 );
