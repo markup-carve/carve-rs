@@ -59,6 +59,7 @@ const IMPLEMENTED: &[&str] = &[
     "inline-span",
     "superscript-and-subscript",
     "line-blocks",
+    "line-endings-and-a-byte-order-mark",
     "admonitions",
     "abbreviations",
     "mentions-and-tags",
@@ -775,4 +776,8 @@ corpus_test!(
 corpus_test!(
     c_comment_is_recognized_at_any_column,
     "a-comment-is-recognized-at-any-column"
+);
+corpus_test!(
+    c_line_endings_and_a_byte_order_mark,
+    "line-endings-and-a-byte-order-mark"
 );
