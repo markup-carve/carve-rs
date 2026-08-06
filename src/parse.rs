@@ -7170,8 +7170,9 @@ fn is_delim_row(line: &str) -> bool {
     content = content.strip_prefix('|').unwrap_or(content);
     content = content.strip_suffix('|').unwrap_or(content);
     let cells = split_table_cells(content);
+    // PART 7: cell padding is U+0020 only, so a tab makes the cell content and
+    // the cell stops being a delimiter cell -- which unmakes the whole row.
     !cells.is_empty() && cells.iter().all(|c| is_delim_cell(trim_cell_padding(c)))
-    // PART 7: cell padding is U+0020 only.
 }
 
 /// Per-column alignment from a delimiter row's colons.
