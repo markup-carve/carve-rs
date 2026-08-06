@@ -10,7 +10,12 @@
 //! specifically so numbering could run without assigning it. It ECHOED one: the
 //! codec read `refId` off a payload and wrote it back, so a document read and
 //! re-published here became one the published format rejects (carve-rs#648).
-//! carve-php already refuses such a payload outright.
+//!
+//! THE ANSWER IS NOW REFUSAL, not a silent drop. PART 12 section 11 generalized
+//! this one field to every property the schema does not name, and rules dropping
+//! out for the reason section 9(b) gives about depth: a caller told the tree was
+//! accepted learns nothing about what went missing (carve-rs#691). So the
+//! assertions below say `from_json` FAILS where they said the field vanished.
 //!
 //! THE FIELD ITSELF STAYS on the node. The HTML renderer assigns it while
 //! numbering footnotes and builds the backlinks from it; the last test here is
@@ -24,9 +29,8 @@
 
 const SOURCE: &str = "Text[^a] and[^a].\n\n[^a]: note\n";
 
-/// SOURCE's published tree with `refId` injected on the references, read back
-/// and re-serialized.
-fn round_tripped_with_injected_ref_id() -> String {
+/// SOURCE's published tree with `refId` injected on the references.
+fn tree_with_injected_ref_id() -> String {
     let json = carve::ast_json::to_json(&carve::parse(SOURCE));
     let injected = json.replace(
         "\"type\":\"footnote_ref\"",
@@ -36,10 +40,8 @@ fn round_tripped_with_injected_ref_id() -> String {
         injected.contains("refId"),
         "the fixture failed to inject anything: {injected}"
     );
-    let back =
-        carve::ast_json::from_json(&injected).expect("a payload with an extra field decodes");
 
-    carve::ast_json::to_json(&back)
+    injected
 }
 
 #[test]
@@ -50,35 +52,40 @@ fn a_fresh_parse_produces_none() {
 }
 
 #[test]
-fn an_injected_one_is_not_echoed_back() {
-    let out = round_tripped_with_injected_ref_id();
+fn a_payload_carrying_one_is_refused() {
+    let error = carve::ast_json::from_json(&tree_with_injected_ref_id())
+        .expect_err("a payload carrying refId was accepted");
+
+    // Named, not merely rejected: a caller cannot act on "something was wrong".
+    assert!(error.to_string().contains("refId"), "{error}");
+}
+
+#[test]
+fn a_tree_without_one_still_round_trips() {
+    // The control. The assertion above passes for a decoder that refuses
+    // everything, and this is what such a decoder would break.
+    let json = carve::ast_json::to_json(&carve::parse(SOURCE));
+    let back = carve::ast_json::from_json(&json).expect("this engine's own tree is readable");
+    let out = carve::ast_json::to_json(&back);
+
+    assert!(out.contains("\"footnote_ref\""), "{out}");
+    assert!(out.contains("\"id\":\"a\""), "{out}");
+    assert!(out.contains("\"number\":1"), "{out}");
     assert!(!out.contains("refId"), "{out}");
 }
 
 #[test]
-fn the_rest_of_the_reference_survives() {
-    // The boundary. Dropping the node, or its id or number, would also satisfy
-    // the assertion above.
-    let out = round_tripped_with_injected_ref_id();
-    assert!(out.contains("\"footnote_ref\""), "{out}");
-    assert!(out.contains("\"id\":\"a\""), "{out}");
-    assert!(out.contains("\"number\":1"), "{out}");
-}
-
-#[test]
 fn an_inline_footnote_is_treated_the_same_way() {
-    // Both node types carried the field, so both have to drop it.
+    // Both node types carried the field, so both have to refuse it.
     let json = carve::ast_json::to_json(&carve::parse("a ^[note] b\n"));
     let injected = json.replace(
         "\"type\":\"inline_footnote\"",
         "\"type\":\"inline_footnote\",\"refId\":\"fnref1\"",
     );
     assert!(injected.contains("refId"), "fixture injected nothing");
-    let back = carve::ast_json::from_json(&injected).expect("decodes");
-    let out = carve::ast_json::to_json(&back);
 
-    assert!(out.contains("\"inline_footnote\""), "{out}");
-    assert!(!out.contains("refId"), "{out}");
+    let error = carve::ast_json::from_json(&injected).expect_err("refId was accepted");
+    assert!(error.to_string().contains("refId"), "{error}");
 }
 
 #[test]
