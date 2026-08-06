@@ -1,5 +1,6 @@
 use crate::ast::*;
 use crate::render::MAX_RENDER_DEPTH;
+use std::collections::{HashMap, HashSet};
 
 struct CarveContext {
     block_depth: usize,
@@ -13,6 +14,22 @@ struct CarveContext {
     /// caption marker is a BLOCK line, and a cell's content is not one.
     table_cell_depth: usize,
     escape_mode: EscapeMode,
+    /// Definitions the author wrote on a definition-list DESCRIPTION line,
+    /// keyed by that line, waiting for the description to write them back.
+    ///
+    /// Collecting a definition out of a `dd` empties it, and an empty
+    /// description has no source spelling: a bare `:` line re-parses into the
+    /// term above it, so `to_html(fmt(x)) == to_html(x)` failed (carve#805).
+    /// The description takes its entry OUT of the map, which is also what
+    /// records that it was written.
+    claimed_definitions: HashMap<usize, ClaimedDefinition>,
+}
+
+/// A collected definition, cloned out of the document so the description can
+/// write it without holding a borrow on the tree it is walking.
+enum ClaimedDefinition {
+    Block(Box<BlockNode>),
+    Footnote(String, Vec<BlockNode>),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -220,6 +237,7 @@ fn render_with_escapes(doc: &Document, escape_mode: EscapeMode) -> String {
         colon_fence_depth: 0,
         table_cell_depth: 0,
         escape_mode,
+        claimed_definitions: HashMap::new(),
     };
     let mut parts = Vec::new();
     if !doc.frontmatter.is_empty() {
@@ -237,8 +255,18 @@ fn render_with_escapes(doc: &Document, escape_mode: EscapeMode) -> String {
     // `ordered_document_entries`, reused rather than reimplemented, so the
     // written source and the published tree cannot disagree.
     let footnote_defs = crate::ast_json::footnote_defs_in_source_order(doc);
+    let entries = crate::ast_json::ordered_document_entries(&doc.children, &footnote_defs);
+    // Decided BEFORE anything is written, so the skip does not depend on which
+    // of the two came first in the order above: a line a description claims is
+    // written there and nowhere else.
+    let claimed_lines = claim_definitions(&entries, &lines_of_empty_descriptions(&doc.children));
+    ctx.claimed_definitions = claimed_lines;
+    let claimed_lines: HashSet<usize> = ctx.claimed_definitions.keys().copied().collect();
     let mut rendered = Vec::new();
-    for entry in crate::ast_json::ordered_document_entries(&doc.children, &footnote_defs) {
+    for entry in entries {
+        if collected_definition_line(&entry).is_some_and(|line| claimed_lines.contains(&line)) {
+            continue;
+        }
         let text = match entry {
             crate::ast_json::DocEntry::Block(child) => render_block(child, &mut ctx),
             crate::ast_json::DocEntry::FootnoteDef(label, blocks) => {
@@ -897,6 +925,90 @@ fn roman_marker(mut n: usize) -> String {
     }
 }
 
+/// The source line of a COLLECTED definition, which is the only kind a
+/// description can have written: `link_reference_definition` and `footnote`.
+fn collected_definition_line(entry: &crate::ast_json::DocEntry<'_>) -> Option<usize> {
+    match entry {
+        crate::ast_json::DocEntry::Block(BlockNode::LinkReferenceDefinition(def)) => {
+            def.pos.as_ref().map(|pos| pos.start_line)
+        }
+        crate::ast_json::DocEntry::FootnoteDef(_, blocks) => {
+            crate::ast_json::first_block_pos(blocks).map(|pos| pos.start_line)
+        }
+        crate::ast_json::DocEntry::Block(_) => None,
+    }
+}
+
+/// Lines held by a definition-list description that collection emptied.
+///
+/// A description with content is not a candidate: whatever it holds is what it
+/// writes. Definition lists nest, so this walks the same containers the rest of
+/// the writer does.
+fn lines_of_empty_descriptions(children: &[BlockNode]) -> HashSet<usize> {
+    let mut lines = HashSet::new();
+    collect_empty_description_lines(children, &mut lines);
+    lines
+}
+
+fn collect_empty_description_lines(children: &[BlockNode], out: &mut HashSet<usize>) {
+    for block in children {
+        match block {
+            BlockNode::DefinitionList(dl) => {
+                for item in &dl.items {
+                    for def in &item.definitions {
+                        if def.children.is_empty() {
+                            if let Some(pos) = def.pos.as_ref() {
+                                out.insert(pos.start_line);
+                            }
+                        } else {
+                            collect_empty_description_lines(&def.children, out);
+                        }
+                    }
+                }
+            }
+            BlockNode::BlockQuote(b) => collect_empty_description_lines(&b.children, out),
+            BlockNode::Div(d) => collect_empty_description_lines(&d.children, out),
+            BlockNode::Admonition(a) => collect_empty_description_lines(&a.children, out),
+            BlockNode::List(l) => {
+                for item in &l.items {
+                    collect_empty_description_lines(&item.children, out);
+                }
+            }
+            BlockNode::Figure(f) => {
+                if let FigureTarget::BlockQuote(b) = &f.target {
+                    collect_empty_description_lines(&b.children, out);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn claim_definitions(
+    entries: &[crate::ast_json::DocEntry<'_>],
+    lines: &HashSet<usize>,
+) -> HashMap<usize, ClaimedDefinition> {
+    let mut claimed = HashMap::new();
+    for entry in entries {
+        let Some(line) = collected_definition_line(entry) else {
+            continue;
+        };
+        if !lines.contains(&line) || claimed.contains_key(&line) {
+            continue;
+        }
+        let definition = match entry {
+            crate::ast_json::DocEntry::Block(block) => {
+                ClaimedDefinition::Block(Box::new((*block).clone()))
+            }
+            crate::ast_json::DocEntry::FootnoteDef(label, blocks) => {
+                ClaimedDefinition::Footnote((*label).clone(), (*blocks).clone())
+            }
+        };
+        claimed.insert(line, definition);
+    }
+    claimed
+}
+
 fn render_definition_list(items: &[DefinitionItem], ctx: &mut CarveContext) -> String {
     let mut out = Vec::new();
     for item in items {
@@ -904,7 +1016,24 @@ fn render_definition_list(items: &[DefinitionItem], ctx: &mut CarveContext) -> S
             out.push(format!(":: {}", render_inlines(term, ctx)));
         }
         for def in &item.definitions {
-            let body = trim_non_nbsp(&render_blocks(def, ctx)).to_string();
+            // An emptied description writes back the definition collected out
+            // of it. Taking the entry is what marks it written, so the
+            // document-level pass cannot emit it a second time.
+            let claimed = if def.children.is_empty() {
+                def.pos
+                    .as_ref()
+                    .and_then(|pos| ctx.claimed_definitions.remove(&pos.start_line))
+            } else {
+                None
+            };
+            let rendered = match claimed {
+                Some(ClaimedDefinition::Block(block)) => render_block(&block, ctx),
+                Some(ClaimedDefinition::Footnote(label, blocks)) => {
+                    render_footnote_def_source(&label, &blocks, ctx)
+                }
+                None => render_blocks(def, ctx),
+            };
+            let body = trim_non_nbsp(&rendered).to_string();
             let mut lines = body.split('\n');
             out.push(format!(":  {}", lines.next().unwrap_or_default()));
             for line in lines {
