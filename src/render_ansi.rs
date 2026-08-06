@@ -4,13 +4,34 @@ use crate::render_text::strip_controls;
 
 use crate::render::MAX_RENDER_DEPTH;
 
+thread_local! {
+    /// Mode for the current render, carried the way `render_markdown` carries
+    /// its own: set once per render entry point, read only by the
+    /// smart-punctuation arm, off every signature in between.
+    ///
+    /// This target keeps its OWN cell rather than sharing the Markdown one. No
+    /// entry point restores the previous value, so a shared cell would let a
+    /// nested render of another target leave its mode behind in this one.
+    static SMART_TYPOGRAPHY: std::cell::Cell<crate::extension::SmartTypographyMode> =
+        const { std::cell::Cell::new(crate::extension::SmartTypographyMode::Glyph) };
+}
+
+fn smart_punctuation_text(node: &crate::ast::SmartPunctuation) -> &str {
+    if SMART_TYPOGRAPHY.with(std::cell::Cell::get) == crate::extension::SmartTypographyMode::Source
+    {
+        return &node.value;
+    }
+
+    smart_punctuation_glyph(node)
+}
+
 fn trim_block_output(s: &str) -> &str {
     s.trim_matches(|c| c == '\n' || c == ' ')
 }
 
-/// Render a document to ANSI-styled text. See `render_markdown_with_options`
-/// for why the options-taking wrapper exists; the profile transform runs
-/// upstream.
+/// Render a document to ANSI-styled text, honouring
+/// `Options::smart_typography`. See `render_markdown_with_options` for why the
+/// options-taking wrapper exists; the profile transform runs upstream.
 /// Render a tree that did NOT come from the parser, refusing at the ceiling.
 ///
 /// `Err` when the tree nests deeper than [`crate::MAX_RENDER_DEPTH`], naming the
@@ -19,10 +40,14 @@ fn trim_block_output(s: &str) -> &str {
 /// through the API or read by `from_json`, which is the caller who can act on it.
 pub fn render_ansi_with_options(
     doc: &Document,
-    _options: &Options<'_>,
+    options: &Options<'_>,
 ) -> Result<String, crate::RenderDepthError> {
     let watch = crate::render_depth::RenderDepthWatch::new();
-    watch.into_result(render_ansi_inner(doc, _options.lowercase_heading_ids))
+    watch.into_result(render_ansi_inner(
+        doc,
+        options.smart_typography,
+        options.lowercase_heading_ids,
+    ))
 }
 
 const RESET: &str = "\x1b[0m";
@@ -54,11 +79,17 @@ pub fn render_ansi(doc: &Document) -> Result<String, crate::RenderDepthError> {
     let watch = crate::render_depth::RenderDepthWatch::new();
     watch.into_result(render_ansi_inner(
         doc,
+        crate::extension::SmartTypographyMode::Glyph,
         Options::default().lowercase_heading_ids,
     ))
 }
 
-fn render_ansi_inner(doc: &Document, lowercase_heading_ids: bool) -> String {
+fn render_ansi_inner(
+    doc: &Document,
+    smart_typography: crate::extension::SmartTypographyMode,
+    lowercase_heading_ids: bool,
+) -> String {
+    SMART_TYPOGRAPHY.with(|cell| cell.set(smart_typography));
     let _abbr_guard = crate::abbr_budget::AbbrBudgetGuard::new(doc.source_len);
     let mut ctx = AnsiContext {
         list_depth: 0,
@@ -532,7 +563,7 @@ fn render_inline(node: &InlineNode, ctx: &mut AnsiContext, depth: usize) -> Stri
     match node {
         InlineNode::Text(text) => strip_controls(&text.value),
         InlineNode::EscapedText(text) => strip_controls(&text.value),
-        InlineNode::SmartPunctuation(s) => strip_controls(smart_punctuation_glyph(s)),
+        InlineNode::SmartPunctuation(s) => strip_controls(smart_punctuation_text(s)),
         InlineNode::Emphasis(emphasis) => match emphasis.kind {
             EmphasisKind::Italic => {
                 style(&render_inlines(&emphasis.children, ctx, depth + 1), ITALIC)

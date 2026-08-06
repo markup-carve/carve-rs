@@ -18,18 +18,37 @@ thread_local! {
         const { std::cell::RefCell::new(std::collections::BTreeSet::new()) };
     static CROSSREF_INDEX: std::cell::RefCell<crate::parse::CrossrefIndex> =
         std::cell::RefCell::new(crate::parse::CrossrefIndex::default());
+    /// Mode for the current render, carried the way `render_markdown` carries
+    /// its own: set once per render entry point, read only by the
+    /// smart-punctuation arm, off every signature in between.
+    ///
+    /// This target keeps its OWN cell rather than sharing the Markdown one. No
+    /// entry point restores the previous value, so a shared cell would let a
+    /// nested render of another target leave its mode behind in this one.
+    static SMART_TYPOGRAPHY: std::cell::Cell<crate::extension::SmartTypographyMode> =
+        const { std::cell::Cell::new(crate::extension::SmartTypographyMode::Glyph) };
 }
 
 fn footnote_is_defined(id: &str) -> bool {
     DEFINED_FOOTNOTES.with(|set| set.borrow().contains(id))
 }
 
+fn smart_punctuation_text(node: &crate::ast::SmartPunctuation) -> &str {
+    if SMART_TYPOGRAPHY.with(std::cell::Cell::get) == crate::extension::SmartTypographyMode::Source
+    {
+        return &node.value;
+    }
+
+    smart_punctuation_glyph(node)
+}
+
 fn trim_block_output(s: &str) -> &str {
     s.trim_matches(|c| c == '\n' || c == ' ')
 }
 
-/// Render a document to plain text. See `render_markdown_with_options` for why
-/// the options-taking wrapper exists; the profile transform runs upstream.
+/// Render a document to plain text, honouring `Options::smart_typography`. See
+/// `render_markdown_with_options` for why the options-taking wrapper exists;
+/// the profile transform runs upstream.
 /// Render a tree that did NOT come from the parser, refusing at the ceiling.
 ///
 /// `Err` when the tree nests deeper than [`crate::MAX_RENDER_DEPTH`], naming the
@@ -41,7 +60,11 @@ pub fn render_plain_text_with_options(
     options: &Options<'_>,
 ) -> Result<String, crate::RenderDepthError> {
     let watch = crate::render_depth::RenderDepthWatch::new();
-    watch.into_result(render_plain_text_inner(doc, options.lowercase_heading_ids))
+    watch.into_result(render_plain_text_inner(
+        doc,
+        options.smart_typography,
+        options.lowercase_heading_ids,
+    ))
 }
 
 /// Render a tree that did NOT come from the parser, refusing at the ceiling.
@@ -54,11 +77,17 @@ pub fn render_plain_text(doc: &Document) -> Result<String, crate::RenderDepthErr
     let watch = crate::render_depth::RenderDepthWatch::new();
     watch.into_result(render_plain_text_inner(
         doc,
+        crate::extension::SmartTypographyMode::Glyph,
         Options::default().lowercase_heading_ids,
     ))
 }
 
-fn render_plain_text_inner(doc: &Document, lowercase_heading_ids: bool) -> String {
+fn render_plain_text_inner(
+    doc: &Document,
+    smart_typography: crate::extension::SmartTypographyMode,
+    lowercase_heading_ids: bool,
+) -> String {
+    SMART_TYPOGRAPHY.with(|cell| cell.set(smart_typography));
     DEFINED_FOOTNOTES.with(|set| {
         *set.borrow_mut() = doc.footnote_defs.keys().cloned().collect();
     });
@@ -305,7 +334,7 @@ fn render_inline(node: &InlineNode, depth: usize) -> String {
     match node {
         InlineNode::Text(text) => strip_controls(&text.value),
         InlineNode::EscapedText(text) => strip_controls(&text.value),
-        InlineNode::SmartPunctuation(s) => strip_controls(smart_punctuation_glyph(s)),
+        InlineNode::SmartPunctuation(s) => strip_controls(smart_punctuation_text(s)),
         InlineNode::Emphasis(emphasis) => match emphasis.kind {
             EmphasisKind::Strike => render_inlines_stateful(&emphasis.children, depth + 1),
             _ => render_inlines_stateful(&emphasis.children, depth + 1),
