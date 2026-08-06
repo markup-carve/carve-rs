@@ -4357,8 +4357,25 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             cur.consume();
             pending_blank = false;
             if let Some(block) = parse_continuation_block(cur, options, base_indent) {
+                // An EMPTY paragraph is not content and must not become one of
+                // the item's blocks. It arises when the attached block's whole
+                // content was a collected definition: the prepass blanks that
+                // line, so what parses is a paragraph with no children.
+                //
+                // Filtering it in the RENDERER (carve-rs#670) fixed the HTML and
+                // left the tree carrying the node - which is the trace spec
+                // markup-carve/carve#801 says a collected definition must not
+                // leave, and the three-way shape comparison shows this engine
+                // standing alone on corpus 226 because of it. carve-js and
+                // carve-php build no node at all.
+                let is_empty_paragraph = matches!(
+                    &block,
+                    BlockNode::Paragraph(p) if p.children.is_empty()
+                );
                 if let Some(last) = items.last_mut() {
-                    last.children.push(block);
+                    if !is_empty_paragraph {
+                        last.children.push(block);
+                    }
                 }
             }
             continue;
