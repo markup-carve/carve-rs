@@ -145,6 +145,9 @@ enum ParseMode {
 }
 
 fn parse_with_options_mode(source: &str, options: &Options<'_>, mode: ParseMode) -> Document {
+    // Kept for the offset table below: normalization rewrites the text the
+    // parser sees, and PART 12 §4 positions index the ORIGINAL file.
+    let original = source;
     // Normalize input up front (matching carve-js / carve-php), only allocating
     // when needed:
     //  - strip a single leading UTF-8 BOM (U+FEFF) so `﻿# T` is a heading;
@@ -189,7 +192,16 @@ fn parse_with_options_mode(source: &str, options: &Options<'_>, mode: ParseMode)
     if options.positions {
         // Offsets need the original text, which the parser only ever sees as
         // already-stripped lines, so they are derived here in one pass.
-        let line_starts = line_start_offsets(source);
+        // BUILT FROM THE ORIGINAL TEXT, not the normalized copy. Normalization
+        // strips a leading BOM and collapses CRLF/CR to LF, so a table built
+        // from the result is short by one codepoint per removed character and
+        // every offset in the document lands before the text it names -
+        // `<BOM># T` reported the space where the node said `T` (carve#876).
+        //
+        // Line NUMBERS are unaffected: the normalization preserves the line
+        // count, so entry N still describes line N. Only where each line starts
+        // in the file changes, which is exactly what this table holds.
+        let line_starts = original_line_start_offsets(original);
         fill_offsets(&mut children, &line_starts);
         for blocks in footnote_defs.values_mut() {
             fill_offsets(blocks, &line_starts);
@@ -2368,6 +2380,37 @@ fn inline_pos_mut(node: &mut InlineNode) -> Option<&mut Pos> {
 }
 
 /// Codepoint offset of the start of each line.
+/// Line-start offsets in the ORIGINAL text, in codepoints.
+///
+/// Splits on every `newline` the grammar admits - '\n', '\r\n' and a lone
+/// '\r' - so the entry count matches the normalized line count, and skips a
+/// leading BOM so line 0 starts at the first real character rather than at the
+/// mark (carve#876).
+fn original_line_start_offsets(source: &str) -> Vec<usize> {
+    let mut chars = source.chars().peekable();
+    let mut starts = Vec::new();
+    let mut count = 0usize;
+    if chars.peek() == Some(&'\u{feff}') {
+        chars.next();
+        count += 1;
+    }
+    starts.push(count);
+    while let Some(ch) = chars.next() {
+        count += 1;
+        if ch == '\r' {
+            if chars.peek() == Some(&'\n') {
+                chars.next();
+                count += 1;
+            }
+            starts.push(count);
+        } else if ch == '\n' {
+            starts.push(count);
+        }
+    }
+
+    starts
+}
+
 fn line_start_offsets(source: &str) -> Vec<usize> {
     let mut starts = vec![0usize];
     let mut count = 0usize;
