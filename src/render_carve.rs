@@ -1,5 +1,26 @@
 use crate::ast::*;
+use crate::ast_json::block_pos;
 use crate::render::MAX_RENDER_DEPTH;
+use std::collections::{HashMap, HashSet};
+
+/// A definition the author wrote ON a definition list's description line.
+///
+/// Collecting it empties the `dd` (spec markup-carve/carve#801), and an empty
+/// description has no source spelling - the production requires content after
+/// the marker - so the writer emitted a bare `:` line, which re-parses as a
+/// continuation of the term above it. That is `to_html(fmt(x)) == to_html(x)`
+/// failing, PART 11 section 1 (markup-carve/carve#805).
+///
+/// Nothing new is needed in the language. The description keeps the span of its
+/// own marker line and the hoisted definition keeps the span it was written at
+/// (PART 12 section 4); the two name the SAME line, so the description writes
+/// the definition back on it and the document-level pass skips what a
+/// description already claimed.
+#[derive(Debug, Clone)]
+enum DefinitionAtLine {
+    Link(Box<LinkReferenceDefinition>),
+    Footnote(String, Vec<BlockNode>),
+}
 
 struct CarveContext {
     block_depth: usize,
@@ -13,6 +34,16 @@ struct CarveContext {
     /// caption marker is a BLOCK line, and a cell's content is not one.
     table_cell_depth: usize,
     escape_mode: EscapeMode,
+    /// Definitions written on a description line, keyed by that line.
+    definitions_by_line: HashMap<usize, DefinitionAtLine>,
+    /// The lines a description has already written back.
+    ///
+    /// PER PASS, because `render_carve_once` renders the document up to three
+    /// times and picks between the forms (PART 11 section 4). A set that
+    /// survived one pass would tell the next that every definition is already
+    /// placed - the description emits a bare `:` again and the document-level
+    /// arm emits nothing, deleting the definition outright.
+    written_in_place: HashSet<usize>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -211,6 +242,94 @@ fn render_carve_once(doc: &Document) -> String {
     conservative
 }
 
+/// The lines every EMPTIED description sits on, anywhere in the tree.
+///
+/// Empty is the only case that matters: a description holding content writes
+/// that content and needs nothing from here. Collecting the set first keeps the
+/// map below empty - and its clones unmade - for every document that has no
+/// such description, which is all but two of the 638 corpus documents.
+fn emptied_description_lines(blocks: &[BlockNode], into: &mut HashSet<usize>) {
+    for block in blocks {
+        match block {
+            BlockNode::DefinitionList(list) => {
+                for item in &list.items {
+                    for def in &item.definitions {
+                        if def.children.is_empty() {
+                            if let Some(pos) = &def.pos {
+                                into.insert(pos.start_line);
+                            }
+                        } else {
+                            emptied_description_lines(&def.children, into);
+                        }
+                    }
+                }
+            }
+            BlockNode::BlockQuote(quote) => emptied_description_lines(&quote.children, into),
+            BlockNode::Admonition(admonition) => {
+                emptied_description_lines(&admonition.children, into);
+            }
+            BlockNode::Div(div) => emptied_description_lines(&div.children, into),
+            // The two other walks over this tree (`normalize_escapes_block` and
+            // `redundant_heading_ids`) both descend into a figure's block-quote
+            // target, so this one does too. No input reaches it today - a `dd`
+            // inside a block quote is not emptied here, because the definition
+            // in it is not collected - but the asymmetry would be a trap the
+            // moment that changes.
+            BlockNode::Figure(figure) => {
+                if let FigureTarget::BlockQuote(quote) = &figure.target {
+                    emptied_description_lines(&quote.children, into);
+                }
+            }
+            BlockNode::List(list) => {
+                for item in &list.items {
+                    emptied_description_lines(&item.children, into);
+                }
+            }
+            BlockNode::Extension(extension) => {
+                emptied_description_lines(&extension.children, into);
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Hoisted definitions that sit on one of those lines, keyed by the line.
+fn definitions_by_description_line(doc: &Document) -> HashMap<usize, DefinitionAtLine> {
+    let mut lines = HashSet::new();
+    emptied_description_lines(&doc.children, &mut lines);
+    let mut out = HashMap::new();
+    if lines.is_empty() {
+        return out;
+    }
+    for child in &doc.children {
+        if let BlockNode::LinkReferenceDefinition(def) = child {
+            if let Some(pos) = &def.pos {
+                if lines.contains(&pos.start_line) {
+                    // First writer wins for a line, which cannot normally
+                    // collide: two definitions on one line is not a shape the
+                    // parser produces.
+                    out.entry(pos.start_line)
+                        .or_insert_with(|| DefinitionAtLine::Link(Box::new(def.clone())));
+                }
+            }
+        }
+    }
+    // A footnote definition is not in `children` - it hangs off the document in
+    // its own map - so its line is the line its body starts on, which is the
+    // definition line by production. That is the line
+    // `footnote_defs_in_source_order` orders by, too.
+    for (label, blocks) in &doc.footnote_defs {
+        let Some(line) = blocks.first().and_then(block_pos).map(|pos| pos.start_line) else {
+            continue;
+        };
+        if lines.contains(&line) {
+            out.entry(line)
+                .or_insert_with(|| DefinitionAtLine::Footnote(label.clone(), blocks.clone()));
+        }
+    }
+    out
+}
+
 fn render_with_escapes(doc: &Document, escape_mode: EscapeMode) -> String {
     let mut ctx = CarveContext {
         block_depth: 0,
@@ -220,6 +339,8 @@ fn render_with_escapes(doc: &Document, escape_mode: EscapeMode) -> String {
         colon_fence_depth: 0,
         table_cell_depth: 0,
         escape_mode,
+        definitions_by_line: definitions_by_description_line(doc),
+        written_in_place: HashSet::new(),
     };
     let mut parts = Vec::new();
     if !doc.frontmatter.is_empty() {
@@ -242,7 +363,17 @@ fn render_with_escapes(doc: &Document, escape_mode: EscapeMode) -> String {
         let text = match entry {
             crate::ast_json::DocEntry::Block(child) => render_block(child, &mut ctx),
             crate::ast_json::DocEntry::FootnoteDef(label, blocks) => {
-                render_footnote_def_source(label, blocks, &mut ctx)
+                // Unless a definition list already wrote it where the author put
+                // it (markup-carve/carve#805).
+                if blocks
+                    .first()
+                    .and_then(block_pos)
+                    .is_some_and(|pos| ctx.written_in_place.contains(&pos.start_line))
+                {
+                    String::new()
+                } else {
+                    render_footnote_def_source(label, blocks, &mut ctx)
+                }
             }
         };
         if !text.is_empty() {
@@ -550,6 +681,16 @@ fn render_item_blocks(blocks: &[BlockNode], tight: bool, ctx: &mut CarveContext)
 fn render_block(node: &BlockNode, ctx: &mut CarveContext) -> String {
     match node {
         BlockNode::LinkReferenceDefinition(def) => {
+            // Unless a definition list already wrote it on its own description
+            // line, where the author put it - writing it twice would define the
+            // label twice (markup-carve/carve#805).
+            if def
+                .pos
+                .as_ref()
+                .is_some_and(|pos| ctx.written_in_place.contains(&pos.start_line))
+            {
+                return String::new();
+            }
             // PART 12 §10 gave this a node precisely so the writer can put the
             // line back. Before that there was nowhere to write it from, which is
             // why every resolved reference was INLINED instead (carve-rs#631).
@@ -904,6 +1045,34 @@ fn render_definition_list(items: &[DefinitionItem], ctx: &mut CarveContext) -> S
             out.push(format!(":: {}", render_inlines(term, ctx)));
         }
         for def in &item.definitions {
+            // An EMPTY description whose line carries a hoisted definition is one
+            // the author wrote that definition on: write it back there
+            // (markup-carve/carve#805). Without this the line came out as a bare
+            // `:`, which re-parses into the term above it.
+            if def.children.is_empty() {
+                let line = def.pos.as_ref().map(|pos| pos.start_line);
+                let written = line
+                    .and_then(|line| ctx.definitions_by_line.get(&line).cloned())
+                    .map(|definition| match definition {
+                        DefinitionAtLine::Link(def) => {
+                            render_block(&BlockNode::LinkReferenceDefinition(*def), ctx)
+                        }
+                        DefinitionAtLine::Footnote(label, blocks) => {
+                            render_footnote_def_source(&label, &blocks, ctx)
+                        }
+                    });
+                if let (Some(line), Some(written)) = (line, written) {
+                    ctx.written_in_place.insert(line);
+                    let mut written_lines = written.split('\n');
+                    out.push(format!(":  {}", written_lines.next().unwrap_or_default()));
+                    // A footnote body can be multi-line; its continuation lines
+                    // carry the body's own indent and sit under the description.
+                    for written_line in written_lines {
+                        out.push(format!("   {written_line}"));
+                    }
+                    continue;
+                }
+            }
             let body = trim_non_nbsp(&render_blocks(def, ctx)).to_string();
             let mut lines = body.split('\n');
             out.push(format!(":  {}", lines.next().unwrap_or_default()));
