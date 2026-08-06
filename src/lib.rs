@@ -246,10 +246,14 @@ fn raw_frontmatter(source: &str) -> (Option<String>, &str) {
     let Some(first_nl) = source.find('\n') else {
         return (None, source);
     };
-    let kind = source[3..first_nl].trim();
-    if !kind.is_empty() && !kind.chars().all(|c| c.is_ascii_alphanumeric()) {
+    // The same opener test the parser applies, from the same helper rather than
+    // a second copy of it: a `fmt` that disagrees with the parser about what a
+    // frontmatter block is would rewrite an ordinary line into one. This copy
+    // read `source[3..first_nl].trim()` and admitted a tab in the padding slot
+    // exactly as the parser's did (carve-rs#725).
+    let Some(kind) = parse::frontmatter_format_token(&source[3..first_nl]) else {
         return (None, source);
-    }
+    };
     let rest = &source[first_nl + 1..];
     let (content_len, after) = if rest == "---" {
         (0, rest.len())
