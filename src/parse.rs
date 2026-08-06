@@ -1777,6 +1777,50 @@ fn frontmatter_pos(source: &str, block_end: usize) -> Pos {
     }
 }
 
+/// The format token of a frontmatter opener, given everything after the `---`.
+///
+/// `Some("")` is a bare fence (`---`), which defaults to yaml; `None` means the
+/// line is not a typed opener at all.
+///
+/// THE PADDING RUN IS SPACES. `frontmatter_open`'s slot before the format token
+/// is a PADDING slot - the `---` pair has already decided the block, and the
+/// token only names the metadata dialect - but PART 7's MARKER SEPARATORS AND
+/// PADDING SLOTS decides the terminal by POSITION rather than by role: the slot
+/// sits after the first non-whitespace character of the line, and a tab is
+/// syntax only inside a line's leading indentation run. So `---<TAB>yaml` is
+/// not a typed opener; it is an ordinary line (carve#901, carve#905).
+///
+/// The whole run is checked, not its first character. A check on the first
+/// character rejects `---<TAB>yaml` and passes `---<SP><TAB>yaml`, and the rule
+/// is about the run. This is the shape that survived carve-rs#720 inside
+/// `detect_container_open` and was only found in carve-rs#722.
+///
+/// The terminal is a literal `' '`, not `[' ', '\t']`. Widening it to a set
+/// would re-admit the tab being removed, and narrowing to `' '` drops U+00A0
+/// with it - which the previous `str::trim` admitted, so `---<NBSP>yaml` opened
+/// frontmatter too.
+///
+/// CARDINALITY IS UNCHANGED. The production spells the slot `[space]`, exactly
+/// one, while every engine reads a run; that is a separate question from the
+/// terminal and no ticket asks for it here. `resources/carve-core.ohm` makes
+/// the same call for `titleSp+`.
+///
+/// TRAILING whitespace after the token is the line-ending rule rather than this
+/// slot, so it stays tolerated - matching the spec oracle.
+pub(crate) fn frontmatter_format_token(after_marker: &str) -> Option<&str> {
+    let token_start = after_marker
+        .find(|c: char| !c.is_whitespace())
+        .unwrap_or(after_marker.len());
+    if after_marker[..token_start].chars().any(|c| c != ' ') {
+        return None;
+    }
+    let kind = after_marker[token_start..].trim_end();
+    if !kind.is_empty() && !kind.chars().all(|c| c.is_ascii_alphanumeric()) {
+        return None;
+    }
+    Some(kind)
+}
+
 fn split_frontmatter(source: &str, positions: bool) -> SplitFrontmatter<'_> {
     // Opening fence: `---` optionally followed by a type token (`---yaml`,
     // `---json`, `---toml`, ...; canonical has no space). Closer is a bare `---`.
@@ -1786,10 +1830,9 @@ fn split_frontmatter(source: &str, positions: bool) -> SplitFrontmatter<'_> {
     let Some(first_nl) = source.find('\n') else {
         return (BTreeMap::new(), None, source);
     };
-    let kind = source[3..first_nl].trim();
-    if !kind.is_empty() && !kind.chars().all(|c| c.is_ascii_alphanumeric()) {
+    let Some(kind) = frontmatter_format_token(&source[3..first_nl]) else {
         return (BTreeMap::new(), None, source);
-    }
+    };
     let rest = &source[first_nl + 1..];
     // The closer is a line that is exactly `---`. It may be the FIRST line of
     // `rest` (an empty frontmatter, `---\n---`) or follow a newline.

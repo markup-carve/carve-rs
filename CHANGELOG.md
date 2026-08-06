@@ -9,6 +9,26 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **The frontmatter opener's format slot is a space** (#725). PART 7 decides the
+  terminal by position, not by the slot's role: the slot sits after the `---`,
+  and a tab is syntax only inside a line's leading indentation run. So
+
+  ```
+  ---	yaml
+  a: 1
+  ---
+  x
+  ```
+
+  is no longer a typed opener - the metadata line is prose and the closing `---`
+  is a thematic break, which is what the production says happens instead. The
+  slot was a full Unicode trim rather than a check on any one character, so it
+  admitted a tab in either direction and every Unicode space besides
+  (`---<NBSP>yaml` opened frontmatter). `---yaml`, `--- yaml`, `---  yaml` and a
+  bare `---` are unchanged, and whitespace after the token is still tolerated.
+  The `fmt` path carried its own copy of the test and normalized the tab away
+  while rewriting the block, so it is fixed with the parser.
+
 - **The link-title slot is a space, in every form that shares it** (#726). PART 7
   decides the terminal by position: a tab is syntax only inside a line's leading
   indentation run, and an inline destination is nowhere near one. Four slots
