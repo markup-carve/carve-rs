@@ -9,6 +9,24 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A table cell's padding slots take U+0020 only** (markup-carve/carve#910).
+  PART 7 makes a tab syntax ONLY in a line's leading indentation run, and every
+  table-cell padding slot sits after the row's opening `|`, so all five cell
+  productions - `delimiter_cell`, `header_cell`, `data_cell`, `rowspan_marker`
+  and `colspan_marker` - take a space. A tab in one of those slots is not a
+  rejection: it stops being padding and becomes ordinary cell CONTENT, staying
+  exactly where it was written, so `|<TAB>a |` now renders `<td><TAB>a</td>`
+  rather than `<td>a</td>`. At `delimiter_cell` the effect is structural instead
+  of textual - the cell is no longer a delimiter cell, so the line is not a
+  delimiter row, no header is promoted, no alignment is assigned, and the `---`
+  run becomes content that smart typography renders as an em dash. The two span
+  markers follow: a tab beside `^` or `<` makes the cell ordinary content and
+  the span does not happen. Cardinality is unchanged - `{space}` is a run, so
+  `|=  i |` is still padded. Both ends of every production moved, and so did the
+  continuation row, whose cells are `data_cell`s reached through a second code
+  path. Pinned by the 21 shapes of the spec corpus category
+  `256-table-cell-padding-must-be-a-space`.
+
 - **`smart_typography` now reaches the plain-text and terminal renderers**
   (markup-carve/carve#560). PART 12 names four presentation renderers - HTML,
   Markdown, plain text and ANSI - and says source mode makes all of them emit

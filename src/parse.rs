@@ -7020,6 +7020,18 @@ fn split_row_attrs(content: &str) -> (Option<Attrs>, &str) {
     (None, content)
 }
 
+/// A cell padding slot is a run of U+0020 (spec PART 7). A tab there is not
+/// padding, so it stays as cell content.
+fn trim_cell_padding(s: &str) -> &str {
+    s.trim_matches(' ')
+}
+
+/// A cell padding slot is a run of U+0020 (spec PART 7). A tab there is not
+/// padding, so it stays as cell content.
+fn trim_cell_padding_start(s: &str) -> &str {
+    s.trim_start_matches(' ')
+}
+
 fn parse_table(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     let span_start = cur.pos;
     let mut rows = Vec::new();
@@ -7158,7 +7170,9 @@ fn is_delim_row(line: &str) -> bool {
     content = content.strip_prefix('|').unwrap_or(content);
     content = content.strip_suffix('|').unwrap_or(content);
     let cells = split_table_cells(content);
-    !cells.is_empty() && cells.iter().all(|c| is_delim_cell(c.trim()))
+    // PART 7: cell padding is U+0020 only, so a tab makes the cell content and
+    // the cell stops being a delimiter cell -- which unmakes the whole row.
+    !cells.is_empty() && cells.iter().all(|c| is_delim_cell(trim_cell_padding(c)))
 }
 
 /// Per-column alignment from a delimiter row's colons.
@@ -7169,7 +7183,16 @@ fn parse_delim_aligns(line: &str) -> Vec<Option<TableAlign>> {
     split_table_cells(content)
         .iter()
         .map(|c| {
-            let t = c.trim();
+            // PART 7: cell padding is U+0020 only. UNREACHABLE-BY-CONSTRUCTION
+            // today -- this runs only behind `is_delim_row`, whose own
+            // space-only trim already rejected any row with a tab in a cell's
+            // padding, so no tab can arrive here. It is spelled the same way
+            // anyway rather than left as `.trim()`: one rule spelled two ways in
+            // two functions is how this family drifts (markup-carve/carve#755),
+            // and if the gate above is ever restructured this site is already
+            // right. Reverting it alone is a GREEN mutation, recorded as such
+            // rather than pinned by a test that could not fail.
+            let t = trim_cell_padding(c);
             match (t.starts_with(':'), t.ends_with(':')) {
                 (true, true) => Some(TableAlign::Center),
                 (false, true) => Some(TableAlign::Right),
@@ -7215,13 +7238,13 @@ fn apply_table_continuation(
         line[..bytes].chars().count()
     });
     for (idx, cell) in split_table_cells_ranged(content).into_iter().enumerate() {
-        let text = cell.text.trim();
+        let text = trim_cell_padding(&cell.text); // PART 7: cell padding is U+0020 only.
         if text.is_empty() {
             continue;
         }
         // Trimming moved the start; count what it took so the anchor lands on
         // the first character of the text and not on the padding before it.
-        let lead = cell.text.chars().count() - cell.text.trim_start().chars().count();
+        let lead = cell.text.chars().count() - trim_cell_padding_start(&cell.text).chars().count(); // PART 7: cell padding is U+0020 only.
         let anchor = match (base, content_off) {
             (Some((line_no, stripped)), Some(off)) => {
                 Some((line_no, stripped + off + cell.start + lead))
@@ -7410,7 +7433,13 @@ fn parse_table_cell(
                 span: None,
                 align: None,
                 attrs: Some(attrs),
-                children: parse_cell_inlines(cell, cell[next..].trim(), options, anchor),
+                // PART 7: cell padding is U+0020 only.
+                children: parse_cell_inlines(
+                    cell,
+                    trim_cell_padding(&cell[next..]),
+                    options,
+                    anchor,
+                ),
                 // The caller places the cell: it knows where the row line sits.
                 pos: None,
             };
@@ -7430,7 +7459,7 @@ fn parse_table_cell(
     // `<` as alignment and matching the second as a lone span marker
     // (carve-rs#459).
     let body = if header { &cell[1..] } else { cell };
-    let trimmed = body.trim();
+    let trimmed = trim_cell_padding(body); // PART 7: cell padding is U+0020 only.
     let mut text = trimmed;
     // A whitespace-delimited lone marker is a span cell rather than alignment,
     // which is the one case a glued marker does not win: `|<|` is a colspan in
@@ -7442,7 +7471,7 @@ fn parse_table_cell(
     } else {
         match body.as_bytes().first() {
             Some(&marker @ (b'>' | b'<' | b'~')) => {
-                text = body[1..].trim();
+                text = trim_cell_padding(&body[1..]); // PART 7: cell padding is U+0020 only.
                 Some(match marker {
                     b'>' => TableAlign::Right,
                     b'<' => TableAlign::Left,
