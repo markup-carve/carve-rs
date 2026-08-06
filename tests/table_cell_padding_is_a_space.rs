@@ -223,6 +223,36 @@ fn a_tab_then_a_space_closing_a_delimiter_cell_unmakes_it_too() {
 }
 
 // ---------------------------------------------------------------------------
+// data_cell - the slot AFTER a glued cell-attribute block
+// ---------------------------------------------------------------------------
+
+#[test]
+fn a_tab_after_a_cell_attribute_block_is_content() {
+    // The third site the corpus category does not reach. `data_cell` opens with
+    // `[cell_attributes]`, and a `{...}` block GLUED to the pipe takes its own
+    // early-return branch, with its own padding trim before the content.
+    //
+    // Found by mutation: reverting that branch alone left every other assertion
+    // in this file green while `|{.c}<TAB>x |` silently lost its tab. The
+    // attributes still attach - the narrowing is about the slot after them.
+    assert_eq!(
+        html("|{.c}\tx |{.d} y |\n"),
+        "<table>\n  <tbody>\n    <tr><td class=\"c\">\tx</td><td class=\"d\">y</td></tr>\n  </tbody>\n</table>"
+    );
+}
+
+#[test]
+fn control_a_space_after_a_cell_attribute_block_is_padding() {
+    // CONTROL: the same cell with a space. The padding is consumed and the
+    // attributes attach exactly as before, which is what shows the change is
+    // confined to which character counts as padding.
+    assert_eq!(
+        html("|{.c} x |{.d} y |\n"),
+        "<table>\n  <tbody>\n    <tr><td class=\"c\">x</td><td class=\"d\">y</td></tr>\n  </tbody>\n</table>"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // data_cell - the slot AFTER a per-cell alignment marker
 // ---------------------------------------------------------------------------
 
