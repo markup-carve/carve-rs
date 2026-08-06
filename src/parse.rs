@@ -1372,7 +1372,19 @@ fn without_blockquote_prefixes(line: &str) -> &str {
 ///
 /// The previous line decides it: a `::` term opens an entry and a further
 /// description continues one.
+/// Does the PREVIOUS line open a definition entry, read through its container?
+///
+/// The prefixes come off first, the way they do for the line being tested one
+/// line down. Asking the raw line meant `> :: term` did not read as a term, so
+/// the `:  ` marker below it was never stripped and a definition written there
+/// was neither collected nor hoisted - PART 12 §10 puts it on the DOCUMENT
+/// (markup-carve/carve#840). A div was the one container that worked, because
+/// it adds no per-line prefix for this to hide behind.
 fn opens_definition_entry(previous: &str) -> bool {
+    opens_definition_entry_bare(strip_container_prefixes(previous, false).bare)
+}
+
+fn opens_definition_entry_bare(previous: &str) -> bool {
     let t = previous.trim_start_matches([' ', '\t']);
     let rest = match t.strip_prefix("::") {
         Some(after) if !after.starts_with(':') => after,
