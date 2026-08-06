@@ -3919,6 +3919,18 @@ fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     let span_start = cur.pos;
     let mut inner = LineBuffer::default();
     let mut para_open = false;
+    // PART 9 §12's absorption, tracked for the QUOTED paragraph the way
+    // `parse_paragraph` tracks it for a top-level one: once a line has failed
+    // the opener test, the paragraph absorbs the next fence-shaped line as text
+    // "INSTEAD of being interrupted by it". The quote body collector already
+    // pushed such a line into `inner`, where the nested parse folded it into the
+    // paragraph correctly - but `para_open` was computed from the line's SHAPE
+    // alone, so a bare `:::` set it false and the flush-left line under it could
+    // not fold. That made the quote disagree with its own body about whether a
+    // paragraph was open (carve-rs#727). Same rule as `suppress_colon_interrupt`
+    // in `parse_paragraph` and the item lead-paragraph collector, spelled from
+    // the same two helpers rather than a fourth time.
+    let mut suppress_colon_interrupt = false;
     let mut in_fence: Option<FenceOpen> = None;
     while let Some(line) = cur.peek() {
         if let Some(stripped) = strip_blockquote_prefix(line) {
@@ -4000,11 +4012,25 @@ fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                     }
                     line
                 };
+                // A fence-shaped line the open paragraph has already absorbed is
+                // paragraph text, so it neither opens a block nor interrupts:
+                // §12's absorption decides before the shape tests below do.
+                let absorbed =
+                    suppress_colon_interrupt && is_suppressed_colon_fence_line(innermost);
                 para_open = !is_blank_line(innermost)
-                    && (innermost.starts_with([' ', '\t'])
-                        || detect_container_open(innermost).is_none())
-                    && !trim_ascii_start(innermost).starts_with("%%")
-                    && !interrupts_paragraph_with_rest(innermost, &rest_stripped);
+                    && (absorbed
+                        || ((innermost.starts_with([' ', '\t'])
+                            || detect_container_open(innermost).is_none())
+                            && !trim_ascii_start(innermost).starts_with("%%")
+                            && !interrupts_paragraph_with_rest(innermost, &rest_stripped)));
+                if para_open {
+                    suppress_colon_interrupt |= is_invalid_colon_fence_opener_text(innermost);
+                }
+            }
+            // The absorption belongs to ONE paragraph: whatever closed it -- a
+            // blank line, a real opener, a code fence -- ends the absorption too.
+            if !para_open {
+                suppress_colon_interrupt = false;
             }
             inner.push_at(stripped.to_string(), source_line, stripped_at);
             continue;
