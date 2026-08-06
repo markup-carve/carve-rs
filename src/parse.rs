@@ -3703,10 +3703,13 @@ fn skip_opaque_span_into(inner: &mut LineBuffer, cur: &mut LineCursor<'_>) -> bo
 fn collect_colon_container_body(cur: &mut LineCursor<'_>, opener_len: usize) -> LineBuffer {
     let mut inner = LineBuffer::default();
     let mut stack = vec![opener_len];
-    let mut para_has_glued_colon = false;
     while cur.peek().is_some() {
         let top = *stack.last().unwrap();
-        if exact_colon_fence_len(cur.peek().unwrap()) == Some(top) && !para_has_glued_colon {
+        // A CLOSER OF AN OPEN CONTAINER IS NOT ABSORBABLE. §12's absorption is
+        // about a paragraph swallowing a would-be OPENER; the container this
+        // line closes was opened BEFORE the malformed fence was ever read, so
+        // no absorption can take its closer away (carve-rs#719).
+        if exact_colon_fence_len(cur.peek().unwrap()) == Some(top) {
             if stack.len() == 1 {
                 cur.consume();
                 break;
@@ -3714,11 +3717,9 @@ fn collect_colon_container_body(cur: &mut LineCursor<'_>, opener_len: usize) -> 
             push_current_line(&mut inner, cur);
             cur.consume();
             stack.pop();
-            para_has_glued_colon = false;
             continue;
         }
         if skip_opaque_span_into(&mut inner, cur) {
-            para_has_glued_colon = false;
             continue;
         }
         let line = cur.peek().unwrap();
@@ -3732,7 +3733,6 @@ fn collect_colon_container_body(cur: &mut LineCursor<'_>, opener_len: usize) -> 
                     stack.push(len);
                     push_current_line(&mut inner, cur);
                     cur.consume();
-                    para_has_glued_colon = false;
                     continue;
                 }
             } else if detect_container_open(line).is_some()
@@ -3750,16 +3750,11 @@ fn collect_colon_container_body(cur: &mut LineCursor<'_>, opener_len: usize) -> 
                 continue;
             }
         }
-        // Only the glued-colon state survives a line here: this walk decides
-        // where the container ENDS, and the one thing a line can change about
-        // that is whether a following bare fence still closes (§10 / carve#455).
-        // Whether the line leaves a paragraph open never mattered - the tracking
-        // that used to answer it fed nothing but itself.
-        if is_blank_line(line) {
-            para_has_glued_colon = false;
-        } else {
-            para_has_glued_colon = para_has_glued_colon || is_invalid_colon_fence_opener_text(line);
-        }
+        // No state survives a line here. This walk decides where the container
+        // ENDS, and nothing a body line does can change that: the only line
+        // that ends it is its own closer, and a closer is not absorbable. The
+        // glued-colon tracking that used to sit here suppressed exactly that
+        // closer, which is the defect (carve-rs#719).
         push_current_line(&mut inner, cur);
         cur.consume();
     }
@@ -3785,17 +3780,30 @@ fn find_colon_container_end(lines: &[&str], start: usize, fence_len: usize) -> u
     let mut closer_index: Option<HashMap<u8, Vec<usize>>> = None;
     let mut stack = vec![fence_len];
     let mut idx = start + 1;
-    let mut para_has_glued_colon = false;
     while idx < lines.len() {
         let line = lines[idx];
         let top = *stack.last().unwrap();
-        if exact_colon_fence_len(line) == Some(top) && !para_has_glued_colon {
+        // A CLOSER OF AN OPEN CONTAINER IS NOT ABSORBABLE - the same rule as in
+        // `collect_colon_container_body`, which walks this body for real. The
+        // two must agree about where the container ends, and they answer with
+        // the same test (carve-rs#719).
+        //
+        // NOT INDEPENDENTLY OBSERVABLE today, and changed anyway. This walk is
+        // reached only from `parse_continuation_block`, where the extent it
+        // reports decides where a `+`-attached block ends; leaving the old
+        // absorbing test here is a GREEN mutation against 690 corpus documents
+        // x six targets and 55223 generated `+`/colon documents. It moves
+        // regardless, because the two walks disagreeing about a container's end
+        // is itself the bug shape - carve#515 was exactly that, and the comment
+        // in the fence branch below records it. A test asserting this line
+        // alone would be a check that cannot fail (markup-carve/carve#755), so
+        // the reason lives here instead.
+        if exact_colon_fence_len(line) == Some(top) {
             stack.pop();
             idx += 1;
             if stack.is_empty() {
                 return idx;
             }
-            para_has_glued_colon = false;
             continue;
         }
         if let Some(open) = detect_fence_open(line) {
@@ -3821,7 +3829,6 @@ fn find_colon_container_end(lines: &[&str], start: usize, fence_len: usize) -> u
                         break;
                     }
                 }
-                para_has_glued_colon = false;
                 continue;
             }
         }
@@ -3830,7 +3837,6 @@ fn find_colon_container_end(lines: &[&str], start: usize, fence_len: usize) -> u
                 (idx + 1..lines.len()).find(|&j| is_comment_fence_close(lines[j], open.fence_len))
             {
                 idx = close + 1;
-                para_has_glued_colon = false;
                 continue;
             }
         }
@@ -3842,14 +3848,8 @@ fn find_colon_container_end(lines: &[&str], start: usize, fence_len: usize) -> u
             {
                 stack.push(len);
                 idx += 1;
-                para_has_glued_colon = false;
                 continue;
             }
-        }
-        if is_blank_line(line) {
-            para_has_glued_colon = false;
-        } else {
-            para_has_glued_colon = para_has_glued_colon || is_invalid_colon_fence_opener_text(line);
         }
         idx += 1;
     }

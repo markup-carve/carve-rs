@@ -9,6 +9,21 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A malformed colon fence inside an open container no longer absorbs that
+  container's closer.** PART 9 §12 lets a paragraph absorb a fence-shaped line
+  once a failing opener has made it prose, but the rule is about a would-be
+  OPENER; a CLOSER belongs to the block that opened it, and that block was
+  opened before the malformed line was read. carve-rs absorbed the closer
+  anyway, so nothing closed the block afterwards and the rest of the document
+  went inside it - `::: note` / `:::oops` / `:::` / `tail` put `tail` in the
+  admonition, and a longer document put everything there. The closer of any
+  container on the open stack is now reachable, inner ones included. Absorption
+  is unchanged everywhere it applies: at top level with no container open, and
+  inside a container for a fence-shaped line that is not its closer. Over
+  10000 generated colon-fence documents this moves 216, every one of them onto
+  the spec oracle's answer and none away from it; the spec corpus renders
+  byte-identically across all six targets.
+
 - **A table cell's padding slots take U+0020 only** (markup-carve/carve#910).
   PART 7 makes a tab syntax ONLY in a line's leading indentation run, and every
   table-cell padding slot sits after the row's opening `|`, so all five cell
