@@ -207,6 +207,8 @@ const IMPLEMENTED: &[&str] = &[
     "two-backticks-are-not-a-code-fence-opening-or-closing",
     "two-dashes-are-not-a-thematic-break",
     "a-link-definition-written-before-a-footnote-stays-before-it",
+    "a-zero-width-character-in-a-reference-definition-destination",
+    "a-multi-line-raw-block-is-placed-at-its-opening-and-verbatim-after-it",
     "a-tab-as-the-first-character-of-a-definition-term",
     "a-repeated-definition-which-one-wins",
     "two-abbreviation-definitions",
