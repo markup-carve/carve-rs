@@ -1,4 +1,4 @@
-//! The residual of a straddling tab is synthesized, so it carries no position.
+//! A straddling tab's residual is synthesized, and the anchor moves back past it.
 //!
 //! `slice_columns` re-emits the columns a straddling tab reached past the
 //! boundary as SPACES, which is load-bearing: without them two sibling markers
@@ -11,9 +11,12 @@
 //!
 //!     span 18..19 is outside the 18-codepoint document
 //!
-//! `stripped_col` already refuses to map a rewritten line, "so blocks starting
-//! there carry no position rather than a wrong one". This is the same answer for
-//! the one rewrite the collector performs itself.
+//! The line's real content is still a suffix of the source line, so the mapping
+//! is exact with one subtraction: what the slice consumed, minus what it wrote
+//! in place. Only a position INSIDE the synthetic run has no source, and nothing
+//! starts there - the run is whitespace and the marker follows it. carve-js#771
+//! fixed the same defect the same way, and the two engines now agree on every
+//! text span of this document.
 
 /// `- a` / four spaces `- b` / space-tab `- c`: `b` and `c` reach one column.
 const SIBLINGS: &str = "- a\n    - b\n \t- c\n";
@@ -109,4 +112,42 @@ fn a_space_only_sibling_pair_keeps_its_positions() {
         "expected the usual spans on a space-only document, got {}",
         found.len()
     );
+}
+
+#[test]
+fn the_recovered_spans_name_the_right_characters() {
+    // Stronger than "inside the document": each text span must slice back to
+    // the character the author wrote. An anchor shifted by the synthetic run
+    // can stay in range and still name the wrong text, which is the failure
+    // mode a length check alone cannot see.
+    let chars: Vec<char> = SIBLINGS.chars().collect();
+    let json =
+        carve::to_json_with_options(SIBLINGS, &carve::Options::default().with_positions(true));
+    for (needle, expected) in [
+        ("\"value\":\"a\"", 'a'),
+        ("\"value\":\"b\"", 'b'),
+        ("\"value\":\"c\"", 'c'),
+    ] {
+        let at = json
+            .find(needle)
+            .unwrap_or_else(|| panic!("no {needle} in:\n{json}"));
+        // The text node's own span is the one that follows its value.
+        let after = &json[at..];
+        let s = after
+            .find("\"startOffset\":")
+            .map(|i| &after[i + "\"startOffset\":".len()..])
+            .expect("a startOffset after the value");
+        let start: usize = s
+            .chars()
+            .take_while(char::is_ascii_digit)
+            .collect::<String>()
+            .parse()
+            .expect("numeric");
+        assert_eq!(
+            chars.get(start).copied(),
+            Some(expected),
+            "the span for {expected:?} starts at {start}, which is {:?}",
+            chars.get(start)
+        );
+    }
 }

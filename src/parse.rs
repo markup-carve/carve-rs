@@ -3750,17 +3750,20 @@ fn slice_columns(line: &str, cols: usize, keep_residual: bool) -> String {
     slice_columns_mapped(line, cols, keep_residual).0
 }
 
-/// `slice_columns`, plus whether the result begins with SYNTHESIZED spaces.
+/// `slice_columns`, plus what a caller needs to map its output back to source.
 ///
-/// The residual of a straddling tab is written as spaces that are not in the
-/// source, so a caller that maps output columns back to source columns cannot
-/// treat this line as a suffix of the original: every offset after the
-/// synthesized run would be charged to characters that do not exist, and a span
-/// near the end of the document runs past its end (markup-carve/carve-rs#700).
-/// `stripped_col` already refuses that mapping for a rewritten line, with the
-/// reason spelled out there; this reports the same fact for the one rewrite the
-/// column collector performs itself.
-fn slice_columns_mapped(line: &str, cols: usize, keep_residual: bool) -> (String, bool) {
+/// Returns `(sliced, consumed, synthetic)`: the characters taken off the front,
+/// and the number of SPACES written in their place for a straddling tab's
+/// residual. Those spaces are not in the source, so a caller that treats the
+/// result as a plain suffix charges offsets to characters that do not exist,
+/// and a span near the end runs past the end of the document (carve-rs#700).
+///
+/// The line's real content still IS a suffix, though, so the mapping is exact
+/// with one subtraction: output position `p >= synthetic` sits at source
+/// position `consumed + p - synthetic`. Only a position INSIDE the synthetic
+/// run has no source, and nothing starts there - the run is whitespace and the
+/// marker follows it. carve-js#771 fixed the same defect the same way.
+fn slice_columns_mapped(line: &str, cols: usize, keep_residual: bool) -> (String, usize, usize) {
     let bytes = line.as_bytes();
     let mut col = 0;
     let mut i = 0;
@@ -3777,12 +3780,14 @@ fn slice_columns_mapped(line: &str, cols: usize, keep_residual: bool) -> (String
             _ => break,
         }
     }
+    let consumed = line[..i].chars().count();
     if keep_residual && col > cols {
-        let mut s = " ".repeat(col - cols);
+        let synthetic = col - cols;
+        let mut s = " ".repeat(synthetic);
         s.push_str(&line[i..]);
-        (s, true)
+        (s, consumed, synthetic)
     } else {
-        (line[i..].to_string(), false)
+        (line[i..].to_string(), consumed, 0)
     }
 }
 
@@ -5870,7 +5875,7 @@ fn collect_indented_block_mapped_with(
         if comment_fence.is_none() {
             comment_fence_strip = None;
         }
-        let (sliced, synthesized) = slice_columns_mapped(line, stripped, is_marker);
+        let (sliced, consumed, synthetic) = slice_columns_mapped(line, stripped, is_marker);
         lines.push(sliced);
         if cur.line_map.is_some() {
             line_map.push(cur.source_line(cur.pos));
@@ -5878,16 +5883,21 @@ fn collect_indented_block_mapped_with(
         // The enclosing container may already have stripped something, so the
         // widths accumulate; an unknown parent width keeps this unknown too.
         //
-        // A line whose front was REWRITTEN - the residual of a straddling tab,
-        // re-emitted as spaces - has no such width: the synthesized characters
-        // are not in the source, so charging offsets past them produced spans
-        // outside the document (carve-rs#700). It maps to None, which is what
-        // `stripped_col` already answers for every other rewritten line.
-        col_map.push(if synthesized {
-            None
-        } else {
-            cur.source_col(cur.pos).map(|outer| outer + stripped)
-        });
+        // A straddling tab's residual is re-emitted as SPACES that are not in
+        // the source, so the plain `outer + stripped` charged offsets past them
+        // to characters that do not exist and spans ran off the end of the
+        // document (carve-rs#700). The content after the run is still a suffix,
+        // so the anchor moves back by the synthetic width instead: what the
+        // slice actually consumed, minus what was written in its place.
+        //
+        // Only a position INSIDE the run has no source, and nothing starts
+        // there - it is whitespace and the marker follows it. If the arithmetic
+        // would go negative the anchor is not recoverable, and no position is
+        // better than a wrong one (the rule `stripped_col` states).
+        col_map.push(
+            cur.source_col(cur.pos)
+                .and_then(|outer| (outer + consumed).checked_sub(synthetic)),
+        );
         cur.consume();
     }
     MappedSource {
