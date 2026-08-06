@@ -7263,20 +7263,37 @@ fn detect_container_open(line: &str) -> Option<ContainerOpen> {
             attrs: None,
         });
     }
-    if let Some(label) = parse_bare_label(rest) {
-        return Some(ContainerOpen {
-            fence_len,
-            kind: None,
-            title: None,
-            title_col: None,
-            label: Some(label),
-            attrs: None,
-        });
+    // `div_open = colon_fence, [[space], label]` - the label is either GLUED to
+    // the fence or separated by a space, and a tab is neither. This branch runs
+    // before the separator check below and matches against the TRIMMED rest, so
+    // it saw a tabbed opener with the tab already gone and opened a labelled
+    // div where the grammar makes the line a paragraph. The same rule decided in
+    // two places, which is the shape that hid it (#712).
+    let label_separator_ok = after_fence.starts_with('[') || after_fence.starts_with(' ');
+    if label_separator_ok {
+        if let Some(label) = parse_bare_label(rest) {
+            return Some(ContainerOpen {
+                fence_len,
+                kind: None,
+                title: None,
+                title_col: None,
+                label: Some(label),
+                attrs: None,
+            });
+        }
     }
-    // A type word must be separated from the fence by at least one space or
-    // tab. A typeless label may still be glued to the fence (`:::[x]`), but
-    // `:::note` is ordinary paragraph text.
-    if !after_fence.starts_with([' ', '\t']) {
+    // THE SEPARATOR IS A SPACE, U+0020 and nothing else. PART 7's MARKER
+    // SEPARATORS AND PADDING SLOTS is normative: this slot stands between the
+    // fence run and the token that SELECTS which of the four blocks the line
+    // opens, which makes it a marker separator rather than padding. A tab was
+    // accepted here, so a tabbed opener opened an admonition, a div, a line
+    // block or a local hard-break block where the grammar makes the line a
+    // paragraph (#712, spec carve#886).
+    //
+    // A typeless label may still be glued to the fence (`:::[x]`), and
+    // `:::note` is ordinary paragraph text. The opener's METADATA slots are
+    // the other role and keep the tab - see `after_kind` below.
+    if !after_fence.starts_with(' ') {
         return None;
     }
     // A type word is a grammar identifier: `(letter | '_'), {letter | digit
@@ -7293,10 +7310,14 @@ fn detect_container_open(line: &str) -> Option<ContainerOpen> {
         .unwrap_or(rest.len());
     let kind = rest[..id_end].to_string();
     let after_kind = &rest[id_end..];
-    if !after_kind.is_empty() && !after_kind.starts_with(char::is_whitespace) {
+    // PADDING, not a separator: `whitespace` is a space or a tab and nothing
+    // else. `char::is_whitespace` is every Unicode whitespace character - a
+    // form feed, a vertical tab and every Unicode space among them - so those
+    // padded a title the grammar does not admit them in.
+    if !after_kind.is_empty() && !after_kind.starts_with([' ', '\t']) {
         return None;
     }
-    let mut after = after_kind.trim_start();
+    let mut after = after_kind.trim_start_matches([' ', '\t']);
     let mut title_col = None;
     let title = if after.starts_with('"') {
         // Where the text after the quote sits in the ORIGINAL line. These are
@@ -7413,12 +7434,16 @@ fn detect_line_block_open(line: &str) -> Option<usize> {
     if fence_len < 3 {
         return None;
     }
-    // grammar: `line_block_open = colon_fence, space, "|"` -- a space (or tab)
-    // between the fence and the pipe is REQUIRED, so `:::|` is not a line block.
+    // grammar: `line_block_open = colon_fence, space, "|"` -- a SPACE between
+    // the fence and the pipe is REQUIRED, so `:::|` is not a line block and
+    // neither is a tabbed opener. The production always said `space`; this read
+    // it as "space or tab", which PART 7's MARKER SEPARATORS AND PADDING SLOTS
+    // now rules out explicitly - the pipe is the token that selects this block,
+    // so the slot before it is a marker separator (#712, spec carve#886).
     let after = &trimmed[fence_len..];
-    let trimmed_after = after.trim_start_matches([' ', '\t']);
+    let trimmed_after = after.trim_start_matches(' ');
     if trimmed_after.len() == after.len() {
-        return None; // no whitespace before the pipe
+        return None; // no space before the pipe
     }
     if trimmed_after.trim_end() == "|" {
         Some(fence_len)
@@ -7764,12 +7789,17 @@ fn detect_hardbreaks_block_open(line: &str) -> Option<usize> {
     if fence_len < 3 {
         return None;
     }
-    // `hardbreaks_block_open = colon_fence, space, "\"` -- a space (or tab)
-    // between the fence and the backslash is REQUIRED, so `:::\` is not one.
+    // `hardbreaks_block_open = colon_fence, space, "\"` -- a SPACE between the
+    // fence and the backslash is REQUIRED, so a glued opener is not one and
+    // neither is a tabbed one. The production always said `space`; this read it
+    // as "space or tab", which PART 7's MARKER SEPARATORS AND PADDING SLOTS now
+    // rules out explicitly - the backslash is the token that selects this
+    // block, so the slot before it is a marker separator (#712, spec
+    // carve#886).
     let after = &trimmed[fence_len..];
-    let trimmed_after = after.trim_start_matches([' ', '\t']);
+    let trimmed_after = after.trim_start_matches(' ');
     if trimmed_after.len() == after.len() {
-        return None; // no whitespace before the backslash
+        return None; // no space before the backslash
     }
     if trimmed_after.trim_end() == "\\" {
         Some(fence_len)
