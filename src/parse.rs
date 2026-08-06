@@ -1541,7 +1541,22 @@ fn strip_container_prefixes_keep_indent(mut line: &str) -> String {
     out
 }
 
+// Counts every `strip_blockquote_prefix` call on the current thread.
+//
+// The blockquote prefix is the one operation this parser can be made to
+// repeat superlinearly (markup-carve/carve-rs#731), so the regression guard
+// counts calls rather than reading a clock: a counted curve is independent of
+// machine load, and this repo's own perf tests record that a ratio bound
+// "flaked on nearly every run". Test-only, so a release build carries nothing.
+#[cfg(test)]
+thread_local! {
+    pub(crate) static QUOTE_PREFIX_CALLS: std::cell::Cell<u64> =
+        const { std::cell::Cell::new(0) };
+}
+
 fn strip_blockquote_prefix(line: &str) -> Option<&str> {
+    #[cfg(test)]
+    QUOTE_PREFIX_CALLS.with(|c| c.set(c.get() + 1));
     let rest = line.strip_prefix('>')?;
     if rest.is_empty() {
         return Some(rest);
@@ -3915,10 +3930,147 @@ fn slice_columns_mapped(line: &str, cols: usize, keep_residual: bool) -> (String
     }
 }
 
+/// Whether the quoted body so far leaves a paragraph open.
+///
+/// Deciding this means walking a quoted line down to its INNERMOST content,
+/// which costs one `strip_blockquote_prefix` per quote marker still on the
+/// line -- and every enclosing level of a nested quote repeats that walk over
+/// the same markers, because each level strips one marker and hands the rest
+/// down. Deciding it eagerly, on every quoted line, therefore cost
+/// `depth^3 / 6` strips on a depth ladder: 1,556,994 at depth 200, against
+/// carve-js's 20,100 on the same document (markup-carve/carve-rs#731).
+///
+/// The answer is READ only when a fence opener or an unprefixed line arrives,
+/// which on a ladder is never. So the walk belongs at the read. The predicate
+/// and its inputs are unchanged; only the moment it runs is.
+///
+/// PART 9 §12's absorption is part of the same answer, so it is decided here
+/// rather than sampled around this value: `suppressed` is the absorption state
+/// the line inherits, and the resolved verdict carries both whether the
+/// paragraph is open and whether THIS line opens an absorption. Reading the
+/// flag on every quoted line - which is what `suppress_colon_interrupt` did
+/// when it stood outside - is precisely the eager read this defers
+/// (markup-carve/carve-rs#738 landing under markup-carve/carve-rs#731).
+enum ParaOpen<'a> {
+    /// Closed, decided without consulting any line.
+    Closed,
+    /// Open iff `line`'s innermost quoted content is paragraph text, under the
+    /// absorption state `suppressed` it inherits. `answer` caches the verdict,
+    /// so re-reading the same state walks once.
+    Deferred {
+        line: &'a str,
+        suppressed: bool,
+        answer: Option<Verdict>,
+    },
+}
+
+/// What one resolved quoted line says about the paragraph and the absorption.
+#[derive(Clone, Copy)]
+struct Verdict {
+    /// Whether the line leaves a paragraph open.
+    open: bool,
+    /// Whether the line is a glued colon fence that starts §12's absorption,
+    /// which only an OPEN paragraph can carry (so this implies `open`).
+    opens_absorption: bool,
+}
+
+impl<'a> ParaOpen<'a> {
+    fn from_line(line: &'a str, suppressed: bool) -> Self {
+        ParaOpen::Deferred {
+            line,
+            suppressed,
+            answer: None,
+        }
+    }
+
+    /// Whether this line opens §12's absorption. Resolves, so it is asked only
+    /// where the absorption state can actually change (see `parse_blockquote`).
+    fn opens_absorption(&mut self) -> bool {
+        self.resolve().opens_absorption
+    }
+
+    fn get(&mut self) -> bool {
+        self.resolve().open
+    }
+
+    fn resolve(&mut self) -> Verdict {
+        let ParaOpen::Deferred {
+            line,
+            suppressed,
+            answer,
+        } = self
+        else {
+            return Verdict {
+                open: false,
+                opens_absorption: false,
+            };
+        };
+        if let Some(known) = answer {
+            return *known;
+        }
+        let suppressed = *suppressed;
+        // Look THROUGH any further quote markers before deciding. A lazy line
+        // continues the innermost OPEN PARAGRAPH, however many containers it
+        // failed to match, so what matters is whether the innermost quoted
+        // content leaves a paragraph open - not whether this line opens
+        // another quote.
+        //
+        // Without this, `>> b` stripped to `> b`, which reads as a container
+        // opener, so the paragraph closed and a following bare line could not
+        // fold. That made laziness work at depth 1 and not at depth 2, which
+        // is not a reading of any rule: PART 1 S4's strict wording would close
+        // the quote at depth 1 too, and nothing does that (markup-carve/carve#506).
+        let mut innermost = *line;
+        while let Some(rest) = strip_blockquote_prefix(innermost) {
+            innermost = rest;
+        }
+        // An open paragraph requires plain paragraph text. A line that is
+        // itself a block-opener (heading, thematic break, table row, `:::` div
+        // / line block opener) leaves NO open paragraph -- so a following list
+        // marker has nothing to fold into and must end the quote.
+        // `interrupts_paragraph_with_rest` is the §10 predicate: a line that
+        // would interrupt a paragraph is, by definition, not paragraph
+        // continuation text.
+        //
+        // Only a FLUSH-LEFT `:::` container closes the quoted paragraph; an
+        // INDENTED `::: note` / `:::` (above the quote's content column) is
+        // literal paragraph text, so it keeps the paragraph open and lazy
+        // continuation stays in the quote (strict column-0 rule,
+        // docs/divergence-from-djot.md §11) -- uniform with the opener paths
+        // in parse_block / interrupts_paragraph.
+        //
+        // The rest-of-body slice is empty: the only lookahead
+        // `interrupts_paragraph_with_rest` consults is a fenced-code closer
+        // probe, and this predicate is reached only from the branch where the
+        // line is NOT a fence opener, so the caller never had a slice to give.
+        // It passed a `Vec` built under `if detect_fence_open(stripped)`, which
+        // the enclosing `else if let Some(open) = detect_fence_open(stripped)`
+        // had already decided was `None` - so that `Vec` was always empty. An
+        // assertion in its place held over the whole corpus and test suite.
+        //
+        // A fence-shaped line the open paragraph has already absorbed is
+        // paragraph text, so it neither opens a block nor interrupts: §12's
+        // absorption decides before the shape tests do (carve-rs#727).
+        let absorbed = suppressed && is_suppressed_colon_fence_line(innermost);
+        let open = !is_blank_line(innermost)
+            && (absorbed
+                || ((innermost.starts_with([' ', '\t'])
+                    || detect_container_open(innermost).is_none())
+                    && !trim_ascii_start(innermost).starts_with("%%")
+                    && !interrupts_paragraph_with_rest(innermost, &[])));
+        let verdict = Verdict {
+            open,
+            opens_absorption: open && is_invalid_colon_fence_opener_text(innermost),
+        };
+        *answer = Some(verdict);
+        verdict
+    }
+}
+
 fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     let span_start = cur.pos;
     let mut inner = LineBuffer::default();
-    let mut para_open = false;
+    let mut para_open = ParaOpen::Closed;
     // PART 9 §12's absorption, tracked for the QUOTED paragraph the way
     // `parse_paragraph` tracks it for a top-level one: once a line has failed
     // the opener test, the paragraph absorbs the next fence-shaped line as text
@@ -3930,6 +4082,11 @@ fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     // paragraph was open (carve-rs#727). Same rule as `suppress_colon_interrupt`
     // in `parse_paragraph` and the item lead-paragraph collector, spelled from
     // the same two helpers rather than a fourth time.
+    //
+    // It is a RUNNING state, and only a resolved `para_open` can advance it, so
+    // it is handed to `ParaOpen` and advanced from the resolved verdict rather
+    // than read on every quoted line. Reading it per line is what would put
+    // markup-carve/carve-rs#731's cubic walk back.
     let mut suppress_colon_interrupt = false;
     let mut in_fence: Option<FenceOpen> = None;
     while let Some(line) = cur.peek() {
@@ -3944,12 +4101,20 @@ fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 if is_fence_close(stripped, open) {
                     in_fence = None;
                 }
-                para_open = false;
+                para_open = ParaOpen::Closed;
+                // The absorption belongs to ONE paragraph: whatever closed it
+                // -- a blank line, a real opener, a code fence -- ends the
+                // absorption too. Spelled at each site that closes the
+                // paragraph rather than once after the chain, because after the
+                // chain it would have to READ `para_open`, and reading it on
+                // every quoted line is the walk this defers.
+                suppress_colon_interrupt = false;
             } else if let Some(open) = detect_fence_open(stripped) {
-                if !para_open {
+                if !para_open.get() {
                     // Fence at block start opens (unterminated renders to end).
                     in_fence = Some(open);
-                    para_open = false;
+                    para_open = ParaOpen::Closed;
+                    suppress_colon_interrupt = false;
                 } else {
                     // After an open paragraph a fence interrupts only with a
                     // matching closer ahead (§10); else it is inline verbatim.
@@ -3962,75 +4127,52 @@ fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                         });
                     if has_closer {
                         in_fence = Some(open);
-                        para_open = false;
+                        para_open = ParaOpen::Closed;
+                        suppress_colon_interrupt = false;
                     }
+                    // No closer: the fence is inline verbatim and the paragraph
+                    // (already resolved OPEN by the test above) stays open, so
+                    // the absorption survives - as it did when the reset was
+                    // written `if !para_open`.
                 }
             } else {
-                // An open paragraph requires plain paragraph text. A stripped
-                // line that is itself a block-opener (heading, thematic break,
-                // table row, `:::` div / line block opener) leaves NO open
-                // paragraph -- so a following list marker has nothing to fold
-                // into and must end the quote. Reuse `interrupts_paragraph`
-                // (the §10 predicate): a line that would interrupt a paragraph
-                // is, by definition, not paragraph continuation text.
-                // `interrupts_paragraph` only consults the lookahead for a
-                // FENCED-CODE opener (its closer probe); `:::` container openers
-                // are already excluded by the detect_container_open check below.
-                // Build the remaining-quoted-body slice ONLY for a fence opener,
-                // so an ordinary long quote stays linear instead of O(n^2).
-                let rest_stripped: Vec<&str> = if detect_fence_open(stripped).is_some() {
-                    cur.lines[cur.pos..]
-                        .iter()
-                        .take_while(|l| strip_blockquote_prefix(l).is_some())
-                        .map(|l| strip_blockquote_prefix(l).unwrap_or(l))
-                        .collect()
-                } else {
-                    Vec::new()
-                };
-                // Only a FLUSH-LEFT `:::` container closes the quoted paragraph;
-                // an INDENTED `::: note` / `:::` (above the quote's content
-                // column) is literal paragraph text, so it keeps the paragraph
-                // open and lazy continuation stays in the quote (strict column-0
-                // rule, docs/divergence-from-djot.md §11) -- uniform with the
-                // opener paths in parse_block / interrupts_paragraph.
-                // Look THROUGH any further quote markers before deciding.
-                // A lazy line continues the innermost OPEN PARAGRAPH, however
-                // many containers it failed to match, so what matters is
-                // whether the innermost quoted content leaves a paragraph open
-                // - not whether this line opens another quote.
+                // Whether this line leaves a paragraph open is decided by
+                // `ParaOpen::get`, which walks down to the innermost quoted
+                // content. Record the line rather than the answer: the walk
+                // costs one strip per remaining quote marker, and answering
+                // here answers a question nothing may ask
+                // (markup-carve/carve-rs#731). The absorption state the line
+                // inherits goes WITH it, so §12 is decided by the same walk
+                // instead of forcing one of its own.
+                para_open = ParaOpen::from_line(stripped, suppress_colon_interrupt);
+                // Advancing the absorption flag needs the verdict, and getting
+                // the verdict is the walk. So force it only where the answer
+                // can change the flag. While the flag is OFF, a line carrying
+                // no COLON RUN settles it either way without being read, and
+                // the flag stays off whether the paragraph turns out open or
+                // closed. Both §12 predicates need `:::`:
                 //
-                // Without this, `>> b` stripped to `> b`, which reads as a
-                // container opener, so the paragraph closed and a following
-                // bare line could not fold. That made laziness work at depth 1
-                // and not at depth 2, which is not a reading of any rule: PART
-                // 1 S4's strict wording would close the quote at depth 1 too,
-                // and nothing does that (markup-carve/carve#506).
-                let innermost = {
-                    let mut line = stripped;
-                    while let Some(rest) = strip_blockquote_prefix(line) {
-                        line = rest;
+                // - `is_invalid_colon_fence_opener_text` returns early unless
+                //   the trimmed line opens with `fence_len >= 3` colons;
+                // - `is_suppressed_colon_fence_line` is `exact_colon_fence_len`
+                //   AND `is_colon_fence_opener_shape`, and each of the three
+                //   detectors the latter ORs (`detect_container_open`,
+                //   `detect_line_block_open`, `detect_hardbreaks_block_open`)
+                //   returns `None` on that same `fence_len < 3` test.
+                //
+                // `innermost` is a suffix of `stripped`, so testing `stripped`
+                // is conservative: it can only force a walk that was not
+                // needed, never skip one that was. Ordinary quoted prose - a
+                // `Note:`, a `12:30`, an `https://` - therefore stays on the
+                // deferred path, which is what lets markup-carve/carve-rs#738
+                // ride on the deferral instead of undoing it.
+                if suppress_colon_interrupt || stripped.contains(":::") {
+                    if para_open.get() {
+                        suppress_colon_interrupt |= para_open.opens_absorption();
+                    } else {
+                        suppress_colon_interrupt = false;
                     }
-                    line
-                };
-                // A fence-shaped line the open paragraph has already absorbed is
-                // paragraph text, so it neither opens a block nor interrupts:
-                // §12's absorption decides before the shape tests below do.
-                let absorbed =
-                    suppress_colon_interrupt && is_suppressed_colon_fence_line(innermost);
-                para_open = !is_blank_line(innermost)
-                    && (absorbed
-                        || ((innermost.starts_with([' ', '\t'])
-                            || detect_container_open(innermost).is_none())
-                            && !trim_ascii_start(innermost).starts_with("%%")
-                            && !interrupts_paragraph_with_rest(innermost, &rest_stripped)));
-                if para_open {
-                    suppress_colon_interrupt |= is_invalid_colon_fence_opener_text(innermost);
                 }
-            }
-            // The absorption belongs to ONE paragraph: whatever closed it -- a
-            // blank line, a real opener, a code fence -- ends the absorption too.
-            if !para_open {
-                suppress_colon_interrupt = false;
             }
             inner.push_at(stripped.to_string(), source_line, stripped_at);
             continue;
@@ -4073,7 +4215,7 @@ fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 // one entry hands every later block a wrong column.
                 inner.col_map.extend(attached.col_map);
                 inner.push_synthetic_blank();
-                para_open = false;
+                para_open = ParaOpen::Closed;
             }
             continue;
         }
@@ -4086,7 +4228,7 @@ fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         // and it already returns false for bullet/task/ordered markers, so we
         // simply defer to it. A heading is the sole construct a list marker
         // would otherwise end, and headings still interrupt via that predicate.
-        if !para_open || is_blank_line(line) || caption_content(line).is_some() || {
+        if !para_open.get() || is_blank_line(line) || caption_content(line).is_some() || {
             let line_owned = line.to_string();
             interrupts_lazy_continuation(cur, &line_owned)
         } {
@@ -13411,4 +13553,226 @@ fn find_emphasis_close(bytes: &[u8], from: usize, delim: u8) -> Option<usize> {
         j += 1;
     }
     None
+}
+
+#[cfg(test)]
+mod quote_prefix_calls {
+    //! COUNTED guards on the blockquote prefix (markup-carve/carve-rs#731).
+    //!
+    //! They live here rather than in `tests/` because the counter they read is
+    //! `#[cfg(test)]`, so a release build carries none of it. `cargo test` runs
+    //! this binary, which is what CI runs.
+    //!
+    //! Counted, not timed, deliberately. This repo already records why a clock
+    //! cannot express these bounds: `tests/perf_regressions.rs` had to
+    //! serialize its 34 timing tests against each other because they flaked
+    //! competing for cores, and carve-js's `writer-deep-list-perf.test.ts`
+    //! carries "No ratio guard here on purpose... would also fail on the
+    //! healthy build". A call count is a property of the algorithm, not of the
+    //! machine: every figure quoted below reproduces byte-identically across
+    //! runs and loads.
+
+    use super::QUOTE_PREFIX_CALLS;
+
+    /// Strips counted over one full parse-and-render of `src`.
+    ///
+    /// On its own thread for two reasons: the counter is thread-local, so a
+    /// fresh thread cannot pick up another test's tally, and a 200-deep quote
+    /// recurses past the default 2 MiB test stack in a debug build.
+    fn calls_for(src: String) -> u64 {
+        std::thread::Builder::new()
+            .stack_size(64 * 1024 * 1024)
+            .spawn(move || {
+                QUOTE_PREFIX_CALLS.with(|c| c.set(0));
+                let _ = crate::to_html(&src);
+                QUOTE_PREFIX_CALLS.with(|c| c.get())
+            })
+            .expect("spawn the counting thread")
+            .join()
+            .expect("the counting thread parses without panicking")
+    }
+
+    /// One measurement: the work the document contains, and the strips it cost.
+    struct Measured {
+        work: u64,
+        calls: u64,
+    }
+
+    impl Measured {
+        fn per_unit(&self) -> f64 {
+            self.calls as f64 / self.work as f64
+        }
+    }
+
+    /// Assert that a document's strip count stays PROPORTIONAL to the work it
+    /// contains, across a doubling of that work.
+    ///
+    /// Three separate claims, each of which has been shown to fail on its own:
+    ///
+    /// 1. A floor. Every quote marker has to be stripped at least once to be
+    ///    recognized, so a count below the work is not a faster parser - it is a
+    ///    counter that stopped counting. Without this the rest would pass on a
+    ///    dead counter reporting zero.
+    /// 2. A ceiling, generous enough to survive honest constant-factor drift.
+    /// 3. The shape, which is the load-bearing half: a cost proportional to the
+    ///    work holds its per-unit rate flat or falling as the document grows,
+    ///    while anything superlinear in the work must make it climb. This one
+    ///    is a statement about the curve rather than its constant, so it still
+    ///    fires when a ceiling has been raised past the point of usefulness.
+    ///
+    /// The comparison is cross-multiplied integers so no float rounding enters
+    /// the verdict; a tenth is allowed for drift. Floats appear in the failure
+    /// messages only.
+    fn assert_proportional(what: &str, small: Measured, large: Measured, ceiling: u64) {
+        assert!(
+            small.calls >= small.work && large.calls >= large.work,
+            "{what}: the strip counter is not counting - {} strips for {} units of work, \
+             {} for {}",
+            small.calls,
+            small.work,
+            large.calls,
+            large.work,
+        );
+        assert!(
+            large.calls <= ceiling * large.work,
+            "{what}: {} strips for {} units of work ({:.1} each, ceiling {ceiling}) - \
+             the quote markers are being re-walked",
+            large.calls,
+            large.work,
+            large.per_unit(),
+        );
+        assert!(
+            large.calls * small.work * 10 <= small.calls * large.work * 11,
+            "{what}: the per-unit strip cost climbs with size ({:.1} at the smaller size, \
+             {:.1} at the larger): the quote markers are being re-walked",
+            small.per_unit(),
+            large.per_unit(),
+        );
+    }
+
+    /// A blockquote depth ladder: line `i` carries `i` quote markers, so the
+    /// document holds `depth * (depth + 1) / 2` markers in total - which is the
+    /// work, and is exactly what carve-js spends on it.
+    fn ladder(depth: usize) -> (String, u64) {
+        ladder_of(depth, "a")
+    }
+
+    /// The same ladder with a chosen line body, so a guard can say what the
+    /// quoted text is made of.
+    fn ladder_of(depth: usize, body: &str) -> (String, u64) {
+        let mut out = String::new();
+        for i in 1..=depth {
+            for _ in 0..i {
+                out.push_str("> ");
+            }
+            out.push_str(body);
+            out.push('\n');
+        }
+        (out, (depth * (depth + 1) / 2) as u64)
+    }
+
+    /// One deep quoted paragraph followed by `depth` lazy continuation lines,
+    /// each of which has to ask whether that paragraph is still open. The work
+    /// is one pass over every line at every level.
+    fn lazy_tail(depth: usize) -> (String, u64) {
+        let mut out = "> ".repeat(depth);
+        out.push_str("a\n");
+        for _ in 0..depth {
+            out.push_str("lazy\n");
+        }
+        (out, ((depth + 1) * depth) as u64)
+    }
+
+    /// A ladder must not cost strips per nesting level per line.
+    ///
+    /// Before the fix the quote's paragraph-open state was decided eagerly on
+    /// every quoted line, and deciding it walked the line down to its innermost
+    /// content - a walk each enclosing level repeated over the same markers:
+    ///
+    /// | depth | markers | strips, eager | strips, deferred |
+    /// | ----- | ------- | ------------- | ---------------- |
+    /// | 25    | 325     | 6,495         | 3,245            |
+    /// | 50    | 1,275   | 35,495        | 12,120           |
+    /// | 100   | 5,050   | 223,495       | 46,745           |
+    /// | 200   | 20,100  | 1,556,994     | 183,494          |
+    ///
+    /// carve-rs still spends about 9 strips per marker where carve-js spends 1.
+    /// That residue is the prefix re-scan every implementation shares
+    /// (markup-carve/carve#752), it is flat in depth, and it is not this
+    /// guard's subject.
+    #[test]
+    fn a_depth_ladder_costs_strips_in_proportion_to_its_markers() {
+        let (small_src, small_work) = ladder(100);
+        let (large_src, large_work) = ladder(200);
+        assert_proportional(
+            "depth ladder",
+            Measured {
+                work: small_work,
+                calls: calls_for(small_src),
+            },
+            Measured {
+                work: large_work,
+                calls: calls_for(large_src),
+            },
+            16,
+        );
+    }
+
+    /// Ordinary quoted PROSE holding a colon must stay on the deferred path.
+    ///
+    /// The ladder above is made of `a`, so it says nothing about the pre-test
+    /// that decides when §12's absorption flag has to be resolved
+    /// (markup-carve/carve-rs#738). That pre-test has to be conservative, and
+    /// the conservative reading is a COLON RUN: widening it to any `:` puts the
+    /// cubic walk back for every `Note:`, `12:30` and `https://` in a quoted
+    /// document - 1,556,994 strips at depth 200 rather than 183,494 - while the
+    /// colon-free ladder above stays green and sees none of it.
+    ///
+    /// A line that really does carry `:::` is not covered, and cannot be:
+    /// deciding the absorption on such a line is what #738 asks for, and that
+    /// answer is only reachable by walking to the innermost content.
+    #[test]
+    fn quoted_prose_holding_a_colon_still_defers() {
+        let (small_src, small_work) = ladder_of(100, "Note: at 12:30, see https://example.com");
+        let (large_src, large_work) = ladder_of(200, "Note: at 12:30, see https://example.com");
+        assert_proportional(
+            "a depth ladder of colon-bearing prose",
+            Measured {
+                work: small_work,
+                calls: calls_for(small_src),
+            },
+            Measured {
+                work: large_work,
+                calls: calls_for(large_src),
+            },
+            16,
+        );
+    }
+
+    /// A run of lazy continuation lines must resolve the open paragraph once,
+    /// not once per line.
+    ///
+    /// The ladder above never reads the paragraph-open state at all, so it
+    /// cannot see this: deferring the walk without caching its answer passes
+    /// the ladder guard and the whole corpus byte for byte, while costing
+    /// 4,143,610 strips here against 103,910 - and climbing, 28 to 53 to 103
+    /// per unit across depths 50, 100 and 200, where the cached answer falls,
+    /// 2.86 to 2.68 to 2.58.
+    #[test]
+    fn lazy_continuation_under_a_deep_quote_resolves_the_paragraph_once() {
+        let (small_src, small_work) = lazy_tail(100);
+        let (large_src, large_work) = lazy_tail(200);
+        assert_proportional(
+            "lazy continuation under a deep quote",
+            Measured {
+                work: small_work,
+                calls: calls_for(small_src),
+            },
+            Measured {
+                work: large_work,
+                calls: calls_for(large_src),
+            },
+            8,
+        );
+    }
 }

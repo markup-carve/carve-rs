@@ -9,6 +9,20 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A nested blockquote no longer re-walks its own markers once per level**
+  (#731). Parsing a quote decided, on every quoted line, whether the body left a
+  paragraph open - and deciding that walked the line down to its innermost
+  quoted content, a walk each enclosing level repeated over the same markers. On
+  a depth-200 ladder that cost 1,556,994 quote-marker strips where carve-js
+  spends 20,100; it is now 183,494, and the per-marker cost no longer climbs
+  with depth. The answer is only consulted when a fenced-code opener or an
+  unprefixed line arrives, so it is now computed there instead of in advance.
+  The predicate, its inputs and every parse result are unchanged - the whole
+  corpus renders byte-identically on all five targets. A quoted line carrying a
+  `:::` run still resolves eagerly, because deciding whether an open paragraph
+  absorbs it (#727) needs exactly that walk; ordinary prose holding a colon does
+  not.
+
 - **The frontmatter opener's format slot is a space** (#725). PART 7 decides the
   terminal by position, not by the slot's role: the slot sits after the `---`,
   and a tab is syntax only inside a line's leading indentation run. So
