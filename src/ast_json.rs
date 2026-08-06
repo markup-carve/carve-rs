@@ -187,10 +187,6 @@ fn write_document(out: &mut String, doc: &Document) {
             write_comma(out, &mut first);
             write_frontmatter(out, raw);
         }
-        for child in &doc.children {
-            write_comma(out, &mut first);
-            write_block(out, child);
-        }
         // Definitions come AFTER the content and in source order (PART 12 §7).
         // The map is keyed by label, so sort by the first placed body block;
         // an unplaced body falls back to label order rather than inventing a
@@ -204,14 +200,93 @@ fn write_document(out: &mut String, doc: &Document) {
                 label.as_str(),
             )
         });
-        for (label, children) in footnote_defs {
+        for entry in ordered_document_entries(&doc.children, &footnote_defs) {
             write_comma(out, &mut first);
-            write_footnote_def(out, label, children);
+            match entry {
+                DocEntry::Block(child) => write_block(out, child),
+                DocEntry::FootnoteDef(label, children) => write_footnote_def(out, label, children),
+            }
         }
         out.push(']');
     });
     w.field("srcByteLength", |out| write_usize(out, doc.source_len));
     w.finish();
+}
+
+/// One direct child of the serialized document.
+///
+/// A footnote definition is a map on the runtime document and only becomes a
+/// sibling on the wire, so the two kinds have to be lined up before either is
+/// written.
+enum DocEntry<'a> {
+    Block(&'a BlockNode),
+    FootnoteDef(&'a String, &'a Vec<BlockNode>),
+}
+
+/// PART 12 §7: "Definitions appear in DOCUMENT ORDER by source position."
+///
+/// The two COLLECTED definition kinds - `link_reference_definition` and
+/// `footnote` - are moved to the document, and §4 keeps the `pos` each was
+/// written at, so their published order has to follow that `pos`. Writing
+/// `doc.children` and then the footnote map put every link definition ahead of
+/// every footnote whatever the author wrote, and `pos` then ran backwards
+/// between two adjacent siblings (carve#746).
+///
+/// Only the collected kinds move. An `abbreviation_def` is not collected out of
+/// the document - §7 refuses that specifically, since hoisting it would empty
+/// the line rather than relocate visible output - so it already sits at its
+/// source position and keeps its index here.
+///
+/// The reordering is confined to the slots the collected definitions already
+/// occupy, so no other child moves, and the sort is stable, so two definitions
+/// reporting the same offset keep the order they arrived in (which for
+/// footnotes is the label tie-break applied by the caller).
+fn ordered_document_entries<'a>(
+    children: &'a [BlockNode],
+    footnote_defs: &[(&'a String, &'a Vec<BlockNode>)],
+) -> Vec<DocEntry<'a>> {
+    let mut entries: Vec<DocEntry<'a>> = children.iter().map(DocEntry::Block).collect();
+    entries.extend(
+        footnote_defs
+            .iter()
+            .map(|(label, body)| DocEntry::FootnoteDef(label, body)),
+    );
+
+    let slots: Vec<usize> = entries
+        .iter()
+        .enumerate()
+        .filter(|(_, entry)| collected_definition_offset(entry).is_some())
+        .map(|(i, _)| i)
+        .collect();
+    if slots.len() < 2 {
+        return entries;
+    }
+
+    let mut moved: Vec<DocEntry<'a>> = Vec::with_capacity(slots.len());
+    for &i in slots.iter().rev() {
+        moved.push(entries.remove(i));
+    }
+    moved.reverse();
+    moved.sort_by_key(|entry| collected_definition_offset(entry).unwrap_or(usize::MAX));
+    for (&i, entry) in slots.iter().zip(moved) {
+        entries.insert(i, entry);
+    }
+    entries
+}
+
+/// The published start offset of a COLLECTED definition, or `None` for anything
+/// §7 does not collect. A collected definition with no placed position sorts
+/// last rather than being given an invented one.
+fn collected_definition_offset(entry: &DocEntry<'_>) -> Option<usize> {
+    match entry {
+        DocEntry::Block(BlockNode::LinkReferenceDefinition(n)) => {
+            Some(n.pos.as_ref().map_or(usize::MAX, |pos| pos.start_offset))
+        }
+        DocEntry::FootnoteDef(_, body) => {
+            Some(first_block_pos(body).map_or(usize::MAX, |pos| pos.start_offset))
+        }
+        DocEntry::Block(_) => None,
+    }
 }
 
 fn first_block_pos(children: &[BlockNode]) -> Option<&Pos> {
