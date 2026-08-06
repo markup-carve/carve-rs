@@ -4908,7 +4908,16 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             .or_else(|| detect_line_block_open(marker.content))
             .or_else(|| detect_hardbreaks_block_open(marker.content));
         while let Some(next) = cur.peek() {
-            if is_blank_line(next) || trim_ascii(next) == "+" {
+            // A `+` ends the lead paragraph only where it can ACT as a
+            // continuation marker - at or below the item's base column. An
+            // INDENTED one is not consumed as a marker by any engine (all three
+            // render it), so it is lazy text and folds like any other
+            // continuation line. Breaking on it at any indent made `- a` / `  +`
+            // two paragraphs here and one in carve-js and carve-php
+            // (carve-rs#672, markup-carve/carve#812).
+            if is_blank_line(next)
+                || (trim_ascii(next) == "+" && indent_columns(next) <= base_indent)
+            {
                 break;
             }
             if let Some(fence_len) = literal_colon_opener {
