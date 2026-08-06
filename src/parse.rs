@@ -2596,6 +2596,97 @@ fn build_comment_closer_last_index(lines: &[&str]) -> HashMap<usize, usize> {
     last_index
 }
 
+/// What `take_comment_block` found on the cursor.
+enum CommentBlock {
+    /// Not a comment line; the cursor has not moved.
+    NotAComment,
+    /// A comment line was consumed. `None` is the placeholder a collected
+    /// definition leaves behind, which produces no node. BOXED because a
+    /// `BlockNode` dwarfs the empty variant beside it.
+    Consumed(Option<Box<BlockNode>>),
+}
+
+/// Take a `%%` line comment or a `%%%` comment fence off the cursor.
+///
+/// SHARED BY BOTH BLOCK PARSERS on purpose. `parse_blocks` had this and
+/// `parse_block` did not, so the same `%% c` was a block comment at top level
+/// and a paragraph wrapping an inline comment when a `+` continuation marker
+/// attached it - one construct, two shapes, decided by which entry point ran
+/// (carve-rs#678). The rendered HTML agrees either way, since a comment renders
+/// nothing, which is why only the tree showed it.
+fn take_comment_block(cur: &mut LineCursor, options: &Options<'_>) -> CommentBlock {
+    let Some(line) = cur.peek() else {
+        return CommentBlock::NotAComment;
+    };
+    if let Some(open) = detect_comment_fence_line_any_column(line) {
+        // No matching closer: degrade to the ordinary `%%` line comment path
+        // below instead of swallowing to EOF.
+        if cur.has_comment_closer_after(cur.pos + 1, open.fence_len) {
+            let span_start = cur.pos;
+            // A body line's indentation is measured FROM ITS FENCE, not from
+            // column 0. Stored absolute, a fence that sits at a column - which
+            // it may, since #585 keeps a below-content-column span's own
+            // columns - hands the writer a body already carrying the fence's
+            // indent, and the writer adds the fence column on top: corpus 186
+            // came back with `x` one column deeper than carve-js and carve-php
+            // write it (carve-rs#601, markup-carve/carve#653).
+            //
+            // The strip is capped at each line's own indent, so a body line
+            // shallower than its fence keeps what it has rather than eating
+            // into its text.
+            let fence_indent = indent_columns(line);
+            let mut content = Vec::new();
+            if !open.tail.is_empty() {
+                content.push(open.tail);
+            }
+            cur.consume();
+            while let Some(line) = cur.peek() {
+                cur.consume();
+                if is_comment_fence_close_any_column(line, open.fence_len) {
+                    break;
+                }
+                content.push(slice_columns(
+                    line,
+                    fence_indent.min(indent_columns(line)),
+                    false,
+                ));
+            }
+
+            return CommentBlock::Consumed(Some(Box::new(BlockNode::Comment(Comment {
+                block: true,
+                content: content.join("\n"),
+                pos: span_of(cur, span_start, cur.pos, options),
+            }))));
+        }
+    }
+    if trim_ascii_start(line).starts_with("%%") {
+        // The line a collected definition left behind is consumed here and
+        // produces nothing. It did its work earlier - it was non-blank through
+        // collection, so the item did not loosen - and an author never typed
+        // it, so it is not a comment node. See DEFINITION_PLACEHOLDER.
+        if trim_ascii_start(line) == DEFINITION_PLACEHOLDER {
+            cur.consume();
+
+            return CommentBlock::Consumed(None);
+        }
+        let content = trim_ascii_start(line)
+            .strip_prefix("%%")
+            .unwrap_or_default()
+            .trim_start()
+            .to_string();
+        let span_start = cur.pos;
+        cur.consume();
+
+        return CommentBlock::Consumed(Some(Box::new(BlockNode::Comment(Comment {
+            block: false,
+            content,
+            pos: span_of(cur, span_start, cur.pos, options),
+        }))));
+    }
+
+    CommentBlock::NotAComment
+}
+
 fn parse_blocks(cur: &mut LineCursor, options: &Options<'_>) -> Vec<BlockNode> {
     // Recursion cap (see MAX_NESTING_DEPTH). Over the cap, flatten everything
     // still in the cursor into one paragraph rather than recursing further,
@@ -2632,71 +2723,18 @@ fn parse_blocks(cur: &mut LineCursor, options: &Options<'_>) -> Vec<BlockNode> {
             cur.consume();
             continue;
         }
-        if let Some(open) = detect_comment_fence_line_any_column(line) {
-            if !cur.has_comment_closer_after(cur.pos + 1, open.fence_len) {
-                // No matching closer: degrade to the ordinary `%%` line
-                // comment path below instead of swallowing to EOF.
-            } else {
-                let span_start = cur.pos;
-                // A body line's indentation is measured FROM ITS FENCE, not from
-                // column 0. Stored absolute, a fence that sits at a column - which
-                // it may, since #585 keeps a below-content-column span's own
-                // columns - hands the writer a body already carrying the fence's
-                // indent, and the writer adds the fence column on top: corpus 186
-                // came back with `x` one column deeper than carve-js and
-                // carve-php write it (carve-rs#601, markup-carve/carve#653).
-                //
-                // The strip is capped at each line's own indent, so a body line
-                // shallower than its fence keeps what it has rather than eating
-                // into its text.
-                let fence_indent = indent_columns(line);
-                let mut content = Vec::new();
-                if !open.tail.is_empty() {
-                    content.push(open.tail);
-                }
-                cur.consume();
-                while let Some(line) = cur.peek() {
-                    cur.consume();
-                    if is_comment_fence_close_any_column(line, open.fence_len) {
-                        break;
-                    }
-                    content.push(slice_columns(
-                        line,
-                        fence_indent.min(indent_columns(line)),
-                        false,
-                    ));
-                }
-                out.push(BlockNode::Comment(Comment {
-                    block: true,
-                    content: content.join("\n"),
-                    pos: span_of(cur, span_start, cur.pos, options),
-                }));
+        // BOTH comment spellings, shared with `parse_block` so a comment
+        // reached through a `+` continuation is the same node as one written at
+        // top level. It was not: this loop had the arm and the single-block
+        // parser did not, so a `+`-attached `%% c` fell through to a paragraph
+        // wrapping an INLINE comment (carve-rs#678).
+        match take_comment_block(cur, options) {
+            CommentBlock::NotAComment => {}
+            CommentBlock::Consumed(None) => continue,
+            CommentBlock::Consumed(Some(node)) => {
+                out.push(*node);
                 continue;
             }
-        }
-        if trim_ascii_start(line).starts_with("%%") {
-            // The line a collected definition left behind is consumed here and
-            // produces nothing. It did its work earlier - it was non-blank
-            // through collection, so the item did not loosen - and an author
-            // never typed it, so it is not a comment node. See
-            // DEFINITION_PLACEHOLDER.
-            if trim_ascii_start(line) == DEFINITION_PLACEHOLDER {
-                cur.consume();
-                continue;
-            }
-            let content = trim_ascii_start(line)
-                .strip_prefix("%%")
-                .unwrap_or_default()
-                .trim_start()
-                .to_string();
-            let span_start = cur.pos;
-            cur.consume();
-            out.push(BlockNode::Comment(Comment {
-                block: false,
-                content,
-                pos: span_of(cur, span_start, cur.pos, options),
-            }));
-            continue;
         }
         if line_flush {
             if let Some(attrs) = parse_standalone_attrs_block(cur) {
@@ -2790,6 +2828,13 @@ fn resolve_code_title(node: &mut BlockNode) {
 }
 
 fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<BlockNode> {
+    // Checked FIRST, and through the same helper `parse_blocks` uses, so a
+    // comment reached by a `+` continuation is the node the identical line
+    // produces at top level (carve-rs#678).
+    match take_comment_block(cur, options) {
+        CommentBlock::NotAComment => {}
+        CommentBlock::Consumed(node) => return node.map(|node| *node),
+    }
     let line = cur.peek()?;
     if let Some(fence_marker) = detect_fence_open(line) {
         let fence_at = cur.pos;
