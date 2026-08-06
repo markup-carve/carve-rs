@@ -701,6 +701,22 @@ fn definition_in_gap(
     Some(written)
 }
 
+/// Sentinel marking a line to be written at the ITEM's marker column.
+///
+/// The list writer prefixes an item's continuation lines with its content
+/// column. A `+` continuation marker and the block it attaches are the two
+/// things that must NOT get that prefix (§17 L3), and they are produced deep
+/// inside the item body where the prefix is not yet known - so they are tagged
+/// here and the prefix loop honours the tag.
+const MARKER_COLUMN: char = '\u{e005}';
+
+fn at_marker_column(text: &str) -> String {
+    text.split('\n')
+        .map(|line| format!("{MARKER_COLUMN}{line}"))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 fn render_item_blocks(blocks: &[BlockNode], tight: bool, ctx: &mut CarveContext) -> String {
     if !tight {
         return render_blocks(blocks, ctx);
@@ -717,6 +733,7 @@ fn render_item_blocks(blocks: &[BlockNode], tight: bool, ctx: &mut CarveContext)
         if rendered.is_empty() {
             continue;
         }
+        let mut separated = false;
         if let Some(prev_block) = prev {
             // A tight item joins every child with a single newline, including a
             // nested list. The blank line that used to be kept here existed to
@@ -727,7 +744,30 @@ fn render_item_blocks(blocks: &[BlockNode], tight: bool, ctx: &mut CarveContext)
             if let Some(written) = definition_in_gap(prev_block, block, ctx) {
                 out.push_str(&written);
                 out.push('\n');
+                // A definition written back BETWEEN the two blocks already ends
+                // the paragraph above it, so the marker below is not needed -
+                // and emitting it anyway changes the canonical form of corpus
+                // 228, whose point is that a line at the definition's own
+                // column forms its own tight block.
+                separated = true;
             }
+        }
+        // §17 L3: a PARAGRAPH after a paragraph needs its continuation marker
+        // written back. Indented under the item it is a lazy continuation of
+        // the paragraph above (§10 I2), so the item comes back holding ONE
+        // block where the author wrote two (carve#861). Only a paragraph
+        // reaches this: no other attached kind can fold into an open paragraph,
+        // which is why the corpus - which pins a fence and a quote - never saw
+        // it.
+        if !separated
+            && matches!(prev, Some(BlockNode::Paragraph(_)))
+            && matches!(block, BlockNode::Paragraph(_))
+        {
+            out.push_str(&at_marker_column("+"));
+            out.push('\n');
+            out.push_str(&at_marker_column(&rendered));
+            prev = Some(block);
+            continue;
         }
         out.push_str(&rendered);
         prev = Some(block);
@@ -1024,6 +1064,10 @@ fn render_list(node: &List, ctx: &mut CarveContext) -> String {
                 // it keeps protecting the line it stands for.
                 out.push_str(&line);
                 out.push('\n');
+            } else if let Some(rest) = line.strip_prefix(MARKER_COLUMN) {
+                // The continuation marker and its attached block sit at the
+                // ITEM's marker column, not its content column (§17 L3).
+                out.push_str(&format!("{rest}\n"));
             } else {
                 out.push_str(&format!("{continuation}{line}\n"));
             }
