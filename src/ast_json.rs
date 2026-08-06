@@ -241,6 +241,32 @@ pub(crate) enum DocEntry<'a> {
 /// occupy, so no other child moves, and the sort is stable, so two definitions
 /// reporting the same offset keep the order they arrived in (which for
 /// footnotes is the label tie-break applied by the caller).
+/// A document's footnote definitions in SOURCE ORDER.
+///
+/// `Document::footnote_defs` is a `BTreeMap`, so iterating it yields label
+/// order - and §7 orders collected definitions by source position. Every target
+/// that prints the definitions needs this, so it lives here rather than being
+/// re-derived per renderer: the `carve` writer had its own copy
+/// (carve-rs#685) and markdown, plain and ansi each walked the map directly
+/// (carve-rs#686).
+///
+/// A definition with no recorded span - positions are opt-in (§4) - sorts to the
+/// end and keeps label order among its peers, which is the only order available
+/// there.
+pub(crate) fn footnote_defs_in_source_order(doc: &Document) -> Vec<(&String, &Vec<BlockNode>)> {
+    let mut defs: Vec<(&String, &Vec<BlockNode>)> = doc.footnote_defs.iter().collect();
+    defs.sort_by_key(|(label, children)| {
+        (
+            first_block_pos(children)
+                .map(|pos| pos.start_offset)
+                .unwrap_or(usize::MAX),
+            label.as_str(),
+        )
+    });
+
+    defs
+}
+
 pub(crate) fn ordered_document_entries<'a>(
     children: &'a [BlockNode],
     footnote_defs: &[(&'a String, &'a Vec<BlockNode>)],

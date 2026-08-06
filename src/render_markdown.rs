@@ -521,7 +521,8 @@ fn render_figure(node: &Figure, ctx: &mut MarkdownContext, depth: usize) -> Stri
 
 fn render_footnote_defs(doc: &Document, ctx: &mut MarkdownContext) -> String {
     let mut out = String::new();
-    for (label, blocks) in &doc.footnote_defs {
+    // SOURCE ORDER, not label order (§7; carve-rs#686). The map is a BTreeMap.
+    for (label, blocks) in crate::ast_json::footnote_defs_in_source_order(doc) {
         out.push_str(&format!(
             "[^{}]: {}\n",
             strip_controls(label),

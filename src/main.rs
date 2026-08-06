@@ -266,9 +266,22 @@ fn main() -> ExitCode {
         // HTML output. All formats share the same parse + profile pipeline.
         match format {
             OutputFormat::Html => carve::to_html_with_options(&source, &options),
-            OutputFormat::Markdown => carve::to_markdown_with_options(&source, &options),
-            OutputFormat::Plain => carve::to_plain_text_with_options(&source, &options),
-            OutputFormat::Ansi => carve::to_ansi_with_options(&source, &options),
+            // Positions ON for the three targets that PRINT the footnote
+            // definitions: §7 orders them by source position, and the map they
+            // come from is a BTreeMap, so without spans they print in label
+            // order (carve-rs#686). `--json` below asks for the same thing.
+            OutputFormat::Markdown => {
+                options = options.with_positions(true);
+                carve::to_markdown_with_options(&source, &options)
+            }
+            OutputFormat::Plain => {
+                options = options.with_positions(true);
+                carve::to_plain_text_with_options(&source, &options)
+            }
+            OutputFormat::Ansi => {
+                options = options.with_positions(true);
+                carve::to_ansi_with_options(&source, &options)
+            }
             OutputFormat::Carve => carve::to_carve(&source),
             OutputFormat::Json => {
                 options = options.with_positions(true);
