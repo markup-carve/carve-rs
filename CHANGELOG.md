@@ -9,6 +9,21 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **The link-title slot is a space, in every form that shares it** (#726). PART 7
+  decides the terminal by position: a tab is syntax only inside a line's leading
+  indentation run, and an inline destination is nowhere near one. Four slots
+  changed. `[t](/u<TAB>"T")` and `![t](/u<TAB>"T")` no longer take a title - the
+  construct falls back to literal text, as it already did for a no-break space in
+  the same slot - and `[r]: /u<TAB>"T"` is still a definition but no longer has
+  one. The fourth is the reference definition's trailing attribute block:
+  `[r]: /u<TAB>{.c}` no longer attaches it. Both directions of a mixed run are
+  covered, because both guards were checks on a single character of a run: the
+  definition's title slot was a full Unicode trim (so `[r]: /u<NBSP>"T"` took a
+  title too), and the attribute block was matched on the character adjacent to
+  the `{`, so a run holding a tab passed whenever its last character was a space.
+  A run of spaces still pads every one of the four, so `[t](/u  "T")` is
+  unchanged.
+
 - **Every slot on a colon-fence opener line is a space** (#722). PART 7 decides
   these terminals by position: a tab is syntax only inside a line's leading
   indentation run, so from the fence onward neither a tab nor a Unicode space
