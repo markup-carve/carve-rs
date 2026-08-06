@@ -53,6 +53,31 @@ fn markdown_source_mode_emits_what_the_author_typed() {
     assert_eq!(out.trim(), "He said \"hi\" -- really... 1 -> 2", "{out}");
 }
 
+// The next two assert on the OUTPUT, never on the exit status. The flag was
+// accepted on both of these targets before carve#560 and did nothing, so an
+// exit-status assertion here is a check that cannot fail.
+#[test]
+fn plain_source_mode_emits_what_the_author_typed() {
+    let (out, _, ok) = run(&["--plain", "--smart-typography", "source"], INPUT);
+    assert!(ok);
+    assert_eq!(out.trim(), "He said \"hi\" -- really... 1 -> 2", "{out}");
+
+    let (glyph, _, ok) = run(&["--plain"], INPUT);
+    assert!(ok);
+    assert_ne!(glyph, out);
+}
+
+#[test]
+fn ansi_source_mode_emits_what_the_author_typed() {
+    let (out, _, ok) = run(&["--ansi", "--smart-typography", "source"], INPUT);
+    assert!(ok);
+    assert_eq!(out.trim(), "He said \"hi\" -- really... 1 -> 2", "{out}");
+
+    let (glyph, _, ok) = run(&["--ansi"], INPUT);
+    assert!(ok);
+    assert_ne!(glyph, out);
+}
+
 #[test]
 fn glyph_is_the_default_and_can_be_asked_for() {
     let (implicit, _, ok) = run(&["--html"], INPUT);

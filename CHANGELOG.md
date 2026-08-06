@@ -9,6 +9,22 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`smart_typography` now reaches the plain-text and terminal renderers**
+  (markup-carve/carve#560). PART 12 names four presentation renderers - HTML,
+  Markdown, plain text and ANSI - and says source mode makes all of them emit
+  each node's source run. Two of them ignored it: `render_ansi_with_options`
+  took its options as `_options`, `render_plain_text_with_options` read only the
+  heading-id flag, and both called the glyph form unconditionally. So
+  `--smart-typography source`, `Options { smart_typography:
+  SmartTypographyMode::Source, .. }`, `to_plain_text_with_options` and
+  `to_ansi_with_options` were all accepted on those two targets and silently did
+  nothing - output that looks configured and is not, which is the failure the
+  switch exists to avoid. Both now carry the mode the way the Markdown renderer
+  does, each in its own thread-local so no render can leave a mode behind in
+  another. On the spec's `29-smart-typography-off` source, both targets are now
+  byte-identical to carve-js and carve-php in both modes. The glyph default and
+  every styling run are unchanged.
+
 - **A nested blockquote no longer re-walks its own markers once per level**
   (#731). Parsing a quote decided, on every quoted line, whether the body left a
   paragraph open - and deciding that walked the line down to its innermost
