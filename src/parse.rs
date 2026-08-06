@@ -3787,6 +3787,17 @@ fn find_colon_container_end(lines: &[&str], start: usize, fence_len: usize) -> u
         // `collect_colon_container_body`, which walks this body for real. The
         // two must agree about where the container ends, and they answer with
         // the same test (carve-rs#719).
+        //
+        // NOT INDEPENDENTLY OBSERVABLE today, and changed anyway. This walk is
+        // reached only from `parse_continuation_block`, where the extent it
+        // reports decides where a `+`-attached block ends; leaving the old
+        // absorbing test here is a GREEN mutation against 690 corpus documents
+        // x six targets and 55223 generated `+`/colon documents. It moves
+        // regardless, because the two walks disagreeing about a container's end
+        // is itself the bug shape - carve#515 was exactly that, and the comment
+        // in the fence branch below records it. A test asserting this line
+        // alone would be a check that cannot fail (markup-carve/carve#755), so
+        // the reason lives here instead.
         if exact_colon_fence_len(line) == Some(top) {
             stack.pop();
             idx += 1;
