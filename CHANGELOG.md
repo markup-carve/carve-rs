@@ -55,9 +55,12 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   a paragraph, so nothing below the body's content column folds into it while one
   is open (PART 0 S4): the containers close, the `<dd>` holds an empty code
   block, and the body re-parses at document level. That is the answer the list
-  and block-quote spellings of the identical shape already gave here. Bodies
-  written AT the content column, the first-block `:  +` form, and a flush-left
-  line after a CLOSED fence are all unchanged.
+  and block-quote spellings of the identical shape already gave here. The same
+  holds once the fence has CLOSED with nothing after it - a finished code block
+  is not an open paragraph either - so `lazy` after a closed fence is a
+  top-level paragraph rather than a second block in the `<dd>`. Bodies written
+  AT the content column, content collected after a closed fence, and the
+  first-block `:  +` form are all unchanged.
 
 - **A document with heading numbers round-trips through this engine's own AST
   JSON.** The encoder stamped a `fromCrossref` flag on every `link` the

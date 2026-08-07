@@ -7374,12 +7374,15 @@ fn parse_definition_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNo
             // first-block (`:  +`) form seeds nothing: its body is the following
             // flush-left block, which supplies no indentation for the rule to
             // measure against.
-            let mut open_fence = if is_plus_marker(def_trimmed) {
-                None
-            } else {
-                detect_fence_open(def_trimmed)
+            let mut fence = DefinitionBodyFence {
+                open: if is_plus_marker(def_trimmed) {
+                    None
+                } else {
+                    detect_fence_open(def_trimmed)
+                },
+                closed_last: false,
             };
-            body.append(collect_definition_body(cur, &mut open_fence));
+            body.append(collect_definition_body(cur, &mut fence));
             // The span covers the `:  ` marker through the last line the body
             // consumed, so a multi-line definition is one region rather than
             // just its opening line. `collect_definition_body` has already
@@ -7439,14 +7442,39 @@ fn is_plus_marker(line: &str) -> bool {
 /// the open paragraph (matching list items, block quotes and djot). Returned
 /// lines carry blank separators so the block sub-parse yields multiple paragraphs.
 ///
-/// `open_fence` carries the body's own fenced code block while it is still OPEN,
-/// seeded by the caller from the `:  ` marker line and followed here on every
-/// line collected at the body's column. Nothing below that column folds while one
-/// is open (PART 0 S4, markup-carve/carve#956).
-fn collect_definition_body(
-    cur: &mut LineCursor,
-    open_fence: &mut Option<FenceOpen>,
-) -> MappedSource {
+/// The body's own fenced code block, for the S4 test below. `open` carries it
+/// while it is still OPEN; `closed_last` records that the last thing collected at
+/// the body's column was its CLOSER, with nothing after it yet. Both states leave
+/// the body without an open paragraph (PART 0 S4, markup-carve/carve#956).
+struct DefinitionBodyFence {
+    open: Option<FenceOpen>,
+    closed_last: bool,
+}
+
+impl DefinitionBodyFence {
+    /// S4's lazy branch continues an open PARAGRAPH, and a verbatim body is not
+    /// one - neither while it runs nor once it has finished. A CLOSED code block
+    /// is a finished block, not a paragraph, so a below-column line after it has
+    /// nothing to fold into either.
+    fn holds_no_paragraph(&self) -> bool {
+        self.open.is_some() || self.closed_last
+    }
+
+    /// Follow the fence over one line collected at the body's column.
+    fn track(&mut self, dedented: &str) {
+        let was_open = self.open.is_some();
+        track_collected_fence(&mut self.open, dedented, true);
+        // The closer is the line that took the fence from open to closed; any
+        // other line at the column is content, and content after a closed block
+        // opens a paragraph the fold can reach again.
+        self.closed_last = was_open && self.open.is_none();
+    }
+}
+
+/// `fence` carries the body's own fenced code block, seeded by the caller from
+/// the `:  ` marker line - which no collector ever sees - and followed here on
+/// every line collected at the body's column.
+fn collect_definition_body(cur: &mut LineCursor, fence: &mut DefinitionBodyFence) -> MappedSource {
     let mut lines: Vec<String> = Vec::new();
     let mut line_map: Vec<Option<usize>> = Vec::new();
     // Codepoints taken off the front of each line, kept in lockstep with
@@ -7494,7 +7522,7 @@ fn collect_definition_body(
                 col_map.push(cur.source_col(cur.pos).map(|c| {
                     c + line.chars().count().saturating_sub(sliced.chars().count()) as isize
                 }));
-                track_collected_fence(open_fence, &sliced, true);
+                fence.track(&sliced);
                 lines.push(sliced);
                 line_map.push(cur.source_line(cur.pos));
                 cur.consume();
@@ -7515,7 +7543,13 @@ fn collect_definition_body(
             // EMPTY code block, and the residue re-parses at document level -
             // byte for byte the answer corpus 276 pins for the list spelling,
             // which this engine already gives (#772).
-            if open_fence.is_some() {
+            //
+            // NEITHER WHILE IT RUNS NOR ONCE IT HAS FINISHED. A CLOSED code
+            // block is a finished block, so the body has no open paragraph after
+            // it either and the same derivation ends the body there. The worked
+            // example in the clause shows the open half; the rule is stated on
+            // the paragraph, not on the delimiter.
+            if fence.holds_no_paragraph() {
                 break;
             }
             // Lazy continuation: a flush-left line with no blank before it that
