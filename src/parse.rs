@@ -6526,7 +6526,29 @@ fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         // Leading indentation is not significant in a paragraph (djot has no
         // indented code blocks); strip it so an indented line like ` c` renders
         // as `<p>c</p>`, matching list-item continuation handling.
-        let trimmed = trim_ascii_start(line);
+        //
+        // TRAILING WHITESPACE IS DROPPED ON EVERY CONTENT LINE, not just the
+        // block's last (PART 2 NO TRAILING WHITESPACE, carve#926). The two
+        // documents `abc<newline>def` and `abc<SP><newline>def` are the same
+        // document. This engine stripped only the joined END, which is the
+        // paragraph-final line, so a run before a SOFT BREAK survived into the
+        // output.
+        //
+        // carve-rs#359 limited stripping to block-final lines on the strength of
+        // PART 12 §7, which claimed `a` + SPACE + newline + `b` renders
+        // `<p>a \nb</p>` and argued from that claim that stripping breaks
+        // `to_html(fmt(x)) == to_html(x)`. §7 has been corrected: the executable
+        // spec does not render it that way, and the PARSER is the half that
+        // moves.
+        //
+        // `trim_ascii_end` is space-and-tab, deliberately not `str::trim_end`:
+        // every other invisible character is CONTENT and survives, however
+        // invisible - a no-break space, a zero-width space, a byte order mark,
+        // an en quad, an ideographic space, a form feed and a vertical tab. An
+        // implementation using a Unicode whitespace property (or a language's
+        // legacy `\s`) fails seven of those rows, and a plain-space fixture
+        // cannot see it.
+        let trimmed = trim_ascii_end(trim_ascii_start(line));
         suppress_colon_interrupt |= is_invalid_colon_fence_opener_text(trimmed);
         lines.push(trimmed);
     }
@@ -6535,14 +6557,14 @@ fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     // pending-attrs loop), and a trailing same-line `{...}` with no abutting
     // host stays literal inline content (§14). Paragraph attributes come only
     // from a preceding block-attribute line (§15), applied by the caller.
-    // CommonMark / Djot: trailing whitespace at the very END of a paragraph's
-    // final line is not significant and is stripped (`abc ` -> `<p>abc</p>`,
-    // `# ` -> `<p>#</p>`). Only the paragraph's final trailing whitespace is
-    // removed -- whitespace before a MID-paragraph newline is untouched, so a
-    // two-space (`a  \nb`) or backslash (`a\<newline>b`) line break is
-    // preserved. `trim_end` here acts on the joined buffer, i.e. only the end.
+    // Every line arrives already stripped at both ends (see the loop above), so
+    // the join needs no further trimming. A HARD BREAK is unaffected: it is a
+    // trailing BACKSLASH, which is content and not whitespace, so the line does
+    // not end in whitespace at all and nothing is dropped in front of it. Carve
+    // has no two-space hard break to lose - `a<SP><SP>` + newline + `b` is one
+    // paragraph with a soft break in the executable spec.
     let joined = lines.join("\n");
-    let joined = joined.trim_end_matches([' ', '\t']);
+    let joined = joined.as_str();
     let children = if options.positions {
         let anchors = lines
             .iter()
@@ -7153,8 +7175,16 @@ fn consume_caption(cur: &mut LineCursor, options: &Options<'_>) -> Option<Vec<In
         }
         cur.consume();
     }
-    // §756 (NORMATIVE): strip the final line's trailing whitespace only. This
-    // only shortens the END, so it cannot shift any anchor.
+    // §756 (NORMATIVE): strip trailing whitespace - on EVERY line the caption
+    // spans, not only its last (PART 2 NO TRAILING WHITESPACE, carve#926; a
+    // table caption is one of the contexts that ruling names, and one the
+    // executable spec itself was missing until it was measured). Stripping only
+    // ever shortens a line's END, so it cannot shift any anchor.
+    let joined = joined
+        .split('\n')
+        .map(trim_ascii_end)
+        .collect::<Vec<_>>()
+        .join("\n");
     let text = trim_ascii_end(&joined);
     Some(match anchors {
         Some(anchors) => parse_caption_inline_with_anchor(text, options, anchors),
@@ -8024,9 +8054,20 @@ fn expand_line_block_ws(line: &str) -> String {
             for _ in 0..width {
                 out.push(crate::NBSP_PLACEHOLDER);
             }
-        } else {
+        } else if chars.peek().is_some() {
             out.push(' ');
         }
+        // ...and a ONE-COLUMN run at the END of the line is dropped, like
+        // trailing whitespace anywhere else (PART 2 NO TRAILING WHITESPACE,
+        // carve#926). The ORDER is what decides this line: §23 converts an
+        // inner or trailing run of TWO OR MORE columns into NBSP CONTENT first,
+        // and content is not whitespace - so the rule never reaches those, and
+        // `abc<SP><SP>` still ends in two non-breaking spaces. What it does
+        // reach is the one-column case, which §23 leaves as an ordinary space.
+        //
+        // A trailing TAB is not the one-column case: it expands to the next tab
+        // stop, which is at least two columns from anywhere it can start, so it
+        // becomes NBSP content and survives.
     }
 
     out
