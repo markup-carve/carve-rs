@@ -2257,6 +2257,17 @@ impl MappedSource {
 /// wrong one. The guard is that the two lines differ ONLY in leading
 /// whitespace: if what either side put in front of the shared tail contains a
 /// single non-indent character, there is no constant and this returns `None`.
+///
+/// THAT LAST GUARD IS UNREACHABLE TODAY, and is recorded as such rather than
+/// presented as a fix (markup-carve/carve#755: a check that cannot fail is
+/// recorded, not deleted and not counted as proof). Deleting it changes no
+/// output over the 830-document spec corpus and over 8018 generated
+/// tab-and-space indentation shapes, and no test in this suite fails. The
+/// reason is that the second branch is only reached when the parser's line is
+/// NOT a suffix of the source line, and the only producer that rewrites a line
+/// that way is `strip_leading_columns`, which consumes nothing but whitespace.
+/// It is here so a future producer that does consume content cannot silently
+/// publish an affine map that is not one.
 fn stripped_col(outer: Option<isize>, original: &str, stripped: &str) -> Option<isize> {
     let outer = outer?;
     if original.ends_with(stripped) {
