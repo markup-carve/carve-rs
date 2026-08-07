@@ -8313,6 +8313,21 @@ fn detect_abbreviation_def(line: &str) -> Option<AbbreviationDef> {
     let rest = line.strip_prefix("*[")?;
     let (abbr, expansion) = rest.split_once("]:")?;
     let expansion = expansion.strip_prefix(' ')?;
+    // THE SEPARATOR IS A RUN, AND IT IS ASCII SPACES. PART 5 spells it
+    // `space+`: a tab is still not a separator, so `*[HTML]:<TAB>x` stayed a
+    // paragraph at the `strip_prefix` above, but a run of spaces is one
+    // separator rather than a separator plus content (carve#892).
+    //
+    // The first character that is not a space ENDS the separator and BEGINS the
+    // content, which is the half this engine had wrong: the expansion was
+    // `trim()`ed, so a no-break space or a tab after the run was eaten and
+    // `*[HTML]: <NBSP>Hyper Text` expanded to a title the author did not write.
+    // An `abbreviation_expansion` is a raw string, so both survive into it.
+    //
+    // Trimmed with `trim_start_matches(' ')` and not a whitespace `trim_start`
+    // for exactly that reason - the terminal is the ASCII space, not the
+    // Unicode property.
+    let expansion = expansion.trim_start_matches(' ');
     // ASCII, because `letter` is: the grammar enumerates it as `a`..`z` plus
     // `A`..`Z`, and `digit` as `0`..`9`. `char::is_alphanumeric` is
     // Unicode-aware, so `*[ß]:` and `*[日本]:` were definitions here and
@@ -8336,7 +8351,12 @@ fn detect_abbreviation_def(line: &str) -> Option<AbbreviationDef> {
     }
     Some(AbbreviationDef {
         abbr: abbr.to_string(),
-        expansion: expansion.trim().to_string(),
+        // Only the TRAILING side is trimmed here: the leading run was consumed
+        // above as the separator it is. (Trailing whitespace on a content line
+        // is dropped by PART 2 - carve#926 - which is a different rule with a
+        // different terminal; this call is the pre-existing one and moves in
+        // that ticket, not this one.)
+        expansion: expansion.trim_end().to_string(),
         pos: None,
     })
 }

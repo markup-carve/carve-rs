@@ -9,6 +9,21 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A definition marker's separator is a run of ASCII spaces, and the next
+  character is content.** PART 5 and PART 9 spell the marker-to-content
+  separator `space+` at both definition markers. Two halves: the separator is a
+  literal space, as it always was (a tab after the marker is still not a
+  separator, so `*[HTML]:<TAB>x` and `[^f]:<TAB>x` stay paragraphs), and it is a
+  RUN - all four readers already consumed one, so the grammar forbade a shape
+  nothing rejected. The half that moves here is what follows the run: the first
+  character that is not an ASCII space ENDS the separator and BEGINS the
+  content. `*[HTML]: <NBSP>Hyper Text` now expands to a title that starts with
+  the no-break space, and `*[HTML]: <TAB>Hyper Text` keeps the tab, where the
+  expansion was previously `trim()`ed and both were eaten. The footnote marker
+  already kept them and does not move. Widening the run is not widening the
+  terminal: a tab as the separator, and a marker with only spaces after it, are
+  still paragraphs.
+
 - **An autolink body admits non-ASCII.** PART 3's `url_char` gains
   `unicode_url_char - format_char - control_char`, so an internationalized
   domain (`<https://例.jp/>`), an accented host, a non-ASCII path and a
