@@ -97,14 +97,37 @@ fn control_a_body_at_the_content_column_stays_in_the_definition() {
     );
 }
 
-/// Once the fence CLOSES at the column the guard is spent, and a flush-left line
-/// after it folds into the definition exactly as it did before. A guard that
-/// never cleared would strand this line at document level.
+/// NEITHER WHILE IT RUNS NOR ONCE IT HAS FINISHED. A CLOSED code block is a
+/// finished block, not a paragraph, so a below-column line after it has nothing
+/// to fold into and the body ends there too. The clause states the rule on the
+/// PARAGRAPH; its worked example only shows the open half, and reading the
+/// example as the rule left this case folding.
+///
+/// This assertion used to say the opposite - "the guard is spent" - and it was
+/// wrong for the same reason a reader of the example would be. Both twins are
+/// asserted, because they are where the answer comes from.
 #[test]
-fn control_a_closed_fence_releases_the_flush_left_fold() {
+fn a_closed_fence_ends_the_definition_body_too() {
+    let out = html(":: t\n:  ```\n   b\n   ```\nlazy\n");
     assert_eq!(
-        html(":: t\n:  ```\n   b\n   ```\nlazy\n"),
-        "<dl>\n  <dt>t</dt>\n  <dd>\n    <pre><code>b\n</code></pre>\n    <p>lazy</p>\n  </dd>\n</dl>"
+        out,
+        "<dl>\n  <dt>t</dt>\n  <dd>\n    <pre><code>b\n</code></pre>\n  </dd>\n</dl>\n<p>lazy</p>"
+    );
+    assert_eq!(out, definition_of(&html("- ```\n  b\n  ```\nlazy\n")));
+    assert_eq!(
+        html("> ```\n> b\n> ```\nlazy\n"),
+        "<blockquote>\n  <pre><code>b\n</code></pre>\n</blockquote>\n<p>lazy</p>"
+    );
+}
+
+/// CONTROL for the half above: content collected at the body's column AFTER the
+/// fence closed opens a paragraph again, and the fold reaches it. A guard that
+/// latched on the first closer would strand this line at document level.
+#[test]
+fn control_content_after_a_closed_fence_reopens_the_fold() {
+    assert_eq!(
+        html(":: t\n:  ```\n   b\n   ```\n   c\nlazy\n"),
+        "<dl>\n  <dt>t</dt>\n  <dd>\n    <pre><code>b\n</code></pre>\n    <p>c\nlazy</p>\n  </dd>\n</dl>"
     );
 }
 
