@@ -602,7 +602,8 @@ fn extract_footnote_defs(
     // closer - which is not a colon fence - and every later definition in the
     // document was skipped. Tracked only to gate the opener.
     let mut in_comment_fence: Option<usize> = None;
-    let comment_closers = comment_fence_close_index(&lines);
+    let comment_fence_closers = comment_fence_close_index(&lines);
+    let mut comment_closers: Option<HashMap<usize, usize>> = None;
     // See ContentColumns: a definition on an item's CONTINUATION line carries no
     // marker, so without this the line kept its indentation, stopped looking
     // like a definition, and was neither collected nor rendered - the author's
@@ -696,7 +697,7 @@ fn extract_footnote_defs(
             i += 1;
             continue;
         } else if let Some(open) = detect_comment_fence_line(lines[i]) {
-            if comment_closers
+            if comment_fence_closers
                 .get(&open.fence_len)
                 .is_some_and(|close_at| *close_at > i)
             {
@@ -783,14 +784,14 @@ fn extract_footnote_defs(
                         i += 1;
                         let mut attached: Vec<String> = Vec::new();
                         let attached_start = i;
-                        while i < lines.len() {
+                        let end =
+                            attached_block_end(&lines, i, &mut comment_closers, &mut |a, _| {
+                                is_blank_line(a)
+                                    || is_plus_marker(a)
+                                    || parse_footnote_def_line(a).is_some()
+                            });
+                        while i < end {
                             let a = lines[i];
-                            if is_blank_line(a)
-                                || is_plus_marker(a)
-                                || parse_footnote_def_line(a).is_some()
-                            {
-                                break;
-                            }
                             attached.push(a.to_string());
                             i += 1;
                         }
@@ -4638,13 +4639,19 @@ fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         if trim_ascii(line) == "+" && indent_columns(line) == 0 {
             cur.consume();
             let mut attached = LineBuffer::default();
-            while let Some(&next) = cur.lines.get(cur.pos) {
-                if is_blank_line(next)
-                    || strip_blockquote_prefix(next).is_some()
-                    || (trim_ascii(next) == "+" && indent_columns(next) == 0)
-                {
-                    break;
-                }
+            let cursor_lines = cur.lines;
+            let end = attached_block_end(
+                cursor_lines,
+                cur.pos,
+                &mut cur.comment_closer_last_index,
+                &mut |next, _| {
+                    is_blank_line(next)
+                        || strip_blockquote_prefix(next).is_some()
+                        || (trim_ascii(next) == "+" && indent_columns(next) == 0)
+                },
+            );
+            while cur.pos < end {
+                let next = cur.lines[cur.pos];
                 // Attached lines are spliced in verbatim, so the container took
                 // nothing beyond whatever an outer one already had.
                 attached.push_at(
@@ -5031,6 +5038,95 @@ fn resolve_ordered_first(
     (first.start, first.ol_type)
 }
 
+fn has_indexed_comment_closer_after(
+    lines: &[&str],
+    comment_closers: &mut Option<HashMap<usize, usize>>,
+    start: usize,
+    fence_len: usize,
+) -> bool {
+    if comment_closers.is_none() {
+        *comment_closers = Some(build_comment_closer_last_index(lines));
+    }
+    comment_closers
+        .as_ref()
+        .and_then(|index| index.get(&fence_len).copied())
+        .is_some_and(|last| last >= start)
+}
+
+/// The end index of the ONE block a `+` continuation marker attaches
+/// (PART 9 §17 L3), scanning from `start` over `lines`.
+///
+/// A BOUNDARY LINE INSIDE AN OPEN FENCE DOES NOT END THE CONTAINER
+/// (markup-carve/carve#983 corpus category 279). L3 bounds the attachment "up
+/// to the next blank line, sibling marker, or a further `+`", and those bound
+/// THE BLOCK: a fenced block ends at its CLOSER, which is what makes it one
+/// block, so a boundary line written between an opener and its closer is fence
+/// content and ends nothing.
+///
+/// ONE SPELLING FOR EVERY CONTAINER. `is_boundary` is the only per-container
+/// part; the four fence shapes are not. This scan is
+/// `parse_continuation_block`'s, moved here unchanged so that collector keeps
+/// its exact behavior and the other four gain it. The second closure argument
+/// is the index of the line being tested.
+///
+/// `comment_closers` is the caller's lazily built exact-width `%%%` closer
+/// index. It is a parameter rather than a local because REBUILDING it per call
+/// is quadratic on a document full of comment openers.
+fn attached_block_end(
+    lines: &[&str],
+    start: usize,
+    comment_closers: &mut Option<HashMap<usize, usize>>,
+    is_boundary: &mut dyn FnMut(&str, usize) -> bool,
+) -> usize {
+    let mut end = start;
+    let mut in_fence: Option<FenceOpen> = None;
+    while end < lines.len() {
+        let line = lines[end];
+        if let Some(open) = in_fence {
+            if is_fence_close(line, open) {
+                in_fence = None;
+            }
+            end += 1;
+            continue;
+        }
+        if let Some(open) = detect_fence_open(line) {
+            in_fence = Some(open);
+            end += 1;
+            continue;
+        }
+        if let Some(open) = detect_comment_fence_line(line) {
+            if has_indexed_comment_closer_after(lines, comment_closers, end + 1, open.fence_len) {
+                if let Some(close) = (end + 1..lines.len())
+                    .find(|&j| is_comment_fence_close(lines[j], open.fence_len))
+                {
+                    end = close + 1;
+                    continue;
+                }
+            }
+        }
+        // A colon fence is a self-delimiting block; skip the whole region so a
+        // `+` inside it is content, not the parent's boundary. Unterminated
+        // colon containers close at end of input.
+        if let Some(fence_len) = detect_line_block_open(line) {
+            end = find_line_block_end(lines, end, fence_len);
+            continue;
+        }
+        if let Some(fence_len) = detect_hardbreaks_block_open(line) {
+            end = find_colon_container_end(lines, end, fence_len);
+            continue;
+        }
+        if let Some(open) = detect_container_open(line) {
+            end = find_colon_container_end(lines, end, open.fence_len);
+            continue;
+        }
+        if is_boundary(line, end) {
+            break;
+        }
+        end += 1;
+    }
+    end
+}
+
 /// Parse ONE block attached by a list `+` continuation marker, bounded to the
 /// lines before the next lone `+` marker at the item's base indent. The scan is
 /// fence-aware -- a `+` inside a nested fenced code block is content, not a
@@ -5062,75 +5158,38 @@ fn parse_continuation_block(
             return None;
         }
     }
-    let mut end = cur.pos;
-    let mut in_fence: Option<FenceOpen> = None;
-    while end < cur.lines.len() {
-        let line = cur.lines[end];
-        if let Some(open) = in_fence {
-            if is_fence_close(line, open) {
-                in_fence = None;
+    let lines = cur.lines;
+    let start = cur.pos;
+    let end = attached_block_end(
+        lines,
+        start,
+        &mut cur.comment_closer_last_index,
+        &mut |line, end| {
+            // A FURTHER `+` ends this attachment, on the first line as on any other.
+            // §17 L3 lists the terminators as "the next blank line, sibling marker,
+            // or a further `+`" and makes no exception for an attachment that has
+            // taken nothing yet. Requiring `end > cur.pos` here swallowed the
+            // second marker as CONTENT of the first, so `- a` / `+` / `+` / `b`
+            // rendered a literal `+` in the item where carve-js, carve-php and the
+            // executable spec all attach `b` (carve-rs#704). The first marker
+            // simply attaches an empty block, which adds nothing.
+            //
+            // The sibling-marker guard below keeps its `end > cur.pos` for a
+            // different reason: a list marker on the first attached line is a
+            // sibling ITEM, and ending the attachment there is what makes it one.
+            if trim_ascii(line) == "+" && indent_columns(line) == base_indent {
+                return true;
             }
-            end += 1;
-            continue;
-        }
-        if let Some(open) = detect_fence_open(line) {
-            in_fence = Some(open);
-            end += 1;
-            continue;
-        }
-        if let Some(open) = detect_comment_fence_line(line) {
-            if cur.has_comment_closer_after(end + 1, open.fence_len) {
-                if let Some(close) = (end + 1..cur.lines.len())
-                    .find(|&j| is_comment_fence_close(cur.lines[j], open.fence_len))
-                {
-                    end = close + 1;
-                    continue;
-                }
-            }
-        }
-        // A colon fence is a self-delimiting block; skip the whole region so a
-        // `+` inside it is content, not the parent's boundary. Unterminated
-        // colon containers close at end of input.
-        if let Some(fence_len) = detect_line_block_open(line) {
-            end = find_line_block_end(cur.lines, end, fence_len);
-            continue;
-        }
-        if let Some(fence_len) = detect_hardbreaks_block_open(line) {
-            end = find_colon_container_end(cur.lines, end, fence_len);
-            continue;
-        }
-        if let Some(open) = detect_container_open(line) {
-            end = find_colon_container_end(cur.lines, end, open.fence_len);
-            continue;
-        }
-        // A FURTHER `+` ends this attachment, on the first line as on any other.
-        // §17 L3 lists the terminators as "the next blank line, sibling marker,
-        // or a further `+`" and makes no exception for an attachment that has
-        // taken nothing yet. Requiring `end > cur.pos` here swallowed the
-        // second marker as CONTENT of the first, so `- a` / `+` / `+` / `b`
-        // rendered a literal `+` in the item where carve-js, carve-php and the
-        // executable spec all attach `b` (carve-rs#704). The first marker
-        // simply attaches an empty block, which adds nothing.
-        //
-        // The sibling-marker guard below keeps its `end > cur.pos` for a
-        // different reason: a list marker on the first attached line is a
-        // sibling ITEM, and ending the attachment there is what makes it one.
-        if trim_ascii(line) == "+" && indent_columns(line) == base_indent {
-            break;
-        }
-        // A list marker at (or below) the base column is a SIBLING item of the
-        // outer list, not part of this `+`-attached block. Bound the block here
-        // so it is not absorbed -- now that a bullet does not interrupt, a
-        // `> quote` (or other) block would otherwise swallow a following
-        // `- next` as lazy continuation. Matches carve-js.
-        if end > cur.pos
-            && indent_columns(line) <= base_indent
-            && detect_list_marker_full(line).is_some()
-        {
-            break;
-        }
-        end += 1;
-    }
+            // A list marker at (or below) the base column is a SIBLING item of the
+            // outer list, not part of this `+`-attached block. Bound the block here
+            // so it is not absorbed -- now that a bullet does not interrupt, a
+            // `> quote` (or other) block would otherwise swallow a following
+            // `- next` as lazy continuation. Matches carve-js.
+            end > start
+                && indent_columns(line) <= base_indent
+                && detect_list_marker_full(line).is_some()
+        },
+    );
     let slice: Vec<&str> = cur.lines[cur.pos..end].to_vec();
     let line_map: Vec<Option<usize>> = cur
         .line_map
@@ -6462,26 +6521,104 @@ fn block_ends_with_open_paragraph(block: Option<&BlockNode>) -> bool {
 /// not track whether a blank sits inside a fenced block, so a fenced block that
 /// contains an interior blank line loosens its item too. `source` is the
 /// continuation dedented to column 0, so block openers are recognized flush.
+/// One past the closer of a colon container opened at `start`, but ONLY when it
+/// really closes.
+///
+/// `find_colon_container_end` and `find_line_block_end` both answer end-of-input
+/// for an unterminated opener, which is right for an extent scan and wrong for
+/// a state pass: an opener with no closer would latch the pass and swallow every
+/// later line, so a genuinely CLOSED fence below an unterminated one would go
+/// unmarked. Proving the last line is an exact closer is the whole difference.
+fn closed_colon_span_end(
+    lines: &[&str],
+    start: usize,
+    fence_len: usize,
+    line_block: bool,
+) -> Option<usize> {
+    let end = if line_block {
+        find_line_block_end(lines, start, fence_len)
+    } else {
+        find_colon_container_end(lines, start, fence_len)
+    };
+    if end > start && end <= lines.len() && exact_colon_fence_len(lines[end - 1]) == Some(fence_len)
+    {
+        return Some(end);
+    }
+    None
+}
+
 fn continuation_source_loosens(source: &str) -> bool {
     let lines: Vec<&str> = source.split('\n').collect();
-    // Track fenced-code regions: a blank line INSIDE an open fence is verbatim
-    // content, not an interior block separator, so it must not loosen the item
-    // (carve-php#404 family; matches carve-js / carve-php). A blank AFTER the
-    // fence closes still loosens against a following paragraph.
+    // A blank line INSIDE AN OPEN FENCE is that block's own content, not an
+    // interior block separator, so it must not loosen the item (carve-php#404
+    // family; matches carve-js / carve-php). A blank AFTER the fence closes
+    // still loosens against a following paragraph.
+    //
+    // ALL THREE FENCE KINDS. This knew only the code fence, which is the same
+    // one-kind-of-three read corpus category 279 pins for the `+` collectors:
+    // a blank inside an item's own `%%%` or `:::` body loosened the item that
+    // held it, where the identical code fence kept it tight
+    // (markup-carve/carve#985). §28 makes a comment body verbatim and a colon
+    // container is one block; neither is two blocks with a separator between
+    // them.
+    //
+    // ONE STATEFUL LEFT-TO-RIGHT PASS, not one scan per line: each closed span
+    // is jumped over whole, and spans never overlap, so the walk stays linear.
     let mut fence: Option<FenceOpen> = None;
-    for i in 0..lines.len() {
+    let mut comment_closers: Option<HashMap<usize, usize>> = None;
+    let mut i = 0;
+    while i < lines.len() {
         if let Some(open) = fence {
             if is_fence_close(lines[i], open) {
                 fence = None;
             }
+            i += 1;
             continue;
         }
         if let Some(open) = detect_fence_open(lines[i]) {
             fence = Some(open);
+            i += 1;
             continue;
+        }
+        if let Some(open) = detect_comment_fence_line(lines[i]) {
+            // AN OPENER WITH NO CLOSER AHEAD OPENS NOTHING (§28) and must not
+            // latch this pass.
+            let closers =
+                comment_closers.get_or_insert_with(|| build_comment_closer_last_index(&lines));
+            let has_closer = closers
+                .get(&open.fence_len)
+                .copied()
+                .is_some_and(|last| last > i);
+            if has_closer {
+                if let Some(close) =
+                    (i + 1..lines.len()).find(|&j| is_comment_fence_close(lines[j], open.fence_len))
+                {
+                    i = close + 1;
+                    continue;
+                }
+            }
+        }
+        if let Some(fence_len) = detect_line_block_open(lines[i]) {
+            if let Some(end) = closed_colon_span_end(&lines, i, fence_len, true) {
+                i = end;
+                continue;
+            }
+        }
+        if let Some(fence_len) = detect_hardbreaks_block_open(lines[i]) {
+            if let Some(end) = closed_colon_span_end(&lines, i, fence_len, false) {
+                i = end;
+                continue;
+            }
+        }
+        if let Some(open) = detect_container_open(lines[i]) {
+            if let Some(end) = closed_colon_span_end(&lines, i, open.fence_len, false) {
+                i = end;
+                continue;
+            }
         }
         // Start at 1: a leading blank is not an interior separator between blocks.
         if i == 0 || !is_blank_line(lines[i]) {
+            i += 1;
             continue;
         }
         let mut j = i + 1;
@@ -6490,11 +6627,13 @@ fn continuation_source_loosens(source: &str) -> bool {
         }
         if j >= lines.len() {
             // Only trailing blank(s) follow: no second block to loosen against.
+            i += 1;
             continue;
         }
         if !continuation_line_opens_sub_block(lines[j], &lines[j + 1..]) {
             return true;
         }
+        i += 1;
     }
     false
 }
@@ -6638,6 +6777,20 @@ fn collect_indented_block_mapped_with(
     let mut line_map = Vec::new();
     let mut col_map: Vec<Option<isize>> = Vec::new();
     let mut block_indent: Option<usize> = None;
+    // A COLON CONTAINER IS THE THIRD OPEN FENCE at the item's content column,
+    // and this collector tracked only the code one. §24 S1 MATCH PREFIXES and
+    // S2 place a line by the COLUMN it reaches and never by its first
+    // character, so a marker at the body's own column inside an open `:::` is
+    // the same continuation a plain `x` is - which is exactly what the code
+    // spelling beside it already answers (corpus category 278). Without it
+    // `- x` / `  :::` / `  a` / `  - m` / `  b` / `  :::` split the div around a
+    // nested list and published a spurious empty `div` for the closer (corpus
+    // category 279 row 5).
+    //
+    // A STACK of exact widths, not a depth count: a colon fence closes on an
+    // EXACT length match (markup-carve/carve#455), so a wider run nests rather
+    // than closes.
+    let mut colon_open: Vec<usize> = Vec::new();
     let mut comment_fence: Option<(usize, usize)> = None;
     let mut comment_fence_strip: Option<usize> = None;
     while let Some(line) = cur.peek() {
@@ -6720,7 +6873,12 @@ fn collect_indented_block_mapped_with(
         // from by two characters. Without the guard the marker severed the
         // verbatim body: the fence closed empty, the marker opened a sub-list,
         // and the fence's own closer became an empty code span.
-        if stop_at_content_column_marker && is_marker && indent >= strip_cols && fence.is_none() {
+        if stop_at_content_column_marker
+            && is_marker
+            && indent >= strip_cols
+            && fence.is_none()
+            && colon_open.is_empty()
+        {
             break;
         }
         // A comment is not a block, so it does not set the block indent. It
@@ -6775,7 +6933,22 @@ fn collect_indented_block_mapped_with(
             comment_fence_strip = None;
         }
         let (sliced, consumed, synthetic) = slice_columns_mapped(line, stripped, is_marker);
+        // A COLON LINE INSIDE A CODE OR COMMENT SPAN OPENS AND CLOSES NOTHING:
+        // §28 makes both bodies verbatim, which is the same reading that keeps a
+        // marker in one from being a marker. Read before the code tracker
+        // advances, so the CLOSER line counts as inside its own fence.
+        //
+        // Without it a `:::` written inside a code fence pushed onto the stack
+        // and never came off, so the item's next REAL `:::` opener matched that
+        // ghost as a closer, the stack emptied one level early, and the marker
+        // gate severed the very div this tracker exists to keep whole.
+        let opaque_here = fence.is_some() || in_comment_span;
         track_collected_fence(fence, &sliced, indent >= strip_cols);
+        track_collected_colon_fence(
+            &mut colon_open,
+            &sliced,
+            indent >= strip_cols && !opaque_here,
+        );
         lines.push(sliced);
         if cur.line_map.is_some() {
             line_map.push(cur.source_line(cur.pos));
@@ -6819,6 +6992,39 @@ fn collect_indented_block_mapped_with(
 /// opens nothing (§24 C3). The test runs on the DEDENTED line for the same
 /// reason `detect_fence_open` refuses an indented one - a residual column is
 /// still a column.
+/// Advance a collector's OPEN COLON CONTAINER stack over one collected line.
+///
+/// The code counterpart is `track_collected_fence`, and this is deliberately
+/// written beside it: one construct answered in two places is what let a `:::`
+/// body sever on a marker where a code body did not.
+///
+/// EXACT WIDTHS, so the widths in flight are a stack (markup-carve/carve#455):
+/// a bare run of the innermost width closes, any other opener nests. Only a
+/// line that reaches the content column can open or close one - below it the
+/// line is text (§24 C3), which is the same condition the code tracker takes.
+fn track_collected_colon_fence(open: &mut Vec<usize>, line: &str, at_content_column: bool) {
+    if !at_content_column {
+        return;
+    }
+    if let Some(len) = exact_colon_fence_len(line) {
+        if open.last() == Some(&len) {
+            open.pop();
+            return;
+        }
+    }
+    if let Some(len) = detect_line_block_open(line) {
+        open.push(len);
+        return;
+    }
+    if let Some(len) = detect_hardbreaks_block_open(line) {
+        open.push(len);
+        return;
+    }
+    if let Some(container) = detect_container_open(line) {
+        open.push(container.fence_len);
+    }
+}
+
 fn track_collected_fence(fence: &mut Option<FenceOpen>, dedented: &str, at_content_column: bool) {
     if !at_content_column {
         return;
@@ -6846,6 +7052,20 @@ fn collect_indented_block_plain_with(
 ) -> String {
     let mut lines = Vec::new();
     let mut block_indent: Option<usize> = None;
+    // A COLON CONTAINER IS THE THIRD OPEN FENCE at the item's content column,
+    // and this collector tracked only the code one. §24 S1 MATCH PREFIXES and
+    // S2 place a line by the COLUMN it reaches and never by its first
+    // character, so a marker at the body's own column inside an open `:::` is
+    // the same continuation a plain `x` is - which is exactly what the code
+    // spelling beside it already answers (corpus category 278). Without it
+    // `- x` / `  :::` / `  a` / `  - m` / `  b` / `  :::` split the div around a
+    // nested list and published a spurious empty `div` for the closer (corpus
+    // category 279 row 5).
+    //
+    // A STACK of exact widths, not a depth count: a colon fence closes on an
+    // EXACT length match (markup-carve/carve#455), so a wider run nests rather
+    // than closes.
+    let mut colon_open: Vec<usize> = Vec::new();
     let mut comment_fence: Option<(usize, usize)> = None;
     let mut comment_fence_strip: Option<usize> = None;
     while let Some(line) = cur.peek() {
@@ -6895,7 +7115,12 @@ fn collect_indented_block_plain_with(
         // from by two characters. Without the guard the marker severed the
         // verbatim body: the fence closed empty, the marker opened a sub-list,
         // and the fence's own closer became an empty code span.
-        if stop_at_content_column_marker && is_marker && indent >= strip_cols && fence.is_none() {
+        if stop_at_content_column_marker
+            && is_marker
+            && indent >= strip_cols
+            && fence.is_none()
+            && colon_open.is_empty()
+        {
             break;
         }
         // A comment is not a block, so it does not set the block indent. It
@@ -6929,7 +7154,22 @@ fn collect_indented_block_plain_with(
             comment_fence_strip = None;
         }
         let sliced = slice_columns(line, stripped, is_marker);
+        // A COLON LINE INSIDE A CODE OR COMMENT SPAN OPENS AND CLOSES NOTHING:
+        // §28 makes both bodies verbatim, which is the same reading that keeps a
+        // marker in one from being a marker. Read before the code tracker
+        // advances, so the CLOSER line counts as inside its own fence.
+        //
+        // Without it a `:::` written inside a code fence pushed onto the stack
+        // and never came off, so the item's next REAL `:::` opener matched that
+        // ghost as a closer, the stack emptied one level early, and the marker
+        // gate severed the very div this tracker exists to keep whole.
+        let opaque_here = fence.is_some() || in_comment_span;
         track_collected_fence(fence, &sliced, indent >= strip_cols);
+        track_collected_colon_fence(
+            &mut colon_open,
+            &sliced,
+            indent >= strip_cols && !opaque_here,
+        );
         lines.push(sliced);
         cur.consume();
     }
@@ -7409,14 +7649,20 @@ fn parse_definition_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNo
             // block (no `+` literal), with no indentation. `:  \+` stays literal.
             let mut body = if is_plus_marker(def_trimmed) {
                 let mut fb = LineBuffer::default();
-                while let Some(a) = cur.peek() {
-                    if is_blank_line(a)
-                        || is_plus_marker(a)
-                        || a.strip_prefix(":: ").is_some()
-                        || a.strip_prefix(":  ").is_some()
-                    {
-                        break;
-                    }
+                let lines = cur.lines;
+                let end = attached_block_end(
+                    lines,
+                    cur.pos,
+                    &mut cur.comment_closer_last_index,
+                    &mut |a, _| {
+                        is_blank_line(a)
+                            || is_plus_marker(a)
+                            || a.strip_prefix(":: ").is_some()
+                            || a.strip_prefix(":  ").is_some()
+                    },
+                );
+                while cur.pos < end {
+                    let a = cur.lines[cur.pos];
                     fb.push_at(
                         a.to_string(),
                         cur.source_line(cur.pos),
@@ -7548,14 +7794,20 @@ fn collect_definition_body(cur: &mut LineCursor, fence: &mut DefinitionBodyFence
         if is_plus_marker(line) {
             cur.consume();
             let mut attached = LineBuffer::default();
-            while let Some(a) = cur.peek() {
-                if is_blank_line(a)
-                    || is_plus_marker(a)
-                    || a.strip_prefix(":: ").is_some()
-                    || a.strip_prefix(":  ").is_some()
-                {
-                    break;
-                }
+            let cursor_lines = cur.lines;
+            let end = attached_block_end(
+                cursor_lines,
+                cur.pos,
+                &mut cur.comment_closer_last_index,
+                &mut |a, _| {
+                    is_blank_line(a)
+                        || is_plus_marker(a)
+                        || a.strip_prefix(":: ").is_some()
+                        || a.strip_prefix(":  ").is_some()
+                },
+            );
+            while cur.pos < end {
+                let a = cur.lines[cur.pos];
                 attached.push_at(
                     a.to_string(),
                     cur.source_line(cur.pos),
