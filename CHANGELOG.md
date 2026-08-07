@@ -141,6 +141,25 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A container a lazy line folded into is still open.** PART 1 S4's lazy branch
+  folds a flush-left line into the innermost open paragraph and closes nothing,
+  and that binds the lines after it too. This engine folded the line and then
+  ended the container anyway, so a line that came back to the container's
+  content column landed outside it: `- x` / `  :::` / `  a` / `d` / `  b` /
+  `  :::` put `b` beside the div and printed a stray empty `<div>` for the
+  closer, where the whole run is one paragraph in one div. The same shape with a
+  block quote produced two quotes instead of one, a marker-line quote and a
+  marker-line heading did the same through their own collectors, and one level
+  of item nesting lost the construct to the top level. The governing parameter
+  is an open paragraph anywhere in the stack, never the fence kind: an empty or
+  a closed container still ends at the flush-left line, a closed container
+  nested inside an unterminated one reads as closed, a colon-shaped line inside
+  a code fence or a line block opens nothing, and a code fence body, which can
+  hold no paragraph at all, is unchanged. A container nested inside a block
+  quote is reached through the quote's marker, which it was not before, so
+  `- x` / `  > :::` / `  > a` / `d` / `  > b` no longer spills the quoted tail
+  out of the list as literal text.
+
 - **A boundary line inside an open fence no longer ends the container**
   (markup-carve/carve#983 corpus category 279, markup-carve/carve#985,
   carve-rs#802). A `+` continuation marker attaches ONE block, and a fenced
