@@ -18,7 +18,7 @@ use crate::ast::{
     smart_punctuation_glyph, Attrs, BlockExtension, BlockNode, Document, FigureTarget,
     InlineExtension, InlineNode,
 };
-use crate::extension::{BeforeRenderContext, CarveExtension, RenderContext};
+use crate::extension::{BeforeRenderContext, CarveExtension, RenderContext, SmartTypographyMode};
 use crate::parse::slugify_parse;
 use crate::render::render_attrs;
 
@@ -58,14 +58,17 @@ impl CarveExtension for Index {
         "index"
     }
 
-    fn before_render(&self, mut doc: Document, _ctx: &BeforeRenderContext<'_>) -> Document {
+    fn before_render(&self, mut doc: Document, ctx: &BeforeRenderContext<'_>) -> Document {
+        // The DISPLAY text below is prose the reader sees, so it follows the
+        // document-global smart-typography mode (PART 9 §19). The slug does not.
+        let smart = ctx.options().smart_typography;
         let mut counts: BTreeMap<String, usize> = BTreeMap::new();
         let mut display: BTreeMap<String, String> = BTreeMap::new();
         // Body-only collection: a marker in deferred content (footnote defs the
         // renderer may drop or reorder) is left as the plain `index` extension
         // and renders inert, so the index never points at a dropped anchor.
         for block in &mut doc.children {
-            rewrite_markers_block(block, &mut counts, &mut display);
+            rewrite_markers_block(block, &mut counts, &mut display, smart);
         }
         let any = !counts.is_empty();
         *self.counts.borrow_mut() = counts;
@@ -120,7 +123,11 @@ impl CarveExtension for Index {
 }
 
 fn term_slug(term: &[InlineNode]) -> String {
-    slugify_parse(&inline_text(term), true)
+    // GLYPH, always. An id must not depend on presentational typography, so the
+    // slug is byte-identical in both smart-typography modes -- the same rule the
+    // core applies to heading ids (PART 9 §19: "heading ids are BYTE-IDENTICAL
+    // either way"). Only the DISPLAY text below follows the mode.
+    slugify_parse(&inline_text(term, SmartTypographyMode::Glyph), true)
 }
 
 fn attr(node: &InlineExtension, key: &str) -> String {
@@ -144,76 +151,77 @@ fn rewrite_markers_block(
     block: &mut BlockNode,
     counts: &mut BTreeMap<String, usize>,
     display: &mut BTreeMap<String, String>,
+    smart: SmartTypographyMode,
 ) {
     match block {
-        BlockNode::Heading(h) => rewrite_markers_inline(&mut h.children, counts, display),
-        BlockNode::Paragraph(p) => rewrite_markers_inline(&mut p.children, counts, display),
+        BlockNode::Heading(h) => rewrite_markers_inline(&mut h.children, counts, display, smart),
+        BlockNode::Paragraph(p) => rewrite_markers_inline(&mut p.children, counts, display, smart),
         BlockNode::List(l) => {
             for item in &mut l.items {
                 for child in &mut item.children {
-                    rewrite_markers_block(child, counts, display);
+                    rewrite_markers_block(child, counts, display, smart);
                 }
             }
         }
         BlockNode::BlockQuote(b) => {
             for child in &mut b.children {
-                rewrite_markers_block(child, counts, display);
+                rewrite_markers_block(child, counts, display, smart);
             }
         }
         BlockNode::Admonition(a) => {
             if let Some(title) = &mut a.title {
-                rewrite_markers_inline(title, counts, display);
+                rewrite_markers_inline(title, counts, display, smart);
             }
             for child in &mut a.children {
-                rewrite_markers_block(child, counts, display);
+                rewrite_markers_block(child, counts, display, smart);
             }
         }
         BlockNode::Div(d) => {
             for child in &mut d.children {
-                rewrite_markers_block(child, counts, display);
+                rewrite_markers_block(child, counts, display, smart);
             }
         }
         BlockNode::Extension(e) => {
             for child in &mut e.children {
-                rewrite_markers_block(child, counts, display);
+                rewrite_markers_block(child, counts, display, smart);
             }
         }
         BlockNode::Table(t) => {
             for row in &mut t.rows {
                 for cell in &mut row.cells {
-                    rewrite_markers_inline(&mut cell.children, counts, display);
+                    rewrite_markers_inline(&mut cell.children, counts, display, smart);
                 }
             }
         }
         BlockNode::DefinitionList(dl) => {
             for item in &mut dl.items {
                 for term in &mut item.terms {
-                    rewrite_markers_inline(term, counts, display);
+                    rewrite_markers_inline(term, counts, display, smart);
                 }
                 for def in &mut item.definitions {
                     for child in def {
-                        rewrite_markers_block(child, counts, display);
+                        rewrite_markers_block(child, counts, display, smart);
                     }
                 }
             }
         }
         BlockNode::Figure(f) => {
-            rewrite_markers_inline(&mut f.caption, counts, display);
+            rewrite_markers_inline(&mut f.caption, counts, display, smart);
             match &mut f.target {
                 FigureTarget::BlockQuote(b) => {
                     for child in &mut b.children {
-                        rewrite_markers_block(child, counts, display);
+                        rewrite_markers_block(child, counts, display, smart);
                     }
                 }
                 FigureTarget::Table(t) => {
                     for row in &mut t.rows {
                         for cell in &mut row.cells {
-                            rewrite_markers_inline(&mut cell.children, counts, display);
+                            rewrite_markers_inline(&mut cell.children, counts, display, smart);
                         }
                     }
                 }
                 FigureTarget::Paragraph(p) => {
-                    rewrite_markers_inline(&mut p.children, counts, display);
+                    rewrite_markers_inline(&mut p.children, counts, display, smart);
                 }
                 FigureTarget::Image(_) | FigureTarget::CodeBlock(_) => {}
             }
@@ -226,6 +234,7 @@ fn rewrite_markers_inline(
     nodes: &mut [InlineNode],
     counts: &mut BTreeMap<String, usize>,
     display: &mut BTreeMap<String, String>,
+    smart: SmartTypographyMode,
 ) {
     for node in nodes.iter_mut() {
         match node {
@@ -236,7 +245,7 @@ fn rewrite_markers_inline(
                 let occurrence = *n;
                 display
                     .entry(slug.clone())
-                    .or_insert_with(|| inline_text(&e.children));
+                    .or_insert_with(|| inline_text(&e.children, smart));
                 let mut attrs = Attrs::default();
                 attrs.key_values.insert("idx-slug".to_string(), slug);
                 attrs
@@ -249,12 +258,20 @@ fn rewrite_markers_inline(
                     pos: None,
                 });
             }
-            InlineNode::Emphasis(e) => rewrite_markers_inline(&mut e.children, counts, display),
-            InlineNode::Link(l) => rewrite_markers_inline(&mut l.children, counts, display),
-            InlineNode::Span(s) => rewrite_markers_inline(&mut s.children, counts, display),
-            InlineNode::Extension(e) => rewrite_markers_inline(&mut e.children, counts, display),
-            InlineNode::CriticInsert(c) => rewrite_markers_inline(&mut c.children, counts, display),
-            InlineNode::CriticDelete(c) => rewrite_markers_inline(&mut c.children, counts, display),
+            InlineNode::Emphasis(e) => {
+                rewrite_markers_inline(&mut e.children, counts, display, smart)
+            }
+            InlineNode::Link(l) => rewrite_markers_inline(&mut l.children, counts, display, smart),
+            InlineNode::Span(s) => rewrite_markers_inline(&mut s.children, counts, display, smart),
+            InlineNode::Extension(e) => {
+                rewrite_markers_inline(&mut e.children, counts, display, smart)
+            }
+            InlineNode::CriticInsert(c) => {
+                rewrite_markers_inline(&mut c.children, counts, display, smart)
+            }
+            InlineNode::CriticDelete(c) => {
+                rewrite_markers_inline(&mut c.children, counts, display, smart)
+            }
             _ => {}
         }
     }
@@ -377,7 +394,7 @@ fn render_index_list(
 }
 
 /// Flatten an inline tree to its text content, matching carve-js `inlineText`.
-fn inline_text(nodes: &[InlineNode]) -> String {
+fn inline_text(nodes: &[InlineNode], smart: SmartTypographyMode) -> String {
     let mut out = String::new();
     for node in nodes {
         match node {
@@ -387,17 +404,23 @@ fn inline_text(nodes: &[InlineNode]) -> String {
             // whole thing on every pass to unescape a caret that is almost
             // never there.
             InlineNode::Text(s) => out.push_str(&s.value),
-            InlineNode::SmartPunctuation(s) => out.push_str(smart_punctuation_glyph(s)),
+            InlineNode::SmartPunctuation(s) => {
+                if smart == SmartTypographyMode::Source {
+                    out.push_str(&s.value);
+                } else {
+                    out.push_str(smart_punctuation_glyph(s));
+                }
+            }
             InlineNode::Code(s) => out.push_str(&s.value),
             // An inline literal renders as visible prose (§27), matching carve-js
             // `inlineText` which folds its content into the flattened term text.
             InlineNode::LiteralInline(l) => out.push_str(&l.content),
-            InlineNode::Emphasis(e) => out.push_str(&inline_text(&e.children)),
-            InlineNode::Link(l) => out.push_str(&inline_text(&l.children)),
-            InlineNode::Span(s) => out.push_str(&inline_text(&s.children)),
-            InlineNode::Extension(e) => out.push_str(&inline_text(&e.children)),
-            InlineNode::CriticInsert(c) => out.push_str(&inline_text(&c.children)),
-            InlineNode::CriticDelete(c) => out.push_str(&inline_text(&c.children)),
+            InlineNode::Emphasis(e) => out.push_str(&inline_text(&e.children, smart)),
+            InlineNode::Link(l) => out.push_str(&inline_text(&l.children, smart)),
+            InlineNode::Span(s) => out.push_str(&inline_text(&s.children, smart)),
+            InlineNode::Extension(e) => out.push_str(&inline_text(&e.children, smart)),
+            InlineNode::CriticInsert(c) => out.push_str(&inline_text(&c.children, smart)),
+            InlineNode::CriticDelete(c) => out.push_str(&inline_text(&c.children, smart)),
             _ => {}
         }
     }

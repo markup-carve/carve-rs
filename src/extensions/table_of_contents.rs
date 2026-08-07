@@ -15,7 +15,7 @@ use std::cell::RefCell;
 use std::collections::BTreeMap;
 
 use crate::ast::{Attrs, BlockExtension, BlockNode, Document, Heading, RawBlock};
-use crate::extension::{BeforeRenderContext, CarveExtension, RenderContext};
+use crate::extension::{BeforeRenderContext, CarveExtension, RenderContext, SmartTypographyMode};
 use crate::render::render_attrs_without_keys;
 
 /// Carrier extension name a `::: toc` block is rewritten to in `before_render`,
@@ -127,13 +127,24 @@ impl CarveExtension for TableOfContents {
         "table-of-contents"
     }
 
-    fn before_render(&self, mut doc: Document, _ctx: &BeforeRenderContext<'_>) -> Document {
+    fn before_render(&self, mut doc: Document, ctx: &BeforeRenderContext<'_>) -> Document {
+        // A TOC entry is prose the reader sees, so its text follows the
+        // document-global smart-typography mode (PART 9 §19); the id it links
+        // to does not (`next_id` keeps the glyph, as heading ids must).
+        let smart = ctx.options().smart_typography;
         // The renderer allocates ids over ALL headings in document order
         // (including nested ones). Reproduce that counter so a top-level
         // heading's link target matches the `<section id>` the core emits.
         let mut counts: BTreeMap<String, usize> = BTreeMap::new();
         let mut entries: Vec<TocEntry> = Vec::new();
-        collect_entries(&doc.children, &mut counts, &self.opts, &mut entries, true);
+        collect_entries(
+            &doc.children,
+            &mut counts,
+            &self.opts,
+            &mut entries,
+            true,
+            smart,
+        );
 
         if entries.is_empty() {
             return doc;
@@ -167,6 +178,7 @@ fn collect_entries(
     opts: &TableOfContentsOptions,
     entries: &mut Vec<TocEntry>,
     top_level: bool,
+    smart: SmartTypographyMode,
 ) {
     for block in blocks {
         match block {
@@ -175,24 +187,32 @@ fn collect_entries(
                 if top_level && h.level >= opts.min_level && h.level <= opts.max_level {
                     entries.push(TocEntry {
                         level: h.level,
-                        text: strip_bidi(crate::render::plain_inlines(&h.children).trim()),
+                        text: strip_bidi(
+                            crate::render::plain_inlines_typography(&h.children, smart).trim(),
+                        ),
                         id,
                     });
                 }
             }
             BlockNode::List(l) => {
                 for item in &l.items {
-                    collect_entries(&item.children, counts, opts, entries, false);
+                    collect_entries(&item.children, counts, opts, entries, false, smart);
                 }
             }
-            BlockNode::BlockQuote(b) => collect_entries(&b.children, counts, opts, entries, false),
-            BlockNode::Admonition(a) => collect_entries(&a.children, counts, opts, entries, false),
-            BlockNode::Div(d) => collect_entries(&d.children, counts, opts, entries, false),
-            BlockNode::Extension(e) => collect_entries(&e.children, counts, opts, entries, false),
+            BlockNode::BlockQuote(b) => {
+                collect_entries(&b.children, counts, opts, entries, false, smart)
+            }
+            BlockNode::Admonition(a) => {
+                collect_entries(&a.children, counts, opts, entries, false, smart)
+            }
+            BlockNode::Div(d) => collect_entries(&d.children, counts, opts, entries, false, smart),
+            BlockNode::Extension(e) => {
+                collect_entries(&e.children, counts, opts, entries, false, smart)
+            }
             BlockNode::DefinitionList(dl) => {
                 for item in &dl.items {
                     for def in &item.definitions {
-                        collect_entries(def, counts, opts, entries, false);
+                        collect_entries(def, counts, opts, entries, false, smart);
                     }
                 }
             }
@@ -210,6 +230,7 @@ fn collect_all_entries(
     counts: &mut BTreeMap<String, usize>,
     lowercase: bool,
     entries: &mut Vec<TocEntry>,
+    smart: SmartTypographyMode,
 ) {
     for block in blocks {
         match block {
@@ -217,27 +238,33 @@ fn collect_all_entries(
                 let id = next_id(h, counts, lowercase);
                 entries.push(TocEntry {
                     level: h.level,
-                    text: strip_bidi(crate::render::plain_inlines(&h.children).trim()),
+                    text: strip_bidi(
+                        crate::render::plain_inlines_typography(&h.children, smart).trim(),
+                    ),
                     id,
                 });
             }
             BlockNode::List(l) => {
                 for item in &l.items {
-                    collect_all_entries(&item.children, counts, lowercase, entries);
+                    collect_all_entries(&item.children, counts, lowercase, entries, smart);
                 }
             }
             BlockNode::BlockQuote(b) => {
-                collect_all_entries(&b.children, counts, lowercase, entries)
+                collect_all_entries(&b.children, counts, lowercase, entries, smart)
             }
             BlockNode::Admonition(a) => {
-                collect_all_entries(&a.children, counts, lowercase, entries)
+                collect_all_entries(&a.children, counts, lowercase, entries, smart)
             }
-            BlockNode::Div(d) => collect_all_entries(&d.children, counts, lowercase, entries),
-            BlockNode::Extension(e) => collect_all_entries(&e.children, counts, lowercase, entries),
+            BlockNode::Div(d) => {
+                collect_all_entries(&d.children, counts, lowercase, entries, smart)
+            }
+            BlockNode::Extension(e) => {
+                collect_all_entries(&e.children, counts, lowercase, entries, smart)
+            }
             BlockNode::DefinitionList(dl) => {
                 for item in &dl.items {
                     for def in &item.definitions {
-                        collect_all_entries(def, counts, lowercase, entries);
+                        collect_all_entries(def, counts, lowercase, entries, smart);
                     }
                 }
             }
@@ -402,9 +429,10 @@ impl CarveExtension for TocPlacement {
         // The id counter stays aligned with the renderer; footnote definitions
         // live outside `doc.children`, so their (id-less) headings are excluded.
         let lowercase = ctx.options().lowercase_heading_ids;
+        let smart = ctx.options().smart_typography;
         let mut counts: BTreeMap<String, usize> = BTreeMap::new();
         let mut entries: Vec<TocEntry> = Vec::new();
-        collect_all_entries(&doc.children, &mut counts, lowercase, &mut entries);
+        collect_all_entries(&doc.children, &mut counts, lowercase, &mut entries, smart);
         *self.entries.borrow_mut() = entries;
         *self.budget.borrow_mut() = (8usize.saturating_mul(doc.source_len)).max(1_000_000);
 
