@@ -181,6 +181,12 @@ pub fn from_json(input: &str) -> Result<Document, AstJsonError> {
         footnote_defs,
         children,
         source_len: src_byte_length,
+        // What the sender actually had to send. Exact rather than estimated:
+        // this function is handed the payload, so the number does not have to
+        // be guessed at. It bounds the expansion budgets and the profile's
+        // `max_length`; see `Document::expansion_budget_len` and
+        // `Document::untrusted_input_len`.
+        ingest_payload_len: input.len(),
     };
 
     clear_unbacked_footnote_numbers(&mut doc);

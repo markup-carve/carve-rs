@@ -434,7 +434,8 @@ impl CarveExtension for TocPlacement {
         let mut entries: Vec<TocEntry> = Vec::new();
         collect_all_entries(&doc.children, &mut counts, lowercase, &mut entries, smart);
         *self.entries.borrow_mut() = entries;
-        *self.budget.borrow_mut() = (8usize.saturating_mul(doc.source_len)).max(1_000_000);
+        *self.budget.borrow_mut() =
+            (8usize.saturating_mul(doc.expansion_budget_len())).max(1_000_000);
 
         rewrite_toc_containers(&mut doc.children);
         doc

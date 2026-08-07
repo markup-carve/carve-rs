@@ -9,6 +9,37 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **An ingested tree is bounded by what its payload cost, not by what the
+  payload claims it cost** (carve-rs#811). Two caps were sized from
+  `srcByteLength`, a number that arrives inside the payload. The expansion
+  budgets - abbreviations, table of contents, index - are `max(1 MB, 8 x source
+  length)`, and rewriting that one number to `1000000000` took a 214 KB payload
+  from 1.04 MB of HTML to 101 MB, 472x, for nine extra bytes. The profile's
+  `max_length` check inside `prepare_document_for_render` had the same shape:
+  `Profile::minimal()`, whose whole job is to cap input at 10,000 bytes,
+  accepted an 80 KB payload that claimed to have come from nothing. A cap has to
+  be enforced against something the attacker does not supply, and the CLI
+  already measures the payload for `--from-json` and says why - the library
+  helper documented as the same path for an already-decoded host did not.
+  `from_json` is handed the payload, so it now records exactly what that payload
+  cost: the budgets take the smaller of the claim and the measurement, and the
+  profile check takes the measurement, because a payload claiming to have come
+  from nothing still cost its own bytes to send. `srcByteLength` is still read
+  exactly as written and re-encoded unchanged, because PART 12 §7 makes it a
+  field of the payload; only the caps stop trusting it. **Behavior change:**
+  under a profile with a `max_length`, an ingested payload larger than the cap is
+  now refused through `prepare_document_for_render` where it used to render, and
+  an ingested tree gets a budget sized from its payload. Nothing on the parse
+  path changes, and the ceiling does not bind on any of the 830 corpus
+  documents. The `max_length` check also moves ahead of the `before_render`
+  hooks, where it used to sit behind them: a cap on untrusted input has to be
+  answered before the table-of-contents and index hooks traverse and allocate
+  from the tree, and a hook now runs only on a payload the profile accepted.
+  **API:** `ast::Document` gains a public `ingest_payload_len` field
+  and the `expansion_budget_len()` / `untrusted_input_len()` accessors, so code
+  constructing a `Document` with a struct literal needs the new field, and code
+  sizing a cap should read an accessor rather than `source_len`.
+
 - **A cross-reference label is a budgeted expansion.** `</#slug>` republishes
   the target heading's whole display text while the reference costs only the
   slug, so a short slug on a long heading amplified output by

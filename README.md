@@ -126,6 +126,27 @@ legitimately rendered to nothing.
 `Options::with_profile_base_host` so the policy can tell internal links from
 external ones.
 
+An untrusted **AST payload** is bounded the same way, through the same profile:
+
+```rust
+let doc = carve::from_json(untrusted_payload)?;
+let prepared = carve::prepare_document_for_render(
+    doc,
+    &options,
+    carve::Mode::Interactive,
+    true,
+)?;
+let html = carve::render_html_with_options(&prepared, &options)?;
+```
+
+`prepare_document_for_render` is where the profile applies on this path, and the
+caps there are sized from the payload's measured length rather than from the
+`srcByteLength` it carries - that number arrives inside the payload, so a hostile
+tree could otherwise claim to have come from nothing and render anything, or
+claim a gigabyte and widen its own expansion budget. `Document::source_len`
+still reports the claim as written; `untrusted_input_len()` and
+`expansion_budget_len()` report what may be trusted to size a cap.
+
 Runnable version of all of the above, including what a rejection looks like:
 `cargo run --example untrusted_input`. Full recipe, defaults and threat model:
 [Security](https://markup-carve.github.io/carve/security).

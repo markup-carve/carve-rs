@@ -266,6 +266,7 @@ fn to_text_degrades_a_node_whose_extractor_comes_back_empty_instead_of_deleting_
             ..Default::default()
         })],
         source_len: 0,
+        ingest_payload_len: 0,
     };
     let p = Profile::default().deny_inline(&["caption_number"]);
     let result = apply_profile(doc, &p, None).unwrap();
@@ -802,6 +803,7 @@ fn denying_frontmatter_strips_a_programmatically_built_map_with_no_raw_form() {
             ..Default::default()
         })],
         source_len: 0,
+        ingest_payload_len: 0,
     };
     let profile = Profile::default().deny_block(&["frontmatter"]);
     let result = apply_profile(doc, &profile, None).unwrap();
