@@ -39,7 +39,21 @@ fn every_dangerous_scheme_is_blanked() {
         "vscode://x",
         "jar:http://x!/",
     ] {
-        assert_eq!(destination_of(&link_to(url)), "", "survived: {url}");
+        // Two safe answers, and the second is new: a destination BLANKED by the
+        // denylist, or no link at all. `ms-msdt:/id PCWDiagnostic` carries a
+        // space, so under carve#911 the definition line is anchored at end of
+        // line and what follows the destination makes the production fail - the
+        // line is an ordinary paragraph and the reference never resolves, which
+        // is strictly stronger than blanking it.
+        let dest = destination_of(&link_to(url));
+        assert!(
+            dest.is_empty() || dest == "<none>",
+            "survived: {url} -> {dest}"
+        );
+        // The guarantee itself, whichever answer the line took: the scheme
+        // never reaches a destination.
+        let md = carve::to_markdown(&link_to(url));
+        assert!(!md.contains(&format!("]({url}")), "survived in {md}");
     }
 }
 

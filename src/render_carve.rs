@@ -63,7 +63,31 @@ enum EscapeMode {
 /// through the API or read by `from_json`, which is the caller who can act on it.
 pub fn render_carve(doc: &Document) -> Result<String, crate::RenderDepthError> {
     let watch = crate::render_depth::RenderDepthWatch::new();
-    watch.into_result(render_carve_unguarded(doc))
+    watch.into_result(protect_leading_bom(render_carve_unguarded(doc)))
+}
+
+/// A U+FEFF that would land at the head of the OUTPUT is written one column in.
+///
+/// `normalize_source` strips a single leading byte order mark before the parser
+/// sees it, so a document whose first content character is one cannot be
+/// written back flush left: the re-parse eats it and the document comes back
+/// empty. The character is content - PART 2 keeps it, and corpus
+/// `268-trailing-whitespace-on-a-content-line-is-dropped-8` is a paragraph
+/// holding exactly one - so the writer has to put it somewhere a re-parse can
+/// still read it.
+///
+/// One leading SPACE does that and nothing else: it is INDENTATION on re-parse,
+/// which a paragraph drops, so the tree round-trips unchanged. It does not
+/// violate PART 11 §7 either, which forbids a line whose ONLY content is
+/// whitespace - this line has content, and the space is in front of it.
+///
+/// Idempotent by construction: the second pass sees the same tree and writes
+/// the same leading space.
+fn protect_leading_bom(out: String) -> String {
+    if out.starts_with('\u{feff}') {
+        return format!(" {out}");
+    }
+    out
 }
 
 thread_local! {
@@ -2283,12 +2307,33 @@ fn collapse_breaks(text: &str) -> String {
     trim_non_nbsp(&out).to_string()
 }
 
+/// The writer's whitespace terminal: U+0020 and U+0009, and NOTHING ELSE.
+///
+/// `blank_line = {whitespace}` takes a space or a tab (PART 1, carve#890), and
+/// PART 2's NO TRAILING WHITESPACE drops the same two (carve#926). Every other
+/// character is CONTENT and has to be written back, however invisible - a
+/// no-break space, an OGHAM SPACE MARK, an EN QUAD, a THIN SPACE, a NARROW
+/// NO-BREAK SPACE, a MEDIUM MATHEMATICAL SPACE, an IDEOGRAPHIC SPACE, a
+/// zero-width space, a FORM FEED and a VERTICAL TAB.
+///
+/// The two LINE TERMINATORS are in the set as well, and that is a different
+/// job: these helpers also trim the newlines around a rendered block, which is
+/// layout rather than line content. A form feed is NOT a terminator here - it
+/// is content that PART 2 keeps - so the set is named rather than spelled
+/// `is_ascii_whitespace`, which would take it.
+///
+/// This was the Unicode whitespace PROPERTY with U+00A0 carved out by hand,
+/// which is the shape the rule keeps being written in wrongly: the one
+/// character anyone thinks of survived and the other eight did not, so a line
+/// holding one of them was written back EMPTY and reparsed as a blank - which
+/// split its paragraph in two and lost the character. Naming the two terminal
+/// characters removes the exception along with the defect.
 fn trim_non_nbsp(text: &str) -> &str {
-    text.trim_matches(|ch: char| ch.is_whitespace() && ch != '\u{00a0}')
+    text.trim_matches([' ', '\t', '\n', '\r'])
 }
 
 fn trim_end_non_nbsp(text: &str) -> &str {
-    text.trim_end_matches(|ch: char| ch.is_whitespace() && ch != '\u{00a0}')
+    text.trim_end_matches([' ', '\t', '\n', '\r'])
 }
 
 fn escape_text(text: &str, mode: EscapeMode, opens_block_line: bool) -> String {
@@ -2309,8 +2354,25 @@ fn escape_text(text: &str, mode: EscapeMode, opens_block_line: bool) -> String {
     let mut at_line_start = opens_block_line;
     let mut chars = text.chars().peekable();
     while let Some(ch) = chars.next() {
-        if matches!(ch, '\u{0000}'..='\u{0008}' | '\u{000b}'..='\u{001f}' | '\u{007f}'..='\u{009f}')
-        {
+        // A CONTROL CHARACTER IS CONTENT, and the writer has to write it back.
+        // This dropped 61 codepoints - every C0 control but tab/newline/return,
+        // DEL, and the whole C1 block - none of which the parser or the HTML
+        // renderer drops, so `to_html(fmt(x)) == to_html(x)` failed on any
+        // document holding one. PART 2 keeps a FORM FEED and a VERTICAL TAB
+        // explicitly (carve#926), and corpus
+        // `261-a-blank-line-holds-spaces-and-tabs-and-nothing-else-3` pins a
+        // line holding one as CONTENT rather than as a blank.
+        //
+        // U+0000 stays dropped, and only it: `normalize_source` removes it
+        // before the parser sees it, so keeping it here would write back a byte
+        // no re-parse can read. Every other control survives the round trip
+        // because it survives the parse.
+        //
+        // This is not the Trojan-Source hardening, which is a different set in
+        // a different place: `escape::is_bidi_control` strips the bidi
+        // overrides and isolates (U+202A-E, U+2066-9), none of which are in the
+        // range this line held.
+        if ch == '\u{0000}' {
             continue;
         }
         // The caption marker is `^` followed by a SPACE. `^sup^` at the start

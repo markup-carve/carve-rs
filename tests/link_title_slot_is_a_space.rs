@@ -83,10 +83,13 @@ fn a_tab_does_not_pad_the_inline_image_title_slot() {
 
 #[test]
 fn a_tab_does_not_pad_the_reference_definition_title_slot() {
-    // Here a failed slot drops the TITLE rather than the whole construct: the
-    // production tolerates trailing junk after the destination, so `[r]: /u x`
-    // is a definition whose `x` is ignored, and the same is true of a tabbed
-    // title.
+    // A failed slot used to drop the TITLE and keep the definition, because the
+    // production tolerated trailing junk after the destination. carve#911
+    // anchored the line at end of line, so there is no tail to absorb what the
+    // slot rejects: the production fails and the line is a PARAGRAPH. That is
+    // the visible failure PART 7 promises, and it is what corpus
+    // `266-a-reference-definition-is-anchored-at-end-of-line-3` through `-5`
+    // pin for these exact three spellings.
     for (label, src) in [
         ("tab first", "[r]: /u\t\"T\"\n\n[t][r]\n"),
         ("space then tab", "[r]: /u \t\"T\"\n\n[t][r]\n"),
@@ -95,19 +98,24 @@ fn a_tab_does_not_pad_the_reference_definition_title_slot() {
         let out = html(src);
         assert_no_title(label, &out);
         assert!(
-            out.contains("href=\"/u\""),
-            "{label}: lost the definition: {out}"
+            !out.contains("href="),
+            "{label}: the line is not a definition any more: {out}"
         );
+        assert!(out.contains("[t][r]"), "{label}: {out}");
     }
 }
 
 #[test]
 fn a_reference_image_takes_the_same_corrected_title() {
-    // `![t][r]` resolves against the same definition, so a title the definition
-    // no longer has must not reappear on the image.
+    // `![t][r]` resolves against the same definition, so what the definition no
+    // longer has must not reappear on the image. Under carve#911 the line is
+    // not a definition at all, so the reference does not resolve either.
     let out = html("[r]: /u\t\"T\"\n\n![t][r]\n");
     assert_no_title("reference image", &out);
-    assert!(out.contains("<img"), "lost the image: {out}");
+    assert!(
+        !out.contains("<img"),
+        "the reference resolved anyway: {out}"
+    );
 }
 
 #[test]
@@ -124,6 +132,9 @@ fn a_unicode_space_does_not_pad_the_reference_definition_title_slot_either() {
 
 #[test]
 fn a_tab_does_not_pad_the_reference_definition_attribute_slot() {
+    // As at the title slot, the anchored line has no tail to absorb what the
+    // slot rejects, so these are paragraphs rather than definitions without a
+    // block - corpus `266-…-6` through `-8`.
     for (label, src) in [
         ("tab first", "[r]: /u\t{.c}\n\n[t][r]\n"),
         ("space then tab", "[r]: /u \t{.c}\n\n[t][r]\n"),
@@ -132,8 +143,8 @@ fn a_tab_does_not_pad_the_reference_definition_attribute_slot() {
         let out = html(src);
         assert!(!out.contains("class="), "{label}: took the block: {out}");
         assert!(
-            out.contains("href=\"/u\""),
-            "{label}: lost the definition: {out}"
+            !out.contains("href="),
+            "{label}: the line is not a definition any more: {out}"
         );
     }
 }

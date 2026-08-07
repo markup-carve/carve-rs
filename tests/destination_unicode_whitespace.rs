@@ -28,12 +28,15 @@ fn an_inline_destination_still_forms_without_it() {
 
 #[test]
 fn a_definition_destination_ends_at_unicode_whitespace() {
+    // The destination still ENDS there - and since carve#911 anchored the line
+    // at end of line, what follows it is no longer ignorable trailing junk: the
+    // production fails and the line is an ordinary paragraph. Either way the
+    // invisible character never reaches an `href`, which is what this case
+    // exists to guarantee, and the executable spec renders the paragraph pair.
     for space in [NNBSP, THIN, IDEOGRAPHIC] {
         let out = carve::to_html(&format!("[x][r]\n\n[r]: https://e.com{space}/path\n"));
-        assert!(
-            out.contains(r#"href="https://e.com""#),
-            "{space:?} stayed in the href: {out}"
-        );
+        assert!(!out.contains("href="), "{space:?} formed a link: {out}");
+        assert!(out.contains("<p>[x][r]</p>"), "{space:?}: {out}");
     }
 }
 
