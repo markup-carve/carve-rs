@@ -19,6 +19,16 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   no-break space is content, not layout. The ASCII-only trim the canonical
   writer already carried now lives in the module the presentation renderers
   share, and all four use it.
+- **A fence opened on a definition marker line no longer swallows a body written
+  below the column.** `:  ` + a fence opener, with the body flush left, kept the
+  below-column line and then the closing delimiter as code text, so the fence
+  never closed and the whole block stayed inside the `<dd>`. A fenced body is not
+  a paragraph, so nothing below the body's content column folds into it while one
+  is open (PART 0 S4): the containers close, the `<dd>` holds an empty code
+  block, and the body re-parses at document level. That is the answer the list
+  and block-quote spellings of the identical shape already gave here. Bodies
+  written AT the content column, the first-block `:  +` form, and a flush-left
+  line after a CLOSED fence are all unchanged.
 
 - **A document with heading numbers round-trips through this engine's own AST
   JSON.** The encoder stamped a `fromCrossref` flag on every `link` the
