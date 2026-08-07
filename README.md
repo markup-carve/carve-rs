@@ -451,6 +451,20 @@ cargo test
 
 The spec corpus lives in `tests/spec/` as a git submodule of [`markup-carve/carve`](https://github.com/markup-carve/carve). Running `cargo test` without initializing the submodule will fail with a clear error message.
 
+## For bindings that pin this engine
+
+carve-rb, carve-py, carve-wasm and carve-go each pin a carve-rs revision - three
+as a Cargo git dependency (the crate publishes as `carve-lang`, not `carve`), one
+as a revision file beside a prebuilt wasm. `tools/check-engine-pin.py` is the
+single reader for both shapes: it asserts the pin names a real commit that is an
+ancestor of `main`, that a lockfile agrees with its manifest, and - optionally -
+that a committed artifact matches the digest recorded beside its revision. The
+lag behind `main` is reported as a number and never gates; `--max-age-days`
+gates on age instead.
+
+See [docs/engine-pin-guard.md](docs/engine-pin-guard.md) for the CI snippet each
+binding should use and for what the guard cannot see.
+
 ## Design
 
 - **Linear-time** parsing: block lexer reads line by line, inline scanner does a single linear pass with no backtracking.
