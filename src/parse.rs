@@ -12891,9 +12891,19 @@ pub(crate) type CrossrefLabel = std::rc::Rc<Vec<InlineNode>>;
 /// too: the label renders inside the referring paragraph, and a second copy of
 /// a `fnref` anchor would publish a duplicate id.
 fn crossref_label_nodes(children: &[InlineNode]) -> CrossrefLabel {
+    std::rc::Rc::new(crossref_label_clone(children))
+}
+
+/// The same clone, owned, for any OTHER consumer that derives display text from
+/// a heading (PART 9R R4, DERIVED DISPLAY TEXT CLONES THE SAME NODES,
+/// markup-carve/carve#957). R4 binds every such consumer, not the core crossref
+/// alone, and the two transformations above are part of what "the same nodes"
+/// means: a consumer that clones the children RAW re-expands a nested reference
+/// and publishes a SECOND `fnref` anchor with a duplicate id.
+pub(crate) fn crossref_label_clone(children: &[InlineNode]) -> Vec<InlineNode> {
     let mut nodes = children.to_vec();
     flatten_nested_crossrefs(&mut nodes);
-    std::rc::Rc::new(enforce_no_nesting_inline(nodes, true))
+    enforce_no_nesting_inline(nodes, true)
 }
 
 /// Replace every `</#id>` inside a cloned label with empty text, and drop every

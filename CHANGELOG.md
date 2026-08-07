@@ -9,6 +9,20 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A numbered cross-reference label carries the heading's markup.** With the
+  `headingNumbers` extension active, a reference to `# A *bold* `c` h` rendered
+  `Section 1 - A bold c h`: the label was flattened to a string where it was
+  derived, so the emphasis, the code span, the escape and the author's source
+  run were all destroyed before any renderer was invoked, and the core rule that
+  a resolved cross-reference renders the heading's cloned NODES was undone by a
+  render-stage transform. The label is the heading's nodes now, on every target -
+  HTML gets `Section 1 - A <strong>bold</strong> <code>c</code> h` and Markdown
+  gets the same markup in its own spelling. Smart typography's source mode
+  reaches the label for the same reason, since the spelling is no longer decided
+  before the renderer sees it. The label is still taken from the PRISTINE
+  heading, so the `section-number` span this extension injects never appears in
+  it, and the label word, the number and the separator are unchanged.
+
 - **A link or an autolink inside a link's label reaches the AST as the node the
   author wrote.** The encoder flattened both to text, so `[[x](y)](z)` published
   a link to `z` whose only child was `x` and the inner destination `y` was gone
