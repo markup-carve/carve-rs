@@ -1581,7 +1581,13 @@ fn parse_link_def_target(target: &str) -> LinkDef {
     let run_len = after_dest
         .find(|c: char| !c.is_whitespace())
         .unwrap_or(after_dest.len());
-    let rest = if after_dest[..run_len].chars().all(|c| c == ' ') {
+    //
+    // AND IT IS EXACTLY ONE SPACE (carve#912). `reference_definition` reuses
+    // `link_title`, whose slot is one `space`; a wider run means NO TITLE by
+    // the same reading that makes a tab mean no title. A run with nothing after
+    // it is the line ending rather than this slot and answers "no title" too,
+    // so the cardinality test is only reached where a title could follow.
+    let rest = if run_len == 1 && after_dest.starts_with(' ') {
         after_dest[run_len..].trim_end()
     } else {
         ""
@@ -1744,7 +1750,12 @@ fn split_trailing_attr_block(target: &str) -> (&str, Option<&str>) {
                     let sep_len = end[..start].len()
                         - end[..start].trim_end_matches(char::is_whitespace).len();
                     let sep = &end[start - sep_len..start];
-                    if sep.is_empty() || !sep.chars().all(|c| c == ' ') {
+                    //
+                    // ONE space, not a run (carve#912): `reference_definition`
+                    // spells the slot `[space, attributes]`. A wider run leaves
+                    // the braces where they are, exactly as a zero-space run
+                    // already leaves them in the destination.
+                    if sep.len() != 1 || !sep.starts_with(' ') {
                         return (target, None);
                     }
                     return (end[..start].trim_end(), Some(&end[start..]));
@@ -1835,6 +1846,16 @@ pub(crate) fn frontmatter_format_token(after_marker: &str) -> Option<&str> {
         return None;
     }
     let kind = after_marker[token_start..].trim_end();
+    // AND EXACTLY ONE SPACE (carve#912). `frontmatter_open = "---", [space],
+    // [frontmatter_format]` spells the slot as one; a wider run makes the line
+    // no typed opener, and since it is not a thematic break either it is
+    // ordinary paragraph text that the metadata lines fold into.
+    //
+    // Only where a token FOLLOWS. With nothing after it the run is the line
+    // ending rather than this slot, and `---<SP><SP>` stays an untyped opener.
+    if !kind.is_empty() && token_start > 1 {
+        return None;
+    }
     if !kind.is_empty() && !kind.chars().all(|c| c.is_ascii_alphanumeric()) {
         return None;
     }
@@ -3504,7 +3525,23 @@ fn detect_fence_open(line: &str) -> Option<FenceOpen> {
     // in that fixed order. With no language, a header or label may sit
     // directly against the fence; after a language each following token must
     // be whitespace-separated.
-    while i < bytes.len() && bytes[i] == b' ' {
+    //
+    // THIS SLOT IS EXACTLY ONE SPACE. `fenced_code_block = code_fence_open,
+    // [space], [code_fence_info]` spells it as one, and carve#912 ruled the
+    // production right (carve#912). A two-space opener therefore matches no
+    // shape and the INVALID-FENCE FALLBACK applies: an inline verbatim span in
+    // a paragraph.
+    //
+    // The two metadata slots INSIDE `code_fence_info` are spelled `space+` and
+    // are NOT in scope - a run stays legal at both, and the `separated` loops
+    // below are deliberately left alone. The cardinality answer is
+    // per-production, not global (carve#892 keeps the colon fence's separator a
+    // run for the same reason).
+    //
+    // A run with no info after it is the line ending rather than this slot: the
+    // remaining spaces are eaten by the `separated` loop and the fence stays
+    // valid, which is what keeps ```` ```<SP><SP> ```` an ordinary empty fence.
+    if bytes.get(i) == Some(&b' ') {
         i += 1;
     }
     let lang_start = i;
@@ -11598,14 +11635,36 @@ fn read_link_target(
     // which is already what a U+00A0 in the same slot does, since the
     // destination scan rejects a non-ASCII space outright.
     //
-    // CARDINALITY IS UNCHANGED. `link_title` spells the slot as exactly one
-    // character while every engine reads a run, and `resources/carve-core.ohm`
-    // keeps `titleSp+` deliberately for that reason.
-    while i < bytes.len() && bytes[i] == b' ' {
-        i += 1;
+    // THE SLOT IS EXACTLY ONE SPACE. `link_title = space, ('"' ...)` spells it
+    // as one character, and carve#912 ruled that the production is right and
+    // the lax readers narrow: a padding slot sits between two tokens on a line
+    // whose construct is already fixed, so its width means nothing and a run
+    // means nothing twice. `image_title = link_title`, so this one test serves
+    // both callers - the two have disagreed before (carve#888).
+    //
+    // A wider run does not lose the TITLE, it loses the LINK: the slot does not
+    // match, the quoted run is left unconsumed, the `)` test below fails and
+    // every character survives as text. That is the failure PART 7 already
+    // names, not a new one.
+    //
+    // Only the title's own padding narrows. A run before the `)` with NO title
+    // after it is not this slot - nothing is being padded - and stays tolerated,
+    // which is why the one-space test is conditioned on a quote following it.
+    let title_at = if bytes.get(i) == Some(&b' ') {
+        i + 1
+    } else {
+        i
+    };
+    let title_follows = matches!(bytes.get(title_at), Some(&b'"') | Some(&b'\''));
+    if title_follows {
+        i = title_at;
+    } else {
+        while i < bytes.len() && bytes[i] == b' ' {
+            i += 1;
+        }
     }
     let mut title: Option<String> = None;
-    if bytes.get(i) == Some(&b'"') || bytes.get(i) == Some(&b'\'') {
+    if title_follows {
         let quote = bytes[i];
         i += 1;
         let title_start = i;

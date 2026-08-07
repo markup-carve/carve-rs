@@ -9,6 +9,23 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Four padding slots take exactly one space.** `link_title` (read inline AND
+  at a reference definition), `image_title`, the code fence opener's slot before
+  its info string, the frontmatter opener's slot before its format token, and
+  the reference definition's slot before a trailing attribute block are each
+  spelled as exactly ONE `space`; this engine accepted a run at all five. The
+  failure mode is the one PART 7 already names: the slot does not match, the
+  construct does not form, and every character survives as text. So
+  `[t](/u<SP><SP>"T")` and `![a](/p.png<SP><SP>"T")` are literal text rather
+  than a link and an image with titles, a two-space code fence opener falls back
+  to an inline verbatim span in a paragraph, a two-space frontmatter opener is
+  ordinary paragraph text the metadata lines fold into, and a two-space run at
+  either reference-definition slot means no title and no attributes. The
+  one-space form is unaffected at all five sites. Cardinality is per-production:
+  the two metadata slots inside `code_fence_info`, the colon fence's separator
+  and the definition markers' separator are spelled `space+` and still take a
+  run.
+
 - **A definition marker's separator is a run of ASCII spaces, and the next
   character is content.** PART 5 and PART 9 spell the marker-to-content
   separator `space+` at both definition markers. Two halves: the separator is a

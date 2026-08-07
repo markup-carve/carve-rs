@@ -164,25 +164,26 @@ fn a_space_still_pads_every_one_of_the_four_slots() {
 }
 
 #[test]
-fn every_slot_is_a_run_not_a_single_space() {
+fn every_slot_is_exactly_one_space() {
     // The production spells `link_title` as exactly one character while every
-    // engine reads a run. Which side gives is a question for the production, and
-    // `resources/carve-core.ohm` keeps `titleSp+` deliberately for that reason;
-    // narrowing the terminal here must not decide it by accident.
+    // engine read a run. carve#912 answered which side gives: the productions
+    // are right and the readers narrow. At all four slots a wider run means the
+    // slot does not match - so the construct does not form and the characters
+    // stay text, which is the failure PART 7 already names.
     assert!(
-        html("[t](/u  \"T\")\n").contains("title=\"T\""),
+        !html("[t](/u  \"T\")\n").contains("title=\"T\""),
         "inline link"
     );
     assert!(
-        html("![t](/u  \"T\")\n").contains("title=\"T\""),
+        !html("![t](/u  \"T\")\n").contains("title=\"T\""),
         "inline image"
     );
     assert!(
-        html("[r]: /u  \"T\"\n\n[t][r]\n").contains("title=\"T\""),
+        !html("[r]: /u  \"T\"\n\n[t][r]\n").contains("title=\"T\""),
         "reference definition"
     );
     assert!(
-        html("[r]: /u  {.c}\n\n[t][r]\n").contains("class=\"c\""),
+        !html("[r]: /u  {.c}\n\n[t][r]\n").contains("class=\"c\""),
         "trailing attribute block"
     );
 }
