@@ -317,6 +317,12 @@ const IMPLEMENTED: &[&str] = &[
     "link-and-image-title-slots-must-be-a-space",
     "table-cell-padding-must-be-a-space",
     "the-flush-left-line-after-a-container-a-quoted-line-opened",
+    "a-below-column-marker-after-a-comment-where-no-paragraph-is-open",
+    "a-collapsed-reference-reaches-a-heading-by-the-heading-s-rendered-text",
+    // carve#950: a fenced body is not a paragraph, so a line below the item's
+    // content column closes the item instead of folding into it (carve-rs#770).
+    // Three of its seven rows moved here; the other four already passed.
+    "a-fence-opened-on-a-list-marker-line-body-below-the-content-column",
 ];
 
 fn corpus_dir() -> PathBuf {
@@ -850,4 +856,8 @@ corpus_test!(
 corpus_test!(
     c_colon_fence_metadata_slots_must_be_a_space_too,
     "colon-fence-metadata-slots-must-be-a-space-too"
+);
+corpus_test!(
+    c_fence_opened_on_a_list_marker_line,
+    "a-fence-opened-on-a-list-marker-line-body-below-the-content-column"
 );
