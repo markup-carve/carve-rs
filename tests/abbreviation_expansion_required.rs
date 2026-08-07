@@ -9,8 +9,11 @@
 //! three engines - the footnote case since carve-rs#482 - so the abbreviation
 //! was the odd one out, in this engine and carve-php.
 //!
-//! Note the boundary the grammar draws, which carve-js already follows: a
-//! SECOND trailing space IS an expansion, because a space is a character.
+//! The boundary MOVED with carve#892, which spells the marker-to-content
+//! separator `space+`. A second trailing space used to be an expansion, because
+//! a space is a character; it is now part of the separator RUN, so a line with
+//! only spaces after the marker has no expansion and stays paragraph text. The
+//! executable spec answers `<p>*[A]:</p>` for it.
 
 use carve::to_html;
 
@@ -30,10 +33,21 @@ fn nothing_is_silently_dropped() {
 }
 
 #[test]
+fn a_spaces_only_line_has_no_expansion() {
+    // MARKER REQUIRES CONTENT after the run. Under carve#892 the second space
+    // is separator rather than expansion, so this is a paragraph and not a
+    // definition with an empty title. Pinned because it is the boundary, not an
+    // accident, and measured against the executable spec.
+    assert_eq!(squash(&to_html("*[A]:  \n")), "<p>*[A]:</p>");
+    assert_eq!(squash(&to_html("*[A]:     \n")), "<p>*[A]:</p>");
+}
+
+#[test]
 fn one_character_of_expansion_is_enough() {
-    // A second space is a character, so this IS a definition - unused, so it
-    // renders nothing. Pinned because it is the boundary, not an accident.
-    assert_eq!(to_html("*[A]:  \n").trim(), "");
+    // A TAB after the run is a character of the expansion, so this IS a
+    // definition - unused, so it renders nothing. (The oracle additionally
+    // drops the trailing tab under carve#926 and reads the whole line as a
+    // paragraph; that rule is carve-rs#751 and moves this line when it lands.)
     assert_eq!(to_html("*[A]: \t\n").trim(), "");
 }
 
