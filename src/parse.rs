@@ -1956,13 +1956,29 @@ fn frontmatter_pos(source: &str, block_end: usize) -> Pos {
 /// TRAILING whitespace after the token is the line-ending rule rather than this
 /// slot, so it stays tolerated - matching the spec oracle.
 pub(crate) fn frontmatter_format_token(after_marker: &str) -> Option<&str> {
+    // WHITESPACE IS SPACE OR TAB (PART 7, carve#977), at both of this
+    // function's slots.
+    //
+    // The TRAILING one is what was wrong. `char::is_whitespace` is the Unicode
+    // White_Space property and takes a VERTICAL TAB, a FORM FEED and a NO-BREAK
+    // SPACE, so `trim_end` cut a trailing vertical tab off the token and a yaml
+    // opener carrying one was typed - and its block then swallowed the document
+    // down to the next bare three-dash line.
+    //
+    // NAMED SURVIVOR: reverting the LEADING scan alone changes no output, and
+    // no test can be written that it does. The next statement already rejects
+    // any character in that run that is not a space, so a wider scan cannot
+    // leak - it only shifts which of the two statements says no. It is narrowed
+    // anyway so the function reads its own production rather than depending on
+    // a downstream check, which is what the padding-slot history in this
+    // function (carve-rs#720, carve-rs#722) is a record of.
     let token_start = after_marker
-        .find(|c: char| !c.is_whitespace())
+        .find(|c: char| !matches!(c, ' ' | '\t'))
         .unwrap_or(after_marker.len());
     if after_marker[..token_start].chars().any(|c| c != ' ') {
         return None;
     }
-    let kind = after_marker[token_start..].trim_end();
+    let kind = trim_ascii_end(&after_marker[token_start..]);
     // AND EXACTLY ONE SPACE (carve#912). `frontmatter_open = "---", [space],
     // [frontmatter_format]` spells the slot as one; a wider run makes the line
     // no typed opener, and since it is not a thematic break either it is
@@ -6918,7 +6934,7 @@ fn detect_block_image(line: &str) -> Option<Image> {
     };
     let (img, consumed) = parse_image_at(bytes, 0, &bounds)?;
     let after = &line[consumed..];
-    if !after.trim().is_empty() {
+    if !trim_ascii(after).is_empty() {
         return None;
     }
     Some(img)
@@ -7727,7 +7743,7 @@ fn is_table_start(line: &str) -> bool {
     // A row may also carry a `{...}` attribute block glued to its closing pipe
     // (`| a |{.x}` -> <tr class="x">); split_row_attrs validates it, so a line
     // ending in a valid row-attribute block also opens a table.
-    let trimmed = line.trim();
+    let trimmed = trim_ascii(line);
     if trimmed.len() < 2 || !trimmed.starts_with('|') {
         return false;
     }
@@ -7873,7 +7889,7 @@ fn is_table_continuation(line: &str) -> bool {
     // pipe is required here too: `+ c | d` is prose and ends the table. Unlike a
     // standard row it has no `row_attributes` slot, so a trailing `|{.x}` does
     // NOT stand in for the closing pipe.
-    let trimmed = line.trim();
+    let trimmed = trim_ascii(line);
     if trimmed.len() < 2 || !trimmed.starts_with('+') || !trimmed.ends_with('|') {
         return false;
     }
@@ -7903,7 +7919,7 @@ fn is_delim_cell(s: &str) -> bool {
 
 /// A delimiter row: every cell is a delimiter cell (and there is at least one).
 fn is_delim_row(line: &str) -> bool {
-    let mut content = line.trim();
+    let mut content = trim_ascii(line);
     content = content.strip_prefix('|').unwrap_or(content);
     content = content.strip_suffix('|').unwrap_or(content);
     let cells = split_table_cells(content);
@@ -7914,7 +7930,7 @@ fn is_delim_row(line: &str) -> bool {
 
 /// Per-column alignment from a delimiter row's colons.
 fn parse_delim_aligns(line: &str) -> Vec<Option<TableAlign>> {
-    let mut content = line.trim();
+    let mut content = trim_ascii(line);
     content = content.strip_prefix('|').unwrap_or(content);
     content = content.strip_suffix('|').unwrap_or(content);
     split_table_cells(content)
@@ -7961,7 +7977,7 @@ fn apply_table_continuation(
     options: &Options<'_>,
     base: Option<(usize, isize)>,
 ) {
-    let mut content = line.trim();
+    let mut content = trim_ascii(line);
     if let Some(stripped) = content.strip_prefix('+') {
         content = stripped;
     }
@@ -8005,7 +8021,7 @@ fn apply_table_continuation(
 /// enclosing container). Without it a cell cannot be placed: this function is
 /// handed an already-split line and cannot know where it sits.
 fn parse_table_row(line: &str, options: &Options<'_>, base: Option<(usize, isize)>) -> TableRow {
-    let mut content = line.trim();
+    let mut content = trim_ascii(line);
     let (attrs, body) = split_row_attrs(content);
     content = body;
     if let Some(stripped) = content.strip_prefix('|') {
@@ -8261,7 +8277,7 @@ struct ContainerOpen {
 }
 
 fn detect_container_open(line: &str) -> Option<ContainerOpen> {
-    let trimmed = line.trim();
+    let trimmed = trim_ascii(line);
     let fence_len = trimmed.bytes().take_while(|b| *b == b':').count();
     if fence_len < 3 {
         return None;
@@ -8391,7 +8407,7 @@ fn detect_container_open(line: &str) -> Option<ContainerOpen> {
     let label = if after.starts_with('[') {
         let close = after.find(']')?;
         let label = after[1..close].to_string();
-        if !after[close + 1..].trim().is_empty() {
+        if !trim_ascii(&after[close + 1..]).is_empty() {
             return None;
         }
         Some(label)
@@ -8480,7 +8496,7 @@ fn parse_container(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
 /// A `::: |` line-block (verse) opener: a colon fence (3+) then a bare pipe and
 /// nothing else (grammar PART 9 §23). Returns the fence length.
 fn detect_line_block_open(line: &str) -> Option<usize> {
-    let trimmed = line.trim();
+    let trimmed = trim_ascii(line);
     let fence_len = trimmed.bytes().take_while(|b| *b == b':').count();
     if fence_len < 3 {
         return None;
@@ -8496,7 +8512,11 @@ fn detect_line_block_open(line: &str) -> Option<usize> {
     if trimmed_after.len() == after.len() {
         return None; // no space before the pipe
     }
-    if trimmed_after.trim_end() == "|" {
+    // `trimmed` already had its trailing SPACE and TAB run removed by
+    // `trim_ascii`, so a `trim_end` here can only ever strip what that helper
+    // deliberately left: a VERTICAL TAB, a FORM FEED or a NO-BREAK SPACE, every
+    // one of them CONTENT (PART 7, carve#977). The comparison is direct.
+    if trimmed_after == "|" {
         Some(fence_len)
     } else {
         None
@@ -8875,7 +8895,7 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
 /// keeps the stanza/block structure of its body, and does not affect nested
 /// blocks. Mirrors carve-js `RE_HARDBREAKS_BLOCK_OPEN` / `parseHardBreaksBlock`.
 fn detect_hardbreaks_block_open(line: &str) -> Option<usize> {
-    let trimmed = line.trim();
+    let trimmed = trim_ascii(line);
     let fence_len = trimmed.bytes().take_while(|b| *b == b':').count();
     if fence_len < 3 {
         return None;
@@ -8892,7 +8912,10 @@ fn detect_hardbreaks_block_open(line: &str) -> Option<usize> {
     if trimmed_after.len() == after.len() {
         return None; // no space before the backslash
     }
-    if trimmed_after.trim_end() == "\\" {
+    // Same as the line block above: `trim_ascii` has already taken the trailing
+    // space-or-tab run, so a `trim_end` could only strip content (PART 7,
+    // carve#977).
+    if trimmed_after == "\\" {
         Some(fence_len)
     } else {
         None
@@ -8988,11 +9011,13 @@ fn detect_abbreviation_def(line: &str) -> Option<AbbreviationDef> {
     Some(AbbreviationDef {
         abbr: abbr.to_string(),
         // Only the TRAILING side is trimmed here: the leading run was consumed
-        // above as the separator it is. (Trailing whitespace on a content line
-        // is dropped by PART 2 - carve#926 - which is a different rule with a
-        // different terminal; this call is the pre-existing one and moves in
-        // that ticket, not this one.)
-        expansion: expansion.trim_end().to_string(),
+        // above as the separator it is. The TERMINAL is space-or-tab, the one
+        // whitespace definition (PART 7, carve#977) - `trim_end` is the Unicode
+        // White_Space property, which ate a trailing NO-BREAK SPACE, VERTICAL
+        // TAB or FORM FEED out of the expansion, all three of them content. The
+        // note that used to stand here deferred this to carve#926; PART 7 is
+        // where the terminal was settled.
+        expansion: trim_ascii_end(expansion).to_string(),
         pos: None,
     })
 }
@@ -9368,7 +9393,7 @@ fn attr_tokens(src: &str) -> Vec<String> {
 }
 
 fn parse_standalone_attrs(line: &str) -> Option<Attrs> {
-    let trimmed = line.trim();
+    let trimmed = trim_ascii(line);
     if !trimmed.starts_with('{') {
         return None;
     }
