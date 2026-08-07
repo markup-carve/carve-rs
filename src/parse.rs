@@ -7552,6 +7552,24 @@ fn collect_definition_body(cur: &mut LineCursor, fence: &mut DefinitionBodyFence
             if fence.holds_no_paragraph() {
                 break;
             }
+            // BELOW THE BODY'S COLUMN THE BODY ENDS (markup-carve/carve#932).
+            // `definition_indent` states the floor as column arithmetic; this is
+            // the other side of it. A line indented 1 or 2 columns reaches
+            // neither band above: it is not the body's own block content, and it
+            // is not lazy text either, because `lazy_continuation_line` is
+            // spelled as a FLUSH-LEFT line. So the body ends and the line is
+            // classified in the surviving context, where PART 2's COLUMN-EXACT
+            // DELIMITERS makes an indented block opener plain text.
+            //
+            // Without this, BELOW and PAST are one band: the fold never looked at
+            // indentation (carve-rs#734 recorded exactly that when it labelled
+            // the no-blank shape a control), so `:  body` / ` > q` and
+            // `:  body` / `    > q` produced the same bytes and the floor of
+            // three columns was unobservable on this side. The footnote body,
+            // which the clause names as the precedent, already answers this way.
+            if indent > 0 {
+                break;
+            }
             // Lazy continuation: a flush-left line with no blank before it that
             // does not start an interrupting block folds into the open
             // paragraph (the same rule list items and block quotes use, matching

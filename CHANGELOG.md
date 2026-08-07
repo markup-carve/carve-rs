@@ -9,6 +9,19 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A definition body ends below its own content column.** A line indented one
+  or two columns under a `:  ` body was folded into the body as lazy text, which
+  is the same answer a line indented PAST the column gets - so the two bands
+  were one and the three-column floor was unobservable on that side of it.
+  Below the column the body now ENDS and the line is classified at document
+  level, where an indented block opener is plain text: `:: t` / `:  body` /
+  ` > q` renders the definition list and then the paragraph `> q`, instead of
+  folding `&gt; q` into the `<dd>`. That is the answer this engine's footnote
+  body already gives for the same shape. A FLUSH-LEFT line still folds, a line
+  AT the column still opens a block inside the `<dd>`, and a line PAST the
+  column is still lazy text. **Behavior change:** a definition body whose
+  continuation lines were indented one or two columns stops collecting them.
+
 - **A numbered cross-reference label carries the heading's markup.** With the
   `headingNumbers` extension active, a reference to `# A *bold* `c` h` rendered
   `Section 1 - A bold c h`: the label was flattened to a string where it was
