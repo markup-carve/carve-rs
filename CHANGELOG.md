@@ -9,6 +9,19 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A `figure` built over a REFERENCE image publishes its position.** A direct
+  `![a](/p.png)` + `^ cap` becomes a figure at parse time and was placed there;
+  a reference `![a][ok]` + `^ cap` cannot be, because whether the label resolves
+  is unknown until the definitions are collected, so it arrives at the
+  promotion pass as a paragraph and is rebuilt into a figure afterwards. That
+  rebuild published no span, discarding the one the paragraph had carried all
+  along. It now keeps it: the paragraph opened at the image and ran to the end
+  of the caption, which is the figure's own extent. PART 12 §4's exemption for
+  a REASSEMBLED node does not reach this - the lines are contiguous and the
+  inline form of the same construct was already placed. The span is
+  markup-inclusive and contains both children, per markup-carve/carve#913. Only
+  the AST output moves; all five rendering targets are byte-identical.
+
 - **A malformed colon fence inside an open container no longer absorbs that
   container's closer.** PART 9 §12 lets a paragraph absorb a fence-shaped line
   once a failing opener has made it prose, but the rule is about a would-be

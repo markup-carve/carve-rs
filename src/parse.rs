@@ -12397,8 +12397,18 @@ fn promote_block_images(blocks: &mut [BlockNode], figures_only: bool) {
             // paragraph onto the figure, matching a direct-image figure (which
             // takes the attrs at parse time) and carve-php -- otherwise
             // `carve fmt` would drop it.
-            let (mut children, attrs) = match block {
-                BlockNode::Paragraph(p) => (std::mem::take(&mut p.children), p.attrs.take()),
+            // The paragraph's own span IS the figure's: it opened at the
+            // image and ran to the end of the caption, which is exactly the
+            // construct the author wrote. Taken here, before the paragraph is
+            // dismantled, because nothing downstream can reconstruct it -- the
+            // image and the caption inlines are placed, but the figure's own
+            // extent only exists on the node being replaced (carve-rs#737).
+            let (mut children, attrs, para_pos) = match block {
+                BlockNode::Paragraph(p) => (
+                    std::mem::take(&mut p.children),
+                    p.attrs.take(),
+                    p.pos.take(),
+                ),
                 _ => unreachable!(),
             };
             let InlineNode::Image(img) = children.remove(0) else {
@@ -12434,7 +12444,12 @@ fn promote_block_images(blocks: &mut [BlockNode], figures_only: bool) {
                 attrs,
                 target: FigureTarget::Image(img),
                 caption: children,
-                pos: None,
+                // PART 12 §4 exempts a REASSEMBLED node, and this one is not:
+                // its lines are contiguous and the direct-image path publishes
+                // exactly this span for the same construct. markup-carve/carve#913
+                // rules `pos` markup-inclusive with a parent's span containing
+                // every child's, which the paragraph's span already satisfies.
+                pos: para_pos,
             });
             continue;
         }
