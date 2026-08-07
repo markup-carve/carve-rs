@@ -9,6 +9,20 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A cross-reference label is a budgeted expansion.** `</#slug>` republishes
+  the target heading's whole display text while the reference costs only the
+  slug, so a short slug on a long heading amplified output by
+  (heading length) x (reference count): 20 KB of input produced 16.7 MB of HTML,
+  40 KB produced 66.7 MB, and the ratio kept growing with the input. The label
+  now charges the same per-render expansion budget an abbreviation charges, on
+  the HTML, Markdown, plain-text and ANSI targets alike. **Behavior change:**
+  once that budget is spent, a cross-reference renders labelled with its
+  authored target (`<a href="#A">A</a>`) instead of the target's full display
+  text, the way an over-budget abbreviation renders as its plain key. Ordinary
+  documents sit orders of magnitude below the budget and are unaffected. The
+  Carve target reproduces the authored `</#slug>` and never expanded, so it is
+  unchanged.
+
 - **A list marker inside an open fence is code text.** PART 9 section 24 places
   a line by the COLUMN it reaches and does not read its first character, so a
   list marker at an item's content column, inside a fence that item opened, is

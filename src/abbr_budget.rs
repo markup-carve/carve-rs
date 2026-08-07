@@ -1,10 +1,18 @@
-//! Bounds the cumulative bytes that abbreviation expansion may contribute to a
+//! Bounds the cumulative bytes that DERIVED-TEXT EXPANSION may contribute to a
 //! single render, defending against a memory-amplification DoS.
 //!
-//! Each occurrence of an abbreviation re-emits its full expansion (the `title`
-//! attribute in HTML/Markdown, `(EXPANSION)` in ANSI). A document with a large
-//! definition (`*[HT]: <huge>`) and many `HT` occurrences would otherwise emit
-//! `expansion_len * occurrence_count` bytes, far larger than the input.
+//! Two constructs republish text they did not pay for, and both charge here:
+//!
+//! - An abbreviation occurrence re-emits its full expansion (the `title`
+//!   attribute in HTML/Markdown, `(EXPANSION)` in ANSI). A document with a large
+//!   definition (`*[HT]: <huge>`) and many `HT` occurrences would otherwise emit
+//!   `expansion_len * occurrence_count` bytes, far larger than the input.
+//! - A cross-reference republishes its target heading's whole display text while
+//!   the reference itself costs only the slug, so K references to one long
+//!   heading emit `K * heading_len` bytes (`markup-carve/carve-rs#805`).
+//!
+//! They share one budget because they amplify the same output through the same
+//! renderers; a second mechanism would be a second thing to get wrong.
 //!
 //! Policy (shared across the HTML, Markdown, and ANSI renderers for
 //! cross-engine consistency): the cumulative expansion bytes are capped at
@@ -51,9 +59,17 @@ pub(crate) struct AbbrBudgetGuard {
 }
 
 impl AbbrBudgetGuard {
-    /// Install a budget sized for an input of `input_len` bytes.
-    pub(crate) fn new(input_len: usize) -> Self {
-        let previous = REMAINING.with(|cell| cell.replace(Some(budget_for(input_len))));
+    /// Install the budget for one render of `doc`.
+    ///
+    /// Every renderer sizes its budget through this one call, so the document's
+    /// length is read in exactly ONE place. That matters because the number is
+    /// not always measured: on the AST-ingest path `source_len` arrives inside
+    /// the payload (`srcByteLength` on the wire), where a hostile tree can
+    /// inflate it to widen the guard that is meant to bound it. Whatever ends up
+    /// bounding that claim binds every target at once from here, instead of
+    /// having to find four spellings of the same read.
+    pub(crate) fn for_document(doc: &crate::ast::Document) -> Self {
+        let previous = REMAINING.with(|cell| cell.replace(Some(budget_for(doc.source_len))));
         AbbrBudgetGuard { previous }
     }
 }

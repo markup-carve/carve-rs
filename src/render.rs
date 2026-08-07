@@ -73,7 +73,7 @@ pub fn render_html_with_options(
 
 fn render_html_inner(doc: &Document, options: &Options<'_>) -> String {
     let mut doc = doc.clone();
-    let _abbr_guard = AbbrBudgetGuard::new(doc.source_len);
+    let _abbr_guard = AbbrBudgetGuard::for_document(&doc);
     let _index_guard = crate::index_budget::IndexBudgetGuard::new(doc.source_len);
     // Document id namespace (extensions contract §2.6): seeded with every
     // explicit `{#id}` attribute and every heading id this render will assign,
@@ -900,6 +900,24 @@ fn indent(out: &mut String, level: usize) {
     for _ in 0..level {
         out.push_str("  ");
     }
+}
+
+/// Charge a rendered cross-reference label against the per-render expansion
+/// budget, degrading an over-budget label to the authored target.
+///
+/// A crossref republishes the target heading's whole display text while the
+/// reference costs only the slug, so K references to one long heading amplify
+/// output K x heading_len. That is the abbreviation expansion's shape, so it
+/// takes the abbreviation expansion's budget rather than a second one, and it
+/// degrades the way that one does: to the text the author actually typed
+/// (`markup-carve/carve-rs#805`).
+fn charge_crossref_label(label: String, target: &str) -> String {
+    if crate::abbr_budget::try_spend(label.len()) {
+        return label;
+    }
+    let mut degraded = String::new();
+    write_escaped_text(&mut degraded, target);
+    degraded
 }
 
 fn render_block(
@@ -2243,25 +2261,30 @@ fn render_inline_after(
                 .map(|(id, title)| (id.to_string(), title.to_string()));
             if let Some((actual_id, title)) = resolved {
                 let label = state.crossref_index.label(&actual_id);
-                if state.link_depth == 0 {
+                let opens_anchor = state.link_depth == 0;
+                let mut text = String::new();
+                match &label {
+                    // Inside the anchor this link is about to open.
+                    Some(nodes) => {
+                        if opens_anchor {
+                            state.link_depth += 1;
+                        }
+                        render_inlines(&mut text, nodes, options, state);
+                        if opens_anchor {
+                            state.link_depth -= 1;
+                        }
+                    }
+                    None => write_escaped_text(&mut text, &title),
+                }
+                let text = charge_crossref_label(text, &c.target);
+                if opens_anchor {
                     out.push_str("<a href=\"#");
                     write_escaped_attr(out, &actual_id);
                     out.push_str("\">");
-                    match &label {
-                        // Inside the anchor this link just opened.
-                        Some(nodes) => {
-                            state.link_depth += 1;
-                            render_inlines(out, nodes, options, state);
-                            state.link_depth -= 1;
-                        }
-                        None => write_escaped_text(out, &title),
-                    }
+                    out.push_str(&text);
                     out.push_str("</a>");
                 } else {
-                    match &label {
-                        Some(nodes) => render_inlines(out, nodes, options, state),
-                        None => write_escaped_text(out, &title),
-                    }
+                    out.push_str(&text);
                 }
             } else {
                 write_escaped_text(out, &format!("</#{}>", c.target));

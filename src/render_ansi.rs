@@ -91,7 +91,7 @@ fn render_ansi_inner(
     lowercase_heading_ids: bool,
 ) -> String {
     SMART_TYPOGRAPHY.with(|cell| cell.set(smart_typography));
-    let _abbr_guard = crate::abbr_budget::AbbrBudgetGuard::new(doc.source_len);
+    let _abbr_guard = crate::abbr_budget::AbbrBudgetGuard::for_document(doc);
     let mut ctx = AnsiContext {
         list_depth: 0,
         block_quote_depth: 0,
@@ -729,6 +729,14 @@ fn render_inline(node: &InlineNode, ctx: &mut AnsiContext, depth: usize) -> Stri
                     let text = match &label {
                         Some(nodes) => render_inlines(nodes, ctx, depth + 1),
                         None => strip_controls(&title),
+                    };
+                    // Same expansion budget the abbreviation arm below spends,
+                    // degrading to the authored target (carve-rs#805). See
+                    // `crate::abbr_budget`.
+                    let text = if crate::abbr_budget::try_spend(text.len()) {
+                        text
+                    } else {
+                        strip_controls(&crossref.target)
                     };
                     if ctx.link_depth > 0 {
                         text

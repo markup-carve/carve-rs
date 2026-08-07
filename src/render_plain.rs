@@ -89,6 +89,11 @@ fn render_plain_text_inner(
     lowercase_heading_ids: bool,
 ) -> String {
     SMART_TYPOGRAPHY.with(|cell| cell.set(smart_typography));
+    // The plain target expands a crossref label exactly as the other three do,
+    // so it needs the same bound; without a guard installed `try_spend` would
+    // fall back to the floor budget and clip a large document earlier here than
+    // in HTML (`markup-carve/carve-rs#805`).
+    let _abbr_guard = crate::abbr_budget::AbbrBudgetGuard::for_document(doc);
     DEFINED_FOOTNOTES.with(|set| {
         *set.borrow_mut() = doc.footnote_defs.keys().cloned().collect();
     });
@@ -114,9 +119,17 @@ fn render_crossref(target: &str, depth: usize) -> String {
     let Some((id, title)) = resolved else {
         return format!("</#{}>", strip_controls(target));
     };
-    match CROSSREF_INDEX.with(|index| index.borrow().label(&id)) {
+    let text = match CROSSREF_INDEX.with(|index| index.borrow().label(&id)) {
         Some(nodes) => render_inlines_stateful(&nodes, depth + 1),
         None => strip_controls(&title),
+    };
+    // Same expansion budget the abbreviation construct spends in the other
+    // targets, degrading to the authored target (carve-rs#805). See
+    // `crate::abbr_budget`.
+    if crate::abbr_budget::try_spend(text.len()) {
+        text
+    } else {
+        strip_controls(target)
     }
 }
 

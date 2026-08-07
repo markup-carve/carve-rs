@@ -71,7 +71,7 @@ fn render_markdown_inner(
     lowercase_heading_ids: bool,
 ) -> String {
     SMART_TYPOGRAPHY.with(|cell| cell.set(smart_typography));
-    let _abbr_guard = crate::abbr_budget::AbbrBudgetGuard::new(doc.source_len);
+    let _abbr_guard = crate::abbr_budget::AbbrBudgetGuard::for_document(doc);
     let mut heading_ids = HashSet::new();
     let mut referenced_heading_ids = HashSet::new();
     let crossref_index = crate::parse::crossref_index_for_document(doc, lowercase_heading_ids);
@@ -766,6 +766,14 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
                     let text = match &label {
                         Some(nodes) => render_inlines(nodes, ctx, depth + 1),
                         None => escape_text(&strip_controls(&title)),
+                    };
+                    // Same expansion budget the abbreviation arm below spends,
+                    // degrading to the authored target (carve-rs#805). See
+                    // `crate::abbr_budget`.
+                    let text = if crate::abbr_budget::try_spend(text.len()) {
+                        text
+                    } else {
+                        escape_text(&strip_controls(&crossref.target))
                     };
                     // Inside a link label the reference is already surrounded by
                     // an anchor, so it degrades to its display text -- the same
