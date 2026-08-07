@@ -37,6 +37,22 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   it back to the authored bytes instead of into a scheme. An ampersand that
   opens nothing, such as the `&` in a query string, is untouched.
 
+- **The Markdown target neutralizes embedded HTML in five more places.** The
+  writer's stated invariant is that `<`, `>` and `&` in author content are
+  escaped so Markdown re-rendered to HTML cannot execute, and math content, the
+  abbreviation definition line and the footnote label (resolved and
+  unresolved) and an unresolved cross-reference's target all skipped it: a math
+  span holding a `script` tag came out live, and an `<abbr title="...">` built
+  from an escaped expansion sat in the same output as the unescaped `*[AB]:`
+  line it came from. **Behavior change:** those slots now escape like every
+  other author-content slot on this target. A footnote label escapes in both
+  the reference and the definition, so the pair still matches; escaping math is
+  transparent to a consumer, which decodes the entity back to the character
+  before its math renderer sees it, exactly as the HTML target has always
+  relied on. An unresolved cross-reference keeps its authored `</#target>`
+  marker, which stays readable; only the target inside it is escaped, because
+  `</#a<script>` is a complete opening tag once the Markdown is rendered.
+
 - **A list marker inside an open fence is code text.** PART 9 section 24 places
   a line by the COLUMN it reaches and does not read its first character, so a
   list marker at an item's content column, inside a fence that item opened, is
