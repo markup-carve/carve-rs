@@ -12416,6 +12416,7 @@ pub(crate) fn number_crossref_captions(doc: &mut Document) {
 pub(crate) fn crossref_index_for_document(doc: &Document, lowercase_ids: bool) -> CrossrefIndex {
     let mut counts = BTreeMap::new();
     let mut titles = BTreeMap::new();
+    let mut labels = BTreeMap::new();
     let mut explicit_ids = std::collections::BTreeSet::new();
     collect_explicit_ids(&doc.children, &mut explicit_ids);
     for blocks in doc.footnote_defs.values() {
@@ -12432,6 +12433,7 @@ pub(crate) fn crossref_index_for_document(doc: &Document, lowercase_ids: bool) -
         &mut HeadingScan {
             counts: &mut counts,
             titles: &mut titles,
+            labels: &mut labels,
             quoted: &mut quoted,
             by_text: &mut by_text,
         },
@@ -12445,6 +12447,7 @@ pub(crate) fn crossref_index_for_document(doc: &Document, lowercase_ids: bool) -
             &mut HeadingScan {
                 counts: &mut counts,
                 titles: &mut titles,
+                labels: &mut labels,
                 quoted: &mut quoted,
                 by_text: &mut by_text,
             },
@@ -12457,7 +12460,7 @@ pub(crate) fn crossref_index_for_document(doc: &Document, lowercase_ids: bool) -
     for blocks in doc.footnote_defs.values() {
         collect_caption_titles(blocks, &mut titles);
     }
-    crossref_index(titles)
+    crossref_index(titles, labels)
 }
 
 fn heading_index(
@@ -12467,6 +12470,7 @@ fn heading_index(
 ) -> CrossrefIndex {
     let mut counts = BTreeMap::new();
     let mut titles = BTreeMap::new();
+    let mut labels = BTreeMap::new();
     let mut explicit_ids = std::collections::BTreeSet::new();
     collect_explicit_ids(children, &mut explicit_ids);
     for blocks in footnote_defs.values() {
@@ -12479,6 +12483,7 @@ fn heading_index(
         &mut HeadingScan {
             counts: &mut counts,
             titles: &mut titles,
+            labels: &mut labels,
             quoted: &mut quoted,
             by_text: &mut by_text,
         },
@@ -12492,6 +12497,7 @@ fn heading_index(
             &mut HeadingScan {
                 counts: &mut counts,
                 titles: &mut titles,
+                labels: &mut labels,
                 quoted: &mut quoted,
                 by_text: &mut by_text,
             },
@@ -12500,13 +12506,74 @@ fn heading_index(
             false,
         );
     }
-    let mut index = crossref_index(titles);
+    let mut index = crossref_index(titles, labels);
     index.quoted = quoted;
     index.by_text = by_text;
     index
 }
 
-fn crossref_index(titles: BTreeMap<String, String>) -> CrossrefIndex {
+/// A cloned crossref label, shared by every reference that resolves to it.
+///
+/// `Rc` rather than a per-reference clone: a document may reference one heading
+/// any number of times, and the label is immutable once captured.
+pub(crate) type CrossrefLabel = std::rc::Rc<Vec<InlineNode>>;
+
+/// Capture a heading's label for the crossref index: a CLONE OF ITS INLINE
+/// NODES, not of its rendered text (PART 9R R4, carve#915).
+///
+/// The difference is the whole point of the clause. A node carries the SOURCE
+/// RUN the author typed; a string carries only the glyphs some renderer chose.
+/// Flattening here would destroy the run before any renderer is invoked, so
+/// smart typography's SOURCE mode (§8) could not recover it on ANY target and
+/// no renderer change would reach the loss -- the label would have been
+/// materialized in the wrong subsystem. The same argument covers every other
+/// run a renderer may want back: a code span, an escape, an inline literal.
+///
+/// Two transformations are applied to the clone, both of them rules that hold
+/// wherever this label is about to be placed rather than presentation choices:
+///
+/// - A NESTED cross-reference becomes empty text. Resolution is ONE LEVEL, so a
+///   cloned label is never re-expanded; doing it here (rather than at render
+///   time) also makes a crossref cycle structurally impossible to follow.
+/// - Links never nest, so the clone is cleaned as if it already sat inside an
+///   anchor -- which it does on every target that emits one.
+///
+/// A footnote reference is dropped, which is what the previous flattening did
+/// too: the label renders inside the referring paragraph, and a second copy of
+/// a `fnref` anchor would publish a duplicate id.
+fn crossref_label_nodes(children: &[InlineNode]) -> CrossrefLabel {
+    let mut nodes = children.to_vec();
+    flatten_nested_crossrefs(&mut nodes);
+    std::rc::Rc::new(enforce_no_nesting_inline(nodes, true))
+}
+
+/// Replace every `</#id>` inside a cloned label with empty text, and drop every
+/// footnote reference. See `crossref_label_nodes`.
+fn flatten_nested_crossrefs(nodes: &mut Vec<InlineNode>) {
+    nodes.retain(|node| !matches!(node, InlineNode::Footnote(_)));
+    for node in nodes.iter_mut() {
+        match node {
+            InlineNode::CrossRef(_) => {
+                *node = InlineNode::Text(Text {
+                    value: String::new(),
+                    pos: None,
+                })
+            }
+            InlineNode::Emphasis(e) => flatten_nested_crossrefs(&mut e.children),
+            InlineNode::Span(s) => flatten_nested_crossrefs(&mut s.children),
+            InlineNode::Link(l) => flatten_nested_crossrefs(&mut l.children),
+            InlineNode::Extension(e) => flatten_nested_crossrefs(&mut e.children),
+            InlineNode::CriticInsert(c) => flatten_nested_crossrefs(&mut c.children),
+            InlineNode::CriticDelete(c) => flatten_nested_crossrefs(&mut c.children),
+            _ => {}
+        }
+    }
+}
+
+fn crossref_index(
+    titles: BTreeMap<String, String>,
+    labels: BTreeMap<String, CrossrefLabel>,
+) -> CrossrefIndex {
     // Case-folded index of known ids -> actual (case-preserved) id. First
     // occurrence wins, so a duplicate that only differs in case does not shadow
     // the earlier heading. Used as a fallback when an exact match fails, so a
@@ -12518,6 +12585,7 @@ fn crossref_index(titles: BTreeMap<String, String>) -> CrossrefIndex {
     }
     CrossrefIndex {
         titles,
+        labels,
         folded,
         by_text: BTreeMap::new(),
         quoted: std::collections::BTreeSet::new(),
@@ -12530,6 +12598,14 @@ fn crossref_index(titles: BTreeMap<String, String>) -> CrossrefIndex {
 #[derive(Default)]
 pub(crate) struct CrossrefIndex {
     titles: BTreeMap<String, String>,
+    /// Id -> the label a resolved reference RENDERS: the target heading's own
+    /// inline nodes, cloned (PART 9R R4). `titles` is the same label flattened
+    /// to text, which is all a slug or a text lookup needs; a renderer needs
+    /// the nodes, because only they still carry what the author typed.
+    ///
+    /// A CAPTION id has a title but no entry here: its label is LABEL + NUMBER
+    /// ("Figure 1"), text that no node of the document ever held.
+    labels: BTreeMap<String, CrossrefLabel>,
     folded: BTreeMap<String, String>,
     /// Normalized heading TEXT -> that heading's id, in document order (first
     /// occurrence wins). PART 11 R1 keys the implicit `[label][]` index by "the
@@ -12572,6 +12648,14 @@ impl CrossrefIndex {
             return None;
         }
         Some((id, title))
+    }
+
+    /// The cloned inline nodes a resolved reference to `id` renders, when the
+    /// target is a HEADING. `None` for a caption id, whose label is
+    /// LABEL + NUMBER rather than any node of the document; the caller falls
+    /// back to `resolve`'s title for that.
+    pub(crate) fn label(&self, id: &str) -> Option<CrossrefLabel> {
+        self.labels.get(id).cloned()
     }
 
     pub(crate) fn resolve(&self, target: &str) -> Option<(&str, &str)> {
@@ -13172,6 +13256,9 @@ fn collect_explicit_ids(blocks: &[BlockNode], out: &mut std::collections::BTreeS
 struct HeadingScan<'a> {
     counts: &'a mut BTreeMap<String, usize>,
     titles: &'a mut BTreeMap<String, String>,
+    /// Id -> the heading's own inline NODES, which is what a resolved
+    /// cross-reference clones (PART 9R R4). See `CrossrefIndex::labels`.
+    labels: &'a mut BTreeMap<String, CrossrefLabel>,
     quoted: &'a mut std::collections::BTreeSet<String>,
     /// Normalized heading text -> id, first occurrence wins (PART 11 R1).
     by_text: &'a mut BTreeMap<String, String>,
@@ -13224,6 +13311,8 @@ fn collect_heading_titles(
                         .entry(normalize_heading_label(&title))
                         .or_insert_with(|| id.clone());
                 }
+                scan.labels
+                    .insert(id.clone(), crossref_label_nodes(&h.children));
                 scan.titles.insert(id, title);
             }
             BlockNode::List(l) => {

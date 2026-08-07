@@ -99,14 +99,24 @@ fn render_plain_text_inner(
     normalize(&format!("{out}{footnotes}"))
 }
 
-fn render_crossref(target: &str) -> String {
-    CROSSREF_INDEX.with(|index| {
+fn render_crossref(target: &str, depth: usize) -> String {
+    // The label is the target's cloned inline NODES (PART 9R R4), so the source
+    // run survives to here and this renderer's own typography mode applies to
+    // it. A caption target has no nodes - its label is LABEL + NUMBER - so that
+    // one is still a string.
+    let resolved = CROSSREF_INDEX.with(|index| {
         index
             .borrow()
             .resolve(target)
-            .map(|(_, title)| strip_controls(title))
-            .unwrap_or_else(|| format!("</#{}>", strip_controls(target)))
-    })
+            .map(|(id, title)| (id.to_string(), title.to_string()))
+    });
+    let Some((id, title)) = resolved else {
+        return format!("</#{}>", strip_controls(target));
+    };
+    match CROSSREF_INDEX.with(|index| index.borrow().label(&id)) {
+        Some(nodes) => render_inlines_stateful(&nodes, depth + 1),
+        None => strip_controls(&title),
+    }
 }
 
 fn render_blocks(blocks: &[BlockNode], depth: usize) -> String {
@@ -400,7 +410,7 @@ fn render_inline(node: &InlineNode, depth: usize) -> String {
         // carve-php kept it (carve#352, corpus 33-editorial-markup).
         InlineNode::Comment(_) => String::new(),
         InlineNode::CriticComment(c) => strip_controls(&c.text),
-        InlineNode::CrossRef(crossref) => render_crossref(&crossref.target),
+        InlineNode::CrossRef(crossref) => render_crossref(&crossref.target, depth),
         // Tier-2 ext node; the core renderer has no numbering, so emit the source.
         InlineNode::CitationGroup(group) => strip_controls(&group.raw),
         InlineNode::CaptionNumber(number) => number

@@ -709,11 +709,31 @@ fn render_inline(node: &InlineNode, ctx: &mut AnsiContext, depth: usize) -> Stri
         // heading, because that is what it is - the href is a fragment, so the
         // `(href)` suffix a link would add is suppressed there too. Only an
         // UNRESOLVED one degrades to its literal source.
-        InlineNode::CrossRef(crossref) => match ctx.crossref_index.resolve(&crossref.target) {
-            Some((_, title)) if ctx.link_depth > 0 => strip_controls(title),
-            Some((_, title)) => style(&strip_controls(title), &(UNDERLINE.to_string() + FG_BLUE)),
-            None => format!("</#{}>", strip_controls(&crossref.target)),
-        },
+        // The label is the target's cloned inline NODES (PART 9R R4), so the
+        // source run reaches this renderer and its own typography mode applies
+        // to it. A caption target has no nodes - its label is LABEL + NUMBER -
+        // so that one is still a string.
+        InlineNode::CrossRef(crossref) => {
+            let resolved = ctx
+                .crossref_index
+                .resolve(&crossref.target)
+                .map(|(id, title)| (id.to_string(), title.to_string()));
+            match resolved {
+                None => format!("</#{}>", strip_controls(&crossref.target)),
+                Some((id, title)) => {
+                    let label = ctx.crossref_index.label(&id);
+                    let text = match &label {
+                        Some(nodes) => render_inlines(nodes, ctx, depth + 1),
+                        None => strip_controls(&title),
+                    };
+                    if ctx.link_depth > 0 {
+                        text
+                    } else {
+                        style(&text, &(UNDERLINE.to_string() + FG_BLUE))
+                    }
+                }
+            }
+        }
         // Tier-2 ext node; the core renderer has no numbering, so emit the source.
         InlineNode::CitationGroup(group) => strip_controls(&group.raw),
         InlineNode::CaptionNumber(number) => number
