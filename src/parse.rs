@@ -8794,14 +8794,32 @@ fn parse_standalone_attrs_block(cur: &mut LineCursor) -> Option<Attrs> {
     // Multi-line: join contiguous lines until one closes with `}`.
     let mut joined = String::new();
     let mut count = 0usize;
+    let mut quote: Option<char> = None;
     while let Some(line) = cur.lines.get(cur.pos + count).copied() {
         if is_blank_line(line) {
             return None;
         }
         if !joined.is_empty() {
+            // A QUOTED VALUE STOPS AT THE NEWLINE (PART 4, carve#888). A line
+            // break inside the quotes is not content: it ends the production,
+            // and the whole attribute block is unrecognized.
+            //
+            // This engine collapsed the break to a SPACE, which no production
+            // in either normative file describes - all three engines accepted
+            // the shape and none of them agreed on what it meant, which is what
+            // an unstated rule looks like.
+            //
+            // `continuation` is where a newline IS admitted, and it sits
+            // BETWEEN two tokens rather than inside one, so a block attribute
+            // may still span lines: the space below is that continuation, and
+            // it is only reached where no value is open across the break.
+            if quote.is_some() {
+                return None;
+            }
             joined.push(' ');
         }
         joined.push_str(trim_ascii(line));
+        quote = open_quote_at_end(trim_ascii(line));
         count += 1;
         if trim_ascii_end(line).ends_with('}') {
             let inner = trim_ascii(&joined);
@@ -8817,6 +8835,45 @@ fn parse_standalone_attrs_block(cur: &mut LineCursor) -> Option<Attrs> {
         }
     }
     None
+}
+
+/// The quote a run leaves OPEN at its end.
+///
+/// A backslash escapes the next character, so `\"` neither opens a value nor
+/// closes one. Used to decide whether a line break falls inside a
+/// `quoted_value`, which PART 4 forbids in both of its alternatives
+/// (carve#888).
+///
+/// The scan starts from NO open quote every time, and deliberately takes no
+/// incoming state: a line that ends inside a value refuses the block at the
+/// very next break, so no later line is ever scanned from inside one. A
+/// carried-in state would be a parameter that cannot take a second value -
+/// dead by construction and untestable, which is the shape this repository has
+/// had to remove repeatedly.
+fn open_quote_at_end(s: &str) -> Option<char> {
+    let mut quote = None;
+    let mut escaped = false;
+    for ch in s.chars() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match quote {
+            Some(q) => {
+                if ch == '\\' {
+                    escaped = true;
+                } else if ch == q {
+                    quote = None;
+                }
+            }
+            None => match ch {
+                '\\' => escaped = true,
+                '"' | '\'' => quote = Some(ch),
+                _ => {}
+            },
+        }
+    }
+    quote
 }
 
 fn merge_attrs(target: &mut Option<Attrs>, incoming: Attrs) {

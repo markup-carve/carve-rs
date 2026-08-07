@@ -9,6 +9,17 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A quoted attribute value stops at the newline.** `quoted_value` excludes a
+  newline in both of its alternatives, so a line break inside the quotes ends
+  the production and the whole attribute block is unrecognized. On a
+  block-attribute LINE this engine accepted the block and collapsed the break to
+  a SPACE - a reading no production in either normative file describes - so
+  `{k="a` + newline + `b"}` above a paragraph attached `k="a b"` to it instead of
+  staying literal text. A block attribute may still span lines: `continuation`
+  admits a newline BETWEEN two tokens, never inside one, so `{.a` + newline +
+  `.b}` is still one block, as is a break after a value whose closing quote is on
+  its own line. The inline form already answered correctly and does not move.
+
 - **Trailing whitespace on a content line is dropped, on every line and not just
   a block's last.** PART 2 carries a NO TRAILING WHITESPACE clause: a whitespace
   run at the end of a content line does not reach the output and is not content.
