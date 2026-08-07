@@ -23,6 +23,26 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **One whitespace definition, in every construct.** PART 7 says Carve has
+  exactly four whitespace characters - space, tab, line feed and carriage
+  return - and that EVERY other character is content, naming the vertical tab
+  (U+000B) and the form feed (U+000C) because they are the two an
+  implementation admits by accident. This engine reached for Rust's wider
+  classes at fifteen line-classification sites, so a line ending in one of
+  those characters was still recognized as its construct and the character was
+  eaten. A table row, a delimiter row, a colon-fence container opener, a
+  line-block opener, a hard-breaks opener, a block image line, a standalone
+  block-attribute line, a list-item attribute line and a frontmatter opener now
+  all end at a space or a tab and at nothing else, and an abbreviation
+  expansion keeps a trailing no-break space, vertical tab or form feed that
+  `str::trim_end` used to eat. **Behavior change:** a line that ends in one of
+  those characters is now ordinary text (or, for the abbreviation, keeps the
+  character), where it previously formed the construct. The frontmatter case is
+  the severe one - a yaml opener followed by a vertical tab opened a block that
+  swallowed the document down to the next three-dash line.
+
+### Fixed
+
 - **A definition body ends below its own content column.** A line indented one
   or two columns under a `:  ` body was folded into the body as lazy text, which
   is the same answer a line indented PAST the column gets - so the two bands
