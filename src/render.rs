@@ -2204,15 +2204,35 @@ fn render_inline_after(
             out.push_str("</a>");
         }
         InlineNode::CrossRef(c) => {
-            if let Some((actual_id, title)) = state.crossref_index.resolve(&c.target) {
+            // The label is the target's cloned inline NODES, so it still
+            // carries what the author typed and renders here exactly as it does
+            // in the heading itself (PART 9R R4). A caption target has no nodes
+            // - its label is LABEL + NUMBER - so that one stays a string.
+            let resolved = state
+                .crossref_index
+                .resolve(&c.target)
+                .map(|(id, title)| (id.to_string(), title.to_string()));
+            if let Some((actual_id, title)) = resolved {
+                let label = state.crossref_index.label(&actual_id);
                 if state.link_depth == 0 {
                     out.push_str("<a href=\"#");
-                    write_escaped_attr(out, actual_id);
+                    write_escaped_attr(out, &actual_id);
                     out.push_str("\">");
-                    write_escaped_text(out, title);
+                    match &label {
+                        // Inside the anchor this link just opened.
+                        Some(nodes) => {
+                            state.link_depth += 1;
+                            render_inlines(out, nodes, options, state);
+                            state.link_depth -= 1;
+                        }
+                        None => write_escaped_text(out, &title),
+                    }
                     out.push_str("</a>");
                 } else {
-                    write_escaped_text(out, title);
+                    match &label {
+                        Some(nodes) => render_inlines(out, nodes, options, state),
+                        None => write_escaped_text(out, &title),
+                    }
                 }
             } else {
                 write_escaped_text(out, &format!("</#{}>", c.target));

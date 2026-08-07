@@ -748,21 +748,36 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
         // Emitting only the title in BOTH cases would silently drop every
         // heading link from the Markdown export - the mistake this arm was first
         // written with.
-        InlineNode::CrossRef(crossref) => match ctx.crossref_index.resolve(&crossref.target) {
-            Some((id, title)) => {
-                let title = escape_text(&strip_controls(title));
-                // Inside a link label the reference is already surrounded by an
-                // anchor, so it degrades to its display text -- the same rule
-                // the parser applies to every link it produces itself, and the
-                // HTML target applies to this node (carve-rs#436).
-                if ctx.link_depth == 0 && ctx.heading_ids.contains(id) {
-                    format!("[{title}](#{})", strip_controls(id))
-                } else {
-                    title
+        InlineNode::CrossRef(crossref) => {
+            // The label is the target's cloned inline NODES (PART 9R R4), so it
+            // is written back out as Markdown markup rather than as flattened
+            // text, and the source run reaches this renderer's typography mode.
+            // A caption target has no nodes - its label is LABEL + NUMBER - so
+            // that one is still a string.
+            let resolved = ctx
+                .crossref_index
+                .resolve(&crossref.target)
+                .map(|(id, title)| (id.to_string(), title.to_string()));
+            match resolved {
+                None => format!("</#{}>", strip_controls(&crossref.target)),
+                Some((id, title)) => {
+                    let label = ctx.crossref_index.label(&id);
+                    let text = match &label {
+                        Some(nodes) => render_inlines(nodes, ctx, depth + 1),
+                        None => escape_text(&strip_controls(&title)),
+                    };
+                    // Inside a link label the reference is already surrounded by
+                    // an anchor, so it degrades to its display text -- the same
+                    // rule the parser applies to every link it produces itself,
+                    // and the HTML target applies to this node (carve-rs#436).
+                    if ctx.link_depth == 0 && ctx.heading_ids.contains(&id) {
+                        format!("[{text}](#{})", strip_controls(&id))
+                    } else {
+                        text
+                    }
                 }
             }
-            None => format!("</#{}>", strip_controls(&crossref.target)),
-        },
+        }
         // Tier-2 ext node; the core renderer has no numbering, so emit the source.
         InlineNode::CitationGroup(group) => strip_controls(&group.raw),
         InlineNode::CaptionNumber(number) => number
