@@ -2594,7 +2594,10 @@ fn parse_eof_closed_colon_ladder(
             // tail put a literal blank line inside a paragraph - which nothing
             // else in the language can hold - and swallowed the block after it
             // (carve-rs#530).
-            flattened_paragraphs(tail, options)
+            // No maps: this path is only reached with positions OFF (its
+            // guard is `!options.source_lines && !options.positions`), so
+            // there is nothing to place and nothing to lose.
+            flattened_paragraphs(tail, None, options)
         } else {
             let tail_source = tail.join("\n");
             parse_blocks_with_options(&tail_source, options)
@@ -2642,8 +2645,72 @@ fn parse_flattened_inline(text: &str, options: &Options<'_>) -> Vec<InlineNode> 
     out
 }
 
+/// `parse_flattened_inline` with the per-line anchors that place what it
+/// returns. Same budget handling, for the same reason.
+///
+/// A flattened run is not REASSEMBLED in PART 12 §4's sense: its lines are
+/// contiguous and verbatim, so every node in it has an honest span. Only the
+/// anchors were missing (carve-rs#716).
+fn parse_flattened_inline_with_anchors(
+    text: &str,
+    options: &Options<'_>,
+    anchors: Vec<Option<(usize, usize)>>,
+) -> Vec<InlineNode> {
+    let saved = NESTING_DEPTH.with(Cell::get);
+    NESTING_DEPTH.with(|d| d.set(0));
+    let out = parse_inline_lines_with_anchor(text, options, anchors);
+    NESTING_DEPTH.with(|d| d.set(saved));
+    out
+}
+
+/// The source line and stripped-column maps for a run of lines, parallel to the
+/// lines themselves. `None` where the caller has none to give.
+///
+/// This is what a `LineCursor` carries per line; a flattened over-cap run has
+/// already been lifted out of one, so its two maps travel together instead.
+type LineMaps<'a> = Option<(&'a [Option<usize>], &'a [Option<usize>])>;
+
+/// Span of the flattened lines `[start, end)`, in the ORIGINAL source.
+///
+/// The line-column pair per body line is what a `LineCursor` would carry; here
+/// the run has already been lifted out of one, so the maps are passed directly.
+/// The arithmetic is `span_of`'s, deliberately: a flattened paragraph is an
+/// ordinary paragraph that happened to be built past the cap, and a second
+/// spelling of the same span is how the two drift apart.
+fn flattened_span(lines: &[&str], maps: LineMaps<'_>, start: usize, end: usize) -> Option<Pos> {
+    let (line_map, col_map) = maps?;
+    let last = end.saturating_sub(1).max(start);
+    let start_line = *line_map.get(start)?.as_ref()?;
+    let end_line = line_map.get(last).copied().flatten().unwrap_or(start_line);
+    let stripped = *col_map.get(start)?.as_ref()?;
+    let end_stripped = *col_map.get(last)?.as_ref()?;
+    let first = lines.get(start)?;
+    let indent = first.chars().count() - first.trim_start().chars().count();
+    let width = lines.get(last).map(|l| l.chars().count()).unwrap_or(0);
+    Some(Pos {
+        start_line,
+        end_line,
+        start_column: stripped + indent + 1,
+        end_column: end_stripped + width + 1,
+        start_offset: 0,
+        end_offset: 0,
+    })
+}
+
 /// Split flattened over-cap lines into paragraphs at every blank line (§25).
-fn flattened_paragraphs(lines: &[&str], options: &Options<'_>) -> Vec<BlockNode> {
+///
+/// `maps` are the source line and stripped-column maps, parallel to `lines`.
+/// `None` means the caller has none to give - the EOF-closed ladder builds its
+/// tail from a plain slice - and the paragraphs then carry no span, which §4
+/// permits only because there is genuinely nothing to report. Every caller that
+/// HAS the maps passes them: a run past the cap is contiguous verbatim source,
+/// so it has an honest span and omitting it is a gap, not an exemption
+/// (carve-rs#716).
+fn flattened_paragraphs(
+    lines: &[&str],
+    maps: LineMaps<'_>,
+    options: &Options<'_>,
+) -> Vec<BlockNode> {
     let mut out = Vec::new();
     let mut idx = 0;
     while idx < lines.len() {
@@ -2657,9 +2724,31 @@ fn flattened_paragraphs(lines: &[&str], options: &Options<'_>) -> Vec<BlockNode>
         while idx < lines.len() && !is_blank_line(lines[idx]) {
             idx += 1;
         }
+        let text = lines[start..idx].join("\n");
+        // The lines are joined VERBATIM here, unlike `parse_paragraph` which
+        // strips each line's indentation first, so a line's anchor is the
+        // column its container took and nothing more.
+        let children = match (options.positions, maps) {
+            (true, Some((line_map, col_map))) => {
+                let anchors = (start..idx)
+                    .map(|i| {
+                        Some((
+                            line_map.get(i).copied().flatten()?,
+                            col_map.get(i).copied().flatten()?,
+                        ))
+                    })
+                    .collect();
+                parse_flattened_inline_with_anchors(&text, options, anchors)
+            }
+            _ => parse_flattened_inline(&text, options),
+        };
         out.push(BlockNode::Paragraph(Paragraph {
             attrs: None,
-            children: parse_flattened_inline(&lines[start..idx].join("\n"), options),
+            children,
+            pos: options
+                .positions
+                .then(|| flattened_span(lines, maps, start, idx))
+                .flatten(),
             ..Default::default()
         }));
     }
@@ -2677,7 +2766,7 @@ fn parse_capped_colon_body(inner: LineBuffer, options: &Options<'_>) -> Vec<Bloc
         return Vec::new();
     }
 
-    flattened_paragraphs(&lines, options)
+    flattened_paragraphs(&lines, Some((&source.line_map, &source.col_map)), options)
 }
 
 /// For each fence char, `vec[len]` is one past the index of the LAST line that
@@ -2835,6 +2924,7 @@ fn parse_blocks(cur: &mut LineCursor, options: &Options<'_>) -> Vec<BlockNode> {
     // still in the cursor into one paragraph rather than recursing further,
     // matching the carve-php degrade behavior.
     let Some(_depth) = DepthGuard::enter() else {
+        let span_start = cur.pos;
         let mut rest: Vec<&str> = Vec::new();
         while let Some(line) = cur.consume() {
             rest.push(line);
@@ -2846,9 +2936,28 @@ fn parse_blocks(cur: &mut LineCursor, options: &Options<'_>) -> Vec<BlockNode> {
         if rest.iter().all(|line| is_blank_line(line)) {
             return Vec::new();
         }
+        // The SECOND over-cap producer, and a real one. The colon-fence
+        // document that named carve-rs#716 never reaches this branch - it
+        // degrades through `parse_capped_colon_body` instead - but a deep quote
+        // ladder and a deep list ladder both arrive here with positions on, and
+        // published nothing either. The lines are contiguous and still in the
+        // cursor, so the span is the ordinary one and the anchors are the
+        // ordinary ones; `rest` holds the lines VERBATIM, so a line's anchor is
+        // its own stripped column.
+        let children = if options.positions {
+            let anchors = rest
+                .iter()
+                .enumerate()
+                .map(|(idx, line)| inline_anchor_for_line(cur, span_start + idx, line))
+                .collect();
+            parse_flattened_inline_with_anchors(&text, options, anchors)
+        } else {
+            parse_flattened_inline(&text, options)
+        };
         return vec![BlockNode::Paragraph(Paragraph {
             attrs: None,
-            children: parse_flattened_inline(&text, options),
+            children,
+            pos: span_of(cur, span_start, cur.pos, options),
             ..Default::default()
         })];
     };

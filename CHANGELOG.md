@@ -9,6 +9,20 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A paragraph produced by the over-cap degrade publishes its position**, and
+  so do the text runs and soft breaks in it. PART 9 §25 turns an opener past the
+  nesting cap into literal paragraph text, and the flattened run that results is
+  contiguous verbatim source - so PART 12 §4's exemption for a REASSEMBLED node
+  does not reach it, and every node in it has an honest span. Two producers were
+  publishing none: the colon-container degrade in `parse_capped_colon_body`,
+  which discarded the line and column maps it already held, and the
+  `DepthGuard::enter()` fallback in `parse_blocks`, which a deep quote or list
+  ladder reaches. On the spec corpus document
+  `182-openers-past-the-nesting-cap-are-one-paragraph` the paragraph now reports
+  the same span as carve-js, and all eight of that document's missing positions
+  are filled. Only the AST output moves; all five rendering targets are
+  byte-identical.
+
 - **A `figure` built over a REFERENCE image publishes its position.** A direct
   `![a](/p.png)` + `^ cap` becomes a figure at parse time and was placed there;
   a reference `![a][ok]` + `^ cap` cannot be, because whether the label resolves
