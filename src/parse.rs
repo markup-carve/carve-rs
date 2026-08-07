@@ -11131,7 +11131,77 @@ fn is_url_autolink_target(target: &str) -> bool {
     scheme
         .bytes()
         .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'+' | b'-' | b'.'))
-        && url.bytes().all(is_url_autolink_char)
+        && url.chars().all(is_url_char)
+}
+
+/// PART 3 `url_char`, the autolink body's character class.
+///
+/// Inside ASCII it is the enumerated set and nothing else, so `"`, `\`, `` ` ``,
+/// `{`, `}`, `|`, `^`, `<` and `>` still break an autolink. Outside ASCII the
+/// clause AN AUTOLINK BODY ADMITS NON-ASCII AND EXCLUDES FORMAT CHARACTERS
+/// reads `unicode_url_char - format_char - control_char` (carve#844,
+/// carve#860): an internationalized domain, an accented host and a non-ASCII
+/// path are autolinks, because the same destination written
+/// `[t](https://<IDN>/)` already links through `link_destination` and one
+/// destination cannot answer differently on the character set depending on the
+/// spelling.
+///
+/// The CONTROL term is not redundant with the ASCII enumeration, which is the
+/// trap it is written around: `unicode_url_char` is "non-whitespace, non-ASCII",
+/// so the C1 block U+0080-U+009F satisfies it - those are Cc, are not Cf, and
+/// only U+0085 is whitespace. Without the term, fourteen control characters
+/// would be `url_char`s while every C0 control is excluded.
+///
+/// `link_destination` is a DIFFERENT production and is unchanged: a format
+/// character in an inline destination or a reference definition is still an
+/// ordinary destination character.
+fn is_url_char(c: char) -> bool {
+    if c.is_ascii() {
+        return is_url_autolink_char(c as u8);
+    }
+    // `char::is_whitespace` is the White_Space property and `char::is_control`
+    // is General_Category=Cc - the properties themselves, not a host language's
+    // `\s` shorthand. JavaScript's `\s` matches U+FEFF and misses U+0085, and
+    // PCRE's Unicode `\s` matches U+180E, which Unicode 6.3.0 removed from
+    // White_Space; spelling either half that way decides part of this rule by
+    // accident (carve-php#957).
+    !c.is_whitespace() && !c.is_control() && !is_format_char(c)
+}
+
+/// General_Category=Cf: 170 codepoints in 21 ranges (Unicode 15.0.0).
+///
+/// A format character is invisible by definition, so a host carrying one
+/// renders as the host without it and links somewhere else. That is a spoofing
+/// surface rather than an authoring convenience, which is why the class is
+/// excluded rather than the individual zero-width characters anyone has thought
+/// to name. The whole property is pinned by codepoint in
+/// `tests/autolink_url_char_classes.rs`, since 170 corpus documents stating one
+/// rule is not a corpus.
+fn is_format_char(c: char) -> bool {
+    matches!(
+        c,
+        '\u{00AD}'
+            | '\u{0600}'..='\u{0605}'
+            | '\u{061C}'
+            | '\u{06DD}'
+            | '\u{070F}'
+            | '\u{0890}'..='\u{0891}'
+            | '\u{08E2}'
+            | '\u{180E}'
+            | '\u{200B}'..='\u{200F}'
+            | '\u{202A}'..='\u{202E}'
+            | '\u{2060}'..='\u{2064}'
+            | '\u{2066}'..='\u{206F}'
+            | '\u{FEFF}'
+            | '\u{FFF9}'..='\u{FFFB}'
+            | '\u{110BD}'
+            | '\u{110CD}'
+            | '\u{13430}'..='\u{1343F}'
+            | '\u{1BCA0}'..='\u{1BCA3}'
+            | '\u{1D173}'..='\u{1D17A}'
+            | '\u{E0001}'
+            | '\u{E0020}'..='\u{E007F}'
+    )
 }
 
 fn is_url_autolink_char(b: u8) -> bool {
