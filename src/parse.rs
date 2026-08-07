@@ -1979,6 +1979,32 @@ pub(crate) fn frontmatter_format_token(after_marker: &str) -> Option<&str> {
     Some(kind)
 }
 
+/// Whether `source` opens a frontmatter block, by the parser's own test.
+///
+/// The canonical writer needs exactly one question answered: would a leading
+/// `---` in the bytes it is about to emit be read back as a frontmatter opener
+/// instead of as the thematic break it wrote? It asks `split_frontmatter`
+/// rather than re-deriving the answer, because a second reader of the same
+/// question is only safe while it agrees - the seam carve-rs#725 had to unify
+/// once already and carve-rs#732 lost a whole document to.
+///
+/// `normalize_source` runs first for the same reason: the parser tests the
+/// normalized text, so a reader that tested the raw text would disagree about
+/// a CRLF or BOM'd document - the exact fall-through carve-rs#732 lost a
+/// frontmatter block to.
+///
+/// NAMED SURVIVOR: no fixture can tell that call apart from a no-op today.
+/// The only caller passes the CANONICAL WRITER'S OUTPUT, which is built from a
+/// tree that was itself parsed out of normalized text, so it can hold no
+/// carriage return, no NUL and no leading byte order mark. The call is kept so
+/// the helper answers for any text rather than only for the one caller's, which
+/// is the same reason `raw_frontmatter` was made to share the opener test
+/// instead of keeping a second copy of it (carve-rs#725).
+pub(crate) fn opens_frontmatter(source: &str) -> bool {
+    let normalized = normalize_source(source);
+    split_frontmatter(normalized.as_ref(), false).1.is_some()
+}
+
 fn split_frontmatter(source: &str, positions: bool) -> SplitFrontmatter<'_> {
     // Opening fence: `---` optionally followed by a type token (`---yaml`,
     // `---json`, `---toml`, ...; canonical has no space). Closer is a bare `---`.
