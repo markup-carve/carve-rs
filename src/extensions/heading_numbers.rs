@@ -11,10 +11,10 @@
 
 use std::collections::BTreeMap;
 
-use crate::ast::{Attrs, BlockNode, Document, FigureTarget, Heading, InlineNode, Link, Span, Text};
-use crate::extension::{BeforeRenderContext, CarveExtension, SmartTypographyMode};
-use crate::parse::slugify_parse;
-use crate::render::{plain_inlines, plain_inlines_typography};
+use crate::ast::{Attrs, BlockNode, Document, FigureTarget, Heading, InlineNode, Link, Span};
+use crate::extension::{BeforeRenderContext, CarveExtension};
+use crate::parse::{crossref_label_clone, slugify_parse};
+use crate::render::plain_inlines;
 
 /// In-text cross-reference rendering for an auto-filled `</#id>` reference.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -85,7 +85,19 @@ impl HeadingNumbers {
 
 struct Entry {
     number: String,
-    title: String,
+    /// The heading's AUTHORED inline content, CLONED (PART 9R R4, DERIVED
+    /// DISPLAY TEXT CLONES THE SAME NODES, markup-carve/carve#957). Not a
+    /// string: flattening at the derivation site destroys the source run, the
+    /// emphasis, the code span and the escape exactly as flattening at the index
+    /// site does, and no renderer downstream can recover any of them.
+    ///
+    /// THE LABEL IS TAKEN BEFORE ANY RENDER-STAGE INJECTION. This extension
+    /// injects a `section-number` span into the heading, and this engine
+    /// resolves cross-references AFTER that - so the clone is taken from the
+    /// PRISTINE heading and not from the live one. The capture below sits above
+    /// the injection for that reason; the ordering is the rule, not an accident
+    /// of how the function reads.
+    title: Vec<InlineNode>,
 }
 
 impl CarveExtension for HeadingNumbers {
@@ -106,7 +118,6 @@ impl CarveExtension for HeadingNumbers {
         let mut state = NumberState {
             min_level: self.opts.min_level,
             lowercase: _ctx.options().lowercase_heading_ids,
-            smart: _ctx.options().smart_typography,
             levels: Vec::new(),
             numbers: Vec::new(),
             heading_counts: BTreeMap::new(),
@@ -133,8 +144,6 @@ impl CarveExtension for HeadingNumbers {
 struct NumberState {
     min_level: u8,
     lowercase: bool,
-    /// The document-global smart-typography mode. See `number_heading`.
-    smart: SmartTypographyMode,
     levels: Vec<u8>,
     numbers: Vec<u32>,
     /// Per-base id dedup counter, mirroring the renderer's `next_heading_id`
@@ -227,17 +236,24 @@ fn number_heading(h: &mut Heading, in_blockquote: bool, state: &mut NumberState)
         .collect::<Vec<_>>()
         .join(".");
 
-    // Capture BEFORE injecting the span. The title is the visible half of the
-    // rewritten cross-reference label, so it is spelled in the document's
-    // smart-typography mode: that switch is DOCUMENT-GLOBAL and applies to EVERY
-    // target (PART 9 §19), and resolving the glyph here would settle it in a
-    // pre-render pass no renderer can reach -- the heading would obey the mode
-    // and the reference to it would not, in the same line of output.
+    // CAPTURE BEFORE INJECTING THE SPAN, and capture the NODES. A heading's
+    // cloned nodes are its AUTHORED inline content; whatever this pass adds to
+    // the heading below -- the `section-number` span -- is not part of the label
+    // and never appears in derived text (PART 9R R4, THE LABEL IS TAKEN BEFORE
+    // ANY RENDER-STAGE INJECTION, markup-carve/carve#957). This engine resolves
+    // cross-references AFTER the transform, which is the side of the injection
+    // this sentence exists to name.
+    //
+    // Cloning also settles the smart-typography question by not answering it.
+    // The switch is DOCUMENT-GLOBAL and applies to every target (PART 9 §19);
+    // this used to flatten the heading in the document's mode, which put a
+    // presentational decision in a pre-render pass. The nodes carry the author's
+    // run and each renderer spells it in the mode it was given.
     //
     // The `base` id above deliberately keeps reading `plain_inlines` (glyph):
     // an id must not depend on presentational typography, and PART 9 §19 pins
     // heading ids as byte-identical in both modes.
-    let title = plain_inlines_typography(&h.children, state.smart);
+    let title = crossref_label_clone(&h.children);
     state.by_id.insert(
         id,
         Entry {
@@ -268,18 +284,18 @@ fn rewrite_links_blocks(
 ) {
     for block in blocks.iter_mut() {
         match block {
-            BlockNode::Heading(h) => rewrite_links_inlines(&mut h.children, by_id, opts, false),
-            BlockNode::Paragraph(p) => rewrite_links_inlines(&mut p.children, by_id, opts, false),
+            BlockNode::Heading(h) => rewrite_links_inlines(&mut h.children, by_id, opts),
+            BlockNode::Paragraph(p) => rewrite_links_inlines(&mut p.children, by_id, opts),
             BlockNode::BlockQuote(b) => {
                 rewrite_links_blocks(&mut b.children, by_id, opts);
                 if let Some(attr) = &mut b.attribution {
-                    rewrite_links_inlines(attr, by_id, opts, false);
+                    rewrite_links_inlines(attr, by_id, opts);
                 }
             }
             BlockNode::Div(d) => rewrite_links_blocks(&mut d.children, by_id, opts),
             BlockNode::Admonition(a) => {
                 if let Some(t) = &mut a.title {
-                    rewrite_links_inlines(t, by_id, opts, false);
+                    rewrite_links_inlines(t, by_id, opts);
                 }
                 rewrite_links_blocks(&mut a.children, by_id, opts);
             }
@@ -291,7 +307,7 @@ fn rewrite_links_blocks(
             BlockNode::DefinitionList(dl) => {
                 for item in &mut dl.items {
                     for term in &mut item.terms {
-                        rewrite_links_inlines(term, by_id, opts, false);
+                        rewrite_links_inlines(term, by_id, opts);
                     }
                     for def in &mut item.definitions {
                         rewrite_links_blocks(def, by_id, opts);
@@ -300,16 +316,16 @@ fn rewrite_links_blocks(
             }
             BlockNode::Table(t) => {
                 if let Some(caption) = &mut t.caption {
-                    rewrite_links_inlines(caption, by_id, opts, false);
+                    rewrite_links_inlines(caption, by_id, opts);
                 }
                 for row in &mut t.rows {
                     for cell in &mut row.cells {
-                        rewrite_links_inlines(&mut cell.children, by_id, opts, false);
+                        rewrite_links_inlines(&mut cell.children, by_id, opts);
                     }
                 }
             }
             BlockNode::Figure(f) => {
-                rewrite_links_inlines(&mut f.caption, by_id, opts, false);
+                rewrite_links_inlines(&mut f.caption, by_id, opts);
                 if let FigureTarget::BlockQuote(b) = &mut f.target {
                     rewrite_links_blocks(&mut b.children, by_id, opts);
                 }
@@ -320,57 +336,52 @@ fn rewrite_links_blocks(
     }
 }
 
+/// There is no `inside_link` parameter any more. It existed to flatten a
+/// cross-reference written INSIDE a link's label to text, so the rewrite would
+/// not put an anchor inside an anchor - and flattening there destroyed the
+/// cloned title in the one position PART 9R R4 is about. PART 12 section 3a
+/// settles it: the node stays, and every renderer unwraps it at the seam
+/// (markup-carve/carve#817).
 fn rewrite_links_inlines(
     nodes: &mut [InlineNode],
     by_id: &BTreeMap<String, Entry>,
     opts: &HeadingNumbersOptions,
-    inside_link: bool,
 ) {
     for node in nodes.iter_mut() {
         match node {
             InlineNode::Link(l) => {
-                rewrite_links_inlines(&mut l.children, by_id, opts, true);
+                rewrite_links_inlines(&mut l.children, by_id, opts);
                 maybe_rewrite_link(l, by_id, opts);
             }
             InlineNode::CrossRef(c) => {
                 if let Some((id, entry)) = resolve_numbered_crossref(by_id, &c.target) {
-                    let text = numbered_crossref_text(entry, opts);
-                    if inside_link {
-                        *node = InlineNode::Text(Text {
-                            value: text,
-                            pos: c.pos,
-                        });
-                    } else {
-                        *node = InlineNode::Link(Link {
-                            attrs: None,
-                            href: format!("#{id}"),
-                            title: None,
-                            children: vec![InlineNode::text(text)],
-                            ref_label: None,
-                            raw_ref: None,
-                            from_crossref: true,
-                            from_heading_reference: false,
-                            pos: c.pos,
-                        });
-                    }
+                    // The same node either way. A link inside a link's label is
+                    // the node the author's reference became, and PART 12
+                    // section 3a keeps it - "links never nest" binds the
+                    // RENDERER, which unwraps it at the seam. Building a text
+                    // node here instead would flatten the cloned title in the
+                    // one position R4 is about.
+                    *node = InlineNode::Link(Link {
+                        attrs: None,
+                        href: format!("#{id}"),
+                        title: None,
+                        children: numbered_crossref_label(entry, opts),
+                        ref_label: None,
+                        raw_ref: None,
+                        from_crossref: true,
+                        from_heading_reference: false,
+                        pos: c.pos,
+                    });
                 }
             }
-            InlineNode::Emphasis(e) => {
-                rewrite_links_inlines(&mut e.children, by_id, opts, inside_link)
-            }
-            InlineNode::Span(s) => rewrite_links_inlines(&mut s.children, by_id, opts, inside_link),
-            InlineNode::Extension(e) => {
-                rewrite_links_inlines(&mut e.children, by_id, opts, inside_link)
-            }
-            InlineNode::CriticInsert(c) => {
-                rewrite_links_inlines(&mut c.children, by_id, opts, inside_link)
-            }
-            InlineNode::CriticDelete(c) => {
-                rewrite_links_inlines(&mut c.children, by_id, opts, inside_link)
-            }
+            InlineNode::Emphasis(e) => rewrite_links_inlines(&mut e.children, by_id, opts),
+            InlineNode::Span(s) => rewrite_links_inlines(&mut s.children, by_id, opts),
+            InlineNode::Extension(e) => rewrite_links_inlines(&mut e.children, by_id, opts),
+            InlineNode::CriticInsert(c) => rewrite_links_inlines(&mut c.children, by_id, opts),
+            InlineNode::CriticDelete(c) => rewrite_links_inlines(&mut c.children, by_id, opts),
             InlineNode::Footnote(f) => {
                 if let Some(inl) = &mut f.inline {
-                    rewrite_links_inlines(inl, by_id, opts, false);
+                    rewrite_links_inlines(inl, by_id, opts);
                 }
             }
             InlineNode::CitationGroup(g) => {
@@ -379,10 +390,10 @@ fn rewrite_links_inlines(
                 // generic link walk reaches these).
                 for item in &mut g.items {
                     if let Some(p) = &mut item.prefix {
-                        rewrite_links_inlines(p, by_id, opts, inside_link);
+                        rewrite_links_inlines(p, by_id, opts);
                     }
                     if let Some(loc) = &mut item.locator {
-                        rewrite_links_inlines(loc, by_id, opts, inside_link);
+                        rewrite_links_inlines(loc, by_id, opts);
                     }
                 }
             }
@@ -404,8 +415,7 @@ fn maybe_rewrite_link(l: &mut Link, by_id: &BTreeMap<String, Entry>, opts: &Head
     let Some(entry) = by_id.get(id) else {
         return; // crossref to an unnumbered heading: leave the title
     };
-    let text = numbered_crossref_text(entry, opts);
-    l.children = vec![InlineNode::text(text)];
+    l.children = numbered_crossref_label(entry, opts);
 }
 
 fn resolve_numbered_crossref<'a>(
@@ -422,10 +432,27 @@ fn resolve_numbered_crossref<'a>(
         .map(|(id, entry)| (id.clone(), entry))
 }
 
-fn numbered_crossref_text(entry: &Entry, opts: &HeadingNumbersOptions) -> String {
+/// NUMBERING, PREFIXING AND JOINING REMAIN THE EXTENSION'S OWN BUSINESS. R4
+/// governs what the TITLE part is made of - the heading's cloned nodes - not the
+/// label word, not the number, and not the separator around them, which are
+/// manufactured text no node of the document ever held.
+fn numbered_crossref_label(entry: &Entry, opts: &HeadingNumbersOptions) -> Vec<InlineNode> {
     match opts.crossref {
-        CrossrefStyle::Number => format!("{} {}", opts.label, entry.number),
-        CrossrefStyle::NumberTitle => format!("{} {} - {}", opts.label, entry.number, entry.title),
+        CrossrefStyle::Number => vec![InlineNode::text(format!("{} {}", opts.label, entry.number))],
+        CrossrefStyle::NumberTitle => {
+            let prefix = format!("{} {} - ", opts.label, entry.number);
+            let mut out: Vec<InlineNode> = entry.title.to_vec();
+            // PART 12 section 1a: no node's children hold two adjacent `text`
+            // nodes, and the title very often BEGINS with one. The prefix joins
+            // it rather than sitting beside it - a split here is bookkeeping,
+            // not the document, and it would publish two runs where a consumer
+            // must see one.
+            match out.first_mut() {
+                Some(InlineNode::Text(first)) => first.value.insert_str(0, &prefix),
+                _ => out.insert(0, InlineNode::text(prefix)),
+            }
+            out
+        }
         CrossrefStyle::Title => entry.title.clone(),
     }
 }
