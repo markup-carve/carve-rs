@@ -141,6 +141,22 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A boundary line inside an open fence no longer ends the container**
+  (markup-carve/carve#983 corpus category 279, markup-carve/carve#985,
+  carve-rs#802). A `+` continuation marker attaches ONE block, and a fenced
+  block ends at its closer - so a blank line, a sibling marker, a `>` quote line
+  or the next definition written between an opener and its closer is fence
+  content and ends nothing. The list item already answered this; the footnote
+  body, the block quote and the definition body's two forms consulted no fence
+  at all, so a code, `:::` or `%%%` fence with a blank in its body was cut in
+  two in each of them - the opener left an empty block, the tail escaping to
+  document level, and a code fence's closer coming back as an empty inline code
+  span. All five now share one fence-aware scan. A list item's INDENTED body
+  gained the colon container beside the code fence it already knew, so a list
+  marker at the body's own column no longer splits a `:::` div around a nested
+  list, and the looseness scan reads all three fence kinds, so a blank inside an
+  item's own `%%%` or `:::` body no longer loosens the item that holds it.
+
 - **Whitespace is a space or a tab, in every construct** (PART 7). Carve has
   exactly four whitespace characters and every other character is content, but
   this engine reached for Rust's wider classes at fifteen line-classification

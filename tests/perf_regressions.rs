@@ -302,9 +302,20 @@ const SCALE_ROUNDS: usize = 3;
 const SCALE_MAX_PER_BYTE_RATIO: f64 = 2.0;
 
 fn measure_scaling(build: &impl Fn(usize) -> String) -> Scaling {
+    measure_scaling_at(build, SCALE_SMALL_N, SCALE_LARGE_N)
+}
+
+/// `measure_scaling` at explicit sizes, keeping the 4x multiple.
+///
+/// A BLOCK-level shape is several LINES per unit, where the inline shapes above
+/// are a few bytes, so the default 50k/200k builds a document two orders of
+/// magnitude larger than such a shape needs to separate linear from quadratic.
+/// Only the sizes move; the interleaving, the rounds and the median are shared,
+/// because a second spelling of the timing is what this helper exists to avoid.
+fn measure_scaling_at(build: &impl Fn(usize) -> String, small_n: usize, large_n: usize) -> Scaling {
     let _guard = perf_guard();
-    let small = build(SCALE_SMALL_N);
-    let large = build(SCALE_LARGE_N);
+    let small = build(small_n);
+    let large = build(large_n);
     let small_bytes = small.len() as f64;
     let large_bytes = large.len() as f64;
 
@@ -361,15 +372,25 @@ fn measure_scaling(build: &impl Fn(usize) -> String) -> Scaling {
 /// a debug build is ~10-20x slower and may exceed the absolute bound without any
 /// regression, though the per-byte ratio itself is build-invariant.
 fn assert_near_linear(build: impl Fn(usize) -> String, label: &str) {
-    let scaling = measure_scaling(&build);
+    assert_near_linear_at(build, label, SCALE_SMALL_N, SCALE_LARGE_N);
+}
+
+/// `assert_near_linear` at explicit sizes. See `measure_scaling_at`.
+fn assert_near_linear_at(
+    build: impl Fn(usize) -> String,
+    label: &str,
+    small_n: usize,
+    large_n: usize,
+) {
+    let scaling = measure_scaling_at(&build, small_n, large_n);
 
     let ratio = scaling.per_byte_ratio();
     assert!(
         ratio < SCALE_MAX_PER_BYTE_RATIO,
         "{label} per-byte cost grew {ratio:.2}x at {}x the input (linear ~1x, quadratic ~{}x): \
          small={:.4}us/byte large={:.4}us/byte",
-        SCALE_LARGE_N / SCALE_SMALL_N,
-        SCALE_LARGE_N / SCALE_SMALL_N,
+        large_n / small_n,
+        large_n / small_n,
         scaling.small_per_byte * 1e6,
         scaling.large_per_byte * 1e6
     );
@@ -382,7 +403,7 @@ fn assert_near_linear(build: impl Fn(usize) -> String, label: &str) {
     // (tens of seconds to minutes at this n) still trips it.
     assert!(
         scaling.large_secs < 30.0,
-        "{label} parse for n={SCALE_LARGE_N} took {:.4}s (expected near-instant)",
+        "{label} parse for n={large_n} took {:.4}s (expected near-instant)",
         scaling.large_secs
     );
 }
@@ -910,4 +931,35 @@ fn bounded_bracket_and_angle_scans_preserve_output() {
 
     let auto = carve::to_html(&flat_unclosed_autolink(5));
     assert_eq!(auto.matches("<a ").count(), 0, "{auto}");
+}
+
+/// A `+`-ATTACHED FENCE'S CLOSER LOOKAHEAD IS ANSWERED FROM AN INDEX, NOT A SCAN
+/// (markup-carve/carve-rs#802).
+///
+/// Five collectors share `attached_block_end`, and each `+` it scans asks
+/// whether the `%%%` opener it just met has a closer ahead. That question is
+/// answered from a width -> last-index map, and the map is the CALLER'S so it is
+/// built once for a line set. Rebuilding it per `+` is O(lines) per marker and
+/// therefore quadratic in the document: measured on the shape below, per-byte
+/// cost grew 3.62x at 4x the input and the large sample went from 0.07s to
+/// 3.47s.
+///
+/// THE FENCES HERE CLOSE, deliberately. An UNCLOSABLE opener would swallow the
+/// rest of the document into the first attachment, so only ONE lookahead would
+/// ever run and the guard could not fail however bad the lookahead was. A
+/// CONSTANT width is deliberate too: widening each opener grows the input bytes
+/// faster than the marker count, which makes the per-byte reading pin that
+/// growth rather than this one.
+fn plus_attached_closed_comment_fences(n: usize) -> String {
+    "- x\n+\n%%%\na\n%%%\n\n".repeat(n)
+}
+
+#[test]
+fn plus_attached_comment_fence_closer_lookahead_is_indexed() {
+    assert_near_linear_at(
+        plus_attached_closed_comment_fences,
+        "plus-attached-closed-comment-fence",
+        2_000,
+        8_000,
+    );
 }

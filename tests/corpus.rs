@@ -13,6 +13,8 @@ use std::fs;
 use std::path::PathBuf;
 
 const IMPLEMENTED: &[&str] = &[
+    "a-list-marker-at-the-content-column-inside-an-open-fence",
+    "a-boundary-line-inside-an-open-fence-does-not-end-the-container",
     "a-flush-left-line-needs-an-open-paragraph-to-fold-into",
     "openers-past-the-nesting-cap-are-one-paragraph",
     "opaque-spans-inside-a-container",
