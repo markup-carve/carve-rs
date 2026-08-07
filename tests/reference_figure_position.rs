@@ -134,11 +134,12 @@ fn the_reference_figures_span_contains_both_of_its_children() {
 
 #[test]
 fn the_caption_text_span_excludes_the_marker() {
-    // Not this fix's doing, and asserted because the promotion EDITS this span
-    // (carve-rs#620): the `^ ` marker is stripped from the value, and the start
-    // offset advances with it so the span still slices back to its own content.
-    // A fix that carried the paragraph's span onto the figure while breaking
-    // that adjustment would pass every other test here.
+    // CONTROL (holds before this fix too). Asserted because the promotion EDITS
+    // this span (carve-rs#620): the `^ ` marker is stripped from the value, and
+    // the start offset advances with it so the span still slices back to its own
+    // content. A change that carried the paragraph's span onto the figure while
+    // breaking that adjustment would pass every other test here - dropping the
+    // adjustment kills this assertion and nothing else.
     let f = figure(REF);
     let caption = f
         .caption
