@@ -1856,7 +1856,31 @@ fn split_trailing_attr_block(target: &str) -> (&str, Option<&str>) {
                     if sep.len() != 1 || !sep.starts_with(' ') {
                         return (target, None);
                     }
-                    return (end[..start].trim_end(), Some(&end[start..]));
+                    let block = &end[start..];
+                    // AN INVALID BLOCK IS NOT `attributes`, SO THE LINE IS NOT A
+                    // DEFINITION (markup-carve/carve#933). `[space, attributes]`
+                    // names the `attributes` production, and a balanced `{...}`
+                    // that production does not accept is not an instance of it -
+                    // it is leftover content, and the end-of-line anchor above
+                    // disposes of it like any other leftover.
+                    //
+                    // The scan is what has to say so. It peels the block off
+                    // BEFORE anything validates it, so a rejected block had
+                    // already been consumed and DISCARDED and the line went on
+                    // to define with the author's braces gone from the page -
+                    // the exact outcome PART 7 names as the one to avoid. The
+                    // remedy is structural: handing the block back as CONTENT is
+                    // a third outcome, and where "rejected" and "absent" are the
+                    // same value the failure has nowhere to be observed.
+                    //
+                    // `x {#}` in a paragraph already keeps its braces as text,
+                    // because `attributes` rejects that block there too. Two
+                    // readings of the same characters one construct apart is
+                    // what this removes.
+                    if parse_attrs(&block[1..block.len() - 1]).is_none() {
+                        return (target, None);
+                    }
+                    return (end[..start].trim_end(), Some(block));
                 }
                 _ => {}
             },

@@ -90,11 +90,20 @@ fn a_closing_brace_inside_a_quoted_value_survives() {
     );
 }
 
+/// AN INVALID BLOCK IS NOT `attributes`, SO THE LINE IS NOT A DEFINITION
+/// (markup-carve/carve#933). This case used to assert the opposite - the block
+/// was ignored and the definition survived without it - which is the outcome
+/// PART 7 names as the one to avoid: the author's braces left the page and the
+/// line went on defining. `{!!!}` is not `attributes`, so it is leftover
+/// content, and the end-of-line anchor disposes of it like any other leftover.
+///
+/// The recorded compatibility break: a document relying on this resolves one
+/// fewer reference (carve#933 signoff).
 #[test]
-fn an_invalid_block_is_ignored_rather_than_breaking_the_definition() {
+fn an_invalid_block_stops_the_line_from_defining() {
     assert_eq!(
-        carve::to_html("[x][r]\n\n[r]: /u {!!!}\n"),
-        "<p><a href=\"/u\">x</a></p>"
+        carve::to_html("[x][r]\n\n[r]: /u {!!!}\n").trim(),
+        "<p>[x][r]</p>\n<p>[r]: /u {!!!}</p>"
     );
 }
 
