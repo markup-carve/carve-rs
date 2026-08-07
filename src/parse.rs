@@ -750,15 +750,7 @@ fn extract_footnote_defs(
             // continuation would carry the container prefix and is left to
             // normal block parsing, which the spec corpus does not pin.
             //
-            // "Indented >= 2" is RELATIVE to the definition line (PART 9 §16).
-            // Measured from column 0 instead, an INDENTED definition swallowed
-            // anything at column 2 - including a `:::` closer that belongs to
-            // the container the definition sits in, which then rendered as an
-            // empty `<div>` inside the endnote and pushed the backlink out of
-            // its paragraph (carve-rs#591). carve-js and carve-php both measure
-            // it relative: `  [^f]: x` takes a `    more` continuation and
-            // leaves a `  more` alone.
-            let body_indent = leading_ws(lines[def_start_line - first_source_line]) + 2;
+            let body_indent = footnote_body_floor(lines[def_start_line - first_source_line]);
             let mut note_fence: Option<FenceOpen> = None;
             if !in_container {
                 while i < lines.len() {
@@ -3854,6 +3846,40 @@ fn find_colon_container_end(lines: &[&str], start: usize, fence_len: usize) -> u
         idx += 1;
     }
     lines.len()
+}
+
+/// The column a footnote body's continuation lines must reach.
+///
+/// PART 9 §16 asks for ">= 2", RELATIVE to the definition line. Measured from
+/// column 0 instead, an INDENTED definition swallowed anything at column 2 -
+/// including a `:::` closer belonging to the container the definition sits in,
+/// which then rendered as an empty `<div>` inside the endnote and pushed the
+/// backlink out of its paragraph (carve-rs#591). carve-js and carve-php both
+/// measure it relative: `  [^f]: x` takes a `    more` continuation and leaves
+/// a `  more` alone.
+///
+/// COLUMNS, not characters. Every caller compares this against
+/// `indent_columns`, which expands a tab to its stop, so computing it with
+/// `leading_ws` - a CHARACTER count - put the two sides of the comparison in
+/// different units and a tab made them disagree. That is the class the
+/// tabs-are-columns family has been correcting throughout: markup-carve/carve#692,
+/// #796, #901, #905 and #893 were each a rule stated in one unit and
+/// implemented in another (carve-rs#735).
+///
+/// UNREACHABLE TODAY, and fixed anyway. The two spellings can only differ on a
+/// definition line whose own indentation contains a tab, and no such line
+/// reaches here: an indented top-level definition is not collected at all (it
+/// stays a literal paragraph), and a container-nested one skips the
+/// continuation loop entirely (`if !in_container`). Measured - swapping the
+/// units back changes nothing across the corpus or any input built for it.
+///
+/// It is corrected rather than left because the next change to which
+/// definitions are collected makes it a live defect with nothing to catch it,
+/// which is why carve-rs#735 was filed before it could bite. A test asserting
+/// the ENGINE's output could not fail here, so the unit is pinned on this
+/// function directly instead (markup-carve/carve#755).
+fn footnote_body_floor(def_line: &str) -> usize {
+    indent_columns(def_line) + 2
 }
 
 fn leading_ws(line: &str) -> usize {
@@ -13818,5 +13844,74 @@ mod quote_prefix_calls {
             },
             8,
         );
+    }
+}
+
+/// A footnote body's continuation floor is a COLUMN count.
+///
+/// `footnote_body_floor` is compared against `indent_columns` at both of its
+/// call sites, so it has to speak the same unit. It was computed with
+/// `leading_ws`, a CHARACTER count, and a tab in the definition line's own
+/// indentation made the two sides disagree.
+///
+/// These assertions are on the function rather than on the engine's output, and
+/// deliberately so: no input reaches the site today (see the function's own
+/// note), so a test written against rendered HTML or a published AST would be a
+/// check that cannot fail - the class catalogued in markup-carve/carve#755. The
+/// ticket asked for exactly this: fix the unit, and prove it with a case where
+/// the two spellings differ on a tabbed input.
+#[cfg(test)]
+mod footnote_body_floor_unit {
+    use super::{footnote_body_floor, indent_columns, leading_ws};
+
+    #[test]
+    fn a_tab_makes_the_two_spellings_disagree() {
+        // THE PROOF. One tab indents the definition line. As characters it is
+        // 1, so the old spelling asked continuations to reach column 3; as
+        // columns it is 4, so the floor is 6. A continuation at column 4 or 5
+        // would have been accepted under the old spelling and must not be.
+        let def = "\t[^a]: note";
+        assert_eq!(leading_ws(def), 1, "the character count");
+        assert_eq!(indent_columns(def), 4, "the column count");
+        assert_ne!(
+            leading_ws(def) + 2,
+            footnote_body_floor(def),
+            "the two spellings must differ on a tabbed definition line, or this \
+             test is pinning nothing"
+        );
+        assert_eq!(footnote_body_floor(def), 6);
+    }
+
+    #[test]
+    fn a_mixed_run_disagrees_too() {
+        // A space then a tab: the tab advances to the next 4-stop from column
+        // 1, so the indentation is still 4 columns while being 2 characters.
+        // Included because a fix that special-cased a LEADING tab would pass
+        // the case above and fail here.
+        let def = " \t[^a]: note";
+        assert_eq!(leading_ws(def), 2);
+        assert_eq!(indent_columns(def), 4);
+        assert_eq!(footnote_body_floor(def), 6);
+    }
+
+    #[test]
+    fn control_space_only_indentation_is_unchanged() {
+        // CONTROL, and the reason the bug was latent: for space-only
+        // indentation the two counts are equal, so every reachable input today
+        // gets the same answer either way. This is what must NOT move.
+        for def in ["[^a]: note", "  [^a]: note", "      [^a]: note"] {
+            assert_eq!(leading_ws(def), indent_columns(def), "{def}");
+            assert_eq!(footnote_body_floor(def), leading_ws(def) + 2, "{def}");
+        }
+    }
+
+    #[test]
+    fn control_the_floor_is_the_indentation_plus_two() {
+        // CONTROL for the other half of the expression. §16 asks for ">= 2"
+        // relative to the definition line; a mutation changing the addend
+        // passes every unit assertion above that only compares the two
+        // spellings, so the constant is pinned on its own.
+        assert_eq!(footnote_body_floor("[^a]: x"), 2);
+        assert_eq!(footnote_body_floor("    [^a]: x"), 6);
     }
 }
