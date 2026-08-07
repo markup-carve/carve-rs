@@ -9,6 +9,12 @@
 //! `---<TAB>yaml` is not a typed opener at all; it is an ordinary line, and the
 //! lines under it are ordinary blocks (carve#901, landed as carve#905).
 //!
+//! THE CARDINALITY IS ONE, since carve#912: the slot is a single `space` and a
+//! run at it makes the line no typed opener. The terminal (a space, never a
+//! tab) and the cardinality (one, never a run) are separate questions, and this
+//! file watches both - a patch that answers one by widening the other passes
+//! half of these.
+//!
 //! ONE CASE PER DIRECTION. The rule is about a RUN, so a check on the run's
 //! first character is not a check on the rule: it rejects `---<TAB>yaml` while
 //! `---<SP><TAB>yaml` still opens a block. That exact shape survived
@@ -117,11 +123,14 @@ fn a_space_still_pads_the_format_slot() {
 }
 
 #[test]
-fn the_slot_is_a_run_not_a_single_space() {
+fn the_slot_is_exactly_one_space() {
     // The production spells the slot `[space]`, exactly one character, while
-    // every engine reads a run. Which side gives is a question for the
-    // production; narrowing the terminal here must not decide it by accident.
-    assert_frontmatter("two spaces", "---  toml\na = 1\n---\nx\n", "toml");
+    // every engine read a run. carve#912 answered which side gives: the
+    // production is right and the readers narrow, so a two-space opener is not
+    // a typed opener at all. It is not a thematic break either, so the line is
+    // ordinary paragraph text and the metadata lines fold into it.
+    assert_not_frontmatter("two spaces", "---  toml\na = 1\n---\nx\n", "toml");
+    assert_frontmatter("one space", "--- toml\na = 1\n---\nx\n", "toml");
 }
 
 /// CONTROL, like `a_space_still_pads_the_format_slot`: neither opener carries a
