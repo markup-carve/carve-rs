@@ -9,6 +9,17 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A list marker inside an open fence is code text.** PART 9 section 24 places
+  a line by the COLUMN it reaches and does not read its first character, so a
+  list marker at an item's content column, inside a fence that item opened, is
+  the same continuation a plain line is. The item collector's marker test had no
+  fence guard, so the marker SEVERED the verbatim body: the fence closed empty,
+  the marker opened a sub-list, and the fence's own closer came back as an empty
+  code span. **Behavior change:** a bullet, ordered or task marker on a line
+  inside an item's open fenced code block is now part of the code, where it
+  previously ended the block and started a list. A marker after a CLOSED fence
+  still opens a sub-list.
+
 - **A tab and four spaces agree past a definition body's column.** PART 9
   section 24 C1 gives a tab a column value, so a bare tab reaches column 4 and
   is PAST a definition body's column exactly as four spaces are - and past the
