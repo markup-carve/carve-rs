@@ -9,6 +9,17 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A block's span covers a leading no-break space instead of starting past
+  it.** PART 12 §4 requires a parent's span to contain every child's, and a
+  block whose line opened with a non-ASCII whitespace character began one column
+  PAST its own first child - the indentation the span skipped was measured with
+  the Unicode whitespace property, while PART 1's `indent` terminal is a space
+  or a tab and nothing else (carve#890). So a no-break space, an en quad or an
+  ideographic space at the head of a paragraph, a quoted line or a footnote body
+  was treated as layout when it is content. Two producers carried the same
+  measurement, `span_of` and `flattened_span`, and both move. Only positions
+  change; all five rendering targets are byte-identical.
+
 - **A quoted attribute value stops at the newline.** `quoted_value` excludes a
   newline in both of its alternatives, so a line break inside the quotes ends
   the production and the whole attribute block is unrecognized. On a

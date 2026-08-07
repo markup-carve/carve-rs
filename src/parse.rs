@@ -2229,10 +2229,18 @@ fn span_of(cur: &LineCursor<'_>, start: usize, end: usize, options: &Options<'_>
     let end_line = cur.source_line(last).unwrap_or(start_line);
     // The parser sees the line with its container prefix removed, so the
     // document column is what the container took plus the indent that remains.
+    //
+    // INDENTATION IS SPACE AND TAB, and nothing else is. `trim_start` here was
+    // the Unicode whitespace property, so a line opening with a no-break space
+    // or an en quad had that character counted as INDENT - the block's span
+    // began one column past its own first child, which PART 12 §4's containment
+    // rule forbids (carve#913, and the finding that pass reports). Those
+    // characters are CONTENT under PART 1's `indent` terminal (carve#890), so
+    // they belong inside the span, not in front of it.
     let indent = cur
         .lines
         .get(start)
-        .map(|l| l.chars().count() - l.trim_start().chars().count())
+        .map(|l| l.chars().count() - trim_ascii_start(l).chars().count())
         .unwrap_or(0);
     let width = cur.lines.get(last).map(|l| l.chars().count()).unwrap_or(0);
     // The LAST line may have had a different amount taken off it than the
@@ -2706,7 +2714,21 @@ fn flattened_span(lines: &[&str], maps: LineMaps<'_>, start: usize, end: usize) 
     let stripped = *col_map.get(start)?.as_ref()?;
     let end_stripped = *col_map.get(last)?.as_ref()?;
     let first = lines.get(start)?;
-    let indent = first.chars().count() - first.trim_start().chars().count();
+    // Space and tab, the same reason as in `span_of`: a leading no-break space
+    // is content the span must cover, not indentation in front of it.
+    //
+    // UNREACHABLE TODAY, and recorded as such rather than presented as a fix.
+    // A flattened run begins at the line that exceeded the nesting cap, and
+    // that line is a marker line by construction - `:::`, `>`, a bullet - so
+    // this indent is zero in every shape reachable from the parser. Mutating it
+    // back to the Unicode property changes no output, which was measured over a
+    // colon ladder, a quote ladder, an indented list ladder and an indented
+    // body line before writing this. It matches `span_of` because the two are
+    // one measurement written twice, and a copy that disagrees with its twin is
+    // how the pair diverges the day a caller does reach it
+    // (markup-carve/carve#755: a check that cannot fail is recorded, not
+    // deleted and not counted as proof).
+    let indent = first.chars().count() - trim_ascii_start(first).chars().count();
     let width = lines.get(last).map(|l| l.chars().count()).unwrap_or(0);
     Some(Pos {
         start_line,
