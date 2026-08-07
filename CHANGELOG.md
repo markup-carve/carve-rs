@@ -9,6 +9,45 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A reference definition is anchored at end of line.** `reference_definition`
+  ends in `newline` and always has, so what follows the destination and the
+  optional title makes the production FAIL and the line is an ordinary
+  paragraph. This engine read the tail as junk and ignored it, so
+  `[a]: /u zzz` defined a link, `[a]: /u<TAB>"T"` defined one without its title,
+  and `[a]: /u<SP><SP>{.c}` defined one without its attributes. All of those are
+  paragraphs now, as are the tab-first and both mixed-run spellings at the title
+  slot and at the trailing-attributes slot. The line ending is `whitespace` - a
+  space or a tab - so `[a]: /u<SP>`, `[a]: /u<TAB>` and `[a]: /u<SP><TAB><SP>`
+  are still definitions, while a no-break space, an en quad or a form feed after
+  the destination is content and makes the line a paragraph. `[a]: /u{.c}` is
+  still a definition whose destination reads the braces.
+- **An inline attribute block's interior is space-only.** A tab at any of the
+  five inline positions - after `{`, between two attributes, before `}`, after
+  an unquoted value, and in the blessed empty block `{ }` - makes the block
+  unrecognized and its braces show. A no-break space no longer separates two
+  attributes either. Inside a QUOTED value the character is content and does not
+  move, and the block-attribute LINE keeps `whitespace` at all three of its
+  slots, so `{<TAB>.a<TAB>.b<TAB>}` and a continuation line indented with a tab
+  are both still one block.
+- **A flush-left line after an unterminated div in a container folds into it.**
+  PART 1 S4 folds such a line into the innermost OPEN paragraph. An unterminated
+  `::: ` div holding a paragraph has one, so `- item` / `  ::: note` / `  body` /
+  `tail` puts `tail` in the div's paragraph rather than at the top level. A div
+  CLOSED by its fence has no open paragraph and still ends the item, and an
+  EMPTY unterminated div has none either.
+- **`fmt` writes back invisible characters instead of dropping them.** Three
+  producers lost content the parser and every renderer keep, so
+  `to_html(fmt(x)) == to_html(x)` failed on any document holding one: a line
+  whose only character was an OGHAM SPACE MARK, EN QUAD, THIN SPACE, HAIR SPACE,
+  NARROW or MEDIUM MATHEMATICAL SPACE or IDEOGRAPHIC SPACE was written back
+  EMPTY and re-read as a blank line, splitting its paragraph; every C0 control
+  but tab/newline/return, DEL and the whole C1 block were dropped from text
+  outright; and a document whose first character is a byte order mark was
+  written flush left, where a re-parse strips it as a document BOM. The
+  whitespace terminal is now the two characters PART 1 names, only U+0000 is
+  dropped (the parser drops it too), and a leading byte order mark is written
+  one column in, where indentation carries it safely.
+
 - **A block's span covers a leading no-break space instead of starting past
   it.** PART 12 §4 requires a parent's span to contain every child's, and a
   block whose line opened with a non-ASCII whitespace character began one column

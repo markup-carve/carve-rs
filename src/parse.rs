@@ -1360,7 +1360,102 @@ fn parse_link_def_line(line: &str) -> Option<(&str, &str)> {
     if first == '@' || label.contains(']') {
         return None;
     }
+    // THE PRODUCTION IS ANCHORED AT END OF LINE (PART 7, carve#911):
+    //
+    //     reference_definition = '[', reference_label, ']', ':', space,
+    //                            link_destination, [link_title],
+    //                            [space, attributes], newline ;
+    //
+    // What follows the destination and the optional title makes the production
+    // FAIL, and the line is then an ordinary paragraph. This engine read the
+    // tail as junk and ignored it, which nothing in the grammar authorized.
+    //
+    // The anchor lives HERE, in the shape test, rather than at the two places
+    // that build the node - so paragraph interruption, the container scan and
+    // the footnote-body scan all get the same answer from the same code. That
+    // is the sweep carve#922 asks for: while the pattern ended in a
+    // swallow-everything tail, a caller could test the RAW line and be right by
+    // accident.
+    if !link_def_target_is_anchored(target) {
+        return None;
+    }
     Some((label, target))
+}
+
+/// Does everything after `]:` match the production to END OF LINE?
+///
+/// PART 7 promises that a slot which fails to match "falls back to prose rather
+/// than silently dropping metadata". At this line there was no prose to fall
+/// back to: the swallowing tail ate whatever a failed slot rejected, so the
+/// promised failure mode was unreachable and every narrowing here dropped
+/// metadata instead of failing visibly. With the line anchored, both the
+/// mixed-run forms at the title slot and at the trailing-attributes slot
+/// produce the visible failure.
+fn link_def_target_is_anchored(target: &str) -> bool {
+    // THE LINE ENDING IS `whitespace` - a space or a tab, the same terminal
+    // `blank_line` takes (PART 1, carve#890). So `[a]: /u<SP>` is a definition
+    // and `[a]: /u<NBSP>` is not: a no-break space, an en quad, a byte order
+    // mark and a form feed are CONTENT under that ruling, and content after the
+    // destination is what the anchor rejects. Implementing this as a Unicode
+    // whitespace PROPERTY reads all of them as a line ending, and a plain tab
+    // fixture cannot see the difference - a tab is inside the property too.
+    //
+    // THE HEAD OF THE LINE IS DELIBERATELY UNTOUCHED. carve#911 rules what
+    // follows the destination; a run BEFORE the destination is a different
+    // question, and both call sites already hand `parse_link_def_target` a
+    // Unicode-trimmed target. The executable spec agrees with that leniency -
+    // `[a]: <U+202F>javascript:alert(1)` is still a definition there, with the
+    // destination sanitized rather than the line refused - so tightening it
+    // here would decide an unruled question as a side effect of this one, and
+    // would silently change what `ansi_destination_denylist` pins about an
+    // obfuscated scheme.
+    let target = trim_ascii_end(target.trim_start());
+    let (rest, _) = split_trailing_attr_block(target);
+    let rest = trim_ascii_end(rest);
+    // `link_destination` ends at the first whitespace, and that scan IS the
+    // Unicode property (`unicode_url_char` is "non-whitespace, non-ASCII"), the
+    // same reading `parse_link_def_target` applies below.
+    let end = rest
+        .char_indices()
+        .find(|(_, c)| c.is_whitespace())
+        .map_or(rest.len(), |(idx, _)| idx);
+    if end == 0 {
+        // No destination: `[r]:` with nothing after the colon is not a
+        // definition, and never was.
+        return false;
+    }
+    let after = &rest[end..];
+    if after.is_empty() {
+        return true;
+    }
+    // `link_title = space, ('"' … '"' | "'" … "'")`, ONE space (carve#912).
+    let Some(after_pad) = after.strip_prefix(' ') else {
+        return false;
+    };
+    let mut chars = after_pad.char_indices();
+    let quote = match chars.next() {
+        Some((_, q @ ('"' | '\''))) => q,
+        _ => return false,
+    };
+    let mut escaped = false;
+    for (idx, c) in chars {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        if c == '\\' {
+            escaped = true;
+            continue;
+        }
+        if c == quote {
+            // Only the line ending may follow the closing quote.
+            return after_pad[idx + c.len_utf8()..]
+                .chars()
+                .all(|c| c == ' ' || c == '\t');
+        }
+    }
+    // An unterminated title is not a title, and the tail no longer excuses it.
+    false
 }
 
 /// A line with its blockquote prefixes removed, for CONTENT-COLUMN purposes.
@@ -1706,7 +1801,10 @@ fn parse_link_def_target_with_attrs(target: &str) -> LinkDef {
 /// `[a]: /u{.x}` keeps the braces in the DESTINATION, matching the
 /// production's `space, attributes`.
 fn split_trailing_attr_block(target: &str) -> (&str, Option<&str>) {
-    let end = target.trim_end();
+    // Space and tab, not the Unicode property: a no-break space after the block
+    // is CONTENT, so a line ending in one is not a definition at all once the
+    // production is anchored (carve#890, carve#911).
+    let end = trim_ascii_end(target);
     if !end.ends_with('}') {
         return (target, None);
     }
@@ -6069,7 +6167,52 @@ fn nested_ends_with_open_paragraph(nested: &str, options: &Options<'_>) -> bool 
         return !blocks.is_empty();
     }
 
+    // AN UNTERMINATED DIV IS A CONTAINER LIKE ANY OTHER (carve#939). PART 1 S4
+    // folds a flush-left line into the innermost OPEN PARAGRAPH, and a `::: `
+    // div that no `:::` line closed still holds one - so the line folds into
+    // the div, not out of the item.
+    //
+    // A div CLOSED by its fence is the case the catch-all below is right about:
+    // the fence closes the paragraph inside it, and a dedented line after it
+    // ends the item. One line of body decides it two ways, which is why the
+    // termination has to be read from the SOURCE rather than from the node -
+    // the AST records what a div holds, not whether the author closed it.
+    if colon_fence_left_open(nested) {
+        let inner = match blocks.get(end - 1) {
+            Some(BlockNode::Div(d)) => Some(&d.children),
+            Some(BlockNode::Admonition(a)) => Some(&a.children),
+            _ => None,
+        };
+        if let Some(children) = inner {
+            return block_ends_with_open_paragraph(children.last());
+        }
+    }
+
     block_ends_with_open_paragraph(blocks.get(end - 1))
+}
+
+/// Does this collected body end INSIDE a colon fence that nothing closed?
+///
+/// A colon fence closes on an EXACT length match, so the widths are tracked as
+/// a stack rather than a count. Only what an opener actually opens is pushed:
+/// a `:::`-shaped line that fails the opener test is absorbed paragraph text
+/// and opens nothing (PART 7's separator narrowing, carve#900/#905), which is
+/// the reading that made `:::note` stop being a container.
+fn colon_fence_left_open(nested: &str) -> bool {
+    let mut open: Vec<usize> = Vec::new();
+    for line in nested.lines() {
+        let trimmed = trim_ascii_start(line);
+        if let Some(len) = exact_colon_fence_len(trimmed) {
+            if open.last() == Some(&len) {
+                open.pop();
+                continue;
+            }
+        }
+        if let Some(container) = detect_container_open(trimmed) {
+            open.push(container.fence_len);
+        }
+    }
+    !open.is_empty()
 }
 
 fn block_ends_with_open_paragraph(block: Option<&BlockNode>) -> bool {
@@ -8568,10 +8711,36 @@ fn attr_payload_provably_invalid(bytes: &[u8], brace: usize) -> bool {
 /// a fresh slice (block attributes, table cells) pass that slice's own last-`}`
 /// index. Skipping only elides a call that would return `None`, so output is
 /// byte-identical.
+/// The INLINE `attributes` production, whose interior is SPACE-ONLY.
+///
+/// Every whitespace slot of the inline block takes `space` (PART 4 THE INLINE
+/// INTERIOR IS SPACE-ONLY, carve#906): the run after `{`, the run between two
+/// attributes, the run before `}`, the boundary after an unquoted value, and
+/// the blessed empty block `{ }`. All five sit AFTER the first non-whitespace
+/// character of their line, which is where PART 7's rule already says a tab is
+/// not syntax.
 fn read_attrs_at(
     bytes: &[u8],
     start: usize,
     last_close_brace: Option<usize>,
+) -> Option<(Attrs, usize)> {
+    read_attrs_at_with(bytes, start, last_close_brace, true)
+}
+
+/// `read_attrs_at`, with the interior's whitespace rule as a parameter.
+///
+/// `space_only` is TRUE for the inline production and FALSE for the
+/// block-attribute LINE, which keeps `whitespace` at all three of its slots -
+/// and that distinction is the ruling rather than an omission. The block line
+/// is the one construct whose interior can hold a leading indentation run:
+/// after a `continuation`, the next line's leading whitespace IS indentation,
+/// and the rule that narrows the inline block is the same rule that protects
+/// this one.
+fn read_attrs_at_with(
+    bytes: &[u8],
+    start: usize,
+    last_close_brace: Option<usize>,
+    space_only: bool,
 ) -> Option<(Attrs, usize)> {
     if bytes.get(start) != Some(&b'{') {
         return None;
@@ -8630,7 +8799,7 @@ fn read_attrs_at(
         return None;
     }
     let inner = std::str::from_utf8(&bytes[start + 1..i]).ok()?;
-    Some((parse_attrs(inner)?, i + 1))
+    Some((parse_attrs_with(inner, space_only)?, i + 1))
 }
 
 /// An attribute name (id, class, key) is a grammar identifier: it must start
@@ -8645,6 +8814,41 @@ fn is_identifier(name: &str) -> bool {
 }
 
 fn parse_attrs(src: &str) -> Option<Attrs> {
+    parse_attrs_with(src, true)
+}
+
+fn parse_attrs_with(src: &str, space_only: bool) -> Option<Attrs> {
+    // A TAB AT ANY OF THE FIVE INLINE POSITIONS MAKES THE BLOCK UNRECOGNIZED,
+    // and its braces show. One test rather than five, because all five are the
+    // same question - is this interior character syntax or not - and narrowing
+    // them one at a time is how the executable spec left `[x]{<TAB>}` a valid
+    // EMPTY block after its separator had already been narrowed. Inside a
+    // QUOTED value the character is content and does not move.
+    if space_only {
+        let mut quote: Option<char> = None;
+        let mut escaped = false;
+        for ch in src.chars() {
+            if escaped {
+                escaped = false;
+                continue;
+            }
+            match quote {
+                Some(q) => {
+                    if ch == '\\' {
+                        escaped = true;
+                    } else if ch == q {
+                        quote = None;
+                    }
+                }
+                None => match ch {
+                    '\\' => escaped = true,
+                    '"' | '\'' => quote = Some(ch),
+                    c if c.is_whitespace() && c != ' ' => return None,
+                    _ => {}
+                },
+            }
+        }
+    }
     if src.trim().is_empty() {
         return None;
     }
@@ -8780,7 +8984,8 @@ fn parse_standalone_attrs(line: &str) -> Option<Attrs> {
     let mut pos = 0usize;
     let mut attrs: Option<Attrs> = None;
     while pos < bytes.len() {
-        let (incoming, next) = read_attrs_at(bytes, pos, last_close_brace)?;
+        // The block-attribute LINE, so `whitespace` at all three of its slots.
+        let (incoming, next) = read_attrs_at_with(bytes, pos, last_close_brace, false)?;
         merge_attrs(&mut attrs, incoming);
         pos = next;
         if pos < bytes.len() && bytes[pos] != b'{' {
@@ -8846,7 +9051,7 @@ fn parse_standalone_attrs_block(cur: &mut LineCursor) -> Option<Attrs> {
         if trim_ascii_end(line).ends_with('}') {
             let inner = trim_ascii(&joined);
             if inner.starts_with('{') && inner.ends_with('}') {
-                if let Some(attrs) = parse_attrs(&inner[1..inner.len() - 1]) {
+                if let Some(attrs) = parse_attrs_with(&inner[1..inner.len() - 1], false) {
                     for _ in 0..count {
                         cur.consume();
                     }
@@ -11084,10 +11289,17 @@ fn read_empty_attrs_at(bytes: &[u8], start: usize) -> Option<(Attrs, usize)> {
         return None;
     }
     let mut i = start + 1;
-    // Only space/tab between the braces -- a newline means it is not a
-    // single-line inline attribute block, so `[x]{\n}` stays literal (matching
-    // the read_attrs_at newline-bail and carve-js).
-    while i < bytes.len() && (bytes[i] == b' ' || bytes[i] == b'\t') {
+    // ONLY SPACES between the braces. The BLESSED EMPTY BLOCK is a separate
+    // position rather than a use of the separator, and it is the one most
+    // likely to be missed: narrowing the separator alone leaves `[x]{<TAB>}` a
+    // valid empty block, and the corpus document that pins it stays green
+    // (PART 4 THE INLINE INTERIOR IS SPACE-ONLY, carve#906; the executable spec
+    // needed two edits for exactly this reason).
+    //
+    // A newline was already excluded here, for the neighbouring reason: it is
+    // not a single-line inline attribute block, so `[x]{` + newline + `}` stays
+    // literal.
+    while bytes.get(i) == Some(&b' ') {
         i += 1;
     }
     if bytes.get(i) == Some(&b'}') {

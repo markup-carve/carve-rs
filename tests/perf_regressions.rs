@@ -834,16 +834,20 @@ fn bounded_attribute_and_critic_scans_preserve_output() {
         carve::to_html("[x]{a=b{c}"),
         "<p><span a=\"b{c\">x</span></p>"
     );
-    // A bare value, id/class chains, whitespace separators, and Unicode-space
-    // separators (NBSP) all still form their spans -- the filter defers on each.
+    // A bare value and id/class chains separated by SPACES still form their
+    // spans -- the filter defers on each.
     assert_eq!(
         carve::to_html("[x]{#i .c key=v}"),
         "<p><span id=\"i\" class=\"c\" key=\"v\">x</span></p>"
     );
-    assert_eq!(
-        carve::to_html("[x]{a\u{00A0}b}"),
-        "<p><span a=\"\" b=\"\">x</span></p>"
-    );
+    // A NO-BREAK SPACE does NOT separate two attributes. The inline interior is
+    // space-only (PART 4, carve#906), and a no-break space is content rather
+    // than syntax either way - so the block is unrecognized and its braces
+    // show. This asserted the opposite while the tokenizer split on the Unicode
+    // whitespace property; the executable spec renders the literal, as it does
+    // for an ideographic space.
+    assert_eq!(carve::to_html("[x]{a\u{00A0}b}"), "<p>[x]{a&nbsp;b}</p>");
+    assert_eq!(carve::to_html("[x]{a\u{3000}b}"), "<p>[x]{a\u{3000}b}</p>");
 
     let ins = carve::to_html(&flat_unclosed_critic_insert(5));
     assert_eq!(ins.matches("<ins>").count(), 0, "{ins}");

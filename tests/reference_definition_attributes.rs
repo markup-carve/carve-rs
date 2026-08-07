@@ -60,13 +60,22 @@ fn a_brace_run_with_no_space_stays_in_the_destination() {
     );
 }
 
-/// Widening the parse must not change what counts as a definition: this was a
-/// definition with the trailing junk ignored, and still is.
+/// A JUNK TAIL IS NO LONGER A DEFINITION. carve#911 anchored the production at
+/// end of line: what follows the destination and the optional title makes it
+/// FAIL, and the line is an ordinary paragraph.
+///
+/// This case was written to say that widening the parse to read a trailing
+/// attribute block "must not change what counts as a definition" - true of that
+/// change, and the swallowing tail it relied on is what the anchor removes.
+/// PART 7 promises that a slot which fails to match falls back to prose rather
+/// than silently dropping metadata, and at this line there was no prose to fall
+/// back to. Corpus `266-a-reference-definition-is-anchored-at-end-of-line` pins
+/// exactly this shape.
 #[test]
-fn a_junk_tail_is_still_a_definition() {
+fn a_junk_tail_is_not_a_definition() {
     assert_eq!(
-        carve::to_html("[x][r]\n\n[r]: /u junk here\n"),
-        "<p><a href=\"/u\">x</a></p>"
+        carve::to_html("[x][r]\n\n[r]: /u junk here\n").trim(),
+        "<p>[x][r]</p>\n<p>[r]: /u junk here</p>"
     );
 }
 

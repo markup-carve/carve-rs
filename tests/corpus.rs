@@ -277,6 +277,46 @@ const IMPLEMENTED: &[&str] = &[
     // (carve#908, carve-rs#722).
     "colon-fence-separator-must-be-a-space",
     "colon-fence-metadata-slots-must-be-a-space-too",
+    // carve#912: four productions spell their padding slot as exactly ONE
+    // `space`, and the lax readers narrow (carve-rs#744).
+    "a-link-title-takes-exactly-one-space",
+    "a-code-fence-opener-takes-exactly-one-space",
+    "a-frontmatter-opener-takes-exactly-one-space",
+    "a-reference-definition-s-metadata-slots-take-exactly-one-space",
+    // carve#911: the definition line is ANCHORED at end of line, so what
+    // follows the destination and the optional title makes the production fail
+    // and the line is a paragraph (carve-rs#746). `16-reference-link-5` moved
+    // with it.
+    "a-reference-definition-is-anchored-at-end-of-line",
+    // carve#892: the marker-to-content separator is a RUN of ASCII spaces, and
+    // the first character that is not one BEGINS the content (carve-rs#748).
+    "a-definition-marker-s-separator-is-a-space-and-it-is-a-run",
+    // carve#926: a whitespace run at the end of a CONTENT LINE is dropped, on
+    // every line and not just a block's last (carve-rs#751).
+    "trailing-whitespace-on-a-content-line-is-dropped",
+    // carve#844/#860: outside ASCII, `url_char` admits any character that is
+    // not whitespace, not a format character and not a control character
+    // (carve-rs#755).
+    "an-autolink-body-admits-non-ascii-and-excludes-format-characters",
+    // carve#906: every whitespace slot of the INLINE attribute block takes
+    // `space`; the block-attribute LINE keeps `whitespace` (carve-rs#757).
+    "the-inline-attribute-interior-is-space-only-the-attribute-line-is-not",
+    // carve#888: `quoted_value` excludes a newline in both alternatives, so a
+    // break inside the quotes ends the block (carve-rs#758).
+    "a-quoted-attribute-value-stops-at-the-newline",
+    // carve#939: PART 1 S4 folds a flush-left line into the innermost OPEN
+    // paragraph, and an UNTERMINATED `::: ` div in a container holds one.
+    "a-real-div-in-a-container-and-the-flush-left-line-after-it",
+    // Categories this engine already produced byte for byte when they landed;
+    // the entry is the whole change.
+    "a-blank-line-holds-spaces-and-tabs-and-nothing-else",
+    "a-definition-body-continuation-indented-past-its-column-is-lazy-text",
+    "a-tab-continues-a-list-item-just-as-two-spaces-do",
+    "an-absorbed-colon-fence-leaves-a-block-quote-s-paragraph-open",
+    "code-fence-metadata-slots-must-be-a-space-too",
+    "link-and-image-title-slots-must-be-a-space",
+    "table-cell-padding-must-be-a-space",
+    "the-flush-left-line-after-a-container-a-quoted-line-opened",
 ];
 
 fn corpus_dir() -> PathBuf {
