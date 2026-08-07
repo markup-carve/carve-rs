@@ -17,6 +17,7 @@
 //! carve-php, which includes inline children in `getChildren()`.
 
 use crate::ast::*;
+use crate::extension::SmartTypographyMode;
 use crate::profile::{
     canonical_block_type, canonical_inline_type, DisallowedAction, LinkPolicy, Profile,
     ProfileViolation, ProfileViolationError,
@@ -38,9 +39,39 @@ pub fn apply_profile(
     profile: &Profile,
     base_host: Option<&str>,
 ) -> Result<ProfileFilterResult, ProfileViolationError> {
+    apply_profile_with_typography(
+        doc,
+        profile,
+        base_host,
+        crate::extension::SmartTypographyMode::Glyph,
+    )
+}
+
+/// [`apply_profile`], told which smart-typography mode the document is being
+/// rendered under.
+///
+/// `to_text` replaces a denied node with "its rendered text content" (profiles
+/// §"Actions on a disallowed node"), and this pass runs once on the parsed AST
+/// before any renderer, so it is the pass that decides what that text says. The
+/// smart-typography switch is DOCUMENT-GLOBAL and applies to EVERY target
+/// (PART 9 §19): with it off/source, "every trigger character survives as the
+/// ASCII the author typed". Resolving the glyph here would settle that question
+/// in a subsystem the switch cannot reach, so a degraded `[x -- y](...)` came
+/// out `x - y` even when the caller asked for the source run.
+///
+/// The GUARANTEE the profile makes stays renderer-agnostic either way: which
+/// nodes are denied, stripped or degraded does not depend on the mode. Only the
+/// spelling of the text a degrade substitutes does.
+pub fn apply_profile_with_typography(
+    doc: Document,
+    profile: &Profile,
+    base_host: Option<&str>,
+    smart: crate::extension::SmartTypographyMode,
+) -> Result<ProfileFilterResult, ProfileViolationError> {
     let mut filter = ProfileFilter {
         profile,
         base_host,
+        smart,
         violations: Vec::new(),
     };
     let mut doc = doc;
@@ -126,6 +157,9 @@ pub fn apply_profile(
 struct ProfileFilter<'a> {
     profile: &'a Profile,
     base_host: Option<&'a str>,
+    /// See [`apply_profile_with_typography`]: the mode a degrade's substituted
+    /// text is spelled in.
+    smart: crate::extension::SmartTypographyMode,
     violations: Vec<ProfileViolation>,
 }
 
@@ -242,7 +276,7 @@ impl ProfileFilter<'_> {
                                 let text = list.items[i]
                                     .children
                                     .iter()
-                                    .map(extract_block_text)
+                                    .map(|n| extract_block_text(n, self.smart))
                                     .filter(|s| !s.is_empty())
                                     .collect::<Vec<_>>()
                                     .join(" ");
@@ -297,7 +331,7 @@ impl ProfileFilter<'_> {
                             }
                             DisallowedAction::ToText => {
                                 // Flatten the row to a single text cell.
-                                let text = row_text(&table.rows[r]);
+                                let text = row_text(&table.rows[r], self.smart);
                                 table.rows[r] = TableRow {
                                     cells: vec![text_cell(&text)],
                                     attrs: None,
@@ -323,7 +357,7 @@ impl ProfileFilter<'_> {
                                     let text: String = row.cells[c]
                                         .children
                                         .iter()
-                                        .map(extract_inline_text)
+                                        .map(|n| extract_inline_text(n, self.smart))
                                         .collect();
                                     row.cells[c].children = vec![InlineNode::text(text)];
                                     c += 1;
@@ -395,7 +429,7 @@ impl ProfileFilter<'_> {
             // collapse the figure target into a paragraph fallback so the
             // figure still renders something coherent.
             Some(other) => {
-                let text = extract_block_text(&other);
+                let text = extract_block_text(&other, self.smart);
                 fig.target = FigureTarget::Paragraph(Paragraph {
                     attrs: None,
                     children: text_with_breaks(&text),
@@ -629,7 +663,7 @@ impl ProfileFilter<'_> {
         ) {
             return Ok(None);
         }
-        let mut text = extract_block_text(node);
+        let mut text = extract_block_text(node, self.smart);
         if text.is_empty() {
             self.record(canonical, "to_text_yielded_nothing")?;
             text = format!("[{canonical}]");
@@ -651,7 +685,7 @@ impl ProfileFilter<'_> {
         node: &InlineNode,
         canonical: &str,
     ) -> Result<Option<InlineNode>, ProfileViolationError> {
-        let mut text = extract_inline_text(node);
+        let mut text = extract_inline_text(node, self.smart);
         if text.is_empty() {
             self.record(canonical, "to_text_yielded_nothing")?;
             text = format!("[{canonical}]");
@@ -745,13 +779,13 @@ fn text_with_breaks(content: &str) -> Vec<InlineNode> {
 
 /// Join a table row's cell text the way `extract_block_text` renders a table
 /// row (cells separated by " | ").
-fn row_text(row: &TableRow) -> String {
+fn row_text(row: &TableRow, smart: SmartTypographyMode) -> String {
     row.cells
         .iter()
         .map(|c| {
             c.children
                 .iter()
-                .map(extract_inline_text)
+                .map(|n| extract_inline_text(n, smart))
                 .collect::<String>()
         })
         .collect::<Vec<_>>()
@@ -781,13 +815,17 @@ fn image_text(img: &Image) -> String {
 
 /// Render a block node to source-flavored plain text (matches carve-php's
 /// `extractTextContent`), so to_text output matches byte-for-byte.
-fn extract_block_text(node: &BlockNode) -> String {
+fn extract_block_text(node: &BlockNode, smart: SmartTypographyMode) -> String {
     match node {
         // The definition line renders nothing, so it contributes no text.
         BlockNode::LinkReferenceDefinition(_) => String::new(),
         BlockNode::Heading(h) => {
             let prefix = "#".repeat(h.level as usize) + " ";
-            let text: String = h.children.iter().map(extract_inline_text).collect();
+            let text: String = h
+                .children
+                .iter()
+                .map(|n| extract_inline_text(n, smart))
+                .collect();
             prefix + &text
         }
         BlockNode::CodeBlock(c) => {
@@ -803,7 +841,12 @@ fn extract_block_text(node: &BlockNode) -> String {
                 let cells: Vec<String> = row
                     .cells
                     .iter()
-                    .map(|c| c.children.iter().map(extract_inline_text).collect())
+                    .map(|c| {
+                        c.children
+                            .iter()
+                            .map(|n| extract_inline_text(n, smart))
+                            .collect()
+                    })
                     .collect();
                 rows.push(cells.join(" | "));
             }
@@ -812,7 +855,7 @@ fn extract_block_text(node: &BlockNode) -> String {
         BlockNode::BlockQuote(bq) => {
             let mut paras = Vec::new();
             for child in &bq.children {
-                let text = extract_block_text(child);
+                let text = extract_block_text(child, smart);
                 if !text.is_empty() {
                     paras.push(format!("> {text}"));
                 }
@@ -823,7 +866,7 @@ fn extract_block_text(node: &BlockNode) -> String {
             let mut parts = Vec::new();
             for item in &dl.items {
                 for term in &item.terms {
-                    let t: String = term.iter().map(extract_inline_text).collect();
+                    let t: String = term.iter().map(|n| extract_inline_text(n, smart)).collect();
                     if !t.is_empty() {
                         parts.push(t);
                     }
@@ -831,7 +874,7 @@ fn extract_block_text(node: &BlockNode) -> String {
                 for def in &item.definitions {
                     let ds: Vec<String> = def
                         .iter()
-                        .map(extract_block_text)
+                        .map(|n| extract_block_text(n, smart))
                         .filter(|s| !s.is_empty())
                         .collect();
                     if !ds.is_empty() {
@@ -848,7 +891,7 @@ fn extract_block_text(node: &BlockNode) -> String {
                 let t: String = item
                     .children
                     .iter()
-                    .map(extract_block_text)
+                    .map(|n| extract_block_text(n, smart))
                     .filter(|s| !s.is_empty())
                     .collect::<Vec<_>>()
                     .join(" ");
@@ -868,22 +911,36 @@ fn extract_block_text(node: &BlockNode) -> String {
         BlockNode::RawBlock(r) => r.content.clone(),
         BlockNode::Comment(_) => String::new(),
         BlockNode::BlockImage(img) => image_text(img),
-        BlockNode::Paragraph(p) => p.children.iter().map(extract_inline_text).collect(),
-        BlockNode::Admonition(adm) => block_children_join(&adm.children),
-        BlockNode::Div(div) => block_children_join(&div.children),
-        BlockNode::LineBlock(lb) => block_children_join(&lb.children),
-        BlockNode::Extension(ext) => block_children_join(&ext.children),
+        BlockNode::Paragraph(p) => p
+            .children
+            .iter()
+            .map(|n| extract_inline_text(n, smart))
+            .collect(),
+        BlockNode::Admonition(adm) => block_children_join(&adm.children, smart),
+        BlockNode::Div(div) => block_children_join(&div.children, smart),
+        BlockNode::LineBlock(lb) => block_children_join(&lb.children, smart),
+        BlockNode::Extension(ext) => block_children_join(&ext.children, smart),
         BlockNode::Figure(fig) => {
             let target = match &fig.target {
                 FigureTarget::Image(img) => image_text(img),
                 FigureTarget::BlockQuote(bq) => {
-                    extract_block_text(&BlockNode::BlockQuote(bq.clone()))
+                    extract_block_text(&BlockNode::BlockQuote(bq.clone()), smart)
                 }
-                FigureTarget::Table(t) => extract_block_text(&BlockNode::Table(t.clone())),
-                FigureTarget::CodeBlock(c) => extract_block_text(&BlockNode::CodeBlock(c.clone())),
-                FigureTarget::Paragraph(p) => p.children.iter().map(extract_inline_text).collect(),
+                FigureTarget::Table(t) => extract_block_text(&BlockNode::Table(t.clone()), smart),
+                FigureTarget::CodeBlock(c) => {
+                    extract_block_text(&BlockNode::CodeBlock(c.clone()), smart)
+                }
+                FigureTarget::Paragraph(p) => p
+                    .children
+                    .iter()
+                    .map(|n| extract_inline_text(n, smart))
+                    .collect(),
             };
-            let caption: String = fig.caption.iter().map(extract_inline_text).collect();
+            let caption: String = fig
+                .caption
+                .iter()
+                .map(|n| extract_inline_text(n, smart))
+                .collect();
             [target, caption]
                 .into_iter()
                 .filter(|s| !s.is_empty())
@@ -894,21 +951,30 @@ fn extract_block_text(node: &BlockNode) -> String {
     }
 }
 
-fn block_children_join(children: &[BlockNode]) -> String {
+fn block_children_join(children: &[BlockNode], smart: SmartTypographyMode) -> String {
     children
         .iter()
-        .map(extract_block_text)
+        .map(|n| extract_block_text(n, smart))
         .filter(|s| !s.is_empty())
         .collect::<Vec<_>>()
         .join(" ")
 }
 
 /// Render an inline node to source-flavored plain text.
-fn extract_inline_text(node: &InlineNode) -> String {
+fn extract_inline_text(node: &InlineNode, smart: SmartTypographyMode) -> String {
     match node {
         InlineNode::Text(t) => t.value.clone(),
         InlineNode::EscapedText(t) => t.value.clone(),
-        InlineNode::SmartPunctuation(s) => smart_punctuation_glyph(s).to_string(),
+        InlineNode::SmartPunctuation(s) => {
+            // The document-global switch decides this, not the extractor
+            // (PART 9 §19). Resolving the glyph here put the answer out of
+            // every renderer's reach; see `apply_profile_with_typography`.
+            if smart == SmartTypographyMode::Source {
+                s.value.clone()
+            } else {
+                smart_punctuation_glyph(s).to_string()
+            }
+        }
         InlineNode::Code(c) => c.value.clone(),
         InlineNode::Math(m) => m.content.clone(),
         InlineNode::RawInline(r) => r.content.clone(),
@@ -920,20 +986,47 @@ fn extract_inline_text(node: &InlineNode) -> String {
         InlineNode::Tag(t) => format!("#{}", t.name),
         InlineNode::Abbreviation(a) => a.abbr.clone(),
         InlineNode::Symbol(e) => format!(":{}:", e.name),
-        InlineNode::Link(l) => l.children.iter().map(extract_inline_text).collect(),
+        InlineNode::Link(l) => l
+            .children
+            .iter()
+            .map(|n| extract_inline_text(n, smart))
+            .collect(),
         InlineNode::AutoLink(a) => a.href.clone(),
         InlineNode::Footnote(f) => match &f.inline {
             // Inline footnote: join its inline content.
-            Some(inline) => inline.iter().map(extract_inline_text).collect(),
+            Some(inline) => inline
+                .iter()
+                .map(|n| extract_inline_text(n, smart))
+                .collect(),
             // Reference: `[^label]`. carve-rs stores the label in `id`.
             None => format!("[^{}]", f.id.clone().unwrap_or_default()),
         },
         // Inline containers concatenate their children.
-        InlineNode::Emphasis(e) => e.children.iter().map(extract_inline_text).collect(),
-        InlineNode::Span(s) => s.children.iter().map(extract_inline_text).collect(),
-        InlineNode::Extension(e) => e.children.iter().map(extract_inline_text).collect(),
-        InlineNode::CriticInsert(c) => c.children.iter().map(extract_inline_text).collect(),
-        InlineNode::CriticDelete(c) => c.children.iter().map(extract_inline_text).collect(),
+        InlineNode::Emphasis(e) => e
+            .children
+            .iter()
+            .map(|n| extract_inline_text(n, smart))
+            .collect(),
+        InlineNode::Span(s) => s
+            .children
+            .iter()
+            .map(|n| extract_inline_text(n, smart))
+            .collect(),
+        InlineNode::Extension(e) => e
+            .children
+            .iter()
+            .map(|n| extract_inline_text(n, smart))
+            .collect(),
+        InlineNode::CriticInsert(c) => c
+            .children
+            .iter()
+            .map(|n| extract_inline_text(n, smart))
+            .collect(),
+        InlineNode::CriticDelete(c) => c
+            .children
+            .iter()
+            .map(|n| extract_inline_text(n, smart))
+            .collect(),
         // Both texts, matching carve-php and carve-js. Returning only the new
         // one silently dropped the wording the author replaced.
         InlineNode::CriticSubstitute(c) => format!("{}{}", c.old_text, c.new_text),

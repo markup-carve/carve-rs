@@ -12,9 +12,9 @@
 use std::collections::BTreeMap;
 
 use crate::ast::{Attrs, BlockNode, Document, FigureTarget, Heading, InlineNode, Link, Span, Text};
-use crate::extension::{BeforeRenderContext, CarveExtension};
+use crate::extension::{BeforeRenderContext, CarveExtension, SmartTypographyMode};
 use crate::parse::slugify_parse;
-use crate::render::plain_inlines;
+use crate::render::{plain_inlines, plain_inlines_typography};
 
 /// In-text cross-reference rendering for an auto-filled `</#id>` reference.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -106,6 +106,7 @@ impl CarveExtension for HeadingNumbers {
         let mut state = NumberState {
             min_level: self.opts.min_level,
             lowercase: _ctx.options().lowercase_heading_ids,
+            smart: _ctx.options().smart_typography,
             levels: Vec::new(),
             numbers: Vec::new(),
             heading_counts: BTreeMap::new(),
@@ -132,6 +133,8 @@ impl CarveExtension for HeadingNumbers {
 struct NumberState {
     min_level: u8,
     lowercase: bool,
+    /// The document-global smart-typography mode. See `number_heading`.
+    smart: SmartTypographyMode,
     levels: Vec<u8>,
     numbers: Vec<u32>,
     /// Per-base id dedup counter, mirroring the renderer's `next_heading_id`
@@ -224,7 +227,17 @@ fn number_heading(h: &mut Heading, in_blockquote: bool, state: &mut NumberState)
         .collect::<Vec<_>>()
         .join(".");
 
-    let title = plain_inlines(&h.children); // capture BEFORE injecting the span
+    // Capture BEFORE injecting the span. The title is the visible half of the
+    // rewritten cross-reference label, so it is spelled in the document's
+    // smart-typography mode: that switch is DOCUMENT-GLOBAL and applies to EVERY
+    // target (PART 9 §19), and resolving the glyph here would settle it in a
+    // pre-render pass no renderer can reach -- the heading would obey the mode
+    // and the reference to it would not, in the same line of output.
+    //
+    // The `base` id above deliberately keeps reading `plain_inlines` (glyph):
+    // an id must not depend on presentational typography, and PART 9 §19 pins
+    // heading ids as byte-identical in both modes.
+    let title = plain_inlines_typography(&h.children, state.smart);
     state.by_id.insert(
         id,
         Entry {

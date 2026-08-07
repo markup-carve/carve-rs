@@ -71,7 +71,7 @@ pub use extensions::{
 };
 pub use parse::{parse, parse_with_options};
 pub use profile::{DisallowedAction, LinkPolicy, Profile, ProfileViolation, ProfileViolationError};
-pub use profile_filter::{apply_profile, ProfileFilterResult};
+pub use profile_filter::{apply_profile, apply_profile_with_typography, ProfileFilterResult};
 pub use render::{render_html, render_html_with_options, MAX_RENDER_DEPTH};
 pub use render_ansi::{render_ansi, render_ansi_with_options};
 pub use render_carve::render_carve;
@@ -329,7 +329,7 @@ fn prepare_doc(
     }
     let doc = parsed_doc_with_hooks(source, options, effective_mode, target_is_html);
     let base_host = options.profile_base_host.as_deref();
-    Ok(apply_profile(doc, profile, base_host)?.doc)
+    Ok(apply_profile_with_typography(doc, profile, base_host, options.smart_typography)?.doc)
 }
 
 /// Run render-time extension hooks and the configured feature profile on an
@@ -363,7 +363,7 @@ pub fn prepare_document_for_render(
         });
     }
     let base_host = options.profile_base_host.as_deref();
-    Ok(apply_profile(doc, profile, base_host)?.doc)
+    Ok(apply_profile_with_typography(doc, profile, base_host, options.smart_typography)?.doc)
 }
 
 /// Parse, run extension hooks, apply the profile, and render to HTML.

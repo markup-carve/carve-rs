@@ -1091,12 +1091,40 @@ fn next_heading_id(h: &Heading, state: &mut RenderState) -> String {
 /// extension reuses it so its anchor `href` can never diverge from the id the
 /// core emits for the same heading (see `heading_permalinks::next_id`).
 pub(crate) fn plain_inlines(nodes: &[InlineNode]) -> String {
+    plain_inlines_typography(nodes, crate::extension::SmartTypographyMode::Glyph)
+}
+
+/// [`plain_inlines`], but resolving `smart_punctuation` through the document's
+/// smart-typography mode instead of hardcoding the glyph.
+///
+/// The mode is DOCUMENT-GLOBAL and applies to EVERY target (PART 9 §19, AST
+/// REPRESENTATION): with it set to source, "every trigger character survives as
+/// the ASCII the author typed". A pre-render pass that derives DISPLAY text and
+/// resolves the glyph itself defeats that switch before any renderer can honor
+/// it, which is why the derived-text callers (the TOC entry, the numbered
+/// cross-reference label) go through here.
+///
+/// SLUG derivation must NOT: an id may not depend on presentational typography,
+/// so `plain_inlines` above keeps the glyph and every id stays byte-identical in
+/// both modes (PART 9 §19 says so in as many words: "heading ids are
+/// BYTE-IDENTICAL either way").
+pub(crate) fn plain_inlines_typography(
+    nodes: &[InlineNode],
+    smart: crate::extension::SmartTypographyMode,
+) -> String {
     let mut out = String::new();
+    let source = smart == crate::extension::SmartTypographyMode::Source;
     for node in nodes {
         match node {
             InlineNode::Text(s) => out.push_str(&s.value),
-            InlineNode::SmartPunctuation(s) => out.push_str(smart_punctuation_glyph(s)),
-            InlineNode::Emphasis(e) => out.push_str(&plain_inlines(&e.children)),
+            InlineNode::SmartPunctuation(s) => {
+                if source {
+                    out.push_str(&s.value);
+                } else {
+                    out.push_str(smart_punctuation_glyph(s));
+                }
+            }
+            InlineNode::Emphasis(e) => out.push_str(&plain_inlines_typography(&e.children, smart)),
             InlineNode::Code(s) => out.push_str(&s.value),
             // An inline literal renders as visible prose (§27), so it contributes
             // its content to a heading slug -- otherwise `` # !`Cat` `` would
@@ -1109,9 +1137,9 @@ pub(crate) fn plain_inlines(nodes: &[InlineNode]) -> String {
             // build the cross-reference index (so `# A </#a>` keeps id `A`, not
             // `A-A`). Mirrors `plain_inlines_parse`, which never saw the Link.
             InlineNode::Link(l) if l.from_crossref => {}
-            InlineNode::Link(l) => out.push_str(&plain_inlines(&l.children)),
+            InlineNode::Link(l) => out.push_str(&plain_inlines_typography(&l.children, smart)),
             InlineNode::Image(i) => out.push_str(&i.alt),
-            InlineNode::Extension(e) => out.push_str(&plain_inlines(&e.children)),
+            InlineNode::Extension(e) => out.push_str(&plain_inlines_typography(&e.children, smart)),
             InlineNode::CitationGroup(g) => out.push_str(&g.raw),
             InlineNode::Abbreviation(a) => out.push_str(&a.abbr),
             InlineNode::Mention(m) => out.push_str(&m.user),
