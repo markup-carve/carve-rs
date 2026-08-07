@@ -2745,6 +2745,16 @@ fn flattened_paragraphs(
         out.push(BlockNode::Paragraph(Paragraph {
             attrs: None,
             children,
+            // The `positions` gate is REDUNDANT today and kept deliberately.
+            // `parse_mapped_source` withholds the column map from the cursor
+            // unless positions were asked for, so every entry reaching here is
+            // `None` in that case and `flattened_span` returns `None` on its
+            // own. Removing the gate is therefore a GREEN mutation - no test
+            // can catch it, because the invariant it guards is established two
+            // layers up. It stays because the opt-in contract is worth stating
+            // where the field is set, rather than inferred from a distant call
+            // (markup-carve/carve#755: a check that cannot fail is recorded as
+            // such, not deleted and not presented as proof).
             pos: options
                 .positions
                 .then(|| flattened_span(lines, maps, start, idx))
