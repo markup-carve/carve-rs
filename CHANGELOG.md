@@ -9,6 +9,18 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A document with heading numbers round-trips through this engine's own AST
+  JSON.** The encoder stamped a `fromCrossref` flag on every `link` the
+  heading-numbers pass derived from a `</#id>` cross-reference. The published
+  schema does not name that property, and PART 12 section 11 ingest refuses any
+  property the schema does not name, so `--json` output produced with heading
+  numbers active was rejected by `--from-json` on the very same binary. The flag
+  is a render-time fact about how the link was produced, not a fact about the
+  source, so it is no longer written: `fromCrossref` no longer appears in AST
+  JSON output, and the decoder no longer looks for it. The in-memory flag is
+  unchanged, so HTML, Markdown, ANSI and canonical Carve output are all
+  byte-identical.
+
 - **A content line ending in whitespace still places what is on it.** Trailing
   ASCII whitespace is dropped from a content line, so the line the inline parser
   sees is the source line with characters taken off BOTH ends, and the column

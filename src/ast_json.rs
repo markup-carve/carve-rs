@@ -1014,9 +1014,11 @@ fn write_link(out: &mut String, n: &Link) {
     if let Some(raw_ref) = &n.raw_ref {
         w.field("rawRef", |out| write_string(out, raw_ref));
     }
-    if n.from_crossref {
-        w.field("fromCrossref", |out| write_bool(out, true));
-    }
+    // `from_crossref` is deliberately NOT written: it is a render-time fact
+    // about how this link was produced, the schema does not name it, and PART 12
+    // §11 ingest refuses any property the schema does not name - so emitting it
+    // made this engine's own `--json` output unreadable by this engine
+    // (carve-rs#776). The flag lives on in memory for the renderers.
     write_attrs_field(&mut w, &n.attrs);
     write_pos_field(&mut w, &n.pos);
     w.finish();
@@ -1615,10 +1617,12 @@ fn decode_inline(value: &Json) -> Result<InlineNode, AstJsonError> {
             children: decode_inlines(required_array(obj, "link", "children")?)?,
             ref_label: optional_string(obj, "ref")?.map(str::to_string),
             raw_ref: optional_string(obj, "rawRef")?.map(str::to_string),
-            from_crossref: optional_bool(obj, "fromCrossref")?.unwrap_or(false),
-            // Not on the wire: it is a writer's concern, like `from_crossref`
-            // before it, and a decoded document rebuilds it from the heading
-            // index the same way a parse does.
+            // Neither flag is on the wire: both are a writer's concern, and a
+            // decoded document rebuilds them from the heading index the same way
+            // a parse does. Reading `fromCrossref` here could never fire anyway -
+            // `refuse_unknown_fields` turns the whole payload away first
+            // (carve-rs#776).
+            from_crossref: false,
             from_heading_reference: false,
             pos: optional_pos(obj, "link")?,
         })),
