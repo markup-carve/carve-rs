@@ -71,13 +71,33 @@ fn three_lines_are_enough_to_lose_the_whole_document() {
 }
 
 #[test]
-fn a_leading_break_alone_still_round_trips() {
-    // The one shape the corpus does hold (`132-...-4.crv`). It round-trips under
-    // either spelling, which is precisely why the corpus sweep could not see the
-    // defect -- with nothing after it, no `---` is left to close a manufactured
-    // block. Named as the control it is.
-    assert_eq!(assert_round_trips("***\n"), "***\n");
-    assert_eq!(assert_round_trips("---\n"), "***\n");
+fn a_leading_break_alone_is_written_with_three_dashes() {
+    // The one shape the corpus does hold (`132-...-4.crv`), and the one
+    // carve#961 pins: `---` is the canonical marker and a document that is only
+    // a break gets it. With nothing after it, no `---` is left to close a
+    // manufactured block, so the opener test does not fire and the fallback is
+    // not owed.
+    //
+    // This assertion previously read `"***\n"` in both directions and was
+    // labelled a control. It was not one: it pinned the spelling the fallback
+    // happened to produce, on the single corpus document that could have said
+    // otherwise.
+    assert_eq!(assert_round_trips("***\n"), "---\n");
+    assert_eq!(assert_round_trips("---\n"), "---\n");
+}
+
+#[test]
+fn a_leading_break_with_no_closer_after_it_keeps_three_dashes() {
+    // The opener needs a CLOSER, so a leading break followed by anything that
+    // is not a bare `---` line is not at risk and keeps the canonical marker.
+    // This is the shape that separates "the break is on line 1" from "the text
+    // would really be misread" - a guard keyed on position alone rewrites here
+    // and this fails.
+    assert_eq!(assert_round_trips("***\n\na\n"), "---\n\na\n");
+    assert_eq!(assert_round_trips("***\n\n# T\n\nb\n"), "---\n\n# T\n\nb\n");
+    // `--- ` with a trailing space is not a closer either, and the writer never
+    // emits one, so a paragraph holding dashes does not arm the fallback.
+    assert_eq!(assert_round_trips("***\n\n-- -\n"), "---\n\n-- -\n");
 }
 
 #[test]
@@ -87,6 +107,41 @@ fn a_leading_break_keeps_its_canonical_spelling_everywhere_else() {
     assert_eq!(assert_round_trips("a\n\n***\n\n---\n"), "a\n\n---\n\n---\n");
     // Inside a container the line is never at byte 0 either.
     assert_eq!(assert_round_trips("> ***\n\n---\n"), "> ---\n\n---\n");
+}
+
+#[test]
+fn a_closer_inside_verbatim_content_still_arms_the_fallback() {
+    // The opener test is a TEXTUAL pre-pass: it scans for a bare `---` line
+    // without knowing about code fences, so a `---` inside a fenced block
+    // closes a manufactured frontmatter block just as a real break would. This
+    // is what makes it load-bearing that the test runs on the bytes AFTER
+    // `restore_verbatim`, rather than on the staged text where verbatim content
+    // is still standing in for itself.
+    let src = "***\n\n```\n---\n```\n";
+    assert_eq!(carve::to_html(src), "<hr>\n<pre><code>---\n</code></pre>");
+    assert_eq!(assert_round_trips(src), "***\n\n```\n---\n```\n");
+    // And the same fence WITHOUT the `---` line does not arm it.
+    assert_eq!(
+        assert_round_trips("***\n\n```\na\n```\n"),
+        "---\n\n```\na\n```\n"
+    );
+}
+
+#[test]
+fn a_leading_break_under_the_writers_own_frontmatter_keeps_three_dashes() {
+    // `render_carve` writes the frontmatter MAP itself, so the break is not on
+    // line 1 and no fallback is owed even though a later `---` line exists. The
+    // opener test only ever sees the body, so without the `parts` emptiness
+    // condition this document is rewritten on the strength of a collision that
+    // cannot happen. `to_carve` cannot reach this shape - it clears the map and
+    // prepends the raw block afterwards - so the tree-taking entry point is the
+    // only way to assert it.
+    let doc = carve::parse("---yaml\nt: 1\n---\n\n***\n\na\n\n---\n");
+    assert_eq!(doc.frontmatter.len(), 1);
+    let written = carve::render_carve(&doc).expect("within the render ceiling");
+    assert_eq!(written, "---\nt: 1\n---\n\n---\n\na\n\n---\n");
+    // And it means what it said: one frontmatter block, two rules.
+    assert_eq!(carve::to_html(&written), "<hr>\n<p>a</p>\n<hr>");
 }
 
 #[test]

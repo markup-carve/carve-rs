@@ -7,6 +7,20 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **`fmt` writes `---` for a thematic break that opens the document.** PART 11
+  section 6a pins `---` as the canonical marker, and this writer already wrote
+  it everywhere except on the document's first line, where it fell back to
+  `***` to keep a leading `---` from being read back as a frontmatter opener.
+  That fallback was owed only to documents the opener test would really catch,
+  and the test needs a CLOSER: the fallback now fires only when the bytes about
+  to be emitted really would open a frontmatter block. `***` alone formats to
+  `---`, and `***` followed by a later `---` line still formats to `***`, so
+  neither rule is lost. **Behavior change:** a document whose first block is a
+  thematic break and which holds no later bare `---` line now formats its first
+  marker as `---` instead of `***`.
+
 ### Fixed
 
 - **A definition body ends below its own content column.** A line indented one

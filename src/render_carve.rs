@@ -424,34 +424,62 @@ fn render_with_escapes(doc: &Document, escape_mode: EscapeMode) -> String {
             rendered.push(text);
         }
     }
-    // A THEMATIC BREAK THAT OPENS THE DOCUMENT IS NOT WRITTEN `---`, because at
-    // that one position `---` is the frontmatter opener. `---` is the canonical
-    // spelling everywhere else and stays; only the first line of the output can
-    // be misread, since the opener test is anchored at byte 0.
+    // `---` IS THE CANONICAL THEMATIC BREAK, INCLUDING ON LINE 1.
     //
-    // Without this the writer MANUFACTURED frontmatter. `***` / blank / `a` /
-    // blank / `---` / blank / `b` holds two thematic breaks and no frontmatter;
-    // `fmt` wrote the first break as `---`, and the next parse read everything
-    // down to the second `---` as a frontmatter block. Three lines are enough
-    // to lose the whole document: `***` / blank / `---` formatted to `---` /
-    // blank / `---`, which reparses as an EMPTY frontmatter block and renders
-    // nothing where the input rendered two rules (carve-rs#732).
+    // PART 11 6a (carve#977): the canonical writer emits a thematic break as
+    // three hyphens whatever the author wrote, so `***` and `___` both come
+    // back as `---`. The clause is a PIN, held until `thematic_break` records
+    // its marker in the AST (carve#976), at which point 6 governs again.
+    //
+    // 6a STATES NO EXCEPTION AND ONE IS TAKEN HERE, because PART 11 1 is the
+    // stronger clause: `to_html(fmt(x)) == to_html(x)`. A break that opens the
+    // document is the one position where `---` can be
+    // read back as something else: the frontmatter opener test is anchored at
+    // byte 0. But the opener only fires when a CLOSER follows, so the collision
+    // is a property of the whole emitted text, not of the break's position -
+    // and the fallback spelling is owed only to the documents that really would
+    // be misread.
+    //
+    // Without any fallback the writer MANUFACTURED frontmatter. `***` / blank /
+    // `a` / blank / `---` / blank / `b` holds two thematic breaks and no
+    // frontmatter; `fmt` wrote the first break as `---`, and the next parse
+    // read everything down to the second `---` as a frontmatter block. Three
+    // lines are enough to lose the whole document: `***` / blank / `---`
+    // formatted to `---` / blank / `---`, which reparses as an EMPTY
+    // frontmatter block and renders nothing where the input rendered two rules
+    // (carve-rs#732).
+    //
+    // So the FINISHED bytes are handed to the PARSER'S own opener test. A
+    // leading break with nothing after it to close a block keeps `---`, which
+    // is what corpus `132-thematic-break-requires-contiguous-markers-4` asks
+    // for and what carve-js and carve-php write.
+    //
+    // THE TEST RUNS AFTER `normalize`, not on a candidate built before it, for
+    // two reasons. `normalize` is not a pure function - it accumulates the
+    // sentinel accounting `render_carve_unguarded` reads to decide whether the
+    // document holds a private-use character of its own - so calling it twice
+    // double-counts every sentinel the writer inserted and sends any document
+    // with a verbatim blank line through a needless second render. And it is
+    // `restore_verbatim`, running inside it, that turns staged content back
+    // into the bytes the next parse will actually see.
     //
     // Only the bare string is rewritten. A break carrying block attributes
     // renders its `{...}` line first, so `---` is not on line 1 and the opener
     // test cannot reach it; and when the document has frontmatter of its own,
-    // `parts` already holds it, so the break is not first either.
-    if parts.is_empty() {
-        if let Some(first) = rendered.first_mut() {
-            if first == "---" {
-                *first = "***".to_string();
-            }
-        }
-    }
+    // `parts` already holds it, so the break is not first either - which is why
+    // the emptiness of `parts` is read BEFORE the body is pushed onto it.
+    let break_opens_the_document =
+        parts.is_empty() && rendered.first().is_some_and(|first| first == "---");
     if !rendered.is_empty() {
         parts.push(rendered.join("\n\n"));
     }
-    normalize(&parts.join("\n\n"))
+    let out = normalize(&parts.join("\n\n"));
+    if break_opens_the_document && crate::parse::opens_frontmatter(&out) {
+        if let Some(rest) = out.strip_prefix("---\n") {
+            return format!("***\n{rest}");
+        }
+    }
+    out
 }
 
 fn escaping_is_redundant(minimal: &str, conservative: &str) -> bool {
