@@ -9,6 +9,31 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A content line ending in whitespace still places what is on it.** Trailing
+  ASCII whitespace is dropped from a content line, so the line the inline parser
+  sees is the source line with characters taken off BOTH ends, and the column
+  map only knew how to describe a removal at the FRONT. Every inline anchored on
+  such a line therefore published no `pos`: `abc<SP>` gave a paragraph with an
+  unplaced text node while the same document without the space placed it. A trim
+  at the end moves nothing in front of it, so the span exists and is now
+  published - across paragraphs, list items, block quotes and line blocks. A
+  verse line ending in a single space is placed for the same reason; a verse
+  line containing a TAB still publishes no position, because its value is not a
+  slice of the source at any offset.
+
+- **A tab-indented footnote continuation carries the positions the space
+  spelling carries.** A note body whose continuation line was indented with a
+  tab published no `pos` on the footnote, on its paragraph, on the soft break
+  or on the second text node; the identical document written with two spaces
+  published all five, and carve-js and carve-php publish all five for both. The
+  cause was the column map's type, not a missing assignment: when a tab
+  straddles the column a container strips to, the dedent re-inserts the
+  overshoot as spaces, so the line the parser sees is two characters longer at
+  the front than the source line was, and the constant mapping a column in it
+  back to a column in the document is negative. The map is signed now and every
+  `pos` column is built in one place. The dedent itself is unchanged, so a
+  tab-indented fence and a tab-indented quote inside a note body stay literal.
+
 - **A fenced body is not a paragraph, so a line below a list item's content
   column closes the item.** A fence opened on an item's MARKER line with its
   body below that column folded the below-column line into the code text, and
