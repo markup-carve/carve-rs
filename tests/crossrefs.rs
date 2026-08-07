@@ -73,3 +73,26 @@ fn non_html_renderers_resolve_crossrefs_at_render_time() {
     );
     assert!(ansi.contains("</#missing>"), "{ansi:?}");
 }
+
+/// The named A/B for carve-rs#776: with heading numbers active the crossref
+/// becomes a `link`, and the encoder used to stamp a `fromCrossref` flag on it
+/// that PART 12 §11 ingest refuses - this engine's own `--json` output was not
+/// readable by this engine. `from_crossref` is a render-time fact and stays in
+/// memory only.
+#[test]
+fn a_numbered_crossref_round_trips_through_this_engines_own_json() {
+    let ext = carve::HeadingNumbers::new();
+    let opts = Options::new().with_extension(&ext);
+    let src = "# Some Title\n\n## Sub\n\nSee </#some-title> and </#sub>.\n";
+    let json = carve::to_json_with_options(src, &opts);
+
+    assert!(
+        json.contains(r#""type":"link""#),
+        "the numbered crossref should have become a link: {json}"
+    );
+    assert!(
+        !json.contains(r#""fromCrossref""#),
+        "the wire must not carry a render-time flag: {json}"
+    );
+    carve::from_json(&json).expect("this engine must be able to read its own JSON output");
+}
