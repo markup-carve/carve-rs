@@ -9,6 +9,18 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A content line ending in whitespace still places what is on it.** Trailing
+  ASCII whitespace is dropped from a content line, so the line the inline parser
+  sees is the source line with characters taken off BOTH ends, and the column
+  map only knew how to describe a removal at the FRONT. Every inline anchored on
+  such a line therefore published no `pos`: `abc<SP>` gave a paragraph with an
+  unplaced text node while the same document without the space placed it. A trim
+  at the end moves nothing in front of it, so the span exists and is now
+  published - across paragraphs, list items, block quotes and line blocks. A
+  verse line ending in a single space is placed for the same reason; a verse
+  line containing a TAB still publishes no position, because its value is not a
+  slice of the source at any offset.
+
 - **A tab-indented footnote continuation carries the positions the space
   spelling carries.** A note body whose continuation line was indented with a
   tab published no `pos` on the footnote, on its paragraph, on the soft break

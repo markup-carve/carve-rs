@@ -2240,10 +2240,24 @@ impl MappedSource {
 /// continuation published no positions while the two-space spelling published
 /// all five (carve-rs#736).
 ///
-/// Two shapes have a knowable width, and both are affine:
+/// Three shapes have a knowable width, and all three are affine:
 ///
 ///   A PREFIX REMOVAL. The line the parser sees is a SUFFIX of the source line,
 ///   and the difference between them is what the container took.
+///
+///   A TRIM AT BOTH ENDS. The line the parser sees is the source line with its
+///   leading indentation AND its trailing ASCII whitespace removed. Dropping
+///   characters off the END moves nothing in front of them, so the constant is
+///   the leading width alone - the trailing trim is invisible to it.
+///
+///   Without this a paragraph line ending in a space or a tab placed NOTHING:
+///   `abc<SP>` is not a suffix of itself trimmed, so every inline anchored on
+///   that line lost its position and `abc` published no `pos` while the same
+///   document without the trailing space published one (PART 12 §4's test is
+///   whether a true span EXISTS, and here it plainly does - `abc` is the
+///   source at offset 0). Fifteen of this engine's position findings were that
+///   one line, across a paragraph, a list item, a block quote and a line
+///   block.
 ///
 ///   A RESIDUAL-AWARE DEDENT. The line the parser sees is a suffix of the
 ///   source line carrying a SYNTHETIC prefix of spaces, and what the container
@@ -2272,6 +2286,15 @@ fn stripped_col(outer: Option<isize>, original: &str, stripped: &str) -> Option<
     let outer = outer?;
     if original.ends_with(stripped) {
         return Some(outer + original.chars().count() as isize - stripped.chars().count() as isize);
+    }
+    // THE SAME SUFFIX TEST, against the line with its trailing whitespace
+    // dropped. It stays anchored at the end - of the trimmed body - so it names
+    // exactly one offset, and the prefix it implies is measured rather than
+    // guessed. That is what keeps it as safe as the rule above it: a trailing
+    // trim is invisible to a constant that describes the front of the line.
+    let body = trim_ascii_end(original);
+    if body.ends_with(stripped) {
+        return Some(outer + body.chars().count() as isize - stripped.chars().count() as isize);
     }
     let synthetic = stripped.chars().take_while(|c| *c == ' ').count();
     let tail = &stripped[synthetic..];
@@ -8592,11 +8615,31 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         //
         // Per line, not per stanza: one tab-bearing line does not cost its
         // neighbours their positions.
-        let placeable_indent = expanded.chars().count() == stripped.chars().count()
-            && expanded
+        //
+        // A DROPPED TRAILING ONE-COLUMN RUN is not a rewrite. §23 leaves a lone
+        // space at the end of a verse line as an ordinary space and PART 2 then
+        // drops it, so `def<SP>` arrives as `def` - SHORTER than its source
+        // line, where an equal-length test reads a refusal. Nothing in front of
+        // it moved, so the constant is unaffected and the line is still
+        // placeable; the equal-length test cost `def` its position while the
+        // identical line without the space kept one (markup-carve/carve#961).
+        // Only the DROPPED tail may differ, and it must be whitespace: a
+        // trailing tab expands to at least two columns, becomes NBSP content
+        // and makes `expanded` longer, which still refuses here.
+        let dropped = stripped
+            .chars()
+            .count()
+            .checked_sub(expanded.chars().count());
+        let placeable_indent = dropped.is_some_and(|dropped| {
+            stripped
                 .chars()
-                .zip(stripped.chars())
-                .all(|(e, s)| e == s || (s == ' ' && e == crate::NBSP_PLACEHOLDER));
+                .rev()
+                .take(dropped)
+                .all(|c| c == ' ' || c == '\t')
+        }) && expanded
+            .chars()
+            .zip(stripped.chars())
+            .all(|(e, s)| e == s || (s == ' ' && e == crate::NBSP_PLACEHOLDER));
         stanza_col_map.push(if placeable_indent {
             stripped_col(cur.source_col(line_at), line, &stripped)
         } else {
