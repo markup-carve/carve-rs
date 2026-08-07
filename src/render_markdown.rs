@@ -1,5 +1,6 @@
 use crate::ast::*;
 use crate::extension::Options;
+use crate::parse::unwrap_nested_anchors;
 use crate::render_text::{strip_controls as strip_control_chars, trim_non_nbsp};
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -792,7 +793,9 @@ fn render_link(node: &Link, ctx: &mut MarkdownContext, depth: usize) -> String {
         return escape_text(&strip_controls(node.raw_ref.as_deref().unwrap_or_default()));
     }
     ctx.link_depth += 1;
-    let text = render_inlines(&node.children, ctx, depth);
+    // Render the label through the anchor-unwrapping view.
+    let children = unwrap_nested_anchors(&node.children);
+    let text = render_inlines(children.as_ref(), ctx, depth);
     ctx.link_depth -= 1;
     if let Some(id) = fragment_id(&node.href) {
         if !ctx.heading_ids.contains(id) {

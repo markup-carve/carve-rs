@@ -1,5 +1,6 @@
 use crate::ast::*;
 use crate::extension::Options;
+use crate::parse::unwrap_nested_anchors;
 use crate::render_text::{strip_controls, trim_non_nbsp};
 
 use crate::render::MAX_RENDER_DEPTH;
@@ -598,7 +599,9 @@ fn render_inline(node: &InlineNode, ctx: &mut AnsiContext, depth: usize) -> Stri
                 return strip_controls(link.raw_ref.as_deref().unwrap_or_default());
             }
             ctx.link_depth += 1;
-            let text = render_inlines(&link.children, ctx, depth + 1);
+            // Render the label through the anchor-unwrapping view.
+            let children = unwrap_nested_anchors(&link.children);
+            let text = render_inlines(children.as_ref(), ctx, depth + 1);
             ctx.link_depth -= 1;
             if ctx.link_depth > 0 {
                 // Already inside a link: the label is styled by the outer one,

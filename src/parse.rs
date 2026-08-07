@@ -270,11 +270,6 @@ fn parse_with_options_mode(source: &str, options: &Options<'_>, mode: ParseMode)
         for blocks in doc.footnote_defs.values_mut() {
             promote_block_images(blocks, false);
         }
-        // Single post-resolution pass: a link may not contain another link. Runs
-        // after reference and cross-reference resolution because both produce
-        // `Link` nodes only at that stage; running earlier would miss the anchors
-        // they create. Applied over document inline content and footnote bodies.
-        enforce_no_nesting(&mut doc);
     } else {
         // Carve/fmt mode: promote image+caption paragraphs to figures too, so a
         // caption serializes as an unescaped `^ …` line -- portable and
@@ -14038,106 +14033,6 @@ fn merged_text_pos(left: Option<Pos>, right: Option<Pos>) -> Option<Pos> {
     })
 }
 
-fn enforce_no_nesting(doc: &mut Document) {
-    for block in &mut doc.children {
-        enforce_no_nesting_block(block);
-    }
-    for body in doc.footnote_defs.values_mut() {
-        for block in body {
-            enforce_no_nesting_block(block);
-        }
-    }
-}
-
-fn enforce_no_nesting_block(block: &mut BlockNode) {
-    match block {
-        BlockNode::Heading(h) => apply_no_nesting(&mut h.children),
-        BlockNode::Paragraph(p) => apply_no_nesting(&mut p.children),
-        BlockNode::List(l) => {
-            for item in &mut l.items {
-                for child in &mut item.children {
-                    enforce_no_nesting_block(child);
-                }
-            }
-        }
-        BlockNode::BlockQuote(b) => {
-            if let Some(attribution) = &mut b.attribution {
-                apply_no_nesting(attribution);
-            }
-            for child in &mut b.children {
-                enforce_no_nesting_block(child);
-            }
-        }
-        BlockNode::Admonition(a) => {
-            if let Some(title) = &mut a.title {
-                apply_no_nesting(title);
-            }
-            for child in &mut a.children {
-                enforce_no_nesting_block(child);
-            }
-        }
-        BlockNode::Div(d) => {
-            for child in &mut d.children {
-                enforce_no_nesting_block(child);
-            }
-        }
-        BlockNode::DefinitionList(d) => {
-            for item in &mut d.items {
-                for term in &mut item.terms {
-                    apply_no_nesting(term);
-                }
-                for definition in &mut item.definitions {
-                    for child in definition {
-                        enforce_no_nesting_block(child);
-                    }
-                }
-            }
-        }
-        BlockNode::Table(t) => {
-            if let Some(caption) = &mut t.caption {
-                apply_no_nesting(caption);
-            }
-            for row in &mut t.rows {
-                for cell in &mut row.cells {
-                    apply_no_nesting(&mut cell.children);
-                }
-            }
-        }
-        BlockNode::Figure(f) => {
-            apply_no_nesting(&mut f.caption);
-            match &mut f.target {
-                FigureTarget::BlockQuote(b) => {
-                    if let Some(attribution) = &mut b.attribution {
-                        apply_no_nesting(attribution);
-                    }
-                    for child in &mut b.children {
-                        enforce_no_nesting_block(child);
-                    }
-                }
-                FigureTarget::Table(t) => {
-                    if let Some(caption) = &mut t.caption {
-                        apply_no_nesting(caption);
-                    }
-                    for row in &mut t.rows {
-                        for cell in &mut row.cells {
-                            apply_no_nesting(&mut cell.children);
-                        }
-                    }
-                }
-                FigureTarget::Image(_)
-                | FigureTarget::CodeBlock(_)
-                | FigureTarget::Paragraph(_) => {}
-            }
-        }
-        _ => {}
-    }
-}
-
-fn apply_no_nesting(nodes: &mut Vec<InlineNode>) {
-    let taken = std::mem::take(nodes);
-    *nodes = enforce_no_nesting_inline(taken, false);
-}
-
 /// The span of the text a nested autolink unwraps to.
 ///
 /// A link cannot contain a link, so `[pre <http://h> post](/u)` keeps only the
@@ -14171,12 +14066,69 @@ fn unwrapped_autolink_pos(link: &AutoLink, display: &str) -> Option<Pos> {
     None
 }
 
+/// "Links never nest" is a RENDERING rule that binds the renderer and not the
+/// encoder (PART 12 section 3a, markup-carve/carve#817), so the tree keeps the
+/// link or autolink the author wrote inside a label and every renderer unwraps
+/// it here.
+pub(crate) fn unwrap_nested_anchors(children: &[InlineNode]) -> std::borrow::Cow<'_, [InlineNode]> {
+    if holds_nested_anchor(children) {
+        std::borrow::Cow::Owned(enforce_no_nesting_inline(children.to_vec(), true))
+    } else {
+        std::borrow::Cow::Borrowed(children)
+    }
+}
+
+/// The ONE spelling of "this link never resolved". Both readers of the rule use
+/// it - the fast path below and the fold itself - because they shadow each
+/// other: with the predicate written twice, flipping EITHER copy alone changes
+/// no output (the fast path short-circuits before the fold is reached, and the
+/// fold is not reached unless the fast path let it through), so a mutation on
+/// either comes back green while the pair is load-bearing.
+fn is_unresolved_reference(link: &Link) -> bool {
+    link.ref_label.is_some() && link.href.is_empty()
+}
+
+fn holds_nested_anchor(nodes: &[InlineNode]) -> bool {
+    nodes.iter().any(|node| match node {
+        InlineNode::AutoLink(_) => true,
+        InlineNode::Link(link) => {
+            !is_unresolved_reference(link) || holds_nested_anchor(&link.children)
+        }
+        InlineNode::Emphasis(emphasis) => holds_nested_anchor(&emphasis.children),
+        InlineNode::Span(span) => holds_nested_anchor(&span.children),
+        InlineNode::Extension(ext) => holds_nested_anchor(&ext.children),
+        InlineNode::CriticInsert(critic) => holds_nested_anchor(&critic.children),
+        InlineNode::CriticDelete(critic) => holds_nested_anchor(&critic.children),
+        InlineNode::Text(_)
+        | InlineNode::EscapedText(_)
+        | InlineNode::SmartPunctuation(_)
+        | InlineNode::Code(_)
+        | InlineNode::Image(_)
+        | InlineNode::Math(_)
+        | InlineNode::RawInline(_)
+        | InlineNode::LiteralInline(_)
+        | InlineNode::Symbol(_)
+        | InlineNode::CrossRef(_)
+        | InlineNode::CaptionNumber(_)
+        | InlineNode::Mention(_)
+        | InlineNode::Tag(_)
+        | InlineNode::CitationGroup(_)
+        | InlineNode::Abbreviation(_)
+        | InlineNode::Footnote(_)
+        | InlineNode::SoftBreak(_)
+        | InlineNode::HardBreak(_)
+        | InlineNode::CriticSubstitute(_)
+        | InlineNode::CriticComment(_)
+        | InlineNode::Comment(_) => false,
+    })
+}
+
 fn enforce_no_nesting_inline(nodes: Vec<InlineNode>, inside_link: bool) -> Vec<InlineNode> {
     let mut out = Vec::with_capacity(nodes.len());
     for node in nodes {
         match node {
             InlineNode::Link(mut link) => {
-                let unresolved = link.ref_label.is_some() && link.href.is_empty();
+                let unresolved = is_unresolved_reference(&link);
                 let children = enforce_no_nesting_inline(link.children, true);
                 if inside_link && !unresolved {
                     // A nested link is dropped; only its (cleaned) text remains

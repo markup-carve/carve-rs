@@ -1,8 +1,14 @@
 //! PART 12 §1a: a serialized node's children hold no two adjacent `text`
-//! nodes. Where the parser's internal tree has a run of them -- an autolink
-//! unwrapped because links do not nest, a nested link dropped to its own text,
-//! a table cell rebuilt from several lines -- they join into one on the way to
-//! the wire.
+//! nodes. Where the parser's internal tree has a run of them -- a table cell
+//! rebuilt from several lines -- they join into one on the way to the wire.
+//!
+//! The two link-label splitters this file was built on are gone. An autolink
+//! and a nested link inside a label used to be dropped to their text, leaving
+//! runs either side; under PART 12 section 3a they stay NODES and the renderer
+//! unwraps them (markup-carve/carve#817), so they split nothing. They are kept
+//! below as cases in their own right, because "the node survives and its
+//! neighbours are still one run each" is what section 1a has to say about them
+//! now -- the same move the unresolved reference made before them.
 //!
 //! The merge happens in the tree, not on the way out, because §6 requires
 //! `parse(x)` serialized and deserialized to equal `parse(x)`: an encoder that
@@ -60,15 +66,43 @@ fn an_unresolved_reference_link_is_published_as_a_link_between_two_runs() {
 }
 
 #[test]
-fn an_autolink_unwrapped_in_a_link_label_is_published_as_one_text_node() {
-    // `[pre <http://h> post](/u)`: links never nest, so the autolink becomes
-    // text between two runs that were already there.
+fn an_autolink_in_a_link_label_is_published_as_a_node_between_two_runs() {
+    // `[pre <http://h> post](/u)`: this used to assert one merged run, because
+    // the autolink was dropped to its display text. It is an `autolink` NODE now
+    // (PART 12 section 3a, markup-carve/carve#817) -- "links never nest" binds
+    // the renderer, not the encoder -- so the label is three nodes and none of
+    // them are adjacent text runs.
     let doc = published("[pre <http://h> post](/u)\n");
     let link = match &paragraph_inlines(&doc)[0] {
         InlineNode::Link(l) => l,
         other => panic!("expected a link, got {other:?}"),
     };
-    assert_eq!(text_values(&link.children), vec!["pre http://h post"]);
+    assert_eq!(text_values(&link.children), vec!["pre ", " post"]);
+    match &link.children[1] {
+        InlineNode::AutoLink(a) => assert_eq!(a.href, "http://h"),
+        other => panic!("expected the autolink to stay a node, got {other:?}"),
+    }
+}
+
+#[test]
+fn a_nested_link_in_a_label_is_published_as_a_node_between_two_runs() {
+    // The same move for the other half of section 3a. A flattened inner link
+    // loses its destination outright, which is strictly worse than the
+    // unresolved reference this file opens with: `[pre [in](/i) post](/o)` had
+    // no `/i` anywhere in the published tree.
+    let doc = published("[pre [in](/i) post](/o)\n");
+    let link = match &paragraph_inlines(&doc)[0] {
+        InlineNode::Link(l) => l,
+        other => panic!("expected a link, got {other:?}"),
+    };
+    assert_eq!(text_values(&link.children), vec!["pre ", " post"]);
+    match &link.children[1] {
+        InlineNode::Link(inner) => {
+            assert_eq!(inner.href, "/i");
+            assert_eq!(text_values(&inner.children), vec!["in"]);
+        }
+        other => panic!("expected the inner link to stay a node, got {other:?}"),
+    }
 }
 
 #[test]
@@ -169,19 +203,19 @@ fn the_merge_happens_in_the_tree_because_section_6_requires_it() {
     // the merge cannot be a serialization step -- an encoder that joined runs
     // on the way out would satisfy §1a and break §6 on the same document,
     // because decoding its output could not reproduce the split tree behind it.
-    // An autolink unwrapped inside a link label: links do not nest, so the
-    // parser leaves three runs behind where the document has one. (The
-    // unresolved reference that used to stand here splits nothing any more -
-    // it stays a link node, PART 12 section 3a.)
-    let source = "[pre <http://h> post](/u)\n";
+    // A table cell rebuilt from two source lines: the parser holds two runs
+    // where the document has one. It is the vehicle because it is the last
+    // splitter left - the unresolved reference and then the unwrapped autolink
+    // both stopped splitting when PART 12 section 3a kept their nodes.
+    let source = "|= a |= b |\n| x | A long description |\n+     | that continues     |\n";
     let doc = carve::parse_with_options(source, &carve::Options::new().with_positions(true));
-    let link = match &paragraph_inlines(&doc)[0] {
-        InlineNode::Link(l) => l,
-        other => panic!("expected a link, got {other:?}"),
+    let table = match &doc.children[0] {
+        BlockNode::Table(t) => t,
+        other => panic!("expected a table, got {other:?}"),
     };
     assert_eq!(
-        text_values(&link.children),
-        vec!["pre http://h post"],
+        text_values(&table.rows[1].cells[1].children),
+        vec!["A long description that continues"],
         "parse() itself must already hold the merged run"
     );
     let decoded = carve::from_json(&carve::to_json(&doc)).expect("decodable");
@@ -424,14 +458,18 @@ fn a_block_extension_body_and_summary_are_coalesced() {
 /// via `from_json`, which is satisfied by an encoder-side merge and so could
 /// never fail while §6 was broken - `parse(x)` kept the split that
 /// `decode(encode(parse(x)))` removed. These are the checks that can fail.
-const ONCE_SPLIT: [(&str, &str); 4] = [
-    // An autolink unwrapped inside a link label (corpus 03-links-12), which is
-    // where the corpus scan found the surviving run.
-    ("[pre <http://h> post](/u)\n", "pre http://h post"),
-    // A nested link inside a label, dropped to its text between two runs.
-    ("[pre [in](/i) post](/o)\n", "pre in post"),
-    // A nested link dropped down to its own text.
-    ("[a [b](/i) c](/o)\n", "a b c"),
+const ONCE_SPLIT: [(&str, &str); 2] = [
+    // A table cell rebuilt from two source lines: the `+` continuation row
+    // appends to the cell above, so the parser holds two runs where the
+    // document has one. This is the LAST splitter in the language, and the
+    // three that used to stand beside it here were all link labels - an
+    // autolink and two nested links, each dropped to its text. Under PART 12
+    // section 3a they stay nodes and split nothing (markup-carve/carve#817), so
+    // keeping them would have made this table assert nothing.
+    (
+        "|= a |= b |\n| x | A long description |\n+     | that continues     |\n",
+        "A long description that continues",
+    ),
     // Plain prose, which must not be split in the first place.
     ("just one run\n", "just one run"),
 ];
@@ -487,18 +525,21 @@ fn all_text_values(doc: &Document) -> Vec<String> {
 
 #[test]
 fn a_merged_run_keeps_a_span_only_where_the_source_is_contiguous() {
-    // The unwrapped autolink leaves its `<` and `>` behind, so the joined value
-    // is not a slice of the source at any offset. PART 12 §4 rates a wrong span
-    // as worse than none, so the merged node publishes no position.
+    // A multi-line table cell joins across the row delimiter between its two
+    // halves, so the joined value is not a slice of the source at any offset.
+    // PART 12 §4 rates a wrong span as worse than none, so the merged node
+    // publishes no position. (The unwrapped autolink used to stand here, for
+    // the `<` and `>` it left behind; it publishes an `autolink` node now and
+    // joins nothing - PART 12 section 3a.)
     let doc = carve::parse_with_options(
-        "[pre <http://h> post](/u)\n",
+        "|= a |= b |\n| x | A long description |\n+     | that continues     |\n",
         &carve::Options::new().with_positions(true),
     );
     let mut checked = 0usize;
     walk_document(&doc, &mut |inlines| {
         for node in inlines {
             if let InlineNode::Text(text) = node {
-                if text.value == "pre http://h post" {
+                if text.value == "A long description that continues" {
                     assert!(
                         text.pos.is_none(),
                         "a run joined across a gap must publish no span, got {:?}",
