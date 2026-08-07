@@ -9,6 +9,18 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A tab and four spaces agree past a definition body's column.** PART 9
+  section 24 C1 gives a tab a column value, so a bare tab reaches column 4 and
+  is PAST a definition body's column exactly as four spaces are - and past the
+  column a line is lazy text, not the body's own block content. The form-A
+  dedent consumed the tab whole and left the residue FLUSH LEFT, where a `>`
+  is a block opener, so the two spellings of the same column produced two
+  different documents. The tab's residual columns are now written back as the
+  spaces it bought past the margin. **Behavior change:** a tab-indented line
+  under a definition body that used to open a block quote, a heading or any
+  other block inside the description is now lazy body text, which is what the
+  four-space spelling has always produced. The dedented line's published
+  position also moves, to the source column the tab really sits at.
 - **A collapsed reference publishes the label it resolves by.** PART 12 section
   3a defines `ref` as the derived label, "the label the reference resolves by",
   with the authored spelling kept in `rawRef`. This engine published the
