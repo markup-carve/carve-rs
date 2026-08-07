@@ -13078,6 +13078,19 @@ impl CrossrefIndex {
         Some((id, title))
     }
 
+    /// Whether R1'S TEXT INDEX answers for `target` - the first of the two keys
+    /// `resolve_ref` offers, without its slug fallback.
+    ///
+    /// A collapsed reference has to publish WHICH key answered (PART 12 §3a,
+    /// markup-carve/carve#962), and `resolve_ref` cannot say: it returns the
+    /// heading either way. The two conditions are the same ones step one of
+    /// `resolve_ref` applies, and are kept beside it for that reason.
+    pub(crate) fn answers_by_text(&self, target: &str) -> bool {
+        self.by_text
+            .get(&normalize_heading_label(target))
+            .is_some_and(|id| !self.quoted.contains(id) && self.titles.contains_key(id))
+    }
+
     /// The cloned inline nodes a resolved reference to `id` renders, when the
     /// target is a HEADING. `None` for a caption id, whose label is
     /// LABEL + NUMBER rather than any node of the document; the caller falls
@@ -13296,10 +13309,61 @@ fn resolve_reference_links_inline(
                         // ancestor; the plain `resolve` used by `</#id>` does
                         // not. Sharing one index for both lookups is what made
                         // this engine resolve into quoted material (#410).
-                        if let Some((actual_id, _)) = heading_index.resolve_ref(label) {
+                        //
+                        // R1 OFFERS THE INDEX TWO KEYS, IN ORDER: the label AS
+                        // WRITTEN, then its rendered plain text. They are the
+                        // same string for a label carrying no markup, no escape
+                        // and no smart-punctuation trigger, which is why the
+                        // second was never separated out. Where they differ,
+                        // `ref` publishes THE ONE THAT ANSWERED (PART 12 §3a,
+                        // markup-carve/carve#962): the field is defined as the
+                        // label the reference RESOLVES BY, and the authored
+                        // spelling is already kept in `raw_ref`, so publishing
+                        // it in both left the resolution key nowhere in the
+                        // tree.
+                        //
+                        // The derived form is `plain_inlines_parse` over the
+                        // link's OWN CHILDREN, which are the parsed label - the
+                        // same function the heading index derives its key from,
+                        // so the resolver and the index cannot disagree about
+                        // what a label renders as.
+                        //
+                        // DERIVED, NOT NORMALIZED. Trimming, whitespace
+                        // collapse, NFC and case folding belong to MATCHING and
+                        // stay inside `normalize_heading_label`;
+                        // `[Getting Started][]` under `# getting started` has
+                        // always published `Getting Started`, and publishing the
+                        // folded key would rewrite every plain label in every
+                        // document to make one markup-bearing one right.
+                        //
+                        // NOT A BLANKET STRIP. The definition branch above is
+                        // the case a blanket strip inverts: `defs` keys on the
+                        // label AS WRITTEN, case-sensitively, and never reaches
+                        // here. Five corpus documents carry a collapsed
+                        // reference with a markup-bearing label and only TWO
+                        // resolve through this branch; a strip would have moved
+                        // all five.
+                        let derived = plain_inlines_parse(&l.children);
+                        let key = if heading_index.answers_by_text(label) {
+                            None
+                        } else if derived != *label && heading_index.answers_by_text(&derived) {
+                            Some(derived)
+                        } else {
+                            // The slug fallback answered, or nothing did. The
+                            // slug is not one of R1's two keys, so there is no
+                            // derived key to publish and the authored spelling
+                            // stands.
+                            None
+                        };
+                        let lookup = key.as_deref().unwrap_or(label);
+                        if let Some((actual_id, _)) = heading_index.resolve_ref(lookup) {
+                            let actual_id = actual_id.to_string();
                             l.href = format!("#{actual_id}");
                             l.title = None;
                             l.from_heading_reference = true;
+                            if let Some(key) = key {
+                                l.ref_label = Some(key);
+                            }
                             // KEEP `ref_label` / `raw_ref`. The href is what the
                             // HTML needs; the reference is what the AUTHOR wrote,
                             // and the canonical writer has to reproduce it. Clearing

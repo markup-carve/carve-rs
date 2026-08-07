@@ -7,6 +7,29 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **A collapsed reference publishes the label it resolves by.** PART 12 section
+  3a defines `ref` as the derived label, "the label the reference resolves by",
+  with the authored spelling kept in `rawRef`. This engine published the
+  authored spelling in both, so the one field defined as the resolution key
+  named a string the reference did not resolve by. PART 9R R1 offers the
+  heading index two keys in order - the label as written, then its rendered
+  plain text - and `ref` now follows the one that answered: a collapsed
+  reference whose label is a code span, under a heading with the same label,
+  publishes the heading's rendered text rather than the backticked source. A
+  label carrying no markup derives to itself, and a
+  collapsed reference that resolves against an authored `[label]: url`
+  definition keeps the label as written, because a definition keys on that
+  string case-sensitively. Rendered HTML and canonical source are unchanged -
+  `ref` is a wire field.
+- **A heading carrying an explicit id is reachable by its rendered text.**
+  Offering the index the second key resolves a collapsed reference this engine
+  previously answered only through its slug fallback, which cannot fire once
+  the heading's id is not the slug of its text: `[*bold* heading][]` under
+  `{#custom}` plus `# *bold* heading` did not resolve at all and now links to
+  `#custom`.
+
 ### Changed
 
 - **`fmt` writes `---` for a thematic break that opens the document.** PART 11
