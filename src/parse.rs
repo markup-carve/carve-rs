@@ -5380,18 +5380,34 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                     // (collect_trailing_lazy still stops at a blank of its own).
                     // Only headings keep the item open this way: a code block or
                     // table leaves its trailing text a separate top-level block.
-                    if nested_ends_with_heading(&nested.source, options) {
-                        collect_trailing_lazy(cur, &mut nested);
-                    } else if !pending_blank
-                        && nested_ends_with_open_paragraph(&nested.source, options)
-                    {
-                        // CommonMark lazy continuation: the dedented non-blank
-                        // line folds into the nested block's deepest open
-                        // paragraph (e.g. a block quote's trailing paragraph) so
-                        // it stays INSIDE the item. The recursive block parse
-                        // (block quote lazy continuation) absorbs it.
-                        collect_trailing_lazy(cur, &mut nested);
-                    }
+                    //
+                    // CommonMark lazy continuation otherwise: the dedented
+                    // non-blank line folds into the nested block's deepest open
+                    // paragraph (e.g. a block quote's or an unterminated div's
+                    // trailing paragraph) so it stays INSIDE the item. The
+                    // recursive block parse absorbs it.
+                    //
+                    // And then collection RESUMES, because S4's lazy branch
+                    // closes nothing -- see fold_lazy_run_and_resume. This
+                    // branch used to fold once and stop, which put the line
+                    // AFTER the folded one outside the container it never left
+                    // (carve#980, carve-rs#813).
+                    fold_lazy_run_and_resume(
+                        cur,
+                        &mut nested,
+                        |src| {
+                            nested_ends_with_heading(src, options)
+                                || (!pending_blank && nested_ends_with_open_paragraph(src, options))
+                        },
+                        |cur| {
+                            collect_item_continuation_block_mapped(
+                                cur,
+                                base_indent,
+                                content_col,
+                                &mut item_open_fence,
+                            )
+                        },
+                    );
                     let nested_children = parse_mapped_source(&nested, options);
                     // A blank before an indented sub-block loosens only when it
                     // is a genuine second paragraph (#74 compact list blocks).
@@ -5503,45 +5519,21 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 // lazy line, then resume collecting the sub-list continuation, so
                 // the sibling joins the open list rather than starting a new one
                 // (corpus 05-lists-17, matches carve-php / carve-js).
-                loop {
-                    // Cheap peek first: is the next line a flush-left line that
-                    // collect_trailing_lazy could actually fold? If not, stop --
-                    // WITHOUT reparsing `nested` (the open-paragraph check below
-                    // reparses the whole subtree, so it must run only when there
-                    // is a lazy line pending, else deeply nested lists blow up).
-                    let has_lazy = if let Some(line) = cur.peek() {
-                        let line = line.to_string();
-                        !is_blank_line(&line)
-                            && indent_columns(&line) == 0
-                            && !is_list_marker(&line)
-                            && !interrupts_paragraph(cur, &line)
-                    } else {
-                        false
-                    };
-                    if !has_lazy {
-                        break;
-                    }
-                    // Only fold the column-0 lazy line when the collected content
-                    // still ends in an OPEN paragraph OR a heading (a heading
-                    // folds trailing plain text as continuation, carve#326). After
-                    // a CLOSED block (fenced code, table, div) there is neither, so
-                    // the dedented line ends the item -> top-level (family-D rule).
-                    if !nested_ends_with_open_paragraph(&nested.source, options)
-                        && !nested_ends_with_heading(&nested.source, options)
-                    {
-                        break;
-                    }
-                    let before = cur.pos;
-                    collect_trailing_lazy(cur, &mut nested);
-                    if cur.pos == before {
-                        break;
-                    }
-                    nested.append(collect_indented_block_mapped(
-                        cur,
-                        sub_indent - 1,
-                        content_col,
-                    ));
-                }
+                //
+                // Only fold the column-0 lazy line when the collected content
+                // still ends in an OPEN paragraph OR a heading (a heading folds
+                // trailing plain text as continuation, carve#326). After a
+                // CLOSED block (fenced code, table, closed div) there is
+                // neither, so the dedented line ends the item -> top-level.
+                fold_lazy_run_and_resume(
+                    cur,
+                    &mut nested,
+                    |src| {
+                        nested_ends_with_open_paragraph(src, options)
+                            || nested_ends_with_heading(src, options)
+                    },
+                    |cur| collect_indented_block_mapped(cur, sub_indent - 1, content_col),
+                );
                 let nested_children = parse_mapped_source(&nested, options);
                 // A blank line INSIDE the outer item -- swallowed into the nested
                 // source by the collection above -- that directly separates the
@@ -5661,10 +5653,16 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             // The collector consumes a trailing blank when the item collected
             // nothing indented, so the test is the LINE JUST CONSUMED rather
             // than the collected text, which no longer shows it.
+            // And collection RESUMES after the fold, because S4 closes nothing:
+            // `- > a` / `d` / `  > b` is ONE quote holding one paragraph, not a
+            // quote followed by a second one (carve#980, carve-rs#813).
             let after_blank = cur.pos > 0 && is_blank_line(cur.lines[cur.pos - 1]);
-            if !after_blank && nested_ends_with_open_paragraph(&stream.source, options) {
-                collect_trailing_lazy(cur, &mut stream);
-            }
+            fold_lazy_run_and_resume(
+                cur,
+                &mut stream,
+                |src| !after_blank && nested_ends_with_open_paragraph(src, options),
+                |cur| collect_indented_block_mapped(cur, base_indent, content_col),
+            );
             // A blank line between the item's blocks loosens the list, whatever
             // the marker-line lead happens to be. This branch and the two beside
             // it build their item and `continue` past the loosening test the
@@ -5823,11 +5821,17 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             // interior blank) is NOT a separator: there the last consumed line is
             // block content, and any real trailing separator is left for the
             // outer loop, so this stays false and tightness is unaffected.
+            // And collection RESUMES after the fold, on the same S4 reading the
+            // other three call sites take: nothing closed, so a line back at the
+            // content column is still the item's (carve#980, carve-rs#813).
             let swallowed_blank_separator =
                 cur.pos > before_block && is_blank_line(cur.lines[cur.pos - 1]);
-            if !swallowed_blank_separator && nested_ends_with_heading(&stream.source, options) {
-                collect_trailing_lazy(cur, &mut stream);
-            }
+            fold_lazy_run_and_resume(
+                cur,
+                &mut stream,
+                |src| !swallowed_blank_separator && nested_ends_with_heading(src, options),
+                |cur| collect_indented_block_mapped(cur, base_indent, content_col),
+            );
             // A blank absorbed inside the marker-line block's continuation that
             // is followed by a plain paragraph loosens the item (§17 L1), the
             // same rule the plain-continuation branch applies -- e.g. a
@@ -6439,31 +6443,72 @@ fn nested_ends_with_open_paragraph(nested: &str, options: &Options<'_>) -> bool 
     // ends the item. One line of body decides it two ways, which is why the
     // termination has to be read from the SOURCE rather than from the node -
     // the AST records what a div holds, not whether the author closed it.
-    if colon_fence_left_open(nested) {
-        let inner = match blocks.get(end - 1) {
-            Some(BlockNode::Div(d)) => Some(&d.children),
-            Some(BlockNode::Admonition(a)) => Some(&a.children),
-            _ => None,
-        };
-        if let Some(children) = inner {
-            return block_ends_with_open_paragraph(children.last());
-        }
-    }
-
-    block_ends_with_open_paragraph(blocks.get(end - 1))
+    // DEPTH IS NOT A PARAMETER of this rule (carve#506), so the unterminated
+    // fence is looked through wherever the recursion below reaches it -- an
+    // item holding an item holding an open div answers the same as a bare one
+    // (markup-carve/carve#980). The termination is read from the SOURCE rather
+    // than from the node either way: the AST records what a div holds, not
+    // whether the author closed it.
+    block_ends_with_open_paragraph(blocks.get(end - 1), colon_fences_left_open(nested))
 }
 
-/// Does this collected body end INSIDE a colon fence that nothing closed?
+/// How many colon fences does this collected body end INSIDE, unclosed?
 ///
 /// A colon fence closes on an EXACT length match, so the widths are tracked as
 /// a stack rather than a count. Only what an opener actually opens is pushed:
 /// a `:::`-shaped line that fails the opener test is absorbed paragraph text
 /// and opens nothing (PART 7's separator narrowing, carve#900/#905), which is
 /// the reading that made `:::note` stop being a container.
-fn colon_fence_left_open(nested: &str) -> bool {
+///
+/// The DEPTH is what the caller needs, not just "any". An unterminated fence can
+/// only be the last block at its level, so the open ones are exactly the last
+/// N containers on the last-child chain - and a CLOSED container nested inside
+/// an open one must still read as closed. Answering `true` for the whole source
+/// let `:::: outer` / `::: inner` / `a` / `:::` fold a flush-left line into the
+/// inner div's paragraph, which its own `:::` line had already closed.
+///
+/// A VERBATIM BODY OPENS NOTHING. A colon-shaped line inside a code fence is
+/// code text and one inside a LINE BLOCK is verse text, so this scan carries
+/// both bodies' state. Without it, `- x` / `  ``` ` / `  :::` / `  ::::` /
+/// `  ``` ` charged two containers the parser never opened, and the properly
+/// closed divs after the fence were then looked through as though they were
+/// open. The line-block spelling is the same defect one construct over, and it
+/// is the one that made the whole scan wrong rather than merely optimistic: a
+/// line block's body is where a colon-shaped line is MOST likely to be content.
+fn colon_fences_left_open(nested: &str) -> usize {
     let mut open: Vec<usize> = Vec::new();
+    let mut code: Option<FenceOpen> = None;
+    let mut verse: Option<usize> = None;
     for line in nested.lines() {
-        let trimmed = trim_ascii_start(line);
+        let mut trimmed = trim_ascii_start(line);
+        // A container nested in a QUOTE carries the quote's marker on every one
+        // of its lines, so the fence is only visible past it.
+        while let Some(rest) = trimmed.strip_prefix('>') {
+            trimmed = trim_ascii_start(rest);
+        }
+        if let Some(fence) = code {
+            if is_fence_close(trimmed, fence) {
+                code = None;
+            }
+            continue;
+        }
+        if let Some(fence_len) = verse {
+            // Only the EXACT closer ends it, and every other line is content
+            // whatever it looks like - the same test the definition prepass
+            // applies to a line block's body.
+            if exact_colon_fence_len(trimmed) == Some(fence_len) {
+                verse = None;
+            }
+            continue;
+        }
+        if let Some(fence) = detect_fence_open(trimmed) {
+            code = Some(fence);
+            continue;
+        }
+        if let Some(fence_len) = detect_line_block_open(trimmed) {
+            verse = Some(fence_len);
+            continue;
+        }
         if let Some(len) = exact_colon_fence_len(trimmed) {
             if open.last() == Some(&len) {
                 open.pop();
@@ -6474,20 +6519,23 @@ fn colon_fence_left_open(nested: &str) -> bool {
             open.push(container.fence_len);
         }
     }
-    !open.is_empty()
+    open.len()
 }
 
-fn block_ends_with_open_paragraph(block: Option<&BlockNode>) -> bool {
+fn block_ends_with_open_paragraph(block: Option<&BlockNode>, colon_open: usize) -> bool {
     match block {
         Some(BlockNode::Paragraph(_)) => true,
         // A blockquote has no explicit closer: lazy continuation keeps its
         // trailing paragraph open, so a dedented line folds into it.
-        Some(BlockNode::BlockQuote(q)) => block_ends_with_open_paragraph(q.children.last()),
+        Some(BlockNode::BlockQuote(q)) => {
+            block_ends_with_open_paragraph(q.children.last(), colon_open)
+        }
         // A list's last item can hold an open paragraph (the deepest open
         // paragraph a dedented line continues, e.g. a sub-list item's text).
-        Some(BlockNode::List(l)) => {
-            block_ends_with_open_paragraph(l.items.last().and_then(|it| it.children.last()))
-        }
+        Some(BlockNode::List(l)) => block_ends_with_open_paragraph(
+            l.items.last().and_then(|it| it.children.last()),
+            colon_open,
+        ),
         // A definition list has no explicit closer either: its last item stays
         // open -- a term still awaiting its `:  ` definition, or a definition
         // whose body ends in a paragraph. A following flush-left `:  ` line (at
@@ -6502,11 +6550,23 @@ fn block_ends_with_open_paragraph(block: Option<&BlockNode>) -> bool {
             // Otherwise the last definition's body must end in an open paragraph.
             Some(item) => block_ends_with_open_paragraph(
                 item.definitions.last().and_then(|d| d.children.last()),
+                colon_open,
             ),
         },
-        // A div / admonition is closed by its `:::` fence -- a complete block
-        // with no open paragraph -- so a dedented line after it ends the item
-        // (like code/table). Matches carve-js.
+        // AN UNTERMINATED DIV IS A CONTAINER LIKE ANY OTHER (carve#939, carve#909).
+        // PART 1 S4 folds a flush-left line into the innermost OPEN PARAGRAPH,
+        // and a `::: ` div that no `:::` line closed still holds one.
+        //
+        // A div CLOSED by its fence is the case the catch-all below is right
+        // about: the fence closes the paragraph inside it, and a dedented line
+        // after it ends the item (like code/table). One line of body decides it
+        // two ways, which is why `colon_open` is read from the SOURCE.
+        Some(BlockNode::Div(d)) if colon_open > 0 => {
+            block_ends_with_open_paragraph(d.children.last(), colon_open - 1)
+        }
+        Some(BlockNode::Admonition(a)) if colon_open > 0 => {
+            block_ends_with_open_paragraph(a.children.last(), colon_open - 1)
+        }
         _ => false,
     }
 }
@@ -6659,6 +6719,66 @@ fn continuation_line_opens_sub_block(line: &str, rest: &[&str]) -> bool {
 /// end the list it follows.
 fn is_flush_line_comment(line: &str) -> bool {
     line.starts_with("%%") && detect_comment_fence_line(line).is_none()
+}
+
+/// Is the next line one `collect_trailing_lazy` could actually fold?
+///
+/// A cheap peek, kept separate because the open-paragraph test that follows it
+/// reparses the whole collected subtree: it must run only when there is a lazy
+/// line pending, else deeply nested lists blow up.
+fn lazy_line_pending(cur: &mut LineCursor) -> bool {
+    let Some(line) = cur.peek() else { return false };
+    let line = line.to_string();
+    !is_blank_line(&line)
+        && indent_columns(&line) == 0
+        && !is_list_marker(&line)
+        && !interrupts_paragraph(cur, &line)
+}
+
+/// AND NOTHING CLOSES MEANS THE CONTAINER GOES ON COLLECTING (PART 1 S4,
+/// markup-carve/carve#980).
+///
+/// S4's lazy branch folds a flush-left line into the innermost OPEN PARAGRAPH
+/// and ends with "and NOTHING closes". That binds the lines AFTER the folded
+/// one as much as the folded one itself, so a line that comes back to the
+/// container's content column is still that container's content. Fold the lazy
+/// run, RESUME collecting into the same stream, and repeat.
+///
+/// Folding once and stopping renders a document nothing in the stack ever
+/// closed: `- x` / `  :::` / `  a` / `d` / `  b` / `  :::` folded `d` into the
+/// div's paragraph and then left `b` beside the div with a stray empty one
+/// after it (markup-carve/carve-rs#813).
+///
+/// `open` is the governing parameter and the caller supplies it, because the
+/// three call sites qualify it differently -- a pending blank closes the
+/// paragraph in one, and a trailing heading keeps the container open for
+/// flush-left text in two (carve#326). What none of them may do is read the
+/// FENCE KIND: a code fence body simply never holds an open paragraph, which
+/// is the whole of the asymmetry (carve#980).
+fn fold_lazy_run_and_resume(
+    cur: &mut LineCursor,
+    nested: &mut MappedSource,
+    mut open: impl FnMut(&str) -> bool,
+    mut resume: impl FnMut(&mut LineCursor) -> MappedSource,
+) {
+    loop {
+        if !lazy_line_pending(cur) {
+            break;
+        }
+        if !open(&nested.source) {
+            break;
+        }
+        let before = cur.pos;
+        collect_trailing_lazy(cur, nested);
+        if cur.pos == before {
+            break;
+        }
+        let before_resume = cur.pos;
+        nested.append(resume(cur));
+        if cur.pos == before_resume {
+            break;
+        }
+    }
 }
 
 fn collect_trailing_lazy(cur: &mut LineCursor, nested: &mut MappedSource) {
