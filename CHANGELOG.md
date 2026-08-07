@@ -9,6 +9,20 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A reference definition carrying an unparseable attribute block stops
+  defining, and the braces stay on the page.** The trailing `{...}` was peeled
+  off a definition line by a balance scan before anything validated it, so a
+  block the `attributes` production rejects had already been consumed and
+  discarded and the line went on to define with the author's braces gone from
+  the output. `[a]: /u {#}` now renders as the paragraph `[a]: /u {#}` and a
+  `[a][]` beside it no longer resolves, the same reading `x {#}` in a paragraph
+  already had. `{ }` and `{=}` answer alike. A VALID block still defines and
+  still transfers its attributes to every link and image that resolves the
+  label, a `}` inside a quoted value still does not close the block, and braces
+  glued to the destination are still part of it. **Behavior change:** a document
+  relying on a definition line with an unparseable attribute block resolves one
+  fewer reference.
+
 - **A no-break space survives the plain-text, Markdown and ANSI writers.** Those
   three reached for `str::trim` to drop the layout around a rendered fragment,
   and Rust's `char::is_whitespace` includes U+00A0 - so a character the author
