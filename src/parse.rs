@@ -7347,7 +7347,20 @@ fn parse_definition_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNo
             } else {
                 MappedSource::new_line_at(def_trimmed.to_string(), def_source_line, def_source_col)
             };
-            body.append(collect_definition_body(cur));
+            // A FENCED BODY IS NOT A PARAGRAPH, and a definition body is such a
+            // container (PART 0 S4, markup-carve/carve#956). The guard is on the
+            // OPEN FENCE rather than on where the fence was opened, so it is
+            // seeded from the `:  ` MARKER line - which no collector ever sees -
+            // and then followed by the collector on the lines it takes. The
+            // first-block (`:  +`) form seeds nothing: its body is the following
+            // flush-left block, which supplies no indentation for the rule to
+            // measure against.
+            let mut open_fence = if is_plus_marker(def_trimmed) {
+                None
+            } else {
+                detect_fence_open(def_trimmed)
+            };
+            body.append(collect_definition_body(cur, &mut open_fence));
             // The span covers the `:  ` marker through the last line the body
             // consumed, so a multi-line definition is one region rather than
             // just its opening line. `collect_definition_body` has already
@@ -7406,7 +7419,15 @@ fn is_plus_marker(line: &str) -> bool {
 /// blank before it that does not start an interrupting block lazily continues
 /// the open paragraph (matching list items, block quotes and djot). Returned
 /// lines carry blank separators so the block sub-parse yields multiple paragraphs.
-fn collect_definition_body(cur: &mut LineCursor) -> MappedSource {
+///
+/// `open_fence` carries the body's own fenced code block while it is still OPEN,
+/// seeded by the caller from the `:  ` marker line and followed here on every
+/// line collected at the body's column. Nothing below that column folds while one
+/// is open (PART 0 S4, markup-carve/carve#956).
+fn collect_definition_body(
+    cur: &mut LineCursor,
+    open_fence: &mut Option<FenceOpen>,
+) -> MappedSource {
     let mut lines: Vec<String> = Vec::new();
     let mut line_map: Vec<Option<usize>> = Vec::new();
     // Codepoints taken off the front of each line, kept in lockstep with
@@ -7454,6 +7475,7 @@ fn collect_definition_body(cur: &mut LineCursor) -> MappedSource {
                 col_map.push(cur.source_col(cur.pos).map(|c| {
                     c + line.chars().count().saturating_sub(sliced.chars().count()) as isize
                 }));
+                track_collected_fence(open_fence, &sliced, true);
                 lines.push(sliced);
                 line_map.push(cur.source_line(cur.pos));
                 cur.consume();
@@ -7462,6 +7484,19 @@ fn collect_definition_body(cur: &mut LineCursor) -> MappedSource {
             // A new term/definition marker ends the definition (the outer loop
             // picks it up).
             if line.strip_prefix(":: ").is_some() || line.strip_prefix(":  ").is_some() {
+                break;
+            }
+            // A FENCED BODY IS NOT A PARAGRAPH (PART 0 S4,
+            // markup-carve/carve#956). This line is below the body's content
+            // column, so it supplies none of the body's indentation: S1 MATCH
+            // PREFIXES stops at the DEFINITION ENTRY and S2 FENCED BODY never
+            // fires, S2 wanting the innermost MATCHED container to be the body.
+            // S4 governs, and its lazy branch continues an open PARAGRAPH, which
+            // a verbatim body is not. The containers close, the `dd` holds an
+            // EMPTY code block, and the residue re-parses at document level -
+            // byte for byte the answer corpus 276 pins for the list spelling,
+            // which this engine already gives (#772).
+            if open_fence.is_some() {
                 break;
             }
             // Lazy continuation: a flush-left line with no blank before it that
