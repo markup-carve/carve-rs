@@ -6709,7 +6709,16 @@ fn collect_indented_block_mapped_with(
             break;
         }
         let is_marker = detect_list_marker_full(line).is_some();
-        if stop_at_content_column_marker && is_marker && indent >= strip_cols {
+        // INSIDE AN OPEN FENCE THE MARKER IS CODE TEXT (corpus category 278,
+        // markup-carve/carve#975). PART 9 §24's S1 MATCH PREFIXES and S2 FENCED
+        // BODY place a line by the COLUMN it reaches; neither reads the line's
+        // first character. So a list marker at the item's content column, inside
+        // a fence that item opened, is the same continuation a plain `x` is -
+        // which corpus 276 row 3 already pins, and which category 278 differs
+        // from by two characters. Without the guard the marker severed the
+        // verbatim body: the fence closed empty, the marker opened a sub-list,
+        // and the fence's own closer became an empty code span.
+        if stop_at_content_column_marker && is_marker && indent >= strip_cols && fence.is_none() {
             break;
         }
         // A comment is not a block, so it does not set the block indent. It
@@ -6875,7 +6884,16 @@ fn collect_indented_block_plain_with(
             break;
         }
         let is_marker = detect_list_marker_full(line).is_some();
-        if stop_at_content_column_marker && is_marker && indent >= strip_cols {
+        // INSIDE AN OPEN FENCE THE MARKER IS CODE TEXT (corpus category 278,
+        // markup-carve/carve#975). PART 9 §24's S1 MATCH PREFIXES and S2 FENCED
+        // BODY place a line by the COLUMN it reaches; neither reads the line's
+        // first character. So a list marker at the item's content column, inside
+        // a fence that item opened, is the same continuation a plain `x` is -
+        // which corpus 276 row 3 already pins, and which category 278 differs
+        // from by two characters. Without the guard the marker severed the
+        // verbatim body: the fence closed empty, the marker opened a sub-list,
+        // and the fence's own closer became an empty code span.
+        if stop_at_content_column_marker && is_marker && indent >= strip_cols && fence.is_none() {
             break;
         }
         // A comment is not a block, so it does not set the block indent. It
