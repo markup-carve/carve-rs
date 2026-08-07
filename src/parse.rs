@@ -738,7 +738,7 @@ fn extract_footnote_defs(
             let mut def_line_map = vec![Some(def_start_line)];
             let mut def_col_map = if positions {
                 vec![stripped_col(
-                    Some(stripped.structural.chars().count()),
+                    Some(stripped.structural.chars().count() as isize),
                     stripped.bare,
                     first,
                 )]
@@ -2030,7 +2030,7 @@ fn parse_blocks_with_options_at_level(
     };
     // Nothing has been stripped from a top-level line, so every column here is
     // a column in the document.
-    let col_map: Vec<Option<usize>> = if options.positions {
+    let col_map: Vec<Option<isize>> = if options.positions {
         vec![Some(0); lines.len()]
     } else {
         Vec::new()
@@ -2051,7 +2051,7 @@ struct LineCursor<'a> {
     /// container, so a nested strip accumulates rather than resetting. `None`
     /// for a line whose stripped width is not known - a block starting there
     /// gets no position rather than a wrong one.
-    col_map: Option<&'a [Option<usize>]>,
+    col_map: Option<&'a [Option<isize>]>,
     pos: usize,
     at_document_level: bool,
     comment_closer_last_index: Option<HashMap<usize, usize>>,
@@ -2062,7 +2062,7 @@ impl<'a> LineCursor<'a> {
     fn new_with_cols(
         lines: &'a [&'a str],
         line_map: Option<&'a [Option<usize>]>,
-        col_map: Option<&'a [Option<usize>]>,
+        col_map: Option<&'a [Option<isize>]>,
     ) -> Self {
         LineCursor {
             lines,
@@ -2094,7 +2094,7 @@ impl<'a> LineCursor<'a> {
     }
 
     /// Columns stripped from the front of the line at `pos`, when known.
-    fn source_col(&self, pos: usize) -> Option<usize> {
+    fn source_col(&self, pos: usize) -> Option<isize> {
         self.col_map.and_then(|map| map.get(pos).copied().flatten())
     }
 
@@ -2147,7 +2147,7 @@ struct LineBuffer {
     /// `lines`. Kept in lockstep by `push_at`: a shifted entry would hand a
     /// nested block a WRONG column, which is worse than the `None` an absent
     /// entry produces.
-    col_map: Vec<Option<usize>>,
+    col_map: Vec<Option<isize>>,
 }
 
 impl LineBuffer {
@@ -2157,7 +2157,7 @@ impl LineBuffer {
 
     /// Like `push`, recording how many codepoints were stripped from the front
     /// of the line by the enclosing container.
-    fn push_at(&mut self, line: String, source_line: Option<usize>, stripped: Option<usize>) {
+    fn push_at(&mut self, line: String, source_line: Option<usize>, stripped: Option<isize>) {
         self.lines.push(line);
         if source_line.is_some() || !self.line_map.is_empty() {
             self.line_map.push(source_line);
@@ -2185,12 +2185,12 @@ struct MappedSource {
     /// indent, a container prefix. Without it a column in `source` cannot be
     /// mapped back to a column in the document, which is why nested blocks
     /// could not carry a position (spec PART 12 section 4).
-    col_map: Vec<Option<usize>>,
+    col_map: Vec<Option<isize>>,
 }
 
 impl MappedSource {
     /// Like `new_line`, recording how many bytes were stripped from the front.
-    fn new_line_at(line: String, source_line: Option<usize>, stripped: Option<usize>) -> Self {
+    fn new_line_at(line: String, source_line: Option<usize>, stripped: Option<isize>) -> Self {
         MappedSource {
             source: line,
             line_map: source_line.into_iter().map(Some).collect(),
@@ -2204,7 +2204,7 @@ impl MappedSource {
         &mut self,
         line: String,
         source_line: Option<usize>,
-        stripped: Option<usize>,
+        stripped: Option<isize>,
     ) {
         if !self.source.is_empty() {
             self.source.push('\n');
@@ -2231,18 +2231,69 @@ impl MappedSource {
 
 /// Codepoints a container took from the front of a line, when that is knowable.
 ///
-/// Only a prefix removal has a knowable width: when the line the parser will
-/// see is a SUFFIX of the source line, the difference between them is what the
-/// container took, and it adds to whatever an outer container already took. A
-/// rewritten line - a tab expansion, a synthesized replacement - has no such
-/// correspondence and yields `None`, so blocks starting there carry no position
-/// rather than a wrong one.
-fn stripped_col(outer: Option<usize>, original: &str, stripped: &str) -> Option<usize> {
+/// SIGNED, because a container can hand the parser a line that is LONGER at the
+/// front than the source line was. When a tab straddles the column a container
+/// strips to, `strip_leading_columns` re-inserts the overshoot as spaces - two
+/// characters where one was consumed - and the constant that maps a column in
+/// the result back to a column in the document is then NEGATIVE. An unsigned
+/// map cannot hold it, which is the whole reason a tab-indented footnote
+/// continuation published no positions while the two-space spelling published
+/// all five (carve-rs#736).
+///
+/// Two shapes have a knowable width, and both are affine:
+///
+///   A PREFIX REMOVAL. The line the parser sees is a SUFFIX of the source line,
+///   and the difference between them is what the container took.
+///
+///   A RESIDUAL-AWARE DEDENT. The line the parser sees is a suffix of the
+///   source line carrying a SYNTHETIC prefix of spaces, and what the container
+///   consumed in front of that suffix was itself nothing but indentation. The
+///   constant is then what it consumed minus what it synthesized, which may be
+///   negative.
+///
+/// Anything else - a tab expansion in the middle of a line, a synthesized
+/// replacement, a line block's indent sentinel - has no such correspondence and
+/// yields `None`, so blocks starting there carry no position rather than a
+/// wrong one. The guard is that the two lines differ ONLY in leading
+/// whitespace: if what either side put in front of the shared tail contains a
+/// single non-indent character, there is no constant and this returns `None`.
+fn stripped_col(outer: Option<isize>, original: &str, stripped: &str) -> Option<isize> {
     let outer = outer?;
-    if !original.ends_with(stripped) {
+    if original.ends_with(stripped) {
+        return Some(outer + original.chars().count() as isize - stripped.chars().count() as isize);
+    }
+    let synthetic = stripped.chars().take_while(|c| *c == ' ').count();
+    let tail = &stripped[synthetic..];
+    if synthetic == 0 || !original.ends_with(tail) {
         return None;
     }
-    Some(outer + original.chars().count() - stripped.chars().count())
+    let consumed = original.chars().count().checked_sub(tail.chars().count())?;
+    if !original
+        .chars()
+        .take(consumed)
+        .all(|c| c == ' ' || c == '\t')
+    {
+        return None;
+    }
+    Some(outer + consumed as isize - synthetic as isize)
+}
+
+/// WHERE THE SIGNED QUANTITY STOPS: a 1-based document column.
+///
+/// `stripped` is the constant the column map carries for a line and `within` is
+/// the codepoint offset inside the line the parser saw, so their sum is the
+/// 0-based document column. Every `Pos` column in this file is built here, so
+/// there is exactly one place the two units meet and exactly one place the
+/// clamp lives.
+///
+/// The clamp is UNREACHABLE for a well-formed map, and is a guard rather than a
+/// fix: a negative constant only ever arises from a synthetic space prefix, and
+/// nothing is placed at a column inside that prefix - it is indentation, and
+/// `within` has already skipped it. Saturating here means a future producer
+/// that does get it wrong publishes column 1 rather than wrapping to
+/// `usize::MAX` and reporting a span past the end of the document.
+fn document_column(stripped: isize, within: usize) -> usize {
+    (stripped + within as isize).max(0) as usize + 1
 }
 
 /// Seed a list item's body with its marker line, carrying the column the marker
@@ -2273,17 +2324,16 @@ fn item_paragraph_span(
     let line = cur.lines.get(start_at)?;
     let start_stripped = stripped_col(cur.source_col(start_at), line, content)?;
     let end_line = cur.source_line(end_at).unwrap_or(start_line);
-    let end_col = cur.source_col(end_at).unwrap_or(0)
-        + cur
-            .lines
-            .get(end_at)
-            .map(|l| l.chars().count())
-            .unwrap_or(0);
+    let end_width = cur
+        .lines
+        .get(end_at)
+        .map(|l| l.chars().count())
+        .unwrap_or(0);
     Some(Pos {
         start_line,
         end_line,
-        start_column: start_stripped + 1,
-        end_column: end_col + 1,
+        start_column: document_column(start_stripped, 0),
+        end_column: document_column(cur.source_col(end_at).unwrap_or(0), end_width),
         start_offset: 0,
         end_offset: 0,
     })
@@ -2293,7 +2343,7 @@ fn inline_anchor_for_line(
     cur: &LineCursor<'_>,
     pos: usize,
     inline_line: &str,
-) -> Option<(usize, usize)> {
+) -> Option<(usize, isize)> {
     Some((
         cur.source_line(pos)?,
         stripped_col(cur.source_col(pos), cur.lines.get(pos)?, inline_line)?,
@@ -2303,7 +2353,7 @@ fn inline_anchor_for_line(
 fn parse_inline_lines_with_anchor(
     text: &str,
     options: &Options<'_>,
-    lines: Vec<Option<(usize, usize)>>,
+    lines: Vec<Option<(usize, isize)>>,
 ) -> Vec<InlineNode> {
     parse_inline_with_anchor(text, options, InlineAnchor { lines: &lines })
 }
@@ -2353,8 +2403,8 @@ fn span_of(cur: &LineCursor<'_>, start: usize, end: usize, options: &Options<'_>
     Some(Pos {
         start_line,
         end_line,
-        start_column: stripped + indent + 1,
-        end_column: end_stripped + width + 1,
+        start_column: document_column(stripped, indent),
+        end_column: document_column(end_stripped, width),
         start_offset: 0,
         end_offset: 0,
     })
@@ -2781,7 +2831,7 @@ fn parse_flattened_inline(text: &str, options: &Options<'_>) -> Vec<InlineNode> 
 fn parse_flattened_inline_with_anchors(
     text: &str,
     options: &Options<'_>,
-    anchors: Vec<Option<(usize, usize)>>,
+    anchors: Vec<Option<(usize, isize)>>,
 ) -> Vec<InlineNode> {
     let saved = NESTING_DEPTH.with(Cell::get);
     NESTING_DEPTH.with(|d| d.set(0));
@@ -2795,7 +2845,7 @@ fn parse_flattened_inline_with_anchors(
 ///
 /// This is what a `LineCursor` carries per line; a flattened over-cap run has
 /// already been lifted out of one, so its two maps travel together instead.
-type LineMaps<'a> = Option<(&'a [Option<usize>], &'a [Option<usize>])>;
+type LineMaps<'a> = Option<(&'a [Option<usize>], &'a [Option<isize>])>;
 
 /// Span of the flattened lines `[start, end)`, in the ORIGINAL source.
 ///
@@ -2831,8 +2881,8 @@ fn flattened_span(lines: &[&str], maps: LineMaps<'_>, start: usize, end: usize) 
     Some(Pos {
         start_line,
         end_line,
-        start_column: stripped + indent + 1,
-        end_column: end_stripped + width + 1,
+        start_column: document_column(stripped, indent),
+        end_column: document_column(end_stripped, width),
         start_offset: 0,
         end_offset: 0,
     })
@@ -4994,7 +5044,7 @@ fn parse_continuation_block(
     // had no column map at all, and every block a `+` attached came out
     // unplaced: the code block, quote or table after the marker, and everything
     // inside it.
-    let col_map: Vec<Option<usize>> = cur
+    let col_map: Vec<Option<isize>> = cur
         .col_map
         .map(|map| map[cur.pos..end].to_vec())
         .unwrap_or_default();
@@ -6489,7 +6539,7 @@ fn collect_indented_block_mapped_with(
     }
     let mut lines = Vec::new();
     let mut line_map = Vec::new();
-    let mut col_map: Vec<Option<usize>> = Vec::new();
+    let mut col_map: Vec<Option<isize>> = Vec::new();
     let mut block_indent: Option<usize> = None;
     let mut comment_fence: Option<(usize, usize)> = None;
     let mut comment_fence_strip: Option<usize> = None;
@@ -6635,12 +6685,16 @@ fn collect_indented_block_mapped_with(
         // slice actually consumed, minus what was written in its place.
         //
         // Only a position INSIDE the run has no source, and nothing starts
-        // there - it is whitespace and the marker follows it. If the arithmetic
-        // would go negative the anchor is not recoverable, and no position is
-        // better than a wrong one (the rule `stripped_col` states).
+        // there - it is whitespace and the marker follows it.
+        //
+        // The difference is SIGNED and no longer bails out when the slice wrote
+        // more than it consumed. It used to `checked_sub` and drop the line's
+        // anchor, because the map could not hold a negative constant - the same
+        // limit that lost a tab-indented footnote continuation its positions
+        // (carve-rs#736).
         col_map.push(
             cur.source_col(cur.pos)
-                .and_then(|outer| (outer + consumed).checked_sub(synthetic)),
+                .map(|outer| outer + consumed as isize - synthetic as isize),
         );
         cur.consume();
     }
@@ -7324,7 +7378,7 @@ fn collect_definition_body(cur: &mut LineCursor) -> MappedSource {
     // Codepoints taken off the front of each line, kept in lockstep with
     // `lines`. `None` means unknown, and a block starting there gets no
     // position rather than a guessed one (PART 12 section 4).
-    let mut col_map: Vec<Option<usize>> = Vec::new();
+    let mut col_map: Vec<Option<isize>> = Vec::new();
     while let Some(line) = cur.peek() {
         // Form B: `+` pull-left continuation.
         if is_plus_marker(line) {
@@ -7363,10 +7417,9 @@ fn collect_definition_body(cur: &mut LineCursor) -> MappedSource {
                 // Count what was actually removed rather than assuming three:
                 // `slice_columns` works in COLUMNS, and a tab is one codepoint
                 // spanning several of them.
-                col_map.push(
-                    cur.source_col(cur.pos)
-                        .map(|c| c + line.chars().count().saturating_sub(sliced.chars().count())),
-                );
+                col_map.push(cur.source_col(cur.pos).map(|c| {
+                    c + line.chars().count().saturating_sub(sliced.chars().count()) as isize
+                }));
                 lines.push(sliced);
                 line_map.push(cur.source_line(cur.pos));
                 cur.consume();
@@ -7740,7 +7793,7 @@ fn apply_table_continuation(
     row: &mut TableRow,
     line: &str,
     options: &Options<'_>,
-    base: Option<(usize, usize)>,
+    base: Option<(usize, isize)>,
 ) {
     let mut content = line.trim();
     if let Some(stripped) = content.strip_prefix('+') {
@@ -7765,7 +7818,7 @@ fn apply_table_continuation(
         let lead = cell.text.chars().count() - trim_cell_padding_start(&cell.text).chars().count(); // PART 7: cell padding is U+0020 only.
         let anchor = match (base, content_off) {
             (Some((line_no, stripped)), Some(off)) => {
-                Some((line_no, stripped + off + cell.start + lead))
+                Some((line_no, stripped + (off + cell.start + lead) as isize))
             }
             _ => None,
         };
@@ -7785,7 +7838,7 @@ fn apply_table_continuation(
 /// `base` is the row line's (source line, columns already stripped by an
 /// enclosing container). Without it a cell cannot be placed: this function is
 /// handed an already-split line and cannot know where it sits.
-fn parse_table_row(line: &str, options: &Options<'_>, base: Option<(usize, usize)>) -> TableRow {
+fn parse_table_row(line: &str, options: &Options<'_>, base: Option<(usize, isize)>) -> TableRow {
     let mut content = line.trim();
     let (attrs, body) = split_row_attrs(content);
     content = body;
@@ -7811,7 +7864,7 @@ fn parse_table_row(line: &str, options: &Options<'_>, base: Option<(usize, usize
             // inside it maps straight back to the document.
             let cell_anchor = match (base, content_off) {
                 (Some((line_no, stripped)), Some(off)) => {
-                    Some((line_no, stripped + off + slice.start))
+                    Some((line_no, stripped + (off + slice.start) as isize))
                 }
                 _ => None,
             };
@@ -7820,8 +7873,8 @@ fn parse_table_row(line: &str, options: &Options<'_>, base: Option<(usize, usize
                 cell.pos = Some(Pos {
                     start_line: line_no,
                     end_line: line_no,
-                    start_column: stripped + off + slice.start + 1,
-                    end_column: stripped + off + slice.end + 1,
+                    start_column: document_column(stripped, off + slice.start),
+                    end_column: document_column(stripped, off + slice.end),
                     // Filled from the line table once the document is parsed.
                     start_offset: 0,
                     end_offset: 0,
@@ -7921,20 +7974,24 @@ fn parse_cell_inlines(
     cell: &str,
     slice: &str,
     options: &Options<'_>,
-    anchor: Option<(usize, usize)>,
+    anchor: Option<(usize, isize)>,
 ) -> Vec<InlineNode> {
     let Some((line_no, base_col)) = anchor else {
         return parse_inline_with_options(slice, options);
     };
     let bytes = (slice.as_ptr() as usize).saturating_sub(cell.as_ptr() as usize);
     let off = cell[..bytes].chars().count();
-    parse_inline_lines_with_anchor(slice, options, vec![Some((line_no, base_col + off))])
+    parse_inline_lines_with_anchor(
+        slice,
+        options,
+        vec![Some((line_no, base_col + off as isize))],
+    )
 }
 
 fn parse_table_cell(
     cell: &str,
     options: &Options<'_>,
-    anchor: Option<(usize, usize)>,
+    anchor: Option<(usize, isize)>,
 ) -> TableCell {
     // A `{...}` attribute block GLUED to the opening pipe (no leading space)
     // sets the cell's attributes; the rest, after optional whitespace, is the
@@ -8235,7 +8292,7 @@ fn parse_container(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 let anchor = open.title_col.and_then(|col| {
                     Some((
                         cur.source_line(span_start)?,
-                        cur.source_col(span_start)? + col,
+                        cur.source_col(span_start)? + col as isize,
                     ))
                 });
                 parse_inline_lines_with_anchor(&t, options, vec![anchor])
@@ -8391,8 +8448,8 @@ fn expand_line_block_ws(line: &str) -> String {
 struct Stanza {
     lines: LineBuffer,
     at: Option<Pos>,
-    end_cols: Vec<Option<usize>>,
-    start_cols: Vec<Option<usize>>,
+    end_cols: Vec<Option<isize>>,
+    start_cols: Vec<Option<isize>>,
 }
 
 /// Give every line-block hard break a span, even where the stanza's TEXT has
@@ -8411,8 +8468,8 @@ struct Stanza {
 fn place_line_block_breaks(
     inlines: Vec<InlineNode>,
     lines: &LineBuffer,
-    end_cols: &[Option<usize>],
-    start_cols: &[Option<usize>],
+    end_cols: &[Option<isize>],
+    start_cols: &[Option<isize>],
     options: &Options<'_>,
 ) -> Vec<InlineNode> {
     if !options.positions {
@@ -8441,9 +8498,9 @@ fn place_line_block_breaks(
             ) {
                 (Some(start_line), Some(end_col), Some(end_line), Some(next_col)) => Some(Pos {
                     start_line,
-                    start_column: end_col + 1,
+                    start_column: document_column(end_col, 0),
                     end_line,
-                    end_column: next_col + 1,
+                    end_column: document_column(next_col, 0),
                     ..Default::default()
                 }),
                 _ => None,
@@ -8467,9 +8524,9 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     let mut stanzas: Vec<Stanza> = Vec::new();
     let mut stanza: Vec<String> = Vec::new();
     let mut stanza_line_map: Vec<Option<usize>> = Vec::new();
-    let mut stanza_col_map: Vec<Option<usize>> = Vec::new();
-    let mut stanza_end_cols: Vec<Option<usize>> = Vec::new();
-    let mut stanza_start_cols: Vec<Option<usize>> = Vec::new();
+    let mut stanza_col_map: Vec<Option<isize>> = Vec::new();
+    let mut stanza_end_cols: Vec<Option<isize>> = Vec::new();
+    let mut stanza_start_cols: Vec<Option<isize>> = Vec::new();
     // Where the open stanza began, and where it ended - the CURSOR's own line
     // indices, which still point at the source. The rewritten verse text cannot
     // give a column back, but the lines a stanza occupies are not in doubt.
@@ -8542,7 +8599,7 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         // `expand_line_block_ws` rewrites gaps into placeholders.
         stanza_end_cols.push(
             cur.source_col(line_at)
-                .map(|stripped_cols| stripped_cols + line.chars().count()),
+                .map(|stripped_cols| stripped_cols + line.chars().count() as isize),
         );
         stanza_start_cols.push(cur.source_col(line_at));
         stanza.push(expanded);
@@ -8572,7 +8629,7 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                  start_cols,
              }| {
                 let source_line = lines.line_map.first().copied().flatten();
-                let anchors: Vec<Option<(usize, usize)>> = lines
+                let anchors: Vec<Option<(usize, isize)>> = lines
                     .line_map
                     .iter()
                     .zip(lines.col_map.iter())
@@ -9490,11 +9547,11 @@ struct InlineBounds<'a> {
 }
 
 pub(crate) struct InlineAnchor<'a> {
-    lines: &'a [Option<(usize, usize)>],
+    lines: &'a [Option<(usize, isize)>],
 }
 
 struct InlinePositionMap<'a> {
-    lines: &'a [Option<(usize, usize)>],
+    lines: &'a [Option<(usize, isize)>],
     byte_line: Vec<usize>,
     byte_column: Vec<usize>,
 }
@@ -9542,8 +9599,8 @@ impl<'a> InlinePositionMap<'a> {
         Some(Pos {
             start_line,
             end_line,
-            start_column: start_stripped + self.byte_column[start] + 1,
-            end_column: end_stripped + self.byte_column[end] + 1,
+            start_column: document_column(start_stripped, self.byte_column[start]),
+            end_column: document_column(end_stripped, self.byte_column[end]),
             start_offset: 0,
             end_offset: 0,
         })
@@ -9635,7 +9692,7 @@ fn parse_caption_inline_with_options(text: &str, options: &Options<'_>) -> Vec<I
 fn parse_caption_inline_with_anchor(
     text: &str,
     options: &Options<'_>,
-    lines: Vec<Option<(usize, usize)>>,
+    lines: Vec<Option<(usize, isize)>>,
 ) -> Vec<InlineNode> {
     if !options.positions {
         return parse_caption_inline_with_options(text, options);

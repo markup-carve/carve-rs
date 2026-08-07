@@ -9,6 +9,19 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A tab-indented footnote continuation carries the positions the space
+  spelling carries.** A note body whose continuation line was indented with a
+  tab published no `pos` on the footnote, on its paragraph, on the soft break
+  or on the second text node; the identical document written with two spaces
+  published all five, and carve-js and carve-php publish all five for both. The
+  cause was the column map's type, not a missing assignment: when a tab
+  straddles the column a container strips to, the dedent re-inserts the
+  overshoot as spaces, so the line the parser sees is two characters longer at
+  the front than the source line was, and the constant mapping a column in it
+  back to a column in the document is negative. The map is signed now and every
+  `pos` column is built in one place. The dedent itself is unchanged, so a
+  tab-indented fence and a tab-indented quote inside a note body stay literal.
+
 - **A fenced body is not a paragraph, so a line below a list item's content
   column closes the item.** A fence opened on an item's MARKER line with its
   body below that column folded the below-column line into the code text, and
