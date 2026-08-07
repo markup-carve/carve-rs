@@ -8626,6 +8626,15 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         // Only the DROPPED tail may differ, and it must be whitespace: a
         // trailing tab expands to at least two columns, becomes NBSP content
         // and makes `expanded` longer, which still refuses here.
+        //
+        // THE WHITESPACE HALF OF THAT TEST CANNOT FAIL TODAY, recorded rather
+        // than presented as a fix (markup-carve/carve#755). Widening it to
+        // accept any dropped tail changes no corpus document and no output over
+        // 6125 generated verse-line shapes, and fails no test: the only way
+        // `expanded` gets shorter is `expand_line_block_ws` dropping a
+        // one-column run, which is whitespace by construction. It stays because
+        // the length arithmetic alone would not notice a future rewrite that
+        // dropped CONTENT off the end, and that one would move the columns.
         let dropped = stripped
             .chars()
             .count()
