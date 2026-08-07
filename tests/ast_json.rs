@@ -140,6 +140,14 @@ fn normalize(mut doc: carve::Document) -> carve::Document {
     for body in doc.footnote_defs.values_mut() {
         blocks(body);
     }
+    // `ingest_payload_len` is a READER's own measurement - how many bytes the
+    // payload this document was decoded from actually cost - and it is
+    // deliberately not on the wire: republishing it would put one reader's
+    // measurement where the next reader would read it back as a claim, which is
+    // the whole defect it exists to close (carve-rs#811). So a decoded document
+    // carries it and a parsed one carries 0, by design, and this comparison is
+    // about what the FORMAT carries.
+    doc.ingest_payload_len = 0;
     doc
 }
 

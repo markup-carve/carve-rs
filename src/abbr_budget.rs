@@ -69,7 +69,8 @@ impl AbbrBudgetGuard {
     /// bounding that claim binds every target at once from here, instead of
     /// having to find four spellings of the same read.
     pub(crate) fn for_document(doc: &crate::ast::Document) -> Self {
-        let previous = REMAINING.with(|cell| cell.replace(Some(budget_for(doc.source_len))));
+        let previous =
+            REMAINING.with(|cell| cell.replace(Some(budget_for(doc.expansion_budget_len()))));
         AbbrBudgetGuard { previous }
     }
 }

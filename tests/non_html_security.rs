@@ -39,6 +39,7 @@ fn markdown_percent_encodes_destination_breakouts() {
         frontmatter: BTreeMap::new(),
         frontmatter_raw: None,
         source_len: 0,
+        ingest_payload_len: 0,
         footnote_defs: BTreeMap::new(),
         children: vec![carve::BlockNode::Paragraph(carve::Paragraph {
             at_content_column: false,
@@ -118,6 +119,7 @@ fn markdown_sanitizes_code_fence_info_string() {
         frontmatter: BTreeMap::new(),
         frontmatter_raw: None,
         source_len: 0,
+        ingest_payload_len: 0,
         footnote_defs: BTreeMap::new(),
         children: vec![carve::BlockNode::CodeBlock(carve::CodeBlock {
             attrs: None,
@@ -145,6 +147,7 @@ fn markdown_escapes_image_alt_label_metacharacters() {
         frontmatter: BTreeMap::new(),
         frontmatter_raw: None,
         source_len: 0,
+        ingest_payload_len: 0,
         footnote_defs: BTreeMap::new(),
         children: vec![carve::BlockNode::Paragraph(carve::Paragraph {
             at_content_column: false,
@@ -183,6 +186,7 @@ fn markdown_strips_control_bytes_from_author_leaf_fields() {
         frontmatter: BTreeMap::new(),
         frontmatter_raw: None,
         source_len: 0,
+        ingest_payload_len: 0,
         footnote_defs,
         children: vec![
             carve::BlockNode::CodeBlock(carve::CodeBlock {
@@ -304,6 +308,7 @@ fn plain_and_ansi_strip_control_bytes_from_author_leaf_fields() {
         frontmatter: BTreeMap::new(),
         frontmatter_raw: None,
         source_len: 0,
+        ingest_payload_len: 0,
         footnote_defs,
         children: vec![
             carve::BlockNode::RawBlock(carve::RawBlock {

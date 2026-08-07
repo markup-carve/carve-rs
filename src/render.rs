@@ -74,7 +74,7 @@ pub fn render_html_with_options(
 fn render_html_inner(doc: &Document, options: &Options<'_>) -> String {
     let mut doc = doc.clone();
     let _abbr_guard = AbbrBudgetGuard::for_document(&doc);
-    let _index_guard = crate::index_budget::IndexBudgetGuard::new(doc.source_len);
+    let _index_guard = crate::index_budget::IndexBudgetGuard::new(doc.expansion_budget_len());
     // Document id namespace (extensions contract §2.6): seeded with every
     // explicit `{#id}` attribute and every heading id this render will assign,
     // so extension-generated ids (citation anchors / reference entries) take

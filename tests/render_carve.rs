@@ -105,6 +105,7 @@ fn bullet_marker_normalization() {
             }],
         })],
         source_len: 0,
+        ingest_payload_len: 0,
     };
     assert_eq!(
         carve::render_carve(&doc).expect("the tree under test is within the render ceiling"),

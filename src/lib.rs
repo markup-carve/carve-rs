@@ -341,6 +341,42 @@ pub fn prepare_document_for_render(
     effective_mode: Mode,
     target_is_html: bool,
 ) -> Result<ast::Document, ProfileViolationError> {
+    // FIRST, ahead of the hooks. A profile's `max_length` bounds UNTRUSTED
+    // INPUT, so it has to be answered before anything walks that input:
+    // `before_render` hooks are where the table of contents and the index
+    // traverse and allocate from the tree, and refusing afterwards means the
+    // work the cap exists to prevent has already been done.
+    //
+    // It also puts the number out of a hook's reach. `before_render` takes the
+    // document by value and hands one back, so a hook could return a document
+    // whose `ingest_payload_len` it had cleared - and a cap read after the
+    // hooks would be a cap whose input the pipeline could rewrite.
+    if let Some(profile) = &options.profile {
+        // Measured, not claimed. On the ingest path the untrusted input is the
+        // payload: it is what got parsed, held and walked. `source_len` cannot
+        // stand in for it there, because that number arrives inside the payload
+        // - a hostile tree claims 0 and renders anything, which is exactly what
+        // `Profile::minimal()` used to accept: an 80 KB payload against a
+        // 10,000 byte cap. `main.rs` already measures the payload for
+        // `--from-json` and says why; this helper is documented as the same
+        // path for a host that has already decoded, so it has to reach the same
+        // answer.
+        let max_length = profile.max_length();
+        let input_len = doc.untrusted_input_len();
+        if max_length > 0 && input_len > max_length {
+            let violation = ProfileViolation {
+                node_type: "document".to_string(),
+                reason: "max_length_exceeded".to_string(),
+                reason_description: Some(format!(
+                    "Input exceeds the profile's maximum length of {max_length} bytes ({input_len} given)."
+                )),
+            };
+            return Err(ProfileViolationError {
+                violations: vec![violation],
+            });
+        }
+    }
+
     let ctx = extension::BeforeRenderContext::new(options, effective_mode, target_is_html);
     for ext in &options.extensions {
         doc = ext.before_render(doc, &ctx);
@@ -348,20 +384,6 @@ pub fn prepare_document_for_render(
     let Some(profile) = &options.profile else {
         return Ok(doc);
     };
-    let max_length = profile.max_length();
-    if max_length > 0 && doc.source_len > max_length {
-        let violation = ProfileViolation {
-            node_type: "document".to_string(),
-            reason: "max_length_exceeded".to_string(),
-            reason_description: Some(format!(
-                "Input exceeds the profile's maximum length of {max_length} bytes ({} given).",
-                doc.source_len
-            )),
-        };
-        return Err(ProfileViolationError {
-            violations: vec![violation],
-        });
-    }
     let base_host = options.profile_base_host.as_deref();
     Ok(apply_profile_with_typography(doc, profile, base_host, options.smart_typography)?.doc)
 }

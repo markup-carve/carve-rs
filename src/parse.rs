@@ -226,6 +226,8 @@ fn parse_with_options_mode(source: &str, options: &Options<'_>, mode: ParseMode)
         footnote_defs,
         children,
         source_len: source.len(),
+        // Measured here, so nothing about the parse path needs a second number.
+        ingest_payload_len: 0,
     };
     let heading_index = heading_index(
         &doc.children,

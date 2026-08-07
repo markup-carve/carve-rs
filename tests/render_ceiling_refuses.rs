@@ -54,6 +54,7 @@ fn nested(depth: usize) -> Document {
         frontmatter: BTreeMap::new(),
         frontmatter_raw: None,
         source_len: 0,
+        ingest_payload_len: 0,
         footnote_defs: BTreeMap::new(),
         children: vec![block],
     }

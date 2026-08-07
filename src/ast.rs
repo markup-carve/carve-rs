@@ -71,11 +71,68 @@ pub struct Document {
     pub footnote_defs: BTreeMap<String, Vec<BlockNode>>,
     pub children: Vec<BlockNode>,
     /// Byte length of the (normalized) source this document was parsed from.
-    /// Renderers use it to size the abbreviation-expansion budget that bounds
-    /// memory-amplification DoS (see `ABBR_EXPANSION_BUDGET_BASE`). Documents
-    /// built programmatically (not via `parse`) leave this at 0, which yields
-    /// the budget floor — far above any realistic hand-built document.
+    ///
+    /// What the DOCUMENT says about itself. On the parse path this crate
+    /// measured it; on the ingest path it is `srcByteLength`, read off the wire
+    /// exactly as written, because PART 12 §7 makes it a field of the payload
+    /// and a reader that rewrites it has silently repaired the record.
+    /// Documents built programmatically (not via `parse`) leave this at 0.
+    ///
+    /// NOT what a cap may be sized from when the document was ingested. See
+    /// [`Document::expansion_budget_len`] and [`Document::untrusted_input_len`].
     pub source_len: usize,
+    /// Byte length of the JSON payload this document was decoded from, or 0
+    /// when it was not decoded from one.
+    ///
+    /// Set by `from_json` and by nothing else. It never reaches the wire: it is
+    /// a fact about how this document ARRIVED rather than about the document,
+    /// and re-publishing it would put one reader's measurement where the next
+    /// reader would read it back as a claim.
+    pub ingest_payload_len: usize,
+}
+
+impl Document {
+    /// The length a per-render expansion budget may be sized from.
+    ///
+    /// The expansion budgets - abbreviations, the table of contents, the index -
+    /// are `max(floor, factor * this)`. A cap has to be enforced against
+    /// something the attacker does not supply, and on the parse path this is
+    /// exactly that: the parser measured the input, so a bigger budget costs a
+    /// bigger document.
+    ///
+    /// On the ingest path `source_len` arrives INSIDE the payload. Left alone it
+    /// let the payload choose the size of the guard meant to bound it: rewriting
+    /// one number to `1000000000` took a 214 KB payload from 1.04 MB of HTML to
+    /// 101 MB, 472x, for nine extra bytes. So an ingested document is bounded by
+    /// what its payload actually cost as well as by what it claims, and the
+    /// smaller wins.
+    ///
+    /// The claim is still honored where it is smaller, because a document that
+    /// says it came from a short source is not made suspect by its AST being
+    /// verbose - and an encoded tree is larger than the source it came from, so
+    /// on an honest round trip this does not bind.
+    pub fn expansion_budget_len(&self) -> usize {
+        if self.ingest_payload_len == 0 {
+            return self.source_len;
+        }
+        self.source_len.min(self.ingest_payload_len)
+    }
+
+    /// The number of untrusted input bytes this document actually cost.
+    ///
+    /// What a profile's `max_length` bounds. The CLI already measures this
+    /// correctly for `--from-json` and says why in `main.rs`: a profile's
+    /// `max_length` bounds untrusted input, and on the ingest path the untrusted
+    /// input is the payload - it is what gets parsed, held and walked. Unlike
+    /// [`Document::expansion_budget_len`] this does not take the smaller of the
+    /// two, because a payload that claims to have come from nothing still cost
+    /// its own bytes to send.
+    pub fn untrusted_input_len(&self) -> usize {
+        if self.ingest_payload_len == 0 {
+            return self.source_len;
+        }
+        self.ingest_payload_len
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
