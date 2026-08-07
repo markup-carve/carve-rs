@@ -9,6 +9,25 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **An autolink body admits non-ASCII.** PART 3's `url_char` gains
+  `unicode_url_char - format_char - control_char`, so an internationalized
+  domain (`<https://例.jp/>`), an accented host, a non-ASCII path and a
+  non-ASCII character that is not a letter (a currency sign, a CJK comma, an
+  emoji, a combining mark) open an autolink instead of staying literal text.
+  The deciding argument is the asymmetry with the inline form: the same
+  destination written `[t](https://例.jp/)` already linked, because
+  `link_destination` admits `unicode_url_char`, and one destination cannot
+  answer differently on the character set depending on its spelling. A FORMAT
+  character (General_Category Cf - the soft hyphen, the zero-width space, the
+  byte order mark, the bidi marks) is excluded: it is invisible, so a host
+  carrying one renders as the host without it and links somewhere else. So is a
+  CONTROL character, which is not redundant with the ASCII enumeration - the C1
+  block U+0080-U+009F is non-ASCII and non-whitespace, so without that term
+  fourteen control characters would be admitted while every C0 one stayed out.
+  `link_destination` is a different production and is unchanged; the ASCII
+  exclusions (`"`, `\`, `` ` ``, `{`, `}`, `|`, `^`, `<`, `>`) and the ASCII-only
+  `scheme` do not move.
+
 - **A paragraph produced by the over-cap degrade publishes its position**, and
   so do the text runs and soft breaks in it. PART 9 §25 turns an opener past the
   nesting cap into literal paragraph text, and the flattened run that results is
