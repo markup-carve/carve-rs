@@ -1,6 +1,7 @@
 use crate::ast::*;
 use crate::ast_json::block_pos;
 use crate::render::MAX_RENDER_DEPTH;
+use crate::render_text::{trim_end_non_nbsp, trim_non_nbsp};
 use std::collections::{HashMap, HashSet};
 
 /// A definition the author wrote ON a definition list's description line.
@@ -2305,35 +2306,6 @@ fn collapse_breaks(text: &str) -> String {
         }
     }
     trim_non_nbsp(&out).to_string()
-}
-
-/// The writer's whitespace terminal: U+0020 and U+0009, and NOTHING ELSE.
-///
-/// `blank_line = {whitespace}` takes a space or a tab (PART 1, carve#890), and
-/// PART 2's NO TRAILING WHITESPACE drops the same two (carve#926). Every other
-/// character is CONTENT and has to be written back, however invisible - a
-/// no-break space, an OGHAM SPACE MARK, an EN QUAD, a THIN SPACE, a NARROW
-/// NO-BREAK SPACE, a MEDIUM MATHEMATICAL SPACE, an IDEOGRAPHIC SPACE, a
-/// zero-width space, a FORM FEED and a VERTICAL TAB.
-///
-/// The two LINE TERMINATORS are in the set as well, and that is a different
-/// job: these helpers also trim the newlines around a rendered block, which is
-/// layout rather than line content. A form feed is NOT a terminator here - it
-/// is content that PART 2 keeps - so the set is named rather than spelled
-/// `is_ascii_whitespace`, which would take it.
-///
-/// This was the Unicode whitespace PROPERTY with U+00A0 carved out by hand,
-/// which is the shape the rule keeps being written in wrongly: the one
-/// character anyone thinks of survived and the other eight did not, so a line
-/// holding one of them was written back EMPTY and reparsed as a blank - which
-/// split its paragraph in two and lost the character. Naming the two terminal
-/// characters removes the exception along with the defect.
-fn trim_non_nbsp(text: &str) -> &str {
-    text.trim_matches([' ', '\t', '\n', '\r'])
-}
-
-fn trim_end_non_nbsp(text: &str) -> &str {
-    text.trim_end_matches([' ', '\t', '\n', '\r'])
 }
 
 fn escape_text(text: &str, mode: EscapeMode, opens_block_line: bool) -> String {

@@ -1,6 +1,6 @@
 use crate::ast::*;
 use crate::extension::Options;
-use crate::render_text::strip_controls;
+use crate::render_text::{strip_controls, trim_non_nbsp};
 
 use crate::render::MAX_RENDER_DEPTH;
 
@@ -259,7 +259,7 @@ fn render_table(node: &Table) -> String {
         out.push_str(
             &row.cells
                 .iter()
-                .map(|cell| render_inlines(&cell.children).trim().to_string())
+                .map(|cell| trim_non_nbsp(&render_inlines(&cell.children)).to_string())
                 .collect::<Vec<_>>()
                 .join(" | "),
         );
@@ -314,7 +314,7 @@ fn render_footnote_defs(doc: &Document) -> String {
         out.push_str(&format!(
             "[^{}]: {}\n",
             strip_controls(label),
-            render_blocks(blocks, 0).trim()
+            trim_non_nbsp(&render_blocks(blocks, 0))
         ));
     }
     out

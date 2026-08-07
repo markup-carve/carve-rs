@@ -9,6 +9,17 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A no-break space survives the plain-text, Markdown and ANSI writers.** Those
+  three reached for `str::trim` to drop the layout around a rendered fragment,
+  and Rust's `char::is_whitespace` includes U+00A0 - so a character the author
+  typed was deleted from a footnote definition's body and a table cell on all
+  three targets, and from a figure caption on ANSI. This engine's HTML and
+  canonical Carve output kept it throughout, so one document rendered two ways
+  depending on the target asked for. PART 11 section 7 states the rule: a
+  no-break space is content, not layout. The ASCII-only trim the canonical
+  writer already carried now lives in the module the presentation renderers
+  share, and all four use it.
+
 - **A document with heading numbers round-trips through this engine's own AST
   JSON.** The encoder stamped a `fromCrossref` flag on every `link` the
   heading-numbers pass derived from a `</#id>` cross-reference. The published

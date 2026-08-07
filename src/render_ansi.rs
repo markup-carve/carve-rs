@@ -1,6 +1,6 @@
 use crate::ast::*;
 use crate::extension::Options;
-use crate::render_text::strip_controls;
+use crate::render_text::{strip_controls, trim_non_nbsp};
 
 use crate::render::MAX_RENDER_DEPTH;
 
@@ -407,7 +407,8 @@ fn render_table(node: &Table, ctx: &mut AnsiContext) -> String {
             row.cells
                 .iter()
                 .map(|cell| {
-                    let content = render_block_inlines(&cell.children, ctx).trim().to_string();
+                    let content =
+                        trim_non_nbsp(&render_block_inlines(&cell.children, ctx)).to_string();
                     let plain = strip_ansi(&content);
                     RenderedCell {
                         content,
@@ -520,7 +521,7 @@ fn render_caption(nodes: &[InlineNode], ctx: &mut AnsiContext) -> String {
     format!(
         "{}\n\n",
         style(
-            render_block_inlines(nodes, ctx).trim(),
+            trim_non_nbsp(&render_block_inlines(nodes, ctx)),
             &(ITALIC.to_string() + DIM)
         )
     )
@@ -537,7 +538,7 @@ fn render_footnote_defs(doc: &Document, ctx: &mut AnsiContext) -> String {
                 &format!("[^{}]", strip_controls(label)),
                 &(FG_CYAN.to_string() + DIM)
             ),
-            render_blocks(blocks, ctx, 0).trim()
+            trim_non_nbsp(&render_blocks(blocks, ctx, 0))
         ));
     }
     out
