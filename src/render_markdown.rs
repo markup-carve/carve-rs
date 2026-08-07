@@ -993,31 +993,28 @@ fn escape_md_html(text: &str) -> String {
 /// downstream, so that is the same sink one step removed (PART 9 section 25,
 /// markup-carve/carve#385).
 fn sanitize_md_url(url: &str) -> String {
-    let probe: String = url
-        .chars()
-        .filter(|c| !crate::escape::is_url_probe_skippable(*c))
-        .collect();
-    if let Some(colon) = probe.find(':') {
-        let prefix = &probe[..colon];
-        let is_scheme = prefix
-            .chars()
-            .next()
-            .is_some_and(|c| c.is_ascii_alphabetic())
-            && prefix
-                .chars()
-                .all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '-' || c == '.');
-        if is_scheme
-            && crate::escape::DANGEROUS_VALUE_SCHEMES
-                .contains(&prefix.to_ascii_lowercase().as_str())
-        {
-            return String::new();
-        }
-    }
-    url.to_string()
+    // The PROBE comes from `escape` too, not only the scheme set. The body used
+    // to be restated here and had already drifted: it dropped the non-empty
+    // prefix guard its original has, so `:x` was read as a scheme with an empty
+    // name. One copy cannot drift from itself.
+    crate::escape::sanitize_url(url).into_owned()
 }
 
+/// Encode a destination for the Markdown output, refusing a denied scheme.
+///
+/// The order is the whole point. This writer NORMALIZES the destination before
+/// it emits it - it drops control characters, and its consumer decodes character
+/// references - so the probe has to run on the normalized form. Probing the
+/// authored form and normalizing afterwards means the writer itself
+/// manufactures the live URL out of one the probe had already dismissed
+/// (`markup-carve/carve-rs#806`).
 fn encode_markdown_destination(url: &str) -> String {
-    let sanitized = sanitize_md_url(url);
+    // 1. Strip first, probe second. The strip drops all of `\p{Cc}`, the probe
+    //    skips only up to U+0020 plus whitespace, so `java<DEL>script:` and the
+    //    C1 range walked straight through and came out clean on the far side.
+    //    The ANSI target of this same engine already strips before it probes
+    //    (`render_ansi.rs`), and carve-php strips inside its probe.
+    let sanitized = sanitize_md_url(&strip_controls(url));
     let mut out = String::new();
     for ch in sanitized.chars() {
         match ch {
@@ -1029,7 +1026,83 @@ fn encode_markdown_destination(url: &str) -> String {
             _ => out.push(ch),
         }
     }
-    strip_controls(&out)
+    // 2. Neutralize character references, so the bytes the consumer resolves are
+    //    the bytes probed in step 1.
+    neutralize_char_refs(&out)
+}
+
+/// Escape every ampersand that OPENS an HTML character reference.
+///
+/// A CommonMark consumer decodes character references inside a link
+/// destination, so `&#106;avascript:alert1` reaches the browser as
+/// `javascript:alert1` - a scheme the probe never saw, because the probe reads
+/// the authored bytes. `&#x6A;` and `javascript&colon;alert1` are the same trick
+/// (the second hides the colon, so there is no scheme to find at all).
+///
+/// Escaping the ampersand rather than percent-encoding it is what keeps this
+/// honest: percent-encoding `&` would corrupt every legitimate query string,
+/// while `&amp;` decodes back to `&` in the consumer, so the URL it resolves is
+/// byte-for-byte the one probed here. It also stops the consumer from silently
+/// rewriting an authored `&#106;` into `j`. An ampersand that opens nothing
+/// (`?a=1&b=2`) is left exactly as authored.
+fn neutralize_char_refs(url: &str) -> String {
+    if !url.contains('&') {
+        return url.to_string();
+    }
+    let mut out = String::with_capacity(url.len() + 8);
+    for (i, ch) in url.char_indices() {
+        if ch == '&' && opens_char_ref(&url[i + ch.len_utf8()..]) {
+            out.push_str("&amp;");
+        } else {
+            out.push(ch);
+        }
+    }
+    out
+}
+
+/// Does the text after an `&` spell a character reference?
+///
+/// The three forms a consumer decodes: `#DIGITS;`, `#xHEXDIGITS;` and `NAME;`.
+/// An unknown NAME counts too - a consumer leaves it alone either way, so
+/// escaping it changes nothing a reader sees, and guessing which names are known
+/// would be a second denylist to keep in step with three engines.
+fn opens_char_ref(rest: &str) -> bool {
+    let mut chars = rest.chars();
+    match chars.next() {
+        Some('#') => {
+            let digits = chars.as_str();
+            let (digits, hex) = match digits.strip_prefix(['x', 'X']) {
+                Some(after) => (after, true),
+                None => (digits, false),
+            };
+            for (seen, c) in digits.chars().enumerate() {
+                if c == ';' {
+                    return seen > 0;
+                }
+                let is_digit = if hex {
+                    c.is_ascii_hexdigit()
+                } else {
+                    c.is_ascii_digit()
+                };
+                if !is_digit || seen >= 8 {
+                    return false;
+                }
+            }
+            false
+        }
+        Some(c) if c.is_ascii_alphabetic() => {
+            for (seen, c) in (1usize..).zip(chars) {
+                if c == ';' {
+                    return true;
+                }
+                if !c.is_ascii_alphanumeric() || seen >= 32 {
+                    return false;
+                }
+            }
+            false
+        }
+        _ => false,
+    }
 }
 
 fn normalize(text: &str) -> String {

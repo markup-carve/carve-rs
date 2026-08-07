@@ -23,6 +23,20 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Carve target reproduces the authored `</#slug>` and never expanded, so it is
   unchanged.
 
+- **The Markdown writer probes the destination it will actually emit.** It
+  normalizes a destination on the way out - it drops control characters, and its
+  consumer decodes character references - but it probed the authored form, so
+  the writer itself manufactured live URLs the denylist had already dismissed.
+  `[t](java<U+007F>script:alert1)` came out as `[t](javascript:alert1)`, and so
+  did the whole C1 range; `[t](&#106;avascript:alert1)`, `&#x6A;`,
+  `javascript&colon;` and `javascript&#58;` came out verbatim and decoded to a
+  live scheme one hop downstream. **Behavior change:** a destination whose
+  scheme is denied only once control characters are stripped is now blanked (the
+  ANSI target of this engine, and carve-php, already did this), and an ampersand
+  that opens a character reference is emitted as `&amp;`, so a consumer decodes
+  it back to the authored bytes instead of into a scheme. An ampersand that
+  opens nothing, such as the `&` in a query string, is untouched.
+
 - **A list marker inside an open fence is code text.** PART 9 section 24 places
   a line by the COLUMN it reaches and does not read its first character, so a
   list marker at an item's content column, inside a fence that item opened, is
