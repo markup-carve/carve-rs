@@ -43,6 +43,28 @@ fn the_abbreviation_definition_line_is_escaped() {
     );
 }
 
+/// The abbreviation KEY escapes too. The parser will not accept a `<` in a
+/// term, so this slot is only reachable through AST ingest - which is a caller
+/// handing over a tree from a database row or a bridge, exactly the input that
+/// has no parser in front of it.
+#[test]
+fn an_ingested_abbreviation_key_is_escaped() {
+    let doc = carve::parse("*[AB]: exp\n\nAB\n");
+    let json = carve::to_json(&doc).replace("\"AB\"", "\"<script>\"");
+    let ingested = carve::from_json(&json).expect("the patched tree is still valid");
+    let out = carve::render_markdown(&ingested).expect("markdown renders");
+
+    assert!(
+        !out.contains("<script>"),
+        "raw HTML survived in a key: {out}"
+    );
+    assert_eq!(
+        out.matches("&lt;script&gt;").count(),
+        2,
+        "the definition line and the occurrence should escape alike: {out}"
+    );
+}
+
 /// Both positions escape, so the reference still matches its definition in the
 /// emitted Markdown.
 #[test]
