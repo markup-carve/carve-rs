@@ -9,6 +9,21 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A fenced body is not a paragraph, so a line below a list item's content
+  column closes the item.** A fence opened on an item's MARKER line with its
+  body below that column folded the below-column line into the code text, and
+  the closer with it, so the fence never closed: `- ` + ` ``` ` / ` x` / ` ``` `
+  rendered one code block holding `x` and a stray delimiter. PART 9 §24 has the
+  item close there instead, holding an EMPTY code block, with the residue
+  re-parsed in the surviving context - the answer the block-quote spelling of
+  the same shape already gave. The guard is on the OPEN fence, so it also
+  reaches a fence opened on a CONTINUATION line, and it clears at the closer: a
+  below-column line after a CLOSED fence still folds into the item as before.
+  A below-column list MARKER closes the item the same way, and the list it
+  starts is a list of its own rather than a sub-list of the item. Two
+  consequences follow: a fence's closer must be inside the same container, so a
+  closer below the content column no longer makes the fence interrupt the item's
+  paragraph; and at the content column a marker is still code text.
 - **A reference definition is anchored at end of line.** `reference_definition`
   ends in `newline` and always has, so what follows the destination and the
   optional title makes the production FAIL and the line is an ordinary

@@ -5084,6 +5084,16 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     // marker). Nested content and sub-blocks of the last item dedent by this, so
     // it persists across iterations and is updated as each item is opened.
     let mut content_col = base_indent + 2;
+    // The current item's own fenced code block, still OPEN. A FENCED BODY IS
+    // NOT A PARAGRAPH, so nothing below the content column folds into the item
+    // while one is open: PART 9 §24's S1 stops at the ITEM, S2 never fires, and
+    // S4's lazy branch wants a paragraph a verbatim body is not - the item and
+    // the list close, and the residue re-parses in the surviving context
+    // (markup-carve/carve#950). It lives here, beside `content_col`, because the
+    // guard is on the OPEN FENCE rather than on where the fence was opened: the
+    // opener may be the MARKER line, which the collectors never see, or a later
+    // CONTINUATION line, after the item's paragraph state has reopened.
+    let mut item_open_fence: Option<FenceOpen> = None;
     while let Some(line) = cur.peek() {
         if is_blank_line(line) {
             // A blank alone does not loosen the list; it loosens only when the
@@ -5135,9 +5145,21 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 if pending_blank && indent < content_col {
                     break;
                 }
+                // The item holds an OPEN fenced body and this line is below its
+                // content column, so §24 closes the item and the list here
+                // rather than folding the line in (#950). The collector below
+                // stops on the same state and would otherwise return nothing,
+                // leaving the cursor where it is.
+                if item_open_fence.is_some() && indent < content_col {
+                    break;
+                }
                 if let Some(last) = items.last_mut() {
-                    let mut nested =
-                        collect_item_continuation_block_mapped(cur, base_indent, content_col);
+                    let mut nested = collect_item_continuation_block_mapped(
+                        cur,
+                        base_indent,
+                        content_col,
+                        &mut item_open_fence,
+                    );
                     // A heading keeps the item open for flush-left lazy text.
                     // The heading itself ends at its newline and absorbs
                     // nothing (PART 2 SINGLE-LINE HEADINGS), but when the
@@ -5254,6 +5276,17 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             if pending_blank && marker.indent < content_col {
                 break;
             }
+            // The same fenced-body guard the non-marker branch above applies. A
+            // MARKER below the content column is a line below the content
+            // column, and §24 stops at the ITEM for both: S1 walks the stack by
+            // the indentation a line supplies, which has nothing to do with
+            // what the line says. Whether the residue is a sub-list or prose is
+            // decided in the surviving context, AFTER the containers close - so
+            // reading the marker first nested it inside the very item the open
+            // fence closes (markup-carve/carve#950).
+            if item_open_fence.is_some() && marker.indent < content_col {
+                break;
+            }
             if let Some(last) = items.last_mut() {
                 let sub_indent = marker.indent;
                 let mut nested = collect_indented_block_mapped(cur, base_indent, content_col);
@@ -5366,6 +5399,8 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             let byte_off = (marker.content.as_ptr() as usize).saturating_sub(l.as_ptr() as usize);
             indent_columns(l) + byte_off.saturating_sub(leading_ws(l))
         };
+        // A new item carries none of the previous item's fence state.
+        item_open_fence = None;
         let item_source_line = cur.source_line(cur.pos);
         let item_at = cur.pos;
         cur.consume();
@@ -5555,7 +5590,16 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         {
             let mut stream = item_marker_source(cur, marker.content, item_at);
             let before_block = cur.pos;
-            stream.append(collect_indented_block_mapped(cur, base_indent, content_col));
+            // A fence can open on the MARKER LINE, where its opener is the
+            // marker-line content rather than a collected line - so the
+            // collector's fenced-body guard is seeded from it (corpus 276).
+            item_open_fence = detect_fence_open(marker.content);
+            stream.append(collect_indented_block_mapped_after_fence(
+                cur,
+                base_indent,
+                content_col,
+                &mut item_open_fence,
+            ));
             // A heading on the marker line (`- # H`) folds its trailing
             // flush-left plain text as heading continuation (`- # H\nlazy` ->
             // one `<h1>H\nlazy</h1>` inside the item), matching carve-js /
@@ -5659,6 +5703,17 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 }
             }
             let indent = indent_columns(next);
+            // A FENCED BODY IS NOT A PARAGRAPH (§24, markup-carve/carve#950).
+            // The lead paragraph may have ABSORBED a fence opener as text - §10
+            // I4 keeps a fence with no closer left in the item from interrupting
+            // - but the LAYOUT still reads a fence there, so a line below the
+            // content column closes the item instead of folding in. The item's
+            // fence state is one variable across all three of its collection
+            // sites, so the outer loop below sees the same open fence and closes
+            // the list at this line.
+            if item_open_fence.is_some() && indent < content_col {
+                break;
+            }
             if indent < content_col {
                 // NO SPECIAL CASE FOR AN ABSORBED FENCE. This used to break
                 // when the paragraph held an invalid colon fence and ended in a
@@ -5721,6 +5776,7 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             if let Some(anchors) = &mut anchors {
                 anchors.push(inline_anchor_for_line(cur, cur.pos, &dedented));
             }
+            track_collected_fence(&mut item_open_fence, &dedented, true);
             para_lines.push(dedented);
             cur.consume();
         }
@@ -6343,8 +6399,9 @@ fn collect_item_continuation_block_mapped(
     cur: &mut LineCursor,
     parent_indent: usize,
     content_col: usize,
+    open_fence: &mut Option<FenceOpen>,
 ) -> MappedSource {
-    collect_indented_block_mapped_with(cur, parent_indent, content_col, true)
+    collect_indented_block_mapped_with(cur, parent_indent, content_col, true, open_fence)
 }
 
 /// How far to dedent a collected line, given the container's content column.
@@ -6394,7 +6451,20 @@ fn collect_indented_block_mapped(
     parent_indent: usize,
     strip_cols: usize,
 ) -> MappedSource {
-    collect_indented_block_mapped_with(cur, parent_indent, strip_cols, false)
+    collect_indented_block_mapped_with(cur, parent_indent, strip_cols, false, &mut None)
+}
+
+/// The same collection, told that a fenced code block is ALREADY OPEN because
+/// its opener was the item's MARKER LINE (`- ``` `) - a line this collector
+/// never sees. Without the seed the guard below has nothing to guard, and the
+/// body's first below-column line folds in (PART 9 §24, markup-carve/carve#950).
+fn collect_indented_block_mapped_after_fence(
+    cur: &mut LineCursor,
+    parent_indent: usize,
+    strip_cols: usize,
+    open_fence: &mut Option<FenceOpen>,
+) -> MappedSource {
+    collect_indented_block_mapped_with(cur, parent_indent, strip_cols, false, open_fence)
 }
 
 fn collect_indented_block_mapped_with(
@@ -6402,6 +6472,7 @@ fn collect_indented_block_mapped_with(
     parent_indent: usize,
     strip_cols: usize,
     stop_at_content_column_marker: bool,
+    fence: &mut Option<FenceOpen>,
 ) -> MappedSource {
     if cur.line_map.is_none() {
         return MappedSource {
@@ -6410,6 +6481,7 @@ fn collect_indented_block_mapped_with(
                 parent_indent,
                 strip_cols,
                 stop_at_content_column_marker,
+                fence,
             ),
             line_map: Vec::new(),
             col_map: Vec::new(),
@@ -6471,6 +6543,26 @@ fn collect_indented_block_mapped_with(
         if indent <= parent_indent {
             break;
         }
+        // A FENCED BODY IS NOT A PARAGRAPH, so nothing below the content column
+        // folds while one is open (PART 9 §24, markup-carve/carve#950). §24's
+        // STEP algorithm says it twice over: a below-column line supplies none
+        // of the body's indentation, so S1 MATCH PREFIXES stops at the ITEM and
+        // S2 FENCED BODY never fires - S2 wants the innermost MATCHED container
+        // to be the body. S4 governs, and its lazy branch continues an open
+        // PARAGRAPH, which a verbatim body is not. The unmatched containers
+        // close: the item holds an EMPTY code block and the residue re-parses in
+        // the surviving context.
+        //
+        // The guard is on the OPEN FENCE, not on where the fence was opened.
+        // Seeding it from the marker line alone leaves the identical shape with
+        // the fence opened at the content column still folding, because a reader
+        // that asks "is a paragraph open" sees one again as soon as the body
+        // collects a line (corpus 276 row 6). And the fence need not be the
+        // item's first block at all - one opened on a CONTINUATION line closes
+        // the item at the same place (row 7).
+        if fence.is_some() && indent < strip_cols {
+            break;
+        }
         let is_marker = detect_list_marker_full(line).is_some();
         if stop_at_content_column_marker && is_marker && indent >= strip_cols {
             break;
@@ -6527,6 +6619,7 @@ fn collect_indented_block_mapped_with(
             comment_fence_strip = None;
         }
         let (sliced, consumed, synthetic) = slice_columns_mapped(line, stripped, is_marker);
+        track_collected_fence(fence, &sliced, indent >= strip_cols);
         lines.push(sliced);
         if cur.line_map.is_some() {
             line_map.push(cur.source_line(cur.pos));
@@ -6558,11 +6651,38 @@ fn collect_indented_block_mapped_with(
     }
 }
 
+/// Follow the fenced code block a collected line opens or closes, so the
+/// below-column guard above knows whether one is open.
+///
+/// Only a line AT OR PAST the content column can do either: below it the line
+/// never reached the container, so a fence-shaped one is paragraph text and
+/// opens nothing (§24 C3). The test runs on the DEDENTED line for the same
+/// reason `detect_fence_open` refuses an indented one - a residual column is
+/// still a column.
+fn track_collected_fence(fence: &mut Option<FenceOpen>, dedented: &str, at_content_column: bool) {
+    if !at_content_column {
+        return;
+    }
+    match *fence {
+        Some(open) => {
+            if is_fence_close(dedented, open) {
+                *fence = None;
+            }
+        }
+        None => {
+            if let Some(open) = detect_fence_open(dedented) {
+                *fence = Some(open);
+            }
+        }
+    }
+}
+
 fn collect_indented_block_plain_with(
     cur: &mut LineCursor,
     parent_indent: usize,
     strip_cols: usize,
     stop_at_content_column_marker: bool,
+    fence: &mut Option<FenceOpen>,
 ) -> String {
     let mut lines = Vec::new();
     let mut block_indent: Option<usize> = None;
@@ -6601,6 +6721,10 @@ fn collect_indented_block_plain_with(
         if indent <= parent_indent {
             break;
         }
+        // Same fenced-body guard as the mapped collector above (§24, #950).
+        if fence.is_some() && indent < strip_cols {
+            break;
+        }
         let is_marker = detect_list_marker_full(line).is_some();
         if stop_at_content_column_marker && is_marker && indent >= strip_cols {
             break;
@@ -6635,7 +6759,9 @@ fn collect_indented_block_plain_with(
         if comment_fence.is_none() {
             comment_fence_strip = None;
         }
-        lines.push(slice_columns(line, stripped, is_marker));
+        let sliced = slice_columns(line, stripped, is_marker);
+        track_collected_fence(fence, &sliced, indent >= strip_cols);
+        lines.push(sliced);
         cur.consume();
     }
     lines.join("\n")
@@ -6819,8 +6945,23 @@ fn interrupts_paragraph(cur: &mut LineCursor<'_>, line: &str) -> bool {
         }
         let strip = leading_ws(cur.lines[cur.pos]);
         let rest = &cur.lines[cur.pos + 1..];
+        // THE CLOSER HAS TO BE INSIDE THE SAME CONTAINER. Once this fence
+        // opens, a line below the container's content column closes the
+        // container: a fenced body is not a paragraph, so nothing folds into it
+        // from below (PART 9 §24, markup-carve/carve#950). A closer past that
+        // line is therefore not this fence's closer, and by §10 I4 a fence with
+        // no closer left does not interrupt - the delimiter run stays paragraph
+        // text.
+        //
+        // `strip` IS that column here: the caller dedents an item's line by the
+        // content column before asking, and `detect_fence_open` refuses a line
+        // that still carries indentation, so a fence reaching this point sat
+        // exactly at the column. At document level the strip is 0 and no line
+        // is below it, which leaves top-level fences untouched. A BLANK line is
+        // not below anything - inside an open fence it is verbatim content.
         if rest
             .iter()
+            .take_while(|l| is_blank_line(l) || leading_ws(l) >= strip)
             .any(|l| is_fence_close(&l[leading_ws(l).min(strip)..], open))
         {
             return true;
