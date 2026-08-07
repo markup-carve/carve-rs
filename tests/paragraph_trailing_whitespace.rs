@@ -1,7 +1,15 @@
-//! Trailing whitespace at the very END of a paragraph's final line is not
-//! significant and is stripped (CommonMark "final spaces are stripped"; matches
-//! carve-php and Djot). Whitespace before a MID-paragraph newline is untouched,
-//! so a two-space soft break and a backslash hard break are both preserved.
+//! Trailing whitespace on a CONTENT LINE is dropped - on every line of a
+//! paragraph, not only its last (PART 2 NO TRAILING WHITESPACE, carve#926).
+//!
+//! The rule used to be written here as "the very END of a paragraph's final
+//! line", with whitespace before a MID-paragraph newline untouched. That was a
+//! correct reading of PART 12 §7 at the time, which claimed `a` + SPACE +
+//! newline + `b` renders `<p>a \nb</p>`; §7 has since been corrected, because
+//! the executable spec does not render it that way.
+//!
+//! A backslash HARD BREAK is unaffected: the line ends in a backslash, which is
+//! content, so it does not end in whitespace at all. Carve has no two-space
+//! hard break for the strip to eat.
 
 #[test]
 fn final_trailing_space_is_stripped() {
@@ -32,19 +40,22 @@ fn plain_paragraph_is_unchanged() {
 
 #[test]
 fn final_trailing_whitespace_after_a_multi_line_paragraph_is_stripped() {
-    // Only the very last line's trailing whitespace is removed; the interior
-    // newline (a soft break) is preserved.
+    // The interior newline (a soft break) is preserved; only the whitespace
+    // goes.
     assert_eq!(carve::to_html("foo\nbar  "), "<p>foo\nbar</p>");
 }
 
 // --- hard / soft breaks must be preserved ---
 
 #[test]
-fn mid_paragraph_two_space_softbreak_is_preserved() {
-    // carve treats two trailing spaces before a mid-paragraph newline as a soft
-    // break that keeps the literal spaces (only the backslash form is a hard
-    // break). The trailing-whitespace strip MUST NOT touch this.
-    assert_eq!(carve::to_html("a  \nb"), "<p>a  \nb</p>");
+fn a_run_before_a_soft_break_is_dropped_like_any_other() {
+    // These two documents are the same document, which is the whole of
+    // carve#926's first half. The run used to survive here because the strip
+    // acted on the joined buffer's END rather than on each line.
+    assert_eq!(carve::to_html("a  \nb"), "<p>a\nb</p>");
+    assert_eq!(carve::to_html("a \nb"), "<p>a\nb</p>");
+    assert_eq!(carve::to_html("a\t\nb"), "<p>a\nb</p>");
+    assert_eq!(carve::to_html("a\nb"), "<p>a\nb</p>");
 }
 
 #[test]

@@ -412,7 +412,12 @@ fn list_nested_under_definition_is_inside_description() {
 
 #[test]
 fn empty_term_is_not_definition_list() {
-    assert_eq!(html(":: \n:  d"), "<p>:: \n:  d</p>");
+    // The trailing space after the marker is DROPPED on the way into the
+    // paragraph (PART 2 NO TRAILING WHITESPACE, carve#926) - it is a content
+    // line like any other, and the executable spec renders it this way. What
+    // this case pins is that the line is a PARAGRAPH rather than a definition
+    // entry, which is unchanged.
+    assert_eq!(html(":: \n:  d"), "<p>::\n:  d</p>");
 }
 
 #[test]

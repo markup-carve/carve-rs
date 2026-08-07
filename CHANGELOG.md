@@ -9,6 +9,24 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Trailing whitespace on a content line is dropped, on every line and not just
+  a block's last.** PART 2 carries a NO TRAILING WHITESPACE clause: a whitespace
+  run at the end of a content line does not reach the output and is not content.
+  This engine stripped only a paragraph's final line, so a run before a SOFT
+  BREAK survived - `abc<SP>` + newline + `def` and `abc` + newline + `def` are
+  the same document and now render the same. The rule reaches every content
+  line, so a heading, a list item, a block quote line, a definition term and
+  description, a footnote body line and a table caption all drop it too, and a
+  line block drops a ONE-column trailing gap (a run of two or more columns
+  became NBSP content under PART 9 §23 before this rule could reach it, so
+  `abc<SP><SP>` still ends in two non-breaking spaces). The dropped run is
+  U+0020 and U+0009 only: a no-break space, a zero-width space, a byte order
+  mark, an en quad, an ideographic space, a form feed and a vertical tab are
+  content and survive. Verbatim payloads (a fenced code block's body, a raw
+  block's body), whitespace interior to a construct (a code span, a literal
+  inline, a table cell) and the run in front of a hard-break backslash are
+  unaffected.
+
 - **Four padding slots take exactly one space.** `link_title` (read inline AND
   at a reference definition), `image_title`, the code fence opener's slot before
   its info string, the frontmatter opener's slot before its format token, and

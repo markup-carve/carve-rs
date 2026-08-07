@@ -169,9 +169,13 @@ fn empty_caption_is_not_a_caption() {
 
 #[test]
 fn caption_with_content_only_on_a_later_line_is_not_a_caption() {
+    // The delimiter line falls back to paragraph text, and its trailing space
+    // is dropped there like any other content line's (PART 2 NO TRAILING
+    // WHITESPACE, carve#926). What this case pins - that the line is not a
+    // caption - is unchanged.
     assert_eq!(
         h("![a](/u)\n^ \nmore"),
-        "<p><img src=\"/u\" alt=\"a\">\n^ \nmore</p>"
+        "<p><img src=\"/u\" alt=\"a\">\n^\nmore</p>"
     );
 }
 
