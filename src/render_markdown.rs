@@ -323,10 +323,15 @@ fn render_block(node: &BlockNode, ctx: &mut MarkdownContext, depth: usize) -> St
         // plain text and the terminal do not get to drop content the author
         // wrote, and dropping it made the output depend on whether a reference
         // exists elsewhere in the document (carve#589).
+        // The definition line goes through `escape_md_html` for the same reason
+        // the `<abbr>` built from it does: an expansion is author content, and
+        // this target's contract is that embedded HTML cannot become live
+        // markup downstream. Writing the occurrence escaped and the definition
+        // raw made one output disagree with itself (carve-rs#807).
         BlockNode::AbbreviationDef(def) => format!(
             "*[{}]: {}\n\n",
-            strip_controls(&def.abbr),
-            strip_controls(&def.expansion)
+            escape_md_html(&strip_controls(&def.abbr)),
+            escape_md_html(&strip_controls(&def.expansion))
         ),
         BlockNode::Comment(_) => String::new(),
     }
@@ -526,7 +531,10 @@ fn render_footnote_defs(doc: &Document, ctx: &mut MarkdownContext) -> String {
     for (label, blocks) in crate::ast_json::footnote_defs_in_source_order(doc) {
         out.push_str(&format!(
             "[^{}]: {}\n",
-            strip_controls(label),
+            // A label is author content, and it is reproduced verbatim in two
+            // places; both escape, so a reference still matches its definition
+            // (carve-rs#807).
+            escape_md_html(&strip_controls(label)),
             trim_non_nbsp(&render_blocks(blocks, ctx, 0))
         ));
     }
@@ -628,7 +636,11 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
         InlineNode::Image(image) => render_image(image),
         InlineNode::Span(span) => render_inlines(&span.children, ctx, depth + 1),
         InlineNode::Math(math) => {
-            let content = strip_controls(&math.content);
+            // Escaped, exactly as the HTML target escapes the same content: a
+            // consumer decodes the entity back to the character before its math
+            // renderer sees it, so `a < b` still reaches KaTeX as `a < b` while
+            // `<script>` cannot become a tag (carve-rs#807).
+            let content = escape_md_html(&strip_controls(&math.content));
             if math.display {
                 format!("$${content}$$")
             } else {
@@ -661,22 +673,13 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
             // Markdown has no abbreviation syntax; emit an HTML <abbr> so the
             // title survives (markdown allows inline HTML), matching carve-php.
             // Dropping it to plain text would lose the expansion.
-            let abbr_text = strip_controls(&abbr.abbr);
-            let text = abbr_text
-                .as_str()
-                .replace('&', "&amp;")
-                .replace('<', "&lt;")
-                .replace('>', "&gt;");
+            let text = escape_md_html(&strip_controls(&abbr.abbr));
             // Bound cumulative expansion bytes (memory-amplification DoS): once
             // the budget is exhausted, degrade to plain key text with no title.
             if crate::abbr_budget::try_spend(abbr.expansion.len()) {
-                let expansion = strip_controls(&abbr.expansion);
-                let title = expansion
-                    .as_str()
-                    .replace('&', "&amp;")
-                    .replace('<', "&lt;")
-                    .replace('>', "&gt;")
-                    .replace('"', "&quot;");
+                // The attribute context needs the quote too; the other three
+                // characters come from the one helper.
+                let title = escape_md_html(&strip_controls(&abbr.expansion)).replace('"', "&quot;");
                 format!("<abbr title=\"{title}\">{text}</abbr>")
             } else {
                 text
@@ -694,13 +697,20 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
             } else {
                 let id = strip_controls(footnote.id.as_deref().unwrap_or(""));
                 if ctx.defined_footnotes.contains(&id) {
-                    format!("[^{id}]")
+                    // Escaped like the definition above, so the pair still
+                    // matches, and like the unresolved branch below, which
+                    // already escapes -- that one was deciding the question for
+                    // brackets and skipping it for HTML (carve-rs#807).
+                    format!("[^{}]", escape_md_html(&id))
                 } else {
                     // UNRESOLVED: ordinary text, and its brackets are Markdown
                     // metacharacters that PART 11 section 8 M1 escapes
                     // UNCONDITIONALLY. Bare, they hand the re-parser markup the
-                    // document never had.
-                    format!("\\[^{id}\\]")
+                    // document never had. The label between them is author
+                    // content and gets the HTML pass for the same reason: this
+                    // branch was deciding the question for brackets and
+                    // skipping it for `<` (raised by codex review).
+                    format!("\\[^{}\\]", escape_md_html(&id))
                 }
             }
         }
@@ -760,7 +770,13 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
                 .resolve(&crossref.target)
                 .map(|(id, title)| (id.to_string(), title.to_string()));
             match resolved {
-                None => format!("</#{}>", strip_controls(&crossref.target)),
+                // UNRESOLVED: the authored marker, kept readable rather than
+                // escaped into noise - a reader can still act on `</#nope>`.
+                // The TARGET inside it is author content and can hold a `<`,
+                // and `</#a<script>` is a complete opening tag once this
+                // Markdown is rendered, so the target takes the HTML pass while
+                // the writer's own delimiters stay literal (carve-rs#807).
+                None => format!("</#{}>", escape_md_html(&strip_controls(&crossref.target))),
                 Some((id, title)) => {
                     let label = ctx.crossref_index.label(&id);
                     let text = match &label {
