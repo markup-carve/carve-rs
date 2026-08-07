@@ -9,6 +9,21 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A link or an autolink inside a link's label reaches the AST as the node the
+  author wrote.** The encoder flattened both to text, so `[[x](y)](z)` published
+  a link to `z` whose only child was `x` and the inner destination `y` was gone
+  from the tree entirely: `fmt` on the source wrote `[[x](y)](z)` back while
+  `fmt` on the same document taken through `--json` wrote `[x](z)`, two
+  spellings of one document. An autolink came back as a bare URL, which is a
+  different document again. "Links never nest" is a RENDERING rule, so it now
+  binds the renderer: the tree keeps the node and every target unwraps it at the
+  render seam. **No rendered output moves** - HTML, Markdown, plain text and
+  ANSI are byte-identical, including the `mailto:` scheme a nested autolink
+  drops from its visible text. What moves is what a consumer of the tree
+  receives. The node carries no non-anchor flag; a consumer infers it from
+  context. An unresolved reference, an image and a code span in a label are
+  unchanged.
+
 - **A reference definition carrying an unparseable attribute block stops
   defining, and the braces stay on the page.** The trailing `{...}` was peeled
   off a definition line by a balance scan before anything validated it, so a

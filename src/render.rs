@@ -11,6 +11,7 @@ use crate::escape::{
     sanitize_url, write_escaped_attr, write_escaped_text,
 };
 use crate::extension::{Options, RenderContext};
+use crate::parse::unwrap_nested_anchors;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fmt::Write as _;
 
@@ -2552,7 +2553,9 @@ fn render_link(out: &mut String, l: &Link, options: &Options<'_>, state: &mut Re
     out.push_str(&render_attrs_without_keys(&l.attrs, &["href"]));
     out.push('>');
     state.link_depth += 1;
-    render_inlines_stateful(out, &l.children, options, state);
+    // Render the label through the anchor-unwrapping view.
+    let children = unwrap_nested_anchors(&l.children);
+    render_inlines_stateful(out, children.as_ref(), options, state);
     state.link_depth -= 1;
     out.push_str("</a>");
 }

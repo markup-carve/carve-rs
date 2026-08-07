@@ -1,5 +1,6 @@
 use crate::ast::*;
 use crate::extension::Options;
+use crate::parse::unwrap_nested_anchors;
 use crate::render_text::{strip_controls, trim_non_nbsp};
 
 use crate::render::MAX_RENDER_DEPTH;
@@ -354,7 +355,9 @@ fn render_inline(node: &InlineNode, depth: usize) -> String {
             if link.ref_label.is_some() && link.href.is_empty() {
                 strip_controls(link.raw_ref.as_deref().unwrap_or_default())
             } else {
-                render_inlines_stateful(&link.children, depth + 1)
+                // Render the label through the anchor-unwrapping view.
+                let children = unwrap_nested_anchors(&link.children);
+                render_inlines_stateful(children.as_ref(), depth + 1)
             }
         }
         InlineNode::Image(image) => render_image(image),

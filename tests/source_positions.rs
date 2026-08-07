@@ -419,16 +419,13 @@ fn a_quoted_figure_spans_the_quote_and_its_caption() {
 }
 
 #[test]
-fn a_nested_autolink_unwraps_to_text_that_keeps_its_own_span() {
-    // A link cannot contain a link, so the autolink keeps only its DISPLAY
-    // text - a sub-slice of what it occupied. Handing over the autolink's whole
-    // span would cover the `<` and `>` as well, and a text node's span has to
-    // select the text it belongs to.
-    //
-    // The autolink is the WHOLE label here, so no neighbouring run merges with
-    // it (PART 12 §1a) and the narrowed span stays visible. With neighbours the
-    // merged run spans a gap -- the `<` and `>` -- and publishes no span at
-    // all; `a_nested_autolink_with_neighbours_publishes_no_span` covers that.
+fn a_nested_autolink_in_a_label_keeps_its_own_whole_span() {
+    // A LINK inside a link's label stays a node, and so does an autolink (PART
+    // 12 section 3a, markup-carve/carve#817): "links never nest" is a RENDERING
+    // rule that binds the renderer, not the encoder. So there is no narrowed
+    // display-text span to publish any more - the autolink is the node the
+    // author wrote and its span covers the `<` and the `>` with it, which is
+    // exactly the span it carries outside a label.
     let source = "[<http://h>](/u)\n";
     let doc = parse_with_positions(source);
     let BlockNode::Paragraph(paragraph) = &doc.children[0] else {
@@ -437,25 +434,24 @@ fn a_nested_autolink_unwraps_to_text_that_keeps_its_own_span() {
     let carve::ast::InlineNode::Link(link) = &paragraph.children[0] else {
         panic!("expected a link");
     };
-
-    let spans: Vec<String> = link
-        .children
-        .iter()
-        .filter_map(|node| match node {
-            carve::ast::InlineNode::Text(t) => Some(slice(source, t.pos.expect("text position"))),
-            _ => None,
-        })
-        .collect();
-
-    assert_eq!(spans, vec!["http://h"]);
+    match &link.children[..] {
+        [carve::ast::InlineNode::AutoLink(a)] => {
+            assert_eq!(a.href, "http://h");
+            assert_eq!(
+                slice(source, a.pos.expect("autolink position")),
+                "<http://h>"
+            );
+        }
+        other => panic!("expected the autolink to stay one node, got {other:?}"),
+    }
 }
 
 #[test]
-fn a_nested_autolink_with_neighbours_publishes_no_span() {
-    // `[pre <http://h> post](/u)`: the unwrapped display text joins the runs on
-    // either side of it, and the source between them carries `<` and `>` that
-    // the merged value does not. A span across that gap would not select its
-    // own text, so there is none -- absent beats wrong (§4).
+fn a_nested_autolink_with_neighbours_places_all_three_nodes() {
+    // `[pre <http://h> post](/u)`: this used to be one merged run with NO span,
+    // because the unwrapped display text joined its neighbours across the `<`
+    // and `>` and no offset selected the result. Nothing merges now, so all
+    // three nodes place, each selecting exactly its own characters (§4).
     let source = "[pre <http://h> post](/u)\n";
     let doc = parse_with_positions(source);
     let BlockNode::Paragraph(paragraph) = &doc.children[0] else {
@@ -465,21 +461,26 @@ fn a_nested_autolink_with_neighbours_publishes_no_span() {
         panic!("expected a link");
     };
     match &link.children[..] {
-        [carve::ast::InlineNode::Text(t)] => {
-            assert_eq!(t.value, "pre http://h post");
-            assert!(t.pos.is_none(), "expected no span, got {:?}", t.pos);
+        [carve::ast::InlineNode::Text(pre), carve::ast::InlineNode::AutoLink(a), carve::ast::InlineNode::Text(post)] =>
+        {
+            assert_eq!(slice(source, pre.pos.expect("pre position")), "pre ");
+            assert_eq!(
+                slice(source, a.pos.expect("autolink position")),
+                "<http://h>"
+            );
+            assert_eq!(slice(source, post.pos.expect("post position")), " post");
         }
-        other => panic!("expected one merged text node, got {other:?}"),
+        other => panic!("expected text, autolink, text, got {other:?}"),
     }
 }
 
 #[test]
-fn an_unwrapped_autolink_declines_when_the_text_is_not_the_source() {
-    // `<mailto:x@y.z>` displays `x@y.z`: the source carries a scheme the text
-    // does not, so no sub-slice equals it and the honest answer is none.
-    //
-    // The autolink is the whole label, so the node stands alone and its missing
-    // span is its own statement rather than a consequence of merging (§1a).
+fn a_mailto_autolink_in_a_label_places_the_source_it_stands_on() {
+    // `<mailto:x@y.z>` displays `x@y.z`, and the DISPLAY text used to be what
+    // the tree held - a rewritten string no sub-slice equalled, so it published
+    // no span. The node carries the source spelling now, scheme and all, so it
+    // places like any other autolink. The rewrite is the renderer's, at the
+    // render seam, where a span is not a question.
     let source = "[<mailto:x@y.z>](/u)\n";
     let doc = parse_with_positions(source);
     let BlockNode::Paragraph(paragraph) = &doc.children[0] else {
@@ -488,12 +489,16 @@ fn an_unwrapped_autolink_declines_when_the_text_is_not_the_source() {
     let carve::ast::InlineNode::Link(link) = &paragraph.children[0] else {
         panic!("expected a link");
     };
-
-    let unplaced = link.children.iter().any(|node| match node {
-        carve::ast::InlineNode::Text(t) => t.value == "x@y.z" && t.pos.is_none(),
-        _ => false,
-    });
-    assert!(unplaced, "a rewritten display text must not claim a span");
+    match &link.children[..] {
+        [carve::ast::InlineNode::AutoLink(a)] => {
+            assert_eq!(a.href, "mailto:x@y.z");
+            assert_eq!(
+                slice(source, a.pos.expect("autolink position")),
+                "<mailto:x@y.z>"
+            );
+        }
+        other => panic!("expected the autolink to stay one node, got {other:?}"),
+    }
 }
 
 #[test]
