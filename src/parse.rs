@@ -7557,10 +7557,24 @@ fn collect_definition_body(cur: &mut LineCursor, fence: &mut DefinitionBodyFence
         if !is_blank_line(line) {
             let indent = indent_columns(line);
             if indent >= 3 {
-                let sliced = slice_columns(line, 3.min(indent), false);
+                // A STRADDLING TAB LEAVES ITS RESIDUAL COLUMNS IN FRONT OF THE
+                // LINE (PART 9 §24 C1 gives a tab a column value, carve-rs#793).
+                // With `keep_residual` false a single tab - which reaches column
+                // 4, one PAST the body's column - was consumed whole and the
+                // residue landed FLUSH LEFT, where a `>` is a block opener. The
+                // four-space spelling of the same column keeps its fourth space,
+                // so the line sits at column 1 and is lazy text. Same column,
+                // two answers.
+                //
+                // The residual is written back as the spaces the tab bought past
+                // the margin, which is what makes the two spellings agree.
+                let sliced = slice_columns(line, 3.min(indent), true);
                 // Count what was actually removed rather than assuming three:
                 // `slice_columns` works in COLUMNS, and a tab is one codepoint
-                // spanning several of them.
+                // spanning several of them. The difference in LENGTH is the
+                // right quantity for both cases: with a residual it is
+                // `consumed - synthetic`, which is exactly the base the mapping
+                // in `slice_columns_mapped` documents.
                 col_map.push(cur.source_col(cur.pos).map(|c| {
                     c + line.chars().count().saturating_sub(sliced.chars().count()) as isize
                 }));
