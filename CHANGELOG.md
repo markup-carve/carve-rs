@@ -176,6 +176,29 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A denied URL scheme split by DEL or a C1 control is blanked** (PART 9 §25,
+  carve-rs#833). `[x](java<DEL>script:alert(1))` reached the rendered `href`
+  with the raw U+007F byte intact, and the image spelling reached `src` the same
+  way, while the plain `javascript:alert(1)` was blanked correctly. The denylist
+  was never wrong; the class of characters dropped before the scheme was read
+  was. `is_url_probe_skippable` tested `(c as u32) <= 0x20`, which stops short of
+  DEL and reaches only U+0085 of the C1 block, so a scheme split by any of the
+  rest was invisible to it. The predicate is now `char::is_control`, which is
+  the Cc category exactly, plus whitespace and the BOM - the same predicate the
+  ANSI and Markdown targets were already applying to a destination before they
+  probed it, which is why only HTML leaked. The SVG sanitizer's second copy of
+  the same rule had the same gap, where it also defeated the
+  reject-every-absolute-scheme check on paint attributes outright.
+
+  This is a **defense-in-depth fix, not a demonstrated execution**: whether such
+  a URL resolves depends on whether the consumer's URL parser discards the
+  character before it reads the scheme, and consumers differ. The probe class is
+  deliberately wider than the §29 emit class, because the two answer different
+  questions - what a target may write, versus what the probe must see through.
+  Filtering only removes characters, so the wider class can refuse more and can
+  never permit more; a destination that is allowed is still emitted with its
+  original bytes.
+
 - **A footnote with an empty body carries a backlink** (PART 9 §16,
   markup-carve/carve#688; carve-rs#826). A body with no blocks at all now gets
   the synthesized wrapping paragraph the rule already gives a body whose last

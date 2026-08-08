@@ -265,11 +265,22 @@ fn is_js_space(c: char) -> bool {
     ) || ('\u{2000}'..='\u{200A}').contains(&c)
 }
 
-/// The carve-js `SCHEME_STRIP_RE` character class: C0 controls + ASCII space,
-/// plus the Unicode separators and the BOM. Stripped before a URL scheme probe
-/// so `java\tscript:` / NBSP-obfuscated schemes are still detected.
+/// The carve-js `SCHEME_PROBE_STRIP_RE` character class: every control
+/// character - `char::is_control`, which is Cc exactly, so U+0000..U+001F plus
+/// DEL and the C1 block - and every ASCII space, plus the Unicode separators
+/// and the BOM. Stripped before a URL scheme probe so `java\tscript:`,
+/// `java<DEL>script:` and NBSP-obfuscated schemes are all still detected.
+///
+/// THIS IS THE SECOND SPELLING of `escape::is_url_probe_skippable` and it has
+/// to stay as wide. It is a PROBE class, not an emit class: PART 9 §29 T5 puts
+/// DEL and C1 outside what a target may emit, and reading this class off that
+/// one is what let a split scheme through `href` / `xlink:href` and defeated
+/// `has_absolute_scheme`'s reject-every-absolute-scheme rule outright
+/// (markup-carve/carve-rs#833). Filtering only removes characters, so a wider
+/// class refuses more and can never permit more.
 fn is_scheme_strip(c: char) -> bool {
-    (c as u32) <= 0x20
+    c.is_control()
+        || (c as u32) <= 0x20
         || matches!(
             c,
             '\u{00A0}'
