@@ -110,9 +110,6 @@ impl ExternalLinks {
                 for child in &mut b.children {
                     self.visit_block(child);
                 }
-                if let Some(attr) = &mut b.attribution {
-                    self.visit_inlines(attr);
-                }
             }
             BlockNode::Table(t) => {
                 if let Some(cap) = &mut t.caption {

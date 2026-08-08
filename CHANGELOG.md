@@ -36,6 +36,16 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `content`): the unknown-field check refused those spellings before either
   could be consulted.
 
+- **`BlockQuote` loses its `attribution` field** (carve-rs#832). Code that builds
+  a `BlockQuote` with a struct literal drops `attribution: None`; code that read
+  the field has nothing to read. It was never set to `Some` anywhere in the
+  crate, no engine publishes an `attribution` property, and the AST schema does
+  not name one - `block_quote` carries only `type`, `children`, `attrs` and
+  `pos`, and ingest refuses the property like any other the schema does not
+  name. So nothing an author writes, renders or ingests moves; the removal is
+  visible only to a Rust consumer that names the field. A quote's attribution
+  line is, and stays, an ordinary second paragraph.
+
 - **`Span` and `RawInline` each gain an `injected` field.** Code that builds
   either with a struct literal, or matches one exhaustively, needs the extra
   field (`injected: false` for anything an author wrote). It records that a

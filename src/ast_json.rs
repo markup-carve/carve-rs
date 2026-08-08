@@ -704,9 +704,6 @@ fn write_code_block(out: &mut String, n: &CodeBlock) {
 fn write_block_quote(out: &mut String, n: &BlockQuote) {
     let mut w = typed(out, "block_quote");
     w.field("children", |out| write_blocks(out, &n.children));
-    if let Some(attribution) = &n.attribution {
-        w.field("attribution", |out| write_inlines(out, attribution));
-    }
     write_attrs_field(&mut w, &n.attrs);
     write_pos_field(&mut w, &n.pos);
     w.finish();
@@ -1335,7 +1332,6 @@ fn decode_block(value: &Json) -> Result<BlockNode, AstJsonError> {
         "block_quote" => Ok(BlockNode::BlockQuote(BlockQuote {
             attrs: optional_attrs(obj)?,
             children: decode_blocks(required_array(obj, "block_quote", "children")?)?,
-            attribution: optional_inlines(obj, "attribution")?,
             pos: optional_pos(obj, "block_quote")?,
         })),
         "list" => Ok(BlockNode::List(List {

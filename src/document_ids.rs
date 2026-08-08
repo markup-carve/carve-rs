@@ -383,9 +383,6 @@ impl Seeder {
     fn walk_blockquote(&mut self, b: &BlockQuote) {
         self.reserve_attrs(&b.attrs);
         self.walk_blocks(&b.children);
-        if let Some(attribution) = &b.attribution {
-            self.walk_inlines(attribution);
-        }
     }
 
     fn walk_table(&mut self, t: &Table) {
