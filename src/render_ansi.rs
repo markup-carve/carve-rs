@@ -1,7 +1,7 @@
 use crate::ast::*;
 use crate::extension::Options;
 use crate::parse::unwrap_nested_anchors;
-use crate::render_text::{strip_controls, trim_non_nbsp};
+use crate::render_text::{strip_terminal_controls, trim_non_nbsp};
 
 use crate::render::MAX_RENDER_DEPTH;
 
@@ -169,8 +169,8 @@ fn render_block(node: &BlockNode, ctx: &mut AnsiContext, depth: usize) -> String
             format!("{content}\n\n")
         }
         BlockNode::CodeBlock(code) => {
-            let lang = code.lang.as_deref().map(strip_controls);
-            render_code_block(&strip_controls(&code.content), lang.as_deref())
+            let lang = code.lang.as_deref().map(strip_terminal_controls);
+            render_code_block(&strip_terminal_controls(&code.content), lang.as_deref())
         }
         BlockNode::BlockQuote(quote) => {
             ctx.block_quote_depth += 1;
@@ -223,8 +223,8 @@ fn render_block(node: &BlockNode, ctx: &mut AnsiContext, depth: usize) -> String
             style(
                 &format!(
                     "[raw:{}] {}",
-                    strip_controls(&raw.format),
-                    strip_controls(&raw.content)
+                    strip_terminal_controls(&raw.format),
+                    strip_terminal_controls(&raw.content)
                 ),
                 DIM
             )
@@ -236,8 +236,8 @@ fn render_block(node: &BlockNode, ctx: &mut AnsiContext, depth: usize) -> String
             style(
                 &format!(
                     "*[{}]: {}",
-                    strip_controls(&def.abbr),
-                    strip_controls(&def.expansion)
+                    strip_terminal_controls(&def.abbr),
+                    strip_terminal_controls(&def.expansion)
                 ),
                 DIM
             )
@@ -286,7 +286,7 @@ fn render_code_block(content: &str, lang: Option<&str>) -> String {
 fn prepend_label(body: String, label: Option<&str>, ctx: &AnsiContext) -> String {
     match label {
         Some(label) if !label.is_empty() => {
-            let l = strip_controls(label);
+            let l = strip_terminal_controls(label);
             let prefix = block_quote_prefix(ctx);
             let label_line = if prefix.is_empty() {
                 style(&l, BOLD)
@@ -536,7 +536,7 @@ fn render_footnote_defs(doc: &Document, ctx: &mut AnsiContext) -> String {
             "{} {}\n",
             // The marker as written (PART 10 §10a): the caret is the construct.
             style(
-                &format!("[^{}]", strip_controls(label)),
+                &format!("[^{}]", strip_terminal_controls(label)),
                 &(FG_CYAN.to_string() + DIM)
             ),
             trim_non_nbsp(&render_blocks(blocks, ctx, 0))
@@ -563,9 +563,9 @@ fn render_inline(node: &InlineNode, ctx: &mut AnsiContext, depth: usize) -> Stri
         return String::new();
     }
     match node {
-        InlineNode::Text(text) => strip_controls(&text.value),
-        InlineNode::EscapedText(text) => strip_controls(&text.value),
-        InlineNode::SmartPunctuation(s) => strip_controls(smart_punctuation_text(s)),
+        InlineNode::Text(text) => strip_terminal_controls(&text.value),
+        InlineNode::EscapedText(text) => strip_terminal_controls(&text.value),
+        InlineNode::SmartPunctuation(s) => strip_terminal_controls(smart_punctuation_text(s)),
         InlineNode::Emphasis(emphasis) => match emphasis.kind {
             EmphasisKind::Italic => {
                 style(&render_inlines(&emphasis.children, ctx, depth + 1), ITALIC)
@@ -593,10 +593,10 @@ fn render_inline(node: &InlineNode, ctx: &mut AnsiContext, depth: usize) -> Stri
                 &(BOLD.to_string() + ITALIC),
             ),
         },
-        InlineNode::Code(code) => style(&strip_controls(&code.value), FG_BRIGHT_YELLOW),
+        InlineNode::Code(code) => style(&strip_terminal_controls(&code.value), FG_BRIGHT_YELLOW),
         InlineNode::Link(link) => {
             if link.ref_label.is_some() && link.href.is_empty() {
-                return strip_controls(link.raw_ref.as_deref().unwrap_or_default());
+                return strip_terminal_controls(link.raw_ref.as_deref().unwrap_or_default());
             }
             ctx.link_depth += 1;
             // Render the label through the anchor-unwrapping view.
@@ -620,7 +620,7 @@ fn render_inline(node: &InlineNode, ctx: &mut AnsiContext, depth: usize) -> Stri
             // from the sanitized value turns a denied autolink - whose text IS the
             // URL, so no parenthetical was ever shown - into
             // `javascript:alert(1) ()`.
-            let authored = strip_controls(&link.href);
+            let authored = strip_terminal_controls(&link.href);
             let mut out = style(&text, &(UNDERLINE.to_string() + FG_BLUE));
             if !authored.starts_with('#') && authored != strip_ansi(&text) {
                 let shown = crate::escape::sanitize_url(&authored);
@@ -630,32 +630,35 @@ fn render_inline(node: &InlineNode, ctx: &mut AnsiContext, depth: usize) -> Stri
         }
         InlineNode::Image(image) => render_image(image),
         InlineNode::Span(span) => render_inlines(&span.children, ctx, depth + 1),
-        InlineNode::Math(math) => style(&strip_controls(&math.content), FG_BRIGHT_MAGENTA),
+        InlineNode::Math(math) => style(&strip_terminal_controls(&math.content), FG_BRIGHT_MAGENTA),
         InlineNode::RawInline(_) => String::new(),
         // §27: always emitted (unlike raw passthrough above). It is prose, not
         // code, so it carries no code styling.
-        InlineNode::LiteralInline(lit) => strip_controls(&lit.content),
+        InlineNode::LiteralInline(lit) => strip_terminal_controls(&lit.content),
         InlineNode::Symbol(symbol) => format!(":{}:", symbol.name),
         InlineNode::AutoLink(link) => {
             // Raw autolink content (URI keeps its scheme; email shows address).
             style(
-                &strip_controls(&link.text),
+                &strip_terminal_controls(&link.text),
                 &(UNDERLINE.to_string() + FG_BLUE),
             )
         }
-        InlineNode::Mention(mention) => format!("@{}", strip_controls(&mention.user)),
-        InlineNode::Tag(tag) => format!("#{}", strip_controls(&tag.name)),
+        InlineNode::Mention(mention) => format!("@{}", strip_terminal_controls(&mention.user)),
+        InlineNode::Tag(tag) => format!("#{}", strip_terminal_controls(&tag.name)),
         InlineNode::Extension(extension) => render_inlines(&extension.children, ctx, depth + 1),
         InlineNode::Abbreviation(abbr) => {
             // Bound cumulative expansion bytes (memory-amplification DoS): once
             // the budget is exhausted, drop the `(EXPANSION)` suffix and emit
             // the plain key only.
-            let key = strip_controls(&abbr.abbr);
+            let key = strip_terminal_controls(&abbr.abbr);
             if crate::abbr_budget::try_spend(abbr.expansion.len()) {
                 format!(
                     "{}{}",
                     key,
-                    style(&format!(" ({})", strip_controls(&abbr.expansion)), DIM)
+                    style(
+                        &format!(" ({})", strip_terminal_controls(&abbr.expansion)),
+                        DIM
+                    )
                 )
             } else {
                 key
@@ -671,7 +674,7 @@ fn render_inline(node: &InlineNode, ctx: &mut AnsiContext, depth: usize) -> Stri
                 ctx.link_depth = outer;
                 format!("({rendered})")
             } else {
-                let id = strip_controls(footnote.id.as_deref().unwrap_or(""));
+                let id = strip_terminal_controls(footnote.id.as_deref().unwrap_or(""));
                 if ctx.defined_footnotes.contains(&id) {
                     style(&format!("[{id}]"), &(FG_CYAN.to_string() + BOLD))
                 } else {
@@ -695,11 +698,11 @@ fn render_inline(node: &InlineNode, ctx: &mut AnsiContext, depth: usize) -> Stri
         InlineNode::CriticSubstitute(sub) => format!(
             "{}{}",
             style(
-                &strip_controls(&sub.old_text),
+                &strip_terminal_controls(&sub.old_text),
                 &(STRIKE.to_string() + "\x1b[31m")
             ),
             style(
-                &strip_controls(&sub.new_text),
+                &strip_terminal_controls(&sub.new_text),
                 &(FG_GREEN.to_string() + UNDERLINE)
             ),
         ),
@@ -708,7 +711,7 @@ fn render_inline(node: &InlineNode, ctx: &mut AnsiContext, depth: usize) -> Stri
         // two targets of one engine disagree about whether the document says it.
         // carve-php kept it (carve#352, corpus 33-editorial-markup).
         InlineNode::Comment(_) => String::new(),
-        InlineNode::CriticComment(c) => strip_controls(&c.text),
+        InlineNode::CriticComment(c) => strip_terminal_controls(&c.text),
         // A RESOLVED cross-reference renders exactly like a link to the same
         // heading, because that is what it is - the href is a fragment, so the
         // `(href)` suffix a link would add is suppressed there too. Only an
@@ -723,12 +726,12 @@ fn render_inline(node: &InlineNode, ctx: &mut AnsiContext, depth: usize) -> Stri
                 .resolve(&crossref.target)
                 .map(|(id, title)| (id.to_string(), title.to_string()));
             match resolved {
-                None => format!("</#{}>", strip_controls(&crossref.target)),
+                None => format!("</#{}>", strip_terminal_controls(&crossref.target)),
                 Some((id, title)) => {
                     let label = ctx.crossref_index.label(&id);
                     let text = match &label {
                         Some(nodes) => render_inlines(nodes, ctx, depth + 1),
-                        None => strip_controls(&title),
+                        None => strip_terminal_controls(&title),
                     };
                     // Same expansion budget the abbreviation arm below spends,
                     // degrading to the authored target (carve-rs#805). See
@@ -736,7 +739,7 @@ fn render_inline(node: &InlineNode, ctx: &mut AnsiContext, depth: usize) -> Stri
                     let text = if crate::abbr_budget::try_spend(text.len()) {
                         text
                     } else {
-                        strip_controls(&crossref.target)
+                        strip_terminal_controls(&crossref.target)
                     };
                     if ctx.link_depth > 0 {
                         text
@@ -747,7 +750,7 @@ fn render_inline(node: &InlineNode, ctx: &mut AnsiContext, depth: usize) -> Stri
             }
         }
         // Tier-2 ext node; the core renderer has no numbering, so emit the source.
-        InlineNode::CitationGroup(group) => strip_controls(&group.raw),
+        InlineNode::CitationGroup(group) => strip_terminal_controls(&group.raw),
         InlineNode::CaptionNumber(number) => number
             .number
             .map(|n| n.to_string())
@@ -757,7 +760,7 @@ fn render_inline(node: &InlineNode, ctx: &mut AnsiContext, depth: usize) -> Stri
 
 fn render_image(node: &Image) -> String {
     if node.ref_label.is_some() && node.src.is_empty() {
-        return strip_controls(node.raw_ref.as_deref().unwrap_or_default());
+        return strip_terminal_controls(node.raw_ref.as_deref().unwrap_or_default());
     }
     format!(
         "{}{}{}",
@@ -765,7 +768,7 @@ fn render_image(node: &Image) -> String {
         if node.alt.is_empty() {
             String::new()
         } else {
-            format!(" {}", strip_controls(&node.alt))
+            format!(" {}", strip_terminal_controls(&node.alt))
         },
         style("]", FG_MAGENTA)
     )

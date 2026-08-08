@@ -1,7 +1,7 @@
 use crate::ast::*;
 use crate::extension::Options;
 use crate::parse::unwrap_nested_anchors;
-use crate::render_text::{strip_controls, trim_non_nbsp};
+use crate::render_text::{strip_high_controls as strip_controls, trim_non_nbsp};
 
 use crate::render::MAX_RENDER_DEPTH;
 

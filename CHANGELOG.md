@@ -179,6 +179,20 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   emitted an `<a>` inside the link's own `<a>`; a mention or tag inside any
   anchor now renders its template-less `<span>` form, which is what links,
   autolinks and cross-references already did there.
+- **The Markdown and plain-text targets emit a non-whitespace C0 control instead
+  of deleting it** (spec PART 9 §29 C0 CONTROLS ON THE RENDER TARGETS,
+  markup-carve/carve#979; carve-rs#812). After markup-carve/carve#963 the
+  whitespace of the language is exactly U+0020, U+0009, U+000A and U+000D, and
+  every other C0 control - U+0000..U+0008, U+000B, U+000C, U+000E..U+001F - is
+  ordinary content. Both targets stripped the whole class, so `a<VT>b<FF>c`
+  rendered `abc` where the HTML target already rendered it whole; four Markdown
+  readers were measured and all four keep these characters, so the strip made
+  Carve the lossy party.
+
+  **The ANSI target is unchanged and keeps its strip broad.** It is the one
+  target whose consumer acts on the character, and §25 still requires DEL and the
+  C1 controls to go with the C0 ones there. DEL and the C1 controls also still go
+  on Markdown and plain, which §29 T5 leaves outside its scope.
 
 - **A container a lazy line folded into is still open.** PART 1 S4's lazy branch
   folds a flush-left line into the innermost open paragraph and closes nothing,
