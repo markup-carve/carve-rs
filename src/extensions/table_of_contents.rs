@@ -14,8 +14,8 @@
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 
-use crate::ast::{Attrs, BlockExtension, BlockNode, Document, Heading, RawBlock};
-use crate::extension::{BeforeRenderContext, CarveExtension, RenderContext, SmartTypographyMode};
+use crate::ast::{Attrs, BlockExtension, BlockNode, Document, Heading, InlineNode, RawBlock};
+use crate::extension::{BeforeRenderContext, CarveExtension, RenderContext};
 use crate::render::render_attrs_without_keys;
 
 /// Carrier extension name a `::: toc` block is rewritten to in `before_render`,
@@ -84,7 +84,14 @@ impl Default for TableOfContentsOptions {
 #[derive(Clone)]
 struct TocEntry {
     level: u8,
-    text: String,
+    /// The entry's display text as NODES (PART 9R R4, DERIVED DISPLAY TEXT
+    /// CLONES THE SAME NODES, markup-carve/carve#957). Not a string: a node
+    /// carries the source run, the emphasis, the code span and the escape, and
+    /// flattening here destroys all four before any renderer is invoked.
+    ///
+    /// The clone is [`crate::parse::derive_display_nodes`] in a LINK context -
+    /// an entry is placed inside the `<a>` this list emits.
+    label: Vec<InlineNode>,
     id: String,
 }
 
@@ -128,23 +135,21 @@ impl CarveExtension for TableOfContents {
     }
 
     fn before_render(&self, mut doc: Document, ctx: &BeforeRenderContext<'_>) -> Document {
-        // A TOC entry is prose the reader sees, so its text follows the
-        // document-global smart-typography mode (PART 9 §19); the id it links
-        // to does not (`next_id` keeps the glyph, as heading ids must).
-        let smart = ctx.options().smart_typography;
+        // A TOC entry is the heading's NODES, so nothing here spells them: the
+        // document-global smart-typography mode (PART 9 §19), the symbols map
+        // and the raw-HTML policy are the RENDERER's, and the nodes are handed
+        // to it below with the caller's own options. Deriving a string here used
+        // to settle the typography switch in a pre-render pass.
+        //
+        // The id it links to still keeps the glyph (`next_id`), as heading ids
+        // must - PART 9 §19 pins them byte-identical in both modes.
+        //
         // The renderer allocates ids over ALL headings in document order
         // (including nested ones). Reproduce that counter so a top-level
         // heading's link target matches the `<section id>` the core emits.
         let mut counts: BTreeMap<String, usize> = BTreeMap::new();
         let mut entries: Vec<TocEntry> = Vec::new();
-        collect_entries(
-            &doc.children,
-            &mut counts,
-            &self.opts,
-            &mut entries,
-            true,
-            smart,
-        );
+        collect_entries(&doc.children, &mut counts, &self.opts, &mut entries, true);
 
         if entries.is_empty() {
             return doc;
@@ -153,7 +158,9 @@ impl CarveExtension for TableOfContents {
         let html = format!(
             "<nav class=\"{}\">\n{}</nav>",
             escape_html(&self.opts.css_class),
-            build_list(&entries, self.opts.list_type),
+            build_list(&entries, self.opts.list_type, &|nodes| {
+                crate::render::render_inlines_inside_anchor(nodes, ctx.options())
+            }),
         );
         let toc = BlockNode::RawBlock(RawBlock {
             format: "html".into(),
@@ -178,7 +185,6 @@ fn collect_entries(
     opts: &TableOfContentsOptions,
     entries: &mut Vec<TocEntry>,
     top_level: bool,
-    smart: SmartTypographyMode,
 ) {
     for block in blocks {
         match block {
@@ -187,32 +193,24 @@ fn collect_entries(
                 if top_level && h.level >= opts.min_level && h.level <= opts.max_level {
                     entries.push(TocEntry {
                         level: h.level,
-                        text: strip_bidi(
-                            crate::render::plain_inlines_typography(&h.children, smart).trim(),
-                        ),
+                        label: crate::parse::derive_display_nodes(&h.children, true),
                         id,
                     });
                 }
             }
             BlockNode::List(l) => {
                 for item in &l.items {
-                    collect_entries(&item.children, counts, opts, entries, false, smart);
+                    collect_entries(&item.children, counts, opts, entries, false);
                 }
             }
-            BlockNode::BlockQuote(b) => {
-                collect_entries(&b.children, counts, opts, entries, false, smart)
-            }
-            BlockNode::Admonition(a) => {
-                collect_entries(&a.children, counts, opts, entries, false, smart)
-            }
-            BlockNode::Div(d) => collect_entries(&d.children, counts, opts, entries, false, smart),
-            BlockNode::Extension(e) => {
-                collect_entries(&e.children, counts, opts, entries, false, smart)
-            }
+            BlockNode::BlockQuote(b) => collect_entries(&b.children, counts, opts, entries, false),
+            BlockNode::Admonition(a) => collect_entries(&a.children, counts, opts, entries, false),
+            BlockNode::Div(d) => collect_entries(&d.children, counts, opts, entries, false),
+            BlockNode::Extension(e) => collect_entries(&e.children, counts, opts, entries, false),
             BlockNode::DefinitionList(dl) => {
                 for item in &dl.items {
                     for def in &item.definitions {
-                        collect_entries(def, counts, opts, entries, false, smart);
+                        collect_entries(def, counts, opts, entries, false);
                     }
                 }
             }
@@ -230,7 +228,6 @@ fn collect_all_entries(
     counts: &mut BTreeMap<String, usize>,
     lowercase: bool,
     entries: &mut Vec<TocEntry>,
-    smart: SmartTypographyMode,
 ) {
     for block in blocks {
         match block {
@@ -238,33 +235,27 @@ fn collect_all_entries(
                 let id = next_id(h, counts, lowercase);
                 entries.push(TocEntry {
                     level: h.level,
-                    text: strip_bidi(
-                        crate::render::plain_inlines_typography(&h.children, smart).trim(),
-                    ),
+                    label: crate::parse::derive_display_nodes(&h.children, true),
                     id,
                 });
             }
             BlockNode::List(l) => {
                 for item in &l.items {
-                    collect_all_entries(&item.children, counts, lowercase, entries, smart);
+                    collect_all_entries(&item.children, counts, lowercase, entries);
                 }
             }
             BlockNode::BlockQuote(b) => {
-                collect_all_entries(&b.children, counts, lowercase, entries, smart)
+                collect_all_entries(&b.children, counts, lowercase, entries)
             }
             BlockNode::Admonition(a) => {
-                collect_all_entries(&a.children, counts, lowercase, entries, smart)
+                collect_all_entries(&a.children, counts, lowercase, entries)
             }
-            BlockNode::Div(d) => {
-                collect_all_entries(&d.children, counts, lowercase, entries, smart)
-            }
-            BlockNode::Extension(e) => {
-                collect_all_entries(&e.children, counts, lowercase, entries, smart)
-            }
+            BlockNode::Div(d) => collect_all_entries(&d.children, counts, lowercase, entries),
+            BlockNode::Extension(e) => collect_all_entries(&e.children, counts, lowercase, entries),
             BlockNode::DefinitionList(dl) => {
                 for item in &dl.items {
                     for def in &item.definitions {
-                        collect_all_entries(def, counts, lowercase, entries, smart);
+                        collect_all_entries(def, counts, lowercase, entries);
                     }
                 }
             }
@@ -296,7 +287,11 @@ fn next_id(h: &Heading, counts: &mut BTreeMap<String, usize>, lowercase: bool) -
 /// its predecessor's predecessor stays a sibling `<li>` in the same nested
 /// `<ul>` rather than opening a fresh one. Returns the `<ul>…</ul>` list with
 /// its trailing newline.
-fn build_list(entries: &[TocEntry], list_type: ListType) -> String {
+fn build_list(
+    entries: &[TocEntry],
+    list_type: ListType,
+    render_label: &dyn Fn(&[InlineNode]) -> String,
+) -> String {
     let tag = list_type.tag();
     if entries.is_empty() {
         return String::new();
@@ -324,10 +319,19 @@ fn build_list(entries: &[TocEntry], list_type: ListType) -> String {
                 level_stack[depth - 1] = e.level;
             }
         }
+        // The label arrives as RENDERED HTML from the caller's own renderer, so
+        // it is escaped exactly once, by the renderer, under the caller's
+        // raw-HTML policy. `escape_html` here would double-escape every tag the
+        // clone is there to keep.
+        //
+        // §26 bidi controls are stripped from the rendered bytes so a TOC link
+        // cannot visually spoof its target, matching the core heading-text
+        // policy. They are bare codepoints, never part of a tag, so stripping
+        // after the render reaches every one of them and touches nothing else.
         html.push_str(&format!(
             "<li><a href=\"#{}\">{}</a>",
             escape_html(&e.id),
-            escape_html(&e.text)
+            strip_bidi(render_label(&e.label).trim())
         ));
         has_open_item = true;
     }
@@ -429,10 +433,9 @@ impl CarveExtension for TocPlacement {
         // The id counter stays aligned with the renderer; footnote definitions
         // live outside `doc.children`, so their (id-less) headings are excluded.
         let lowercase = ctx.options().lowercase_heading_ids;
-        let smart = ctx.options().smart_typography;
         let mut counts: BTreeMap<String, usize> = BTreeMap::new();
         let mut entries: Vec<TocEntry> = Vec::new();
-        collect_all_entries(&doc.children, &mut counts, lowercase, &mut entries, smart);
+        collect_all_entries(&doc.children, &mut counts, lowercase, &mut entries);
         *self.entries.borrow_mut() = entries;
         *self.budget.borrow_mut() =
             (8usize.saturating_mul(doc.expansion_budget_len())).max(1_000_000);
@@ -528,7 +531,15 @@ fn render_toc_nav(
     if picked.is_empty() {
         return wrap(empty_nav);
     }
-    let nav = format!("<nav{attrs}>\n{}</nav>", build_list(&picked, ListType::Ul));
+    // Rendered through the RENDER IN PROGRESS, so an entry obeys the same
+    // raw-HTML policy, symbols map and typography mode as the heading it was
+    // derived from - the injected `tableOfContents()` nav uses the same options
+    // by the same argument, one hook earlier.
+    let nav = format!(
+        "<nav{attrs}>\n{}</nav>",
+        build_list(&picked, ListType::Ul, &|nodes| ctx
+            .render_inlines_inside_anchor(nodes))
+    );
     // Bound cumulative nav bytes across all `::: toc` blocks in one render: K
     // blocks x N headings would otherwise amplify output ~K*N. Once the budget
     // is exhausted, degrade to an empty nav. The borrow is scoped and released

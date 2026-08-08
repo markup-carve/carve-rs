@@ -2042,9 +2042,30 @@ fn render_image(out: &mut String, img: &Image) {
 // ---- Inline ----
 
 pub(crate) fn render_inlines_with_options(nodes: &[InlineNode], options: &Options<'_>) -> String {
+    render_inlines_at_link_depth(nodes, options, 0)
+}
+
+/// Render inline nodes that will be placed INSIDE an anchor the caller emits.
+///
+/// A derived display text is not free-standing prose: a table-of-contents entry
+/// is written into an `<a href="#id">` the list builder emits itself, so a
+/// construct in it that would open its own anchor has to be told, exactly as it
+/// is told when it sits in a link's label. Without this the entry rendered at
+/// depth 0 and a heading holding a mention, a tag or a cross-reference published
+/// an `<a>` inside the entry's own `<a>` (PART 12 section 3a, LINKS NEVER NEST).
+pub(crate) fn render_inlines_inside_anchor(nodes: &[InlineNode], options: &Options<'_>) -> String {
+    render_inlines_at_link_depth(nodes, options, 1)
+}
+
+fn render_inlines_at_link_depth(
+    nodes: &[InlineNode],
+    options: &Options<'_>,
+    link_depth: usize,
+) -> String {
     let mut out = String::new();
     let mut state = RenderState {
         lowercase_heading_ids: options.lowercase_heading_ids,
+        link_depth,
         ..RenderState::default()
     };
     render_inlines(&mut out, nodes, options, &mut state);
@@ -2296,7 +2317,17 @@ fn render_inline_after(
             }
         }
         InlineNode::Mention(m) => {
-            if let Some(template) = &options.mention_url {
+            // LINKS NEVER NEST (PART 12 section 3a). A mention with a URL
+            // template opens its own anchor, so inside one it renders the
+            // template-less form instead - the same test the cross-reference
+            // above makes, and the reason it is made HERE rather than by
+            // pruning the node is that only the renderer knows whether a
+            // template was configured at all.
+            if let Some(template) = options
+                .mention_url
+                .as_ref()
+                .filter(|_| state.link_depth == 0)
+            {
                 let encoded = percent_encode(&m.user);
                 let href = template
                     .replace("{name}", &encoded)
@@ -2323,7 +2354,8 @@ fn render_inline_after(
             }
         }
         InlineNode::Tag(t) => {
-            if let Some(template) = &options.tag_url {
+            // LINKS NEVER NEST (PART 12 section 3a); see the mention above.
+            if let Some(template) = options.tag_url.as_ref().filter(|_| state.link_depth == 0) {
                 let encoded = percent_encode(&t.name);
                 let href = template.replace("{name}", &encoded);
                 let (class, _) = structural_attrs("tag", &t.attrs);

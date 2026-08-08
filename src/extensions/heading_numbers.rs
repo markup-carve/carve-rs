@@ -262,12 +262,19 @@ fn number_heading(h: &mut Heading, in_blockquote: bool, state: &mut NumberState)
         },
     );
 
+    // MARKED as injected. PART 9R R4's THE LABEL IS TAKEN BEFORE ANY
+    // RENDER-STAGE INJECTION names this span, and this engine derives display
+    // text at RENDER time - after this hook - so a derivation downstream has to
+    // be able to tell it from an author's own span. It cannot be told by the
+    // CLASS: `[v1]{.section-number}` is valid source, and the carve-out above
+    // for that spelling would be undone by a class-keyed strip.
     let span = InlineNode::Span(Span {
         attrs: Some(Attrs {
-            classes: vec!["section-number".to_string()],
+            classes: vec![crate::parse::SECTION_NUMBER_CLASS.to_string()],
             ..Attrs::default()
         }),
         children: vec![InlineNode::text(number)],
+        injected: true,
         pos: None,
     });
     let mut new_children = Vec::with_capacity(h.children.len() + 2);

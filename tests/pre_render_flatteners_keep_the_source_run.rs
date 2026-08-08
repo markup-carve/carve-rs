@@ -144,12 +144,18 @@ fn an_index_entry_keeps_the_source_run_and_its_slug_does_not_move() {
 // 4. the table-of-contents entry text
 // ---------------------------------------------------------------------------
 
+/// The entry is the heading's NODES since carve-rs#782, so the renderer spells
+/// them - which is what keeps the mode answerable at all. The `\"` is written
+/// bare rather than as `&quot;`: it is escaped ONCE, by the renderer, and HTML
+/// text content does not need the quote escaped. The TOC's own escaper used to
+/// spell it, so this line moved with the derivation; carve-js#872 moved the same
+/// line the same way, so the cross-impl `<nav>` fragment still agrees.
 #[test]
 fn a_toc_entry_keeps_the_source_run_and_its_href_does_not_move() {
     let src = "# The \"quoted\" -- heading\n";
 
     for (smart, want) in [
-        (SOURCE, "The &quot;quoted&quot; -- heading"),
+        (SOURCE, "The \"quoted\" -- heading"),
         (GLYPH, "The \u{201c}quoted\u{201d} \u{2013} heading"),
     ] {
         let toc = TableOfContents::new();
@@ -174,7 +180,7 @@ fn a_placed_toc_entry_keeps_the_source_run() {
     let mut o = opts(SOURCE);
     o.extensions.push(&placed);
     let out = carve::to_html_with_options(src, &o);
-    assert!(out.contains("The &quot;quoted&quot; -- heading"), "{out}");
+    assert!(out.contains("The \"quoted\" -- heading"), "{out}");
     assert!(out.contains("href=\"#The-quoted-heading\""), "{out}");
 }
 

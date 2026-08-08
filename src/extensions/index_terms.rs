@@ -42,8 +42,17 @@ pub(crate) const LIST_CARRIER: &str = "carve-index-list";
 pub struct Index {
     /// slug -> total occurrences (BTreeMap keeps codepoint/byte-ascending order).
     counts: RefCell<BTreeMap<String, usize>>,
-    /// slug -> first occurrence's display text.
-    display: RefCell<BTreeMap<String, String>>,
+    /// slug -> the first occurrence's display text, as NODES (PART 9R R4,
+    /// DERIVED DISPLAY TEXT CLONES THE SAME NODES, markup-carve/carve#957).
+    ///
+    /// Not a string: `:index[*bold* `c`]` published `bold c`, with the emphasis,
+    /// the code span, the escape and the author's source run all destroyed at
+    /// the derivation site where no renderer downstream can recover them.
+    ///
+    /// The clone is [`crate::parse::derive_display_nodes`] with `inside_link`
+    /// FALSE: an index list item is not an anchor - only the backrefs after the
+    /// display are - so an authored link in the term survives.
+    display: RefCell<BTreeMap<String, Vec<InlineNode>>>,
 }
 
 impl Index {
@@ -58,17 +67,19 @@ impl CarveExtension for Index {
         "index"
     }
 
-    fn before_render(&self, mut doc: Document, ctx: &BeforeRenderContext<'_>) -> Document {
-        // The DISPLAY text below is prose the reader sees, so it follows the
-        // document-global smart-typography mode (PART 9 §19). The slug does not.
-        let smart = ctx.options().smart_typography;
+    fn before_render(&self, mut doc: Document, _ctx: &BeforeRenderContext<'_>) -> Document {
+        // The DISPLAY is the term's NODES, so nothing here spells them: the
+        // document-global smart-typography mode (PART 9 §19), the symbols map
+        // and the raw-HTML policy belong to the renderer, which receives the
+        // nodes at render time. The SLUG still flattens, and still in GLYPH
+        // mode - an id must not depend on presentational typography.
         let mut counts: BTreeMap<String, usize> = BTreeMap::new();
-        let mut display: BTreeMap<String, String> = BTreeMap::new();
+        let mut display: BTreeMap<String, Vec<InlineNode>> = BTreeMap::new();
         // Body-only collection: a marker in deferred content (footnote defs the
         // renderer may drop or reorder) is left as the plain `index` extension
         // and renders inert, so the index never points at a dropped anchor.
         for block in &mut doc.children {
-            rewrite_markers_block(block, &mut counts, &mut display, smart);
+            rewrite_markers_block(block, &mut counts, &mut display);
         }
         let any = !counts.is_empty();
         *self.counts.borrow_mut() = counts;
@@ -150,78 +161,77 @@ fn with_base_class(attrs: &Option<Attrs>, base: &str) -> Attrs {
 fn rewrite_markers_block(
     block: &mut BlockNode,
     counts: &mut BTreeMap<String, usize>,
-    display: &mut BTreeMap<String, String>,
-    smart: SmartTypographyMode,
+    display: &mut BTreeMap<String, Vec<InlineNode>>,
 ) {
     match block {
-        BlockNode::Heading(h) => rewrite_markers_inline(&mut h.children, counts, display, smart),
-        BlockNode::Paragraph(p) => rewrite_markers_inline(&mut p.children, counts, display, smart),
+        BlockNode::Heading(h) => rewrite_markers_inline(&mut h.children, counts, display),
+        BlockNode::Paragraph(p) => rewrite_markers_inline(&mut p.children, counts, display),
         BlockNode::List(l) => {
             for item in &mut l.items {
                 for child in &mut item.children {
-                    rewrite_markers_block(child, counts, display, smart);
+                    rewrite_markers_block(child, counts, display);
                 }
             }
         }
         BlockNode::BlockQuote(b) => {
             for child in &mut b.children {
-                rewrite_markers_block(child, counts, display, smart);
+                rewrite_markers_block(child, counts, display);
             }
         }
         BlockNode::Admonition(a) => {
             if let Some(title) = &mut a.title {
-                rewrite_markers_inline(title, counts, display, smart);
+                rewrite_markers_inline(title, counts, display);
             }
             for child in &mut a.children {
-                rewrite_markers_block(child, counts, display, smart);
+                rewrite_markers_block(child, counts, display);
             }
         }
         BlockNode::Div(d) => {
             for child in &mut d.children {
-                rewrite_markers_block(child, counts, display, smart);
+                rewrite_markers_block(child, counts, display);
             }
         }
         BlockNode::Extension(e) => {
             for child in &mut e.children {
-                rewrite_markers_block(child, counts, display, smart);
+                rewrite_markers_block(child, counts, display);
             }
         }
         BlockNode::Table(t) => {
             for row in &mut t.rows {
                 for cell in &mut row.cells {
-                    rewrite_markers_inline(&mut cell.children, counts, display, smart);
+                    rewrite_markers_inline(&mut cell.children, counts, display);
                 }
             }
         }
         BlockNode::DefinitionList(dl) => {
             for item in &mut dl.items {
                 for term in &mut item.terms {
-                    rewrite_markers_inline(term, counts, display, smart);
+                    rewrite_markers_inline(term, counts, display);
                 }
                 for def in &mut item.definitions {
                     for child in def {
-                        rewrite_markers_block(child, counts, display, smart);
+                        rewrite_markers_block(child, counts, display);
                     }
                 }
             }
         }
         BlockNode::Figure(f) => {
-            rewrite_markers_inline(&mut f.caption, counts, display, smart);
+            rewrite_markers_inline(&mut f.caption, counts, display);
             match &mut f.target {
                 FigureTarget::BlockQuote(b) => {
                     for child in &mut b.children {
-                        rewrite_markers_block(child, counts, display, smart);
+                        rewrite_markers_block(child, counts, display);
                     }
                 }
                 FigureTarget::Table(t) => {
                     for row in &mut t.rows {
                         for cell in &mut row.cells {
-                            rewrite_markers_inline(&mut cell.children, counts, display, smart);
+                            rewrite_markers_inline(&mut cell.children, counts, display);
                         }
                     }
                 }
                 FigureTarget::Paragraph(p) => {
-                    rewrite_markers_inline(&mut p.children, counts, display, smart);
+                    rewrite_markers_inline(&mut p.children, counts, display);
                 }
                 FigureTarget::Image(_) | FigureTarget::CodeBlock(_) => {}
             }
@@ -233,8 +243,7 @@ fn rewrite_markers_block(
 fn rewrite_markers_inline(
     nodes: &mut [InlineNode],
     counts: &mut BTreeMap<String, usize>,
-    display: &mut BTreeMap<String, String>,
-    smart: SmartTypographyMode,
+    display: &mut BTreeMap<String, Vec<InlineNode>>,
 ) {
     for node in nodes.iter_mut() {
         match node {
@@ -245,7 +254,7 @@ fn rewrite_markers_inline(
                 let occurrence = *n;
                 display
                     .entry(slug.clone())
-                    .or_insert_with(|| inline_text(&e.children, smart));
+                    .or_insert_with(|| crate::parse::derive_display_nodes(&e.children, false));
                 let mut attrs = Attrs::default();
                 attrs.key_values.insert("idx-slug".to_string(), slug);
                 attrs
@@ -258,20 +267,12 @@ fn rewrite_markers_inline(
                     pos: None,
                 });
             }
-            InlineNode::Emphasis(e) => {
-                rewrite_markers_inline(&mut e.children, counts, display, smart)
-            }
-            InlineNode::Link(l) => rewrite_markers_inline(&mut l.children, counts, display, smart),
-            InlineNode::Span(s) => rewrite_markers_inline(&mut s.children, counts, display, smart),
-            InlineNode::Extension(e) => {
-                rewrite_markers_inline(&mut e.children, counts, display, smart)
-            }
-            InlineNode::CriticInsert(c) => {
-                rewrite_markers_inline(&mut c.children, counts, display, smart)
-            }
-            InlineNode::CriticDelete(c) => {
-                rewrite_markers_inline(&mut c.children, counts, display, smart)
-            }
+            InlineNode::Emphasis(e) => rewrite_markers_inline(&mut e.children, counts, display),
+            InlineNode::Link(l) => rewrite_markers_inline(&mut l.children, counts, display),
+            InlineNode::Span(s) => rewrite_markers_inline(&mut s.children, counts, display),
+            InlineNode::Extension(e) => rewrite_markers_inline(&mut e.children, counts, display),
+            InlineNode::CriticInsert(c) => rewrite_markers_inline(&mut c.children, counts, display),
+            InlineNode::CriticDelete(c) => rewrite_markers_inline(&mut c.children, counts, display),
             _ => {}
         }
     }
@@ -320,7 +321,7 @@ fn render_index_list(
     node: &BlockExtension,
     ctx: &RenderContext<'_>,
     counts: &BTreeMap<String, usize>,
-    display: &BTreeMap<String, String>,
+    display: &BTreeMap<String, Vec<InlineNode>>,
 ) -> String {
     let level = ctx.level();
     let pad = ctx.indent(level);
@@ -342,9 +343,15 @@ fn render_index_list(
         if crate::index_budget::is_exhausted() {
             break;
         }
-        let text = display.get(slug).map(String::as_str).unwrap_or_default();
-        let escaped_text = ctx.escape_html(text);
-        let mut entry = format!("{}<li>{} ", inner, escaped_text);
+        // RENDERED, not escaped: the label is nodes, and the renderer escapes
+        // text and emits markup in one pass under the caller's own policy.
+        // `escape_html` here would double-escape every tag the clone keeps.
+        // The budget still charges the emitted bytes, which is what it bounds.
+        let rendered = display
+            .get(slug)
+            .map(|nodes| ctx.render_inlines(nodes))
+            .unwrap_or_default();
+        let mut entry = format!("{}<li>{} ", inner, rendered);
         if !crate::index_budget::try_spend(entry.len()) {
             break;
         }

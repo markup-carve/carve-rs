@@ -9,6 +9,14 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Breaking
 
+- **`Span` and `RawInline` each gain an `injected` field.** Code that builds
+  either with a struct literal, or matches one exhaustively, needs the extra
+  field (`injected: false` for anything an author wrote). It records that a
+  render-stage transform put the node there rather than the author, which is
+  what lets a derived display text leave it out (PART 9R R4). Like
+  `Link::from_crossref` it is a render-time fact and is never written to or read
+  from the AST JSON, so the wire format is unchanged.
+
 - **A heading ends at the newline** (markup-carve/carve#451,
   markup-carve/carve#434). Nothing folds into a heading, so `# Title` with prose
   beneath is a heading plus a paragraph, and its id comes from the heading line
@@ -140,6 +148,37 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   where the author wrote it.
 
 ### Fixed
+
+- **Every derived display text clones the heading's nodes, not just the
+  cross-reference label** (PART 9R R4 DERIVED DISPLAY TEXT CLONES THE SAME
+  NODES, markup-carve/carve#957; carve-rs#782). A node carries the author's
+  source run and a string does not, so flattening at the derivation site
+  destroyed the emphasis, the code span and the escape before any renderer was
+  invoked. For `# A *bold* h`:
+
+  - a table-of-contents entry, both the injected `<nav>` and the `::: toc`
+    placement directive, published `A bold h` and now carries the markup;
+  - an index term's display published its term flattened and now carries the
+    nodes the author wrote.
+
+  A derived label is the heading's AUTHORED content, so nothing a later stage
+  added appears in one: not a `section-number` span, not a permalink anchor, not
+  a footnote reference, not a citation, not an abbreviation's expansion, and not
+  an invisible `:index[term]` marker. An author's own `[v1]{.section-number}`
+  span is authored content and stays. This also fixes a resolved `</#id>`
+  publishing the target's permalink anchor inside its own anchor.
+
+  A TOC entry is rendered by the render in progress rather than at derivation
+  time, so it now obeys the caller's raw-HTML policy and symbols map as well as
+  the typography mode it already followed. It is also escaped once, by that
+  renderer: a `"` in a heading reaches the entry bare instead of as `&quot;`,
+  which is what the heading itself already emitted and what carve-js emits.
+
+- **A mention and a tag open no anchor inside a link** (PART 12 section 3a LINKS
+  NEVER NEST). With `mention_url` / `tag_url` configured, `[see @bob](/u)`
+  emitted an `<a>` inside the link's own `<a>`; a mention or tag inside any
+  anchor now renders its template-less `<span>` form, which is what links,
+  autolinks and cross-references already did there.
 
 - **A container a lazy line folded into is still open.** PART 1 S4's lazy branch
   folds a flush-left line into the innermost open paragraph and closes nothing,
