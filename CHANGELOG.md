@@ -186,6 +186,36 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A profile's link policy reads the scheme through the characters a URL
+  consumer discards** (carve-rs#835). `LinkPolicy::is_url_allowed` read the text
+  before the first colon with no character filter, and `trim` only reaches the
+  ends, so any control or whitespace character INSIDE the scheme defeated the
+  denied-scheme lookup: `java<U+0001>script:alert(1)`, `java<DEL>script:` and
+  `java<U+009B>script:` were all answered `allowed`, while the plain
+  `javascript:alert(1)` was answered `denied`. The scheme is now read through
+  `is_url_probe_skippable`, the same probe class the renderer settled on in
+  carve-rs#833: every control character plus every whitespace character.
+
+  Two further answers were wrong for the same reason and are now right: a split
+  scheme was neither `http` nor `https`, so it also skipped the **denied-domain**
+  check and the **`allow_external`** check, and `htt<DEL>ps://evil.com` was
+  answered `allowed` under a policy denying `evil.com`. The link, inline-image
+  and block-image gates share the one rule, so all three narrow together.
+
+  This is a **narrowing only**. Filtering removes characters, so it can only make
+  the deny lists recognize MORE destinations; **no destination a policy refuses
+  today becomes allowed**. No legitimate scheme contains a filtered character -
+  a URL scheme is a letter followed by letters, digits, `+`, `-` and `.` - so
+  nothing legitimate starts being refused. The ALLOWLIST form deliberately still
+  reads the raw text: it asks whether a scheme is exactly one it permits, a split
+  scheme is not, and it was never defeated. It is unaffected here in both
+  directions.
+
+  A document rendered with default options was never at risk: PART 9 §25 blanks
+  these destinations in the renderer no matter what a profile answered. What was
+  affected is a caller using a profile to VALIDATE or FILTER, where the
+  permissive answer is the whole output.
+
 - **A denied URL scheme split by DEL or a C1 control is blanked** (PART 9 §25,
   carve-rs#833). `[x](java<DEL>script:alert(1))` reached the rendered `href`
   with the raw U+007F byte intact, and the image spelling reached `src` the same

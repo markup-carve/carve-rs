@@ -15,6 +15,7 @@
 //! canonical name before the allow/deny check.
 
 use crate::ast::*;
+use crate::escape::is_url_probe_skippable;
 
 /// Action taken on a disallowed node.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -371,6 +372,21 @@ impl LinkPolicy {
     /// Check whether a URL is permitted by this policy.
     ///
     /// `base_host` is the current document's host (for external detection).
+    ///
+    /// The scheme is read through [`is_url_probe_skippable`], the renderer's own
+    /// probe class, so this rule and PART 9 §25's answer the same way about a
+    /// scheme split by a character a URL consumer discards. That is a
+    /// NARROWING: filtering only removes characters, so the deny lists can
+    /// recognize more and can never recognize less, and no legitimate scheme
+    /// carries one (a scheme is a letter followed by letters, digits, `+`, `-`
+    /// and `.`).
+    ///
+    /// Known and deliberate limit: the internal/external classification below
+    /// runs on the raw text, so a LEADING probe-class character - which `trim`
+    /// does not reach - still reads `<DEL>//host` as neither protocol-relative
+    /// nor relative. That is a prefix classification rather than a scheme read,
+    /// and normalizing it cannot be done without also deciding what an
+    /// allowlist makes of the normalized text, so it is not settled here.
     pub fn is_url_allowed(&self, url: &str, base_host: Option<&str>) -> bool {
         let url = url.trim();
         if url.is_empty() {
@@ -393,13 +409,33 @@ impl LinkPolicy {
         }
 
         if let Some(colon_pos) = url.find(':') {
-            let scheme = url[..colon_pos].to_lowercase();
+            let raw_scheme = url[..colon_pos].to_lowercase();
+            // What a URL consumer would read as the scheme: the probe class
+            // filtered out, because a consumer may discard any of those
+            // characters before it decides what the scheme is. `trim` only
+            // reaches the two ends, so while this was the raw text
+            // `java<DEL>script:` and `java<U+0001>script:` walked past the
+            // denylist (markup-carve/carve-rs#835).
+            let scheme: String = raw_scheme
+                .chars()
+                .filter(|c| !is_url_probe_skippable(*c))
+                .collect();
 
             if self.denied_schemes.iter().any(|s| s == &scheme) {
                 return false;
             }
+            // The ALLOW lookup deliberately reads the RAW text, not the probe.
+            //
+            // The two lists ask opposite questions. Deny asks "could a consumer
+            // read this as a scheme I refuse", so it has to see through the
+            // split. Allow asks "is this exactly a scheme I permit", and a
+            // scheme carrying a control character is not one - an allowlist
+            // refuses what it does not recognize, which is why this form was
+            // never defeated. Reading the probe here would START allowing
+            // `htt<DEL>ps:` under `set_allowed_schemes(Some(vec!["https"]))`,
+            // turning a fix into a widening.
             if let Some(allowed) = &self.allowed_schemes {
-                if !allowed.iter().any(|s| s == &scheme) {
+                if !allowed.iter().any(|s| s == &raw_scheme) {
                     return false;
                 }
             }
@@ -485,6 +521,16 @@ fn is_same_host(a: &str, b: &str) -> bool {
 /// Extract the host of an http(s) URL the way PHP's `parse_url` does for the
 /// cases [`LinkPolicy`] needs (host only). Returns `None` when no host can be
 /// determined.
+///
+/// It finds the authority by splitting on `://` and never looks at the scheme,
+/// which is why the caller hands it the URL unchanged. carve-js' spelling
+/// matches `^[a-zA-Z][a-zA-Z0-9+.-]*://` instead, so a scheme split by a
+/// probe-class character makes it return `None` there and skip the domain
+/// denylist and the `allow_external` check with it; that engine repairs the
+/// scheme before this call and this one has nothing to repair
+/// (markup-carve/carve-rs#835). Do NOT port the repair here to match: it would
+/// be a step that cannot change an answer, and a check that cannot fail is the
+/// thing this repo keeps finding at the bottom of its defects.
 fn parse_host(url: &str) -> Option<String> {
     // scheme://authority/...; authority ends at /, ?, or #.
     let rest = url.split_once("://")?.1;
