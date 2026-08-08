@@ -1,1 +1,1 @@
-Hi @alice see \#topic
+Hi @alice see #topic

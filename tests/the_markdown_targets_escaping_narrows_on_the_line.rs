@@ -111,7 +111,9 @@ fn adjacency_is_seen_across_a_node_boundary() {
 #[test]
 fn control_a_closing_bracket_still_takes_m1_unconditionally() {
     assert_eq!(md("a ] b"), "a \\] b");
-    assert_eq!(md("a ` b"), "a \\` b");
+    // The two halves of a reference are spelled differently on purpose now: the
+    // opener narrows and the closer does not.
+    assert_eq!(md("a [x] b"), "a [x\\] b");
 }
 
 /// M2: a character the AUTHOR escaped is an `escaped_text` node and is emitted
