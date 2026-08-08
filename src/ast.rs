@@ -808,6 +808,15 @@ pub struct InlineExtension {
 pub struct Span {
     pub attrs: Option<Attrs>,
     pub children: Vec<InlineNode>,
+    /// True when a render-stage transform injected this node rather than the
+    /// author writing it - today, the `section-number` span `headingNumbers`
+    /// prepends to a heading. See [`RawInline::injected`]; the same render-time
+    /// fact, and never written to the wire for the same reason.
+    ///
+    /// A CLASS is not a substitute: `[v1]{.section-number}` is valid source, and
+    /// keying the strip on the class would delete an author's own span out of
+    /// every derived label.
+    pub injected: bool,
     /// Span in the original source, when the parser could determine it.
     pub pos: Option<Pos>,
 }
@@ -825,6 +834,18 @@ pub struct Math {
 pub struct RawInline {
     pub format: String,
     pub content: String,
+    /// True when a render-stage transform injected this node rather than the
+    /// author writing it - today, the anchor `headingPermalinks` appends to a
+    /// heading.
+    ///
+    /// A render-time fact about how the node got here, so it is NOT written to
+    /// the wire (like [`Link::from_crossref`]): re-publishing it would put one
+    /// pass's bookkeeping where the next reader reads it back as a claim. It
+    /// exists because PART 9R R4's THE LABEL IS TAKEN BEFORE ANY RENDER-STAGE
+    /// INJECTION has to be answerable AFTER the injection has happened - this
+    /// engine derives display text at render time - and content-sniffing an
+    /// anchor out of a raw HTML string is not an answer.
+    pub injected: bool,
     /// Span in the original source, when the parser could determine it.
     pub pos: Option<Pos>,
 }

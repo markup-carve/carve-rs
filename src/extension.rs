@@ -515,6 +515,15 @@ impl<'a> RenderContext<'a> {
         crate::render::render_inlines_with_options(nodes, self.options)
     }
 
+    /// [`RenderContext::render_inlines`], for nodes the caller is about to place
+    /// inside an anchor of its own. A construct that would open its own anchor
+    /// renders its non-anchor form instead (PART 12 section 3a, LINKS NEVER
+    /// NEST) - what a table-of-contents entry needs, since the entry is written
+    /// into an `<a href="#id">` the extension emits.
+    pub fn render_inlines_inside_anchor(&self, nodes: &[InlineNode]) -> String {
+        crate::render::render_inlines_inside_anchor(nodes, self.options)
+    }
+
     /// Render block nodes at level 0 (no leading indentation). Use
     /// [`RenderContext::render_blocks_at`] to render at a specific nesting
     /// level.

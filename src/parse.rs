@@ -11408,6 +11408,7 @@ fn parse_raw_inline_after_code(
         RawInline {
             format: format.to_string(),
             content: value.to_string(),
+            injected: false,
             pos: None,
         },
         i + 1 - start,
@@ -12094,6 +12095,7 @@ fn parse_span(
     Some((
         Span {
             attrs,
+            injected: false,
             children: parse_inline_context(
                 &content,
                 options,
@@ -13369,22 +13371,123 @@ fn crossref_label_nodes(children: &[InlineNode]) -> CrossrefLabel {
     std::rc::Rc::new(crossref_label_clone(children))
 }
 
-/// The same clone, owned, for any OTHER consumer that derives display text from
-/// a heading (PART 9R R4, DERIVED DISPLAY TEXT CLONES THE SAME NODES,
-/// markup-carve/carve#957). R4 binds every such consumer, not the core crossref
-/// alone, and the two transformations above are part of what "the same nodes"
-/// means: a consumer that clones the children RAW re-expands a nested reference
-/// and publishes a SECOND `fnref` anchor with a duplicate id.
+/// The core crossref's label: [`derive_display_nodes`] in a link context, since
+/// a resolved reference always renders inside the anchor it produces.
 pub(crate) fn crossref_label_clone(children: &[InlineNode]) -> Vec<InlineNode> {
-    let mut nodes = children.to_vec();
-    flatten_nested_crossrefs(&mut nodes);
-    enforce_no_nesting_inline(nodes, true)
+    derive_display_nodes(children, true)
 }
 
-/// Replace every `</#id>` inside a cloned label with empty text, and drop every
-/// footnote reference. See `crossref_label_nodes`.
-fn flatten_nested_crossrefs(nodes: &mut Vec<InlineNode>) {
-    nodes.retain(|node| !matches!(node, InlineNode::Footnote(_)));
+/// The one derivation every consumer of a heading's display text goes through
+/// (PART 9R R4, DERIVED DISPLAY TEXT CLONES THE SAME NODES,
+/// markup-carve/carve#957).
+///
+/// R4 binds every such consumer, not the core crossref alone, and names three: a
+/// numbered cross-reference label, an index term's display, a table-of-contents
+/// entry. Each answering the follow-on questions on its own is how one rule
+/// acquires four readings, so they all call this.
+///
+/// `inside_link` is the CALLER's context rather than a fact about `children`: a
+/// crossref label and a TOC entry are placed inside an `<a>` and pass `true`; an
+/// index list item is not an anchor (only the backrefs after the display are) and
+/// passes `false`, so an authored link in the term survives.
+pub(crate) fn derive_display_nodes(children: &[InlineNode], inside_link: bool) -> Vec<InlineNode> {
+    let mut nodes = children.to_vec();
+    strip_non_authored(&mut nodes);
+    flatten_nested_crossrefs(&mut nodes);
+    enforce_no_nesting_inline(nodes, inside_link)
+}
+
+/// Reduce a cloned run to what the AUTHOR wrote.
+///
+/// THE LABEL IS TAKEN BEFORE ANY RENDER-STAGE INJECTION (PART 9R R4). A heading's
+/// cloned nodes are its AUTHORED inline content, so whatever a later stage added
+/// to the heading is not part of the label. That half of the clause is aimed at
+/// THIS engine: it builds the crossref index at RENDER time, after every
+/// `before_render` hook has already run, so the injections are in the heading by
+/// the time the label is taken and the pristine reading has to be recovered here
+/// rather than obtained by ordering.
+///
+/// Five kinds come out, and each is what the flatten this replaces already
+/// produced, so no construct moves byte-wise by being dropped:
+///
+/// - A `section-number` SPAN, injected by `headingNumbers` (§9). R4 names this
+///   one explicitly.
+/// - A PERMALINK ANCHOR, injected by `headingPermalinks`. R4 names this one too.
+///   Left in, a resolved `</#id>` rendered an `<a>` INSIDE its own `<a>`.
+/// - A FOOTNOTE REFERENCE, which is a pointer into the endnotes rather than
+///   display text: a second copy publishes a duplicate `fnref` id and points the
+///   backlink at whichever rendered last.
+/// - An `:index[term]` MARKER, invisible by §8.1 - it emits no visible text, so
+///   it is not display text anywhere it is derived, and its `idx-…` anchor id is
+///   published exactly once. What comes out is the COUNTED CARRIER the extension
+///   rewrites a body marker to, and only that. The AUTHORED `index` extension
+///   stays: with the extension off it degrades to the visible generic fallback
+///   `<span class="ext-index">term</span>` (§8.3, "the marker cannot hide without
+///   its handler"), so dropping it would make a derived label disagree with the
+///   heading it was derived from and lose authored text (raised by codex review).
+///   With the extension ON, an authored marker that reaches here unrewritten
+///   renders inert and invisible, which is the heading's own answer too.
+/// - A CITATION GROUP, the other resolution result a heading can carry. It
+///   renders as an anchor into the references list, and with a bibliography pool
+///   active it also carries a per-use `cite-…` id - so a second copy nests an
+///   anchor inside the derived label's own anchor AND publishes a duplicate DOM
+///   id, the same two failures the footnote reference has. The author's raw
+///   `[@key]` run goes back in its place, which is what the flatten produced.
+/// - An ABBREVIATION, an R3 resolution result. The author wrote the short form;
+///   cloning the resolved node republishes the whole `<abbr title="…">` once per
+///   derived site, an amplification the body renderer bounds with a budget this
+///   path cannot reach. Taking the author's `abbr` back out is both the bounded
+///   answer and the correct one.
+fn strip_non_authored(nodes: &mut Vec<InlineNode>) {
+    nodes.retain(|node| match node {
+        InlineNode::Footnote(_) => false,
+        InlineNode::RawInline(r) => !r.injected,
+        InlineNode::Span(s) => !s.injected,
+        InlineNode::Extension(e) => e.name != INDEX_MARKER_CARRIER,
+        _ => true,
+    });
+    for node in nodes.iter_mut() {
+        match node {
+            InlineNode::Abbreviation(a) => {
+                *node = InlineNode::Text(Text {
+                    value: std::mem::take(&mut a.abbr),
+                    pos: a.pos,
+                });
+                continue;
+            }
+            InlineNode::CitationGroup(g) => {
+                *node = InlineNode::Text(Text {
+                    value: std::mem::take(&mut g.raw),
+                    pos: g.pos,
+                });
+                continue;
+            }
+            _ => {}
+        }
+        match node {
+            InlineNode::Emphasis(e) => strip_non_authored(&mut e.children),
+            InlineNode::Span(s) => strip_non_authored(&mut s.children),
+            InlineNode::Link(l) => strip_non_authored(&mut l.children),
+            InlineNode::Extension(e) => strip_non_authored(&mut e.children),
+            InlineNode::CriticInsert(c) => strip_non_authored(&mut c.children),
+            InlineNode::CriticDelete(c) => strip_non_authored(&mut c.children),
+            _ => {}
+        }
+    }
+}
+
+/// Class on the `section-number` span `headingNumbers` injects into a heading.
+/// The strip does NOT key on it (see [`Span::injected`]); it is named once, and
+/// the extension reads it from here so the class and its documentation cannot
+/// drift apart.
+pub(crate) const SECTION_NUMBER_CLASS: &str = "section-number";
+/// The counted carrier `index` rewrites a body marker to in `before_render`.
+pub(crate) const INDEX_MARKER_CARRIER: &str = "carve-index-marker";
+
+/// Replace every `</#id>` inside a cloned label with empty text. Resolution is
+/// ONE LEVEL, so a cloned label is never re-expanded; doing it here rather than
+/// at render time also makes a crossref cycle structurally impossible to follow.
+fn flatten_nested_crossrefs(nodes: &mut [InlineNode]) {
     for node in nodes.iter_mut() {
         match node {
             InlineNode::CrossRef(_) => {

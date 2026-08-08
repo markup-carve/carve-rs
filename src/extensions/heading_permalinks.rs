@@ -140,17 +140,29 @@ impl HeadingPermalinks {
         };
         // Emit the marker as raw inline HTML so the core inline renderer passes
         // it through verbatim, with a literal space separating it from the text.
+        //
+        // ONE node, separator included, and MARKED as injected. Both halves are
+        // PART 9R R4's THE LABEL IS TAKEN BEFORE ANY RENDER-STAGE INJECTION: a
+        // permalink anchor is not part of a heading's derived display text, and
+        // this engine derives that text at render time - after this hook - so
+        // the anchor has to be recognizable there. A separate `text(" ")` node
+        // could not be marked and would survive the strip as a stray space
+        // inside every derived label. The emitted bytes are unchanged either
+        // way: the space sits at the same place in the same run.
+        let content = if self.opts.prepend {
+            format!("{marker_html} ")
+        } else {
+            format!(" {marker_html}")
+        };
         let anchor = InlineNode::RawInline(RawInline {
             format: "html".into(),
-            content: marker_html,
+            content,
+            injected: true,
             pos: None,
         });
-        let space = InlineNode::text(" ");
         if self.opts.prepend {
-            h.children.insert(0, space);
             h.children.insert(0, anchor);
         } else {
-            h.children.push(space);
             h.children.push(anchor);
         }
     }

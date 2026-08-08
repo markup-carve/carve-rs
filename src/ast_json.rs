@@ -1634,6 +1634,9 @@ fn decode_inline(value: &Json) -> Result<InlineNode, AstJsonError> {
         })),
         "image" => Ok(InlineNode::Image(decode_image(obj)?)),
         "span" => Ok(InlineNode::Span(Span {
+            // Ingested content is AUTHORED; `injected` is this crate's own
+            // render-time bookkeeping and never a field of the payload.
+            injected: false,
             attrs: optional_attrs(obj)?,
             children: decode_inlines(required_array(obj, "span", "children")?)?,
             pos: optional_pos(obj, "span")?,
@@ -1647,6 +1650,9 @@ fn decode_inline(value: &Json) -> Result<InlineNode, AstJsonError> {
         "raw_inline" => Ok(InlineNode::RawInline(RawInline {
             format: required_string(obj, "raw_inline", "format")?.to_string(),
             content: required_string(obj, "raw_inline", "content")?.to_string(),
+            // An ingested node is AUTHORED content: `injected` is a render-time
+            // fact this crate sets, never a field of the payload (PART 12 §7).
+            injected: false,
             pos: optional_pos(obj, "raw_inline")?,
         })),
         "literal_inline" => Ok(InlineNode::LiteralInline(LiteralInline {
