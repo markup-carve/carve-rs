@@ -69,6 +69,28 @@ pub struct Document {
     /// The frontmatter block as written, when the document has one.
     pub frontmatter_raw: Option<Frontmatter>,
     pub footnote_defs: BTreeMap<String, Vec<BlockNode>>,
+    /// Where a footnote definition was WRITTEN, for the definitions whose body
+    /// cannot say - keyed by the same label.
+    ///
+    /// A definition's extent is derived from its body, which works only while
+    /// there is a body to derive from: `[^f]: {empty}` parses to no blocks at
+    /// all, so the derivation had nothing to measure and the node reached the
+    /// wire with no `pos` - the one node in the corpus that PART 12 §4 requires
+    /// to carry one and this engine did not publish (markup-carve/carve#1023).
+    ///
+    /// ONLY definitions whose body places nothing are in here, and that bound is
+    /// load-bearing rather than an optimization. §6 makes a document
+    /// reconstructible from its serialization, so this map may hold no fact the
+    /// wire does not carry - and the wire carries one span per definition, the
+    /// PUBLISHED extent. For a definition with content that extent is the body's
+    /// and says nothing about the definition line, so recording the line for one
+    /// would make a parsed document differ from its own round trip.
+    ///
+    /// A separate map rather than a field on the body because the body is a
+    /// plain `Vec<BlockNode>` shared by every renderer, and what is recorded
+    /// here belongs to the DEFINITION LINE, which no block in the body owns.
+    /// Empty unless the caller asked for positions (§4 makes them opt-in).
+    pub footnote_def_pos: BTreeMap<String, Pos>,
     pub children: Vec<BlockNode>,
     /// Byte length of the (normalized) source this document was parsed from.
     ///

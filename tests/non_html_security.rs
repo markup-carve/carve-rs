@@ -66,6 +66,7 @@ fn markdown_percent_encodes_destination_breakouts() {
         source_len: 0,
         ingest_payload_len: 0,
         footnote_defs: BTreeMap::new(),
+        footnote_def_pos: BTreeMap::new(),
         children: vec![carve::BlockNode::Paragraph(carve::Paragraph {
             at_content_column: false,
             pos: None,
@@ -155,6 +156,7 @@ fn markdown_sanitizes_code_fence_info_string() {
         source_len: 0,
         ingest_payload_len: 0,
         footnote_defs: BTreeMap::new(),
+        footnote_def_pos: BTreeMap::new(),
         children: vec![carve::BlockNode::CodeBlock(carve::CodeBlock {
             attrs: None,
             lang: Some("rs ```\n# injected".to_string()),
@@ -183,6 +185,7 @@ fn markdown_escapes_image_alt_label_metacharacters() {
         source_len: 0,
         ingest_payload_len: 0,
         footnote_defs: BTreeMap::new(),
+        footnote_def_pos: BTreeMap::new(),
         children: vec![carve::BlockNode::Paragraph(carve::Paragraph {
             at_content_column: false,
             pos: None,
@@ -222,6 +225,7 @@ fn markdown_emits_control_bytes_from_author_leaf_fields_and_still_refuses_del_an
         source_len: 0,
         ingest_payload_len: 0,
         footnote_defs,
+        footnote_def_pos: Default::default(),
         children: vec![
             carve::BlockNode::CodeBlock(carve::CodeBlock {
                 attrs: None,
@@ -334,6 +338,7 @@ fn render_markdown_with(c: &str) -> String {
         source_len: 0,
         ingest_payload_len: 0,
         footnote_defs: BTreeMap::new(),
+        footnote_def_pos: BTreeMap::new(),
         children: vec![
             carve::BlockNode::CodeBlock(carve::CodeBlock {
                 attrs: None,
@@ -382,6 +387,7 @@ fn the_terminal_target_strips_control_bytes_from_every_author_leaf_field() {
         source_len: 0,
         ingest_payload_len: 0,
         footnote_defs,
+        footnote_def_pos: Default::default(),
         children: vec![
             carve::BlockNode::RawBlock(carve::RawBlock {
                 format: format!("fmt{c}"),

@@ -245,6 +245,7 @@ pub fn from_json(input: &str) -> Result<Document, AstJsonError> {
     let mut children = Vec::new();
     let mut frontmatter_raw = None;
     let mut footnote_defs = BTreeMap::new();
+    let mut footnote_def_pos = BTreeMap::new();
     for child in required_array(root, "document", "children")? {
         let obj = child.as_object("document.children[]")?;
         match required_string(obj, "block node", "type")? {
@@ -267,6 +268,21 @@ pub fn from_json(input: &str) -> Result<Document, AstJsonError> {
                 // (carve-rs#820, spec 743).
                 let label = required_string(obj, "footnote", "label")?.to_string();
                 let blocks = decode_blocks(required_array(obj, "footnote", "children")?)?;
+                // A definition whose body places NOTHING published the
+                // definition line as its extent, and nothing in the body records
+                // it - so an ingest that dropped this re-derived from an empty
+                // body and published no position at all, exactly the gap the
+                // parse path had (markup-carve/carve#1023).
+                //
+                // Guarded by the same condition the parse path prunes on, so the
+                // two build the same map: where the body DOES place something,
+                // the span on the wire is that body's extent and belongs to no
+                // definition line.
+                if first_block_pos(&blocks).is_none() {
+                    if let Some(pos) = optional_pos(obj, "footnote")? {
+                        footnote_def_pos.insert(label.clone(), pos);
+                    }
+                }
                 footnote_defs.insert(label, blocks);
             }
             _ => children.push(decode_block(child)?),
@@ -283,6 +299,7 @@ pub fn from_json(input: &str) -> Result<Document, AstJsonError> {
             .unwrap_or_default(),
         frontmatter_raw,
         footnote_defs,
+        footnote_def_pos,
         children,
         source_len: src_byte_length,
         // What the sender actually had to send. Exact rather than estimated:
@@ -382,23 +399,19 @@ fn write_document(out: &mut String, doc: &Document) {
             write_frontmatter(out, raw);
         }
         // Definitions come AFTER the content and in source order (PART 12 §7).
-        // The map is keyed by label, so sort by the first placed body block;
-        // an unplaced body falls back to label order rather than inventing a
-        // source position.
-        let mut footnote_defs: Vec<_> = doc.footnote_defs.iter().collect();
-        footnote_defs.sort_by_key(|(label, children)| {
-            (
-                first_block_pos(children)
-                    .map(|pos| pos.start_offset)
-                    .unwrap_or(usize::MAX),
-                label.as_str(),
-            )
-        });
-        for entry in ordered_document_entries(&doc.children, &footnote_defs) {
+        //
+        // `footnote_defs_in_source_order` rather than a second copy of that
+        // sort: this function had its own, and the two then had to be kept
+        // agreeing by hand - which is how the `carve` writer's copy came to
+        // order definitions differently from the encoder's (carve-rs#685).
+        let footnote_defs = footnote_defs_in_source_order(doc);
+        for entry in ordered_document_entries(doc, &footnote_defs) {
             write_comma(out, &mut first);
             match entry {
                 DocEntry::Block(child) => write_block(out, child),
-                DocEntry::FootnoteDef(label, children) => write_footnote_def(out, label, children),
+                DocEntry::FootnoteDef(label, children, pos) => {
+                    write_footnote_def(out, label, children, pos)
+                }
             }
         }
         out.push(']');
@@ -414,7 +427,9 @@ fn write_document(out: &mut String, doc: &Document) {
 /// written.
 pub(crate) enum DocEntry<'a> {
     Block(&'a BlockNode),
-    FootnoteDef(&'a String, &'a Vec<BlockNode>),
+    /// Label, body, and where the definition LINE was written - which the body
+    /// does not record and an empty body cannot stand in for.
+    FootnoteDef(&'a String, &'a Vec<BlockNode>, Option<&'a Pos>),
 }
 
 /// PART 12 §7: "Definitions appear in DOCUMENT ORDER by source position."
@@ -451,9 +466,7 @@ pub(crate) fn footnote_defs_in_source_order(doc: &Document) -> Vec<(&String, &Ve
     let mut defs: Vec<(&String, &Vec<BlockNode>)> = doc.footnote_defs.iter().collect();
     defs.sort_by_key(|(label, children)| {
         (
-            first_block_pos(children)
-                .map(|pos| pos.start_offset)
-                .unwrap_or(usize::MAX),
+            footnote_def_start(doc, label, children).unwrap_or(usize::MAX),
             label.as_str(),
         )
     });
@@ -461,16 +474,33 @@ pub(crate) fn footnote_defs_in_source_order(doc: &Document) -> Vec<(&String, &Ve
     defs
 }
 
+/// Where a footnote definition starts, for §7's document order.
+///
+/// The DEFINITION LINE first, the body only as a fallback. Ordering by the body
+/// alone put a definition with no blocks last whatever the author wrote, because
+/// there was no block to read a start from - so `[^a]: {empty}` written above
+/// `[^b]: x` was published below it, and §7's "document order by source
+/// position" was decided by which definition happened to have content
+/// (markup-carve/carve#1023).
+///
+/// The two never disagree: `footnote_def_pos` holds a line only for a
+/// definition whose body places nothing, so exactly one of the two is available
+/// per definition and the order is read from whichever that is.
+fn footnote_def_start(doc: &Document, label: &str, children: &[BlockNode]) -> Option<usize> {
+    doc.footnote_def_pos
+        .get(label)
+        .or_else(|| first_block_pos(children))
+        .map(|pos| pos.start_offset)
+}
+
 pub(crate) fn ordered_document_entries<'a>(
-    children: &'a [BlockNode],
+    doc: &'a Document,
     footnote_defs: &[(&'a String, &'a Vec<BlockNode>)],
 ) -> Vec<DocEntry<'a>> {
-    let mut entries: Vec<DocEntry<'a>> = children.iter().map(DocEntry::Block).collect();
-    entries.extend(
-        footnote_defs
-            .iter()
-            .map(|(label, body)| DocEntry::FootnoteDef(label, body)),
-    );
+    let mut entries: Vec<DocEntry<'a>> = doc.children.iter().map(DocEntry::Block).collect();
+    entries.extend(footnote_defs.iter().map(|(label, body)| {
+        DocEntry::FootnoteDef(label, body, doc.footnote_def_pos.get(label.as_str()))
+    }));
 
     let slots: Vec<usize> = entries
         .iter()
@@ -502,9 +532,10 @@ fn collected_definition_offset(entry: &DocEntry<'_>) -> Option<usize> {
         DocEntry::Block(BlockNode::LinkReferenceDefinition(n)) => {
             Some(n.pos.as_ref().map_or(usize::MAX, |pos| pos.start_offset))
         }
-        DocEntry::FootnoteDef(_, body) => {
-            Some(first_block_pos(body).map_or(usize::MAX, |pos| pos.start_offset))
-        }
+        DocEntry::FootnoteDef(_, body, pos) => Some(
+            pos.or_else(|| first_block_pos(body))
+                .map_or(usize::MAX, |pos| pos.start_offset),
+        ),
         DocEntry::Block(_) => None,
     }
 }
@@ -545,7 +576,12 @@ fn write_frontmatter(out: &mut String, raw: &Frontmatter) {
     w.finish();
 }
 
-fn write_footnote_def(out: &mut String, label: &str, children: &[BlockNode]) {
+fn write_footnote_def(
+    out: &mut String,
+    label: &str,
+    children: &[BlockNode],
+    def_pos: Option<&Pos>,
+) {
     let mut w = Writer::new(out);
     w.field("type", |out| write_string(out, "footnote"));
     w.field("label", |out| write_string(out, label));
@@ -553,16 +589,30 @@ fn write_footnote_def(out: &mut String, label: &str, children: &[BlockNode]) {
     // FIRST block's start through the LAST placed block's end. Taking the
     // first block's span alone left every later block - a `+` continuation, an
     // indented second paragraph - outside its own footnote (carve#565).
-    let pos = first_block_pos(children).copied().map(|mut pos| {
-        if let Some(last) = children.iter().rev().find_map(block_pos) {
-            if last.end_offset > pos.end_offset {
-                pos.end_offset = last.end_offset;
-                pos.end_line = last.end_line;
-                pos.end_column = last.end_column;
+    //
+    // A definition with NO PLACED BLOCK has nothing to derive from, and that is
+    // not the same thing as being unplaceable: `[^f]: {empty}` is written on a
+    // line of its own, so §4's "omit rather than invent" does not apply and the
+    // definition line is the honest extent - the one the reference publishes.
+    // Deriving from the body alone left this node the only one in the corpus
+    // with no `pos` (markup-carve/carve#1023).
+    //
+    // The fallback is only reached when the body places nothing, so a
+    // definition that HAS content keeps the extent it has always had.
+    let pos = match first_block_pos(children) {
+        Some(first) => {
+            let mut pos = *first;
+            if let Some(last) = children.iter().rev().find_map(block_pos) {
+                if last.end_offset > pos.end_offset {
+                    pos.end_offset = last.end_offset;
+                    pos.end_line = last.end_line;
+                    pos.end_column = last.end_column;
+                }
             }
+            Some(pos)
         }
-        pos
-    });
+        None => def_pos.copied(),
+    };
     write_pos_field(&mut w, &pos);
     w.finish();
 }

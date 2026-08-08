@@ -220,6 +220,7 @@ fn control_a_carriage_return_in_a_constructed_tree_is_still_dropped() {
         source_len: 0,
         ingest_payload_len: 0,
         footnote_defs: BTreeMap::new(),
+        footnote_def_pos: BTreeMap::new(),
         children: vec![carve::BlockNode::Paragraph(carve::Paragraph {
             at_content_column: false,
             pos: None,
