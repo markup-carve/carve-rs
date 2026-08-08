@@ -1456,6 +1456,12 @@ fn render_figure(node: &Figure, ctx: &mut CarveContext) -> String {
 }
 
 fn render_footnote_def_source(label: &str, blocks: &[BlockNode], ctx: &mut CarveContext) -> String {
+    // A bare `[^label]:` is paragraph text, not a definition. PART 11 §7b
+    // gives an empty definition an explicit spelling so formatting preserves
+    // the definition and references to it keep resolving.
+    if blocks.is_empty() {
+        return format!("[^{}]: {{empty}}", escape_footnote_label(label));
+    }
     let raw_body = render_blocks(blocks, ctx);
     let single_body;
     let body = trim_non_nbsp(if blocks.len() == 1 {

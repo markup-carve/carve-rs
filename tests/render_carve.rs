@@ -78,6 +78,16 @@ fn blank_line_collapse() {
 }
 
 #[test]
+fn empty_footnote_definition_uses_the_empty_sentinel() {
+    let source = "See[^f]\n\n[^f]: {empty}\n";
+    assert_eq!(carve::to_carve(source), source);
+    assert_eq!(
+        carve::to_html(&carve::to_carve(source)),
+        carve::to_html(source)
+    );
+}
+
+#[test]
 fn bullet_marker_normalization() {
     let doc = carve::Document {
         frontmatter: Default::default(),
