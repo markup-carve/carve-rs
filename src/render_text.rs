@@ -1,12 +1,63 @@
-/// Drop C0/C1 control characters (keeping tab and newline) from author content
-/// so attacker `ESC` / OSC sequences cannot inject into terminal output (the
-/// ANSI and plain-text renderers). The renderers' own styling escapes are added
-/// separately and are not affected.
-pub(crate) fn strip_controls(input: &str) -> String {
+/// Drop EVERY control character (keeping tab and newline) from author content,
+/// so an attacker's `ESC` / OSC sequence cannot inject into terminal output.
+///
+/// THE TERMINAL TARGET ONLY (PART 9 §29 T4). It is the one target whose consumer
+/// ACTS on the character: a form feed feeds or clears, and U+001B introduces a
+/// sequence that can move the cursor, rewrite earlier output or reach the
+/// clipboard. That is a property of the DEVICE, so it reaches this target and no
+/// other. The breadth is deliberate and T4 says so in as many words: §25
+/// NON-HTML TARGETS requires DEL (U+007F) and the C1 controls to go too, because
+/// CSI (U+009B) and OSC (U+009D) are single-character forms of the very
+/// sequences the requirement exists to stop. Narrowing this to C0 would be a
+/// security regression.
+///
+/// The Markdown and plain-text targets use [`strip_high_controls`] instead.
+pub(crate) fn strip_terminal_controls(input: &str) -> String {
     input
         .chars()
         .filter(|c| *c == '\t' || *c == '\n' || !c.is_control())
         .collect()
+}
+
+/// Drop DEL and the C1 controls, and NOTHING BELOW U+007F, from author content.
+///
+/// What the Markdown and plain-text targets strip (PART 9 §29 T2, T3). After
+/// markup-carve/carve#963 the whitespace of this language is exactly U+0020,
+/// U+0009, U+000A and U+000D; every other C0 control - U+0000..U+0008, U+000B,
+/// U+000C, U+000E..U+001F - is ordinary CONTENT that parses as content, survives
+/// into the AST, and satisfies no whitespace slot. §29 then says what each target
+/// does with that content, and for these two the answer is EMIT: a target that
+/// silently removes content is lossy in exactly the way markup-carve/carve#817
+/// rejected for the wire, and the reason first offered for the strip - that a
+/// Markdown reader would reclassify these as whitespace - was measured against
+/// four readers and did not hold.
+///
+/// DEL AND THE C1 CONTROLS ARE NOT PART OF THAT, and stay stripped here. §29 T5
+/// puts them outside the section explicitly and leaves them to a ticket of their
+/// own; removing them from this filter as well would have made this change
+/// introduce that defect rather than leave it where it is
+/// (markup-carve/carve-rs#812).
+///
+/// NEITHER IS U+000D, and for the opposite reason: carve#963 makes it
+/// WHITESPACE, so §29's class - "every OTHER C0 control" - excludes it and this
+/// section rules on it not at all. The parser never lets one through (a CRLF is
+/// normalized before any block is read), so it can only arrive on a tree built
+/// through the API or read by `from_json`, where it is a LINE TERMINATOR inside
+/// a leaf the writer is laying out in lines of its own: a Markdown reader may
+/// take it as a line boundary, and on a terminal it returns the cursor over what
+/// was already printed. The previous filter dropped it and so does this one -
+/// leaving a character §29 does not govern exactly where it was (raised by
+/// `codex review`).
+pub(crate) fn strip_high_controls(input: &str) -> String {
+    if !input.chars().any(is_not_emitted) {
+        return input.to_string();
+    }
+    input.chars().filter(|c| !is_not_emitted(*c)).collect()
+}
+
+/// DEL (U+007F), the C1 controls (U+0080..U+009F), and the carriage return.
+fn is_not_emitted(c: char) -> bool {
+    matches!(c, '\u{7f}'..='\u{9f}' | '\r')
 }
 
 /// A renderer's whitespace terminal: U+0020 and U+0009, and NOTHING ELSE.
