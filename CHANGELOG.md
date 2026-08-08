@@ -202,6 +202,25 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   heading is the exception `heading_folds_lazy.rs` pins, and an image line is a
   block only while nothing folds into it, which the following line decides.
 
+- **`fmt` keeps a `+`-attached block that opens no block of its own** (PART 11
+  §1, PART 9 §17 L3; carve-rs#819). The continuation marker was written back
+  only for a PARAGRAPH after a paragraph, on the premise that nothing else can
+  fold into one. An image line opens no block at the item's content column and
+  folds like any other text, so `- x` / `+` / `![a](i.png)` / `^ cap` came back
+  as `- x` / `  ![a](i.png)` / `  ^ cap`: the `<figure>` gone and the caption
+  literal text. The bare image without a caption lost its block the same way.
+  The writer now asks the parser's own opener test about the bytes it is about
+  to emit, so a quote, a fence, a heading, a break and a div still get no marker.
+
+- **`fmt` parts a header cell's marker from content that starts with an
+  alignment sigil** (PART 11 §1; carve-rs#819). The header `=` is read glued to
+  the pipe and the alignment sigil glued after it, so `| ~x~ |` - a header cell
+  holding a strikethrough - was written as `|=~x~|` and re-read as a CENTERED
+  column holding `x~`, centering every cell in the column by a marker nobody
+  wrote. One space now parts them (`|= ~x~|`); only the marker's position
+  relative to the pipe is significant. A cell that already carries alignment,
+  and one with no prefix at all, are unchanged.
+
 - **The Markdown target's escaping narrows on the line** (PART 11 §8a,
   markup-carve/carve#970; carve-rs#824). `_`, `#` and `[` are escaped if and only
   if the character is ADJACENT on the emitted line to an unescaped delimiter of
