@@ -138,13 +138,16 @@ fn the_slot_is_exactly_one_space() {
 #[test]
 fn the_canonical_and_bare_openers_are_unchanged() {
     assert_frontmatter("glued", "---toml\na = 1\n---\nx\n", "toml");
-    // A bare fence defaults to yaml in the AST but writes back bare, so the
-    // shared helper's fence assertion does not apply to it.
+    // A bare fence defaults to yaml in the AST and now writes back WITH that
+    // token, so the opener it comes back as is not the one it went in as - the
+    // shared helper's fence assertion still does not apply to it. This line used
+    // to assert `---`; PART 11 section 6b spells the token "for EVERY format,
+    // the default one included" (markup-carve/carve#1040).
     let bare = parse("---\na: 1\n---\nx\n")
         .frontmatter_raw
         .expect("bare: no frontmatter block");
     assert_eq!(bare.format, "yaml");
-    assert_eq!(fmt_first_line("---\na: 1\n---\nx\n"), "---");
+    assert_eq!(fmt_first_line("---\na: 1\n---\nx\n"), "---yaml");
 }
 
 #[test]

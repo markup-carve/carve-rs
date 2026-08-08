@@ -2333,9 +2333,8 @@ fn restore_verbatim(text: &str) -> String {
             // formatter's semantic check on
             // `69-opaque-spans-inside-a-container-6`.
             //
-            // Drop the marker and KEEP the indentation, which is what the global
-            // replace did; a later trim removes a whitespace-only line. A marker
-            // sitting next to real text is left alone, which is the point.
+            // Drop the marker. A marker sitting next to real text is left alone,
+            // which is the point.
             let prefix = line.trim_end_matches(verbatim_blank());
             if prefix.len() != line.len()
                 && prefix.chars().all(|c| c == ' ' || c == '\t' || c == '>')
@@ -2347,6 +2346,28 @@ fn restore_verbatim(text: &str) -> String {
                 // formatter's semantic check both caught. A line that is nothing
                 // but container prefix plus the marker is the blank the marker
                 // stands for, at any nesting.
+                //
+                // A PURELY WHITESPACE PREFIX IS DROPPED WITH IT. PART 11 section
+                // 7 emits the STRUCTURAL INDENT of an empty verbatim line as
+                // nothing: "when the verbatim content on that line is EMPTY the
+                // indent alone is what remains -- that is layout, and it is
+                // omitted". Keeping it left a whitespace-only line, which editors
+                // that strip on save, `git apply --whitespace=fix` and CI
+                // whitespace checks all rewrite behind the formatter.
+                //
+                // The comment here used to say "a later trim removes a
+                // whitespace-only line". Nothing does: `normalize` runs its
+                // whitespace-only pass BEFORE this function, when the line still
+                // carries the marker and so is not whitespace-only yet. That was
+                // a check that could not fail, and a blank line inside a fenced
+                // block under a footnote definition or a definition-list
+                // description came out indented (carve#1040).
+                //
+                // The block-quote prefix is not layout and stays: an EMPTY line
+                // would close the quote, taking the open fence with it.
+                if prefix.chars().all(|c| c == ' ' || c == '\t') {
+                    return String::new();
+                }
                 return prefix.to_string();
             }
             let line = match line.strip_prefix(thematic_guard()) {
