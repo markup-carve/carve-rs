@@ -9,6 +9,20 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Breaking
 
+- **An inline comment is written with the space that separates it from the
+  construct before it** (markup-carve/carve#1028). `{,y,} %% c` was written back
+  as `{,y,}%% c`, so the bytes changed for any document whose comment follows
+  emphasis, a link, an image, a span or math. It is a repair, not a preference:
+  `%%` opens a comment only at the start of a line or after whitespace, so the
+  glued form re-parsed as literal text - `<p><sub>y</sub>%% c</p>` where the
+  source rendered `<p><sub>y</sub></p>`, PART 11 §1 failing on the writer's own
+  output.
+
+  The writer already put one space back, but decided by asking the previous NODE
+  for its last character, and those five kinds report none - indistinguishable
+  from "nothing precedes me". It now decides on the bytes already emitted for the
+  line, which is the test PART 11 §1a states.
+
 - **The AST now publishes `thematic_break.marker` and the Carve writer
   reproduces it** (markup-carve/carve#976). Parsed `***` and `___` carry `*`
   and `_` respectively; the default `---` leaves the optional field absent.
