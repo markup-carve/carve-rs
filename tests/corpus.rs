@@ -329,6 +329,7 @@ const IMPLEMENTED: &[&str] = &[
     // Three of its seven rows moved here; the other four already passed.
     "a-fence-opened-on-a-list-marker-line-body-below-the-content-column",
     "an-empty-footnote-body-is-written-with-the-empty-sentinel",
+    "a-ragged-table-keeps-each-row-s-cell-count",
 ];
 
 fn corpus_dir() -> PathBuf {
