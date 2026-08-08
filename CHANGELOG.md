@@ -191,6 +191,38 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`fmt` no longer manufactures a frontmatter block out of a promoted
+  paragraph** (carve-rs#819). PART 11 §7 writes a hoisted link or footnote
+  definition after the body, promoting whatever stood second to byte 0. When
+  that block is a PARAGRAPH whose first line is `---yaml`-shaped, the emitted
+  document opens a frontmatter block the input did not have and the next parse
+  swallows everything down to the first bare `---`: `[a]: /u` / blank /
+  `---yaml` / `k: v` / `---` rendered a paragraph and a rule, and after `fmt`
+  rendered nothing at all. The previous guard could not see it - it asked
+  whether the first rendered block was the string `---`, and a paragraph is not,
+  and the line that has to move is the CLOSER four lines further down. The
+  finished bytes are now handed to the parser's own opener test. **Behavior
+  change:** when the emitted bytes would be read as opening a frontmatter block
+  the document does not have, `fmt` writes every HYPHEN-spelled thematic break
+  as `***`, not only the one at the head. Only the hyphen spelling can be read
+  as a fence, so a break the author wrote `***` or `___` keeps its own marker
+  even in that document, which is the smallest departure that restores the
+  invariant. A document that is not misread is untouched, and one still misread
+  with `***` keeps the authored spelling rather than paying a respelling that
+  buys nothing. This is a deviation from §6, taken because PART 11 §1a makes §1
+  the stronger clause.
+
+- **`fmt` keeps the continuation marker on every block in a `+`-attached run**
+  (carve-rs#819). The marker column is the item's own column, to the left of the
+  item's content column, so once one child was written there every later child
+  written at the content column was indented relative to it and read as its lazy
+  continuation. `- x` / `+` / image / `+` / image came back as one item holding a
+  single image paragraph with the second image's source as literal text, and with
+  a caption on each, the second figure's whole source landed inside the first
+  one's `<figcaption>`. The condition is the previous child's COLUMN rather than
+  its kind: a block opener needs no marker of its own but still cannot sit two
+  columns to the right of the block above it.
+
 - **`fmt` writes a footnote definition with no blocks as `[^f]: {empty}`**
   (carve-rs#819, PART 11 §7b). The body empties whenever the definition line's
   whole body is a block-attribute run, which the line collects as attributes and
