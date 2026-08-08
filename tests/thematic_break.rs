@@ -17,6 +17,43 @@ fn contiguous_col0_runs_are_breaks() {
 }
 
 #[test]
+fn authored_markers_survive_parse_ingest_and_write() {
+    for (marker, source) in [('-', "---"), ('*', "***"), ('_', "___")] {
+        let doc = carve::parse(source);
+        let json = carve::ast_json::to_json(&doc);
+        if marker == '-' {
+            assert!(
+                !json.contains(r#""marker""#),
+                "default marker published in {json}"
+            );
+        } else {
+            assert!(
+                json.contains(&format!(r#""marker":"{marker}""#)),
+                "authored marker absent from {json}"
+            );
+        }
+        assert_eq!(
+            carve::render_carve(&doc).expect("render"),
+            format!("{source}\n")
+        );
+    }
+
+    let authored = r#"{"type":"document","srcByteLength":3,"children":[{"type":"thematic_break","marker":"_"}]}"#;
+    let decoded = carve::ast_json::from_json(authored).expect("marker is accepted");
+    let republished = carve::ast_json::to_json(&decoded);
+    assert!(republished.contains(r#""marker":"_""#));
+    assert_eq!(carve::render_carve(&decoded).expect("render"), "___\n");
+
+    let defaulted =
+        r#"{"type":"document","srcByteLength":3,"children":[{"type":"thematic_break"}]}"#;
+    let decoded = carve::ast_json::from_json(defaulted).expect("absent marker is accepted");
+    assert_eq!(carve::render_carve(&decoded).expect("render"), "---\n");
+
+    let invalid = r#"{"type":"document","srcByteLength":3,"children":[{"type":"thematic_break","marker":"x"}]}"#;
+    assert!(carve::ast_json::from_json(invalid).is_err());
+}
+
+#[test]
 fn spaced_runs_are_not_breaks() {
     // Internal spaces disqualify the break: `* * *`/`- - -` parse as a nested
     // list, `_ _ _` as a paragraph.

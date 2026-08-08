@@ -71,42 +71,30 @@ fn three_lines_are_enough_to_lose_the_whole_document() {
 }
 
 #[test]
-fn a_leading_break_alone_is_written_with_three_dashes() {
-    // The one shape the corpus does hold (`132-...-4.crv`), and the one
-    // carve#961 pins: `---` is the canonical marker and a document that is only
-    // a break gets it. With nothing after it, no `---` is left to close a
-    // manufactured block, so the opener test does not fire and the fallback is
-    // not owed.
-    //
-    // This assertion previously read `"***\n"` in both directions and was
-    // labelled a control. It was not one: it pinned the spelling the fallback
-    // happened to produce, on the single corpus document that could have said
-    // otherwise.
-    assert_eq!(assert_round_trips("***\n"), "---\n");
+fn a_leading_break_alone_keeps_its_authored_marker() {
+    assert_eq!(assert_round_trips("***\n"), "***\n");
     assert_eq!(assert_round_trips("---\n"), "---\n");
 }
 
 #[test]
-fn a_leading_break_with_no_closer_after_it_keeps_three_dashes() {
+fn a_leading_break_with_no_closer_after_it_keeps_its_authored_marker() {
     // The opener needs a CLOSER, so a leading break followed by anything that
-    // is not a bare `---` line is not at risk and keeps the canonical marker.
+    // is not a bare `---` line is not at risk and keeps its authored marker.
     // This is the shape that separates "the break is on line 1" from "the text
     // would really be misread" - a guard keyed on position alone rewrites here
     // and this fails.
-    assert_eq!(assert_round_trips("***\n\na\n"), "---\n\na\n");
-    assert_eq!(assert_round_trips("***\n\n# T\n\nb\n"), "---\n\n# T\n\nb\n");
+    assert_eq!(assert_round_trips("***\n\na\n"), "***\n\na\n");
+    assert_eq!(assert_round_trips("***\n\n# T\n\nb\n"), "***\n\n# T\n\nb\n");
     // `--- ` with a trailing space is not a closer either, and the writer never
     // emits one, so a paragraph holding dashes does not arm the fallback.
-    assert_eq!(assert_round_trips("***\n\n-- -\n"), "---\n\n-- -\n");
+    assert_eq!(assert_round_trips("***\n\n-- -\n"), "***\n\n-- -\n");
 }
 
 #[test]
-fn a_leading_break_keeps_its_canonical_spelling_everywhere_else() {
-    // `---` is the canonical thematic break and stays one. Only the document's
-    // FIRST line can be misread, because the opener test is anchored at byte 0.
-    assert_eq!(assert_round_trips("a\n\n***\n\n---\n"), "a\n\n---\n\n---\n");
+fn breaks_keep_their_authored_spelling_everywhere_else() {
+    assert_eq!(assert_round_trips("a\n\n***\n\n---\n"), "a\n\n***\n\n---\n");
     // Inside a container the line is never at byte 0 either.
-    assert_eq!(assert_round_trips("> ***\n\n---\n"), "> ---\n\n---\n");
+    assert_eq!(assert_round_trips("> ***\n\n---\n"), "> ***\n\n---\n");
 }
 
 #[test]
@@ -123,12 +111,12 @@ fn a_closer_inside_verbatim_content_still_arms_the_fallback() {
     // And the same fence WITHOUT the `---` line does not arm it.
     assert_eq!(
         assert_round_trips("***\n\n```\na\n```\n"),
-        "---\n\n```\na\n```\n"
+        "***\n\n```\na\n```\n"
     );
 }
 
 #[test]
-fn a_leading_break_under_the_writers_own_frontmatter_keeps_three_dashes() {
+fn a_leading_break_under_the_writers_own_frontmatter_keeps_its_authored_marker() {
     // `render_carve` writes the frontmatter MAP itself, so the break is not on
     // line 1 and no fallback is owed even though a later `---` line exists. The
     // opener test only ever sees the body, so without the `parts` emptiness
@@ -139,7 +127,7 @@ fn a_leading_break_under_the_writers_own_frontmatter_keeps_three_dashes() {
     let doc = carve::parse("---yaml\nt: 1\n---\n\n***\n\na\n\n---\n");
     assert_eq!(doc.frontmatter.len(), 1);
     let written = carve::render_carve(&doc).expect("within the render ceiling");
-    assert_eq!(written, "---\nt: 1\n---\n\n---\n\na\n\n---\n");
+    assert_eq!(written, "---\nt: 1\n---\n\n***\n\na\n\n---\n");
     // And it means what it said: one frontmatter block, two rules.
     assert_eq!(carve::to_html(&written), "<hr>\n<p>a</p>\n<hr>");
 }
@@ -159,7 +147,7 @@ fn a_real_leading_frontmatter_block_still_opens_with_three_dashes() {
 }
 
 #[test]
-fn the_tree_taking_writer_keeps_three_dashes_under_its_own_frontmatter() {
+fn the_tree_taking_writer_keeps_the_authored_marker_under_its_own_frontmatter() {
     // `render_carve` is public and writes the frontmatter MAP itself, so on that
     // path the break is not the first line and `---` is still right. `to_carve`
     // cannot reach this: it clears the map and prepends the raw block
@@ -171,7 +159,7 @@ fn the_tree_taking_writer_keeps_three_dashes_under_its_own_frontmatter() {
     assert_eq!(doc.frontmatter.len(), 1);
     assert_eq!(
         carve::render_carve(&doc).expect("within the render ceiling"),
-        "---\nt: 1\n---\n\n---\n\na\n"
+        "---\nt: 1\n---\n\n***\n\na\n"
     );
 }
 
@@ -182,7 +170,7 @@ fn an_attributed_leading_break_is_not_rewritten() {
     // rendered bytes rather than the node kind, so this is what keeps it from
     // rewriting a break it did not need to.
     let formatted = assert_round_trips("{.x}\n***\n\n---\n");
-    assert_eq!(formatted, "{.x}\n---\n\n---\n");
+    assert_eq!(formatted, "{.x}\n***\n\n---\n");
 }
 
 // ---------------------------------------------------------------------------
