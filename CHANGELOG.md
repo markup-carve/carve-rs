@@ -188,6 +188,20 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and a profile whose disallowed action is Strip removing the body's every
   block. Matches carve-js and carve-php.
 
+- **A definition body that holds no open paragraph does not take the lazy fold**
+  (PART 0 §4, markup-carve/carve#956; carve-rs#790). The clause is stated on the
+  PARAGRAPH, and only the FENCED body had been read that way. Seven more bodies
+  fold no longer, each matching the LIST spelling of the same document, which
+  already answered this way: an empty block quote, a closed div, a closed
+  admonition, a table, a thematic break, a line block, and a body a
+  block-attribute line left with no block at all. So `:: t` / `:  >` / `lazy`
+  renders the empty quote inside the `<dd>` and `lazy` as a top-level paragraph,
+  where it used to be a paragraph inside the `<dd>`.
+
+  A HEADING still takes the fold, and so does a bare or captioned image: a
+  heading is the exception `heading_folds_lazy.rs` pins, and an image line is a
+  block only while nothing folds into it, which the following line decides.
+
 - **The Markdown target's escaping narrows on the line** (PART 11 §8a,
   markup-carve/carve#970; carve-rs#824). `_`, `#` and `[` are escaped if and only
   if the character is ADJACENT on the emitted line to an unescaped delimiter of
