@@ -75,7 +75,10 @@ fn control_a_plus_attached_block_opener_still_gets_no_marker() {
         ("- x\n+\n```\nc\n```\n", "- x\n  ```\n  c\n  ```\n"),
         ("- x\n+\n# H\n", "- x\n  # H\n"),
         ("- x\n+\n---\n", "- x\n  ---\n"),
-        ("- x\n+\n::: note\nb\n:::\n", "- x\n  ::: note\n  b\n  :::\n"),
+        (
+            "- x\n+\n::: note\nb\n:::\n",
+            "- x\n  ::: note\n  b\n  :::\n",
+        ),
     ] {
         assert_eq!(fmt(src), formatted, "for {src:?}");
         assert!(round_trips(src), "for {src:?}: {}", fmt(src));
@@ -132,6 +135,21 @@ fn control_a_header_cell_that_already_carries_alignment_stays_glued() {
     let src = "| a |\n|:-:|\n| ~y~ |\n";
     assert_eq!(fmt(src), "|=~a|\n| ~y~ |\n");
     assert!(round_trips(src));
+}
+
+#[test]
+fn a_cell_that_already_carries_alignment_keeps_its_sigil_content_glued() {
+    // THE `align.is_empty()` CONDITION IS ABOUT THE BYTES, not about the round
+    // trip: with an alignment marker already in the prefix the reader trims the
+    // padding after it, so a separator here would round-trip too. What it would
+    // not do is stay canonical - `|~ ~x~|` carries a space nothing asked for,
+    // and `fmt` writes one form per document. Both spellings are asserted, with
+    // and without the header marker.
+    for src in ["|~~x~|\n| y |\n", "|=~~x~|\n| y |\n"] {
+        assert_eq!(fmt(src), src, "for {src:?}");
+        assert!(round_trips(src), "for {src:?}");
+        assert!(html(src).contains("<s>x</s>"), "the premise: {}", html(src));
+    }
 }
 
 #[test]
