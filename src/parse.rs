@@ -3401,10 +3401,11 @@ fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<BlockNode>
         }
         return Some(block);
     }
-    if detect_thematic_break(line) {
+    if let Some(marker) = thematic_break_marker(line) {
         let span_start = cur.pos;
         cur.consume();
         return Some(BlockNode::ThematicBreak(ThematicBreak {
+            marker: (marker != '-').then_some(marker),
             pos: span_of(cur, span_start, cur.pos, options),
             ..Default::default()
         }));
@@ -3727,6 +3728,10 @@ fn is_comment_fence_close(line: &str, fence_len: usize) -> bool {
 }
 
 fn detect_thematic_break(line: &str) -> bool {
+    thematic_break_marker(line).is_some()
+}
+
+fn thematic_break_marker(line: &str) -> Option<char> {
     // Grammar (spec §262): a col-0 run of 3+ of the SAME `-`/`*`/`_`,
     // CONTIGUOUS (no internal spaces), followed only by trailing whitespace.
     // No leading indent. So `***`/`----`/`___` are breaks, but `* * *` (spaces)
@@ -3735,7 +3740,7 @@ fn detect_thematic_break(line: &str) -> bool {
     let bytes = line.as_bytes();
     let marker = match bytes.first() {
         Some(&b @ (b'-' | b'*' | b'_')) => b,
-        _ => return false,
+        _ => return None,
     };
     let mut count = 0usize;
     let mut i = 0;
@@ -3744,10 +3749,13 @@ fn detect_thematic_break(line: &str) -> bool {
         i += 1;
     }
     if count < 3 {
-        return false;
+        return None;
     }
     // Only trailing whitespace may follow the contiguous marker run.
-    bytes[i..].iter().all(|&b| b == b' ' || b == b'\t')
+    bytes[i..]
+        .iter()
+        .all(|&b| b == b' ' || b == b'\t')
+        .then_some(marker as char)
 }
 
 #[derive(Debug, Clone, Copy)]

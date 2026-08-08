@@ -159,6 +159,8 @@ pub enum BlockNode {
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ThematicBreak {
+    /// The thematic-break character as authored. Absence defaults to `-`.
+    pub marker: Option<char>,
     /// Attributes from a preceding block-attribute line (`{.x}` then `---`).
     pub attrs: Option<Attrs>,
     /// Span in the original source, when the parser could determine it.

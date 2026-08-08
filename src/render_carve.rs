@@ -977,7 +977,10 @@ fn render_block(node: &BlockNode, ctx: &mut CarveContext) -> String {
             &list.attrs,
             &with_reset_colon_fence_depth(ctx, |ctx| render_list(list, ctx)),
         ),
-        BlockNode::ThematicBreak(rule) => with_block_attrs(&rule.attrs, "---"),
+        BlockNode::ThematicBreak(rule) => {
+            let marker = rule.marker.unwrap_or('-').to_string().repeat(3);
+            with_block_attrs(&rule.attrs, &marker)
+        }
         BlockNode::Table(table) => with_block_attrs(&table.attrs, &render_table(table, ctx)),
         BlockNode::Admonition(admonition) => {
             let title = admonition

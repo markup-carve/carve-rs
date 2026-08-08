@@ -669,6 +669,9 @@ fn write_block(out: &mut String, node: &BlockNode) {
         BlockNode::BlockImage(n) => write_image(out, n),
         BlockNode::ThematicBreak(n) => {
             let mut w = typed(out, "thematic_break");
+            if let Some(marker @ ('*' | '_')) = n.marker {
+                w.field("marker", |out| write_string(out, &marker.to_string()));
+            }
             write_attrs_field(&mut w, &n.attrs);
             write_pos_field(&mut w, &n.pos);
             w.finish();
@@ -1364,6 +1367,7 @@ fn decode_block(value: &Json) -> Result<BlockNode, AstJsonError> {
             pos: optional_pos(obj, "code_block")?,
         })),
         "thematic_break" => Ok(BlockNode::ThematicBreak(ThematicBreak {
+            marker: optional_thematic_break_marker(obj)?,
             attrs: optional_attrs(obj)?,
             pos: optional_pos(obj, "thematic_break")?,
         })),
@@ -1946,6 +1950,18 @@ fn optional_marker_char(
             Ok(ch)
         })
         .transpose()
+}
+
+fn optional_thematic_break_marker(
+    obj: &BTreeMap<String, Json>,
+) -> Result<Option<char>, AstJsonError> {
+    let marker = optional_marker_char(obj, "marker")?;
+    match marker {
+        None | Some('-' | '*' | '_') => Ok(marker),
+        Some(value) => Err(AstJsonError::new(format!(
+            "thematic_break.marker must be one of `-`, `*`, or `_`, got `{value}`"
+        ))),
+    }
 }
 
 fn optional_attrs(obj: &BTreeMap<String, Json>) -> Result<Option<Attrs>, AstJsonError> {

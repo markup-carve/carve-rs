@@ -9,6 +9,11 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Breaking
 
+- **The AST now publishes `thematic_break.marker` and the Carve writer
+  reproduces it** (markup-carve/carve#976). Parsed `***` and `___` carry `*`
+  and `_` respectively; the default `---` leaves the optional field absent.
+  AST ingest accepts the field and defaults an absent one to `---`.
+
 - **AST ingest refuses every property the schema does not name, including the
   ones it used to understand** (PART 12 §11, markup-carve/carve#743;
   carve-rs#820). Three spellings were accepted and now reject at decode:
