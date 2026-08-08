@@ -2,6 +2,13 @@
 //! nothing and only litters identifiers in output meant to be read and searched.
 //! An asterisk is not symmetric here - `a*b*c` does emphasise - so `*` stays
 //! escaped everywhere.
+//!
+//! SINCE PART 11 §8a (carve-rs#824) THE RULE IS WIDER THAN INTRAWORD. `_` is
+//! escaped if and only if it is ADJACENT on the emitted line to an unescaped
+//! delimiter of the same character, so a LONE underscore anywhere goes bare, not
+//! only one between two word characters. The two cases below that used to pin
+//! the narrower rule move with it, and `the_markdown_targets_escaping_narrows_on_the_line`
+//! carries the clause itself.
 
 #[test]
 fn intraword_underscores_are_left_bare() {
@@ -19,10 +26,15 @@ fn intraword_underscores_are_left_bare() {
     }
 }
 
+/// A `_` at a word boundary is still not adjacent to a delimiter of its own
+/// character, so §8a M1b emits it bare. The old intraword test kept it escaped;
+/// that was the narrower rule, and it protected nothing - this writer spells
+/// emphasis with `*`, so there is no `_` delimiter on the line for it to merge
+/// with.
 #[test]
-fn underscores_that_could_open_or_close_emphasis_stay_escaped() {
-    assert_eq!(carve::to_markdown("trailing_").trim(), "trailing\\_");
-    assert_eq!(carve::to_markdown("_leading").trim(), "\\_leading");
+fn underscores_that_could_open_or_close_emphasis_are_bare_too() {
+    assert_eq!(carve::to_markdown("trailing_").trim(), "trailing_");
+    assert_eq!(carve::to_markdown("_leading").trim(), "_leading");
 }
 
 #[test]
@@ -57,11 +69,15 @@ fn a_backslash_the_renderer_did_not_write_is_kept() {
     }
 }
 
+/// PART 11 §8a M2: a character the AUTHOR escaped is an `escaped_text` node and
+/// is emitted AS AN ESCAPE whatever the character, untouched by M1b. This used
+/// to lose its backslash to the intraword rule, which was M1b deciding a node M1
+/// never governed - and it made `a\_b` and `a_b` indistinguishable on this
+/// target, taking out the one case where the author had said which reading they
+/// meant.
 #[test]
-fn an_authored_escape_is_de_escaped_when_intraword() {
-    // `a\_b` and `a_b` are two spellings of the same document, so they have to
-    // render the same - the escape the author wrote is still an escape.
-    assert_eq!(carve::to_markdown(r"a\_b").trim(), "a_b");
+fn an_authored_escape_is_emitted_as_an_escape() {
+    assert_eq!(carve::to_markdown(r"a\_b").trim(), r"a\_b");
 }
 
 #[test]

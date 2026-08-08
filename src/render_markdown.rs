@@ -562,16 +562,16 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
         // Reproduce the author's escape. `\-\-` was written precisely so a
         // downstream processor with smart punctuation on would not read an en
         // dash; emitting the character bare loses exactly that (carve issue
-        // 350). The underscore still goes through the sentinel so the intraword
-        // rule can drop the backslash where CommonMark ignores it anyway.
-        InlineNode::EscapedText(text) => {
-            let ch = &text.value;
-            if ch == "_" {
-                UNDERSCORE_ESCAPE.to_string()
-            } else {
-                format!("\\{ch}")
-            }
-        }
+        // 350).
+        //
+        // NO SENTINEL HERE, and PART 11 §8a M2 says why: M1b is a rule about a
+        // character that reached this writer inside a TEXT node - one the Carve
+        // grammar did not read as an opener and the author did not mark. This
+        // is the other case. The author said which reading they meant, M2 gives
+        // it back whatever the character, and the line test never sees it. The
+        // underscore used to take the sentinel here and lose its backslash to
+        // the intraword rule, which was M1b deciding a node M1 never governed.
+        InlineNode::EscapedText(text) => format!("\\{}", text.value),
         InlineNode::Text(text) => {
             if is_literal_crossref(&text.value) {
                 strip_controls(&text.value)
@@ -960,16 +960,22 @@ fn escape_text(text: &str) -> String {
                 out.push_str("&gt;");
                 continue;
             }
-            // The underscore escape is emitted as a sentinel rather than a
-            // backslash: whether it survives depends on its neighbours in the
-            // assembled document, which only resolve_underscore_escapes() can
-            // see. See UNDERSCORE_ESCAPE.
-            '_' => {
-                out.push(UNDERSCORE_ESCAPE);
+            // `_`, `#` and `[` are emitted as SENTINELS rather than as
+            // backslashes: PART 11 §8a decides those three on the EMITTED LINE,
+            // which only `resolve_narrowed_escapes` can see. See
+            // `narrowed_sentinel`.
+            '_' | '#' | '[' => {
+                out.push(narrowed_sentinel(ch));
                 continue;
             }
-            // Markdown metacharacters.
-            '\\' | '`' | '*' | '[' | ']' | '#' => out.push('\\'),
+            // Markdown metacharacters. The ASTERISK keeps M1 unconditionally
+            // (§8a M1a): this writer spells emphasis with `*`, so a literal
+            // asterisk is not a character that MIGHT meet markup on the line -
+            // it is the character the line's markup is made of. `*\*\**`
+            // unescaped to `****`, which a CommonMark reader publishes as a
+            // thematic break rather than as emphasis holding two asterisks.
+            // `]` and the rest are M1c: nothing else narrows.
+            '\\' | '`' | '*' | ']' => out.push('\\'),
             _ => {}
         }
         out.push(ch);
@@ -977,18 +983,52 @@ fn escape_text(text: &str) -> String {
     out
 }
 
-/// Sentinel standing in for an underscore escape this renderer emitted, so the
-/// final pass can tell those apart from a backslash the author wrote. U+E000 is
-/// the NBSP sentinel and the Carve writer claims U+E001..U+E003; this extends
-/// the scheme. Author content never carries it: strip_controls() drops it on
-/// the way in, and every path to the output runs through strip_controls().
-const UNDERSCORE_ESCAPE: char = '\u{E004}';
+/// Sentinels standing in for the escapes PART 11 §8a decides on the LINE.
+///
+/// One per narrowed character. U+E000 is the NBSP sentinel and the Carve writer
+/// claims U+E001..U+E003; this extends the scheme. Author content never carries
+/// one: `strip_controls` drops the whole range on the way in, and every path to
+/// the output runs through it.
+const SENTINEL_FIRST: char = '\u{E004}';
+const SENTINEL_LAST: char = '\u{E006}';
 
-/// Drop control characters from author content, and the underscore-escape
-/// sentinel with them: author content that carried it would otherwise be read
-/// as an escape this renderer emitted. Every path to the output passes here.
+/// The sentinel for a narrowed character (`_`, `#`, `[`).
+fn narrowed_sentinel(ch: char) -> char {
+    match ch {
+        '_' => '\u{E004}',
+        '#' => '\u{E005}',
+        '[' => '\u{E006}',
+        other => other,
+    }
+}
+
+/// The character a narrowed sentinel stands for, or `None` for anything else.
+fn narrowed_character(ch: char) -> Option<char> {
+    match ch {
+        '\u{E004}' => Some('_'),
+        '\u{E005}' => Some('#'),
+        '\u{E006}' => Some('['),
+        _ => None,
+    }
+}
+
+/// Drop control characters from author content, and the §8a sentinels with them:
+/// author content that carried one would otherwise reach
+/// `resolve_narrowed_escapes` and be read as an escape this renderer emitted.
+/// Every path to the output passes here.
+///
+/// THE CONTROL HALF STAYS AS BROAD AS IT WAS. It is `strip_control_chars`, which
+/// is every `Cc` character bar tab and newline, NOT the non-whitespace C0 class:
+/// DEL (U+007F) and the C1 controls have to keep going, because CSI (U+009B) and
+/// OSC (U+009D) are single-character forms of the sequences PART 9 §25's terminal
+/// rule exists to stop. Narrowing this guard is a security regression, and the
+/// test suite pins it rather than leaving it to this comment.
 fn strip_controls(input: &str) -> String {
-    strip_control_chars(&input.replace(UNDERSCORE_ESCAPE, ""))
+    let sentinels_gone: String = input
+        .chars()
+        .filter(|c| !(SENTINEL_FIRST..=SENTINEL_LAST).contains(c))
+        .collect();
+    strip_control_chars(&sentinels_gone)
 }
 
 /// Escape `<>&` so embedded raw HTML cannot become live markup downstream.
@@ -1137,49 +1177,86 @@ fn normalize(text: &str) -> String {
     }
     let collapsed = format!("{}\n", out.trim_matches(|c| c == '\n' || c == ' '));
 
-    resolve_underscore_escapes(&collapsed)
+    resolve_narrowed_escapes(&collapsed)
 }
 
-/// Resolve the underscore escapes, dropping the backslash from an intraword one.
+/// Whether the candidate at `i` is ADJACENT to an unescaped delimiter of the
+/// same character, on the line the writer is building (PART 11 §8a M1b).
 ///
-/// CommonMark does not honour an intraword underscore, so `company_id`
-/// renders literally with or without the escape - the backslash only litters
-/// identifiers in output meant to be read and searched. An asterisk is NOT
-/// symmetric here (`a*b*c` does emphasise), so this applies to `_` alone.
+/// `line` is the assembled output with every candidate resolved to its BARE
+/// character, so it is the line as it reads if nothing is escaped, and an index
+/// into it is an index into the text being rewritten. "On the emitted line"
+/// needs no line splitting: a neighbour across a newline IS a newline, which is
+/// never the same character.
 ///
-/// Runs on the assembled output rather than in `escape_text` because whether
-/// an underscore is intraword is a property of the rendered stream, not of one
-/// node: the parser splits `company_id` into the text nodes `company` and
-/// `_id`, so at escape time the underscore looks like it starts a word.
-///
-/// It decides on the sentinel rather than on `\_` because the assembled
-/// document also contains regions this renderer must reproduce byte-exact -
-/// code spans, code blocks, link destinations, titles, raw HTML - and a
-/// backslash there is content, not an escape. Matching `\_` rewrote those too
-/// (carve-js issue 400).
-fn resolve_underscore_escapes(text: &str) -> String {
-    let chars: Vec<char> = text.chars().collect();
-    let mut out = String::with_capacity(text.len());
-    let mut i = 0usize;
-
-    while i < chars.len() {
-        let has_word_before = i > 0 && chars[i - 1].is_alphanumeric();
-        let has_word_after = chars.get(i + 1).is_some_and(|c| c.is_alphanumeric());
-
-        if chars[i] == UNDERSCORE_ESCAPE {
-            out.push_str(if has_word_before && has_word_after {
-                "_"
-            } else {
-                "\\_"
-            });
-            i += 1;
-            continue;
-        }
-
-        out.push(chars[i]);
-        i += 1;
+/// A neighbour BEFORE the candidate counts only if it is not itself behind a
+/// backslash - the clause's "not behind a backslash" - so the run of backslashes
+/// in front of it is counted and an odd run disqualifies it. A neighbour AFTER
+/// never can be: the character in front of it is the candidate itself.
+fn adjacent_to_live_delimiter(line: &[char], i: usize, ch: char) -> bool {
+    if line.get(i + 1) == Some(&ch) {
+        return true;
     }
+    if i == 0 || line[i - 1] != ch {
+        return false;
+    }
+    let mut backslashes = 0usize;
+    let mut j = i.checked_sub(2);
+    while let Some(k) = j {
+        if line[k] != '\\' {
+            break;
+        }
+        backslashes += 1;
+        j = k.checked_sub(1);
+    }
+    backslashes % 2 == 0
+}
 
+/// Resolve the narrowed escapes: PART 11 §8a, M1b.
+///
+/// `_`, `#` and `[` are escaped IF AND ONLY IF the character is adjacent on the
+/// emitted line to an unescaped delimiter of the same character. Adjacent, and
+/// unescaping would MERGE THE TWO INTO ONE RUN, which every Markdown reader this
+/// target answers to resolves by run length - so that escape is holding a run
+/// boundary apart under all of them at once, and it is kept. Not adjacent, and
+/// the escape protects nothing under any of them: `company_id`, `C#` and
+/// `issue #123` are written as the author typed them, and a backslash inside an
+/// identifier no longer breaks exact-match search in the published document.
+///
+/// THE ASTERISK IS NOT HERE, and that is M1a rather than an omission. See
+/// `escape_text`.
+///
+/// IT RUNS ON THE ASSEMBLED OUTPUT because the test is over the LINE and not
+/// over the node: the parser splits `company_id` into the text nodes `company`
+/// and `_id`, so at escape time the underscore looks like it starts a word.
+///
+/// IT DECIDES ON THE SENTINEL rather than on a `\_` in the output, because the
+/// assembled document also contains regions this renderer must reproduce
+/// byte-exact - code spans, code blocks, link destinations, titles, raw HTML -
+/// and a backslash there is content, not an escape. Matching `\_` rewrote those
+/// too (carve-js issue 400). It also keeps M2 out of the question: an
+/// author-escaped character is an `escaped_text` node emitted AS AN ESCAPE, and
+/// it never carries a sentinel, so nothing here can unescape it.
+fn resolve_narrowed_escapes(text: &str) -> String {
+    if !text.chars().any(|c| narrowed_character(c).is_some()) {
+        return text.to_string();
+    }
+    let line: Vec<char> = text
+        .chars()
+        .map(|c| narrowed_character(c).unwrap_or(c))
+        .collect();
+    let mut out = String::with_capacity(text.len());
+    for (i, raw) in text.chars().enumerate() {
+        match narrowed_character(raw) {
+            Some(ch) => {
+                if adjacent_to_live_delimiter(&line, i, ch) {
+                    out.push('\\');
+                }
+                out.push(ch);
+            }
+            None => out.push(raw),
+        }
+    }
     out
 }
 

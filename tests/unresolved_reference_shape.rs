@@ -194,9 +194,14 @@ fn explicit_definition_resolves_and_keeps_reference_metadata() {
 fn non_html_writers_render_unresolved_reference_source() {
     let source = "a ![alt][nope] and [b][no] x";
 
+    // PART 11 section 8a M1b (carve-rs#824): an opening bracket is escaped only
+    // where it is adjacent on the emitted line to an unescaped one. None of
+    // these is, so they go bare. The closing bracket keeps M1 unconditionally -
+    // M1c names no fourth character - so the two halves of a reference are
+    // spelled differently on purpose.
     assert_eq!(
         carve::to_markdown(source),
-        "a !\\[alt\\]\\[nope\\] and \\[b\\]\\[no\\] x\n"
+        "a ![alt\\][nope\\] and [b\\][no\\] x\n"
     );
     assert_eq!(
         carve::to_plain_text(source),

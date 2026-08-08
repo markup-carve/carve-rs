@@ -149,6 +149,23 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **The Markdown target's escaping narrows on the line** (PART 11 §8a,
+  markup-carve/carve#970; carve-rs#824). `_`, `#` and `[` are escaped if and only
+  if the character is ADJACENT on the emitted line to an unescaped delimiter of
+  the same character. So `company_id`, `C#` and `issue #123` are written as the
+  author typed them, where before they were `company\_id`, `C\#` and
+  `issue \#123` - a backslash inside an identifier breaks exact-match search in
+  the published document and protects nothing a CommonMark reader would read
+  differently. `a__b` and `[[x]]` keep both escapes, because unescaping would
+  merge the two into one delimiter run.
+
+  The ASTERISK is exempt and keeps its unconditional escape: this writer spells
+  emphasis with `*`, so a literal asterisk can merge with a delimiter the writer
+  itself just wrote. Nothing else narrows, and an author-escaped character is
+  still emitted as an escape - including `\_`, which used to lose its backslash
+  to the old intraword rule. Markdown output only; every other target is
+  unchanged.
+
 - **An escaped character reaches a heading's derived text** (carve-rs#800). It
   renders as visible prose, so it feeds the heading's title, its generated id and
   PART 9R R1's implicit `[label][]` index - and it fed none of them: the three
