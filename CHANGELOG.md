@@ -191,6 +191,9 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Preserve each row's cell count when formatting a ragged table instead of
+  manufacturing empty cells to make the table rectangular.
+
 - **`fmt` no longer manufactures a frontmatter block out of a promoted
   paragraph** (carve-rs#819). PART 11 §7 writes a hoisted link or footnote
   definition after the body, promoting whatever stood second to byte 0. When

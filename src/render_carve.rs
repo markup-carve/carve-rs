@@ -1371,12 +1371,6 @@ fn colon_fence_for(ctx: &CarveContext) -> String {
 /// the column.
 fn render_table(node: &Table, ctx: &mut CarveContext) -> String {
     let mut rows = Vec::new();
-    let columns = node
-        .rows
-        .iter()
-        .map(|row| row.cells.len())
-        .max()
-        .unwrap_or(0);
     let header_row = node
         .rows
         .first()
@@ -1390,23 +1384,16 @@ fn render_table(node: &Table, ctx: &mut CarveContext) -> String {
 
     for (row_index, row) in node.rows.iter().enumerate() {
         let mut cells = Vec::new();
-        for i in 0..columns {
-            if let Some(cell) = row.cells.get(i) {
-                // In the delimiter form the promoted row is written as ordinary
-                // data cells - the row after it is what makes them headers.
-                let mark_header = !(needs_delimiter && row_index == 0);
-                cells.push(render_table_cell(cell, ctx, mark_header));
-            } else {
-                cells.push(RenderedCell {
-                    text: String::new(),
-                    tight: false,
-                });
-            }
+        for cell in &row.cells {
+            // In the delimiter form the promoted row is written as ordinary
+            // data cells - the row after it is what makes them headers.
+            let mark_header = !(needs_delimiter && row_index == 0);
+            cells.push(render_table_cell(cell, ctx, mark_header));
         }
         rows.push(render_table_row(&cells, &render_attrs(&row.attrs)));
     }
     if needs_delimiter {
-        let sep = vec!["---"; columns].join("|");
+        let sep = vec!["---"; node.rows[0].cells.len()].join("|");
         rows.insert(1, format!("|{sep}|"));
     }
     if let Some(caption) = &node.caption {
