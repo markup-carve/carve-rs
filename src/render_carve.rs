@@ -1590,6 +1590,19 @@ fn render_inlines(nodes: &[InlineNode], ctx: &mut CarveContext) -> String {
             .and_then(first_boundary)
             .unwrap_or_default();
         let rendered = render_inline(node, ctx, prev, next);
+        // A COMMENT'S SEPARATING SPACE IS DECIDED ON THE EMITTED BYTES, not on
+        // the previous NODE (carve#1028). `%%` opens a comment only at the
+        // start of a line or after whitespace, so the writer owes one space
+        // whenever anything has already been written on this line. Asking the
+        // previous node for its last character cannot answer that: emphasis, a
+        // link, an image and a span all report NO boundary character, which is
+        // indistinguishable from "nothing precedes me" - so `{,y,} %% c` came
+        // back as `{,y,}%% c`, and re-parsing carve-rs's own output turned the
+        // comment into literal text. PART 11 section 1a states the test: read
+        // the bytes the writer just produced, not the source it came from.
+        if matches!(node, InlineNode::Comment(_)) && needs_comment_space(&out) {
+            out.push(' ');
+        }
         out.push_str(&rendered);
     }
     ctx.inline_depth -= 1;
@@ -1605,18 +1618,10 @@ fn render_inline(
     match node {
         // The one target that publishes it: the author wrote `%% note`, and
         // the canonical form writes it back verbatim. The parser drops the
-        // whitespace before the marker (it is not part of the text), so put a
-        // single space back unless the comment opens the line - `%%` only
-        // starts a comment at the start of a line or after whitespace, so
-        // gluing it to the word before would re-parse as literal text.
-        InlineNode::Comment(c) => {
-            let lead = if prev_char == '\0' || prev_char == '\n' {
-                ""
-            } else {
-                " "
-            };
-            format!("{lead}%% {}", c.content)
-        }
+        // whitespace before the marker (it is not part of the text); the space
+        // that puts it back is decided in `render_inlines`, on the bytes
+        // already emitted for this line.
+        InlineNode::Comment(c) => format!("%% {}", c.content),
         InlineNode::Text(text) => escape_text(
             &resolve_nbsp_placeholder(&text.value, ctx.line_block_depth > 0),
             ctx.escape_mode,
@@ -2792,6 +2797,20 @@ fn first_boundary(node: &InlineNode) -> Option<char> {
             other => other,
         }
     })
+}
+
+/// Does an inline comment need a space before it, given what is already
+/// emitted on its line?
+///
+/// Nothing emitted yet means the comment opens the run, and `%%` at the start
+/// of a line is already a comment marker. Anything else that is not itself
+/// whitespace has to be separated, or the marker glues to it and re-parses as
+/// literal text.
+fn needs_comment_space(emitted: &str) -> bool {
+    match emitted.chars().next_back() {
+        None => false,
+        Some(last) => last != '\n' && !last.is_whitespace(),
+    }
 }
 
 fn last_boundary(node: &InlineNode) -> Option<char> {
