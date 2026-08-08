@@ -13,6 +13,9 @@ use std::fs;
 use std::path::PathBuf;
 
 const IMPLEMENTED: &[&str] = &[
+    "a-caption-attaches-across-one-blank-line",
+    "a-container-a-lazy-line-folded-into-is-still-open",
+    "two-blank-lines-detach-a-caption",
     "a-list-marker-at-the-content-column-inside-an-open-fence",
     "a-boundary-line-inside-an-open-fence-does-not-end-the-container",
     "a-flush-left-line-needs-an-open-paragraph-to-fold-into",
