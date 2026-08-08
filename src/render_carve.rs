@@ -374,7 +374,82 @@ fn definitions_by_description_line(doc: &Document) -> HashMap<usize, DefinitionA
     out
 }
 
+thread_local! {
+    /// Whether a HYPHEN-spelled thematic break would be misread in this render.
+    ///
+    /// PART 11 §6 writes the marker the author used, now that the AST records it
+    /// (carve#976, carve-rs#843). The one document that gets another spelling is
+    /// the one whose emitted bytes would open a frontmatter block it does not
+    /// have, and `render_with_escapes` is where that is decided.
+    static HYPHEN_BREAKS_ARE_UNSAFE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Render, and fall back to a break spelling that cannot be read as frontmatter
+/// when the finished bytes would be.
+///
+/// A frontmatter block is an opening fence AT BYTE 0 plus a bare `---` CLOSER
+/// anywhere below it, so the collision is a property of the WHOLE emitted
+/// document rather than of its first line. Two writer decisions reach it, and
+/// this seam is the only thing they share:
+///
+/// - a break the author spelled `---` opens the document and gains a closer from
+///   any later `---` break. `---` / blank / `---` is an EMPTY frontmatter block
+///   rendering nothing where the input rendered two rules (carve-rs#732).
+/// - §7 writes a hoisted link or footnote definition after the body, promoting
+///   whatever stood second to byte 0 - and that block can be a PARAGRAPH whose
+///   first line is `---yaml`-shaped. NO HEAD-OF-DOCUMENT RESPELLING REPAIRS
+///   THAT ONE, because the paragraph's text is not the writer's to change. It is
+///   saved by respelling the CLOSER instead, which is why the fallback moves
+///   every hyphen break in the document rather than the one at the head
+///   (carve-rs#819).
+///
+/// The second is why the previous seam is replaced rather than extended. That
+/// one asked whether the FIRST RENDERED BLOCK was the string `---` and rewrote
+/// that single line; a `---yaml` paragraph is not that block, and the break that
+/// has to move is four lines further down.
+///
+/// THE DEPARTURE IS THE SMALLEST ONE THAT RESTORES §1, which is what §1a asks
+/// for: only the HYPHEN spelling can be read as a fence, so only hyphen breaks
+/// move and every other authored marker survives untouched. A document whose
+/// breaks are all `***` or `___` never reaches the second pass at all.
+///
+/// The FINISHED bytes are handed to the PARSER'S own opener test, twice: once to
+/// ask whether the authored spelling is misread, and once to confirm the
+/// fallback is not. A document still misread with `***` keeps the authored
+/// spelling rather than paying a respelling that buys nothing, which is the case
+/// where the `---` closer came from somewhere other than a break, such as the
+/// inside of a fenced block.
+///
+/// A leading `---` break with nothing below it to close a block keeps its
+/// marker, which is what corpus
+/// `132-thematic-break-requires-contiguous-markers-4` asks for. It is a CONTROL:
+/// no mutation of this fallback moves it.
+///
+/// The `doc.frontmatter` arm is a COST GATE, not a correctness one, and saying
+/// so is the honest reading. A document that really carries frontmatter has it
+/// written by `render_frontmatter`, whose closer is not a break, so the fallback
+/// pass opens frontmatter too and the authored form is returned anyway. Removing
+/// the arm changes no output, only the number of renders paid by every document
+/// that has frontmatter. Verified by mutation.
+///
+/// The test runs on the output of `normalize`, which is where `restore_verbatim`
+/// turns staged content back into the bytes the next parse will actually see.
 fn render_with_escapes(doc: &Document, escape_mode: EscapeMode) -> String {
+    let authored = render_with_escapes_once(doc, escape_mode);
+    if !doc.frontmatter.is_empty() || !crate::parse::opens_frontmatter(&authored) {
+        return authored;
+    }
+    HYPHEN_BREAKS_ARE_UNSAFE.with(|unsafe_| unsafe_.set(true));
+    let fallback = render_with_escapes_once(doc, escape_mode);
+    HYPHEN_BREAKS_ARE_UNSAFE.with(|unsafe_| unsafe_.set(false));
+    if crate::parse::opens_frontmatter(&fallback) {
+        authored
+    } else {
+        fallback
+    }
+}
+
+fn render_with_escapes_once(doc: &Document, escape_mode: EscapeMode) -> String {
     let mut ctx = CarveContext {
         block_depth: 0,
         inline_depth: 0,
@@ -424,62 +499,18 @@ fn render_with_escapes(doc: &Document, escape_mode: EscapeMode) -> String {
             rendered.push(text);
         }
     }
-    // `---` IS THE CANONICAL THEMATIC BREAK, INCLUDING ON LINE 1.
+    // THE FALLBACK SPELLING IS DECIDED IN `render_with_escapes`, on the finished
+    // bytes, not here. It used to be decided here, from the FIRST RENDERED
+    // BLOCK, and that could only see the shape where the break itself opens the
+    // document - so a hoisted definition promoting a `---yaml`-shaped PARAGRAPH
+    // to byte 0 walked straight past it (carve-rs#819).
     //
-    // PART 11 6a (carve#977): the canonical writer emits a thematic break as
-    // three hyphens whatever the author wrote, so `***` and `___` both come
-    // back as `---`. The clause is a PIN, held until `thematic_break` records
-    // its marker in the AST (carve#976), at which point 6 governs again.
-    //
-    // 6a STATES NO EXCEPTION AND ONE IS TAKEN HERE, because PART 11 1 is the
-    // stronger clause: `to_html(fmt(x)) == to_html(x)`. A break that opens the
-    // document is the one position where `---` can be
-    // read back as something else: the frontmatter opener test is anchored at
-    // byte 0. But the opener only fires when a CLOSER follows, so the collision
-    // is a property of the whole emitted text, not of the break's position -
-    // and the fallback spelling is owed only to the documents that really would
-    // be misread.
-    //
-    // Without any fallback the writer MANUFACTURED frontmatter. `***` / blank /
-    // `a` / blank / `---` / blank / `b` holds two thematic breaks and no
-    // frontmatter; `fmt` wrote the first break as `---`, and the next parse
-    // read everything down to the second `---` as a frontmatter block. Three
-    // lines are enough to lose the whole document: `***` / blank / `---`
-    // formatted to `---` / blank / `---`, which reparses as an EMPTY
-    // frontmatter block and renders nothing where the input rendered two rules
-    // (carve-rs#732).
-    //
-    // So the FINISHED bytes are handed to the PARSER'S own opener test. A
-    // leading break with nothing after it to close a block keeps `---`, which
-    // is what corpus `132-thematic-break-requires-contiguous-markers-4` asks
-    // for and what carve-js and carve-php write.
-    //
-    // THE TEST RUNS AFTER `normalize`, not on a candidate built before it, for
-    // two reasons. `normalize` is not a pure function - it accumulates the
-    // sentinel accounting `render_carve_unguarded` reads to decide whether the
-    // document holds a private-use character of its own - so calling it twice
-    // double-counts every sentinel the writer inserted and sends any document
-    // with a verbatim blank line through a needless second render. And it is
-    // `restore_verbatim`, running inside it, that turns staged content back
-    // into the bytes the next parse will actually see.
-    //
-    // Only the bare string is rewritten. A break carrying block attributes
-    // renders its `{...}` line first, so `---` is not on line 1 and the opener
-    // test cannot reach it; and when the document has frontmatter of its own,
-    // `parts` already holds it, so the break is not first either - which is why
-    // the emptiness of `parts` is read BEFORE the body is pushed onto it.
-    let break_opens_the_document =
-        parts.is_empty() && rendered.first().is_some_and(|first| first == "---");
+    // What stays here is the ORDER: §7 puts hoisted definitions after the body,
+    // which is the decision that does the promoting.
     if !rendered.is_empty() {
         parts.push(rendered.join("\n\n"));
     }
-    let out = normalize(&parts.join("\n\n"));
-    if break_opens_the_document && crate::parse::opens_frontmatter(&out) {
-        if let Some(rest) = out.strip_prefix("---\n") {
-            return format!("***\n{rest}");
-        }
-    }
-    out
+    normalize(&parts.join("\n\n"))
 }
 
 fn escaping_is_redundant(minimal: &str, conservative: &str) -> bool {
@@ -802,6 +833,7 @@ fn render_item_blocks(blocks: &[BlockNode], tight: bool, ctx: &mut CarveContext)
     ctx.block_depth += 1;
     let mut out = String::new();
     let mut prev: Option<&BlockNode> = None;
+    let mut prev_at_marker_column = false;
     for block in blocks {
         let rendered = render_block(block, ctx);
         if rendered.is_empty() {
@@ -851,18 +883,39 @@ fn render_item_blocks(blocks: &[BlockNode], tight: bool, ctx: &mut CarveContext)
             .lines()
             .next()
             .is_some_and(crate::parse::line_starts_paragraph);
+        // ONCE ONE CHILD IS AT THE MARKER COLUMN, EVERY LATER ONE IN THE RUN
+        // MUST BE.
+        //
+        // The marker column is the ITEM's column, to the LEFT of the item's
+        // content column, so a later child written at the content column is
+        // INDENTED relative to the block above it - it becomes that block's
+        // lazy continuation (§10 I2) or is absorbed into it outright. `- x` /
+        // `+` / image / `+` / image came back as an item holding ONE image
+        // paragraph with the second image's source as literal text; with a
+        // caption on each, the second figure's whole source landed inside the
+        // first one's `<figcaption>` (carve-rs#819).
+        //
+        // The condition is the PREVIOUS child's COLUMN, not its kind. Its kind
+        // is what the arm above already asks, and that answers a different
+        // question - whether this child folds into an open PARAGRAPH. This one
+        // is about where the child sits relative to the block before it, which
+        // no property of the child alone can decide.
+        let continues_a_run_at_the_marker_column = prev.is_some() && prev_at_marker_column;
         if !separated
-            && matches!(prev, Some(BlockNode::Paragraph(_)))
-            && folds_into_the_paragraph_above
+            && (continues_a_run_at_the_marker_column
+                || (matches!(prev, Some(BlockNode::Paragraph(_)))
+                    && folds_into_the_paragraph_above))
         {
             out.push_str(&at_marker_column("+"));
             out.push('\n');
             out.push_str(&at_marker_column(&rendered));
             prev = Some(block);
+            prev_at_marker_column = true;
             continue;
         }
         out.push_str(&rendered);
         prev = Some(block);
+        prev_at_marker_column = false;
     }
     ctx.block_depth -= 1;
     out
@@ -977,9 +1030,17 @@ fn render_block(node: &BlockNode, ctx: &mut CarveContext) -> String {
             &list.attrs,
             &with_reset_colon_fence_depth(ctx, |ctx| render_list(list, ctx)),
         ),
+        // PART 11 §6 writes the marker the author used, now that the AST
+        // records it (carve#976, carve-rs#843). Only the HYPHEN spelling can be
+        // read back as a frontmatter fence, so it is the only one the fallback
+        // moves, and only for a document whose emitted bytes would really be
+        // misread - see `render_with_escapes`, where that is decided.
         BlockNode::ThematicBreak(rule) => {
-            let marker = rule.marker.unwrap_or('-').to_string().repeat(3);
-            with_block_attrs(&rule.attrs, &marker)
+            let mut marker = rule.marker.unwrap_or('-');
+            if marker == '-' && HYPHEN_BREAKS_ARE_UNSAFE.with(|unsafe_| unsafe_.get()) {
+                marker = '*';
+            }
+            with_block_attrs(&rule.attrs, &marker.to_string().repeat(3))
         }
         BlockNode::Table(table) => with_block_attrs(&table.attrs, &render_table(table, ctx)),
         BlockNode::Admonition(admonition) => {
