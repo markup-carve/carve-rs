@@ -9,6 +9,33 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Breaking
 
+- **AST ingest refuses every property the schema does not name, including the
+  ones it used to understand** (PART 12 §11, markup-carve/carve#743;
+  carve-rs#820). Three spellings were accepted and now reject at decode:
+
+  - `footnote.id`, read as an alias for `label`. carve-php always refused it, so
+    a document decoded in two engines and failed in the third - the interchange
+    break §3's "field names are spec surface" exists to prevent. **No engine
+    publishes it today**: carve-js, carve-php, carve-rs and pandoc-carve all
+    write `label`, and carve-php cannot even read `id` back. Only a tree stored
+    before §7 settled the spelling carries it, and rewriting `id` to `label` on
+    such a tree is the whole migration.
+  - the LEGACY definition entry, `{terms, definitions}`. The record has no
+    `type` - the schema gives it none - so it was invisible to a check keyed by
+    `type`, and any field on it was accepted. The form itself still decodes; it
+    is now closed to `terms`, `definitions`, `definitionLines` and
+    `definitionSpans`, the set carve-js closed it to.
+  - the CITATION record inside `citation_group.items`, which the schema names
+    and closes but likewise gives no `type`. A citation carrying any extra
+    property decoded and the property vanished in silence.
+
+  The check now covers every untyped record the schema closes, generated from
+  the schema rather than listed by hand, so a new one cannot arrive unguarded.
+  Two decoder fallbacks that could never fire are gone with it (`code_block`
+  reading `title` for `header`, `inline_extension` reading `children` for
+  `content`): the unknown-field check refused those spellings before either
+  could be consulted.
+
 - **`Span` and `RawInline` each gain an `injected` field.** Code that builds
   either with a struct literal, or matches one exhaustively, needs the extra
   field (`injected: false` for anything an author wrote). It records that a

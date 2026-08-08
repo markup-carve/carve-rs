@@ -50,6 +50,38 @@ def render(schema: dict) -> str:
             raise SystemExit(f"{name} is not closed in the schema; section 11 has nothing to check against")
         helpers[name] = sorted(definition["properties"])
 
+    # A record the schema CLOSES but gives no `type` of its own, reached through
+    # an array-valued property of a typed node - `citation_group.items`, whose
+    # items are `citation` objects. The runtime check is keyed by a node's
+    # `type`, so these are invisible to it and every field on one was accepted;
+    # the position has to come with the field set, because the record carries
+    # nothing that identifies it. HELPERS covers the object-valued ones (`attrs`,
+    # `pos`), which the check reaches by property name instead.
+    untyped_arrays: dict[str, list[str]] = {}
+    for definition in defs.values():
+        properties = definition.get("properties")
+        if not properties:
+            continue
+        type_const = properties.get("type", {}).get("const")
+        if not isinstance(type_const, str):
+            continue
+        for property_name, property_schema in sorted(properties.items()):
+            if property_schema.get("type") != "array":
+                continue
+            ref = (property_schema.get("items") or {}).get("$ref")
+            if not isinstance(ref, str) or not ref.startswith("#/$defs/"):
+                continue
+            target = defs.get(ref[len("#/$defs/") :], {})
+            target_properties = target.get("properties")
+            if not target_properties:
+                continue
+            if isinstance(target_properties.get("type", {}).get("const"), str):
+                continue  # a typed node; WIRE_FIELDS already closes it
+            if target.get("additionalProperties") is not False:
+                continue  # open in the schema; section 11 has nothing to check
+            key = f"{type_const}.{property_name}"
+            untyped_arrays[key] = sorted(target_properties)
+
     def table(entries: dict[str, list[str]], name: str, doc: str) -> str:
         rows = "".join(
             '    ("%s", &[%s]),\n' % (key, ", ".join('"%s"' % f for f in fields))
@@ -78,6 +110,13 @@ def render(schema: dict) -> str:
             helpers,
             "WIRE_HELPER_FIELDS",
             "Properties the schema names for the objects that hang off a node.",
+        )
+        + "\n"
+        + table(
+            untyped_arrays,
+            "WIRE_UNTYPED_ARRAY_FIELDS",
+            "Properties the schema names for an untyped record in an array,\n"
+            "/// keyed by the `type.property` that holds it.",
         )
     )
 
