@@ -328,6 +328,7 @@ const IMPLEMENTED: &[&str] = &[
     // content column closes the item instead of folding into it (carve-rs#770).
     // Three of its seven rows moved here; the other four already passed.
     "a-fence-opened-on-a-list-marker-line-body-below-the-content-column",
+    "an-empty-footnote-body-is-written-with-the-empty-sentinel",
 ];
 
 fn corpus_dir() -> PathBuf {
