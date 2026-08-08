@@ -822,6 +822,22 @@ fn at_marker_column(text: &str) -> String {
         .join("\n")
 }
 
+fn adjacent_blocks_merge(left: &BlockNode, right: &BlockNode) -> bool {
+    match (left, right) {
+        (BlockNode::BlockQuote(_), BlockNode::BlockQuote(_))
+        | (BlockNode::Table(_), BlockNode::Table(_))
+        | (BlockNode::LineBlock(_), BlockNode::LineBlock(_))
+        | (BlockNode::DefinitionList(_), BlockNode::DefinitionList(_)) => true,
+        (BlockNode::List(left), BlockNode::List(right)) => {
+            left.ordered == right.ordered
+                && left.delim == right.delim
+                && left.bullet_char == right.bullet_char
+                && left.ol_type == right.ol_type
+        }
+        _ => false,
+    }
+}
+
 fn render_item_blocks(blocks: &[BlockNode], tight: bool, ctx: &mut CarveContext) -> String {
     if !tight {
         return render_blocks(blocks, ctx);
@@ -834,7 +850,8 @@ fn render_item_blocks(blocks: &[BlockNode], tight: bool, ctx: &mut CarveContext)
     let mut out = String::new();
     let mut prev: Option<&BlockNode> = None;
     let mut prev_at_marker_column = false;
-    for block in blocks {
+    for (index, block) in blocks.iter().enumerate() {
+        let next = blocks.get(index + 1);
         let rendered = render_block(block, ctx);
         if rendered.is_empty() {
             continue;
@@ -903,6 +920,7 @@ fn render_item_blocks(blocks: &[BlockNode], tight: bool, ctx: &mut CarveContext)
         let continues_a_run_at_the_marker_column = prev.is_some() && prev_at_marker_column;
         if !separated
             && (continues_a_run_at_the_marker_column
+                || next.is_some_and(|next_block| adjacent_blocks_merge(block, next_block))
                 || (matches!(prev, Some(BlockNode::Paragraph(_)))
                     && folds_into_the_paragraph_above))
         {
