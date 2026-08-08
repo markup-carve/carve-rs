@@ -96,12 +96,23 @@ fn a_tree_this_engine_published_still_round_trips() {
 }
 
 #[test]
-fn the_legacy_footnote_id_is_still_read() {
-    // Section 11's one carve-out: a property the ingest UNDERSTANDS, published
-    // by this engine's siblings before section 7 settled on `label`, decoded
-    // onto the named field. Refusing those stored trees would not protect a
-    // caller from a half-read tree.
+fn the_legacy_footnote_id_is_refused_like_any_other_unnamed_property() {
+    // This used to be section 11's one carve-out, on the reasoning that an
+    // alias the ingest UNDERSTANDS costs the caller nothing. Section 11 says
+    // otherwise and carve-php always agreed: a second spelling of a field name
+    // on the wire is the interchange break section 3's "field names are spec
+    // surface" exists to prevent, and a document that decoded in two engines
+    // and failed in the third is exactly what it produced (carve-rs#820,
+    // spec 743). No engine in the org publishes `footnote.id` today - carve-js,
+    // carve-php, carve-rs and pandoc-carve all write `label` - so only a tree
+    // stored before section 7 settled the spelling carries it.
     let payload = r#"{"type":"document","srcByteLength":0,"children":[{"type":"footnote","id":"a","children":[]}]}"#;
 
-    assert!(from_json(payload).is_ok());
+    let error = from_json(payload).expect_err("the alias is refused");
+    assert!(error.to_string().contains("\"id\""), "{error}");
+
+    // The named spelling still decodes, so the refusal above is about the
+    // SPELLING and not about footnote definitions being rejected wholesale.
+    let named = payload.replace("\"id\":\"a\"", "\"label\":\"a\"");
+    assert!(from_json(&named).is_ok());
 }

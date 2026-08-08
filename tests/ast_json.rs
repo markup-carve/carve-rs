@@ -342,9 +342,17 @@ fn block_and_inline_pos_present() {
 }
 
 #[test]
-fn decode_accepts_legacy_footnote_id() {
+fn decode_refuses_the_legacy_footnote_id() {
+    // It used to be read as an alias for `label`. PART 12 §11 rules ingest
+    // strict, and a second spelling of a field name on the wire is the
+    // interchange break §3 exists to prevent (carve-rs#820, spec 743).
     let json = "{\"type\":\"document\",\"children\":[{\"type\":\"footnote\",\"id\":\"old\",\"children\":[{\"type\":\"paragraph\",\"children\":[{\"type\":\"text\",\"value\":\"body\"}]}]}],\"srcByteLength\":0}";
-    let doc = carve::from_json(json).expect("decode");
+    let error = carve::from_json(json).expect_err("the alias is refused");
+    assert!(error.to_string().contains("\"id\""), "{error}");
+
+    // The named spelling, which is what every engine publishes.
+    let named = json.replace("\"id\":\"old\"", "\"label\":\"old\"");
+    let doc = carve::from_json(&named).expect("decode");
     assert!(doc.footnote_defs.contains_key("old"));
 }
 

@@ -45,18 +45,40 @@ pub fn to_json(doc: &Document) -> String {
     out
 }
 
-/// A property this engine READS that the schema does not name.
+/// The fields a LEGACY definition-list entry may carry.
 ///
-/// PART 12 §11's one carve-out. `label` is the spec spelling for a footnote
-/// definition's label, and `id` is what carve-js and carve-php published before
-/// §7 settled it; trees written then are stored, and a decoder that maps the
-/// old spelling onto the named field understands them exactly. §11 refuses what
-/// an ingest CANNOT understand, so refusing these would not protect a caller
-/// from a half-read tree.
+/// The schema gives `definition_list.items` typed `definition_term` and
+/// `definition_description` nodes, and this decoder also reads the OLD grouping
+/// record - `{terms, definitions}`, an object with no `type` at all, which is
+/// what the engines published before §4 settled the flat form. Trees in that
+/// shape are stored, so the form stays readable; but "the schema names no
+/// `type` here" is not "the schema names no fields here", and being invisible to
+/// the type-keyed check below left every field on the record accepted.
 ///
-/// One entry, not an escape hatch: the alias is honored only on the type that
-/// carried it.
-const LEGACY_ALIASES: &[(&str, &[&str])] = &[("footnote", &["id"])];
+/// The set is the one carve-js closed it to (carve-js#913), including the two
+/// position arrays its own runtime record carries: the legacy publisher was that
+/// runtime, and a narrower set here would refuse a stored payload carve-js
+/// accepts, which is the interchange break §11 exists to prevent rather than to
+/// cause. This engine's legacy path drops position data for the whole record
+/// anyway - it sets `pos: None` on every term and description it rebuilds -
+/// so the two names cost nothing beyond being spellable.
+const LEGACY_DEFINITION_ENTRY_FIELDS: &[&str] =
+    &["definitionLines", "definitionSpans", "definitions", "terms"];
+
+/// Is this the untyped legacy definition entry, rather than some other untyped
+/// object?
+///
+/// Array-valued, like carve-js's test, and NOT merely "the key is present":
+/// `attrs.keyValues` is an open map of strings, so a document with an attribute
+/// literally named `terms` would otherwise be read as a legacy entry and have
+/// its other attributes refused.
+fn is_legacy_definition_entry(obj: &BTreeMap<String, Json>) -> bool {
+    if obj.contains_key("type") {
+        return false;
+    }
+    matches!(obj.get("terms"), Some(Json::Array(_)))
+        || matches!(obj.get("definitions"), Some(Json::Array(_)))
+}
 
 fn named_fields(
     table: &'static [(&'static str, &'static [&'static str])],
@@ -86,11 +108,25 @@ fn refuse_unknown_fields(node: &Json, path: &str) -> Result<(), AstJsonError> {
             // business: the decoder turns an unusable kind away on its own
             // terms, and naming a field on a type nobody knows would send the
             // caller after the wrong thing.
+            // The legacy definition entry is closed too. It has no `type` - the
+            // schema gives it none, which is what exempts it from the node-type
+            // rule - and it was thereby exempt from the FIELD rule as well, with
+            // nothing else reaching it. The exemption is about the missing
+            // `type`, not about everything else on the record (carve-rs#820,
+            // carve-js#913).
+            if is_legacy_definition_entry(obj) {
+                for key in obj.keys() {
+                    if !LEGACY_DEFINITION_ENTRY_FIELDS.contains(&key.as_str()) {
+                        return Err(AstJsonError::new(format!(
+                            "the legacy definition entry at {path} carries {key:?}, which the schema does not name (PART 12 §11)"
+                        )));
+                    }
+                }
+            }
             if let Some(Json::String(ty)) = obj.get("type") {
                 if let Some(known) = named_fields(crate::wire_fields::WIRE_FIELDS, ty) {
-                    let legacy = named_fields(LEGACY_ALIASES, ty).unwrap_or(&[]);
                     for key in obj.keys() {
-                        if !known.contains(&key.as_str()) && !legacy.contains(&key.as_str()) {
+                        if !known.contains(&key.as_str()) {
                             return Err(AstJsonError::new(format!(
                                 "{ty} at {path} carries {key:?}, which the schema does not name (PART 12 §11)"
                             )));
@@ -109,6 +145,35 @@ fn refuse_unknown_fields(node: &Json, path: &str) -> Result<(), AstJsonError> {
                                 return Err(AstJsonError::new(format!(
                                     "{helper} at {path}.{helper} carries {key:?}, which the schema does not name (PART 12 §11)"
                                 )));
+                            }
+                        }
+                    }
+                    // The records the schema closes but gives no `type`, reached
+                    // through an ARRAY property of a typed node - today only
+                    // `citation_group.items`, whose entries are `citation`
+                    // objects. The type-keyed check above cannot see them and
+                    // the helper loop cannot either, so a citation carrying any
+                    // extra field rode straight in.
+                    for (position, allowed) in crate::wire_fields::WIRE_UNTYPED_ARRAY_FIELDS {
+                        let Some((owner, property)) = position.split_once('.') else {
+                            continue;
+                        };
+                        if *ty != *owner {
+                            continue;
+                        }
+                        let Some(Json::Array(items)) = obj.get(property) else {
+                            continue;
+                        };
+                        for (index, item) in items.iter().enumerate() {
+                            let Json::Object(record) = item else {
+                                continue;
+                            };
+                            for key in record.keys() {
+                                if !allowed.contains(&key.as_str()) {
+                                    return Err(AstJsonError::new(format!(
+                                        "{position} at {path}.{property}[{index}] carries {key:?}, which the schema does not name (PART 12 §11)"
+                                    )));
+                                }
                             }
                         }
                     }
@@ -156,12 +221,13 @@ pub fn from_json(input: &str) -> Result<Document, AstJsonError> {
                 });
             }
             "footnote" => {
-                let label = obj
-                    .get("label")
-                    .or_else(|| obj.get("id"))
-                    .ok_or_else(|| AstJsonError::new("footnote.label is required"))?
-                    .as_string("footnote.label")?
-                    .to_string();
+                // `label` only. `id` was what carve-js and carve-php published
+                // before PART 12 §7 settled the spelling, and reading it here
+                // was a second spelling of a field name on the wire - the thing
+                // §3's "field names are spec surface" exists to prevent, and a
+                // document that decoded in two engines and failed in the third
+                // (carve-rs#820, spec 743).
+                let label = required_string(obj, "footnote", "label")?.to_string();
                 let blocks = decode_blocks(required_array(obj, "footnote", "children")?)?;
                 footnote_defs.insert(label, blocks);
             }
@@ -1292,9 +1358,11 @@ fn decode_block(value: &Json) -> Result<BlockNode, AstJsonError> {
         "code_block" => Ok(BlockNode::CodeBlock(CodeBlock {
             attrs: optional_attrs(obj)?,
             lang: optional_string(obj, "lang")?.map(str::to_string),
-            title: optional_string(obj, "header")?
-                .or(optional_string(obj, "title")?)
-                .map(str::to_string),
+            // `header` only: `title` is not a name the schema gives this node,
+            // so the unknown-field check refused the payload before this could
+            // read it. A fallback that cannot fire is a check that cannot fail
+            // (carve-rs#820).
+            title: optional_string(obj, "header")?.map(str::to_string),
             label: optional_string(obj, "label")?.map(str::to_string),
             content: required_string(obj, "code_block", "content")?.to_string(),
             pos: optional_pos(obj, "code_block")?,
@@ -1703,12 +1771,10 @@ fn decode_inline(value: &Json) -> Result<InlineNode, AstJsonError> {
         "inline_extension" => Ok(InlineNode::Extension(InlineExtension {
             attrs: optional_attrs(obj)?,
             name: required_string(obj, "inline_extension", "name")?.to_string(),
-            children: decode_inlines(
-                obj.get("content")
-                    .or_else(|| obj.get("children"))
-                    .ok_or_else(|| AstJsonError::new("inline_extension.content is required"))?
-                    .as_array("inline_extension.content")?,
-            )?,
+            // `content` only, for the reason given at `code_block` above:
+            // `children` is not a name the schema gives this node, so the
+            // fallback could never be reached.
+            children: decode_inlines(required_array(obj, "inline_extension", "content")?)?,
             pos: optional_pos(obj, "inline_extension")?,
         })),
         "abbreviation" => Ok(InlineNode::Abbreviation(Abbreviation {
