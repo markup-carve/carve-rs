@@ -8161,7 +8161,14 @@ fn image_is_block(cur: &mut LineCursor) -> bool {
 
 fn consume_caption(cur: &mut LineCursor, options: &Options<'_>) -> Option<Vec<InlineNode>> {
     let saved = cur.pos;
-    while matches!(cur.peek(), Some(line) if is_blank_line(line)) {
+    // PART 9 §4 (NORMATIVE): `caption_slot = [blank_line], caption` carries at
+    // most ONE optional blank line. A caption line adjacent to its host, or
+    // separated from it by exactly one blank line, attaches; TWO blank lines
+    // DETACH and leave the `^ ` line an ordinary paragraph. Scanning blank
+    // lines in a loop attaches across any number of them (carve-rs#830), which
+    // no corpus document could distinguish because every captioned document
+    // had zero or one blank line.
+    if matches!(cur.peek(), Some(line) if is_blank_line(line)) {
         cur.consume();
     }
     let Some(line) = cur.peek() else {
