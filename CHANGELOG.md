@@ -191,6 +191,9 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Keep adjacent mergeable block openers separate when formatting a tight
+  `+`-attached run, instead of collapsing two quotes or tables into one block.
+
 - Preserve each row's cell count when formatting a ragged table instead of
   manufacturing empty cells to make the table rectangular.
 
