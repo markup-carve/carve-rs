@@ -381,30 +381,39 @@ impl LinkPolicy {
     /// carries one (a scheme is a letter followed by letters, digits, `+`, `-`
     /// and `.`).
     ///
-    /// Known and deliberate limit: the internal/external classification below
-    /// runs on the raw text, so a LEADING probe-class character - which `trim`
-    /// does not reach - still reads `<DEL>//host` as neither protocol-relative
-    /// nor relative. That is a prefix classification rather than a scheme read,
-    /// and normalizing it cannot be done without also deciding what an
-    /// allowlist makes of the normalized text, so it is not settled here.
     pub fn is_url_allowed(&self, url: &str, base_host: Option<&str>) -> bool {
         let url = url.trim();
         if url.is_empty() {
             return true;
         }
 
+        // Prefix classification reads through the SAME probe class as the
+        // scheme lookup below. A URL consumer may discard these leading bytes
+        // before deciding that `<DEL>//evil.com` is protocol-relative; reading
+        // the raw first byte instead classified it as neither external nor a
+        // relative path and let it fall through allowed (carve-rs#839).
+        //
+        // This normalized view is for JUDGEMENT only. The authored destination
+        // is still what renderers emit when the policy permits it. Host and
+        // domain checks deliberately receive the view they classify, so an
+        // allowlist sees `//good.example` rather than an unparseable prefix.
+        let prefix_url = url.trim_start_matches(is_url_probe_skippable);
+
         // Fragment-only URLs are always internal.
-        if url.starts_with('#') {
+        if prefix_url.starts_with('#') {
             return self.allow_internal;
         }
 
         // Protocol-relative URLs are absolute external URLs, not internal paths.
-        if url.starts_with("//") {
-            return self.is_protocol_relative_url_allowed(url, base_host);
+        if prefix_url.starts_with("//") {
+            return self.is_protocol_relative_url_allowed(prefix_url, base_host);
         }
 
         // Relative paths are internal.
-        if url.starts_with('/') || url.starts_with("./") || url.starts_with("../") {
+        if prefix_url.starts_with('/')
+            || prefix_url.starts_with("./")
+            || prefix_url.starts_with("../")
+        {
             return self.allow_internal;
         }
 
