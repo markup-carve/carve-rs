@@ -1,4 +1,4 @@
-use crate::{ast_json::source_layout_positions, Document};
+use crate::{ast_json::source_layout_positions, parse_with_options, Document, Options};
 
 fn escape_json(value: &str) -> String {
     let mut out = String::from("\"");
@@ -56,4 +56,11 @@ pub fn to_source_layout_json(source: &str, doc: &Document) -> String {
         .join(",");
     format!("{{\"version\":1,\"encoding\":\"utf-8\",\"source\":{},\"lineEndings\":\"{}\",\"bom\":{},\"nodes\":[{}]}}",
         escape_json(source), endings, source.starts_with('\u{feff}'), nodes)
+}
+
+/// Parse with positions enabled and return the semantic document plus its sidecar JSON.
+pub fn parse_with_source_layout(source: &str) -> (Document, String) {
+    let doc = parse_with_options(source, &Options::default().with_positions(true));
+    let layout = to_source_layout_json(source, &doc);
+    (doc, layout)
 }

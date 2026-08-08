@@ -1,14 +1,15 @@
-use carve::{parse, to_json, to_source_layout_json};
+use carve::{parse, parse_with_source_layout, to_json};
 
 #[test]
 fn source_layout_is_opt_in_and_uses_utf8_bytes() {
     let source = "\u{feff}- 😀\r\n";
-    let doc = parse(source);
-    let ast = to_json(&doc);
+    let plain = parse(source);
+    let ast = to_json(&plain);
     assert!(!ast.contains("sourceLayout"));
-    let layout = to_source_layout_json(source, &doc);
+    let (_doc, layout) = parse_with_source_layout(source);
     assert!(layout.contains("\"version\":1"));
     assert!(layout.contains("\"lineEndings\":\"crlf\""));
     assert!(layout.contains("\"bom\":true"));
+    assert!(layout.contains("\"path\":\"/children/0\""));
     assert!(!layout.contains(&format!("\"endByte\":{}x", source.len())));
 }
