@@ -33,6 +33,7 @@ mod render_depth;
 mod render_markdown;
 mod render_plain;
 mod render_text;
+mod source_layout;
 mod stamp;
 mod unicode_nfc;
 mod wire_fields;
@@ -78,6 +79,7 @@ pub use render_carve::render_carve;
 pub use render_depth::RenderDepthError;
 pub use render_markdown::{render_markdown, render_markdown_with_options};
 pub use render_plain::{render_plain_text, render_plain_text_with_options};
+pub use source_layout::to_source_layout_json;
 pub use stamp::{needs_review, read_stamp, stamp_carve, Stamp, StampForm};
 
 /// Parse a Carve source string and render it as HTML in one call.
