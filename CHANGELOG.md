@@ -186,6 +186,20 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`fmt` writes a footnote definition with no blocks as `[^f]: {empty}`**
+  (carve-rs#819, PART 11 §7b). The body empties whenever the definition line's
+  whole body is a block-attribute run, which the line collects as attributes and
+  discards. The writer emitted `[^f]:` with nothing after the colon, and that
+  line is not a definition at all, so formatting the document lost BOTH halves:
+  the definition came back as a paragraph and the reference to it came back as
+  literal text. The sentinel is a valid attribute block, collected and discarded
+  on the same line, so the note still renders empty and the reference still
+  resolves. `{ }` and `{}` would not serve - a block-attribute line requires at
+  least one attribute, so both stay literal text inside the note - and the
+  spelling is pinned by the spec rather than chosen here, so all three engines
+  write the same bytes. A body holding one block that RENDERS nothing, such as a
+  comment, is not an empty body and is unaffected.
+
 - **A profile's link policy reads the scheme through the characters a URL
   consumer discards** (carve-rs#835). `LinkPolicy::is_url_allowed` read the text
   before the first colon with no character filter, and `trim` only reaches the

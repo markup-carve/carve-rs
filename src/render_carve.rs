@@ -1465,6 +1465,23 @@ fn render_footnote_def_source(label: &str, blocks: &[BlockNode], ctx: &mut Carve
         &raw_body
     })
     .to_string();
+    // A body holding NO blocks takes the SENTINEL `{empty}` (PART 11 §7b).
+    //
+    // `[^f]:` with nothing after the colon is not a definition at all -- MARKER
+    // REQUIRES CONTENT (PART 2) -- so writing it degrades the definition to a
+    // paragraph and every reference to it to literal text. §1a is what licenses
+    // departing from the per-construct spelling: the emitted bytes have to
+    // re-parse to the tree they came from.
+    //
+    // The sentinel has to be a VALID ATTRIBUTE BLOCK, which is why it is not
+    // `{ }` or `{}`: a block-attribute line requires at least one attribute, so
+    // both of those stay literal text inside the note. `{empty}` is a boolean
+    // attribute, collected on the definition line and discarded with the rest
+    // of the note's pending attributes, so it reaches neither the endnote item
+    // nor anything after it.
+    if body.is_empty() {
+        return format!("[^{}]: {{empty}}", escape_footnote_label(label));
+    }
     let mut lines = body.split('\n');
     let mut def_lines = vec![format!(
         "[^{}]: {}",
