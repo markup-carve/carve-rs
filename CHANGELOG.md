@@ -199,6 +199,15 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   never permit more; a destination that is allowed is still emitted with its
   original bytes.
 
+- **Two blank lines detach a caption** (PART 9 §4, markup-carve/carve#991;
+  carve-rs#830). `caption_slot = [blank_line], caption` carries at most ONE
+  optional blank line, and the scan read it as any number, so a `^ ` line two or
+  more blank lines below its host attached anyway. A caption now attaches
+  adjacent to its host or across exactly one blank line, and beyond that it
+  detaches and stays an ordinary paragraph. One shared site served all five
+  captionable hosts, so the table, the fenced code block, the blockquote, the
+  image paragraph and standalone display math change together. Matches carve-js.
+
 - **A footnote with an empty body carries a backlink** (PART 9 §16,
   markup-carve/carve#688; carve-rs#826). A body with no blocks at all now gets
   the synthesized wrapping paragraph the rule already gives a body whose last
