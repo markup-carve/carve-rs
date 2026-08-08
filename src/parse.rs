@@ -14879,6 +14879,14 @@ fn plain_inlines_parse(nodes: &[InlineNode]) -> String {
     for node in nodes {
         match node {
             InlineNode::Text(s) => out.push_str(&s.value),
+            // An escaped character is VISIBLE prose - `\*` renders as `*` - so it
+            // contributes to every text derived from this run, exactly as the
+            // text around it does. Without this arm the `_ => {}` below swallowed
+            // it, and a heading the author escaped got a title, an id and a
+            // PART 9R R1 `by_text` key with the escaped characters missing
+            // (carve-rs#800). carve-js `inlineText` and carve-php
+            // `inlineTextLeaf` both carry the same arm.
+            InlineNode::EscapedText(e) => out.push_str(&e.value),
             InlineNode::SmartPunctuation(s) => out.push_str(smart_punctuation_glyph(s)),
             InlineNode::Emphasis(e) => out.push_str(&plain_inlines_parse(&e.children)),
             InlineNode::Code(s) => out.push_str(&s.value),
