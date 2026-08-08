@@ -110,6 +110,10 @@ fn the_blank_line_stays_inside_the_fence_on_the_round_trip() {
             carve::to_html(src),
             "PART 11 section 1: fmt preserves what the document says\n{src:?}\n{out:?}"
         );
-        assert_eq!(fmt(&out), out, "PART 11 section 1: fmt is idempotent\n{out:?}");
+        assert_eq!(
+            fmt(&out),
+            out,
+            "PART 11 section 1: fmt is idempotent\n{out:?}"
+        );
     }
 }

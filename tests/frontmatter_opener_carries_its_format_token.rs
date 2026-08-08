@@ -39,10 +39,16 @@ fn an_empty_frontmatter_block_carries_the_token_too() {
 
 #[test]
 fn a_named_format_is_reproduced_as_written() {
-    assert_eq!(fmt("---toml\na = 1\n---\n\nx\n"), "---toml\na = 1\n---\n\nx\n");
+    assert_eq!(
+        fmt("---toml\na = 1\n---\n\nx\n"),
+        "---toml\na = 1\n---\n\nx\n"
+    );
     assert_eq!(fmt("---json\n{}\n---\n\nx\n"), "---json\n{}\n---\n\nx\n");
     // The token is already `yaml`, so nothing changes and nothing doubles.
-    assert_eq!(fmt("---yaml\na: 1\n---\n\nx\n"), "---yaml\na: 1\n---\n\nx\n");
+    assert_eq!(
+        fmt("---yaml\na: 1\n---\n\nx\n"),
+        "---yaml\na: 1\n---\n\nx\n"
+    );
 }
 
 #[test]
@@ -56,14 +62,22 @@ fn the_closer_stays_bare() {
 
 #[test]
 fn writing_the_token_holds_the_invariants() {
-    for src in ["---\na: 1\n---\n\nx\n", "---\n---\n\nx\n", "---toml\na = 1\n---\n\nx\n"] {
+    for src in [
+        "---\na: 1\n---\n\nx\n",
+        "---\n---\n\nx\n",
+        "---toml\na = 1\n---\n\nx\n",
+    ] {
         let out = fmt(src);
         assert_eq!(
             carve::to_html(&out),
             carve::to_html(src),
             "PART 11 section 1: fmt preserves what the document says\n{src:?}"
         );
-        assert_eq!(fmt(&out), out, "PART 11 section 1: fmt is idempotent\n{out:?}");
+        assert_eq!(
+            fmt(&out),
+            out,
+            "PART 11 section 1: fmt is idempotent\n{out:?}"
+        );
     }
 }
 
