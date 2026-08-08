@@ -254,7 +254,6 @@ pub struct ListItem {
 pub struct BlockQuote {
     pub attrs: Option<Attrs>,
     pub children: Vec<BlockNode>,
-    pub attribution: Option<Vec<InlineNode>>,
     /// Span in the original source, when the parser could determine it.
     pub pos: Option<Pos>,
 }

@@ -312,9 +312,6 @@ fn walk_block<'a>(
         BlockNode::Paragraph(n) => inline_lists.push(&n.children),
         BlockNode::Heading(n) => inline_lists.push(&n.children),
         BlockNode::BlockQuote(n) => {
-            if let Some(attribution) = &n.attribution {
-                inline_lists.push(attribution);
-            }
             child_blocks.extend(n.children.iter());
         }
         BlockNode::Div(n) => child_blocks.extend(n.children.iter()),

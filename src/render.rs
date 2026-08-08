@@ -369,16 +369,6 @@ fn collect_footnotes_block(
             }
         }
         BlockNode::BlockQuote(b) => {
-            if let Some(attribution) = &mut b.attribution {
-                collect_footnotes_inline(
-                    assign_ref_ids,
-                    attribution,
-                    def_labels,
-                    label_indices,
-                    seen,
-                    order,
-                );
-            }
             for child in &mut b.children {
                 collect_footnotes_block(
                     assign_ref_ids,
@@ -497,16 +487,6 @@ fn collect_footnotes_block(
             );
             match &mut f.target {
                 FigureTarget::BlockQuote(b) => {
-                    if let Some(attribution) = &mut b.attribution {
-                        collect_footnotes_inline(
-                            assign_ref_ids,
-                            attribution,
-                            def_labels,
-                            label_indices,
-                            seen,
-                            order,
-                        );
-                    }
                     for child in &mut b.children {
                         collect_footnotes_block(
                             assign_ref_ids,

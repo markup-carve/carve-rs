@@ -114,7 +114,6 @@ fn non_html_renderers_bound_programmatic_block_depth() {
             block = carve::BlockNode::BlockQuote(carve::BlockQuote {
                 attrs: None,
                 children: vec![block],
-                attribution: None,
                 pos: None,
             });
         }

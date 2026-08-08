@@ -306,9 +306,6 @@ impl ProfileFilter<'_> {
             }
             BlockNode::BlockQuote(bq) => {
                 self.filter_blocks(&mut bq.children, depth)?;
-                if let Some(attr) = &mut bq.attribution {
-                    self.filter_inlines(attr, depth)?;
-                }
             }
             BlockNode::Table(table) => {
                 // `table_row` / `table_cell` are nodes in carve-php / carve-js:
@@ -1082,9 +1079,6 @@ fn cleanup_block_children(block: &mut BlockNode) {
         }
         BlockNode::BlockQuote(bq) => {
             cleanup_blocks(&mut bq.children);
-            if let Some(attr) = &mut bq.attribution {
-                cleanup_inlines(attr);
-            }
         }
         BlockNode::Table(t) => {
             for row in &mut t.rows {

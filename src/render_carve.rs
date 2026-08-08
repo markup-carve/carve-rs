@@ -615,9 +615,6 @@ fn normalize_escapes_block(block: &mut BlockNode) {
             for child in &mut b.children {
                 normalize_escapes_block(child);
             }
-            if let Some(attr) = &mut b.attribution {
-                normalize_escapes_inlines(attr);
-            }
         }
         BlockNode::Table(t) => {
             if let Some(cap) = &mut t.caption {

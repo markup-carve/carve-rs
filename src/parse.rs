@@ -2547,9 +2547,6 @@ fn fill_offsets(blocks: &mut [BlockNode], line_starts: &[usize]) {
             BlockNode::Heading(h) => apply_inline_offsets(&mut h.children, line_starts),
             BlockNode::Paragraph(p) => apply_inline_offsets(&mut p.children, line_starts),
             BlockNode::BlockQuote(b) => {
-                if let Some(attribution) = &mut b.attribution {
-                    apply_inline_offsets(attribution, line_starts);
-                }
                 fill_offsets(&mut b.children, line_starts);
             }
             BlockNode::Div(d) => fill_offsets(&mut d.children, line_starts),
@@ -2608,9 +2605,6 @@ fn fill_offsets(blocks: &mut [BlockNode], line_starts: &[usize]) {
                         // records, one target along.
                         if let Some(pos) = q.pos.as_mut() {
                             apply_offsets(pos, line_starts);
-                        }
-                        if let Some(attribution) = &mut q.attribution {
-                            apply_inline_offsets(attribution, line_starts);
                         }
                         fill_offsets(&mut q.children, line_starts);
                     }
@@ -4703,7 +4697,6 @@ fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         pos: span_of(cur, span_start, cur.pos, options),
         attrs: None,
         children,
-        attribution: None,
     };
     if let Some(caption) = consume_caption(cur, options) {
         BlockNode::Figure(Figure {
@@ -14651,9 +14644,6 @@ fn coalesce_block(block: &mut BlockNode) {
             }
         }
         BlockNode::BlockQuote(b) => {
-            if let Some(attribution) = &mut b.attribution {
-                coalesce_inlines(attribution);
-            }
             for child in &mut b.children {
                 coalesce_block(child);
             }
@@ -14714,9 +14704,6 @@ fn coalesce_block(block: &mut BlockNode) {
             coalesce_inlines(&mut f.caption);
             match &mut f.target {
                 FigureTarget::BlockQuote(b) => {
-                    if let Some(attribution) = &mut b.attribution {
-                        coalesce_inlines(attribution);
-                    }
                     for child in &mut b.children {
                         coalesce_block(child);
                     }
