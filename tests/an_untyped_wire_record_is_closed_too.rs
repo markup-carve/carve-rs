@@ -74,6 +74,24 @@ fn control_a_legacy_definition_entry_keeps_the_publishers_position_arrays() {
 }
 
 #[test]
+fn a_typed_node_carrying_terms_is_refused_under_its_own_type() {
+    // THE `type`-ABSENT GUARD IS ABOUT THE MESSAGE, and this is what makes it
+    // load-bearing rather than decorative. Removing the guard kills no other
+    // case here - no node the schema names carries an array-valued `terms`, so
+    // a typed node carrying one is refused either way. What changes is WHICH
+    // rule refuses it: without the guard the payload comes back as a legacy
+    // definition entry carrying `"type"`, which sends the caller after a record
+    // their document does not contain.
+    let error = refusal(r#"{"type":"paragraph","terms":[],"children":[]}"#);
+    assert!(error.contains("paragraph"), "{error}");
+    assert!(error.contains("\"terms\""), "{error}");
+    assert!(
+        !error.contains("legacy definition entry"),
+        "a typed node is not a legacy entry: {error}"
+    );
+}
+
+#[test]
 fn control_an_attribute_literally_named_terms_is_not_a_legacy_entry() {
     // The false positive the array-valued test exists to stop.
     // `attrs.keyValues` is an OPEN map of strings, so a document with an
