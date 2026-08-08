@@ -149,6 +149,18 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A footnote with an empty body carries a backlink** (PART 9 §16,
+  markup-carve/carve#688; carve-rs#826). A body with no blocks at all now gets
+  the synthesized wrapping paragraph the rule already gives a body whose last
+  block is not a paragraph, so `[^f]: {x}` renders
+  `<li id="fn1"> <p><a href="#fnref1" role="doc-backlink">↩</a></p> </li>`
+  instead of an empty `<li id="fn1"> </li>`. The reference above it always
+  rendered and always pointed at the note, so a reader who followed it had no
+  way back. Three routes reach a zero-block body and all three are fixed: a body
+  consumed as attributes, an ingested `"type":"footnote"` with empty `children`,
+  and a profile whose disallowed action is Strip removing the body's every
+  block. Matches carve-js and carve-php.
+
 - **The Markdown target's escaping narrows on the line** (PART 11 §8a,
   markup-carve/carve#970; carve-rs#824). `_`, `#` and `[` are escaped if and only
   if the character is ADJACENT on the emitted line to an unescaped delimiter of
