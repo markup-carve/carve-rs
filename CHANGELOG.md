@@ -170,7 +170,9 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
   A TOC entry is rendered by the render in progress rather than at derivation
   time, so it now obeys the caller's raw-HTML policy and symbols map as well as
-  the typography mode it already followed.
+  the typography mode it already followed. It is also escaped once, by that
+  renderer: a `"` in a heading reaches the entry bare instead of as `&quot;`,
+  which is what the heading itself already emitted and what carve-js emits.
 
 - **A mention and a tag open no anchor inside a link** (PART 12 section 3a LINKS
   NEVER NEST). With `mention_url` / `tag_url` configured, `[see @bob](/u)`
