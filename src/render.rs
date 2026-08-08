@@ -779,42 +779,65 @@ fn render_footnotes_section(
             out.push_str(&render_backlinks(&entry.backrefs));
             out.push_str("</p>");
         } else if let Some(label) = &entry.label {
-            if let Some(blocks) = doc.footnote_defs.get(label) {
-                for (block_idx, block) in blocks.iter().enumerate() {
-                    out.push('\n');
-                    let mut rendered = String::new();
-                    render_block(&mut rendered, block, 3, options, state);
-                    if block_idx + 1 == blocks.len() {
-                        let backlink = render_backlinks(&entry.backrefs);
-                        // The backlink goes INSIDE the body's last paragraph -
-                        // but only when that last block IS a paragraph. When it
-                        // is anything else the body gets a synthesized paragraph
-                        // to carry it (PART 9 §16, spec markup-carve/carve#799,
-                        // corpus 225).
-                        //
-                        // Searching the rendered string for the last `</p>` was
-                        // wrong twice over: it appended a bare anchor after
-                        // `</pre>` for a body ending in a fence, leaving the
-                        // endnote ending in something that is not a block; and
-                        // for a body ending in a quote or a list it found the
-                        // paragraph nested INSIDE that block and put the
-                        // backlink there, which reads as part of the quotation.
-                        if matches!(block, BlockNode::Paragraph(_)) {
-                            if let Some(pos) = rendered.rfind("</p>") {
-                                rendered.insert_str(pos, &backlink);
-                            } else {
-                                rendered.push_str(&backlink);
-                            }
+            let blocks: &[BlockNode] = doc
+                .footnote_defs
+                .get(label)
+                .map(Vec::as_slice)
+                .unwrap_or_default();
+            // A body with NO blocks at all still owes the reader a way back.
+            // PART 9 §16 hangs the backlink on the body's last block and
+            // synthesizes a wrapping paragraph when that block is not one
+            // (markup-carve/carve#688); a body with no last block has nothing
+            // to hang it on, so the whole paragraph is synthesized. The loop
+            // below runs zero times here, which is how the anchor went missing
+            // while the reference kept pointing at the note (carve-rs#826).
+            //
+            // Zero blocks is reachable from source (a body that is only a
+            // block-attribute line, `[^f]: {x}`, whose line is consumed as
+            // attributes), from AST-JSON ingest (`"type":"footnote"` with an
+            // empty `children`), and from a profile whose disallowed action is
+            // Strip removing every block of the body. All three arrive here.
+            if blocks.is_empty() {
+                out.push('\n');
+                indent(&mut out, 3);
+                out.push_str("<p>");
+                out.push_str(&render_backlinks(&entry.backrefs));
+                out.push_str("</p>");
+            }
+            for (block_idx, block) in blocks.iter().enumerate() {
+                out.push('\n');
+                let mut rendered = String::new();
+                render_block(&mut rendered, block, 3, options, state);
+                if block_idx + 1 == blocks.len() {
+                    let backlink = render_backlinks(&entry.backrefs);
+                    // The backlink goes INSIDE the body's last paragraph -
+                    // but only when that last block IS a paragraph. When it
+                    // is anything else the body gets a synthesized paragraph
+                    // to carry it (PART 9 §16, spec markup-carve/carve#799,
+                    // corpus 225).
+                    //
+                    // Searching the rendered string for the last `</p>` was
+                    // wrong twice over: it appended a bare anchor after
+                    // `</pre>` for a body ending in a fence, leaving the
+                    // endnote ending in something that is not a block; and
+                    // for a body ending in a quote or a list it found the
+                    // paragraph nested INSIDE that block and put the
+                    // backlink there, which reads as part of the quotation.
+                    if matches!(block, BlockNode::Paragraph(_)) {
+                        if let Some(pos) = rendered.rfind("</p>") {
+                            rendered.insert_str(pos, &backlink);
                         } else {
-                            rendered.push('\n');
-                            indent(&mut rendered, 3);
-                            rendered.push_str("<p>");
                             rendered.push_str(&backlink);
-                            rendered.push_str("</p>");
                         }
+                    } else {
+                        rendered.push('\n');
+                        indent(&mut rendered, 3);
+                        rendered.push_str("<p>");
+                        rendered.push_str(&backlink);
+                        rendered.push_str("</p>");
                     }
-                    out.push_str(&rendered);
                 }
+                out.push_str(&rendered);
             }
         }
         out.push('\n');
