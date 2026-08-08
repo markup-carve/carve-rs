@@ -7,6 +7,8 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-08-08
+
 ### Breaking
 
 - **A frontmatter block whose opener named no format is written back as
