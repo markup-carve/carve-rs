@@ -280,11 +280,26 @@ fn raw_frontmatter(source: &str) -> (Option<String>, &str) {
     } else {
         return (None, source);
     };
-    let open = if kind.is_empty() {
-        "---".to_string()
-    } else {
-        format!("---{kind}")
-    };
+    // The opening delimiter carries the format token for EVERY format, the
+    // default one included: PART 11 section 6b says frontmatter in `yaml` comes
+    // back as `---yaml` and never as a bare `---`. An untyped opener is the case
+    // that clause was written for, not one it forgot - `---` and `---yaml` open
+    // the same block, so nothing in the tree tells them apart, and a writer that
+    // omitted the token would be special-casing a value `frontmatter_format`
+    // distinguishes nowhere except in the parser's leniency rule. A reader's
+    // leniency is not a writer's license.
+    //
+    // The default is the parser's own, from the same constant that fills
+    // `Frontmatter::format` for a bare fence, so the written source and the
+    // published tree cannot disagree about which format the document is in.
+    let open = format!(
+        "---{}",
+        if kind.is_empty() {
+            parse::DEFAULT_FRONTMATTER_FORMAT
+        } else {
+            kind
+        }
+    );
     let content = &rest[..content_len];
     let body = &rest[after..];
     (Some(format!("{open}\n{content}\n---")), body)

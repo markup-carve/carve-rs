@@ -9,6 +9,23 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Breaking
 
+- **A frontmatter block whose opener named no format is written back as
+  `---yaml`** (markup-carve/carve#1040). PART 11 §6b spells the format token on
+  the opening delimiter for every format, the default one included, and says of
+  the untyped opener that "A READER'S LENIENCY IS NOT A WRITER'S LICENSE". This
+  writer reproduced the opener as authored, so `---toml` came back typed and a
+  bare `---` came back bare - the special case for one value the clause removes.
+  The closer stays bare, and a document that has no frontmatter grows none.
+
+- **A blank line inside verbatim content carries no structural indent**
+  (markup-carve/carve#1040). PART 11 §7 emits the indent of an EMPTY verbatim
+  line as nothing: "that is layout, and it is omitted". Only the list item
+  applied it; a fenced block under a footnote definition or a definition-list
+  description came back with a whitespace-only line, which editors that strip on
+  save and CI whitespace checks rewrite behind the formatter. A block quote keeps
+  its `>` - an empty line there would close the quote and take the open fence
+  with it.
+
 - **An inline comment is written with the space that separates it from the
   construct before it** (markup-carve/carve#1028). `{,y,} %% c` was written back
   as `{,y,}%% c`, so the bytes changed for any document whose comment follows

@@ -54,6 +54,15 @@ const DEFINITION_PLACEHOLDER: &str = "%%\u{E005}";
 /// growing its VM stack on the heap.
 pub(crate) const MAX_NESTING_DEPTH: usize = 200;
 
+/// The format a BARE frontmatter fence is in (PART 1, "a bare `---` defaults to
+/// `yaml`").
+///
+/// Named rather than spelled twice: the parser publishes it as
+/// `Frontmatter::format` and the canonical writer emits it on the opening fence
+/// (PART 11 section 6b), and a second literal is a second place for the two to
+/// drift apart.
+pub(crate) const DEFAULT_FRONTMATTER_FORMAT: &str = "yaml";
+
 fn trim_ascii_start(s: &str) -> &str {
     s.trim_start_matches([' ', '\t'])
 }
@@ -2117,7 +2126,7 @@ fn split_frontmatter(source: &str, positions: bool) -> SplitFrontmatter<'_> {
     let raw = Frontmatter {
         // A bare fence is yaml, which is what the reference publishes.
         format: if kind.is_empty() {
-            "yaml".to_string()
+            DEFAULT_FRONTMATTER_FORMAT.to_string()
         } else {
             kind.to_string()
         },
