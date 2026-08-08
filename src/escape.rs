@@ -168,8 +168,9 @@ pub fn is_valid_attr_name(name: &str) -> bool {
 /// Blank an attribute value carrying a dangerous URL scheme or a CSS
 /// `expression(...)`, so an author cannot smuggle script through an attribute
 /// the name filter allows (e.g. `background`, `style`). The scheme is
-/// normalized (C0 controls + spaces removed) before comparison to defeat
-/// `java\tscript:` style evasion.
+/// normalized - every control and whitespace character removed, see
+/// `is_url_probe_skippable` - before comparison, to defeat `java\tscript:` and
+/// `java<DEL>script:` style evasion alike.
 pub fn sanitize_attr_value<'a>(name: &str, value: &'a str) -> std::borrow::Cow<'a, str> {
     if let Some(colon) = value.find(':') {
         let scheme: String = value[..colon]
@@ -259,7 +260,10 @@ fn normalize_css_for_dangerous_check(value: &str) -> String {
 /// Always-on URL hardening for `href` / `src`: blank a URL whose (normalized)
 /// scheme is on the dangerous denylist (`javascript`, `vbscript`, `data`,
 /// `file`); every other scheme and any scheme-less URL passes. Scheme detection
-/// strips C0 controls + spaces to defeat `java\tscript:` evasion. The returned
+/// drops every control and whitespace character - see
+/// `is_url_probe_skippable` - to defeat `java\tscript:` and `java<DEL>script:`
+/// evasion alike. STRIP-THEN-PROBE: the stripped form is only a judgement aid,
+/// and a URL that passes is returned with its original bytes. The returned
 /// value is still passed through `escape_attr` by the caller.
 pub fn sanitize_url(url: &str) -> std::borrow::Cow<'_, str> {
     let probe: String = url
@@ -285,14 +289,35 @@ pub fn sanitize_url(url: &str) -> std::borrow::Cow<'_, str> {
     std::borrow::Cow::Borrowed(url)
 }
 
-/// Characters dropped before probing a URL's scheme. Browsers strip C0 controls
-/// and ASCII space inside a scheme, so `java\tscript:` must still be detected.
-/// We additionally drop Unicode whitespace/separators (NBSP U+00A0, the line/
-/// paragraph separators U+2028/U+2029) and the zero-width no-break space / BOM
-/// (U+FEFF). These are not browser-stripped in practice, so this is defense in
-/// depth and parity with the JS/PHP implementations, not an exploitable gap.
+/// Characters dropped before probing a URL's scheme: every control character
+/// and every whitespace character, plus the zero-width no-break space / BOM.
+///
+/// `char::is_control` is the Cc category exactly - U+0000..U+001F, DEL (U+007F)
+/// and the C1 block U+0080..U+009F - and naming it is what widened this
+/// predicate. It used to read `(c as u32) <= 0x20`, which stopped short of DEL
+/// and covered only U+0085 of the C1 block (through `is_whitespace`). While it
+/// did, `[x](java<DEL>script:alert(1))` reached the rendered `href` with the raw
+/// `7f` byte intact and `![a](...)` reached `src` the same way, though the plain
+/// `javascript:alert(1)` was blanked correctly (markup-carve/carve-rs#833).
+///
+/// THIS IS A PROBE CLASS AND IT IS DELIBERATELY WIDER THAN PART 9 §29's EMIT
+/// CLASS. §29 governs what a target may write, and by T5 it puts DEL and C1
+/// outside itself; this governs what the probe must see THROUGH. The two answer
+/// different questions, and reading the second off the first is what left the
+/// gap. The membership test here is "may a URL consumer discard this character
+/// before it reads the scheme", not "is this character a control".
+///
+/// The ANSI target already had this right one file over: it runs
+/// `strip_terminal_controls` - which is `char::is_control` - over the
+/// destination before handing it to `sanitize_url`, so the split form never
+/// reached the narrow predicate from that direction. The Markdown target does
+/// the same through `is_not_emitted`. HTML had no such pre-strip, which is why
+/// it was the target that leaked.
+///
+/// Filtering only ever REMOVES characters, so widening this can deny more and
+/// can never allow more.
 pub(crate) fn is_url_probe_skippable(c: char) -> bool {
-    (c as u32) <= 0x20 || c.is_whitespace() || c == '\u{FEFF}'
+    c.is_control() || c.is_whitespace() || c == '\u{FEFF}'
 }
 
 #[cfg(test)]
