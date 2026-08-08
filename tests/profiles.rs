@@ -254,6 +254,7 @@ fn to_text_degrades_a_node_whose_extractor_comes_back_empty_instead_of_deleting_
         frontmatter: Default::default(),
         frontmatter_raw: None,
         footnote_defs: Default::default(),
+        footnote_def_pos: Default::default(),
         children: vec![carve::BlockNode::Paragraph(carve::Paragraph {
             attrs: None,
             children: vec![
@@ -797,6 +798,7 @@ fn denying_frontmatter_strips_a_programmatically_built_map_with_no_raw_form() {
         )]),
         frontmatter_raw: None,
         footnote_defs: Default::default(),
+        footnote_def_pos: Default::default(),
         children: vec![carve::BlockNode::Paragraph(carve::Paragraph {
             attrs: None,
             children: vec![carve::InlineNode::text("Body.".to_string())],

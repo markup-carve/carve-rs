@@ -123,6 +123,7 @@ fn non_html_renderers_bound_programmatic_block_depth() {
             source_len: 0,
             ingest_payload_len: 0,
             footnote_defs: std::collections::BTreeMap::new(),
+            footnote_def_pos: std::collections::BTreeMap::new(),
             children: vec![block],
         };
 
@@ -163,6 +164,7 @@ fn non_html_renderers_bound_programmatic_inline_depth() {
             source_len: 0,
             ingest_payload_len: 0,
             footnote_defs: std::collections::BTreeMap::new(),
+            footnote_def_pos: std::collections::BTreeMap::new(),
             children: vec![carve::BlockNode::Paragraph(carve::Paragraph {
                 attrs: None,
                 children: vec![inline],

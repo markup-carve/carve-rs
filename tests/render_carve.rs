@@ -93,6 +93,7 @@ fn bullet_marker_normalization() {
         frontmatter: Default::default(),
         frontmatter_raw: None,
         footnote_defs: Default::default(),
+        footnote_def_pos: Default::default(),
         children: vec![carve::BlockNode::List(carve::List {
             attrs: None,
             ordered: false,

@@ -186,7 +186,7 @@ fn parse_with_options_mode(source: &str, options: &Options<'_>, mode: ParseMode)
         .filter(|b| *b == b'\n')
         .count()
         + 1;
-    let (body, footnote_defs_src, note_link_defs) =
+    let (body, footnote_defs_src, mut footnote_def_pos, note_link_defs) =
         extract_footnote_defs(body, body_start_line, options.positions);
     let (body_source, mut link_defs) = extract_link_defs(&body.source);
     // A definition written inside a footnote body is document-level metadata,
@@ -219,11 +219,31 @@ fn parse_with_options_mode(source: &str, options: &Options<'_>, mode: ParseMode)
         for blocks in footnote_defs.values_mut() {
             fill_offsets(blocks, &line_starts);
         }
+        // A definition whose BODY places something already has an extent, and
+        // that extent - not this line - is what reaches the wire. Keeping the
+        // line beside it would put a fact in the document that its own
+        // serialization does not carry, so an ingested copy would differ from
+        // the parse (§6). Dropped here rather than never recorded because the
+        // bodies are parsed after the scan that finds the definition lines.
+        footnote_def_pos.retain(|label, _| match footnote_defs.get(label) {
+            Some(blocks) => crate::ast_json::first_block_pos(blocks).is_none(),
+            None => true,
+        });
+        // A definition line's own offsets, from the same table for the same
+        // reason. Both ends sit on that one line, so one lookup places both.
+        for pos in footnote_def_pos.values_mut() {
+            let Some(line_start) = line_starts.get(pos.start_line - 1).copied() else {
+                continue;
+            };
+            pos.start_offset = line_start + pos.start_column - 1;
+            pos.end_offset = line_start + pos.end_column - 1;
+        }
     }
     let mut doc = Document {
         frontmatter,
         frontmatter_raw,
         footnote_defs,
+        footnote_def_pos,
         children,
         source_len: source.len(),
         // Measured here, so nothing about the parse path needs a second number.
@@ -563,6 +583,16 @@ fn at_content_column<'a>(bare: &'a str, structural: &str, content_col: usize) ->
     }
 }
 
+/// What `extract_footnote_defs` hands back, in order: the document body with
+/// the definition lines removed, each definition's own source, where each
+/// definition LINE sits, and the link definitions lifted out of the note bodies.
+type FootnoteExtraction = (
+    MappedSource,
+    BTreeMap<String, MappedSource>,
+    BTreeMap<String, Pos>,
+    BTreeMap<String, LinkDef>,
+);
+
 /// Footnote definitions, and the LINK DEFINITIONS written inside their bodies.
 ///
 /// A note body is lifted out of the document here, before `extract_link_defs`
@@ -579,15 +609,16 @@ fn extract_footnote_defs(
     source: &str,
     first_source_line: usize,
     positions: bool,
-) -> (
-    MappedSource,
-    BTreeMap<String, MappedSource>,
-    BTreeMap<String, LinkDef>,
-) {
+) -> FootnoteExtraction {
     let lines: Vec<&str> = source.lines().collect();
     let mut body = Vec::new();
     let mut body_line_map = Vec::new();
     let mut defs = BTreeMap::new();
+    // Where each definition was written. Lines and columns are final here; the
+    // OFFSETS are filled by the caller, which is the only place that holds the
+    // original text the offsets are measured in - the same split `fill_offsets`
+    // already uses for every other block.
+    let mut def_positions: BTreeMap<String, Pos> = BTreeMap::new();
     let mut note_link_defs: BTreeMap<String, LinkDef> = BTreeMap::new();
     // Fence state for the note-body walk below, declared per definition since a
     // fence cannot span two notes.
@@ -731,6 +762,35 @@ fn extract_footnote_defs(
         );
         if let Some((label, first)) = parse_footnote_def_line(def_line) {
             let def_start_line = first_source_line + i;
+            // The definition's OWN extent, before the body is collected.
+            //
+            // PART 12 §4: a span begins at the markup that opens the construct,
+            // which for a definition is the `[` of `[^label]:` and not the
+            // container prefix that carried the line. `def_line` is that text,
+            // so what precedes it on the raw line is exactly the prefix to skip -
+            // measured by taking `def_line` off the end rather than by re-deriving
+            // a column, so a tab or a quote marker cannot be counted differently
+            // here than it was when the line was stripped.
+            let raw_def_line = lines[i];
+            if positions {
+                if let Some(prefix) = raw_def_line.strip_suffix(def_line) {
+                    // First definition for a label wins, matching `defs` below.
+                    def_positions
+                        .entry(label.to_string())
+                        .or_insert_with(|| Pos {
+                            // `def_start_line` is already the 1-based source
+                            // line - `body_start_line` starts the count at 1 -
+                            // and it is the same number `def_line_map` records
+                            // for the body's first line.
+                            start_line: def_start_line,
+                            end_line: def_start_line,
+                            start_column: prefix.chars().count() + 1,
+                            end_column: raw_def_line.chars().count() + 1,
+                            start_offset: 0,
+                            end_offset: 0,
+                        });
+                }
+            }
             i += 1;
             let mut def_lines = vec![first.to_string()];
             let mut def_line_map = vec![Some(def_start_line)];
@@ -951,6 +1011,7 @@ fn extract_footnote_defs(
             line_map: body_line_map,
         },
         defs,
+        def_positions,
         note_link_defs,
     )
 }

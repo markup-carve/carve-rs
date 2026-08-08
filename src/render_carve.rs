@@ -478,10 +478,10 @@ fn render_with_escapes_once(doc: &Document, escape_mode: EscapeMode) -> String {
     // written source and the published tree cannot disagree.
     let footnote_defs = crate::ast_json::footnote_defs_in_source_order(doc);
     let mut rendered = Vec::new();
-    for entry in crate::ast_json::ordered_document_entries(&doc.children, &footnote_defs) {
+    for entry in crate::ast_json::ordered_document_entries(doc, &footnote_defs) {
         let text = match entry {
             crate::ast_json::DocEntry::Block(child) => render_block(child, &mut ctx),
-            crate::ast_json::DocEntry::FootnoteDef(label, blocks) => {
+            crate::ast_json::DocEntry::FootnoteDef(label, blocks, _) => {
                 // Unless a definition list already wrote it where the author put
                 // it (markup-carve/carve#805).
                 if blocks
