@@ -1136,6 +1136,12 @@ pub(crate) fn plain_inlines_typography(
     for node in nodes {
         match node {
             InlineNode::Text(s) => out.push_str(&s.value),
+            // Visible prose, so it feeds derived text (carve-rs#800). This has to
+            // move together with `plain_inlines_parse`'s arm: the parse-time
+            // index and the render-time id are two spellings of one derivation,
+            // and a heading whose id disagreed between them would publish an
+            // anchor no cross-reference could resolve.
+            InlineNode::EscapedText(e) => out.push_str(&e.value),
             InlineNode::SmartPunctuation(s) => {
                 if source {
                     out.push_str(&s.value);

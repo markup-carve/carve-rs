@@ -149,6 +149,19 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **An escaped character reaches a heading's derived text** (carve-rs#800). It
+  renders as visible prose, so it feeds the heading's title, its generated id and
+  PART 9R R1's implicit `[label][]` index - and it fed none of them: the three
+  projections behind those had no arm for it and dropped it silently.
+  `# a\.b` published `id="ab"` and now publishes `id="a-b"`, and `[a.b][]`
+  resolves to it. carve-js and carve-php already included it, so this was a
+  one-engine divergence.
+
+  **Behavior change:** a heading whose escaped character is a word separator the
+  slug keeps a boundary for gets a different id. Where the escaped character is
+  one the slug strips anyway - `# \*bold\*` - the id does not move. No corpus
+  document changes.
+
 - **Every derived display text clones the heading's nodes, not just the
   cross-reference label** (PART 9R R4 DERIVED DISPLAY TEXT CLONES THE SAME
   NODES, markup-carve/carve#957; carve-rs#782). A node carries the author's

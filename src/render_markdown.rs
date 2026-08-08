@@ -1242,6 +1242,12 @@ fn plain_inlines(nodes: &[InlineNode]) -> String {
             InlineNode::Text(text) => {
                 out.push_str(&text.value.replace(crate::NBSP_PLACEHOLDER, " "))
             }
+            // Visible prose, so it feeds this slug exactly as it feeds the core's
+            // (carve-rs#800). This is the THIRD spelling of one derivation - the
+            // parse-time index, the HTML renderer and this one - and the reason
+            // the arm goes in all three at once is that a heading id derived two
+            // ways has to be one id.
+            InlineNode::EscapedText(escaped) => out.push_str(&escaped.value),
             InlineNode::SmartPunctuation(s) => out.push_str(smart_punctuation_text(s)),
             InlineNode::Emphasis(emphasis) => out.push_str(&plain_inlines(&emphasis.children)),
             InlineNode::Code(code) => out.push_str(&code.value),
