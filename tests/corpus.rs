@@ -13,6 +13,7 @@ use std::fs;
 use std::path::PathBuf;
 
 const IMPLEMENTED: &[&str] = &[
+    "adjacent-block-openers-in-an-attached-run-stay-separate",
     "a-caption-attaches-across-one-blank-line",
     "a-container-a-lazy-line-folded-into-is-still-open",
     "two-blank-lines-detach-a-caption",
@@ -329,6 +330,7 @@ const IMPLEMENTED: &[&str] = &[
     // Three of its seven rows moved here; the other four already passed.
     "a-fence-opened-on-a-list-marker-line-body-below-the-content-column",
     "an-empty-footnote-body-is-written-with-the-empty-sentinel",
+    "a-ragged-table-keeps-each-row-s-cell-count",
 ];
 
 fn corpus_dir() -> PathBuf {
