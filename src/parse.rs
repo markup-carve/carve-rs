@@ -7810,7 +7810,8 @@ fn parse_definition_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNo
                 },
                 closed_last: false,
             };
-            body.append(collect_definition_body(cur, &mut fence));
+            let seed = body.source.clone();
+            body.append(collect_definition_body(cur, &mut fence, &seed, options));
             // The span covers the `:  ` marker through the last line the body
             // consumed, so a multi-line definition is one region rather than
             // just its opening line. `collect_definition_body` has already
@@ -7899,10 +7900,73 @@ impl DefinitionBodyFence {
     }
 }
 
+/// Does the definition body collected so far end in something a flush-left line
+/// can FOLD INTO?
+///
+/// PART 0 S4's lazy branch continues an open PARAGRAPH. `DefinitionBodyFence`
+/// above answers that for the body's own code fence and has to, because this
+/// test reads the body collected SO FAR: an unterminated fence has no closer
+/// yet, and PART 9 S10 degrades it to a paragraph, which would answer the open
+/// half backwards (carve-rs#785, #789). Everything else the body can end in -
+/// an empty block quote, a closed div or admonition, a table, a thematic break,
+/// a line block, a block-attribute line that left no block at all - holds no
+/// open paragraph either, and this is where those are answered
+/// (markup-carve/carve#956, carve-rs#790).
+///
+/// THE HEADING IS AN EXCEPTION AND IT IS SPELLED HERE, not in
+/// `block_ends_with_open_paragraph`. A heading is not a paragraph, so the shared
+/// predicate says false for one - yet `- one` / `  :: term` / `  :  # H` /
+/// `lazy` keeps the line inside the body, and so does every list spelling beside
+/// it (`heading_folds_lazy.rs`, carve#326). The list path arrives at that answer
+/// without consulting the shared predicate at all, so an arm added THERE would
+/// move the list's pinned answers as well as this one. Written here, it reaches
+/// the definition body and nothing else.
+fn definition_body_takes_the_fold(source: &str, options: &Options<'_>) -> bool {
+    if nested_ends_with_open_paragraph(source, options) {
+        return true;
+    }
+    let blocks = parse_blocks_with_options(source, options);
+    let mut end = blocks.len();
+    // Past a trailing run of comments, for the reason
+    // `nested_ends_with_open_paragraph` gives: a comment renders nothing, so it
+    // closes no paragraph and cannot be what the body ends in (S24 C3).
+    while end > 0 && matches!(blocks[end - 1], BlockNode::Comment(_)) {
+        end -= 1;
+    }
+    if end == 0 {
+        return false;
+    }
+    matches!(
+        blocks[end - 1],
+        // See above.
+        BlockNode::Heading(_)
+            // AN IMAGE BLOCK IS ONLY A BLOCK UNTIL SOMETHING FOLDS INTO IT.
+            // `image_is_block` makes a bare image line a block ONLY when the
+            // next line does not fold, and a `^ ` caption is an inline
+            // continuation a following line extends. Both are decided by the
+            // line AFTER the body, which is exactly the line this predicate is
+            // being asked about and which the collected source therefore does
+            // not contain yet. Reading the block off a body that stops one line
+            // early turned `:  ![a](i.png)` / `lazy` into a standalone image
+            // plus a top-level paragraph, where the list twin folds - the same
+            // read-the-body-so-far trap the fence guard exists to avoid.
+            | BlockNode::BlockImage(_)
+            | BlockNode::Figure(_)
+    )
+}
+
 /// `fence` carries the body's own fenced code block, seeded by the caller from
 /// the `:  ` marker line - which no collector ever sees - and followed here on
-/// every line collected at the body's column.
-fn collect_definition_body(cur: &mut LineCursor, fence: &mut DefinitionBodyFence) -> MappedSource {
+/// every line collected at the body's column. `seed` is that same marker-line
+/// content (or, for the `:  +` form, the attached flush-left block), because the
+/// paragraph test below needs the WHOLE body and this collector only ever sees
+/// the lines after it.
+fn collect_definition_body(
+    cur: &mut LineCursor,
+    fence: &mut DefinitionBodyFence,
+    seed: &str,
+    options: &Options<'_>,
+) -> MappedSource {
     let mut lines: Vec<String> = Vec::new();
     let mut line_map: Vec<Option<usize>> = Vec::new();
     // Codepoints taken off the front of each line, kept in lockstep with
@@ -7998,6 +8062,21 @@ fn collect_definition_body(cur: &mut LineCursor, fence: &mut DefinitionBodyFence
             // example in the clause shows the open half; the rule is stated on
             // the paragraph, not on the delimiter.
             if fence.holds_no_paragraph() {
+                break;
+            }
+            // AND NEITHER DOES ANY OTHER BODY THAT ENDS IN A FINISHED BLOCK.
+            // The fence guard above is one shape of "the body holds no open
+            // paragraph"; an empty block quote, a closed div or admonition, a
+            // table, a thematic break, a line block and a body a
+            // block-attribute line left with no block at all are the others,
+            // and each of them folded here while the LIST twin closed
+            // (carve-rs#790). Same clause, same answer.
+            let mut so_far = String::from(seed);
+            for collected in &lines {
+                so_far.push('\n');
+                so_far.push_str(collected);
+            }
+            if !definition_body_takes_the_fold(&so_far, options) {
                 break;
             }
             // BELOW THE BODY'S COLUMN THE BODY ENDS (markup-carve/carve#932).
