@@ -6250,7 +6250,7 @@ fn marker_content_col(line: &str) -> Option<usize> {
 /// PARAGRAPH rather than a block opener. Any indented line is paragraph text
 /// under the strict column-0 rule; a flush-left line is a paragraph only when it
 /// matches none of the block openers.
-fn line_starts_paragraph(line: &str) -> bool {
+pub(crate) fn line_starts_paragraph(line: &str) -> bool {
     if is_blank_line(line) {
         return false;
     }

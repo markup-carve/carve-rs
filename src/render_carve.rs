@@ -829,16 +829,34 @@ fn render_item_blocks(blocks: &[BlockNode], tight: bool, ctx: &mut CarveContext)
                 separated = true;
             }
         }
-        // §17 L3: a PARAGRAPH after a paragraph needs its continuation marker
-        // written back. Indented under the item it is a lazy continuation of
-        // the paragraph above (§10 I2), so the item comes back holding ONE
-        // block where the author wrote two (carve#861). Only a paragraph
-        // reaches this: no other attached kind can fold into an open paragraph,
-        // which is why the corpus - which pins a fence and a quote - never saw
-        // it.
+        // §17 L3: a block after a paragraph needs its continuation marker
+        // written back whenever the block's own first line would FOLD into that
+        // paragraph. Indented under the item it is a lazy continuation of the
+        // paragraph above (§10 I2), so the item comes back holding ONE block
+        // where the author wrote two (carve#861).
+        //
+        // "ONLY A PARAGRAPH REACHES THIS" WAS FALSE, and the comment that said
+        // so said why the corpus never caught it: it pins a fence and a quote,
+        // both of which OPEN a block at the item's content column and so never
+        // needed the marker. An IMAGE line opens nothing. `- x` / `+` /
+        // `![a](i.png)` / `^ cap` came back as `- x` / `  ![a](i.png)` /
+        // `  ^ cap`, where the image is no longer a standalone image paragraph,
+        // PART 9 §4 does not attach the caption, and the `<figure>` is gone with
+        // the caption left as literal text (carve-rs#819). The bare image
+        // without a caption loses its block just the same, and that one is not
+        // on the ticket.
+        //
+        // So the test is the PARSER'S OWN opener test on the bytes about to be
+        // emitted, rather than a list of block kinds maintained by hand here -
+        // the same deviation `markup-carve/carve#961` records for the leading
+        // thematic break.
+        let folds_into_the_paragraph_above = rendered
+            .lines()
+            .next()
+            .is_some_and(crate::parse::line_starts_paragraph);
         if !separated
             && matches!(prev, Some(BlockNode::Paragraph(_)))
-            && matches!(block, BlockNode::Paragraph(_))
+            && folds_into_the_paragraph_above
         {
             out.push_str(&at_marker_column("+"));
             out.push('\n');
@@ -1390,17 +1408,39 @@ fn render_table_cell(cell: &TableCell, ctx: &mut CarveContext, mark_header: bool
             }
         };
     }
+    let align = align_marker(cell.align);
     let prefix = format!(
         "{}{}{}",
         attrs,
         if cell.header && mark_header { "=" } else { "" },
-        align_marker(cell.align)
+        align
     );
     ctx.table_cell_depth += 1;
     let content = render_inlines(&cell.children, ctx);
     ctx.table_cell_depth -= 1;
+    // A MARKER AND THE CONTENT'S FIRST CHARACTER CAN MERGE INTO A LONGER MARKER
+    // RUN. The header `=` is read glued to the pipe and the ALIGNMENT sigil is
+    // read glued after it, off the UNTRIMMED cell - so a prefix carrying no
+    // alignment of its own hands its next character to the alignment reader.
+    // `| ~x~ |`, a header cell holding a strikethrough, came back as `|=~x~|`,
+    // which re-reads as a CENTERED column holding the text `x~`: the
+    // strikethrough gone and every cell in the column centered by a marker
+    // nobody wrote (carve-rs#819).
+    //
+    // ONE SPACE PARTS THEM, and it costs nothing: only the marker's position
+    // relative to the PIPE is significant, and the reader trims the padding
+    // after it. Escaping the character instead would be wrong - `~` opens a real
+    // strikethrough here, so a backslash would change the content rather than
+    // protect it. `<` and `>` reach this already escaped as literal text, which
+    // is why `~` was the only spelling that broke.
+    let separator =
+        if !prefix.is_empty() && align.is_empty() && content.starts_with(['<', '>', '~']) {
+            " "
+        } else {
+            ""
+        };
     RenderedCell {
-        text: format!("{prefix}{content}"),
+        text: format!("{prefix}{separator}{content}"),
         tight: !prefix.is_empty(),
     }
 }
