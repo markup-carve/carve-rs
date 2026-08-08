@@ -45,6 +45,44 @@ pub fn to_json(doc: &Document) -> String {
     out
 }
 
+pub(crate) fn source_layout_positions(doc: &Document) -> Vec<(String, usize, usize)> {
+    fn walk(value: &Json, path: &str, out: &mut Vec<(String, usize, usize)>) {
+        match value {
+            Json::Object(object) => {
+                if let Some(Json::Object(pos)) = object.get("pos") {
+                    if let (Some(Json::Number(start)), Some(Json::Number(end))) =
+                        (pos.get("startOffset"), pos.get("endOffset"))
+                    {
+                        if *start >= 0 && *end >= 0 {
+                            out.push((path.to_owned(), *start as usize, *end as usize));
+                        }
+                    }
+                }
+                for (key, child) in object {
+                    if key == "pos" {
+                        continue;
+                    }
+                    let escaped = key.replace('~', "~0").replace('/', "~1");
+                    walk(child, &format!("{path}/{escaped}"), out);
+                }
+            }
+            Json::Array(values) => {
+                for (index, child) in values.iter().enumerate() {
+                    walk(child, &format!("{path}/{index}"), out);
+                }
+            }
+            _ => {}
+        }
+    }
+    let json = Parser::new(&to_json(doc))
+        .parse()
+        .expect("encoder always writes valid JSON");
+    let mut out = Vec::new();
+    walk(&json, "", &mut out);
+    out.sort_by(|a, b| a.0.cmp(&b.0));
+    out
+}
+
 /// The fields a LEGACY definition-list entry may carry.
 ///
 /// The schema gives `definition_list.items` typed `definition_term` and
