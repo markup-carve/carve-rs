@@ -13,6 +13,7 @@ use std::fs;
 use std::path::PathBuf;
 
 const IMPLEMENTED: &[&str] = &[
+    "adjacent-block-openers-in-an-attached-run-stay-separate",
     "a-caption-attaches-across-one-blank-line",
     "a-container-a-lazy-line-folded-into-is-still-open",
     "two-blank-lines-detach-a-caption",
