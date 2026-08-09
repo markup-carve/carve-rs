@@ -34,6 +34,8 @@ struct CarveContext {
     /// Inside a table cell, where a leading `^` cannot open a caption: a
     /// caption marker is a BLOCK line, and a cell's content is not one.
     table_cell_depth: usize,
+    after_caption_host: bool,
+    paragraph_starts_after_caption_host: bool,
     escape_mode: EscapeMode,
     /// Definitions written on a description line, keyed by that line.
     definitions_by_line: HashMap<usize, DefinitionAtLine>,
@@ -50,9 +52,6 @@ struct CarveContext {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum EscapeMode {
     Minimal,
-    /// Minimal, plus the escape for a caption marker - `^` followed by a space
-    /// at the start of a block line. The middle step in `render_carve`.
-    MinimalWithCaptionMarkers,
     Conservative,
 }
 
@@ -240,29 +239,6 @@ fn render_carve_once(doc: &Document) -> String {
     let conservative = render_with_escapes(doc, EscapeMode::Conservative);
     if minimal == conservative || escaping_is_redundant(&minimal, &conservative) {
         return minimal;
-    }
-    // The minimal form changed the parse, and the blunt answer is to escape
-    // EVERY candidate in the document. One dangerous character then pulls
-    // escapes onto characters that were never at risk: that is how
-    // `\^ Figure 1: moon` became `\^ Figure 1\: moon`, a colon escape that
-    // changes no parse in any engine.
-    //
-    // So try one step in between - minimal, plus the escape for the construct
-    // a line-initial `^ ` forms. If that reproduces the conservative parse it
-    // is the least escaping that preserves meaning, which is what PART 11 §4
-    // asks for.
-    //
-    // This replaces an UNCONDITIONAL caption escape (carve-rs#558, mine). That
-    // could not tell corpus 158, where the caret is load-bearing because the
-    // writer dedents the image to column 0, from `![a][nope]` + `^ cap`, where
-    // the image resolves to nothing, the caption promotes nothing, and the bare
-    // caret changes no parse. Asking the parser tells them apart; a rule about
-    // position cannot (carve-rs#559).
-    let with_caption_escapes = render_with_escapes(doc, EscapeMode::MinimalWithCaptionMarkers);
-    if with_caption_escapes != minimal
-        && escaping_is_redundant(&with_caption_escapes, &conservative)
-    {
-        return with_caption_escapes;
     }
     conservative
 }
@@ -457,6 +433,8 @@ fn render_with_escapes_once(doc: &Document, escape_mode: EscapeMode) -> String {
         line_block_depth: 0,
         colon_fence_depth: 0,
         table_cell_depth: 0,
+        after_caption_host: false,
+        paragraph_starts_after_caption_host: false,
         escape_mode,
         definitions_by_line: definitions_by_description_line(doc),
         written_in_place: HashSet::new(),
@@ -480,8 +458,14 @@ fn render_with_escapes_once(doc: &Document, escape_mode: EscapeMode) -> String {
     let mut rendered = Vec::new();
     for entry in crate::ast_json::ordered_document_entries(doc, &footnote_defs) {
         let text = match entry {
-            crate::ast_json::DocEntry::Block(child) => render_block(child, &mut ctx),
+            crate::ast_json::DocEntry::Block(child) => {
+                ctx.paragraph_starts_after_caption_host = ctx.after_caption_host;
+                let text = render_block(child, &mut ctx);
+                ctx.after_caption_host = hosts_caption(child);
+                text
+            }
             crate::ast_json::DocEntry::FootnoteDef(label, blocks, _) => {
+                ctx.after_caption_host = false;
                 // Unless a definition list already wrote it where the author put
                 // it (markup-carve/carve#805).
                 if blocks
@@ -733,14 +717,40 @@ fn render_blocks(blocks: &[BlockNode], ctx: &mut CarveContext) -> String {
         return String::new();
     }
     ctx.block_depth += 1;
-    let out = blocks
-        .iter()
-        .map(|block| render_block(block, ctx))
-        .filter(|s| !s.is_empty())
-        .collect::<Vec<_>>()
-        .join("\n\n");
+    let previous_host = ctx.after_caption_host;
+    let previous_paragraph_start = ctx.paragraph_starts_after_caption_host;
+    ctx.after_caption_host = false;
+    let mut rendered = Vec::new();
+    for block in blocks {
+        ctx.paragraph_starts_after_caption_host = ctx.after_caption_host;
+        let text = render_block(block, ctx);
+        ctx.after_caption_host = hosts_caption(block);
+        if !text.is_empty() {
+            rendered.push(text);
+        }
+    }
+    let out = rendered.join("\n\n");
+    ctx.after_caption_host = previous_host;
+    ctx.paragraph_starts_after_caption_host = previous_paragraph_start;
     ctx.block_depth -= 1;
     out
+}
+
+fn hosts_caption(block: &BlockNode) -> bool {
+    match block {
+        BlockNode::Table(_)
+        | BlockNode::CodeBlock(_)
+        | BlockNode::BlockQuote(_)
+        | BlockNode::BlockImage(_) => true,
+        BlockNode::Paragraph(paragraph) if paragraph.children.len() == 1 => {
+            match &paragraph.children[0] {
+                InlineNode::Image(image) => !image.src.is_empty(),
+                InlineNode::Math(math) => math.display,
+                _ => false,
+            }
+        }
+        _ => false,
+    }
 }
 
 fn with_reset_colon_fence_depth<T>(
@@ -999,7 +1009,13 @@ fn render_block(node: &BlockNode, ctx: &mut CarveContext) -> String {
             with_block_attrs(&attrs, &body)
         }
         BlockNode::Paragraph(paragraph) => {
-            let body = guard_thematic_break_lines(&render_inlines(&paragraph.children, ctx));
+            let caption_can_open = render_attrs(&paragraph.attrs).is_empty()
+                && ctx.paragraph_starts_after_caption_host;
+            let body = guard_thematic_break_lines(&render_inlines_with_caption(
+                &paragraph.children,
+                ctx,
+                caption_can_open,
+            ));
             with_block_attrs(&paragraph.attrs, &body)
         }
         BlockNode::CodeBlock(code) => {
@@ -1574,12 +1590,23 @@ fn render_footnote_def_source(label: &str, blocks: &[BlockNode], ctx: &mut Carve
 }
 
 fn render_inlines(nodes: &[InlineNode], ctx: &mut CarveContext) -> String {
+    render_inlines_with_caption(nodes, ctx, false)
+}
+
+fn render_inlines_with_caption(
+    nodes: &[InlineNode],
+    ctx: &mut CarveContext,
+    mut caption_can_open: bool,
+) -> String {
     if ctx.inline_depth >= MAX_RENDER_DEPTH {
         crate::render_depth::record("carve");
         return String::new();
     }
     ctx.inline_depth += 1;
     let mut out = String::new();
+    let mut first_line = true;
+    let mut line_node_count = 0usize;
+    let mut line_hosts_caption = false;
     for (idx, node) in nodes.iter().enumerate() {
         let prev = idx
             .checked_sub(1)
@@ -1589,7 +1616,7 @@ fn render_inlines(nodes: &[InlineNode], ctx: &mut CarveContext) -> String {
             .get(idx + 1)
             .and_then(first_boundary)
             .unwrap_or_default();
-        let rendered = render_inline(node, ctx, prev, next);
+        let rendered = render_inline(node, ctx, prev, next, caption_can_open);
         // A COMMENT'S SEPARATING SPACE IS DECIDED ON THE EMITTED BYTES, not on
         // the previous NODE (carve#1028). `%%` opens a comment only at the
         // start of a line or after whitespace, so the writer owes one space
@@ -1604,9 +1631,27 @@ fn render_inlines(nodes: &[InlineNode], ctx: &mut CarveContext) -> String {
             out.push(' ');
         }
         out.push_str(&rendered);
+        if matches!(node, InlineNode::SoftBreak(_)) {
+            caption_can_open = first_line && line_node_count == 1 && line_hosts_caption;
+            first_line = false;
+            line_node_count = 0;
+            line_hosts_caption = false;
+        } else {
+            line_node_count += 1;
+            line_hosts_caption = line_node_count == 1 && inline_hosts_caption(node);
+            caption_can_open = false;
+        }
     }
     ctx.inline_depth -= 1;
     out
+}
+
+fn inline_hosts_caption(node: &InlineNode) -> bool {
+    match node {
+        InlineNode::Image(image) => !image.src.is_empty(),
+        InlineNode::Math(math) => math.display,
+        _ => false,
+    }
 }
 
 fn render_inline(
@@ -1614,6 +1659,7 @@ fn render_inline(
     ctx: &mut CarveContext,
     prev_char: char,
     next_char: char,
+    caption_can_open: bool,
 ) -> String {
     match node {
         // The one target that publishes it: the author wrote `%% note`, and
@@ -1628,6 +1674,9 @@ fn render_inline(
             // Does this node's first character sit at the start of a block
             // line? Only there can a `^` be read back as a caption marker.
             (prev_char == '\0' || prev_char == '\n') && ctx.table_cell_depth == 0,
+            caption_can_open && ctx.table_cell_depth == 0,
+            prev_char,
+            next_char,
         ),
         InlineNode::EscapedText(text) => format!("\\{}", text.value),
         InlineNode::SmartPunctuation(s) => s.value.clone(),
@@ -1705,7 +1754,9 @@ fn render_inline(
             render_inlines(&extension.children, ctx),
             render_attrs(&extension.attrs)
         ),
-        InlineNode::Abbreviation(abbr) => escape_text(&abbr.abbr, ctx.escape_mode, false),
+        InlineNode::Abbreviation(abbr) => {
+            escape_text(&abbr.abbr, ctx.escape_mode, false, false, '\0', '\0')
+        }
         InlineNode::Footnote(footnote) => {
             let body = if let Some(inline) = &footnote.inline {
                 format!("^[{}]", render_inlines(inline, ctx))
@@ -2184,7 +2235,24 @@ fn normalize(text: &str) -> String {
     // U+E010 marks an escaped space, and it resolves HERE rather than during
     // rendering because the backslash it expands to is itself an unconditional
     // escape: expanding earlier let escapeText double it, giving `10\\ kg`.
-    let text = text.replace(&marker, "\\ ");
+    // An escaped space at end of line has already lost its trailing SPACE by
+    // PART 11 §2a: canonical source must not depend on editors preserving that
+    // byte. Expand it to the bare backslash in every container, not only at
+    // document level. The list writer used to indent first and preserve the
+    // expanded space as mid-paragraph content (carve-rs#855).
+    let mut expanded = String::with_capacity(text.len());
+    let mut chars = text.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == sentinel(S_ESCAPED_SPACE) {
+            expanded.push('\\');
+            if !matches!(chars.peek(), None | Some('\n')) {
+                expanded.push(' ');
+            }
+        } else {
+            expanded.push(ch);
+        }
+    }
+    let text = expanded;
     // Strip a line's trailing whitespace only where it cannot be content. At the
     // end of a paragraph the parser drops it too, so the writer must; before a
     // SOFT BREAK the parser keeps it, and stripping it there changed the
@@ -2491,7 +2559,14 @@ fn collapse_breaks(text: &str) -> String {
     trim_non_nbsp(&out).to_string()
 }
 
-fn escape_text(text: &str, mode: EscapeMode, opens_block_line: bool) -> String {
+fn escape_text(
+    text: &str,
+    mode: EscapeMode,
+    opens_block_line: bool,
+    caption_can_open: bool,
+    previous_boundary: char,
+    next_boundary: char,
+) -> String {
     let mut out = String::new();
     // A `^` is only dangerous where a caption marker could be read: at the
     // start of a line. Anywhere else it is literal text - superscript is
@@ -2508,6 +2583,7 @@ fn escape_text(text: &str, mode: EscapeMode, opens_block_line: bool) -> String {
     // pins that exact shape at 158-indented-image-and-caption-stay-literal.
     let mut at_line_start = opens_block_line;
     let mut chars = text.chars().peekable();
+    let mut previous = previous_boundary;
     while let Some(ch) = chars.next() {
         // A CONTROL CHARACTER IS CONTENT, and the writer has to write it back.
         // This dropped 61 codepoints - every C0 control but tab/newline/return,
@@ -2534,8 +2610,15 @@ fn escape_text(text: &str, mode: EscapeMode, opens_block_line: bool) -> String {
         // of a line is not one - superscript is braced-only, so it is literal
         // text and needs no escape, which two of this repo's own tests already
         // pinned.
-        let caret_opens_a_caption =
-            ch == '^' && at_line_start && chars.peek().is_some_and(|c| *c == ' ' || *c == '\t');
+        let next = chars.peek().copied().unwrap_or(next_boundary);
+        // SPACE ONLY, which is what the comment above already said and what the
+        // code did not do. A tab after the marker leaves the line as prose -
+        // corpus
+        // `231-a-tab-after-a-heading-quote-or-caption-marker-leaves-the-line-as-prose-2`
+        // is that document - so `^<TAB>` re-parses as text either way and PART 11
+        // §4 asks for the minimal form when dropping the escape changes nothing.
+        let caret_opens_a_caption = ch == '^' && at_line_start && caption_can_open && next == ' ';
+        let caret_opens_inline = ch == '^' && (next == '[' || previous == '{' || next == '}');
         // A `:` opens something only where a marker can START: `:: term`,
         // `:  def` and `::: fence` are all recognized at the beginning of a
         // line, so the FIRST colon of that run is the one that has to be
@@ -2552,8 +2635,8 @@ fn escape_text(text: &str, mode: EscapeMode, opens_block_line: bool) -> String {
         // HERE, rather than escaping the class it belongs to.
         let colon_cannot_open = ch == ':' && !at_line_start;
         at_line_start = ch == '\n';
-        let force_caption = caret_opens_a_caption && mode != EscapeMode::Minimal;
-        let unconditional = matches!(ch, '\\' | '`' | '"' | '\'') || force_caption;
+        let unconditional =
+            matches!(ch, '\\' | '`' | '"' | '\'') || caret_opens_a_caption || caret_opens_inline;
         let candidate = matches!(
             ch,
             '*' | '_'
@@ -2578,12 +2661,12 @@ fn escape_text(text: &str, mode: EscapeMode, opens_block_line: bool) -> String {
                 | '='
                 | ':'
                 | ';'
-                | '^'
         );
         if unconditional || (mode == EscapeMode::Conservative && candidate && !colon_cannot_open) {
             out.push('\\');
         }
         out.push(ch);
+        previous = ch;
     }
     out
 }

@@ -980,14 +980,11 @@ fn extract_footnote_defs(
             // `<p>a</p>` and `<p>more</p>` where the other two engines render
             // both bare (carve#801, the `list.tight` divergence).
             //
-            // `def_line != stripped.bare` is what says the definition was matched
-            // through the CONTENT-COLUMN strip, which is the case that needs it;
-            // requiring a non-empty prefix on top of that only narrowed it to
-            // definitions that happened to sit inside a quote or a nested marker.
-            if def_line != stripped.bare
-                && !replacement.ends_with("%%")
-                && !replacement.ends_with(DEFINITION_PLACEHOLDER)
-            {
+            // Top-level needs the marker too: a plain blank is caption_slot's
+            // optional blank line, so replacing a definition with one allowed a
+            // caption to attach THROUGH the definition (carve#1028). The marker
+            // is invisible but non-blank, preserving the interruption.
+            if !replacement.ends_with("%%") && !replacement.ends_with(DEFINITION_PLACEHOLDER) {
                 // AND IT HAS TO STAND AT THE DEFINITION'S OWN COLUMN. Inside a
                 // container the structural prefix already carries it; at top
                 // level that prefix is empty, so an unindented placeholder
@@ -1269,14 +1266,10 @@ fn extract_link_defs(source: &str) -> (String, BTreeMap<String, LinkDef>) {
             // `<p>a</p>` and `<p>more</p>` where the other two engines render
             // both bare (carve#801, the `list.tight` divergence).
             //
-            // `def_line != stripped.bare` is what says the definition was matched
-            // through the CONTENT-COLUMN strip, which is the case that needs it;
-            // requiring a non-empty prefix on top of that only narrowed it to
-            // definitions that happened to sit inside a quote or a nested marker.
-            if def_line != stripped.bare
-                && !replacement.ends_with("%%")
-                && !replacement.ends_with(DEFINITION_PLACEHOLDER)
-            {
+            // Top-level needs the marker too: a plain blank is caption_slot's
+            // optional blank line, so replacing a definition with one allowed a
+            // caption to attach THROUGH the definition (carve#1028).
+            if !replacement.ends_with("%%") && !replacement.ends_with(DEFINITION_PLACEHOLDER) {
                 // AND IT HAS TO STAND AT THE DEFINITION'S OWN COLUMN. Inside a
                 // container the structural prefix already carries it; at top
                 // level that prefix is empty, so an unindented placeholder
@@ -6061,7 +6054,14 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             para_lines.push(dedented);
             cur.consume();
         }
-        let para_text = para_lines.join("\n");
+        // Trailing ASCII whitespace is discarded before inline escape
+        // resolution.  Do this per physical line: waiting until after `join`
+        // leaves an escaped space on an intermediate list-item line, which the
+        // inline parser then turns into NBSP instead of the intended hard break
+        // (carve-rs#855, markup-carve/carve#1028).
+        let normalized_para_lines: Vec<&str> =
+            para_lines.iter().map(|line| trim_ascii_end(line)).collect();
+        let para_text = normalized_para_lines.join("\n");
         let para_text = para_text.trim_end_matches([' ', '\t']);
         let children = if let Some(anchors) = anchors {
             parse_inline_lines_with_anchor(para_text, options, anchors)

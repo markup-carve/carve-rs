@@ -27,6 +27,33 @@ fn the_expanded_backslash_is_not_doubled() {
     assert_eq!(carve::to_carve(&out), out, "fmt is not idempotent");
 }
 
+#[test]
+fn an_escaped_space_at_line_end_loses_the_space_inside_a_list_item() {
+    let source = "- item\n\\ \nx\n";
+    let expected = "- item\n  \\\n  x\n";
+    let out = carve::to_carve(source);
+
+    assert_eq!(out, expected);
+    assert_eq!(carve::to_html(&out), carve::to_html(source));
+    assert_eq!(carve::to_carve(&out), out, "fmt is not idempotent");
+}
+
+#[test]
+fn a_definition_between_a_table_and_caption_prevents_attachment() {
+    let source = "^ cap\n# head\n{.cls}\n@user\n| a | b |\n[a]: /u\n^ cap\n";
+    let html = carve::to_html(source);
+
+    assert!(
+        !html.contains("<caption>"),
+        "definition was skipped: {html}"
+    );
+    assert!(html.contains("<p>^ cap</p>"));
+    assert_eq!(
+        carve::to_carve(source),
+        "^ cap\n\n# head\n\n{.cls}\n@user\n\n| a | b |\n\n\\^ cap\n\n[a]: /u\n"
+    );
+}
+
 /// A line block's leading indentation still resolves to ORDINARY spaces: that is
 /// the source form the parser reads back as indentation, whereas an escape or a
 /// real nbsp re-parses as literal text (carve#359).
@@ -55,5 +82,22 @@ fn a_needed_escape_inside_an_extension_survives() {
     let out = carve::to_carve(src);
     assert!(out.contains("\\-\\-"), "escape was dropped: {out:?}");
     assert_eq!(carve::to_html(&out), carve::to_html(src));
+    assert_eq!(carve::to_carve(&out), out, "fmt is not idempotent");
+}
+
+// The caption slot is a SPACE after the marker. A tab leaves the line as prose,
+// which corpus 231 (a tab after a heading, quote or caption marker leaves the
+// line as prose) pins on exactly this document, so the caret re-parses as text
+// either way and PART 11 section 4 asks for the minimal form when dropping the
+// escape changes nothing. This writer forced it, emitting a backslash where
+// carve-js emits the bare caret. That corpus case has no `.fmt` fixture, so only
+// the cross-engine render comparison could see it.
+#[test]
+fn a_tab_after_the_caret_is_not_a_caption_slot() {
+    let source = "![Moon](m.jpg)\n^\tFigure 1\n";
+    let out = carve::to_carve(source);
+
+    assert_eq!(out, source);
+    assert_eq!(carve::to_html(&out), carve::to_html(source));
     assert_eq!(carve::to_carve(&out), out, "fmt is not idempotent");
 }
