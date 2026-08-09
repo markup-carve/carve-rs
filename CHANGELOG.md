@@ -7,7 +7,7 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-## [0.1.2] - 2026-08-08
+## [0.1.2] - 2026-08-10
 
 ### Breaking
 
@@ -1136,7 +1136,7 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The formatter preserves the authored list marker (#237) and keeps verbatim
   content byte-exact through document normalization (#231).
 
-## [0.1.0] - YYYY-MM-DD
+## [0.1.0] - 2026-07-14
 
 Initial release of **carve-rs**, a zero-dependency Rust crate and CLI for the
 [Carve](https://github.com/markup-carve/carve) markup language. The crate is
@@ -1236,5 +1236,7 @@ is still `carve`.
 - Uniform nesting depth cap of 200
 - Char-boundary panic guard in container-prefix stripping (crash-DoS fix)
 
-[Unreleased]: https://github.com/markup-carve/carve-rs/compare/0.1.0...HEAD
+[Unreleased]: https://github.com/markup-carve/carve-rs/compare/0.1.2...HEAD
+[0.1.2]: https://github.com/markup-carve/carve-rs/compare/0.1.1...0.1.2
+[0.1.1]: https://github.com/markup-carve/carve-rs/compare/0.1.0...0.1.1
 [0.1.0]: https://github.com/markup-carve/carve-rs/releases/tag/0.1.0
