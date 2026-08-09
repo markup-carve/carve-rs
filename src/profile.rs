@@ -382,22 +382,20 @@ impl LinkPolicy {
     /// and `.`).
     ///
     pub fn is_url_allowed(&self, url: &str, base_host: Option<&str>) -> bool {
-        let url = url.trim();
+        // WHATWG URL preprocessing ignores leading/trailing ASCII C0 controls
+        // and space. Rust's `trim()` is wider: it also removes URL-significant
+        // Unicode spaces, which would manufacture an authority from relative
+        // content such as `<NBSP>//host` (follow-up to carve-rs#844).
+        let url = url.trim_matches(|c| c <= '\u{20}');
         if url.is_empty() {
             return true;
         }
 
-        // Prefix classification reads through the SAME probe class as the
-        // scheme lookup below. A URL consumer may discard these leading bytes
-        // before deciding that `<DEL>//evil.com` is protocol-relative; reading
-        // the raw first byte instead classified it as neither external nor a
-        // relative path and let it fall through allowed (carve-rs#839).
-        //
-        // This normalized view is for JUDGEMENT only. The authored destination
-        // is still what renderers emit when the policy permits it. Host and
-        // domain checks deliberately receive the view they classify, so an
-        // allowlist sees `//good.example` rather than an unparseable prefix.
-        let prefix_url = url.trim_start_matches(is_url_probe_skippable);
+        // WHATWG special URLs treat a backslash as a slash. Normalize only the
+        // prefix classifier's view: scheme/allowlist checks and renderers keep
+        // the authored bytes. Ordinary URLs allocate nothing.
+        let prefix_storage = url.contains('\\').then(|| url.replace('\\', "/"));
+        let prefix_url = prefix_storage.as_deref().unwrap_or(url);
 
         // Fragment-only URLs are always internal.
         if prefix_url.starts_with('#') {
