@@ -465,6 +465,7 @@ fn render_with_escapes_once(doc: &Document, escape_mode: EscapeMode) -> String {
                 text
             }
             crate::ast_json::DocEntry::FootnoteDef(label, blocks, _) => {
+                ctx.after_caption_host = false;
                 // Unless a definition list already wrote it where the author put
                 // it (markup-carve/carve#805).
                 if blocks
@@ -737,7 +738,10 @@ fn render_blocks(blocks: &[BlockNode], ctx: &mut CarveContext) -> String {
 
 fn hosts_caption(block: &BlockNode) -> bool {
     match block {
-        BlockNode::Table(_) | BlockNode::CodeBlock(_) | BlockNode::BlockQuote(_) => true,
+        BlockNode::Table(_)
+        | BlockNode::CodeBlock(_)
+        | BlockNode::BlockQuote(_)
+        | BlockNode::BlockImage(_) => true,
         BlockNode::Paragraph(paragraph) if paragraph.children.len() == 1 => {
             match &paragraph.children[0] {
                 InlineNode::Image(image) => !image.src.is_empty(),
