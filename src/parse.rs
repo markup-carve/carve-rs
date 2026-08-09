@@ -30,6 +30,14 @@ use std::collections::{BTreeMap, HashMap};
 /// tightness decision made before that point. Same device as `VERBATIM_BLANK`
 /// in the writer.
 const DEFINITION_PLACEHOLDER: &str = "%%\u{E005}";
+const DOCUMENT_DEFINITION_PLACEHOLDER: &str = "%%\u{E006}";
+
+fn is_definition_placeholder(line: &str) -> bool {
+    matches!(
+        trim_ascii_start(line),
+        DEFINITION_PLACEHOLDER | DOCUMENT_DEFINITION_PLACEHOLDER
+    )
+}
 
 /// Maximum block + inline nesting depth. Pathological input (deeply nested
 /// blockquotes, indented lists, bracketed inlines) recurses one stack frame
@@ -990,10 +998,15 @@ fn extract_footnote_defs(
                 // level that prefix is empty, so an unindented placeholder
                 // lands at column 0 and CLOSES the item it exists to keep
                 // open - the line after it leaves the list entirely.
+                let document_column = replacement.is_empty() && leading_ws(stripped.bare) == 0;
                 if replacement.is_empty() {
                     replacement.push_str(&stripped.bare[..leading_ws(stripped.bare)]);
                 }
-                replacement.push_str(DEFINITION_PLACEHOLDER);
+                replacement.push_str(if document_column {
+                    DOCUMENT_DEFINITION_PLACEHOLDER
+                } else {
+                    DEFINITION_PLACEHOLDER
+                });
             }
             body.push(replacement);
             body_line_map.push(Some(def_start_line));
@@ -1275,10 +1288,15 @@ fn extract_link_defs(source: &str) -> (String, BTreeMap<String, LinkDef>) {
                 // level that prefix is empty, so an unindented placeholder
                 // lands at column 0 and CLOSES the item it exists to keep
                 // open - the line after it leaves the list entirely.
+                let document_column = replacement.is_empty() && leading_ws(stripped.bare) == 0;
                 if replacement.is_empty() {
                     replacement.push_str(&stripped.bare[..leading_ws(stripped.bare)]);
                 }
-                replacement.push_str(DEFINITION_PLACEHOLDER);
+                replacement.push_str(if document_column {
+                    DOCUMENT_DEFINITION_PLACEHOLDER
+                } else {
+                    DEFINITION_PLACEHOLDER
+                });
             }
             body.push(replacement);
         } else {
@@ -3252,7 +3270,7 @@ fn take_comment_block(cur: &mut LineCursor, options: &Options<'_>) -> CommentBlo
         // produces nothing. It did its work earlier - it was non-blank through
         // collection, so the item did not loosen - and an author never typed
         // it, so it is not a comment node. See DEFINITION_PLACEHOLDER.
-        if trim_ascii_start(line) == DEFINITION_PLACEHOLDER {
+        if is_definition_placeholder(line) {
             cur.consume();
 
             return CommentBlock::Consumed(None);
@@ -5532,6 +5550,16 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             // comment after a BLANK line - past a blank the item is closed
             // already, and nothing reopens it.
             if !pending_blank && is_flush_line_comment(line) {
+                // A collected definition at this container's column zero is
+                // not the comment exception below. It is a column-scoped I5
+                // interrupter: below the open item's content column it closes
+                // the item, then the surrounding block parser consumes the
+                // placeholder and parses what follows as a sibling. At the
+                // item's content column the indented continuation branch above
+                // already collected it inside the item (corpus 228).
+                if trim_ascii_start(line) == DOCUMENT_DEFINITION_PLACEHOLDER {
+                    break;
+                }
                 if let Some(last) = items.last_mut() {
                     let mut nested = MappedSource::new_line_at(
                         line.to_string(),

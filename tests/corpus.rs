@@ -331,6 +331,7 @@ const IMPLEMENTED: &[&str] = &[
     "a-fence-opened-on-a-list-marker-line-body-below-the-content-column",
     "an-empty-footnote-body-is-written-with-the-empty-sentinel",
     "a-ragged-table-keeps-each-row-s-cell-count",
+    "a-column-zero-definition-ends-an-open-list-item",
 ];
 
 fn corpus_dir() -> PathBuf {
