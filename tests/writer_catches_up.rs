@@ -38,6 +38,22 @@ fn an_escaped_space_at_line_end_loses_the_space_inside_a_list_item() {
     assert_eq!(carve::to_carve(&out), out, "fmt is not idempotent");
 }
 
+#[test]
+fn a_definition_between_a_table_and_caption_prevents_attachment() {
+    let source = "^ cap\n# head\n{.cls}\n@user\n| a | b |\n[a]: /u\n^ cap\n";
+    let html = carve::to_html(source);
+
+    assert!(
+        !html.contains("<caption>"),
+        "definition was skipped: {html}"
+    );
+    assert!(html.contains("<p>^ cap</p>"));
+    assert_eq!(
+        carve::to_carve(source),
+        "^ cap\n\n# head\n\n{.cls}\n@user\n\n| a | b |\n\n\\^ cap\n\n[a]: /u\n"
+    );
+}
+
 /// A line block's leading indentation still resolves to ORDINARY spaces: that is
 /// the source form the parser reads back as indentation, whereas an escape or a
 /// real nbsp re-parses as literal text (carve#359).
