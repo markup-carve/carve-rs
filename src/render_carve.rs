@@ -2611,8 +2611,13 @@ fn escape_text(
         // text and needs no escape, which two of this repo's own tests already
         // pinned.
         let next = chars.peek().copied().unwrap_or(next_boundary);
-        let caret_opens_a_caption =
-            ch == '^' && at_line_start && caption_can_open && (next == ' ' || next == '\t');
+        // SPACE ONLY, which is what the comment above already said and what the
+        // code did not do. A tab after the marker leaves the line as prose -
+        // corpus
+        // `231-a-tab-after-a-heading-quote-or-caption-marker-leaves-the-line-as-prose-2`
+        // is that document - so `^<TAB>` re-parses as text either way and PART 11
+        // §4 asks for the minimal form when dropping the escape changes nothing.
+        let caret_opens_a_caption = ch == '^' && at_line_start && caption_can_open && next == ' ';
         let caret_opens_inline = ch == '^' && (next == '[' || previous == '{' || next == '}');
         // A `:` opens something only where a marker can START: `:: term`,
         // `:  def` and `::: fence` are all recognized at the beginning of a

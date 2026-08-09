@@ -222,6 +222,22 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A tab after a line-initial caret is not a caption slot, so the writer leaves
+  it bare** (markup-carve/carve#1042 follow-up). A caption marker is a caret
+  followed by a SPACE; a tab after it leaves the line as prose, which corpus
+  `231-a-tab-after-a-heading-quote-or-caption-marker-leaves-the-line-as-prose-2`
+  pins. The caret re-parses as text either way, so PART 11 §4 asks for the
+  minimal form, and `carve fmt` on
+
+  ```
+  ![Moon](m.jpg)
+  ^	Figure 1
+  ```
+
+  wrote a backslash before the caret where carve-js writes it bare. Nothing on
+  the page changed; the divergence was in the canonical source, which PART 11 §2a
+  requires the three engines to agree on byte for byte.
+
 - **The Markdown separator row is sized from the header row, not the table**
   (markup-carve/carve#1042). PART 11 §10b says the delimiter "carries exactly one
   cell for each cell in the HEADER ROW, not one for each column reached by a
