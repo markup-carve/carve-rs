@@ -48,12 +48,12 @@ fn a_closed_admonition_body_does_not_take_the_fold() {
 }
 
 #[test]
-fn a_body_a_block_attribute_line_left_empty_does_not_take_the_fold() {
+fn a_definition_attribute_is_left_empty_but_a_marker_line_attribute_floats() {
     assert_eq!(
         html(":: t\n:  {.a}\nlazy\n"),
         "<dl>\n  <dt>t</dt>\n  <dd></dd>\n</dl>\n<p>lazy</p>"
     );
-    assert!(list_twin("- {.a}\nlazy\n").ends_with("<p>lazy</p>"));
+    assert!(list_twin("- {.a}\nlazy\n").contains("<li><p class=\"a\">lazy</p></li>"));
 }
 
 // ---------------------------------------------------------------------------
@@ -72,12 +72,14 @@ fn a_table_body_does_not_take_the_fold() {
 }
 
 #[test]
-fn a_thematic_break_body_does_not_take_the_fold() {
+fn a_definition_thematic_break_does_not_fold_but_a_marker_line_one_keeps_the_item_open() {
     assert_eq!(
         html(":: t\n:  ---\nlazy\n"),
         "<dl>\n  <dt>t</dt>\n  <dd>\n    <hr>\n  </dd>\n</dl>\n<p>lazy</p>"
     );
-    assert!(list_twin("- ---\nlazy\n").ends_with("<p>lazy</p>"));
+    let list = list_twin("- ---\nlazy\n");
+    assert!(list.contains("<hr>\n    lazy\n  </li>"));
+    assert!(!list.ends_with("<p>lazy</p>"));
 }
 
 #[test]
