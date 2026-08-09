@@ -467,19 +467,20 @@ fn table_border(widths: &[usize], pos: &str) -> String {
 
 fn table_row(cells: &[RenderedCell], widths: &[usize]) -> String {
     let sep = style("│", DIM);
-    let parts = cells
+    let is_header = cells.first().is_some_and(|cell| cell.is_header);
+    let parts = widths
         .iter()
         .enumerate()
-        .map(|(i, cell)| {
-            let padding = widths
-                .get(i)
-                .copied()
-                .unwrap_or(0)
-                .saturating_sub(width(&cell.plain));
-            let content = if cell.is_header {
-                style(&(cell.content.clone() + &" ".repeat(padding)), BOLD)
+        .map(|(i, column_width)| {
+            let cell = cells.get(i);
+            let plain_width = cell.map_or(0, |cell| width(&cell.plain));
+            let padding = column_width.saturating_sub(plain_width);
+            let content =
+                cell.map_or("", |cell| cell.content.as_str()).to_string() + &" ".repeat(padding);
+            let content = if is_header {
+                style(&content, BOLD)
             } else {
-                cell.content.clone() + &" ".repeat(padding)
+                content
             };
             format!(" {content} ")
         })
