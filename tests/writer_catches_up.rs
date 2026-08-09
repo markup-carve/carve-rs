@@ -85,13 +85,13 @@ fn a_needed_escape_inside_an_extension_survives() {
     assert_eq!(carve::to_carve(&out), out, "fmt is not idempotent");
 }
 
-/// The caption slot is a SPACE after the marker. A tab leaves the line as prose,
-/// which corpus 231 (a tab after a heading, quote or caption marker leaves the
-/// line as prose) pins on exactly this document, so the caret re-parses as text
-/// either way and PART 11 section 4 asks for the minimal form when dropping the
-/// escape changes nothing. This writer forced it, emitting a backslash where
-/// carve-js emits the bare caret. That corpus case has no `.fmt` fixture, so only
-/// the cross-engine render comparison could see it.
+// The caption slot is a SPACE after the marker. A tab leaves the line as prose,
+// which corpus 231 (a tab after a heading, quote or caption marker leaves the
+// line as prose) pins on exactly this document, so the caret re-parses as text
+// either way and PART 11 section 4 asks for the minimal form when dropping the
+// escape changes nothing. This writer forced it, emitting a backslash where
+// carve-js emits the bare caret. That corpus case has no `.fmt` fixture, so only
+// the cross-engine render comparison could see it.
 #[test]
 fn a_tab_after_the_caret_is_not_a_caption_slot() {
     let source = "![Moon](m.jpg)\n^\tFigure 1\n";
