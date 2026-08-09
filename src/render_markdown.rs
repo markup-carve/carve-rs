@@ -420,8 +420,8 @@ fn render_definition_list(
 
 fn render_table(node: &Table, ctx: &mut MarkdownContext) -> String {
     let mut header = None;
+    let mut header_columns = 0usize;
     let mut rows = Vec::new();
-    let mut columns = 0usize;
     // Per-column alignment for the separator row, which is the only place Markdown
     // can express it.
     //
@@ -451,10 +451,10 @@ fn render_table(node: &Table, ctx: &mut MarkdownContext) -> String {
             .iter()
             .map(|cell| trim_non_nbsp(&render_block_inlines(&cell.children, ctx)).to_string())
             .collect::<Vec<_>>();
-        columns = columns.max(cells.len());
         let rendered = format!("| {} |", cells.join(" | "));
         if row.cells.iter().all(|cell| cell.header) {
             header = Some(rendered);
+            header_columns = cells.len();
             take_aligns(&mut aligns, row);
         } else {
             rows.push(rendered);
@@ -469,7 +469,10 @@ fn render_table(node: &Table, ctx: &mut MarkdownContext) -> String {
     if let Some(header) = header {
         out.push_str(&header);
         out.push('\n');
-        let sep = (0..columns)
+        // The delimiter promotes the header row, so its width must match that
+        // row rather than a wider body row. Otherwise common Markdown readers
+        // reject the whole table (carve#1042, PART 11 §10b).
+        let sep = (0..header_columns)
             .map(|i| match aligns.get(i).copied().flatten() {
                 Some(TableAlign::Left) => ":---",
                 Some(TableAlign::Center) => ":---:",

@@ -27,6 +27,17 @@ fn the_expanded_backslash_is_not_doubled() {
     assert_eq!(carve::to_carve(&out), out, "fmt is not idempotent");
 }
 
+#[test]
+fn an_escaped_space_at_line_end_loses_the_space_inside_a_list_item() {
+    let source = "- item\n\\ \nx\n";
+    let expected = "- item\n  \\\n  x\n";
+    let out = carve::to_carve(source);
+
+    assert_eq!(out, expected);
+    assert_eq!(carve::to_html(&out), carve::to_html(source));
+    assert_eq!(carve::to_carve(&out), out, "fmt is not idempotent");
+}
+
 /// A line block's leading indentation still resolves to ORDINARY spaces: that is
 /// the source form the parser reads back as indentation, whereas an escape or a
 /// real nbsp re-parses as literal text (carve#359).

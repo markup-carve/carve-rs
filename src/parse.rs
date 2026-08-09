@@ -6061,7 +6061,14 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             para_lines.push(dedented);
             cur.consume();
         }
-        let para_text = para_lines.join("\n");
+        // Trailing ASCII whitespace is discarded before inline escape
+        // resolution.  Do this per physical line: waiting until after `join`
+        // leaves an escaped space on an intermediate list-item line, which the
+        // inline parser then turns into NBSP instead of the intended hard break
+        // (carve-rs#855, markup-carve/carve#1028).
+        let normalized_para_lines: Vec<&str> =
+            para_lines.iter().map(|line| trim_ascii_end(line)).collect();
+        let para_text = normalized_para_lines.join("\n");
         let para_text = para_text.trim_end_matches([' ', '\t']);
         let children = if let Some(anchors) = anchors {
             parse_inline_lines_with_anchor(para_text, options, anchors)

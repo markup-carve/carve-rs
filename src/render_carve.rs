@@ -2184,7 +2184,24 @@ fn normalize(text: &str) -> String {
     // U+E010 marks an escaped space, and it resolves HERE rather than during
     // rendering because the backslash it expands to is itself an unconditional
     // escape: expanding earlier let escapeText double it, giving `10\\ kg`.
-    let text = text.replace(&marker, "\\ ");
+    // An escaped space at end of line has already lost its trailing SPACE by
+    // PART 11 §2a: canonical source must not depend on editors preserving that
+    // byte. Expand it to the bare backslash in every container, not only at
+    // document level. The list writer used to indent first and preserve the
+    // expanded space as mid-paragraph content (carve-rs#855).
+    let mut expanded = String::with_capacity(text.len());
+    let mut chars = text.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == sentinel(S_ESCAPED_SPACE) {
+            expanded.push('\\');
+            if !matches!(chars.peek(), None | Some('\n')) {
+                expanded.push(' ');
+            }
+        } else {
+            expanded.push(ch);
+        }
+    }
+    let text = expanded;
     // Strip a line's trailing whitespace only where it cannot be content. At the
     // end of a paragraph the parser drops it too, so the writer must; before a
     // SOFT BREAK the parser keeps it, and stripping it there changed the
