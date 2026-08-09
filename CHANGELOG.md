@@ -222,6 +222,57 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **The Markdown separator row is sized from the header row, not the table**
+  (markup-carve/carve#1042). PART 11 §10b says the delimiter "carries exactly one
+  cell for each cell in the HEADER ROW, not one for each column reached by a
+  wider body row", and the Markdown target sized it from the table width instead.
+  A ragged table therefore emitted a separator wider than the row it promotes:
+
+  ```
+  | h |
+  |---|
+  | |x |
+  ```
+
+  used to write
+
+  ```
+  | h |
+  | --- | --- |
+  |  | x |
+  ```
+
+  which neither python-markdown nor marked reads as a table - the whole document
+  published as a paragraph of pipes. It now writes
+
+  ```
+  | h |
+  | --- |
+  |  | x |
+  ```
+
+  and both readers render a table again. A header that is itself the widest row
+  is unchanged, and the header's column alignment still reaches the separator.
+
+- **An escaped space at the end of a line inside a list item writes back as the
+  bare backslash** (carve-rs#855). PART 11 §2a wants canonical source that does
+  not depend on an editor preserving a trailing space, so the escape expands to a
+  lone backslash with nothing after it. That expansion ran at document level
+  only, and the list writer indented first, so the space survived as
+  mid-paragraph content:
+
+  ```
+  - item
+  \
+  x
+  ```
+
+  where the second line is a backslash followed by a space. That was written
+  back with two spaces, a backslash and a trailing space, where carve-js and
+  carve-php write two spaces and the bare backslash. The parse now discards trailing ASCII whitespace per physical line
+  before escapes resolve, so the hard break the escape carries is the same
+  before and after formatting.
+
 - **A footnote definition with an EMPTY body now carries a position**
   (markup-carve/carve#1023, PART 12 §4). A definition's extent was derived from
   its body, and `[^f]: {empty}` parses to no blocks - so nothing was there to
