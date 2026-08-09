@@ -1128,6 +1128,12 @@ fn extract_link_defs(source: &str) -> (String, BTreeMap<String, LinkDef>) {
         let after_term = line_index > 0 && opens_definition_entry(all_lines[line_index - 1]);
         let stripped =
             strip_container_prefixes_at(line, columns.reached_by(leading_ws(line)), after_term);
+        // A marker after an already-open paragraph is lazy paragraph text, not
+        // a new container from which this line-oriented pre-pass may collect a
+        // definition (`r\n. [f]: t`).
+        let marker_is_lazy_text = line_index > 0
+            && !is_blank_line(all_lines[line_index - 1])
+            && detect_list_marker_full(line).is_some();
         let raw_is_quoted = prepass_line_is_quoted(line);
         if let Some(fence_len) = in_line_block {
             // The line is KEPT whatever it looks like - that is the whole point.
@@ -1225,7 +1231,30 @@ fn extract_link_defs(source: &str) -> (String, BTreeMap<String, LinkDef>) {
         if let Some(mut open) = detect_fence_open(fence_line) {
             open.content_col = content_col;
             open.quoted = raw_is_quoted;
-            in_fence = Some(open);
+            let follows_open_paragraph =
+                line_index > 0 && !is_blank_line(all_lines[line_index - 1]);
+            let closes_ahead = follows_open_paragraph
+                && all_lines[line_index + 1..].iter().any(|candidate| {
+                    let kept = if open.quoted {
+                        strip_prepass_blockquote_prefix(candidate).unwrap_or(candidate)
+                    } else {
+                        candidate
+                    };
+                    let kept = strip_container_prefixes_keep_indent(kept);
+                    let indent = leading_ws(&kept);
+                    let candidate = if indent >= open.content_col {
+                        &kept[open.content_col..]
+                    } else {
+                        kept.as_str()
+                    };
+                    is_fence_close(candidate, open)
+                });
+            // An unterminated fence cannot interrupt an open paragraph. Do not
+            // make the pre-pass opaque in that case: later definitions still
+            // need collecting (`:\n```\n[A]: b`).
+            if !follows_open_paragraph || closes_ahead {
+                in_fence = Some(open);
+            }
             body.push(line.to_string());
             continue;
         }
@@ -1241,11 +1270,15 @@ fn extract_link_defs(source: &str) -> (String, BTreeMap<String, LinkDef>) {
         // implementations agree it defines nothing there. Zero columns is the
         // top-level case, where `text` / `  [r]: /u` is likewise text
         // everywhere - so this only ever fires inside a list item.
-        let def_line = at_content_column(
-            stripped.bare,
-            stripped.structural,
-            columns.reached_by(leading_ws(stripped.bare)),
-        );
+        let def_line = if marker_is_lazy_text {
+            line
+        } else {
+            at_content_column(
+                stripped.bare,
+                stripped.structural,
+                columns.reached_by(leading_ws(stripped.bare)),
+            )
+        };
         if let Some((label_part, target_part)) = parse_link_def_line(def_line) {
             // A reference definition needs a non-empty destination (carve-js
             // `RE_LINK_DEF` requires `(\S+)` after the colon). An empty target
@@ -1614,15 +1647,12 @@ fn strip_container_prefixes(mut line: &str, after_term: bool) -> StrippedContain
             line = rest;
             needs_empty_list_content = false;
         }
-        // Only bullets and DECIMAL-ordered markers (ol_type == None) carry a
-        // collected definition, matching carve-js and the spec corpus. An
-        // alpha/roman ordered marker is left intact (carve-js does not collect
-        // those either; byte-parity there is moot as js is itself inconsistent).
+        // Every list spelling carries definitions at its content column. The
+        // marker dialect changes numbering only; it cannot make an otherwise
+        // identical reference definition visible.
         if let Some(marker) = detect_list_marker_full(line) {
-            if marker.ol_type.is_none() {
-                line = marker.content;
-                needs_empty_list_content = true;
-            }
+            line = marker.content;
+            needs_empty_list_content = true;
         }
         // A definition list's DESCRIPTION marker opens entry content exactly as
         // a bullet does, so a definition written on that line is collected from
@@ -5787,6 +5817,19 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         if parse_standalone_attrs(marker.content).is_some() {
             let mut stream = item_marker_source(cur, marker.content, item_at);
             stream.append(collect_indented_block_mapped(cur, base_indent, content_col));
+            // The attribute line floats onto the item's first following block;
+            // a flush-left line therefore remains item-owned even when it would
+            // interrupt an ordinary open paragraph.
+            if let Some(line) = cur.peek().map(str::to_string) {
+                if !is_blank_line(&line) && indent_columns(&line) == 0 && !is_list_marker(&line) {
+                    stream.push_newline_at(
+                        trim_ascii_start(&line).to_string(),
+                        cur.source_line(cur.pos),
+                        cur.source_col(cur.pos),
+                    );
+                    cur.consume();
+                }
+            }
             // A blank line between the item's blocks loosens the list, whatever
             // the marker-line lead happens to be. This branch and the two beside
             // it build their item and `continue` past the loosening test the
@@ -5918,10 +5961,37 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             // content column is still the item's (carve#980, carve-rs#813).
             let swallowed_blank_separator =
                 cur.pos > before_block && is_blank_line(cur.lines[cur.pos - 1]);
+            let marker_line_was_the_whole_block = cur.pos == before_block;
+            // A marker-line attribute floats onto the block that follows it.
+            // That following line is ownership, not paragraph interruption, so
+            // even a line the ordinary lazy gate would call an interrupter must
+            // enter this item.
+            if trim_ascii(marker.content).starts_with('{') {
+                if let Some(line) = cur.peek().map(str::to_string) {
+                    if !is_blank_line(&line) && indent_columns(&line) == 0 && !is_list_marker(&line)
+                    {
+                        stream.push_newline_at(
+                            trim_ascii_start(&line).to_string(),
+                            cur.source_line(cur.pos),
+                            cur.source_col(cur.pos),
+                        );
+                        cur.consume();
+                    }
+                }
+            }
             fold_lazy_run_and_resume(
                 cur,
                 &mut stream,
-                |src| !swallowed_blank_separator && nested_ends_with_heading(src, options),
+                |src| {
+                    !swallowed_blank_separator
+                        && (nested_ends_with_heading(src, options)
+                            || (marker_line_was_the_whole_block && is_table_start(marker.content))
+                            || detect_thematic_break(marker.content)
+                            || parse_footnote_def_line(marker.content).is_some()
+                            || parse_link_def_line(marker.content).is_some()
+                            || marker_content_is_attr_line(marker.content)
+                            || trim_ascii_start(marker.content).starts_with("%%"))
+                },
                 |cur| collect_indented_block_mapped(cur, base_indent, content_col),
             );
             // A blank absorbed inside the marker-line block's continuation that
@@ -6157,6 +6227,14 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
 }
 
 fn marker_content_starts_block(content: &str, cur: &LineCursor<'_>, content_col: usize) -> bool {
+    // Reference and footnote definitions are invisible blocks at a container's
+    // content column. On a marker line they must enter the nested block parser,
+    // not the lead-paragraph scanner (`r. [f]: t` is an empty list item).
+    if parse_footnote_def_line(content).is_some()
+        || parse_link_def_line(content).is_some_and(|(_, target)| !trim_ascii(target).is_empty())
+    {
+        return true;
+    }
     // A thematic break as the marker-line content is a block (`1. ---` ->
     // <li><hr></li>), not inline text -- otherwise smart punctuation turns
     // `---` into an em-dash. Matches carve-js / carve-php.
@@ -6235,10 +6313,7 @@ fn marker_content_starts_block(content: &str, cur: &LineCursor<'_>, content_col:
         return is_list_marker(next) || interrupts_paragraph_with_rest(next, &[]);
     }
     if is_table_start(content) {
-        return cur.lines.get(cur.pos).is_some_and(|line| {
-            let indent = indent_columns(line);
-            indent >= content_col && is_table_start(&slice_columns(line, content_col, false))
-        });
+        return true;
     }
     // A definition TERM. PART 9 §24 C3 names it in the same uniform block-opener
     // set as the branches above - "block quote, heading, thematic break, fenced
@@ -8341,7 +8416,15 @@ fn is_table_start(line: &str) -> bool {
     if trimmed == "||" {
         return false;
     }
-    trimmed.ends_with('|') || split_row_attrs(trimmed).0.is_some()
+    let (_, body) = split_row_attrs(trimmed);
+    if !body.ends_with('|') {
+        return false;
+    }
+    let interior = &body[1..body.len() - 1];
+    if !interior.contains('|') && trim_ascii(interior).is_empty() {
+        return false;
+    }
+    true
 }
 
 /// A `{...}` attribute block GLUED to the row's closing `|` sets the row's

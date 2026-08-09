@@ -340,13 +340,11 @@ fn reference_prepass_keeps_forward_reference_resolution() {
 }
 
 #[test]
-fn only_bullet_decimal_and_task_list_markers_collect_definitions() {
-    // Bullet / decimal-ordered / task: collected (resolve).
+fn every_list_marker_dialect_collects_definitions() {
     assert!(html("1. [r]: /u\n\n[x][r]").contains("href=\"/u\""));
     assert!(html("- [ ] [r]: /u\n\n[x][r]").contains("href=\"/u\""));
-    // Alpha / roman ordered: NOT collected (matches carve-js), so unresolved.
-    assert!(!html("a. [r]: /u\n\n[x][r]").contains("href=\"/u\""));
-    assert!(!html("i. [r]: /u\n\n[x][r]").contains("href=\"/u\""));
+    assert!(html("a. [r]: /u\n\n[x][r]").contains("href=\"/u\""));
+    assert!(html("i. [r]: /u\n\n[x][r]").contains("href=\"/u\""));
 }
 
 #[test]
