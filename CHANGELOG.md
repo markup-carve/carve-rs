@@ -222,6 +222,44 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A short ANSI table row is padded out to the box** (markup-carve/carve#1044).
+  The ANSI box draws its rules at the TABLE width, so a ragged table left the
+  short row stopping mid-box with no right border:
+
+  ```
+  | h |
+  |---|
+  | |x |
+  ```
+
+  used to render
+
+  ```
+  ┌───┬───┐
+  │ h │
+  ├───┼───┤
+  │   │ x │
+  └───┴───┘
+  ```
+
+  and now renders
+
+  ```
+  ┌───┬───┐
+  │ h │   │
+  ├───┼───┤
+  │   │ x │
+  └───┴───┘
+  ```
+
+  The trailing cells a row does not have are a DISPLAY pad: nothing re-parses
+  ANSI output, and a box has to be a rectangle to read as one. It is also what
+  the HTML target already shows, since the table is two columns wide there. PART
+  11 §10b forbids this same padding on the Markdown delimiter row because a
+  reader parses that row; that reason is absent here, which is why the two
+  targets settle it differently. AST row cell counts are unchanged, and the
+  Markdown, plain and Carve targets still write each row's own cells.
+
 - **A tab after a line-initial caret is not a caption slot, so the writer leaves
   it bare** (markup-carve/carve#1042 follow-up). A caption marker is a caret
   followed by a SPACE; a tab after it leaves the line as prose, which corpus
