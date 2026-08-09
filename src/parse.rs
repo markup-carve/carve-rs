@@ -1110,6 +1110,44 @@ fn extract_link_defs(source: &str) -> (String, BTreeMap<String, LinkDef>) {
     // before the state is entered - see comment_fence_closes.
     let all_lines: Vec<&str> = source.lines().collect();
     let comment_closers = comment_fence_close_index(&all_lines);
+    // Suffix maxima make the "could this opener close later?" rejection O(1).
+    // The exact scan below is then needed only when a compatible closer really
+    // exists; once found, the fence state makes all intervening opener-shaped
+    // lines opaque. Without this index, N unterminated marker lines each scanned
+    // the remaining N lines (perf_regressions).
+    let mut backtick_closer_max = vec![0usize; all_lines.len() + 1];
+    let mut tilde_closer_max = vec![0usize; all_lines.len() + 1];
+    for index in (0..all_lines.len()).rev() {
+        backtick_closer_max[index] = backtick_closer_max[index + 1];
+        tilde_closer_max[index] = tilde_closer_max[index + 1];
+        let mut candidate = trim_ascii_start(all_lines[index]);
+        while let Some(rest) = strip_blockquote_prefix(candidate) {
+            candidate = trim_ascii_start(rest);
+        }
+        let Some(&fence_char) = candidate.as_bytes().first() else {
+            continue;
+        };
+        if fence_char != b'`' && fence_char != b'~' {
+            continue;
+        }
+        let run = candidate
+            .as_bytes()
+            .iter()
+            .take_while(|byte| **byte == fence_char)
+            .count();
+        if run < 3
+            || !candidate[run..]
+                .bytes()
+                .all(|byte| byte == b' ' || byte == b'\t')
+        {
+            continue;
+        }
+        if fence_char == b'`' {
+            backtick_closer_max[index] = backtick_closer_max[index].max(run);
+        } else {
+            tilde_closer_max[index] = tilde_closer_max[index].max(run);
+        }
+    }
     for (line_index, line) in all_lines.iter().copied().enumerate() {
         // Verse text is opaque: a line-block body line like `- verse` is not a
         // list marker, and letting it push a content column left the NEXT
@@ -1233,7 +1271,13 @@ fn extract_link_defs(source: &str) -> (String, BTreeMap<String, LinkDef>) {
             open.quoted = raw_is_quoted;
             let follows_open_paragraph =
                 line_index > 0 && !is_blank_line(all_lines[line_index - 1]);
+            let suffix_max = if open.fence_char == b'`' {
+                backtick_closer_max[line_index + 1]
+            } else {
+                tilde_closer_max[line_index + 1]
+            };
             let closes_ahead = follows_open_paragraph
+                && suffix_max >= open.fence_len
                 && all_lines[line_index + 1..].iter().any(|candidate| {
                     let kept = if open.quoted {
                         strip_prepass_blockquote_prefix(candidate).unwrap_or(candidate)
