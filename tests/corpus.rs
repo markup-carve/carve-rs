@@ -332,6 +332,7 @@ const IMPLEMENTED: &[&str] = &[
     "an-empty-footnote-body-is-written-with-the-empty-sentinel",
     "a-ragged-table-keeps-each-row-s-cell-count",
     "a-column-zero-definition-ends-an-open-list-item",
+    "a-caret-line-does-not-end-a-paragraph-it-cannot-caption",
 ];
 
 fn corpus_dir() -> PathBuf {
