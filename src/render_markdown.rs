@@ -358,7 +358,6 @@ fn render_list(node: &List, ctx: &mut MarkdownContext, depth: usize) -> String {
     // `delim` and render_carve already reproduces it (carve#352, corpus 31).
     let delim = if node.delim == Some(')') { ')' } else { '.' };
     for item in &node.items {
-        let indent = "  ".repeat(ctx.list_depth - 1);
         let prefix = if node.ordered {
             let prefix = format!("{counter}{delim} ");
             counter += 1;
@@ -374,13 +373,27 @@ fn render_list(node: &List, ctx: &mut MarkdownContext, depth: usize) -> String {
         };
         let content = trim_block_output(&render_blocks(&item.children, ctx, depth + 1)).to_string();
         let mut lines = content.split('\n');
-        out.push_str(&format!(
-            "{indent}{prefix}{}\n",
-            lines.next().unwrap_or_default()
-        ));
+        // NESTING COMES FROM THE PARENT'S CONTINUATION PAD ALONE. This used to
+        // add `"  ".repeat(list_depth - 1)` as well, and the enclosing item then
+        // padded the same lines again by its marker width, so every level was
+        // indented twice: two levels landed at four spaces and three at ten.
+        // Ten spaces under a marker whose content column is six is four PAST
+        // it, which is where a reader opens an indented verbatim block -- so a
+        // third level stopped being a list for every reader that is not Carve
+        // itself. Carve's own content-column model is lenient enough to read it
+        // back as a list, which is why this was invisible from inside the
+        // engine and only pandoc showed it (carve#1069, carve-php#1142).
+        out.push_str(&format!("{prefix}{}\n", lines.next().unwrap_or_default()));
         let continuation = " ".repeat(prefix.len());
         for line in lines {
-            out.push_str(&format!("{indent}{continuation}{line}\n"));
+            // A line with no content takes no pad: PART 11 section 7 emits such
+            // a line empty, and trailing whitespace is what editors and
+            // `git apply --whitespace=fix` rewrite behind the writer.
+            if line.is_empty() {
+                out.push('\n');
+            } else {
+                out.push_str(&format!("{continuation}{line}\n"));
+            }
         }
     }
     ctx.list_depth -= 1;

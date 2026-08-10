@@ -7,6 +7,18 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **A nested list is indented once on the Markdown target, not twice.**
+  `render_list` padded every emitted line by the list's own depth, and the
+  enclosing item padded the same lines again by the width of its marker, so each
+  level was indented twice: two levels came out at four spaces and three at ten.
+  Ten spaces under a marker whose content column is six is an indented verbatim
+  block, so a third level stopped being a list for every reader that is not
+  Carve itself. Nesting now comes from the parent's continuation pad alone -
+  `- a` / `  - b` / `    - c` - and a line with no content no longer takes that
+  pad, which removes the whitespace-only lines PART 11 §7 forbids.
+
 ## [0.1.2] - 2026-08-10
 
 ### Breaking
