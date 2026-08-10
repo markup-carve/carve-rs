@@ -13879,6 +13879,12 @@ impl CrossrefIndex {
     /// make the heading unreachable: `</#id>` still addresses it, by id rather
     /// than by wording.
     pub(crate) fn resolve_ref(&self, target: &str) -> Option<(&str, &str)> {
+        // An all-excluded label (for example a symbol-only heading reference)
+        // has no prose key. The heading still receives the fallback id `s`,
+        // but an empty invisible key must not reach that id through slugging.
+        if normalize_heading_label(target).is_empty() {
+            return None;
+        }
         // By TEXT first (R1's index), then the id lookup the `</#id>` path uses.
         // The fallback keeps every document whose id IS the slug of its heading
         // text resolving exactly as before.
@@ -14620,9 +14626,10 @@ fn collect_heading_titles(
                     // `or_insert` is that rule. A scan.quoted heading is not indexed
                     // at all, so a later unquoted one with the same text still
                     // wins rather than being shadowed by a declined entry.
-                    scan.by_text
-                        .entry(normalize_heading_label(&title))
-                        .or_insert_with(|| id.clone());
+                    let text_key = normalize_heading_label(&title);
+                    if !text_key.is_empty() {
+                        scan.by_text.entry(text_key).or_insert_with(|| id.clone());
+                    }
                 }
                 scan.labels
                     .insert(id.clone(), crossref_label_nodes(&h.children));
@@ -15200,6 +15207,7 @@ fn plain_inlines_parse(nodes: &[InlineNode]) -> String {
             // parse-time cross-reference slug like a code span does.
             InlineNode::LiteralInline(l) => out.push_str(&l.content),
             InlineNode::Link(l) => out.push_str(&plain_inlines_parse(&l.children)),
+            InlineNode::AutoLink(a) => out.push_str(&a.text),
             InlineNode::Image(i) => out.push_str(&i.alt),
             InlineNode::Extension(e) => out.push_str(&plain_inlines_parse(&e.children)),
             InlineNode::CitationGroup(g) => out.push_str(&g.raw),
