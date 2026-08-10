@@ -128,19 +128,17 @@ fn an_empty_definition_spans_its_own_line() {
     assert_eq!(field(pos, "startColumn"), 1);
 }
 
-/// A definition WITH content keeps the extent its body gives it.
+/// A definition WITH content spans from its own opener through its body.
 ///
-/// The fallback is reached only where the body places nothing, and this pins
-/// that: widening it to every definition would move the extent of every footnote
-/// in the corpus, which is a separate question - the engines already disagree
-/// about it and that disagreement is declared.
+/// The exact-span consensus makes the definition marker part of the footnote
+/// definition's extent, matching every other block construct's opener rule.
 #[test]
-fn a_definition_with_a_body_keeps_its_body_derived_extent() {
+fn a_definition_with_a_body_includes_its_opener() {
     let source = "See[^f]\n\n[^f]: body\n";
 
     let defs = footnote_objects(&published(source));
     assert_eq!(defs.len(), 1);
-    assert_eq!(slice_of(source, pos_of(&defs[0])), "body");
+    assert_eq!(slice_of(source, pos_of(&defs[0])), "[^f]: body");
 }
 
 /// §4 puts a span's start at the markup that OPENS the construct, not at the
