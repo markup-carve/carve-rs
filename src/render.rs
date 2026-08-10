@@ -1171,8 +1171,14 @@ pub(crate) fn plain_inlines_typography(
             InlineNode::Extension(e) => out.push_str(&plain_inlines_typography(&e.children, smart)),
             InlineNode::CitationGroup(g) => out.push_str(&g.raw),
             InlineNode::Abbreviation(a) => out.push_str(&a.abbr),
-            InlineNode::Mention(m) => out.push_str(&m.user),
-            InlineNode::Tag(t) => out.push_str(&t.name),
+            InlineNode::Mention(m) => {
+                out.push('@');
+                out.push_str(&m.user);
+            }
+            InlineNode::Tag(t) => {
+                out.push('#');
+                out.push_str(&t.name);
+            }
             InlineNode::CaptionNumber(n) => {
                 if let Some(number) = n.number {
                     out.push_str(&number.to_string());

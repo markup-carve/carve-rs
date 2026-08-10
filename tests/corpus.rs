@@ -220,6 +220,7 @@ const IMPLEMENTED: &[&str] = &[
     "a-tab-separates-two-attributes-and-pads-a-block-as-a-space-does",
     "the-same-column-written-with-four-spaces",
     "sibling-markers-that-reach-one-column-are-one-list",
+    "heading-index-plain-text-covers-visible-leaves-and-rejects-an-empty-key",
     "the-continuation-marker-at-an-item-s-own-column-and-what-follows-it",
     "a-continuation-marker-after-a-blank-line-in-the-item",
     "a-continuation-marker-after-a-blank-line-in-a-loose-item",

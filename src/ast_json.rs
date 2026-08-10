@@ -278,10 +278,8 @@ pub fn from_json(input: &str) -> Result<Document, AstJsonError> {
                 // two build the same map: where the body DOES place something,
                 // the span on the wire is that body's extent and belongs to no
                 // definition line.
-                if first_block_pos(&blocks).is_none() {
-                    if let Some(pos) = optional_pos(obj, "footnote")? {
-                        footnote_def_pos.insert(label.clone(), pos);
-                    }
+                if let Some(pos) = optional_pos(obj, "footnote")? {
+                    footnote_def_pos.insert(label.clone(), pos);
                 }
                 footnote_defs.insert(label, blocks);
             }
@@ -599,9 +597,11 @@ fn write_footnote_def(
     //
     // The fallback is only reached when the body places nothing, so a
     // definition that HAS content keeps the extent it has always had.
-    let pos = match first_block_pos(children) {
-        Some(first) => {
-            let mut pos = *first;
+    let pos = match def_pos
+        .copied()
+        .or_else(|| first_block_pos(children).copied())
+    {
+        Some(mut pos) => {
             if let Some(last) = children.iter().rev().find_map(block_pos) {
                 if last.end_offset > pos.end_offset {
                     pos.end_offset = last.end_offset;
@@ -611,7 +611,7 @@ fn write_footnote_def(
             }
             Some(pos)
         }
-        None => def_pos.copied(),
+        None => None,
     };
     write_pos_field(&mut w, &pos);
     w.finish();
