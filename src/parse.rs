@@ -1029,13 +1029,14 @@ fn extract_footnote_defs(
                     DEFINITION_PLACEHOLDER
                 });
             }
-            replacement.extend(std::iter::repeat_n(
-                ' ',
-                raw_def_line
-                    .chars()
-                    .count()
-                    .saturating_sub(replacement.chars().count()),
-            ));
+            replacement.push_str(
+                &" ".repeat(
+                    raw_def_line
+                        .chars()
+                        .count()
+                        .saturating_sub(replacement.chars().count()),
+                ),
+            );
             body.push(replacement);
             body_line_map.push(Some(def_start_line));
         } else {
@@ -1403,12 +1404,13 @@ fn extract_link_defs(source: &str) -> (String, BTreeMap<String, LinkDef>) {
                     DEFINITION_PLACEHOLDER
                 });
             }
-            replacement.extend(std::iter::repeat_n(
-                ' ',
-                line.chars()
-                    .count()
-                    .saturating_sub(replacement.chars().count()),
-            ));
+            replacement.push_str(
+                &" ".repeat(
+                    line.chars()
+                        .count()
+                        .saturating_sub(replacement.chars().count()),
+                ),
+            );
             body.push(replacement);
         } else {
             body.push(line.to_string());
@@ -5542,7 +5544,7 @@ fn span_across_items(items: &[ListItem]) -> Option<Pos> {
 fn widen_items_over_children(items: &mut [ListItem]) {
     for item in items.iter_mut() {
         let Some(mut pos) = item.pos else { continue };
-        let mut last_owned = None;
+        let mut last_owned: Option<Pos> = None;
         for child in &item.children {
             let Some(child_pos) = crate::ast_json::block_pos(child) else {
                 continue;
@@ -5550,9 +5552,13 @@ fn widen_items_over_children(items: &mut [ListItem]) {
             // LINE and COLUMN, not offsets: a span carries the pair at parse
             // time and `fill_offsets` turns it into offsets afterwards, so
             // comparing offsets here compares two zeroes and widens nothing.
-            if last_owned.is_none_or(|last: Pos| {
-                (child_pos.end_line, child_pos.end_column) > (last.end_line, last.end_column)
-            }) {
+            let is_later = match last_owned {
+                None => true,
+                Some(last) => {
+                    (child_pos.end_line, child_pos.end_column) > (last.end_line, last.end_column)
+                }
+            };
+            if is_later {
                 last_owned = Some(*child_pos);
             }
         }
