@@ -333,6 +333,7 @@ const IMPLEMENTED: &[&str] = &[
     "a-ragged-table-keeps-each-row-s-cell-count",
     "a-column-zero-definition-ends-an-open-list-item",
     "a-caret-line-does-not-end-a-paragraph-it-cannot-caption",
+    "heading-index-plain-text-covers-visible-leaves-and-rejects-an-empty-key",
 ];
 
 fn corpus_dir() -> PathBuf {
