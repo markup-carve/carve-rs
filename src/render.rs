@@ -1166,6 +1166,7 @@ pub(crate) fn plain_inlines_typography(
             // `A-A`). Mirrors `plain_inlines_parse`, which never saw the Link.
             InlineNode::Link(l) if l.from_crossref => {}
             InlineNode::Link(l) => out.push_str(&plain_inlines_typography(&l.children, smart)),
+            InlineNode::AutoLink(a) => out.push_str(&a.text),
             InlineNode::Image(i) => out.push_str(&i.alt),
             InlineNode::Extension(e) => out.push_str(&plain_inlines_typography(&e.children, smart)),
             InlineNode::CitationGroup(g) => out.push_str(&g.raw),

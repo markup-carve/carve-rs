@@ -47,3 +47,17 @@ fn an_unclosed_fence_in_a_paragraph_does_not_hide_a_later_definition() {
 fn a_marker_line_attribute_floats_to_the_following_item_block() {
     assert!(carve::to_html("* {i}\n|\n").contains("<li><p i=\"\">|</p></li>"));
 }
+
+#[test]
+fn visible_autolink_text_contributes_to_heading_keys() {
+    let html = carve::to_html("# a <https://e.com> b\n\n[a <https://e.com> b][]\n");
+    assert!(html.contains("id=\"a-https-e-com-b\""), "{html}");
+    assert!(html.contains("href=\"#a-https-e-com-b\""), "{html}");
+}
+
+#[test]
+fn an_empty_heading_key_does_not_resolve_through_the_fallback_slug() {
+    let html = carve::to_html("# :smile:\n\n[:smile:][]\n");
+    assert!(html.contains("id=\"s\""), "{html}");
+    assert!(!html.contains("href=\"#s\""), "{html}");
+}
