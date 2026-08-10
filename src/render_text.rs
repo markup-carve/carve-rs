@@ -1,3 +1,5 @@
+use crate::escape::is_bidi_control;
+
 /// Drop EVERY control character (keeping tab and newline) from author content,
 /// so an attacker's `ESC` / OSC sequence cannot inject into terminal output.
 ///
@@ -15,7 +17,7 @@
 pub(crate) fn strip_terminal_controls(input: &str) -> String {
     input
         .chars()
-        .filter(|c| *c == '\t' || *c == '\n' || !c.is_control())
+        .filter(|c| (*c == '\t' || *c == '\n' || !c.is_control()) && !is_bidi_control(*c))
         .collect()
 }
 
@@ -55,9 +57,10 @@ pub(crate) fn strip_high_controls(input: &str) -> String {
     input.chars().filter(|c| !is_not_emitted(*c)).collect()
 }
 
-/// DEL (U+007F), the C1 controls (U+0080..U+009F), and the carriage return.
+/// DEL (U+007F), the C1 controls (U+0080..U+009F), the carriage return, and
+/// §26's bidi override/isolate controls on every presentation target.
 fn is_not_emitted(c: char) -> bool {
-    matches!(c, '\u{7f}'..='\u{9f}' | '\r')
+    matches!(c, '\u{7f}'..='\u{9f}' | '\r') || is_bidi_control(c)
 }
 
 /// A renderer's whitespace terminal: U+0020 and U+0009, and NOTHING ELSE.
