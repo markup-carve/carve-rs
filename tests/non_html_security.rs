@@ -107,7 +107,18 @@ fn markdown_neutralizes_embedded_html() {
     let sup = md("{^<img src=x onerror=alert(1)>^}");
     assert!(sup.contains("<sup>"));
     assert!(!sup.contains("<img"));
-    assert_eq!(md("a < b & c"), "a &lt; b &amp; c");
+    assert_eq!(md("a < b & c"), "a &lt; b & c");
+
+    // The reason `&` stopped being escaped (carve#1071): an entity in Markdown
+    // TEXT decodes to a CHARACTER, and a character cannot open a tag. Text
+    // authored as `&lt;script&gt;` therefore comes back as the four characters a
+    // reader sees, never as live markup - which is what a bare `<` would be, and
+    // why `<` and `>` keep the entity form.
+    assert_eq!(md("a &lt;script&gt; b"), "a &lt;script&gt; b");
+    assert_eq!(
+        md("a <script>x</script> b"),
+        "a &lt;script&gt;x&lt;/script&gt; b"
+    );
 }
 
 #[test]

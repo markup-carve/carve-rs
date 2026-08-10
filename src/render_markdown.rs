@@ -964,10 +964,22 @@ fn escape_text(text: &str) -> String {
             // Neutralize embedded HTML so Markdown re-rendered to HTML cannot
             // execute it (carve's "HTML is text" guarantee for the Markdown
             // target too): a literal `<img onerror=…>` becomes inert.
-            '&' => {
-                out.push_str("&amp;");
-                continue;
-            }
+            //
+            // ONLY `<` AND `>` DO THAT WORK. A bare `&` cannot open a tag: an
+            // entity in Markdown TEXT decodes to a CHARACTER, and a character in
+            // text content is escaped again by whatever writes the HTML.
+            // Measured against pandoc 3.5, commonmark.js and marked with raw
+            // HTML ALLOWED - the entity and bare forms came out byte-identical
+            // and inert, while a bare `<` was live in all three. Escaping every
+            // ampersand cost every document its spelling for nothing
+            // (carve#1071).
+            //
+            // NO EXCEPTION FOR A CHARACTER-REFERENCE OPENER, deliberately: text
+            // authored as `&#65;` is emitted as itself. Whether an `&` opens a
+            // reference depends on the EMITTED LINE, and Carve parses `#65` as a
+            // tag, so this renderer sees two separate text nodes - answering it
+            // here would be one node too early, the mistake section 8a
+            // documents for `_`, `#` and `[`.
             '<' => {
                 out.push_str("&lt;");
                 continue;
