@@ -214,7 +214,10 @@ fn render_block(node: &BlockNode, ctx: &mut MarkdownContext, depth: usize) -> St
             format!("{} {text}{suffix}\n\n", "#".repeat(heading.level as usize))
         }
         BlockNode::Paragraph(paragraph) => {
-            format!("{}\n\n", render_block_inlines(&paragraph.children, ctx))
+            format!(
+                "{}\n\n",
+                protect_paragraph_list_markers(&render_block_inlines(&paragraph.children, ctx))
+            )
         }
         BlockNode::CodeBlock(code) => {
             let content = strip_controls(&code.content);
@@ -335,6 +338,80 @@ fn render_block(node: &BlockNode, ctx: &mut MarkdownContext, depth: usize) -> St
         ),
         BlockNode::Comment(_) => String::new(),
     }
+}
+
+/// Keep paragraph continuation lines from becoming lists in Markdown readers.
+fn protect_paragraph_list_markers(text: &str) -> String {
+    let mut output = String::with_capacity(text.len());
+    let mut code_fence = 0usize;
+    for (line_index, source_line) in text.split('\n').enumerate() {
+        if line_index > 0 {
+            output.push('\n');
+        }
+        let mut line = source_line.to_string();
+        if code_fence == 0 {
+            let bytes = line.as_bytes();
+            let mut marker = 0usize;
+            while marker < bytes.len() && marker < 3 && matches!(bytes[marker], b' ' | b'\t') {
+                marker += 1;
+            }
+            let insert_at = if marker + 1 < bytes.len()
+                && matches!(bytes[marker], b'-' | b'+')
+                && matches!(bytes[marker + 1], b' ' | b'\t')
+            {
+                Some(marker)
+            } else {
+                let digit_start = marker;
+                while marker < bytes.len()
+                    && marker - digit_start < 9
+                    && bytes[marker].is_ascii_digit()
+                {
+                    marker += 1;
+                }
+                if marker > digit_start
+                    && marker + 1 < bytes.len()
+                    && matches!(bytes[marker], b'.' | b')')
+                    && matches!(bytes[marker + 1], b' ' | b'\t')
+                {
+                    Some(marker)
+                } else {
+                    None
+                }
+            };
+            if let Some(at) = insert_at {
+                line.insert(at, '\\');
+            }
+        }
+
+        let bytes = line.as_bytes();
+        let mut i = 0usize;
+        while i < bytes.len() {
+            if bytes[i] != b'`' {
+                i += 1;
+                continue;
+            }
+            let mut backslashes = 0usize;
+            let mut before = i;
+            while before > 0 && bytes[before - 1] == b'\\' {
+                backslashes += 1;
+                before -= 1;
+            }
+            let mut run = 1usize;
+            while i + run < bytes.len() && bytes[i + run] == b'`' {
+                run += 1;
+            }
+            if backslashes % 2 == 0 {
+                if code_fence == 0 {
+                    code_fence = run;
+                } else if code_fence == run {
+                    code_fence = 0;
+                }
+            }
+            i += run;
+        }
+        output.push_str(&line);
+    }
+    output
 }
 
 fn render_list(node: &List, ctx: &mut MarkdownContext, depth: usize) -> String {
