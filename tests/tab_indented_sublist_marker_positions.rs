@@ -1,4 +1,4 @@
-//! A tab-indented sublist marker is placed, and its span names the marker.
+//! A tab-indented sublist marker is placed with its exact container extent.
 //!
 //! The second site the unsigned column map lost, found by mutating the first.
 //! `slice_columns_mapped` re-emits the columns a straddling tab overshot as
@@ -73,9 +73,10 @@ fn the_sublist_under_a_tab_is_placed() {
 }
 
 #[test]
-fn the_sublist_span_names_the_marker_the_author_wrote() {
-    // Stronger than "present". Offsets in `- a\n\t- b\n`: the tab is 4, the
-    // sublist marker 5, and `b` 7.
+fn the_sublist_span_includes_its_container_indentation() {
+    // Stronger than "present". The exact-span consensus keeps the tab that
+    // establishes the nested block's source extent; the text still owns only
+    // its authored value.
     let chars: Vec<char> = TAB_SUBLIST.chars().collect();
     let found = placed(TAB_SUBLIST);
     let inner_list = found
@@ -86,7 +87,7 @@ fn the_sublist_span_names_the_marker_the_author_wrote() {
     let (start, end) = inner_list.1.expect("the nested list is placed");
     assert_eq!(
         chars[start..end].iter().collect::<String>(),
-        "- b",
+        "\t- b",
         "the nested list's span names the wrong source"
     );
     let inner_text = found
@@ -111,9 +112,9 @@ fn an_ordered_tab_indented_sublist_is_placed_too() {
 }
 
 #[test]
-fn the_space_indented_sublist_is_unchanged() {
-    // The control: with no tab nothing is synthesized, so none of this applies
-    // and the shape was always placed.
+fn the_space_indented_sublist_keeps_its_container_indentation() {
+    // The control: with no tab nothing is synthesized. The nested list keeps
+    // the two columns that remain after the parent item consumes its prefix.
     let source = "- a\n    - b\n";
     let chars: Vec<char> = source.chars().collect();
     let found = placed(source);
@@ -127,7 +128,7 @@ fn the_space_indented_sublist_is_unchanged() {
         .nth(1)
         .and_then(|(_, p)| *p)
         .expect("a placed nested list");
-    assert_eq!(chars[start..end].iter().collect::<String>(), "- b");
+    assert_eq!(chars[start..end].iter().collect::<String>(), "  - b");
 }
 
 #[test]
