@@ -7,6 +7,16 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **The Markdown target leaves a bare ampersand alone.** Text was neutralized as
+  `&amp;`, `&lt;` and `&gt;`; only two thirds of that was doing anything. An
+  entity in Markdown TEXT decodes to a CHARACTER, and a character cannot open a
+  tag, so `&` carried no risk to leave bare - measured against pandoc 3.5,
+  commonmark.js and marked with raw HTML allowed. `<` and `>` keep the entity
+  form, which is what actually neutralizes embedded HTML. Text authored as
+  `&#65;` is emitted as itself too; there is no character-reference exception.
+
 ### Fixed
 
 - **A nested list is indented once on the Markdown target, not twice.**
