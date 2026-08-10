@@ -28,6 +28,7 @@ thread_local! {
     /// nested render of another target leave its mode behind in this one.
     static SMART_TYPOGRAPHY: std::cell::Cell<crate::extension::SmartTypographyMode> =
         const { std::cell::Cell::new(crate::extension::SmartTypographyMode::Glyph) };
+    static LIST_DEPTH: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
 fn footnote_is_defined(id: &str) -> bool {
@@ -89,6 +90,7 @@ fn render_plain_text_inner(
     lowercase_heading_ids: bool,
 ) -> String {
     SMART_TYPOGRAPHY.with(|cell| cell.set(smart_typography));
+    LIST_DEPTH.with(|cell| cell.set(0));
     // The plain target expands a crossref label exactly as the other three do,
     // so it needs the same bound; without a guard installed `try_spend` would
     // fall back to the floor budget and clip a large document earlier here than
@@ -230,16 +232,51 @@ fn render_list(node: &List, depth: usize) -> String {
     }
     let mut out = String::new();
     let mut counter = node.start.unwrap_or(1);
+    let list_depth = LIST_DEPTH.with(|cell| {
+        let next = cell.get() + 1;
+        cell.set(next);
+        next
+    });
+    let indent = "  ".repeat(list_depth - 1);
     for item in &node.items {
+        out.push_str(&indent);
         if node.ordered {
             out.push_str(&format!("{counter}. "));
             counter += 1;
         } else {
             out.push_str("- ");
         }
-        out.push_str(trim_block_output(&render_blocks(&item.children, depth + 1)));
+        let rendered = render_blocks(&item.children, depth + 1);
+        let mut content = trim_block_output(&rendered).to_string();
+        if node.tight {
+            let nested_indent = "  ".repeat(list_depth);
+            let ordered_prefix = |line: &str| {
+                let digits = line.bytes().take_while(u8::is_ascii_digit).count();
+                digits > 0
+                    && line
+                        .as_bytes()
+                        .get(digits..digits + 2)
+                        .is_some_and(|tail| matches!(tail, [b'.' | b')', b' ']))
+            };
+            let mut lines = content.split('\n').peekable();
+            let mut compact = String::with_capacity(content.len());
+            while let Some(line) = lines.next() {
+                compact.push_str(line);
+                if let Some(next) = lines.peek() {
+                    let marker = next
+                        .strip_prefix(&nested_indent)
+                        .is_some_and(|tail| tail.starts_with("- ") || ordered_prefix(tail));
+                    if !line.is_empty() || !marker {
+                        compact.push('\n');
+                    }
+                }
+            }
+            content = compact;
+        }
+        out.push_str(&content);
         out.push('\n');
     }
+    LIST_DEPTH.with(|cell| cell.set(cell.get() - 1));
     out.push('\n');
     out
 }
