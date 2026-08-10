@@ -34,7 +34,7 @@ const DOCUMENT_DEFINITION_PLACEHOLDER: &str = "%%\u{E006}";
 
 fn is_definition_placeholder(line: &str) -> bool {
     matches!(
-        trim_ascii_start(line),
+        trim_ascii(line),
         DEFINITION_PLACEHOLDER | DOCUMENT_DEFINITION_PLACEHOLDER
     )
 }
@@ -236,24 +236,39 @@ fn parse_with_options_mode(source: &str, options: &Options<'_>, mode: ParseMode)
         for blocks in footnote_defs.values_mut() {
             fill_offsets(blocks, &line_starts);
         }
+        include_comment_indentation(&mut children, original, &line_starts);
+        for blocks in footnote_defs.values_mut() {
+            include_comment_indentation(blocks, original, &line_starts);
+        }
         // A definition whose BODY places something already has an extent, and
         // that extent - not this line - is what reaches the wire. Keeping the
         // line beside it would put a fact in the document that its own
         // serialization does not carry, so an ingested copy would differ from
         // the parse (§6). Dropped here rather than never recorded because the
         // bodies are parsed after the scan that finds the definition lines.
-        footnote_def_pos.retain(|label, _| match footnote_defs.get(label) {
-            Some(blocks) => crate::ast_json::first_block_pos(blocks).is_none(),
-            None => true,
-        });
-        // A definition line's own offsets, from the same table for the same
-        // reason. Both ends sit on that one line, so one lookup places both.
+        // Place both boundaries; a multi-line definition ends at the following
+        // line start rather than on its opener line.
         for pos in footnote_def_pos.values_mut() {
-            let Some(line_start) = line_starts.get(pos.start_line - 1).copied() else {
+            let Some(start) = line_starts.get(pos.start_line - 1).copied() else {
                 continue;
             };
-            pos.start_offset = line_start + pos.start_column - 1;
-            pos.end_offset = line_start + pos.end_column - 1;
+            let Some(end) = line_starts.get(pos.end_line - 1).copied() else {
+                continue;
+            };
+            pos.start_offset = start + pos.start_column - 1;
+            pos.end_offset = end + pos.end_column - 1;
+        }
+        for (label, pos) in &mut footnote_def_pos {
+            if let Some(last) = footnote_defs
+                .get(label)
+                .and_then(|blocks| blocks.iter().rev().find_map(crate::ast_json::block_pos))
+            {
+                if last.end_offset > pos.end_offset {
+                    pos.end_line = last.end_line;
+                    pos.end_column = last.end_column;
+                    pos.end_offset = last.end_offset;
+                }
+            }
         }
     }
     let mut doc = Document {
@@ -960,6 +975,12 @@ fn extract_footnote_defs(
                     break;
                 }
             }
+            if positions && !in_container && i < lines.len() && is_blank_line(lines[i]) {
+                if let Some(pos) = def_positions.get_mut(label) {
+                    pos.end_line = first_source_line + i;
+                    pos.end_column = 1;
+                }
+            }
             // First definition for a label wins (later duplicates are ignored).
             defs.entry(label.to_string())
                 .or_insert_with(|| MappedSource {
@@ -1008,6 +1029,14 @@ fn extract_footnote_defs(
                     DEFINITION_PLACEHOLDER
                 });
             }
+            replacement.push_str(
+                &" ".repeat(
+                    raw_def_line
+                        .chars()
+                        .count()
+                        .saturating_sub(replacement.chars().count()),
+                ),
+            );
             body.push(replacement);
             body_line_map.push(Some(def_start_line));
         } else {
@@ -1375,6 +1404,13 @@ fn extract_link_defs(source: &str) -> (String, BTreeMap<String, LinkDef>) {
                     DEFINITION_PLACEHOLDER
                 });
             }
+            replacement.push_str(
+                &" ".repeat(
+                    line.chars()
+                        .count()
+                        .saturating_sub(replacement.chars().count()),
+                ),
+            );
             body.push(replacement);
         } else {
             body.push(line.to_string());
@@ -2700,7 +2736,23 @@ fn fill_offsets(blocks: &mut [BlockNode], line_starts: &[usize]) {
         // Recurse into the containers that hold blocks and inline content.
         match block {
             BlockNode::Heading(h) => apply_inline_offsets(&mut h.children, line_starts),
-            BlockNode::Paragraph(p) => apply_inline_offsets(&mut p.children, line_starts),
+            BlockNode::Paragraph(p) => {
+                apply_inline_offsets(&mut p.children, line_starts);
+                let first = p.children.iter().find_map(|node| {
+                    (!matches!(node, InlineNode::SoftBreak(_) | InlineNode::HardBreak(_)))
+                        .then(|| owned_inline_pos(node))
+                        .flatten()
+                });
+                let last = p.children.iter().rev().find_map(owned_inline_pos);
+                if let (Some(pos), Some(first), Some(last)) = (&mut p.pos, first, last) {
+                    pos.start_line = first.start_line;
+                    pos.start_column = first.start_column;
+                    pos.start_offset = first.start_offset;
+                    pos.end_line = last.end_line;
+                    pos.end_column = last.end_column;
+                    pos.end_offset = last.end_offset;
+                }
+            }
             BlockNode::BlockQuote(b) => {
                 fill_offsets(&mut b.children, line_starts);
             }
@@ -2720,6 +2772,18 @@ fn fill_offsets(blocks: &mut [BlockNode], line_starts: &[usize]) {
                         apply_offsets(pos, line_starts);
                     }
                     fill_offsets(&mut item.children, line_starts);
+                    if let (Some(pos), Some(last)) = (
+                        item.pos.as_mut(),
+                        item.children
+                            .iter()
+                            .rev()
+                            .find_map(crate::ast_json::block_pos)
+                            .copied(),
+                    ) {
+                        pos.end_line = last.end_line;
+                        pos.end_column = last.end_column;
+                        pos.end_offset = last.end_offset;
+                    }
                 }
             }
             BlockNode::Table(t) => apply_table_offsets(t, line_starts),
@@ -2791,6 +2855,56 @@ fn fill_offsets(blocks: &mut [BlockNode], line_starts: &[usize]) {
     }
 }
 
+fn include_comment_indentation(blocks: &mut [BlockNode], source: &str, line_starts: &[usize]) {
+    let source_lines: Vec<&str> = source.lines().collect();
+    fn walk(blocks: &mut [BlockNode], lines: &[&str], starts: &[usize]) {
+        for block in blocks {
+            if let BlockNode::Comment(comment) = block {
+                if let Some(pos) = &mut comment.pos {
+                    let raw = lines
+                        .get(pos.start_line.saturating_sub(1))
+                        .copied()
+                        .unwrap_or("");
+                    if raw.trim_start_matches([' ', '\t']).starts_with('%') && leading_ws(raw) == 1
+                    {
+                        pos.start_column = 1;
+                        pos.start_offset = starts
+                            .get(pos.start_line.saturating_sub(1))
+                            .copied()
+                            .unwrap_or(pos.start_offset);
+                    }
+                }
+            }
+            match block {
+                BlockNode::BlockQuote(n) => walk(&mut n.children, lines, starts),
+                BlockNode::Div(n) => walk(&mut n.children, lines, starts),
+                BlockNode::Admonition(n) => walk(&mut n.children, lines, starts),
+                BlockNode::List(n) => {
+                    for item in &mut n.items {
+                        walk(&mut item.children, lines, starts);
+                    }
+                }
+                BlockNode::LineBlock(n) => walk(&mut n.children, lines, starts),
+                BlockNode::DefinitionList(n) => {
+                    for item in &mut n.items {
+                        for def in &mut item.definitions {
+                            walk(&mut def.children, lines, starts);
+                        }
+                    }
+                }
+                BlockNode::Figure(n) => {
+                    if let FigureTarget::BlockQuote(q) = &mut n.target {
+                        walk(&mut q.children, lines, starts);
+                    }
+                }
+                BlockNode::Extension(n) => walk(&mut n.children, lines, starts),
+                _ => {}
+            }
+        }
+    }
+    walk(blocks, &source_lines, line_starts);
+}
+
 /// Turn the line/column pair already on a span into codepoint offsets.
 fn apply_offsets(pos: &mut Pos, line_starts: &[usize]) {
     if let Some(start) = line_starts.get(pos.start_line.saturating_sub(1)) {
@@ -2798,6 +2912,14 @@ fn apply_offsets(pos: &mut Pos, line_starts: &[usize]) {
     }
     if let Some(end) = line_starts.get(pos.end_line.saturating_sub(1)) {
         pos.end_offset = end + pos.end_column.saturating_sub(1);
+    }
+    if line_starts.first() == Some(&1) {
+        if pos.start_line == 1 {
+            pos.start_column += 1;
+        }
+        if pos.end_line == 1 {
+            pos.end_column += 1;
+        }
     }
 }
 
@@ -2889,6 +3011,11 @@ fn inline_pos_mut(node: &mut InlineNode) -> Option<&mut Pos> {
         InlineNode::Comment(n) => n.pos.as_mut(),
         InlineNode::CriticComment(n) => n.pos.as_mut(),
     }
+}
+
+fn owned_inline_pos(node: &InlineNode) -> Option<Pos> {
+    let mut cloned = node.clone();
+    inline_pos_mut(&mut cloned).copied()
 }
 
 /// Codepoint offset of the start of each line.
@@ -3332,10 +3459,14 @@ fn take_comment_block(cur: &mut LineCursor, options: &Options<'_>) -> CommentBlo
                 ));
             }
 
+            let mut pos = span_of(cur, span_start, cur.pos, options);
+            if let Some(pos) = &mut pos {
+                pos.start_column = pos.start_column.saturating_sub(leading_ws(line));
+            }
             return CommentBlock::Consumed(Some(Box::new(BlockNode::Comment(Comment {
                 block: true,
                 content: content.join("\n"),
-                pos: span_of(cur, span_start, cur.pos, options),
+                pos,
             }))));
         }
     }
@@ -3357,10 +3488,14 @@ fn take_comment_block(cur: &mut LineCursor, options: &Options<'_>) -> CommentBlo
         let span_start = cur.pos;
         cur.consume();
 
+        let mut pos = span_of(cur, span_start, cur.pos, options);
+        if let Some(pos) = &mut pos {
+            pos.start_column = pos.start_column.saturating_sub(leading_ws(line));
+        }
         return CommentBlock::Consumed(Some(Box::new(BlockNode::Comment(Comment {
             block: false,
             content,
-            pos: span_of(cur, span_start, cur.pos, options),
+            pos,
         }))));
     }
 
@@ -5409,6 +5544,7 @@ fn span_across_items(items: &[ListItem]) -> Option<Pos> {
 fn widen_items_over_children(items: &mut [ListItem]) {
     for item in items.iter_mut() {
         let Some(mut pos) = item.pos else { continue };
+        let mut last_owned: Option<Pos> = None;
         for child in &item.children {
             let Some(child_pos) = crate::ast_json::block_pos(child) else {
                 continue;
@@ -5416,11 +5552,20 @@ fn widen_items_over_children(items: &mut [ListItem]) {
             // LINE and COLUMN, not offsets: a span carries the pair at parse
             // time and `fill_offsets` turns it into offsets afterwards, so
             // comparing offsets here compares two zeroes and widens nothing.
-            if (child_pos.end_line, child_pos.end_column) > (pos.end_line, pos.end_column) {
-                pos.end_line = child_pos.end_line;
-                pos.end_column = child_pos.end_column;
-                pos.end_offset = child_pos.end_offset;
+            let is_later = match last_owned {
+                None => true,
+                Some(last) => {
+                    (child_pos.end_line, child_pos.end_column) > (last.end_line, last.end_column)
+                }
+            };
+            if is_later {
+                last_owned = Some(*child_pos);
             }
+        }
+        if let Some(last) = last_owned {
+            pos.end_line = last.end_line;
+            pos.end_column = last.end_column;
+            pos.end_offset = last.end_offset;
         }
         item.pos = Some(pos);
     }
@@ -5631,7 +5776,7 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 // placeholder and parses what follows as a sibling. At the
                 // item's content column the indented continuation branch above
                 // already collected it inside the item (corpus 228).
-                if trim_ascii_start(line) == DOCUMENT_DEFINITION_PLACEHOLDER {
+                if trim_ascii(line) == DOCUMENT_DEFINITION_PLACEHOLDER {
                     break;
                 }
                 if let Some(last) = items.last_mut() {
@@ -6242,14 +6387,31 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             pos: span_of(cur, item_at, cur.pos, options),
         });
     }
+    // Indentation that places a list at this cursor level belongs to each item.
+    // `MappedSource` anchors the stripped marker at the content column, so move
+    // the start back across that placing indentation before offsets are filled.
+    if base_indent > 0 {
+        for item in &mut items {
+            if let Some(pos) = &mut item.pos {
+                pos.start_column = pos.start_column.saturating_sub(base_indent);
+            }
+        }
+    }
     widen_items_over_children(&mut items);
+    let mut list_pos =
+        span_of(cur, span_start, cur.pos, options).or_else(|| span_across_items(&items));
+    if base_indent > 0 {
+        if let Some(pos) = &mut list_pos {
+            pos.start_column = pos.start_column.saturating_sub(base_indent);
+        }
+    }
     BlockNode::List(List {
         // The cursor's own span when it can give one, else the extent of the
         // items themselves. A list inside a `+`-continued blockquote sits on
         // lines whose stripped width is unknown, so `span_of` refuses - but the
         // items were placed by other means, and a list that runs from its first
         // item to its last is not a guess.
-        pos: span_of(cur, span_start, cur.pos, options).or_else(|| span_across_items(&items)),
+        pos: list_pos,
         attrs: None,
         ordered: is_ordered,
         start,
@@ -8034,10 +8196,19 @@ fn parse_definition_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNo
             // consumed, so a multi-line definition is one region rather than
             // just its opening line. `collect_definition_body` has already
             // advanced the cursor past those lines.
-            let pos = span_of(cur, def_start, cur.pos, options);
+            let children = parse_mapped_source(&body, options);
+            let mut pos = span_of(cur, def_start, cur.pos, options);
+            if let (Some(pos), Some(last)) = (
+                pos.as_mut(),
+                children.iter().rev().find_map(crate::ast_json::block_pos),
+            ) {
+                pos.end_line = last.end_line;
+                pos.end_column = last.end_column;
+                pos.end_offset = last.end_offset;
+            }
             defs.push(DefinitionDef {
                 attrs: source_line_attrs(None, def_source_line, options),
-                children: parse_mapped_source(&body, options),
+                children,
                 pos,
             });
         }
@@ -8723,6 +8894,9 @@ fn apply_table_continuation(
             _ => None,
         };
         if let Some(target) = row.cells.get_mut(idx) {
+            // Its value is now reassembled from discontiguous fragments; no
+            // single exact source extent exists for the cell.
+            target.pos = None;
             if !target.children.is_empty() {
                 // The joiner is MANUFACTURED - the source has a line break
                 // here, not a space - so it carries no position.
@@ -10993,6 +11167,16 @@ fn parse_inline_context(
                         }
                     }
                     merge_attrs_into_inline(last, attrs);
+                    // An attached attribute block is owned by the construct it
+                    // decorates, so extend the construct through the closing
+                    // brace while retaining its original opening delimiter.
+                    if let Some(attr_extent) = inline_pos(positions, base + i, base + next) {
+                        if let Some(pos) = inline_pos_mut(last) {
+                            pos.end_line = attr_extent.end_line;
+                            pos.end_column = attr_extent.end_column;
+                            pos.end_offset = attr_extent.end_offset;
+                        }
+                    }
                     i = next;
                     continue;
                 }
@@ -15212,8 +15396,14 @@ fn plain_inlines_parse(nodes: &[InlineNode]) -> String {
             InlineNode::Extension(e) => out.push_str(&plain_inlines_parse(&e.children)),
             InlineNode::CitationGroup(g) => out.push_str(&g.raw),
             InlineNode::Abbreviation(a) => out.push_str(&a.abbr),
-            InlineNode::Mention(m) => out.push_str(&m.user),
-            InlineNode::Tag(t) => out.push_str(&t.name),
+            InlineNode::Mention(m) => {
+                out.push('@');
+                out.push_str(&m.user);
+            }
+            InlineNode::Tag(t) => {
+                out.push('#');
+                out.push_str(&t.name);
+            }
             InlineNode::CaptionNumber(n) => {
                 if let Some(number) = n.number {
                     out.push_str(&number.to_string());
