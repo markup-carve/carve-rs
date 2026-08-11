@@ -1252,7 +1252,12 @@ fn render_list(
     let tag = if l.ordered { "ol" } else { "ul" };
     out.push('<');
     out.push_str(tag);
-    write_attrs(out, &l.attrs);
+    // A STRUCTURAL ATTRIBUTE LEADS (PART 11 section 5.1). `type` and `start` are
+    // fixed by the first item's marker, so they are the element's own shape
+    // rather than something added on top of what the author wrote, and they
+    // precede the authored attributes. This wrote them after, reading the
+    // "generated attribute joins at the end" rule as covering them -- carve-js,
+    // carve-php and reference djot all lead with them (carve#1090).
     if l.ordered {
         if let Some(ol_type) = l.ol_type {
             let value = match ol_type {
@@ -1267,6 +1272,7 @@ fn render_list(
             write!(out, " start=\"{start}\"").unwrap();
         }
     }
+    write_attrs(out, &l.attrs);
     out.push_str(">\n");
     for (i, item) in l.items.iter().enumerate() {
         if i > 0 {
