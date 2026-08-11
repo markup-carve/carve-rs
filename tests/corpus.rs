@@ -366,6 +366,34 @@ fn corpus_pairs() -> Vec<String> {
     out
 }
 
+fn expected_corpus_size() -> usize {
+    let examples = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/spec/docs/examples");
+    let entries =
+        fs::read_dir(&examples).unwrap_or_else(|e| panic!("read_dir {}: {e}", examples.display()));
+    let mut count = 0;
+    for entry in entries {
+        let path = entry.expect("read spec example entry").path();
+        if path.extension().and_then(|e| e.to_str()) != Some("md") {
+            continue;
+        }
+        let source =
+            fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+        count += source
+            .lines()
+            .filter(|line| {
+                let line = line.trim();
+                let colons = line.bytes().take_while(|b| *b == b':').count();
+                colons >= 3
+                    && line[colons..].strip_prefix(" compare").is_some_and(|rest| {
+                        rest.is_empty() || rest.starts_with(char::is_whitespace)
+                    })
+            })
+            .count();
+    }
+    assert!(count > 0, "no ::: compare blocks found in spec examples");
+    count
+}
+
 fn check_pair(slug: &str) {
     let slug = &resolve_slug(slug);
     let dir = corpus_dir();
@@ -402,7 +430,11 @@ fn pretty_assert_eq(slug: &str, expected: &str, actual: &str) {
 
 #[test]
 fn corpus_pairs_present() {
-    assert!(!corpus_pairs().is_empty(), "no .crv files found in corpus");
+    assert_eq!(
+        corpus_pairs().len(),
+        expected_corpus_size(),
+        "the corpus is truncated"
+    );
 }
 
 /// Reduce a corpus pair slug to its base category: `NN-slug` or

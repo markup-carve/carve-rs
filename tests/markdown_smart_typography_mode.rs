@@ -41,8 +41,11 @@ fn glyph_mode_remains_the_default() {
 
 #[test]
 fn escaping_is_left_alone() {
-    // Escaping is a separate concern with its own rationale.
-    assert_eq!(source_mode("a & b"), "a &amp; b");
+    // Escaping is a separate concern with its own rationale. `&` is emitted
+    // bare on this target (carve#1071); what this asserts is that the smart
+    // typography mode does not change that either way.
+    assert_eq!(source_mode("a & b"), "a & b");
+    assert_eq!(source_mode("a < b"), "a &lt; b");
 }
 
 #[test]

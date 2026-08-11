@@ -214,7 +214,10 @@ fn render_block(node: &BlockNode, ctx: &mut MarkdownContext, depth: usize) -> St
             format!("{} {text}{suffix}\n\n", "#".repeat(heading.level as usize))
         }
         BlockNode::Paragraph(paragraph) => {
-            format!("{}\n\n", render_block_inlines(&paragraph.children, ctx))
+            format!(
+                "{}\n\n",
+                protect_paragraph_list_markers(&render_block_inlines(&paragraph.children, ctx))
+            )
         }
         BlockNode::CodeBlock(code) => {
             let content = strip_controls(&code.content);
@@ -337,6 +340,80 @@ fn render_block(node: &BlockNode, ctx: &mut MarkdownContext, depth: usize) -> St
     }
 }
 
+/// Keep paragraph continuation lines from becoming lists in Markdown readers.
+fn protect_paragraph_list_markers(text: &str) -> String {
+    let mut output = String::with_capacity(text.len());
+    let mut code_fence = 0usize;
+    for (line_index, source_line) in text.split('\n').enumerate() {
+        if line_index > 0 {
+            output.push('\n');
+        }
+        let mut line = source_line.to_string();
+        if code_fence == 0 {
+            let bytes = line.as_bytes();
+            let mut marker = 0usize;
+            while marker < bytes.len() && marker < 3 && matches!(bytes[marker], b' ' | b'\t') {
+                marker += 1;
+            }
+            let insert_at = if marker + 1 < bytes.len()
+                && matches!(bytes[marker], b'-' | b'+')
+                && matches!(bytes[marker + 1], b' ' | b'\t')
+            {
+                Some(marker)
+            } else {
+                let digit_start = marker;
+                while marker < bytes.len()
+                    && marker - digit_start < 9
+                    && bytes[marker].is_ascii_digit()
+                {
+                    marker += 1;
+                }
+                if marker > digit_start
+                    && marker + 1 < bytes.len()
+                    && matches!(bytes[marker], b'.' | b')')
+                    && matches!(bytes[marker + 1], b' ' | b'\t')
+                {
+                    Some(marker)
+                } else {
+                    None
+                }
+            };
+            if let Some(at) = insert_at {
+                line.insert(at, '\\');
+            }
+        }
+
+        let bytes = line.as_bytes();
+        let mut i = 0usize;
+        while i < bytes.len() {
+            if bytes[i] != b'`' {
+                i += 1;
+                continue;
+            }
+            let mut backslashes = 0usize;
+            let mut before = i;
+            while before > 0 && bytes[before - 1] == b'\\' {
+                backslashes += 1;
+                before -= 1;
+            }
+            let mut run = 1usize;
+            while i + run < bytes.len() && bytes[i + run] == b'`' {
+                run += 1;
+            }
+            if backslashes % 2 == 0 {
+                if code_fence == 0 {
+                    code_fence = run;
+                } else if code_fence == run {
+                    code_fence = 0;
+                }
+            }
+            i += run;
+        }
+        output.push_str(&line);
+    }
+    output
+}
+
 fn render_list(node: &List, ctx: &mut MarkdownContext, depth: usize) -> String {
     if depth > MAX_RENDER_DEPTH {
         crate::render_depth::record("markdown");
@@ -358,7 +435,6 @@ fn render_list(node: &List, ctx: &mut MarkdownContext, depth: usize) -> String {
     // `delim` and render_carve already reproduces it (carve#352, corpus 31).
     let delim = if node.delim == Some(')') { ')' } else { '.' };
     for item in &node.items {
-        let indent = "  ".repeat(ctx.list_depth - 1);
         let prefix = if node.ordered {
             let prefix = format!("{counter}{delim} ");
             counter += 1;
@@ -374,13 +450,27 @@ fn render_list(node: &List, ctx: &mut MarkdownContext, depth: usize) -> String {
         };
         let content = trim_block_output(&render_blocks(&item.children, ctx, depth + 1)).to_string();
         let mut lines = content.split('\n');
-        out.push_str(&format!(
-            "{indent}{prefix}{}\n",
-            lines.next().unwrap_or_default()
-        ));
+        // NESTING COMES FROM THE PARENT'S CONTINUATION PAD ALONE. This used to
+        // add `"  ".repeat(list_depth - 1)` as well, and the enclosing item then
+        // padded the same lines again by its marker width, so every level was
+        // indented twice: two levels landed at four spaces and three at ten.
+        // Ten spaces under a marker whose content column is six is four PAST
+        // it, which is where a reader opens an indented verbatim block -- so a
+        // third level stopped being a list for every reader that is not Carve
+        // itself. Carve's own content-column model is lenient enough to read it
+        // back as a list, which is why this was invisible from inside the
+        // engine and only pandoc showed it (carve#1069, carve-php#1142).
+        out.push_str(&format!("{prefix}{}\n", lines.next().unwrap_or_default()));
         let continuation = " ".repeat(prefix.len());
         for line in lines {
-            out.push_str(&format!("{indent}{continuation}{line}\n"));
+            // A line with no content takes no pad: PART 11 section 7 emits such
+            // a line empty, and trailing whitespace is what editors and
+            // `git apply --whitespace=fix` rewrite behind the writer.
+            if line.is_empty() {
+                out.push('\n');
+            } else {
+                out.push_str(&format!("{continuation}{line}\n"));
+            }
         }
     }
     ctx.list_depth -= 1;
@@ -951,10 +1041,22 @@ fn escape_text(text: &str) -> String {
             // Neutralize embedded HTML so Markdown re-rendered to HTML cannot
             // execute it (carve's "HTML is text" guarantee for the Markdown
             // target too): a literal `<img onerror=…>` becomes inert.
-            '&' => {
-                out.push_str("&amp;");
-                continue;
-            }
+            //
+            // ONLY `<` AND `>` DO THAT WORK. A bare `&` cannot open a tag: an
+            // entity in Markdown TEXT decodes to a CHARACTER, and a character in
+            // text content is escaped again by whatever writes the HTML.
+            // Measured against pandoc 3.5, commonmark.js and marked with raw
+            // HTML ALLOWED - the entity and bare forms came out byte-identical
+            // and inert, while a bare `<` was live in all three. Escaping every
+            // ampersand cost every document its spelling for nothing
+            // (carve#1071).
+            //
+            // NO EXCEPTION FOR A CHARACTER-REFERENCE OPENER, deliberately: text
+            // authored as `&#65;` is emitted as itself. Whether an `&` opens a
+            // reference depends on the EMITTED LINE, and Carve parses `#65` as a
+            // tag, so this renderer sees two separate text nodes - answering it
+            // here would be one node too early, the mistake section 8a
+            // documents for `_`, `#` and `[`.
             '<' => {
                 out.push_str("&lt;");
                 continue;

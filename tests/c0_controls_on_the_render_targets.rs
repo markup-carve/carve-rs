@@ -187,21 +187,31 @@ fn control_markdown_and_plain_still_strip_del_and_the_c1_controls() {
     }
 }
 
-/// CONTROL: §26 is a different rule from §29 and is untouched here. A bidi
-/// override is an injection vector in a renderer, which a C0 control is not, and
-/// the HTML target removes it.
-///
-/// MEASURED, NOT ASSUMED: this engine strips a bidi control on the HTML target
-/// ONLY - the Markdown, plain and ANSI targets emit it, on `main` at `04f9284`
-/// exactly as here. Whether §26's reach should be wider is a separate question
-/// this change does not touch and must not be read as answering; the case is
-/// here so that the C0 narrowing cannot be blamed for it either way.
+/// CONTROL: §26 is independent of §29 because bidi override/isolate characters
+/// are Unicode format characters, not C0 controls. Every presentation target
+/// removes the whole class; canonical Carve remains a lossless source writer.
 #[test]
-fn control_a_bidi_override_is_removed_on_html_and_unchanged_elsewhere() {
-    assert!(!render("html", "a\u{202e}b\n").contains('\u{202e}'));
-    for target in ["markdown", "plain", "ansi"] {
-        let out = render(target, "a\u{202e}b\n");
-        assert!(out.contains('\u{202e}'), "{target}: {out:?}");
+fn every_presentation_target_removes_bidi_controls_and_canonical_preserves_them() {
+    let controls = [
+        '\u{202a}', '\u{202b}', '\u{202c}', '\u{202d}', '\u{202e}', '\u{2066}', '\u{2067}',
+        '\u{2068}', '\u{2069}',
+    ];
+    for control in controls {
+        let source = format!("a{control}b\n");
+        for target in ["html", "markdown", "plain", "ansi"] {
+            let out = render(target, &source);
+            assert!(
+                !out.contains(control),
+                "{target} emitted U+{:04X}: {out:?}",
+                control as u32
+            );
+        }
+        let canonical = carve::render_carve(&carve::parse(&source)).expect("canonical renders");
+        assert!(
+            canonical.contains(control),
+            "canonical dropped U+{:04X}",
+            control as u32
+        );
     }
 }
 

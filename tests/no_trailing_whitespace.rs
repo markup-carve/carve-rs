@@ -13,6 +13,8 @@
 //! carve#359), and whitespace that IS verbatim content, since a line of three
 //! spaces inside a code block renders as three spaces.
 
+mod common;
+
 use std::fs;
 use std::path::Path;
 
@@ -65,7 +67,11 @@ fn the_writer_never_emits_trailing_whitespace_inner() {
         }
     }
 
-    assert!(checked > 400, "only {checked} corpus inputs were read");
+    assert_eq!(
+        checked,
+        common::expected_corpus_size(),
+        "the corpus sweep read a different number of documents than the spec examples define"
+    );
 
     // Known remaining, shared with carve-js: a fenced block inside a list item
     // has its indentation SENTINEL-PROTECTED so that normalize() cannot eat real
