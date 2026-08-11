@@ -75,10 +75,11 @@ pub use extension::{
 pub use extensions::{
     sanitize_svg, Autolink, AutolinkOptions, CodeCallouts, ColorSwatch, ContentMode, CrossrefStyle,
     Details, ExternalLinks, ExternalLinksOptions, FencedRender, FencedRenderOptions, Glossary,
-    HeadingNumbers, HeadingNumbersOptions, HeadingPermalinks, HeadingPermalinksOptions, ImgFence,
-    Index, ListTable, ListType, MathBlock, MathBlockOptions, Position, SanitizeResult,
-    SanitizeSvgOptions, Spoiler, SwatchPosition, SwatchShape, TabNormalize, TableOfContents,
-    TableOfContentsOptions, TocPlacement, UrlGenerator, Wikilinks, WikilinksOptions,
+    HeadingLevelShift, HeadingLevelShiftOptions, HeadingNumbers, HeadingNumbersOptions,
+    HeadingPermalinks, HeadingPermalinksOptions, ImgFence, Index, ListTable, ListType, MathBlock,
+    MathBlockOptions, Position, SanitizeResult, SanitizeSvgOptions, Spoiler, SwatchPosition,
+    SwatchShape, TabNormalize, TableOfContents, TableOfContentsOptions, TocPlacement, UrlGenerator,
+    Wikilinks, WikilinksOptions,
 };
 pub use parse::{parse, parse_with_options};
 pub use profile::{DisallowedAction, LinkPolicy, Profile, ProfileViolation, ProfileViolationError};

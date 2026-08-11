@@ -7,6 +7,16 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **`HeadingLevelShift` extension**, ported from carve-js `heading-level-shift`
+  and carve-php `HeadingLevelShiftExtension`, closing the last of the three
+  engines to carry it. Shifts every heading down by a fixed offset for pages
+  that reserve `h1` for the page title. Default 1, clamped to `0..=5` and
+  capped at `h6` like the other two, and headings nested in a blockquote, a
+  div, an admonition, a list item, a definition or a figure's blockquote are
+  shifted too.
+
 ### Changed
 
 - **The Markdown target leaves a bare ampersand alone.** Text was neutralized as
