@@ -335,6 +335,7 @@ const IMPLEMENTED: &[&str] = &[
     "a-column-zero-definition-ends-an-open-list-item",
     "a-caret-line-does-not-end-a-paragraph-it-cannot-caption",
     "heading-index-plain-text-covers-visible-leaves-and-rejects-an-empty-key",
+    "a-structural-attribute-leads-the-author-s-own",
 ];
 
 fn corpus_dir() -> PathBuf {
