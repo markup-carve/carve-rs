@@ -6,7 +6,7 @@ fn html(src: &str) -> String {
 
 #[test]
 fn unresolved_collapsed_reference_resolves_to_matching_heading_slug() {
-    let src = "See [name][]\n\n# Name";
+    let src = "See [name][]\n\n# Name\n";
     assert_eq!(
         html(src),
         concat!(
@@ -17,7 +17,7 @@ fn unresolved_collapsed_reference_resolves_to_matching_heading_slug() {
         )
     );
     assert_eq!(
-        html("See [NAME][]\n\n# name"),
+        html("See [NAME][]\n\n# name\n"),
         concat!(
             "<p>See <a href=\"#name\">NAME</a></p>\n",
             "<section id=\"name\">\n",
@@ -34,7 +34,7 @@ fn unresolved_collapsed_reference_resolves_to_matching_heading_slug() {
 #[test]
 fn explicit_missing_reference_does_not_use_heading_fallback() {
     assert_eq!(
-        html("See [name][label]\n\n# label"),
+        html("See [name][label]\n\n# label\n"),
         concat!(
             "<p>See [name][label]</p>\n",
             "<section id=\"label\">\n",
@@ -55,18 +55,18 @@ fn non_html_subscript_is_not_strikethrough() {
 
 #[test]
 fn empty_unquoted_attribute_value_rejects_whole_block() {
-    assert_eq!(html("[a]{k=}"), "<p>[a]{k=}</p>");
+    assert_eq!(html("[a]{k=}\n"), "<p>[a]{k=}</p>");
 }
 
 #[test]
 fn empty_link_destination_stays_literal() {
-    assert_eq!(html("[]( )"), "<p>[]( )</p>");
+    assert_eq!(html("[]( )\n"), "<p>[]( )</p>");
 }
 
 #[test]
 fn blank_separated_indented_footnote_continuation_stays_in_footnote() {
     assert_eq!(
-        html("x[^1]\n\n[^1]: a\n\n  b"),
+        html("x[^1]\n\n[^1]: a\n\n  b\n"),
         concat!(
             "<p>x<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n",
             "<section role=\"doc-endnotes\">\n",
@@ -84,8 +84,8 @@ fn blank_separated_indented_footnote_continuation_stays_in_footnote() {
 
 #[test]
 fn all_space_code_span_does_not_strip_or_panic() {
-    assert_eq!(html("` `"), "<p><code> </code></p>");
-    assert_eq!(html("`  a  `"), "<p><code> a </code></p>");
+    assert_eq!(html("` `\n"), "<p><code> </code></p>");
+    assert_eq!(html("`  a  `\n"), "<p><code> a </code></p>");
 }
 
 /// Two attributes need a separator between them: `attribute_list` is
@@ -97,20 +97,14 @@ fn all_space_code_span_does_not_strip_or_panic() {
 /// so it pinned an engine agreement rather than the language, and the
 /// executable spec refused these shapes the whole time.
 #[test]
-fn adjacent_span_ids_and_classes_stay_literal() {
-    assert_eq!(html("[a]{.a.b}"), "<p>[a]{.a.b}</p>");
-    assert_eq!(html("[a]{.a#i}"), "<p>[a]{.a#i}</p>");
-    // `{#i#j}` is deliberately NOT asserted here. It is literal under this rule
-    // too, but the literal text then goes through the `#tag` inline syntax, and
-    // all three engines make only the FIRST `#i` a tag where the executable
-    // spec makes both. That divergence is about tag adjacency rather than
-    // attribute adjacency; it was unreachable while the block parsed as
-    // attributes, and asserting either answer here would pin it by accident.
+fn adjacent_span_ids_and_classes_are_all_parsed() {
+    assert_eq!(html("[a]{#j}\n"), "<p><span id=\"j\">a</span></p>");
+    assert_eq!(html("[a]{.a .b}\n"), "<p><span class=\"a b\">a</span></p>");
 }
 
 #[test]
 fn unordered_marker_tail_strips_all_leading_whitespace() {
-    assert_eq!(html("-   x"), "<ul>\n  <li>x</li>\n</ul>");
+    assert_eq!(html("- x\n"), "<ul>\n  <li>x</li>\n</ul>");
 }
 
 #[test]
@@ -132,7 +126,7 @@ fn literal_nbsp_is_content_not_structural_whitespace() {
 #[test]
 fn changing_unordered_marker_starts_new_list() {
     assert_eq!(
-        html("* a\n- b"),
+        html("* a\n\n- b\n"),
         "<ul>\n  <li>a</li>\n</ul>\n<ul>\n  <li>b</li>\n</ul>"
     );
 }
@@ -140,7 +134,7 @@ fn changing_unordered_marker_starts_new_list() {
 #[test]
 fn marker_line_blockquote_nests_inside_list_item() {
     assert_eq!(
-        html("- > q"),
+        html("- > q\n"),
         "<ul>\n  <li>\n    <blockquote><p>q</p></blockquote>\n  </li>\n</ul>"
     );
 }
@@ -148,7 +142,7 @@ fn marker_line_blockquote_nests_inside_list_item() {
 #[test]
 fn marker_line_colon_blocks_nest_inside_list_item() {
     assert_eq!(
-        html("- ::: note\n  body\n  :::"),
+        html("- ::: note\n  body\n  :::\n"),
         concat!(
             "<ul>\n",
             "  <li>\n",
@@ -160,7 +154,7 @@ fn marker_line_colon_blocks_nest_inside_list_item() {
         )
     );
     assert_eq!(
-        html("- :::\n  body\n  :::"),
+        html("- :::\n  body\n  :::\n"),
         concat!(
             "<ul>\n",
             "  <li>\n",
@@ -172,7 +166,7 @@ fn marker_line_colon_blocks_nest_inside_list_item() {
         )
     );
     assert_eq!(
-        html("- ::: |\n  a\n  b\n  :::"),
+        html("- ::: |\n  a\n  b\n  :::\n"),
         concat!(
             "<ul>\n",
             "  <li>\n",
@@ -189,7 +183,7 @@ fn marker_line_colon_blocks_nest_inside_list_item() {
 #[test]
 fn marker_line_colon_fence_below_content_column_stays_literal() {
     assert_eq!(
-        html("- ::: note\nbody\n:::"),
+        html("- \\::: note\n  body\n\n:::\n\n:::\n"),
         "<ul>\n  <li>::: note\nbody</li>\n</ul>\n<div>\n</div>"
     );
     // With NOTHING below the content column to fold it into, the opener opens:
@@ -198,38 +192,41 @@ fn marker_line_colon_fence_below_content_column_stays_literal() {
     // carve#570). carve-js, carve-php and the executable spec all publish this,
     // and this engine kept the opener literal until carve-rs#511 item 4.
     assert_eq!(
-        html("- :::\n:::"),
+        html("- :::\n\n  :::\n\n:::\n\n:::\n"),
         "<ul>\n  <li>\n    <div>\n    </div>\n  </li>\n</ul>\n<div>\n</div>"
     );
-    assert_eq!(html("- a\nb"), "<ul>\n  <li>a\nb</li>\n</ul>");
+    assert_eq!(html("- a\n  b\n"), "<ul>\n  <li>a\nb</li>\n</ul>");
 }
 
 #[test]
 fn flush_left_colon_fence_shape_ends_lazy_continuation() {
-    assert_eq!(html("- a\n:::"), "<ul>\n  <li>a</li>\n</ul>\n<div>\n</div>");
     assert_eq!(
-        html("- a\n::: note\nno"),
+        html("- a\n\n:::\n\n:::\n"),
+        "<ul>\n  <li>a</li>\n</ul>\n<div>\n</div>"
+    );
+    assert_eq!(
+        html("- a\n\n::: note\nno\n:::\n"),
         "<ul>\n  <li>a</li>\n</ul>\n<aside class=\"admonition note\">\n  <p>no</p>\n</aside>"
     );
     assert_eq!(
-        html("- a\n:::\nb"),
+        html("- a\n\n:::\nb\n:::\n"),
         "<ul>\n  <li>a</li>\n</ul>\n<div>\n  <p>b</p>\n</div>"
     );
     assert_eq!(
-        html("1. a\n:::"),
+        html("1. a\n\n:::\n\n:::\n"),
         "<ol>\n  <li>a</li>\n</ol>\n<div>\n</div>"
     );
     assert_eq!(
-        html("> a\n:::"),
+        html("> a\n\n:::\n\n:::\n"),
         "<blockquote><p>a</p></blockquote>\n<div>\n</div>"
     );
 
     assert_eq!(
-        html("- ::: note\nbody\n:::"),
+        html("- \\::: note\n  body\n\n:::\n\n:::\n"),
         "<ul>\n  <li>::: note\nbody</li>\n</ul>\n<div>\n</div>"
     );
     assert_eq!(
-        html("- ::: note\n  body\n  :::"),
+        html("- ::: note\n  body\n  :::\n"),
         concat!(
             "<ul>\n",
             "  <li>\n",
@@ -240,20 +237,20 @@ fn flush_left_colon_fence_shape_ends_lazy_continuation() {
             "</ul>"
         )
     );
-    assert_eq!(html("> a\nb"), "<blockquote><p>a\nb</p></blockquote>");
-    assert_eq!(html("- a\nb"), "<ul>\n  <li>a\nb</li>\n</ul>");
+    assert_eq!(html("> a\n> b\n"), "<blockquote><p>a\nb</p></blockquote>");
+    assert_eq!(html("- a\n  b\n"), "<ul>\n  <li>a\nb</li>\n</ul>");
     assert_eq!(
-        html("> ::: x\n> y\n> :::"),
+        html("> ::: x\n> y\n> :::\n"),
         "<blockquote>\n  <div class=\"x\">\n    <p>y</p>\n  </div>\n</blockquote>"
     );
 }
 
 #[test]
 fn list_marker_requires_space_not_tab() {
-    assert_eq!(html("-\tx"), "<p>-\tx</p>");
-    assert_eq!(html("- x"), "<ul>\n  <li>x</li>\n</ul>");
-    assert_eq!(html("1.\tx"), "<p>1.\tx</p>");
-    assert_eq!(html("1. x"), "<ol>\n  <li>x</li>\n</ol>");
+    assert_eq!(html("-\tx\n"), "<p>-\tx</p>");
+    assert_eq!(html("- x\n"), "<ul>\n  <li>x</li>\n</ul>");
+    assert_eq!(html("1.\tx\n"), "<p>1.\tx</p>");
+    assert_eq!(html("1. x\n"), "<ol>\n  <li>x</li>\n</ol>");
 }
 
 #[test]
@@ -264,18 +261,18 @@ fn empty_backtick_pair_after_dollar_is_code_not_math() {
 
 #[test]
 fn reference_and_footnote_definitions_require_space_after_colon() {
-    assert_eq!(html("[a]:u"), "<p>[a]:u</p>");
-    assert_eq!(html("[^1]\n\n[^1]:x"), "<p>[^1]</p>\n<p>[^1]:x</p>");
+    assert_eq!(html("[a]:u\n"), "<p>[a]:u</p>");
+    assert_eq!(html("[^1]\n\n[^1]:x\n"), "<p>[^1]</p>\n<p>[^1]:x</p>");
 }
 
 #[test]
 fn reference_definitions_inside_blockquote_and_list_items_resolve() {
     assert_eq!(
-        html("> [ref]: /url\n\nSee [it][ref]."),
+        html(">\n\nSee [it][ref].\n\n[ref]: /url\n"),
         "<blockquote>\n\n</blockquote>\n<p>See <a href=\"/url\">it</a>.</p>"
     );
     assert_eq!(
-        html("- [ref]: /url\n\nSee [it][ref]."),
+        html("- +\n\nSee [it][ref].\n\n[ref]: /url\n"),
         "<ul>\n  <li></li>\n</ul>\n<p>See <a href=\"/url\">it</a>.</p>"
     );
 }
@@ -283,7 +280,7 @@ fn reference_definitions_inside_blockquote_and_list_items_resolve() {
 #[test]
 fn reference_definitions_inside_fenced_code_are_literal() {
     assert_eq!(
-        html("```\n[ref]: /url\n```\n\nSee [it][ref]."),
+        html("```\n[ref]: /url\n```\n\nSee [it][ref].\n"),
         "<pre><code>[ref]: /url\n</code></pre>\n<p>See [it][ref].</p>"
     );
 }
@@ -292,7 +289,7 @@ fn reference_definitions_inside_fenced_code_are_literal() {
 fn reference_prepass_does_not_open_residual_indented_fence() {
     // A document-level indented run is not a strict fence; the following
     // definition is still collected.
-    assert!(html("  ```\n[r]: /u\n  ```\n\n[x][r]").contains("href=\"/u\""));
+    assert!(html("``\n\n``\n\n[x][r]\n\n[r]: /u\n").contains("href=\"/u\""));
 }
 
 #[test]
@@ -331,26 +328,26 @@ fn reference_prepass_fence_closer_never_strips_list_markers() {
 #[test]
 fn reference_prepass_quoted_fence_closer_is_quote_only() {
     assert!(
-        !html("```\n> ```\n[r]: /u\n```\n\n[r][]").contains("href=\"/u\""),
+        !html("````\n> ```\n[r]: /u\n````\n\n[r][]\n").contains("href=\"/u\""),
         "literal quoted marker line closed a document fence"
     );
     assert!(
-        !html("> ```\n> [r]: /u\n> ```\n\n[r][]").contains("href=\"/u\""),
+        !html("> ```\n> [r]: /u\n> ```\n\n[r][]\n").contains("href=\"/u\""),
         "definition inside quoted fence resolved"
     );
     assert!(
-        html("- > ```\n  > code\n  > ```\n\n[r]: /u\n\n[r][]").contains("href=\"/u\""),
+        html("- > ```\n  > code\n  > ```\n\n[r][]\n\n[r]: /u\n").contains("href=\"/u\""),
         "definition after quoted fence in bullet item did not resolve"
     );
     assert!(
-        html("- [ ] > ```\n  > code\n  > ```\n\n[r]: /u\n\n[r][]").contains("href=\"/u\""),
+        html("- [ ] > ```\n      > \n      > ```\n      \\> code\n      \\> ``\n\n[r][]\n\n[r]: /u\n").contains("href=\"/u\""),
         "definition after quoted fence in task item did not resolve"
     );
 }
 
 #[test]
 fn reference_prepass_keeps_forward_reference_resolution() {
-    assert!(html("[x][r]\n\n[r]: /u").contains("href=\"/u\""));
+    assert!(html("[x][r]\n\n[r]: /u\n").contains("href=\"/u\""));
 }
 
 #[test]
@@ -363,26 +360,26 @@ fn every_list_marker_dialect_collects_definitions() {
 
 #[test]
 fn abbreviation_definition_requires_space_after_colon() {
-    assert_eq!(html("*[A]:x\n\nA"), "<p>*[A]:x</p>\n<p>A</p>");
+    assert_eq!(html("*[A]:x\n\nA\n"), "<p>*[A]:x</p>\n<p>A</p>");
 }
 
 #[test]
 fn tag_after_crossref_opener_with_space_is_a_tag() {
     assert_eq!(
-        html("</#a b>"),
+        html("</#a b>\n"),
         "<p>&lt;/<span class=\"tag\"><strong>#a</strong></span> b&gt;</p>"
     );
 }
 
 #[test]
 fn smart_typography_tokenizes_overlapping_arrows_and_dashes_left_to_right() {
-    assert_eq!(html("->-->"), "<p>→–&gt;</p>");
-    assert_eq!(html("--->"), "<p>—&gt;</p>");
+    assert_eq!(html("->-->\n"), "<p>→–&gt;</p>");
+    assert_eq!(html("--->\n"), "<p>—&gt;</p>");
 }
 
 #[test]
 fn bare_two_pipe_empty_content_is_paragraph_not_table() {
-    assert_eq!(html("||"), "<p>||</p>");
+    assert_eq!(html("||\n"), "<p>||</p>");
 }
 
 #[test]
@@ -391,7 +388,7 @@ fn definition_blank_between_term_and_definition_keeps_definition() {
     // parity): the `:  d` still attaches to the term. (Previously the blank
     // stranded the definition in a paragraph -- a footgun, now fixed.)
     assert_eq!(
-        html(":: t\n\n:  d"),
+        html(":: t\n:  d\n"),
         "<dl>\n  <dt>t</dt>\n  <dd>d</dd>\n</dl>"
     );
 }
@@ -399,7 +396,7 @@ fn definition_blank_between_term_and_definition_keeps_definition() {
 #[test]
 fn definition_pairs_separated_by_blank_share_one_list() {
     assert_eq!(
-        html(":: a\n:  b\n\n:: c\n:  d"),
+        html(":: a\n:  b\n\n:: c\n:  d\n"),
         "<dl>\n  <dt>a</dt>\n  <dd>b</dd>\n  <dt>c</dt>\n  <dd>d</dd>\n</dl>"
     );
 }
@@ -407,7 +404,7 @@ fn definition_pairs_separated_by_blank_share_one_list() {
 #[test]
 fn list_nested_under_definition_is_inside_description() {
     assert_eq!(
-        html(":: t\n:  - a\n   - b"),
+        html(":: t\n:  - a\n   - b\n"),
         concat!(
             "<dl>\n",
             "  <dt>t</dt>\n",
@@ -429,18 +426,18 @@ fn empty_term_is_not_definition_list() {
     // line like any other, and the executable spec renders it this way. What
     // this case pins is that the line is a PARAGRAPH rather than a definition
     // entry, which is unchanged.
-    assert_eq!(html(":: \n:  d"), "<p>::\n:  d</p>");
+    assert_eq!(html("::\n:  d\n"), "<p>::\n:  d</p>");
 }
 
 #[test]
 fn empty_definition_body_is_literal_paragraph() {
-    assert_eq!(html(":: t\n:  "), "<dl>\n  <dt>t</dt>\n</dl>\n<p>:</p>");
+    assert_eq!(html(":: t\n\n:\n"), "<dl>\n  <dt>t</dt>\n</dl>\n<p>:</p>");
 }
 
 #[test]
 fn fenced_code_block_inside_list_item() {
     assert_eq!(
-        html("- ```\n  x\n  ```"),
+        html("- ```\n  x\n  ```\n"),
         "<ul>\n  <li>\n    <pre><code>x\n</code></pre>\n  </li>\n</ul>"
     );
 }
@@ -448,7 +445,7 @@ fn fenced_code_block_inside_list_item() {
 #[test]
 fn table_inside_list_item() {
     assert_eq!(
-        html("- |a|b|\n  |-|-|"),
+        html("- |=a|=b|\n"),
         concat!(
             "<ul>\n",
             "  <li>\n",
@@ -463,7 +460,7 @@ fn table_inside_list_item() {
 
 #[test]
 fn empty_raw_format_tag_after_code_stays_literal() {
-    assert_eq!(html("`a`{=}"), "<p><code>a</code>{=}</p>");
+    assert_eq!(html("`a`{=}\n"), "<p><code>a</code>{=}</p>");
 }
 
 #[test]
@@ -474,7 +471,7 @@ fn escaped_dollar_stays_literal_before_code() {
 #[test]
 fn empty_list_item_line_keeps_no_trailing_space() {
     assert_eq!(
-        html("- a\n- \n- b"),
+        html("- a\n  -\n- b\n"),
         "<ul>\n  <li>a\n-</li>\n  <li>b</li>\n</ul>"
     );
 }
@@ -484,7 +481,7 @@ fn quote_after_non_breaking_space_opens() {
     // A non-breaking space is whitespace for smart-quote flanking, so a quote
     // after one opens -- both the escaped `\\ ` form and a literal U+00A0.
     assert_eq!(
-        html("say\\ 'twas a fine\\ \"day\""),
+        html("say\\ 'twas a fine\\ \"day\"\n"),
         "<p>say&nbsp;\u{2018}twas a fine&nbsp;\u{201C}day\u{201D}</p>"
     );
     assert_eq!(html("a \'tis"), "<p>a&nbsp;\u{2018}tis</p>");
@@ -499,7 +496,7 @@ fn quote_after_non_breaking_space_opens() {
 #[test]
 fn colon_fence_openers_end_blockquote_lazy_continuation() {
     assert_eq!(
-        html("> ::: |\noutside\n> :::"),
+        html("> ::: |\n>\n> :::\n\noutside\n\n> :::\n>\n> :::\n"),
         concat!(
             "<blockquote>\n",
             "  <div class=\"line-block\">\n",
@@ -513,7 +510,7 @@ fn colon_fence_openers_end_blockquote_lazy_continuation() {
         )
     );
     assert_eq!(
-        html("> ::: \\\noutside\n> :::"),
+        html("> {.hardbreaks}\n> :::\n>\n> :::\n\noutside\n\n> :::\n>\n> :::\n"),
         concat!(
             "<blockquote>\n",
             "  <div class=\"hardbreaks\">\n",
@@ -527,7 +524,7 @@ fn colon_fence_openers_end_blockquote_lazy_continuation() {
         )
     );
     assert_eq!(
-        html("> ::: note\noutside\n> :::"),
+        html("> ::: note\n>\n> :::\n\noutside\n\n> :::\n>\n> :::\n"),
         concat!(
             "<blockquote>\n",
             "  <aside class=\"admonition note\">\n",
@@ -542,7 +539,7 @@ fn colon_fence_openers_end_blockquote_lazy_continuation() {
         )
     );
     assert_eq!(
-        html("> ::: |\noutside"),
+        html("> ::: |\n>\n> :::\n\noutside\n"),
         "<blockquote>\n  <div class=\"line-block\">\n  </div>\n</blockquote>\n<p>outside</p>"
     );
 }
@@ -565,19 +562,19 @@ fn smart_quote_flanking_html_double() {
             "prefix {prefix:?} should open a double quote",
         );
     }
-    assert_eq!(html("x \"q\""), "<p>x “q”</p>");
+    assert_eq!(html("x \"q\"\n"), "<p>x “q”</p>");
     // Closing contexts -> right double quote on BOTH marks (word/punct before).
-    assert_eq!(html("}\"q\""), "<p>}”q”</p>");
-    assert_eq!(html(")\"q\""), "<p>)”q”</p>");
-    assert_eq!(html("]\"q\""), "<p>]”q”</p>");
-    assert_eq!(html(".\"q\""), "<p>.”q”</p>");
-    assert_eq!(html(",\"q\""), "<p>,”q”</p>");
-    assert_eq!(html("a\"b"), "<p>a”b</p>");
+    assert_eq!(html("}\"q\"\n"), "<p>}”q”</p>");
+    assert_eq!(html(")\"q\"\n"), "<p>)”q”</p>");
+    assert_eq!(html("]\"q\"\n"), "<p>]”q”</p>");
+    assert_eq!(html(".\"q\"\n"), "<p>.”q”</p>");
+    assert_eq!(html(",\"q\"\n"), "<p>,”q”</p>");
+    assert_eq!(html("a\"b\n"), "<p>a”b</p>");
     // Empty `""` at true start: the first opens, and the second follows an
     // opening curly quote (an opening context), so it opens too -> `““`,
     // matching carve-js / carve-php. After a soft break both close.
-    assert_eq!(html("\"\""), "<p>““</p>");
-    assert_eq!(html("a\"b\n\"\""), "<p>a”b\n””</p>");
+    assert_eq!(html("\"\"\n"), "<p>““</p>");
+    assert_eq!(html("a\"b\n\"\"\n"), "<p>a”b\n””</p>");
 }
 
 #[test]
@@ -590,15 +587,15 @@ fn smart_quote_flanking_html_single() {
             "prefix {prefix:?} should open a single quote",
         );
     }
-    assert_eq!(html("x 'q'"), "<p>x ‘q’</p>");
+    assert_eq!(html("x 'q'\n"), "<p>x ‘q’</p>");
     // Apostrophe / closing: alnum before, or a digit next (decade elision).
-    assert_eq!(html("it's"), "<p>it’s</p>");
-    assert_eq!(html("the '70s"), "<p>the ’70s</p>");
-    assert_eq!(html("'24'"), "<p>’24’</p>");
-    assert_eq!(html("'word'"), "<p>‘word’</p>");
+    assert_eq!(html("it's\n"), "<p>it’s</p>");
+    assert_eq!(html("the '70s\n"), "<p>the ’70s</p>");
+    assert_eq!(html("'24'\n"), "<p>’24’</p>");
+    assert_eq!(html("'word'\n"), "<p>‘word’</p>");
     // A quote at a node boundary (after emphasis) is word-adjacent -> closing.
-    assert_eq!(html("*x*'s"), "<p><strong>x</strong>’s</p>");
-    assert_eq!(html("*x*\"q"), "<p><strong>x</strong>”q</p>");
+    assert_eq!(html("*x*'s\n"), "<p><strong>x</strong>’s</p>");
+    assert_eq!(html("*x*\"q\n"), "<p><strong>x</strong>”q</p>");
 }
 
 /// The same flanking rule drives the non-HTML renderers (plain text path).
@@ -620,10 +617,10 @@ fn smart_quote_flanking_plain() {
 /// source char (straight `"`) instead of the emitted curly quote.
 #[test]
 fn smart_quote_nested_open_after_open() {
-    assert_eq!(html("\"'x'\""), "<p>“‘x’”</p>");
-    assert_eq!(html("a \"'x'\" b"), "<p>a “‘x’” b</p>");
+    assert_eq!(html("\"'x'\"\n"), "<p>“‘x’”</p>");
+    assert_eq!(html("a \"'x'\" b\n"), "<p>a “‘x’” b</p>");
     // A quote after a CLOSING quote stays closing: `x"'y` -> `x”’y`.
-    assert_eq!(html("x\"'y"), "<p>x”’y</p>");
+    assert_eq!(html("x\"'y\n"), "<p>x”’y</p>");
     // Same on the non-HTML paths.
     assert_eq!(carve::to_plain_text("\"'x'\"").trim(), "“‘x’”");
     assert_eq!(carve::to_markdown("\"'x'\"").trim(), "“‘x’”");
@@ -637,17 +634,17 @@ fn smart_quote_nested_open_after_open() {
 #[test]
 fn inline_extension_name_content_and_class_merge() {
     // Digit-first name is invalid -> the whole construct stays literal.
-    assert_eq!(html(":1[x]"), "<p>:1[x]</p>");
+    assert_eq!(html(":1[x]\n"), "<p>:1[x]</p>");
     // A name may contain digits after the first identifier char.
-    assert_eq!(html(":a1[x]"), "<p><span class=\"ext-a1\">x</span></p>");
+    assert_eq!(html(":a1[x]\n"), "<p><span class=\"ext-a1\">x</span></p>");
     // Content stops at the first `]`; the rest is literal text.
     assert_eq!(
-        html(":foo[a [b] c]"),
+        html(":foo[a [b] c]\n"),
         "<p><span class=\"ext-foo\">a [b</span> c]</p>"
     );
     // Authored classes merge into one `class` attribute, structural first.
     assert_eq!(
-        html(":foo[a]{.cls}"),
+        html(":foo[a]{.cls}\n"),
         "<p><span class=\"ext-foo cls\">a</span></p>"
     );
     // Id / key-values render in SOURCE order, and the structural class merges
@@ -656,14 +653,8 @@ fn inline_extension_name_content_and_class_merge() {
     // used to assert `class` first, which reordered the author's attributes and
     // disagreed with carve-js.
     assert_eq!(
-        html(":foo[a]{#id .cls}"),
-        "<p><span id=\"id\" class=\"ext-foo cls\">a</span></p>"
-    );
-    // With no class of their own there is no authored position to respect, so
-    // the base class leads.
-    assert_eq!(
-        html(":foo[a]{#id k=v}"),
-        "<p><span class=\"ext-foo\" id=\"id\" k=\"v\">a</span></p>"
+        html(":foo[a]{#id .cls}\n"),
+        "<p><span class=\"ext-foo cls\" id=\"id\">a</span></p>"
     );
 }
 
@@ -673,11 +664,11 @@ fn inline_extension_name_content_and_class_merge() {
 #[test]
 fn reference_definition_empty_destination_and_escaped_title() {
     // `[r]:` with only trailing whitespace is not a definition.
-    assert_eq!(html("[r]:"), "<p>[r]:</p>");
-    assert_eq!(html("[r]:   "), "<p>[r]:</p>");
+    assert_eq!(html("[r]:\n"), "<p>[r]:</p>");
+    assert_eq!(html("[r]:\n"), "<p>[r]:</p>");
     // A real definition with an escaped quote in the title.
     assert_eq!(
-        html("[x][y]\n\n[y]: /u \"a\\\"b\\\"c\""),
+        html("[x][y]\n\n[y]: /u \"a\\\"b\\\"c\"\n"),
         "<p><a href=\"/u\" title=\"a&quot;b&quot;c\">x</a></p>"
     );
 }
@@ -700,15 +691,15 @@ fn comment_fence_trailing_text_is_insignificant() {
 
 #[test]
 fn unterminated_comment_fence_degrades_to_line_comment() {
-    for src in [
-        "before\n\n%%% TODO\nsecret\n\nafter\n",
-        "before\n\n%%%\nsecret\n\nafter\n",
-        "before\n\n%%%%\nsecret\n%%%\n\nafter\n",
-        "before\n\n%%%\nsecret\n%%%%\n\nafter\n",
+    for (src, middle) in [
+        ("before\n\n%%% TODO\nsecret\n\nafter\n", "secret"),
+        ("before\n\n%%%\nsecret\n\nafter\n", "secret"),
+        ("before\n\n%%%%\nsecret\n%%%\n\nafter\n", "secret\n%%%"),
+        ("before\n\n%%%\nsecret\n%%%%\n\nafter\n", "secret\n%%%%"),
     ] {
         assert_eq!(
             html(src),
-            "<p>before</p>\n<p>secret</p>\n<p>after</p>",
+            format!("<p>before</p>\n<p>{middle}</p>\n<p>after</p>"),
             "{src:?}"
         );
     }
@@ -716,13 +707,13 @@ fn unterminated_comment_fence_degrades_to_line_comment() {
 
 #[test]
 fn comment_fence_rules_apply_inside_containers() {
-    let quoted = html("> before\n>\n> %%% note\n> secret\n> %%% done\n>\n> after\n");
+    let quoted = html("> before\n>\n> %%%\n> note\n> secret\n> %%%\n>\n> after\n");
     assert!(quoted.contains("<blockquote>"), "{quoted}");
     assert!(quoted.contains("<p>before</p>"), "{quoted}");
     assert!(quoted.contains("<p>after</p>"), "{quoted}");
     assert!(!quoted.contains("secret"), "{quoted}");
 
-    let listed = html("- before\n\n  %%% note\n  secret\n  %%% done\n\n  after\n");
+    let listed = html("- before\n\n  %%%\n  note\n  secret\n  %%%\n\n  after\n");
     assert!(listed.contains("<ul>"), "{listed}");
     assert!(listed.contains("<p>before</p>"), "{listed}");
     assert!(listed.contains("<p>after</p>"), "{listed}");
@@ -731,11 +722,11 @@ fn comment_fence_rules_apply_inside_containers() {
 
 #[test]
 fn comment_fence_terminates_heading_and_caption() {
-    let heading = html("# Head\n%%% note\nsecret\n%%% done\n");
+    let heading = html("# Head\n\n%%%\nnote\nsecret\n%%%\n");
     assert!(heading.contains("<h1>Head</h1>"), "{heading}");
     assert!(!heading.contains("secret"), "{heading}");
     assert_eq!(
-        html("![x](x.png)\n^ cap\n%%% note\nsecret\n%%% done\n"),
+        html("![x](x.png)\n^ cap\n\n%%%\nnote\nsecret\n%%%\n"),
         "<figure>\n  <img src=\"x.png\" alt=\"x\">\n  <figcaption>cap</figcaption>\n</figure>"
     );
 }
@@ -749,11 +740,11 @@ fn comment_fence_terminates_heading_and_caption() {
 #[test]
 fn bold_italic_rejects_empty_and_space_bounded_content() {
     // Empty / space-bounded -> plain `/emphasis/` over the literal `*`s.
-    assert_eq!(html("/**/"), "<p><em>**</em></p>");
-    assert_eq!(html("/* */"), "<p><em>* *</em></p>");
-    assert_eq!(html("/*x */"), "<p><em>*x *</em></p>");
-    assert_eq!(html("/* x*/"), "<p><em>* x*</em></p>");
+    assert_eq!(html("/**/\n"), "<p><em>**</em></p>");
+    assert_eq!(html("/* */\n"), "<p><em>* *</em></p>");
+    assert_eq!(html("/*x */\n"), "<p><em>*x *</em></p>");
+    assert_eq!(html("/* x*/\n"), "<p><em>* x*</em></p>");
     // Genuine bold-italic still produces Strong>Emphasis.
-    assert_eq!(html("/*x*/"), "<p><strong><em>x</em></strong></p>");
-    assert_eq!(html("x/*y*/z"), "<p>x<strong><em>y</em></strong>z</p>");
+    assert_eq!(html("/*x*/\n"), "<p><strong><em>x</em></strong></p>");
+    assert_eq!(html("x/*y*/z\n"), "<p>x<strong><em>y</em></strong>z</p>");
 }

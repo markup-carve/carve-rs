@@ -15,7 +15,7 @@
 #[test]
 fn a_lazy_line_continues_a_nested_quote() {
     assert_eq!(
-        carve::to_html("> a\n> > b\nc\n"),
+        carve::to_html("> a\n>\n> > b\n> > c\n"),
         "<blockquote>\n  <p>a</p>\n  <blockquote><p>b\nc</p></blockquote>\n</blockquote>"
     );
 }
@@ -23,7 +23,7 @@ fn a_lazy_line_continues_a_nested_quote() {
 #[test]
 fn the_unspaced_spelling_stays_literal() {
     assert_eq!(
-        carve::to_html("> a\n>> b\nc\n"),
+        carve::to_html("> a\n> >> b\n> c\n"),
         "<blockquote><p>a\n&gt;&gt; b\nc</p></blockquote>"
     );
 }
@@ -33,14 +33,14 @@ fn depth_one_is_unchanged() {
     // The behavior this fix generalises from. Pinned so a change to the nested
     // path cannot quietly take the simple case with it.
     assert_eq!(
-        carve::to_html("> a\nb\n"),
+        carve::to_html("> a\n> b\n"),
         "<blockquote><p>a\nb</p></blockquote>"
     );
 }
 
 #[test]
 fn three_levels_fold_into_the_innermost() {
-    let html = carve::to_html("> a\n> > b\n> > > c\nd\n");
+    let html = carve::to_html("> a\n>\n> > b\n> >\n> > > c\n> > > d\n");
     assert!(
         html.contains("c\nd"),
         "the lazy line should join the innermost paragraph, got: {html}"
@@ -51,7 +51,7 @@ fn three_levels_fold_into_the_innermost() {
 fn a_block_opener_still_ends_the_quote() {
     // Laziness folds PLAIN text. A visible opener after a nested quote closes
     // it and starts that block outside, exactly as at depth 1.
-    let html = carve::to_html("> a\n> > b\n# H\n");
+    let html = carve::to_html("> a\n>\n> > b\n\n# H\n");
     assert!(
         html.contains("</blockquote>") && html.contains("<h1"),
         "a heading must end the quote, got: {html}"
@@ -64,7 +64,7 @@ fn a_block_opener_still_ends_the_quote() {
 
 #[test]
 fn a_blank_line_still_ends_the_quote() {
-    let html = carve::to_html("> a\n> > b\n\nc\n");
+    let html = carve::to_html("> a\n>\n> > b\n\nc\n");
     assert!(
         html.contains("<p>c</p>") && !html.contains("b\nc"),
         "a blank line ends the quote, got: {html}"
@@ -76,7 +76,7 @@ fn a_nested_container_opener_still_closes_the_paragraph() {
     // `> ::: note` is a nested quote whose CONTENT is a container opener, so
     // the paragraph does not stay open and the following bare line does not
     // fold. The fix looks through blockquote markers, not through everything.
-    let html = carve::to_html("> a\n> ::: note\n> body\n> :::\nc\n");
+    let html = carve::to_html("> a\n>\n> ::: note\n> body\n> :::\n\nc\n");
     assert!(
         !html.contains("body\nc"),
         "an admonition body must not absorb the lazy line, got: {html}"

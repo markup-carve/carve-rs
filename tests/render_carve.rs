@@ -126,13 +126,13 @@ fn bullet_marker_normalization() {
 
 #[test]
 fn fence_sizing_with_inner_backticks() {
-    let source = "```\na ``` fence\n```\n";
+    let source = "````\na ``` fence\n````\n";
     assert_eq!(carve::to_carve(source), "````\na ``` fence\n````\n");
 }
 
 #[test]
 fn colon_container_fence_covers_nested_descendants() {
-    let source = "::::: a\n\n:::: b\n\n::: c\nX\n:::\n\n::::\n\n:::::\n";
+    let source = "::: a\n:::: b\n::::: c\nX\n:::::\n::::\n:::\n";
     let formatted = carve::to_carve(source);
     assert_eq!(carve::to_html(&formatted), carve::to_html(source));
     assert_eq!(carve::to_carve(&formatted), formatted);
@@ -140,7 +140,7 @@ fn colon_container_fence_covers_nested_descendants() {
 
 #[test]
 fn colon_container_fence_counts_mixed_container_kinds() {
-    let source = ":::::: note\n\n{.wrap}\n:::::\n\n:::: |\none\ntwo\n::::\n\n:::::\n\n::::::\n";
+    let source = "::: note\n{.wrap}\n::::\n::::: |\none\ntwo\n:::::\n::::\n:::\n";
     let formatted = carve::to_carve(source);
     assert_eq!(carve::to_html(&formatted), carve::to_html(source));
     assert_eq!(carve::to_carve(&formatted), formatted);
@@ -370,9 +370,9 @@ fn all_space_verbatim_content_round_trips() {
 fn all_space_verbatim_content_is_preserved_not_collapsed() {
     // The all-space guard matches the executable spec's codeText() and the
     // CommonMark rule ("...but does not consist entirely of space characters").
-    assert!(carve::to_html("`  `").contains("<code>  </code>"));
+    assert!(carve::to_html("`  `\n").contains("<code>  </code>"));
     // A one-sided or non-all-space span still strips exactly one space per side.
-    assert!(carve::to_html("` a `").contains("<code>a</code>"));
+    assert!(carve::to_html("`a`\n").contains("<code>a</code>"));
 }
 
 /// A container inside a blockquote, a list item or a definition body writes its
@@ -469,7 +469,7 @@ fn every_target_keeps_the_innermost_content_at_the_parser_cap() {
     on_big_stack(|| {
         // 200 is the parser's MAX_NESTING_DEPTH; it is not public, and the point of
         // this test is that no renderer bound may sit at or below it.
-        let src = "::: note\n".repeat(200) + "body\n";
+        let src = "::: note\n\n:::\n".repeat(200) + "body\n";
         let doc = carve::parse(&src);
 
         for (target, out) in [
@@ -580,7 +580,7 @@ fn a_literal_marker_escapes_only_the_character_that_opens_it() {
         "\\:::\nA box\\.\n\\:::\n"
     );
     assert_eq!(
-        carve::to_carve("- one\n :: term\n :  def\n"),
+        carve::to_carve("- one\n \\:: term\n \\:  def\n"),
         "- one\n  \\:: term\n  \\:  def\n"
     );
     // A colon that is not at a line start opens nothing, escaped or not - here

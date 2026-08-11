@@ -125,7 +125,7 @@ fn a_unicode_space_does_not_pad_the_format_slot_either() {
 fn the_lines_under_a_rejected_opener_are_ordinary_blocks() {
     // What the production says happens instead, rather than only what does not:
     // the metadata line is prose and the closing `---` is a thematic break.
-    let out = carve::to_html("---\tyaml\na: 1\n---\nx\n");
+    let out = carve::to_html("---\tyaml\na: 1\n\n---\n\nx\n");
     assert!(out.contains("a: 1"), "the metadata line vanished: {out}");
     assert!(out.contains("<hr>"), "no thematic break: {out}");
 }

@@ -870,6 +870,20 @@ impl ContentColumns {
             .expect("the document frame is never popped")
     }
 
+    fn current_mut(&mut self) -> &mut Vec<usize> {
+        self.frames
+            .last_mut()
+            .expect("the document frame is never popped")
+            .cols
+    }
+
+    fn has_open_item(&self) -> bool {
+        !self.current().cols.is_empty()
+    }
+
+    fn current_content_col(&self) -> usize {
+        self.current().cols.last().copied().unwrap_or(0)
+    }
     /// The content column of the open item a line at `indent` actually reaches:
     /// the deepest one at or below it, or 0 when it reaches none.
     ///
@@ -988,8 +1002,28 @@ fn extract_footnote_defs(
     // like a definition, and was neither collected nor rendered - the author's
     // line disappeared and a reference to it stayed literal (carve-rs#568).
     let mut columns = ContentColumns::new();
+    let mut paragraph_open = false;
     let mut i = 0;
     while i < lines.len() {
+        let structural_blank = prepass_structural_blank(lines[i]);
+        let structural_list_boundary =
+            columns.has_open_item() && detect_list_marker_full(lines[i]).is_some();
+        let structural_continuation = columns.has_open_item()
+            && is_plus_marker(lines[i])
+            && leading_ws(lines[i]) < columns.current_content_col();
+        if paragraph_open
+            && !structural_blank
+            && !structural_list_boundary
+            && !structural_continuation
+        {
+            body.push(lines[i].to_string());
+            body_line_map.push(Some(first_source_line + i));
+            i += 1;
+            continue;
+        }
+        if structural_blank || structural_list_boundary || structural_continuation {
+            paragraph_open = false;
+        }
         // A footnote definition is collected at the top level AND from inside a
         // blockquote / bullet-list container: `> [^a]: body` and `- [^a]: body`
         // both stash the def and leave the container empty, matching carve-js
@@ -1290,6 +1324,7 @@ fn extract_footnote_defs(
                         } else if let Some(open) = detect_fence_open(trimmed) {
                             note_fence = Some(open);
                         } else if let Some((label_part, target_part)) = parse_link_def_line(trimmed)
+                            .filter(|_| def_lines.last().is_some_and(|line| is_blank_line(line)))
                         {
                             // A LINK DEFINITION inside the body is
                             // document-level metadata like any other, so it is
@@ -1405,6 +1440,9 @@ fn extract_footnote_defs(
         } else {
             body.push(lines[i].to_string());
             body_line_map.push(Some(first_source_line + i));
+            if prepass_opens_paragraph(stripped.bare) {
+                paragraph_open = true;
+            }
             i += 1;
         }
     }
@@ -1765,6 +1803,8 @@ fn extract_link_defs_with_guard(
     // still produce a spurious link, not content loss; the sound fix is
     // collecting definitions during block parsing.
     let mut columns = ContentColumns::new();
+    let mut paragraph_open = false;
+    let mut in_definition_body = false;
     // Collected so an unterminated `%%%` can be told from a real fenced comment
     // before the state is entered - see comment_fence_closes.
     let all_lines: Vec<&str> = source.lines().collect();
@@ -1811,6 +1851,37 @@ fn extract_link_defs_with_guard(
         }
     }
     for (line_index, line) in all_lines.iter().copied().enumerate() {
+        let structural_blank = prepass_structural_blank(line);
+        let structural_list_boundary =
+            columns.has_open_item() && detect_list_marker_full(line).is_some();
+        let structural_continuation = columns.has_open_item()
+            && is_plus_marker(line)
+            && leading_ws(line) < columns.current_content_col();
+        let structural_description = line.starts_with(":  ");
+        if line.starts_with(":  ") {
+            in_definition_body = true;
+        } else if structural_blank || line.starts_with(":: ") {
+            in_definition_body = false;
+        }
+        let definition_body_boundary = in_definition_body && parse_link_def_line(line).is_some();
+        if paragraph_open
+            && !structural_blank
+            && !structural_list_boundary
+            && !structural_continuation
+            && !structural_description
+            && !definition_body_boundary
+        {
+            body.push(line.to_string());
+            continue;
+        }
+        if structural_blank
+            || structural_list_boundary
+            || structural_continuation
+            || structural_description
+            || definition_body_boundary
+        {
+            paragraph_open = false;
+        }
         // Verse text is opaque: a line-block body line like `- verse` is not a
         // list marker, and letting it push a content column left the NEXT
         // top-level opener unprotected. A COMMENT body is opaque the same way,
@@ -2024,6 +2095,10 @@ fn extract_link_defs_with_guard(
             // and the SOURCE order of the hoisted definitions both come from here.
             def.line = Some(line_index);
             defs.insert(label_part.to_string(), def);
+            if definition_body_boundary {
+                body.push(String::new());
+                continue;
+            }
             // Leave a blank line in place of the (invisible) definition so it
             // still acts as a block boundary (matches carve-js, where a
             // definition interrupts a paragraph / ends a lazy blockquote).
@@ -2070,9 +2145,38 @@ fn extract_link_defs_with_guard(
             body.push(std::borrow::Cow::Owned(replacement));
         } else {
             body.push(std::borrow::Cow::Borrowed(line));
+            if prepass_opens_paragraph(stripped.bare) {
+                paragraph_open = true;
+            }
         }
     }
     (joined_source(&body), defs)
+}
+
+fn prepass_opens_paragraph(line: &str) -> bool {
+    let line = trim_ascii_start(line);
+    !line.is_empty()
+        && !is_plus_marker(line)
+        && parse_link_def_line(line).is_none()
+        && parse_footnote_def_line(line).is_none()
+        && detect_abbreviation_def(line).is_none()
+        && parse_standalone_attrs(line).is_none()
+        && !is_heading_marker_line(line)
+        && !detect_thematic_break(line)
+        && detect_fence_open(line).is_none()
+        && detect_comment_fence_line(line).is_none()
+        && !line.starts_with("%%")
+        && !line.starts_with('|')
+        && !line.starts_with(":: ")
+        && !line.starts_with("::: ")
+        && line != ":::"
+}
+
+fn prepass_structural_blank(mut line: &str) -> bool {
+    while let Some(rest) = strip_prepass_blockquote_prefix(line) {
+        line = rest;
+    }
+    is_blank_line(line)
 }
 
 fn prepass_line_is_quoted(line: &str) -> bool {
@@ -6361,6 +6465,7 @@ fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     // meeting a line that could CLOSE an attribute block has proved the same for
     // every line it passed - see `quoted_attrs_block_len`.
     let mut attrs_scan_floor: usize = 0;
+    let mut colon_fences: Vec<usize> = Vec::new();
     while let Some(line) = cur.peek() {
         if let Some(stripped) = strip_blockquote_prefix(line) {
             let source_line = cur.source_line(cur.pos);
@@ -6369,6 +6474,17 @@ fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             // The quote marker (and its optional space) is a pure prefix, so the
             // quoted line's columns are knowable in the document.
             let stripped_at = stripped_col(cur.source_col(at), line, stripped);
+            let paragraph_was_open = para_open.get();
+            let mut innermost = stripped;
+            while let Some(rest) = strip_blockquote_prefix(innermost) {
+                innermost = rest;
+            }
+            let closes_colon = exact_colon_fence_len(innermost)
+                .is_some_and(|width| colon_fences.last() == Some(&width));
+            if paragraph_was_open && !is_blank_line(stripped) && !closes_colon {
+                inner.push_at(stripped.to_string(), source_line, stripped_at);
+                continue;
+            }
             if attrs_block_rest > 0 {
                 // Inside a wrapped attribute block the opener already closed the
                 // paragraph; its remaining lines close nothing further and open
@@ -6489,6 +6605,13 @@ fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 // deferred path, which is what lets markup-carve/carve-rs#738
                 // ride on the deferral instead of undoing it.
             }
+            if closes_colon {
+                colon_fences.pop();
+            } else if !paragraph_was_open {
+                if let Some(open) = detect_container_open(innermost) {
+                    colon_fences.push(open.fence_len);
+                }
+            }
             inner.push_at(stripped.to_string(), source_line, stripped_at);
             continue;
         }
@@ -6573,10 +6696,7 @@ fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         // and it already returns false for bullet/task/ordered markers, so we
         // simply defer to it. A heading is the sole construct a list marker
         // would otherwise end, and headings still interrupt via that predicate.
-        if !para_open.get() || is_blank_line(line) || caption_content(line).is_some() || {
-            let line_owned = line.to_string();
-            interrupts_lazy_continuation(cur, &line_owned)
-        } {
+        if !para_open.get() || is_blank_line(line) || caption_content(line).is_some() {
             break;
         }
         let source_line = cur.source_line(cur.pos);
@@ -8048,10 +8168,7 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 }
                 let has_lazy = if let Some(line) = cur.peek() {
                     let line = line.to_string();
-                    !is_blank_line(&line)
-                        && indent_columns(&line) == 0
-                        && !is_list_marker(&line)
-                        && !interrupts_paragraph(cur, &line)
+                    !is_blank_line(&line) && indent_columns(&line) == 0 && !is_list_marker(&line)
                 } else {
                     false
                 };
@@ -8375,8 +8492,7 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 // block opener (the residual/absent indent disqualifies it), so it
                 // never interrupts; only a genuine lazy-continuation interrupt
                 // (blank, sibling marker, ...) ends it.
-                let next_owned = next.to_string();
-                if interrupts_lazy_continuation_as_container(cur, &next_owned) {
+                if caption_content(next).is_some() {
                     break;
                 }
                 let inline_line = trim_ascii_start(next);
@@ -8394,8 +8510,7 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 // `> q` renders as literal text, and no residual indent leaks).
                 // A sibling/nesting marker above the content column was already
                 // handled above; only a genuine lazy interrupt ends the fold.
-                let next_owned = next.to_string();
-                if interrupts_lazy_continuation_as_container(cur, &next_owned) {
+                if caption_content(next).is_some() {
                     break;
                 }
                 let inline_line = trim_ascii_start(next);
@@ -8406,34 +8521,11 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 cur.consume();
                 continue;
             }
-            // AT content_column: a block opener interrupts the lead paragraph and
-            // nests as a child block; plain text dedents to the body's column 0.
+            // AT content_column, non-marker nonblank lines remain paragraph
+            // text. Nested-list markers were handled structurally above.
             let dedented = slice_columns(next, content_col, false);
-            let suppress_colon_interrupt = para_lines
-                .iter()
-                .any(|line| is_invalid_colon_fence_opener_text(line));
-            let interrupts = interrupts_paragraph_as_container(cur, &dedented)
-                && !(suppress_colon_interrupt && is_suppressed_colon_fence_line(&dedented));
-            if interrupts {
-                break;
-            }
             if let Some(anchors) = &mut anchors {
                 anchors.push(inline_anchor_for_line(cur, cur.pos, &dedented));
-            }
-            // A code-fence-shaped line with no closer is inline paragraph text
-            // (§10 I4), not an open fenced body. Do not seed the layout fence
-            // tracker when no compatible closer exists anywhere ahead: doing
-            // so closes the item before the next below-column lazy line (corpus
-            // 367). A closer outside this item still matters to the established
-            // layout rule (corpus 276), hence the broader suffix-index check.
-            let rejected_fence_has_closer = detect_fence_open(&dedented).is_some_and(|open| {
-                cur.has_code_closer_after(cur.pos + 1, open.fence_char, open.fence_len)
-            });
-            if item_open_fence.is_some()
-                || detect_fence_open(&dedented).is_none()
-                || rejected_fence_has_closer
-            {
-                track_collected_fence(&mut item_open_fence, &dedented, true);
             }
             para_lines.push(dedented);
             cur.consume();
@@ -9333,10 +9425,7 @@ fn is_flush_line_comment(line: &str) -> bool {
 fn lazy_line_pending(cur: &mut LineCursor) -> bool {
     let Some(line) = cur.peek() else { return false };
     let line = line.to_string();
-    !is_blank_line(&line)
-        && indent_columns(&line) == 0
-        && !is_list_marker(&line)
-        && !interrupts_paragraph(cur, &line)
+    !is_blank_line(&line) && indent_columns(&line) == 0 && !is_list_marker(&line)
 }
 
 /// AND NOTHING CLOSES MEANS THE CONTAINER GOES ON COLLECTING (PART 1 S4,
@@ -10041,18 +10130,8 @@ fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     // literal (strict column-0 rule).
     let at_content_column = cur.peek().is_some_and(|l| !l.starts_with([' ', '\t']));
     let mut lines: Vec<&str> = Vec::new();
-    let mut suppress_colon_interrupt = false;
     while let Some(line) = cur.peek() {
         if is_blank_line(line) {
-            break;
-        }
-        // First line is always part of the paragraph; from the second on, a
-        // visible block opener interrupts (§10).
-        let line_owned = line.to_string();
-        if !lines.is_empty()
-            && interrupts_paragraph(cur, &line_owned)
-            && !(suppress_colon_interrupt && is_suppressed_colon_fence_line(&line_owned))
-        {
             break;
         }
         cur.consume();
@@ -10082,7 +10161,6 @@ fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         // legacy `\s`) fails seven of those rows, and a plain-space fixture
         // cannot see it.
         let trimmed = trim_ascii_end(trim_ascii_start(line));
-        suppress_colon_interrupt |= is_invalid_colon_fence_opener_text(trimmed);
         lines.push(trimmed);
     }
     // A paragraph never carries its OWN trailing attribute block: a standalone
@@ -10237,25 +10315,8 @@ fn interrupts_lazy_continuation(cur: &mut LineCursor<'_>, line: &str) -> bool {
     // plain prose the item absorbs. It becomes its own top-level block, matching
     // carve-js / carve-php (carve#326). Top-level caption-to-figure attachment
     // runs in the block parser, not this lazy-continuation path.
-    interrupts_paragraph(cur, line)
-        || is_colon_fence_opener_shape(line)
-        || caption_content(line).is_some()
-}
-
-fn interrupts_paragraph_as_container(cur: &mut LineCursor<'_>, line: &str) -> bool {
-    let saved = cur.at_document_level;
-    cur.at_document_level = false;
-    let interrupts = interrupts_paragraph(cur, line);
-    cur.at_document_level = saved;
-    interrupts
-}
-
-fn interrupts_lazy_continuation_as_container(cur: &mut LineCursor<'_>, line: &str) -> bool {
-    let saved = cur.at_document_level;
-    cur.at_document_level = false;
-    let interrupts = interrupts_lazy_continuation(cur, line);
-    cur.at_document_level = saved;
-    interrupts
+    let _ = cur;
+    caption_content(line).is_some()
 }
 
 fn is_colon_fence_opener_shape(line: &str) -> bool {
@@ -10393,9 +10454,6 @@ fn parse_definition_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNo
                 break;
             }
             let owned = next.to_string();
-            if interrupts_paragraph(cur, &owned) {
-                break;
-            }
             term_text.push('\n');
             // A term's continuation line is a CONTENT LINE, so its trailing
             // whitespace run does not reach the output - the same rule the
@@ -10457,9 +10515,6 @@ fn parse_definition_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNo
                     break;
                 }
                 let owned = following.to_string();
-                if interrupts_paragraph(cur, &owned) {
-                    break;
-                }
                 text.push('\n');
                 // Same rule as the first term's continuation above: a CONSECUTIVE
                 // term folds its lines the same way, so it drops the same run.
@@ -11037,15 +11092,12 @@ fn collect_definition_body(
             // paragraph (the same rule list items and block quotes use, matching
             // djot). A block opener ends the definition.
             let owned = line.to_string();
-            if !interrupts_paragraph(cur, &owned) {
-                folded_a_lazy_line = true;
-                lines.push(owned);
-                line_map.push(cur.source_line(cur.pos));
-                col_map.push(cur.source_col(cur.pos));
-                cur.consume();
-                continue;
-            }
-            break;
+            folded_a_lazy_line = true;
+            lines.push(owned);
+            line_map.push(cur.source_line(cur.pos));
+            col_map.push(cur.source_col(cur.pos));
+            cur.consume();
+            continue;
         }
         // Blank line: absorb it as a paragraph separator ONLY when a later line
         // still continues the definition (form A); otherwise leave it for the
@@ -11087,13 +11139,7 @@ fn image_is_block(cur: &mut LineCursor) -> bool {
     if is_blank_line(next) || caption_content(next).is_some() {
         return true;
     }
-    // Peek-1 interruption: test the next line as if it were current, then rewind.
-    let next_owned = next.to_string();
-    let saved = cur.pos;
-    cur.pos += 1;
-    let interrupts = interrupts_paragraph(cur, &next_owned);
-    cur.pos = saved;
-    interrupts
+    false
 }
 
 fn consume_caption(cur: &mut LineCursor, options: &Options<'_>) -> Option<Vec<InlineNode>> {
@@ -14766,6 +14812,7 @@ fn parse_inline_context(
         if c == b'%'
             && bytes.get(i + 1) == Some(&b'%')
             && (i == 0 || bytes[i - 1] == b' ' || bytes[i - 1] == b'\t' || bytes[i - 1] == b'\n')
+            && bytes.get(i.wrapping_sub(1)) != Some(&b'\n')
         {
             // Popping from the END keeps the buffer equal to the source it
             // started at - `flush_text` measures the span as

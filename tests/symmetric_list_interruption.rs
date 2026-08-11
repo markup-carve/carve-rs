@@ -27,8 +27,8 @@ fn blank_line_starts_the_list() {
 }
 
 #[test]
-fn thematic_break_still_interrupts() {
-    assert_eq!(h("intro\n---\nmore"), "<p>intro</p>\n<hr>\n<p>more</p>");
+fn thematic_break_is_separate_with_explicit_boundaries() {
+    assert_eq!(h("intro\n\n---\n\nmore"), "<p>intro</p>\n<hr>\n<p>more</p>");
 }
 
 #[test]
@@ -84,7 +84,7 @@ fn bullet_ends_a_quote_whose_last_line_is_a_heading() {
     // A paragraph followed by a quoted heading: the heading closes the open
     // paragraph, so the trailing list marker ends the quote (does not fold).
     assert_eq!(
-        h("> a\n> # h\n- item"),
+        h("> a\n>\n> # h\n\n- item"),
         "<blockquote>\n  <p>a</p>\n  <h1 id=\"h\">h</h1>\n</blockquote>\n<ul>\n  <li>item</li>\n</ul>"
     );
 }

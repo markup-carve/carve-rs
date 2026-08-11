@@ -12,7 +12,7 @@ fn html(src: &str) -> String {
 #[test]
 fn a_comment_block_inside_a_div() {
     assert_eq!(
-        html(":::\n%%%\nx\n%%%\nbody\n:::\n"),
+        html(":::\n%%%\nx\n%%%\n\nbody\n:::\n"),
         "<div>\n  <p>body</p>\n</div>"
     );
 }
@@ -20,7 +20,7 @@ fn a_comment_block_inside_a_div() {
 #[test]
 fn a_comment_block_inside_an_admonition() {
     assert_eq!(
-        html("::: note\n%%%\nx\n%%%\nbody\n:::\n"),
+        html("::: note\n%%%\nx\n%%%\n\nbody\n:::\n"),
         "<aside class=\"admonition note\">\n  <p>body</p>\n</aside>"
     );
 }
@@ -28,7 +28,7 @@ fn a_comment_block_inside_an_admonition() {
 #[test]
 fn a_comment_block_inside_a_block_quote() {
     assert_eq!(
-        html("> q\n> %%%\n> x\n> %%%\n> body\n"),
+        html("> q\n>\n> %%%\n> x\n> %%%\n>\n> body\n"),
         "<blockquote>\n  <p>q</p>\n  <p>body</p>\n</blockquote>"
     );
 }
@@ -54,10 +54,10 @@ fn a_container_holding_only_an_empty_block_renders_like_an_empty_one() {
     // The empty line inside an aside and a block quote is what every engine
     // already emits for a container with no content. This change must not
     // move it - only the blank line a rendered-to-nothing block left behind.
-    assert_eq!(html(":::\n%%%\nx\n%%%\n:::\n"), html(":::\n:::\n"));
+    assert_eq!(html(":::\n%%%\nx\n%%%\n:::\n"), html(":::\n\n:::\n"));
     assert_eq!(
         html("::: note\n%%%\nx\n%%%\n:::\n"),
-        html("::: note\n:::\n")
+        html("::: note\n\n:::\n")
     );
     assert_eq!(html("> %%%\n> x\n> %%%\n"), html(">\n"));
 }

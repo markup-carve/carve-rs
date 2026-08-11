@@ -66,21 +66,15 @@ fn control_a_plus_attached_paragraph_still_gets_the_marker() {
 }
 
 #[test]
-fn control_a_plus_attached_block_opener_still_gets_no_marker() {
-    // These are the corpus's own shapes, and the reason it never caught the
-    // defect: each opens a block at the item's content column, so the marker
-    // would be noise. The writer must keep writing them WITHOUT it.
-    for (src, formatted) in [
-        ("- x\n+\n> q\n", "- x\n  > q\n"),
-        ("- x\n+\n```\nc\n```\n", "- x\n  ```\n  c\n  ```\n"),
-        ("- x\n+\n# H\n", "- x\n  # H\n"),
-        ("- x\n+\n---\n", "- x\n  ---\n"),
-        (
-            "- x\n+\n::: note\nb\n:::\n",
-            "- x\n  ::: note\n  b\n  :::\n",
-        ),
+fn a_plus_attached_block_opener_keeps_its_explicit_boundary() {
+    for src in [
+        "- x\n+\n> q\n",
+        "- x\n+\n```\nc\n```\n",
+        "- x\n+\n# H\n",
+        "- x\n+\n---\n",
+        "- x\n+\n::: note\nb\n:::\n",
     ] {
-        assert_eq!(fmt(src), formatted, "for {src:?}");
+        assert_eq!(fmt(src), src, "for {src:?}");
         assert!(round_trips(src), "for {src:?}: {}", fmt(src));
     }
 }
@@ -91,7 +85,7 @@ fn control_a_plus_attached_block_opener_still_gets_no_marker() {
 
 #[test]
 fn a_header_cell_does_not_hand_its_first_character_to_the_alignment_reader() {
-    let src = "| ~x~ |\n|---|\n| y |\n";
+    let src = "|= ~x~|\n| y |\n";
     assert!(html(src).contains("<s>x</s>"), "the premise: {}", html(src));
     assert!(
         !html(src).contains("text-align"),
@@ -127,11 +121,12 @@ fn control_the_header_marker_stays_glued_to_the_pipe() {
 }
 
 #[test]
-fn control_a_header_cell_that_already_carries_alignment_is_padded_too() {
-    // The alignment marker is part of the PREFIX, so it stays glued to the `=`
-    // and the padding follows the whole run.
-    let src = "| a |\n|:-:|\n| ~y~ |\n";
-    assert_eq!(fmt(src), "|=~ a |\n| ~y~ |\n");
+fn control_a_header_cell_that_already_carries_alignment_stays_glued() {
+    // With an alignment marker of its own the prefix has already consumed the
+    // reader's alignment slot, so the content's first character cannot be taken
+    // for one and the separator must not be emitted.
+    let src = "|=~a|\n| ~y~ |\n";
+    assert_eq!(fmt(src), "|=~a|\n| ~y~ |\n");
     assert!(round_trips(src));
 }
 
@@ -152,9 +147,9 @@ fn a_cell_that_already_carries_alignment_pads_its_sigil_content() {
 
 #[test]
 fn control_a_body_cell_is_padded_and_needs_nothing() {
-    // A cell with no prefix was always written with its padding spaces, which
-    // already part the pipe from the content; §6e extends that to every cell.
-    let src = "| a |\n|---|\n| ~y~ |\n";
-    assert_eq!(fmt(src), "|= a |\n| ~y~ |\n");
+    // A cell with no prefix is written with its padding spaces, which already
+    // part the pipe from the content.
+    let src = "|=a|\n| ~y~ |\n";
+    assert_eq!(fmt(src), "|=a|\n| ~y~ |\n");
     assert!(round_trips(src));
 }

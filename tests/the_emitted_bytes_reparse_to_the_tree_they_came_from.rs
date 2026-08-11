@@ -46,7 +46,7 @@ fn a_promoted_dashed_paragraph_does_not_open_frontmatter() {
     // reach: the writer may not rewrite a paragraph's text. `fmt` emitted
     // `---yaml` / `k: v` / blank / `---` / blank / `[a]: /u`, and the next parse
     // read the whole document as a frontmatter block and rendered NOTHING.
-    let src = "[a]: /u\n\n---yaml\nk: v\n---\n";
+    let src = "---yaml\nk: v\n\n***\n\n[a]: /u\n";
     assert_eq!(
         html(src),
         "<p>\u{2014}yaml\nk: v</p>\n<hr>",
@@ -61,7 +61,7 @@ fn a_footnote_definition_promotes_the_same_paragraph() {
     // The hoist is not specific to a link definition: PART 11 §7 moves every
     // definition below the body, and a footnote definition promotes whatever
     // stood second exactly as a link definition does.
-    let src = "[^a]: n\n\n---toml\nx\n---\n";
+    let src = "---toml\nx\n\n***\n\n[^a]: n\n";
     assert!(round_trips(src), "{}", fmt(src));
     assert!(
         !fmt(src).contains("\n---\n"),
@@ -81,7 +81,7 @@ fn a_hyphen_break_promoted_to_the_head_is_written_star() {
     // Two lines are enough to lose everything: written with hyphens this is an
     // EMPTY frontmatter block, rendering nothing where the input rendered two
     // rules.
-    let src = "[a]: /u\n\n---\n\n---\n";
+    let src = "***\n\n***\n\n[a]: /u\n";
     assert_eq!(html(src), "<hr>\n<hr>");
     assert_eq!(fmt(src), "***\n\n***\n\n[a]: /u\n");
     assert!(round_trips(src), "{}", fmt(src));
@@ -91,7 +91,7 @@ fn a_hyphen_break_promoted_to_the_head_is_written_star() {
 fn every_hyphen_break_moves_not_only_the_one_at_the_head() {
     // The fallback is document-wide, which is what makes the promoted PARAGRAPH
     // fixable at all: there, the only line that can move is the closer.
-    let src = "[a]: /u\n\n---\n\np\n\n---\n";
+    let src = "***\n\np\n\n***\n\n[a]: /u\n";
     assert_eq!(html(src), "<hr>\n<p>p</p>\n<hr>");
     assert_eq!(fmt(src), "***\n\np\n\n***\n\n[a]: /u\n");
     assert!(round_trips(src), "{}", fmt(src));
@@ -108,17 +108,17 @@ fn an_authored_star_break_at_the_head_needs_no_fallback() {
 
 #[test]
 fn a_star_break_elsewhere_survives_the_fallback() {
-    // THE DEPARTURE IS THE SMALLEST ONE. Only the hyphen spelling can be read as
-    // a fence, so a `___` break in the same document keeps its own marker even
-    // while the hyphen breaks move.
+    // Under 0.2 the closer-shaped line remains part of the open paragraph; the
+    // writer guards it as paragraph text. The independent `___` break keeps
+    // its authored marker.
     let src = "[a]: /u\n\n---yaml\nk: v\n---\n\n___\n";
-    assert_eq!(fmt(src), "---yaml\nk: v\n\n***\n\n___\n\n[a]: /u\n");
+    assert_eq!(fmt(src), "---yaml\nk: v\n ---\n\n___\n\n[a]: /u\n");
     assert!(round_trips(src), "{}", fmt(src));
 }
 
 #[test]
 fn a_relocated_definition_promoting_a_bare_break_still_round_trips() {
-    let src = "[a]: /u\n\n---\n\np\n\n---\n";
+    let src = "***\n\np\n\n***\n\n[a]: /u\n";
     assert_eq!(html(src), "<hr>\n<p>p</p>\n<hr>");
     assert!(round_trips(src), "{}", fmt(src));
 }
@@ -163,7 +163,7 @@ fn a_closer_that_is_not_a_break_keeps_the_canonical_spelling() {
     // a fenced block, so respelling every BREAK cannot remove it: the document
     // is misread with `***` too. It keeps the canonical spelling rather than
     // paying a respelling that buys nothing.
-    let src = "[a]: /u\n\n---yaml\nk: v\n---\n\n```\n---\n```\n";
+    let src = "---yaml\nk: v\n\n---\n\n```\n---\n```\n\n[a]: /u\n";
     let out = fmt(src);
     assert!(
         out.starts_with("---yaml"),
@@ -222,12 +222,11 @@ fn a_block_opener_after_a_marked_child_takes_the_marker_too() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn a_run_that_never_reached_the_marker_column_is_untouched() {
-    // CONTROL. A fence opens its own block at the item's content column, so no
-    // child in this run is at the marker column and none gains a marker. This is
-    // the shape the corpus pins, and no mutation of the run rule moves it.
+fn a_fence_after_item_prose_keeps_its_explicit_boundary() {
+    // A fence no longer interrupts the item paragraph in 0.2, so the separate
+    // code block is attached explicitly and the writer keeps that spelling.
     let src = "- x\n+\n```\nc\n```\n";
-    assert_eq!(fmt(src), "- x\n  ```\n  c\n  ```\n");
+    assert_eq!(fmt(src), src);
     assert!(round_trips(src), "{}", fmt(src));
 }
 

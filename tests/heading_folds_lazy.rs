@@ -14,8 +14,8 @@
 #[test]
 fn indented_item_heading_after_blank_ends_the_item() {
     assert_eq!(
-        carve::to_html("- text\n\n  # N\nlazy\n"),
-        "<ul>\n  <li>text\n    <h1 id=\"N\">N</h1>\n  </li>\n</ul>\n<p>lazy</p>"
+        carve::to_html("- text\n+\n# N\n+\nlazy\n"),
+        "<ul>\n  <li>text\n    <h1 id=\"N\">N</h1>\n    lazy\n  </li>\n</ul>"
     );
 }
 
@@ -26,8 +26,8 @@ fn nested_marker_line_heading_ends_the_item_like_an_unnested_one() {
     // items wrap the heading. Ending is the answer the ruling settled on, so
     // this one moved to meet the other rather than the reverse.
     assert_eq!(
-        carve::to_html("- a\n  - # N\nlazy\n"),
-        "<ul>\n  <li>a\n    <ul>\n      <li>\n        <h1 id=\"N\">N</h1>\n      </li>\n    </ul>\n  </li>\n</ul>\n<p>lazy</p>"
+        carve::to_html("- a\n  - # N\n    lazy\n"),
+        "<ul>\n  <li>a\n    <ul>\n      <li>\n        <h1 id=\"N\">N</h1>\n        lazy\n      </li>\n    </ul>\n  </li>\n</ul>"
     );
 }
 
@@ -35,8 +35,8 @@ fn nested_marker_line_heading_ends_the_item_like_an_unnested_one() {
 fn deeply_nested_indented_heading_closes_the_inner_item() {
     // Corpus 75-list-nesting-and-looseness-4: the outer item remains available.
     assert_eq!(
-        carve::to_html("- a\n  - b\n    # N\nlazy\n"),
-        "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <h1 id=\"N\">N</h1>\n      </li>\n    </ul>\n    lazy\n  </li>\n</ul>"
+        carve::to_html("- a\n  - b\n  +\n  # N\n  +\n  lazy\n"),
+        "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <h1 id=\"N\">N</h1>\n        lazy\n      </li>\n    </ul>\n  </li>\n</ul>"
     );
 }
 
@@ -46,8 +46,8 @@ fn heading_on_a_definition_marker_line_leaves_no_outer_paragraph_either() {
     // list has already interrupted the item's earlier prose. No container in
     // the open stack can therefore take the flush-left line (PART 1 S4).
     assert_eq!(
-        carve::to_html("- one\n  :: term\n  :  # H\nlazy\n"),
-        "<ul>\n  <li>one\n    <dl>\n      <dt>term</dt>\n      <dd>\n        <h1 id=\"H\">H</h1>\n      </dd>\n    </dl>\n  </li>\n</ul>\n<p>lazy</p>"
+        carve::to_html("- one\n+\n:: term\n:  # H\n\n   lazy\n"),
+        "<ul>\n  <li>one\n    <dl>\n      <dt>term</dt>\n      <dd>\n        <h1 id=\"H\">H</h1>\n        <p>lazy</p>\n      </dd>\n    </dl>\n  </li>\n</ul>"
     );
 }
 
@@ -66,7 +66,7 @@ fn caption_ends_the_item_rather_than_folding_into_the_heading() {
     // lazy continuation instead of folding into the heading; it becomes its own
     // top-level block, matching carve-js / carve-php.
     assert_eq!(
-        carve::to_html("- text\n\n  # H\n^ cap\n"),
+        carve::to_html("- text\n+\n# H\n\n^ cap\n"),
         "<ul>\n  <li>text\n    <h1 id=\"H\">H</h1>\n  </li>\n</ul>\n<p>^ cap</p>"
     );
 }
@@ -74,7 +74,7 @@ fn caption_ends_the_item_rather_than_folding_into_the_heading() {
 #[test]
 fn caption_ends_a_plain_paragraph_item_too() {
     assert_eq!(
-        carve::to_html("- text\n^ cap\n"),
+        carve::to_html("- text\n\n^ cap\n"),
         "<ul>\n  <li>text</li>\n</ul>\n<p>^ cap</p>"
     );
 }

@@ -28,14 +28,14 @@ fn the_writer_keeps_the_comment_rather_than_writing_a_continuation_marker() {
 
 #[test]
 fn an_item_holding_only_a_comment_renders_empty() {
-    assert_eq!(to_html("- %% c"), "<ul>\n  <li></li>\n</ul>");
+    assert_eq!(to_html("- %% c\n"), "<ul>\n  <li></li>\n</ul>");
 }
 
 #[test]
 fn a_comment_beside_content_leaves_no_whitespace_line() {
     // The `<li>` used to close on a line of its own after `a`, with the child
     // indentation left behind by the block that rendered to nothing.
-    assert_eq!(to_html("- a\n  %% c"), "<ul>\n  <li>a</li>\n</ul>");
+    assert_eq!(to_html("- a\n+\n%% c\n"), "<ul>\n  <li>a</li>\n</ul>");
 }
 
 #[test]
@@ -43,7 +43,7 @@ fn a_comment_fence_in_an_item_leaves_no_whitespace_line() {
     // The same rule reached by the BLOCK comment, which is a real block inside
     // the item rather than a marker-line one.
     assert_eq!(
-        to_html("- a\n  %%%\n  hidden\n  %%%"),
+        to_html("- a\n+\n%%%\nhidden\n%%%\n"),
         "<ul>\n  <li>a</li>\n</ul>"
     );
 }

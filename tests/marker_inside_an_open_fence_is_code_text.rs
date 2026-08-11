@@ -34,7 +34,7 @@ fn the_fence_is_opened_on_a_line_of_its_own() {
     // from the previous content-column line rather than from the marker line,
     // and the marker test that consumes it had no fence guard.
     assert_eq!(
-        html("- a\n  ```\n  - x\n  ```\n"),
+        html("- a\n+\n```\n- x\n```\n"),
         "<ul>\n  <li>a\n    <pre><code>- x\n</code></pre>\n  </li>\n</ul>"
     );
 }
@@ -67,7 +67,7 @@ fn a_marker_after_a_closed_fence_still_opens_a_sub_list() {
     // fence is OPEN here". A guard keyed on the former leaves this document
     // with its marker swallowed into the code block.
     assert_eq!(
-        html("- a\n  ```\n  y\n  ```\n  - x\n"),
+        html("- a\n+\n```\ny\n```\n  - x\n"),
         "<ul>\n  <li>a\n    <pre><code>y\n</code></pre>\n    <ul>\n      <li>x</li>\n    </ul>\n  </li>\n</ul>"
     );
 }
@@ -78,7 +78,7 @@ fn the_continuation_marker_paths_were_already_right() {
     // their own, and the corpus reaches neither. Measured on this engine before
     // the guard and unchanged by it - pinned so a later change to those loops
     // cannot regress a rule no corpus document covers.
-    assert_eq!(html("- +\n```\n- x\n```\n"), FENCED_MARKER);
+    assert_eq!(html("- ```\n  - x\n  ```\n"), FENCED_MARKER);
     assert_eq!(
         html("- a\n+\n```\n- x\n```\n"),
         "<ul>\n  <li>a\n    <pre><code>- x\n</code></pre>\n  </li>\n</ul>"

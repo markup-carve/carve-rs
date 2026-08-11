@@ -29,7 +29,7 @@ fn the_expanded_backslash_is_not_doubled() {
 
 #[test]
 fn an_escaped_space_at_line_end_loses_the_space_inside_a_list_item() {
-    let source = "- item\n\\ \nx\n";
+    let source = "- item\n  \\\n  x\n";
     let expected = "- item\n  \\\n  x\n";
     let out = carve::to_carve(source);
 
@@ -40,7 +40,7 @@ fn an_escaped_space_at_line_end_loses_the_space_inside_a_list_item() {
 
 #[test]
 fn a_definition_between_a_table_and_caption_prevents_attachment() {
-    let source = "^ cap\n# head\n{.cls}\n@user\n| a | b |\n[a]: /u\n^ cap\n";
+    let source = "^ cap\n\n# head\n\n{.cls}\n@user\n\n| a | b |\n\n\\^ cap\n\n[a]: /u\n";
     let html = carve::to_html(source);
 
     assert!(

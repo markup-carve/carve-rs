@@ -46,7 +46,7 @@ fn a_deeper_quote_does_not_inherit_a_quoted_items_column() {
 fn an_items_own_continuation_still_defines_across_a_quote_it_contains() {
     // The quote here is the item's own block, written AT its content column, so
     // the column survives it and the definition after it is the item's.
-    let html = squash(&to_html("- item\n  > quoted\n  [r]: /u\n\nsee [t][r]"));
+    let html = squash(&to_html("- item\n+\n> quoted\n\n  [r]: /u\n\nsee [t][r]"));
 
     assert!(html.contains("<a href=\"/u\">t</a>"), "{html}");
     assert!(
@@ -58,7 +58,7 @@ fn an_items_own_continuation_still_defines_across_a_quote_it_contains() {
 #[test]
 fn the_same_holds_for_a_quoted_item() {
     let html = squash(&to_html(
-        "> - item\n>   > quoted\n>   [r]: /u\n\nsee [t][r]",
+        "> - item\n> +\n> > quoted\n>\n>   [r]: /u\n\nsee [t][r]",
     ));
 
     assert!(html.contains("<a href=\"/u\">t</a>"), "{html}");
@@ -69,14 +69,14 @@ fn the_same_holds_for_a_quoted_item() {
 fn a_definition_at_a_quoted_items_column_still_registers() {
     // The shape #587 added, unchanged: columns measured inside a quote are what
     // makes this work at all.
-    let html = squash(&to_html("> - a\n>   [r]: /u\n\nsee [t][r]"));
+    let html = squash(&to_html("> - a\n>\n>   [r]: /u\n\nsee [t][r]"));
 
     assert!(html.contains("<a href=\"/u\">t</a>"), "{html}");
 }
 
 #[test]
 fn the_top_level_shapes_are_unchanged() {
-    assert!(squash(&to_html("- a\n  [r]: /u\n\nsee [t][r]")).contains("<a href=\"/u\">t</a>"));
+    assert!(squash(&to_html("- a\n\n  [r]: /u\n\nsee [t][r]")).contains("<a href=\"/u\">t</a>"));
     assert!(squash(&to_html("> [r]: /u\n\nsee [t][r]")).contains("<a href=\"/u\">t</a>"));
     // Below every column it is text, and defines nothing.
     assert!(squash(&to_html("text\n  [r]: /u\n\nsee [t][r]")).contains("see [t][r]"));

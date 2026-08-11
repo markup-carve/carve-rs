@@ -29,6 +29,7 @@ pub mod html_import;
 mod index_budget;
 pub mod lint;
 pub mod markdown_import;
+mod migrate;
 mod parse;
 pub mod profile;
 pub mod profile_filter;
@@ -69,7 +70,7 @@ pub(crate) const NBSP_PLACEHOLDER: char = '\u{e000}';
 ///
 /// The version of the crate itself is `CARGO_PKG_VERSION` - derived from the
 /// manifest, never written out a second time here.
-pub const SPEC_VERSION: &str = "0.1";
+pub const SPEC_VERSION: &str = "0.2";
 
 pub use ast::*;
 pub use ast_json::{from_json, to_json, try_to_json, AstJsonError};
@@ -107,6 +108,7 @@ pub use html_import::{
 };
 pub use lint::{lint_carve, lint_carve_with_options, LintWarning};
 pub use markdown_import::{markdown_to_ast, markdown_to_carve};
+pub use migrate::migrate_0_1_to_0_2;
 pub use parse::{parse, parse_with_options};
 pub use profile::{DisallowedAction, LinkPolicy, Profile, ProfileViolation, ProfileViolationError};
 pub use profile_filter::{apply_profile, apply_profile_with_typography, ProfileFilterResult};

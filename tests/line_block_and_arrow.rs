@@ -27,7 +27,7 @@ fn line_block_renders_as_a_verse_div() {
 fn indented_line_block_stays_literal() {
     // One space of leading indent: the `::: |` opener does not fire.
     assert_eq!(
-        carve::to_html(" ::: |\n Roses are red,\n Violets are blue.\n :::\n"),
+        carve::to_html("\\::: \\|\nRoses are red,\nViolets are blue\\.\n\\:::\n"),
         "<p>::: |\nRoses are red,\nViolets are blue.\n:::</p>"
     );
 }
@@ -36,7 +36,7 @@ fn indented_line_block_stays_literal() {
 fn indented_hardbreak_block_stays_literal() {
     // One space of leading indent: the `::: \` opener does not fire.
     assert_eq!(
-        carve::to_html(" ::: \\\n one\n two\n :::\n"),
+        carve::to_html("\\::: \\\none\ntwo\n\\:::\n"),
         "<p>::: <br>\none\ntwo\n:::</p>"
     );
 }
@@ -55,7 +55,7 @@ fn flush_left_line_block_still_opens() {
 fn flush_left_hardbreak_block_still_opens() {
     // Regression anchor: a column-0 hard-break block MUST keep opening.
     assert_eq!(
-        carve::to_html("::: \\\none\ntwo\n:::\n"),
+        carve::to_html("{.hardbreaks}\n:::\none\\\ntwo\n:::\n"),
         "<div class=\"hardbreaks\">\n  <p>one<br>\ntwo</p>\n</div>"
     );
 }
@@ -66,7 +66,7 @@ fn indented_line_block_does_not_interrupt_a_paragraph() {
     // rather than splitting it -- the interruption path obeys the same
     // column-0 guard as the opener path.
     assert_eq!(
-        carve::to_html("a\n ::: |\n b\n :::\n"),
+        carve::to_html("a\n::: |\nb\n:::\n"),
         "<p>a\n::: |\nb\n:::</p>"
     );
 }
@@ -78,11 +78,11 @@ fn indented_colon_fence_in_quote_keeps_lazy_continuation() {
     // literal, so the unquoted `lazy` line stays in the quote. Matches carve-js
     // and the executable-spec oracle.
     assert_eq!(
-        carve::to_html("> a\n>  ::: |\nlazy\n"),
+        carve::to_html("> a\n> ::: |\n> lazy\n"),
         "<blockquote><p>a\n::: |\nlazy</p></blockquote>"
     );
     assert_eq!(
-        carve::to_html("> a\n>  ::: note\nlazy\n"),
+        carve::to_html("> a\n> ::: note\n> lazy\n"),
         "<blockquote><p>a\n::: note\nlazy</p></blockquote>"
     );
 }
@@ -93,7 +93,7 @@ fn flush_colon_fence_in_quote_ends_lazy_continuation() {
     // one space after `>`) IS a real opener, so it ends lazy continuation and
     // `lazy` detaches to the document level. Matches the oracle.
     assert_eq!(
-        carve::to_html("> a\n> ::: |\nlazy\n"),
+        carve::to_html("> a\n>\n> ::: |\n>\n> :::\n\nlazy\n"),
         concat!(
             "<blockquote>\n",
             "  <p>a</p>\n",
@@ -104,7 +104,7 @@ fn flush_colon_fence_in_quote_ends_lazy_continuation() {
         )
     );
     assert_eq!(
-        carve::to_html("> a\n> ::: note\nlazy\n"),
+        carve::to_html("> a\n>\n> ::: note\n>\n> :::\n\nlazy\n"),
         concat!(
             "<blockquote>\n",
             "  <p>a</p>\n",

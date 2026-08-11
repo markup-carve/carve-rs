@@ -40,14 +40,14 @@ fn a_footnote_in_a_description_is_written_back_on_that_line() {
 
 #[test]
 fn a_footnote_in_an_item_gap_is_written_back_on_that_line() {
-    let source = "- a\n  [^f]: x\n  more\n\nsee[^f]\n";
+    let source = "- a\n\n  [^f]: x\n\n  more\n\nsee[^f]\n";
     assert_eq!(fmt(source), source);
     assert!(round_trips(source));
 }
 
 #[test]
 fn a_link_definition_in_an_item_gap_is_written_back_on_that_line() {
-    let source = "- a\n  [r]: /u\n  more\n\nsee [t][r]\n";
+    let source = "- a\n+\n[r]: /u\n+\nmore\n\nsee [t][r]\n";
     assert_eq!(fmt(source), source);
     assert!(round_trips(source));
 }
@@ -64,9 +64,9 @@ fn the_item_split_survives_the_round_trip() {
     // The point of writing the line back: without it the two blocks rejoin into
     // one paragraph, and a paragraph with a soft break renders differently from
     // two tight blocks.
-    let html = carve::to_html(&fmt("- a\n  [^f]: x\n  more\n\nsee[^f]\n"));
+    let html = carve::to_html(&fmt("- a\n\n  [^f]: x\n\n  more\n\nsee[^f]\n"));
     assert!(
-        html.contains("<li>a\n    more\n  </li>"),
+        html.contains("<li><p>a</p>\n    <p>more</p>"),
         "the item's two blocks were rejoined:\n{html}"
     );
 }

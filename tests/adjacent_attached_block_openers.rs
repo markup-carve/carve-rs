@@ -19,6 +19,6 @@ fn adjacent_block_openers_stay_separate() {
 }
 
 #[test]
-fn an_isolated_block_opener_keeps_the_indented_canonical_form() {
-    assert_eq!(fmt("- x\n+\n> q\n"), "- x\n  > q\n");
+fn an_isolated_block_opener_keeps_the_explicit_boundary() {
+    assert_eq!(fmt("- x\n+\n> q\n"), "- x\n+\n> q\n");
 }

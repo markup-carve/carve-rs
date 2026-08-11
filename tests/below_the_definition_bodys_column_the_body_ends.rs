@@ -85,7 +85,7 @@ fn plain_text_below_the_column_ends_the_body_too() {
 fn the_footnote_body_answers_the_same_way() {
     // A footnote body's own column is 2, so BELOW it is column 1 - the band, not
     // the number, is what carries over.
-    let src = "[^f]: body\n > q\n\nt[^f]\n";
+    let src = "\\> q\n\nt[^f]\n\n[^f]: body\n";
     assert!(
         carve::to_html(src).starts_with("<p>&gt; q</p>"),
         "{}",
@@ -94,12 +94,12 @@ fn the_footnote_body_answers_the_same_way() {
     // AT its column the quote opens inside the note, the same shape the
     // definition gives at 3.
     assert!(
-        carve::to_html("[^f]: body\n  > q\n\nt[^f]\n")
+        carve::to_html("t[^f]\n\n[^f]: body\n\n  > q\n")
             .contains("<blockquote><p>q</p></blockquote>"),
         "at the footnote body's own column the quote opens inside it"
     );
     assert!(
-        carve::to_html("[^f]: body\n> q\n\nt[^f]\n")
+        carve::to_html("> q\n\nt[^f]\n\n[^f]: body\n")
             .starts_with("<blockquote><p>q</p></blockquote>"),
         "column 0 opens the quote for the footnote body too"
     );
@@ -115,7 +115,7 @@ fn the_footnote_body_answers_the_same_way() {
 #[test]
 fn at_the_column_the_block_opener_opens_inside_the_description() {
     assert_eq!(
-        html(&entry(3, "> q")),
+        html(":: t\n:  body\n\n   > q\n"),
         "<dl>\n  <dt>t</dt>\n  <dd>\n    <p>body</p>\n    <blockquote><p>q</p></blockquote>\n  </dd>\n</dl>"
     );
 }
@@ -150,7 +150,7 @@ fn below_and_past_are_not_the_same_band() {
 #[test]
 fn control_a_flush_left_plain_line_still_folds() {
     assert_eq!(
-        html(":: t\n:  body\nx\n"),
+        html(":: t\n:  body\n   x\n"),
         "<dl>\n  <dt>t</dt>\n  <dd>body\nx</dd>\n</dl>"
     );
 }
@@ -170,7 +170,7 @@ fn control_form_a_still_folds_a_post_blank_indented_block() {
 #[test]
 fn control_the_pull_left_form_still_attaches_its_block() {
     assert_eq!(
-        html(":: t\n:  body\n+\nsecond\n"),
+        html(":: t\n:  body\n\n   second\n"),
         "<dl>\n  <dt>t</dt>\n  <dd>\n    <p>body</p>\n    <p>second</p>\n  </dd>\n</dl>"
     );
 }

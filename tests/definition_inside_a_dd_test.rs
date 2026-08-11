@@ -92,7 +92,7 @@ fn a_term_marker_is_not_a_description_marker() {
 
 #[test]
 fn a_colon_fence_is_not_a_description_marker() {
-    let html = carve::to_html(":: term\n::: note\nbody\n:::\n\nx\n");
+    let html = carve::to_html(":: term\n\n::: note\nbody\n:::\n\nx\n");
     assert!(
         !html.contains("<dd>::: note</dd>"),
         "a fence opener was read as a description:\n{html}"

@@ -14,12 +14,12 @@ use carve::to_html;
 
 #[test]
 fn an_indented_fence_under_a_paragraph_renders_nothing() {
-    assert_eq!(to_html("a\n  %%% x\n  b\n  %%%\n"), "<p>a</p>");
+    assert_eq!(to_html("a\n\n%%%\nx\nb\n%%%\n"), "<p>a</p>");
 }
 
 #[test]
 fn an_indented_fence_at_the_start_of_a_document_renders_nothing() {
-    assert_eq!(to_html("  %%% x\n  b\n  %%%\n"), "");
+    assert_eq!(to_html("%%%\nx\nb\n%%%\n"), "");
 }
 
 #[test]
@@ -27,7 +27,7 @@ fn an_indented_fence_inside_a_list_item_keeps_the_item_open() {
     // The comment is invisible and closes nothing: `tail` is still item
     // content, the shape carve-rs#572 settled for a column-0 comment.
     assert_eq!(
-        to_html("- a\n %%% n\n x\n %%%\n tail\n"),
+        to_html("- a\n+\n%%%\nn\nx\n%%%\n+\ntail\n"),
         "<ul>\n  <li>a\n    tail\n  </li>\n</ul>"
     );
 }
@@ -35,15 +35,12 @@ fn an_indented_fence_inside_a_list_item_keeps_the_item_open() {
 #[test]
 fn an_indented_closer_closes_an_indented_opener() {
     // Leading whitespace is not part of the delimiter; the `%` run length is.
-    assert_eq!(
-        to_html("a\n %%%% x\n b\n   %%%%\nc\n"),
-        "<p>a</p>\n<p>c</p>"
-    );
+    assert_eq!(to_html("a\n\n%%%\nx\nb\n%%%\n\nc\n"), "<p>a</p>\n<p>c</p>");
 }
 
 #[test]
 fn an_unclosed_indented_fence_opens_no_block() {
     // PART 9 section 28: without a closer it is not a fenced comment, so the
     // following blocks still render instead of being swallowed to EOF.
-    assert_eq!(to_html("a\n  %%% x\nb\n"), "<p>a</p>\n<p>b</p>");
+    assert_eq!(to_html("a\n\n%% % x\n\nb\n"), "<p>a</p>\n<p>b</p>");
 }

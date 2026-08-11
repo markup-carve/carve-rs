@@ -57,6 +57,7 @@ fn main() -> ExitCode {
     let mut command = Command::Render;
     let mut fmt_write = false;
     let mut fmt_check = false;
+    let mut fmt_from_0_1 = false;
     let mut fmt_stamp = None;
     let mut stamp_mode: Option<StampMode> = None;
     let mut enable_extensions = false;
@@ -75,6 +76,7 @@ fn main() -> ExitCode {
             }
             "-w" | "--write" if command == Command::Fmt => fmt_write = true,
             "--check" if command == Command::Fmt => fmt_check = true,
+            "--from-0.1" if command == Command::Fmt => fmt_from_0_1 = true,
             "--stamp" if command == Command::Fmt => fmt_stamp = Some(carve::StampForm::Line),
             "--stamp-block" if command == Command::Fmt => {
                 fmt_stamp = Some(carve::StampForm::Block);
@@ -188,7 +190,7 @@ fn main() -> ExitCode {
     }
 
     if command == Command::Fmt {
-        return run_fmt(&input_paths, fmt_write, fmt_check, fmt_stamp);
+        return run_fmt(&input_paths, fmt_write, fmt_check, fmt_stamp, fmt_from_0_1);
     }
 
     if enable_extensions {
@@ -694,6 +696,7 @@ fn run_fmt(
     write: bool,
     check: bool,
     stamp: Option<carve::StampForm>,
+    from_0_1: bool,
 ) -> ExitCode {
     if write && check {
         eprintln!("carve fmt: --write and --check are mutually exclusive");
@@ -709,7 +712,7 @@ fn run_fmt(
             eprintln!("carve fmt: cannot read stdin: {err}");
             return ExitCode::FAILURE;
         }
-        return write_stdout(&format_carve(&source, stamp));
+        return write_stdout(&format_carve(&source, stamp, from_0_1));
     }
 
     let mut changed = Vec::new();
@@ -726,7 +729,7 @@ fn run_fmt(
                 return ExitCode::FAILURE;
             }
         };
-        let formatted = format_carve(&source, stamp);
+        let formatted = format_carve(&source, stamp, from_0_1);
         if formatted != source {
             changed.push(path.clone());
             if write {
@@ -752,8 +755,9 @@ fn run_fmt(
     ExitCode::SUCCESS
 }
 
-fn format_carve(source: &str, stamp: Option<carve::StampForm>) -> String {
-    let formatted = carve::to_carve(source);
+fn format_carve(source: &str, stamp: Option<carve::StampForm>, from_0_1: bool) -> String {
+    let migrated = from_0_1.then(|| carve::migrate_0_1_to_0_2(source));
+    let formatted = carve::to_carve(migrated.as_deref().unwrap_or(source));
     match stamp {
         Some(form) => {
             let generated_by = format!("carve-rs {}", env!("CARGO_PKG_VERSION"));
@@ -799,6 +803,7 @@ fn print_usage() {
          Format options:\n  \
          -w, --write                 write formatted output in place\n  \
          --check                     fail if any file is not formatted\n\n\
+         --from-0.1                  preserve 0.1 block boundaries with blanks\n\n\
          --stamp                     append/update provenance marker\n  \
          --stamp-block               append/update provenance marker as block comment\n\n\
          Render mode (HTML only; default --interactive):\n  \
