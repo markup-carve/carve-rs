@@ -587,12 +587,28 @@ impl<'a> Importer<'a> {
 }
 
 fn collapse(s: &str) -> String {
-    s.split_whitespace().collect::<Vec<_>>().join(" ")
-        + if s.chars().last().is_some_and(char::is_whitespace) {
+    let value = s.split_whitespace().collect::<Vec<_>>().join(" ");
+    if value.is_empty() {
+        return if s.is_empty() {
+            String::new()
+        } else {
+            " ".into()
+        };
+    }
+    format!(
+        "{}{}{}",
+        if s.chars().next().is_some_and(char::is_whitespace) {
+            " "
+        } else {
+            ""
+        },
+        value,
+        if s.chars().last().is_some_and(char::is_whitespace) {
             " "
         } else {
             ""
         }
+    )
 }
 fn visible(nodes: &[InlineNode]) -> bool {
     nodes

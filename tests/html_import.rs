@@ -1,6 +1,8 @@
 use carve::{
     html_to_ast, html_to_carve, HtmlImportDiagnosticCode, HtmlImportMode, HtmlImportOptions,
 };
+use std::fs;
+use std::path::Path;
 
 #[test]
 fn imports_through_the_canonical_writer() {
@@ -59,4 +61,42 @@ fn roundtrip_mode_preserves_unknown_markup_as_raw_html() {
         result.report.diagnostics[0].code,
         HtmlImportDiagnosticCode::RawPreserved
     );
+}
+
+#[test]
+fn shared_contract_fixtures_match() {
+    let root = Path::new("tests/spec/tests/html-import");
+    for entry in fs::read_dir(root).unwrap() {
+        let dir = entry.unwrap().path();
+        if !dir.is_dir() {
+            continue;
+        }
+        let html = fs::read_to_string(dir.join("input.html")).unwrap();
+        let expected = fs::read_to_string(dir.join("expected.crv")).unwrap();
+        let expected_report: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(dir.join("expected.report.json")).unwrap())
+                .unwrap();
+        let result = html_to_carve(&html, &HtmlImportOptions::default()).unwrap();
+        assert_eq!(result.value, expected, "{}", dir.display());
+        let expected_codes = expected_report["diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|d| d["code"].as_str().unwrap())
+            .collect::<Vec<_>>();
+        let actual_codes = result
+            .report
+            .diagnostics
+            .iter()
+            .map(|d| match d.code {
+                HtmlImportDiagnosticCode::ElementDropped => "element-dropped",
+                HtmlImportDiagnosticCode::ElementUnwrapped => "element-unwrapped",
+                HtmlImportDiagnosticCode::AttributeDropped => "attribute-dropped",
+                HtmlImportDiagnosticCode::StyleUnmapped => "style-unmapped",
+                HtmlImportDiagnosticCode::TableDegraded => "table-degraded",
+                HtmlImportDiagnosticCode::RawPreserved => "raw-preserved",
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(actual_codes, expected_codes, "{}", dir.display());
+    }
 }
