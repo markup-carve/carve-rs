@@ -22,6 +22,14 @@ taken), but it is imported as `carve` and its CLI binary is `carve`:
 let html = carve::to_html("# Hello /Carve/");
 ```
 
+HTML migration is available through `html_to_ast` and `html_to_carve`. Both
+return the value plus ordered loss diagnostics and accept safe, semantic, and
+trusted-roundtrip policies. The CLI equivalent is:
+
+```sh
+carve migrate --from html --mode safe --report report.json input.html
+```
+
 ## Status
 
 The crate passes every `.crv` / `.html` pair currently checked into its

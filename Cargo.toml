@@ -17,6 +17,10 @@ categories = ["parser-implementations", "text-processing"]
 # `tests/spec` submodule (1200+ corpus/doc files) which consumers do not need.
 include = ["/src/**/*", "/Cargo.toml", "/README.md", "/LICENSE", "/CHANGELOG.md"]
 
+[dependencies]
+html5ever = "0.27"
+markup5ever_rcdom = "0.3"
+
 [lib]
 name = "carve"
 path = "src/lib.rs"
