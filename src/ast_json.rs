@@ -30,13 +30,53 @@ impl fmt::Display for AstJsonError {
 impl std::error::Error for AstJsonError {}
 
 #[derive(Debug, Clone, PartialEq)]
-enum Json {
+pub(crate) enum Json {
     Null,
     Bool(bool),
     Number(i64),
     String(String),
     Array(Vec<Json>),
     Object(BTreeMap<String, Json>),
+}
+
+pub(crate) fn parse_value(input: &str) -> Result<Json, AstJsonError> {
+    Parser::new(input).parse()
+}
+
+pub(crate) fn value_to_json(value: &Json) -> String {
+    fn write(out: &mut String, value: &Json) {
+        match value {
+            Json::Null => out.push_str("null"),
+            Json::Bool(value) => out.push_str(if *value { "true" } else { "false" }),
+            Json::Number(value) => out.push_str(&value.to_string()),
+            Json::String(value) => write_string(out, value),
+            Json::Array(values) => {
+                out.push('[');
+                for (index, value) in values.iter().enumerate() {
+                    if index != 0 {
+                        out.push(',');
+                    }
+                    write(out, value);
+                }
+                out.push(']');
+            }
+            Json::Object(values) => {
+                out.push('{');
+                for (index, (key, value)) in values.iter().enumerate() {
+                    if index != 0 {
+                        out.push(',');
+                    }
+                    write_string(out, key);
+                    out.push(':');
+                    write(out, value);
+                }
+                out.push('}');
+            }
+        }
+    }
+    let mut out = String::new();
+    write(&mut out, value);
+    out
 }
 
 pub fn to_json(doc: &Document) -> String {

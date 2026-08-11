@@ -30,6 +30,10 @@ enum StampMode {
 }
 
 fn main() -> ExitCode {
+    let raw_args = std::env::args().skip(1).collect::<Vec<_>>();
+    if raw_args.first().map(String::as_str) == Some("merge") {
+        return run_merge(&raw_args[1..]);
+    }
     // Bundled interactive extensions, owned here so they outlive `options`
     // (which borrows them). Registered only when `--extensions` is passed, so
     // the default CLI behavior is unchanged. They are degradation-safe: in
@@ -300,6 +304,139 @@ fn main() -> ExitCode {
     ExitCode::SUCCESS
 }
 
+fn run_merge(args: &[String]) -> ExitCode {
+    if args.iter().any(|arg| arg == "-h" || arg == "--help") {
+        println!("usage: carve merge [--json] BASE OURS THEIRS");
+        return ExitCode::SUCCESS;
+    }
+    if let Some(option) = args
+        .iter()
+        .find(|arg| arg.starts_with('-') && arg.as_str() != "--json")
+    {
+        eprintln!("carve merge: unknown option: {option}");
+        return ExitCode::from(2);
+    }
+    let json = args.iter().any(|arg| arg == "--json");
+    let paths = args
+        .iter()
+        .filter(|arg| arg.as_str() != "--json")
+        .collect::<Vec<_>>();
+    if paths.len() != 3 {
+        eprintln!("carve merge: takes exactly three files (base, ours, theirs)");
+        return ExitCode::from(2);
+    }
+    let mut documents = Vec::new();
+    for path in paths {
+        let source = match std::fs::read_to_string(path) {
+            Ok(source) => source,
+            Err(error) => {
+                eprintln!("carve merge: cannot read {path}: {error}");
+                return ExitCode::from(2);
+            }
+        };
+        documents.push(carve::parse(&source));
+    }
+    match carve::merge_ast(&documents[0], &documents[1], &documents[2]) {
+        Ok(carve::MergeResult::Merged(document)) => {
+            let output = if json {
+                format!(
+                    "{{\"ok\":true,\"ast\":{},\"conflicts\":[]}}",
+                    carve::to_json(&document)
+                )
+            } else {
+                match carve::render_carve(&document) {
+                    Ok(output) => output,
+                    Err(error) => {
+                        eprintln!("carve merge: cannot serialize result: {error}");
+                        return ExitCode::FAILURE;
+                    }
+                }
+            };
+            print!("{output}");
+            if !output.ends_with('\n') {
+                println!();
+            }
+            ExitCode::SUCCESS
+        }
+        Ok(carve::MergeResult::Conflicts(conflicts)) => {
+            if json {
+                let items = conflicts
+                    .iter()
+                    .map(|item| {
+                        let deleted = if item.base.is_none()
+                            || item.ours.is_none()
+                            || item.theirs.is_none()
+                        {
+                            format!(
+                                ",\"deleted\":{{\"base\":{},\"ours\":{},\"theirs\":{}}}",
+                                item.base.is_none(),
+                                item.ours.is_none(),
+                                item.theirs.is_none(),
+                            )
+                        } else {
+                            String::new()
+                        };
+                        format!(
+                            "{{\"path\":{},\"reason\":{},\"base\":{},\"ours\":{},\"theirs\":{}{deleted}}}",
+                            json_string(&item.path),
+                            json_string(merge_reason(item.reason)),
+                            item.base.as_deref().unwrap_or("null"),
+                            item.ours.as_deref().unwrap_or("null"),
+                            item.theirs.as_deref().unwrap_or("null")
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join(",");
+                println!("{{\"ok\":false,\"ast\":null,\"conflicts\":[{items}]}}");
+            } else {
+                for item in &conflicts {
+                    eprintln!("conflict {} at {}", merge_reason(item.reason), item.path);
+                }
+                eprintln!(
+                    "{} structural conflict{}",
+                    conflicts.len(),
+                    if conflicts.len() == 1 { "" } else { "s" }
+                );
+            }
+            ExitCode::FAILURE
+        }
+        Err(error) => {
+            eprintln!("carve merge: {error}");
+            ExitCode::from(2)
+        }
+    }
+}
+
+fn merge_reason(reason: carve::MergeConflictReason) -> &'static str {
+    match reason {
+        carve::MergeConflictReason::BothChanged => "both-changed",
+        carve::MergeConflictReason::DeleteEdit => "delete-edit",
+        carve::MergeConflictReason::ConcurrentSequenceEdit => "concurrent-sequence-edit",
+    }
+}
+
+fn json_string(value: &str) -> String {
+    let mut output = String::from("\"");
+    for character in value.chars() {
+        match character {
+            '\"' => output.push_str("\\\""),
+            '\\' => output.push_str("\\\\"),
+            '\u{08}' => output.push_str("\\b"),
+            '\u{0c}' => output.push_str("\\f"),
+            '\n' => output.push_str("\\n"),
+            '\r' => output.push_str("\\r"),
+            '\t' => output.push_str("\\t"),
+            character if character <= '\u{1f}' => {
+                use std::fmt::Write as _;
+                let _ = write!(output, "\\u{:04x}", character as u32);
+            }
+            character => output.push(character),
+        }
+    }
+    output.push('\"');
+    output
+}
+
 /// What can stop `--from-json` from producing output.
 ///
 /// This path is the one where a renderer's §25 ceiling is reachable: the JSON
@@ -444,6 +581,8 @@ fn print_usage() {
          Usage:\n  \
          carve [options] [file]      render file (or stdin when omitted or `-`)\n  \
          carve fmt [options] [files] format Carve source to stdout\n  \
+         carve merge [--json] BASE OURS THEIRS\n  \
+                                     merge independent structural edits\n  \
          carve -h                    show this help\n\n\
          Output format (default --html; last one wins):\n  \
          --html                      HTML\n  \
