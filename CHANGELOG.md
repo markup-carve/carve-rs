@@ -30,6 +30,19 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   resolves; like carve-php it shares the `[[…]]` syntax with `Wikilinks`, so
   enable one or the other on a render.
 
+- **`Tabs` extension**, ported from carve-js `tabs` and carve-php
+  `TabsExtension`, closing the last extension gap between the three engines.
+  Renders a `:::: tabs` container - or a div carrying the `tabs` class - as a
+  tab set, one tab per `::: tab` child. Two interactive modes: `Css`, the
+  default, drives the panels with a radio input per tab and needs no script,
+  and `Aria` emits `role="tablist"` with buttons and panels for a page that
+  ships its own behaviour. A tab is named by its opener `[label]`, then a
+  `label=` attribute, then its first heading - which then stops being content -
+  and finally `Tab N`. A tab carrying `selected` opens first, otherwise the
+  first one does. A container with no tab child is left to the core div
+  renderer. In static mode every panel is shown in sequence as a `<section>`
+  headed by its label.
+
 ### Added
 
 - **`HeadingLevelShift` extension**, ported from carve-js `heading-level-shift`
