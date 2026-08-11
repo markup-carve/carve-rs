@@ -1,6 +1,5 @@
 //! Conservative three-way merge for the normative PART 12 exchange tree.
 
-use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::ast::Document;
@@ -28,23 +27,39 @@ pub enum MergeResult {
     Conflicts(Vec<MergeConflict>),
 }
 
-fn clean(value: &Json) -> Json {
+fn clean(value: &Json, strip_metadata: bool) -> Json {
     match value {
-        Json::Array(values) => Json::Array(values.iter().map(clean).collect()),
+        Json::Array(values) => Json::Array(
+            values
+                .iter()
+                .map(|value| clean(value, strip_metadata))
+                .collect(),
+        ),
         Json::Object(values) => Json::Object(
             values
                 .iter()
-                .filter(|(key, _)| key.as_str() != "pos" && key.as_str() != "srcByteLength")
-                .map(|(key, value)| (key.clone(), clean(value)))
+                .filter(|(key, _)| {
+                    !strip_metadata || (key.as_str() != "pos" && key.as_str() != "srcByteLength")
+                })
+                .map(|(key, value)| {
+                    (
+                        key.clone(),
+                        clean(value, strip_metadata && key != "keyValues"),
+                    )
+                })
                 .collect(),
         ),
         value => value.clone(),
     }
 }
 
-fn same(a: Option<&Json>, b: Option<&Json>) -> bool {
+fn strip_metadata(path: &str) -> bool {
+    !path.split('/').any(|part| part == "keyValues")
+}
+
+fn same(a: Option<&Json>, b: Option<&Json>, path: &str) -> bool {
     match (a, b) {
-        (Some(a), Some(b)) => clean(a) == clean(b),
+        (Some(a), Some(b)) => clean(a, strip_metadata(path)) == clean(b, strip_metadata(path)),
         (None, None) => true,
         _ => false,
     }
@@ -96,7 +111,7 @@ struct SideMatch {
     additions: Vec<usize>,
 }
 
-fn match_side(base: &[Json], side: &[Json]) -> SideMatch {
+fn match_side(base: &[Json], side: &[Json], path: &str) -> SideMatch {
     let mut found = SideMatch::default();
     fn take(found: &mut SideMatch, bi: usize, si: usize) {
         found.base_to_side.insert(bi, si);
@@ -104,7 +119,7 @@ fn match_side(base: &[Json], side: &[Json]) -> SideMatch {
     }
     for (bi, value) in base.iter().enumerate() {
         if let Some(si) = side.iter().enumerate().find_map(|(si, candidate)| {
-            (!found.side_to_base.contains_key(&si) && same(Some(value), Some(candidate)))
+            (!found.side_to_base.contains_key(&si) && same(Some(value), Some(candidate), path))
                 .then_some(si)
         }) {
             take(&mut found, bi, si);
@@ -120,6 +135,12 @@ fn match_side(base: &[Json], side: &[Json]) -> SideMatch {
             .filter(|i| !found.side_to_base.contains_key(i))
             .collect::<Vec<_>>()
     };
+    let mut base_hints = BTreeMap::<String, Vec<usize>>::new();
+    for bi in remaining_base(&found) {
+        if let Some(hint) = identity_hint(&base[bi]) {
+            base_hints.entry(hint).or_default().push(bi);
+        }
+    }
     for bi in remaining_base(&found) {
         let Some(hint) = identity_hint(&base[bi]) else {
             continue;
@@ -128,7 +149,11 @@ fn match_side(base: &[Json], side: &[Json]) -> SideMatch {
             .into_iter()
             .filter(|si| identity_hint(&side[*si]).as_ref() == Some(&hint))
             .collect::<Vec<_>>();
-        if candidates.len() == 1 {
+        if base_hints
+            .get(&hint)
+            .is_some_and(|indexes| indexes.len() == 1)
+            && candidates.len() == 1
+        {
             take(&mut found, bi, candidates[0]);
         }
     }
@@ -213,11 +238,7 @@ fn record_conflict(
     conflicts: &mut Vec<MergeConflict>,
 ) -> Option<Json> {
     conflicts.push(MergeConflict {
-        path: if path.is_empty() {
-            "/".into()
-        } else {
-            path.into()
-        },
+        path: path.into(),
         reason,
         base: base.map(value_to_json),
         ours: ours.map(value_to_json),
@@ -233,8 +254,8 @@ fn merge_sequence(
     path: &str,
     conflicts: &mut Vec<MergeConflict>,
 ) -> Option<Json> {
-    let om = match_side(base, ours);
-    let tm = match_side(base, theirs);
+    let om = match_side(base, ours, path);
+    let tm = match_side(base, theirs, path);
     let mut values = BTreeMap::<String, Json>::new();
     let mut omitted = BTreeSet::<String>::new();
     for (i, base_value) in base.iter().enumerate() {
@@ -247,10 +268,10 @@ fn merge_sequence(
             (None, None) => {
                 omitted.insert(token);
             }
-            (None, Some(ti)) if same(Some(base_value), Some(&theirs[ti])) => {
+            (None, Some(ti)) if same(Some(base_value), Some(&theirs[ti]), path) => {
                 omitted.insert(token);
             }
-            (Some(oi), None) if same(Some(base_value), Some(&ours[oi])) => {
+            (Some(oi), None) if same(Some(base_value), Some(&ours[oi]), path) => {
                 omitted.insert(token);
             }
             (None, Some(ti)) => {
@@ -294,10 +315,26 @@ fn merge_sequence(
     let mut theirs_add = BTreeMap::new();
     let mut used_theirs = BTreeSet::new();
     for &oi in &om.additions {
+        let ours_hint = identity_hint(&ours[oi]);
+        if tm.additions.iter().copied().any(|ti| {
+            ours_hint.is_some()
+                && identity_hint(&theirs[ti]) == ours_hint
+                && anchor(oi, &om, ours.len()) == anchor(ti, &tm, theirs.len())
+                && !same(Some(&ours[oi]), Some(&theirs[ti]), path)
+        }) {
+            return record_conflict(
+                MergeConflictReason::ConcurrentSequenceEdit,
+                path,
+                Some(&Json::Array(base.to_vec())),
+                Some(&Json::Array(ours.to_vec())),
+                Some(&Json::Array(theirs.to_vec())),
+                conflicts,
+            );
+        }
         let same_addition = tm.additions.iter().copied().find(|ti| {
             !used_theirs.contains(ti)
                 && anchor(oi, &om, ours.len()) == anchor(*ti, &tm, theirs.len())
-                && same(Some(&ours[oi]), Some(&theirs[*ti]))
+                && same(Some(&ours[oi]), Some(&theirs[*ti]), path)
         });
         let token = format!("o{oi}");
         ours_add.insert(oi, token.clone());
@@ -365,12 +402,6 @@ fn merge_sequence(
         add_edges(&ot, ours_moved);
         add_edges(&tt, theirs_moved);
     }
-    let mut priority = BTreeMap::<String, f64>::new();
-    for (tokens, weight) in [(&surviving, 1.0), (&ot, 0.01), (&tt, 0.0001)] {
-        for (i, token) in tokens.iter().enumerate() {
-            *priority.entry(token.clone()).or_default() += i as f64 * weight;
-        }
-    }
     let mut incoming = all
         .iter()
         .map(|t| (t.clone(), 0usize))
@@ -387,14 +418,7 @@ fn merge_sequence(
         .collect::<Vec<_>>();
     let mut order = Vec::new();
     while !ready.is_empty() {
-        ready.sort_by(|a, b| {
-            priority
-                .get(a)
-                .unwrap_or(&0.0)
-                .partial_cmp(priority.get(b).unwrap_or(&0.0))
-                .unwrap_or(Ordering::Equal)
-                .then_with(|| a.cmp(b))
-        });
+        ready.sort();
         let token = ready.remove(0);
         order.push(token.clone());
         for to in edges.get(&token).into_iter().flatten() {
@@ -430,13 +454,13 @@ fn merge_value(
     path: &str,
     conflicts: &mut Vec<MergeConflict>,
 ) -> Option<Json> {
-    if same(ours, theirs) {
+    if same(ours, theirs, path) {
         return ours.cloned();
     }
-    if same(ours, base) {
+    if same(ours, base, path) {
         return theirs.cloned();
     }
-    if same(theirs, base) {
+    if same(theirs, base, path) {
         return ours.cloned();
     }
     let (Some(ours), Some(theirs)) = (ours, theirs) else {
@@ -460,11 +484,13 @@ fn merge_value(
             .keys()
             .chain(ours.keys())
             .chain(theirs.keys())
-            .filter(|k| k.as_str() != "pos" && k.as_str() != "srcByteLength")
             .cloned()
             .collect::<BTreeSet<_>>();
         let mut out = BTreeMap::new();
         for key in keys {
+            if strip_metadata(path) && (key == "pos" || key == "srcByteLength") {
+                continue;
+            }
             if let Some(value) = merge_value(
                 base.get(&key),
                 ours.get(&key),
@@ -503,6 +529,7 @@ pub fn merge_ast(
     if !conflicts.is_empty() {
         return Ok(MergeResult::Conflicts(conflicts));
     }
+    merged = clean(&merged, true);
     if let Json::Object(root) = &mut merged {
         root.insert("srcByteLength".into(), Json::Number(0));
     }

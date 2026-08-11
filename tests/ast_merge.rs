@@ -51,3 +51,28 @@ fn rejects_incompatible_reorders() {
         .iter()
         .any(|item| item.reason == MergeConflictReason::ConcurrentSequenceEdit));
 }
+
+#[test]
+fn preserves_attributes_named_like_position_metadata() {
+    let base = parse("[text]{pos=base srcByteLength=kept}\n");
+    let ours = parse("[text]{pos=ours srcByteLength=kept}\n");
+    let theirs = parse("[changed]{pos=base srcByteLength=kept}\n");
+    let MergeResult::Merged(merged) = merge_ast(&base, &ours, &theirs).unwrap() else {
+        panic!("unexpected conflict")
+    };
+    let json = to_json(&merged);
+    assert!(json.contains("\"pos\":\"ours\""));
+    assert!(json.contains("\"srcByteLength\":\"kept\""));
+    assert!(!json.contains("\"startLine\""));
+}
+
+#[test]
+fn uses_the_empty_pointer_for_a_root_conflict() {
+    let base = parse("Base.\n");
+    let ours = parse("Ours.\n");
+    let theirs = parse("Theirs.\n");
+    let MergeResult::Conflicts(conflicts) = merge_ast(&base, &ours, &theirs).unwrap() else {
+        panic!("expected conflict")
+    };
+    assert!(conflicts.iter().all(|conflict| conflict.path != "/"));
+}

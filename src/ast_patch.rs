@@ -28,18 +28,34 @@ impl From<AstJsonError> for AstPatchError {
     }
 }
 
-fn clean(value: &Json) -> Json {
+fn clean(value: &Json, strip_metadata: bool) -> Json {
     match value {
-        Json::Array(values) => Json::Array(values.iter().map(clean).collect()),
+        Json::Array(values) => Json::Array(
+            values
+                .iter()
+                .map(|value| clean(value, strip_metadata))
+                .collect(),
+        ),
         Json::Object(values) => Json::Object(
             values
                 .iter()
-                .filter(|(key, _)| key.as_str() != "pos" && key.as_str() != "srcByteLength")
-                .map(|(key, value)| (key.clone(), clean(value)))
+                .filter(|(key, _)| {
+                    !strip_metadata || (key.as_str() != "pos" && key.as_str() != "srcByteLength")
+                })
+                .map(|(key, value)| {
+                    (
+                        key.clone(),
+                        clean(value, strip_metadata && key.as_str() != "keyValues"),
+                    )
+                })
                 .collect(),
         ),
         value => value.clone(),
     }
+}
+
+fn strip_metadata(path: &str) -> bool {
+    !path.split('/').any(|part| part == "keyValues")
 }
 
 fn pointer(path: &str, key: impl ToString) -> String {
@@ -50,7 +66,8 @@ fn pointer(path: &str, key: impl ToString) -> String {
 }
 
 fn build(before: &Json, after: &Json, path: &str, out: &mut Vec<AstPatchOperation>) {
-    if clean(before) == clean(after) {
+    let strip = strip_metadata(path);
+    if clean(before, strip) == clean(after, strip) {
         return;
     }
     match (before, after) {
@@ -63,17 +80,17 @@ fn build(before: &Json, after: &Json, path: &str, out: &mut Vec<AstPatchOperatio
             let keys = before
                 .keys()
                 .chain(after.keys())
-                .filter(|key| key.as_str() != "pos" && key.as_str() != "srcByteLength")
+                .filter(|key| !strip || (key.as_str() != "pos" && key.as_str() != "srcByteLength"))
                 .cloned()
                 .collect::<BTreeSet<_>>();
             for key in keys {
                 let child = pointer(path, &key);
                 match (before.get(&key), after.get(&key)) {
                     (Some(_), None) => out.push(AstPatchOperation::Remove { path: child }),
-                    (None, Some(value)) => out.push(AstPatchOperation::Add {
-                        path: child,
-                        value: value_to_json(&clean(value)),
-                    }),
+                    (None, Some(value)) => {
+                        let value = value_to_json(&clean(value, strip_metadata(&child)));
+                        out.push(AstPatchOperation::Add { path: child, value });
+                    }
                     (Some(before), Some(after)) => build(before, after, &child, out),
                     (None, None) => {}
                 }
@@ -81,7 +98,7 @@ fn build(before: &Json, after: &Json, path: &str, out: &mut Vec<AstPatchOperatio
         }
         _ => out.push(AstPatchOperation::Replace {
             path: path.into(),
-            value: value_to_json(&clean(after)),
+            value: value_to_json(&clean(after, strip)),
         }),
     }
 }
@@ -111,7 +128,10 @@ fn decode(path: &str) -> Result<Vec<String>, AstPatchError> {
 }
 
 fn index(value: &str, length: usize, allow_end: bool) -> Result<usize, AstPatchError> {
-    if value.is_empty() || !value.bytes().all(|byte| byte.is_ascii_digit()) {
+    if value.is_empty()
+        || (value.len() > 1 && value.starts_with('0'))
+        || !value.bytes().all(|byte| byte.is_ascii_digit())
+    {
         return Err(AstPatchError(format!(
             "array component {value:?} is not an index"
         )));
@@ -137,6 +157,12 @@ fn apply_at(
     parts: &[String],
     operation: &AstPatchOperation,
 ) -> Result<Json, AstPatchError> {
+    let operation_path = match operation {
+        AstPatchOperation::Add { path, .. }
+        | AstPatchOperation::Replace { path, .. }
+        | AstPatchOperation::Remove { path } => path,
+    };
+    let strip = strip_metadata(operation_path);
     let (key, rest) = parts
         .split_first()
         .ok_or_else(|| AstPatchError("patch path cannot be empty here".into()))?;
@@ -164,11 +190,11 @@ fn apply_at(
         Json::Array(values) => match operation {
             AstPatchOperation::Add { value, .. } => {
                 let i = index(key, values.len(), true)?;
-                values.insert(i, clean(&parse_value(value)?));
+                values.insert(i, clean(&parse_value(value)?, strip));
             }
             AstPatchOperation::Replace { value, .. } => {
                 let i = index(key, values.len(), false)?;
-                values[i] = clean(&parse_value(value)?);
+                values[i] = clean(&parse_value(value)?, strip);
             }
             AstPatchOperation::Remove { .. } => {
                 let i = index(key, values.len(), false)?;
@@ -177,7 +203,7 @@ fn apply_at(
         },
         Json::Object(values) => match operation {
             AstPatchOperation::Add { value, .. } => {
-                values.insert(key.clone(), clean(&parse_value(value)?));
+                values.insert(key.clone(), clean(&parse_value(value)?, strip));
             }
             AstPatchOperation::Replace { value, .. } => {
                 if !values.contains_key(key) {
@@ -185,7 +211,7 @@ fn apply_at(
                         "path component {key:?} does not exist"
                     )));
                 }
-                values.insert(key.clone(), clean(&parse_value(value)?));
+                values.insert(key.clone(), clean(&parse_value(value)?, strip));
             }
             AstPatchOperation::Remove { .. } => {
                 if values.remove(key).is_none() {
@@ -204,7 +230,7 @@ pub fn apply_ast_patch(
     ast: &Document,
     operations: &[AstPatchOperation],
 ) -> Result<Document, AstPatchError> {
-    let mut root = clean(&parse_value(&to_json(ast))?);
+    let mut root = clean(&parse_value(&to_json(ast))?, true);
     for operation in operations {
         let path = match operation {
             AstPatchOperation::Add { path, .. }
@@ -218,7 +244,7 @@ pub fn apply_ast_patch(
                     return Err(AstPatchError("the document root cannot be removed".into()))
                 }
                 AstPatchOperation::Add { value, .. } | AstPatchOperation::Replace { value, .. } => {
-                    clean(&parse_value(value)?)
+                    clean(&parse_value(value)?, true)
                 }
             };
         } else {

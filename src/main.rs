@@ -305,6 +305,17 @@ fn main() -> ExitCode {
 }
 
 fn run_merge(args: &[String]) -> ExitCode {
+    if args.iter().any(|arg| arg == "-h" || arg == "--help") {
+        println!("usage: carve merge [--json] BASE OURS THEIRS");
+        return ExitCode::SUCCESS;
+    }
+    if let Some(option) = args
+        .iter()
+        .find(|arg| arg.starts_with('-') && arg.as_str() != "--json")
+    {
+        eprintln!("carve merge: unknown option: {option}");
+        return ExitCode::from(2);
+    }
     let json = args.iter().any(|arg| arg == "--json");
     let paths = args
         .iter()
@@ -328,7 +339,10 @@ fn run_merge(args: &[String]) -> ExitCode {
     match carve::merge_ast(&documents[0], &documents[1], &documents[2]) {
         Ok(carve::MergeResult::Merged(document)) => {
             let output = if json {
-                carve::to_json(&document)
+                format!(
+                    "{{\"ok\":true,\"ast\":{},\"conflicts\":[]}}",
+                    carve::to_json(&document)
+                )
             } else {
                 match carve::render_carve(&document) {
                     Ok(output) => output,
@@ -346,12 +360,25 @@ fn run_merge(args: &[String]) -> ExitCode {
         }
         Ok(carve::MergeResult::Conflicts(conflicts)) => {
             if json {
-                let items = conflicts.iter().map(|item| format!(
-                    "{{\"path\":{:?},\"reason\":{:?},\"base\":{},\"ours\":{},\"theirs\":{}}}",
-                    item.path,
-                    match item.reason { carve::MergeConflictReason::BothChanged => "both-changed", carve::MergeConflictReason::DeleteEdit => "delete-edit", carve::MergeConflictReason::ConcurrentSequenceEdit => "concurrent-sequence-edit" },
-                    item.base.as_deref().unwrap_or("null"), item.ours.as_deref().unwrap_or("null"), item.theirs.as_deref().unwrap_or("null")
-                )).collect::<Vec<_>>().join(",");
+                let items = conflicts
+                    .iter()
+                    .map(|item| {
+                        format!(
+                            "{{\"path\":{},\"reason\":{},\"base\":{},\"ours\":{},\"theirs\":{}}}",
+                            json_string(&item.path),
+                            json_string(match item.reason {
+                                carve::MergeConflictReason::BothChanged => "both-changed",
+                                carve::MergeConflictReason::DeleteEdit => "delete-edit",
+                                carve::MergeConflictReason::ConcurrentSequenceEdit =>
+                                    "concurrent-sequence-edit",
+                            }),
+                            item.base.as_deref().unwrap_or("null"),
+                            item.ours.as_deref().unwrap_or("null"),
+                            item.theirs.as_deref().unwrap_or("null")
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join(",");
                 println!("{{\"ok\":false,\"ast\":null,\"conflicts\":[{items}]}}");
             } else {
                 for item in &conflicts {
@@ -366,6 +393,28 @@ fn run_merge(args: &[String]) -> ExitCode {
             ExitCode::from(2)
         }
     }
+}
+
+fn json_string(value: &str) -> String {
+    let mut output = String::from("\"");
+    for character in value.chars() {
+        match character {
+            '\"' => output.push_str("\\\""),
+            '\\' => output.push_str("\\\\"),
+            '\u{08}' => output.push_str("\\b"),
+            '\u{0c}' => output.push_str("\\f"),
+            '\n' => output.push_str("\\n"),
+            '\r' => output.push_str("\\r"),
+            '\t' => output.push_str("\\t"),
+            character if character <= '\u{1f}' => {
+                use std::fmt::Write as _;
+                let _ = write!(output, "\\u{:04x}", character as u32);
+            }
+            character => output.push(character),
+        }
+    }
+    output.push('\"');
+    output
 }
 
 /// What can stop `--from-json` from producing output.
