@@ -456,13 +456,14 @@ fn render_with_escapes_once(doc: &Document, escape_mode: EscapeMode) -> String {
     // written source and the published tree cannot disagree.
     let footnote_defs = crate::ast_json::footnote_defs_in_source_order(doc);
     let mut rendered = Vec::new();
+    let mut previous_rendered_block: Option<&BlockNode> = None;
     for entry in crate::ast_json::ordered_document_entries(doc, &footnote_defs) {
-        let text = match entry {
+        let (mut text, current_block) = match entry {
             crate::ast_json::DocEntry::Block(child) => {
                 ctx.paragraph_starts_after_caption_host = ctx.after_caption_host;
                 let text = render_block(child, &mut ctx);
                 ctx.after_caption_host = hosts_caption(child);
-                text
+                (text, Some(child))
             }
             crate::ast_json::DocEntry::FootnoteDef(label, blocks, _) => {
                 ctx.after_caption_host = false;
@@ -473,15 +474,24 @@ fn render_with_escapes_once(doc: &Document, escape_mode: EscapeMode) -> String {
                     .and_then(block_pos)
                     .is_some_and(|pos| ctx.written_in_place.contains(&pos.start_line))
                 {
-                    String::new()
+                    (String::new(), None)
                 } else {
-                    render_footnote_def_source(label, blocks, &mut ctx)
+                    (render_footnote_def_source(label, blocks, &mut ctx), None)
                 }
             }
         };
         if !text.is_empty() {
+            if previous_rendered_block
+                .zip(current_block)
+                .is_some_and(|(left, right)| hard_list_boundary(left, right))
+            {
+                note_inserted(S_BLANK);
+                text = format!("{}\n{text}", verbatim_blank());
+            }
             rendered.push(text);
         }
+        // A rendering-empty block still breaks AST adjacency.
+        previous_rendered_block = current_block;
     }
     // THE FALLBACK SPELLING IS DECIDED IN `render_with_escapes`, on the finished
     // bytes, not here. It used to be decided here, from the FIRST RENDERED
@@ -721,13 +731,20 @@ fn render_blocks(blocks: &[BlockNode], ctx: &mut CarveContext) -> String {
     let previous_paragraph_start = ctx.paragraph_starts_after_caption_host;
     ctx.after_caption_host = false;
     let mut rendered = Vec::new();
+    let mut previous_rendered: Option<&BlockNode> = None;
     for block in blocks {
         ctx.paragraph_starts_after_caption_host = ctx.after_caption_host;
-        let text = render_block(block, ctx);
+        let mut text = render_block(block, ctx);
         ctx.after_caption_host = hosts_caption(block);
         if !text.is_empty() {
+            if previous_rendered.is_some_and(|left| hard_list_boundary(left, block)) {
+                note_inserted(S_BLANK);
+                text = format!("{}\n{text}", verbatim_blank());
+            }
             rendered.push(text);
         }
+        // A rendering-empty block still breaks AST adjacency.
+        previous_rendered = Some(block);
     }
     let out = rendered.join("\n\n");
     ctx.after_caption_host = previous_host;
@@ -843,9 +860,16 @@ fn adjacent_blocks_merge(left: &BlockNode, right: &BlockNode) -> bool {
                 && left.delim == right.delim
                 && left.bullet_char == right.bullet_char
                 && left.ol_type == right.ol_type
+                && left.items.first().and_then(|item| item.checked).is_some()
+                    == right.items.first().and_then(|item| item.checked).is_some()
         }
         _ => false,
     }
+}
+
+fn hard_list_boundary(left: &BlockNode, right: &BlockNode) -> bool {
+    matches!((left, right), (BlockNode::List(_), BlockNode::List(_)))
+        && adjacent_blocks_merge(left, right)
 }
 
 fn render_item_blocks(blocks: &[BlockNode], tight: bool, ctx: &mut CarveContext) -> String {
