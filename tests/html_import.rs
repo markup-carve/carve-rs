@@ -56,7 +56,7 @@ fn roundtrip_mode_preserves_unknown_markup_as_raw_html() {
         ..Default::default()
     };
     let result = html_to_carve("<p><kbd>x</kbd></p>", &options).unwrap();
-    assert!(result.value.contains("{=html}"));
+    assert!(result.value.contains("`<kbd>x</kbd>`{=html}"));
     assert_eq!(
         result.report.diagnostics[0].code,
         HtmlImportDiagnosticCode::RawPreserved

@@ -152,7 +152,44 @@ impl<'a> Importer<'a> {
         if serialize(&mut bytes, &serializable, SerializeOpts::default()).is_err() {
             return String::new();
         }
-        String::from_utf8(bytes).unwrap_or_default()
+        let inner = String::from_utf8(bytes).unwrap_or_default();
+        let NodeData::Element { name, attrs, .. } = &handle.data else {
+            return inner;
+        };
+        let tag = name.local.as_ref();
+        let attributes = attrs
+            .borrow()
+            .iter()
+            .map(|attribute| {
+                let value = attribute
+                    .value
+                    .replace('&', "&amp;")
+                    .replace('"', "&quot;")
+                    .replace('<', "&lt;");
+                format!(" {}=\"{}\"", attribute.name.local, value)
+            })
+            .collect::<String>();
+        if matches!(
+            tag,
+            "area"
+                | "base"
+                | "br"
+                | "col"
+                | "embed"
+                | "hr"
+                | "img"
+                | "input"
+                | "link"
+                | "meta"
+                | "param"
+                | "source"
+                | "track"
+                | "wbr"
+        ) {
+            format!("<{tag}{attributes}>")
+        } else {
+            format!("<{tag}{attributes}>{inner}</{tag}>")
+        }
     }
     fn attrs(&mut self, handle: &Handle, path: &str) -> Option<Attrs> {
         let tag = Self::tag(handle).unwrap_or_default();
