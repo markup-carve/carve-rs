@@ -18,6 +18,8 @@
 //! These tests therefore read back through `carve::from_json`, which is what a
 //! consumer sees and also proves the wire form the encoder wrote decodes.
 
+mod common;
+
 use carve::ast::*;
 use carve::Document;
 
@@ -254,7 +256,11 @@ fn sweep_the_corpus_for_adjacent_runs() {
         .filter(|p| p.extension().is_some_and(|e| e == "crv"))
         .collect();
     sources.sort();
-    assert!(sources.len() > 400, "corpus looks truncated");
+    assert_eq!(
+        sources.len(),
+        common::expected_corpus_size(),
+        "the corpus sweep read a different number of documents than the spec examples define"
+    );
 
     let mut offenders = Vec::new();
     for path in &sources {
