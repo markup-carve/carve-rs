@@ -5708,7 +5708,7 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                         &mut nested,
                         |src| {
                             nested_ends_with_heading(src, options)
-                                || (!pending_blank && nested_ends_with_open_paragraph(src, options))
+                                || nested_ends_with_open_paragraph(src, options)
                         },
                         |cur| {
                             collect_item_continuation_block_mapped(
@@ -7173,10 +7173,15 @@ fn fold_lazy_run_and_resume(
 
 fn collect_trailing_lazy(cur: &mut LineCursor, nested: &mut MappedSource) {
     while let Some(line) = cur.peek() {
-        if is_blank_line(line) || indent_columns(line) > 0 || is_list_marker(line) || {
-            let line_owned = line.to_string();
-            interrupts_lazy_continuation(cur, &line_owned)
-        } {
+        if is_blank_line(line)
+            || indent_columns(line) > 0
+            || is_list_marker(line)
+            || trim_ascii(line) == "+"
+            || {
+                let line_owned = line.to_string();
+                interrupts_lazy_continuation(cur, &line_owned)
+            }
+        {
             break;
         }
         // The guard above already required column 0, so nothing is taken off
