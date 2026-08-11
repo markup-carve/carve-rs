@@ -1661,7 +1661,7 @@ fn parse_link_def_line(line: &str) -> Option<(&str, &str)> {
     // tail as junk and ignored it, which nothing in the grammar authorized.
     //
     // The anchor lives HERE, in the shape test, rather than at the two places
-    // that build the node - so paragraph interruption, the container scan and
+    // that build the node - so block-position handling, the container scan and
     // the footnote-body scan all get the same answer from the same code. That
     // is the sweep carve#922 asks for: while the pattern ended in a
     // swallow-everything tail, a caller could test the RAW line and be right by
@@ -4788,7 +4788,7 @@ fn slice_columns_mapped(line: &str, cols: usize, keep_residual: bool) -> (String
 /// rather than sampled around this value: `suppressed` is the absorption state
 /// the line inherits, and the resolved verdict carries both whether the
 /// paragraph is open and whether THIS line opens an absorption. Reading the
-/// flag on every quoted line - which is what `suppress_colon_interrupt` did
+/// flag on every quoted line - which is what `colon_absorption` did
 /// when it stood outside - is precisely the eager read this defers
 /// (markup-carve/carve-rs#738 landing under markup-carve/carve-rs#731).
 enum ParaOpen<'a> {
@@ -4868,7 +4868,7 @@ impl<'a> ParaOpen<'a> {
         // itself a block-opener (heading, thematic break, table row, `:::` div
         // / line block opener) leaves NO open paragraph -- so a following list
         // marker has nothing to fold into and must end the quote.
-        // `interrupts_paragraph_with_rest` is the §10 predicate: a line that
+        // `starts_block_boundary_with_rest` is the §10 predicate: a line that
         // would interrupt a paragraph is, by definition, not paragraph
         // continuation text.
         //
@@ -4877,10 +4877,10 @@ impl<'a> ParaOpen<'a> {
         // literal paragraph text, so it keeps the paragraph open and lazy
         // continuation stays in the quote (strict column-0 rule,
         // docs/divergence-from-djot.md §11) -- uniform with the opener paths
-        // in parse_block / interrupts_paragraph.
+        // in parse_block / starts_block_boundary.
         //
         // The rest-of-body slice is empty: the only lookahead
-        // `interrupts_paragraph_with_rest` consults is a fenced-code closer
+        // `starts_block_boundary_with_rest` consults is a fenced-code closer
         // probe, and this predicate is reached only from the branch where the
         // line is NOT a fence opener, so the caller never had a slice to give.
         // It passed a `Vec` built under `if detect_fence_open(stripped)`, which
@@ -4897,7 +4897,7 @@ impl<'a> ParaOpen<'a> {
                 || ((innermost.starts_with([' ', '\t'])
                     || detect_container_open(innermost).is_none())
                     && !trim_ascii_start(innermost).starts_with("%%")
-                    && !interrupts_paragraph_with_rest(innermost, &[])));
+                    && !starts_block_boundary_with_rest(innermost, &[])));
         let verdict = Verdict {
             open,
             opens_absorption: open && is_invalid_colon_fence_opener_text(innermost),
@@ -4919,7 +4919,7 @@ fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     // paragraph correctly - but `para_open` was computed from the line's SHAPE
     // alone, so a bare `:::` set it false and the flush-left line under it could
     // not fold. That made the quote disagree with its own body about whether a
-    // paragraph was open (carve-rs#727). Same rule as `suppress_colon_interrupt`
+    // paragraph was open (carve-rs#727). Same rule as `colon_absorption`
     // in `parse_paragraph` and the item lead-paragraph collector, spelled from
     // the same two helpers rather than a fourth time.
     //
@@ -4927,7 +4927,7 @@ fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     // it is handed to `ParaOpen` and advanced from the resolved verdict rather
     // than read on every quoted line. Reading it per line is what would put
     // markup-carve/carve-rs#731's cubic walk back.
-    let mut suppress_colon_interrupt = false;
+    let mut colon_absorption = false;
     let mut in_fence: Option<FenceOpen> = None;
     let mut colon_fences: Vec<usize> = Vec::new();
     while let Some(line) = cur.peek() {
@@ -4960,13 +4960,13 @@ fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 // paragraph rather than once after the chain, because after the
                 // chain it would have to READ `para_open`, and reading it on
                 // every quoted line is the walk this defers.
-                suppress_colon_interrupt = false;
+                colon_absorption = false;
             } else if let Some(open) = detect_fence_open(stripped) {
                 if !para_open.get() {
                     // Fence at block start opens (unterminated renders to end).
                     in_fence = Some(open);
                     para_open = ParaOpen::Closed;
-                    suppress_colon_interrupt = false;
+                    colon_absorption = false;
                 } else {
                     // After an open paragraph a fence interrupts only with a
                     // matching closer ahead (§10); else it is inline verbatim.
@@ -4980,7 +4980,7 @@ fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                     if has_closer {
                         in_fence = Some(open);
                         para_open = ParaOpen::Closed;
-                        suppress_colon_interrupt = false;
+                        colon_absorption = false;
                     }
                     // No closer: the fence is inline verbatim and the paragraph
                     // (already resolved OPEN by the test above) stays open, so
@@ -4996,7 +4996,7 @@ fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 // (markup-carve/carve-rs#731). The absorption state the line
                 // inherits goes WITH it, so §12 is decided by the same walk
                 // instead of forcing one of its own.
-                para_open = ParaOpen::from_line(stripped, suppress_colon_interrupt);
+                para_open = ParaOpen::from_line(stripped, colon_absorption);
                 // Advancing the absorption flag needs the verdict, and getting
                 // the verdict is the walk. So force it only where the answer
                 // can change the flag. While the flag is OFF, a line carrying
@@ -5018,11 +5018,11 @@ fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 // `Note:`, a `12:30`, an `https://` - therefore stays on the
                 // deferred path, which is what lets markup-carve/carve-rs#738
                 // ride on the deferral instead of undoing it.
-                if suppress_colon_interrupt || stripped.contains(":::") {
+                if colon_absorption || stripped.contains(":::") {
                     if para_open.get() {
-                        suppress_colon_interrupt |= para_open.opens_absorption();
+                        colon_absorption |= para_open.opens_absorption();
                     } else {
-                        suppress_colon_interrupt = false;
+                        colon_absorption = false;
                     }
                 }
             }
@@ -5089,7 +5089,7 @@ fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         // A list marker FOLDS into the open quoted paragraph as literal text --
         // the quoted paragraph follows the same rule as a top-level paragraph,
         // where a list marker does not interrupt (it needs a blank line before
-        // it). `interrupts_paragraph` is the shared predicate for that decision,
+        // it). `starts_block_boundary` is the shared predicate for that decision,
         // and it already returns false for bullet/task/ordered markers, so we
         // simply defer to it. A heading is the sole construct a list marker
         // would otherwise end, and headings still interrupt via that predicate.
@@ -6278,7 +6278,7 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 cur.pos > before_block && is_blank_line(cur.lines[cur.pos - 1]);
             let marker_line_was_the_whole_block = cur.pos == before_block;
             // A marker-line attribute floats onto the block that follows it.
-            // That following line is ownership, not paragraph interruption, so
+            // That following line is ownership, not block-position handling, so
             // even a line the ordinary lazy gate would call an interrupter must
             // enter this item.
             if trim_ascii(marker.content).starts_with('{') {
@@ -6631,7 +6631,7 @@ fn marker_content_starts_block(content: &str, cur: &LineCursor<'_>, content_col:
         if indent_columns(next) > 0 {
             return false;
         }
-        return is_list_marker(next) || interrupts_paragraph_with_rest(next, &[]);
+        return is_list_marker(next) || starts_block_boundary_with_rest(next, &[]);
     }
     if is_table_start(content) {
         return true;
@@ -7202,7 +7202,7 @@ fn continuation_line_opens_sub_block(line: &str, rest: &[&str]) -> bool {
     if is_list_marker(line) {
         return true;
     }
-    if interrupts_paragraph_with_rest(line, rest) {
+    if starts_block_boundary_with_rest(line, rest) {
         return true;
     }
     false
@@ -7277,7 +7277,7 @@ fn collect_trailing_lazy(cur: &mut LineCursor, nested: &mut MappedSource) {
     while let Some(line) = cur.peek() {
         if is_blank_line(line) || indent_columns(line) > 0 || is_list_marker(line) || {
             let line_owned = line.to_string();
-            interrupts_lazy_continuation(cur, &line_owned)
+            ends_lazy_continuation(cur, &line_owned)
         } {
             break;
         }
@@ -7854,7 +7854,7 @@ fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         lines.push(trimmed);
     }
     // A paragraph never carries its OWN trailing attribute block: a standalone
-    // `{...}` line floats forward (handled via interrupts_paragraph + the
+    // `{...}` line floats forward (handled via starts_block_boundary + the
     // pending-attrs loop), and a trailing same-line `{...}` with no abutting
     // host stays literal inline content (§14). Paragraph attributes come only
     // from a preceding block-attribute line (§15), applied by the caller.
@@ -7885,62 +7885,50 @@ fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     })
 }
 
-/// Whether `line`, seen while accumulating a paragraph, ends it and starts a
-/// new block (grammar §10, post-Markdown default).
-///
-/// A VISIBLE block interrupts an open paragraph with no blank line, at the top
-/// level and nested: heading, thematic break, block quote, bullet/task list, a
-/// valid table row, a fenced code block that has a matching closer ahead, and
-/// a valid flush-left colon-fence block. INVISIBLE constructs
-/// (comments, abbreviation definitions) interrupt too. ORDERED lists do NOT
-/// interrupt, `+` is the continuation marker not a bullet, and a bare image
-/// stays inline.
-fn interrupts_paragraph(cur: &mut LineCursor<'_>, line: &str) -> bool {
-    // §10 (post-Markdown default): a VISIBLE block interrupts an open paragraph
-    // with no blank line. Invisible constructs (comments, abbreviation defs)
-    // interrupt too. Ordered lists do NOT interrupt, `+` is the continuation
-    // marker not a bullet, and a bare image stays inline.
+/// Whether `line` establishes a structural boundary for a bounded inline block
+/// or container collector. Open paragraphs never call this classifier: §10
+/// already makes every nonblank line paragraph content. Lists and bare images
+/// are excluded because they fold in the bounded contexts that use this helper.
+fn starts_block_boundary(cur: &mut LineCursor<'_>, line: &str) -> bool {
     if trim_ascii_start(line).starts_with("%%")
         || (cur.at_document_level && detect_abbreviation_def(line).is_some())
     {
         return true;
     }
     // A standalone block-attribute line floats forward to the next block (or is
-    // dropped when none follows, §15), so it interrupts the paragraph rather
-    // than folding in as literal text -- but only FLUSH-LEFT, like the
+    // dropped when none follows, §15), so it ends a bounded run -- but only
+    // FLUSH-LEFT, like the
     // quote/heading/table checks below. `parse_standalone_attrs` trims leading
-    // whitespace, so without this guard an INDENTED `{...}` line would interrupt
-    // where an indented `> q` / `# h` does not; an indented attr line is lazy
+    // whitespace, so without this guard an INDENTED `{...}` line would establish
+    // a boundary where an indented `> q` / `# h` does not; an indented attr line is lazy
     // paragraph text under the strict column-0 rule (§24 C3), not a floater.
     if !line.starts_with([' ', '\t']) && parse_standalone_attrs(line).is_some() {
         return true;
     }
-    // Symmetric §10: a list marker (bullet OR task OR ordered) does NOT
-    // interrupt a paragraph -- a list needs a blank line before it. Only the
-    // other visible blocks interrupt.
+    // List markers fold in bounded inline contexts; the other structural forms
+    // end them.
     if detect_heading(line).is_some()
         || detect_thematic_break(line)
         || strip_blockquote_prefix(line).is_some()
-        // A definition-list term `:: ` is a first-class block opener (§24 C3):
-        // it interrupts at column 0 and nests at the content column, uniform
-        // with quote/heading/fence/table. `is_definition_list_start` requires a
+        // A definition-list term `:: ` is a first-class block opener in a
+        // bounded context. `is_definition_list_start` requires a
         // flush-left `:: `, so an indented term folds as lazy text like the rest.
         || is_definition_list_start(line)
-        // A table row interrupts only when FLUSH-LEFT, like the quote/heading
+        // A table row is structural only when flush-left, like quote/heading
         // checks above -- `is_table_start` trims leading whitespace, so without
-        // this guard an INDENTED row (`  |a|`) would interrupt where an indented
+        // this guard an INDENTED row (`  |a|`) would establish a boundary where an indented
         // `> q` / `# h` does not. An indented row below/above a list item's
         // content column is lazy paragraph text (§24 C3), not a nested table.
         || (!line.starts_with([' ', '\t']) && is_table_start(line))
     {
         return true;
     }
-    // Fenced code interrupts only with a matching closer ahead. The
+    // Fenced code is structural only with a matching closer ahead. The
     // opener `line` has been dedented to its container's content column by the
     // caller (a list item's lead paragraph dedents by that column), but the
     // closer probe runs over the RAW remaining lines -- so dedent each by the
     // same amount before the column-exact `is_fence_close`, or a closer that
-    // carries the container indent is missed and the fence never interrupts.
+    // carries the container indent is missed and the fence never opens.
     // For a flush (column-0) opener the strip is 0, so top-level fences are
     // unaffected; a strict opener only matches when `line` is flush, so the
     // strip comes from the raw current line's own indentation.
@@ -7959,9 +7947,8 @@ fn interrupts_paragraph(cur: &mut LineCursor<'_>, line: &str) -> bool {
         // opens, a line below the container's content column closes the
         // container: a fenced body is not a paragraph, so nothing folds into it
         // from below (PART 9 §24, markup-carve/carve#950). A closer past that
-        // line is therefore not this fence's closer, and by §10 I4 a fence with
-        // no closer left does not interrupt - the delimiter run stays paragraph
-        // text.
+        // line is therefore not this fence's closer; with none left, the
+        // delimiter run stays inline content in this bounded context.
         //
         // `strip` IS that column here: the caller dedents an item's line by the
         // content column before asking, and `detect_fence_open` refuses a line
@@ -7983,7 +7970,7 @@ fn interrupts_paragraph(cur: &mut LineCursor<'_>, line: &str) -> bool {
     false
 }
 
-fn interrupts_lazy_continuation(cur: &mut LineCursor<'_>, line: &str) -> bool {
+fn ends_lazy_continuation(cur: &mut LineCursor<'_>, line: &str) -> bool {
     // A caption line (`^ …`) ends a list/blockquote item's lazy continuation
     // rather than folding in: a caption is a heading/figure terminator, not
     // plain prose the item absorbs. It becomes its own top-level block, matching
@@ -7994,8 +7981,8 @@ fn interrupts_lazy_continuation(cur: &mut LineCursor<'_>, line: &str) -> bool {
 }
 
 fn is_colon_fence_opener_shape(line: &str) -> bool {
-    // Only a FLUSH-LEFT colon fence ends lazy continuation (grammar PART 9
-    // §10). An INDENTED colon-shaped line (the detectors trim leading
+    // Only a FLUSH-LEFT colon fence establishes a boundary in this bounded
+    // context. An INDENTED colon-shaped line (the detectors trim leading
     // whitespace) is still within the container, so it folds as lazy text
     // instead of escaping the container.
     if line.starts_with(' ') || line.starts_with('\t') {
@@ -8006,8 +7993,8 @@ fn is_colon_fence_opener_shape(line: &str) -> bool {
         || detect_hardbreaks_block_open(line).is_some()
 }
 
-/// Whether a glued colon fence earlier in the paragraph (`:::note`, `:::]`)
-/// keeps THIS line from interrupting it.
+/// Whether a glued colon fence earlier in a bounded run (`:::note`, `:::]`)
+/// keeps this line literal.
 ///
 /// Only a BARE fence (`:::`, nothing after the colons) is held back: it is
 /// closer-shaped, and the paragraph it would close is literal text, so it stays
@@ -8018,11 +8005,11 @@ fn is_suppressed_colon_fence_line(line: &str) -> bool {
     is_colon_fence_opener_shape(line) && exact_colon_fence_len(line).is_some()
 }
 
-fn interrupts_paragraph_with_rest(line: &str, rest: &[&str]) -> bool {
+fn starts_block_boundary_with_rest(line: &str, rest: &[&str]) -> bool {
     if trim_ascii_start(line).starts_with("%%") {
         return true;
     }
-    // Flush-left only (see interrupts_paragraph): an indented `{...}` line is
+    // Flush-left only (see starts_block_boundary): an indented `{...}` line is
     // lazy paragraph text under the strict column-0 rule, not a floating attr.
     if !line.starts_with([' ', '\t']) && parse_standalone_attrs(line).is_some() {
         return true;
@@ -8030,14 +8017,13 @@ fn interrupts_paragraph_with_rest(line: &str, rest: &[&str]) -> bool {
     if detect_heading(line).is_some()
         || detect_thematic_break(line)
         || strip_blockquote_prefix(line).is_some()
-        // A definition-list term `:: ` is a first-class block opener (§24 C3):
-        // it interrupts at column 0 and nests at the content column, uniform
-        // with quote/heading/fence/table. `is_definition_list_start` requires a
+        // A definition-list term `:: ` is a first-class block opener in a
+        // bounded context. `is_definition_list_start` requires a
         // flush-left `:: `, so an indented term folds as lazy text like the rest.
         || is_definition_list_start(line)
-        // A table row interrupts only when FLUSH-LEFT, like the quote/heading
+        // A table row establishes a boundary only when FLUSH-LEFT, like the quote/heading
         // checks above -- `is_table_start` trims leading whitespace, so without
-        // this guard an INDENTED row (`  |a|`) would interrupt where an indented
+        // this guard an INDENTED row (`  |a|`) would establish one where an indented
         // `> q` / `# h` does not. An indented row below/above a list item's
         // content column is lazy paragraph text (§24 C3), not a nested table.
         || (!line.starts_with([' ', '\t']) && is_table_start(line))
@@ -8049,8 +8035,8 @@ fn interrupts_paragraph_with_rest(line: &str, rest: &[&str]) -> bool {
             return true;
         }
     }
-    // A FLUSH-LEFT colon-fence family opener interrupts blockquote lazy
-    // continuation like any block opener. An INDENTED colon fence (above the
+    // A FLUSH-LEFT colon-fence family opener ends a bounded lazy continuation
+    // like any block opener. An INDENTED colon fence (above the
     // quote's content column) is literal paragraph text under the strict
     // column-0 rule, so lazy continuation stays inside the quote.
     if !line.starts_with([' ', '\t'])
@@ -8063,14 +8049,7 @@ fn interrupts_paragraph_with_rest(line: &str, rest: &[&str]) -> bool {
     false
 }
 
-/// A `- ` / `* ` bullet, including the attributed form `-{.c} ` (NOT `+`, the
-/// continuation marker; not ordered).
-///
-/// Delegates to `detect_unordered` so an attributed bullet interrupts a
-/// paragraph just like a plain one (and an attributed task already does via
-/// `detect_task`). Leading tabs are skipped as well as spaces: a bullet opens
-/// a list at any indentation (Rule B), so a tab-indented bullet interrupts a
-/// paragraph too.
+/// A flush-left, non-empty `:: ` definition-list term opener.
 fn is_definition_list_start(line: &str) -> bool {
     line.strip_prefix(":: ")
         .is_some_and(|term| !is_blank_line(term))
@@ -8334,7 +8313,7 @@ fn is_plus_marker(line: &str) -> bool {
 /// list item (PART 9 §17): form A folds an indented block in (a blank line is
 /// tolerated when a later line still continues), form B attaches a lone `+`
 /// pull-left flush-left block with no indentation, and a flush-left line with no
-/// blank before it that does not start an interrupting block lazily continues
+/// blank before it that does not start an structural block lazily continues
 /// the open paragraph (matching list items, block quotes and djot). Returned
 /// lines carry blank separators so the block sub-parse yields multiple paragraphs.
 ///
@@ -8567,11 +8546,11 @@ fn collect_definition_body(
             if parse_link_def_line(line).is_some() {
                 break;
             }
-            if interrupts_paragraph(cur, line) {
+            if starts_block_boundary(cur, line) {
                 break;
             }
             // Lazy continuation: a flush-left line with no blank before it that
-            // does not start an interrupting block folds into the open
+            // does not start an structural block folds into the open
             // paragraph (the same rule list items and block quotes use, matching
             // djot). A block opener ends the definition.
             let owned = line.to_string();
@@ -8609,7 +8588,7 @@ fn collect_definition_body(
 }
 
 /// A bare image line is a block image (or figure) ONLY when it stands alone --
-/// the next line is blank / EOF, a `^ ` caption, or a paragraph interrupter.
+/// the next line is blank / EOF or a `^ ` caption.
 /// When the next line FOLDS (plain text, list marker, another bare image), the
 /// image stays inline in a paragraph with that content, per grammar §1722 I3
 /// ("an image is not a block of its own; it stays inline in the paragraph").
@@ -8653,16 +8632,16 @@ fn consume_caption(cur: &mut LineCursor, options: &Options<'_>) -> Option<Vec<In
     cur.consume();
     // A caption is multi-line inline content, so it folds following lines like a
     // PARAGRAPH (§10), NOT like a heading: a list marker FOLDS in (djot -- a
-    // list needs a blank line to interrupt), while a heading / blockquote /
+    // list needs block position), while a heading / blockquote /
     // table / fenced code / `:::` div / thematic break / `%%%` comment
-    // interrupts and ends the caption. A blank line or a further `^ ` caption
+    // ends the caption. A blank line or a further `^ ` caption
     // line also ends it. Continuation lines join with `\n`.
     while let Some(next) = cur.peek() {
         if is_blank_line(next) || caption_content(next).is_some() {
             break;
         }
         let next_owned = next.to_string();
-        if interrupts_paragraph(cur, &next_owned) {
+        if starts_block_boundary(cur, &next_owned) {
             break;
         }
         joined.push('\n');
@@ -14661,7 +14640,7 @@ fn promote_block_images(blocks: &mut [BlockNode], figures_only: bool) {
         // "^ caption…"]` (the syntactic block-image/caption pass only knows the
         // inline `![…](…)` form); an unresolved ref keeps `ref_label` and stays
         // literal. The caption inlines are already parsed
-        // (paragraph interruption already stopped the caption at a block opener,
+        // (block-position handling already stopped the caption at a block opener,
         // so a multi-line caption keeps its interior soft breaks); strip the
         // `^ ` marker from the leading Text.
         // Strict column-0 (docs/divergence-from-djot.md §11): the image must have
