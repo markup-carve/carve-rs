@@ -18,6 +18,18 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   renderer. In static mode the radios go and each panel becomes a `<section>`
   headed by its label, so the panels stay distinguishable offline.
 
+- **`HeadingReference` extension**, ported from carve-js `heading-reference`
+  and carve-php `HeadingReferenceExtension`. Resolves `[[Heading Text]]` to an
+  intra-document link, with `[[Heading Text|display]]` for custom link text.
+  References match on heading PLAIN TEXT rather than on a guessed id, so an
+  author never has to know the slug rules, and straight quotes still match a
+  heading the smart-typography pass curled. A reference to a heading that does
+  not exist, or to text that appears on more than one heading, falls back to
+  its literal `[[…]]` source rather than guessing. This is a different
+  construct from the spec's `[Heading][]` reference form, which core already
+  resolves; like carve-php it shares the `[[…]]` syntax with `Wikilinks`, so
+  enable one or the other on a render.
+
 ### Added
 
 - **`HeadingLevelShift` extension**, ported from carve-js `heading-level-shift`
