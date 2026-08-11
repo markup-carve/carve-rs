@@ -4620,13 +4620,23 @@ fn indent_columns(line: &str) -> usize {
 }
 
 // Drop leading whitespace up to `cols` columns (tab-stop aware) and return the
-// remainder. By default a tab straddling the boundary is consumed whole, so a
-// block opener (quote, heading) dedents flush to column 0 and parses -- Carve
-// has no indent-sensitive block where the leftover column would change meaning.
-// With keep_residual (used only for sub-list marker lines), the unconsumed
-// columns of a straddling tab are re-emitted as spaces so tab+space-aligned
-// sibling markers keep the same visual column and the recursive parse re-derives
-// the child base from it. For space-only indentation there is never a residual.
+// remainder. With keep_residual, the unconsumed columns of a straddling tab are
+// re-emitted as spaces, so the line keeps the column the tab actually reached.
+// For space-only indentation there is never a residual.
+//
+// THE RESIDUAL MATTERS INSIDE A LIST ITEM, and the note here used to say the
+// opposite: that a straddling tab could be consumed whole because "Carve has no
+// indent-sensitive block where the leftover column would change meaning". Every
+// block opener in an item is indent-sensitive in exactly that way -- at the
+// item's content column an opener parses, one column past it the line is
+// paragraph text -- so dropping the residual let a tab landing PAST the column
+// dedent flush and open a fence, heading, quote or thematic break that the same
+// column written in spaces does not (carve-rs#889). PART 7: a leading tab
+// indents to column 4, and an ordered item's content column is 3.
+//
+// Marker lines still pass it for their own reason: tab+space-aligned sibling
+// markers keep the same visual column and the recursive parse re-derives the
+// child base from it.
 fn slice_columns(line: &str, cols: usize, keep_residual: bool) -> String {
     slice_columns_mapped(line, cols, keep_residual).0
 }
@@ -7432,7 +7442,7 @@ fn collect_indented_block_mapped_with(
         if comment_fence.is_none() {
             comment_fence_strip = None;
         }
-        let (sliced, consumed, synthetic) = slice_columns_mapped(line, stripped, is_marker);
+        let (sliced, consumed, synthetic) = slice_columns_mapped(line, stripped, true);
         // A COLON LINE INSIDE A CODE OR COMMENT SPAN OPENS AND CLOSES NOTHING:
         // §28 makes both bodies verbatim, which is the same reading that keeps a
         // marker in one from being a marker. Read before the code tracker
@@ -7653,7 +7663,7 @@ fn collect_indented_block_plain_with(
         if comment_fence.is_none() {
             comment_fence_strip = None;
         }
-        let sliced = slice_columns(line, stripped, is_marker);
+        let sliced = slice_columns(line, stripped, true);
         // A COLON LINE INSIDE A CODE OR COMMENT SPAN OPENS AND CLOSES NOTHING:
         // §28 makes both bodies verbatim, which is the same reading that keeps a
         // marker in one from being a marker. Read before the code tracker
