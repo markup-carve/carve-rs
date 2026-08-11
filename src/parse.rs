@@ -4697,7 +4697,7 @@ fn slice_columns_mapped(line: &str, cols: usize, keep_residual: bool) -> (String
 /// and its inputs are unchanged; only the moment it runs is.
 ///
 /// PART 9 §12's absorption is part of the same answer, so it is decided here
-/// rather than sampled around this value: `suppressed` is the absorption state
+/// rather than sampled around this value: `inherited_absorption` is the state
 /// the line inherits, and the resolved verdict carries both whether the
 /// paragraph is open and whether THIS line opens an absorption. Reading the
 /// flag on every quoted line - which is what `suppress_colon_interrupt` did
@@ -4707,11 +4707,11 @@ enum ParaOpen<'a> {
     /// Closed, decided without consulting any line.
     Closed,
     /// Open iff `line`'s innermost quoted content is paragraph text, under the
-    /// absorption state `suppressed` it inherits. `answer` caches the verdict,
+    /// absorption state it inherits. `answer` caches the verdict,
     /// so re-reading the same state walks once.
     Deferred {
         line: &'a str,
-        suppressed: bool,
+        inherited_absorption: bool,
         answer: Option<Verdict>,
     },
 }
@@ -4727,18 +4727,38 @@ struct Verdict {
 }
 
 impl<'a> ParaOpen<'a> {
-    fn from_line(line: &'a str, suppressed: bool) -> Self {
+    fn from_line(line: &'a str, inherited_absorption: bool) -> Self {
         ParaOpen::Deferred {
             line,
-            suppressed,
+            inherited_absorption,
             answer: None,
         }
     }
 
-    /// Whether this line opens §12's absorption. Resolves, so it is asked only
-    /// where the absorption state can actually change (see `parse_blockquote`).
-    fn opens_absorption(&mut self) -> bool {
-        self.resolve().opens_absorption
+    /// Whether resolving this line can change the absorption carried by the
+    /// next one. Keeping this cheap guard preserves the deep-quote deferral.
+    fn may_carry_absorption(&self) -> bool {
+        match self {
+            ParaOpen::Closed => false,
+            ParaOpen::Deferred {
+                line,
+                inherited_absorption,
+                ..
+            } => *inherited_absorption || line.contains(":::"),
+        }
+    }
+
+    /// Absorption inherited by the next quoted line.
+    fn absorption(&mut self) -> bool {
+        let inherited = match self {
+            ParaOpen::Closed => return false,
+            ParaOpen::Deferred {
+                inherited_absorption,
+                ..
+            } => *inherited_absorption,
+        };
+        let verdict = self.resolve();
+        verdict.open && (inherited || verdict.opens_absorption)
     }
 
     fn get(&mut self) -> bool {
@@ -4748,7 +4768,7 @@ impl<'a> ParaOpen<'a> {
     fn resolve(&mut self) -> Verdict {
         let ParaOpen::Deferred {
             line,
-            suppressed,
+            inherited_absorption,
             answer,
         } = self
         else {
@@ -4760,7 +4780,7 @@ impl<'a> ParaOpen<'a> {
         if let Some(known) = answer {
             return *known;
         }
-        let suppressed = *suppressed;
+        let suppressed = *inherited_absorption;
         // Look THROUGH any further quote markers before deciding. A lazy line
         // continues the innermost OPEN PARAGRAPH, however many containers it
         // failed to match, so what matters is whether the innermost quoted
@@ -4831,15 +4851,14 @@ fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     // paragraph correctly - but `para_open` was computed from the line's SHAPE
     // alone, so a bare `:::` set it false and the flush-left line under it could
     // not fold. That made the quote disagree with its own body about whether a
-    // paragraph was open (carve-rs#727). Same rule as `suppress_colon_interrupt`
-    // in `parse_paragraph` and the item lead-paragraph collector, spelled from
-    // the same two helpers rather than a fourth time.
+    // paragraph was open (carve-rs#727). `ParaOpen` owns that state now,
+    // instead of requiring a second boolean whose validity depends on the
+    // enum's current variant.
     //
     // It is a RUNNING state, and only a resolved `para_open` can advance it, so
-    // it is handed to `ParaOpen` and advanced from the resolved verdict rather
+    // it is carried by `ParaOpen` and advanced from the resolved verdict rather
     // than read on every quoted line. Reading it per line is what would put
     // markup-carve/carve-rs#731's cubic walk back.
-    let mut suppress_colon_interrupt = false;
     let mut in_fence: Option<FenceOpen> = None;
     while let Some(line) = cur.peek() {
         if let Some(stripped) = strip_blockquote_prefix(line) {
@@ -4860,13 +4879,11 @@ fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 // paragraph rather than once after the chain, because after the
                 // chain it would have to READ `para_open`, and reading it on
                 // every quoted line is the walk this defers.
-                suppress_colon_interrupt = false;
             } else if let Some(open) = detect_fence_open(stripped) {
                 if !para_open.get() {
                     // Fence at block start opens (unterminated renders to end).
                     in_fence = Some(open);
                     para_open = ParaOpen::Closed;
-                    suppress_colon_interrupt = false;
                 } else {
                     // After an open paragraph a fence interrupts only with a
                     // matching closer ahead (§10); else it is inline verbatim.
@@ -4880,7 +4897,6 @@ fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                     if has_closer {
                         in_fence = Some(open);
                         para_open = ParaOpen::Closed;
-                        suppress_colon_interrupt = false;
                     }
                     // No closer: the fence is inline verbatim and the paragraph
                     // (already resolved OPEN by the test above) stays open, so
@@ -4896,7 +4912,12 @@ fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 // (markup-carve/carve-rs#731). The absorption state the line
                 // inherits goes WITH it, so §12 is decided by the same walk
                 // instead of forcing one of its own.
-                para_open = ParaOpen::from_line(stripped, suppress_colon_interrupt);
+                let inherited_absorption = if para_open.may_carry_absorption() {
+                    para_open.absorption()
+                } else {
+                    false
+                };
+                para_open = ParaOpen::from_line(stripped, inherited_absorption);
                 // Advancing the absorption flag needs the verdict, and getting
                 // the verdict is the walk. So force it only where the answer
                 // can change the flag. While the flag is OFF, a line carrying
@@ -4918,13 +4939,6 @@ fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 // `Note:`, a `12:30`, an `https://` - therefore stays on the
                 // deferred path, which is what lets markup-carve/carve-rs#738
                 // ride on the deferral instead of undoing it.
-                if suppress_colon_interrupt || stripped.contains(":::") {
-                    if para_open.get() {
-                        suppress_colon_interrupt |= para_open.opens_absorption();
-                    } else {
-                        suppress_colon_interrupt = false;
-                    }
-                }
             }
             inner.push_at(stripped.to_string(), source_line, stripped_at);
             continue;
