@@ -60,14 +60,23 @@ fn control_the_shapes_that_never_had_a_trailing_blank() {
     assert_eq!(code("```\nx\n\ny\n"), "x\n\ny\n");
 }
 
-/// KNOWN STILL WRONG, asserted so the gap is visible rather than implied.
-/// A fence ended by a CONTAINER's closer still loses the blank: those rebuilds
-/// carry synthetic separators that must not survive, so the terminator has to
-/// become conditional on an open fence there (the shape carve-js#989 used).
-/// When that lands, these assertions flip and this test is deleted.
+/// A fence ended by a CONTAINER's closer keeps its blank now: `LineBuffer`
+/// records whether its last line was authored or synthetic, so `into_source`
+/// terminates for the author's blank and not for a `push_synthetic_blank`.
 #[test]
-fn known_gap_a_container_closed_fence_still_loses_it() {
-    assert_eq!(code("::: note\n```\nx\n\n:::\n"), "x\n");
-    assert_eq!(code("> ```\n> x\n>\n"), "x\n");
+fn a_container_closed_fence_keeps_its_trailing_blank() {
+    assert_eq!(code("::: note\n```\nx\n\n:::\n"), "x\n\n");
+    assert_eq!(code("::: note\n```\nx\n\n\n:::\n"), "x\n\n\n");
+    assert_eq!(code("> ```\n> x\n>\n"), "x\n\n");
+}
+
+/// KNOWN STILL WRONG, asserted so the remaining gap is visible rather than
+/// implied. A fence ending with the LIST ITEM loses its blank for a different
+/// reason: the collection loop stops without consuming it, so `lines` is
+/// already `["x"]` before any join runs and there is nothing to preserve. That
+/// is the collector half, the one carve-js#989 needed separately.
+/// When it lands, this assertion flips and this test is deleted.
+#[test]
+fn known_gap_an_item_final_fence_still_loses_it() {
     assert_eq!(code("- ```\n  x\n\n"), "x\n");
 }
