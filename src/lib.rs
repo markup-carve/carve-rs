@@ -77,10 +77,11 @@ pub use extensions::{
     sanitize_svg, Autolink, AutolinkOptions, CodeCallouts, CodeGroup, CodeGroupOptions,
     ColorSwatch, ContentMode, CrossrefStyle, Details, ExternalLinks, ExternalLinksOptions,
     FencedRender, FencedRenderOptions, Glossary, HeadingLevelShift, HeadingLevelShiftOptions,
-    HeadingNumbers, HeadingNumbersOptions, HeadingPermalinks, HeadingPermalinksOptions, ImgFence,
-    Index, ListTable, ListType, MathBlock, MathBlockOptions, Position, SanitizeResult,
-    SanitizeSvgOptions, Spoiler, SwatchPosition, SwatchShape, TabNormalize, TableOfContents,
-    TableOfContentsOptions, TocPlacement, UrlGenerator, Wikilinks, WikilinksOptions,
+    HeadingNumbers, HeadingNumbersOptions, HeadingPermalinks, HeadingPermalinksOptions,
+    HeadingReference, HeadingReferenceOptions, ImgFence, Index, ListTable, ListType, MathBlock,
+    MathBlockOptions, Position, SanitizeResult, SanitizeSvgOptions, Spoiler, SwatchPosition,
+    SwatchShape, TabNormalize, TableOfContents, TableOfContentsOptions, TocPlacement, UrlGenerator,
+    Wikilinks, WikilinksOptions,
 };
 pub use html_import::{
     html_to_ast, html_to_carve, HtmlImportAdapter, HtmlImportDiagnostic, HtmlImportDiagnosticCode,
