@@ -80,8 +80,8 @@ pub use extensions::{
     HeadingNumbers, HeadingNumbersOptions, HeadingPermalinks, HeadingPermalinksOptions,
     HeadingReference, HeadingReferenceOptions, ImgFence, Index, ListTable, ListType, MathBlock,
     MathBlockOptions, Position, SanitizeResult, SanitizeSvgOptions, Spoiler, SwatchPosition,
-    SwatchShape, TabNormalize, TableOfContents, TableOfContentsOptions, TocPlacement, UrlGenerator,
-    Wikilinks, WikilinksOptions,
+    SwatchShape, TabNormalize, TableOfContents, TableOfContentsOptions, Tabs, TabsMode,
+    TabsOptions, TocPlacement, UrlGenerator, Wikilinks, WikilinksOptions,
 };
 pub use html_import::{
     html_to_ast, html_to_carve, HtmlImportAdapter, HtmlImportDiagnostic, HtmlImportDiagnosticCode,

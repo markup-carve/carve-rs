@@ -32,6 +32,7 @@ pub mod spoiler;
 pub mod svg_sanitize;
 pub mod tab_normalize;
 pub mod table_of_contents;
+pub mod tabs;
 pub mod wikilinks;
 
 pub use autolink::{Autolink, AutolinkOptions};
@@ -56,4 +57,5 @@ pub use tab_normalize::TabNormalize;
 pub use table_of_contents::{
     ListType, Position, TableOfContents, TableOfContentsOptions, TocPlacement,
 };
+pub use tabs::{Tabs, TabsMode, TabsOptions};
 pub use wikilinks::{UrlGenerator, Wikilinks, WikilinksOptions};
