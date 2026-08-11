@@ -57,8 +57,14 @@ pub const SPEC_VERSION: &str = "0.1";
 
 pub use ast::*;
 pub use ast_json::{from_json, to_json, AstJsonError};
-pub use ast_merge::{merge_ast, MergeConflict, MergeConflictReason, MergeResult};
-pub use ast_patch::{apply_ast_patch, create_ast_patch, AstPatchError, AstPatchOperation};
+pub use ast_merge::{
+    merge_ast, merge_ast_with_resolver, MergeConflict, MergeConflictReason, MergeResolution,
+    MergeResult,
+};
+pub use ast_patch::{
+    apply_ast_patch, ast_patch_from_json, ast_patch_to_json, create_ast_patch, AstPatchError,
+    AstPatchOperation,
+};
 pub use citations::{
     parse_locator, CitationMode, Citations, CslDate, CslEntry, CslName, ParsedLocator,
 };

@@ -1,6 +1,6 @@
 //! Conservative three-way merge for the normative PART 12 exchange tree.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use crate::ast::Document;
 use crate::ast_json::{from_json, parse_value, to_json, value_to_json, AstJsonError, Json};
@@ -26,6 +26,17 @@ pub enum MergeResult {
     Merged(Document),
     Conflicts(Vec<MergeConflict>),
 }
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MergeResolution {
+    Base,
+    Ours,
+    Theirs,
+    /// A JSON-encoded replacement value, which may target any PART 12 field.
+    Value(String),
+}
+
+type Resolver<'a> = Option<&'a mut dyn FnMut(&MergeConflict) -> Option<MergeResolution>>;
 
 fn clean(value: &Json, strip_metadata: bool) -> Json {
     match value {
@@ -117,11 +128,17 @@ fn match_side(base: &[Json], side: &[Json], path: &str) -> SideMatch {
         found.base_to_side.insert(bi, si);
         found.side_to_base.insert(si, bi);
     }
+    let strip = strip_metadata(path);
+    let mut exact = BTreeMap::<String, VecDeque<usize>>::new();
+    for (si, value) in side.iter().enumerate() {
+        exact
+            .entry(value_to_json(&clean(value, strip)))
+            .or_default()
+            .push_back(si);
+    }
     for (bi, value) in base.iter().enumerate() {
-        if let Some(si) = side.iter().enumerate().find_map(|(si, candidate)| {
-            (!found.side_to_base.contains_key(&si) && same(Some(value), Some(candidate), path))
-                .then_some(si)
-        }) {
+        let key = value_to_json(&clean(value, strip));
+        if let Some(si) = exact.get_mut(&key).and_then(VecDeque::pop_front) {
             take(&mut found, bi, si);
         }
     }
@@ -176,11 +193,13 @@ fn match_side(base: &[Json], side: &[Json], path: &str) -> SideMatch {
     }
     let bs = remaining_base(&found);
     let ss = remaining_side(&found);
+    let base_kinds = bs.iter().map(|i| kind(&base[*i])).collect::<Vec<_>>();
+    let side_kinds = ss.iter().map(|i| kind(&side[*i])).collect::<Vec<_>>();
     if bs.len().saturating_mul(ss.len()) <= 1_000_000 {
         let mut table = vec![vec![0usize; ss.len() + 1]; bs.len() + 1];
         for i in (0..bs.len()).rev() {
             for j in (0..ss.len()).rev() {
-                table[i][j] = if kind(&base[bs[i]]) == kind(&side[ss[j]]) {
+                table[i][j] = if base_kinds[i] == side_kinds[j] {
                     table[i + 1][j + 1] + 1
                 } else {
                     table[i + 1][j].max(table[i][j + 1])
@@ -189,7 +208,7 @@ fn match_side(base: &[Json], side: &[Json], path: &str) -> SideMatch {
         }
         let (mut i, mut j) = (0, 0);
         while i < bs.len() && j < ss.len() {
-            if kind(&base[bs[i]]) == kind(&side[ss[j]]) {
+            if base_kinds[i] == side_kinds[j] {
                 take(&mut found, bs[i], ss[j]);
                 i += 1;
                 j += 1;
@@ -201,8 +220,8 @@ fn match_side(base: &[Json], side: &[Json], path: &str) -> SideMatch {
         }
     } else {
         let mut cursor = 0;
-        for bi in bs {
-            while cursor < ss.len() && kind(&base[bi]) != kind(&side[ss[cursor]]) {
+        for (base_offset, bi) in bs.into_iter().enumerate() {
+            while cursor < ss.len() && base_kinds[base_offset] != side_kinds[cursor] {
                 cursor += 1;
             }
             if cursor == ss.len() {
@@ -236,15 +255,28 @@ fn record_conflict(
     ours: Option<&Json>,
     theirs: Option<&Json>,
     conflicts: &mut Vec<MergeConflict>,
-) -> Option<Json> {
-    conflicts.push(MergeConflict {
+    resolver: &mut Resolver<'_>,
+) -> Result<Option<Json>, AstJsonError> {
+    let conflict = MergeConflict {
         path: path.into(),
         reason,
         base: base.map(value_to_json),
         ours: ours.map(value_to_json),
         theirs: theirs.map(value_to_json),
-    });
-    None
+    };
+    let resolution = resolver
+        .as_deref_mut()
+        .and_then(|resolve| resolve(&conflict));
+    match resolution {
+        Some(MergeResolution::Base) => Ok(base.cloned()),
+        Some(MergeResolution::Ours) => Ok(ours.cloned()),
+        Some(MergeResolution::Theirs) => Ok(theirs.cloned()),
+        Some(MergeResolution::Value(value)) => Ok(Some(parse_value(&value)?)),
+        None => {
+            conflicts.push(conflict);
+            Ok(None)
+        }
+    }
 }
 
 fn merge_sequence(
@@ -253,7 +285,8 @@ fn merge_sequence(
     theirs: &[Json],
     path: &str,
     conflicts: &mut Vec<MergeConflict>,
-) -> Option<Json> {
+    resolver: &mut Resolver<'_>,
+) -> Result<Option<Json>, AstJsonError> {
     let om = match_side(base, ours, path);
     let tm = match_side(base, theirs, path);
     let mut values = BTreeMap::<String, Json>::new();
@@ -275,26 +308,34 @@ fn merge_sequence(
                 omitted.insert(token);
             }
             (None, Some(ti)) => {
-                record_conflict(
+                if let Some(value) = record_conflict(
                     MergeConflictReason::DeleteEdit,
                     &pointer(path, i),
                     Some(base_value),
                     None,
                     Some(&theirs[ti]),
                     conflicts,
-                );
-                omitted.insert(token);
+                    resolver,
+                )? {
+                    values.insert(token, value);
+                } else {
+                    omitted.insert(token);
+                }
             }
             (Some(oi), None) => {
-                record_conflict(
+                if let Some(value) = record_conflict(
                     MergeConflictReason::DeleteEdit,
                     &pointer(path, i),
                     Some(base_value),
                     Some(&ours[oi]),
                     None,
                     conflicts,
-                );
-                omitted.insert(token);
+                    resolver,
+                )? {
+                    values.insert(token, value);
+                } else {
+                    omitted.insert(token);
+                }
             }
             (Some(oi), Some(ti)) => {
                 if let Some(value) = merge_value(
@@ -303,7 +344,8 @@ fn merge_sequence(
                     Some(&theirs[ti]),
                     &pointer(path, i),
                     conflicts,
-                ) {
+                    resolver,
+                )? {
                     values.insert(token, value);
                 } else {
                     omitted.insert(token);
@@ -329,6 +371,7 @@ fn merge_sequence(
                 Some(&Json::Array(ours.to_vec())),
                 Some(&Json::Array(theirs.to_vec())),
                 conflicts,
+                resolver,
             );
         }
         let same_addition = tm.additions.iter().copied().find(|ti| {
@@ -418,7 +461,14 @@ fn merge_sequence(
         .collect::<Vec<_>>();
     let mut order = Vec::new();
     while !ready.is_empty() {
-        ready.sort();
+        ready.sort_by(|a, b| {
+            a.as_bytes()[0].cmp(&b.as_bytes()[0]).then_with(|| {
+                a[1..]
+                    .parse::<usize>()
+                    .unwrap()
+                    .cmp(&b[1..].parse::<usize>().unwrap())
+            })
+        });
         let token = ready.remove(0);
         order.push(token.clone());
         for to in edges.get(&token).into_iter().flatten() {
@@ -437,14 +487,15 @@ fn merge_sequence(
             Some(&Json::Array(ours.to_vec())),
             Some(&Json::Array(theirs.to_vec())),
             conflicts,
+            resolver,
         );
     }
-    Some(Json::Array(
+    Ok(Some(Json::Array(
         order
             .into_iter()
             .filter_map(|token| values.remove(&token))
             .collect(),
-    ))
+    )))
 }
 
 fn merge_value(
@@ -453,15 +504,16 @@ fn merge_value(
     theirs: Option<&Json>,
     path: &str,
     conflicts: &mut Vec<MergeConflict>,
-) -> Option<Json> {
+    resolver: &mut Resolver<'_>,
+) -> Result<Option<Json>, AstJsonError> {
     if same(ours, theirs, path) {
-        return ours.cloned();
+        return Ok(ours.cloned());
     }
     if same(ours, base, path) {
-        return theirs.cloned();
+        return Ok(theirs.cloned());
     }
     if same(theirs, base, path) {
-        return ours.cloned();
+        return Ok(ours.cloned());
     }
     let (Some(ours), Some(theirs)) = (ours, theirs) else {
         return record_conflict(
@@ -471,11 +523,12 @@ fn merge_value(
             ours,
             theirs,
             conflicts,
+            resolver,
         );
     };
     if let (Some(Json::Array(base)), Json::Array(ours), Json::Array(theirs)) = (base, ours, theirs)
     {
-        return merge_sequence(base, ours, theirs, path, conflicts);
+        return merge_sequence(base, ours, theirs, path, conflicts, resolver);
     }
     if let (Some(Json::Object(base)), Json::Object(ours), Json::Object(theirs)) =
         (base, ours, theirs)
@@ -497,11 +550,12 @@ fn merge_value(
                 theirs.get(&key),
                 &pointer(path, &key),
                 conflicts,
-            ) {
+                resolver,
+            )? {
                 out.insert(key, value);
             }
         }
-        return Some(Json::Object(out));
+        return Ok(Some(Json::Object(out)));
     }
     record_conflict(
         MergeConflictReason::BothChanged,
@@ -510,6 +564,7 @@ fn merge_value(
         Some(ours),
         Some(theirs),
         conflicts,
+        resolver,
     )
 }
 
@@ -518,11 +573,40 @@ pub fn merge_ast(
     ours: &Document,
     theirs: &Document,
 ) -> Result<MergeResult, AstJsonError> {
+    merge_ast_inner(base, ours, theirs, &mut None)
+}
+
+pub fn merge_ast_with_resolver<F>(
+    base: &Document,
+    ours: &Document,
+    theirs: &Document,
+    mut resolve: F,
+) -> Result<MergeResult, AstJsonError>
+where
+    F: FnMut(&MergeConflict) -> Option<MergeResolution>,
+{
+    let mut resolver: Resolver<'_> = Some(&mut resolve);
+    merge_ast_inner(base, ours, theirs, &mut resolver)
+}
+
+fn merge_ast_inner(
+    base: &Document,
+    ours: &Document,
+    theirs: &Document,
+    resolver: &mut Resolver<'_>,
+) -> Result<MergeResult, AstJsonError> {
     let base = parse_value(&to_json(base))?;
     let ours = parse_value(&to_json(ours))?;
     let theirs = parse_value(&to_json(theirs))?;
     let mut conflicts = Vec::new();
-    let Some(mut merged) = merge_value(Some(&base), Some(&ours), Some(&theirs), "", &mut conflicts)
+    let Some(mut merged) = merge_value(
+        Some(&base),
+        Some(&ours),
+        Some(&theirs),
+        "",
+        &mut conflicts,
+        resolver,
+    )?
     else {
         return Ok(MergeResult::Conflicts(conflicts));
     };

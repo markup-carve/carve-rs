@@ -13,6 +13,83 @@ pub enum AstPatchOperation {
     Remove { path: String },
 }
 
+/// Encode operations using the shared `{op,path,value}` patch wire shape.
+pub fn ast_patch_to_json(operations: &[AstPatchOperation]) -> Result<String, AstPatchError> {
+    let mut encoded = Vec::with_capacity(operations.len());
+    for operation in operations {
+        let mut object = std::collections::BTreeMap::new();
+        match operation {
+            AstPatchOperation::Add { path, value } => {
+                object.insert("op".into(), Json::String("add".into()));
+                object.insert("path".into(), Json::String(path.clone()));
+                object.insert("value".into(), parse_value(value)?);
+            }
+            AstPatchOperation::Replace { path, value } => {
+                object.insert("op".into(), Json::String("replace".into()));
+                object.insert("path".into(), Json::String(path.clone()));
+                object.insert("value".into(), parse_value(value)?);
+            }
+            AstPatchOperation::Remove { path } => {
+                object.insert("op".into(), Json::String("remove".into()));
+                object.insert("path".into(), Json::String(path.clone()));
+            }
+        }
+        encoded.push(Json::Object(object));
+    }
+    Ok(value_to_json(&Json::Array(encoded)))
+}
+
+/// Decode and validate the shared `{op,path,value}` patch wire shape.
+pub fn ast_patch_from_json(input: &str) -> Result<Vec<AstPatchOperation>, AstPatchError> {
+    let Json::Array(operations) = parse_value(input)? else {
+        return Err(AstPatchError("patch JSON must be an array".into()));
+    };
+    operations
+        .into_iter()
+        .map(|operation| {
+            let Json::Object(mut operation) = operation else {
+                return Err(AstPatchError("patch operation must be an object".into()));
+            };
+            let op = match operation.remove("op") {
+                Some(Json::String(value)) => value,
+                _ => return Err(AstPatchError("patch operation requires a string op".into())),
+            };
+            let path = match operation.remove("path") {
+                Some(Json::String(value)) => value,
+                _ => {
+                    return Err(AstPatchError(
+                        "patch operation requires a string path".into(),
+                    ))
+                }
+            };
+            let value = operation.remove("value");
+            if !operation.is_empty() {
+                return Err(AstPatchError(
+                    "patch operation has an unknown property".into(),
+                ));
+            }
+            match (op.as_str(), value) {
+                ("add", Some(value)) => Ok(AstPatchOperation::Add {
+                    path,
+                    value: value_to_json(&value),
+                }),
+                ("replace", Some(value)) => Ok(AstPatchOperation::Replace {
+                    path,
+                    value: value_to_json(&value),
+                }),
+                ("remove", None) => Ok(AstPatchOperation::Remove { path }),
+                ("add" | "replace", None) => Err(AstPatchError(
+                    "patch add and replace require a value".into(),
+                )),
+                ("remove", Some(_)) => {
+                    Err(AstPatchError("patch remove must not carry a value".into()))
+                }
+                _ => Err(AstPatchError("unknown patch operation".into())),
+            }
+        })
+        .collect()
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AstPatchError(String);
 

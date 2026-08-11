@@ -1,4 +1,7 @@
-use carve::{apply_ast_patch, create_ast_patch, parse, to_json, AstPatchOperation};
+use carve::{
+    apply_ast_patch, ast_patch_from_json, ast_patch_to_json, create_ast_patch, parse, to_json,
+    AstPatchOperation,
+};
 
 #[test]
 fn patch_replays_semantic_changes() {
@@ -60,4 +63,27 @@ fn refuses_a_leading_zero_array_index() {
     )
     .unwrap_err();
     assert!(error.to_string().contains("not an index"));
+}
+
+#[test]
+fn patch_wire_format_round_trips() {
+    let operations = vec![
+        AstPatchOperation::Add {
+            path: "/children/0".into(),
+            value: "{\"type\":\"paragraph\",\"children\":[]}".into(),
+        },
+        AstPatchOperation::Remove {
+            path: "/children/1".into(),
+        },
+    ];
+    let encoded = ast_patch_to_json(&operations).unwrap();
+    let decoded = ast_patch_from_json(&encoded).unwrap();
+    assert_eq!(ast_patch_to_json(&decoded).unwrap(), encoded);
+    assert!(encoded.contains("\"op\":\"add\""));
+}
+
+#[test]
+fn patch_wire_format_rejects_malformed_operations() {
+    assert!(ast_patch_from_json("[{\"op\":\"replace\",\"path\":\"/type\"}]").is_err());
+    assert!(ast_patch_from_json("[{\"op\":\"test\",\"path\":\"/type\",\"value\":null}]").is_err());
 }

@@ -363,15 +363,23 @@ fn run_merge(args: &[String]) -> ExitCode {
                 let items = conflicts
                     .iter()
                     .map(|item| {
+                        let deleted = if item.base.is_none()
+                            || item.ours.is_none()
+                            || item.theirs.is_none()
+                        {
+                            format!(
+                                ",\"deleted\":{{\"base\":{},\"ours\":{},\"theirs\":{}}}",
+                                item.base.is_none(),
+                                item.ours.is_none(),
+                                item.theirs.is_none(),
+                            )
+                        } else {
+                            String::new()
+                        };
                         format!(
-                            "{{\"path\":{},\"reason\":{},\"base\":{},\"ours\":{},\"theirs\":{}}}",
+                            "{{\"path\":{},\"reason\":{},\"base\":{},\"ours\":{},\"theirs\":{}{deleted}}}",
                             json_string(&item.path),
-                            json_string(match item.reason {
-                                carve::MergeConflictReason::BothChanged => "both-changed",
-                                carve::MergeConflictReason::DeleteEdit => "delete-edit",
-                                carve::MergeConflictReason::ConcurrentSequenceEdit =>
-                                    "concurrent-sequence-edit",
-                            }),
+                            json_string(merge_reason(item.reason)),
                             item.base.as_deref().unwrap_or("null"),
                             item.ours.as_deref().unwrap_or("null"),
                             item.theirs.as_deref().unwrap_or("null")
@@ -382,9 +390,13 @@ fn run_merge(args: &[String]) -> ExitCode {
                 println!("{{\"ok\":false,\"ast\":null,\"conflicts\":[{items}]}}");
             } else {
                 for item in &conflicts {
-                    eprintln!("conflict {:?} at {}", item.reason, item.path);
+                    eprintln!("conflict {} at {}", merge_reason(item.reason), item.path);
                 }
-                eprintln!("{} structural conflict(s)", conflicts.len());
+                eprintln!(
+                    "{} structural conflict{}",
+                    conflicts.len(),
+                    if conflicts.len() == 1 { "" } else { "s" }
+                );
             }
             ExitCode::FAILURE
         }
@@ -392,6 +404,14 @@ fn run_merge(args: &[String]) -> ExitCode {
             eprintln!("carve merge: {error}");
             ExitCode::from(2)
         }
+    }
+}
+
+fn merge_reason(reason: carve::MergeConflictReason) -> &'static str {
+    match reason {
+        carve::MergeConflictReason::BothChanged => "both-changed",
+        carve::MergeConflictReason::DeleteEdit => "delete-edit",
+        carve::MergeConflictReason::ConcurrentSequenceEdit => "concurrent-sequence-edit",
     }
 }
 
