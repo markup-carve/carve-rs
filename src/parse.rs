@@ -177,6 +177,32 @@ enum ParseMode {
 /// so there is one answer to that question rather than one per caller - the
 /// same reason carve-rs#725 had to unify the frontmatter OPENER test between
 /// these two callers.
+/// Join collected lines back into a source string, TERMINATED.
+///
+/// The parser rebuilds its source several times - a footnote body, the document
+/// body after definitions are lifted out, a container's collected lines - and
+/// each consumer splits it again with `str::lines()`. `join` alone makes that
+/// round trip lossy in exactly one place, a trailing EMPTY line:
+///
+/// ```text
+/// ["a", ""]  ->  join  ->  "a\n"    ->  lines()  ->  ["a"]      the blank is gone
+/// ["a", ""]  ->  here  ->  "a\n\n"   ->  lines()  ->  ["a", ""]  preserved
+/// ["a"]      ->  here  ->  "a\n"    ->  lines()  ->  ["a"]      unchanged
+/// ```
+///
+/// Every other line survives a plain `join` because the separator before it is
+/// still in the string; only the last one has nothing after it to imply it.
+/// `lines()` drops one trailing newline, so terminating changes the
+/// empty-last-line case and nothing else (markup-carve/carve-rs#908).
+fn joined_source(lines: &[String]) -> String {
+    if lines.is_empty() {
+        return String::new();
+    }
+    let mut joined = lines.join("\n");
+    joined.push('\n');
+    joined
+}
+
 pub(crate) fn normalize_source(source: &str) -> std::borrow::Cow<'_, str> {
     if !(source.starts_with('\u{feff}') || source.contains('\r') || source.contains('\0')) {
         return std::borrow::Cow::Borrowed(source);
@@ -985,7 +1011,7 @@ fn extract_footnote_defs(
             defs.entry(label.to_string())
                 .or_insert_with(|| MappedSource {
                     col_map: def_col_map,
-                    source: def_lines.join("\n"),
+                    source: joined_source(&def_lines),
                     line_map: def_line_map,
                 });
             // Leave the container's structural prefix (or a blank line at top
@@ -1055,7 +1081,7 @@ fn extract_footnote_defs(
             } else {
                 Vec::new()
             },
-            source: body.join("\n"),
+            source: joined_source(&body),
             line_map: body_line_map,
         },
         defs,
@@ -1416,7 +1442,7 @@ fn extract_link_defs(source: &str) -> (String, BTreeMap<String, LinkDef>) {
             body.push(line.to_string());
         }
     }
-    (body.join("\n"), defs)
+    (joined_source(&body), defs)
 }
 
 fn prepass_line_is_quoted(line: &str) -> bool {
@@ -2427,7 +2453,7 @@ impl LineBuffer {
     fn into_source(self) -> MappedSource {
         MappedSource {
             col_map: self.col_map,
-            source: self.lines.join("\n"),
+            source: joined_source(&self.lines),
             line_map: self.line_map,
         }
     }
@@ -7508,7 +7534,7 @@ fn collect_indented_block_mapped_with(
     }
     MappedSource {
         col_map,
-        source: lines.join("\n"),
+        source: joined_source(&lines),
         line_map,
     }
 }
@@ -8551,7 +8577,7 @@ fn collect_definition_body(
     debug_assert_eq!(col_map.len(), lines.len());
     MappedSource {
         col_map,
-        source: lines.join("\n"),
+        source: joined_source(&lines),
         line_map,
     }
 }
