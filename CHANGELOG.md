@@ -9,6 +9,17 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`CodeGroup` extension**, ported from carve-js `code-group` and carve-php
+  `CodeGroupExtension`. Renders a `::: code-group` container - or any div
+  carrying the `code-group` class - as radio-driven tabbed code panels, one tab
+  per fenced code block, named by the block's `[label]`, its language, or
+  `Code N` in that order. A block carrying `selected` opens first, otherwise
+  the first one does. A container with no code block is left to the core div
+  renderer. In static mode the radios go and each panel becomes a `<section>`
+  headed by its label, so the panels stay distinguishable offline.
+
+### Added
+
 - **`HeadingLevelShift` extension**, ported from carve-js `heading-level-shift`
   and carve-php `HeadingLevelShiftExtension`, closing the last of the three
   engines to carry it. Shifts every heading down by a fixed offset for pages

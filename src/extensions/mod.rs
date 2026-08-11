@@ -14,6 +14,7 @@
 
 pub mod autolink;
 pub mod code_callouts;
+pub mod code_group;
 pub mod color_swatch;
 pub mod details;
 pub mod external_links;
@@ -34,6 +35,7 @@ pub mod wikilinks;
 
 pub use autolink::{Autolink, AutolinkOptions};
 pub use code_callouts::CodeCallouts;
+pub use code_group::{CodeGroup, CodeGroupOptions};
 pub use color_swatch::{ColorSwatch, SwatchPosition, SwatchShape};
 pub use details::Details;
 pub use external_links::{ExternalLinks, ExternalLinksOptions};
