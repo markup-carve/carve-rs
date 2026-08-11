@@ -173,12 +173,11 @@ impl<'a> Importer<'a> {
                 } else if name == "class" {
                     out.classes
                         .extend(value.split_whitespace().map(str::to_owned));
-                } else if name.starts_with("data-")
+                } else if (name.starts_with("data-")
                     && name != "data-djot-src"
-                    && name != "data-carve-src"
+                    && name != "data-carve-src")
+                    || (name == "title" && tag != "a" && tag != "img")
                 {
-                    out.key_values.insert(name, value);
-                } else if name == "title" && tag != "a" && tag != "img" {
                     out.key_values.insert(name, value);
                 } else if name == "style" {
                     self.diag(
