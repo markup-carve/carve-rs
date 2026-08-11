@@ -18,7 +18,9 @@
 
 fn code(source: &str) -> String {
     let html = carve::to_html(source);
-    let start = html.find("<code").and_then(|i| html[i..].find('>').map(|j| i + j + 1));
+    let start = html
+        .find("<code")
+        .and_then(|i| html[i..].find('>').map(|j| i + j + 1));
     match start {
         Some(s) => match html[s..].find("</code>") {
             Some(e) => html[s..s + e].to_string(),
