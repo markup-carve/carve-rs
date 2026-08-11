@@ -7545,6 +7545,7 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     // attributes LIFTED off a chunk (`split_trailing_attrs`), so the span comes
     // from the chunk's own maps rather than from the cursor.
     let mut pending_attrs_pos: Option<Pos> = None;
+    let mut blank_run = 0usize;
     // The current item's content column (where its content begins after the
     // marker). Nested content and sub-blocks of the last item dedent by this, so
     // it persists across iterations and is updated as each item is opened.
@@ -7566,6 +7567,7 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             // pending_blank) or an indented second paragraph (below). A blank
             // before any other indented block keeps it compact (#74).
             pending_blank = true;
+            blank_run += 1;
             cur.consume();
             continue;
         }
@@ -7579,6 +7581,7 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 pending_attrs_pos.take().filter(|_| pending_attrs.is_some()),
             );
             pending_attrs = None;
+            blank_run = 0;
             if let Some(block) = parse_continuation_block(cur, options, base_indent) {
                 // An EMPTY paragraph is not content and must not become one of
                 // the item's blocks. It arises when the attached block's whole
@@ -7756,6 +7759,10 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                     if !renders_nothing {
                         pending_blank = false;
                     }
+                    // The line was nonblank even when it renders nothing.
+                    // Looseness may span an invisible line (§17 L1b), but the
+                    // hard boundary requires consecutive blank source lines.
+                    blank_run = 0;
                     last.children.extend(nested_children);
                     // A collected definition is an I5 block, not the comment
                     // exception. If the collector stopped on a nonzero line
@@ -7903,6 +7910,7 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 // sub-list still re-raises pending_blank in the blank branch, so
                 // a genuine blank BETWEEN items keeps loosening.
                 pending_blank = false;
+                blank_run = 0;
                 last.children.extend(nested_children);
                 continue;
             }
@@ -7935,9 +7943,16 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         {
             break;
         }
+        // PART 17 L1 (0.2): one blank line separates items in a loose list;
+        // two or more end it before the next compatible marker. Leave that
+        // marker unconsumed so the outer block parser opens a sibling list.
+        if blank_run >= 2 {
+            break;
+        }
         if pending_blank {
             tight = false;
             pending_blank = false;
+            blank_run = 0;
         }
         // This item's content column. For ordered/unordered it is where the
         // marker content begins (`- `=2, `1. `=3, `10. `=4). For a TASK the
