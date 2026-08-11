@@ -456,13 +456,36 @@ fn render_with_escapes_once(doc: &Document, escape_mode: EscapeMode) -> String {
     // written source and the published tree cannot disagree.
     let footnote_defs = crate::ast_json::footnote_defs_in_source_order(doc);
     let mut rendered = Vec::new();
+    // The document level joins its own entries rather than going through
+    // `render_blocks`, so the adjacent-sibling-list offset is applied here too.
+    // See the note beside `lists_would_merge`; without it a top-level pair --
+    // which is where authors actually write one -- still merged (carve#1088).
+    let mut previous_list: Option<&List> = None;
+    let mut list_offset = 0usize;
     for entry in crate::ast_json::ordered_document_entries(doc, &footnote_defs) {
         let text = match entry {
             crate::ast_json::DocEntry::Block(child) => {
                 ctx.paragraph_starts_after_caption_host = ctx.after_caption_host;
                 let text = render_block(child, &mut ctx);
                 ctx.after_caption_host = hosts_caption(child);
-                text
+                if let BlockNode::List(list) = child {
+                    list_offset = match previous_list {
+                        Some(previous) if lists_would_merge(previous, list) => list_offset + 1,
+                        _ => 0,
+                    };
+                    previous_list = Some(list);
+                    if list_offset > 0 {
+                        indent_lines(&text, list_offset)
+                    } else {
+                        text
+                    }
+                } else {
+                    if !text.is_empty() {
+                        previous_list = None;
+                        list_offset = 0;
+                    }
+                    text
+                }
             }
             crate::ast_json::DocEntry::FootnoteDef(label, blocks, _) => {
                 ctx.after_caption_host = false;
@@ -711,6 +734,41 @@ fn normalize_escapes_figure_target(f: &mut crate::ast::Figure) {
     }
 }
 
+/// Whether two adjacent sibling lists would read back as ONE list.
+///
+/// PART 9 §11 N1's axes: the kind, the plain-vs-task classification, and the
+/// marker character the author chose -- the ordered delimiter and dialect, or
+/// the bullet. Where any of them differs the lists separate on their own and
+/// the writer owes them nothing, which is what carve#286 established.
+fn lists_would_merge(a: &List, b: &List) -> bool {
+    if a.ordered != b.ordered || is_task_list(a) != is_task_list(b) {
+        return false;
+    }
+    if a.ordered {
+        return a.delim.unwrap_or('.') == b.delim.unwrap_or('.') && a.ol_type == b.ol_type;
+    }
+    a.bullet_char.unwrap_or('-') == b.bullet_char.unwrap_or('-')
+}
+
+fn is_task_list(list: &List) -> bool {
+    list.items.iter().any(|item| item.checked.is_some())
+}
+
+/// Every non-blank line of `text`, prefixed with `columns` spaces.
+fn indent_lines(text: &str, columns: usize) -> String {
+    let pad = " ".repeat(columns);
+    text.split('\n')
+        .map(|line| {
+            if line.is_empty() {
+                String::new()
+            } else {
+                format!("{pad}{line}")
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 fn render_blocks(blocks: &[BlockNode], ctx: &mut CarveContext) -> String {
     if ctx.block_depth >= MAX_RENDER_DEPTH {
         crate::render_depth::record("carve");
@@ -721,12 +779,41 @@ fn render_blocks(blocks: &[BlockNode], ctx: &mut CarveContext) -> String {
     let previous_paragraph_start = ctx.paragraph_starts_after_caption_host;
     ctx.after_caption_host = false;
     let mut rendered = Vec::new();
+    // TWO ADJACENT SIBLING LISTS NEED SOMETHING BETWEEN THEM. Written at the
+    // same column with matching markers they merge on re-parse, so
+    // `parse(fmt(x)) == parse(x)` is false for a document the parser reads as
+    // two lists (carve#1088). carve#286 spent the marker axis -- emit the marker
+    // as authored -- which separates them only while the markers DIFFER; when
+    // both are `1.` at column 0 there is nothing left to preserve and
+    // indentation is the axis remaining.
+    //
+    // ONE SPACE, CUMULATIVE, RELATIVE TO THE LIST BEFORE IT. One space is the
+    // only offset safe for both kinds: a bullet's content column is 2, so two
+    // spaces already NEST the second list inside the first. And the step is per
+    // list rather than per run -- a flat +1 leaves the second and third at the
+    // same column, where they merge with each other.
+    let mut previous_list: Option<&List> = None;
+    let mut list_offset = 0usize;
     for block in blocks {
         ctx.paragraph_starts_after_caption_host = ctx.after_caption_host;
         let text = render_block(block, ctx);
         ctx.after_caption_host = hosts_caption(block);
+        if let BlockNode::List(list) = block {
+            list_offset = match previous_list {
+                Some(previous) if lists_would_merge(previous, list) => list_offset + 1,
+                _ => 0,
+            };
+            previous_list = Some(list);
+        } else if !text.is_empty() {
+            previous_list = None;
+            list_offset = 0;
+        }
         if !text.is_empty() {
-            rendered.push(text);
+            rendered.push(if list_offset > 0 {
+                indent_lines(&text, list_offset)
+            } else {
+                text
+            });
         }
     }
     let out = rendered.join("\n\n");
