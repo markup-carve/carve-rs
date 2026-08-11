@@ -683,13 +683,14 @@ fn extract_footnote_defs(
     let mut paragraph_open = false;
     let mut i = 0;
     while i < lines.len() {
+        let structural_blank = prepass_structural_blank(lines[i]);
         let structural_list_boundary =
             columns.has_open_item() && detect_list_marker_full(lines[i]).is_some();
         let structural_continuation = columns.has_open_item()
             && is_plus_marker(lines[i])
             && leading_ws(lines[i]) < columns.current_content_col();
         if paragraph_open
-            && !is_blank_line(lines[i])
+            && !structural_blank
             && !structural_list_boundary
             && !structural_continuation
         {
@@ -698,7 +699,7 @@ fn extract_footnote_defs(
             i += 1;
             continue;
         }
-        if is_blank_line(lines[i]) || structural_list_boundary || structural_continuation {
+        if structural_blank || structural_list_boundary || structural_continuation {
             paragraph_open = false;
         }
         // A footnote definition is collected at the top level AND from inside a
@@ -1211,29 +1212,33 @@ fn extract_link_defs(source: &str) -> (String, BTreeMap<String, LinkDef>) {
         }
     }
     for (line_index, line) in all_lines.iter().copied().enumerate() {
+        let structural_blank = prepass_structural_blank(line);
         let structural_list_boundary =
             columns.has_open_item() && detect_list_marker_full(line).is_some();
         let structural_continuation = columns.has_open_item()
             && is_plus_marker(line)
             && leading_ws(line) < columns.current_content_col();
+        let structural_description = line.starts_with(":  ");
         if line.starts_with(":  ") {
             in_definition_body = true;
-        } else if is_blank_line(line) || line.starts_with(":: ") {
+        } else if structural_blank || line.starts_with(":: ") {
             in_definition_body = false;
         }
         let definition_body_boundary = in_definition_body && parse_link_def_line(line).is_some();
         if paragraph_open
-            && !is_blank_line(line)
+            && !structural_blank
             && !structural_list_boundary
             && !structural_continuation
+            && !structural_description
             && !definition_body_boundary
         {
             body.push(line.to_string());
             continue;
         }
-        if is_blank_line(line)
+        if structural_blank
             || structural_list_boundary
             || structural_continuation
+            || structural_description
             || definition_body_boundary
         {
             paragraph_open = false;
@@ -1492,6 +1497,7 @@ fn prepass_opens_paragraph(line: &str) -> bool {
         && !is_plus_marker(line)
         && parse_link_def_line(line).is_none()
         && parse_footnote_def_line(line).is_none()
+        && detect_abbreviation_def(line).is_none()
         && parse_standalone_attrs(line).is_none()
         && !is_heading_marker_line(line)
         && !detect_thematic_break(line)
@@ -1502,6 +1508,13 @@ fn prepass_opens_paragraph(line: &str) -> bool {
         && !line.starts_with(":: ")
         && !line.starts_with("::: ")
         && line != ":::"
+}
+
+fn prepass_structural_blank(mut line: &str) -> bool {
+    while let Some(rest) = strip_prepass_blockquote_prefix(line) {
+        line = rest;
+    }
+    is_blank_line(line)
 }
 
 fn prepass_line_is_quoted(line: &str) -> bool {
@@ -4916,6 +4929,7 @@ fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     // markup-carve/carve-rs#731's cubic walk back.
     let mut suppress_colon_interrupt = false;
     let mut in_fence: Option<FenceOpen> = None;
+    let mut colon_fences: Vec<usize> = Vec::new();
     while let Some(line) = cur.peek() {
         if let Some(stripped) = strip_blockquote_prefix(line) {
             let source_line = cur.source_line(cur.pos);
@@ -4924,7 +4938,14 @@ fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             // The quote marker (and its optional space) is a pure prefix, so the
             // quoted line's columns are knowable in the document.
             let stripped_at = stripped_col(cur.source_col(at), line, stripped);
-            if para_open.get() && !is_blank_line(stripped) {
+            let paragraph_was_open = para_open.get();
+            let mut innermost = stripped;
+            while let Some(rest) = strip_blockquote_prefix(innermost) {
+                innermost = rest;
+            }
+            let closes_colon = exact_colon_fence_len(innermost)
+                .is_some_and(|width| colon_fences.last() == Some(&width));
+            if paragraph_was_open && !is_blank_line(stripped) && !closes_colon {
                 inner.push_at(stripped.to_string(), source_line, stripped_at);
                 continue;
             }
@@ -5003,6 +5024,13 @@ fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                     } else {
                         suppress_colon_interrupt = false;
                     }
+                }
+            }
+            if closes_colon {
+                colon_fences.pop();
+            } else if !paragraph_was_open {
+                if let Some(open) = detect_container_open(innermost) {
+                    colon_fences.push(open.fence_len);
                 }
             }
             inner.push_at(stripped.to_string(), source_line, stripped_at);

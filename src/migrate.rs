@@ -98,7 +98,7 @@ pub fn migrate_0_1_to_0_2(source: &str) -> String {
             paragraph_open = false;
             attachment = None;
         } else if is_old_interrupter(line) {
-            paragraph_open = line.starts_with("> ") && line[2..].trim().len() > 0;
+            paragraph_open = line.starts_with("> ") && !line[2..].trim().is_empty();
             attachment = paragraph_open.then(|| ("+".to_string(), 2));
         } else {
             if !paragraph_open {

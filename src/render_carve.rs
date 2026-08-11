@@ -850,7 +850,24 @@ fn adjacent_blocks_merge(left: &BlockNode, right: &BlockNode) -> bool {
 
 fn render_item_blocks(blocks: &[BlockNode], tight: bool, ctx: &mut CarveContext) -> String {
     if !tight {
-        return render_blocks(blocks, ctx);
+        let mut out = String::new();
+        let mut previous: Option<&BlockNode> = None;
+        for block in blocks {
+            let rendered = render_block(block, ctx);
+            if rendered.is_empty() {
+                continue;
+            }
+            if let Some(before) = previous {
+                out.push_str("\n\n");
+                if let Some(definition) = definition_in_gap(before, block, ctx) {
+                    out.push_str(&definition);
+                    out.push_str("\n\n");
+                }
+            }
+            out.push_str(&rendered);
+            previous = Some(block);
+        }
+        return out;
     }
     if ctx.block_depth >= MAX_RENDER_DEPTH {
         crate::render_depth::record("carve");
@@ -1234,7 +1251,11 @@ fn render_list(node: &List, ctx: &mut CarveContext) -> String {
         let first = lines.remove(0);
         out.push_str(&format!("{prefix}{first}\n"));
         let continuation = " ".repeat(prefix.len());
+        let mut in_task_nested_list = false;
         for line in lines {
+            if item.checked.is_some() && is_rendered_list_marker(line.trim_start()) {
+                in_task_nested_list = true;
+            }
             if line.is_empty() || line.chars().eq([verbatim_blank()]) {
                 // A blank continuation line is emitted EMPTY, never indented to
                 // the content column: PART 11 section 7 forbids a whitespace-only
@@ -1255,7 +1276,18 @@ fn render_list(node: &List, ctx: &mut CarveContext) -> String {
             } else if let Some(rest) = line.strip_prefix(MARKER_COLUMN) {
                 // The continuation marker and its attached block sit at the
                 // ITEM's marker column, not its content column (§17 L3).
-                out.push_str(&format!("{rest}\n"));
+                if in_task_nested_list {
+                    out.push_str(&format!("  {rest}\n"));
+                } else {
+                    out.push_str(&format!("{rest}\n"));
+                }
+            } else if in_task_nested_list {
+                // The checkbox is item content, not part of the marker width.
+                // A task item's nested list therefore starts two columns in,
+                // just like its authored form; indenting it by the full
+                // `- [ ] ` prefix makes the nested continuation marker miss
+                // its list and changes the following block into prose.
+                out.push_str(&format!("  {line}\n"));
             } else {
                 out.push_str(&format!("{continuation}{line}\n"));
             }
@@ -1330,7 +1362,10 @@ fn roman_marker(mut n: usize) -> String {
 
 fn render_definition_list(items: &[DefinitionItem], ctx: &mut CarveContext) -> String {
     let mut out = Vec::new();
-    for item in items {
+    for (item_index, item) in items.iter().enumerate() {
+        if item_index > 0 {
+            out.push(String::new());
+        }
         for term in &item.terms {
             out.push(format!(":: {}", render_inlines(term, ctx)));
         }

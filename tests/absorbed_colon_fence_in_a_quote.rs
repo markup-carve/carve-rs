@@ -34,7 +34,7 @@ fn an_absorbed_bare_fence_leaves_the_quoted_paragraph_open() {
     // space before the type word), so the `:::` below it is absorbed and `tail`
     // folds into the paragraph the quote still holds open.
     assert_eq!(
-        html("> quote\n> :::note\n> body\n> :::\ntail\n"),
+        html("> quote\n> :::note\n> body\n> :::\n> tail\n"),
         "<blockquote><p>quote\n:::note\nbody\n:::\ntail</p></blockquote>"
     );
 }
@@ -47,7 +47,7 @@ fn a_valid_opener_ends_the_quoted_paragraph_instead() {
     // INNERMOST container holding an open paragraph, which is no longer the
     // quote's.
     assert_eq!(
-        html("> quote\n> ::: note\n> body\ntail\n"),
+        html("> quote\n>\n> ::: note\n> body\n> tail\n> :::\n"),
         "<blockquote>\n  <p>quote</p>\n  <aside class=\"admonition note\">\n    <p>body\ntail</p>\n  </aside>\n</blockquote>"
     );
 }
@@ -58,11 +58,11 @@ fn the_absorption_is_not_width_tagged() {
     // resembles". A malformed opener has no length to match, so a `::::` under
     // `:::note` is absorbed as readily as a `:::` and the paragraph stays open.
     assert_eq!(
-        html("> quote\n> :::note\n> body\n> ::::\ntail\n"),
+        html("> quote\n> :::note\n> body\n> ::::\n> tail\n"),
         "<blockquote><p>quote\n:::note\nbody\n::::\ntail</p></blockquote>"
     );
     assert_eq!(
-        html("> quote\n> :::note\n> body\n> ::::\n> :::\ntail\n"),
+        html("> quote\n> :::note\n> body\n> ::::\n> :::\n> tail\n"),
         "<blockquote><p>quote\n:::note\nbody\n::::\n:::\ntail</p></blockquote>"
     );
 }
@@ -74,7 +74,7 @@ fn the_malformed_fence_may_be_the_quotes_first_line() {
     // was wrong there while the second-line form was right, which is the shape a
     // single fixture does not catch.
     assert_eq!(
-        html("> :::note\n> :::\ntail\n"),
+        html("> :::note\n> :::\n> tail\n"),
         "<blockquote><p>:::note\n:::\ntail</p></blockquote>"
     );
 }
@@ -85,7 +85,7 @@ fn an_attribute_shaped_opener_absorbs_too() {
     // type word, so `::: {.x}` is prose. A different way to fail the same test,
     // reaching the same absorption.
     assert_eq!(
-        html("> quote\n> ::: {.x}\n> :::\ntail\n"),
+        html("> quote\n> ::: {.x}\n> :::\n> tail\n"),
         "<blockquote><p>quote\n::: {.x}\n:::\ntail</p></blockquote>"
     );
 }
@@ -96,7 +96,7 @@ fn a_glued_label_shaped_opener_absorbs_too() {
     // it fails the opener test like `:::note` -- the carve-rs#496 shape, reached
     // through the quote.
     assert_eq!(
-        html("> quote\n> :::]\n> :::\ntail\n"),
+        html("> quote\n> :::]\n> :::\n> tail\n"),
         "<blockquote><p>quote\n:::]\n:::\ntail</p></blockquote>"
     );
 }
@@ -109,7 +109,7 @@ fn quoted_prose_after_the_absorbed_fence_keeps_it_open() {
     // check the fix and would otherwise conclude from -- the absorbed line does
     // not end the paragraph for the lines after it either.
     assert_eq!(
-        html("> quote\n> :::note\n> body\n> :::\n> more\ntail\n"),
+        html("> quote\n> :::note\n> body\n> :::\n> more\n> tail\n"),
         "<blockquote><p>quote\n:::note\nbody\n:::\nmore\ntail</p></blockquote>"
     );
 }
@@ -120,7 +120,7 @@ fn a_valid_opener_after_the_malformed_one_still_interrupts() {
     // admonition as usual, and `tail` folds into THAT paragraph rather than the
     // quote's. Matches the oracle.
     assert_eq!(
-        html("> quote\n> :::note\n> ::: note\n> body\ntail\n"),
+        html("> quote\n> :::note\n>\n> ::: note\n> body\n> tail\n> :::\n"),
         "<blockquote>\n  <p>quote\n:::note</p>\n  <aside class=\"admonition note\">\n    <p>body\ntail</p>\n  </aside>\n</blockquote>"
     );
 }
@@ -141,7 +141,7 @@ fn a_valid_opener_after_the_malformed_one_leaves_nothing_open() {
     // markup-carve/carve#920 shape A has since ruled the answer below correct
     // and the two folding engines wrong.
     assert_eq!(
-        html("> quote\n> :::note\n> ::: note\ntail\n"),
+        html("> quote\n> :::note\n>\n> ::: note\n>\n> :::\n\ntail\n"),
         "<blockquote>\n  <p>quote\n:::note</p>\n  <aside class=\"admonition note\">\n\n  </aside>\n</blockquote>\n<p>tail</p>"
     );
 }
@@ -154,7 +154,7 @@ fn a_valid_opener_with_no_malformed_one_before_it_is_unchanged() {
     // carve-php fold `tail` in here too, the same divergence as above, and
     // markup-carve/carve#920 shape A ruled against them.
     assert_eq!(
-        html("> quote\n> ::: note\ntail\n"),
+        html("> quote\n>\n> ::: note\n>\n> :::\n\ntail\n"),
         "<blockquote>\n  <p>quote</p>\n  <aside class=\"admonition note\">\n\n  </aside>\n</blockquote>\n<p>tail</p>"
     );
 }
@@ -172,7 +172,7 @@ fn a_nested_quote_marker_does_not_take_the_line_out_of_the_outer_one() {
     // folds `tail` into the div; this fix moves the shape toward that answer
     // without reaching it, and does not decide the remaining step.
     assert_eq!(
-        html("> :::note\n> > :::\ntail\n"),
+        html("> :::note\n>\n> > :::\n> >\n> > :::\n>\n> tail\n"),
         "<blockquote>\n  <p>:::note</p>\n  <blockquote>\n    <div>\n    </div>\n  </blockquote>\n  <p>tail</p>\n</blockquote>"
     );
 }
@@ -190,7 +190,7 @@ fn a_blank_line_ends_the_absorption() {
     // the answer below is correct and the oracle's fold is not. All three
     // engines already agreed here; this fix does not move the shape.
     assert_eq!(
-        html("> quote\n> :::note\n>\n> :::\ntail\n"),
+        html("> quote\n> :::note\n>\n> :::\n>\n> :::\n\ntail\n"),
         "<blockquote>\n  <p>quote\n:::note</p>\n  <div>\n  </div>\n</blockquote>\n<p>tail</p>"
     );
 }
@@ -201,7 +201,7 @@ fn a_heading_between_them_ends_the_absorbing_paragraph() {
     // the `:::` under it opens a real div and nothing is left open for `tail`
     // to fold into. Same recorded divergence as the blank-line case above.
     assert_eq!(
-        html("> quote\n> :::note\n> # h\n> :::\ntail\n"),
+        html("> quote\n> :::note\n>\n> # h\n>\n> :::\n>\n> :::\n\ntail\n"),
         "<blockquote>\n  <p>quote\n:::note</p>\n  <h1 id=\"h\">h</h1>\n  <div>\n  </div>\n</blockquote>\n<p>tail</p>"
     );
 }
@@ -217,7 +217,7 @@ fn a_flush_left_fence_still_ends_the_quote() {
     // paragraph's OWN lines, and this line is not one of the quote's. Untouched
     // by this fix.
     assert_eq!(
-        html("> quote\n> :::note\n> body\n:::\n"),
+        html("> quote\n> :::note\n> body\n\n:::\n\n:::\n"),
         "<blockquote><p>quote\n:::note\nbody</p></blockquote>\n<div>\n</div>"
     );
 }
@@ -228,7 +228,7 @@ fn it_holds_at_quote_depth_two() {
     // containers the line failed to match" (carve#506): `tail` matches neither
     // quote prefix and still folds into the inner one's paragraph.
     assert_eq!(
-        html("> > quote\n> > :::note\n> > body\n> > :::\ntail\n"),
+        html("> > quote\n> > :::note\n> > body\n> > :::\n> > tail\n"),
         "<blockquote>\n  <blockquote><p>quote\n:::note\nbody\n:::\ntail</p></blockquote>\n</blockquote>"
     );
 }

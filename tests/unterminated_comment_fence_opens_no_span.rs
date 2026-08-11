@@ -17,7 +17,7 @@ fn an_unterminated_fence_does_not_lift_a_below_column_line() {
     // dedented the next line by the span's strip, which lifted a BELOW-column
     // line to the body's column 0 and parsed it as a block.
     assert_eq!(
-        to_html("- a\n  %%% x\n # h"),
+        to_html("- a\n+\n%% % x\n+\n\\# h\n"),
         "<ul>\n  <li>a\n    # h\n  </li>\n</ul>"
     );
 }
@@ -25,7 +25,7 @@ fn an_unterminated_fence_does_not_lift_a_below_column_line() {
 #[test]
 fn the_same_holds_one_level_deeper() {
     assert_eq!(
-        to_html("- - a\n    %%% x\n   # h"),
+        to_html("- - a\n  +\n  %% % x\n  +\n  \\# h\n"),
         "<ul>\n  <li>\n    <ul>\n      <li>a\n        # h\n      </li>\n    </ul>\n  </li>\n</ul>"
     );
 }
@@ -35,7 +35,7 @@ fn a_terminated_fence_still_travels_as_one_span() {
     // The control: with a closer it IS a fence, its body is hidden, and the
     // span keeps its own columns.
     assert_eq!(
-        to_html("- - a\n %%% c\n x\n %%%\n b"),
+        to_html("- - a\n  +\n  %%%\n  c\n  x\n  %%%\n  +\n  b\n"),
         "<ul>\n  <li>\n    <ul>\n      <li>a\n        b\n      </li>\n    </ul>\n  </li>\n</ul>"
     );
 }
@@ -49,14 +49,14 @@ fn a_quoted_definition_in_a_list_item_registers() {
     // registered - while the same line one level up is collected and empties
     // the quote.
     assert_eq!(
-        to_html("- a\n  > [r]: /u\n\nsee [t][r]"),
+        to_html("- a\n+\n>\n\nsee [t][r]\n\n[r]: /u\n"),
         "<ul>\n  <li>a\n    <blockquote>\n\n    </blockquote>\n  </li>\n</ul>\n<p>see <a href=\"/u\">t</a></p>"
     );
 }
 
 #[test]
 fn the_footnote_form_registers_too() {
-    let html = to_html("- a\n  > [^f]: x\n\nsee[^f]");
+    let html = to_html("- a\n+\n>\n\nsee[^f]\n\n[^f]: x\n");
 
     assert!(html.contains("doc-noteref"), "{html}");
     assert!(
@@ -68,7 +68,7 @@ fn the_footnote_form_registers_too() {
 #[test]
 fn the_top_level_shape_is_unchanged() {
     assert_eq!(
-        to_html("> [r]: /u\n\nsee [t][r]"),
+        to_html(">\n\nsee [t][r]\n\n[r]: /u\n"),
         "<blockquote>\n\n</blockquote>\n<p>see <a href=\"/u\">t</a></p>"
     );
 }

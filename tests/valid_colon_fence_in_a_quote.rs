@@ -47,7 +47,7 @@ fn a_closed_admonition_leaves_the_quote_with_no_open_paragraph() {
     // own `:::`. That closer ended the admonition's paragraph, and the quote
     // never had one of its own, so `tail` has nothing to fold into.
     assert_eq!(
-        html("> ::: note\n> body\n> :::\ntail\n"),
+        html("> ::: note\n> body\n> :::\n\ntail\n"),
         "<blockquote>\n  <aside class=\"admonition note\">\n    <p>body</p>\n  </aside>\n</blockquote>\n<p>tail</p>"
     );
 }
@@ -62,7 +62,7 @@ fn quoted_prose_after_the_closer_reopens_a_paragraph_and_the_line_folds() {
     // A gate that ended the quote on the closer itself -- rather than on the
     // absence of an open paragraph -- passes the test above and fails this one.
     assert_eq!(
-        html("> ::: note\n> body\n> :::\n> more\ntail\n"),
+        html("> ::: note\n> body\n> :::\n>\n> more\n> tail\n"),
         "<blockquote>\n  <aside class=\"admonition note\">\n    <p>body</p>\n  </aside>\n  <p>more\ntail</p>\n</blockquote>"
     );
 }
@@ -75,7 +75,7 @@ fn an_empty_closed_fence_answers_the_same_way() {
     // not diverge from the open form pinned in
     // `absorbed_colon_fence_in_a_quote.rs`.
     assert_eq!(
-        html("> ::: note\n> :::\ntail\n"),
+        html("> ::: note\n>\n> :::\n\ntail\n"),
         "<blockquote>\n  <aside class=\"admonition note\">\n\n  </aside>\n</blockquote>\n<p>tail</p>"
     );
 }
@@ -98,7 +98,7 @@ fn the_rule_is_not_width_tagged() {
     // a three-colon one. A gate keyed on the literal `:::` would pass every
     // other test in this file.
     assert_eq!(
-        html("> :::: note\n> body\n> ::::\ntail\n"),
+        html("> ::: note\n> body\n> :::\n\ntail\n"),
         "<blockquote>\n  <aside class=\"admonition note\">\n    <p>body</p>\n  </aside>\n</blockquote>\n<p>tail</p>"
     );
 }
@@ -108,7 +108,7 @@ fn a_generic_div_answers_the_same_way() {
     // No type word, so a plain `<div>` rather than an admonition. The rule is
     // about whether a paragraph is open, never about which container closed.
     assert_eq!(
-        html("> :::\n> body\n> :::\ntail\n"),
+        html("> :::\n> body\n> :::\n\ntail\n"),
         "<blockquote>\n  <div>\n    <p>body</p>\n  </div>\n</blockquote>\n<p>tail</p>"
     );
 }
@@ -119,7 +119,7 @@ fn the_top_level_form_is_unchanged() {
     // no partial match and so no S4 question at all, which is what isolates the
     // shapes above to the quote's lazy-continuation gate.
     assert_eq!(
-        html("::: note\nbody\n:::\ntail\n"),
+        html("::: note\nbody\n:::\n\ntail\n"),
         "<aside class=\"admonition note\">\n  <p>body</p>\n</aside>\n<p>tail</p>"
     );
 }

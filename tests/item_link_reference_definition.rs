@@ -12,7 +12,7 @@ fn html(source: &str) -> String {
 
 #[test]
 fn a_definition_on_an_item_continuation_line_is_collected() {
-    let out = html("- a\n  [r]: /u\n\nsee [text][r]\n");
+    let out = html("- a\n\n  [r]: /u\n\nsee [text][r]\n");
     assert!(
         !out.contains("[r]: /u"),
         "definition leaked into the output:\n{out}"
@@ -62,7 +62,7 @@ fn a_footnote_definition_at_the_content_column_is_collected() {
     // front of the `[` and the definition was neither collected nor rendered -
     // the author's line disappeared and a reference to it stayed literal
     // (carve-rs#568). carve-js and the executable spec both collect it.
-    let out = carve::to_html("- a\n  [^f]: x\n\nsee[^f]\n");
+    let out = carve::to_html("- a\n\n  [^f]: x\n\nsee[^f]\n");
     assert!(!out.contains("[^f]: x"), "definition leaked:\n{out}");
     assert!(
         out.contains("doc-noteref"),

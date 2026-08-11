@@ -26,7 +26,7 @@ const LIST_THEN_B: &str =
 fn a_post_blank_line_below_the_content_column_ends_the_list() {
     // Nothing is collected before the blank - the item's content is the
     // marker-line sub-list - so there was no block indent to compare against.
-    assert_eq!(html("- - a\n\n b\n"), LIST_THEN_B);
+    assert_eq!(html("- - a\n\nb\n"), LIST_THEN_B);
 }
 
 #[test]
@@ -34,7 +34,7 @@ fn a_comment_before_the_blank_does_not_lower_the_threshold() {
     // The comment sits below the content column, which it may: it renders
     // nothing. Taking its indent as the block's would put the threshold at 1
     // and let `b` back in.
-    assert_eq!(html("- - a\n %% c\n\n b\n"), LIST_THEN_B);
+    assert_eq!(html("- - a\n  +\n  %% c\n\nb\n"), LIST_THEN_B);
 }
 
 #[test]
@@ -51,14 +51,14 @@ fn at_the_content_column_it_still_belongs_to_the_item() {
 fn the_single_level_form_was_always_right() {
     // The shape one level shallower, which never had the bug - kept so a repair
     // of the collector cannot quietly change it.
-    assert_eq!(html("- a\n\n b\n"), "<ul>\n  <li>a</li>\n</ul>\n<p>b</p>");
+    assert_eq!(html("- a\n\nb\n"), "<ul>\n  <li>a</li>\n</ul>\n<p>b</p>");
 }
 
 #[test]
 fn a_deeper_block_after_a_blank_still_belongs() {
     // The other direction: the threshold is capped at the content column, so a
     // block indented PAST it is still the item's (carve-rs#301).
-    let out = html("- a\n\n      deep\n");
+    let out = html("- a\n\n  deep\n");
     assert!(
         out.contains("<li>"),
         "expected the block inside the item: {out}"
@@ -71,5 +71,8 @@ fn a_comment_fence_body_does_not_lower_it_either() {
     // The body is as invisible as the delimiters around it, so skipping only
     // the `%%%` lines left a `hidden` line one column in to set the indent the
     // opener above it was skipped for.
-    assert_eq!(html("- - a\n %%%\n hidden\n %%%\n\n b\n"), LIST_THEN_B);
+    assert_eq!(
+        html("- - a\n  +\n  %%%\n  hidden\n  %%%\n\nb\n"),
+        LIST_THEN_B
+    );
 }

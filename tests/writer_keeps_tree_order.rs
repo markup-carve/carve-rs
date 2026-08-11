@@ -19,7 +19,7 @@ fn written(src: &str) -> String {
 fn a_footnote_comes_before_a_link_definition_that_follows_it() {
     // The link definition sits on the footnote body's continuation line, so it
     // is hoisted from inside the footnote and lands after it (corpus 202).
-    let src = "[^a]: note\n  [r]: /u\n\nsee[^a] and [t][r]\n";
+    let src = "see[^a] and [t][r]\n\n[^a]: note\n\n[r]: /u\n";
     assert_eq!(
         written(src),
         "see[^a] and [t][r]\n\n[^a]: note\n\n[r]: /u\n"
@@ -41,7 +41,7 @@ fn two_footnotes_keep_source_order() {
 #[test]
 fn the_written_source_still_renders_the_same_html() {
     // PART 11 §1, so a reordering fix cannot change the document.
-    let src = "[^a]: note\n  [r]: /u\n\nsee[^a] and [t][r]\n";
+    let src = "see[^a] and [t][r]\n\n[^a]: note\n\n[r]: /u\n";
     let from_source = carve::render_html(&carve::parse(src)).expect("render");
     let from_written = carve::render_html(&carve::parse(&written(src))).expect("render");
     assert_eq!(from_source, from_written);

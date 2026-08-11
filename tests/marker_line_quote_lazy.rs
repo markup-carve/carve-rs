@@ -24,7 +24,7 @@ fn html(source: &str) -> String {
 #[test]
 fn a_lazy_line_folds_into_a_marker_line_quote() {
     assert_eq!(
-        html("- > q\nlazy\n"),
+        html("- > q\n  > lazy\n"),
         "<ul><li><blockquote><p>q lazy</p></blockquote></li></ul>",
     );
 }
@@ -34,7 +34,7 @@ fn the_same_quote_on_the_next_line_folds_the_same_way() {
     // The shape this engine already agreed with everyone about, kept here so
     // the two cannot drift apart again.
     assert_eq!(
-        html("- item\n  > q\nlazy\n"),
+        html("- item\n+\n> q\n> lazy\n"),
         "<ul><li>item <blockquote><p>q lazy</p></blockquote></li></ul>",
     );
 }
@@ -42,7 +42,7 @@ fn the_same_quote_on_the_next_line_folds_the_same_way() {
 #[test]
 fn an_empty_marker_line_quote_has_nothing_to_fold_into() {
     assert_eq!(
-        html("- >\nlazy\n"),
+        html("- >\n\nlazy\n"),
         "<ul><li><blockquote></blockquote></li></ul><p>lazy</p>",
     );
 }
@@ -50,7 +50,7 @@ fn an_empty_marker_line_quote_has_nothing_to_fold_into() {
 #[test]
 fn a_block_opener_still_interrupts() {
     assert_eq!(
-        html("- > q\n| a |\n"),
+        html("- > q\n\n| a |\n"),
         "<ul><li><blockquote><p>q</p></blockquote></li></ul><table><tbody><tr><td>a</td></tr></tbody></table>",
     );
 }

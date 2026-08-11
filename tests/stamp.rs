@@ -3,8 +3,8 @@ use carve::{
 };
 
 const GENERATED_BY: &str = "carve-rs 0.1.0";
-const LINE_MARKER: &str = "%% carve-version: 0.1; generated-by: carve-rs 0.1.0";
-const BLOCK_MARKER: &str = "%%%\ncarve-version: 0.1\ngenerated-by: carve-rs 0.1.0\n%%%";
+const LINE_MARKER: &str = "%% carve-version: 0.2; generated-by: carve-rs 0.1.0";
+const BLOCK_MARKER: &str = "%%%\ncarve-version: 0.2\ngenerated-by: carve-rs 0.1.0\n%%%";
 
 #[test]
 fn one_liner_default_form() {
@@ -80,7 +80,7 @@ fn read_stamp_recognizes_the_line_form() {
     assert_eq!(
         read_stamp(&format!("text\n\n{LINE_MARKER}\n")),
         Some(Stamp {
-            version: "0.1".to_string(),
+            version: "0.2".to_string(),
             generated_by: Some(GENERATED_BY.to_string()),
         })
     );

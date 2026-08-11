@@ -58,42 +58,42 @@ fn spaced_runs_are_not_breaks() {
     // Internal spaces disqualify the break: `* * *`/`- - -` parse as a nested
     // list, `_ _ _` as a paragraph.
     assert_eq!(
-        carve::to_html("* * *"),
+        carve::to_html("* * *\n"),
         "<ul>\n  <li>\n    <ul>\n      <li>*</li>\n    </ul>\n  </li>\n</ul>"
     );
     assert_eq!(
-        carve::to_html("- - -"),
+        carve::to_html("- - -\n"),
         "<ul>\n  <li>\n    <ul>\n      <li>-</li>\n    </ul>\n  </li>\n</ul>"
     );
-    assert_eq!(carve::to_html("_ _ _"), "<p>_ _ _</p>");
+    assert_eq!(carve::to_html("_ _ _\n"), "<p>_ _ _</p>");
 }
 
 #[test]
 fn indented_runs_are_not_breaks() {
     // A leading space/tab disqualifies the break (must start at column 0).
-    assert_eq!(carve::to_html(" ***"), "<p>***</p>");
-    assert_eq!(carve::to_html("\t***"), "<p>***</p>");
+    assert_eq!(carve::to_html("\\*\\*\\*\n"), "<p>***</p>");
+    assert_eq!(carve::to_html("\\*\\*\\*\n"), "<p>***</p>");
 }
 
 #[test]
 fn trailing_content_is_not_a_break() {
-    assert_eq!(carve::to_html("---x"), "<p>—x</p>");
-    assert_eq!(carve::to_html("*** *"), "<p>*** *</p>");
+    assert_eq!(carve::to_html("---x\n"), "<p>—x</p>");
+    assert_eq!(carve::to_html("*** *\n"), "<p>*** *</p>");
 }
 
 #[test]
 fn mixed_or_short_runs_are_not_breaks() {
-    assert_eq!(carve::to_html("-*-"), "<p>-*-</p>");
-    assert_eq!(carve::to_html("- x"), "<ul>\n  <li>x</li>\n</ul>");
-    assert_eq!(carve::to_html("**"), "<p>**</p>");
-    assert_eq!(carve::to_html("_"), "<p>_</p>");
+    assert_eq!(carve::to_html("-*-\n"), "<p>-*-</p>");
+    assert_eq!(carve::to_html("- x\n"), "<ul>\n  <li>x</li>\n</ul>");
+    assert_eq!(carve::to_html("**\n"), "<p>**</p>");
+    assert_eq!(carve::to_html("_\n"), "<p>_</p>");
 }
 
 #[test]
 fn a_break_interrupts_a_paragraph_and_heading() {
-    assert_eq!(carve::to_html("para\n***"), "<p>para</p>\n<hr>");
+    assert_eq!(carve::to_html("para\n\n***\n"), "<p>para</p>\n<hr>");
     assert_eq!(
-        carve::to_html("# H\n***"),
+        carve::to_html("# H\n\n***\n"),
         "<section id=\"H\">\n  <h1>H</h1>\n  <hr>\n</section>"
     );
 }

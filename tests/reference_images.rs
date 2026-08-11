@@ -154,7 +154,7 @@ fn bare_image_alone_is_block() {
 #[test]
 fn bare_image_before_interrupter_stays_standalone() {
     assert_eq!(
-        h("![a](/u)\n# H"),
+        h("![a](/u)\n\n# H"),
         "<img src=\"/u\" alt=\"a\">\n<section id=\"H\">\n  <h1>H</h1>\n</section>"
     );
 }

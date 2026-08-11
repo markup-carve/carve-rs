@@ -109,7 +109,7 @@ fn cc_final_table_below_content_after_blank_doc_level() {
 #[test]
 fn cc_final_deflist_interrupts_at_column_zero() {
     assert_eq!(
-        carve::to_html("- one\n:: term\n:  def\n"),
+        carve::to_html("- one\n\n:: term\n:  def\n"),
         "<ul>\n  <li>one</li>\n</ul>\n<dl>\n  <dt>term</dt>\n  <dd>def</dd>\n</dl>"
     );
 }
@@ -117,7 +117,7 @@ fn cc_final_deflist_interrupts_at_column_zero() {
 #[test]
 fn cc_final_deflist_nests_at_content_column() {
     assert_eq!(
-        carve::to_html("- one\n  :: term\n  :  def\n"),
+        carve::to_html("- one\n\n  :: term\n  :  def\n"),
         "<ul>\n  <li>one\n    <dl>\n      <dt>term</dt>\n      <dd>def</dd>\n    </dl>\n  </li>\n</ul>"
     );
 }
@@ -132,7 +132,7 @@ fn cc_def_below_content_column_attaches_as_dd() {
     // Term nested at content column 2; the `:  def` at column 0 is below it but
     // still attaches to the open definition (it does NOT orphan to a paragraph).
     assert_eq!(
-        carve::to_html("- one\n  :: term\n:  def\n"),
+        carve::to_html("- one\n+\n:: term\n:  def\n"),
         "<ul>\n  <li>one\n    <dl>\n      <dt>term</dt>\n      <dd>def</dd>\n    </dl>\n  </li>\n</ul>"
     );
 }
@@ -140,7 +140,7 @@ fn cc_def_below_content_column_attaches_as_dd() {
 #[test]
 fn cc_multiple_defs_below_content_column_attach() {
     assert_eq!(
-        carve::to_html("- one\n  :: term\n:  d1\n:  d2\n"),
+        carve::to_html("- one\n+\n:: term\n:  d1\n:  d2\n"),
         "<ul>\n  <li>one\n    <dl>\n      <dt>term</dt>\n      <dd>d1</dd>\n      <dd>d2</dd>\n    </dl>\n  </li>\n</ul>"
     );
 }
@@ -149,7 +149,7 @@ fn cc_multiple_defs_below_content_column_attach() {
 fn cc_def_below_content_column_lazy_body_folds() {
     // A flush-left line after the below-content def lazily continues its body.
     assert_eq!(
-        carve::to_html("- one\n  :: term\n:  def\nmore\n"),
+        carve::to_html("- one\n+\n:: term\n:  def\nmore\n"),
         "<ul>\n  <li>one\n    <dl>\n      <dt>term</dt>\n      <dd>def\nmore</dd>\n    </dl>\n  </li>\n</ul>"
     );
 }
@@ -160,7 +160,7 @@ fn cc_def_below_content_column_after_blank_ends_entry() {
     // top-level paragraph (the blank is a genuine terminator, not a separator
     // here because the term's content column is not reached).
     assert_eq!(
-        carve::to_html("- one\n  :: term\n\n:  def\n"),
+        carve::to_html("- one\n\n  :: term\n\n:  def\n"),
         "<ul>\n  <li>one\n    <dl>\n      <dt>term</dt>\n    </dl>\n  </li>\n</ul>\n<p>:  def</p>"
     );
 }
@@ -170,7 +170,7 @@ fn cc_bare_below_content_new_term_starts_top_level_list() {
     // A `:: term2` at column 0 is a first-class block opener: it does NOT attach
     // to the item's def-list, it starts a new top-level definition list.
     assert_eq!(
-        carve::to_html("- one\n  :: term\n:: term2\n:  def2\n"),
+        carve::to_html("- one\n\n  :: term\n\n:: term2\n:  def2\n"),
         "<ul>\n  <li>one\n    <dl>\n      <dt>term</dt>\n    </dl>\n  </li>\n</ul>\n<dl>\n  <dt>term2</dt>\n  <dd>def2</dd>\n</dl>"
     );
 }
@@ -193,7 +193,7 @@ fn cc_colon_fence_below_content_column_is_lazy() {
 #[test]
 fn cc_colon_fence_nests_at_content_column() {
     assert_eq!(
-        carve::to_html("- one\n  ::: note\n  body\n  :::\n"),
+        carve::to_html("- one\n\n  ::: note\n  body\n  :::\n"),
         "<ul>\n  <li>one\n    <aside class=\"admonition note\">\n      <p>body</p>\n    </aside>\n  </li>\n</ul>"
     );
 }
@@ -201,7 +201,7 @@ fn cc_colon_fence_nests_at_content_column() {
 #[test]
 fn cc_colon_fence_interrupts_at_column_zero() {
     assert_eq!(
-        carve::to_html("- one\n::: note\nbody\n:::\n"),
+        carve::to_html("- one\n\n::: note\nbody\n:::\n"),
         "<ul>\n  <li>one</li>\n</ul>\n<aside class=\"admonition note\">\n  <p>body</p>\n</aside>"
     );
 }

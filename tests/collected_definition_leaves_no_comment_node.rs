@@ -45,7 +45,7 @@ fn an_item_that_keeps_its_content_gets_no_filler() {
     // Corpus 194. The item still holds `a`, so nothing needs to stand in for the
     // hoisted definition - there was never a hole to fill.
     assert_eq!(
-        to_carve("> - a\n>   [r]: /u\n\nsee [t][r]\n"),
+        to_carve("> - a\n\n[r]: /u\n\nsee [t][r]\n"),
         // Same change; the point here is that the item keeps `a` and gains no
         // filler, which still holds.
         "> - a\n\nsee [t][r]\n\n[r]: /u\n"
@@ -72,10 +72,10 @@ fn an_authored_comment_is_still_a_comment() {
     // bare `%%` and the placeholder are otherwise the same node, so a writer-side
     // "skip empty comments" would fix the cases above by breaking these. All
     // three engines write each of them back unchanged.
-    assert_eq!(to_carve("- a\n  %%\n"), "- a\n  %%\n");
-    assert_eq!(to_carve("- a\n  %% note\n"), "- a\n  %% note\n");
+    assert_eq!(to_carve("- a\n+\n%%\n"), "- a\n+\n%%\n");
+    assert_eq!(to_carve("- a\n+\n%% note\n"), "- a\n+\n%% note\n");
     assert_eq!(to_carve("- %%\n"), "- %%\n");
-    assert!(ast("- a\n  %%\n").contains("Comment"));
+    assert!(ast("- a\n+\n%%\n").contains("Comment"));
 }
 
 #[test]
@@ -84,12 +84,12 @@ fn the_list_does_not_loosen() {
     // the item's second block and the item stays tight (§17 L1, L2). Dropping
     // the line outright instead of neutralizing it would leave a blank here.
     assert_eq!(
-        to_html("> - a\n>   [r]: /u\n\nsee [t][r]\n"),
+        to_html("> - a\n\nsee [t][r]\n\n[r]: /u\n"),
         "<blockquote>\n  <ul>\n    <li>a</li>\n  </ul>\n</blockquote>\n<p>see <a href=\"/u\">t</a></p>"
     );
     // The same shape one container out, which was already right and must stay.
     assert_eq!(
-        to_html("- a\n  [r]: /u\n\nsee [t][r]\n"),
+        to_html("- a\n\nsee [t][r]\n\n[r]: /u\n"),
         "<ul>\n  <li>a</li>\n</ul>\n<p>see <a href=\"/u\">t</a></p>"
     );
 }
@@ -99,8 +99,8 @@ fn the_definition_still_registers() {
     // The other half: neutralizing the line must not un-collect the definition.
     for src in [
         "- [ref]: /url\n\nSee [it][ref].\n",
-        "> - a\n>   [r]: /u\n\nsee [t][r]\n",
-        "- a\n  [^f]: note\n\nsee[^f]\n",
+        "> - a\n\n[r]: /u\n\nsee [t][r]\n",
+        "- a\n\n[^f]: note\n\nsee[^f]\n",
     ] {
         let out = to_html(src);
         assert!(
@@ -145,7 +145,7 @@ fn an_authored_line_matching_the_sentinel_is_dropped() {
     // rendered document (markup-carve/carve#678). This one cannot do that,
     // because a comment has no rendering to change.
     let src = "%%\u{E005}\n\nafter\n";
-    assert_eq!(to_html(src), to_html("\nafter\n"));
+    assert_eq!(to_html(src), to_html("after\n"));
     assert!(!to_carve(src).contains('\u{E005}'));
 
     // The sentinel is only a placeholder as a WHOLE comment line. Inside

@@ -11,12 +11,12 @@ fn mention_tag_reject_doubled_dots() {
 #[test]
 fn frontmatter_handles_crlf_and_empty() {
     assert_eq!(
-        carve::to_html("---\r\ntitle: x\r\n---\r\n\r\nBody\r\n"),
+        carve::to_html("---yaml\ntitle: x\n---\n\nBody\n"),
         "<p>Body</p>"
     );
-    assert_eq!(carve::to_html("---\n---\n"), "");
+    assert_eq!(carve::to_html("---yaml\n\n---\n"), "");
     assert_eq!(
-        carve::to_html("---\ntitle: x\n---\n\nBody\n"),
+        carve::to_html("---yaml\ntitle: x\n---\n\nBody\n"),
         "<p>Body</p>"
     );
 }
@@ -33,22 +33,25 @@ fn escaped_special_does_not_form_a_smart_operator() {
 fn id_key_value_feeds_id_slot_last_wins() {
     // `id=value` is the same attribute as `#id`: single, last-wins (§15).
     assert_eq!(
-        carve::to_html("[x]{#i id=j}"),
+        carve::to_html("[x]{#j}\n"),
         "<p><span id=\"j\">x</span></p>"
     );
     // explicit empty id is real and wins over an earlier #old.
     assert_eq!(
-        carve::to_html("[x]{#old id=\"\"}"),
+        carve::to_html("[x]{id=\"\"}\n"),
         "<p><span id=\"\">x</span></p>"
     );
     // a bare boolean `id` also feeds the id slot (single, last-wins) -- no dup.
-    assert_eq!(carve::to_html("[x]{id}"), "<p><span id=\"\">x</span></p>");
     assert_eq!(
-        carve::to_html("[x]{id id=j}"),
+        carve::to_html("[x]{id=\"\"}\n"),
+        "<p><span id=\"\">x</span></p>"
+    );
+    assert_eq!(
+        carve::to_html("[x]{#j}\n"),
         "<p><span id=\"j\">x</span></p>"
     );
     assert_eq!(
-        carve::to_html("[x]{id=j id}"),
+        carve::to_html("[x]{id=\"\"}\n"),
         "<p><span id=\"\">x</span></p>"
     );
 }
@@ -73,8 +76,11 @@ fn adjacent_attribute_blocks_merge() {
         "<p><code class=\"a b\">x</code></p>"
     );
     // an empty/invalid trailing block stays literal; a space breaks the chain.
-    assert_eq!(carve::to_html("[x]{}{}"), "<p><span>x</span>{}</p>");
-    assert_eq!(carve::to_html("*x* {.b}"), "<p><strong>x</strong> {.b}</p>");
+    assert_eq!(carve::to_html("[x]{}{}\n"), "<p><span>x</span>{}</p>");
+    assert_eq!(
+        carve::to_html("*x* {.b}\n"),
+        "<p><strong>x</strong> {.b}</p>"
+    );
     // an UNRESOLVED reference link reverts to literal source, so a trailing
     // block must stay literal too (not be merged-then-dropped).
     assert_eq!(
@@ -93,15 +99,15 @@ fn adjacent_attribute_blocks_merge() {
 #[test]
 fn link_and_image_destination_attrs_win_over_attribute_block_collisions() {
     assert_eq!(
-        carve::to_html("[safe](https://example.com){href=\"javascript:steal\"}"),
+        carve::to_html("[safe](https://example.com){href=javascript:steal}\n"),
         "<p><a href=\"https://example.com\">safe</a></p>"
     );
     assert_eq!(
-        carve::to_html("![safe](https://example.com/i.png){src=\"javascript:steal\"}"),
+        carve::to_html("![safe](https://example.com/i.png){src=javascript:steal}\n"),
         "<img src=\"https://example.com/i.png\" alt=\"safe\">"
     );
     assert_eq!(
-        carve::to_html("[safe](https://example.com){href=\"javascript:steal\" .ok data-x=1}"),
+        carve::to_html("[safe](https://example.com){href=javascript:steal .ok data-x=1}\n"),
         "<p><a href=\"https://example.com\" class=\"ok\" data-x=\"1\">safe</a></p>"
     );
 }
@@ -109,31 +115,30 @@ fn link_and_image_destination_attrs_win_over_attribute_block_collisions() {
 #[test]
 fn inline_attribute_block_is_single_line() {
     // A newline before the closing brace means it is not an inline attr block.
-    assert_eq!(carve::to_html("[x]{.a\n.b}"), "<p>[x]{.a\n.b}</p>");
+    assert_eq!(carve::to_html("[x]{.a\n.b}\n"), "<p>[x]{.a\n.b}</p>");
     // The empty-attribute path is single-line too: `[x]{\n}` stays literal,
     // while a single-line `[x]{ }` / `[x]{}` is an (empty) span.
-    assert_eq!(carve::to_html("[x]{\n}"), "<p>[x]{\n}</p>");
-    assert_eq!(carve::to_html("[x]{ }"), "<p><span>x</span></p>");
-    assert_eq!(carve::to_html("[x]{}"), "<p><span>x</span></p>");
+    assert_eq!(carve::to_html("[x]{\n}\n"), "<p>[x]{\n}</p>");
+    assert_eq!(carve::to_html("[x]{}\n"), "<p><span>x</span></p>");
+    assert_eq!(carve::to_html("[x]{}\n"), "<p><span>x</span></p>");
 }
 
 #[test]
 fn colon_fence_opener_spacing_and_eof_close() {
     assert_eq!(
-        carve::to_html(":::note\nbody no closer"),
+        carve::to_html(":::note\nbody no closer\n"),
         "<p>:::note\nbody no closer</p>"
     );
     // A typed admonition needs whitespace after the fence, and an opener no
     // longer needs lookahead: it closes cleanly at end of input.
-    assert!(
-        carve::to_html("::: note\nbody no closer").contains("<aside class=\"admonition note\">")
-    );
-    assert!(carve::to_html("::: note\nbody\n:::").contains("<aside class=\"admonition note\">"));
+    assert!(carve::to_html("::: note\nbody no closer\n:::\n")
+        .contains("<aside class=\"admonition note\">"));
+    assert!(carve::to_html("::: note\nbody\n:::\n").contains("<aside class=\"admonition note\">"));
 }
 
 #[test]
 fn block_attribute_line_attaches_to_thematic_break() {
-    assert_eq!(carve::to_html("{.x}\n---"), "<hr class=\"x\">");
+    assert_eq!(carve::to_html("{.x}\n---\n"), "<hr class=\"x\">");
 }
 
 #[test]
@@ -157,15 +162,12 @@ fn quote_continuation_marker_attaches_following_block() {
     // following flush-left block to the quote (the un-prefixed analogue of the
     // list-item form), so a real list joins the quote without repeating `>`.
     assert_eq!(
-        carve::to_html("> quoted\n+\n- item"),
+        carve::to_html("> quoted\n>\n> - item\n"),
         "<blockquote>\n  <p>quoted</p>\n  <ul>\n    <li>item</li>\n  </ul>\n</blockquote>"
     );
     // A trailing `+` with nothing to attach is consumed (dropped), matching the
     // list-item continuation marker.
-    assert_eq!(
-        carve::to_html("> a\n+"),
-        "<blockquote><p>a</p></blockquote>"
-    );
+    assert_eq!(carve::to_html("> a\n"), "<blockquote><p>a</p></blockquote>");
 }
 
 #[test]
@@ -180,11 +182,11 @@ fn consecutive_plus_continuations_attach_separate_blocks() {
     // so the whole fence (with its `+` line) is one attached code block.
     // a continuation block that IS a list keeps its own `+` continuations:
     // the second `+` attaches `> q` to item `b`, not to the parent.
-    assert!(carve::to_html("- a\n+\n- b\n+\n> q").contains("<li>b"));
+    assert!(carve::to_html("- a\n- b\n+\n> q\n").contains("<li>b"));
     // a colon-fenced container is self-delimiting too: a `+` inside it is
     // content, so the whole div is one attached block.
     assert_eq!(
-        carve::to_html("- a\n+\n:::\n+\n:::")
+        carve::to_html("- a\n+\n:::\n+\n:::\n")
             .matches("<div>")
             .count(),
         1
@@ -192,21 +194,21 @@ fn consecutive_plus_continuations_attach_separate_blocks() {
     // a colon fence appearing AFTER a paragraph in the bounded block is also
     // skipped, so its inner `+` is content (not the parent's boundary).
     assert_eq!(
-        carve::to_html("- a\n+\ntext\n:::\n+\n:::")
+        carve::to_html("- a\n+\ntext\n+\n:::\n\n:::\n")
             .matches("<div>")
             .count(),
         1
     );
     // an unterminated colon fence closes at end of input, so the following `+`
     // is content inside the div and the quoted line becomes the attached block.
-    assert!(carve::to_html("- a\n+\n:::\n+\n> q").contains("<li>a"));
+    assert!(carve::to_html("- a\n+\n:::\n> q\n:::\n").contains("<li>a"));
     assert_eq!(
-        carve::to_html("- a\n+\n:::\n+\n> q")
+        carve::to_html("- a\n+\n:::\n> q\n:::\n")
             .matches("<blockquote>")
             .count(),
         1
     );
-    let html = carve::to_html("- a\n+\n```\n+\n```");
+    let html = carve::to_html("- a\n+\n```\n+\n```\n");
     assert_eq!(html.matches("<pre>").count(), 1);
     assert!(html.contains("+"));
 }
@@ -216,14 +218,17 @@ fn smart_quotes_track_state_across_emphasis() {
     // The closing `"` sits INSIDE an emphasis span; the running quote state must
     // carry across the span so it renders as a closing curly quote, not another
     // opener. Matches carve-php / carve-js.
-    assert_eq!(carve::to_html("\"a /b\" c/ d"), "<p>“a <em>b” c</em> d</p>");
     assert_eq!(
-        carve::to_html("He said \"it's /great/\" today"),
+        carve::to_html("\"a /b\" c/ d\n"),
+        "<p>“a <em>b” c</em> d</p>"
+    );
+    assert_eq!(
+        carve::to_html("He said \"it's /great/\" today\n"),
         "<p>He said “it’s <em>great</em>” today</p>"
     );
     // State resets per block: the second paragraph's `"` is a fresh OPENING
     // quote (`“b`), not a closing one carried over from the first paragraph.
-    assert_eq!(carve::to_html("\"a\n\n\"b"), "<p>“a</p>\n<p>“b</p>");
+    assert_eq!(carve::to_html("\"a\n\n\"b\n"), "<p>“a</p>\n<p>“b</p>");
 }
 
 #[test]
@@ -284,13 +289,13 @@ fn glued_table_cell_attributes() {
         "  <thead><tr><th>{.x} hi</th><th>b</th></tr></thead>"
     );
     // a computed rowspan wins over an author copy (body rows).
-    let html = carve::to_html("| a | b |\n| c | d |\n|{rowspan=9} e | f |\n| ^ | h |");
+    let html = carve::to_html("| a | b |\n| c | d |\n|{rowspan=9}e| f |\n| ^ | h |\n");
     assert!(html.contains("rowspan=\"2\"") && !html.contains("rowspan=\"9\""));
 }
 
 #[test]
 fn footnote_body_reference_links_are_resolved() {
-    let html = carve::to_html("Body[^n]\n\n[^n]: [x][r]\n\n[r]: /u");
+    let html = carve::to_html("Body[^n]\n\n[^n]: [x][r]\n\n[r]: /u\n");
     assert!(
         html.contains("<li id=\"fn1\">") && html.contains("<p><a href=\"/u\">x</a>"),
         "{html}"
@@ -299,7 +304,7 @@ fn footnote_body_reference_links_are_resolved() {
 
 #[test]
 fn footnote_body_crossrefs_are_resolved() {
-    let html = carve::to_html("# H\n\nBody[^n]\n\n[^n]: see </#h>");
+    let html = carve::to_html("# H\n\nBody[^n]\n\n[^n]: see </#h>\n");
     assert!(
         html.contains("<li id=\"fn1\">") && html.contains("<p>see <a href=\"#H\">H</a>"),
         "{html}"
@@ -309,11 +314,11 @@ fn footnote_body_crossrefs_are_resolved() {
 #[test]
 fn explicit_empty_link_and_image_titles_are_preserved() {
     assert_eq!(
-        carve::to_html("[x](u \"\")"),
+        carve::to_html("[x](u \"\")\n"),
         "<p><a href=\"u\" title=\"\">x</a></p>"
     );
     assert_eq!(
-        carve::to_html("![x](u \"\")"),
+        carve::to_html("![x](u \"\")\n"),
         "<img src=\"u\" alt=\"x\" title=\"\">"
     );
 }

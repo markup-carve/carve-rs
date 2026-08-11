@@ -194,7 +194,7 @@ fn an_under_indented_definition_still_attaches() {
     // it from ANY column, so it keeps dedenting to the body's column 0 rather
     // than folding as text (corpus 154).
     assert_eq!(
-        carve::to_html("- one\n  :: term\n :  def\n"),
+        carve::to_html("- one\n\n  :: term\n :  def\n"),
         "<ul>\n  <li>one\n    <dl>\n      <dt>term</dt>\n      <dd>def</dd>\n    </dl>\n  </li>\n</ul>"
     );
 }
@@ -209,7 +209,7 @@ fn a_below_column_definition_term_folds_but_its_definition_still_attaches() {
     // Its DEFINITION is: `:  def` attaches to the term above it from any
     // column, which is corpus 154 and the reason the two are separated here.
     assert_eq!(
-        carve::to_html("- one\n  :: term\n :  def\n"),
+        carve::to_html("- one\n\n  :: term\n :  def\n"),
         "<ul>\n  <li>one\n    <dl>\n      <dt>term</dt>\n      <dd>def</dd>\n    </dl>\n  </li>\n</ul>"
     );
 }

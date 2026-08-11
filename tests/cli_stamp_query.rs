@@ -40,7 +40,7 @@ fn stamp_info_reports_a_marker_and_exits_zero() {
     assert_eq!(code, 0);
     assert!(out.contains("carve-version: 0.1"), "{out}");
     assert!(out.contains("generated-by: carve-php 0.1.0"), "{out}");
-    assert!(out.contains("this engine targets: 0.1"), "{out}");
+    assert!(out.contains("this engine targets: 0.2"), "{out}");
 }
 
 #[test]
@@ -69,7 +69,8 @@ fn stamp_check_exits_one_for_an_older_or_unknown_document() {
 
 #[test]
 fn stamp_check_exits_zero_for_a_current_document() {
-    let (_, err, code) = run(&["--stamp-check"], FROM_PHP);
+    let current = FROM_PHP.replace("carve-version: 0.1", "carve-version: 0.2");
+    let (_, err, code) = run(&["--stamp-check"], &current);
     assert_eq!(code, 0);
     assert_eq!(err, "");
 }

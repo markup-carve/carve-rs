@@ -319,7 +319,7 @@ fn frontmatter_is_first_child_and_raw() {
 
 #[test]
 fn footnote_definition_is_labelled_document_child() {
-    let source = "> quoted\n> [^inside]: lifted\n\nUse [^inside].\n";
+    let source = "> quoted\n\nUse [^inside].\n\n[^inside]: lifted\n";
     let json = carve::to_json(&carve::parse(source));
     assert!(json.contains("{\"type\":\"footnote\",\"label\":\"inside\",\"children\""));
     assert!(!json.contains("\"id\":\"inside\",\"children\""));

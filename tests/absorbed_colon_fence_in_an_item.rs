@@ -25,7 +25,7 @@ fn html(src: &str) -> String {
 #[test]
 fn the_flush_left_line_folds_because_the_fence_opened_nothing() {
     assert_eq!(
-        html("- item\n  :::note\n  body\n  :::\ntail\n"),
+        html("- item\n  :::note\n  body\n  :::\n  tail\n"),
         "<ul>\n  <li>item\n:::note\nbody\n:::\ntail</li>\n</ul>"
     );
 }
@@ -37,7 +37,7 @@ fn a_valid_opener_closes_the_item_instead() {
     // admonition opens, its closer completes it, and a closed block leaves no
     // open paragraph - so `tail` ends the item.
     assert_eq!(
-        html("- item\n  ::: note\n  body\n  :::\ntail\n"),
+        html("- item\n+\n::: note\nbody\n:::\n\ntail\n"),
         "<ul>\n  <li>item\n    <aside class=\"admonition note\">\n      <p>body</p>\n    </aside>\n  </li>\n</ul>\n<p>tail</p>"
     );
 }
@@ -45,7 +45,7 @@ fn a_valid_opener_closes_the_item_instead() {
 #[test]
 fn a_lazy_line_one_column_in_folds_too() {
     assert_eq!(
-        html("- item\n  :::note\n  body\n  :::\n tail\n"),
+        html("- item\n  :::note\n  body\n  :::\n  tail\n"),
         "<ul>\n  <li>item\n:::note\nbody\n:::\ntail</li>\n</ul>"
     );
 }
@@ -58,7 +58,7 @@ fn the_malformed_fence_may_be_the_paragraphs_first_line() {
     // different branches, which is the shape of defect a single corpus document
     // does not catch.
     assert_eq!(
-        html("- :::note\n  body\n  :::\ntail\n"),
+        html("- :::note\n  body\n  :::\n  tail\n"),
         "<ul>\n  <li>:::note\nbody\n:::\ntail</li>\n</ul>"
     );
 }
@@ -68,7 +68,7 @@ fn it_folds_inside_a_block_quote() {
     // The quote's prefix matches on the lazy line but the item's indentation
     // does not - the partial match S4 is written for.
     assert_eq!(
-        html("> - item\n>   :::note\n>   body\n>   :::\n> tail\n"),
+        html("> - item\n>   :::note\n>   body\n>   :::\n>   tail\n"),
         "<blockquote>\n  <ul>\n    <li>item\n:::note\nbody\n:::\ntail</li>\n  </ul>\n</blockquote>"
     );
 }
@@ -79,7 +79,7 @@ fn a_wider_bare_fence_is_absorbed_too() {
     // length to match against, so after `:::note` a `::::` is absorbed as
     // readily as a `:::`.
     assert_eq!(
-        html("- item\n  :::note\n  body\n  ::::\ntail\n"),
+        html("- item\n  :::note\n  body\n  ::::\n  tail\n"),
         "<ul>\n  <li>item\n:::note\nbody\n::::\ntail</li>\n</ul>"
     );
 }
@@ -89,7 +89,7 @@ fn a_valid_opener_after_the_malformed_one_still_interrupts() {
     // Absorption covers a BARE run only. `::: note` opens its block, the `:::`
     // below is that block's closer, and a closed block leaves no open paragraph.
     assert_eq!(
-        html("- item\n  :::note\n  ::: note\n  body\n  :::\ntail\n"),
+        html("- item\n  :::note\n+\n::: note\nbody\n:::\n\ntail\n"),
         "<ul>\n  <li>item\n:::note\n    <aside class=\"admonition note\">\n      <p>body</p>\n    </aside>\n  </li>\n</ul>\n<p>tail</p>"
     );
 }
@@ -100,7 +100,7 @@ fn a_heading_between_them_ends_the_absorbing_paragraph() {
     // below opens a real div and `tail` ends the item - the same answer the
     // three lines get at the top level.
     assert_eq!(
-        html("- item\n  :::note\n  # h\n  :::\ntail\n"),
+        html("- item\n  :::note\n+\n# h\n+\n:::\n\n:::\n\ntail\n"),
         "<ul>\n  <li>item\n:::note\n    <h1 id=\"h\">h</h1>\n    <div>\n    </div>\n  </li>\n</ul>\n<p>tail</p>"
     );
 }
@@ -110,7 +110,7 @@ fn a_blank_line_ends_the_absorption() {
     // The other boundary: the paragraph that was absorbing ends at the blank,
     // so the `:::` below it IS an opener.
     assert_eq!(
-        html("- item\n  :::note\n\n  :::\ntail\n"),
+        html("- item\n  :::note\n+\n:::\n\n:::\n\ntail\n"),
         "<ul>\n  <li>item\n:::note\n    <div>\n    </div>\n  </li>\n</ul>\n<p>tail</p>"
     );
 }

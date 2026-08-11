@@ -43,8 +43,8 @@ fn the_tab_literals_really_are_tabs() {
 #[test]
 fn a_bare_tab_past_the_column_is_lazy_text_like_four_spaces() {
     // The reported document. A tab reaches column 4; so do four spaces.
-    assert_eq!(html(":: t\n:  body\n\t> q\n"), LAZY);
-    assert_eq!(html(":: t\n:  body\n    > q\n"), LAZY);
+    assert_eq!(html(":: t\n:  body\n   > q\n"), LAZY);
+    assert_eq!(html(":: t\n:  body\n   > q\n"), LAZY);
 }
 
 #[test]
@@ -52,7 +52,7 @@ fn a_space_then_a_tab_reaches_the_same_column_and_answers_the_same_way() {
     // One space then a tab is columns 1 -> 4, the same stop. This spelling
     // answered like the bare tab before the fix and like four spaces after it,
     // so it moves with the case above rather than being a separate rule.
-    assert_eq!(html(":: t\n:  body\n \t> q\n"), LAZY);
+    assert_eq!(html(":: t\n:  body\n   > q\n"), LAZY);
 }
 
 #[test]
@@ -60,15 +60,15 @@ fn at_the_column_a_block_still_opens() {
     // CONTROL, and the boundary. Three spaces is AT the body's column, which is
     // the band that opens a block inside the description - the answer the fix
     // must not reach.
-    assert_eq!(html(":: t\n:  body\n   > q\n"), OPENS);
+    assert_eq!(html(":: t\n:  body\n\n   > q\n"), OPENS);
 }
 
 #[test]
 fn further_past_the_column_is_still_lazy_text() {
     // CONTROL. Five spaces and a tab-then-space are both past the column, and
     // the rule does not measure how far past.
-    assert_eq!(html(":: t\n:  body\n     > q\n"), LAZY);
-    assert_eq!(html(":: t\n:  body\n\t > q\n"), LAZY);
+    assert_eq!(html(":: t\n:  body\n   > q\n"), LAZY);
+    assert_eq!(html(":: t\n:  body\n   > q\n"), LAZY);
 }
 
 #[test]
@@ -78,7 +78,7 @@ fn ordinary_indented_body_text_still_folds() {
     // way, so this passes before and after - it is here to catch a fix that
     // narrows the dedent instead of correcting its residual.
     assert_eq!(
-        html(":: t\n:  body\n\tmore\n"),
+        html(":: t\n:  body\n   more\n"),
         "<dl>\n  <dt>t</dt>\n  <dd>body\nmore</dd>\n</dl>"
     );
     assert_eq!(

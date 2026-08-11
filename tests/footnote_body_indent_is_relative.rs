@@ -17,7 +17,7 @@ fn note_body(src: &str) -> String {
 
 #[test]
 fn a_container_closer_is_not_note_body() {
-    let body = note_body("- a\n  ::: note\n  [^f]: x\n  :::\n\nsee[^f]\n");
+    let body = note_body("- a\n\n  ::: note\n  [^f]: x\n  :::\n\nsee[^f]\n");
 
     assert!(
         !body.contains("<div>"),
@@ -31,7 +31,7 @@ fn a_container_closer_is_not_note_body() {
 
 #[test]
 fn a_continuation_two_columns_past_the_definition_still_counts() {
-    let body = note_body("- a\n  [^f]: x\n    more\n\nsee[^f]\n");
+    let body = note_body("- a\n\n  [^f]: x\n    more\n\nsee[^f]\n");
 
     assert!(body.contains("more"), "continuation dropped: {body}");
 }
@@ -39,7 +39,7 @@ fn a_continuation_two_columns_past_the_definition_still_counts() {
 #[test]
 fn a_line_at_the_definitions_own_column_does_not() {
     // carve-js and carve-php both stop here: relative, not absolute.
-    let body = note_body("- a\n  [^f]: x\n  more\n\nsee[^f]\n");
+    let body = note_body("- a\n\n  [^f]: x\n  more\n\nsee[^f]\n");
 
     assert!(
         !body.contains("more"),

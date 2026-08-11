@@ -53,13 +53,11 @@ fn the_written_form_is_a_fixed_point() {
 }
 
 #[test]
-fn the_attached_kinds_that_never_folded_are_left_alone() {
-    // The control. These already round-tripped by indenting the block into the
-    // item, and a fix that emitted `+` everywhere would change all of them.
+fn every_attached_block_kind_keeps_the_boundary() {
     for block in ["```\nb\n```", "> b", "# b", "::: note\nb\n:::", "---"] {
         let source = format!("- a\n+\n{block}\n\nx\n");
         assert!(round_trips(&source), "{source}");
-        assert!(!to_carve(&source).contains("\n+\n"), "{source}");
+        assert!(to_carve(&source).contains("\n+\n"), "{source}");
     }
 }
 
