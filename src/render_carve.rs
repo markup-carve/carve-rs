@@ -875,13 +875,14 @@ fn render_item_blocks(blocks: &[BlockNode], tight: bool, ctx: &mut CarveContext)
             // blank the author never wrote and diverge from carve-js/carve-php.
             out.push('\n');
             if let Some(written) = definition_in_gap(prev_block, block, ctx) {
-                out.push_str(&written);
+                // Definitions do not interrupt an open paragraph in 0.2.
+                // Attach the definition-led run explicitly at the marker
+                // column so it remains structural without loosening the item.
+                out.push_str(&at_marker_column("+"));
                 out.push('\n');
-                // A definition written back BETWEEN the two blocks already ends
-                // the paragraph above it, so the marker below is not needed -
-                // and emitting it anyway changes the canonical form of corpus
-                // 228, whose point is that a line at the definition's own
-                // column forms its own tight block.
+                out.push_str(&at_marker_column(&written));
+                out.push('\n');
+                prev_at_marker_column = true;
                 separated = true;
             }
         }
@@ -906,10 +907,7 @@ fn render_item_blocks(blocks: &[BlockNode], tight: bool, ctx: &mut CarveContext)
         // emitted, rather than a list of block kinds maintained by hand here -
         // the same deviation `markup-carve/carve#961` records for the leading
         // thematic break.
-        let folds_into_the_paragraph_above = rendered
-            .lines()
-            .next()
-            .is_some_and(crate::parse::line_starts_paragraph);
+        let folds_into_the_paragraph_above = !matches!(block, BlockNode::List(_));
         // ONCE ONE CHILD IS AT THE MARKER COLUMN, EVERY LATER ONE IN THE RUN
         // MUST BE.
         //
@@ -928,11 +926,11 @@ fn render_item_blocks(blocks: &[BlockNode], tight: bool, ctx: &mut CarveContext)
         // is about where the child sits relative to the block before it, which
         // no property of the child alone can decide.
         let continues_a_run_at_the_marker_column = prev.is_some() && prev_at_marker_column;
-        if !separated
-            && (continues_a_run_at_the_marker_column
-                || next.is_some_and(|next_block| adjacent_blocks_merge(block, next_block))
-                || (matches!(prev, Some(BlockNode::Paragraph(_)))
-                    && folds_into_the_paragraph_above))
+        if continues_a_run_at_the_marker_column
+            || next.is_some_and(|next_block| adjacent_blocks_merge(block, next_block))
+            || (!separated
+                && matches!(prev, Some(BlockNode::Paragraph(_)))
+                && folds_into_the_paragraph_above)
         {
             out.push_str(&at_marker_column("+"));
             out.push('\n');

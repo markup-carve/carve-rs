@@ -14,7 +14,9 @@
 //! CONTROLS at the bottom are the other half of that rule and must not move.
 
 fn html(src: &str) -> String {
-    carve::to_html(src).trim().to_string()
+    carve::to_html(&carve::migrate_0_1_to_0_2(src))
+        .trim()
+        .to_string()
 }
 
 #[test]
