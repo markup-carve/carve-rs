@@ -40,6 +40,7 @@ pub enum HtmlImportDiagnosticCode {
     StyleUnmapped,
     TableDegraded,
     RawPreserved,
+    DiagnosticsTruncated,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -65,7 +66,7 @@ impl Default for HtmlImportOptions {
             mode: HtmlImportMode::Safe,
             adapter: HtmlImportAdapter::Generic,
             max_depth: 128,
-            max_nodes: 100_000,
+            max_nodes: 1_000_000,
             max_diagnostics: 1_000,
         }
     }
@@ -115,14 +116,23 @@ impl<'a> Importer<'a> {
         severity: HtmlImportSeverity,
         path: &str,
     ) {
-        if self.diagnostics.len() < self.opts.max_diagnostics {
-            self.diagnostics.push(HtmlImportDiagnostic {
-                code,
-                message,
-                severity,
-                path: Some(path.into()),
-            });
+        if self.diagnostics.len() >= self.opts.max_diagnostics {
+            if let Some(last) = self.diagnostics.last_mut() {
+                *last = HtmlImportDiagnostic {
+                    code: HtmlImportDiagnosticCode::DiagnosticsTruncated,
+                    message: "HTML import diagnostics limit reached".into(),
+                    severity: HtmlImportSeverity::Error,
+                    path: None,
+                };
+            }
+            return;
         }
+        self.diagnostics.push(HtmlImportDiagnostic {
+            code,
+            message,
+            severity,
+            path: Some(path.into()),
+        });
     }
     fn tag(handle: &Handle) -> Option<String> {
         match &handle.data {

@@ -95,6 +95,7 @@ fn shared_contract_fixtures_match() {
                 HtmlImportDiagnosticCode::StyleUnmapped => "style-unmapped",
                 HtmlImportDiagnosticCode::TableDegraded => "table-degraded",
                 HtmlImportDiagnosticCode::RawPreserved => "raw-preserved",
+                HtmlImportDiagnosticCode::DiagnosticsTruncated => "diagnostics-truncated",
             })
             .collect::<Vec<_>>();
         assert_eq!(actual_codes, expected_codes, "{}", dir.display());
