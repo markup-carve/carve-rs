@@ -679,7 +679,7 @@ corpus_test!(
     c78_trailing_attribute_block_edge_cases,
     "trailing-attribute-block-edge-cases"
 );
-corpus_test!(c79_paragraph_interruption, "paragraph-interruption");
+corpus_test!(c79_block_position_after_paragraph, "paragraph-interruption");
 corpus_test!(
     c80_blockquote_lazy_continuation,
     "blockquote-lazy-continuation"

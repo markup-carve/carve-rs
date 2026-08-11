@@ -1,18 +1,16 @@
-//! Paragraph interruption (grammar §10): a VISIBLE block interrupts an open
-//! paragraph with no blank line, at the top level and nested. Symmetric rule: a
-//! LIST marker (bullet, task, or ordered) does NOT interrupt -- a list needs a
-//! blank line and otherwise folds in; `+` is the continuation marker not a
-//! bullet, and a bare image stays inline. Invisible constructs (comments,
-//! abbreviation definitions) interrupt as before.
+//! Uniform block position after an open paragraph (grammar §10). Every block
+//! marker needs a blank or enclosing structural boundary; without one its bytes
+//! remain paragraph content. Tight nesting at a container content column and
+//! bounded headings are structural rather than opener-specific exceptions.
 
 fn html(src: &str) -> String {
     carve::to_html(src).trim().to_string()
 }
 
-// --- Top level: visible blocks interrupt ---
+// --- Top-level blocks after an explicit boundary ---
 
 #[test]
-fn fence_interrupts() {
+fn fence_starts_in_block_position() {
     assert_eq!(
         html("text\n\n```\ncode\n```\n"),
         "<p>text</p>\n<pre><code>code\n</code></pre>"
@@ -20,7 +18,7 @@ fn fence_interrupts() {
 }
 
 #[test]
-fn heading_interrupts() {
+fn heading_starts_in_block_position() {
     assert_eq!(
         html("text\n\n# H\n"),
         "<p>text</p>\n<section id=\"H\">\n  <h1>H</h1>\n</section>"
@@ -28,7 +26,7 @@ fn heading_interrupts() {
 }
 
 #[test]
-fn thematic_break_interrupts() {
+fn thematic_break_starts_in_block_position() {
     assert_eq!(
         html("text\n\n---\n\nmore\n"),
         "<p>text</p>\n<hr>\n<p>more</p>"
@@ -36,7 +34,7 @@ fn thematic_break_interrupts() {
 }
 
 #[test]
-fn admonition_interrupts() {
+fn admonition_starts_in_block_position() {
     assert_eq!(
         html("text\n\n::: note\nb\n:::\n"),
         "<p>text</p>\n<aside class=\"admonition note\">\n  <p>b</p>\n</aside>"
@@ -44,7 +42,7 @@ fn admonition_interrupts() {
 }
 
 #[test]
-fn blockquote_interrupts() {
+fn blockquote_starts_in_block_position() {
     assert_eq!(
         html("text\n\n> q\n"),
         "<p>text</p>\n<blockquote><p>q</p></blockquote>"
@@ -52,7 +50,7 @@ fn blockquote_interrupts() {
 }
 
 #[test]
-fn table_interrupts() {
+fn table_starts_in_block_position() {
     assert_eq!(
         html("text\n\n| a | b |\n"),
         "<p>text</p>\n<table>\n  <tbody>\n    <tr><td>a</td><td>b</td></tr>\n  </tbody>\n</table>"
@@ -66,30 +64,30 @@ fn unordered_list_folds_without_blank_line() {
     assert_eq!(html("text\n- a\n- b\n"), "<p>text\n- a\n- b</p>");
 }
 
-// --- Top level: these do NOT interrupt ---
+// --- Without block position, marker bytes remain paragraph content ---
 
 #[test]
-fn ordered_list_does_not_interrupt() {
+fn ordered_list_marker_stays_in_paragraph() {
     assert_eq!(html("text\n1. x\n2. y\n"), "<p>text\n1. x\n2. y</p>");
 }
 
 #[test]
-fn block_image_does_not_interrupt() {
+fn image_stays_inline() {
     assert_eq!(
         html("text\n![a](u)\n"),
         "<p>text\n<img src=\"u\" alt=\"a\"></p>"
     );
 }
 
-// --- Invisible constructs interrupt ---
+// --- Non-rendering constructs in block position ---
 
 #[test]
-fn abbreviation_def_interrupts() {
+fn abbreviation_definition_starts_after_blank() {
     assert_eq!(html("text\n\n*[HT]: Hyper\n"), "<p>text</p>");
 }
 
 #[test]
-fn comment_interrupts() {
+fn comment_starts_after_blank() {
     assert_eq!(html("para\n\n%% c\n"), "<p>para</p>");
 }
 
@@ -111,10 +109,10 @@ fn blank_line_starts_fence() {
     );
 }
 
-// --- Nested context: interruption applies inside containers too ---
+// --- Nested contexts use the same boundaries ---
 
 #[test]
-fn nested_sublist_interrupts() {
+fn nested_sublist_starts_at_content_column() {
     assert_eq!(
         html("- a\n  - b\n"),
         "<ul>\n  <li>a\n    <ul>\n      <li>b</li>\n    </ul>\n  </li>\n</ul>"
@@ -122,7 +120,7 @@ fn nested_sublist_interrupts() {
 }
 
 #[test]
-fn heading_interrupts_inside_blockquote() {
+fn heading_starts_after_quoted_blank() {
     assert_eq!(
         html("> text\n>\n> # H\n"),
         "<blockquote>\n  <p>text</p>\n  <h1 id=\"H\">H</h1>\n</blockquote>"
@@ -130,7 +128,7 @@ fn heading_interrupts_inside_blockquote() {
 }
 
 #[test]
-fn fence_interrupts_inside_admonition() {
+fn fence_starts_after_blank_inside_admonition() {
     assert_eq!(
         html("::: note\ntext\n\n```\ncode\n```\n:::\n"),
         "<aside class=\"admonition note\">\n  <p>text</p>\n  <pre><code>code\n</code></pre>\n</aside>"
@@ -145,15 +143,14 @@ fn tab_indented_bullet_folds_into_paragraph() {
 }
 
 #[test]
-fn indented_ordered_marker_does_not_interrupt_paragraph() {
+fn ordered_marker_stays_in_paragraph() {
     // Ordered markers never interrupt a paragraph, at any indentation.
     assert_eq!(html("text\n1. item\n"), "<p>text\n1. item</p>");
 }
 
 #[test]
 fn block_quote_nests_under_an_ordered_item_without_a_blank() {
-    // A block opener indented to the item's content column interrupts the item's
-    // lead paragraph and nests, rather than folding in as lazy text. The content
+    // A continuation marker establishes block position in the item. The content
     // column of `1. ` is 3, so the dedent must use the marker width, not a fixed
     // bullet width of 2 (matches carve-php).
     assert_eq!(
@@ -180,6 +177,6 @@ fn block_quote_after_a_sub_list_is_an_outer_item_sibling() {
 
 #[test]
 fn indented_prose_still_folds_as_lazy_continuation() {
-    // A non-block-opening indented line is lazy continuation, not a new block.
+    // Indented prose is lazy continuation, not a new block.
     assert_eq!(html("1. a\n   more\n"), "<ol>\n  <li>a\nmore</li>\n</ol>");
 }

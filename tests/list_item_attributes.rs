@@ -79,7 +79,7 @@ fn bare_marker_with_no_content_is_not_a_list() {
 
 #[test]
 fn attributed_bullet_folds_into_a_paragraph() {
-    // Symmetric §10: an attributed bullet does NOT interrupt an open paragraph
+    // Symmetric §10: an attributed bullet cannot end an open paragraph
     // (like a plain bullet); with no preceding blank line it folds in.
     assert_eq!(
         carve::to_html("para\n-{.c} item"),
