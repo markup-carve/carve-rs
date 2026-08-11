@@ -1011,7 +1011,7 @@ fn extract_footnote_defs(
             defs.entry(label.to_string())
                 .or_insert_with(|| MappedSource {
                     col_map: def_col_map,
-                    source: joined_source(&def_lines),
+                    source: def_lines.join("\n"),
                     line_map: def_line_map,
                 });
             // Leave the container's structural prefix (or a blank line at top
@@ -2453,7 +2453,7 @@ impl LineBuffer {
     fn into_source(self) -> MappedSource {
         MappedSource {
             col_map: self.col_map,
-            source: joined_source(&self.lines),
+            source: self.lines.join("\n"),
             line_map: self.line_map,
         }
     }
@@ -7534,7 +7534,7 @@ fn collect_indented_block_mapped_with(
     }
     MappedSource {
         col_map,
-        source: joined_source(&lines),
+        source: lines.join("\n"),
         line_map,
     }
 }
@@ -8577,7 +8577,7 @@ fn collect_definition_body(
     debug_assert_eq!(col_map.len(), lines.len());
     MappedSource {
         col_map,
-        source: joined_source(&lines),
+        source: lines.join("\n"),
         line_map,
     }
 }
