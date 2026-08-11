@@ -30,6 +30,10 @@ enum StampMode {
 }
 
 fn main() -> ExitCode {
+    let raw_args = std::env::args().skip(1).collect::<Vec<_>>();
+    if raw_args.first().map(String::as_str) == Some("merge") {
+        return run_merge(&raw_args[1..]);
+    }
     // Bundled interactive extensions, owned here so they outlive `options`
     // (which borrows them). Registered only when `--extensions` is passed, so
     // the default CLI behavior is unchanged. They are degradation-safe: in
@@ -300,6 +304,70 @@ fn main() -> ExitCode {
     ExitCode::SUCCESS
 }
 
+fn run_merge(args: &[String]) -> ExitCode {
+    let json = args.iter().any(|arg| arg == "--json");
+    let paths = args
+        .iter()
+        .filter(|arg| arg.as_str() != "--json")
+        .collect::<Vec<_>>();
+    if paths.len() != 3 {
+        eprintln!("carve merge: takes exactly three files (base, ours, theirs)");
+        return ExitCode::from(2);
+    }
+    let mut documents = Vec::new();
+    for path in paths {
+        let source = match std::fs::read_to_string(path) {
+            Ok(source) => source,
+            Err(error) => {
+                eprintln!("carve merge: cannot read {path}: {error}");
+                return ExitCode::from(2);
+            }
+        };
+        documents.push(carve::parse(&source));
+    }
+    match carve::merge_ast(&documents[0], &documents[1], &documents[2]) {
+        Ok(carve::MergeResult::Merged(document)) => {
+            let output = if json {
+                carve::to_json(&document)
+            } else {
+                match carve::render_carve(&document) {
+                    Ok(output) => output,
+                    Err(error) => {
+                        eprintln!("carve merge: cannot serialize result: {error}");
+                        return ExitCode::FAILURE;
+                    }
+                }
+            };
+            print!("{output}");
+            if !output.ends_with('\n') {
+                println!();
+            }
+            ExitCode::SUCCESS
+        }
+        Ok(carve::MergeResult::Conflicts(conflicts)) => {
+            if json {
+                let items = conflicts.iter().map(|item| format!(
+                    "{{\"path\":{:?},\"reason\":{:?},\"base\":{},\"ours\":{},\"theirs\":{}}}",
+                    item.path,
+                    match item.reason { carve::MergeConflictReason::BothChanged => "both-changed", carve::MergeConflictReason::DeleteEdit => "delete-edit", carve::MergeConflictReason::ConcurrentSequenceEdit => "concurrent-sequence-edit" },
+                    item.base.as_deref().unwrap_or("null"), item.ours.as_deref().unwrap_or("null"), item.theirs.as_deref().unwrap_or("null")
+                )).collect::<Vec<_>>().join(",");
+                println!("{{\"ok\":false,\"ast\":null,\"conflicts\":[{items}]}}");
+            } else {
+                for item in &conflicts {
+                    eprintln!("conflict {:?} at {}", item.reason, item.path);
+                }
+                eprintln!("{} structural conflict(s)", conflicts.len());
+            }
+            ExitCode::FAILURE
+        }
+        Err(error) => {
+            eprintln!("carve merge: {error}");
+            ExitCode::from(2)
+        }
+    }
+}
+
 /// What can stop `--from-json` from producing output.
 ///
 /// This path is the one where a renderer's §25 ceiling is reachable: the JSON
@@ -444,6 +512,8 @@ fn print_usage() {
          Usage:\n  \
          carve [options] [file]      render file (or stdin when omitted or `-`)\n  \
          carve fmt [options] [files] format Carve source to stdout\n  \
+         carve merge [--json] BASE OURS THEIRS\n  \
+                                     merge independent structural edits\n  \
          carve -h                    show this help\n\n\
          Output format (default --html; last one wins):\n  \
          --html                      HTML\n  \

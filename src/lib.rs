@@ -17,6 +17,8 @@
 mod abbr_budget;
 pub mod ast;
 pub mod ast_json;
+pub mod ast_merge;
+pub mod ast_patch;
 mod citations;
 mod document_ids;
 mod escape;
@@ -55,6 +57,8 @@ pub const SPEC_VERSION: &str = "0.1";
 
 pub use ast::*;
 pub use ast_json::{from_json, to_json, AstJsonError};
+pub use ast_merge::{merge_ast, MergeConflict, MergeConflictReason, MergeResult};
+pub use ast_patch::{apply_ast_patch, create_ast_patch, AstPatchError, AstPatchOperation};
 pub use citations::{
     parse_locator, CitationMode, Citations, CslDate, CslEntry, CslName, ParsedLocator,
 };

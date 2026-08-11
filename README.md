@@ -432,7 +432,14 @@ carve --markdown README.crv         # Markdown
 carve --plain README.crv            # plain text
 carve --ansi README.crv             # ANSI-colored terminal text
 echo '# Hello' | carve              # render from stdin
+carve merge base.crv ours.crv theirs.crv # structural three-way merge
 ```
+
+The library exports `merge_ast`, `create_ast_patch`, and `apply_ast_patch` for
+the same workflow over typed `Document` values. The merge combines independent
+field edits, insertions, deletions, and moves, while ambiguous edits are returned
+as JSON-Pointer conflicts rather than silently picking a side. Derived position
+metadata is intentionally regenerated after serialization.
 
 Other options:
 
