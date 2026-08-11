@@ -19,6 +19,8 @@
 //! `from_json` -> `prepare_document_for_render` -> `render_*` pipeline is the
 //! reachable case.
 
+mod common;
+
 use carve::extensions::table_of_contents::TocPlacement;
 
 /// A tree of `headings` headings, each followed by a `::: toc` block, as JSON.
@@ -383,7 +385,11 @@ fn corpus_budget_inner() {
         }
     }
 
-    assert!(checked > 400, "only {checked} corpus documents were read");
+    assert_eq!(
+        checked,
+        common::expected_corpus_size(),
+        "the corpus sweep read a different number of documents than the spec examples define"
+    );
     assert!(
         binding.is_empty(),
         "{} corpus documents would have their budget cut on ingest: {:?}",
