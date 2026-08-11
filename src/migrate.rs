@@ -12,6 +12,23 @@ pub fn migrate_0_1_to_0_2(source: &str) -> String {
     if had_final_eol {
         lines.pop();
     }
+    let frontmatter_end = lines.first().and_then(|line| {
+        let opener = line.trim_end_matches([' ', '\t']);
+        let rest = opener.strip_prefix("---")?;
+        let token = rest.strip_prefix(' ').unwrap_or(rest);
+        let valid_slot = !rest.starts_with('\t')
+            && !rest.starts_with("  ")
+            && token.chars().all(|ch| ch.is_ascii_alphanumeric());
+        valid_slot.then(|| {
+            lines
+                .iter()
+                .enumerate()
+                .skip(1)
+                .find_map(|(index, candidate)| {
+                    (candidate.trim_end_matches([' ', '\t']) == "---").then_some(index)
+                })
+        })?
+    });
     let mut out: Vec<String> = Vec::with_capacity(lines.len());
     let mut opaque: Option<(char, usize)> = None;
     let mut paragraph_open = false;
@@ -19,6 +36,10 @@ pub fn migrate_0_1_to_0_2(source: &str) -> String {
     let mut colon_widths: Vec<usize> = Vec::new();
 
     for (index, raw) in lines.iter().enumerate() {
+        if frontmatter_end.is_some_and(|end| index <= end) {
+            out.push(raw.to_string());
+            continue;
+        }
         let (prefix, line) = quote_prefix(raw).unwrap_or(("", raw.trim_start_matches([' ', '\t'])));
         if let Some((ch, width)) = opaque {
             out.push(raw.to_string());
@@ -218,5 +239,17 @@ mod tests {
         let migrated = migrate_0_1_to_0_2("intro\n# Heading\n");
         assert_eq!(migrated, "intro\n\n# Heading\n");
         assert_eq!(migrate_0_1_to_0_2(&migrated), migrated);
+    }
+
+    #[test]
+    fn leaves_frontmatter_byte_identical() {
+        let source = "---\ntitle: X\n---\n\nbody\n";
+        assert_eq!(migrate_0_1_to_0_2(source), source);
+    }
+
+    #[test]
+    fn a_list_marker_was_not_an_old_interrupter() {
+        let source = "intro\n- item\n";
+        assert_eq!(migrate_0_1_to_0_2(source), source);
     }
 }
