@@ -34,6 +34,9 @@ fn main() -> ExitCode {
     if raw_args.first().map(String::as_str) == Some("merge") {
         return run_merge(&raw_args[1..]);
     }
+    if raw_args.first().map(String::as_str) == Some("migrate") {
+        return run_migrate(&raw_args[1..]);
+    }
     // Bundled interactive extensions, owned here so they outlive `options`
     // (which borrows them). Registered only when `--extensions` is passed, so
     // the default CLI behavior is unchanged. They are degradation-safe: in
@@ -302,6 +305,185 @@ fn main() -> ExitCode {
         let _ = stdout.write_all(b"\n");
     }
     ExitCode::SUCCESS
+}
+
+fn run_migrate(args: &[String]) -> ExitCode {
+    let mut mode = carve::HtmlImportMode::Safe;
+    let mut adapter = carve::HtmlImportAdapter::Generic;
+    let mut report_path: Option<&str> = None;
+    let mut check_loss = false;
+    let mut input: Option<&str> = None;
+    let mut from_html = false;
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--from" => {
+                i += 1;
+                from_html = args.get(i).map(String::as_str) == Some("html");
+            }
+            "--mode" => {
+                i += 1;
+                mode = match args.get(i).map(String::as_str) {
+                    Some("safe") => carve::HtmlImportMode::Safe,
+                    Some("semantic") => carve::HtmlImportMode::Semantic,
+                    Some("roundtrip") => carve::HtmlImportMode::Roundtrip,
+                    Some(other) => {
+                        eprintln!("carve migrate: unknown mode {other}");
+                        return ExitCode::FAILURE;
+                    }
+                    None => {
+                        eprintln!("carve migrate: --mode requires a value");
+                        return ExitCode::FAILURE;
+                    }
+                };
+            }
+            "--adapter" => {
+                i += 1;
+                adapter = match args.get(i).map(String::as_str) {
+                    Some("generic") => carve::HtmlImportAdapter::Generic,
+                    Some("tiptap") => carve::HtmlImportAdapter::Tiptap,
+                    Some("prosemirror") => carve::HtmlImportAdapter::Prosemirror,
+                    Some("ckeditor") => carve::HtmlImportAdapter::Ckeditor,
+                    Some("tinymce") => carve::HtmlImportAdapter::Tinymce,
+                    Some("word") => carve::HtmlImportAdapter::Word,
+                    Some("google-docs") => carve::HtmlImportAdapter::GoogleDocs,
+                    Some(other) => {
+                        eprintln!("carve migrate: unknown adapter {other}");
+                        return ExitCode::FAILURE;
+                    }
+                    None => {
+                        eprintln!("carve migrate: --adapter requires a value");
+                        return ExitCode::FAILURE;
+                    }
+                };
+            }
+            "--report" => {
+                i += 1;
+                report_path = args.get(i).map(String::as_str);
+            }
+            "--check-loss" => check_loss = true,
+            "-" => input = Some("-"),
+            value if value.starts_with('-') => {
+                eprintln!("carve migrate: unknown option {value}");
+                return ExitCode::FAILURE;
+            }
+            value => {
+                if input.is_some() {
+                    eprintln!("carve migrate: takes at most one input file");
+                    return ExitCode::FAILURE;
+                }
+                input = Some(value);
+            }
+        }
+        i += 1;
+    }
+    if !from_html {
+        eprintln!("carve migrate: --from html is required");
+        return ExitCode::FAILURE;
+    }
+    let source = match input {
+        None | Some("-") => {
+            let mut s = String::new();
+            if io::stdin().read_to_string(&mut s).is_err() {
+                return ExitCode::FAILURE;
+            }
+            s
+        }
+        Some(path) => match std::fs::read_to_string(path) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("carve migrate: cannot read {path}: {e}");
+                return ExitCode::FAILURE;
+            }
+        },
+    };
+    let options = carve::HtmlImportOptions {
+        mode,
+        adapter,
+        ..Default::default()
+    };
+    let result = match carve::html_to_carve(&source, &options) {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("carve migrate: {e:?}");
+            return ExitCode::FAILURE;
+        }
+    };
+    print!("{}", result.value);
+    let report = html_report_json(&result.report);
+    if let Some(path) = report_path {
+        if path == "-" {
+            eprintln!("{report}");
+        } else if let Err(e) = std::fs::write(path, format!("{report}\n")) {
+            eprintln!("carve migrate: cannot write report {path}: {e}");
+            return ExitCode::FAILURE;
+        }
+    }
+    if check_loss && !result.report.diagnostics.is_empty() {
+        ExitCode::FAILURE
+    } else {
+        ExitCode::SUCCESS
+    }
+}
+
+fn html_report_json(report: &carve::HtmlImportReport) -> String {
+    fn mode(v: carve::HtmlImportMode) -> &'static str {
+        match v {
+            carve::HtmlImportMode::Safe => "safe",
+            carve::HtmlImportMode::Semantic => "semantic",
+            carve::HtmlImportMode::Roundtrip => "roundtrip",
+        }
+    }
+    fn adapter(v: carve::HtmlImportAdapter) -> &'static str {
+        match v {
+            carve::HtmlImportAdapter::Generic => "generic",
+            carve::HtmlImportAdapter::Tiptap => "tiptap",
+            carve::HtmlImportAdapter::Prosemirror => "prosemirror",
+            carve::HtmlImportAdapter::Ckeditor => "ckeditor",
+            carve::HtmlImportAdapter::Tinymce => "tinymce",
+            carve::HtmlImportAdapter::Word => "word",
+            carve::HtmlImportAdapter::GoogleDocs => "google-docs",
+        }
+    }
+    fn esc(s: &str) -> String {
+        format!("{s:?}")
+    }
+    let diagnostics = report
+        .diagnostics
+        .iter()
+        .map(|d| {
+            format!(
+                "{{\"code\":\"{}\",\"message\":{},\"severity\":\"{}\"{}}}",
+                match d.code {
+                    carve::HtmlImportDiagnosticCode::ElementDropped => "element-dropped",
+                    carve::HtmlImportDiagnosticCode::ElementUnwrapped => "element-unwrapped",
+                    carve::HtmlImportDiagnosticCode::AttributeDropped => "attribute-dropped",
+                    carve::HtmlImportDiagnosticCode::StyleUnmapped => "style-unmapped",
+                    carve::HtmlImportDiagnosticCode::TableDegraded => "table-degraded",
+                    carve::HtmlImportDiagnosticCode::RawPreserved => "raw-preserved",
+                    carve::HtmlImportDiagnosticCode::DiagnosticsTruncated =>
+                        "diagnostics-truncated",
+                },
+                esc(&d.message),
+                match d.severity {
+                    carve::HtmlImportSeverity::Info => "info",
+                    carve::HtmlImportSeverity::Warning => "warning",
+                    carve::HtmlImportSeverity::Error => "error",
+                },
+                d.path
+                    .as_ref()
+                    .map(|p| format!(",\"path\":{}", esc(p)))
+                    .unwrap_or_default()
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+    format!(
+        "{{\"mode\":\"{}\",\"adapter\":\"{}\",\"diagnostics\":[{}]}}",
+        mode(report.mode),
+        adapter(report.adapter),
+        diagnostics
+    )
 }
 
 fn run_merge(args: &[String]) -> ExitCode {
