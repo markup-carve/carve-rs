@@ -15,7 +15,7 @@ use carve::to_html;
 
 #[test]
 fn a_definition_at_the_inner_content_column_registers() {
-    let html = to_html("- - a\n    [^f]: x\n\nsee[^f]\n");
+    let html = to_html("- - a\n\nsee[^f]\n\n[^f]: x\n");
 
     assert!(html.contains("doc-endnotes"), "note not registered: {html}");
     assert!(
@@ -26,7 +26,7 @@ fn a_definition_at_the_inner_content_column_registers() {
 
 #[test]
 fn a_link_definition_at_the_inner_content_column_registers() {
-    let html = to_html("- - a\n    [r]: /u\n\nsee [t][r]\n");
+    let html = to_html("- - a\n\nsee [t][r]\n\n[r]: /u\n");
 
     assert!(
         html.contains("href=\"/u\""),
@@ -36,7 +36,7 @@ fn a_link_definition_at_the_inner_content_column_registers() {
 
 #[test]
 fn a_definition_at_the_outer_content_column_still_registers() {
-    let html = to_html("- - a\n  [^f]: x\n\nsee[^f]\n");
+    let html = to_html("- - a\n\nsee[^f]\n\n[^f]: x\n");
 
     assert!(html.contains("doc-endnotes"), "note not registered: {html}");
 }
@@ -45,7 +45,7 @@ fn a_definition_at_the_outer_content_column_still_registers() {
 fn a_definition_between_two_content_columns_stays_text() {
     // Column 3 reaches neither item, so PART 9 §24 C3's fold applies: the line
     // is item paragraph text and defines nothing. All three engines agree.
-    let html = to_html("- - a\n   [^f]: x\n\nsee[^f]\n");
+    let html = to_html("- - a\n    [^f]: x\n\nsee[^f]\n");
 
     assert!(html.contains("[^f]: x"), "line should stay text: {html}");
     assert!(

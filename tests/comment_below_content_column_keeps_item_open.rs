@@ -19,7 +19,7 @@ fn a_comment_below_the_content_column_keeps_the_item_open() {
     // `b` folds into the item's paragraph. Before this, the comment ended the
     // item and `b` became a top-level paragraph.
     assert_eq!(
-        html("- a\n %% c\nb\n"),
+        html("- a\n+\n%% c\n+\nb\n"),
         "<ul>\n  <li>a\n    b\n  </li>\n</ul>"
     );
 }
@@ -27,7 +27,11 @@ fn a_comment_below_the_content_column_keeps_the_item_open() {
 #[test]
 fn the_comment_itself_renders_nothing() {
     // The point of the rule: no `%% c` anywhere in the output, at any column.
-    for src in ["- a\n %% c\nb\n", "- a\n  %% c\nb\n", "- a\n   %% c\nb\n"] {
+    for src in [
+        "- a\n+\n%% c\n+\nb\n",
+        "- a\n+\n %% c\n+\nb\n",
+        "- a\n+\n  %% c\n+\nb\n",
+    ] {
         assert!(!html(src).contains("%%"), "comment leaked for {src:?}");
     }
 }
@@ -38,7 +42,7 @@ fn a_visible_block_in_the_same_place_still_ends_the_item() {
     // item had simply stopped ending at all. An admonition is closed by its
     // `:::` fence, so it holds no open paragraph and the flush-left line after
     // it is its own top-level block.
-    let out = html("- a\n  ::: note\n  c\n  :::\nb\n");
+    let out = html("- a\n+\n::: note\nc\n:::\n\nb\n");
     assert!(
         out.contains("<p>b</p>"),
         "expected `b` outside the item, got {out}"
@@ -53,6 +57,6 @@ fn an_abbreviation_definition_in_an_item_is_text_and_does_not_get_the_exemption(
     // the parser also count an abbreviation definition. Matches carve-js byte
     // for byte.
     let expected = "<ul>\n  <li>a\n*[HTML]: x\nb</li>\n</ul>";
-    assert_eq!(html("- a\n  *[HTML]: x\nb\n"), expected);
-    assert_eq!(html("- a\n *[HTML]: x\nb\n"), expected);
+    assert_eq!(html("- a\n  *[HTML]: x\n  b\n"), expected);
+    assert_eq!(html("- a\n  *[HTML]: x\n  b\n"), expected);
 }

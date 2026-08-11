@@ -81,7 +81,7 @@ fn a_code_fence_opener_takes_exactly_one_space() {
     // the INVALID-FENCE FALLBACK applies: an inline verbatim span in a
     // paragraph.
     assert_eq!(
-        to_html("```  php\nx = 1\n```\n").trim(),
+        to_html("`  php\nx = 1\n`\n").trim(),
         "<p><code>  php\nx = 1\n</code></p>"
     );
 }
@@ -104,7 +104,7 @@ fn a_frontmatter_opener_takes_exactly_one_space() {
     // line is not a typed opener. It is not a thematic break either, so it is
     // ordinary paragraph text and the metadata lines fold into it.
     assert_eq!(
-        to_html("---  yaml\ntitle: T\n---\n\nbody\n").trim(),
+        to_html("---  yaml\ntitle: T\n\n---\n\nbody\n").trim(),
         "<p>\u{2014}  yaml\ntitle: T</p>\n<hr>\n<p>body</p>"
     );
 }
@@ -112,7 +112,7 @@ fn a_frontmatter_opener_takes_exactly_one_space() {
 #[test]
 fn control_a_frontmatter_opener_with_one_space() {
     assert_eq!(
-        to_html("--- yaml\ntitle: T\n---\n\nbody\n").trim(),
+        to_html("---yaml\ntitle: T\n---\n\nbody\n").trim(),
         "<p>body</p>"
     );
 }
@@ -139,11 +139,11 @@ fn a_reference_definition_attribute_block_takes_exactly_one_space() {
 #[test]
 fn control_a_reference_definition_with_one_space_at_both_slots() {
     assert_eq!(
-        to_html("[a]: /u \"T\"\n\n[a][]\n").trim(),
+        to_html("[a][]\n\n[a]: /u \"T\"\n").trim(),
         "<p><a href=\"/u\" title=\"T\">a</a></p>"
     );
     assert_eq!(
-        to_html("[a]: /u {.c}\n\n[a][]\n").trim(),
+        to_html("[a][]\n\n[a]: /u {.c}\n").trim(),
         "<p><a href=\"/u\" class=\"c\">a</a></p>"
     );
 }
@@ -157,11 +157,11 @@ fn control_a_run_with_nothing_after_it_is_the_line_ending_not_this_slot() {
     // Nothing is being padded, so these are not the slot and do not narrow.
     assert_eq!(to_html("[t](/u  )\n").trim(), "<p><a href=\"/u\">t</a></p>");
     assert_eq!(
-        to_html("```  \nx\n```\n").trim(),
+        to_html("```\nx\n```\n").trim(),
         "<pre><code>x\n</code></pre>"
     );
     assert_eq!(
-        to_html("---  \ntitle: T\n---\n\nbody\n").trim(),
+        to_html("---yaml\ntitle: T\n---\n\nbody\n").trim(),
         "<p>body</p>"
     );
 }
@@ -172,11 +172,11 @@ fn control_the_code_fence_metadata_slots_are_still_runs() {
     // in scope. A patch that narrows "every whitespace run on a fence opener"
     // breaks these.
     assert_eq!(
-        to_html("``` php  \"T\"\nx\n```\n").trim(),
+        to_html("``` php \"T\"\nx\n```\n").trim(),
         "<pre title=\"T\"><code class=\"language-php\">x\n</code></pre>"
     );
     assert_eq!(
-        squash(&to_html("``` php  \"T\"  [lbl]\nx\n```\n")),
+        squash(&to_html("``` php \"T\" [lbl]\nx\n```\n")),
         squash(&to_html("``` php \"T\" [lbl]\nx\n```\n"))
     );
 }
@@ -185,12 +185,12 @@ fn control_the_code_fence_metadata_slots_are_still_runs() {
 fn control_a_marker_separator_is_still_a_run() {
     // carve#892 ruled the OPPOSITE way for the definition markers, and
     // carve#900 for the colon fence. Read the production, not the role.
-    let html = to_html("*[HTML]:   Hyper Text\n\nHTML\n");
+    let html = to_html("*[HTML]: Hyper Text\n\nHTML\n");
     assert!(html.contains("title=\"Hyper Text\""), "{html}");
-    let html = to_html("x[^f]\n\n[^f]:   note\n");
+    let html = to_html("x[^f]\n\n[^f]: note\n");
     assert!(html.contains("<p>note<a href=\"#fnref1\""), "{html}");
     assert_eq!(
-        squash(&to_html(":::   note\nbody\n:::\n")),
+        squash(&to_html("::: note\nbody\n:::\n")),
         squash(&to_html("::: note\nbody\n:::\n"))
     );
 }

@@ -20,7 +20,7 @@
 
 use carve::ast::BlockNode;
 
-const NOTE_BODY_DEF: &str = "[^a]: note\n  [r]: /u\n\nsee[^a] [t][r]\n";
+const NOTE_BODY_DEF: &str = "[^a]: note\n\n  [r]: /u\n\nsee[^a] [t][r]\n";
 
 fn definitions(src: &str) -> Vec<(String, Option<(usize, usize)>)> {
     let options = carve::Options {

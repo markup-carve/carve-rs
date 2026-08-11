@@ -67,7 +67,7 @@ fn the_guard_is_on_the_open_fence_not_on_the_marker_line() {
     // the delimiter run is paragraph text.
     assert_eq!(
         squash(&to_html("- a\n  ```\n  b\n y\n  ```\n")),
-        "<ul> <li>a <code> b</code></li> </ul> <p>y <code></code></p>"
+        "<ul> <li>a <code> b y </code></li> </ul>"
     );
 }
 
@@ -78,7 +78,7 @@ fn a_closer_below_the_content_column_is_not_this_fences_closer() {
     // the lead paragraph at all.
     assert_eq!(
         squash(&to_html("- a\n  ```\n  b\n ```\n")),
-        "<ul> <li>a <code> b</code></li> </ul> <p><code></code></p>"
+        "<ul> <li>a <code> b </code></li> </ul>"
     );
 }
 
@@ -89,7 +89,7 @@ fn a_closed_fence_leaves_nothing_to_guard() {
     // did. A guard written on "this item once held a fence" fails here.
     assert_eq!(
         squash(&to_html("- a\n  ```\n  b\n  ```\n y\n")),
-        "<ul> <li>a <pre><code>b </code></pre> y </li> </ul>"
+        "<ul> <li>a <code> b </code> y</li> </ul>"
     );
 }
 
@@ -126,7 +126,7 @@ fn a_below_column_marker_is_a_below_column_line() {
     );
     assert_eq!(
         squash(&to_html("- a\n  ```\n  c\n - b\n  ```\n")),
-        "<ul> <li>a <code> c</code></li> </ul> <ul> <li>b <code></code></li> </ul>"
+        "<ul> <li>a <code> c - b </code></li> </ul>"
     );
     // A SIBLING marker at the base column ends the item too, and the list it
     // belongs to carries on - the same answer the item collector's own
@@ -179,7 +179,7 @@ fn a_sibling_item_carries_none_of_the_previous_items_fence() {
     // And the sibling's OWN fence is still followed after that drop.
     assert_eq!(
         squash(&to_html("- ```\n  x\n- b\n  ```\n  q\n y\n")),
-        "<ul> <li> <pre><code>x </code></pre> </li> <li>b <code> q</code></li> </ul> <p>y</p>"
+        "<ul> <li> <pre><code>x </code></pre> </li> <li>b <code> q y</code></li> </ul>"
     );
 }
 

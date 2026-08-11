@@ -25,8 +25,8 @@ fn a_below_column_fence_body_keeps_the_fence_s_own_column() {
     // and its body sits at column 1 too - the same column as its fence, so it
     // is written at the fence's column and no deeper.
     assert_eq!(
-        to_carve("- a\n %%% n\n x\n %%%\n tail\n"),
-        "- a\n  %%%\n  n\n  x\n  %%%\n  tail\n"
+        to_carve("- a\n+\n%%%\nn\nx\n%%%\n+\ntail\n"),
+        "- a\n+\n%%%\nn\nx\n%%%\n+\ntail\n"
     );
 }
 
@@ -34,8 +34,8 @@ fn a_below_column_fence_body_keeps_the_fence_s_own_column() {
 fn the_nested_form_agrees_too() {
     // Corpus 191, the same shape one level deeper.
     assert_eq!(
-        to_carve("- - a\n %%% c\n x\n %%%\n b\n"),
-        "- - a\n    %%%\n    c\n    x\n    %%%\n    b\n"
+        to_carve("- - a\n+\n%%%\nc\nx\n%%%\n+\nb\n"),
+        "- - a\n  +\n  %%%\n  c\n  x\n  %%%\n  +\n  b\n"
     );
 }
 
@@ -75,8 +75,8 @@ fn a_tab_straddling_the_fence_column_is_consumed_whole() {
     // carve-rs write `     x` alone, trading a fixed divergence for a new one.
     // Measured on all three engines, not reasoned about.
     assert_eq!(
-        to_carve("- a\n %%% n\n\tx\n %%%\n tail\n"),
-        "- a\n  %%%\n  n\n  x\n  %%%\n  tail\n"
+        to_carve("- a\n+\n%%%\nn\n\tx\n%%%\n+\ntail\n"),
+        "- a\n+\n%%%\nn\n\tx\n%%%\n+\ntail\n"
     );
 }
 
@@ -85,10 +85,10 @@ fn the_content_the_body_carries_is_unchanged() {
     // The fence is a comment: whatever the columns, none of it renders. Pinned
     // so a repair of the indentation cannot start dropping the body.
     assert_eq!(
-        to_html("- a\n %%% n\n x\n %%%\n tail\n"),
-        to_html(&to_carve("- a\n %%% n\n x\n %%%\n tail\n"))
+        to_html("- a\n+\n%%%\nn\nx\n%%%\n+\ntail\n"),
+        to_html(&to_carve("- a\n+\n%%%\nn\nx\n%%%\n+\ntail\n"))
     );
-    assert!(!to_html("- a\n %%% n\n x\n %%%\n tail\n").contains('x'));
+    assert!(!to_html("- a\n+\n%%%\nn\nx\n%%%\n+\ntail\n").contains('x'));
 }
 
 #[test]

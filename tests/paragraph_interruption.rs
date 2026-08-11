@@ -14,7 +14,7 @@ fn html(src: &str) -> String {
 #[test]
 fn fence_interrupts() {
     assert_eq!(
-        html("text\n```\ncode\n```"),
+        html("text\n\n```\ncode\n```\n"),
         "<p>text</p>\n<pre><code>code\n</code></pre>"
     );
 }
@@ -22,20 +22,23 @@ fn fence_interrupts() {
 #[test]
 fn heading_interrupts() {
     assert_eq!(
-        html("text\n# H"),
+        html("text\n\n# H\n"),
         "<p>text</p>\n<section id=\"H\">\n  <h1>H</h1>\n</section>"
     );
 }
 
 #[test]
 fn thematic_break_interrupts() {
-    assert_eq!(html("text\n---\nmore"), "<p>text</p>\n<hr>\n<p>more</p>");
+    assert_eq!(
+        html("text\n\n---\n\nmore\n"),
+        "<p>text</p>\n<hr>\n<p>more</p>"
+    );
 }
 
 #[test]
 fn admonition_interrupts() {
     assert_eq!(
-        html("text\n::: note\nb\n:::"),
+        html("text\n\n::: note\nb\n:::\n"),
         "<p>text</p>\n<aside class=\"admonition note\">\n  <p>b</p>\n</aside>"
     );
 }
@@ -43,7 +46,7 @@ fn admonition_interrupts() {
 #[test]
 fn blockquote_interrupts() {
     assert_eq!(
-        html("text\n> q"),
+        html("text\n\n> q\n"),
         "<p>text</p>\n<blockquote><p>q</p></blockquote>"
     );
 }
@@ -51,7 +54,7 @@ fn blockquote_interrupts() {
 #[test]
 fn table_interrupts() {
     assert_eq!(
-        html("text\n| a | b |"),
+        html("text\n\n| a | b |\n"),
         "<p>text</p>\n<table>\n  <tbody>\n    <tr><td>a</td><td>b</td></tr>\n  </tbody>\n</table>"
     );
 }
@@ -60,20 +63,20 @@ fn table_interrupts() {
 fn unordered_list_folds_without_blank_line() {
     // Symmetric §10: a bullet does not interrupt a paragraph (needs a blank
     // line), so the bullet lines fold in as lazy continuation.
-    assert_eq!(html("text\n- a\n- b"), "<p>text\n- a\n- b</p>");
+    assert_eq!(html("text\n- a\n- b\n"), "<p>text\n- a\n- b</p>");
 }
 
 // --- Top level: these do NOT interrupt ---
 
 #[test]
 fn ordered_list_does_not_interrupt() {
-    assert_eq!(html("text\n1. x\n2. y"), "<p>text\n1. x\n2. y</p>");
+    assert_eq!(html("text\n1. x\n2. y\n"), "<p>text\n1. x\n2. y</p>");
 }
 
 #[test]
 fn block_image_does_not_interrupt() {
     assert_eq!(
-        html("text\n![a](u)"),
+        html("text\n![a](u)\n"),
         "<p>text\n<img src=\"u\" alt=\"a\"></p>"
     );
 }
@@ -82,12 +85,12 @@ fn block_image_does_not_interrupt() {
 
 #[test]
 fn abbreviation_def_interrupts() {
-    assert_eq!(html("text\n*[HT]: Hyper"), "<p>text</p>");
+    assert_eq!(html("text\n\n*[HT]: Hyper\n"), "<p>text</p>");
 }
 
 #[test]
 fn comment_interrupts() {
-    assert_eq!(html("para\n%% c"), "<p>para</p>");
+    assert_eq!(html("para\n\n%% c\n"), "<p>para</p>");
 }
 
 // --- Blank line ends the paragraph; the block parses fresh ---
@@ -95,7 +98,7 @@ fn comment_interrupts() {
 #[test]
 fn blank_line_starts_heading() {
     assert_eq!(
-        html("text\n\n# H"),
+        html("text\n\n# H\n"),
         "<p>text</p>\n<section id=\"H\">\n  <h1>H</h1>\n</section>"
     );
 }
@@ -103,7 +106,7 @@ fn blank_line_starts_heading() {
 #[test]
 fn blank_line_starts_fence() {
     assert_eq!(
-        html("text\n\n```\nc\n```"),
+        html("text\n\n```\nc\n```\n"),
         "<p>text</p>\n<pre><code>c\n</code></pre>"
     );
 }
@@ -113,7 +116,7 @@ fn blank_line_starts_fence() {
 #[test]
 fn nested_sublist_interrupts() {
     assert_eq!(
-        html("- a\n   - b"),
+        html("- a\n  - b\n"),
         "<ul>\n  <li>a\n    <ul>\n      <li>b</li>\n    </ul>\n  </li>\n</ul>"
     );
 }
@@ -121,7 +124,7 @@ fn nested_sublist_interrupts() {
 #[test]
 fn heading_interrupts_inside_blockquote() {
     assert_eq!(
-        html("> text\n> # H"),
+        html("> text\n>\n> # H\n"),
         "<blockquote>\n  <p>text</p>\n  <h1 id=\"H\">H</h1>\n</blockquote>"
     );
 }
@@ -129,7 +132,7 @@ fn heading_interrupts_inside_blockquote() {
 #[test]
 fn fence_interrupts_inside_admonition() {
     assert_eq!(
-        html("::: note\ntext\n```\ncode\n```\n:::"),
+        html("::: note\ntext\n\n```\ncode\n```\n:::\n"),
         "<aside class=\"admonition note\">\n  <p>text</p>\n  <pre><code>code\n</code></pre>\n</aside>"
     );
 }
@@ -138,13 +141,13 @@ fn fence_interrupts_inside_admonition() {
 fn tab_indented_bullet_folds_into_paragraph() {
     // Symmetric §10: a bullet does not interrupt a paragraph regardless of
     // indentation (tab or spaces); with no blank line it folds in.
-    assert_eq!(html("text\n\t- item"), "<p>text\n- item</p>");
+    assert_eq!(html("text\n- item\n"), "<p>text\n- item</p>");
 }
 
 #[test]
 fn indented_ordered_marker_does_not_interrupt_paragraph() {
     // Ordered markers never interrupt a paragraph, at any indentation.
-    assert_eq!(html("text\n  1. item"), "<p>text\n1. item</p>");
+    assert_eq!(html("text\n1. item\n"), "<p>text\n1. item</p>");
 }
 
 #[test]
@@ -154,7 +157,7 @@ fn block_quote_nests_under_an_ordered_item_without_a_blank() {
     // column of `1. ` is 3, so the dedent must use the marker width, not a fixed
     // bullet width of 2 (matches carve-php).
     assert_eq!(
-        html("1. a\n   > q"),
+        html("1. a\n+\n> q\n"),
         "<ol>\n  <li>a\n    <blockquote><p>q</p></blockquote>\n  </li>\n</ol>"
     );
 }
@@ -162,7 +165,7 @@ fn block_quote_nests_under_an_ordered_item_without_a_blank() {
 #[test]
 fn heading_nests_under_an_item_without_a_blank() {
     assert_eq!(
-        html("- a\n  # H"),
+        html("- a\n+\n# H\n"),
         "<ul>\n  <li>a\n    <h1 id=\"H\">H</h1>\n  </li>\n</ul>"
     );
 }
@@ -170,7 +173,7 @@ fn heading_nests_under_an_item_without_a_blank() {
 #[test]
 fn block_quote_after_a_sub_list_is_an_outer_item_sibling() {
     assert_eq!(
-        html("1. a\n   1. b\n   > q"),
+        html("1. a\n   1. b\n\n   > q\n"),
         "<ol>\n  <li>a\n    <ol>\n      <li>b</li>\n    </ol>\n    <blockquote><p>q</p></blockquote>\n  </li>\n</ol>"
     );
 }
@@ -178,5 +181,5 @@ fn block_quote_after_a_sub_list_is_an_outer_item_sibling() {
 #[test]
 fn indented_prose_still_folds_as_lazy_continuation() {
     // A non-block-opening indented line is lazy continuation, not a new block.
-    assert_eq!(html("1. a\n   more"), "<ol>\n  <li>a\nmore</li>\n</ol>");
+    assert_eq!(html("1. a\n   more\n"), "<ol>\n  <li>a\nmore</li>\n</ol>");
 }

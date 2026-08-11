@@ -20,7 +20,7 @@ fn squash(s: &str) -> String {
 
 #[test]
 fn a_definition_in_a_note_body_resolves_a_reference_below_it() {
-    let html = squash(&to_html("[^a]: note\n  [r]: /u\n\nsee[^a] and [t][r]"));
+    let html = squash(&to_html("[^a]: note\n\n  [r]: /u\n\nsee[^a] and [t][r]"));
 
     assert!(
         html.contains("href=\"/u\""),
@@ -34,7 +34,7 @@ fn a_definition_in_a_note_body_resolves_a_reference_below_it() {
 
 #[test]
 fn the_definition_line_renders_nothing_inside_the_note() {
-    let html = squash(&to_html("[^a]: note\n  [r]: /u\n\nsee[^a] and [t][r]"));
+    let html = squash(&to_html("[^a]: note\n\n  [r]: /u\n\nsee[^a] and [t][r]"));
 
     assert!(
         !html.contains("[r]: /u"),
@@ -61,7 +61,7 @@ fn a_top_level_definition_wins_over_one_in_a_note_body() {
     // Measured on carve-js and carve-php: with both present, `[t][r]` resolves
     // to the top-level target, whichever comes first in the source.
     let html = squash(&to_html(
-        "[^a]: note\n  [r]: /inner\n\n[r]: /outer\n\nsee[^a] and [t][r]",
+        "[^a]: note\n\n  [r]: /inner\n\n[r]: /outer\n\nsee[^a] and [t][r]",
     ));
 
     assert!(html.contains("href=\"/outer\""), "{html}");
@@ -94,7 +94,7 @@ fn the_last_definition_among_note_bodies_wins() {
     // one; note bodies follow the same rule so placement does not change the
     // precedence a label gets.
     let html = squash(&to_html(
-        "[^a]: one\n  [r]: /first\n\n[^b]: two\n  [r]: /second\n\nsee[^a][^b] and [t][r]",
+        "[^a]: one\n\n  [r]: /first\n\n[^b]: two\n\n  [r]: /second\n\nsee[^a][^b] and [t][r]",
     ));
 
     assert!(html.contains("href=\"/second\""), "{html}");

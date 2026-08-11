@@ -45,7 +45,7 @@ fn indented_document_openers_do_not_open_fences() {
 #[test]
 fn opener_at_list_item_content_column_opens_fence() {
     assert_eq!(
-        carve::to_html("- ```\n  x\n  ```").trim(),
+        carve::to_html("- ```\n  x\n  ```\n").trim(),
         "<ul>\n  <li>\n    <pre><code>x\n</code></pre>\n  </li>\n</ul>"
     );
 }
@@ -58,7 +58,7 @@ fn opener_one_column_past_list_item_content_column_is_text() {
 #[test]
 fn opener_at_block_quote_content_column_opens_fence() {
     assert_eq!(
-        carve::to_html("> ```\n> x\n> ```").trim(),
+        carve::to_html("> ```\n> x\n> ```\n").trim(),
         "<blockquote>\n  <pre><code>x\n</code></pre>\n</blockquote>"
     );
 }
@@ -73,7 +73,7 @@ fn indented_closer_is_code_content_not_a_delimiter() {
 #[test]
 fn indented_backtick_run_survives_as_sample_text_inside_fence() {
     assert_eq!(
-        carve::to_html("````\nexample:\n ```\n````").trim(),
+        carve::to_html("````\nexample:\n ```\n````\n").trim(),
         "<pre><code>example:\n ```\n</code></pre>"
     );
 }
@@ -87,7 +87,7 @@ fn fence_opens_on_a_list_item_continuation_line() {
     // column-exact rule those must be dedented by the same amount or the closer
     // is missed and the fence never opens.
     assert_eq!(
-        carve::to_html("- item\n  ```\n  c\n  ```\ntail").trim(),
+        carve::to_html("- item\n+\n```\nc\n```\n\ntail\n").trim(),
         "<ul>\n  <li>item\n    <pre><code>c\n</code></pre>\n  </li>\n</ul>\n<p>tail</p>"
     );
 }
@@ -97,7 +97,7 @@ fn nested_fence_content_dedents_to_the_item_content_column() {
     // Indentation INSIDE the fence is preserved relative to the content column,
     // not stripped wholesale: `    deep` (col 4, content col 2) keeps 2 spaces.
     assert_eq!(
-        carve::to_html("- item\n  ```\n    deep\n  code\n  ```").trim(),
+        carve::to_html("- item\n+\n```\n  deep\ncode\n```\n").trim(),
         "<ul>\n  <li>item\n    <pre><code>  deep\ncode\n</code></pre>\n  </li>\n</ul>"
     );
 }

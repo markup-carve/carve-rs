@@ -850,7 +850,24 @@ fn adjacent_blocks_merge(left: &BlockNode, right: &BlockNode) -> bool {
 
 fn render_item_blocks(blocks: &[BlockNode], tight: bool, ctx: &mut CarveContext) -> String {
     if !tight {
-        return render_blocks(blocks, ctx);
+        let mut out = String::new();
+        let mut previous: Option<&BlockNode> = None;
+        for block in blocks {
+            let rendered = render_block(block, ctx);
+            if rendered.is_empty() {
+                continue;
+            }
+            if let Some(before) = previous {
+                out.push_str("\n\n");
+                if let Some(definition) = definition_in_gap(before, block, ctx) {
+                    out.push_str(&definition);
+                    out.push_str("\n\n");
+                }
+            }
+            out.push_str(&rendered);
+            previous = Some(block);
+        }
+        return out;
     }
     if ctx.block_depth >= MAX_RENDER_DEPTH {
         crate::render_depth::record("carve");
@@ -875,13 +892,14 @@ fn render_item_blocks(blocks: &[BlockNode], tight: bool, ctx: &mut CarveContext)
             // blank the author never wrote and diverge from carve-js/carve-php.
             out.push('\n');
             if let Some(written) = definition_in_gap(prev_block, block, ctx) {
-                out.push_str(&written);
+                // Definitions do not interrupt an open paragraph in 0.2.
+                // Attach the definition-led run explicitly at the marker
+                // column so it remains structural without loosening the item.
+                out.push_str(&at_marker_column("+"));
                 out.push('\n');
-                // A definition written back BETWEEN the two blocks already ends
-                // the paragraph above it, so the marker below is not needed -
-                // and emitting it anyway changes the canonical form of corpus
-                // 228, whose point is that a line at the definition's own
-                // column forms its own tight block.
+                out.push_str(&at_marker_column(&written));
+                out.push('\n');
+                prev_at_marker_column = true;
                 separated = true;
             }
         }
@@ -906,10 +924,7 @@ fn render_item_blocks(blocks: &[BlockNode], tight: bool, ctx: &mut CarveContext)
         // emitted, rather than a list of block kinds maintained by hand here -
         // the same deviation `markup-carve/carve#961` records for the leading
         // thematic break.
-        let folds_into_the_paragraph_above = rendered
-            .lines()
-            .next()
-            .is_some_and(crate::parse::line_starts_paragraph);
+        let folds_into_the_paragraph_above = !matches!(block, BlockNode::List(_));
         // ONCE ONE CHILD IS AT THE MARKER COLUMN, EVERY LATER ONE IN THE RUN
         // MUST BE.
         //
@@ -928,11 +943,11 @@ fn render_item_blocks(blocks: &[BlockNode], tight: bool, ctx: &mut CarveContext)
         // is about where the child sits relative to the block before it, which
         // no property of the child alone can decide.
         let continues_a_run_at_the_marker_column = prev.is_some() && prev_at_marker_column;
-        if !separated
-            && (continues_a_run_at_the_marker_column
-                || next.is_some_and(|next_block| adjacent_blocks_merge(block, next_block))
-                || (matches!(prev, Some(BlockNode::Paragraph(_)))
-                    && folds_into_the_paragraph_above))
+        if continues_a_run_at_the_marker_column
+            || next.is_some_and(|next_block| adjacent_blocks_merge(block, next_block))
+            || (!separated
+                && matches!(prev, Some(BlockNode::Paragraph(_)))
+                && folds_into_the_paragraph_above)
         {
             out.push_str(&at_marker_column("+"));
             out.push('\n');
@@ -1236,7 +1251,11 @@ fn render_list(node: &List, ctx: &mut CarveContext) -> String {
         let first = lines.remove(0);
         out.push_str(&format!("{prefix}{first}\n"));
         let continuation = " ".repeat(prefix.len());
+        let mut in_task_nested_list = false;
         for line in lines {
+            if item.checked.is_some() && is_rendered_list_marker(line.trim_start()) {
+                in_task_nested_list = true;
+            }
             if line.is_empty() || line.chars().eq([verbatim_blank()]) {
                 // A blank continuation line is emitted EMPTY, never indented to
                 // the content column: PART 11 section 7 forbids a whitespace-only
@@ -1257,7 +1276,18 @@ fn render_list(node: &List, ctx: &mut CarveContext) -> String {
             } else if let Some(rest) = line.strip_prefix(MARKER_COLUMN) {
                 // The continuation marker and its attached block sit at the
                 // ITEM's marker column, not its content column (§17 L3).
-                out.push_str(&format!("{rest}\n"));
+                if in_task_nested_list {
+                    out.push_str(&format!("  {rest}\n"));
+                } else {
+                    out.push_str(&format!("{rest}\n"));
+                }
+            } else if in_task_nested_list {
+                // The checkbox is item content, not part of the marker width.
+                // A task item's nested list therefore starts two columns in,
+                // just like its authored form; indenting it by the full
+                // `- [ ] ` prefix makes the nested continuation marker miss
+                // its list and changes the following block into prose.
+                out.push_str(&format!("  {line}\n"));
             } else {
                 out.push_str(&format!("{continuation}{line}\n"));
             }
@@ -1332,7 +1362,10 @@ fn roman_marker(mut n: usize) -> String {
 
 fn render_definition_list(items: &[DefinitionItem], ctx: &mut CarveContext) -> String {
     let mut out = Vec::new();
-    for item in items {
+    for (item_index, item) in items.iter().enumerate() {
+        if item_index > 0 {
+            out.push(String::new());
+        }
         for term in &item.terms {
             out.push(format!(":: {}", render_inlines(term, ctx)));
         }

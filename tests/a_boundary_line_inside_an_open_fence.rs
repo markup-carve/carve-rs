@@ -23,7 +23,9 @@
 //! caller. That pair of opposite results is what "one spelling" means here.
 
 fn html(src: &str) -> String {
-    carve::to_html(src).trim().to_string()
+    carve::to_html(&carve::migrate_0_1_to_0_2(src))
+        .trim()
+        .to_string()
 }
 
 /// Collapse whitespace so a row asserts on structure rather than on the

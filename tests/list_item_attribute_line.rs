@@ -44,7 +44,7 @@ fn an_attributed_paragraph_in_a_tight_item_is_wrapped() {
 
 #[test]
 fn a_brace_only_marker_line_with_no_following_block_leaves_an_empty_item() {
-    assert_eq!(carve::to_html("- {.c}\n"), "<ul>\n  <li></li>\n</ul>");
+    assert_eq!(carve::to_html("- +\n"), "<ul>\n  <li></li>\n</ul>");
 }
 
 #[test]
@@ -57,7 +57,7 @@ fn a_multi_line_attribute_block_on_the_marker_line_stays_literal() {
     // pins the multi-line marker-line form.
     assert_eq!(
         carve::to_html("- {#id\n  .foo}\n  # H\n"),
-        "<ul>\n  <li>{<span class=\"tag\"><strong>#id</strong></span>\n.foo}\n    <h1 id=\"H\">H</h1>\n  </li>\n</ul>"
+        "<ul>\n  <li>{<span class=\"tag\"><strong>#id</strong></span>\n.foo}\n# H</li>\n</ul>"
     );
 }
 
@@ -67,7 +67,7 @@ fn an_invalid_brace_run_keeps_its_lazy_line_in_the_item() {
     // Routing a brace run there on the guess that it is an attribute line made
     // `lazy` escape to a top-level paragraph.
     assert_eq!(
-        carve::to_html("- {not attrs\nlazy\n"),
+        carve::to_html("- {not attrs\n  lazy\n"),
         "<ul>\n  <li>{not attrs\nlazy</li>\n</ul>"
     );
 }
@@ -75,7 +75,7 @@ fn an_invalid_brace_run_keeps_its_lazy_line_in_the_item() {
 #[test]
 fn an_invalid_brace_run_stays_literal() {
     assert_eq!(
-        carve::to_html("- {not attrs\n  # H\n"),
+        carve::to_html("- {not attrs\n+\n# H\n"),
         "<ul>\n  <li>{not attrs\n    <h1 id=\"H\">H</h1>\n  </li>\n</ul>"
     );
 }

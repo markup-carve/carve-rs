@@ -23,6 +23,7 @@ mod escape;
 mod extension;
 pub mod extensions;
 mod index_budget;
+mod migrate;
 mod parse;
 pub mod profile;
 pub mod profile_filter;
@@ -51,7 +52,7 @@ mod wire_fields;
 /// something a consumer can be expected to absorb (carve-rs#404). The writer's
 /// own staging markers moved to U+E010.. to free it.
 pub(crate) const NBSP_PLACEHOLDER: char = '\u{e000}';
-pub const SPEC_VERSION: &str = "0.1";
+pub const SPEC_VERSION: &str = "0.2";
 
 pub use ast::*;
 pub use ast_json::{from_json, to_json, AstJsonError};
@@ -70,6 +71,7 @@ pub use extensions::{
     SanitizeSvgOptions, Spoiler, SwatchPosition, SwatchShape, TabNormalize, TableOfContents,
     TableOfContentsOptions, TocPlacement, UrlGenerator, Wikilinks, WikilinksOptions,
 };
+pub use migrate::migrate_0_1_to_0_2;
 pub use parse::{parse, parse_with_options};
 pub use profile::{DisallowedAction, LinkPolicy, Profile, ProfileViolation, ProfileViolationError};
 pub use profile_filter::{apply_profile, apply_profile_with_typography, ProfileFilterResult};
