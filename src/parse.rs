@@ -7765,7 +7765,15 @@ fn collect_indented_block_plain_with(
         lines.push(sliced);
         cur.consume();
     }
-    lines.join("\n")
+    // TERMINATE while a fence is still open, so the blank the loop above just
+    // collected survives the round trip back through `str::lines()`. Outside a
+    // fence a trailing blank is spacing and the plain join is right
+    // (markup-carve/carve-rs#908).
+    let mut source = lines.join("\n");
+    if fence.is_some() && lines.last().is_some_and(|line| line.is_empty()) {
+        source.push('\n');
+    }
+    source
 }
 
 fn detect_block_image(line: &str) -> Option<Image> {

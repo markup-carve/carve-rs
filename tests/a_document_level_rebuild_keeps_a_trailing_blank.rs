@@ -70,13 +70,18 @@ fn a_container_closed_fence_keeps_its_trailing_blank() {
     assert_eq!(code("> ```\n> x\n>\n"), "x\n\n");
 }
 
-/// KNOWN STILL WRONG, asserted so the remaining gap is visible rather than
-/// implied. A fence ending with the LIST ITEM loses its blank for a different
-/// reason: the collection loop stops without consuming it, so `lines` is
-/// already `["x"]` before any join runs and there is nothing to preserve. That
-/// is the collector half, the one carve-js#989 needed separately.
-/// When it lands, this assertion flips and this test is deleted.
+/// The last shape. A fence ending with the LIST ITEM needed BOTH halves, which
+/// is why neither showed alone: the collection loop skipped the trailing blank
+/// (its lookahead asks whether the ITEM continues, which is the wrong question
+/// while a fence is running), and the plain collector's join then dropped it
+/// even once collected.
 #[test]
-fn known_gap_an_item_final_fence_still_loses_it() {
-    assert_eq!(code("- ```\n  x\n\n"), "x\n");
+fn an_item_final_fence_keeps_its_trailing_blank() {
+    assert_eq!(code("- ```\n  x\n\n"), "x\n\n");
+    assert_eq!(code("- ```\n  x\n\n\n"), "x\n\n\n");
+    assert_eq!(code("1. ```\n   x\n\n"), "x\n\n");
+    // BOUNDS: a terminated fence and a blank with content after it were always
+    // right and move under neither half.
+    assert_eq!(code("- ```\n  x\n\n  ```\n"), "x\n\n");
+    assert_eq!(code("- ```\n  x\n\n  y\n"), "x\n\ny\n");
 }
