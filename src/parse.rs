@@ -11844,10 +11844,12 @@ fn parse_footnote_ref(
         return None;
     }
     let mut i = start + 2;
-    while i < bytes.len() && bytes[i] != b']' {
+    // A label is a physical-line identifier. Definition markers cannot cross
+    // a newline, so such a reference could never bind to a valid definition.
+    while i < bytes.len() && bytes[i] != b']' && bytes[i] != b'\n' && bytes[i] != b'\r' {
         i += 1;
     }
-    if i >= bytes.len() {
+    if i >= bytes.len() || bytes[i] != b']' {
         return None;
     }
     let id = std::str::from_utf8(&bytes[start + 2..i]).ok()?.to_string();
