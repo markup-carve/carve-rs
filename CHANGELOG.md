@@ -19,6 +19,12 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A footnote reference no longer crosses a source newline.** The parser used
+  to publish an unresolved `footnote_ref` whose id contained that newline,
+  although the one-line definition marker could never bind it. The bracketed
+  source now remains ordinary text around a soft break, matching the grammar;
+  rendered HTML and canonical source are unchanged.
+
 - **A nested list is indented once on the Markdown target, not twice.**
   `render_list` padded every emitted line by the list's own depth, and the
   enclosing item padded the same lines again by the width of its marker, so each
