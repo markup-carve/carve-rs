@@ -20,6 +20,7 @@ pub mod ast_json;
 pub mod ast_merge;
 pub mod ast_patch;
 mod citations;
+pub mod djot_migrate;
 mod document_ids;
 mod escape;
 mod extension;
@@ -69,6 +70,7 @@ pub use ast_patch::{
 pub use citations::{
     parse_locator, CitationMode, Citations, CslDate, CslEntry, CslName, ParsedLocator,
 };
+pub use djot_migrate::djot_to_carve;
 pub use extension::{
     BeforeRenderContext, BlockMatch, CarveExtension, InlineMatch, MatcherContext, Mode, Options,
     RenderContext, SmartTypographyMode, StaticRenderers,
