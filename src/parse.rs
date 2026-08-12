@@ -2429,6 +2429,11 @@ struct LineBuffer {
     /// nested block a WRONG column, which is worse than the `None` an absent
     /// entry produces.
     col_map: Vec<Option<isize>>,
+    /// Whether the LAST line pushed was a synthetic blank rather than one the
+    /// author wrote. `into_source` needs the difference: a real trailing blank
+    /// is content and must survive the round trip, a synthetic one is
+    /// scaffolding and must not (markup-carve/carve-rs#908).
+    last_is_synthetic: bool,
 }
 
 impl LineBuffer {
@@ -2439,6 +2444,7 @@ impl LineBuffer {
     /// Like `push`, recording how many codepoints were stripped from the front
     /// of the line by the enclosing container.
     fn push_at(&mut self, line: String, source_line: Option<usize>, stripped: Option<isize>) {
+        self.last_is_synthetic = false;
         self.lines.push(line);
         if source_line.is_some() || !self.line_map.is_empty() {
             self.line_map.push(source_line);
@@ -2448,12 +2454,31 @@ impl LineBuffer {
 
     fn push_synthetic_blank(&mut self) {
         self.push(String::new(), None);
+        self.last_is_synthetic = true;
     }
 
     fn into_source(self) -> MappedSource {
+        // TERMINATE only when the buffer ends in a blank the AUTHOR wrote.
+        //
+        // `join` loses a trailing empty line on the round trip back through
+        // `str::lines()`, so a fence that runs to a container's closer came out
+        // a line short. Terminating unconditionally fixed that and broke the
+        // other half: `push_synthetic_blank` inserts blanks so an attached
+        // block parses on its own, and preserving one of those re-parses as a
+        // real blank line that `fmt` then writes out
+        // (tests/comment_body_is_relative_to_its_fence).
+        //
+        // The two are told apart by who pushed the line, which is the only
+        // place the difference is known (markup-carve/carve-rs#908).
+        let ends_in_authored_blank =
+            !self.last_is_synthetic && self.lines.last().is_some_and(|line| line.is_empty());
+        let mut source = self.lines.join("\n");
+        if ends_in_authored_blank {
+            source.push('\n');
+        }
         MappedSource {
             col_map: self.col_map,
-            source: self.lines.join("\n"),
+            source,
             line_map: self.line_map,
         }
     }
@@ -9683,6 +9708,8 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                         lines: std::mem::take(&mut stanza),
                         line_map: std::mem::take(&mut stanza_line_map),
                         col_map: std::mem::take(&mut stanza_col_map),
+                        // Built line by line from the source; nothing synthetic.
+                        last_is_synthetic: false,
                     },
                     at: at.and_then(|start| span_of(cur, start, stanza_end, options)),
                     end_cols,
@@ -9774,6 +9801,8 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 lines: stanza,
                 line_map: stanza_line_map,
                 col_map: stanza_col_map,
+                // Built line by line from the source; nothing synthetic.
+                last_is_synthetic: false,
             },
             at: at.and_then(|start| span_of(cur, start, stanza_end, options)),
             end_cols: stanza_end_cols,
