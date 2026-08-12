@@ -7375,6 +7375,21 @@ fn collect_indented_block_mapped_with(
     let mut comment_fence_strip: Option<usize> = None;
     while let Some(line) = cur.peek() {
         if is_blank_line(line) {
+            // INSIDE AN OPEN FENCE A BLANK IS CONTENT. Mirrors the plain
+            // collector: the lookahead below asks whether the ITEM continues,
+            // which is the wrong question while a fence is running. The plain
+            // path was fixed in #911 and this one was not, so `--html` (which
+            // takes the plain path) and `--json`/`fmt` (which take this one)
+            // parsed the same document differently (markup-carve/carve-rs#908).
+            if fence.is_some() {
+                lines.push(String::new());
+                if cur.line_map.is_some() {
+                    line_map.push(cur.source_line(cur.pos));
+                }
+                col_map.push(cur.source_col(cur.pos));
+                cur.consume();
+                continue;
+            }
             // Lazy continuation does not cross a blank line: after a blank, only
             // keep collecting if the next non-blank line is still indented to the
             // block's own level. A shallower line (e.g. a dedent landing below a
@@ -7557,9 +7572,16 @@ fn collect_indented_block_mapped_with(
         );
         cur.consume();
     }
+    // TERMINATE while a fence is still open, so the blank collected above
+    // survives the round trip back through `str::lines()`. Same rule the plain
+    // collector applies (markup-carve/carve-rs#908).
+    let mut source = lines.join("\n");
+    if fence.is_some() && lines.last().is_some_and(|line| line.is_empty()) {
+        source.push('\n');
+    }
     MappedSource {
         col_map,
-        source: lines.join("\n"),
+        source,
         line_map,
     }
 }
