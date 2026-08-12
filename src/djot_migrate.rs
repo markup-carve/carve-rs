@@ -97,6 +97,9 @@ struct Rule {
     close: &'static str,
     /// `_` only opens and closes at a word boundary. See INTRAWORD below.
     word_bounded: bool,
+    /// The inverse: this rule matches ONLY between word characters, which is
+    /// the case the word-bounded rule above deliberately declines.
+    intraword: bool,
 }
 
 /// Longest run first within a family: `~~x~~` is strikethrough, and only what
@@ -109,6 +112,7 @@ const RULES: &[Rule] = &[
         open: "*",
         close: "*",
         word_bounded: false,
+        intraword: false,
     },
     Rule {
         delimiter: "~~",
@@ -117,6 +121,7 @@ const RULES: &[Rule] = &[
         open: "~",
         close: "~",
         word_bounded: false,
+        intraword: false,
     },
     // Djot spells subscript braced as well as bare and means the same by each.
     // The braced form is listed BEFORE the bare one and shares its family, so
@@ -131,6 +136,7 @@ const RULES: &[Rule] = &[
         open: "{,",
         close: ",}",
         word_bounded: false,
+        intraword: false,
     },
     Rule {
         delimiter: "~",
@@ -139,6 +145,7 @@ const RULES: &[Rule] = &[
         open: "{,",
         close: ",}",
         word_bounded: false,
+        intraword: false,
     },
     // Braced superscript is spelled identically in both languages, so this is
     // the identity. It still needs a rule: claiming the range is what stops the
@@ -151,6 +158,7 @@ const RULES: &[Rule] = &[
         open: "{^",
         close: "^}",
         word_bounded: false,
+        intraword: false,
     },
     Rule {
         delimiter: "^",
@@ -159,6 +167,7 @@ const RULES: &[Rule] = &[
         open: "{^",
         close: "^}",
         word_bounded: false,
+        intraword: false,
     },
     Rule {
         delimiter: "_",
@@ -167,6 +176,26 @@ const RULES: &[Rule] = &[
         open: "/",
         close: "/",
         word_bounded: true,
+        intraword: false,
+    },
+    // The complement of the rule above, and it CONVERTS rather than leaving the
+    // run literal. The input is a DJOT document: Djot emphasizes an intraword
+    // `_`, and an author who wanted the literal characters had to escape them.
+    // `snake\_case\_name` renders as `snake_case_name` in Djot and arrives here
+    // already escaped, so an UNESCAPED `snake_case_name` is emphasis the author
+    // saw in their own renderer and kept.
+    //
+    // The braced form is required, not stylistic: a bare `/` is literal
+    // intraword in Carve, so only `snake{/case/}name` renders as
+    // `snake<em>case</em>name`.
+    Rule {
+        delimiter: "_",
+        closer: "_",
+        family: '_',
+        open: "{/",
+        close: "/}",
+        word_bounded: false,
+        intraword: true,
     },
     Rule {
         delimiter: "{=",
@@ -175,6 +204,7 @@ const RULES: &[Rule] = &[
         open: "{=",
         close: "=}",
         word_bounded: false,
+        intraword: false,
     },
 ];
 
@@ -246,6 +276,18 @@ fn find_pairs(masked: &str, rule: &Rule) -> Vec<(usize, usize, usize, usize)> {
             }
         }
 
+        if rule.intraword {
+            let before = if i > 0 {
+                masked[..i].chars().next_back()
+            } else {
+                None
+            };
+            if !before.is_some_and(is_word_char) {
+                i += width;
+                continue;
+            }
+        }
+
         let inner_start = i + width;
         // An opener is not one when whitespace follows it.
         if bytes
@@ -301,6 +343,14 @@ fn find_closer(masked: &str, from: usize, rule: &Rule) -> Option<usize> {
             if rule.word_bounded {
                 let after = masked[j + width..].chars().next();
                 if after.is_some_and(is_word_char) {
+                    j += width;
+                    continue;
+                }
+            }
+
+            if rule.intraword {
+                let after = masked[j + width..].chars().next();
+                if !after.is_some_and(is_word_char) {
                     j += width;
                     continue;
                 }
@@ -678,13 +728,36 @@ mod tests {
         assert_eq!(djot_to_carve("{=marked=}"), "{=marked=}");
     }
 
-    /// The documented intent choice: an identifier is not emphasis.
+    /// An intraword `_x_` CONVERTS, to the braced form. Djot emphasizes it, and
+    /// an author who wanted the literal characters had to escape them, so an
+    /// unescaped run is emphasis the source states rather than an identifier
+    /// the converter should protect.
     #[test]
-    fn an_intraword_underscore_is_left_alone() {
+    fn an_intraword_underscore_converts_to_the_braced_form() {
         assert_eq!(
             djot_to_carve("snake_case_name stays"),
-            "snake_case_name stays"
+            "snake{/case/}name stays"
         );
+        assert_eq!(djot_to_carve("MAX_BUFFER_SIZE"), "MAX{/BUFFER/}SIZE");
+        assert_eq!(djot_to_carve("a _x_ and y_z_w"), "a /x/ and y{/z/}w");
+    }
+
+    /// The other side, and what makes it safe: the escape survives, so an
+    /// author who did mean the identifier keeps it.
+    #[test]
+    fn an_escaped_intraword_underscore_is_left_alone() {
+        assert_eq!(djot_to_carve("snake\\_case\\_name"), "snake\\_case\\_name");
+    }
+
+    /// BOUND: the word-bounded rule still emits the BARE form, and shapes that
+    /// are not an intraword pair at all are untouched. Removing the intraword
+    /// rule leaves every row here passing.
+    #[test]
+    fn the_surrounding_underscore_shapes_are_unchanged() {
+        assert_eq!(djot_to_carve("a _x_ b"), "a /x/ b");
+        assert_eq!(djot_to_carve("__init__"), "__init__");
+        assert_eq!(djot_to_carve("_leading"), "_leading");
+        assert_eq!(djot_to_carve("[t](/a_b_c)"), "[t](/a_b_c)");
     }
 
     #[test]
