@@ -193,6 +193,17 @@ let html = carve::to_html_with_options("Press :kbd[Ctrl].", &options);
 assert_eq!(html, "<p>Press <kbd>Ctrl</kbd>.</p>");
 ```
 
+Locale-specific quote glyphs are also an opt-in extension:
+
+```rust
+use carve::{Options, SmartQuotes};
+
+let quotes = SmartQuotes::new("de");
+let options = Options::new().with_extension(&quotes);
+let html = carve::to_html_with_options("\"Hallo\"", &options);
+assert_eq!(html, "<p>„Hallo“</p>");
+```
+
 ### Built-in extensions
 
 The crate ships the same opt-in extensions as carve-js: `Autolink`,
