@@ -2090,11 +2090,15 @@ fn render_attrs(attrs: &Option<Attrs>) -> String {
     };
     let emit_key = |parts: &mut Vec<String>, key: &str| {
         if let Some(value) = attrs.key_values.get(key) {
-            parts.push(format!(
-                "{}={}",
-                escape_attr_key(key),
-                quote_attr_value(value)
-            ));
+            if key.eq_ignore_ascii_case("lang") && is_language_tag(value) {
+                parts.push(format!(":{value}"));
+            } else {
+                parts.push(format!(
+                    "{}={}",
+                    escape_attr_key(key),
+                    quote_attr_value(value)
+                ));
+            }
         }
     };
     if attrs.order.is_empty() {
@@ -2127,6 +2131,15 @@ fn render_attrs(attrs: &Option<Attrs>) -> String {
     } else {
         format!("{{{}}}", parts.join(" "))
     }
+}
+
+fn is_language_tag(value: &str) -> bool {
+    value.is_empty()
+        || value.split('-').all(|subtag| {
+            !subtag.is_empty()
+                && subtag.len() <= 8
+                && subtag.bytes().all(|byte| byte.is_ascii_alphanumeric())
+        })
 }
 
 fn quote_attr_value(value: &str) -> String {
