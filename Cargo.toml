@@ -20,6 +20,11 @@ include = ["/src/**/*", "/Cargo.toml", "/README.md", "/LICENSE", "/CHANGELOG.md"
 [dependencies]
 html5ever = "0.27"
 markup5ever_rcdom = "0.3"
+# The Markdown importer parses to an AST first, the way the HTML importer uses
+# html5ever, rather than rewriting source lines. pulldown-cmark is the
+# ecosystem's CommonMark parser and emits an event stream that walks straight
+# into a Carve Document.
+pulldown-cmark = { version = "0.13", default-features = false }
 
 [dev-dependencies]
 serde_json = "1"

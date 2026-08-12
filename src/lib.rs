@@ -27,6 +27,7 @@ mod extension;
 pub mod extensions;
 pub mod html_import;
 mod index_budget;
+pub mod markdown_import;
 mod parse;
 pub mod profile;
 pub mod profile_filter;
@@ -91,6 +92,7 @@ pub use html_import::{
     HtmlImportError, HtmlImportMode, HtmlImportOptions, HtmlImportReport, HtmlImportResult,
     HtmlImportSeverity,
 };
+pub use markdown_import::{markdown_to_ast, markdown_to_carve};
 pub use parse::{parse, parse_with_options};
 pub use profile::{DisallowedAction, LinkPolicy, Profile, ProfileViolation, ProfileViolationError};
 pub use profile_filter::{apply_profile, apply_profile_with_typography, ProfileFilterResult};
