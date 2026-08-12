@@ -240,6 +240,7 @@ pub(crate) struct RenderState {
     /// `::: footnotes` nested inside a footnote definition must NOT emit a
     /// placement sentinel (it renders as an ordinary div, matching carve-js).
     rendering_footnotes: bool,
+    suppress_automatic_abbreviation: bool,
 }
 
 fn render_document_blocks(
@@ -2114,6 +2115,74 @@ fn render_inlines_stateful(
     }
 }
 
+const SEMANTIC_SPAN_ORDER: [&str; 9] = [
+    "abbr", "time", "code", "mark", "samp", "var", "kbd", "cite", "dfn",
+];
+
+/// PART 10 §10 compact semantic attributes on an ordinary authored span.
+fn render_semantic_span(
+    out: &mut String,
+    span: &Span,
+    options: &Options<'_>,
+    state: &mut RenderState,
+) {
+    let Some(attrs) = &span.attrs else {
+        out.push_str("<span>");
+        render_inlines_stateful(out, &span.children, options, state);
+        out.push_str("</span>");
+        return;
+    };
+    let names: Vec<&str> = SEMANTIC_SPAN_ORDER
+        .iter()
+        .copied()
+        .filter(|name| attrs.key_values.contains_key(*name))
+        .collect();
+    if names.is_empty() {
+        out.push_str("<span");
+        write_attrs(out, &span.attrs);
+        out.push('>');
+        render_inlines_stateful(out, &span.children, options, state);
+        out.push_str("</span>");
+        return;
+    }
+
+    let mut html = String::new();
+    let previous_suppression = state.suppress_automatic_abbreviation;
+    if attrs.key_values.contains_key("abbr") {
+        state.suppress_automatic_abbreviation = true;
+    }
+    render_inlines_stateful(&mut html, &span.children, options, state);
+    state.suppress_automatic_abbreviation = previous_suppression;
+    for name in names {
+        let value = &attrs.key_values[name];
+        let mapped = match (name, value.is_empty()) {
+            ("abbr" | "dfn", false) => format!(" title=\"{}\"", escape_attr(value)),
+            ("time", false) => format!(" datetime=\"{}\"", escape_attr(value)),
+            _ => String::new(),
+        };
+        html = format!("<{name}{mapped}>{html}</{name}>");
+    }
+
+    let mut rest = attrs.clone();
+    rest.key_values
+        .retain(|name, _| !SEMANTIC_SPAN_ORDER.contains(&name.as_str()));
+    rest.order.retain(|slot| match slot {
+        AttrSlot::Key(name) => !SEMANTIC_SPAN_ORDER.contains(&name.as_str()),
+        _ => true,
+    });
+    let has_remaining =
+        rest.id.is_some() || !rest.classes.is_empty() || !rest.key_values.is_empty();
+    if has_remaining {
+        out.push_str("<span");
+        write_attrs(out, &Some(rest));
+        out.push('>');
+        out.push_str(&html);
+        out.push_str("</span>");
+    } else {
+        out.push_str(&html);
+    }
+}
+
 /// Escape text content (`& < >`) and fold the no-break space U+00A0 into
 /// `&nbsp;`, writing directly into `out`. Equivalent to
 /// `escape_text(s).replace('\u{00a0}', "&nbsp;")` but in one pass with no
@@ -2198,11 +2267,7 @@ fn render_inline_after(
         InlineNode::Link(l) => render_link(out, l, options, state),
         InlineNode::Image(img) => render_image(out, img),
         InlineNode::Span(s) => {
-            out.push_str("<span");
-            write_attrs(out, &s.attrs);
-            out.push('>');
-            render_inlines_stateful(out, &s.children, options, state);
-            out.push_str("</span>");
+            render_semantic_span(out, s, options, state);
         }
         InlineNode::Math(m) => {
             let base = if m.display {
@@ -2404,6 +2469,10 @@ fn render_inline_after(
         InlineNode::CitationGroup(g) => render_citation_group(out, g, options, state),
         InlineNode::Extension(e) => render_inline_extension(out, e, options, state),
         InlineNode::Abbreviation(a) => {
+            if state.suppress_automatic_abbreviation {
+                write_escaped_text(out, &a.abbr);
+                return;
+            }
             // Bound cumulative expansion bytes: once the budget is exhausted,
             // degrade to plain key text (no `<abbr>`, no title) so a large
             // expansion repeated many times cannot amplify output without limit.
