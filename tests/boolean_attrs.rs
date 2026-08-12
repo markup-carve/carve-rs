@@ -38,7 +38,7 @@ fn mixes_with_key_value() {
 fn multiple_bare_words() {
     assert_eq!(
         html("[x]{kbd foo}"),
-        r#"<p><span kbd="" foo="">x</span></p>"#
+        r#"<p><span foo=""><kbd>x</kbd></span></p>"#
     );
 }
 

@@ -9,6 +9,11 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Compact semantic span attributes are now portable core syntax.**
+  `[Ctrl]{kbd}`, `[HTML]{abbr="…"}`, and combined forms such as
+  `[CSS]{dfn abbr="…"}` render without an opt-in extension and match PHP and
+  JavaScript. The AST and non-HTML renderers retain ordinary span behavior.
+
 - **The existing nine-name semantic inline registry is now spec- and
   corpus-pinned across all engines.** `:abbr[…]`, `:cite[…]`, `:dfn[…]`,
   `:kbd[…]`, `:samp[…]`, `:var[…]`, `:time[…]`, `:code[…]`, and `:mark[…]`

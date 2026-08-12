@@ -166,6 +166,11 @@ Nine semantic inline names are built in and need no registration: `abbr`,
 `:name[content]{attrs}` remains an ordinary inline-extension AST node and maps
 to the same-named HTML element; unknown names retain the generic
 `<span class="ext-name">` fallback. Plain and ANSI render only the content.
+
+The same registry has compact span-attribute sugar: `[Ctrl]{kbd}` and
+`[HTML]{abbr="HyperText Markup Language"}`. Attributes can combine, for example
+`[CSS]{dfn abbr="Cascading Style Sheets"}`; non-semantic attributes remain on
+one outer span.
 `:cite[…]` is distinct from bibliographic `[@key]` citations, and `:abbr[…]`
 does not declare an automatic abbreviation.
 
