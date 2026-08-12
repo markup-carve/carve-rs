@@ -7,6 +7,20 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **A hash in Djot source is not a Carve tag** (markup-carve/carve-php#1191).
+  A tag is the one Carve inline construct that is not a pair - `#x` opens on
+  its own and needs no closer - so nothing downstream neutralizes it and
+  escaping an enclosing brace cannot either. Djot has no hashtag at all, so
+  every `#word` in Djot prose became a Carve tag span that existed nowhere in
+  the source; the braced `{#y#}` that was reported is the rarest instance
+  rather than the defect. The rule mirrors the parser's opener: a `#` not
+  preceded by an alphanumeric and followed by an alphanumeric or `-`. A heading
+  is `#` plus a space and is shared with Djot, `a#y` is not a tag either, and
+  `&` is excluded because `&#8212;` is a numeric character reference whose `#`
+  must stay bare or the entity stops decoding.
+
 ### Changed
 
 - **The existing nine-name semantic inline registry is now spec- and

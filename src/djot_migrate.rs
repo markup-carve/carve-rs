@@ -592,6 +592,37 @@ fn escape_plain_carve_syntax(source: &str) -> String {
         }
     }
 
+    // A TAG is the one construct here that is not a pair: `#x` opens on its own
+    // and needs no closer, so nothing downstream neutralizes it and escaping an
+    // enclosing brace cannot either - `\{#y#}` still rendered a tag span inside
+    // literal braces (carve-php#1191).
+    //
+    // Djot has no hashtag at all: pandoc's Djot reader renders `a #y b` as
+    // `<p>a #y b</p>`. So every `#word` in Djot prose became a Carve tag span
+    // that existed nowhere in the source, of which the braced case was only the
+    // rarest instance.
+    //
+    // Mirrors the parser's opener rather than approximating it: a tag opens on
+    // a `#` NOT preceded by an alphanumeric and followed by an alphanumeric or
+    // `-`. A heading is `#` plus a SPACE and is shared with Djot, so it is left
+    // alone, and `a#y` is not a tag either. `&` is excluded because `&#8212;`
+    // is a numeric character reference and escaping its `#` stops it decoding.
+    let mut i = 0;
+    while i < mask.len() {
+        if mask[i] != b'#' || is_escaped(mask, i) {
+            i += 1;
+            continue;
+        }
+        let before_ok = i == 0 || !(mask[i - 1].is_ascii_alphanumeric() || mask[i - 1] == b'&');
+        let opens_tag = mask
+            .get(i + 1)
+            .is_some_and(|b| b.is_ascii_alphanumeric() || *b == b'-');
+        if before_ok && opens_tag {
+            at.push(i);
+        }
+        i += 1;
+    }
+
     if at.is_empty() {
         return source.to_string();
     }
@@ -716,6 +747,27 @@ mod tests {
     #[test]
     fn an_escaped_delimiter_is_literal_text() {
         assert_eq!(djot_to_carve("\\_not em\\_"), "\\_not em\\_");
+    }
+
+    /// A tag is the one construct that is not a pair, so escaping an enclosing
+    /// brace cannot neutralize it. Djot has no hashtag - pandoc renders
+    /// `a #y b` as `<p>a #y b</p>` - so every `#word` became a Carve tag span
+    /// (carve-php#1191).
+    #[test]
+    fn a_hash_does_not_become_a_tag() {
+        assert_eq!(djot_to_carve("a #y b"), "a \\#y b");
+        assert_eq!(djot_to_carve("a #1 b"), "a \\#1 b");
+        assert_eq!(djot_to_carve("{#y#} x"), "\\{\\#y#} x");
+    }
+
+    /// A heading is `#` plus a SPACE and is shared with Djot; `a#y` is not a
+    /// tag either; and `&#8212;` is a numeric character reference whose `#`
+    /// must stay bare or the entity stops decoding.
+    #[test]
+    fn the_hash_negatives_stay_bare() {
+        assert_eq!(djot_to_carve("# Heading"), "# Heading");
+        assert_eq!(djot_to_carve("a#y b"), "a#y b");
+        assert_eq!(djot_to_carve("a &#8212; b"), "a &#8212; b");
     }
 
     #[test]
