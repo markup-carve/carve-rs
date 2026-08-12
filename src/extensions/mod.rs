@@ -28,6 +28,7 @@ pub mod img_fence;
 pub mod index_terms;
 pub mod list_table;
 pub mod math_block;
+pub mod registry;
 pub mod smart_quotes;
 pub mod spoiler;
 pub mod svg_sanitize;
