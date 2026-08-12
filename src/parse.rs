@@ -3733,6 +3733,7 @@ fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<BlockNode>
                     attrs: None,
                     target: FigureTarget::CodeBlock(cb),
                     caption,
+                    short_caption: None,
                     // From the opening fence through the end of the caption -
                     // the same extent a captioned image's figure takes.
                     pos: span_of(cur, fence_at, cur.pos, options),
@@ -3851,6 +3852,7 @@ fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<BlockNode>
                     attrs: None,
                     target: FigureTarget::Image(img),
                     caption,
+                    short_caption: None,
                     // The figure runs from the image to the end of the caption
                     // the cursor just consumed.
                     pos: span_of(cur, image_at, cur.pos, options),
@@ -3920,6 +3922,7 @@ fn parse_equation_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<B
             attrs: None,
             target,
             caption,
+            short_caption: None,
             // Through the end of the caption, like the listing above.
             pos: span_of(cur, math_at, cur.pos, options),
         }));
@@ -5076,6 +5079,7 @@ fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             attrs: None,
             target: FigureTarget::BlockQuote(quote),
             caption,
+            short_caption: None,
             // From the quote's first line through the caption the cursor has
             // just consumed. The image path already did this; a quote wrapped
             // in a figure went unplaced.
@@ -8891,6 +8895,7 @@ fn parse_table(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         pos: span_of(cur, span_start, cur.pos, options),
         attrs: None,
         caption,
+        short_caption: None,
         rows,
     })
 }
@@ -14785,6 +14790,7 @@ fn promote_block_images(blocks: &mut [BlockNode], figures_only: bool) {
                 attrs,
                 target: FigureTarget::Image(img),
                 caption: children,
+                short_caption: None,
                 // PART 12 §4 exempts a REASSEMBLED node, and this one is not:
                 // its lines are contiguous and the direct-image path publishes
                 // exactly this span for the same construct. markup-carve/carve#913
