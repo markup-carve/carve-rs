@@ -79,9 +79,10 @@ pub use extensions::{
     FencedRender, FencedRenderOptions, Glossary, HeadingLevelShift, HeadingLevelShiftOptions,
     HeadingNumbers, HeadingNumbersOptions, HeadingPermalinks, HeadingPermalinksOptions,
     HeadingReference, HeadingReferenceOptions, ImgFence, Index, ListTable, ListType, MathBlock,
-    MathBlockOptions, Position, SanitizeResult, SanitizeSvgOptions, Spoiler, SwatchPosition,
-    SwatchShape, TabNormalize, TableOfContents, TableOfContentsOptions, Tabs, TabsMode,
-    TabsOptions, TocPlacement, UrlGenerator, Wikilinks, WikilinksOptions,
+    MathBlockOptions, Position, QuoteCharacters, SanitizeResult, SanitizeSvgOptions, SmartQuotes,
+    Spoiler, SwatchPosition, SwatchShape, TabNormalize, TableOfContents, TableOfContentsOptions,
+    Tabs, TabsMode, TabsOptions, TocPlacement, UrlGenerator, Wikilinks, WikilinksOptions,
+    SMART_QUOTE_LOCALES,
 };
 pub use html_import::{
     html_to_ast, html_to_carve, HtmlImportAdapter, HtmlImportDiagnostic, HtmlImportDiagnosticCode,

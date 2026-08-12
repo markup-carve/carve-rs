@@ -9,6 +9,12 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`SmartQuotes` extension**, matching carve-php's locale quote configuration:
+  20 built-in locale sets, exact-locale then language fallback (`de-AT` →
+  `de`, `fr_FR` → `fr`), English fallback for an unknown locale, and chainable
+  per-quote overrides. Apostrophes remain U+2019 regardless of locale. This
+  makes the German optional-corpus case a three-engine comparison.
+
 - **`CodeGroup` extension**, ported from carve-js `code-group` and carve-php
   `CodeGroupExtension`. Renders a `::: code-group` container - or any div
   carrying the `code-group` class - as radio-driven tabbed code panels, one tab

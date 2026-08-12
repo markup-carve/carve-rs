@@ -50,6 +50,7 @@ fn main() -> ExitCode {
     // wavedrom, abc, vega-lite, chart), owned here so it outlives `options`.
     let fenced_presets = carve::FencedRender::presets();
     let math_block = carve::MathBlock::new();
+    let mut quote_locale: Option<String> = None;
 
     let mut options = carve::Options::new();
     let mut format = OutputFormat::Html;
@@ -145,6 +146,13 @@ fn main() -> ExitCode {
                     }
                 };
             }
+            "--quote-locale" => {
+                let Some(value) = args.next() else {
+                    eprintln!("carve: --quote-locale requires a locale");
+                    return ExitCode::FAILURE;
+                };
+                quote_locale = Some(value);
+            }
             "--profile-base-host" => {
                 let Some(value) = args.next() else {
                     eprintln!("carve: --profile-base-host requires a host");
@@ -193,6 +201,10 @@ fn main() -> ExitCode {
         for preset in &fenced_presets {
             options = options.with_extension(preset);
         }
+    }
+    let smart_quotes = quote_locale.as_deref().map(carve::SmartQuotes::new);
+    if let Some(extension) = &smart_quotes {
+        options = options.with_extension(extension);
     }
 
     let source = match input_paths.first().map(String::as_str) {
@@ -796,7 +808,8 @@ fn print_usage() {
          --profile NAME              restrict features (full|article|comment|minimal)\n  \
          --profile-base-host HOST    base host for the profile link policy\n  \
          --smart-typography MODE     glyph (default) or source: emit the runs\n                              \
-         the author typed instead of the resolved glyphs\n\n\
+         the author typed instead of the resolved glyphs\n  \
+         --quote-locale LOCALE       use locale-specific opening/closing quotes\n\n\
          Spec: https://markup-carve.github.io/carve/"
     );
 }

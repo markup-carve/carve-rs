@@ -177,9 +177,10 @@ fn citations_suppress_per_item() {
 }
 
 #[test]
-#[ignore = "optional Tier-2 feature not supported by carve-rs yet"]
 fn smart_quotes_locale_de() {
-    assert_optional_pair("03-smart-quotes-locale-de", carve::Options::new());
+    let extension = carve::SmartQuotes::new("de");
+    let options = carve::Options::new().with_extension(&extension);
+    assert_optional_pair("03-smart-quotes-locale-de", options);
 }
 
 #[test]
