@@ -325,13 +325,13 @@ fn run_migrate(args: &[String]) -> ExitCode {
     let mut report_path: Option<&str> = None;
     let mut check_loss = false;
     let mut input: Option<&str> = None;
-    let mut from_html = false;
+    let mut from: Option<String> = None;
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
             "--from" => {
                 i += 1;
-                from_html = args.get(i).map(String::as_str) == Some("html");
+                from = args.get(i).cloned();
             }
             "--mode" => {
                 i += 1;
@@ -389,10 +389,17 @@ fn run_migrate(args: &[String]) -> ExitCode {
         }
         i += 1;
     }
-    if !from_html {
-        eprintln!("carve migrate: --from html is required");
-        return ExitCode::FAILURE;
-    }
+    let from = match from.as_deref() {
+        Some("html") | Some("markdown") | Some("md") => from.clone().unwrap_or_default(),
+        Some(other) => {
+            eprintln!("carve migrate: unknown source format {other}");
+            return ExitCode::FAILURE;
+        }
+        None => {
+            eprintln!("carve migrate: --from html or --from markdown is required");
+            return ExitCode::FAILURE;
+        }
+    };
     let source = match input {
         None | Some("-") => {
             let mut s = String::new();
@@ -409,6 +416,15 @@ fn run_migrate(args: &[String]) -> ExitCode {
             }
         },
     };
+    // Markdown has no import policy to apply and nothing to report as lost:
+    // it parses to a Carve document whole, so the mode/adapter/report options
+    // are HTML's alone and are silently unused here rather than rejected.
+    if from != "html" {
+        print!("{}", carve::markdown_to_carve(&source));
+
+        return ExitCode::SUCCESS;
+    }
+
     let options = carve::HtmlImportOptions {
         mode,
         adapter,

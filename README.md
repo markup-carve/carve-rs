@@ -30,6 +30,13 @@ trusted-roundtrip policies. The CLI equivalent is:
 carve migrate --from html --mode safe --report report.json input.html
 ```
 
+Markdown migration is `markdown_to_ast` and `markdown_to_carve`, or
+`carve migrate --from markdown input.md`. It parses the source to a tree and
+writes it canonically, so the output is the document rather than the author's
+spelling: a setext heading comes back as `#`, an indented code block as a
+fence. There is no mode or report, because nothing is dropped - the
+`--mode`/`--adapter`/`--report` options belong to HTML.
+
 ## Status
 
 The crate passes every `.crv` / `.html` pair currently checked into its
