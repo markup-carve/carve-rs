@@ -7,6 +7,20 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Compact semantic spans (PART 10 §10).** On an ordinary `[content]{attrs}`
+  span, the reserved names `abbr`, `time`, `code`, `mark`, `samp`, `var`,
+  `kbd`, `cite` and `dfn` are consumed as attributes and wrap the content in
+  their same-named element: `[Tab]{kbd}` renders `<kbd>Tab</kbd>` rather than
+  `<span kbd="">Tab</span>`. A non-empty `abbr` or `dfn` value becomes `title`
+  and a `time` value becomes `datetime`; on the others a value only selects the
+  wrapper. Several nest in the fixed inner-to-outer order above, independent of
+  how the author ordered them, and any remaining id, class or key/value
+  attributes stay on one outer `<span>` that still passes attribute hardening.
+  HTML only: the AST, the non-HTML targets and the canonical writer are
+  unchanged.
+
 ### Changed
 
 - **The existing nine-name semantic inline registry is now spec- and

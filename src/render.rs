@@ -2198,11 +2198,7 @@ fn render_inline_after(
         InlineNode::Link(l) => render_link(out, l, options, state),
         InlineNode::Image(img) => render_image(out, img),
         InlineNode::Span(s) => {
-            out.push_str("<span");
-            write_attrs(out, &s.attrs);
-            out.push('>');
-            render_inlines_stateful(out, &s.children, options, state);
-            out.push_str("</span>");
+            render_span(out, s, options, state);
         }
         InlineNode::Math(m) => {
             let base = if m.display {
@@ -2748,6 +2744,107 @@ fn write_attr_key_value(out: &mut String, key: &str, value: &str) {
         std::borrow::Cow::Owned(v) => write_escaped_attr(out, &v),
     }
     out.push('"');
+}
+
+/// PART 10 §10: the attribute names that are compact semantic-span sugar.
+///
+/// The slice order is the normative INNER-TO-OUTER nesting order, and it is
+/// deliberately not the author's order: `{cite kbd}` and `{kbd cite}` render
+/// the same tree, so a document cannot depend on how the attributes were
+/// typed.
+const SEMANTIC_SPAN_ATTRS: &[&str] = &[
+    "abbr", "time", "code", "mark", "samp", "var", "kbd", "cite", "dfn",
+];
+
+/// The attribute a semantic wrapper carries when the author gave a value.
+///
+/// `abbr` and `dfn` describe the term, so their value is the `title`; `time`
+/// carries a machine-readable `datetime`. On the rest a value only selects the
+/// wrapper and is dropped - `{kbd="x"}` is still just `<kbd>`.
+fn semantic_span_value_attr(name: &str) -> Option<&'static str> {
+    match name {
+        "abbr" | "dfn" => Some("title"),
+        "time" => Some("datetime"),
+        _ => None,
+    }
+}
+
+/// Render a `[content]{attrs}` span, applying PART 10 §10 semantic sugar.
+///
+/// A span with none of the reserved names renders exactly as before. With one
+/// or more, each is consumed as an attribute and becomes an element wrapping
+/// the content; whatever is left over stays on a single outer `<span>` and
+/// still passes attribute hardening.
+///
+/// The leftovers decide the outer `<span>`, and they are counted BEFORE
+/// hardening: `[x]{kbd onclick="alert(1)"}` renders `<span><kbd>x</kbd></span>`,
+/// because the author wrote a non-semantic attribute, so the span is theirs
+/// even though hardening then empties it.
+fn render_span(out: &mut String, span: &Span, options: &Options, state: &mut RenderState) {
+    let semantic: Vec<&str> = match &span.attrs {
+        Some(attrs) => SEMANTIC_SPAN_ATTRS
+            .iter()
+            .copied()
+            .filter(|name| attrs.key_values.contains_key(*name))
+            .collect(),
+        None => Vec::new(),
+    };
+
+    if semantic.is_empty() {
+        out.push_str("<span");
+        write_attrs(out, &span.attrs);
+        out.push('>');
+        render_inlines_stateful(out, &span.children, options, state);
+        out.push_str("</span>");
+        return;
+    }
+
+    let attrs = span.attrs.as_ref().expect("semantic names came from attrs");
+    let rest = strip_semantic_attrs(attrs);
+    let outer_span = rest
+        .as_ref()
+        .is_some_and(|r| r.id.is_some() || !r.classes.is_empty() || !r.key_values.is_empty());
+
+    if outer_span {
+        out.push_str("<span");
+        write_attrs(out, &rest);
+        out.push('>');
+    }
+    // Outermost wrapper first, so the innermost name in the registry ends up
+    // closest to the content.
+    for name in semantic.iter().rev() {
+        out.push('<');
+        out.push_str(name);
+        if let Some(attr) = semantic_span_value_attr(name) {
+            let value = &attrs.key_values[*name];
+            if !value.is_empty() {
+                write_attr_key_value(out, attr, value);
+            }
+        }
+        out.push('>');
+    }
+    render_inlines_stateful(out, &span.children, options, state);
+    for name in semantic.iter() {
+        out.push_str("</");
+        out.push_str(name);
+        out.push('>');
+    }
+    if outer_span {
+        out.push_str("</span>");
+    }
+}
+
+/// The author's attributes minus the semantic names, keeping their order.
+fn strip_semantic_attrs(attrs: &Attrs) -> Option<Attrs> {
+    let mut rest = attrs.clone();
+    for name in SEMANTIC_SPAN_ATTRS {
+        rest.key_values.remove(*name);
+    }
+    rest.order.retain(|slot| match slot {
+        AttrSlot::Key(key) => !SEMANTIC_SPAN_ATTRS.contains(&key.as_str()),
+        _ => true,
+    });
+    Some(rest)
 }
 
 fn write_attrs(out: &mut String, attrs: &Option<Attrs>) {

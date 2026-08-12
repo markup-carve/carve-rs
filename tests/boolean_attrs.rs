@@ -36,9 +36,20 @@ fn mixes_with_key_value() {
 
 #[test]
 fn multiple_bare_words() {
+    // `kbd` is reserved sugar (PART 10 §10), so it becomes the element rather
+    // than staying an attribute; `foo` is an ordinary boolean attribute and
+    // stays on the outer span. This case used to render both as attributes.
     assert_eq!(
         html("[x]{kbd foo}"),
-        r#"<p><span kbd="" foo="">x</span></p>"#
+        r#"<p><span foo=""><kbd>x</kbd></span></p>"#
+    );
+}
+
+#[test]
+fn a_bare_word_outside_the_semantic_registry_stays_an_attribute() {
+    assert_eq!(
+        html("[x]{foo bar}"),
+        r#"<p><span foo="" bar="">x</span></p>"#
     );
 }
 

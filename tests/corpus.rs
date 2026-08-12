@@ -120,6 +120,7 @@ const IMPLEMENTED: &[&str] = &[
     "abbreviation-definition-interrupts-a-paragraph",
     "literal-less-than-in-prose",
     "boolean-attributes",
+    "a-boolean-and-a-key-value-of-the-same-name-are-one-attribute",
     "table-span-marker-in-first-column",
     "table-cell-attributes",
     "table-row-attributes",
@@ -720,6 +721,10 @@ corpus_test!(
 );
 corpus_test!(c94_literal_less_than_in_prose, "literal-less-than-in-prose");
 corpus_test!(c95_boolean_attributes, "boolean-attributes");
+corpus_test!(
+    c292_boolean_and_key_value_of_the_same_name,
+    "a-boolean-and-a-key-value-of-the-same-name-are-one-attribute"
+);
 corpus_test!(
     c96_table_span_marker_in_first_column,
     "table-span-marker-in-first-column"
