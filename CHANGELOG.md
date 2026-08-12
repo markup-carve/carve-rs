@@ -9,6 +9,15 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`djot_to_carve` converts an intraword `_x_` instead of leaving it literal.**
+  Djot's spec puts no word boundary on emphasis, so `snake_case_name` IS
+  emphasis in the source language and an author who wanted the literal
+  characters had to escape them. An unescaped run is therefore emphasis the
+  author saw in their own renderer and kept. It now converts to the braced
+  `{/case/}`, which is required rather than stylistic: a bare `/` is literal
+  intraword in Carve. An escaped `snake\_case\_name` is untouched, which is what
+  makes the change safe.
+
 - **`SmartQuotes` extension**, matching carve-php's locale quote configuration:
   20 built-in locale sets, exact-locale then language fallback (`de-AT` →
   `de`, `fr_FR` → `fr`), English fallback for an unknown locale, and chainable
