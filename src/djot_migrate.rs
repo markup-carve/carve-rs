@@ -441,6 +441,217 @@ fn find_backtick_close(bytes: &[u8], from: usize, run: usize) -> Option<usize> {
     None
 }
 
+/// Rewrite a Djot `+` bullet marker to `-`.
+///
+/// Djot allows `-`, `*` and `+` as bullets. Carve has no `+` bullet: `+` is the
+/// list-continuation marker, so a Djot `+` list degrades to a paragraph - the
+/// line stops being a list item at all, which is a structural change and not a
+/// delimiter one.
+///
+/// A LONE `+` is left alone. That is the Carve continuation marker itself, and
+/// a marker with no content is exactly the form that means it, so rewriting it
+/// would break the construct this rule exists to protect.
+///
+/// Lines inside a fenced block are skipped via the code mask. The rewrite is
+/// one byte for one byte, so it runs before the mask is taken for the inline
+/// rules and leaves every later offset valid.
+fn normalize_plus_bullets(source: &str) -> String {
+    let masked = mask_code_and_destinations(source);
+    let mask = masked.as_bytes();
+    let mut out = source.as_bytes().to_vec();
+
+    let mut line_start = 0;
+    while line_start <= out.len() {
+        let line_end = mask[line_start..]
+            .iter()
+            .position(|b| *b == b'\n')
+            .map(|n| line_start + n)
+            .unwrap_or(out.len());
+
+        // A masked line is code: its `+` is content, not a marker.
+        let mut i = line_start;
+        while i < line_end && (mask[i] == b' ' || mask[i] == b'\t') {
+            i += 1;
+        }
+
+        if i < line_end && mask[i] == b'+' {
+            // `+ content` is a bullet; a bare `+` (or `+` then only spaces) is
+            // the continuation marker and stays.
+            let mut j = i + 1;
+            let mut spaced = false;
+            while j < line_end && (mask[j] == b' ' || mask[j] == b'\t') {
+                spaced = true;
+                j += 1;
+            }
+            if spaced && j < line_end {
+                out[i] = b'-';
+            }
+        }
+
+        if line_end >= out.len() {
+            break;
+        }
+        line_start = line_end + 1;
+    }
+
+    String::from_utf8(out).expect("one-byte substitution preserves UTF-8")
+}
+
+/// Escape Carve inline syntax that is ORDINARY TEXT in Djot.
+///
+/// The converter's job has two halves and this is the half the delimiter rules
+/// cannot do. `/x/`, `=x=`, `%% c` and `{,x,}` carry no meaning in Djot, so an
+/// author writes them as text - but each one IS markup in Carve, so passing
+/// them through unchanged renders something the source never said. `%% c` is
+/// the worst of them: Carve reads it as a line comment and the line disappears
+/// from the output entirely.
+///
+/// Only delimiters this converter does NOT itself rewrite are escaped. `~`,
+/// `*` and `_` are Djot's own, so they are converted rather than escaped, and
+/// `{^…^}`, `{=…=}`, `{+…+}` and `{-…-}` mean the same in both languages.
+///
+/// THE BRACE IS NOT ESCAPED ALONE. Escaping only the `{` of `{/y/}` leaves the
+/// `/y/` inside it bare, and a bare `/` is Carve emphasis, so the "literal"
+/// text still renders as `{<em>y</em>}`. The bare pass below therefore runs
+/// over the escaped brace as well - it has no `{` exclusion - which is what
+/// produces `\{\/y/}` and renders the text the author wrote. A delimiter with
+/// no bare Carve form, such as `,`, needs only the brace.
+fn escape_plain_carve_syntax(source: &str) -> String {
+    let masked = mask_code_and_destinations(source);
+    let mask = masked.as_bytes();
+    let mut at: Vec<usize> = Vec::new();
+
+    // `%%` opens a comment at the start of a line or after whitespace. `%%%` is
+    // not a comment opener, so it is left alone.
+    let mut i = 0;
+    while i + 1 < mask.len() {
+        if mask[i] == b'%'
+            && mask[i + 1] == b'%'
+            && mask.get(i + 2) != Some(&b'%')
+            && !is_escaped(mask, i)
+            && (i == 0 || matches!(mask[i - 1], b' ' | b'\t' | b'\n'))
+        {
+            at.push(i);
+            i += 2;
+            continue;
+        }
+        i += 1;
+    }
+
+    // Braced forms whose delimiter this converter does not own.
+    for delim in *b",/#" {
+        let mut i = 0;
+        while i + 3 < mask.len() {
+            if mask[i] != b'{' || mask[i + 1] != delim || is_escaped(mask, i) {
+                i += 1;
+                continue;
+            }
+            match find_braced_close(mask, i + 2, delim) {
+                Some(end) => {
+                    at.push(i);
+                    i = end + 2;
+                }
+                None => i += 1,
+            }
+        }
+    }
+
+    // Bare pairs. `/` is Carve emphasis and `=` is Carve highlight; neither is
+    // Djot syntax, so both are the author's literal text.
+    for delim in *b"/=" {
+        let mut i = 0;
+        while i < mask.len() {
+            if mask[i] != delim || is_escaped(mask, i) {
+                i += 1;
+                continue;
+            }
+            // `{` is excluded for `=` and NOT for `/`, and the asymmetry is the
+            // point rather than an oversight. `{=x=}` is a highlight in both
+            // languages, so the inner `=` is markup that must survive; there is
+            // no `{/x/}` that means the same in both, so the `/` inside an
+            // escaped brace is literal text and still needs escaping - escaping
+            // the brace alone leaves it free to open Carve emphasis and renders
+            // `{<em>x</em>}`.
+            let brace_protects = delim == b'=';
+            let before_ok = i == 0
+                || !(mask[i - 1].is_ascii_alphanumeric()
+                    || mask[i - 1] == delim
+                    || (brace_protects && mask[i - 1] == b'{'));
+            let after = mask.get(i + 1).copied().unwrap_or(b' ');
+            if !before_ok || after.is_ascii_whitespace() || after == delim {
+                i += 1;
+                continue;
+            }
+            match find_bare_close(mask, i + 1, delim) {
+                Some(end) => {
+                    at.push(i);
+                    i = end + 1;
+                }
+                None => i += 1,
+            }
+        }
+    }
+
+    if at.is_empty() {
+        return source.to_string();
+    }
+
+    at.sort_unstable();
+    at.dedup();
+    let bytes = source.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len() + at.len());
+    let mut cursor = 0;
+    for point in at {
+        out.extend_from_slice(&bytes[cursor..point]);
+        out.push(b'\\');
+        cursor = point;
+    }
+    out.extend_from_slice(&bytes[cursor..]);
+
+    String::from_utf8(out).expect("inserting an ASCII backslash preserves UTF-8")
+}
+
+/// The offset of the `X}` that closes a `{X` opened before `from`, on the same
+/// line, with non-space content between.
+fn find_braced_close(mask: &[u8], from: usize, delim: u8) -> Option<usize> {
+    if mask.get(from).is_some_and(|b| b.is_ascii_whitespace()) {
+        return None;
+    }
+    let mut j = from;
+    while j + 1 < mask.len() {
+        if mask[j] == b'\n' {
+            return None;
+        }
+        if mask[j] == delim && mask[j + 1] == b'}' && j > from && !mask[j - 1].is_ascii_whitespace()
+        {
+            return Some(j);
+        }
+        j += 1;
+    }
+    None
+}
+
+/// The offset of the delimiter closing a bare pair opened before `from`, using
+/// the same word boundaries the Carve parser opens on.
+fn find_bare_close(mask: &[u8], from: usize, delim: u8) -> Option<usize> {
+    let mut j = from;
+    while j < mask.len() {
+        if mask[j] == b'\n' {
+            return None;
+        }
+        if mask[j] == delim {
+            let preceded_by_space = mask[j - 1].is_ascii_whitespace();
+            let after = mask.get(j + 1).copied().unwrap_or(b' ');
+            if j > from && !preceded_by_space && !after.is_ascii_alphanumeric() && after != delim {
+                return Some(j);
+            }
+            return None;
+        }
+        j += 1;
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -592,215 +803,4 @@ mod tests {
         assert_eq!(djot_to_carve("%%% not\n"), "%%% not\n");
         assert_eq!(djot_to_carve("```\n/code/\n```\n"), "```\n/code/\n```\n");
     }
-}
-
-/// Rewrite a Djot `+` bullet marker to `-`.
-///
-/// Djot allows `-`, `*` and `+` as bullets. Carve has no `+` bullet: `+` is the
-/// list-continuation marker, so a Djot `+` list degrades to a paragraph - the
-/// line stops being a list item at all, which is a structural change and not a
-/// delimiter one.
-///
-/// A LONE `+` is left alone. That is the Carve continuation marker itself, and
-/// a marker with no content is exactly the form that means it, so rewriting it
-/// would break the construct this rule exists to protect.
-///
-/// Lines inside a fenced block are skipped via the code mask. The rewrite is
-/// one byte for one byte, so it runs before the mask is taken for the inline
-/// rules and leaves every later offset valid.
-fn normalize_plus_bullets(source: &str) -> String {
-    let masked = mask_code_and_destinations(source);
-    let mask = masked.as_bytes();
-    let mut out = source.as_bytes().to_vec();
-
-    let mut line_start = 0;
-    while line_start <= out.len() {
-        let line_end = mask[line_start..]
-            .iter()
-            .position(|b| *b == b'\n')
-            .map(|n| line_start + n)
-            .unwrap_or(out.len());
-
-        // A masked line is code: its `+` is content, not a marker.
-        let mut i = line_start;
-        while i < line_end && (mask[i] == b' ' || mask[i] == b'\t') {
-            i += 1;
-        }
-
-        if i < line_end && mask[i] == b'+' {
-            // `+ content` is a bullet; a bare `+` (or `+` then only spaces) is
-            // the continuation marker and stays.
-            let mut j = i + 1;
-            let mut spaced = false;
-            while j < line_end && (mask[j] == b' ' || mask[j] == b'\t') {
-                spaced = true;
-                j += 1;
-            }
-            if spaced && j < line_end {
-                out[i] = b'-';
-            }
-        }
-
-        if line_end >= out.len() {
-            break;
-        }
-        line_start = line_end + 1;
-    }
-
-    String::from_utf8(out).expect("one-byte substitution preserves UTF-8")
-}
-
-/// Escape Carve inline syntax that is ORDINARY TEXT in Djot.
-///
-/// The converter's job has two halves and this is the half the delimiter rules
-/// cannot do. `/x/`, `=x=`, `%% c` and `{,x,}` carry no meaning in Djot, so an
-/// author writes them as text - but each one IS markup in Carve, so passing
-/// them through unchanged renders something the source never said. `%% c` is
-/// the worst of them: Carve reads it as a line comment and the line disappears
-/// from the output entirely.
-///
-/// Only delimiters this converter does NOT itself rewrite are escaped. `~`,
-/// `*` and `_` are Djot's own, so they are converted rather than escaped, and
-/// `{^…^}`, `{=…=}`, `{+…+}` and `{-…-}` mean the same in both languages.
-///
-/// THE BRACE IS NOT ESCAPED ALONE. Escaping only the `{` of `{/y/}` leaves the
-/// `/y/` inside it bare, and a bare `/` is Carve emphasis, so the "literal"
-/// text still renders as `{<em>y</em>}`. The bare pass below therefore runs
-/// over the escaped brace as well - it has no `{` exclusion - which is what
-/// produces `\{\/y/}` and renders the text the author wrote. A delimiter with
-/// no bare Carve form, such as `,`, needs only the brace.
-fn escape_plain_carve_syntax(source: &str) -> String {
-    let masked = mask_code_and_destinations(source);
-    let mask = masked.as_bytes();
-    let mut at: Vec<usize> = Vec::new();
-
-    // `%%` opens a comment at the start of a line or after whitespace. `%%%` is
-    // not a comment opener, so it is left alone.
-    let mut i = 0;
-    while i + 1 < mask.len() {
-        if mask[i] == b'%'
-            && mask[i + 1] == b'%'
-            && mask.get(i + 2) != Some(&b'%')
-            && !is_escaped(mask, i)
-            && (i == 0 || matches!(mask[i - 1], b' ' | b'\t' | b'\n'))
-        {
-            at.push(i);
-            i += 2;
-            continue;
-        }
-        i += 1;
-    }
-
-    // Braced forms whose delimiter this converter does not own.
-    for delim in [b',', b'/', b'#'] {
-        let mut i = 0;
-        while i + 3 < mask.len() {
-            if mask[i] != b'{' || mask[i + 1] != delim || is_escaped(mask, i) {
-                i += 1;
-                continue;
-            }
-            match find_braced_close(mask, i + 2, delim) {
-                Some(end) => {
-                    at.push(i);
-                    i = end + 2;
-                }
-                None => i += 1,
-            }
-        }
-    }
-
-    // Bare pairs. `/` is Carve emphasis and `=` is Carve highlight; neither is
-    // Djot syntax, so both are the author's literal text.
-    for delim in [b'/', b'='] {
-        let mut i = 0;
-        while i < mask.len() {
-            if mask[i] != delim || is_escaped(mask, i) {
-                i += 1;
-                continue;
-            }
-            // `{` is excluded for `=` and NOT for `/`, and the asymmetry is the
-            // point rather than an oversight. `{=x=}` is a highlight in both
-            // languages, so the inner `=` is markup that must survive; there is
-            // no `{/x/}` that means the same in both, so the `/` inside an
-            // escaped brace is literal text and still needs escaping - escaping
-            // the brace alone leaves it free to open Carve emphasis and renders
-            // `{<em>x</em>}`.
-            let brace_protects = delim == b'=';
-            let before_ok = i == 0
-                || !(mask[i - 1].is_ascii_alphanumeric()
-                    || mask[i - 1] == delim
-                    || (brace_protects && mask[i - 1] == b'{'));
-            let after = mask.get(i + 1).copied().unwrap_or(b' ');
-            if !before_ok || after.is_ascii_whitespace() || after == delim {
-                i += 1;
-                continue;
-            }
-            match find_bare_close(mask, i + 1, delim) {
-                Some(end) => {
-                    at.push(i);
-                    i = end + 1;
-                }
-                None => i += 1,
-            }
-        }
-    }
-
-    if at.is_empty() {
-        return source.to_string();
-    }
-
-    at.sort_unstable();
-    at.dedup();
-    let bytes = source.as_bytes();
-    let mut out = Vec::with_capacity(bytes.len() + at.len());
-    let mut cursor = 0;
-    for point in at {
-        out.extend_from_slice(&bytes[cursor..point]);
-        out.push(b'\\');
-        cursor = point;
-    }
-    out.extend_from_slice(&bytes[cursor..]);
-
-    String::from_utf8(out).expect("inserting an ASCII backslash preserves UTF-8")
-}
-
-/// The offset of the `X}` that closes a `{X` opened before `from`, on the same
-/// line, with non-space content between.
-fn find_braced_close(mask: &[u8], from: usize, delim: u8) -> Option<usize> {
-    if mask.get(from).is_some_and(|b| b.is_ascii_whitespace()) {
-        return None;
-    }
-    let mut j = from;
-    while j + 1 < mask.len() {
-        if mask[j] == b'\n' {
-            return None;
-        }
-        if mask[j] == delim && mask[j + 1] == b'}' && j > from && !mask[j - 1].is_ascii_whitespace()
-        {
-            return Some(j);
-        }
-        j += 1;
-    }
-    None
-}
-
-/// The offset of the delimiter closing a bare pair opened before `from`, using
-/// the same word boundaries the Carve parser opens on.
-fn find_bare_close(mask: &[u8], from: usize, delim: u8) -> Option<usize> {
-    let mut j = from;
-    while j < mask.len() {
-        if mask[j] == b'\n' {
-            return None;
-        }
-        if mask[j] == delim {
-            let preceded_by_space = mask[j - 1].is_ascii_whitespace();
-            let after = mask.get(j + 1).copied().unwrap_or(b' ');
-            if j > from && !preceded_by_space && !after.is_ascii_alphanumeric() && after != delim {
-                return Some(j);
-            }
-            return None;
-        }
-        j += 1;
-    }
-    None
 }
