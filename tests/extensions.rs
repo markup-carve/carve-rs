@@ -68,6 +68,23 @@ fn semantic_shorthands_render_as_html_elements() {
         carve::to_html(":foo[x]"),
         "<p><span class=\"ext-foo\">x</span></p>"
     );
+
+    assert_eq!(
+        carve::to_html(":time[*noon*]{#clock .local datetime=\"12:00\" onclick=\"x\"}"),
+        "<p><time id=\"clock\" class=\"local\" datetime=\"12:00\"><strong>noon</strong></time></p>"
+    );
+    assert_eq!(
+        carve::to_html(":widget[x]{.control}"),
+        "<p><span class=\"ext-widget control\">x</span></p>"
+    );
+}
+
+#[test]
+fn semantic_shorthands_are_content_on_non_html_targets_and_preserve_source() {
+    let source = ":abbr[*HTML*]{title=\"HyperText Markup Language\"}";
+    assert_eq!(carve::to_plain_text(source), "HTML\n");
+    assert!(carve::to_ansi(source).contains("HTML"));
+    assert_eq!(carve::to_carve(source), format!("{source}\n"));
 }
 
 struct Wiki;
