@@ -7650,6 +7650,18 @@ fn collect_indented_block_plain_with(
     let mut comment_fence_strip: Option<usize> = None;
     while let Some(line) = cur.peek() {
         if is_blank_line(line) {
+            // INSIDE AN OPEN FENCE A BLANK IS CONTENT, not a gap between blocks.
+            // The lookahead below asks whether the ITEM continues, and answers
+            // no when nothing after the blank reaches the content column - which
+            // is right for spacing and wrong for a fence still running, whose
+            // body continues to its closer or to the container's end. A fence
+            // that ended with the item therefore lost its trailing blank before
+            // any join could preserve it (markup-carve/carve-rs#908).
+            if fence.is_some() {
+                lines.push(String::new());
+                cur.consume();
+                continue;
+            }
             {
                 // No block collected yet means the item's content is all on the
                 // MARKER line (`- - a`, `- # H`), so there is no block indent to
@@ -7753,7 +7765,15 @@ fn collect_indented_block_plain_with(
         lines.push(sliced);
         cur.consume();
     }
-    lines.join("\n")
+    // TERMINATE while a fence is still open, so the blank the loop above just
+    // collected survives the round trip back through `str::lines()`. Outside a
+    // fence a trailing blank is spacing and the plain join is right
+    // (markup-carve/carve-rs#908).
+    let mut source = lines.join("\n");
+    if fence.is_some() && lines.last().is_some_and(|line| line.is_empty()) {
+        source.push('\n');
+    }
+    source
 }
 
 fn detect_block_image(line: &str) -> Option<Image> {
