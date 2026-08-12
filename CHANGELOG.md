@@ -7,6 +7,14 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **The existing nine-name semantic inline registry is now spec- and
+  corpus-pinned across all engines.** `:abbr[…]`, `:cite[…]`, `:dfn[…]`,
+  `:kbd[…]`, `:samp[…]`, `:var[…]`, `:time[…]`, `:code[…]`, and `:mark[…]`
+  retain their existing same-named HTML output; this release adds explicit
+  attribute-hardening, non-HTML and source-writer conformance coverage.
+
 ### Added
 
 - **`SmartQuotes` extension**, matching carve-php's locale quote configuration:

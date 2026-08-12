@@ -161,6 +161,14 @@ Runnable version of all of the above, including what a rejection looks like:
 
 ## Extensions
 
+Nine semantic inline names are built in and need no registration: `abbr`,
+`cite`, `dfn`, `kbd`, `samp`, `var`, `time`, `code`, and `mark`.
+`:name[content]{attrs}` remains an ordinary inline-extension AST node and maps
+to the same-named HTML element; unknown names retain the generic
+`<span class="ext-name">` fallback. Plain and ANSI render only the content.
+`:cite[…]` is distinct from bibliographic `[@key]` citations, and `:abbr[…]`
+does not declare an automatic abbreviation.
+
 Opt-in extensions implement `CarveExtension` and are passed through `Options`.
 An extension can add inline/block matchers, run `after_parse` and
 `before_render` AST transforms, and override renderers for extension nodes such
