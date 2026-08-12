@@ -286,6 +286,8 @@ pub struct BlockQuote {
 pub struct Table {
     pub attrs: Option<Attrs>,
     pub caption: Option<Vec<InlineNode>>,
+    /// Structured publishing/navigation label; Carve 0.1 source has no spelling.
+    pub short_caption: Option<Vec<InlineNode>>,
     pub rows: Vec<TableRow>,
     /// Span in the original source, when the parser could determine it.
     pub pos: Option<Pos>,
@@ -443,6 +445,8 @@ pub struct Figure {
     pub attrs: Option<Attrs>,
     pub target: FigureTarget,
     pub caption: Vec<InlineNode>,
+    /// Structured publishing/navigation label; ordinary renderers ignore it.
+    pub short_caption: Option<Vec<InlineNode>>,
     /// Span in the original source, when the parser could determine it.
     pub pos: Option<Pos>,
 }

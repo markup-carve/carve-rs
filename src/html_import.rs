@@ -519,6 +519,7 @@ impl<'a> Importer<'a> {
         Ok(Table {
             attrs,
             caption: None,
+            short_caption: None,
             rows: result,
             pos: None,
         })

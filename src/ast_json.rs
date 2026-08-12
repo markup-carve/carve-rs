@@ -742,6 +742,9 @@ fn write_block(out: &mut String, node: &BlockNode) {
             let mut w = typed(out, "figure");
             w.field("target", |out| write_figure_target(out, &n.target));
             w.field("caption", |out| write_inlines(out, &n.caption));
+            if let Some(short_caption) = &n.short_caption {
+                w.field("shortCaption", |out| write_inlines(out, short_caption));
+            }
             write_attrs_field(&mut w, &n.attrs);
             write_pos_field(&mut w, &n.pos);
             w.finish();
@@ -856,6 +859,9 @@ fn write_table(out: &mut String, n: &Table) {
     w.field("rows", |out| write_array(out, &n.rows, write_table_row));
     if let Some(caption) = &n.caption {
         w.field("caption", |out| write_inlines(out, caption));
+    }
+    if let Some(short_caption) = &n.short_caption {
+        w.field("shortCaption", |out| write_inlines(out, short_caption));
     }
     write_attrs_field(&mut w, &n.attrs);
     write_pos_field(&mut w, &n.pos);
@@ -1534,6 +1540,7 @@ fn decode_block(value: &Json) -> Result<BlockNode, AstJsonError> {
             attrs: optional_attrs(obj)?,
             target: decode_figure_target(required_value(obj, "figure", "target")?)?,
             caption: decode_inlines(required_array(obj, "figure", "caption")?)?,
+            short_caption: optional_inlines(obj, "shortCaption")?,
             pos: optional_pos(obj, "figure")?,
         })),
         "link_reference_definition" => Ok(BlockNode::LinkReferenceDefinition(
@@ -1596,6 +1603,7 @@ fn decode_table(obj: &BTreeMap<String, Json>) -> Result<Table, AstJsonError> {
     Ok(Table {
         attrs: optional_attrs(obj)?,
         caption: optional_inlines(obj, "caption")?,
+        short_caption: optional_inlines(obj, "shortCaption")?,
         rows: required_array(obj, "table", "rows")?
             .iter()
             .map(decode_table_row)
