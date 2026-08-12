@@ -15,6 +15,20 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   per-quote overrides. Apostrophes remain U+2019 regardless of locale. This
   makes the German optional-corpus case a three-engine comparison.
 
+- **`djot_to_carve`**, a Djot to Carve migration, ported from carve-php
+  `DjotToCarve` (itself the converter form of the carve-js `djot-migrate`
+  linter). Several inline delimiters mean different things in the two
+  languages, so a Djot document fed to a Carve processor renders wrong with no
+  error; this rewrites exactly those - `_x_` becomes `/x/`, `~x~` becomes
+  `{,x,}`, `^x^` becomes `{^x^}`, `**x**` becomes `*x*`, `~~x~~` becomes `~x~`
+  - and leaves alone the constructs that mean the same in both. Only the
+  delimiters are replaced, so nested constructs of different families compose.
+  Code (fenced and inline), link destinations and backslash-escaped delimiters
+  are never rewritten. Intraword underscores are deliberately left literal: a
+  strict Djot reader emphasizes `snake_case_name` and this migration does not,
+  because the documents it exists for are full of identifiers no author meant
+  as emphasis. That divergence is documented at the guard.
+
 - **`CodeGroup` extension**, ported from carve-js `code-group` and carve-php
   `CodeGroupExtension`. Renders a `::: code-group` container - or any div
   carrying the `code-group` class - as radio-driven tabbed code panels, one tab
