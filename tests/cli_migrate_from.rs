@@ -15,12 +15,23 @@ fn run(args: &[&str], input: &str) -> (String, String, bool) {
         .stderr(Stdio::piped())
         .spawn()
         .expect("spawn carve binary");
-    child
-        .stdin
-        .take()
-        .expect("stdin")
-        .write_all(input.as_bytes())
-        .expect("write stdin");
+    // A BROKEN PIPE HERE IS NOT A FAILURE. A run that rejects its arguments
+    // prints usage and exits WITHOUT reading stdin, so this write races that
+    // exit: it lands in the pipe buffer when the child is still alive and hits
+    // a closed pipe when it is not. Both are the behavior under test, and
+    // panicking on the second made `rejects_an_unknown_source_format` and
+    // `names_every_source_format_when_from_is_missing` fail intermittently on
+    // main. The exit status and stderr are the assertions; delivery of stdin
+    // to a process that does not want it is not.
+    let mut stdin = child.stdin.take().expect("stdin");
+    match stdin.write_all(input.as_bytes()) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::BrokenPipe => {}
+        Err(error) => panic!("write stdin: {error}"),
+    }
+    // Explicit, because the child waits on EOF and the borrow above no longer
+    // ends the moment the write does.
+    drop(stdin);
     let out = child.wait_with_output().expect("wait carve binary");
     (
         String::from_utf8(out.stdout).expect("utf8 stdout"),
