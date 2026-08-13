@@ -1544,6 +1544,7 @@ fn render_table_row(
         }
         out.push('<');
         out.push_str(tag);
+        out.push_str(&cell_scope_attr(cell, tag == "th", header_row));
         out.push_str(&render_cell_author_attrs(&cell.attrs, &emitted));
         out.push_str(&extra);
         out.push_str(&align);
@@ -1581,7 +1582,8 @@ fn render_table_body_row(
             // nothing to extend (no cell above) renders an EMPTY cell (§5).
             if ctx.orphan_carets.contains(&(source_row_idx, cell_index)) {
                 let tag = if cell.header { "th" } else { "td" };
-                write!(out, "<{tag}></{tag}>").unwrap();
+                let scope = cell_scope_attr(cell, cell.header, false);
+                write!(out, "<{tag}{scope}></{tag}>").unwrap();
             }
             continue;
         }
@@ -1597,7 +1599,8 @@ fn render_table_body_row(
             // an EMPTY cell (§5).
             if colspan_target(row, cell_index, &consumed_cols).is_none() {
                 let tag = if cell.header { "th" } else { "td" };
-                write!(out, "<{tag}></{tag}>").unwrap();
+                let scope = cell_scope_attr(cell, cell.header, false);
+                write!(out, "<{tag}{scope}></{tag}>").unwrap();
             }
             continue;
         }
@@ -1617,6 +1620,8 @@ fn render_table_body_row(
         let tag = if cell.header { "th" } else { "td" };
         out.push('<');
         out.push_str(tag);
+        // Below the header run, so a header cell here heads its ROW.
+        out.push_str(&cell_scope_attr(cell, cell.header, false));
         out.push_str(&render_cell_author_attrs(&cell.attrs, &emitted));
         out.push_str(&attrs);
         out.push('>');
@@ -1645,6 +1650,40 @@ fn render_align_attr(align: Option<TableAlign>) -> String {
 /// for the cell (`rowspan` / `colspan` / `style`) -- the computed value is
 /// authoritative. When no such structural attribute is emitted, the author's
 /// value (e.g. a custom `style`) is preserved.
+/// PART 10 SST9: a header cell states what it heads - `col` in the leading
+/// header-row run, `row` below it. The language already distinguishes the two
+/// positions, so this states an association the table has rather than adding a
+/// concept; without it a screen reader guesses from position and guesses wrong
+/// on any table carrying both kinds.
+///
+/// Empty when the author named a `scope` themselves. An authored value REPLACES
+/// the default rather than joining it: emitting both gives
+/// `<th scope="col" scope="colgroup">`, two attributes of one name and invalid
+/// HTML. Suppressing it is also what keeps `colgroup` and `rowgroup` reachable,
+/// since neither has a marker spelling here.
+///
+/// The test is case-INSENSITIVE, the one place this departs from Carve's
+/// case-sensitive attribute names: `{Scope=...}` stays a different Carve
+/// attribute and still reaches the output as `Scope`, but HTML attribute names
+/// are not case-sensitive, so emitting the default beside it is the same
+/// collision by another spelling.
+fn cell_scope_attr(cell: &TableCell, is_header_cell: bool, in_header_run: bool) -> String {
+    if !is_header_cell {
+        return String::new();
+    }
+    if let Some(attrs) = &cell.attrs {
+        if attrs
+            .key_values
+            .keys()
+            .any(|key| key.eq_ignore_ascii_case("scope"))
+        {
+            return String::new();
+        }
+    }
+
+    format!(" scope=\"{}\"", if in_header_run { "col" } else { "row" })
+}
+
 fn render_cell_author_attrs(attrs: &Option<Attrs>, emitted: &[&str]) -> String {
     let Some(a) = attrs else {
         return String::new();

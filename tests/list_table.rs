@@ -98,7 +98,7 @@ fn header_rows_promote_to_thead() {
         h("{header-rows=1}\n::: list-table\n- - Region\n  - Q1\n- - EMEA\n  - 10\n:::"),
         [
             "<table>",
-            "  <thead><tr><th>Region</th><th>Q1</th></tr></thead>",
+            "  <thead><tr><th scope=\"col\">Region</th><th scope=\"col\">Q1</th></tr></thead>",
             "  <tbody>",
             "    <tr><td>EMEA</td><td>10</td></tr>",
             "  </tbody>",
@@ -116,7 +116,7 @@ fn boolean_header_rows_promotes_first_row() {
         h("{header-rows}\n::: list-table\n- - Region\n  - Q1\n- - EMEA\n  - 10\n:::"),
         [
             "<table>",
-            "  <thead><tr><th>Region</th><th>Q1</th></tr></thead>",
+            "  <thead><tr><th scope=\"col\">Region</th><th scope=\"col\">Q1</th></tr></thead>",
             "  <tbody>",
             "    <tr><td>EMEA</td><td>10</td></tr>",
             "  </tbody>",
@@ -133,8 +133,8 @@ fn boolean_header_cols_promotes_first_column() {
         [
             "<table>",
             "  <tbody>",
-            "    <tr><th>Region</th><td>Q1</td></tr>",
-            "    <tr><th>EMEA</th><td>10</td></tr>",
+            "    <tr><th scope=\"row\">Region</th><td>Q1</td></tr>",
+            "    <tr><th scope=\"row\">EMEA</th><td>10</td></tr>",
             "  </tbody>",
             "</table>",
         ]
@@ -149,8 +149,8 @@ fn header_cols_promote_first_cell_to_row_header() {
         [
             "<table>",
             "  <tbody>",
-            "    <tr><th>Region</th><td>Q1</td></tr>",
-            "    <tr><th>EMEA</th><td>10</td></tr>",
+            "    <tr><th scope=\"row\">Region</th><td>Q1</td></tr>",
+            "    <tr><th scope=\"row\">EMEA</th><td>10</td></tr>",
             "  </tbody>",
             "</table>",
         ]
@@ -164,9 +164,9 @@ fn header_rows_and_cols_combine() {
         h("{header-rows=1}\n{header-cols=1}\n::: list-table\n- - Region\n  - Q1\n- - EMEA\n  - 10\n:::"),
         [
             "<table>",
-            "  <thead><tr><th>Region</th><th>Q1</th></tr></thead>",
+            "  <thead><tr><th scope=\"col\">Region</th><th scope=\"col\">Q1</th></tr></thead>",
             "  <tbody>",
-            "    <tr><th>EMEA</th><td>10</td></tr>",
+            "    <tr><th scope=\"row\">EMEA</th><td>10</td></tr>",
             "  </tbody>",
             "</table>",
         ]
@@ -204,7 +204,7 @@ fn sales_example_rowspan_and_colspan() {
         [
             "<table>",
             "  <caption>Sales</caption>",
-            "  <thead><tr><th>Region</th><th>Q1</th><th>Q2</th></tr></thead>",
+            "  <thead><tr><th scope=\"col\">Region</th><th scope=\"col\">Q1</th><th scope=\"col\">Q2</th></tr></thead>",
             "  <tbody>",
             "    <tr><td rowspan=\"2\">EMEA</td><td>10</td><td>12</td></tr>",
             "    <tr><td>14</td><td>16</td></tr>",
@@ -297,7 +297,7 @@ fn header_rowspan_clamped_at_thead_tbody_boundary() {
         h("{header-rows=1}\n::: list-table\n- - H1\n  - H2\n- - ^\n  - B2\n:::"),
         [
             "<table>",
-            "  <thead><tr><th>H1</th><th>H2</th></tr></thead>",
+            "  <thead><tr><th scope=\"col\">H1</th><th scope=\"col\">H2</th></tr></thead>",
             "  <tbody>",
             "    <tr><td></td><td>B2</td></tr>",
             "  </tbody>",
@@ -343,7 +343,7 @@ fn table_attributes_carry_onto_table_tag() {
         h("{#t1 .striped header-rows=1}\n::: list-table\n- - A\n  - B\n- - C\n  - D\n:::"),
         [
             "<table id=\"t1\" class=\"striped\">",
-            "  <thead><tr><th>A</th><th>B</th></tr></thead>",
+            "  <thead><tr><th scope=\"col\">A</th><th scope=\"col\">B</th></tr></thead>",
             "  <tbody>",
             "    <tr><td>C</td><td>D</td></tr>",
             "  </tbody>",

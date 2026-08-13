@@ -51,7 +51,7 @@ fn a_marker_after_whitespace_is_content_not_alignment() {
 
     let header = carve::to_html("|= <  A |= B |\n| 1 | 2 |");
     assert!(
-        header.contains("<th>&lt;  A</th>"),
+        header.contains("<th scope=\"col\">&lt;  A</th>"),
         "a header cell aligned on a spaced marker: {header}"
     );
 }
@@ -62,7 +62,7 @@ fn a_glued_marker_still_aligns() {
     // second is literal content.
     let header = carve::to_html("|=<< Note |= B |\n| 1 | 2 |");
     assert!(
-        header.contains(r#"<th style="text-align: left;">&lt; Note</th>"#),
+        header.contains(r#"<th scope="col" style="text-align: left;">&lt; Note</th>"#),
         "got {header}"
     );
 
@@ -70,7 +70,7 @@ fn a_glued_marker_still_aligns() {
     // the `=` already marks the cell, so there is no span to confuse it with.
     let lone = carve::to_html("|=< |= B |\n| 1 | 2 |");
     assert!(
-        lone.contains(r#"<th style="text-align: left;"></th>"#),
+        lone.contains(r#"<th scope="col" style="text-align: left;"></th>"#),
         "got {lone}"
     );
 

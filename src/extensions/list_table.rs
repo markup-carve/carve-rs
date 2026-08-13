@@ -327,6 +327,17 @@ fn render_row(
         let is_header_cell = is_header_row || col < header_cols;
         let tag = if is_header_cell { "th" } else { "td" };
         let mut attr_html = String::new();
+        // PART 10 SST9, the same rule and the same position as the pipe table:
+        // `col` in the header-row run, `row` for a cell that is a header only
+        // because it falls inside `header-cols`. A ListTable and the pipe table
+        // it is equivalent to must not differ in accessibility markup.
+        if is_header_cell {
+            attr_html.push_str(if is_header_row {
+                " scope=\"col\""
+            } else {
+                " scope=\"row\""
+            });
+        }
         if entry.rowspan > 1 {
             attr_html.push_str(&format!(" rowspan=\"{}\"", entry.rowspan));
         }
@@ -348,12 +359,19 @@ fn render_row(
     // Pad trailing columns so a ragged row stays rectangular.
     let mut col = next_col.max(placement.row_reach[row_index]);
     while col < column_count {
-        let tag = if is_header_row || col < header_cols {
-            "th"
+        let is_pad_header = is_header_row || col < header_cols;
+        let tag = if is_pad_header { "th" } else { "td" };
+        // A padded cell is still a header cell where the grid says so.
+        let scope = if is_pad_header {
+            if is_header_row {
+                " scope=\"col\""
+            } else {
+                " scope=\"row\""
+            }
         } else {
-            "td"
+            ""
         };
-        html.push_str(&format!("<{tag}></{tag}>"));
+        html.push_str(&format!("<{tag}{scope}></{tag}>"));
         col += 1;
     }
 

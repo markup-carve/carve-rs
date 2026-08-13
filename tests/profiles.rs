@@ -348,7 +348,7 @@ fn denying_table_cell_flattens_cells_to_text() {
     assert!(out.contains("<table>"), "{out}");
     // The strong/inline structure inside cells is gone (here cells are plain).
     assert!(
-        out.contains("<td>1</td>") || out.contains("<th>a</th>"),
+        out.contains("<td>1</td>") || out.contains("<th scope=\"col\">a</th>"),
         "{out}"
     );
 }
