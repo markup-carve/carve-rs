@@ -2090,8 +2090,17 @@ fn render_attrs(attrs: &Option<Attrs>) -> String {
     };
     let emit_key = |parts: &mut Vec<String>, key: &str| {
         if let Some(value) = attrs.key_values.get(key) {
-            if key.eq_ignore_ascii_case("lang") && is_language_tag(value) {
+            // EXACT key match, not case-insensitive: `LANG` and `lang` are
+            // different attribute names, so folding here rewrote
+            // `[x]{LANG=fr}` into `[x]{:fr}` and changed the name, which
+            // breaks PART 11 §1 (carve#1137).
+            if key == "lang" && is_language_tag(value) {
                 parts.push(format!(":{value}"));
+            } else if value.is_empty() && is_attr_identifier(key) {
+                // PART 11 §6c: a value-less attribute comes back as the bare
+                // name, which is the production the language has for it. A key
+                // needing escaping has no bare spelling to fall back to.
+                parts.push(escape_attr_key(key));
             } else {
                 parts.push(format!(
                     "{}={}",
