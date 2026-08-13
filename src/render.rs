@@ -2787,15 +2787,33 @@ fn render_inline_extension(
     // contributes id / key-values after. Matches the math-span merge and
     // carve-js / carve-php.
     let base = format!("ext-{}", node.name);
-    let (class, rest) = match &node.attrs {
-        Some(a) if !a.classes.is_empty() => (
-            dedup_class_str(&format!("{} {}", base, a.classes.join(" "))),
-            render_attrs_after_class(a),
-        ),
-        Some(a) => (base, render_attrs_after_class(a)),
-        None => (base, String::new()),
-    };
-    out.push_str(&format!("<span class=\"{}\"{}>", escape_attr(&class), rest));
+    match &node.attrs {
+        // PART 10 §1: the structural class merges INTO the author's class slot,
+        // and the slot keeps the position the author wrote it in -
+        // `:widget[x]{#i .c k=v}` is `<span id="i" class="ext-widget c" k="v">`.
+        // Rendering the class first instead REORDERS the author's attributes,
+        // which is a different rule (corpus 45-inline-extensions-12,
+        // markup-carve/carve#1164).
+        Some(a) if !a.classes.is_empty() => {
+            let mut merged = a.clone();
+            merged.classes = vec![dedup_class_str(&format!(
+                "{} {}",
+                base,
+                a.classes.join(" ")
+            ))];
+            out.push_str("<span");
+            write_attrs(out, &Some(merged));
+            out.push('>');
+        }
+        // With no class slot to merge into there is nothing to reorder, so the
+        // structural class leads.
+        Some(a) => out.push_str(&format!(
+            "<span class=\"{}\"{}>",
+            escape_attr(&base),
+            render_attrs_after_class(a)
+        )),
+        None => out.push_str(&format!("<span class=\"{}\">", escape_attr(&base))),
+    }
     render_inlines_stateful(out, &node.children, options, state);
     out.push_str("</span>");
 }
