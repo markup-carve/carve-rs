@@ -23,7 +23,9 @@ fn preserves_non_html_targets() {
     let doc = parse(source);
     assert_eq!(render_plain_text(&doc).unwrap(), "Ctrl\n");
     assert_eq!(render_ansi(&doc).unwrap(), "Ctrl\n");
-    assert_eq!(render_carve(&doc).unwrap(), "[Ctrl]{kbd=\"\"}\n");
+    // PART 11 §6c: a value-less attribute comes back as the bare name, which is
+    // also the form PART 9 §10 documents for this construct.
+    assert_eq!(render_carve(&doc).unwrap(), "[Ctrl]{kbd}\n");
 }
 
 #[test]
