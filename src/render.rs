@@ -2115,9 +2115,7 @@ fn render_inlines_stateful(
     }
 }
 
-const SEMANTIC_SPAN_ORDER: [&str; 9] = [
-    "abbr", "time", "code", "mark", "samp", "var", "kbd", "cite", "dfn",
-];
+const SEMANTIC_SPAN_ORDER: [&str; 7] = ["abbr", "time", "samp", "var", "kbd", "cite", "dfn"];
 
 /// PART 10 §10 compact semantic attributes on an ordinary authored span.
 fn render_semantic_span(
@@ -2722,9 +2720,12 @@ fn render_inline_extension(
     // Semantic shorthands: `:tag[content]` renders as the matching HTML element
     // (matches carve-js / carve-php). Any other name falls back to a generic
     // `<span class="ext-NAME">`.
-    const SEMANTIC_TAGS: [&str; 9] = [
-        "kbd", "dfn", "abbr", "cite", "samp", "var", "code", "mark", "time",
-    ];
+    //
+    // PART 9 §9: the registry holds no element Carve already spells, so `code`
+    // and `mark` are absent - a code span writes <code> and =x= writes <mark>.
+    // `code` also made the duplication a defect: a code span is verbatim while
+    // an extension body is parsed, so one tag carried two content models.
+    const SEMANTIC_TAGS: [&str; 7] = ["kbd", "dfn", "abbr", "cite", "samp", "var", "time"];
     if SEMANTIC_TAGS.contains(&node.name.as_str()) {
         out.push_str(&format!("<{}{}>", node.name, render_attrs(&node.attrs)));
         render_inlines_stateful(out, &node.children, options, state);

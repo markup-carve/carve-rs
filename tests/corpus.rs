@@ -13,6 +13,7 @@ use std::fs;
 use std::path::PathBuf;
 
 const IMPLEMENTED: &[&str] = &[
+    "the-semantic-registry-holds-no-element-carve-already-spells",
     "a-language-attribute-is-exact-sugar-for-lang",
     "a-malformed-language-tag-leaves-the-whole-block-literal",
     "a-language-attribute-and-lang-are-one-key",

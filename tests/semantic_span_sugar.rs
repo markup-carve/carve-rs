@@ -5,7 +5,7 @@ fn renders_the_fixed_registry_and_value_mappings() {
     let source = "[CSS]{dfn abbr=\"Cascading Style Sheets\"}\n[Noon]{time=\"12:00\"} [x]{code mark samp var kbd cite}";
     assert_eq!(
         to_html(source),
-        "<p><dfn><abbr title=\"Cascading Style Sheets\">CSS</abbr></dfn>\n<time datetime=\"12:00\">Noon</time> <cite><kbd><var><samp><mark><code>x</code></mark></samp></var></kbd></cite></p>"
+        "<p><dfn><abbr title=\"Cascading Style Sheets\">CSS</abbr></dfn>\n<time datetime=\"12:00\">Noon</time> <span code=\"\" mark=\"\"><cite><kbd><var><samp>x</samp></var></kbd></cite></span></p>"
     );
 }
 

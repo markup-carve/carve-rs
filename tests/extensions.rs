@@ -53,8 +53,6 @@ fn semantic_shorthands_render_as_html_elements() {
         ("cite", "<cite>x</cite>"),
         ("samp", "<samp>x</samp>"),
         ("var", "<var>x</var>"),
-        ("code", "<code>x</code>"),
-        ("mark", "<mark>x</mark>"),
         ("time", "<time>x</time>"),
     ] {
         assert_eq!(
@@ -68,6 +66,29 @@ fn semantic_shorthands_render_as_html_elements() {
         carve::to_html(":foo[x]"),
         "<p><span class=\"ext-foo\">x</span></p>"
     );
+
+    // PART 9 §9: the registry holds no element Carve already spells, so these
+    // two take the same fallback. `code` is why the rule is a rule: a code span
+    // is verbatim while an extension body is parsed, so the registry entry gave
+    // one tag two content models.
+    for (source, html) in [
+        (
+            ":code[*b*]",
+            "<span class=\"ext-code\"><strong>b</strong></span>",
+        ),
+        (
+            ":mark[*b*]",
+            "<span class=\"ext-mark\"><strong>b</strong></span>",
+        ),
+        ("`*b*`", "<code>*b*</code>"),
+        ("=*b*=", "<mark><strong>b</strong></mark>"),
+    ] {
+        assert_eq!(
+            carve::to_html(source),
+            format!("<p>{html}</p>"),
+            "the spelling Carve already has: {source}"
+        );
+    }
 
     assert_eq!(
         carve::to_html(":time[*noon*]{#clock .local datetime=\"12:00\" onclick=\"x\"}"),

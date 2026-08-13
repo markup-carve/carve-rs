@@ -7,7 +7,29 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **`code` and `mark` leave the built-in semantic registry.** Both spellings
+  follow the spec's seven-name list - `abbr`, `time`, `samp`, `var`, `kbd`,
+  `cite`, `dfn` - so `:code[x]` and `:mark[x]` take the generic
+  `<span class="ext-NAME">` fallback and `[x]{code}` / `[x]{mark}` are ordinary
+  boolean attributes on the outer span. A name belongs in the registry only
+  where Carve has no other INLINE spelling for that element, and these two have
+  one: a code span writes `<code>`, `=x=` writes `<mark>`. `code` is also where
+  the duplication became a defect - a code span is verbatim while an extension
+  body is parsed, so `` `*b*` `` and `:code[*b*]` produced the same tag with
+  different content models and nothing reported the switch
+  (markup-carve/carve#1146).
+
 ### Added
+
+- **The `{:TAG}` language attribute** (markup-carve/carve#1114). `[x]{:fr}` is
+  exact sugar for `{lang=fr}`, on inline spans and block attribute lines alike;
+  `{:}` is the explicit "language unknown" form and desugars to `lang=""`. A
+  malformed tag leaves the whole block literal, and the sigil takes no padding,
+  so `{: fr}` is the empty attribute plus a separate boolean. This shipped
+  without a changelog entry when the feature landed; recorded here rather than
+  left to the diff.
 
 - **`carve migrate --from djot` runs the Djot importer.** `djot_to_carve` was
   library-only, so the only way to reach it was to link the crate, while the
