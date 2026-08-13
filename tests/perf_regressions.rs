@@ -347,13 +347,22 @@ fn measure_scaling_at(build: &impl Fn(usize) -> String, small_n: usize, large_n:
         }
     }
 
-    let median = |mut xs: Vec<f64>| -> f64 {
-        xs.sort_by(|a, b| a.partial_cmp(b).unwrap());
-        xs[xs.len() / 2]
-    };
+    // BEST of the rounds, not the median. Scheduler noise is one-sided: it can
+    // only make a sample slower, never faster, so the minimum is the closest
+    // estimate of the parse's own cost and the median carries whatever load the
+    // machine happened to be under. With a median, the ratio clustered at
+    // 2.02-2.06x against a 2.0 cutoff and tripped roughly one run in three while
+    // the parse was unchanged - which trains everyone to re-run a red perf test,
+    // and that is how a real quadratic regression gets waved through
+    // (carve-rs#952).
+    //
+    // It does not weaken the guard. A quadratic shape is ~4x per byte at 4x the
+    // input in EVERY round, so its minimum is quadratic too; only the noise the
+    // threshold was catching goes away.
+    let best = |xs: Vec<f64>| -> f64 { xs.into_iter().fold(f64::INFINITY, f64::min) };
 
-    let small_secs = median(small_samples);
-    let large_secs = median(large_samples);
+    let small_secs = best(small_samples);
+    let large_secs = best(large_samples);
 
     Scaling {
         small_secs,
