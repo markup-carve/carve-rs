@@ -128,6 +128,7 @@ const IMPLEMENTED: &[&str] = &[
     "literal-less-than-in-prose",
     "boolean-attributes",
     "a-boolean-and-a-key-value-of-the-same-name-are-one-attribute",
+    "two-attributes-need-a-separator-between-them",
     "table-span-marker-in-first-column",
     "table-cell-attributes",
     "table-row-attributes",
