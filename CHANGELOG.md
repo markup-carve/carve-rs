@@ -7,6 +7,17 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **The HTML importer keeps an authored table-cell `scope`** (carve-rs#944).
+  `<th scope="colgroup">` imported with the value gone, so a second conversion
+  back to HTML could not produce it. `colgroup` and `rowgroup` have no marker
+  spelling and no positional derivation, so an authored one is the only way to
+  get them. A `scope` that merely restates the positional default PART 10 §T9
+  emits - `col` in the head-row run, `row` below it - is still dropped, because
+  importing that would write this engine's own output back in as if the author
+  had typed it.
+
 ### Added
 
 - **`extensions::semantic_span::SemanticSpan`** (spec PART 9 §10,

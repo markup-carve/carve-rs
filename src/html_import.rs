@@ -253,6 +253,13 @@ impl<'a> Importer<'a> {
                     && name != "data-djot-src"
                     && name != "data-carve-src")
                     || (name == "title" && tag != "a" && tag != "img")
+                    // A header cell's `scope` is REPRESENTABLE (PART 10 SST9)
+                    // and is kept here, so a value the positional default
+                    // cannot explain survives the import. `import_table` drops
+                    // it again when it merely restates that default, which is
+                    // what stops this engine's own output being read back as
+                    // if the author had typed it (carve-rs#944).
+                    || (name == "scope" && (tag == "th" || tag == "td"))
                 {
                     out.key_values.insert(name, value);
                 } else if name == "style" {
@@ -551,6 +558,32 @@ impl<'a> Importer<'a> {
                 attrs: None,
                 pos: None,
             });
+        }
+
+        // PART 10 SST9 gives every `th` a `scope` from its POSITION: `col` in
+        // the leading run of all-header rows, `row` for a header cell below it.
+        // A value equal to that default carries no information the renderer
+        // cannot reproduce, and importing it would write this engine's own
+        // output back as if the author had written it. A value the default
+        // cannot explain - `colgroup`, `rowgroup`, which have no marker
+        // spelling - is the only way to get it, so it stays (carve-rs#944).
+        let head_run = result
+            .iter()
+            .take_while(|row| !row.cells.is_empty() && row.cells.iter().all(|c| c.header))
+            .count();
+        for (r, row) in result.iter_mut().enumerate() {
+            for cell in row.cells.iter_mut() {
+                if !cell.header {
+                    continue;
+                }
+                let default = if r < head_run { "col" } else { "row" };
+                let Some(attrs) = cell.attrs.as_mut() else {
+                    continue;
+                };
+                if attrs.key_values.get("scope").map(String::as_str) == Some(default) {
+                    attrs.key_values.remove("scope");
+                }
+            }
         }
         Ok(Table {
             attrs,
