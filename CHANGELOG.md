@@ -7,6 +7,16 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **`carve migrate --from djot` runs the Djot importer.** `djot_to_carve` was
+  library-only, so the only way to reach it was to link the crate, while the
+  CLI answered `--from djot` with `unknown source format djot`. Like Markdown
+  it takes no mode and writes no report - it parses its source whole and drops
+  nothing - so `--mode`, `--adapter`, `--report` and `--check-loss` remain
+  HTML's alone and stay ignored rather than rejected. The `migrate` subcommand
+  is also listed in `-h` for the first time.
+
 ### Fixed
 
 - **A hash in Djot source is not a Carve tag** (markup-carve/carve-php#1191).

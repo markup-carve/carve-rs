@@ -37,6 +37,10 @@ spelling: a setext heading comes back as `#`, an indented code block as a
 fence. There is no mode or report, because nothing is dropped - the
 `--mode`/`--adapter`/`--report` options belong to HTML.
 
+Djot migration is `djot_to_carve`, or `carve migrate --from djot input.dj`. It
+rewrites the delimiters that differ between the two languages, and like
+Markdown it has no mode or report.
+
 ## Status
 
 The crate passes every `.crv` / `.html` pair currently checked into its

@@ -390,13 +390,15 @@ fn run_migrate(args: &[String]) -> ExitCode {
         i += 1;
     }
     let from = match from.as_deref() {
-        Some("html") | Some("markdown") | Some("md") => from.clone().unwrap_or_default(),
+        Some("html") | Some("markdown") | Some("md") | Some("djot") => {
+            from.clone().unwrap_or_default()
+        }
         Some(other) => {
             eprintln!("carve migrate: unknown source format {other}");
             return ExitCode::FAILURE;
         }
         None => {
-            eprintln!("carve migrate: --from html or --from markdown is required");
+            eprintln!("carve migrate: --from html, markdown or djot is required");
             return ExitCode::FAILURE;
         }
     };
@@ -416,11 +418,17 @@ fn run_migrate(args: &[String]) -> ExitCode {
             }
         },
     };
-    // Markdown has no import policy to apply and nothing to report as lost:
-    // it parses to a Carve document whole, so the mode/adapter/report options
-    // are HTML's alone and are silently unused here rather than rejected.
+    // Markdown and Djot have no import policy to apply and nothing to report
+    // as lost: each parses to a Carve document whole, so the mode/adapter/
+    // report options are HTML's alone and are silently unused here rather than
+    // rejected.
     if from != "html" {
-        print!("{}", carve::markdown_to_carve(&source));
+        let carve = if from == "djot" {
+            carve::djot_to_carve(&source)
+        } else {
+            carve::markdown_to_carve(&source)
+        };
+        print!("{carve}");
 
         return ExitCode::SUCCESS;
     }
@@ -793,6 +801,10 @@ fn print_usage() {
          carve fmt [options] [files] format Carve source to stdout\n  \
          carve merge [--json] BASE OURS THEIRS\n  \
                                      merge independent structural edits\n  \
+         carve migrate --from FORMAT [options] [file]\n                              \
+         convert html, markdown (md) or djot to Carve.\n                              \
+         --mode/--adapter/--report/--check-loss are html's\n                              \
+         alone: it is the only importer that drops anything\n  \
          carve -h                    show this help\n\n\
          Output format (default --html; last one wins):\n  \
          --html                      HTML\n  \
