@@ -9,6 +9,17 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **The Markdown target escapes `<` only where it would open markup** (PART 11
+  §8a M1e, markup-carve/carve#1148). `<` and `>` were rewritten to entities
+  unconditionally, with no clause behind it. A `<` is now escaped with a
+  BACKSLASH when the next character is an ASCII letter, `/`, `!` or `?` - the
+  four things that open raw HTML - and left alone otherwise; `>` takes nothing,
+  since it is inert mid-line and a block quote marker at line start, which M1
+  already covers. So `a < b` survives as itself, and `a <b> c` is written with
+  the opener escaped, which a CommonMark reader gives back as text.
+
+### Changed
+
 - **The semantic-span registry is split by tier, and leftovers ride the
   element** (PART 9 §9, markup-carve/carve#1162). The `:name[...]` spelling no
   longer special-cases the seven semantic names in a core render: `:kbd[Ctrl+C]`

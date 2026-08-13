@@ -1046,7 +1046,9 @@ fn prepend_label(body: String, label: Option<&str>) -> String {
 
 fn escape_text(text: &str) -> String {
     let mut out = String::new();
-    for ch in text.chars() {
+    // PEEKABLE, because M1e below decides on the NEXT character.
+    let mut chars = text.chars().peekable();
+    while let Some(ch) = chars.next() {
         match ch {
             // Neutralize embedded HTML so Markdown re-rendered to HTML cannot
             // execute it (carve's "HTML is text" guarantee for the Markdown
@@ -1067,12 +1069,27 @@ fn escape_text(text: &str) -> String {
             // tag, so this renderer sees two separate text nodes - answering it
             // here would be one node too early, the mistake section 8a
             // documents for `_`, `#` and `[`.
+            // PART 11 section 8a M1e: a `<` is escaped only where the emitted
+            // line would read it as markup - before an ASCII letter, `/`, `!`
+            // or `?`, the four things that open raw HTML. Everything else is
+            // inert, and so is `>` mid-line; at line start `>` is a block quote
+            // marker M1 already covers.
+            //
+            // A BACKSLASH, not an entity. Both entities were written
+            // unconditionally with no clause behind them (carve#1148), and that
+            // is precisely because an entity is not the operation this section
+            // describes: M2 and M3 protect a character so it survives as
+            // itself, and an entity replaces it instead. Escaping the `<` alone
+            // suffices - a tag that cannot open cannot be closed.
             '<' => {
-                out.push_str("&lt;");
-                continue;
-            }
-            '>' => {
-                out.push_str("&gt;");
+                let opens_markup = matches!(
+                    chars.peek(),
+                    Some(n) if n.is_ascii_alphabetic() || matches!(n, '/' | '!' | '?')
+                );
+                if opens_markup {
+                    out.push('\\');
+                }
+                out.push('<');
                 continue;
             }
             // `_`, `#` and `[` are emitted as SENTINELS rather than as

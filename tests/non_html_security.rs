@@ -103,22 +103,29 @@ fn markdown_escapes_raw_html() {
 
 #[test]
 fn markdown_neutralizes_embedded_html() {
-    assert!(!md("plain <img onerror=x> text").contains("<img"));
+    // The claim is that no TAG opens, not that a particular spelling is used.
+    // PART 11 section 8a M1e escapes the OPENER with a backslash rather than
+    // rewriting it to an entity (carve#1148), so the check is on an `<img` that
+    // is NOT preceded by one - a plain `contains` reports the safe escaped form
+    // as a hit, because the escape sits right before the substring.
+    let opens_a_tag = |s: &str| s.replace("\\<", "").contains("<img");
+    assert!(!opens_a_tag(&md("plain <img onerror=x> text")));
+    assert!(md("plain <img onerror=x> text").contains("\\<img"));
     let sup = md("{^<img src=x onerror=alert(1)>^}");
     assert!(sup.contains("<sup>"));
-    assert!(!sup.contains("<img"));
-    assert_eq!(md("a < b & c"), "a &lt; b & c");
+    assert!(!opens_a_tag(&sup));
+
+    // A `<` before a SPACE was never markup, so M1e leaves it alone, and a
+    // mid-line `>` is inert in every flavour.
+    assert_eq!(md("a < b & c"), "a < b & c");
 
     // The reason `&` stopped being escaped (carve#1071): an entity in Markdown
     // TEXT decodes to a CHARACTER, and a character cannot open a tag. Text
     // authored as `&lt;script&gt;` therefore comes back as the four characters a
-    // reader sees, never as live markup - which is what a bare `<` would be, and
-    // why `<` and `>` keep the entity form.
+    // reader sees, never as live markup.
     assert_eq!(md("a &lt;script&gt; b"), "a &lt;script&gt; b");
-    assert_eq!(
-        md("a <script>x</script> b"),
-        "a &lt;script&gt;x&lt;/script&gt; b"
-    );
+    // A literal tag in text IS the hazard, and the backslash is what stops it.
+    assert_eq!(md("a <script>x</script> b"), "a \\<script>x\\</script> b");
 }
 
 #[test]

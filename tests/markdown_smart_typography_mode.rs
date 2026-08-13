@@ -45,7 +45,11 @@ fn escaping_is_left_alone() {
     // bare on this target (carve#1071); what this asserts is that the smart
     // typography mode does not change that either way.
     assert_eq!(source_mode("a & b"), "a & b");
-    assert_eq!(source_mode("a < b"), "a &lt; b");
+    // A `<` before a space opens nothing, so M1e leaves it alone too
+    // (carve#1148); one before a tag name is escaped, in this mode as in any
+    // other.
+    assert_eq!(source_mode("a < b"), "a < b");
+    assert_eq!(source_mode("a <b> c"), "a \\<b> c");
 }
 
 #[test]
