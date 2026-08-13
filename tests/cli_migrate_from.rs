@@ -15,12 +15,27 @@ fn run(args: &[&str], input: &str) -> (String, String, bool) {
         .stderr(Stdio::piped())
         .spawn()
         .expect("spawn carve binary");
-    child
+    // A BROKEN PIPE HERE IS THE CASE UNDER TEST, NOT A FAILURE. Two of these
+    // cases give the binary arguments it rejects before it ever reads stdin -
+    // an unknown `--from`, and a missing one - so it exits while this write is
+    // still in flight and the pipe closes under it. Whether the write lands is
+    // then a race with process teardown: it passed locally and on most runs,
+    // and failed on `main` and on every branch off it once the scheduling went
+    // the other way. What the test asserts is the message on stderr and the
+    // exit status, both of which are already decided by the time the pipe
+    // breaks, so the write's fate is genuinely not part of the claim.
+    if let Err(error) = child
         .stdin
         .take()
         .expect("stdin")
         .write_all(input.as_bytes())
-        .expect("write stdin");
+    {
+        assert_eq!(
+            error.kind(),
+            std::io::ErrorKind::BrokenPipe,
+            "writing stdin failed for a reason other than the child exiting first: {error}"
+        );
+    }
     let out = child.wait_with_output().expect("wait carve binary");
     (
         String::from_utf8(out.stdout).expect("utf8 stdout"),
