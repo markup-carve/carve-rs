@@ -82,9 +82,12 @@ fn semantic_shorthands_use_the_generic_core_fallback() {
         );
     }
 
+    // SOURCE order, with the structural class merged at the author's class
+    // slot - so the id written first stays first (PART 10 §1, carve#1164).
+    // `onclick` is still dropped; that is the sanitizer, not the ordering.
     assert_eq!(
         carve::to_html(":time[*noon*]{#clock .local datetime=\"12:00\" onclick=\"x\"}"),
-        "<p><span class=\"ext-time local\" id=\"clock\" datetime=\"12:00\"><strong>noon</strong></span></p>"
+        "<p><span id=\"clock\" class=\"ext-time local\" datetime=\"12:00\"><strong>noon</strong></span></p>"
     );
     assert_eq!(
         carve::to_html(":widget[x]{.control}"),

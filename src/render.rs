@@ -2787,15 +2787,10 @@ fn render_inline_extension(
     // contributes id / key-values after. Matches the math-span merge and
     // carve-js / carve-php.
     let base = format!("ext-{}", node.name);
-    let (class, rest) = match &node.attrs {
-        Some(a) if !a.classes.is_empty() => (
-            dedup_class_str(&format!("{} {}", base, a.classes.join(" "))),
-            render_attrs_after_class(a),
-        ),
-        Some(a) => (base, render_attrs_after_class(a)),
-        None => (base, String::new()),
-    };
-    out.push_str(&format!("<span class=\"{}\"{}>", escape_attr(&class), rest));
+    out.push_str(&format!(
+        "<span{}>",
+        render_attrs_with_base_class(&node.attrs, &base)
+    ));
     render_inlines_stateful(out, &node.children, options, state);
     out.push_str("</span>");
 }
@@ -2962,6 +2957,88 @@ pub(crate) fn render_attrs_without_keys(attrs: &Option<Attrs>, blocked: &[&str])
 /// Render an attribute block's id and key-values in source order, omitting
 /// the class slot. Used by a node whose class is structural and merged
 /// separately (the math span: `class="math inline {extra}"`).
+/// Render an attribute block in SOURCE ORDER with a mandatory base class
+/// merged into the author's class slot.
+///
+/// PART 10 SS1 emits authored attributes in the order they were written, and a
+/// structural class belongs in the class slot rather than ahead of everything.
+/// Writing `class="..."` unconditionally first REORDERED the author's
+/// attributes: `:widget[x]{#copy .shortcut}` came back as
+/// `<span class="ext-widget shortcut" id="copy">` where carve-js keeps
+/// `<span id="copy" class="ext-widget shortcut">` (markup-carve/carve#1164).
+///
+/// With no class slot to merge into there is no authored position to respect,
+/// so the base class leads - which is what carve-js does for `{#copy}` and
+/// `{k=v}` alike.
+pub(crate) fn render_attrs_with_base_class(attrs: &Option<Attrs>, base: &str) -> String {
+    let Some(attrs) = attrs else {
+        return format!(" class=\"{}\"", escape_attr(base));
+    };
+    let merged = |classes: &[String]| -> String {
+        let joined = if classes.is_empty() {
+            base.to_string()
+        } else {
+            format!("{} {}", base, classes.join(" "))
+        };
+        format!(" class=\"{}\"", escape_attr(&dedup_class_str(&joined)))
+    };
+    // No recorded order: the slots go in the canonical order, class first.
+    if attrs.order.is_empty() {
+        let mut out = merged(&attrs.classes);
+        if let Some(id) = &attrs.id {
+            write_attr_id(&mut out, id);
+        }
+        for (key, value) in &attrs.key_values {
+            if !is_dangerous_attr_name(key) && is_valid_attr_name(key) {
+                out.push_str(&format!(
+                    " {}=\"{}\"",
+                    escape_attr(key),
+                    escape_attr(&sanitize_attr_value(key, value))
+                ));
+            }
+        }
+
+        return out;
+    }
+
+    let has_class_slot = attrs.order.iter().any(|s| matches!(s, AttrSlot::Class));
+    let mut out = String::new();
+    if !has_class_slot {
+        out.push_str(&merged(&attrs.classes));
+    }
+    let mut class_written = false;
+    for slot in &attrs.order {
+        match slot {
+            AttrSlot::Id => {
+                if let Some(id) = &attrs.id {
+                    write_attr_id(&mut out, id);
+                }
+            }
+            AttrSlot::Class => {
+                // The FIRST class slot carries the merge; a second one would be
+                // a second `class` attribute, which is never valid.
+                if !class_written {
+                    out.push_str(&merged(&attrs.classes));
+                    class_written = true;
+                }
+            }
+            AttrSlot::Key(key) => {
+                if let Some(value) = attrs.key_values.get(key) {
+                    if !is_dangerous_attr_name(key) && is_valid_attr_name(key) {
+                        out.push_str(&format!(
+                            " {}=\"{}\"",
+                            escape_attr(key),
+                            escape_attr(&sanitize_attr_value(key, value))
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
+    out
+}
+
 pub(crate) fn render_attrs_after_class(attrs: &Attrs) -> String {
     let mut out = String::new();
     if attrs.order.is_empty() {
