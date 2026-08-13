@@ -650,10 +650,20 @@ fn inline_extension_name_content_and_class_merge() {
         html(":foo[a]{.cls}"),
         "<p><span class=\"ext-foo cls\">a</span></p>"
     );
-    // Id / key-values from the attribute block still render (after the class).
+    // Id / key-values render in SOURCE order, and the structural class merges
+    // at the author's class slot rather than ahead of everything - so an id
+    // written before a class stays before it (PART 10 §1, carve#1164). This
+    // used to assert `class` first, which reordered the author's attributes and
+    // disagreed with carve-js.
     assert_eq!(
         html(":foo[a]{#id .cls}"),
-        "<p><span class=\"ext-foo cls\" id=\"id\">a</span></p>"
+        "<p><span id=\"id\" class=\"ext-foo cls\">a</span></p>"
+    );
+    // With no class of their own there is no authored position to respect, so
+    // the base class leads.
+    assert_eq!(
+        html(":foo[a]{#id k=v}"),
+        "<p><span class=\"ext-foo\" id=\"id\" k=\"v\">a</span></p>"
     );
 }
 
