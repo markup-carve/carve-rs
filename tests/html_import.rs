@@ -142,3 +142,41 @@ fn a_footer_carrying_blocks_stays_quoted_content() {
     .unwrap();
     assert_eq!(result.value, "> quote\n>\n> By *A*\n>\n> Work\n");
 }
+
+/// PART 10 §T9 gives every `th` a `scope` from its POSITION, so importing that
+/// value back would write this engine's own output in as if the author had
+/// typed it. A value the default cannot explain is a different thing: `colgroup`
+/// and `rowgroup` have no marker spelling and no positional derivation, so an
+/// authored one is the only way to get them and dropping it is lossy
+/// (carve-rs#944).
+#[test]
+fn an_authored_table_cell_scope_survives_the_import() {
+    let result = html_to_carve(
+        "<table><thead><tr><th scope=\"colgroup\">A</th></tr></thead><tbody><tr><td>1</td></tr></tbody></table>",
+        &HtmlImportOptions::default(),
+    )
+    .unwrap();
+    assert!(
+        result.value.contains("scope=colgroup"),
+        "the authored scope was dropped: {}",
+        result.value
+    );
+}
+
+#[test]
+fn a_scope_that_only_restates_the_positional_default_is_dropped() {
+    // The other half, and the one that must not regress: `col` on a cell in the
+    // head-row run is exactly what the renderer emits from position, so keeping
+    // it would round-trip the generator's own output back into the source.
+    for html in [
+        "<table><thead><tr><th scope=\"col\">A</th></tr></thead><tbody><tr><td>1</td></tr></tbody></table>",
+        "<table><tbody><tr><th scope=\"row\">A</th><td>1</td></tr></tbody></table>",
+    ] {
+        let result = html_to_carve(html, &HtmlImportOptions::default()).unwrap();
+        assert!(
+            !result.value.contains("scope"),
+            "a positional scope was imported: {}",
+            result.value
+        );
+    }
+}
