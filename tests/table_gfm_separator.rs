@@ -1,6 +1,7 @@
 //! GFM-style header separator rows, in addition to Carve's native `|=` header
 //! cells. A delimiter row directly after the first row turns it into a <thead>
 //! header and sets per-column alignment. Matches carve-php / carve-js.
+//! PART 10 §T9 gives every header cell in that head-row run `scope="col"`.
 
 fn html(src: &str) -> String {
     carve::to_html(src).trim().to_string()

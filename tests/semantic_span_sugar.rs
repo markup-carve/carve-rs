@@ -2,18 +2,22 @@ use carve::{parse, render_ansi, render_carve, render_plain_text, to_html};
 
 #[test]
 fn renders_the_fixed_registry_and_value_mappings() {
+    // PART 9 §9: core consumes only abbr, time, and kbd as semantic names;
+    // samp, var, cite, and dfn remain ordinary attributes.
     let source = "[CSS]{dfn abbr=\"Cascading Style Sheets\"}\n[Noon]{time=\"12:00\"} [x]{code mark samp var kbd cite}";
     assert_eq!(
         to_html(source),
-        "<p><dfn><abbr title=\"Cascading Style Sheets\">CSS</abbr></dfn>\n<time datetime=\"12:00\">Noon</time> <span code=\"\" mark=\"\"><cite><kbd><var><samp>x</samp></var></kbd></cite></span></p>"
+        "<p><abbr title=\"Cascading Style Sheets\" dfn=\"\">CSS</abbr>\n<time datetime=\"12:00\">Noon</time> <kbd code=\"\" mark=\"\" samp=\"\" var=\"\" cite=\"\">x</kbd></p>"
     );
 }
 
 #[test]
 fn keeps_remaining_hardened_attributes_on_one_outer_span() {
+    // PART 9 §9: after kbd is consumed, surviving attributes ride on the
+    // semantic element itself; the rejected hostile attribute adds no wrapper.
     assert_eq!(
         to_html("[*Ctrl*+C]{#copy .shortcut kbd data-key=\"copy\" onclick=\"alert(1)\"}"),
-        "<p><span id=\"copy\" class=\"shortcut\" data-key=\"copy\"><kbd><strong>Ctrl</strong>+C</kbd></span></p>"
+        "<p><kbd id=\"copy\" class=\"shortcut\" data-key=\"copy\"><strong>Ctrl</strong>+C</kbd></p>"
     );
 }
 

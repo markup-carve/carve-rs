@@ -176,7 +176,18 @@ fn render_block(node: &BlockNode, ctx: &mut AnsiContext, depth: usize) -> String
             ctx.block_quote_depth += 1;
             let out = render_blocks(&quote.children, ctx, depth + 1);
             ctx.block_quote_depth -= 1;
-            out
+            // Keeps the styling the caption had while a quote was a figure, so
+            // a terminal reader sees the same thing in a different place.
+            match &quote.attribution {
+                Some(attribution) => {
+                    format!(
+                        "{}\n\n{}",
+                        out.trim_end_matches('\n'),
+                        render_caption(attribution, ctx)
+                    )
+                }
+                None => out,
+            }
         }
         BlockNode::List(list) => render_list(list, ctx, depth + 1),
         BlockNode::ThematicBreak(_) => format!("{}\n\n", style(&"─".repeat(40), DIM)),

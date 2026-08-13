@@ -92,7 +92,12 @@ impl SmartQuotes {
                         self.visit_blocks(&mut item.children);
                     }
                 }
-                BlockNode::BlockQuote(b) => self.visit_blocks(&mut b.children),
+                BlockNode::BlockQuote(b) => {
+                    if let Some(attribution) = &mut b.attribution {
+                        self.visit_inlines(attribution);
+                    }
+                    self.visit_blocks(&mut b.children);
+                }
                 BlockNode::Table(t) => {
                     if let Some(c) = &mut t.caption {
                         self.visit_inlines(c);

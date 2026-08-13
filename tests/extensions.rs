@@ -43,22 +43,14 @@ fn unknown_inline_extension_uses_fallback() {
 }
 
 #[test]
-fn semantic_shorthands_render_as_html_elements() {
-    // The core semantic set renders as its matching tag (matches carve-js /
-    // carve-php), no extension required.
-    for (name, html) in [
-        ("kbd", "<kbd>x</kbd>"),
-        ("dfn", "<dfn>x</dfn>"),
-        ("abbr", "<abbr>x</abbr>"),
-        ("cite", "<cite>x</cite>"),
-        ("samp", "<samp>x</samp>"),
-        ("var", "<var>x</var>"),
-        ("time", "<time>x</time>"),
-    ] {
+fn semantic_shorthands_use_the_generic_core_fallback() {
+    // These names belong to the SemanticSpan extension. Core does not claim
+    // the deprecated `:name[…]` spelling.
+    for name in ["kbd", "dfn", "abbr", "cite", "samp", "var", "time"] {
         assert_eq!(
             carve::to_html(&format!(":{name}[x]")),
-            format!("<p>{html}</p>"),
-            "semantic tag {name}"
+            format!("<p><span class=\"ext-{name}\">x</span></p>"),
+            "generic fallback for {name}"
         );
     }
     // A non-semantic name still falls back to a generic span.
@@ -92,7 +84,7 @@ fn semantic_shorthands_render_as_html_elements() {
 
     assert_eq!(
         carve::to_html(":time[*noon*]{#clock .local datetime=\"12:00\" onclick=\"x\"}"),
-        "<p><time id=\"clock\" class=\"local\" datetime=\"12:00\"><strong>noon</strong></time></p>"
+        "<p><span class=\"ext-time local\" id=\"clock\" datetime=\"12:00\"><strong>noon</strong></span></p>"
     );
     assert_eq!(
         carve::to_html(":widget[x]{.control}"),

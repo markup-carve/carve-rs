@@ -53,11 +53,11 @@ fn and_inside_a_nested_item() {
 fn and_for_the_other_captionable_targets_in_an_item() {
     // A caption is not image-only. These passed before the fix as well, and are
     // pinned here so a narrowed change cannot trade one target for another.
+    // The quote's caption is its ATTRIBUTION (PART 9 §4a, carve#1159), so it
+    // is a `<footer>` rather than a `<figcaption>`. What the slot ACCEPTS in a
+    // list item is the question here, and that is unchanged.
     let quote = to_html("- > quoted\n  ^ quote cap\n");
-    assert!(
-        quote.contains("<figcaption>quote cap</figcaption>"),
-        "{quote}"
-    );
+    assert!(quote.contains("<footer>quote cap</footer>"), "{quote}");
 
     let code = to_html("- ```\n  code\n  ```\n  ^ code cap\n");
     assert!(code.contains("<figcaption>code cap</figcaption>"), "{code}");

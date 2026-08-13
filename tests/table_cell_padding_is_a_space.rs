@@ -32,6 +32,8 @@
 //!
 //! Pre-fix this engine reproduced 5 of the 21 documents; the 16 it failed are
 //! exactly the ones carrying a tab.
+//! Header expectations also follow PART 10 §T9: every `<thead>` cell carries
+//! `scope="col"`; this is independent of padding and alignment.
 //!
 //! Cardinality is deliberately untouched: `{space}` is a RUN, so `|=  i |` is
 //! still padded, not content. markup-carve/carve#912 settles cardinality for

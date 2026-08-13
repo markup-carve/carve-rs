@@ -370,6 +370,16 @@ fn collect_footnotes_block(
             }
         }
         BlockNode::BlockQuote(b) => {
+            if let Some(attribution) = &mut b.attribution {
+                collect_footnotes_inline(
+                    assign_ref_ids,
+                    attribution,
+                    def_labels,
+                    label_indices,
+                    seen,
+                    order,
+                );
+            }
             for child in &mut b.children {
                 collect_footnotes_block(
                     assign_ref_ids,
@@ -1417,7 +1427,10 @@ fn render_blockquote(
     state: &mut RenderState,
 ) {
     indent(out, level);
-    if b.children.len() == 1 {
+    // PART 9 §4a: an attribution renders INSIDE the quote, where a quotation's
+    // source belongs, and forces the expanded form - the compact one has
+    // nowhere to put a second element (carve#1159).
+    if b.attribution.is_none() && b.children.len() == 1 {
         if let BlockNode::Paragraph(p) = &b.children[0] {
             out.push_str("<blockquote");
             write_attrs(out, &b.attrs);
@@ -1439,6 +1452,13 @@ fn render_blockquote(
         }
         out.push_str(&child);
         first = false;
+    }
+    if let Some(attribution) = &b.attribution {
+        out.push('\n');
+        indent(out, level + 1);
+        out.push_str("<footer>");
+        render_inlines(out, attribution, options, state);
+        out.push_str("</footer>");
     }
     out.push('\n');
     indent(out, level);
@@ -1515,7 +1535,7 @@ fn render_table(
 fn render_table_row(
     out: &mut String,
     row: &TableRow,
-    header_row: bool,
+    in_head: bool,
     options: &Options<'_>,
     row_idx: usize,
     rowspan_cols: &BTreeMap<(usize, usize), usize>,
@@ -1525,11 +1545,7 @@ fn render_table_row(
     write_attrs(out, &row.attrs);
     out.push('>');
     for (col, cell) in row.cells.iter().enumerate() {
-        let tag = if header_row || cell.header {
-            "th"
-        } else {
-            "td"
-        };
+        let tag = if in_head || cell.header { "th" } else { "td" };
         let mut extra = String::new();
         let mut emitted: Vec<&str> = Vec::new();
         // A header cell can carry a rowspan that extends down into the body
@@ -1544,7 +1560,7 @@ fn render_table_row(
         }
         out.push('<');
         out.push_str(tag);
-        out.push_str(&cell_scope_attr(cell, tag == "th", header_row));
+        out.push_str(&cell_scope_attr(cell, tag == "th", in_head));
         out.push_str(&render_cell_author_attrs(&cell.attrs, &emitted));
         out.push_str(&extra);
         out.push_str(&align);
@@ -2154,7 +2170,7 @@ fn render_inlines_stateful(
     }
 }
 
-const SEMANTIC_SPAN_ORDER: [&str; 7] = ["abbr", "time", "samp", "var", "kbd", "cite", "dfn"];
+const SEMANTIC_SPAN_ORDER: [&str; 3] = ["abbr", "time", "kbd"];
 
 /// PART 10 §10 compact semantic attributes on an ordinary authored span.
 fn render_semantic_span(
@@ -2190,16 +2206,6 @@ fn render_semantic_span(
     }
     render_inlines_stateful(&mut html, &span.children, options, state);
     state.suppress_automatic_abbreviation = previous_suppression;
-    for name in names {
-        let value = &attrs.key_values[name];
-        let mapped = match (name, value.is_empty()) {
-            ("abbr" | "dfn", false) => format!(" title=\"{}\"", escape_attr(value)),
-            ("time", false) => format!(" datetime=\"{}\"", escape_attr(value)),
-            _ => String::new(),
-        };
-        html = format!("<{name}{mapped}>{html}</{name}>");
-    }
-
     let mut rest = attrs.clone();
     rest.key_values
         .retain(|name, _| !SEMANTIC_SPAN_ORDER.contains(&name.as_str()));
@@ -2207,17 +2213,36 @@ fn render_semantic_span(
         AttrSlot::Key(name) => !SEMANTIC_SPAN_ORDER.contains(&name.as_str()),
         _ => true,
     });
-    let has_remaining =
-        rest.id.is_some() || !rest.classes.is_empty() || !rest.key_values.is_empty();
-    if has_remaining {
-        out.push_str("<span");
-        write_attrs(out, &Some(rest));
-        out.push('>');
-        out.push_str(&html);
-        out.push_str("</span>");
-    } else {
-        out.push_str(&html);
+    let outermost = *names.last().expect("semantic names is non-empty");
+    for name in names {
+        let value = &attrs.key_values[name];
+        let mapped = match (name, value.is_empty()) {
+            ("abbr", false) => Some(("title", value.as_str())),
+            ("time", false) => Some(("datetime", value.as_str())),
+            _ => None,
+        };
+
+        let mut own = Attrs::default();
+        if let Some((key, value)) = mapped {
+            // A derived attribute occupies the same slot as an authored one.
+            // The authored value in `rest` therefore wins instead of producing
+            // a duplicate attribute.
+            if name != outermost || !rest.key_values.contains_key(key) {
+                own.key_values.insert(key.to_string(), value.to_string());
+                own.order.push(AttrSlot::Key(key.to_string()));
+            }
+        }
+        if name == outermost {
+            own.id = rest.id.clone();
+            own.classes = rest.classes.clone();
+            for (key, value) in &rest.key_values {
+                own.key_values.insert(key.clone(), value.clone());
+            }
+            own.order.extend(rest.order.iter().cloned());
+        }
+        html = format!("<{name}{}>{html}</{name}>", render_attrs(&Some(own)));
     }
+    out.push_str(&html);
 }
 
 /// Escape text content (`& < >`) and fold the no-break space U+00A0 into
@@ -2755,21 +2780,6 @@ fn render_inline_extension(
             out.push_str(&html);
             return;
         }
-    }
-    // Semantic shorthands: `:tag[content]` renders as the matching HTML element
-    // (matches carve-js / carve-php). Any other name falls back to a generic
-    // `<span class="ext-NAME">`.
-    //
-    // PART 9 §9: the registry holds no element Carve already spells, so `code`
-    // and `mark` are absent - a code span writes <code> and =x= writes <mark>.
-    // `code` also made the duplication a defect: a code span is verbatim while
-    // an extension body is parsed, so one tag carried two content models.
-    const SEMANTIC_TAGS: [&str; 7] = ["kbd", "dfn", "abbr", "cite", "samp", "var", "time"];
-    if SEMANTIC_TAGS.contains(&node.name.as_str()) {
-        out.push_str(&format!("<{}{}>", node.name, render_attrs(&node.attrs)));
-        render_inlines_stateful(out, &node.children, options, state);
-        out.push_str(&format!("</{}>", node.name));
-        return;
     }
     // The `ext-NAME` class is structural and emitted first; a trailing
     // attribute block merges its classes into the SAME `class` attribute

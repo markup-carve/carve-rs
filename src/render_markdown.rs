@@ -273,7 +273,17 @@ fn render_block(node: &BlockNode, ctx: &mut MarkdownContext, depth: usize) -> St
                 .map(|line| format!("> {line}"))
                 .collect::<Vec<_>>()
                 .join("\n");
-            format!("{body}\n\n")
+            // Markdown has no attribution slot, so the source follows the quote
+            // as an ordinary paragraph rather than being dropped.
+            match &quote.attribution {
+                Some(attribution) => {
+                    format!(
+                        "{body}\n\n{}\n\n",
+                        render_inlines(attribution, ctx, depth + 1)
+                    )
+                }
+                None => format!("{body}\n\n"),
+            }
         }
         BlockNode::List(list) => render_list(list, ctx, depth + 1),
         BlockNode::ThematicBreak(_) => "---\n\n".to_string(),

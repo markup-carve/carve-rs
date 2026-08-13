@@ -96,20 +96,26 @@ fn an_item_with_only_its_marker_line_is_unchanged() {
     assert_eq!(children.len(), 1);
 }
 
-/// A figure's block-quote target kept line and column and offsets of 0..0: the
-/// walk filled its children and its attribution and skipped the quote itself,
-/// so the quote reported a span that selects nothing and every block inside it
-/// fell outside its own parent (carve#565).
+/// A quote carrying an attribution kept line and column and offsets of 0..0:
+/// the walk filled its children and its attribution and skipped the quote
+/// itself, so the quote reported a span that selects nothing and every block
+/// inside it fell outside its own parent (carve#565).
+///
+/// The fixture used to reach the quote through a figure wrapping it. §4a
+/// removed that wrapper - the caption is the quote's attribution now
+/// (carve#1159) - so the quote is a direct child, and the span it has to get
+/// right is its own.
 #[test]
-fn a_figures_quote_target_carries_real_offsets() {
+fn an_attributed_quote_carries_real_offsets() {
     let source = "Intro\n\n> Stay hungry\n^ Steve Jobs\n";
     let doc = document(source);
-    let BlockNode::Figure(figure) = &doc.children[1] else {
-        panic!("expected a figure second, got {:?}", doc.children[1]);
+    let BlockNode::BlockQuote(quote) = &doc.children[1] else {
+        panic!("expected a quote second, got {:?}", doc.children[1]);
     };
-    let carve::ast::FigureTarget::BlockQuote(quote) = &figure.target else {
-        panic!("expected a block quote target");
-    };
+    assert!(
+        quote.attribution.is_some(),
+        "the caption line did not attach as an attribution"
+    );
     let pos = quote.pos.expect("the quote carries no position");
 
     assert!(
@@ -118,13 +124,17 @@ fn a_figures_quote_target_carries_real_offsets() {
         pos.start_offset,
         pos.end_offset,
     );
-    let figure_pos = figure.pos.expect("the figure carries no position");
-    assert!(
-        pos.start_offset >= figure_pos.start_offset && pos.end_offset <= figure_pos.end_offset,
-        "quote [{}, {}] is outside its figure [{}, {}]",
-        pos.start_offset,
-        pos.end_offset,
-        figure_pos.start_offset,
-        figure_pos.end_offset,
-    );
+    // The span runs from the quote's first line THROUGH the attribution, so it
+    // contains every child and the attribution alike.
+    for child in &quote.children {
+        let child_pos = child_pos(child).expect("a child of the quote carries no position");
+        assert!(
+            child_pos.start_offset >= pos.start_offset && child_pos.end_offset <= pos.end_offset,
+            "child [{}, {}] is outside its quote [{}, {}]",
+            child_pos.start_offset,
+            child_pos.end_offset,
+            pos.start_offset,
+            pos.end_offset,
+        );
+    }
 }

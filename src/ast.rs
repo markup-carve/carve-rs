@@ -278,6 +278,12 @@ pub struct ListItem {
 pub struct BlockQuote {
     pub attrs: Option<Attrs>,
     pub children: Vec<BlockNode>,
+    /// The source of the quotation (PART 9 §4a).
+    ///
+    /// A `^` caption on a quote is its ATTRIBUTION, not a figure caption: the
+    /// quote is not a figure, takes no number, and nothing walking the tree for
+    /// figures finds it (carve#1159).
+    pub attribution: Option<Vec<InlineNode>>,
     /// Span in the original source, when the parser could determine it.
     pub pos: Option<Pos>,
 }

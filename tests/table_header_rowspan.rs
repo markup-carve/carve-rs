@@ -1,6 +1,7 @@
 //! A `^` rowspan marker extends the cell above it even across the thead/tbody
 //! boundary: a header cell can carry a rowspan that spans into body rows.
 //! Matches carve-js.
+//! PART 10 §T9 still gives those head-row cells `scope="col"`.
 
 #[test]
 fn native_header_cell_spans_into_body() {

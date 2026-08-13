@@ -65,10 +65,12 @@ fn two_blank_lines_detach_a_listing_caption() {
 #[test]
 fn one_blank_line_attaches_a_blockquote_caption() {
     // CONTROL. This is the one shape the corpus pins, via
-    // `55-blockquote-caption-after-a-blank-line.crv`.
+    // `55-blockquote-caption-after-a-blank-line.crv`. A quote's caption is its
+    // ATTRIBUTION (PART 9 §4a, carve#1159) - a different node shape, the same
+    // slot and the same blank-line allowance, which is what this file is about.
     assert_eq!(
         html("> q\n\n^ cap\n"),
-        "<figure>\n  <blockquote><p>q</p></blockquote>\n  <figcaption>cap</figcaption>\n</figure>"
+        "<blockquote>\n  <p>q</p>\n  <footer>cap</footer>\n</blockquote>"
     );
 }
 
@@ -136,6 +138,6 @@ fn an_adjacent_caption_still_attaches() {
     // documents that carry a caption) and is untouched by the slot's width.
     assert_eq!(
         html("> q\n^ cap\n"),
-        "<figure>\n  <blockquote><p>q</p></blockquote>\n  <figcaption>cap</figcaption>\n</figure>"
+        "<blockquote>\n  <p>q</p>\n  <footer>cap</footer>\n</blockquote>"
     );
 }

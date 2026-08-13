@@ -160,10 +160,18 @@ fn render_block(node: &BlockNode, depth: usize) -> String {
         }
         BlockNode::CodeBlock(code) => format!("{}\n\n", strip_controls(&code.content)),
         BlockNode::BlockQuote(quote) => {
-            format!(
-                "\"{}\"\n\n",
+            let quoted = format!(
+                "\"{}\"",
                 trim_block_output(&render_blocks(&quote.children, depth + 1))
-            )
+            );
+            // Visible content, so a text target keeps it - as a separate block,
+            // which is the spacing the renderer-parity fixtures pin.
+            match &quote.attribution {
+                Some(attribution) => {
+                    format!("{quoted}\n\n{}\n\n", render_inlines(attribution))
+                }
+                None => format!("{quoted}\n\n"),
+            }
         }
         BlockNode::List(list) => render_list(list, depth + 1),
         BlockNode::ThematicBreak(_) => "---\n\n".to_string(),

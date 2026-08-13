@@ -87,6 +87,9 @@ impl TabNormalize {
                 }
             }
             BlockNode::BlockQuote(b) => {
+                if let Some(attribution) = &mut b.attribution {
+                    self.visit_inlines(attribution);
+                }
                 for child in &mut b.children {
                     self.visit_block(child);
                 }

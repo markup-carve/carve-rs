@@ -764,6 +764,9 @@ fn annotate_citations_block(
             }
         }
         BlockNode::BlockQuote(b) => {
+            if let Some(attribution) = &mut b.attribution {
+                annotate_citations_inline(attribution, defs, mode, has_bib, seen, order, uses);
+            }
             for child in &mut b.children {
                 annotate_citations_block(child, defs, mode, has_bib, seen, order, uses);
             }

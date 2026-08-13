@@ -8,6 +8,7 @@
 //! symptom was `| << |`, whose first `<` was consumed as alignment and whose
 //! second then matched as a lone colspan marker, emitting an empty cell where
 //! carve-js and carve-php both render literal text (carve-rs#459).
+//! PART 10 §T9 independently gives each `<thead>` cell `scope="col"`.
 
 fn body_row(cell: &str) -> String {
     carve::to_html(&format!("| a | b |\n|---|---|\n{cell} d |"))

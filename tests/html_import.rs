@@ -101,3 +101,44 @@ fn shared_contract_fixtures_match() {
         assert_eq!(actual_codes, expected_codes, "{}", dir.display());
     }
 }
+
+/// PART 9 §4a, carve#1159. The renderer emits a quote's attribution as a
+/// `<footer>` inside the `<blockquote>`, so an importer that read it as an
+/// ordinary second paragraph made the engine's own HTML un-round-trippable.
+#[test]
+fn a_trailing_footer_in_a_quote_is_its_attribution() {
+    let result = html_to_carve(
+        "<blockquote><p>To be</p><footer>Hamlet</footer></blockquote>",
+        &HtmlImportOptions::default(),
+    )
+    .unwrap();
+    assert_eq!(result.value, "> To be\n^ Hamlet\n");
+}
+
+/// A quote has ONE attribution, so a second footer cannot join it. The LAST is
+/// the one this renderer emits and the one an author puts after the quoted
+/// text; the earlier footer stays an ordinary block rather than being dropped.
+#[test]
+fn the_last_footer_is_the_attribution_and_the_others_stay() {
+    let result = html_to_carve(
+        "<blockquote><footer>First</footer><p>To be</p><footer>Hamlet</footer></blockquote>",
+        &HtmlImportOptions::default(),
+    )
+    .unwrap();
+    assert_eq!(result.value, "> First\n>\n> To be\n^ Hamlet\n");
+}
+
+/// The slot holds INLINE content, so a footer carrying blocks does not fit it.
+/// Flattening one would run its paragraphs together with no separator, so it
+/// stays ordinary quoted content instead - every word survives, which is the
+/// better answer when the shape cannot be represented. carve-js and carve-php
+/// agree byte for byte.
+#[test]
+fn a_footer_carrying_blocks_stays_quoted_content() {
+    let result = html_to_carve(
+        "<blockquote><p>quote</p><footer><p>By <strong>A</strong></p><p>Work</p></footer></blockquote>",
+        &HtmlImportOptions::default(),
+    )
+    .unwrap();
+    assert_eq!(result.value, "> quote\n>\n> By *A*\n>\n> Work\n");
+}
