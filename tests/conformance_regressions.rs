@@ -88,10 +88,24 @@ fn all_space_code_span_does_not_strip_or_panic() {
     assert_eq!(html("`  a  `"), "<p><code> a </code></p>");
 }
 
+/// Two attributes need a separator between them: `attribute_list` is
+/// `attribute, {space+, attribute}` (PART 7), so an adjacent pair is one
+/// malformed item and the whole block stays literal (PART 9 §14).
+///
+/// This test asserted the opposite until the rule was ruled on. It was added in
+/// #136 as a conformance regression against carve-js, which accepted the pair -
+/// so it pinned an engine agreement rather than the language, and the
+/// executable spec refused these shapes the whole time.
 #[test]
-fn adjacent_span_ids_and_classes_are_all_parsed() {
-    assert_eq!(html("[a]{#i#j}"), "<p><span id=\"j\">a</span></p>");
-    assert_eq!(html("[a]{.a.b}"), "<p><span class=\"a b\">a</span></p>");
+fn adjacent_span_ids_and_classes_stay_literal() {
+    assert_eq!(html("[a]{.a.b}"), "<p>[a]{.a.b}</p>");
+    assert_eq!(html("[a]{.a#i}"), "<p>[a]{.a#i}</p>");
+    // `{#i#j}` is deliberately NOT asserted here. It is literal under this rule
+    // too, but the literal text then goes through the `#tag` inline syntax, and
+    // all three engines make only the FIRST `#i` a tag where the executable
+    // spec makes both. That divergence is about tag adjacency rather than
+    // attribute adjacency; it was unreachable while the block parsed as
+    // attributes, and asserting either answer here would pin it by accident.
 }
 
 #[test]
