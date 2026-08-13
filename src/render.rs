@@ -2172,6 +2172,33 @@ fn render_inlines_stateful(
 
 const SEMANTIC_SPAN_ORDER: [&str; 3] = ["abbr", "time", "kbd"];
 
+/// The full order, including the four names an extension may add (PART 9 §10).
+const EXTENDED_SEMANTIC_SPAN_ORDER: [&str; 7] =
+    ["abbr", "time", "samp", "var", "kbd", "cite", "dfn"];
+
+/// The names this render consumes, in the canonical order: core's three plus
+/// whatever a registered extension claims.
+fn semantic_span_order(options: &Options<'_>) -> Vec<&'static str> {
+    if options
+        .extensions
+        .iter()
+        .all(|ext| ext.semantic_span_names().is_empty())
+    {
+        return SEMANTIC_SPAN_ORDER.to_vec();
+    }
+    EXTENDED_SEMANTIC_SPAN_ORDER
+        .iter()
+        .copied()
+        .filter(|name| {
+            SEMANTIC_SPAN_ORDER.contains(name)
+                || options
+                    .extensions
+                    .iter()
+                    .any(|ext| ext.semantic_span_names().contains(name))
+        })
+        .collect()
+}
+
 /// PART 10 §10 compact semantic attributes on an ordinary authored span.
 fn render_semantic_span(
     out: &mut String,
@@ -2185,7 +2212,8 @@ fn render_semantic_span(
         out.push_str("</span>");
         return;
     };
-    let names: Vec<&str> = SEMANTIC_SPAN_ORDER
+    let order = semantic_span_order(options);
+    let names: Vec<&str> = order
         .iter()
         .copied()
         .filter(|name| attrs.key_values.contains_key(*name))
@@ -2208,9 +2236,9 @@ fn render_semantic_span(
     state.suppress_automatic_abbreviation = previous_suppression;
     let mut rest = attrs.clone();
     rest.key_values
-        .retain(|name, _| !SEMANTIC_SPAN_ORDER.contains(&name.as_str()));
+        .retain(|name, _| !order.contains(&name.as_str()));
     rest.order.retain(|slot| match slot {
-        AttrSlot::Key(name) => !SEMANTIC_SPAN_ORDER.contains(&name.as_str()),
+        AttrSlot::Key(name) => !order.contains(&name.as_str()),
         _ => true,
     });
     let outermost = *names.last().expect("semantic names is non-empty");
@@ -2218,6 +2246,11 @@ fn render_semantic_span(
         let value = &attrs.key_values[name];
         let mapped = match (name, value.is_empty()) {
             ("abbr", false) => Some(("title", value.as_str())),
+            // `dfn` is the SemanticSpan extension's, and maps its value the
+            // same way `abbr` does (docs/extensions.md §11.1). The mapping
+            // lives here rather than in the extension for the same reason the
+            // order does: one implementation, not two that drift.
+            ("dfn", false) => Some(("title", value.as_str())),
             ("time", false) => Some(("datetime", value.as_str())),
             _ => None,
         };
@@ -2780,6 +2813,20 @@ fn render_inline_extension(
             out.push_str(&html);
             return;
         }
+    }
+    // PART 9 §10: the SemanticSpan extension re-registers the seven names as a
+    // SOFT-DEPRECATED spelling. Core registers none, so without the extension
+    // every name falls through to the readable `ext-NAME` span below.
+    if options
+        .extensions
+        .iter()
+        .any(|ext| !ext.semantic_span_names().is_empty())
+        && EXTENDED_SEMANTIC_SPAN_ORDER.contains(&node.name.as_str())
+    {
+        out.push_str(&format!("<{}{}>", node.name, render_attrs(&node.attrs)));
+        render_inlines_stateful(out, &node.children, options, state);
+        out.push_str(&format!("</{}>", node.name));
+        return;
     }
     // The `ext-NAME` class is structural and emitted first; a trailing
     // attribute block merges its classes into the SAME `class` attribute
