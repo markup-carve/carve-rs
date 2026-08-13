@@ -7,6 +7,20 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **`extensions::semantic_span::SemanticSpan`** (spec PART 9 §10,
+  docs/extensions.md §11). The four semantic span names core does not reserve -
+  `samp`, `var`, `cite`, `dfn` - under the same spelling, nesting order,
+  value mapping and riding rule core uses for `abbr`, `time` and `kbd`, plus the
+  `:name[…]` form for all seven as a SOFT-DEPRECATED compatibility spelling
+  scheduled for removal in 0.2. Registered under the key `semantic-span`.
+
+  What it claims is declarative - `CarveExtension::semantic_span_names()` names
+  the four and the core renderer renders them, so the rules have one
+  implementation rather than two that drift. A non-empty `dfn` value maps to
+  `title`, which the renderer now handles alongside `abbr` and `time`.
+
 ### Changed
 
 - **The semantic-span registry is split by tier, and leftovers ride the
