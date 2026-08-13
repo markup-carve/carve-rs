@@ -10112,6 +10112,10 @@ fn attr_payload_provably_invalid(bytes: &[u8], brace: usize) -> bool {
                     i += 1;
                 }
             }
+            // `:TAG` / `:` semantic language attribute. The full parser owns
+            // the structural subtag envelope; this fast path only avoids
+            // rejecting the newly claimed token before it gets there.
+            b':' => return false,
             // A bareword: a boolean attribute, or the name in `key=value`.
             _ if is_attr_ident_start(c) => {
                 i += 1;
@@ -10295,7 +10299,15 @@ fn parse_attrs_with(src: &str, space_only: bool) -> Option<Attrs> {
     }
     let mut attrs = Attrs::default();
     for token in attr_tokens(src) {
-        if let Some(id) = token.strip_prefix('#') {
+        if let Some(tag) = token.strip_prefix(':') {
+            if !is_language_tag(tag) {
+                return None;
+            }
+            if !attrs.key_values.contains_key("lang") {
+                attrs.order.push(AttrSlot::Key("lang".to_string()));
+            }
+            attrs.key_values.insert("lang".to_string(), tag.to_string());
+        } else if let Some(id) = token.strip_prefix('#') {
             if !is_identifier(id) {
                 return None;
             }
@@ -10368,6 +10380,15 @@ fn parse_attrs_with(src: &str, space_only: bool) -> Option<Attrs> {
         }
     }
     Some(attrs)
+}
+
+fn is_language_tag(tag: &str) -> bool {
+    tag.is_empty()
+        || tag.split('-').all(|subtag| {
+            !subtag.is_empty()
+                && subtag.len() <= 8
+                && subtag.bytes().all(|byte| byte.is_ascii_alphanumeric())
+        })
 }
 
 fn attr_tokens(src: &str) -> Vec<String> {
