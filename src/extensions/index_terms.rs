@@ -174,6 +174,9 @@ fn rewrite_markers_block(
             }
         }
         BlockNode::BlockQuote(b) => {
+            if let Some(attribution) = &mut b.attribution {
+                rewrite_markers_inline(attribution, counts, display);
+            }
             for child in &mut b.children {
                 rewrite_markers_block(child, counts, display);
             }

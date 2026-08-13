@@ -1,6 +1,7 @@
 //! Row-level table attributes: a `{...}` block glued to a row's closing pipe
 //! sets the `<tr>` attributes (the row twin of a cell's opening-pipe block).
 //! Matches carve-php / carve-js.
+//! PART 10 §T9 independently gives each `<thead>` cell `scope="col"`.
 
 #[test]
 fn class_on_a_body_row() {

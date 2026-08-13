@@ -250,7 +250,8 @@ fn inline_footnote_quote_state_is_isolated() {
 #[test]
 fn glued_table_cell_attributes() {
     let row1 = |s: &str| carve::to_html(s).lines().nth(1).unwrap_or("").to_string();
-    // glued `{...}` after the pipe sets the cell's attributes; rest is content.
+    // Glued `{...}` after the pipe sets the cell's attributes; rest is content.
+    // PART 10 §T9 also gives every head-row `<th>` its default `scope="col"`.
     assert_eq!(
         row1("|{.x} hi | b |\n|---|---|\n| c | d |"),
         "  <thead><tr><th scope=\"col\" class=\"x\">hi</th><th scope=\"col\">b</th></tr></thead>"

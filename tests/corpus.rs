@@ -13,13 +13,15 @@ use std::fs;
 use std::path::PathBuf;
 
 const IMPLEMENTED: &[&str] = &[
+    "two-attributes-need-a-separator-between-them",
     "the-semantic-registry-holds-no-element-carve-already-spells",
     "a-language-attribute-is-exact-sugar-for-lang",
     "a-malformed-language-tag-leaves-the-whole-block-literal",
     "a-language-attribute-and-lang-are-one-key",
     "the-language-sigil-takes-no-padding",
     "a-boolean-lang-is-the-third-spelling-of-the-same-key",
-    "a-semantic-span-keeps-its-wrapper-unless-consumption-empties-it",
+    "a-semantic-name-renames-the-span-and-the-leftovers-ride-the-element",
+    "a-derived-title-yields-to-an-authored-one",
     "adjacent-block-openers-in-an-attached-run-stay-separate",
     "a-caption-attaches-across-one-blank-line",
     "a-container-a-lazy-line-folded-into-is-still-open",

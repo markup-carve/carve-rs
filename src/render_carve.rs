@@ -650,6 +650,9 @@ fn normalize_escapes_block(block: &mut BlockNode) {
             }
         }
         BlockNode::BlockQuote(b) => {
+            if let Some(attribution) = &mut b.attribution {
+                normalize_escapes_inlines(attribution);
+            }
             for child in &mut b.children {
                 normalize_escapes_block(child);
             }
@@ -1145,6 +1148,14 @@ fn render_block(node: &BlockNode, ctx: &mut CarveContext) -> String {
                 })
                 .collect::<Vec<_>>()
                 .join("\n");
+            // PART 9 §4a: an attribution is written back as the `^` line it was
+            // read from. Dropping it would lose content, which PART 11 §1 forbids.
+            let body = match &quote.attribution {
+                Some(attribution) => {
+                    format!("{body}\n^ {}", render_inlines(attribution, ctx))
+                }
+                None => body,
+            };
             with_block_attrs(&quote.attrs, &body)
         }
         BlockNode::List(list) => with_block_attrs(

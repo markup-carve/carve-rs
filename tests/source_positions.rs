@@ -404,16 +404,19 @@ fn a_resolved_reference_link_is_unaffected() {
 }
 
 #[test]
-fn a_quoted_figure_spans_the_quote_and_its_caption() {
-    // The image path placed its figure; a blockquote wrapped in one did not.
+fn an_attributed_quote_spans_the_quote_and_its_attribution() {
+    // The image path placed its figure; a quote with a caption line did not.
+    // §4a made that caption the quote's ATTRIBUTION rather than a figure
+    // wrapping it (carve#1159), so the span to get right is the quote's own -
+    // and it still has to reach through the `^ ` line the cursor consumed.
     let source = "> Stay hungry\n^ Steve Jobs\n";
     let doc = parse_with_positions(source);
-    let BlockNode::Figure(figure) = &doc.children[0] else {
-        panic!("expected a figure, got {:?}", doc.children[0]);
+    let BlockNode::BlockQuote(quote) = &doc.children[0] else {
+        panic!("expected a quote, got {:?}", doc.children[0]);
     };
 
     assert_eq!(
-        slice(source, figure.pos.expect("the figure carries a position")),
+        slice(source, quote.pos.expect("the quote carries a position")),
         "> Stay hungry\n^ Steve Jobs"
     );
 }

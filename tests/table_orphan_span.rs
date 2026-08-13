@@ -1,6 +1,7 @@
 //! A span marker with nothing to merge renders an EMPTY cell, not dropped
 //! (spec PART 9 §5): a `^` in the first row, a `<` in the first column.
 //! Matches carve-js / carve-php.
+//! PART 10 §T9 gives cells in a promoted head-row run `scope="col"`.
 
 #[test]
 fn orphan_rowspan_marker_is_empty_cell() {

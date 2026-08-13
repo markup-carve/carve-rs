@@ -9,6 +9,36 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **The semantic-span registry is split by tier, and leftovers ride the
+  element** (PART 9 §9, markup-carve/carve#1162). The `:name[...]` spelling no
+  longer special-cases the seven semantic names in a core render: `:kbd[Ctrl+C]`
+  is `<span class="ext-kbd">Ctrl+C</span>`, because those names are the
+  SemanticSpan extension's. The attribute spelling still renames the span, and
+  core keeps three of the names - `abbr`, `time`, `kbd` - while `samp`, `var`,
+  `cite` and `dfn` stay ordinary attributes there. Every attribute left over
+  after the name is consumed now lands ON the element rather than on a wrapper
+  around it, so `[x]{#k .key kbd}` is `<kbd id="k" class="key">x</kbd>`, and
+  where nothing is left over there is no wrapper at all. A derived `title` or
+  `datetime` yields to an authored one of the same name.
+
+- **A caption on a block quote is now that quote's attribution** (PART 9 §4a,
+  markup-carve/carve#1159). `> To be` followed by `^ Hamlet` no longer parses as
+  a `figure` wrapping a `block_quote`; it is a `block_quote` carrying an
+  `attribution`, and HTML renders `<footer>Hamlet</footer>` inside the
+  `<blockquote>` rather than a `<figure>` / `<figcaption>` pair. A quote is not
+  a figure, takes no number, and no longer turns up in a walk for figures. The
+  Markdown, plain-text, ANSI and Carve writers all carry the attribution, and
+  the HTML importer reads a trailing `<footer>` in a `<blockquote>` back as the
+  attribution so the renderer's own output round-trips.
+
+- **Every `<th>` carries a `scope`** (PART 10 §T9, markup-carve/carve#1159).
+  `col` for a header cell in the head-row run, `row` for one below it, on pipe
+  tables and list tables alike. An authored `scope` replaces the emitted one
+  rather than joining it, matched case-insensitively because HTML attribute
+  names are, so `{Scope="colgroup"}` does not produce two of them. Without it a
+  screen reader guesses the association from position and guesses wrong on any
+  table carrying both kinds of header.
+
 - **`code` and `mark` leave the built-in semantic registry.** Both spellings
   follow the spec's seven-name list - `abbr`, `time`, `samp`, `var`, `kbd`,
   `cite`, `dfn` - so `:code[x]` and `:mark[x]` take the generic

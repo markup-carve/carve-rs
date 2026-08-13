@@ -415,7 +415,12 @@ fn fill_crossref_hrefs(doc: &mut Document, lowercase_ids: bool) {
             match node {
                 BlockNode::Paragraph(p) => inlines(&mut p.children, index),
                 BlockNode::Heading(h) => inlines(&mut h.children, index),
-                BlockNode::BlockQuote(b) => blocks(&mut b.children, index),
+                BlockNode::BlockQuote(b) => {
+                    if let Some(attribution) = &mut b.attribution {
+                        inlines(attribution, index);
+                    }
+                    blocks(&mut b.children, index);
+                }
                 BlockNode::Div(d) => blocks(&mut d.children, index),
                 BlockNode::Figure(f) => inlines(&mut f.caption, index),
                 BlockNode::List(l) => {
@@ -2805,6 +2810,9 @@ fn fill_offsets(blocks: &mut [BlockNode], line_starts: &[usize]) {
                 }
             }
             BlockNode::BlockQuote(b) => {
+                if let Some(attribution) = &mut b.attribution {
+                    apply_inline_offsets(attribution, line_starts);
+                }
                 fill_offsets(&mut b.children, line_starts);
             }
             BlockNode::Div(d) => fill_offsets(&mut d.children, line_starts),
@@ -5069,25 +5077,21 @@ fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     }
     let inner = inner.into_source();
     let children = parse_mapped_source(&inner, options);
-    let quote = BlockQuote {
+    let mut quote = BlockQuote {
         pos: span_of(cur, span_start, cur.pos, options),
         attrs: None,
+        attribution: None,
         children,
     };
-    if let Some(caption) = consume_caption(cur, options) {
-        BlockNode::Figure(Figure {
-            attrs: None,
-            target: FigureTarget::BlockQuote(quote),
-            caption,
-            short_caption: None,
-            // From the quote's first line through the caption the cursor has
-            // just consumed. The image path already did this; a quote wrapped
-            // in a figure went unplaced.
-            pos: span_of(cur, span_start, cur.pos, options),
-        })
-    } else {
-        BlockNode::BlockQuote(quote)
+    // PART 9 §4a: the caption on a quote is its ATTRIBUTION, so no figure wraps
+    // it - it takes no number, and nothing walking the tree for figures finds
+    // it (carve#1159). The span still runs from the quote's first line through
+    // the caption the cursor just consumed.
+    if let Some(attribution) = consume_attribution(cur, options) {
+        quote.attribution = Some(attribution);
+        quote.pos = span_of(cur, span_start, cur.pos, options);
     }
+    BlockNode::BlockQuote(quote)
 }
 
 fn is_list_marker(line: &str) -> bool {
@@ -8674,7 +8678,22 @@ fn image_is_block(cur: &mut LineCursor) -> bool {
     interrupts
 }
 
+/// A quote's attribution (PART 9 §4a): the same slot as a caption, parsed
+/// without caption context so a bare `#` stays literal - an attribution has no
+/// number to place, and §4a says the placeholder does not resolve there.
+fn consume_attribution(cur: &mut LineCursor, options: &Options<'_>) -> Option<Vec<InlineNode>> {
+    consume_caption_slot(cur, options, false)
+}
+
 fn consume_caption(cur: &mut LineCursor, options: &Options<'_>) -> Option<Vec<InlineNode>> {
+    consume_caption_slot(cur, options, true)
+}
+
+fn consume_caption_slot(
+    cur: &mut LineCursor,
+    options: &Options<'_>,
+    caption_context: bool,
+) -> Option<Vec<InlineNode>> {
     let saved = cur.pos;
     // PART 9 §4 (NORMATIVE): `caption_slot = [blank_line], caption` carries at
     // most ONE optional blank line. A caption line adjacent to its host, or
@@ -8735,8 +8754,8 @@ fn consume_caption(cur: &mut LineCursor, options: &Options<'_>) -> Option<Vec<In
         .join("\n");
     let text = trim_ascii_end(&joined);
     Some(match anchors {
-        Some(anchors) => parse_caption_inline_with_anchor(text, options, anchors),
-        None => parse_caption_inline_with_options(text, options),
+        Some(anchors) => parse_caption_inline_with_anchor(text, options, anchors, caption_context),
+        None => parse_caption_inline_with_options(text, options, caption_context),
     })
 }
 
@@ -10948,8 +10967,12 @@ fn parse_inline_with_anchor(
     parse_inline_context(text, options, false, false, Some(&map), 0)
 }
 
-fn parse_caption_inline_with_options(text: &str, options: &Options<'_>) -> Vec<InlineNode> {
-    parse_inline_context(text, options, true, false, None, 0)
+fn parse_caption_inline_with_options(
+    text: &str,
+    options: &Options<'_>,
+    caption_context: bool,
+) -> Vec<InlineNode> {
+    parse_inline_context(text, options, caption_context, false, None, 0)
 }
 
 /// A caption's inline content, anchored to the source lines it was folded from.
@@ -10961,9 +10984,10 @@ fn parse_caption_inline_with_anchor(
     text: &str,
     options: &Options<'_>,
     lines: Vec<Option<(usize, isize)>>,
+    caption_context: bool,
 ) -> Vec<InlineNode> {
     if !options.positions {
-        return parse_caption_inline_with_options(text, options);
+        return parse_caption_inline_with_options(text, options, caption_context);
     }
     let map = InlinePositionMap::new(text, InlineAnchor { lines: &lines });
     parse_inline_context(text, options, true, false, Some(&map), 0)
@@ -13688,6 +13712,9 @@ fn apply_abbreviations_block(block: &mut BlockNode, index: &AbbreviationIndex<'_
             }
         }
         BlockNode::BlockQuote(b) => {
+            if let Some(attribution) = &mut b.attribution {
+                apply_abbreviations_inline(attribution, index);
+            }
             for child in &mut b.children {
                 apply_abbreviations_block(child, index);
             }
@@ -14362,6 +14389,9 @@ fn resolve_reference_links_block(
             }
         }
         BlockNode::BlockQuote(b) => {
+            if let Some(attribution) = &mut b.attribution {
+                resolve_reference_links_inline(attribution, defs, heading_index);
+            }
             for child in &mut b.children {
                 resolve_reference_links_block(child, defs, heading_index);
             }
@@ -15227,6 +15257,9 @@ fn coalesce_block(block: &mut BlockNode) {
             }
         }
         BlockNode::BlockQuote(b) => {
+            if let Some(attribution) = &mut b.attribution {
+                coalesce_inlines(attribution);
+            }
             for child in &mut b.children {
                 coalesce_block(child);
             }

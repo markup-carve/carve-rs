@@ -134,6 +134,35 @@ impl<'a> Importer<'a> {
             path: Some(path.into()),
         });
     }
+    fn is_block_tag(tag: &str) -> bool {
+        matches!(
+            tag,
+            "html"
+                | "head"
+                | "body"
+                | "h1"
+                | "h2"
+                | "h3"
+                | "h4"
+                | "h5"
+                | "h6"
+                | "p"
+                | "blockquote"
+                | "ul"
+                | "ol"
+                | "pre"
+                | "hr"
+                | "table"
+                | "div"
+                | "section"
+                | "article"
+                | "main"
+                | "nav"
+                | "header"
+                | "footer"
+        )
+    }
+
     fn tag(handle: &Handle) -> Option<String> {
         match &handle.data {
             NodeData::Element { name, .. } => Some(name.local.to_string()),
@@ -265,37 +294,7 @@ impl<'a> Importer<'a> {
         let mut inline = Vec::new();
         for (i, handle) in handles.iter().enumerate() {
             let tag = Self::tag(handle);
-            let is_block = tag
-                .as_deref()
-                .map(|t| {
-                    matches!(
-                        t,
-                        "html"
-                            | "head"
-                            | "body"
-                            | "h1"
-                            | "h2"
-                            | "h3"
-                            | "h4"
-                            | "h5"
-                            | "h6"
-                            | "p"
-                            | "blockquote"
-                            | "ul"
-                            | "ol"
-                            | "pre"
-                            | "hr"
-                            | "table"
-                            | "div"
-                            | "section"
-                            | "article"
-                            | "main"
-                            | "nav"
-                            | "header"
-                            | "footer"
-                    )
-                })
-                .unwrap_or(false);
+            let is_block = tag.as_deref().map(Self::is_block_tag).unwrap_or(false);
             if is_block {
                 if !inline.is_empty() {
                     let children = self.inlines(&inline, parent, depth + 1)?;
@@ -358,9 +357,46 @@ impl<'a> Importer<'a> {
             })]);
         }
         if tag == "blockquote" {
+            // A trailing `<footer>` is the quote's ATTRIBUTION (PART 9 §4a).
+            // This renderer emits the source of a quotation that way, so
+            // reading it back as an ordinary second paragraph meant the
+            // engine's own HTML did not survive a round trip - the `^ ` line
+            // was gone from the Carve it wrote (carve#1159).
+            //
+            // The LAST footer, because that is the one the renderer emits and
+            // the one an author puts after the quoted text; an earlier one
+            // stays an ordinary block.
+            // The slot holds INLINE content, so a footer carrying blocks does
+            // not fit it. Flattening one would run its paragraphs together
+            // with no separator; leaving it an ordinary block inside the quote
+            // keeps every word, which is the better answer when the shape
+            // cannot be represented.
+            let footer = children.iter().rposition(|n| {
+                Self::tag(n).as_deref() == Some("footer")
+                    && !n.children.borrow().iter().any(|c| {
+                        Self::tag(c)
+                            .as_deref()
+                            .map(Self::is_block_tag)
+                            .unwrap_or(false)
+                    })
+            });
+            let attribution = match footer {
+                Some(index) => {
+                    let inner = children[index].children.borrow().clone();
+                    Some(self.inlines(&inner, path, depth + 1)?)
+                }
+                None => None,
+            };
+            let body: Vec<_> = children
+                .iter()
+                .enumerate()
+                .filter(|(index, _)| Some(*index) != footer)
+                .map(|(_, node)| node.clone())
+                .collect();
             return Ok(vec![BlockNode::BlockQuote(BlockQuote {
                 attrs,
-                children: self.blocks(&children, path, depth + 1)?,
+                children: self.blocks(&body, path, depth + 1)?,
+                attribution,
                 pos: None,
             })]);
         }
