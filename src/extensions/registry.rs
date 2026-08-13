@@ -23,8 +23,8 @@ use crate::citations::Citations;
 use crate::extensions::{
     Autolink, CodeCallouts, CodeGroup, ColorSwatch, Details, ExternalLinks, FencedRender, Glossary,
     HeadingLevelShift, HeadingNumbers, HeadingPermalinks, HeadingReference, ImgFence, Index,
-    ListTable, MathBlock, SmartQuotes, Spoiler, TabNormalize, TableOfContents, Tabs, TocPlacement,
-    Wikilinks,
+    ListTable, MathBlock, SemanticSpan, SmartQuotes, Spoiler, TabNormalize, TableOfContents, Tabs,
+    TocPlacement, Wikilinks,
 };
 use crate::CarveExtension;
 
@@ -183,6 +183,11 @@ pub static REGISTRY: &[Registered] = &[
         key: "smart-quotes",
         module: "smart_quotes",
         factory: || Box::new(SmartQuotes::new("en")),
+    },
+    Registered {
+        key: "semantic-span",
+        module: "semantic_span",
+        factory: || Box::new(SemanticSpan),
     },
     Registered {
         key: "spoiler",

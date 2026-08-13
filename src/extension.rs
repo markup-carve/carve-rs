@@ -338,6 +338,17 @@ impl<'a> Options<'a> {
 pub trait CarveExtension {
     fn name(&self) -> &'static str;
 
+    /// Semantic span attribute names this extension adds (spec PART 9 §10).
+    ///
+    /// DECLARATIVE ON PURPOSE. The nesting order, the value mapping and §9's
+    /// riding rule live in ONE renderer; an extension that re-implemented them
+    /// for its own names would be a second copy of the feature, drifting from
+    /// core the first time either side changed. So an extension names what it
+    /// claims and core renders it.
+    fn semantic_span_names(&self) -> &'static [&'static str] {
+        &[]
+    }
+
     fn match_inline(
         &self,
         _text: &str,

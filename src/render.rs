@@ -2115,7 +2115,33 @@ fn render_inlines_stateful(
     }
 }
 
-const SEMANTIC_SPAN_ORDER: [&str; 7] = ["abbr", "time", "samp", "var", "kbd", "cite", "dfn"];
+/// PART 9 §9: the names core reserves on a span, inner to outer.
+///
+/// THREE, not the seven this once carried. A name is core when it carries data
+/// the author would otherwise lose (`abbr`'s expansion, `time`'s machine-readable
+/// value) or when a core clause already rules its interaction; `kbd` is core on
+/// ubiquity alone. `samp`, `var`, `cite` and `dfn` are the SemanticSpan
+/// extension's (PART 9 §10), which NAMES them rather than re-rendering them.
+const CORE_SEMANTIC_SPAN_ORDER: [&str; 3] = ["abbr", "time", "kbd"];
+
+/// The full order, including the four names an extension may add.
+const EXTENDED_SEMANTIC_SPAN_ORDER: [&str; 7] =
+    ["abbr", "time", "samp", "var", "kbd", "cite", "dfn"];
+
+/// The names this render consumes, in the canonical order.
+fn semantic_span_order(options: &Options<'_>) -> Vec<&'static str> {
+    EXTENDED_SEMANTIC_SPAN_ORDER
+        .iter()
+        .copied()
+        .filter(|name| {
+            CORE_SEMANTIC_SPAN_ORDER.contains(name)
+                || options
+                    .extensions
+                    .iter()
+                    .any(|ext| ext.semantic_span_names().contains(name))
+        })
+        .collect()
+}
 
 /// PART 10 §10 compact semantic attributes on an ordinary authored span.
 fn render_semantic_span(
@@ -2130,7 +2156,8 @@ fn render_semantic_span(
         out.push_str("</span>");
         return;
     };
-    let names: Vec<&str> = SEMANTIC_SPAN_ORDER
+    let order = semantic_span_order(options);
+    let names: Vec<&str> = order
         .iter()
         .copied()
         .filter(|name| attrs.key_values.contains_key(*name))
@@ -2151,34 +2178,48 @@ fn render_semantic_span(
     }
     render_inlines_stateful(&mut html, &span.children, options, state);
     state.suppress_automatic_abbreviation = previous_suppression;
-    for name in names {
-        let value = &attrs.key_values[name];
-        let mapped = match (name, value.is_empty()) {
-            ("abbr" | "dfn", false) => format!(" title=\"{}\"", escape_attr(value)),
-            ("time", false) => format!(" datetime=\"{}\"", escape_attr(value)),
-            _ => String::new(),
-        };
-        html = format!("<{name}{mapped}>{html}</{name}>");
-    }
-
+    // PART 9 §9: leftovers RIDE the outermost semantic element. A consumed name
+    // RENAMES the span rather than wrapping it, so the author's id, classes and
+    // remaining key/values land on the element they were written on.
     let mut rest = attrs.clone();
     rest.key_values
-        .retain(|name, _| !SEMANTIC_SPAN_ORDER.contains(&name.as_str()));
+        .retain(|name, _| !order.contains(&name.as_str()));
     rest.order.retain(|slot| match slot {
-        AttrSlot::Key(name) => !SEMANTIC_SPAN_ORDER.contains(&name.as_str()),
+        AttrSlot::Key(name) => !order.contains(&name.as_str()),
         _ => true,
     });
-    let has_remaining =
-        rest.id.is_some() || !rest.classes.is_empty() || !rest.key_values.is_empty();
-    if has_remaining {
-        out.push_str("<span");
-        write_attrs(out, &Some(rest));
-        out.push('>');
-        out.push_str(&html);
-        out.push_str("</span>");
-    } else {
-        out.push_str(&html);
+
+    let outermost = *names.last().expect("names is non-empty here");
+    for name in names {
+        let value = &attrs.key_values[name];
+        let maps_to = match (name, value.is_empty()) {
+            ("abbr" | "dfn", false) => Some("title"),
+            ("time", false) => Some("datetime"),
+            _ => None,
+        };
+        let riding = if name == outermost {
+            Some(rest.clone())
+        } else {
+            None
+        };
+        // A DERIVED ATTRIBUTE YIELDS TO AN AUTHORED ONE of the same name:
+        // `title` and `datetime` are names an author may also write, and one
+        // element never carries the same attribute twice.
+        let authored_same_name = match (maps_to, riding.as_ref()) {
+            (Some(key), Some(attrs)) => attrs.key_values.contains_key(key),
+            _ => false,
+        };
+        let mapped = match maps_to {
+            Some(key) if !authored_same_name => format!(" {key}=\"{}\"", escape_attr(value)),
+            _ => String::new(),
+        };
+        let mut own = String::new();
+        if let Some(attrs) = riding {
+            write_attrs(&mut own, &Some(attrs));
+        }
+        html = format!("<{name}{mapped}{own}>{html}</{name}>");
     }
+    out.push_str(&html);
 }
 
 /// Escape text content (`& < >`) and fold the no-break space U+00A0 into
@@ -2725,8 +2766,15 @@ fn render_inline_extension(
     // and `mark` are absent - a code span writes <code> and =x= writes <mark>.
     // `code` also made the duplication a defect: a code span is verbatim while
     // an extension body is parsed, so one tag carried two content models.
-    const SEMANTIC_TAGS: [&str; 7] = ["kbd", "dfn", "abbr", "cite", "samp", "var", "time"];
-    if SEMANTIC_TAGS.contains(&node.name.as_str()) {
+    // PART 9 §10: core registers NO `:name[…]` handler at all. The SemanticSpan
+    // extension re-registers the seven as a soft-deprecated spelling; without
+    // it every name takes the readable fallback.
+    let deprecated_spelling = options
+        .extensions
+        .iter()
+        .any(|ext| !ext.semantic_span_names().is_empty())
+        && EXTENDED_SEMANTIC_SPAN_ORDER.contains(&node.name.as_str());
+    if deprecated_spelling {
         out.push_str(&format!("<{}{}>", node.name, render_attrs(&node.attrs)));
         render_inlines_stateful(out, &node.children, options, state);
         out.push_str(&format!("</{}>", node.name));

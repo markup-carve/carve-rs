@@ -405,6 +405,61 @@ fn expected_corpus_size() -> usize {
     count
 }
 
+/// Documents this engine renders per the CURRENT spec, which the PINNED corpus
+/// predates.
+///
+/// Each entry FAILS IN BOTH DIRECTIONS: the output must equal what the spec now
+/// states, so an engine regression is caught exactly as the corpus would have
+/// caught it, and it must still DIFFER from the pinned golden, so an entry that
+/// went stale when the submodule bumped fails and has to be deleted with it.
+const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[
+    (
+        "293-a-semantic-span-keeps-its-wrapper-unless-consumption-empties-it-3",
+        "the tier split: leftovers ride the outermost semantic element instead of an outer span",
+        "<p><kbd>x</kbd></p>",
+    ),
+    (
+        "45-inline-extensions",
+        "the tier split (spec PART 9 §9/§10): core reserves three span attributes and registers no `:name[...]` handler",
+        "<p>Press <span class=\"ext-kbd\">Ctrl+C</span> to copy.</p>",
+    ),
+    (
+        "45-inline-extensions-7",
+        "the tier split (spec PART 9 §9/§10): core reserves three span attributes and registers no `:name[...]` handler",
+        "<p><span class=\"ext-abbr\" title=\"HyperText Markup Language\">HTML</span> <span class=\"ext-cite\">The Book</span> <span class=\"ext-dfn\">term</span>\n<span class=\"ext-samp\">ready</span> <span class=\"ext-var\">x</span> <span class=\"ext-time\" datetime=\"12:00\">noon</span> <span class=\"ext-code\">x</span> <span class=\"ext-mark\">relevant</span></p>",
+    ),
+    (
+        "45-inline-extensions-8",
+        "the tier split (spec PART 9 §9/§10): core reserves three span attributes and registers no `:name[...]` handler",
+        "<p><span class=\"ext-kbd shortcut\" id=\"copy\" data-key=\"copy\"><strong>Ctrl</strong>+C</span></p>",
+    ),
+    (
+        "45-inline-extensions-9",
+        "the tier split: `dfn`, `samp`, `var`, `cite`, `code` and `mark` are not core names, so they ride the element they were written on as ordinary attributes",
+        "<p><abbr title=\"Cascading Style Sheets\" dfn=\"\">CSS</abbr>\n<time datetime=\"12:00\">Noon</time> <kbd code=\"\" mark=\"\" samp=\"\" var=\"\" cite=\"\">x</kbd></p>",
+    ),
+    (
+        "45-inline-extensions-10",
+        "the tier split: leftovers ride the outermost semantic element instead of an outer span",
+        "<p><kbd id=\"copy\" class=\"shortcut\" data-key=\"copy\"><strong>Ctrl</strong>+C</kbd>\n<kbd>x</kbd></p>",
+    ),
+    (
+        "46-symbols",
+        "the tier split (spec PART 9 §9/§10): core reserves three span attributes and registers no `:name[...]` handler",
+        "<p>Great :rocket: and <span class=\"ext-kbd\">Ctrl</span> is an extension.</p>",
+    ),
+    (
+        "71-attribute-edge-cases-8",
+        "the tier split (spec PART 9 §9/§10): core reserves three span attributes and registers no `:name[...]` handler",
+        "<p><span class=\"ext-kbd\" k=\"{y}\">x</span></p>",
+    ),
+    (
+        "71-attribute-edge-cases-10",
+        "the tier split (spec PART 9 §9/§10): core reserves three span attributes and registers no `:name[...]` handler",
+        "<p><span class=\"ext-kbd foo\">x</span></p>",
+    ),
+];
+
 fn check_pair(slug: &str) {
     let slug = &resolve_slug(slug);
     let dir = corpus_dir();
@@ -414,6 +469,19 @@ fn check_pair(slug: &str) {
     let expected =
         fs::read_to_string(&html).unwrap_or_else(|e| panic!("read {}: {e}", html.display()));
     let actual = carve::to_html(&source);
+    if let Some((_, reason, ahead)) = AHEAD_OF_PIN.iter().find(|(name, _, _)| *name == slug) {
+        assert_eq!(
+            ahead.trim(),
+            actual.trim(),
+            "{slug} is declared ahead of the pinned corpus ({reason}) and does not render what the spec states"
+        );
+        assert_ne!(
+            expected.trim(),
+            actual.trim(),
+            "{slug} now matches the pinned corpus: delete its AHEAD_OF_PIN entry"
+        );
+        return;
+    }
     pretty_assert_eq(slug, expected.trim(), actual.trim());
 }
 

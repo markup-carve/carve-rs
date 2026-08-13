@@ -1,19 +1,24 @@
 use carve::{parse, render_ansi, render_carve, render_plain_text, to_html};
 
 #[test]
-fn renders_the_fixed_registry_and_value_mappings() {
+fn renders_the_core_registry_and_value_mappings() {
+    // PART 9 §9: three names, and a value that maps to the attribute it stands
+    // for. `dfn`, `samp`, `var`, `cite`, `code` and `mark` are not core, so they
+    // stay ordinary attributes riding the element they were written on.
     let source = "[CSS]{dfn abbr=\"Cascading Style Sheets\"}\n[Noon]{time=\"12:00\"} [x]{code mark samp var kbd cite}";
     assert_eq!(
         to_html(source),
-        "<p><dfn><abbr title=\"Cascading Style Sheets\">CSS</abbr></dfn>\n<time datetime=\"12:00\">Noon</time> <span code=\"\" mark=\"\"><cite><kbd><var><samp>x</samp></var></kbd></cite></span></p>"
+        "<p><abbr title=\"Cascading Style Sheets\" dfn=\"\">CSS</abbr>\n<time datetime=\"12:00\">Noon</time> <kbd code=\"\" mark=\"\" samp=\"\" var=\"\" cite=\"\">x</kbd></p>"
     );
 }
 
 #[test]
-fn keeps_remaining_hardened_attributes_on_one_outer_span() {
+fn leftovers_ride_the_outermost_semantic_element() {
+    // A consumed name RENAMES the span rather than wrapping it, and hardening
+    // still removes the handler.
     assert_eq!(
         to_html("[*Ctrl*+C]{#copy .shortcut kbd data-key=\"copy\" onclick=\"alert(1)\"}"),
-        "<p><span id=\"copy\" class=\"shortcut\" data-key=\"copy\"><kbd><strong>Ctrl</strong>+C</kbd></span></p>"
+        "<p><kbd id=\"copy\" class=\"shortcut\" data-key=\"copy\"><strong>Ctrl</strong>+C</kbd></p>"
     );
 }
 

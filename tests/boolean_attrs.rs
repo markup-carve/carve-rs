@@ -36,10 +36,9 @@ fn mixes_with_key_value() {
 
 #[test]
 fn multiple_bare_words() {
-    assert_eq!(
-        html("[x]{kbd foo}"),
-        r#"<p><span foo=""><kbd>x</kbd></span></p>"#
-    );
+    // The consumed name renames the span and `foo` rides the element it was
+    // written on (PART 9 §9).
+    assert_eq!(html("[x]{kbd foo}"), r#"<p><kbd foo="">x</kbd></p>"#);
 }
 
 #[test]

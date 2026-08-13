@@ -85,6 +85,12 @@ fn symbol_attrs_round_trip_in_carve_renderer() {
 
 #[test]
 fn colon_inline_extension_still_wins() {
+    // The point is that `:kbd[...]` parses as an EXTENSION rather than a
+    // symbol, which is unchanged. What it renders to is not: PART 9 §10 leaves
+    // core with no `:name[...]` handler, so it takes the generic fallback.
     assert_eq!(symbol_count(":kbd[Ctrl]"), 0);
-    assert_eq!(carve::to_html(":kbd[Ctrl]"), "<p><kbd>Ctrl</kbd></p>");
+    assert_eq!(
+        carve::to_html(":kbd[Ctrl]"),
+        "<p><span class=\"ext-kbd\">Ctrl</span></p>"
+    );
 }

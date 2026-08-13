@@ -7,21 +7,40 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Semantic span attributes** (markup-carve/carve#1146). `[Tab]{kbd}`,
+  `[HTML]{abbr="…"}` and `[now]{time="2026-01-01"}` render `<kbd>`,
+  `<abbr title="…">` and `<time datetime="…">` - three names spec PART 9 §9
+  reserves on an ordinary span: the two that carry data the author would
+  otherwise lose, plus the one every comparable system ships. Several nest in a
+  fixed order, leftover attributes ride the outermost element
+  (`[Tab]{#k .key kbd}` is `<kbd id="k" class="key">Tab</kbd>`), and a derived
+  `title`/`datetime` yields to an authored one of the same name.
+
+- **`extensions::semantic_span::SemanticSpan`.** The four names core does not
+  reserve - `samp`, `var`, `cite`, `dfn` - in the same spelling and under the
+  same rules, plus the `:name[…]` form for all seven as a SOFT-DEPRECATED
+  compatibility spelling scheduled for removal in 0.2. What it claims is
+  declarative (`CarveExtension::semantic_span_names`), so the nesting order,
+  the value mapping and the riding rule have one implementation.
+
 ### Changed
 
-- **`code` and `mark` leave the built-in semantic registry.** Both spellings
-  follow the spec's seven-name list - `abbr`, `time`, `samp`, `var`, `kbd`,
-  `cite`, `dfn` - so `:code[x]` and `:mark[x]` take the generic
-  `<span class="ext-NAME">` fallback and `[x]{code}` / `[x]{mark}` are ordinary
-  boolean attributes on the outer span. A name belongs in the registry only
-  where Carve has no other INLINE spelling for that element, and these two have
-  one: a code span writes `<code>`, `=x=` writes `<mark>`. `code` is also where
-  the duplication became a defect - a code span is verbatim while an extension
-  body is parsed, so `` `*b*` `` and `:code[*b*]` produced the same tag with
-  different content models and nothing reported the switch
-  (markup-carve/carve#1146).
+- **`:name[…]` no longer renders a semantic element unless the extension is
+  registered.** `:kbd[x]` is `<span class="ext-kbd">x</span>`; register
+  `SemanticSpan` to keep the old output. The extension SYNTAX is core and the
+  HANDLERS are Tier-2/3 - what the extensions contract has always said, and
+  what a hardcoded set of nine tags in the renderer had been contradicting.
 
-### Added
+- **`:code[…]` and `:mark[…]` render no element at all.** Both take the generic
+  `<span class="ext-NAME">` fallback and are in no registry, core or extension:
+  a code span already writes `<code>` and `=x=` already writes `<mark>`. `code`
+  was also the name that made the duplication a defect - a code span is
+  verbatim while an extension body is parsed, so one tag carried two content
+  models.
+
+### Changed
 
 - **The `{:TAG}` language attribute** (markup-carve/carve#1114). `[x]{:fr}` is
   exact sugar for `{lang=fr}`, on inline spans and block attribute lines alike;
