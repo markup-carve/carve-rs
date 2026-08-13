@@ -10419,10 +10419,14 @@ fn attr_tokens(src: &str) -> Vec<String> {
             buf.push(ch);
             continue;
         }
-        if (ch == '#' || ch == '.') && (buf.starts_with('#') || buf.starts_with('.')) {
-            tokens.push(std::mem::take(&mut buf));
-            buf.push(ch);
-        } else if ch.is_whitespace() {
+        // NO SPLIT ON A SIGIL. `attribute_list` is
+        // `attribute, {space+, attribute}` (PART 7): a separator is required,
+        // so `{.a.b}`, `{#i.c}` and `{.a#i}` are not attribute blocks and stay
+        // literal. This branch used to break a class or id token at the next
+        // `#` or `.`, manufacturing two attributes where the source has one
+        // malformed one - `.a.b` now stays one token and fails `is_identifier`,
+        // which is what makes the whole block literal.
+        if ch.is_whitespace() {
             if !buf.is_empty() {
                 tokens.push(std::mem::take(&mut buf));
             }
