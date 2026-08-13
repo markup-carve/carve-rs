@@ -9,6 +9,16 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **An abbreviation expands inside a span** (markup-carve/carve#1151). PART 9R R3
+  matches a term in rendered text at word boundaries and says nothing about the
+  container it sits in, but `apply_abbreviations_inline` matched `Emphasis`,
+  `Link` and `Extension` and let a `Span` fall to the catch-all arm - so
+  `[HTML]{.x}` and `[HTML]{kbd}` silently dropped an expansion that `*HTML*` and
+  `[HTML](/u)` got. PART 9 §10 made the second spelling a documented feature,
+  which put the loss inside a construct the docs teach.
+
+### Fixed
+
 - **The HTML importer keeps an authored table-cell `scope`** (carve-rs#944).
   `<th scope="colgroup">` imported with the value gone, so a second conversion
   back to HTML could not produce it. `colgroup` and `rowgroup` have no marker

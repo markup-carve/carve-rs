@@ -13800,6 +13800,17 @@ fn apply_abbreviations_inline(nodes: &mut Vec<InlineNode>, index: &AbbreviationI
                 apply_abbreviations_inline(&mut e.children, index);
                 out.push(InlineNode::Extension(e));
             }
+            // PART 9R R3 matches a term in RENDERED TEXT at word boundaries, and
+            // the container the text sits in does not change that. A span fell
+            // to the catch-all arm below and its children were never walked, so
+            // `[HTML]{.x}` and `[HTML]{kbd}` silently dropped the expansion that
+            // `*HTML*` and `[HTML](/u)` got - and PART 9 §10 made the second
+            // spelling a documented feature, so the loss sits inside a construct
+            // the docs teach (carve#1151).
+            InlineNode::Span(mut sp) => {
+                apply_abbreviations_inline(&mut sp.children, index);
+                out.push(InlineNode::Span(sp));
+            }
             InlineNode::CitationGroup(mut g) => {
                 for item in &mut g.items {
                     if let Some(prefix) = &mut item.prefix {
