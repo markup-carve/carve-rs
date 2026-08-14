@@ -276,22 +276,34 @@ fn render_block(node: &BlockNode, ctx: &mut MarkdownContext, depth: usize) -> St
         }
         BlockNode::BlockQuote(quote) => {
             let lines = render_blocks(&quote.children, ctx, depth + 1);
-            let body = trim_block_output(&lines)
+            let mut body = trim_block_output(&lines).to_string();
+            // PART 11 §10c T1. The attribution is the quotation's SOURCE, so it
+            // stays INSIDE the quote. It used to follow as a sibling paragraph,
+            // which kept the words but not what they mean - read back it was
+            // attached to nothing, and a round trip produced a blockquote with
+            // no attribution.
+            //
+            // Markdown has no attribution syntax but does admit HTML, and this
+            // target already writes <u>, <mark>, <sub>, <ins> and <del> for
+            // constructs with no Markdown spelling. Through a CommonMark reader
+            // <footer> opens an HTML BLOCK inside the quote (it is not wrapped
+            // in a paragraph), so the rendered HTML matches the HTML target's.
+            if let Some(attribution) = &quote.attribution {
+                let text = render_inlines(attribution, ctx, depth + 1);
+                body.push_str(&format!("\n\n<footer>{}</footer>", text.trim()));
+            }
+            let quoted = body
                 .split('\n')
-                .map(|line| format!("> {line}"))
+                .map(|line| {
+                    if line.is_empty() {
+                        ">".to_string()
+                    } else {
+                        format!("> {line}")
+                    }
+                })
                 .collect::<Vec<_>>()
                 .join("\n");
-            // Markdown has no attribution slot, so the source follows the quote
-            // as an ordinary paragraph rather than being dropped.
-            match &quote.attribution {
-                Some(attribution) => {
-                    format!(
-                        "{body}\n\n{}\n\n",
-                        render_inlines(attribution, ctx, depth + 1)
-                    )
-                }
-                None => format!("{body}\n\n"),
-            }
+            format!("{quoted}\n\n")
         }
         BlockNode::List(list) => render_list(list, ctx, depth + 1),
         BlockNode::ThematicBreak(_) => "---\n\n".to_string(),

@@ -189,12 +189,27 @@ fn render_block(node: &BlockNode, ctx: &mut AnsiContext, depth: usize) -> String
             ctx.block_quote_depth -= 1;
             // Keeps the styling the caption had while a quote was a figure, so
             // a terminal reader sees the same thing in a different place.
+            //
+            // PART 11 §10c T2: it also carries the QUOTE BAR. The bar is already
+            // this target's marker for "inside the quote", and the attribution
+            // was the one line in the quote that did not get it - so the source
+            // read as a separate block that merely happened to follow. Nothing
+            // new is invented; the prefix the body lines already use is applied
+            // one line further. The caption's own trailing separator is trimmed
+            // BEFORE prefixing, or the bar would be drawn on blank lines and the
+            // quote would appear to continue past its end.
             match &quote.attribution {
                 Some(attribution) => {
+                    ctx.block_quote_depth += 1;
+                    let bar = block_quote_prefix(ctx);
+                    ctx.block_quote_depth -= 1;
+                    let rendered = render_caption(attribution, ctx);
+                    let prefixed = prefix_lines(rendered.trim_end_matches('\n'), &bar);
                     format!(
-                        "{}\n\n{}",
+                        "{}\n{}\n{}\n\n",
                         out.trim_end_matches('\n'),
-                        render_caption(attribution, ctx)
+                        bar.trim_end(),
+                        prefixed
                     )
                 }
                 None => out,

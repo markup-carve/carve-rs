@@ -174,11 +174,15 @@ fn render_block(node: &BlockNode, depth: usize) -> String {
                 "\"{}\"",
                 trim_block_output(&render_blocks(&quote.children, depth + 1))
             );
-            // Visible content, so a text target keeps it - as a separate block,
-            // which is the spacing the renderer-parity fixtures pin.
+            // PART 11 §10c T3. ADJACENCY, not a blank line. A blank line is what
+            // separates blocks on this target, so putting one here said the
+            // attribution was a block of its own rather than the quotation's
+            // source - the words survived, the attachment did not. No
+            // punctuation is invented: a dash prefix would put a character in
+            // the output the author never wrote.
             match &quote.attribution {
                 Some(attribution) => {
-                    format!("{quoted}\n\n{}\n\n", render_inlines(attribution))
+                    format!("{quoted}\n{}\n\n", render_inlines(attribution).trim())
                 }
                 None => format!("{quoted}\n\n"),
             }

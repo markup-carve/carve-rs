@@ -85,6 +85,44 @@ fn the_terminal_rule_carries_the_title_and_label() {
     );
 }
 
+/// PART 11 §10c. The attribution is the quotation's SOURCE, so every target
+/// keeps it ATTACHED. It used to follow as a sibling separated by a blank line:
+/// the words survived, the relationship did not, and a round trip produced a
+/// blockquote with no attribution at all.
+#[test]
+fn the_attribution_stays_attached_to_its_quote() {
+    let src = "> q\n^ Attr\n";
+
+    // Markdown: a <footer> element inside the quote. Through a CommonMark reader
+    // that opens an HTML block rather than being wrapped in a paragraph, so the
+    // rendered HTML matches the HTML target's.
+    assert_eq!(carve::to_markdown(src), "> q\n>\n> <footer>Attr</footer>\n");
+
+    // Plain text: adjacency. No blank line, and no invented punctuation.
+    assert_eq!(carve::to_plain_text(src), "\"q\"\nAttr\n");
+
+    // Terminal: the quote bar carried onto the attribution line, which keeps its
+    // italic-dim caption styling.
+    assert_eq!(strip_ansi(&carve::to_ansi(src)), "\u{2502} q\n\u{2502}\n\u{2502} Attr\n");
+}
+
+/// A quote with no attribution is untouched: the change adds a line only where
+/// the author wrote one.
+#[test]
+fn a_quote_without_an_attribution_is_unchanged() {
+    assert_eq!(carve::to_markdown("> q\n"), "> q\n");
+    assert_eq!(carve::to_plain_text("> q\n"), "\"q\"\n");
+}
+
+/// A block after an attributed quote keeps its separation.
+#[test]
+fn a_block_after_an_attributed_quote_stays_separate() {
+    assert_eq!(
+        carve::to_markdown("> q\n^ A\n\nafter\n"),
+        "> q\n>\n> <footer>A</footer>\n\nafter\n"
+    );
+}
+
 fn strip_ansi(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     let mut chars = s.chars();

@@ -9,6 +9,30 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Presentation targets no longer discard authored text**
+  (markup-carve/carve#1179). `docs/graceful-degradation.md` states the floor as
+  a MUST - "losing the click is fine; losing the words is not" - and three kinds
+  of authored text were dropped outright: a table caption vanished on the
+  Markdown target, and a fence title (`"src/app.js"`) and a grouping label
+  (`[Node]`) vanished on the plain-text and terminal targets. The caption now
+  sits on its own line under the table, the way an image and a listing caption
+  already degrade there; plain emits the title and label as standalone lines
+  ahead of the code, through the same `prepend_label` the `Div` arm already
+  used; and the terminal joins them to the rule line it was already drawing. An
+  uncaptioned table and a fence with no title are byte-identical to before.
+
+- **A quote attribution stays attached to its quote on every target**
+  (markup-carve/carve#1179, PART 11 §10c). It used to follow the quote as a
+  sibling separated by a blank line, which kept the words but not what they
+  mean - read back the attribution was attached to nothing, and a round trip
+  produced a blockquote with no attribution at all. Markdown now emits a
+  `<footer>` element inside the quote (that target already writes `<u>`,
+  `<mark>` and `<ins>` where Markdown has no spelling, and through a CommonMark
+  reader `<footer>` opens an HTML block rather than being wrapped in a
+  paragraph, so the rendered HTML matches the HTML target's); the terminal
+  carries its quote bar onto the attribution line; plain text attaches by
+  adjacency, dropping the blank line. A quote with no attribution is unchanged.
+
 - **An authored `abbr` wins on the Markdown, ANSI and plain targets**
   (markup-carve/carve#1176). markup-carve/carve#1127 ruled that an explicit
   `abbr` outranks automatic expansion; the HTML renderer honoured it while
