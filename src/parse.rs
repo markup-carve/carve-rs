@@ -13193,6 +13193,20 @@ fn read_to_first_bracket(bytes: &[u8], start: usize) -> Option<(String, usize)> 
     None
 }
 
+/// The body of the bracketed run `text` opens with, if the run closes inside it.
+///
+/// The canonical writer asks this before deciding whether a `^` it is about to
+/// emit opens an inline note, so the question has to be answered by the READER
+/// rather than by a second scan that promises to agree with it: the close is
+/// bracket-balanced, escape-aware and opaque inside a verbatim span or an
+/// editorial comment, and [`read_bracketed`] is where all of that already lives.
+///
+/// `None` when the run does not close in `text` - which for the writer means the
+/// closer may still arrive from a later node, so it must not drop the escape.
+pub(crate) fn bracketed_run_body(text: &str) -> Option<String> {
+    read_bracketed(text.as_bytes(), 0).map(|(body, _)| body)
+}
+
 fn read_bracketed(bytes: &[u8], start: usize) -> Option<(String, usize)> {
     if bytes.get(start) != Some(&b'[') {
         return None;
