@@ -54,9 +54,10 @@ pub struct LintWarning {
     /// Deliberately NOT the CODEPOINT offsets PART 12 §4 pins for a serialized
     /// AST, which is what [`Pos`] carries. This struct is a diagnostic a Rust
     /// caller slices its own `&str` with, and a codepoint offset handed to
-    /// `&source[start..end]` PANICS on the first non-ASCII character before it
-    /// - not a wrong highlight, a crash. carve-js converts the same positions
-    /// to UTF-16 for the same reason; the unit follows the host language.
+    /// `&source[start..end]` PANICS on the first non-ASCII character before it.
+    /// That is a crash, not a wrong highlight. carve-js converts the same
+    /// positions to UTF-16 for the same reason; the unit follows the host
+    /// language.
     pub start: usize,
     /// 0-based end offset in the source, exclusive, in bytes.
     pub end: usize,
@@ -187,6 +188,13 @@ fn collect_semantic_attribute_warnings(
         if is_valid_html_attribute_on(node_type, name) {
             continue;
         }
+        // The trailing `{name}=""` is carve-js' wording, kept verbatim, and it
+        // is INACCURATE for a valued name: `` `c`{kbd="V"} `` renders
+        // `<code kbd="V">`, not `kbd=""`. Left alone deliberately. "Same rule,
+        // same id" is what parity means here, and a consumer reading the same
+        // rule id from two engines must not get two different sentences - so
+        // this is a wording fix all three engines make together, not one a port
+        // makes on its own. Raised on markup-carve/carve#1132.
         out.push(warning(
             pos,
             to_byte,
