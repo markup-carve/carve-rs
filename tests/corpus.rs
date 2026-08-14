@@ -13,6 +13,13 @@ use std::fs;
 use std::path::PathBuf;
 
 const IMPLEMENTED: &[&str] = &[
+    // Added with the spec bump to carve 68b71c2. Every document in each of the
+    // four was rendered through this engine and matched its committed HTML
+    // before being listed here.
+    "a-marker-glued-to-a-name-opens-nothing",
+    "a-math-span-s-base-class-keeps-the-class-slot-in-place",
+    "an-abbreviation-expands-inside-an-inline-container",
+    "an-angle-bracket-is-escaped-only-where-it-opens-markup",
     "two-attributes-need-a-separator-between-them",
     "the-semantic-registry-holds-no-element-carve-already-spells",
     "a-language-attribute-is-exact-sugar-for-lang",
