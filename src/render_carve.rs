@@ -1189,7 +1189,7 @@ fn render_block(node: &BlockNode, ctx: &mut CarveContext) -> String {
             let label = admonition
                 .label
                 .as_ref()
-                .map(|label| format!(" [{}]", escape_bracket_text(label)))
+                .map(|label| format!(" [{}]", write_flat_bracket_run(label)))
                 .unwrap_or_default();
             let fence = colon_fence_for(ctx);
             let body = render_inside_colon_container(&admonition.children, ctx);
@@ -1218,7 +1218,7 @@ fn render_block(node: &BlockNode, ctx: &mut CarveContext) -> String {
             let label = div
                 .label
                 .as_ref()
-                .map(|label| format!(" [{}]", escape_bracket_text(label)))
+                .map(|label| format!(" [{}]", write_flat_bracket_run(label)))
                 .unwrap_or_default();
             let fence = colon_fence_for(ctx);
             let body = render_inside_colon_container(&div.children, ctx);
@@ -1648,7 +1648,7 @@ fn render_footnote_def_source(label: &str, blocks: &[BlockNode], ctx: &mut Carve
     // gives an empty definition an explicit spelling so formatting preserves
     // the definition and references to it keep resolving.
     if blocks.is_empty() {
-        return format!("[^{}]: {{empty}}", escape_footnote_label(label));
+        return format!("[^{}]: {{empty}}", write_flat_bracket_run(label));
     }
     let raw_body = render_blocks(blocks, ctx);
     let single_body;
@@ -1674,12 +1674,12 @@ fn render_footnote_def_source(label: &str, blocks: &[BlockNode], ctx: &mut Carve
     // of the note's pending attributes, so it reaches neither the endnote item
     // nor anything after it.
     if body.is_empty() {
-        return format!("[^{}]: {{empty}}", escape_footnote_label(label));
+        return format!("[^{}]: {{empty}}", write_flat_bracket_run(label));
     }
     let mut lines = body.split('\n');
     let mut def_lines = vec![format!(
         "[^{}]: {}",
-        escape_footnote_label(label),
+        write_flat_bracket_run(label),
         lines.next().unwrap_or_default()
     )];
     for line in lines {
@@ -1897,7 +1897,7 @@ fn render_inline(
             } else {
                 format!(
                     "[^{}]",
-                    escape_footnote_label(footnote.id.as_deref().unwrap_or_default())
+                    write_flat_bracket_run(footnote.id.as_deref().unwrap_or_default())
                 )
             };
             format!("{body}{}", render_attrs(&footnote.attrs))
@@ -2091,7 +2091,7 @@ fn code_fence_info(lang: Option<&str>, title: Option<&str>, label: Option<&str>)
         parts.push(format!("\"{}\"", escape_quoted(title)));
     }
     if let Some(label) = label {
-        parts.push(format!("[{}]", escape_bracket_text(label)));
+        parts.push(format!("[{}]", write_flat_bracket_run(label)));
     }
     if parts.is_empty() {
         String::new()
@@ -2926,7 +2926,30 @@ fn escape_plain_line(text: &str) -> String {
     text.replace('\n', " ")
 }
 
+/// An image's ALT TEXT, written between `![` and `]`.
+///
+/// ALT IS RAW. It is an HTML attribute, so nothing inside it is inline-parsed
+/// and no escape inside it is resolved: `![t\]z](/i.png)` gives `alt="t\]z"`,
+/// backslash and all. That is what makes escaping the wrong tool here - a `\]`
+/// the writer emits is not a neutralized bracket, it is two more characters of
+/// alt text, and the document says something else on the next read. It
+/// compounded, too, because each pass escaped the backslash the last pass wrote
+/// (markup-carve/carve#1197).
+///
+/// The run closes at the MATCHING `]`, by the same scan a link's text closes by,
+/// so the alt an author can write is exactly the alt that re-reads as itself and
+/// the writer's job is to put it back verbatim (markup-carve/carve#1206).
+///
+/// The fallback covers an alt with NO Carve spelling - a bare unbalanced `]`, or
+/// a run ending inside an unclosed code span. `parse` cannot produce one; an
+/// ingested AST can. Escaping is not a representation of that value either, but
+/// it keeps the image a well-formed image instead of letting a stray `]` split
+/// the line, and it settles: the escaped alt IS representable, so the pass after
+/// it writes the same bytes.
 fn escape_image_alt(text: &str) -> String {
+    if crate::parse::raw_bracket_run_closes(text) {
+        return text.to_string();
+    }
     text.replace('\\', "\\\\")
         .replace('[', "\\[")
         .replace(']', "\\]")
@@ -3024,16 +3047,42 @@ fn escape_quoted(text: &str) -> String {
     text.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
-fn escape_bracket_text(text: &str) -> String {
-    text.replace('\\', "\\\\").replace(']', "\\]")
+/// A FLAT raw bracketed run: a colon-fence or code-fence `[label]`, and a
+/// footnote's `[^id]` in both its definition and its references.
+///
+/// The same rule as an alt text and for the same reason - the value is raw, so
+/// an escape the writer emits reaches the reader as two characters of content
+/// rather than as a neutralized bracket - but a narrower close. These readers
+/// take the run up to the FIRST `]`, with no balance and no escape, so a run is
+/// representable exactly when it holds neither a `]` nor a line break.
+///
+/// One function for one rule. It was written twice and both spellings escaped,
+/// so `::: [a\b]` and `[^n\m]` grew a backslash on every format pass - a div
+/// label is rendered, so that document said something new each time, and the
+/// other three merely refused to settle.
+///
+/// WRITTEN AS AUTHORED WITH NO FALLBACK, unlike an alt text. A value holding a
+/// `]` has no spelling here either, but the escape is not a spelling of it: each
+/// of these readers requires the run to be the whole of what follows, so
+/// `[a\]b]` fails to match exactly as `[a]b]` does, and `::: [a\]b]` and
+/// `::: [a]b]` render the same paragraph, container and all. Where the construct
+/// survives as text instead - a code fence, a footnote definition - the escape
+/// only adds a backslash the reader can see. The branch would change no output
+/// anywhere, which is a branch that cannot fail, so it is not written.
+fn write_flat_bracket_run(text: &str) -> &str {
+    text
 }
 
-fn escape_footnote_label(text: &str) -> String {
-    escape_bracket_text(text)
-}
-
+/// NOT the same rule, deliberately.
+///
+/// [`detect_abbreviation_def`](crate::parse) reads the term as
+/// `is_ascii_alphanumeric`, per PART 5's `(letter | digit)+`, so neither
+/// character this escapes can reach it from a parse - and an ingested
+/// abbreviation carrying one has no `*[…]:` spelling with or without the
+/// backslash. Left as it stands rather than folded into the function above,
+/// which would claim a shared rule where there is only a shared shape.
 fn escape_abbr(text: &str) -> String {
-    escape_bracket_text(text)
+    text.replace('\\', "\\\\").replace(']', "\\]")
 }
 
 fn escape_identifier(text: &str) -> String {

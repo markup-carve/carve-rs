@@ -13207,6 +13207,24 @@ pub(crate) fn bracketed_run_body(text: &str) -> Option<String> {
     read_bracketed(text.as_bytes(), 0).map(|(body, _)| body)
 }
 
+/// Does a RAW bracketed run re-read as itself when written between `[` and `]`?
+///
+/// The writer needs this because a raw run - an image's alt text - resolves no
+/// escapes: whatever sits between the brackets IS the value, backslashes and
+/// all. So the writer cannot neutralize a `]` by escaping it. It can only ask
+/// whether the reader's own scan would close where it is about to put the `]`,
+/// and write the run verbatim when it does.
+///
+/// It is the READER's scan rather than a second spelling of it: the same
+/// [`read_bracketed`] the inline pass closes a link's text with, run over the
+/// run wrapped in the brackets it will be written between. Balance,
+/// escape-awareness and opacity inside a verbatim span or an editorial comment
+/// therefore hold by construction.
+pub(crate) fn raw_bracket_run_closes(text: &str) -> bool {
+    let wrapped = format!("[{text}]");
+    read_bracketed(wrapped.as_bytes(), 0).is_some_and(|(_, after)| after == wrapped.len())
+}
+
 fn read_bracketed(bytes: &[u8], start: usize) -> Option<(String, usize)> {
     if bytes.get(start) != Some(&b'[') {
         return None;
