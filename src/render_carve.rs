@@ -34,6 +34,10 @@ struct CarveContext {
     /// Inside a table cell, where a leading `^` cannot open a caption: a
     /// caption marker is a BLOCK line, and a cell's content is not one.
     table_cell_depth: usize,
+    /// Inside an inline note's content, where PART 9 §16 disables note
+    /// recognition at every depth - so a `^[` written there opens nothing and
+    /// needs no escape.
+    note_content_depth: usize,
     after_caption_host: bool,
     paragraph_starts_after_caption_host: bool,
     escape_mode: EscapeMode,
@@ -433,6 +437,7 @@ fn render_with_escapes_once(doc: &Document, escape_mode: EscapeMode) -> String {
         line_block_depth: 0,
         colon_fence_depth: 0,
         table_cell_depth: 0,
+        note_content_depth: 0,
         after_caption_host: false,
         paragraph_starts_after_caption_host: false,
         escape_mode,
@@ -1714,7 +1719,12 @@ fn render_inlines_with_caption(
             .get(idx + 1)
             .and_then(first_boundary)
             .unwrap_or_default();
-        let rendered = render_inline(node, ctx, prev, next, caption_can_open);
+        let opens_a_note = next_node_opens_a_note(
+            nodes.get(idx + 1),
+            ctx.note_content_depth > 0,
+            ctx.escape_mode,
+        );
+        let rendered = render_inline(node, ctx, prev, next, caption_can_open, opens_a_note);
         // A COMMENT'S SEPARATING SPACE IS DECIDED ON THE EMITTED BYTES, not on
         // the previous NODE (carve#1028). `%%` opens a comment only at the
         // start of a line or after whitespace, so the writer owes one space
@@ -1758,6 +1768,7 @@ fn render_inline(
     prev_char: char,
     next_char: char,
     caption_can_open: bool,
+    next_opens_a_note: bool,
 ) -> String {
     match node {
         // The one target that publishes it: the author wrote `%% note`, and
@@ -1775,6 +1786,10 @@ fn render_inline(
             caption_can_open && ctx.table_cell_depth == 0,
             prev_char,
             next_char,
+            NoteEscape {
+                in_note_content: ctx.note_content_depth > 0,
+                next_node_opens_a_note: next_opens_a_note,
+            },
         ),
         InlineNode::EscapedText(text) => format!("\\{}", text.value),
         InlineNode::SmartPunctuation(s) => s.value.clone(),
@@ -1852,12 +1867,33 @@ fn render_inline(
             render_inlines(&extension.children, ctx),
             render_attrs(&extension.attrs)
         ),
-        InlineNode::Abbreviation(abbr) => {
-            escape_text(&abbr.abbr, ctx.escape_mode, false, false, '\0', '\0')
-        }
+        // The neighbour characters are the REAL ones, not `\0`: this arm writes
+        // the abbreviation's own text into the same run as everything around
+        // it, so a `^` it ends on sits against whatever the next node writes.
+        // A `\0` here told the caret decision there was no neighbour, and an
+        // ingested abbreviation ending in `^` before a bracket run came back
+        // bare - bytes that re-parse as an inline note.
+        InlineNode::Abbreviation(abbr) => escape_text(
+            &abbr.abbr,
+            ctx.escape_mode,
+            false,
+            false,
+            prev_char,
+            next_char,
+            NoteEscape {
+                in_note_content: ctx.note_content_depth > 0,
+                next_node_opens_a_note: next_opens_a_note,
+            },
+        ),
         InlineNode::Footnote(footnote) => {
             let body = if let Some(inline) = &footnote.inline {
-                format!("^[{}]", render_inlines(inline, ctx))
+                // PART 9 §16 parses a note's content with footnote recognition
+                // DISABLED, so a `^[` or a `[^` written inside it is ordinary
+                // text on the way back in and the writer owes it no escape.
+                ctx.note_content_depth += 1;
+                let content = render_inlines(inline, ctx);
+                ctx.note_content_depth -= 1;
+                format!("^[{content}]")
             } else {
                 format!(
                     "[^{}]",
@@ -2679,6 +2715,96 @@ fn collapse_breaks(text: &str) -> String {
     trim_non_nbsp(&out).to_string()
 }
 
+/// What the caret-before-a-bracket decision needs that one text node cannot say.
+#[derive(Clone, Copy)]
+struct NoteEscape {
+    /// Inside an inline note's content, where PART 9 §16 disables note
+    /// recognition at every depth.
+    in_note_content: bool,
+    /// The `[` arrived as the NEXT node's boundary character, and that node
+    /// opens a note with it.
+    next_node_opens_a_note: bool,
+}
+
+/// Whether the `^` before the `[` at `bracket` needs its escape.
+///
+/// PART 11 §2 escapes a character IF AND ONLY IF omitting the escape would
+/// change the re-parsed AST, and it takes the decision per OPENER OCCURRENCE.
+/// `^[` is only an occurrence where the note can FORM, and PART 9 §16 gives two
+/// shapes where it cannot: an empty or whitespace-only body is literal, and note
+/// recognition is DISABLED inside a note's own content, at every depth. Escaping
+/// either one is the over-escaping §2 calls a defect rather than a safe default.
+///
+/// Three of the four answers are certain and are taken here. The fourth is not:
+/// the run does not close in THIS text node, and a later node may still supply
+/// the `]` - or may not, which is the `x ^[a` that needs nothing. That one is
+/// handed to the minimal/conservative vote (§4) rather than guessed, which is
+/// what the `mode` argument is for: the two passes then differ, W3 parses both,
+/// and the bare form is emitted exactly when it re-parses the same.
+fn caret_needs_its_escape(text: &str, bracket: usize, note: NoteEscape, mode: EscapeMode) -> bool {
+    if note.in_note_content {
+        return false;
+    }
+    let run = match text.get(bracket..) {
+        Some(rest) if rest.starts_with('[') => rest,
+        // The `[` is the next NODE's, so the run is not this node's to weigh -
+        // and it is not even certain to follow the caret in the output, since a
+        // node reporting a boundary character emits its own opener ahead of it.
+        // `next_node_opens_a_note` is that question, answered where the node was
+        // in hand.
+        _ => return note.next_node_opens_a_note,
+    };
+    match crate::parse::bracketed_run_body(run) {
+        Some(body) => !body.trim().is_empty(),
+        None => mode == EscapeMode::Conservative,
+    }
+}
+
+/// The characters a node writes VERBATIM at the very front of its output.
+///
+/// A different question from [`boundary_text`], which answers "what character is
+/// adjacent" for the emphasis and comment-spacing decisions and is happy to name
+/// one the node does not write first: a code span reports its content while
+/// writing a backtick ahead of it, escaped text reports the character while
+/// writing a backslash, and a mention, a tag and a symbol all write their sigil
+/// first. Only these three put their own value at byte zero.
+///
+/// The nodes that DO open with a bare `[` - a link, a span, a reference - report
+/// no boundary character at all, so they never reach this decision.
+fn leading_verbatim_text(node: &InlineNode) -> Option<&str> {
+    match node {
+        InlineNode::Text(text) => Some(&text.value),
+        InlineNode::SmartPunctuation(punctuation) => Some(&punctuation.value),
+        InlineNode::Abbreviation(abbr) => Some(&abbr.abbr),
+        _ => None,
+    }
+}
+
+/// Does the node FOLLOWING a text node begin, in the output, with a bracket run
+/// that opens a note?
+///
+/// This is what stops ``x ^`[t]` `` coming back ``x \^`[t]` ``: the code span
+/// reports a `[` as the adjacent character but writes a backtick, so the caret
+/// is not in front of a bracket in the output at all.
+fn next_node_opens_a_note(
+    next: Option<&InlineNode>,
+    in_note_content: bool,
+    mode: EscapeMode,
+) -> bool {
+    match next.and_then(leading_verbatim_text) {
+        Some(text) => caret_needs_its_escape(
+            text,
+            0,
+            NoteEscape {
+                in_note_content,
+                next_node_opens_a_note: false,
+            },
+            mode,
+        ),
+        None => false,
+    }
+}
+
 fn escape_text(
     text: &str,
     mode: EscapeMode,
@@ -2686,6 +2812,7 @@ fn escape_text(
     caption_can_open: bool,
     previous_boundary: char,
     next_boundary: char,
+    note: NoteEscape,
 ) -> String {
     let mut out = String::new();
     // A `^` is only dangerous where a caption marker could be read: at the
@@ -2702,9 +2829,9 @@ fn escape_text(
     // every candidate in it, including the `:` that needs nothing. The corpus
     // pins that exact shape at 158-indented-image-and-caption-stay-literal.
     let mut at_line_start = opens_block_line;
-    let mut chars = text.chars().peekable();
+    let mut chars = text.char_indices().peekable();
     let mut previous = previous_boundary;
-    while let Some(ch) = chars.next() {
+    while let Some((offset, ch)) = chars.next() {
         // A CONTROL CHARACTER IS CONTENT, and the writer has to write it back.
         // This dropped 61 codepoints - every C0 control but tab/newline/return,
         // DEL, and the whole C1 block - none of which the parser or the HTML
@@ -2730,7 +2857,7 @@ fn escape_text(
         // of a line is not one - superscript is braced-only, so it is literal
         // text and needs no escape, which two of this repo's own tests already
         // pinned.
-        let next = chars.peek().copied().unwrap_or(next_boundary);
+        let next = chars.peek().map(|&(_, c)| c).unwrap_or(next_boundary);
         // SPACE ONLY, which is what the comment above already said and what the
         // code did not do. A tab after the marker leaves the line as prose -
         // corpus
@@ -2738,7 +2865,11 @@ fn escape_text(
         // is that document - so `^<TAB>` re-parses as text either way and PART 11
         // §4 asks for the minimal form when dropping the escape changes nothing.
         let caret_opens_a_caption = ch == '^' && at_line_start && caption_can_open && next == ' ';
-        let caret_opens_inline = ch == '^' && (next == '[' || previous == '{' || next == '}');
+        let caret_opens_inline = ch == '^'
+            && (previous == '{'
+                || next == '}'
+                || (next == '['
+                    && caret_needs_its_escape(text, offset + ch.len_utf8(), note, mode)));
         // A `:` opens something only where a marker can START: `:: term`,
         // `:  def` and `::: fence` are all recognized at the beginning of a
         // line, so the FIRST colon of that run is the one that has to be

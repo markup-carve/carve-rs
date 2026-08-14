@@ -262,6 +262,42 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`carve fmt` no longer escapes a caret before a bracket run that opens no
+  note** (markup-carve/carve#1191, PART 11 §2). §2 escapes a character if and
+  only if omitting the escape would change the re-parsed AST, and it takes the
+  decision per opener occurrence. The writer treated every `^[` as one, which
+  PART 9 §16 rules out twice over: an empty or whitespace-only body is literal,
+  and note recognition is disabled inside a note's own content at every depth.
+
+  Input:
+
+  ```
+  x ^[]
+  ```
+
+  came back as:
+
+  ```
+  x \^[]
+  ```
+
+  `x ^[a ^[b] c]` came back as `x ^[a \^[b] c]`, `x ^[a` came back as `x \^[a`
+  and ``x ^`[t]` `` came back as ``x \^`[t]` ``. All four re-parse to the
+  document they started from, so nothing rendered wrong - the `carve` target
+  simply published an escape nobody wrote, and disagreed with carve-js and
+  carve-php on four corpus documents.
+
+  Two of the four shapes come from asking the question rather than from §16: an
+  unterminated `^[` opens nothing, which is the reading PART 11 §2a already
+  records for `[^`, and a `[` reported by a code span is not adjacent to the
+  caret at all, because the span writes its backtick first.
+
+  The escape is unchanged wherever the note can form. Where the writer cannot
+  tell - the run does not close in the text node holding the caret, so a later
+  node may or may not supply the `]` - the answer is left to the
+  minimal/conservative vote (PART 11 §4) instead of guessed, so the bare form is
+  emitted exactly when it re-parses the same.
+
 - **A footnote inside an unresolved reference is no longer a reference**
   (markup-carve/carve#1198, PART 9R R2). An unresolved reference degrades to its
   literal source, so the link text built for it is discarded rather than written
