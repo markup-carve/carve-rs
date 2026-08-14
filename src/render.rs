@@ -2372,17 +2372,14 @@ fn render_inline_after(
             };
             let open = if m.display { "\\[" } else { "\\(" };
             let close = if m.display { "\\]" } else { "\\)" };
-            // The `math {inline,display}` class is structural and emitted
-            // first; a trailing attribute block merges its classes into it
-            // and contributes id / key-values after (never a second class).
-            let (class, rest) = match &m.attrs {
-                Some(a) if !a.classes.is_empty() => (
-                    dedup_class_str(&format!("{} {}", base, a.classes.join(" "))),
-                    render_attrs_after_class(a),
-                ),
-                Some(a) => (base.to_string(), render_attrs_after_class(a)),
-                None => (base.to_string(), String::new()),
-            };
+            // The `math {inline,display}` class is structural, so it merges
+            // into the author's class slot AT THAT SLOT'S POSITION rather than
+            // being written first. Emitting it first reordered everything the
+            // author wrote: `{#i .c k=v}` came back as
+            // `class="math inline c" id="i" k="v"` where the class slot the
+            // author put second should keep its place (corpus 302). This is
+            // the same rule carve#1164 fixed for the ext-NAME base class, and
+            // the same helper - the math path simply never adopted it.
             // Static mode: when a build-time math renderer is supplied, emit its
             // server-side output (MathML / HTML) inside the math span so the page
             // needs no client KaTeX / MathJax; the renderer output is trusted and
@@ -2394,9 +2391,8 @@ fn render_inline_after(
                 _ => format!("{}{}{}", open, escape_text(&m.content), close),
             };
             out.push_str(&format!(
-                "<span class=\"{}\"{}>{}</span>",
-                escape_attr(&class),
-                rest,
+                "<span{}>{}</span>",
+                render_attrs_with_base_class(&m.attrs, base),
                 body,
             ));
         }
