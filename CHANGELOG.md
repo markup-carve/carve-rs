@@ -195,6 +195,32 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A block-level HTML element imported from Markdown stays inside the container
+  that holds it** (markup-carve/carve-rs#963, alongside
+  markup-carve/carve-js#1045). `markdown_to_ast` and `markdown_to_carve` read
+  the parser's `HtmlBlock` tag through a catch-all that opens a paragraph, so
+  the raw block was emitted past the enclosing block quote, list item or
+  footnote definition and landed at the top of the document - ahead of the
+  container it was written inside. An attribution imported from
+
+  ```
+  > quoted
+  >
+  > <footer>Socrates</footer>
+  ```
+
+  therefore came out before the quotation it belonged to, which is a change of
+  document order rather than of nesting. It now stays where the source put it,
+  at the container's own content column, across 24 measured positions: quotes,
+  nested quotes, ordered and unordered items, an item inside a quote, a quote
+  inside an item, a nested item, a footnote definition, and comment and
+  `<script>` elements in each. `commonmark` 0.31.2 and `marked` 18.0.9 agree on
+  every one.
+
+  The same catch-all closed as an empty paragraph, which the Carve writer drops
+  but an AST consumer sees; a document imported through `markdown_to_ast` no
+  longer carries one per HTML element, at top level either. Inline HTML is
+  unaffected: a `<span>` in any of these positions is still inline text.
 - **Presentation targets no longer discard authored text** (spec PART 11 §10e,
   markup-carve/carve#1179). `docs/graceful-degradation.md` states the floor as
   a MUST - "losing the click is fine; losing the words is not" - and three kinds
