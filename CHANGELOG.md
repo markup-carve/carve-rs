@@ -144,6 +144,30 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **HTML import maps the seven semantic elements to the span attribute that
+  spells them** (PART 9 §10, markup-carve/carve#1140). `<kbd>Tab</kbd>` imported
+  as `Tab`, with an `element-unwrapped` diagnostic recording the loss, and an
+  `<abbr title="HyperText">` lost the expansion along with the element; `<time>`
+  lost its `datetime` one step earlier still, because nothing on the import side
+  claimed the attribute. `html_to_carve` and `html_to_ast` now give
+  `[Tab]{kbd}`, `[HTML]{abbr=HyperText}` and `[today]{time=2026-01-01}`.
+  `<samp>`, `<var>`, `<cite>` and `<dfn>` map the same way. An `abbr` or `dfn`
+  takes its value from `title` and a `time` from `datetime`, consuming the
+  attribute rather than leaving a duplicate key; an element with no such
+  attribute gives the bare boolean, and a leftover `id`, `class` or `data-*`
+  rides the same span. None of the seven carries a diagnostic any more, because
+  none of the losses still happens.
+
+  All three modes map them, including `roundtrip`, which raw-preserves only what
+  Carve cannot express. The consequence there: an exotic attribute on one of the
+  seven (`<kbd dir="rtl">`) is now reported as dropped instead of riding along
+  inside raw HTML, which is the treatment `<mark>` and `<em>` already had.
+  `<mark>` still imports as `=m=`, inline `<code>` as a code span and
+  `<pre><code>` as a code block. `samp`, `var`, `cite` and `dfn` are the
+  `SemanticSpan` extension's names, so `[out]{samp}` renders `<span samp="">` in
+  a core render and `<samp>` only where that extension is registered - the
+  semantic survives as an attribute a reader can recover, where before it was
+  discarded outright.
 - **A referenced abbreviation definition now splits by target** (PART 11 §10f,
   markup-carve/carve#1185). The plain-text and terminal writers drop the
   `*[TERM]: expansion` line for a definition whose expansion they emit, and the
