@@ -262,6 +262,47 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`carve fmt` no longer escapes into a run the reader reads raw**
+  (markup-carve/carve#1197, markup-carve/carve#1206, PART 11 §2). An image's alt
+  text is an HTML attribute: nothing inside is inline-parsed and no escape inside
+  is resolved, so `![t\]z](/i.png)` gives `alt="t\]z"`, backslash and all. The
+  writer escaped every `[`, `]` and `\` in it anyway, on the premise that the
+  run stops at the first `]`.
+
+  Input:
+
+  ```
+  a ![t[z]](/i.png) b
+  ```
+
+  was written back as:
+
+  ```
+  a ![t\[z\]](/i.png) b
+  ```
+
+  which renders `alt="t\[z\]"` against the document's own `alt="t[z]"`. It
+  compounded: each pass escaped the backslash the last pass wrote, so
+  `fmt(fmt(x)) == fmt(x)` failed from the second pass on.
+
+  The same escape was written at five sites, and four of them were breaking more
+  quietly because their run holds no bracket to draw attention: an admonition
+  label, a div label, a code-fence label, and a footnote definition together with
+  every reference to it. A backslash in any of them grew one more backslash per
+  pass - `::: [a\b]` became `::: [a\\b]` and then `::: [a\\\\b]`. A div
+  label and an admonition label are rendered, so those documents said something
+  new each time; a code-fence label and a footnote id are not, so they merely
+  refused to settle.
+
+  A raw run cannot be neutralized, only written or not written, so the writer now
+  asks the reader whether it closes and emits it verbatim when it does. An alt
+  text with no Carve spelling at all - a bare unbalanced `]` - keeps the escape;
+  `parse` cannot produce one, but an ingested AST can.
+
+  An abbreviation definition keeps its escape and is deliberately unchanged: the
+  term reader is `is_ascii_alphanumeric`, so neither character can reach it from
+  a parse.
+
 - **`carve fmt` no longer escapes a caret before a bracket run that opens no
   note** (markup-carve/carve#1191, PART 11 §2). §2 escapes a character if and
   only if omitting the escape would change the re-parsed AST, and it takes the
