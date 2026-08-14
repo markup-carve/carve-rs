@@ -2372,17 +2372,17 @@ fn render_inline_after(
             };
             let open = if m.display { "\\[" } else { "\\(" };
             let close = if m.display { "\\]" } else { "\\)" };
-            // The `math {inline,display}` class is structural and emitted
-            // first; a trailing attribute block merges its classes into it
-            // and contributes id / key-values after (never a second class).
-            let (class, rest) = match &m.attrs {
-                Some(a) if !a.classes.is_empty() => (
-                    dedup_class_str(&format!("{} {}", base, a.classes.join(" "))),
-                    render_attrs_after_class(a),
-                ),
-                Some(a) => (base.to_string(), render_attrs_after_class(a)),
-                None => (base.to_string(), String::new()),
-            };
+            // PART 10 SS1: the `math {inline,display}` class is a mandatory BASE
+            // class, so it is prepended INSIDE the author's class slot and the
+            // slot keeps its first-appearance position. Emitting `class="..."`
+            // unconditionally first put it ahead of an id the author wrote
+            // before any class, which reorders what they wrote.
+            //
+            // carve#1168 fixed exactly this for the generic `ext-NAME` fallback
+            // and left the helper below behind; the math span carries a base
+            // class the same way and was missed, because no corpus case put an
+            // id before a class on it (carve#1164).
+            let attrs = render_attrs_with_base_class(&m.attrs, base);
             // Static mode: when a build-time math renderer is supplied, emit its
             // server-side output (MathML / HTML) inside the math span so the page
             // needs no client KaTeX / MathJax; the renderer output is trusted and
@@ -2393,12 +2393,7 @@ fn render_inline_after(
                 (true, Some(build)) => build(&m.content, m.display),
                 _ => format!("{}{}{}", open, escape_text(&m.content), close),
             };
-            out.push_str(&format!(
-                "<span class=\"{}\"{}>{}</span>",
-                escape_attr(&class),
-                rest,
-                body,
-            ));
+            out.push_str(&format!("<span{}>{}</span>", attrs, body,));
         }
         InlineNode::RawInline(r) => {
             if r.format.trim() == "html" {

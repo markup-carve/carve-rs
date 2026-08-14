@@ -9,6 +9,11 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A math span's base class keeps the class slot in place** (PART 10 §1,
+  markup-carve/carve#1164). `math inline` / `math display` was written ahead of
+  everything, so an id the author wrote BEFORE any class came out after it. The
+  `render_attrs_with_base_class` helper carve#1168 added for the `ext-NAME`
+  fallback already implements the rule; the math span simply never used it.
 - **An abbreviation expands inside a span** (markup-carve/carve#1151). PART 9R R3
   matches a term in rendered text at word boundaries and says nothing about the
   container it sits in, but `apply_abbreviations_inline` matched `Emphasis`,
