@@ -93,6 +93,7 @@ fn render_ansi_inner(
     SMART_TYPOGRAPHY.with(|cell| cell.set(smart_typography));
     let _abbr_guard = crate::abbr_budget::AbbrBudgetGuard::for_document(doc);
     let mut ctx = AnsiContext {
+        consumed_abbreviations: crate::render_text::consumed_abbreviation_definitions(doc),
         suppress_automatic_abbreviation: false,
         list_depth: 0,
         block_quote_depth: 0,
@@ -107,6 +108,9 @@ fn render_ansi_inner(
 }
 
 struct AnsiContext {
+    /// The `(term, expansion)` pairs this render emits an expansion for, so the
+    /// definitions that supplied them can drop their line (PART 11 §10f).
+    consumed_abbreviations: crate::render_text::ConsumedAbbreviations,
     /// Set while rendering a span that carries an authored `abbr` (carve#1127,
     /// carve#1176). See the Markdown renderer's field for the reasoning.
     suppress_automatic_abbreviation: bool,
@@ -267,18 +271,30 @@ fn render_block(node: &BlockNode, ctx: &mut AnsiContext, depth: usize) -> String
             )
         ),
         BlockNode::Extension(extension) => render_blocks(&extension.children, ctx, depth + 1),
-        // PART 10 §10a - see the note in render_markdown.
-        BlockNode::AbbreviationDef(def) => format!(
-            "{}\n\n",
-            style(
-                &format!(
-                    "*[{}]: {}",
-                    strip_terminal_controls(&def.abbr),
-                    strip_terminal_controls(&def.expansion)
-                ),
-                DIM
+        // PART 11 §10a keeps the UNUSED definition here - see the note in
+        // render_markdown. §10f then splits the CONSUMED one by target: this
+        // one drops the line, because it already writes `TERM (expansion)` at
+        // every occurrence and the words would otherwise be emitted twice.
+        // Markdown keeps it, and the canonical writer must.
+        BlockNode::AbbreviationDef(def) => {
+            if ctx
+                .consumed_abbreviations
+                .contains(&(def.abbr.clone(), def.expansion.clone()))
+            {
+                return String::new();
+            }
+            format!(
+                "{}\n\n",
+                style(
+                    &format!(
+                        "*[{}]: {}",
+                        strip_terminal_controls(&def.abbr),
+                        strip_terminal_controls(&def.expansion)
+                    ),
+                    DIM
+                )
             )
-        ),
+        }
         BlockNode::Comment(_) => String::new(),
     }
 }

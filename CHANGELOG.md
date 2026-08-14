@@ -120,6 +120,18 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **A referenced abbreviation definition now splits by target** (PART 11 §10f,
+  markup-carve/carve#1185). The plain-text and terminal writers drop the
+  `*[TERM]: expansion` line for a definition whose expansion they emit, and the
+  plain writer gains that automatic expansion, so both now print
+  `TERM (expansion)` at every occurrence instead of repeating the definition
+  line beside it. Markdown keeps the line and the expansion both, because that
+  spelling is PHP Markdown Extra's own and the export round-trips through it,
+  and the canonical writer keeps every line. A definition nothing references
+  still survives on all three targets (§10a). Where an authored `abbr` outranks
+  the definition, or a later definition of the same term won, the definition's
+  own expansion reaches no target and its line stays - the test is whether that
+  definition's expansion is emitted, not whether its term appears.
 - **The semantic-span registry is split by tier, and leftovers ride the
   element** (PART 9 §9, markup-carve/carve#1162). The `:name[...]` spelling no
   longer special-cases the seven semantic names in a core render: `:kbd[Ctrl+C]`
