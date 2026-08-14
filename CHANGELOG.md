@@ -7,6 +7,192 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **`extensions::semantic_span::SemanticSpan`** (spec PART 9 §10,
+  docs/extensions.md §11). The four semantic span names core does not reserve -
+  `samp`, `var`, `cite`, `dfn` - under the same spelling, nesting order,
+  value mapping and riding rule core uses for `abbr`, `time` and `kbd`, plus the
+  `:name[…]` form for all seven as a SOFT-DEPRECATED compatibility spelling
+  scheduled for removal in 0.2. Registered under the key `semantic-span`.
+
+  What it claims is declarative - `CarveExtension::semantic_span_names()` names
+  the four and the core renderer renders them, so the rules have one
+  implementation rather than two that drift. A non-empty `dfn` value maps to
+  `title`, which the renderer now handles alongside `abbr` and `time`.
+- **The `{:TAG}` language attribute** (markup-carve/carve#1114). `[x]{:fr}` is
+  exact sugar for `{lang=fr}`, on inline spans and block attribute lines alike;
+  `{:}` is the explicit "language unknown" form and desugars to `lang=""`. A
+  malformed tag leaves the whole block literal, and the sigil takes no padding,
+  so `{: fr}` is the empty attribute plus a separate boolean. This shipped
+  without a changelog entry when the feature landed; recorded here rather than
+  left to the diff.
+- **`carve migrate --from djot` runs the Djot importer.** `djot_to_carve` was
+  library-only, so the only way to reach it was to link the crate, while the
+  CLI answered `--from djot` with `unknown source format djot`. Like Markdown
+  it takes no mode and writes no report - it parses its source whole and drops
+  nothing - so `--mode`, `--adapter`, `--report` and `--check-loss` remain
+  HTML's alone and stay ignored rather than rejected. The `migrate` subcommand
+  is also listed in `-h` for the first time.
+- **`djot_to_carve` converts an intraword `_x_` instead of leaving it literal.**
+  Djot's spec puts no word boundary on emphasis, so `snake_case_name` IS
+  emphasis in the source language and an author who wanted the literal
+  characters had to escape them. An unescaped run is therefore emphasis the
+  author saw in their own renderer and kept. It now converts to the braced
+  `{/case/}`, which is required rather than stylistic: a bare `/` is literal
+  intraword in Carve. An escaped `snake\_case\_name` is untouched, which is what
+  makes the change safe.
+- **`SmartQuotes` extension**, matching carve-php's locale quote configuration:
+  20 built-in locale sets, exact-locale then language fallback (`de-AT` →
+  `de`, `fr_FR` → `fr`), English fallback for an unknown locale, and chainable
+  per-quote overrides. Apostrophes remain U+2019 regardless of locale. This
+  makes the German optional-corpus case a three-engine comparison.
+- **`djot_to_carve`**, a Djot to Carve migration, ported from carve-php
+  `DjotToCarve` (itself the converter form of the carve-js `djot-migrate`
+  linter). Several inline delimiters mean different things in the two
+  languages, so a Djot document fed to a Carve processor renders wrong with no
+  error; this rewrites exactly those - `_x_` becomes `/x/`, `~x~` becomes
+  `{,x,}`, `^x^` becomes `{^x^}`, `**x**` becomes `*x*`, `~~x~~` becomes `~x~`
+  - and leaves alone the constructs that mean the same in both. Only the
+  delimiters are replaced, so nested constructs of different families compose.
+  Code (fenced and inline), link destinations and backslash-escaped delimiters
+  are never rewritten. Intraword underscores are deliberately left literal: a
+  strict Djot reader emphasizes `snake_case_name` and this migration does not,
+  because the documents it exists for are full of identifiers no author meant
+  as emphasis. That divergence is documented at the guard.
+- **`CodeGroup` extension**, ported from carve-js `code-group` and carve-php
+  `CodeGroupExtension`. Renders a `::: code-group` container - or any div
+  carrying the `code-group` class - as radio-driven tabbed code panels, one tab
+  per fenced code block, named by the block's `[label]`, its language, or
+  `Code N` in that order. A block carrying `selected` opens first, otherwise
+  the first one does. A container with no code block is left to the core div
+  renderer. In static mode the radios go and each panel becomes a `<section>`
+  headed by its label, so the panels stay distinguishable offline.
+- **`HeadingReference` extension**, ported from carve-js `heading-reference`
+  and carve-php `HeadingReferenceExtension`. Resolves `[[Heading Text]]` to an
+  intra-document link, with `[[Heading Text|display]]` for custom link text.
+  References match on heading PLAIN TEXT rather than on a guessed id, so an
+  author never has to know the slug rules, and straight quotes still match a
+  heading the smart-typography pass curled. A reference to a heading that does
+  not exist, or to text that appears on more than one heading, falls back to
+  its literal `[[…]]` source rather than guessing. This is a different
+  construct from the spec's `[Heading][]` reference form, which core already
+  resolves; like carve-php it shares the `[[…]]` syntax with `Wikilinks`, so
+  enable one or the other on a render.
+- **`Tabs` extension**, ported from carve-js `tabs` and carve-php
+  `TabsExtension`, closing the last extension gap between the three engines.
+  Renders a `:::: tabs` container - or a div carrying the `tabs` class - as a
+  tab set, one tab per `::: tab` child. Two interactive modes: `Css`, the
+  default, drives the panels with a radio input per tab and needs no script,
+  and `Aria` emits `role="tablist"` with buttons and panels for a page that
+  ships its own behaviour. A tab is named by its opener `[label]`, then a
+  `label=` attribute, then its first heading - which then stops being content -
+  and finally `Tab N`. A tab carrying `selected` opens first, otherwise the
+  first one does. A container with no tab child is left to the core div
+  renderer. In static mode every panel is shown in sequence as a `<section>`
+  headed by its label.
+- **`HeadingLevelShift` extension**, ported from carve-js `heading-level-shift`
+  and carve-php `HeadingLevelShiftExtension`, closing the last of the three
+  engines to carry it. Shifts every heading down by a fixed offset for pages
+  that reserve `h1` for the page title. Default 1, clamped to `0..=5` and
+  capped at `h6` like the other two, and headings nested in a blockquote, a
+  div, an admonition, a list item, a definition or a figure's blockquote are
+  shifted too.
+
+- **Structural AST merge and patch APIs** (#893). A three-way merge with
+  explicit JSON-Pointer conflicts and `merge_ast_with_resolver` for
+  base/ours/theirs/custom resolution, position-independent patch creation and
+  replay including `ast_patch_to_json` and `ast_patch_from_json` for the
+  shared JS/PHP wire format, and `carve merge [--json] base ours theirs` with
+  machine-readable success and conflict envelopes. Sequence matching is
+  bounded for wide ambiguous lists; the APIs stay compatible with Rust 1.75.
+
+- **An AST-first HTML importer and migration CLI** (#902). The importer
+  builds the tree instead of splicing strings, and the CLI reports what it
+  could not carry faithfully rather than dropping it silently.
+
+- **A Markdown importer, parsed to an AST** (#931).
+
+- **A name-keyed registry of the built-in extensions** (#923).
+
+- **Structural short captions are preserved in AST JSON** (#921), with
+  accessors on the owning nodes.
+
+### Changed
+
+- **The semantic-span registry is split by tier, and leftovers ride the
+  element** (PART 9 §9, markup-carve/carve#1162). The `:name[...]` spelling no
+  longer special-cases the seven semantic names in a core render: `:kbd[Ctrl+C]`
+  is `<span class="ext-kbd">Ctrl+C</span>`, because those names are the
+  SemanticSpan extension's. The attribute spelling still renames the span, and
+  core keeps three of the names - `abbr`, `time`, `kbd` - while `samp`, `var`,
+  `cite` and `dfn` stay ordinary attributes there. Every attribute left over
+  after the name is consumed now lands ON the element rather than on a wrapper
+  around it, so `[x]{#k .key kbd}` is `<kbd id="k" class="key">x</kbd>`, and
+  where nothing is left over there is no wrapper at all. A derived `title` or
+  `datetime` yields to an authored one of the same name.
+- **A caption on a block quote is now that quote's attribution** (PART 9 §4a,
+  markup-carve/carve#1159). `> To be` followed by `^ Hamlet` no longer parses as
+  a `figure` wrapping a `block_quote`; it is a `block_quote` carrying an
+  `attribution`, and HTML renders `<footer>Hamlet</footer>` inside the
+  `<blockquote>` rather than a `<figure>` / `<figcaption>` pair. A quote is not
+  a figure, takes no number, and no longer turns up in a walk for figures. The
+  Markdown, plain-text, ANSI and Carve writers all carry the attribution, and
+  the HTML importer reads a trailing `<footer>` in a `<blockquote>` back as the
+  attribution so the renderer's own output round-trips.
+- **Every `<th>` carries a `scope`** (PART 10 §T9, markup-carve/carve#1159).
+  `col` for a header cell in the head-row run, `row` for one below it, on pipe
+  tables and list tables alike. An authored `scope` replaces the emitted one
+  rather than joining it, matched case-insensitively because HTML attribute
+  names are, so `{Scope="colgroup"}` does not produce two of them. Without it a
+  screen reader guesses the association from position and guesses wrong on any
+  table carrying both kinds of header.
+- **`code` and `mark` leave the built-in semantic registry.** Both spellings
+  follow the spec's seven-name list - `abbr`, `time`, `samp`, `var`, `kbd`,
+  `cite`, `dfn` - so `:code[x]` and `:mark[x]` take the generic
+  `<span class="ext-NAME">` fallback and `[x]{code}` / `[x]{mark}` are ordinary
+  boolean attributes on the outer span. A name belongs in the registry only
+  where Carve has no other INLINE spelling for that element, and these two have
+  one: a code span writes `<code>`, `=x=` writes `<mark>`. `code` is also where
+  the duplication became a defect - a code span is verbatim while an extension
+  body is parsed, so `` `*b*` `` and `:code[*b*]` produced the same tag with
+  different content models and nothing reported the switch
+  (markup-carve/carve#1146).
+- **Compact semantic span attributes are now portable core syntax.**
+  `[Ctrl]{kbd}`, `[HTML]{abbr="…"}`, and combined forms such as
+  `[CSS]{dfn abbr="…"}` render without an opt-in extension and match PHP and
+  JavaScript. The AST and non-HTML renderers retain ordinary span behavior.
+- **The existing nine-name semantic inline registry is now spec- and
+  corpus-pinned across all engines.** `:abbr[…]`, `:cite[…]`, `:dfn[…]`,
+  `:kbd[…]`, `:samp[…]`, `:var[…]`, `:time[…]`, `:code[…]`, and `:mark[…]`
+  retain their existing same-named HTML output; this release adds explicit
+  attribute-hardening, non-HTML and source-writer conformance coverage.
+- **The Markdown target escapes `<` only where it would open markup** (PART 11
+  §8a M1e, markup-carve/carve#1148). `<` and `>` were rewritten to entities
+  unconditionally, with no clause behind it. A `<` is now escaped with a
+  BACKSLASH when the next character is an ASCII letter, `/`, `!` or `?` - the
+  four things that open raw HTML - and left alone otherwise; `>` takes nothing,
+  since it is inert mid-line and a block quote marker at line start, which M1
+  already covers. So `a < b` survives as itself, and `a <b> c` is written with
+  the opener escaped, which a CommonMark reader gives back as text.
+- **The Markdown target leaves a bare ampersand alone.** Text was neutralized as
+  `&amp;`, `&lt;` and `&gt;`; only two thirds of that was doing anything. An
+  entity in Markdown TEXT decodes to a CHARACTER, and a character cannot open a
+  tag, so `&` carried no risk to leave bare - measured against pandoc 3.5,
+  commonmark.js and marked with raw HTML allowed. `<` and `>` keep the entity
+  form, which is what actually neutralizes embedded HTML. Text authored as
+  `&#65;` is emitted as itself too; there is no character-reference exception.
+
+- **Bidi control characters are stripped from presentation targets** (#883),
+  so Trojan-Source reordering cannot survive into plain-text, ANSI or
+  Markdown output.
+
+- **Plain-text and ANSI targets preserve list structure** (#884) instead of
+  flattening items into prose.
+
+- **A tab and four spaces resolve to the same column inside a list item**
+  (#892), so mixed-indent documents parse to one structure.
+
 ### Fixed
 
 - **Presentation targets no longer discard authored text**
@@ -41,9 +227,6 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   to state it once, so plain now prints it parenthetically - the idiom it
   already uses for an inline footnote - while an automatic expansion stays as it
   was, since the definition line carries it.
-
-### Fixed
-
 - **A math span's base class keeps the class slot in place** (PART 10 §1,
   markup-carve/carve#1164). `math inline` / `math display` was written ahead of
   everything, so an id the author wrote BEFORE any class came out after it. The
@@ -56,9 +239,6 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `[HTML]{.x}` and `[HTML]{kbd}` silently dropped an expansion that `*HTML*` and
   `[HTML](/u)` got. PART 9 §10 made the second spelling a documented feature,
   which put the loss inside a construct the docs teach.
-
-### Fixed
-
 - **The HTML importer keeps an authored table-cell `scope`** (carve-rs#944).
   `<th scope="colgroup">` imported with the value gone, so a second conversion
   back to HTML could not produce it. `colgroup` and `rowgroup` have no marker
@@ -67,96 +247,6 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   emits - `col` in the head-row run, `row` below it - is still dropped, because
   importing that would write this engine's own output back in as if the author
   had typed it.
-
-### Added
-
-- **`extensions::semantic_span::SemanticSpan`** (spec PART 9 §10,
-  docs/extensions.md §11). The four semantic span names core does not reserve -
-  `samp`, `var`, `cite`, `dfn` - under the same spelling, nesting order,
-  value mapping and riding rule core uses for `abbr`, `time` and `kbd`, plus the
-  `:name[…]` form for all seven as a SOFT-DEPRECATED compatibility spelling
-  scheduled for removal in 0.2. Registered under the key `semantic-span`.
-
-  What it claims is declarative - `CarveExtension::semantic_span_names()` names
-  the four and the core renderer renders them, so the rules have one
-  implementation rather than two that drift. A non-empty `dfn` value maps to
-  `title`, which the renderer now handles alongside `abbr` and `time`.
-
-### Changed
-
-- **The Markdown target escapes `<` only where it would open markup** (PART 11
-  §8a M1e, markup-carve/carve#1148). `<` and `>` were rewritten to entities
-  unconditionally, with no clause behind it. A `<` is now escaped with a
-  BACKSLASH when the next character is an ASCII letter, `/`, `!` or `?` - the
-  four things that open raw HTML - and left alone otherwise; `>` takes nothing,
-  since it is inert mid-line and a block quote marker at line start, which M1
-  already covers. So `a < b` survives as itself, and `a <b> c` is written with
-  the opener escaped, which a CommonMark reader gives back as text.
-
-### Changed
-
-- **The semantic-span registry is split by tier, and leftovers ride the
-  element** (PART 9 §9, markup-carve/carve#1162). The `:name[...]` spelling no
-  longer special-cases the seven semantic names in a core render: `:kbd[Ctrl+C]`
-  is `<span class="ext-kbd">Ctrl+C</span>`, because those names are the
-  SemanticSpan extension's. The attribute spelling still renames the span, and
-  core keeps three of the names - `abbr`, `time`, `kbd` - while `samp`, `var`,
-  `cite` and `dfn` stay ordinary attributes there. Every attribute left over
-  after the name is consumed now lands ON the element rather than on a wrapper
-  around it, so `[x]{#k .key kbd}` is `<kbd id="k" class="key">x</kbd>`, and
-  where nothing is left over there is no wrapper at all. A derived `title` or
-  `datetime` yields to an authored one of the same name.
-
-- **A caption on a block quote is now that quote's attribution** (PART 9 §4a,
-  markup-carve/carve#1159). `> To be` followed by `^ Hamlet` no longer parses as
-  a `figure` wrapping a `block_quote`; it is a `block_quote` carrying an
-  `attribution`, and HTML renders `<footer>Hamlet</footer>` inside the
-  `<blockquote>` rather than a `<figure>` / `<figcaption>` pair. A quote is not
-  a figure, takes no number, and no longer turns up in a walk for figures. The
-  Markdown, plain-text, ANSI and Carve writers all carry the attribution, and
-  the HTML importer reads a trailing `<footer>` in a `<blockquote>` back as the
-  attribution so the renderer's own output round-trips.
-
-- **Every `<th>` carries a `scope`** (PART 10 §T9, markup-carve/carve#1159).
-  `col` for a header cell in the head-row run, `row` for one below it, on pipe
-  tables and list tables alike. An authored `scope` replaces the emitted one
-  rather than joining it, matched case-insensitively because HTML attribute
-  names are, so `{Scope="colgroup"}` does not produce two of them. Without it a
-  screen reader guesses the association from position and guesses wrong on any
-  table carrying both kinds of header.
-
-- **`code` and `mark` leave the built-in semantic registry.** Both spellings
-  follow the spec's seven-name list - `abbr`, `time`, `samp`, `var`, `kbd`,
-  `cite`, `dfn` - so `:code[x]` and `:mark[x]` take the generic
-  `<span class="ext-NAME">` fallback and `[x]{code}` / `[x]{mark}` are ordinary
-  boolean attributes on the outer span. A name belongs in the registry only
-  where Carve has no other INLINE spelling for that element, and these two have
-  one: a code span writes `<code>`, `=x=` writes `<mark>`. `code` is also where
-  the duplication became a defect - a code span is verbatim while an extension
-  body is parsed, so `` `*b*` `` and `:code[*b*]` produced the same tag with
-  different content models and nothing reported the switch
-  (markup-carve/carve#1146).
-
-### Added
-
-- **The `{:TAG}` language attribute** (markup-carve/carve#1114). `[x]{:fr}` is
-  exact sugar for `{lang=fr}`, on inline spans and block attribute lines alike;
-  `{:}` is the explicit "language unknown" form and desugars to `lang=""`. A
-  malformed tag leaves the whole block literal, and the sigil takes no padding,
-  so `{: fr}` is the empty attribute plus a separate boolean. This shipped
-  without a changelog entry when the feature landed; recorded here rather than
-  left to the diff.
-
-- **`carve migrate --from djot` runs the Djot importer.** `djot_to_carve` was
-  library-only, so the only way to reach it was to link the crate, while the
-  CLI answered `--from djot` with `unknown source format djot`. Like Markdown
-  it takes no mode and writes no report - it parses its source whole and drops
-  nothing - so `--mode`, `--adapter`, `--report` and `--check-loss` remain
-  HTML's alone and stay ignored rather than rejected. The `migrate` subcommand
-  is also listed in `-h` for the first time.
-
-### Fixed
-
 - **A hash in Djot source is not a Carve tag** (markup-carve/carve-php#1191).
   A tag is the one Carve inline construct that is not a pair - `#x` opens on
   its own and needs no closer - so nothing downstream neutralizes it and
@@ -168,113 +258,11 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   is `#` plus a space and is shared with Djot, `a#y` is not a tag either, and
   `&` is excluded because `&#8212;` is a numeric character reference whose `#`
   must stay bare or the entity stops decoding.
-
-### Changed
-
-- **Compact semantic span attributes are now portable core syntax.**
-  `[Ctrl]{kbd}`, `[HTML]{abbr="…"}`, and combined forms such as
-  `[CSS]{dfn abbr="…"}` render without an opt-in extension and match PHP and
-  JavaScript. The AST and non-HTML renderers retain ordinary span behavior.
-
-- **The existing nine-name semantic inline registry is now spec- and
-  corpus-pinned across all engines.** `:abbr[…]`, `:cite[…]`, `:dfn[…]`,
-  `:kbd[…]`, `:samp[…]`, `:var[…]`, `:time[…]`, `:code[…]`, and `:mark[…]`
-  retain their existing same-named HTML output; this release adds explicit
-  attribute-hardening, non-HTML and source-writer conformance coverage.
-
-### Added
-
-- **`djot_to_carve` converts an intraword `_x_` instead of leaving it literal.**
-  Djot's spec puts no word boundary on emphasis, so `snake_case_name` IS
-  emphasis in the source language and an author who wanted the literal
-  characters had to escape them. An unescaped run is therefore emphasis the
-  author saw in their own renderer and kept. It now converts to the braced
-  `{/case/}`, which is required rather than stylistic: a bare `/` is literal
-  intraword in Carve. An escaped `snake\_case\_name` is untouched, which is what
-  makes the change safe.
-
-- **`SmartQuotes` extension**, matching carve-php's locale quote configuration:
-  20 built-in locale sets, exact-locale then language fallback (`de-AT` →
-  `de`, `fr_FR` → `fr`), English fallback for an unknown locale, and chainable
-  per-quote overrides. Apostrophes remain U+2019 regardless of locale. This
-  makes the German optional-corpus case a three-engine comparison.
-
-- **`djot_to_carve`**, a Djot to Carve migration, ported from carve-php
-  `DjotToCarve` (itself the converter form of the carve-js `djot-migrate`
-  linter). Several inline delimiters mean different things in the two
-  languages, so a Djot document fed to a Carve processor renders wrong with no
-  error; this rewrites exactly those - `_x_` becomes `/x/`, `~x~` becomes
-  `{,x,}`, `^x^` becomes `{^x^}`, `**x**` becomes `*x*`, `~~x~~` becomes `~x~`
-  - and leaves alone the constructs that mean the same in both. Only the
-  delimiters are replaced, so nested constructs of different families compose.
-  Code (fenced and inline), link destinations and backslash-escaped delimiters
-  are never rewritten. Intraword underscores are deliberately left literal: a
-  strict Djot reader emphasizes `snake_case_name` and this migration does not,
-  because the documents it exists for are full of identifiers no author meant
-  as emphasis. That divergence is documented at the guard.
-
-- **`CodeGroup` extension**, ported from carve-js `code-group` and carve-php
-  `CodeGroupExtension`. Renders a `::: code-group` container - or any div
-  carrying the `code-group` class - as radio-driven tabbed code panels, one tab
-  per fenced code block, named by the block's `[label]`, its language, or
-  `Code N` in that order. A block carrying `selected` opens first, otherwise
-  the first one does. A container with no code block is left to the core div
-  renderer. In static mode the radios go and each panel becomes a `<section>`
-  headed by its label, so the panels stay distinguishable offline.
-
-- **`HeadingReference` extension**, ported from carve-js `heading-reference`
-  and carve-php `HeadingReferenceExtension`. Resolves `[[Heading Text]]` to an
-  intra-document link, with `[[Heading Text|display]]` for custom link text.
-  References match on heading PLAIN TEXT rather than on a guessed id, so an
-  author never has to know the slug rules, and straight quotes still match a
-  heading the smart-typography pass curled. A reference to a heading that does
-  not exist, or to text that appears on more than one heading, falls back to
-  its literal `[[…]]` source rather than guessing. This is a different
-  construct from the spec's `[Heading][]` reference form, which core already
-  resolves; like carve-php it shares the `[[…]]` syntax with `Wikilinks`, so
-  enable one or the other on a render.
-
-- **`Tabs` extension**, ported from carve-js `tabs` and carve-php
-  `TabsExtension`, closing the last extension gap between the three engines.
-  Renders a `:::: tabs` container - or a div carrying the `tabs` class - as a
-  tab set, one tab per `::: tab` child. Two interactive modes: `Css`, the
-  default, drives the panels with a radio input per tab and needs no script,
-  and `Aria` emits `role="tablist"` with buttons and panels for a page that
-  ships its own behaviour. A tab is named by its opener `[label]`, then a
-  `label=` attribute, then its first heading - which then stops being content -
-  and finally `Tab N`. A tab carrying `selected` opens first, otherwise the
-  first one does. A container with no tab child is left to the core div
-  renderer. In static mode every panel is shown in sequence as a `<section>`
-  headed by its label.
-
-### Added
-
-- **`HeadingLevelShift` extension**, ported from carve-js `heading-level-shift`
-  and carve-php `HeadingLevelShiftExtension`, closing the last of the three
-  engines to carry it. Shifts every heading down by a fixed offset for pages
-  that reserve `h1` for the page title. Default 1, clamped to `0..=5` and
-  capped at `h6` like the other two, and headings nested in a blockquote, a
-  div, an admonition, a list item, a definition or a figure's blockquote are
-  shifted too.
-
-### Changed
-
-- **The Markdown target leaves a bare ampersand alone.** Text was neutralized as
-  `&amp;`, `&lt;` and `&gt;`; only two thirds of that was doing anything. An
-  entity in Markdown TEXT decodes to a CHARACTER, and a character cannot open a
-  tag, so `&` carried no risk to leave bare - measured against pandoc 3.5,
-  commonmark.js and marked with raw HTML allowed. `<` and `>` keep the entity
-  form, which is what actually neutralizes embedded HTML. Text authored as
-  `&#65;` is emitted as itself too; there is no character-reference exception.
-
-### Fixed
-
 - **A footnote reference no longer crosses a source newline.** The parser used
   to publish an unresolved `footnote_ref` whose id contained that newline,
   although the one-line definition marker could never bind it. The bracketed
   source now remains ordinary text around a soft break, matching the grammar;
   rendered HTML and canonical source are unchanged.
-
 - **A nested list is indented once on the Markdown target, not twice.**
   `render_list` padded every emitted line by the list's own depth, and the
   enclosing item padded the same lines again by the width of its marker, so each
@@ -284,6 +272,20 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Carve itself. Nesting now comes from the parent's continuation pad alone -
   `- a` / `  - b` / `    - c` - and a line with no content no longer takes that
   pad, which removes the whitespace-only lines PART 11 §7 forbids.
+
+- **A container-closed fence keeps an authored trailing blank line** - also
+  when the fence ends with a list item, in document-level source rebuilds,
+  and in the mapped collector (#909, #910, #911, #915).
+
+- **Adjacent sibling lists stay separate through fmt** (#900), lazy lines
+  fold into deep item paragraphs (#896), and a structural `<ol>` attribute
+  no longer leads the author's own (#895).
+
+- **A value-less attribute is written as a boolean and LANG is no longer
+  folded** (#938), and an attribute needs a separator before it (#942).
+
+- **The `ext-NAME` base class joins the author's class slot** (#949) instead
+  of jumping ahead of the id.
 
 ## [0.1.2] - 2026-08-10
 
