@@ -91,6 +91,11 @@ enum Frame {
         lang: Option<String>,
         content: String,
     },
+    /// A block-level HTML element, which the parser opens once and then fills a
+    /// line at a time. It is a frame rather than a buffer on the builder so the
+    /// finished raw block folds into whatever container the element sits in,
+    /// the same way every other block does.
+    RawHtml(String),
     Emphasis(EmphasisKind, Vec<InlineNode>),
     Link {
         href: String,
@@ -128,20 +133,10 @@ struct Builder {
     /// Carve parser assigns and therefore the one a round trip must reproduce.
     footnote_numbers: BTreeMap<String, usize>,
     frontmatter: Option<Frontmatter>,
-    /// Consecutive block-level HTML events, which the parser emits one chunk at
-    /// a time; they are one raw block and are flushed when anything else
-    /// arrives.
-    raw_html: String,
 }
 
 impl Builder {
     fn push(&mut self, event: Event<'_>) {
-        // A block-level HTML run ends at the first event that is not more of
-        // it, so every other arm flushes first.
-        if !matches!(event, Event::Html(_)) {
-            self.flush_raw_html();
-        }
-
         match event {
             Event::Start(tag) => self.start(tag),
             Event::End(tag) => self.end(tag),
@@ -159,7 +154,7 @@ impl Builder {
             // PROFILE decision (`apply_profile` strips it), which is where a
             // policy about untrusted input belongs - not silently inside one
             // engine's importer while the other two keep it.
-            Event::Html(html) => self.raw_html.push_str(&html),
+            Event::Html(html) => self.raw_html(&html),
             // Inline HTML stays text: it has no block to become, and Carve has
             // no inline raw spelling in the 0.1 core.
             Event::InlineHtml(html) => self.text(&html),
@@ -187,16 +182,17 @@ impl Builder {
         }
     }
 
-    fn flush_raw_html(&mut self) {
-        if self.raw_html.is_empty() {
-            return;
+    /// Collect one line of a block-level HTML element into the frame the
+    /// element opened.
+    fn raw_html(&mut self, value: &str) {
+        match self.frames.last_mut() {
+            Some(Frame::RawHtml(content)) => content.push_str(value),
+            // The parser wraps every block-HTML line in an `HtmlBlock`, so a
+            // line with no frame open is not a shape this reaches today. It
+            // keeps the source as text rather than dropping it, which is what
+            // inline HTML does with the same content.
+            _ => self.text(value),
         }
-        let content = std::mem::take(&mut self.raw_html);
-        self.block(BlockNode::RawBlock(RawBlock {
-            format: "html".to_string(),
-            content: content.trim_end_matches('\n').to_string(),
-            pos: None,
-        }));
     }
 
     /// Text lands in whatever is open: a code block collects it verbatim, an
@@ -247,6 +243,7 @@ impl Builder {
                 },
                 content: String::new(),
             },
+            Tag::HtmlBlock => Frame::RawHtml(String::new()),
             Tag::Emphasis => Frame::Emphasis(EmphasisKind::Italic, Vec::new()),
             Tag::Strong => Frame::Emphasis(EmphasisKind::Strong, Vec::new()),
             Tag::Strikethrough => Frame::Emphasis(EmphasisKind::Strike, Vec::new()),
@@ -362,6 +359,15 @@ impl Builder {
                 // The parser hands the body with its closing newline; the node
                 // holds the body, and the writer supplies the fence lines.
                 content: content.strip_suffix('\n').unwrap_or(&content).to_string(),
+                pos: None,
+            })),
+            // The frame has already been popped, so the raw block folds into
+            // the container the element sits in - a quote, a list item or a
+            // footnote definition - instead of landing at the top of the
+            // document ahead of the container it was written inside.
+            Frame::RawHtml(content) => self.block(BlockNode::RawBlock(RawBlock {
+                format: "html".to_string(),
+                content: content.trim_end_matches('\n').to_string(),
                 pos: None,
             })),
             // Markdown emphasis IS Carve emphasis; only the spelling differs,
@@ -497,7 +503,6 @@ impl Builder {
         while !self.frames.is_empty() {
             self.close();
         }
-        self.flush_raw_html();
 
         let frontmatter = self
             .frontmatter
