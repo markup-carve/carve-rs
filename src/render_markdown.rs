@@ -139,6 +139,7 @@ fn render_markdown_inner(
     }
 
     let mut ctx = MarkdownContext {
+        suppress_automatic_abbreviation: false,
         heading_ids,
         referenced_heading_ids,
         explicit_ids,
@@ -156,6 +157,13 @@ fn render_markdown_inner(
 }
 
 struct MarkdownContext {
+    /// Set while rendering a span that carries an authored `abbr`.
+    ///
+    /// PART 9 section 10 and carve#1127: the authored value OUTRANKS automatic
+    /// expansion, and a resolved abbreviation inside such a span contributes only
+    /// its visible text. The HTML renderer already carried this flag on its state;
+    /// this target emitted the DEFINITION's text instead (carve#1176).
+    suppress_automatic_abbreviation: bool,
     heading_ids: HashSet<String>,
     referenced_heading_ids: HashSet<String>,
     explicit_ids: HashSet<String>,
@@ -737,7 +745,30 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
         InlineNode::Code(code) => render_code(&strip_controls(&code.value)),
         InlineNode::Link(link) => render_link(link, ctx, depth + 1),
         InlineNode::Image(image) => render_image(image),
-        InlineNode::Span(span) => render_inlines(&span.children, ctx, depth + 1),
+        InlineNode::Span(span) => {
+            // A span has no Markdown spelling, so its content is rendered bare -
+            // EXCEPT for an authored `abbr`, which outranks the document
+            // definition (carve#1127). This target can carry a title, since it
+            // already emits an `<abbr>` for an ordinary expansion, so it carries
+            // the AUTHORED one (carve#1176).
+            let authored = span
+                .attrs
+                .as_ref()
+                .and_then(|a| a.key_values.get("abbr"))
+                .cloned();
+            let Some(authored) = authored else {
+                return render_inlines(&span.children, ctx, depth + 1);
+            };
+            let previous = ctx.suppress_automatic_abbreviation;
+            ctx.suppress_automatic_abbreviation = true;
+            let inner = render_inlines(&span.children, ctx, depth + 1);
+            ctx.suppress_automatic_abbreviation = previous;
+            if authored.is_empty() || !crate::abbr_budget::try_spend(authored.len()) {
+                return inner;
+            }
+            let title = escape_md_html(&strip_controls(&authored)).replace('"', "&quot;");
+            format!("<abbr title=\"{title}\">{inner}</abbr>")
+        }
         InlineNode::Math(math) => {
             // Escaped, exactly as the HTML target escapes the same content: a
             // consumer decodes the entity back to the character before its math
@@ -777,6 +808,11 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
             // title survives (markdown allows inline HTML), matching carve-php.
             // Dropping it to plain text would lose the expansion.
             let text = escape_md_html(&strip_controls(&abbr.abbr));
+            // Inside a span carrying its own `abbr`, only the visible text
+            // (carve#1127).
+            if ctx.suppress_automatic_abbreviation {
+                return text;
+            }
             // Bound cumulative expansion bytes (memory-amplification DoS): once
             // the budget is exhausted, degrade to plain key text with no title.
             if crate::abbr_budget::try_spend(abbr.expansion.len()) {
