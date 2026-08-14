@@ -260,6 +260,68 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A footnote inside an unresolved reference is no longer a reference**
+  (markup-carve/carve#1198, PART 9R R2). An unresolved reference degrades to its
+  literal source, so the link text built for it is discarded rather than written
+  into the document, and a `[^label]` use or an `^[content]` note sitting in
+  that text references nothing. This engine counted it, because it numbered
+  footnotes before it knew whether the reference had resolved.
+
+  Input:
+
+  ```
+  a [t[^1]][nope] b
+
+  [^1]: n
+  ```
+
+  rendered an endnotes section holding a note nothing references, with a
+  backlink to a `#fnref1` no element in the document carries:
+
+  ```html
+  <p>a [t[^1]][nope] b</p>
+  <section role="doc-endnotes">
+    <hr>
+    <ol>
+      <li id="fn1">
+        <p>n<a href="#fnref1" role="doc-backlink">↩</a></p>
+      </li>
+    </ol>
+  </section>
+  ```
+
+  It now renders the paragraph alone:
+
+  ```html
+  <p>a [t[^1]][nope] b</p>
+  ```
+
+  Where a live use follows a discarded one, the surviving noteref is `fnref1`
+  with a single backlink, rather than `fnref1-2` reading as a repeat of a
+  reference the document does not contain. Twenty-three documents changed, over
+  the shapes a note can reach discarded text through: the lone use, the use
+  followed by a live one, the inline-note spelling, the collapsed reference, an
+  unresolved reference nested inside a resolved one, one inside a note body, a
+  label used once each way, and the same reference inside a heading, a list
+  item, a block quote, a table cell, a description and a div. The AST's
+  `number` moves with the rendering. A reference IMAGE is unaffected: its alt is
+  a string rather than an inline tree, so it never held a note. The Markdown,
+  plain-text, ANSI and canonical-Carve targets write a definition line whether
+  or not anything references it, so they are unaffected too.
+
+  Two neighboring shapes deliberately do NOT change, because what is counted is
+  what the output holds: a note in a reference that DOES resolve is an ordinary
+  reference, and a note in a bracketed run that never carried a tail is ordinary
+  too, since PART 9 §14 renders that run's content.
+
+- **A reference tail no longer seals its own link text**
+  (markup-carve/carve#1196). A reference written inside a reference link's text
+  stayed literal, where the inline-destination spelling of the same text
+  resolved it. `[t[x][r2]][r]` rendered `<a href="/u">t[x][r2]</a>` and now
+  renders `<a href="/u">tx</a>`, agreeing with `[t[x][r2]](/u)`, which was
+  already correct. An image reference in that position renders its `<img>` the
+  same way.
+
 - **A tight list item imported from Markdown holds one paragraph, not one per
   inline node** (markup-carve/carve-rs#969). `pulldown-cmark` spells a tight
   item by emitting its inlines with no `Start(Paragraph)` around them - that

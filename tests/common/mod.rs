@@ -18,8 +18,13 @@ use std::path::{Path, PathBuf};
 ///
 /// carve-js and carve-php took the same route in markup-carve/carve-js#969 and
 /// markup-carve/carve-php#1155; this is the third engine (carve#755).
+///
+/// The authored examples live under `resources/examples`. `docs/examples` is
+/// generated output as of markup-carve/carve#1194 and is no longer committed,
+/// so counting the generated copies would make this guard depend on whether a
+/// docs build had run in the checkout.
 pub fn expected_corpus_size() -> usize {
-    let examples = spec_root().join("docs/examples");
+    let examples = spec_root().join("resources/examples");
     let mut count = 0usize;
     let mut files = 0usize;
     for entry in std::fs::read_dir(&examples)
