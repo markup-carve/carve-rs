@@ -158,17 +158,31 @@ fn render_block(node: &BlockNode, depth: usize) -> String {
         BlockNode::Paragraph(paragraph) => {
             format!("{}\n\n", render_inlines(&paragraph.children))
         }
-        BlockNode::CodeBlock(code) => format!("{}\n\n", strip_controls(&code.content)),
+        // Caption floor, the same one the `Div` arm below applies through
+        // `prepend_label`: a fence title (`"src/app.js"`) and a grouping label
+        // (`[Node]`) are authored text, and this target has nowhere to attach
+        // them, so they become standalone lines rather than being dropped. Title
+        // first when both are present, matching the div's order. Ported from
+        // carve-js#1044.
+        BlockNode::CodeBlock(code) => {
+            let body = format!("{}\n\n", strip_controls(&code.content));
+            let body = prepend_label(body, code.label.as_deref());
+            prepend_label(body, code.title.as_deref())
+        }
         BlockNode::BlockQuote(quote) => {
             let quoted = format!(
                 "\"{}\"",
                 trim_block_output(&render_blocks(&quote.children, depth + 1))
             );
-            // Visible content, so a text target keeps it - as a separate block,
-            // which is the spacing the renderer-parity fixtures pin.
+            // PART 11 §10c T3. ADJACENCY, not a blank line. A blank line is what
+            // separates blocks on this target, so putting one here said the
+            // attribution was a block of its own rather than the quotation's
+            // source - the words survived, the attachment did not. No
+            // punctuation is invented: a dash prefix would put a character in
+            // the output the author never wrote.
             match &quote.attribution {
                 Some(attribution) => {
-                    format!("{quoted}\n\n{}\n\n", render_inlines(attribution))
+                    format!("{quoted}\n{}\n\n", render_inlines(attribution).trim())
                 }
                 None => format!("{quoted}\n\n"),
             }

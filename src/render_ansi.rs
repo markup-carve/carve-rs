@@ -174,7 +174,14 @@ fn render_block(node: &BlockNode, ctx: &mut AnsiContext, depth: usize) -> String
         }
         BlockNode::CodeBlock(code) => {
             let lang = code.lang.as_deref().map(strip_terminal_controls);
-            render_code_block(&strip_terminal_controls(&code.content), lang.as_deref())
+            let title = code.title.as_deref().map(strip_terminal_controls);
+            let label = code.label.as_deref().map(strip_terminal_controls);
+            render_code_block(
+                &strip_terminal_controls(&code.content),
+                lang.as_deref(),
+                title.as_deref(),
+                label.as_deref(),
+            )
         }
         BlockNode::BlockQuote(quote) => {
             ctx.block_quote_depth += 1;
@@ -182,12 +189,27 @@ fn render_block(node: &BlockNode, ctx: &mut AnsiContext, depth: usize) -> String
             ctx.block_quote_depth -= 1;
             // Keeps the styling the caption had while a quote was a figure, so
             // a terminal reader sees the same thing in a different place.
+            //
+            // PART 11 §10c T2: it also carries the QUOTE BAR. The bar is already
+            // this target's marker for "inside the quote", and the attribution
+            // was the one line in the quote that did not get it - so the source
+            // read as a separate block that merely happened to follow. Nothing
+            // new is invented; the prefix the body lines already use is applied
+            // one line further. The caption's own trailing separator is trimmed
+            // BEFORE prefixing, or the bar would be drawn on blank lines and the
+            // quote would appear to continue past its end.
             match &quote.attribution {
                 Some(attribution) => {
+                    ctx.block_quote_depth += 1;
+                    let bar = block_quote_prefix(ctx);
+                    ctx.block_quote_depth -= 1;
+                    let rendered = render_caption(attribution, ctx);
+                    let prefixed = prefix_lines(rendered.trim_end_matches('\n'), &bar);
                     format!(
-                        "{}\n\n{}",
+                        "{}\n{}\n{}\n\n",
                         out.trim_end_matches('\n'),
-                        render_caption(attribution, ctx)
+                        bar.trim_end(),
+                        prefixed
                     )
                 }
                 None => out,
@@ -279,10 +301,32 @@ fn render_heading(level: u8, content: &str) -> String {
     format!("{out}\n\n")
 }
 
-fn render_code_block(content: &str, lang: Option<&str>) -> String {
+fn render_code_block(
+    content: &str,
+    lang: Option<&str>,
+    title: Option<&str>,
+    label: Option<&str>,
+) -> String {
     let mut out = String::new();
+    // Caption floor: a fence title (`"src/app.js"`) and a grouping label
+    // (`[Node]`) are authored text. This target had a rule line already and put
+    // only the language on it, so both were dropped outright - the one thing
+    // docs/graceful-degradation.md says a target may never do. They join the
+    // rule rather than taking lines of their own, so a captioned fence still
+    // reads as one block. Ported from carve-js#1044.
+    let mut parts: Vec<String> = Vec::new();
     if let Some(lang) = lang {
-        out.push_str(&format!("{}\n", style(&format!("┌── {lang} "), DIM)));
+        parts.push(lang.to_string());
+    }
+    if let Some(title) = title.filter(|t| !t.is_empty()) {
+        parts.push(title.to_string());
+    }
+    if let Some(label) = label.filter(|l| !l.is_empty()) {
+        parts.push(format!("[{label}]"));
+    }
+    if !parts.is_empty() {
+        let joined = parts.join(" ");
+        out.push_str(&format!("{}\n", style(&format!("┌── {joined} "), DIM)));
     }
     for line in content.strip_suffix('\n').unwrap_or(content).split('\n') {
         out.push_str(&format!(
