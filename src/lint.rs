@@ -32,6 +32,7 @@
 
 use crate::ast::*;
 use crate::ast_json::emphasis_type;
+use crate::escape::escape_attr;
 use crate::extension::Options;
 use crate::parse::parse_with_options;
 use crate::render::{semantic_span_order, semantic_value_target, EXTENDED_SEMANTIC_SPAN_ORDER};
@@ -188,13 +189,12 @@ fn collect_semantic_attribute_warnings(
         if is_valid_html_attribute_on(node_type, name) {
             continue;
         }
-        // The trailing `{name}=""` is carve-js' wording, kept verbatim, and it
-        // is INACCURATE for a valued name: `` `c`{kbd="V"} `` renders
-        // `<code kbd="V">`, not `kbd=""`. Left alone deliberately. "Same rule,
-        // same id" is what parity means here, and a consumer reading the same
-        // rule id from two engines must not get two different sentences - so
-        // this is a wording fix all three engines make together, not one a port
-        // makes on its own. Raised on markup-carve/carve#1132.
+        // The tail quotes the value the RENDERER emits, escaped the way it
+        // escapes it. A fixed `name=""` is true only for the boolean form and
+        // false the moment a value is authored - `` `c`{kbd="V"} `` renders
+        // `<code kbd="V">` - and the valued case is precisely the one where a
+        // reader needs the sentence to describe their own input back to them.
+        let emitted = quoted_attribute_value(value);
         out.push(warning(
             pos,
             to_byte,
@@ -202,9 +202,32 @@ fn collect_semantic_attribute_warnings(
             format!(
                 "\"{name}\" is a semantic span attribute (PART 9 §10) and only applies to an \
                  ordinary [content]{{attrs}} span; on {node_type} it stays a raw attribute and \
-                 renders as {name}=\"\"."
+                 renders as {name}=\"{emitted}\"."
             ),
         ));
+    }
+}
+
+/// The attribute value as it reaches the output, ready to sit inside the
+/// message's own quotes.
+///
+/// Escaped with [`escape_attr`], which is what the HTML renderer writes an
+/// attribute value with, so the message quotes the bytes the author will find
+/// in the document rather than the ones they typed.
+///
+/// Capped, because the value is author text and a diagnostic is read in a
+/// terminal or an editor gutter: an attribute carrying a paragraph would push
+/// the part of the sentence that explains the problem off the line. The cut is
+/// made on a character boundary of the SOURCE value and the result escaped
+/// afterwards - escaping first and cutting the result could halve an entity and
+/// print `&qu` as though it were authored.
+fn quoted_attribute_value(value: &str) -> String {
+    /// Characters of the value the message quotes before it elides the rest.
+    const MAX_CHARS: usize = 64;
+
+    match value.char_indices().nth(MAX_CHARS) {
+        Some((byte, _)) => format!("{}…", escape_attr(&value[..byte])),
+        None => escape_attr(value),
     }
 }
 
