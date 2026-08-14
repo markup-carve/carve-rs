@@ -216,11 +216,25 @@ fn a_retired_name_is_reported_by_neither_rule() {
 #[test]
 fn cite_on_a_block_quote_is_valid_html_and_is_not_reported() {
     let src = "{cite=\"https://example.org/dune\"}\n> q\n";
+
+    // ANCHOR FIRST. Under a CORE render `cite` is not an element name at all,
+    // so the rule never reaches the quote and an empty result says nothing
+    // about the exception - a control in that state passes for the wrong
+    // reason. Registering SemanticSpan makes `cite` live, which the code-span
+    // case proves in this same render before the quote is asserted on.
+    assert_eq!(
+        rules_with_semantic_span("`c`{cite=\"https://example.org/dune\"}\n"),
+        vec![OUTSIDE_SPAN],
+        "cite must be a live element name here, or the assertion below is vacuous"
+    );
     assert!(
         rules_with_semantic_span(src).is_empty(),
         "{:?}",
         with_semantic_span(src)
     );
+
+    // Core reports nothing either, but only because `cite` is an ordinary
+    // attribute there. Pinned as behavior, not as evidence for the exception.
     assert!(rules(src).is_empty());
 }
 
