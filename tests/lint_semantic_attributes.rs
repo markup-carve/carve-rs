@@ -341,6 +341,33 @@ fn the_quoted_value_is_escaped_the_way_the_renderer_escapes_it() {
     assert_eq!(only_message(src), expected_message("code", "kbd", &emitted));
 }
 
+/// Escaping is not the only thing between the authored value and the output.
+/// A dangerous URL scheme is BLANKED on the way out (PART 25), so the authored
+/// text is not what renders and quoting it would be wrong in exactly the way
+/// the fixed `name=""` was wrong.
+#[test]
+fn a_value_the_renderer_blanks_is_reported_as_blank() {
+    for value in ["javascript:alert(1)", "data:text/html,x", "vbscript:x"] {
+        let src = format!("`c`{{kbd=\"{value}\"}}\n");
+        assert_eq!(emitted_kbd_attribute(&src), "", "{value}");
+        assert_eq!(
+            only_message(&src),
+            expected_message("code", "kbd", ""),
+            "{value}"
+        );
+    }
+
+    // ANCHOR: a scheme that is NOT dangerous survives, so the assertions above
+    // report the sanitizer firing rather than the value never reaching the
+    // message at all.
+    let src = "`c`{kbd=\"https://example.org/k\"}\n";
+    assert_eq!(emitted_kbd_attribute(src), "https://example.org/k");
+    assert_eq!(
+        only_message(src),
+        expected_message("code", "kbd", "https://example.org/k")
+    );
+}
+
 /// A long value is elided rather than printed whole: a diagnostic is read on
 /// one line, and an attribute carrying a paragraph would push the explanation
 /// off it. 64 characters are kept.

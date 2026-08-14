@@ -32,7 +32,7 @@
 
 use crate::ast::*;
 use crate::ast_json::emphasis_type;
-use crate::escape::escape_attr;
+use crate::escape::{escape_attr, sanitize_attr_value};
 use crate::extension::Options;
 use crate::parse::parse_with_options;
 use crate::render::{semantic_span_order, semantic_value_target, EXTENDED_SEMANTIC_SPAN_ORDER};
@@ -194,7 +194,7 @@ fn collect_semantic_attribute_warnings(
         // false the moment a value is authored - `` `c`{kbd="V"} `` renders
         // `<code kbd="V">` - and the valued case is precisely the one where a
         // reader needs the sentence to describe their own input back to them.
-        let emitted = quoted_attribute_value(value);
+        let emitted = quoted_attribute_value(name, value);
         out.push(warning(
             pos,
             to_byte,
@@ -211,23 +211,27 @@ fn collect_semantic_attribute_warnings(
 /// The attribute value as it reaches the output, ready to sit inside the
 /// message's own quotes.
 ///
-/// Escaped with [`escape_attr`], which is what the HTML renderer writes an
-/// attribute value with, so the message quotes the bytes the author will find
-/// in the document rather than the ones they typed.
+/// Put through the SAME two steps the renderer puts an attribute value
+/// through, in the same order: [`sanitize_attr_value`] then [`escape_attr`].
+/// Sanitizing is not decoration here - a value carrying a dangerous URL scheme
+/// is blanked on the way out, so `` `c`{kbd="javascript:alert(1)"} `` really
+/// does render `kbd=""`, and a message that quoted the authored text would be
+/// wrong in exactly the way this rule was fixed to stop being wrong.
 ///
 /// Capped, because the value is author text and a diagnostic is read in a
 /// terminal or an editor gutter: an attribute carrying a paragraph would push
 /// the part of the sentence that explains the problem off the line. The cut is
-/// made on a character boundary of the SOURCE value and the result escaped
+/// made on a character boundary of the SANITIZED value and the result escaped
 /// afterwards - escaping first and cutting the result could halve an entity and
 /// print `&qu` as though it were authored.
-fn quoted_attribute_value(value: &str) -> String {
+fn quoted_attribute_value(name: &str, value: &str) -> String {
     /// Characters of the value the message quotes before it elides the rest.
     const MAX_CHARS: usize = 64;
 
-    match value.char_indices().nth(MAX_CHARS) {
-        Some((byte, _)) => format!("{}…", escape_attr(&value[..byte])),
-        None => escape_attr(value),
+    let emitted = sanitize_attr_value(name, value);
+    match emitted.char_indices().nth(MAX_CHARS) {
+        Some((byte, _)) => format!("{}…", escape_attr(&emitted[..byte])),
+        None => escape_attr(&emitted),
     }
 }
 
