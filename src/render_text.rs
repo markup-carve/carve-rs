@@ -1,4 +1,178 @@
+use crate::ast::{BlockNode, Document, FigureTarget, InlineNode};
 use crate::escape::is_bidi_control;
+use std::collections::BTreeSet;
+
+/// The `(term, expansion)` pairs whose expansion this render will emit.
+pub(crate) type ConsumedAbbreviations = BTreeSet<(String, String)>;
+
+/// Which abbreviation DEFINITIONS the plain-text and terminal targets drop.
+///
+/// PART 11 §10f splits the referenced definition by target: Markdown keeps the
+/// `*[TERM]: expansion` line, because that spelling is PHP Markdown Extra's own
+/// and the export round-trips through it, while plain and the terminal drop it
+/// and print `TERM (expansion)` at each occurrence instead. §10a - the UNUSED
+/// definition, which every non-HTML target still emits - is untouched.
+///
+/// THE TEST IS WHETHER THIS DEFINITION'S EXPANSION IS EMITTED, not whether its
+/// term appears. The line goes because the content is emitted TWICE, and it is
+/// emitted twice only where the expansion is emitted. So the answer is a set of
+/// `(term, expansion)` PAIRS rather than a set of terms, and two shapes already
+/// in the corpus turn on that:
+///
+/// - PART 9R R3 is last-wins, so in `*[A]: a` / `*[A]: b` the parser resolves
+///   every occurrence to `b`. Only `("A", "b")` lands in the set, so `*[A]: b`
+///   goes and `*[A]: a` stays - dropping both would delete the string `a` from
+///   the document outright, which is the content loss §10a exists to prevent.
+/// - PART 9 §9 makes an authored `abbr` authoritative, and a resolved
+///   abbreviation inside such a span contributes only its visible text. Its
+///   expansion therefore reaches no target, so the occurrence does not count and
+///   the definition keeps its line (`45-inline-extensions-11`).
+///
+/// The suppression rule here mirrors the `suppress_automatic_abbreviation` flag
+/// the three inline renderers carry, INCLUDING that an empty `{abbr=""}`
+/// suppresses too: it is the author's spelling for "mark this, expand nothing",
+/// so the definition's expansion is not emitted there either.
+///
+/// A footnote definition's body is walked because the plain and terminal targets
+/// render it, so an occurrence inside one emits its expansion like any other.
+///
+/// WHAT THIS DELIBERATELY DOES NOT MODEL is `crate::abbr_budget`. Past the
+/// budget an occurrence degrades to its plain key, so on a document large enough
+/// to exhaust a megabyte of expansion the line can be dropped while a late
+/// occurrence prints no expansion. Simulating the budget here would mean
+/// replaying every spend in render order from a second walk that has to stay in
+/// step with three renderers - a far likelier source of divergence than the
+/// case it covers, which is a §25 denial-of-service defense degrading a document
+/// that is already being clipped.
+pub(crate) fn consumed_abbreviation_definitions(doc: &Document) -> ConsumedAbbreviations {
+    let mut out = ConsumedAbbreviations::new();
+    collect_blocks(&doc.children, false, &mut out);
+    for body in doc.footnote_defs.values() {
+        collect_blocks(body, false, &mut out);
+    }
+    out
+}
+
+fn collect_blocks(blocks: &[BlockNode], suppressed: bool, out: &mut ConsumedAbbreviations) {
+    for block in blocks {
+        collect_block(block, suppressed, out);
+    }
+}
+
+fn collect_block(block: &BlockNode, suppressed: bool, out: &mut ConsumedAbbreviations) {
+    match block {
+        BlockNode::Heading(h) => collect_inlines(&h.children, suppressed, out),
+        BlockNode::Paragraph(p) => collect_inlines(&p.children, suppressed, out),
+        BlockNode::List(l) => {
+            for item in &l.items {
+                collect_blocks(&item.children, suppressed, out);
+            }
+        }
+        BlockNode::BlockQuote(b) => collect_block_quote(b, suppressed, out),
+        BlockNode::Table(t) => collect_table(t, suppressed, out),
+        BlockNode::Admonition(a) => {
+            if let Some(title) = &a.title {
+                collect_inlines(title, suppressed, out);
+            }
+            collect_blocks(&a.children, suppressed, out);
+        }
+        BlockNode::Div(d) => collect_blocks(&d.children, suppressed, out),
+        BlockNode::LineBlock(lb) => collect_blocks(&lb.children, suppressed, out),
+        BlockNode::DefinitionList(d) => {
+            for item in &d.items {
+                for term in &item.terms {
+                    collect_inlines(term, suppressed, out);
+                }
+                for definition in &item.definitions {
+                    collect_blocks(definition, suppressed, out);
+                }
+            }
+        }
+        BlockNode::Figure(f) => {
+            match &f.target {
+                FigureTarget::Image(_) | FigureTarget::CodeBlock(_) => {}
+                FigureTarget::BlockQuote(b) => collect_block_quote(b, suppressed, out),
+                FigureTarget::Table(t) => collect_table(t, suppressed, out),
+                FigureTarget::Paragraph(p) => collect_inlines(&p.children, suppressed, out),
+            }
+            collect_inlines(&f.caption, suppressed, out);
+        }
+        BlockNode::Extension(e) => collect_blocks(&e.children, suppressed, out),
+        // A code block's text is never abbreviation-expanded, and the remaining
+        // block kinds carry no inline children at all.
+        BlockNode::CodeBlock(_)
+        | BlockNode::AbbreviationDef(_)
+        | BlockNode::LinkReferenceDefinition(_)
+        | BlockNode::RawBlock(_)
+        | BlockNode::Comment(_)
+        | BlockNode::BlockImage(_)
+        | BlockNode::ThematicBreak(_) => {}
+    }
+}
+
+fn collect_block_quote(
+    quote: &crate::ast::BlockQuote,
+    suppressed: bool,
+    out: &mut ConsumedAbbreviations,
+) {
+    if let Some(attribution) = &quote.attribution {
+        collect_inlines(attribution, suppressed, out);
+    }
+    collect_blocks(&quote.children, suppressed, out);
+}
+
+fn collect_table(table: &crate::ast::Table, suppressed: bool, out: &mut ConsumedAbbreviations) {
+    if let Some(caption) = &table.caption {
+        collect_inlines(caption, suppressed, out);
+    }
+    for row in &table.rows {
+        for cell in &row.cells {
+            collect_inlines(&cell.children, suppressed, out);
+        }
+    }
+}
+
+fn collect_inlines(nodes: &[InlineNode], suppressed: bool, out: &mut ConsumedAbbreviations) {
+    for node in nodes {
+        match node {
+            InlineNode::Abbreviation(abbr) => {
+                if !suppressed {
+                    out.insert((abbr.abbr.clone(), abbr.expansion.clone()));
+                }
+            }
+            InlineNode::Span(span) => {
+                // An authored `abbr` outranks the document definition, so every
+                // resolved abbreviation below it contributes visible text only.
+                let authored = span
+                    .attrs
+                    .as_ref()
+                    .is_some_and(|a| a.key_values.contains_key("abbr"));
+                collect_inlines(&span.children, suppressed || authored, out);
+            }
+            InlineNode::Emphasis(e) => collect_inlines(&e.children, suppressed, out),
+            InlineNode::Link(l) => collect_inlines(&l.children, suppressed, out),
+            InlineNode::Extension(e) => collect_inlines(&e.children, suppressed, out),
+            InlineNode::Footnote(f) => {
+                if let Some(inline) = &f.inline {
+                    collect_inlines(inline, suppressed, out);
+                }
+            }
+            InlineNode::CriticInsert(c) => collect_inlines(&c.children, suppressed, out),
+            InlineNode::CriticDelete(c) => collect_inlines(&c.children, suppressed, out),
+            InlineNode::CitationGroup(g) => {
+                for item in &g.items {
+                    for part in [&item.prefix, &item.locator, &item.suffix]
+                        .into_iter()
+                        .flatten()
+                    {
+                        collect_inlines(part, suppressed, out);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
 
 /// Drop EVERY control character (keeping tab and newline) from author content,
 /// so an attacker's `ESC` / OSC sequence cannot inject into terminal output.
