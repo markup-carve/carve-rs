@@ -9,6 +9,30 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`lint_carve` / `lint_carve_with_options`, and the `LintWarning` they
+  return** (markup-carve/carve#1131, markup-carve/carve#1132). carve-rs' first
+  lint surface, carrying the two diagnostics PART 9 §10 implies and had nowhere
+  to say. Rule ids and messages match carve-js' `lintCarve`, so a consumer
+  reading diagnostics from both engines sees one warning under one spelling.
+
+  - `semantic-attribute-value-ignored` - a value on a reserved name that only
+    selects a wrapper. `[x]{kbd="V"}` renders `<kbd>x</kbd>` and `V` reaches no
+    output. Only `abbr`, `dfn` and `time` carry a value, as `title` or
+    `datetime`.
+  - `semantic-attribute-outside-span` - a reserved name on any target other
+    than an ordinary `[content]{attrs}` span, where §10 does not apply and it
+    stays a raw attribute. `` `c`{kbd} `` renders `<code kbd="">c</code>`.
+
+  Neither is a rendering change: every case renders exactly as it did, and
+  identically to carve-js and carve-php. Both rules are tier-aware, which is why
+  the `_with_options` form exists - pass the `Options` you render with, and a
+  name that only becomes an element under `SemanticSpan` is reported only when
+  that extension is registered. `cite` on a BLOCK QUOTE is a valid HTML URL
+  attribute and is deliberately not reported.
+
+  `LintWarning::start` / `end` are BYTE offsets into the source the caller
+  passed, not the codepoint offsets `Pos` carries: a codepoint offset handed to
+  `&source[start..end]` panics on the first non-ASCII character before it.
 - **`extensions::semantic_span::SemanticSpan`** (spec PART 9 §10,
   docs/extensions.md §11). The four semantic span names core does not reserve -
   `samp`, `var`, `cite`, `dfn` - under the same spelling, nesting order,
