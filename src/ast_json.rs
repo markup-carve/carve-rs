@@ -3,7 +3,7 @@
 //! This module intentionally has no serde dependency. It contains the small
 //! JSON writer and parser needed for the schema-backed AST interchange format.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 use crate::ast::*;
@@ -1292,6 +1292,46 @@ fn write_attrs_field(w: &mut Writer<'_>, attrs: &Option<Attrs>) {
     }
 }
 
+/// `key_values` in the order the AUTHOR wrote them, which is what `attrs.order`
+/// records.
+///
+/// The map behind it is a `BTreeMap`, so iterating it publishes an ALPHABETICAL
+/// order that is this engine's storage choice and nothing the document said.
+/// `[x]{b=1 a=2}` came out as `{"keyValues":{"a":"1","b":"2"},"order":["b","a"]}`,
+/// which is one `attrs` object stating two different orders for the same three
+/// characters, and the HTML renderer, which reads `order`, already agreed with
+/// the second one. PART 12 §1 is explicit about which of the two is publishable:
+/// an implementation whose internals differ MAPS on the way out, it does not
+/// export its internals. `resources/ast-schema.json` calls `order`
+/// "Source-appearance order of the slots", and PART 11 §6 makes the author's
+/// attribute order a choice "the AST records".
+///
+/// A key `order` does not mention is still published, after the ones it does. An
+/// `Attrs` built programmatically records no order at all (the schema says so),
+/// and dropping its attributes to protect an ordering would lose the document to
+/// save the bookkeeping.
+fn ordered_key_values(attrs: &Attrs) -> Vec<(&str, &str)> {
+    let mut out: Vec<(&str, &str)> = Vec::with_capacity(attrs.key_values.len());
+    let mut seen: BTreeSet<&str> = BTreeSet::new();
+    for slot in &attrs.order {
+        let AttrSlot::Key(key) = slot else {
+            continue;
+        };
+        let Some((key, value)) = attrs.key_values.get_key_value(key.as_str()) else {
+            continue;
+        };
+        if seen.insert(key.as_str()) {
+            out.push((key.as_str(), value.as_str()));
+        }
+    }
+    for (key, value) in &attrs.key_values {
+        if seen.insert(key.as_str()) {
+            out.push((key.as_str(), value.as_str()));
+        }
+    }
+    out
+}
+
 fn write_attrs(out: &mut String, attrs: &Attrs) {
     let mut w = Writer::new(out);
     if let Some(id) = &attrs.id {
@@ -1303,7 +1343,7 @@ fn write_attrs(out: &mut String, attrs: &Attrs) {
     if !attrs.key_values.is_empty() {
         w.field("keyValues", |out| {
             let mut w = Writer::new(out);
-            for (key, value) in &attrs.key_values {
+            for (key, value) in ordered_key_values(attrs) {
                 w.field(key, |out| write_string(out, value));
             }
             w.finish();
