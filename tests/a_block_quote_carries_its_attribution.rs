@@ -96,8 +96,13 @@ fn a_quote_with_an_attribution_line_renders_as_an_attribution() {
         carve::to_html("> q\n^ Attr"),
         "<blockquote>\n  <p>q</p>\n  <footer>Attr</footer>\n</blockquote>"
     );
-    assert_eq!(carve::to_markdown("> q\n^ Attr"), "> q\n\nAttr\n");
-    assert_eq!(carve::to_plain_text("> q\n^ Attr"), "\"q\"\n\nAttr\n");
+    // PART 11 §10c: the attribution stays ATTACHED on every target. Markdown
+    // keeps it inside the quote as a <footer>; plain text attaches by adjacency.
+    assert_eq!(
+        carve::to_markdown("> q\n^ Attr"),
+        "> q\n>\n> <footer>Attr</footer>\n"
+    );
+    assert_eq!(carve::to_plain_text("> q\n^ Attr"), "\"q\"\nAttr\n");
     assert_eq!(carve::to_carve("> q\n^ Attr"), "> q\n^ Attr\n");
 }
 
