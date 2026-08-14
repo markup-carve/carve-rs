@@ -592,7 +592,23 @@ fn render_table(node: &Table, ctx: &mut MarkdownContext) -> String {
         out.push_str(&format!("| {sep} |\n"));
     }
     out.push_str(&rows.join("\n"));
-    out.push_str("\n\n");
+    out.push('\n');
+    // A caption is authored text, and Markdown has no table-caption syntax - so
+    // it goes on its own line under the table rather than being dropped.
+    // Dropping it was the only place a presentation target discarded authored
+    // text outright, against the MUST in docs/graceful-degradation.md ("losing
+    // the click is fine; losing the words is not"). An image and a listing
+    // caption already degrade exactly this way, so the table stops being the odd
+    // one out. Ported from carve-js#1044.
+    if let Some(caption) = &node.caption {
+        let text = render_inlines(caption, ctx, 0);
+        let text = text.trim();
+        if !text.is_empty() {
+            out.push_str(text);
+            out.push('\n');
+        }
+    }
+    out.push('\n');
     out
 }
 
