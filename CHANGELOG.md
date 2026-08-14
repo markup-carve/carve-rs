@@ -262,6 +262,32 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A reference inside an inline note, a critic insertion or a critic deletion
+  resolves** (markup-carve/carve#1203, PART 9 §16). §16 disables FOOTNOTE
+  recognition inside a note and says nothing about references, so a note's
+  content is ordinary inline content and a reference in it resolves like any
+  other. The reference resolver had no arm for the note, so it reached the
+  reader as literal text while the same reference one node over, inside
+  emphasis, resolved.
+
+  Input:
+
+  ```
+  a ^[see [t][r]] b
+
+  [r]: /u
+  ```
+
+  put `see [t][r]` in the endnote where the document says
+  `see <a href="/u">t</a>`. The same held for an image reference
+  (`![z][r]`) and for a collapsed reference reaching the heading index
+  (`[h][]`).
+
+  Sweeping every inline node that carries inline children found two more hosts
+  with the same gap: a critic insertion (`{++…++}`) and a critic deletion
+  (`{--…--}`). A critic substitution and a critic comment carry strings rather
+  than children, so nothing in them can resolve and they are unchanged.
+
 - **`carve fmt` no longer escapes into a run the reader reads raw**
   (markup-carve/carve#1197, markup-carve/carve#1206, PART 11 §2). An image's alt
   text is an HTML attribute: nothing inside is inline-parsed and no escape inside
