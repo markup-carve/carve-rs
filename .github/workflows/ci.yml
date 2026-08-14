@@ -9,6 +9,10 @@ on:
 env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: "-D warnings"
+  # ~340 integration-test binaries dominate the test job via compile and
+  # link time; line-tables-only keeps file:line in backtraces at a fraction
+  # of the cost of full debug info.
+  CARGO_PROFILE_DEV_DEBUG: "line-tables-only"
 
 jobs:
   test:
@@ -17,7 +21,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        toolchain: [stable, "1.75"]
+        # PRs run stable only; the MSRV leg runs on pushes to main, so a
+        # 1.75 regression is still caught on merge without doubling every
+        # PR's CI time.
+        toolchain: ${{ github.event_name == 'push' && fromJSON('["stable", "1.75"]') || fromJSON('["stable"]') }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -37,8 +44,12 @@ jobs:
       # `tools/sync-implemented.py` (no --check) adds exactly those.
       - name: Is the allowlist behind the corpus, or is the engine?
         if: always()
+        # The tool prefers target/release/carve and falls back to the debug
+        # binary the build step just produced. A restored cache may still hold
+        # a STALE release binary from an older commit, so drop it rather than
+        # paying for a second, release-profile compile of the whole crate.
         run: |
-          cargo build --release
+          rm -rf target/release
           python3 tools/sync-implemented.py --check
 
   lints:
