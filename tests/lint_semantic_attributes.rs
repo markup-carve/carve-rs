@@ -110,8 +110,16 @@ fn the_message_names_the_attribute_and_the_element() {
 
 /// The ticket lists six off-span targets. Every row here was MEASURED against
 /// `carve --json` on this tree: the named type is the node the authored `kbd`
-/// actually lands on. Twenty-eight distinct wire types can carry it, against
-/// the six the ticket named, so the count is a floor rather than a total.
+/// actually lands on. TWENTY-NINE distinct wire types can carry it, against the
+/// six the ticket named, so the ticket's count is a floor rather than a total.
+///
+/// Three shapes are deliberately absent because carve-rs cannot reach them from
+/// source, and their absence is measured too. A table CELL takes no attributes
+/// (`| a{kbd} |` and `| {kbd}a |` both leave the braces literal) - the ROW does,
+/// on the closing pipe. A `list_item` carries `attrs` in the AST but no source
+/// spelling fills it; the block-attribute line binds to the `list`. And
+/// `RawBlock` has no `attrs` field at all, so it is not a target here even
+/// though it is one in carve-php (markup-carve/carve-php#1254).
 const OFF_SPAN_TARGETS: &[(&str, &str)] = &[
     // inline
     ("code", "`c`{kbd}\n"),
@@ -143,6 +151,7 @@ const OFF_SPAN_TARGETS: &[(&str, &str)] = &[
     ("code_block", "{kbd}\n```\nc\n```\n"),
     ("thematic_break", "{kbd}\n---\n"),
     ("admonition", "{kbd}\n::: note\nx\n:::\n"),
+    ("div", "{kbd}\n:::\nx\n:::\n"),
 ];
 
 #[test]
