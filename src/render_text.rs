@@ -91,7 +91,6 @@ fn collect_block(block: &BlockNode, suppressed: bool, out: &mut ConsumedAbbrevia
         BlockNode::Figure(f) => {
             match &f.target {
                 FigureTarget::Image(_) | FigureTarget::CodeBlock(_) => {}
-                FigureTarget::BlockQuote(b) => collect_block_quote(b, suppressed, out),
                 FigureTarget::Table(t) => collect_table(t, suppressed, out),
                 FigureTarget::Paragraph(p) => collect_inlines(&p.children, suppressed, out),
             }

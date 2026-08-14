@@ -638,11 +638,6 @@ fn render_figure(node: &Figure, ctx: &mut MarkdownContext, depth: usize) -> Stri
     let target = match &node.target {
         FigureTarget::Image(image) => render_image(image),
         FigureTarget::Table(table) => render_table(table, ctx).trim().to_string(),
-        FigureTarget::BlockQuote(quote) => {
-            render_block(&BlockNode::BlockQuote(quote.clone()), ctx, depth + 1)
-                .trim()
-                .to_string()
-        }
         FigureTarget::CodeBlock(cb) => {
             render_block(&BlockNode::CodeBlock(cb.clone()), ctx, depth + 1)
                 .trim()
@@ -654,9 +649,8 @@ fn render_figure(node: &Figure, ctx: &mut MarkdownContext, depth: usize) -> Stri
                 .to_string()
         }
     };
-    // The caption sits on its own line directly under the figure (`\n`) - an
-    // image target used to glue it on (`![a](/u)cap`). A blockquote target keeps
-    // the blank-line separation.
+    // The caption sits on its own line directly under the figure (`\n`), so an
+    // image target does not glue it on (`![a](/u)cap`).
     //
     // A TABLE TARGET IS THE SAME RULE AS `render_table`'s CAPTION, and takes the
     // same blank line for the same reason (PART 11 §10e T2). This is the second
@@ -667,7 +661,7 @@ fn render_figure(node: &Figure, ctx: &mut MarkdownContext, depth: usize) -> Stri
     // - `| a |Fruit prices` - fusing the words INTO the last data cell rather
     // than merely following it.
     let sep = match &node.target {
-        FigureTarget::BlockQuote(_) | FigureTarget::Table(_) => "\n\n",
+        FigureTarget::Table(_) => "\n\n",
         _ => "\n",
     };
     // End with the block separator so a following block is not glued to the
@@ -1630,9 +1624,6 @@ where
             BlockNode::Figure(figure) => {
                 visit(block, Some(&figure.caption));
                 match &figure.target {
-                    FigureTarget::BlockQuote(quote) => {
-                        walk_blocks(&quote.children, depth + 1, visit)
-                    }
                     FigureTarget::Table(table) => {
                         walk_blocks(&[BlockNode::Table(table.clone())], depth + 1, visit);
                     }

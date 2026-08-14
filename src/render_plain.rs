@@ -385,11 +385,6 @@ fn render_figure(node: &Figure, depth: usize) -> String {
     let target = match &node.target {
         FigureTarget::Image(image) => render_image(image),
         FigureTarget::Table(table) => render_table(table).trim().to_string(),
-        FigureTarget::BlockQuote(quote) => {
-            render_block(&BlockNode::BlockQuote(quote.clone()), depth + 1)
-                .trim()
-                .to_string()
-        }
         FigureTarget::CodeBlock(cb) => render_block(&BlockNode::CodeBlock(cb.clone()), depth + 1)
             .trim()
             .to_string(),
@@ -397,10 +392,9 @@ fn render_figure(node: &Figure, depth: usize) -> String {
             .trim()
             .to_string(),
     };
-    // The caption sits on its own line directly under the figure (`\n`) - an
-    // image target used to glue it on. A blockquote target keeps the blank-line
-    // separation. End with the block separator so a following block is not glued
-    // (matching carve-php).
+    // The caption sits on its own line directly under the figure (`\n`), so an
+    // image target does not glue it on. End with the block separator so a
+    // following block is not glued (matching carve-php).
     //
     // A TABLE TARGET took the empty string, so the caption was written with no
     // line break at all - `aFruit prices` - fusing the words into the last cell.
@@ -408,10 +402,7 @@ fn render_figure(node: &Figure, depth: usize) -> String {
     // this is the same construct reaching the same writer through the AST-ingest
     // path, so it takes the same separator. Losing the words INTO a cell is the
     // failure docs/graceful-degradation.md forbids and PART 11 §10e names.
-    let sep = match &node.target {
-        FigureTarget::BlockQuote(_) => "\n\n",
-        _ => "\n",
-    };
+    let sep = "\n";
     format!("{target}{sep}{}\n\n", render_inlines(&node.caption))
 }
 

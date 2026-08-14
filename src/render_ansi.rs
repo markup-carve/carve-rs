@@ -567,11 +567,6 @@ fn render_figure(node: &Figure, ctx: &mut AnsiContext, depth: usize) -> String {
     let target = match &node.target {
         FigureTarget::Image(image) => render_image(image),
         FigureTarget::Table(table) => render_table(table, ctx).trim_end().to_string(),
-        FigureTarget::BlockQuote(quote) => {
-            render_block(&BlockNode::BlockQuote(quote.clone()), ctx, depth + 1)
-                .trim_end()
-                .to_string()
-        }
         FigureTarget::CodeBlock(cb) => {
             render_block(&BlockNode::CodeBlock(cb.clone()), ctx, depth + 1)
                 .trim_end()
@@ -583,10 +578,7 @@ fn render_figure(node: &Figure, ctx: &mut AnsiContext, depth: usize) -> String {
                 .to_string()
         }
     };
-    let sep = match &node.target {
-        FigureTarget::BlockQuote(_) => "\n\n",
-        _ => "\n",
-    };
+    let sep = "\n";
     format!("{target}{sep}{}", render_caption(&node.caption, ctx))
 }
 

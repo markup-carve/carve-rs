@@ -262,6 +262,17 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **AST JSON refuses a `block_quote` as a `figure.target`, matching the
+  published schema** (markup-carve/carve#1161, PART 9 §4a). A caption on a
+  quote is its attribution, so the schema stopped admitting the figure-wrapped
+  form; this engine went on decoding it and rendering the superseded
+  `<figure><blockquote>`, while carve-js and carve-php refused it. The admitted
+  targets are `code_block`, `image`, `paragraph` and `table`, and the refusal
+  message names them. The public `FigureTarget::BlockQuote` variant is removed
+  with it: the parser never produced one, so decode was its only entry point.
+  Captioned quotes in Carve source are unaffected and still carry an
+  attribution.
+
 - **`carve fmt` no longer escapes into a run the reader reads raw**
   (markup-carve/carve#1197, markup-carve/carve#1206, PART 11 §2). An image's alt
   text is an HTML attribute: nothing inside is inline-parsed and no escape inside

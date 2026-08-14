@@ -497,18 +497,6 @@ fn collect_footnotes_block(
                 order,
             );
             match &mut f.target {
-                FigureTarget::BlockQuote(b) => {
-                    for child in &mut b.children {
-                        collect_footnotes_block(
-                            assign_ref_ids,
-                            child,
-                            def_labels,
-                            label_indices,
-                            seen,
-                            order,
-                        );
-                    }
-                }
                 FigureTarget::Table(t) => {
                     if let Some(caption) = &mut t.caption {
                         collect_footnotes_inline(
@@ -2094,7 +2082,6 @@ fn render_figure(
             indent(out, level + 1);
             render_image(out, img);
         }
-        FigureTarget::BlockQuote(b) => render_blockquote(out, b, level + 1, options, state),
         FigureTarget::Table(t) => render_table(out, t, level + 1, options, state),
         FigureTarget::CodeBlock(cb) => render_block(
             out,

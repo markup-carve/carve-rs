@@ -156,11 +156,6 @@ impl TabNormalize {
         use crate::ast::FigureTarget;
         match &mut f.target {
             FigureTarget::CodeBlock(c) => c.content = self.expand(&c.content),
-            FigureTarget::BlockQuote(b) => {
-                for child in &mut b.children {
-                    self.visit_block(child);
-                }
-            }
             FigureTarget::Table(t) => {
                 if let Some(cap) = &mut t.caption {
                     self.visit_inlines(cap);

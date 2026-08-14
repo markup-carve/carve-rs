@@ -176,11 +176,6 @@ impl ExternalLinks {
     fn visit_figure_target(&self, f: &mut crate::ast::Figure) {
         use crate::ast::FigureTarget;
         match &mut f.target {
-            FigureTarget::BlockQuote(b) => {
-                for child in &mut b.children {
-                    self.visit_block(child);
-                }
-            }
             FigureTarget::Table(t) => {
                 if let Some(cap) = &mut t.caption {
                     self.visit_inlines(cap);

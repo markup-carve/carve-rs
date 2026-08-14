@@ -412,7 +412,6 @@ impl ProfileFilter<'_> {
         // one-element block list and re-use the block machinery.
         let target_block: BlockNode = match &fig.target {
             FigureTarget::Image(img) => BlockNode::BlockImage(img.clone()),
-            FigureTarget::BlockQuote(bq) => BlockNode::BlockQuote(bq.clone()),
             FigureTarget::Table(t) => BlockNode::Table(t.clone()),
             FigureTarget::CodeBlock(c) => BlockNode::CodeBlock(c.clone()),
             FigureTarget::Paragraph(p) => BlockNode::Paragraph(p.clone()),
@@ -421,7 +420,6 @@ impl ProfileFilter<'_> {
         self.filter_blocks(&mut wrapper, depth)?;
         match wrapper.into_iter().next() {
             Some(BlockNode::BlockImage(img)) => fig.target = FigureTarget::Image(img),
-            Some(BlockNode::BlockQuote(bq)) => fig.target = FigureTarget::BlockQuote(bq),
             Some(BlockNode::Table(t)) => fig.target = FigureTarget::Table(t),
             Some(BlockNode::CodeBlock(c)) => fig.target = FigureTarget::CodeBlock(c),
             Some(BlockNode::Paragraph(p)) => fig.target = FigureTarget::Paragraph(p),
@@ -932,9 +930,6 @@ fn extract_block_text(node: &BlockNode, smart: SmartTypographyMode) -> String {
         BlockNode::Figure(fig) => {
             let target = match &fig.target {
                 FigureTarget::Image(img) => image_text(img),
-                FigureTarget::BlockQuote(bq) => {
-                    extract_block_text(&BlockNode::BlockQuote(bq.clone()), smart)
-                }
                 FigureTarget::Table(t) => extract_block_text(&BlockNode::Table(t.clone()), smart),
                 FigureTarget::CodeBlock(c) => {
                     extract_block_text(&BlockNode::CodeBlock(c.clone()), smart)

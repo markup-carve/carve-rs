@@ -466,7 +466,6 @@ pub struct Figure {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FigureTarget {
     Image(Image),
-    BlockQuote(BlockQuote),
     Table(Table),
     CodeBlock(CodeBlock),
     Paragraph(Paragraph),

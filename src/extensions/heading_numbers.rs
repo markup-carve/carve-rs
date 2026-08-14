@@ -11,7 +11,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::ast::{Attrs, BlockNode, Document, FigureTarget, Heading, InlineNode, Link, Span};
+use crate::ast::{Attrs, BlockNode, Document, Heading, InlineNode, Link, Span};
 use crate::extension::{BeforeRenderContext, CarveExtension};
 use crate::parse::{crossref_label_clone, slugify_parse};
 use crate::render::plain_inlines;
@@ -177,14 +177,6 @@ fn number_blocks(blocks: &mut [BlockNode], in_blockquote: bool, state: &mut Numb
                     }
                 }
             }
-            BlockNode::Figure(f) => {
-                // Only a blockquote target can hold a heading; the resolver
-                // assigns its heading an id (as a quoted heading), so mirror
-                // that descent for first-id-wins.
-                if let FigureTarget::BlockQuote(b) = &mut f.target {
-                    number_blocks(&mut b.children, true, state);
-                }
-            }
             // An extension carrier (Details/Spoiler/Glossary/… registered
             // before this one) wraps rendered block content; descend so its
             // headings are numbered, matching how carve-js descends the
@@ -333,9 +325,6 @@ fn rewrite_links_blocks(
             }
             BlockNode::Figure(f) => {
                 rewrite_links_inlines(&mut f.caption, by_id, opts);
-                if let FigureTarget::BlockQuote(b) = &mut f.target {
-                    rewrite_links_blocks(&mut b.children, by_id, opts);
-                }
             }
             BlockNode::Extension(e) => rewrite_links_blocks(&mut e.children, by_id, opts),
             _ => {}

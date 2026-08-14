@@ -128,9 +128,6 @@ fn normalize(mut doc: carve::Document) -> carve::Document {
                     if let carve::FigureTarget::Paragraph(p) = &mut f.target {
                         p.at_content_column = false;
                     }
-                    if let carve::FigureTarget::BlockQuote(q) = &mut f.target {
-                        blocks(&mut q.children);
-                    }
                 }
                 _ => {}
             }

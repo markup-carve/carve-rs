@@ -12,7 +12,7 @@
 //! assert!(html.contains("<h2"));
 //! ```
 
-use crate::ast::{BlockNode, Document, FigureTarget};
+use crate::ast::{BlockNode, Document};
 use crate::extension::{BeforeRenderContext, CarveExtension};
 
 /// Options for [`HeadingLevelShift`].
@@ -95,13 +95,6 @@ fn shift_block(block: &mut BlockNode, shift: u8) {
                 for definition in &mut item.definitions {
                     shift_blocks(&mut definition.children, shift);
                 }
-            }
-        }
-        // Only the blockquote target can hold one; an image, a table, a code
-        // block and a paragraph cannot.
-        BlockNode::Figure(figure) => {
-            if let FigureTarget::BlockQuote(quote) = &mut figure.target {
-                shift_blocks(&mut quote.children, shift);
             }
         }
         _ => {}

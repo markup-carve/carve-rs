@@ -353,7 +353,6 @@ fn walk_block(node: &BlockNode, visit: &mut Visit<'_>) {
             report("figure", &n.attrs, n.pos, visit);
             match &n.target {
                 FigureTarget::Image(image) => report("image", &image.attrs, image.pos, visit),
-                FigureTarget::BlockQuote(quote) => walk_block_quote(quote, visit),
                 FigureTarget::Table(table) => walk_table(table, visit),
                 FigureTarget::CodeBlock(block) => {
                     report("code_block", &block.attrs, block.pos, visit)

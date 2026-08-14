@@ -2874,18 +2874,6 @@ fn fill_offsets(blocks: &mut [BlockNode], line_starts: &[usize]) {
                 // selects nothing, the exact shape section 4 forbids.
                 apply_inline_offsets(&mut f.caption, line_starts);
                 match &mut f.target {
-                    FigureTarget::BlockQuote(q) => {
-                        // The quote's OWN span, which this arm skipped while
-                        // filling everything inside it: it kept line and column
-                        // and offsets of 0..0, so the quote selected nothing and
-                        // every block within it fell outside its own parent
-                        // (carve#565). Same defect the code-block arm below
-                        // records, one target along.
-                        if let Some(pos) = q.pos.as_mut() {
-                            apply_offsets(pos, line_starts);
-                        }
-                        fill_offsets(&mut q.children, line_starts);
-                    }
                     FigureTarget::Paragraph(p) => {
                         if let Some(pos) = p.pos.as_mut() {
                             apply_offsets(pos, line_starts);
@@ -2949,11 +2937,6 @@ fn include_comment_indentation(blocks: &mut [BlockNode], source: &str, line_star
                         for def in &mut item.definitions {
                             walk(&mut def.children, lines, starts);
                         }
-                    }
-                }
-                BlockNode::Figure(n) => {
-                    if let FigureTarget::BlockQuote(q) = &mut n.target {
-                        walk(&mut q.children, lines, starts);
                     }
                 }
                 BlockNode::Extension(n) => walk(&mut n.children, lines, starts),
@@ -13791,11 +13774,6 @@ fn apply_abbreviations_block(block: &mut BlockNode, index: &AbbreviationIndex<'_
         BlockNode::Figure(f) => {
             apply_abbreviations_inline(&mut f.caption, index);
             match &mut f.target {
-                FigureTarget::BlockQuote(b) => {
-                    for child in &mut b.children {
-                        apply_abbreviations_block(child, index);
-                    }
-                }
                 FigureTarget::Table(t) => {
                     for row in &mut t.rows {
                         for cell in &mut row.cells {
@@ -14474,11 +14452,6 @@ fn resolve_reference_links_block(
         BlockNode::Figure(f) => {
             resolve_reference_links_inline(&mut f.caption, defs, heading_index);
             match &mut f.target {
-                FigureTarget::BlockQuote(b) => {
-                    for child in &mut b.children {
-                        resolve_reference_links_block(child, defs, heading_index);
-                    }
-                }
                 FigureTarget::Table(t) => {
                     if let Some(caption) = &mut t.caption {
                         resolve_reference_links_inline(caption, defs, heading_index);
@@ -15104,9 +15077,6 @@ fn collect_heading_titles(
                 }
             }
             BlockNode::Figure(f) => match &f.target {
-                FigureTarget::BlockQuote(b) => {
-                    collect_heading_titles(&b.children, scan, lowercase_ids, explicit_ids, true)
-                }
                 FigureTarget::Table(_)
                 | FigureTarget::Image(_)
                 | FigureTarget::CodeBlock(_)
@@ -15128,9 +15098,6 @@ fn number_captioned_blocks(
             BlockNode::Figure(f) => {
                 number_caption(&mut f.caption, f.attrs.as_ref(), counts, titles);
                 match &mut f.target {
-                    FigureTarget::BlockQuote(b) => {
-                        number_captioned_blocks(&mut b.children, counts, titles);
-                    }
                     FigureTarget::Table(t) => number_table_caption(t, counts, titles),
                     FigureTarget::Image(_)
                     | FigureTarget::CodeBlock(_)
@@ -15202,7 +15169,6 @@ fn collect_caption_titles(blocks: &[BlockNode], titles: &mut BTreeMap<String, St
             BlockNode::Figure(f) => {
                 collect_caption_title(&f.caption, f.attrs.as_ref(), titles);
                 match &f.target {
-                    FigureTarget::BlockQuote(b) => collect_caption_titles(&b.children, titles),
                     FigureTarget::Table(t) => collect_table_caption_title(t, titles),
                     FigureTarget::Image(_)
                     | FigureTarget::CodeBlock(_)
@@ -15373,11 +15339,6 @@ fn coalesce_block(block: &mut BlockNode) {
         BlockNode::Figure(f) => {
             coalesce_inlines(&mut f.caption);
             match &mut f.target {
-                FigureTarget::BlockQuote(b) => {
-                    for child in &mut b.children {
-                        coalesce_block(child);
-                    }
-                }
                 FigureTarget::Table(t) => {
                     if let Some(caption) = &mut t.caption {
                         coalesce_inlines(caption);
@@ -15760,11 +15721,6 @@ fn stamp_heading_ids_in(blocks: &mut [BlockNode], next: &mut impl Iterator<Item 
             BlockNode::List(l) => {
                 for item in l.items.iter_mut() {
                     stamp_heading_ids_in(&mut item.children, next);
-                }
-            }
-            BlockNode::Figure(f) => {
-                if let FigureTarget::BlockQuote(b) = &mut f.target {
-                    stamp_heading_ids_in(&mut b.children, next);
                 }
             }
             BlockNode::DefinitionList(dl) => {

@@ -944,7 +944,6 @@ fn write_definition_entries(out: &mut String, items: &[DefinitionItem]) {
 fn write_figure_target(out: &mut String, target: &FigureTarget) {
     match target {
         FigureTarget::Image(n) => write_image(out, n),
-        FigureTarget::BlockQuote(n) => write_block_quote(out, n),
         FigureTarget::Table(n) => write_table(out, n),
         FigureTarget::CodeBlock(n) => write_code_block(out, n),
         FigureTarget::Paragraph(n) => write_paragraph(out, n),
@@ -1800,10 +1799,6 @@ fn decode_figure_target(value: &Json) -> Result<FigureTarget, AstJsonError> {
     let obj = value.as_object("figure.target")?;
     match required_string(obj, "figure.target", "type")? {
         "image" => Ok(FigureTarget::Image(decode_image(obj)?)),
-        "block_quote" => match decode_block(value)? {
-            BlockNode::BlockQuote(n) => Ok(FigureTarget::BlockQuote(n)),
-            _ => unreachable!(),
-        },
         "table" => Ok(FigureTarget::Table(decode_table(obj)?)),
         "code_block" => match decode_block(value)? {
             BlockNode::CodeBlock(n) => Ok(FigureTarget::CodeBlock(n)),
@@ -1814,7 +1809,7 @@ fn decode_figure_target(value: &Json) -> Result<FigureTarget, AstJsonError> {
             _ => unreachable!(),
         },
         other => Err(AstJsonError::new(format!(
-            "unknown figure.target node type {other:?}"
+            "figure.target holds a {other:?} node where the schema admits only code_block, image, paragraph, table"
         ))),
     }
 }

@@ -156,11 +156,6 @@ fn strip_generated_ids(blocks: &mut [BlockNode], had_any: &mut bool) {
                     strip_generated_ids(&mut item.children, had_any);
                 }
             }
-            BlockNode::Figure(f) => {
-                if let FigureTarget::BlockQuote(b) = &mut f.target {
-                    strip_generated_ids(&mut b.children, had_any);
-                }
-            }
             BlockNode::DefinitionList(dl) => {
                 for entry in dl.items.iter_mut() {
                     for definition in entry.definitions.iter_mut() {
@@ -185,11 +180,6 @@ fn collect_heading_ids(blocks: &[BlockNode], out: &mut Vec<Option<String>>) {
             BlockNode::List(l) => {
                 for item in l.items.iter() {
                     collect_heading_ids(&item.children, out);
-                }
-            }
-            BlockNode::Figure(f) => {
-                if let FigureTarget::BlockQuote(b) = &f.target {
-                    collect_heading_ids(&b.children, out);
                 }
             }
             BlockNode::DefinitionList(dl) => {
@@ -274,17 +264,6 @@ fn emptied_description_lines(blocks: &[BlockNode], into: &mut HashSet<usize>) {
                 emptied_description_lines(&admonition.children, into);
             }
             BlockNode::Div(div) => emptied_description_lines(&div.children, into),
-            // The two other walks over this tree (`normalize_escapes_block` and
-            // `redundant_heading_ids`) both descend into a figure's block-quote
-            // target, so this one does too. No input reaches it today - a `dd`
-            // inside a block quote is not emptied here, because the definition
-            // in it is not collected - but the asymmetry would be a trap the
-            // moment that changes.
-            BlockNode::Figure(figure) => {
-                if let FigureTarget::BlockQuote(quote) = &figure.target {
-                    emptied_description_lines(&quote.children, into);
-                }
-            }
             BlockNode::List(list) => {
                 for item in &list.items {
                     // A definition the author wrote BETWEEN two of an item's
@@ -722,11 +701,6 @@ fn normalize_escapes_block(block: &mut BlockNode) {
 
 fn normalize_escapes_figure_target(f: &mut crate::ast::Figure) {
     match &mut f.target {
-        FigureTarget::BlockQuote(b) => {
-            for child in &mut b.children {
-                normalize_escapes_block(child);
-            }
-        }
         FigureTarget::Table(t) => {
             if let Some(cap) = &mut t.caption {
                 normalize_escapes_inlines(cap);
@@ -1634,7 +1608,6 @@ fn render_figure(node: &Figure, ctx: &mut CarveContext) -> String {
     let target = match &node.target {
         FigureTarget::Image(image) => render_image(image),
         FigureTarget::Table(table) => render_table(table, ctx),
-        FigureTarget::BlockQuote(quote) => render_block(&BlockNode::BlockQuote(quote.clone()), ctx),
         FigureTarget::CodeBlock(code) => render_block(&BlockNode::CodeBlock(code.clone()), ctx),
         FigureTarget::Paragraph(paragraph) => {
             render_block(&BlockNode::Paragraph(paragraph.clone()), ctx)
