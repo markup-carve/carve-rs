@@ -260,6 +260,33 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A tight list item imported from Markdown holds one paragraph, not one per
+  inline node** (markup-carve/carve-rs#969). `pulldown-cmark` spells a tight
+  item by emitting its inlines with no `Start(Paragraph)` around them - that
+  absence is the tightness - and the importer had no inline frame open in that
+  state, so its fallback wrapped each arriving node in a paragraph of its own.
+
+  ```
+  - a *b* c
+  ```
+
+  imported as
+
+  ```
+  - a 
+  +
+  /b/
+  +
+   c
+  ```
+
+  It now imports as `- a /b/ c`, which is the one inline run
+  `commonmark` 0.31.2 reads. The same fallback reached an IMAGE ALT, where the
+  failure was worse: `![a *b* c](i.png)` put `/b/` in a top-level paragraph
+  AHEAD of the image and dropped `b` from the alt. A construct written inside an
+  alt now contributes its text to the alt, matching the reference's
+  `alt="a b c"`. A loose item, an item holding a single inline node, a block
+  quote and a table cell were never on this path and are unchanged.
 - **A block-level HTML element imported from Markdown stays inside the container
   that holds it** (markup-carve/carve-rs#963, alongside
   markup-carve/carve-js#1045). `markdown_to_ast` and `markdown_to_carve` read

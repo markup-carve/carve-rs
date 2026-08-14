@@ -86,6 +86,16 @@ enum Frame {
         /// because this builder wraps that bare text in a paragraph of its own
         /// - so by the time the item closes, both shapes look alike.
         loose: bool,
+        /// A TIGHT item's inline run, held until the item's content column is
+        /// closed by a block or by the item itself.
+        ///
+        /// Tightness IS the absence of `Start(Paragraph)`, so these nodes
+        /// arrive with no inline frame open and there is nothing to collect
+        /// them into. The run is one paragraph, so it is buffered whole rather
+        /// than folded a node at a time - it lives in the FRAME because a
+        /// nested list opens a second item while the first one's run is still
+        /// unflushed, and one buffer on the builder would mix the two.
+        pending: Vec<InlineNode>,
     },
     CodeBlock {
         lang: Option<String>,
@@ -228,6 +238,7 @@ impl Builder {
                 checked: None,
                 children: Vec::new(),
                 loose: false,
+                pending: Vec::new(),
             },
             Tag::CodeBlock(kind) => Frame::CodeBlock {
                 lang: match kind {
@@ -337,9 +348,11 @@ impl Builder {
             })),
             Frame::ListItem {
                 checked,
-                children,
+                mut children,
                 loose,
+                mut pending,
             } => {
+                flush_inline_run(&mut pending, &mut children);
                 let item = ListItem {
                     attrs: None,
                     checked,
@@ -471,9 +484,18 @@ impl Builder {
 
     fn block(&mut self, node: BlockNode) {
         match self.frames.last_mut() {
-            Some(Frame::BlockQuote(children))
-            | Some(Frame::ListItem { children, .. })
-            | Some(Frame::FootnoteDef { children, .. }) => children.push(node),
+            // A block ends the item's content column, so whatever inline run
+            // was still open closes as its own paragraph FIRST. Without this a
+            // nested list would sort ahead of the text the item opened with.
+            Some(Frame::ListItem {
+                children, pending, ..
+            }) => {
+                flush_inline_run(pending, children);
+                children.push(node);
+            }
+            Some(Frame::BlockQuote(children)) | Some(Frame::FootnoteDef { children, .. }) => {
+                children.push(node)
+            }
             _ => self.blocks.push(node),
         }
     }
@@ -485,6 +507,15 @@ impl Builder {
             | Some(Frame::Emphasis(_, children))
             | Some(Frame::Link { children, .. })
             | Some(Frame::TableCell(children)) => children.push(node),
+            // A TIGHT item spells its content with no paragraph around it, so
+            // the run arrives here. It is buffered and closed whole - one
+            // paragraph for the item, not one per node.
+            Some(Frame::ListItem { pending, .. }) => pending.push(node),
+            // An image's alt is a plain string on the node, so a construct
+            // inside it contributes its TEXT. Turning it into a node of its own
+            // would put it outside the image entirely, which is where it used
+            // to go.
+            Some(Frame::Image { alt, .. }) => alt.push_str(&inline_text(&node)),
             // Inline content with no inline container open is content the
             // author wrote outside any block; it becomes a paragraph rather
             // than being dropped.
@@ -526,6 +557,48 @@ impl Builder {
 /// block. Deliberately not a YAML parser - the raw block keeps the source, so
 /// anything structured survives there and only the scalars are lifted, which is
 /// what the Carve parser's own frontmatter handling does.
+/// Close a tight list item's collected inline run as the ONE paragraph it is.
+///
+/// `pulldown-cmark` spells a tight item by emitting its inlines with no
+/// `Start(Paragraph)` around them - that absence IS the tightness - so the run
+/// arrives with nothing to collect it into. The content still needs a
+/// paragraph; what it does not need is one per node, which is what wrapping
+/// each arriving node separately produced (markup-carve/carve-rs#969).
+fn flush_inline_run(pending: &mut Vec<InlineNode>, children: &mut Vec<BlockNode>) {
+    if pending.is_empty() {
+        return;
+    }
+    children.push(BlockNode::Paragraph(Paragraph {
+        attrs: None,
+        children: std::mem::take(pending),
+        at_content_column: true,
+        pos: None,
+    }));
+}
+
+/// The text a construct inside an image's alt contributes to it.
+///
+/// `alt` is a plain string on the node, so an emphasis, a code span or a link
+/// written inside `![...]` has no node to become. CommonMark flattens it the
+/// same way - `![a *b* c](i.png)` carries `alt="a b c"` - so the text is what
+/// is kept. A break contributes nothing, which is what this importer already
+/// did with one and is deliberately not changed here: a newline inside `alt`
+/// would have to be written back into a single-line image spelling.
+fn inline_text(node: &InlineNode) -> String {
+    match node {
+        InlineNode::Text(text) => text.value.clone(),
+        InlineNode::Code(code) => code.value.clone(),
+        InlineNode::Emphasis(emphasis) => inline_run_text(&emphasis.children),
+        InlineNode::Link(link) => inline_run_text(&link.children),
+        InlineNode::Image(image) => image.alt.clone(),
+        _ => String::new(),
+    }
+}
+
+fn inline_run_text(nodes: &[InlineNode]) -> String {
+    nodes.iter().map(inline_text).collect()
+}
+
 fn parse_frontmatter(content: &str) -> BTreeMap<String, String> {
     content
         .lines()
