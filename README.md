@@ -87,6 +87,40 @@ ANSI-styled text via `carve::to_markdown`, `carve::to_plain_text`, and
 `carve::to_ansi` (each with a matching `render_*` function for a parsed
 `Document`).
 
+### Linting
+
+`carve::lint_carve` reports silent degradations - places where a document parses
+and renders without error, but something the author wrote does not reach the
+output. It returns a `Vec<LintWarning>`, each carrying a stable `rule` id shared
+with carve-js and carve-php, a message, a 1-based line and column, and byte
+offsets into the source you passed.
+
+```rust
+let warnings = carve::lint_carve("`c`{kbd}\n");
+assert_eq!(warnings[0].rule, "semantic-attribute-outside-span");
+```
+
+Two rules today, both about the compact semantic span attributes (spec PART 9
+§10):
+
+| rule | fires on |
+| --- | --- |
+| `semantic-attribute-value-ignored` | a value on a reserved name that only selects a wrapper: `[x]{kbd="V"}` renders `<kbd>x</kbd>` and `V` reaches no output |
+| `semantic-attribute-outside-span` | a reserved name anywhere other than an ordinary `[content]{attrs}` span, where it stays a raw attribute: `` `c`{kbd} `` renders `<code kbd="">c</code>` |
+
+Both are tier-aware. `abbr`, `time` and `kbd` are reserved in core; `samp`,
+`var`, `cite` and `dfn` only become elements once the `SemanticSpan` extension
+is registered, and until then they are ordinary attributes whose value reaches
+the output intact. Pass the same `Options` you render with so the diagnostics
+describe the output you will actually get:
+
+```rust
+let warnings = carve::lint_carve_with_options(source, &options);
+```
+
+`cite` on a block quote is a valid HTML URL attribute and is deliberately not
+reported.
+
 ### Section wrappers
 
 A top-level heading is wrapped, along with the content following it up to the
