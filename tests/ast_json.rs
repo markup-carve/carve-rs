@@ -660,3 +660,119 @@ fn the_older_grouped_payload_still_decodes() {
 
     assert!(carve::to_json(&doc).contains("\"type\":\"definition_term\""));
 }
+
+#[test]
+fn key_values_serialize_in_the_author_s_source_order() {
+    // The order the map is STORED in is this engine's storage choice - a
+    // `BTreeMap`, so alphabetical - and PART 12 §1 says an implementation whose
+    // internals differ maps on the way out rather than exporting them. The
+    // author's order is what `attrs.order` records ("Source-appearance order of
+    // the slots", resources/ast-schema.json), and it is what the HTML renderer
+    // has always used (PART 10 §1).
+    let json = carve::to_json(&carve::parse("[x]{b=1 a=2}\n"));
+    assert!(
+        json.contains(r#""keyValues":{"b":"1","a":"2"},"order":["b","a"]"#),
+        "{json}"
+    );
+
+    // The reverse spelling, so the assertion above cannot pass by the emitted
+    // order happening to be a fixed one.
+    let json = carve::to_json(&carve::parse("[x]{a=2 b=1}\n"));
+    assert!(
+        json.contains(r#""keyValues":{"a":"2","b":"1"},"order":["a","b"]"#),
+        "{json}"
+    );
+}
+
+#[test]
+fn one_attrs_object_states_one_order() {
+    // The defect stated plainly: `keyValues` and `order` disagreed inside the
+    // same object, on three corpus documents. This is the shape of all three
+    // (markup-carve/carve-rs#966) - `297-the-language-sigil-takes-no-padding`,
+    // `301-a-derived-title-yields-to-an-authored-one` and
+    // `45-inline-extensions-9` - reduced to one source each.
+    for source in [
+        "[x]{: fr}\n",
+        "[x]{time=\"t\" datetime=\"d\"}\n",
+        "[x]{kbd data-key=\"k\" onclick=\"o\"}\n",
+    ] {
+        let json = carve::to_json(&carve::parse(source));
+        let attrs = json
+            .split(r#""attrs":{"#)
+            .nth(1)
+            .unwrap_or_else(|| panic!("no attrs in {json}"));
+        let emitted: Vec<&str> = attrs
+            .split(r#""keyValues":{"#)
+            .nth(1)
+            .unwrap_or_else(|| panic!("no keyValues in {json}"))
+            .split('}')
+            .next()
+            .expect("keyValues closes")
+            .split(',')
+            .map(|slot| slot.split(':').next().expect("a key").trim_matches('"'))
+            .collect();
+        let recorded: Vec<&str> = attrs
+            .split(r#""order":["#)
+            .nth(1)
+            .unwrap_or_else(|| panic!("no order in {json}"))
+            .split(']')
+            .next()
+            .expect("order closes")
+            .split(',')
+            .map(|slot| slot.trim_matches('"'))
+            .filter(|slot| *slot != "#id" && *slot != ".class")
+            .collect();
+        assert_eq!(emitted, recorded, "{source:?}: {json}");
+    }
+}
+
+#[test]
+fn the_emitted_order_is_the_one_the_html_renderer_uses() {
+    // Not two implementations of one rule. The renderer reads `order` and
+    // always has; the serializer now reads the same field, so the two cannot
+    // drift into stating different orders for one document again.
+    let source = "[x]{zz=1 aa=2}\n";
+    let html = carve::render_html(&carve::parse(source)).expect("render");
+    assert_eq!(html, r#"<p><span zz="1" aa="2">x</span></p>"#);
+
+    let json = carve::to_json(&carve::parse(source));
+    assert!(
+        json.contains(r#""keyValues":{"zz":"1","aa":"2"}"#),
+        "{json}"
+    );
+}
+
+#[test]
+fn a_key_the_order_does_not_mention_is_still_published() {
+    // An `Attrs` built programmatically records no order at all (the schema
+    // says so), and dropping its attributes to protect an ordering would lose
+    // the document to save the bookkeeping.
+    let mut doc = carve::parse("x\n");
+    let carve::BlockNode::Paragraph(paragraph) = &mut doc.children[0] else {
+        panic!("the fixture is a paragraph");
+    };
+    let mut attrs = carve::Attrs::default();
+    attrs.key_values.insert("zz".to_string(), "1".to_string());
+    attrs.key_values.insert("aa".to_string(), "2".to_string());
+    paragraph.attrs = Some(attrs);
+
+    let json = carve::to_json(&doc);
+    assert!(
+        json.contains(r#""keyValues":{"aa":"2","zz":"1"}"#),
+        "{json}"
+    );
+    assert!(!json.contains(r#""order":"#), "{json}");
+}
+
+#[test]
+fn source_order_survives_a_json_round_trip() {
+    // §6. `order` is what carries it, so a tree that went out and came back
+    // still serializes the way the author wrote it.
+    let source = "[x]{b=1 a=2}\n";
+    let doc = carve::parse_with_options(source, &carve::Options::new().with_positions(true));
+    let json = carve::to_json(&doc);
+    let decoded = carve::from_json(&json).expect("decode");
+
+    assert_eq!(carve::to_json(&decoded), json);
+    assert!(json.contains(r#""keyValues":{"b":"1","a":"2"}"#), "{json}");
+}

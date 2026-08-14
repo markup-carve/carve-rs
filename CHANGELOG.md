@@ -287,6 +287,18 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   alt now contributes its text to the alt, matching the reference's
   `alt="a b c"`. A loose item, an item holding a single inline node, a block
   quote and a table cell were never on this path and are unchanged.
+- **`attrs.keyValues` serializes in the author's source order**
+  (markup-carve/carve-rs#966). The map behind it is a `BTreeMap`, and the
+  serializer iterated it directly, so `[x]{b=1 a=2}` published
+  `"keyValues":{"a":"2","b":"1"}` alongside `"order":["b","a"]` - one `attrs`
+  object stating two different orders for the same three characters, with the
+  HTML renderer, which reads `order`, already agreeing with the second one.
+  PART 12 §1 requires an implementation whose internals differ to map on the way
+  out rather than export them, and `order` is the record of what the author
+  wrote. The serializer now reads the same field the renderer does. Three spec
+  corpus documents were affected; nothing about how a document renders or
+  formats changes, and a key `order` does not mention is still published, after
+  the ones it does.
 - **A block-level HTML element imported from Markdown stays inside the container
   that holds it** (markup-carve/carve-rs#963, alongside
   markup-carve/carve-js#1045). `markdown_to_ast` and `markdown_to_carve` read
