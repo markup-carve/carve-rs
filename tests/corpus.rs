@@ -356,6 +356,22 @@ const IMPLEMENTED: &[&str] = &[
     "a-structural-attribute-leads-the-author-s-own",
     "adjacent-sibling-lists-survive-the-round-trip",
     "a-fence-keeps-the-blank-line-at-the-end-of-its-content",
+    // Added with the spec bump to carve b48e905, the merge of PART 9R R2, and
+    // the categories that landed between the previous pin and it. Every
+    // document in each was rendered through this engine and diffed against its
+    // committed HTML before being listed here. Two needed an engine change:
+    // `a-footnote-in-an-unresolved-reference-is-not-a-reference` (three of four
+    // documents) and `a-reference-link-s-text-survives-its-own-frame` (two of
+    // four). The other seven already matched and only the pin was behind.
+    "a-captioned-quote-holds-more-than-one-block",
+    "a-footnote-in-an-unresolved-reference-is-not-a-reference",
+    "a-footnote-in-link-text-nests-the-anchors",
+    "a-footnote-in-reference-link-text-nests-the-anchors-too",
+    "a-multi-letter-ordered-marker-opens-no-list",
+    "a-note-body-s-own-references-resolve",
+    "a-note-s-content-recognizes-no-note",
+    "a-reference-link-s-text-survives-its-own-frame",
+    "an-empty-inline-note-is-literal",
 ];
 
 fn corpus_dir() -> PathBuf {
@@ -388,7 +404,10 @@ fn corpus_pairs() -> Vec<String> {
 }
 
 fn expected_corpus_size() -> usize {
-    let examples = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/spec/docs/examples");
+    // The authored examples the corpus is derived from. `docs/examples` is
+    // generated output as of markup-carve/carve#1194 and is no longer
+    // committed.
+    let examples = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/spec/resources/examples");
     let entries =
         fs::read_dir(&examples).unwrap_or_else(|e| panic!("read_dir {}: {e}", examples.display()));
     let mut count = 0;
