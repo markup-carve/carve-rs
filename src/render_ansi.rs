@@ -93,6 +93,7 @@ fn render_ansi_inner(
     SMART_TYPOGRAPHY.with(|cell| cell.set(smart_typography));
     let _abbr_guard = crate::abbr_budget::AbbrBudgetGuard::for_document(doc);
     let mut ctx = AnsiContext {
+        suppress_automatic_abbreviation: false,
         list_depth: 0,
         block_quote_depth: 0,
         ordered: Vec::new(),
@@ -106,6 +107,9 @@ fn render_ansi_inner(
 }
 
 struct AnsiContext {
+    /// Set while rendering a span that carries an authored `abbr` (carve#1127,
+    /// carve#1176). See the Markdown renderer's field for the reasoning.
+    suppress_automatic_abbreviation: bool,
     list_depth: usize,
     block_quote_depth: usize,
     ordered: Vec<usize>,
@@ -641,7 +645,31 @@ fn render_inline(node: &InlineNode, ctx: &mut AnsiContext, depth: usize) -> Stri
             out
         }
         InlineNode::Image(image) => render_image(image),
-        InlineNode::Span(span) => render_inlines(&span.children, ctx, depth + 1),
+        InlineNode::Span(span) => {
+            // ANSI has no markup to carry a title, so an authored `abbr` renders
+            // as parenthetical text - the same shape this target already uses
+            // for an ordinary expansion, carrying the AUTHORED value.
+            let authored = span
+                .attrs
+                .as_ref()
+                .and_then(|a| a.key_values.get("abbr"))
+                .cloned();
+            let Some(authored) = authored else {
+                return render_inlines(&span.children, ctx, depth + 1);
+            };
+            let previous = ctx.suppress_automatic_abbreviation;
+            ctx.suppress_automatic_abbreviation = true;
+            let inner = render_inlines(&span.children, ctx, depth + 1);
+            ctx.suppress_automatic_abbreviation = previous;
+            if authored.is_empty() || !crate::abbr_budget::try_spend(authored.len()) {
+                return inner;
+            }
+            format!(
+                "{}{}",
+                inner,
+                style(&format!(" ({})", strip_terminal_controls(&authored)), DIM)
+            )
+        }
         InlineNode::Math(math) => style(&strip_terminal_controls(&math.content), FG_BRIGHT_MAGENTA),
         InlineNode::RawInline(_) => String::new(),
         // §27: always emitted (unlike raw passthrough above). It is prose, not
@@ -663,6 +691,11 @@ fn render_inline(node: &InlineNode, ctx: &mut AnsiContext, depth: usize) -> Stri
             // the budget is exhausted, drop the `(EXPANSION)` suffix and emit
             // the plain key only.
             let key = strip_terminal_controls(&abbr.abbr);
+            // Inside a span carrying its own `abbr`, only the visible text
+            // (carve#1127).
+            if ctx.suppress_automatic_abbreviation {
+                return key;
+            }
             if crate::abbr_budget::try_spend(abbr.expansion.len()) {
                 format!(
                     "{}{}",

@@ -419,7 +419,35 @@ fn render_inline(node: &InlineNode, depth: usize) -> String {
             }
         }
         InlineNode::Image(image) => render_image(image),
-        InlineNode::Span(span) => render_inlines_stateful(&span.children, depth + 1),
+        InlineNode::Span(span) => {
+            // An AUTHORED `abbr` is the one expansion this target has to print
+            // inline. The automatic case does not need it: the
+            // `*[TERM]: expansion` definition line is emitted verbatim, so the
+            // mapping survives once at the definition rather than at every
+            // occurrence. An authored value has NO definition line to carry it,
+            // so dropping it loses the text outright - `[HTML]{abbr="Custom"}`
+            // came out as bare `HTML` with "Custom" nowhere (carve#1176).
+            //
+            // Parentheses are already this target's idiom for an aside: an
+            // inline footnote renders `(content)` here.
+            //
+            // No suppression flag is needed, unlike the Markdown and ANSI
+            // targets: the `Abbreviation` arm below already prints the key
+            // alone, so a resolved abbreviation inside the span contributes
+            // only its visible text by construction (carve#1127).
+            let inner = render_inlines_stateful(&span.children, depth + 1);
+            let authored = span
+                .attrs
+                .as_ref()
+                .and_then(|a| a.key_values.get("abbr"))
+                .filter(|v| !v.is_empty());
+            match authored {
+                Some(value) if crate::abbr_budget::try_spend(value.len()) => {
+                    format!("{inner} ({})", strip_controls(value))
+                }
+                _ => inner,
+            }
+        }
         InlineNode::Math(math) => strip_controls(&math.content),
         InlineNode::RawInline(_) => String::new(),
         // §27: always emitted (unlike raw passthrough above), as plain prose.
