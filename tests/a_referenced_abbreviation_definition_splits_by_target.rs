@@ -233,6 +233,54 @@ fn the_expansion_reaches_plain_and_the_terminal_unescaped() {
     );
 }
 
+// --- positions whose subtree these two targets never render -----------------
+//
+// Both were found by `codex review` and both lost the expansion outright: the
+// definition line went while the occurrence printed no expansion, so the string
+// existed nowhere in the output. They are one rule, not two - the decision has
+// to follow what the TARGET emits, and where it emits raw source instead of the
+// subtree, the abbreviation below it is not an occurrence.
+
+/// An unresolved reference link is emitted as its raw source, so an
+/// abbreviation in its label expands nowhere and the definition keeps its line.
+#[test]
+fn an_occurrence_in_an_unresolved_reference_link_does_not_count() {
+    let source = "*[HTML]: Long Form\n\n[HTML][missing]\n";
+    assert_eq!(
+        carve::to_plain_text(source),
+        "*[HTML]: Long Form\n\n[HTML][missing]\n"
+    );
+    assert_eq!(
+        carve::to_ansi(source),
+        format!("{}\n\n[HTML][missing]\n", dim("*[HTML]: Long Form"))
+    );
+}
+
+/// A citation group is emitted as its raw source on both targets, resolved or
+/// not, so an abbreviation the Citations extension left in a suffix reaches
+/// HTML and nothing else. The definition keeps its line.
+#[test]
+fn an_occurrence_inside_a_citation_part_does_not_count() {
+    let citations = carve::Citations::new();
+    let options = carve::Options::new().with_extension(&citations);
+    let source = "*[HTML]: Long Form\n\n[@a, see HTML] here.\n\n[@a]: Entry A.\n";
+    assert_eq!(
+        carve::to_plain_text_with_options(source, &options),
+        "*[HTML]: Long Form\n\n[@a, see HTML] here.\n"
+    );
+    assert_eq!(
+        carve::to_ansi_with_options(source, &options),
+        format!("{}\n\n[@a, see HTML] here.\n", dim("*[HTML]: Long Form"))
+    );
+    // The occurrence really does expand on HTML - which is what makes this a
+    // divergence between targets rather than a term that never resolved.
+    assert!(
+        carve::to_html_with_options(source, &options)
+            .contains("<abbr title=\"Long Form\">HTML</abbr>"),
+        "the abbreviation must resolve, or this pins nothing"
+    );
+}
+
 /// HTML is outside this clause entirely and drops the definition as it always
 /// has - it has nowhere to put one.
 #[test]

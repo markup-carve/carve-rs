@@ -150,7 +150,20 @@ fn collect_inlines(nodes: &[InlineNode], suppressed: bool, out: &mut ConsumedAbb
                 collect_inlines(&span.children, suppressed || authored, out);
             }
             InlineNode::Emphasis(e) => collect_inlines(&e.children, suppressed, out),
-            InlineNode::Link(l) => collect_inlines(&l.children, suppressed, out),
+            InlineNode::Link(l) => {
+                // An UNRESOLVED reference link is emitted as its raw source on
+                // both of these targets - the same `ref_label.is_some() &&
+                // href.is_empty()` test they each apply - so nothing below it
+                // reaches the output and an abbreviation in its label expands
+                // nowhere. Counting it lost the expansion outright:
+                // `*[HTML]: Long Form` with `[HTML][missing]` as the only
+                // occurrence dropped the definition line and printed
+                // `[HTML][missing]`, with "Long Form" in neither place.
+                if l.ref_label.is_some() && l.href.is_empty() {
+                    continue;
+                }
+                collect_inlines(&l.children, suppressed, out);
+            }
             InlineNode::Extension(e) => collect_inlines(&e.children, suppressed, out),
             InlineNode::Footnote(f) => {
                 if let Some(inline) = &f.inline {
@@ -159,16 +172,14 @@ fn collect_inlines(nodes: &[InlineNode], suppressed: bool, out: &mut ConsumedAbb
             }
             InlineNode::CriticInsert(c) => collect_inlines(&c.children, suppressed, out),
             InlineNode::CriticDelete(c) => collect_inlines(&c.children, suppressed, out),
-            InlineNode::CitationGroup(g) => {
-                for item in &g.items {
-                    for part in [&item.prefix, &item.locator, &item.suffix]
-                        .into_iter()
-                        .flatten()
-                    {
-                        collect_inlines(part, suppressed, out);
-                    }
-                }
-            }
+            // A CITATION GROUP is emitted as `raw` on both targets, whether or
+            // not its items resolved, so its parsed prefix, locator and suffix
+            // never reach the output either. An abbreviation the Citations
+            // extension resolved inside a suffix expands on HTML and on nothing
+            // else, so counting it dropped the definition line on the two
+            // targets that could not print the expansion. Skipping the subtree
+            // is the same rule as the unresolved reference link above.
+            InlineNode::CitationGroup(_) => {}
             _ => {}
         }
     }
