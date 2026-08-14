@@ -404,3 +404,23 @@ fn mark_inline_code_and_a_code_block_are_left_alone() {
     .unwrap();
     assert_eq!(block.value, "``` js\nx()\n```\n");
 }
+
+/// An EXPLICITLY empty value is the bare boolean too, which the compact form
+/// cannot tell from an absent one: `[A]{abbr=""}` and `[A]{abbr}` both render
+/// `<abbr>A</abbr>`, so only the escape hatch `[A]{abbr title=""}` could carry
+/// it. That spelling is deliberately not produced here. carve-js takes the same
+/// value (`attr(node, source) ?? ''`), and the three engines have to agree byte
+/// for byte before the shared fixtures land, so a rule only this engine has
+/// would be the divergence rather than the fix. It is not a regression either:
+/// before this change the element AND the title were both lost. Pinned so the
+/// choice is stated rather than accidental.
+#[test]
+fn an_explicitly_empty_value_is_the_bare_boolean() {
+    for (html, carve) in [
+        ("<p><abbr title=\"\">A</abbr></p>", "[A]{abbr}\n"),
+        ("<p><time datetime=\"\">t</time></p>", "[t]{time}\n"),
+    ] {
+        let result = html_to_carve(html, &HtmlImportOptions::default()).unwrap();
+        assert_eq!(result.value, carve, "{html}");
+    }
+}
