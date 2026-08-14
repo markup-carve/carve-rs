@@ -22,11 +22,13 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - `semantic-attribute-outside-span` - a reserved name on any target other
     than an ordinary `[content]{attrs}` span, where §10 does not apply and it
     stays a raw attribute. `` `c`{kbd} `` renders `<code kbd="">c</code>`. The
-    message quotes the value the renderer actually emits - sanitized and
-    escaped the way the renderer does it, and capped at 64 characters - so
-    `` `c`{kbd="keyboard"} `` is reported as `kbd="keyboard"` rather than as a
-    fixed empty value, and `` `c`{kbd="javascript:alert(1)"} ``, whose value
-    PART 25 blanks, is still reported as `kbd=""`.
+    message quotes the value the renderer actually emits - sanitized, cut at
+    120 characters if it is longer, then escaped the way the renderer does it -
+    so `` `c`{kbd="keyboard"} `` is reported as `kbd="keyboard"` rather than as
+    a fixed empty value, and `` `c`{kbd="javascript:alert(1)"} ``, whose value
+    PART 25 blanks, is still reported as `kbd=""`. The cut is 120 characters
+    because that is where carve-js and carve-php cut, so one authored value
+    produces one message whichever engine a consumer reads it from.
 
   Neither is a rendering change: every case renders exactly as it did, and
   identically to carve-js and carve-php. Both rules are tier-aware, which is why
