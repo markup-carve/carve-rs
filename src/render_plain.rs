@@ -367,11 +367,17 @@ fn render_figure(node: &Figure, depth: usize) -> String {
     };
     // The caption sits on its own line directly under the figure (`\n`) - an
     // image target used to glue it on. A blockquote target keeps the blank-line
-    // separation; a table drops the caption. End with the block separator so a
-    // following block is not glued (matching carve-php).
+    // separation. End with the block separator so a following block is not glued
+    // (matching carve-php).
+    //
+    // A TABLE TARGET took the empty string, so the caption was written with no
+    // line break at all - `aFruit prices` - fusing the words into the last cell.
+    // A captioned table this target renders directly separates them with `\n`;
+    // this is the same construct reaching the same writer through the AST-ingest
+    // path, so it takes the same separator. Losing the words INTO a cell is the
+    // failure docs/graceful-degradation.md forbids and PART 11 §10e names.
     let sep = match &node.target {
         FigureTarget::BlockQuote(_) => "\n\n",
-        FigureTarget::Table(_) => "",
         _ => "\n",
     };
     format!("{target}{sep}{}\n\n", render_inlines(&node.caption))

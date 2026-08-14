@@ -605,17 +605,23 @@ fn render_table(node: &Table, ctx: &mut MarkdownContext) -> String {
     }
     out.push_str(&rows.join("\n"));
     out.push('\n');
-    // A caption is authored text, and Markdown has no table-caption syntax - so
-    // it goes on its own line under the table rather than being dropped.
-    // Dropping it was the only place a presentation target discarded authored
-    // text outright, against the MUST in docs/graceful-degradation.md ("losing
-    // the click is fine; losing the words is not"). An image and a listing
-    // caption already degrade exactly this way, so the table stops being the odd
-    // one out. Ported from carve-js#1044.
+    // PART 11 §10e T2. A caption is authored text, and Markdown has no
+    // table-caption syntax, so it goes under the table as body text rather than
+    // being dropped - the position an image caption and a listing caption
+    // already take on this target.
+    //
+    // THE BLANK LINE IS LOAD-BEARING. Written directly after the last row, the
+    // caption is read by a GFM reader as ANOTHER ROW: `| a |` then
+    // `Fruit prices` yields `<td>a</td>` and `<td>Fruit prices</td>`. The words
+    // survive as a fabricated data cell, which is worse than losing them,
+    // because neither a reader nor a parser can tell it from an authored cell.
+    // §10e states the general form: attachment by adjacency is available only on
+    // a target where adjacency does not change what the adjacent block IS.
     if let Some(caption) = &node.caption {
         let text = render_inlines(caption, ctx, 0);
         let text = text.trim();
         if !text.is_empty() {
+            out.push('\n');
             out.push_str(text);
             out.push('\n');
         }
@@ -650,10 +656,18 @@ fn render_figure(node: &Figure, ctx: &mut MarkdownContext, depth: usize) -> Stri
     };
     // The caption sits on its own line directly under the figure (`\n`) - an
     // image target used to glue it on (`![a](/u)cap`). A blockquote target keeps
-    // the blank-line separation; a table drops the caption entirely.
+    // the blank-line separation.
+    //
+    // A TABLE TARGET IS THE SAME RULE AS `render_table`'s CAPTION, and takes the
+    // same blank line for the same reason (PART 11 §10e T2). This is the second
+    // spelling of one rule: a captioned table the parser produces is a `table`
+    // carrying its own caption, but a `figure` over a table arrives through the
+    // AST-ingest path from an engine that models it that way. The separator here
+    // was the empty string, so the caption was written with no line break at all
+    // - `| a |Fruit prices` - fusing the words INTO the last data cell rather
+    // than merely following it.
     let sep = match &node.target {
-        FigureTarget::BlockQuote(_) => "\n\n",
-        FigureTarget::Table(_) => "",
+        FigureTarget::BlockQuote(_) | FigureTarget::Table(_) => "\n\n",
         _ => "\n",
     };
     // End with the block separator so a following block is not glued to the
