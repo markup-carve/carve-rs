@@ -308,25 +308,21 @@ fn render_code_block(
     label: Option<&str>,
 ) -> String {
     let mut out = String::new();
-    // Caption floor: a fence title (`"src/app.js"`) and a grouping label
-    // (`[Node]`) are authored text. This target had a rule line already and put
-    // only the language on it, so both were dropped outright - the one thing
-    // docs/graceful-degradation.md says a target may never do. They join the
-    // rule rather than taking lines of their own, so a captioned fence still
-    // reads as one block. Ported from carve-js#1044.
-    let mut parts: Vec<String> = Vec::new();
+    // PART 11 §10e T1. A fence's title (`"src/app.js"`) and grouping label
+    // (`[Node]`) render the way a fenced div's already do on this target: a BOLD
+    // STANDALONE LINE each, above the block, title before label. Both used to
+    // join the rule line instead, and §10e considered that and rejected it - the
+    // rule line exists only when the fence has a LANGUAGE, so a titled fence
+    // without one would have needed a header invented for it, and a fence
+    // carrying both tokens would have needed a separator invented too. The
+    // language keeps the rule line to itself.
+    for token in [title, label] {
+        if let Some(token) = token.filter(|value| !value.is_empty()) {
+            out.push_str(&format!("{}\n\n", style(token, BOLD)));
+        }
+    }
     if let Some(lang) = lang {
-        parts.push(lang.to_string());
-    }
-    if let Some(title) = title.filter(|t| !t.is_empty()) {
-        parts.push(title.to_string());
-    }
-    if let Some(label) = label.filter(|l| !l.is_empty()) {
-        parts.push(format!("[{label}]"));
-    }
-    if !parts.is_empty() {
-        let joined = parts.join(" ");
-        out.push_str(&format!("{}\n", style(&format!("┌── {joined} "), DIM)));
+        out.push_str(&format!("{}\n", style(&format!("┌── {lang} "), DIM)));
     }
     for line in content.strip_suffix('\n').unwrap_or(content).split('\n') {
         out.push_str(&format!(

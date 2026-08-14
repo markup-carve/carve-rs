@@ -195,17 +195,31 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
-- **Presentation targets no longer discard authored text**
-  (markup-carve/carve#1179). `docs/graceful-degradation.md` states the floor as
+- **Presentation targets no longer discard authored text** (spec PART 11 §10e,
+  markup-carve/carve#1179). `docs/graceful-degradation.md` states the floor as
   a MUST - "losing the click is fine; losing the words is not" - and three kinds
   of authored text were dropped outright: a table caption vanished on the
   Markdown target, and a fence title (`"src/app.js"`) and a grouping label
-  (`[Node]`) vanished on the plain-text and terminal targets. The caption now
-  sits on its own line under the table, the way an image and a listing caption
-  already degrade there; plain emits the title and label as standalone lines
-  ahead of the code, through the same `prepend_label` the `Div` arm already
-  used; and the terminal joins them to the rule line it was already drawing. An
-  uncaptioned table and a fence with no title are byte-identical to before.
+  (`[Node]`) vanished on the plain-text and terminal targets.
+
+  A table caption is now body text under the table on the Markdown target,
+  separated by one blank line. The blank line is load-bearing rather than
+  cosmetic: written directly after the last row, the caption is read by a GFM
+  reader as ANOTHER ROW, and the words come back as a fabricated `<td>` that
+  neither a reader nor a parser can tell from an authored cell.
+
+  A fence's title and label take a standalone line each above the block on the
+  plain-text target and a bold standalone line each on the terminal, title
+  before label - the rendering a fenced div's title and label already get. The
+  language tag is untouched and keeps the terminal's `┌── ` header line to
+  itself, so a fence with neither token is byte-identical to before, and an
+  uncaptioned table is unchanged.
+
+  The caption fix covers both spellings the AST allows: a `table` carrying its
+  own caption, and a `figure` whose target is a table, which arrives through the
+  AST-ingest path and used to write the caption with no separator at all,
+  welding the words onto the last data cell (`| a |Fruit prices` on Markdown,
+  `aFruit prices` on plain text).
 
 - **A quote attribution stays attached to its quote on every target**
   (markup-carve/carve#1179, PART 11 §10c). It used to follow the quote as a
