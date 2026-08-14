@@ -1,6 +1,7 @@
 //! HTML5-to-Carve migration boundary.
 
 use crate::ast::*;
+use crate::render::{semantic_value_target, EXTENDED_SEMANTIC_SPAN_ORDER};
 use crate::{render_carve, RenderDepthError};
 use html5ever::tendril::TendrilSink;
 use html5ever::{serialize, serialize::SerializeOpts};
@@ -249,6 +250,16 @@ impl<'a> Importer<'a> {
                 } else if name == "class" {
                     out.classes
                         .extend(value.split_whitespace().map(str::to_owned));
+                } else if is_semantic_span_tag(&tag)
+                    && semantic_value_target(&tag) == Some(name.as_str())
+                {
+                    // The VALUE of a compact semantic span (PART 9 §10): the
+                    // `title` on an `<abbr>`, the `datetime` on a `<time>`.
+                    // `inline` reads it straight off the element and writes it
+                    // as the attribute's value, so keeping it here as well
+                    // would spell the same string twice - and diagnosing it as
+                    // dropped, which is where `datetime` used to land, would
+                    // report a loss that no longer happens (carve#1140).
                 } else if (name.starts_with("data-")
                     && name != "data-djot-src"
                     && name != "data-carve-src")
@@ -675,6 +686,26 @@ impl<'a> Importer<'a> {
                 injected: false,
                 pos: None,
             }),
+            // PART 9 §10, carve#1140. The seven names the compact span
+            // attribute spells exactly. They belong here, with the other
+            // elements Carve can express, rather than behind a mode branch:
+            // `roundtrip` raw-preserves only what Carve CANNOT express, so
+            // placing them here maps them in all three modes by construction.
+            name if is_semantic_span_tag(name) => {
+                let mut attrs = attrs.unwrap_or_default();
+                // A name that carries no value, or an element that omits the
+                // attribute it would carry it in, gives the bare boolean.
+                let value = semantic_value_target(name)
+                    .and_then(|source| Self::attr(h, source))
+                    .unwrap_or_default();
+                attrs.key_values.insert(name.to_string(), value);
+                InlineNode::Span(Span {
+                    attrs: Some(attrs),
+                    children,
+                    injected: false,
+                    pos: None,
+                })
+            }
             _ if self.opts.mode == HtmlImportMode::Roundtrip => {
                 self.diag(
                     HtmlImportDiagnosticCode::RawPreserved,
@@ -701,6 +732,16 @@ impl<'a> Importer<'a> {
         };
         Ok(vec![node])
     }
+}
+
+/// Whether an HTML element name is one of the seven PART 9 §10 spells as a
+/// compact span attribute.
+///
+/// The list and the value mapping are the renderer's, read rather than
+/// repeated: a name that joins or leaves the set, or starts carrying its value
+/// somewhere else, cannot be right in the renderer and stale in the importer.
+fn is_semantic_span_tag(tag: &str) -> bool {
+    EXTENDED_SEMANTIC_SPAN_ORDER.contains(&tag)
 }
 
 fn collapse(s: &str) -> String {
