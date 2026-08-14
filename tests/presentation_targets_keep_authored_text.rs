@@ -14,16 +14,32 @@
 /// image caption and a listing caption survive the same target the table's
 /// caption did not.
 const CASES: &[(&str, &str, &str)] = &[
-    ("table caption", "|= H |\n| a |\n^ Table caption\n", "Table caption"),
-    ("fence title", "``` js \"src/app.js\"\nlet a = 1\n```\n", "src/app.js"),
+    (
+        "table caption",
+        "|= H |\n| a |\n^ Table caption\n",
+        "Table caption",
+    ),
+    (
+        "fence title",
+        "``` js \"src/app.js\"\nlet a = 1\n```\n",
+        "src/app.js",
+    ),
     ("grouping label", "``` js [Node]\na\n```\n", "Node"),
-    ("image caption (control)", "![alt](i.png)\n^ Figure caption\n", "Figure caption"),
+    (
+        "image caption (control)",
+        "![alt](i.png)\n^ Figure caption\n",
+        "Figure caption",
+    ),
     (
         "listing caption (control)",
         "``` js\nlet a = 1\n```\n^ Listing caption\n",
         "Listing caption",
     ),
-    ("admonition title (control)", "::: note \"Title\"\nbody\n:::\n", "Title"),
+    (
+        "admonition title (control)",
+        "::: note \"Title\"\nbody\n:::\n",
+        "Title",
+    ),
 ];
 
 /// Containment, not bytes: a renderer may keep changing HOW it presents these
@@ -60,7 +76,10 @@ fn the_table_caption_is_its_own_line() {
 /// wrote one.
 #[test]
 fn an_uncaptioned_table_is_unchanged() {
-    assert_eq!(carve::to_markdown("|= H |\n| a |\n"), "| H |\n| --- |\n| a |\n");
+    assert_eq!(
+        carve::to_markdown("|= H |\n| a |\n"),
+        "| H |\n| --- |\n| a |\n"
+    );
 }
 
 /// A following block keeps its blank-line separation, so the caption cannot
@@ -79,10 +98,7 @@ fn a_block_after_a_captioned_table_stays_separate() {
 fn the_terminal_rule_carries_the_title_and_label() {
     let ansi = carve::to_ansi("``` js \"src/app.js\" [Node]\nlet a = 1\n```\n");
     let plain: String = strip_ansi(&ansi);
-    assert!(
-        plain.contains("┌── js src/app.js [Node]"),
-        "got: {plain:?}"
-    );
+    assert!(plain.contains("┌── js src/app.js [Node]"), "got: {plain:?}");
 }
 
 /// PART 11 §10c. The attribution is the quotation's SOURCE, so every target
@@ -103,7 +119,10 @@ fn the_attribution_stays_attached_to_its_quote() {
 
     // Terminal: the quote bar carried onto the attribution line, which keeps its
     // italic-dim caption styling.
-    assert_eq!(strip_ansi(&carve::to_ansi(src)), "\u{2502} q\n\u{2502}\n\u{2502} Attr\n");
+    assert_eq!(
+        strip_ansi(&carve::to_ansi(src)),
+        "\u{2502} q\n\u{2502}\n\u{2502} Attr\n"
+    );
 }
 
 /// A quote with no attribution is untouched: the change adds a line only where
