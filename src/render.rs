@@ -2173,12 +2173,31 @@ fn render_inlines_stateful(
 const SEMANTIC_SPAN_ORDER: [&str; 3] = ["abbr", "time", "kbd"];
 
 /// The full order, including the four names an extension may add (PART 9 §10).
-const EXTENDED_SEMANTIC_SPAN_ORDER: [&str; 7] =
+pub(crate) const EXTENDED_SEMANTIC_SPAN_ORDER: [&str; 7] =
     ["abbr", "time", "samp", "var", "kbd", "cite", "dfn"];
+
+/// The attribute an authored VALUE on a semantic name reaches the output as.
+///
+/// `None` says the value only selects the wrapper and is dropped - which is
+/// what `lint::lint_carve` reports as `semantic-attribute-value-ignored`. The
+/// lint reads this rather than keeping a list of its own, so a name that starts
+/// or stops carrying its value cannot be right in one place and stale in the
+/// other (markup-carve/carve#1131).
+pub(crate) fn semantic_value_target(name: &str) -> Option<&'static str> {
+    match name {
+        // `dfn` is the SemanticSpan extension's, and maps its value the same
+        // way `abbr` does (docs/extensions.md §11.1). The mapping lives here
+        // rather than in the extension for the same reason the order does: one
+        // implementation, not two that drift.
+        "abbr" | "dfn" => Some("title"),
+        "time" => Some("datetime"),
+        _ => None,
+    }
+}
 
 /// The names this render consumes, in the canonical order: core's three plus
 /// whatever a registered extension claims.
-fn semantic_span_order(options: &Options<'_>) -> Vec<&'static str> {
+pub(crate) fn semantic_span_order(options: &Options<'_>) -> Vec<&'static str> {
     if options
         .extensions
         .iter()
@@ -2244,15 +2263,10 @@ fn render_semantic_span(
     let outermost = *names.last().expect("semantic names is non-empty");
     for name in names {
         let value = &attrs.key_values[name];
-        let mapped = match (name, value.is_empty()) {
-            ("abbr", false) => Some(("title", value.as_str())),
-            // `dfn` is the SemanticSpan extension's, and maps its value the
-            // same way `abbr` does (docs/extensions.md §11.1). The mapping
-            // lives here rather than in the extension for the same reason the
-            // order does: one implementation, not two that drift.
-            ("dfn", false) => Some(("title", value.as_str())),
-            ("time", false) => Some(("datetime", value.as_str())),
-            _ => None,
+        let mapped = if value.is_empty() {
+            None
+        } else {
+            semantic_value_target(name).map(|key| (key, value.as_str()))
         };
 
         let mut own = Attrs::default();

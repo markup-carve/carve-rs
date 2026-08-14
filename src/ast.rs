@@ -10,8 +10,14 @@ use std::ops::{Deref, DerefMut};
 
 /// A node's span in the ORIGINAL source (spec PART 12 section 4).
 ///
-/// Lines and columns are 1-based; offsets are 0-based byte offsets. `end_column`
-/// and `end_offset` are exclusive.
+/// Lines are 1-based; columns and offsets count UNICODE CODEPOINTS, columns
+/// 1-based and offsets 0-based, with `end_column` and `end_offset` exclusive.
+/// This said "byte offsets", which is not what the parser records and not what
+/// PART 12 §4 pins - `docs/ast-json.md`: "columns and offsets count Unicode
+/// codepoints - not bytes, not UTF-16 code units". A consumer that slices a
+/// Rust `&str` with one of these PANICS on the first non-ASCII character before
+/// it, so the unit is worth stating correctly; `lint::LintWarning` converts to
+/// bytes for exactly that reason.
 ///
 /// Recording this is not free here: the parser works on lines whose container
 /// prefixes have already been stripped - a blockquote marker, a list indent -

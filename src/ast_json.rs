@@ -1427,7 +1427,7 @@ fn align_json(t: TableAlign) -> &'static str {
     }
 }
 
-fn emphasis_type(t: EmphasisKind) -> &'static str {
+pub(crate) fn emphasis_type(t: EmphasisKind) -> &'static str {
     match t {
         EmphasisKind::Italic => "emphasis",
         EmphasisKind::Strong | EmphasisKind::BoldItalic => "strong",
