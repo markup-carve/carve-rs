@@ -278,6 +278,158 @@ fn cite_off_a_block_quote_is_still_reported() {
     );
 }
 
+// ---- the tail quotes what the renderer emits (markup-carve/carve-js#1058) ----
+
+/// The `kbd="…"` the HTML renderer actually writes for `src`, read out of the
+/// document rather than restated.
+///
+/// The point of the rule's tail is that it agrees with the output, so the
+/// expectation is taken FROM the output. A test that spelled the expected value
+/// by hand would pass just as happily if the renderer changed underneath it.
+fn emitted_kbd_attribute(src: &str) -> String {
+    let html = carve::render_html(&carve::parse(src)).expect("render");
+    let start = html.find("kbd=\"").expect("no kbd attribute in {html}") + "kbd=\"".len();
+    let end = start + html[start..].find('"').expect("unterminated kbd attribute");
+    html[start..end].to_string()
+}
+
+fn only_message(src: &str) -> String {
+    let warnings = lint_carve(src);
+    assert_eq!(warnings.len(), 1, "{warnings:?}");
+    warnings[0].message.clone()
+}
+
+fn expected_message(node_type: &str, name: &str, emitted: &str) -> String {
+    format!(
+        "\"{name}\" is a semantic span attribute (PART 9 \u{a7}10) and only applies to an ordinary \
+         [content]{{attrs}} span; on {node_type} it stays a raw attribute and renders as \
+         {name}=\"{emitted}\"."
+    )
+}
+
+/// The boolean form is the case the fixed `name=""` was right about, so it must
+/// read exactly as it did before.
+#[test]
+fn the_boolean_form_still_reports_an_empty_value() {
+    assert_eq!(emitted_kbd_attribute("`c`{kbd}\n"), "");
+    assert_eq!(
+        only_message("`c`{kbd}\n"),
+        expected_message("code", "kbd", "")
+    );
+}
+
+/// The case the fixed form got wrong: `` `c`{kbd="keyboard"} `` renders
+/// `<code kbd="keyboard">`, and the message said `kbd=""`.
+#[test]
+fn an_authored_value_is_reported_as_the_renderer_emits_it() {
+    let src = "`c`{kbd=\"keyboard\"}\n";
+    assert_eq!(emitted_kbd_attribute(src), "keyboard");
+    assert_eq!(
+        only_message(src),
+        expected_message("code", "kbd", "keyboard")
+    );
+}
+
+/// The value is author text, so the message must not carry it raw. It is
+/// escaped exactly as the renderer escapes an attribute value, which is what
+/// makes the two agree character for character.
+#[test]
+fn the_quoted_value_is_escaped_the_way_the_renderer_escapes_it() {
+    let src = "`c`{kbd=\"a<b>&'\\\"q\\\"\"}\n";
+    let emitted = emitted_kbd_attribute(src);
+    assert_eq!(emitted, "a&lt;b&gt;&amp;&apos;&quot;q&quot;");
+    assert_eq!(only_message(src), expected_message("code", "kbd", &emitted));
+}
+
+/// Escaping is not the only thing between the authored value and the output.
+/// A dangerous URL scheme is BLANKED on the way out (PART 25), so the authored
+/// text is not what renders and quoting it would be wrong in exactly the way
+/// the fixed `name=""` was wrong.
+#[test]
+fn a_value_the_renderer_blanks_is_reported_as_blank() {
+    for value in ["javascript:alert(1)", "data:text/html,x", "vbscript:x"] {
+        let src = format!("`c`{{kbd=\"{value}\"}}\n");
+        assert_eq!(emitted_kbd_attribute(&src), "", "{value}");
+        assert_eq!(
+            only_message(&src),
+            expected_message("code", "kbd", ""),
+            "{value}"
+        );
+    }
+
+    // ANCHOR: a scheme that is NOT dangerous survives, so the assertions above
+    // report the sanitizer firing rather than the value never reaching the
+    // message at all.
+    let src = "`c`{kbd=\"https://example.org/k\"}\n";
+    assert_eq!(emitted_kbd_attribute(src), "https://example.org/k");
+    assert_eq!(
+        only_message(src),
+        expected_message("code", "kbd", "https://example.org/k")
+    );
+}
+
+/// A long value is elided rather than printed whole: a diagnostic is read on
+/// one line, and an attribute carrying a paragraph would push the explanation
+/// off it. 64 characters are kept.
+#[test]
+fn a_long_value_is_truncated_at_sixty_four_characters() {
+    let long = "x".repeat(200);
+    let src = format!("`c`{{kbd=\"{long}\"}}\n");
+    assert_eq!(emitted_kbd_attribute(&src), long);
+    assert_eq!(
+        only_message(&src),
+        expected_message("code", "kbd", &format!("{}\u{2026}", "x".repeat(64)))
+    );
+}
+
+/// The boundary, both sides of it. Exactly 64 characters is printed whole, so
+/// the cap is a cap and not an off-by-one that elides ordinary values.
+#[test]
+fn a_value_of_exactly_the_cap_is_not_truncated() {
+    let src = format!("`c`{{kbd=\"{}\"}}\n", "x".repeat(64));
+    assert_eq!(
+        only_message(&src),
+        expected_message("code", "kbd", &"x".repeat(64))
+    );
+
+    let src = format!("`c`{{kbd=\"{}\"}}\n", "x".repeat(65));
+    assert_eq!(
+        only_message(&src),
+        expected_message("code", "kbd", &format!("{}\u{2026}", "x".repeat(64)))
+    );
+}
+
+/// The cut is made on the SOURCE value and escaped afterwards. Cutting the
+/// escaped text instead would split an entity and print a fragment such as
+/// `&qu` as though the author had written it.
+#[test]
+fn truncation_never_splits_an_escaped_entity() {
+    let value = format!("{}<tail", "y".repeat(63));
+    let src = format!("`c`{{kbd=\"{value}\"}}\n");
+    let message = only_message(&src);
+    assert_eq!(
+        message,
+        expected_message("code", "kbd", &format!("{}&lt;\u{2026}", "y".repeat(63)))
+    );
+    assert!(!message.contains("&l\u{2026}"), "{message}");
+}
+
+/// The sibling rule was checked for the same assumption and carries none: it
+/// names the attribute and says the value reaches no output, which is true of
+/// every value. Pinned so a later edit cannot quietly give it one.
+#[test]
+fn the_value_ignored_message_quotes_no_value() {
+    let warnings = lint_carve("[x]{kbd=\"keyboard\"}\n");
+    assert_eq!(warnings.len(), 1, "{warnings:?}");
+    assert_eq!(warnings[0].rule, VALUE_IGNORED);
+    assert_eq!(
+        warnings[0].message,
+        "Value on the semantic attribute \"kbd\" is discarded: it selects the <kbd> element and \
+         reaches no output. Only abbr, dfn and time carry a value (as title or datetime)."
+    );
+    assert!(!warnings[0].message.contains("keyboard"), "{warnings:?}");
+}
+
 // ---- locations, containers and the clean case ----
 
 #[test]
