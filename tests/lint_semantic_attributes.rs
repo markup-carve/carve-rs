@@ -368,50 +368,120 @@ fn a_value_the_renderer_blanks_is_reported_as_blank() {
     );
 }
 
+/// Characters of the rendered value the message quotes before it elides the
+/// rest. carve-js and carve-php cut at the same number, so one authored value
+/// produces one message whichever engine reports it.
+const QUOTED_VALUE_LIMIT: usize = 120;
+
 /// A long value is elided rather than printed whole: a diagnostic is read on
 /// one line, and an attribute carrying a paragraph would push the explanation
-/// off it. 64 characters are kept.
+/// off it.
 #[test]
-fn a_long_value_is_truncated_at_sixty_four_characters() {
-    let long = "x".repeat(200);
+fn a_long_value_is_truncated_at_the_shared_limit() {
+    let long = "x".repeat(QUOTED_VALUE_LIMIT * 2);
     let src = format!("`c`{{kbd=\"{long}\"}}\n");
     assert_eq!(emitted_kbd_attribute(&src), long);
     assert_eq!(
         only_message(&src),
-        expected_message("code", "kbd", &format!("{}\u{2026}", "x".repeat(64)))
+        expected_message(
+            "code",
+            "kbd",
+            &format!("{}\u{2026}", "x".repeat(QUOTED_VALUE_LIMIT))
+        )
     );
 }
 
-/// The boundary, both sides of it. Exactly 64 characters is printed whole, so
-/// the cap is a cap and not an off-by-one that elides ordinary values.
+/// The boundary, both sides of it. Exactly the limit is printed whole, so the
+/// cap is a cap and not an off-by-one that elides ordinary values.
 #[test]
 fn a_value_of_exactly_the_cap_is_not_truncated() {
-    let src = format!("`c`{{kbd=\"{}\"}}\n", "x".repeat(64));
+    let src = format!("`c`{{kbd=\"{}\"}}\n", "x".repeat(QUOTED_VALUE_LIMIT));
     assert_eq!(
         only_message(&src),
-        expected_message("code", "kbd", &"x".repeat(64))
+        expected_message("code", "kbd", &"x".repeat(QUOTED_VALUE_LIMIT))
     );
 
-    let src = format!("`c`{{kbd=\"{}\"}}\n", "x".repeat(65));
+    let src = format!("`c`{{kbd=\"{}\"}}\n", "x".repeat(QUOTED_VALUE_LIMIT + 1));
     assert_eq!(
         only_message(&src),
-        expected_message("code", "kbd", &format!("{}\u{2026}", "x".repeat(64)))
+        expected_message(
+            "code",
+            "kbd",
+            &format!("{}\u{2026}", "x".repeat(QUOTED_VALUE_LIMIT))
+        )
     );
 }
 
-/// The cut is made on the SOURCE value and escaped afterwards. Cutting the
+/// The limit is the one carve-js and carve-php cut at, asserted as a NUMBER
+/// because the reason it is 120 is cross-engine agreement and nothing else in
+/// this repository would notice the three drifting apart.
+///
+/// The number is MEASURED off the engine rather than compared to this file's
+/// own constant, which would be an assertion that 120 equals 120 and would hold
+/// for any limit the linter actually used.
+#[test]
+fn the_limit_is_the_one_the_other_engines_use() {
+    let shortest_elided = (1..=QUOTED_VALUE_LIMIT * 3)
+        .find(|n| {
+            only_message(&format!("`c`{{kbd=\"{}\"}}\n", "x".repeat(*n))).contains('\u{2026}')
+        })
+        .expect("some length is elided");
+    // The first length that elides is one past the longest kept whole.
+    assert_eq!(shortest_elided - 1, 120);
+    assert_eq!(shortest_elided - 1, QUOTED_VALUE_LIMIT);
+}
+
+/// The cut is made on the SANITIZED value and escaped afterwards. Cutting the
 /// escaped text instead would split an entity and print a fragment such as
 /// `&qu` as though the author had written it.
 #[test]
 fn truncation_never_splits_an_escaped_entity() {
-    let value = format!("{}<tail", "y".repeat(63));
+    let value = format!("{}<tail", "y".repeat(QUOTED_VALUE_LIMIT - 1));
     let src = format!("`c`{{kbd=\"{value}\"}}\n");
     let message = only_message(&src);
     assert_eq!(
         message,
-        expected_message("code", "kbd", &format!("{}&lt;\u{2026}", "y".repeat(63)))
+        expected_message(
+            "code",
+            "kbd",
+            &format!("{}&lt;\u{2026}", "y".repeat(QUOTED_VALUE_LIMIT - 1))
+        )
     );
     assert!(!message.contains("&l\u{2026}"), "{message}");
+}
+
+/// The SANITIZER runs before the cut, and this is the row that says so.
+///
+/// The obvious fixture for it does not separate the two orders: a short
+/// `javascript:alert(1)` sits inside the cut window either way, so the
+/// sanitizer blanks it whichever ran first and a cut-first implementation
+/// passes. The scheme here is pushed PAST the cut instead. The renderer strips
+/// whitespace out of the scheme before comparing it, so it still reads
+/// `javascript` and blanks the whole value; an implementation that cut first
+/// would see only spaces, find no colon, and quote 120 spaces and an ellipsis
+/// at an author whose attribute rendered empty.
+#[test]
+fn the_sanitizer_reads_the_whole_value_not_the_cut_one() {
+    // Built by repetition and asserted, not written out: a run of spaces is
+    // exactly what a formatter rewrites without anyone noticing, and this
+    // test means nothing if the run is shorter than the cut.
+    let padding = " ".repeat(QUOTED_VALUE_LIMIT + 10);
+    assert_eq!(padding.len(), 130);
+    assert!(padding.chars().count() > QUOTED_VALUE_LIMIT);
+    assert!(padding.chars().all(|c| c == ' '));
+    assert!(!padding.contains(':'));
+
+    let value = format!("{padding}javascript:alert(1)");
+    let src = format!("`c`{{kbd=\"{value}\"}}\n");
+
+    // What the renderer actually writes: the sanitizer read past the padding.
+    assert_eq!(emitted_kbd_attribute(&src), "");
+
+    let message = only_message(&src);
+    assert_eq!(message, expected_message("code", "kbd", ""));
+    // The two ways a cut-first implementation gives itself away.
+    assert!(!message.contains('\u{2026}'), "{message}");
+    assert!(!message.contains("  "), "{message}");
 }
 
 /// The sibling rule was checked for the same assumption and carries none: it

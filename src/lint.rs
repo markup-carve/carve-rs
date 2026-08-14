@@ -220,20 +220,37 @@ fn collect_semantic_attribute_warnings(
 ///
 /// Capped, because the value is author text and a diagnostic is read in a
 /// terminal or an editor gutter: an attribute carrying a paragraph would push
-/// the part of the sentence that explains the problem off the line. The cut is
-/// made on a character boundary of the SANITIZED value and the result escaped
-/// afterwards - escaping first and cutting the result could halve an entity and
-/// print `&qu` as though it were authored.
+/// the part of the sentence that explains the problem off the line.
+///
+/// THE THREE STEPS RUN IN EXACTLY THAT ORDER AND NONE OF THEM COMMUTES:
+///
+/// The sanitizer runs FIRST. It reads the WHOLE value, so cutting first can
+/// quote a payload back as a harmless-looking prefix while the output holds an
+/// empty attribute.
+///
+/// The cut counts CHARACTERS rather than bytes, so it never lands inside a
+/// UTF-8 sequence and quotes a broken character back at the author.
+///
+/// Escaping happens LAST, so the cut cannot land inside an entity and print
+/// `&qu` as though it were authored.
 fn quoted_attribute_value(name: &str, value: &str) -> String {
-    /// Characters of the value the message quotes before it elides the rest.
-    const MAX_CHARS: usize = 64;
-
     let emitted = sanitize_attr_value(name, value);
-    match emitted.char_indices().nth(MAX_CHARS) {
-        Some((byte, _)) => format!("{}…", escape_attr(&emitted[..byte])),
+    match emitted.char_indices().nth(QUOTED_VALUE_LIMIT) {
+        Some((byte, _)) => format!("{}{QUOTED_VALUE_ELLIPSIS}", escape_attr(&emitted[..byte])),
         None => escape_attr(&emitted),
     }
 }
+
+/// Longest rendered value quoted back whole, in CHARACTERS.
+///
+/// The number is not the spec's - the ruling says the diagnostic quotes the
+/// value the renderer emits, truncated if long, and fixes no length. It is
+/// carve-js' and carve-php's, so that one authored value produces one message
+/// whichever engine a consumer reads it from (markup-carve/carve-js#1058).
+const QUOTED_VALUE_LIMIT: usize = 120;
+
+/// Marks a value the diagnostic cut, inside the quotes it was cut from.
+const QUOTED_VALUE_ELLIPSIS: char = '…';
 
 /// A node whose `pos` the parser could not determine still gets a diagnostic -
 /// dropping it would make the rule silent on exactly the constructs whose
