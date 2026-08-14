@@ -40,7 +40,10 @@ fn with_semantic_span(src: &str) -> Vec<LintWarning> {
 }
 
 fn rules_with_semantic_span(src: &str) -> Vec<&'static str> {
-    with_semantic_span(src).into_iter().map(|w| w.rule).collect()
+    with_semantic_span(src)
+        .into_iter()
+        .map(|w| w.rule)
+        .collect()
 }
 
 // ---- markup-carve/carve#1131: the value only selects the wrapper ----
@@ -73,7 +76,10 @@ fn a_bare_name_is_not_reported() {
 #[test]
 fn an_extension_name_is_reported_only_when_the_extension_is_registered() {
     assert!(rules("[x]{samp=\"V\"}\n").is_empty());
-    assert_eq!(rules_with_semantic_span("[x]{samp=\"V\"}\n"), vec![VALUE_IGNORED]);
+    assert_eq!(
+        rules_with_semantic_span("[x]{samp=\"V\"}\n"),
+        vec![VALUE_IGNORED]
+    );
 }
 
 #[test]
@@ -149,7 +155,9 @@ fn every_off_span_target_is_reported_and_named_by_its_wire_type() {
             "{node_type}: {src:?}"
         );
         assert!(
-            warnings[0].message.contains(&format!("on {node_type} it stays")),
+            warnings[0]
+                .message
+                .contains(&format!("on {node_type} it stays")),
             "{node_type}: message was {:?}",
             warnings[0].message
         );
@@ -208,7 +216,11 @@ fn a_retired_name_is_reported_by_neither_rule() {
 #[test]
 fn cite_on_a_block_quote_is_valid_html_and_is_not_reported() {
     let src = "{cite=\"https://example.org/dune\"}\n> q\n";
-    assert!(rules_with_semantic_span(src).is_empty(), "{:?}", with_semantic_span(src));
+    assert!(
+        rules_with_semantic_span(src).is_empty(),
+        "{:?}",
+        with_semantic_span(src)
+    );
     assert!(rules(src).is_empty());
 }
 
@@ -218,16 +230,29 @@ fn cite_on_a_block_quote_is_valid_html_and_is_not_reported() {
 #[test]
 fn a_reserved_name_on_a_quote_is_reported_when_it_is_not_valid_html() {
     let warnings = lint_carve("{kbd}\n> q\n");
-    assert_eq!(warnings.iter().map(|w| w.rule).collect::<Vec<_>>(), vec![OUTSIDE_SPAN]);
-    assert!(warnings[0].message.contains("on block_quote it stays"), "{:?}", warnings[0]);
+    assert_eq!(
+        warnings.iter().map(|w| w.rule).collect::<Vec<_>>(),
+        vec![OUTSIDE_SPAN]
+    );
+    assert!(
+        warnings[0].message.contains("on block_quote it stays"),
+        "{:?}",
+        warnings[0]
+    );
 }
 
 /// The exception is scoped to the quote. `cite` anywhere else is still a raw
 /// attribute with no meaning, so it is still reported.
 #[test]
 fn cite_off_a_block_quote_is_still_reported() {
-    assert_eq!(rules_with_semantic_span("`c`{cite=\"u\"}\n"), vec![OUTSIDE_SPAN]);
-    assert_eq!(rules_with_semantic_span("{cite=\"u\"}\nPara\n"), vec![OUTSIDE_SPAN]);
+    assert_eq!(
+        rules_with_semantic_span("`c`{cite=\"u\"}\n"),
+        vec![OUTSIDE_SPAN]
+    );
+    assert_eq!(
+        rules_with_semantic_span("{cite=\"u\"}\nPara\n"),
+        vec![OUTSIDE_SPAN]
+    );
 }
 
 // ---- locations, containers and the clean case ----
@@ -265,7 +290,10 @@ fn a_rule_fires_inside_a_hoisted_footnote_definition() {
 fn a_rule_fires_inside_a_container() {
     assert_eq!(rules("> `c`{kbd}\n"), vec![OUTSIDE_SPAN]);
     assert_eq!(rules("- `c`{kbd}\n"), vec![OUTSIDE_SPAN]);
-    assert_eq!(rules("| `c`{kbd} | b |\n|---|---|\n| 1 | 2 |\n"), vec![OUTSIDE_SPAN]);
+    assert_eq!(
+        rules("| `c`{kbd} | b |\n|---|---|\n| 1 | 2 |\n"),
+        vec![OUTSIDE_SPAN]
+    );
 }
 
 #[test]

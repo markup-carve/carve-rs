@@ -97,7 +97,14 @@ pub fn lint_carve_with_options(source: &str, options: &Options<'_>) -> Vec<LintW
     };
     let mut out = Vec::new();
     let mut visit = |node_type: &'static str, attrs: &Attrs, pos: Option<Pos>| {
-        collect_semantic_attribute_warnings(node_type, attrs, pos, &element_names, &to_byte, &mut out);
+        collect_semantic_attribute_warnings(
+            node_type,
+            attrs,
+            pos,
+            &element_names,
+            &to_byte,
+            &mut out,
+        );
     };
     walk_blocks(&doc.children, &mut visit);
     // A footnote definition hoists to the document (PART 9 §7), so its body is
@@ -398,7 +405,10 @@ fn walk_inline(node: &InlineNode, visit: &mut Visit<'_>) {
         InlineNode::Tag(n) => report("tag", &n.attrs, n.pos, visit),
         InlineNode::CitationGroup(n) => {
             for item in &n.items {
-                for part in [&item.prefix, &item.locator, &item.suffix].into_iter().flatten() {
+                for part in [&item.prefix, &item.locator, &item.suffix]
+                    .into_iter()
+                    .flatten()
+                {
                     walk_inlines(part, visit);
                 }
             }
