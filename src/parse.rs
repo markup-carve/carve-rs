@@ -14589,6 +14589,17 @@ fn resolve_reference_links_inline(
                             // from the tree either way.
                         }
                     }
+                    // A reference tail FRAMES this link's text; it does not
+                    // seal it. The text is ordinary inline content, so a
+                    // reference written inside it resolves like any other
+                    // (corpus 313, markup-carve/carve#1196) - `[t[x][r2]][r]`
+                    // renders `x` as a link, the same as the inline-destination
+                    // spelling `[t[x][r2]](/u)` already did here.
+                    //
+                    // AFTER this node's own tail, not before: the heading-index
+                    // fallback above derives its lookup key from the children's
+                    // plain text, and that key is the text the AUTHOR wrote.
+                    resolve_reference_links_inline(&mut l.children, defs, heading_index);
                     out.push(node);
                 } else {
                     resolve_reference_links_inline(&mut l.children, defs, heading_index);
@@ -15464,13 +15475,14 @@ pub(crate) fn unwrap_nested_anchors(children: &[InlineNode]) -> std::borrow::Cow
     }
 }
 
-/// The ONE spelling of "this link never resolved". Both readers of the rule use
-/// it - the fast path below and the fold itself - because they shadow each
-/// other: with the predicate written twice, flipping EITHER copy alone changes
-/// no output (the fast path short-circuits before the fold is reached, and the
-/// fold is not reached unless the fast path let it through), so a mutation on
-/// either comes back green while the pair is load-bearing.
-fn is_unresolved_reference(link: &Link) -> bool {
+/// The ONE spelling of "this link never resolved". Its readers shadow each
+/// other: the fast path below and the fold itself short-circuit in sequence, so
+/// with the predicate written twice, flipping EITHER copy alone changes no
+/// output and a mutation on either comes back green while the pair is
+/// load-bearing. The footnote numbering pass reads it for the same reason - it
+/// has to reach the same answer `render_link` does about the same node, and two
+/// spellings of that are two things to keep in step (PART 9R R2).
+pub(crate) fn is_unresolved_reference(link: &Link) -> bool {
     link.ref_label.is_some() && link.href.is_empty()
 }
 

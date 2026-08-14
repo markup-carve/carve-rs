@@ -562,6 +562,12 @@ fn collect_footnotes_block(
     }
 }
 
+/// Walk an inline subtree that the document itself reaches, numbering the notes
+/// in it.
+///
+/// A block is never inside a link, so nothing a block walker hands over is
+/// discarded text; `discarded` is raised only while descending, by the one arm
+/// that can degrade its own children (see [`collect_footnotes_inline_scoped`]).
 fn collect_footnotes_inline(
     assign_ref_ids: bool,
     nodes: &mut [InlineNode],
@@ -570,9 +576,52 @@ fn collect_footnotes_inline(
     seen: &mut BTreeMap<String, usize>,
     order: &mut Vec<FootnoteEntry>,
 ) {
+    collect_footnotes_inline_scoped(
+        assign_ref_ids,
+        nodes,
+        def_labels,
+        label_indices,
+        seen,
+        order,
+        false,
+    );
+}
+
+/// `discarded` says the nodes sit in text the document throws away.
+///
+/// PART 9R R2, `A NOTE INSIDE AN UNRESOLVED REFERENCE IS NOT A REFERENCE`
+/// (markup-carve/carve#1198). R1 degrades an unresolved reference to its
+/// literal SOURCE, so the link text built for it never reaches the reader. The
+/// subtree is still WALKED rather than skipped, because a note in there must
+/// have any stale number cleared the same way a reference whose definition went
+/// away has its own cleared (carve-rs#641).
+#[allow(clippy::too_many_arguments)]
+fn collect_footnotes_inline_scoped(
+    assign_ref_ids: bool,
+    nodes: &mut [InlineNode],
+    def_labels: &HashSet<String>,
+    label_indices: &mut HashMap<String, usize>,
+    seen: &mut BTreeMap<String, usize>,
+    order: &mut Vec<FootnoteEntry>,
+    discarded: bool,
+) {
     for node in nodes {
         match node {
             InlineNode::Footnote(f) => {
+                // The reference degraded to its literal source, so the text
+                // holding this note was discarded: it draws no number, a
+                // definition it was the only use of stays unreferenced and is
+                // dropped, and no endnotes section is written on its account.
+                // Numbering it anyway is what a pipeline does when it resolves
+                // footnotes before it knows the reference failed, and the
+                // numbering says so out loud - the note a reader CAN see then
+                // reads as a repeat of a reference the document does not
+                // contain.
+                if discarded {
+                    f.number = None;
+                    f.ref_id = None;
+                    continue;
+                }
                 if let Some(inline) = &f.inline {
                     let number = order.len() + 1;
                     let ref_id = format!("fnref{number}");
@@ -625,78 +674,92 @@ fn collect_footnotes_inline(
                 }
                 order[idx].backrefs.push(ref_id);
             }
-            InlineNode::Emphasis(e) => collect_footnotes_inline(
+            InlineNode::Emphasis(e) => collect_footnotes_inline_scoped(
                 assign_ref_ids,
                 &mut e.children,
                 def_labels,
                 label_indices,
                 seen,
                 order,
+                discarded,
             ),
-            InlineNode::Link(l) => collect_footnotes_inline(
-                assign_ref_ids,
-                &mut l.children,
-                def_labels,
-                label_indices,
-                seen,
-                order,
-            ),
-            InlineNode::Span(s) => collect_footnotes_inline(
+            // The one arm that can raise `discarded`: a reference this document
+            // never resolved renders its literal source and never writes these
+            // children (see `render_link`).
+            InlineNode::Link(l) => {
+                let discarded = discarded || crate::parse::is_unresolved_reference(l);
+                collect_footnotes_inline_scoped(
+                    assign_ref_ids,
+                    &mut l.children,
+                    def_labels,
+                    label_indices,
+                    seen,
+                    order,
+                    discarded,
+                );
+            }
+            InlineNode::Span(s) => collect_footnotes_inline_scoped(
                 assign_ref_ids,
                 &mut s.children,
                 def_labels,
                 label_indices,
                 seen,
                 order,
+                discarded,
             ),
-            InlineNode::Extension(e) => collect_footnotes_inline(
+            InlineNode::Extension(e) => collect_footnotes_inline_scoped(
                 assign_ref_ids,
                 &mut e.children,
                 def_labels,
                 label_indices,
                 seen,
                 order,
+                discarded,
             ),
             InlineNode::CriticInsert(c) => {
-                collect_footnotes_inline(
+                collect_footnotes_inline_scoped(
                     assign_ref_ids,
                     &mut c.children,
                     def_labels,
                     label_indices,
                     seen,
                     order,
+                    discarded,
                 );
             }
             InlineNode::CriticDelete(c) => {
-                collect_footnotes_inline(
+                collect_footnotes_inline_scoped(
                     assign_ref_ids,
                     &mut c.children,
                     def_labels,
                     label_indices,
                     seen,
                     order,
+                    discarded,
                 );
             }
             InlineNode::CitationGroup(g) => {
                 for item in &mut g.items {
                     if let Some(prefix) = &mut item.prefix {
-                        collect_footnotes_inline(
+                        collect_footnotes_inline_scoped(
                             assign_ref_ids,
                             prefix,
                             def_labels,
                             label_indices,
                             seen,
                             order,
+                            discarded,
                         );
                     }
                     if let Some(locator) = &mut item.locator {
-                        collect_footnotes_inline(
+                        collect_footnotes_inline_scoped(
                             assign_ref_ids,
                             locator,
                             def_labels,
                             label_indices,
                             seen,
                             order,
+                            discarded,
                         );
                     }
                 }
