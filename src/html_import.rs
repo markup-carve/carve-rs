@@ -97,6 +97,10 @@ struct Importer<'a> {
     opts: &'a HtmlImportOptions,
     diagnostics: Vec<HtmlImportDiagnostic>,
     nodes: usize,
+    /// How many `<q>` elements are open around the node being read. HTML5
+    /// leaves the marks to the user agent and every one of them alternates, so
+    /// the depth is what chooses between the double and the single pair.
+    quote_depth: usize,
 }
 
 /// The largest position a Roman marker is written for: `MMMCMXCIX`, the end of
@@ -162,6 +166,7 @@ impl<'a> Importer<'a> {
                 | "pre"
                 | "hr"
                 | "table"
+                | "details"
                 | "div"
                 | "section"
                 | "article"
@@ -279,6 +284,12 @@ impl<'a> Importer<'a> {
                     // what stops this engine's own output being read back as
                     // if the author had typed it (carve-rs#944).
                     || (name == "scope" && (tag == "th" || tag == "td"))
+                    // `open` on a `<details>` is REPRESENTABLE: the details
+                    // extension reads it off the admonition's attributes and
+                    // puts it back on the tag, and Carve spells a valueless
+                    // attribute `{open}`. Dropping it would import a disclosure
+                    // that starts open as one that starts closed.
+                    || (name == "open" && tag == "details")
                 {
                     out.key_values.insert(name, value);
                 } else if name == "style" {
@@ -456,6 +467,11 @@ impl<'a> Importer<'a> {
                 pos: None,
             })]);
         }
+        if tag == "details" {
+            return Ok(vec![BlockNode::Admonition(
+                self.details(h, path, depth, attrs)?,
+            )]);
+        }
         if tag == "dl" {
             return self.definition_list(h, path, depth, attrs);
         }
@@ -490,6 +506,71 @@ impl<'a> Importer<'a> {
             path,
         );
         self.blocks(&children, path, depth + 1)
+    }
+    /// `<details>/<summary>` to a `details` admonition.
+    ///
+    /// Before this the element unwrapped: the summary and the body were flushed
+    /// into the same inline run, so a disclosure widget imported as one
+    /// paragraph whose first words were the summary, with nothing separating
+    /// them - and three `element-unwrapped` diagnostics that named the elements
+    /// without saying the document had lost a section.
+    ///
+    /// `::: details` is the shape Carve already has for this, and the bundled
+    /// details extension renders it straight back to `<details>/<summary>`, so
+    /// the round trip closes. A generic `<div class="details">` would not: it
+    /// renders the summary as ordinary body text.
+    fn details(
+        &mut self,
+        h: &Handle,
+        path: &str,
+        depth: usize,
+        attrs: Option<Attrs>,
+    ) -> Result<Admonition, HtmlImportError> {
+        let children = h.children.borrow();
+        // HTML5 puts the summary first, but takes it wherever it is; the rest
+        // of the element is the body in document order either way. A second
+        // `<summary>` is not one, and falls through to the block walk, where it
+        // is reported like any other element Carve cannot express.
+        let summary = children
+            .iter()
+            .position(|c| Self::tag(c).as_deref() == Some("summary"));
+        let title = match summary {
+            Some(i) => {
+                let p = format!("{path}/summary[{}]", i + 1);
+                // The summary's OWN attributes are read, not just its children.
+                // Skipping them would take an `onclick` off the element without
+                // a word, which is the silent shape this whole tracker exists
+                // to remove. A span is where an id or a class lands, since the
+                // title is inline content and the admonition's attribute slot
+                // belongs to the `<details>` tag.
+                let title_attrs = self.attrs(&children[i], &p);
+                let inlines = self.inlines(&children[i].children.borrow(), &p, depth + 1)?;
+                Some(match title_attrs {
+                    Some(attrs) => vec![InlineNode::Span(Span {
+                        attrs: Some(attrs),
+                        children: inlines,
+                        injected: false,
+                        pos: None,
+                    })],
+                    None => inlines,
+                })
+            }
+            None => None,
+        };
+        let body: Vec<Handle> = children
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| Some(*i) != summary)
+            .map(|(_, c)| c.clone())
+            .collect();
+        Ok(Admonition {
+            attrs,
+            kind: "details".into(),
+            title,
+            label: None,
+            children: self.blocks(&body, path, depth + 1)?,
+            pos: None,
+        })
     }
     /// The numbering style this `<ol>` is written with, or `None` for decimal.
     ///
@@ -861,6 +942,50 @@ impl<'a> Importer<'a> {
             );
             return Ok(Vec::new());
         }
+        if tag == "q" {
+            // PART 10 has no quotation node and does not need one: `<q>` is
+            // punctuation the author would otherwise have typed, and the marks
+            // ARE the content once they are in the text. This is a deliberate
+            // mapping, not an unwrap, so it reports nothing - the reverse of
+            // the `element-unwrapped` info it used to emit, which claimed a
+            // loss where the only thing lost is a tag whose entire rendered
+            // effect has been written out.
+            //
+            // The pair alternates with nesting, the way every user agent
+            // renders it: HTML5 leaves the marks to the UA and a nested
+            // quotation that repeated the outer pair would be unreadable.
+            //
+            // The pair written is the English one, and the cases where a UA
+            // would render a different pair are the ones carrying a `lang` -
+            // which has no slot here and is already reported as a dropped
+            // attribute by the walk below. So the locale is not silently
+            // decided: the signal that would have chosen another pair is
+            // itself the diagnostic.
+            let attrs = self.attrs(h, path);
+            let (open, close) = if self.quote_depth % 2 == 0 {
+                ('\u{201c}', '\u{201d}')
+            } else {
+                ('\u{2018}', '\u{2019}')
+            };
+            self.quote_depth += 1;
+            let inner = self.inlines(&h.children.borrow(), path, depth + 1);
+            self.quote_depth -= 1;
+            let mut quoted = vec![InlineNode::text(open.to_string())];
+            quoted.extend(inner?);
+            quoted.push(InlineNode::text(close.to_string()));
+            // An id or a class on the element still has a home, and a span is
+            // the one that keeps it without inventing a node for the quotation
+            // itself.
+            if attrs.is_some() {
+                return Ok(vec![InlineNode::Span(Span {
+                    attrs,
+                    children: quoted,
+                    injected: false,
+                    pos: None,
+                })]);
+            }
+            return Ok(quoted);
+        }
         let attrs = self.attrs(h, path);
         let children = self.inlines(&h.children.borrow(), path, depth + 1)?;
         let emphasis = |kind| {
@@ -1024,6 +1149,7 @@ pub fn html_to_ast(
         opts: options,
         diagnostics: Vec::new(),
         nodes: 0,
+        quote_depth: 0,
     };
     let children = importer.blocks(&dom.document.children.borrow(), "", 0)?;
     Ok(HtmlImportResult {
