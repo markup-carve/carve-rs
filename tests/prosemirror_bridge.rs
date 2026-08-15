@@ -285,7 +285,12 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // all `319-*`, and no existing pair changed content. All six are tables the
     // editor schema covers whole, so all six land in the strict set and the
     // reported-lossy count does not move.
-    const STRICT: usize = 799;
+    // 799/224 to 801/224 is the two `320-the-canonical-writer-glues-a-code-
+    // fence-to-its-info-string` documents arriving with the spec pin, and
+    // nothing else: the corpus went from 1023 pairs to 1025, the two added
+    // pairs are both `320-*`, and no existing pair changed content. Both are
+    // code blocks the editor schema covers whole.
+    const STRICT: usize = 801;
     const LOSSY: usize = 224;
     assert!(
         covered >= STRICT,
