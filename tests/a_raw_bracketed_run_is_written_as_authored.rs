@@ -135,7 +135,7 @@ fn a_flat_label_is_written_as_authored() {
     }
 
     // A code-fence label renders nothing, so the value is read out of the tree.
-    let fence = "``` rust [a\\b]\nc\n```\n";
+    let fence = "```rust [a\\b]\nc\n```\n";
     assert_eq!(fmt(fence), fence);
     settles(fence);
     assert_eq!(code_fence_label(fence).as_deref(), Some("a\\b"));
