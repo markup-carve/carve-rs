@@ -191,3 +191,50 @@ fn an_element_carve_cannot_express_still_reports_its_unwrap() {
         vec![HtmlImportDiagnosticCode::ElementUnwrapped]
     );
 }
+
+/// The summary's OWN attributes are read, not just its children. Skipping them
+/// would take an `onclick` off the element without a word - the silent shape
+/// this tracker exists to remove - and would lose an id or a class outright.
+#[test]
+fn the_summarys_own_attributes_are_read() {
+    let html = "<details><summary onclick=\"evil()\" class=\"s\">M</summary><p>B</p></details>";
+    assert_eq!(imported(html), "::: details \"[M]{.s}\"\nB\n:::\n");
+    assert_eq!(
+        html_to_ast(html, &HtmlImportOptions::default())
+            .unwrap()
+            .report
+            .diagnostics
+            .iter()
+            .map(|d| d.code)
+            .collect::<Vec<_>>(),
+        vec![HtmlImportDiagnosticCode::AttributeDropped]
+    );
+    // CONTROL: a bare summary keeps its plain title and reports nothing, so the
+    // span above is the attributes and not a wrapper on every import.
+    assert_eq!(
+        imported("<details><summary>M</summary><p>B</p></details>"),
+        "::: details \"M\"\nB\n:::\n"
+    );
+}
+
+/// The pair written is the English one. A quotation a user agent would render
+/// with different marks is one carrying a `lang`, which has no slot here and is
+/// already reported as a dropped attribute - so the locale is not decided in
+/// silence: the signal that would have chosen another pair IS the diagnostic.
+#[test]
+fn a_quotation_in_another_language_reports_the_lang_it_could_not_keep() {
+    let result = html_to_ast(
+        "<p><q lang=\"fr\">bonjour</q></p>",
+        &HtmlImportOptions::default(),
+    )
+    .unwrap();
+    assert_eq!(
+        result
+            .report
+            .diagnostics
+            .iter()
+            .map(|d| d.code)
+            .collect::<Vec<_>>(),
+        vec![HtmlImportDiagnosticCode::AttributeDropped]
+    );
+}

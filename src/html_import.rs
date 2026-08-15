@@ -535,11 +535,26 @@ impl<'a> Importer<'a> {
             .iter()
             .position(|c| Self::tag(c).as_deref() == Some("summary"));
         let title = match summary {
-            Some(i) => Some(self.inlines(
-                &children[i].children.borrow(),
-                &format!("{path}/summary[{}]", i + 1),
-                depth + 1,
-            )?),
+            Some(i) => {
+                let p = format!("{path}/summary[{}]", i + 1);
+                // The summary's OWN attributes are read, not just its children.
+                // Skipping them would take an `onclick` off the element without
+                // a word, which is the silent shape this whole tracker exists
+                // to remove. A span is where an id or a class lands, since the
+                // title is inline content and the admonition's attribute slot
+                // belongs to the `<details>` tag.
+                let title_attrs = self.attrs(&children[i], &p);
+                let inlines = self.inlines(&children[i].children.borrow(), &p, depth + 1)?;
+                Some(match title_attrs {
+                    Some(attrs) => vec![InlineNode::Span(Span {
+                        attrs: Some(attrs),
+                        children: inlines,
+                        injected: false,
+                        pos: None,
+                    })],
+                    None => inlines,
+                })
+            }
             None => None,
         };
         let body: Vec<Handle> = children
@@ -939,6 +954,13 @@ impl<'a> Importer<'a> {
             // The pair alternates with nesting, the way every user agent
             // renders it: HTML5 leaves the marks to the UA and a nested
             // quotation that repeated the outer pair would be unreadable.
+            //
+            // The pair written is the English one, and the cases where a UA
+            // would render a different pair are the ones carrying a `lang` -
+            // which has no slot here and is already reported as a dropped
+            // attribute by the walk below. So the locale is not silently
+            // decided: the signal that would have chosen another pair is
+            // itself the diagnostic.
             let attrs = self.attrs(h, path);
             let (open, close) = if self.quote_depth % 2 == 0 {
                 ('\u{201c}', '\u{201d}')
