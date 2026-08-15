@@ -1,9 +1,9 @@
 //! `<dl>` had no branch in the HTML importer, so the element fell through to
 //! the unwrapping path and every term and every definition became inline
 //! content of one paragraph: a glossary imported as a run of words with no
-//! separator between a term and its own definition. The slot was already there
-//! - `DefinitionList` exists, the parser fills it from `::` and `:` lines, and
-//! the canonical writer emits it (markup-carve/carve#1210 P3).
+//! separator between a term and its own definition. The slot was already
+//! there: `DefinitionList` exists, the parser fills it from `::` and `:`
+//! lines, and the canonical writer emits it (markup-carve/carve#1210 P3).
 //!
 //! The assertions go through the parser rather than stopping at the emitted
 //! source: what the row promises is a definition list on the other side, and a

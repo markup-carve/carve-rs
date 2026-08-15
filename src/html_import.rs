@@ -550,7 +550,7 @@ impl<'a> Importer<'a> {
                         }
                     }
                 }
-                other => self.dropped_in_dl(&other, &format!("{path}/{other}[{}]", i + 1)),
+                other => self.dropped_in_dl(other, &format!("{path}/{other}[{}]", i + 1)),
             }
         }
 
