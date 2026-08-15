@@ -240,3 +240,42 @@ fn every_style_either_reaches_the_marker_or_is_reported() {
     // Both branches must be exercised, or the invariant above is half a test.
     assert_eq!((spelled, kept), (124, 56));
 }
+
+/// A Roman marker past `MMMCMXCIX` is a run of `m` whose length is the start
+/// value over a thousand, and `start` is an author-supplied integer - so
+/// without a cap a twenty-byte attribute buys an arbitrarily large marker, once
+/// per item. The cap is a resource bound as much as a legibility one.
+#[test]
+fn a_roman_list_past_the_classic_range_is_kept_raw() {
+    // The boundary itself still reaches the marker.
+    let inside = "<ol type=\"i\" start=\"3998\"><li>x</li><li>y</li></ol>";
+    assert_eq!(only_list(inside).ol_type, Some(OrderedListType::LowerRoman));
+
+    for html in [
+        "<ol type=\"i\" start=\"4000\"><li>x</li><li>y</li></ol>",
+        "<ol type=\"I\" start=\"1000000000000\"><li>x</li><li>y</li></ol>",
+    ] {
+        let result = html_to_ast(html, &HtmlImportOptions::default()).unwrap();
+        let Some(BlockNode::List(list)) = result.value.children.first() else {
+            panic!("expected a list: {html}");
+        };
+        assert_eq!(list.ol_type, None, "{html}");
+        assert!(
+            list.attrs
+                .as_ref()
+                .is_some_and(|a| a.key_values.contains_key("type")),
+            "{html}"
+        );
+        assert!(
+            result
+                .report
+                .diagnostics
+                .iter()
+                .any(|d| d.code == HtmlImportDiagnosticCode::RawPreserved),
+            "{html}"
+        );
+        // The written source stays proportional to the input, which is the
+        // whole point of the cap.
+        assert!(imported(html).len() < 200, "{html}: {}", imported(html));
+    }
+}

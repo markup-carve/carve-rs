@@ -99,6 +99,13 @@ struct Importer<'a> {
     nodes: usize,
 }
 
+/// The largest position a Roman marker is written for: `MMMCMXCIX`, the end of
+/// the classic range. Past it the additive form grows without bound - the
+/// marker for position `n` carries `n / 1000` copies of `m` - and `start` is an
+/// author-supplied integer, so the cap is what stops a twenty-byte attribute
+/// from buying an arbitrarily large marker once per item.
+const MAX_ROMAN_MARKER: usize = 3999;
+
 impl<'a> Importer<'a> {
     fn enter(&mut self, depth: usize) -> Result<(), HtmlImportError> {
         if depth > self.opts.max_depth {
@@ -505,7 +512,13 @@ impl<'a> Importer<'a> {
     /// - a one-item Roman list at 5, 10, 50, 100, 500 or 1000, whose `v.`,
     ///   `x.`, `l.`, `c.`, `d.` or `m.` reads as alphabetic. Position 1 is not
     ///   among them: the parser resolves a lone `i.` to Roman, which is what it
-    ///   would have meant.
+    ///   would have meant;
+    /// - a Roman list running past `MMMCMXCIX`, where the additive form stops
+    ///   being a numeral anyone reads and starts being a run of `m` whose
+    ///   length is the start value over a thousand. That one is a resource
+    ///   bound as much as a legibility one: `start` is an author-supplied
+    ///   integer, so without it a twenty-byte attribute buys a marker of
+    ///   arbitrary size, once per item.
     ///
     /// In those cases the raw `type` is KEPT as an attribute, which still
     /// renders the right `<ol>`, and the diagnostic says the style could not
@@ -536,7 +549,9 @@ impl<'a> Importer<'a> {
                 start >= 1 && last <= 26 && !(items == 1 && start == 9)
             }
             Some(OrderedListType::LowerRoman) | Some(OrderedListType::UpperRoman) => {
-                start >= 1 && !(items == 1 && matches!(start, 5 | 10 | 50 | 100 | 500 | 1000))
+                start >= 1
+                    && last <= MAX_ROMAN_MARKER
+                    && !(items == 1 && matches!(start, 5 | 10 | 50 | 100 | 500 | 1000))
             }
             None => false,
         };
