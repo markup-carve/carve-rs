@@ -120,6 +120,48 @@ impl Drop for DepthGuard {
     }
 }
 
+thread_local! {
+    // GROUPS DO NOT NEST (PART 9 §4c): a bare `::: figure` opener anywhere
+    // inside an open group's body - at ANY depth, through divs, quotes and
+    // list items - is a generic Tier-2 container, not an inner group. The
+    // body parses through several re-entrant helpers on this thread, so the
+    // state lives beside the depth counter they already share.
+    //
+    // Plain initializer for the same MSRV reason as `NESTING_DEPTH` above.
+    #[allow(clippy::missing_const_for_thread_local)]
+    static IN_FIGURE_GROUP: Cell<bool> = Cell::new(false);
+}
+
+/// RAII guard that marks the current thread as parsing a figure group's body,
+/// restoring the previous state on drop (panic unwind included), the same
+/// discipline [`DepthGuard`] keeps for the depth counter.
+struct FigureGroupGuard {
+    previous: bool,
+}
+
+impl FigureGroupGuard {
+    fn enter() -> FigureGroupGuard {
+        let previous = IN_FIGURE_GROUP.with(Cell::get);
+        IN_FIGURE_GROUP.with(|flag| flag.set(true));
+        FigureGroupGuard { previous }
+    }
+}
+
+impl Drop for FigureGroupGuard {
+    fn drop(&mut self) {
+        let previous = self.previous;
+        IN_FIGURE_GROUP.with(|flag| flag.set(previous));
+    }
+}
+
+/// Whether a container opener line is the BARE `::: figure` form - the fence,
+/// its separator and the kind word, NOTHING else (PART 9 §4c,
+/// `figure_group_open`). An opener carrying a quoted title or a label matches
+/// `admonition_open` instead and stays a generic container.
+fn is_bare_figure_open(open: &ContainerOpen) -> bool {
+    open.kind.as_deref() == Some("figure") && open.title.is_none() && open.label.is_none()
+}
+
 pub fn parse(source: &str) -> Document {
     parse_with_options(source, &Options::default())
 }
@@ -420,6 +462,12 @@ fn fill_crossref_hrefs(doc: &mut Document, lowercase_ids: bool) {
                 }
                 BlockNode::Div(d) => blocks(&mut d.children, index),
                 BlockNode::Figure(f) => inlines(&mut f.caption, index),
+                BlockNode::FigureGroup(g) => {
+                    blocks(&mut g.children, index);
+                    if let Some(caption) = &mut g.caption {
+                        inlines(caption, index);
+                    }
+                }
                 BlockNode::List(l) => {
                     for item in &mut l.items {
                         blocks(&mut item.children, index);
@@ -2772,6 +2820,7 @@ fn fill_offsets(blocks: &mut [BlockNode], line_starts: &[usize]) {
             BlockNode::Table(t) => t.pos.as_mut(),
             BlockNode::LineBlock(l) => l.pos.as_mut(),
             BlockNode::Figure(f) => f.pos.as_mut(),
+            BlockNode::FigureGroup(g) => g.pos.as_mut(),
             BlockNode::BlockImage(i) => i.pos.as_mut(),
             BlockNode::DefinitionList(d) => d.pos.as_mut(),
             BlockNode::AbbreviationDef(a) => a.pos.as_mut(),
@@ -2903,6 +2952,12 @@ fn fill_offsets(blocks: &mut [BlockNode], line_starts: &[usize]) {
                     }
                 }
             }
+            BlockNode::FigureGroup(g) => {
+                if let Some(caption) = &mut g.caption {
+                    apply_inline_offsets(caption, line_starts);
+                }
+                fill_offsets(&mut g.children, line_starts);
+            }
             _ => {}
         }
     }
@@ -2932,6 +2987,7 @@ fn include_comment_indentation(blocks: &mut [BlockNode], source: &str, line_star
                 BlockNode::BlockQuote(n) => walk(&mut n.children, lines, starts),
                 BlockNode::Div(n) => walk(&mut n.children, lines, starts),
                 BlockNode::Admonition(n) => walk(&mut n.children, lines, starts),
+                BlockNode::FigureGroup(n) => walk(&mut n.children, lines, starts),
                 BlockNode::List(n) => {
                     for item in &mut n.items {
                         walk(&mut item.children, lines, starts);
@@ -3181,10 +3237,24 @@ fn parse_eof_closed_colon_ladder(
     let available = MAX_NESTING_DEPTH.saturating_sub(current_depth);
     let take = opens.len().min(available);
 
+    // PART 9 §4c along this fast path too: the outermost bare `::: figure`
+    // opener not already inside a group is a composite figure; every bare
+    // opener under it stays a generic container (groups do not nest). Walked
+    // outer-in, seeded from the thread state, so a ladder inside an open
+    // group's body demotes exactly as the ordinary path would.
+    let mut in_group = IN_FIGURE_GROUP.with(Cell::get);
+    let mut opens_a_group: Vec<bool> = Vec::with_capacity(take);
+    for open in opens.iter().take(take) {
+        let bare = is_bare_figure_open(open) && !in_group;
+        opens_a_group.push(bare);
+        in_group = in_group || bare;
+    }
+
     let tail = &lines[take..];
     let mut children = if tail.iter().all(|line| is_blank_line(line)) {
         Vec::new()
     } else {
+        let _guard = in_group.then(FigureGroupGuard::enter);
         if opens.len() > available {
             // PART 9 §25: past the cap an opener "becomes literal paragraph
             // text" - it degrades, it does not vanish. This used to locate the
@@ -3208,7 +3278,18 @@ fn parse_eof_closed_colon_ladder(
         }
     };
 
-    for open in opens.into_iter().take(take).rev() {
+    for (open, opens_group) in opens.into_iter().take(take).zip(opens_a_group).rev() {
+        if opens_group {
+            // An EOF-closed group never wrote its closer, so it has no line
+            // for a caption to hang on (§4c).
+            children = vec![BlockNode::FigureGroup(FigureGroup {
+                attrs: open.attrs,
+                children,
+                caption: None,
+                pos: None,
+            })];
+            continue;
+        }
         children = vec![if let Some(kind) = open.kind {
             BlockNode::Admonition(Admonition {
                 attrs: open.attrs,
@@ -4464,8 +4545,13 @@ fn skip_opaque_span_into(inner: &mut LineBuffer, cur: &mut LineCursor<'_>) -> bo
     false
 }
 
-fn collect_colon_container_body(cur: &mut LineCursor<'_>, opener_len: usize) -> LineBuffer {
+/// Returns the collected body and whether the container's own CLOSER was
+/// consumed - `false` means end of input closed it (PART 9 §12). The flag
+/// exists for the figure group, whose caption slot hangs on the closing fence
+/// (§4c): a group closed by end of input has no closer line for a caption.
+fn collect_colon_container_body(cur: &mut LineCursor<'_>, opener_len: usize) -> (LineBuffer, bool) {
     let mut inner = LineBuffer::default();
+    let mut closed = false;
     let mut stack = vec![opener_len];
     while cur.peek().is_some() {
         let top = *stack.last().unwrap();
@@ -4476,6 +4562,7 @@ fn collect_colon_container_body(cur: &mut LineCursor<'_>, opener_len: usize) -> 
         if exact_colon_fence_len(cur.peek().unwrap()) == Some(top) {
             if stack.len() == 1 {
                 cur.consume();
+                closed = true;
                 break;
             }
             push_current_line(&mut inner, cur);
@@ -4522,7 +4609,7 @@ fn collect_colon_container_body(cur: &mut LineCursor<'_>, opener_len: usize) -> 
         push_current_line(&mut inner, cur);
         cur.consume();
     }
-    inner
+    (inner, closed)
 }
 
 fn find_line_block_end(lines: &[&str], start: usize, fence_len: usize) -> usize {
@@ -7025,6 +7112,12 @@ fn block_ends_with_open_paragraph(block: Option<&BlockNode>, colon_open: usize) 
         Some(BlockNode::Admonition(a)) if colon_open > 0 => {
             block_ends_with_open_paragraph(a.children.last(), colon_open - 1)
         }
+        // A bare `::: figure` fence is a container like the two above; left
+        // unterminated it still holds its open paragraph (§4c defers to §12's
+        // container rules for body and closer discipline).
+        Some(BlockNode::FigureGroup(g)) if colon_open > 0 => {
+            block_ends_with_open_paragraph(g.children.last(), colon_open - 1)
+        }
         _ => false,
     }
 }
@@ -9484,7 +9577,35 @@ fn parse_container(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     let open = detect_container_open(cur.peek().unwrap()).unwrap();
     let span_start = cur.pos;
     cur.consume();
-    let inner = collect_colon_container_body(cur, open.fence_len);
+    // PART 9 §4c: a BARE `::: figure` opener opens a COMPOSITE FIGURE, unless
+    // it sits inside an open group's body (groups do not nest - the inner one
+    // stays the generic container the Admonition arm below builds). The body
+    // and closer follow the unchanged container rules; what §4c adds is the
+    // caption slot hanging on the CLOSING fence, this kind only.
+    if is_bare_figure_open(&open) && !IN_FIGURE_GROUP.with(Cell::get) {
+        let (children, closed) = {
+            let _guard = FigureGroupGuard::enter();
+            let (inner, closed) = collect_colon_container_body(cur, open.fence_len);
+            (parse_capped_colon_body(inner, options), closed)
+        };
+        // The slot hangs on the closer. A group left open at end of input
+        // closed there without one, so there is no line for a caption to
+        // attach to (§4c).
+        let caption = if closed {
+            consume_caption(cur, options)
+        } else {
+            None
+        };
+        // Through the caption the cursor just consumed, like a figure's span.
+        let pos = span_of(cur, span_start, cur.pos, options);
+        return BlockNode::FigureGroup(FigureGroup {
+            attrs: None,
+            children,
+            caption,
+            pos,
+        });
+    }
+    let (inner, _closed) = collect_colon_container_body(cur, open.fence_len);
     let children = parse_capped_colon_body(inner, options);
     // The span covers the opening fence through the closing one.
     let pos = span_of(cur, span_start, cur.pos, options);
@@ -9961,7 +10082,7 @@ fn parse_hardbreaks_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockN
     let fence_len = detect_hardbreaks_block_open(opener).unwrap();
     let span_start = cur.pos;
     cur.consume();
-    let inner = collect_colon_container_body(cur, fence_len);
+    let (inner, _closed) = collect_colon_container_body(cur, fence_len);
     // The span covers the opening fence through the closing one, like any other
     // colon fence.
     let pos = span_of(cur, span_start, cur.pos, options);
@@ -10631,6 +10752,7 @@ fn stamp_source_line(node: &mut BlockNode, line: usize) {
         BlockNode::LineBlock(n) => Some(&mut n.attrs),
         BlockNode::DefinitionList(n) => Some(&mut n.attrs),
         BlockNode::Figure(n) => Some(&mut n.attrs),
+        BlockNode::FigureGroup(n) => Some(&mut n.attrs),
         BlockNode::Extension(n) => Some(&mut n.attrs),
         BlockNode::BlockImage(n) => Some(&mut n.attrs),
         BlockNode::AbbreviationDef(_) | BlockNode::RawBlock(_) | BlockNode::Comment(_) => None,
@@ -10682,6 +10804,9 @@ fn apply_attrs_to_block(node: &mut BlockNode, attrs: Attrs) {
         BlockNode::LineBlock(n) => merge_leading_attrs(&mut n.attrs, attrs),
         BlockNode::DefinitionList(n) => n.attrs = Some(attrs),
         BlockNode::Figure(n) => n.attrs = Some(attrs),
+        // The bare opener carries nothing of its own (§4c), so the preceding
+        // block-attribute line is the group's only attribute source.
+        BlockNode::FigureGroup(n) => n.attrs = Some(attrs),
         BlockNode::Extension(n) => n.attrs = Some(attrs),
         // A direct block image (`{#id}\n![…](…)`) carries the leading attrs on
         // the `<img>` itself; the image's own inline attrs win on conflict (§15).
@@ -13748,6 +13873,14 @@ fn apply_abbreviations_block(block: &mut BlockNode, index: &AbbreviationIndex<'_
                 apply_abbreviations_block(child, index);
             }
         }
+        BlockNode::FigureGroup(g) => {
+            for child in &mut g.children {
+                apply_abbreviations_block(child, index);
+            }
+            if let Some(caption) = &mut g.caption {
+                apply_abbreviations_inline(caption, index);
+            }
+        }
         // A `:::` div and a block extension were missing, so an abbreviation
         // never expanded inside one -- even with the definition at the top
         // level, where collection was never in doubt. carve-js expands it.
@@ -14436,6 +14569,14 @@ fn resolve_reference_links_block(
                 resolve_reference_links_block(child, defs, heading_index);
             }
         }
+        BlockNode::FigureGroup(g) => {
+            for child in &mut g.children {
+                resolve_reference_links_block(child, defs, heading_index);
+            }
+            if let Some(caption) = &mut g.caption {
+                resolve_reference_links_inline(caption, defs, heading_index);
+            }
+        }
         BlockNode::Div(d) => {
             for child in &mut d.children {
                 resolve_reference_links_block(child, defs, heading_index);
@@ -14923,6 +15064,9 @@ fn promote_block_images(blocks: &mut [BlockNode], figures_only: bool) {
         match block {
             BlockNode::BlockQuote(b) => promote_block_images(&mut b.children, figures_only),
             BlockNode::Admonition(a) => promote_block_images(&mut a.children, figures_only),
+            // Descend into the group so an image-with-caption paragraph built
+            // from a resolved reference image still becomes a panel (§4c).
+            BlockNode::FigureGroup(g) => promote_block_images(&mut g.children, figures_only),
             BlockNode::Div(d) => promote_block_images(&mut d.children, figures_only),
             BlockNode::List(l) => {
                 for item in &mut l.items {
@@ -14990,6 +15134,7 @@ fn collect_explicit_ids(blocks: &[BlockNode], out: &mut std::collections::BTreeS
             }
             BlockNode::BlockQuote(b) => collect_explicit_ids(&b.children, out),
             BlockNode::Admonition(a) => collect_explicit_ids(&a.children, out),
+            BlockNode::FigureGroup(g) => collect_explicit_ids(&g.children, out),
             BlockNode::Div(d) => collect_explicit_ids(&d.children, out),
             BlockNode::DefinitionList(d) => {
                 for item in &d.items {
@@ -15094,6 +15239,13 @@ fn collect_heading_titles(
                 explicit_ids,
                 in_blockquote,
             ),
+            BlockNode::FigureGroup(g) => collect_heading_titles(
+                &g.children,
+                scan,
+                lowercase_ids,
+                explicit_ids,
+                in_blockquote,
+            ),
             BlockNode::Div(d) => collect_heading_titles(
                 &d.children,
                 scan,
@@ -15148,6 +15300,35 @@ fn number_captioned_blocks(
                     | FigureTarget::Paragraph(_) => {}
                 }
             }
+            BlockNode::FigureGroup(group) => {
+                // THE GROUP IS ONE NUMBERING UNIT (§4c). Its caption draws
+                // first - before anything inside the body, matching the
+                // oracle - and that one draw is also what the panel ids
+                // register under, with a letter by panel order.
+                let drew = group.caption.as_mut().and_then(|caption| {
+                    number_caption(caption, group.attrs.as_ref(), counts, titles)
+                });
+                if let Some((label, number)) = &drew {
+                    register_panel_titles(&group.children, label, *number, titles);
+                }
+                // PANELS ARE NOT SEQUENCE UNITS: a panel's own caption draws
+                // nothing (a `#` there stays literal, §4c), but content
+                // inside a quote panel and every non-panel child numbers
+                // normally.
+                for child in &mut group.children {
+                    match child {
+                        BlockNode::Figure(f) => {
+                            if let FigureTarget::BlockQuote(b) = &mut f.target {
+                                number_captioned_blocks(&mut b.children, counts, titles);
+                            }
+                        }
+                        BlockNode::Table(_) => {}
+                        other => {
+                            number_captioned_blocks(std::slice::from_mut(other), counts, titles)
+                        }
+                    }
+                }
+            }
             BlockNode::List(l) => {
                 for item in &mut l.items {
                     number_captioned_blocks(&mut item.children, counts, titles);
@@ -15178,18 +15359,18 @@ fn number_table_caption(
     }
 }
 
+/// Returns the label and number the caption drew, when it held a `#`
+/// placeholder - the figure group's arm derives its panels' crossref text
+/// from that draw (§4c).
 fn number_caption(
     caption: &mut [InlineNode],
     attrs: Option<&Attrs>,
     counts: &mut BTreeMap<String, usize>,
     titles: &mut BTreeMap<String, String>,
-) {
-    let Some(idx) = caption
+) -> Option<(String, usize)> {
+    let idx = caption
         .iter()
-        .position(|node| matches!(node, InlineNode::CaptionNumber(_)))
-    else {
-        return;
-    };
+        .position(|node| matches!(node, InlineNode::CaptionNumber(_)))?;
     let label = plain_inlines_parse(&caption[..idx])
         .trim_end_matches(char::is_whitespace)
         .to_string();
@@ -15203,6 +15384,47 @@ fn number_caption(
         titles
             .entry(id.clone())
             .or_insert_with(|| format!("{label} {number}"));
+    }
+    Some((label, number))
+}
+
+/// A panel's crossref letter by its order among the group's panels: a..z,
+/// then aa, ab, ... (PART 9 §4c; the letters exist in crossref text only).
+fn panel_letter(index: usize) -> String {
+    let mut out = Vec::new();
+    let mut n = index + 1;
+    while n > 0 {
+        n -= 1;
+        out.push(b'a' + (n % 26) as u8);
+        n /= 26;
+    }
+    out.reverse();
+    String::from_utf8(out).expect("ascii letters")
+}
+
+/// Register a numbered group's panel ids as "Label N" plus a letter by panel
+/// order (§4c). Panels are the `Figure` and `Table` nodes among the group's
+/// direct children; an unnumbered group's panels stay plain anchors, exactly
+/// as an id on an uncaptioned figure does.
+fn register_panel_titles(
+    children: &[BlockNode],
+    label: &str,
+    number: usize,
+    titles: &mut BTreeMap<String, String>,
+) {
+    let mut panel_index = 0usize;
+    for child in children {
+        let id = match child {
+            BlockNode::Figure(f) => f.attrs.as_ref().and_then(|attrs| attrs.id.clone()),
+            BlockNode::Table(t) => t.attrs.as_ref().and_then(|attrs| attrs.id.clone()),
+            _ => continue,
+        };
+        if let Some(id) = id {
+            titles
+                .entry(id)
+                .or_insert_with(|| format!("{label} {number}{}", panel_letter(panel_index)));
+        }
+        panel_index += 1;
     }
 }
 
@@ -15218,6 +15440,29 @@ fn collect_caption_titles(blocks: &[BlockNode], titles: &mut BTreeMap<String, St
                     FigureTarget::Image(_)
                     | FigureTarget::CodeBlock(_)
                     | FigureTarget::Paragraph(_) => {}
+                }
+            }
+            BlockNode::FigureGroup(g) => {
+                // The ingest twin of the group arm in `number_captioned_blocks`:
+                // read the number the group's caption already carries, register
+                // the group id and the panel letters from that one draw, and
+                // skip the panel captions exactly as the numbering pass does.
+                if let Some(caption) = &g.caption {
+                    collect_caption_title(caption, g.attrs.as_ref(), titles);
+                    if let Some((label, number)) = numbered_caption_draw(caption) {
+                        register_panel_titles(&g.children, &label, number, titles);
+                    }
+                }
+                for child in &g.children {
+                    match child {
+                        BlockNode::Figure(f) => {
+                            if let FigureTarget::BlockQuote(b) = &f.target {
+                                collect_caption_titles(&b.children, titles);
+                            }
+                        }
+                        BlockNode::Table(_) => {}
+                        other => collect_caption_titles(std::slice::from_ref(other), titles),
+                    }
                 }
             }
             BlockNode::List(l) => {
@@ -15238,6 +15483,22 @@ fn collect_caption_titles(blocks: &[BlockNode], titles: &mut BTreeMap<String, St
             _ => {}
         }
     }
+}
+
+/// The label and number an ALREADY-NUMBERED caption carries, read without
+/// assigning anything - the ingest-side twin of `number_caption`'s return.
+fn numbered_caption_draw(caption: &[InlineNode]) -> Option<(String, usize)> {
+    let idx = caption
+        .iter()
+        .position(|node| matches!(node, InlineNode::CaptionNumber(_)))?;
+    let number = match &caption[idx] {
+        InlineNode::CaptionNumber(n) => n.number?,
+        _ => return None,
+    };
+    let label = plain_inlines_parse(&caption[..idx])
+        .trim_end_matches(char::is_whitespace)
+        .to_string();
+    Some((label, number))
 }
 
 fn collect_table_caption_title(table: &Table, titles: &mut BTreeMap<String, String>) {
@@ -15331,6 +15592,14 @@ fn coalesce_block(block: &mut BlockNode) {
                 coalesce_inlines(title);
             }
             for child in &mut a.children {
+                coalesce_block(child);
+            }
+        }
+        BlockNode::FigureGroup(g) => {
+            if let Some(caption) = &mut g.caption {
+                coalesce_inlines(caption);
+            }
+            for child in &mut g.children {
                 coalesce_block(child);
             }
         }
@@ -15765,6 +16034,7 @@ fn stamp_heading_ids_in(blocks: &mut [BlockNode], next: &mut impl Iterator<Item 
             BlockNode::BlockQuote(b) => stamp_heading_ids_in(&mut b.children, next),
             BlockNode::Div(d) => stamp_heading_ids_in(&mut d.children, next),
             BlockNode::Admonition(a) => stamp_heading_ids_in(&mut a.children, next),
+            BlockNode::FigureGroup(g) => stamp_heading_ids_in(&mut g.children, next),
             BlockNode::List(l) => {
                 for item in l.items.iter_mut() {
                     stamp_heading_ids_in(&mut item.children, next);

@@ -66,6 +66,7 @@ new corpus pairs fail CI until the parser and renderer support them.
 | 16 | inline extensions (`:type[…]`) | passing |
 | 17 | attribute blocks (`{#id .class}`) | passing |
 | 18 | YAML frontmatter | passing |
+| 318-composite-figures | `::: figure` groups: panels, group caption on the closer, `Figure 2a` crossrefs | passing |
 
 ## Library use
 
@@ -100,13 +101,20 @@ let warnings = carve::lint_carve("`c`{kbd}\n");
 assert_eq!(warnings[0].rule, "semantic-attribute-outside-span");
 ```
 
-Two rules today, both about the compact semantic span attributes (spec PART 9
-§10):
+The compact semantic span attribute rules (spec PART 9 §10):
 
 | rule | fires on |
 | --- | --- |
 | `semantic-attribute-value-ignored` | a value on a reserved name that only selects a wrapper: `[x]{kbd="V"}` renders `<kbd>x</kbd>` and `V` reaches no output |
 | `semantic-attribute-outside-span` | a reserved name anywhere other than an ordinary `[content]{attrs}` span, where it stays a raw attribute: `` `c`{kbd} `` renders `<code kbd="">c</code>` |
+
+The composite-figure rules (spec PART 9 §4c):
+
+| rule | fires on |
+| --- | --- |
+| `figure-group-opener-metadata` | a `::: figure` opener carrying a quoted title or a `[label]`, which stays a generic container - the group has no title or label slot |
+| `figure-group-nested` | a bare `::: figure` opener inside an open group's body, which stays a generic container - groups do not nest |
+| `figure-group-panel-number` | a `#` placeholder in a PANEL caption, which stays literal - panels are not sequence units |
 
 Both are tier-aware. `abbr`, `time` and `kbd` are reserved in core; `samp`,
 `var`, `cite` and `dfn` only become elements once the `SemanticSpan` extension

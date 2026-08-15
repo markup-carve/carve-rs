@@ -427,6 +427,30 @@ fn collect_footnotes_block(
                 );
             }
         }
+        BlockNode::FigureGroup(g) => {
+            // Children first: the panels precede the group caption in the
+            // rendered output, so their footnote references number first.
+            for child in &mut g.children {
+                collect_footnotes_block(
+                    assign_ref_ids,
+                    child,
+                    def_labels,
+                    label_indices,
+                    seen,
+                    order,
+                );
+            }
+            if let Some(caption) = &mut g.caption {
+                collect_footnotes_inline(
+                    assign_ref_ids,
+                    caption,
+                    def_labels,
+                    label_indices,
+                    seen,
+                    order,
+                );
+            }
+        }
         BlockNode::LineBlock(lb) => {
             for child in &mut lb.children {
                 collect_footnotes_block(
@@ -776,6 +800,7 @@ fn block_source_line(block: &BlockNode) -> Option<&str> {
         BlockNode::LineBlock(n) => n.attrs.as_ref(),
         BlockNode::DefinitionList(n) => n.attrs.as_ref(),
         BlockNode::Figure(n) => n.attrs.as_ref(),
+        BlockNode::FigureGroup(n) => n.attrs.as_ref(),
         BlockNode::Extension(n) => n.attrs.as_ref(),
         BlockNode::BlockImage(n) => n.attrs.as_ref(),
         BlockNode::AbbreviationDef(_) | BlockNode::RawBlock(_) | BlockNode::Comment(_) => None,
@@ -1014,6 +1039,7 @@ fn render_block(
         BlockNode::LineBlock(lb) => render_line_block(out, lb, level, options, state),
         BlockNode::DefinitionList(d) => render_definition_list(out, d, level, options, state),
         BlockNode::Figure(f) => render_figure(out, f, level, options, state),
+        BlockNode::FigureGroup(g) => render_figure_group(out, g, level, options, state),
         BlockNode::AbbreviationDef(_) => {}
         BlockNode::RawBlock(r) => {
             if r.format == "html" {
@@ -2068,6 +2094,35 @@ fn render_figure(
 ) {
     indent(out, level);
     out.push_str(&format!("<figure{}>", render_attrs(&f.attrs)));
+    render_figure_contents(out, f, level, options, state);
+}
+
+/// The class-first attribute string a typed wrapper opens with: the structural
+/// class leads, the author's classes merge after it, then the id and remaining
+/// attributes in source order - the `admonition {kind}` convention, reused by
+/// the figure group and its panels (PART 9 §4c).
+fn class_first_attrs(base: &str, attrs: &Option<Attrs>) -> String {
+    let (class, rest) = match attrs {
+        Some(at) if !at.classes.is_empty() => (
+            dedup_class_str(&format!("{} {}", base, at.classes.join(" "))),
+            render_attrs_after_class(at),
+        ),
+        Some(at) => (base.to_string(), render_attrs_after_class(at)),
+        None => (base.to_string(), String::new()),
+    };
+    format!(" class=\"{}\"{}", escape_attr(&class), rest)
+}
+
+/// Everything of a figure after its opening tag: the target, the caption and
+/// the closing tag. Split out so a PANEL of a figure group renders the same
+/// body under its class-first opener.
+fn render_figure_contents(
+    out: &mut String,
+    f: &Figure,
+    level: usize,
+    options: &Options<'_>,
+    state: &mut RenderState,
+) {
     out.push('\n');
     match &f.target {
         FigureTarget::Image(img) => {
@@ -2096,6 +2151,73 @@ fn render_figure(
     out.push_str("<figcaption>");
     render_inlines(out, &f.caption, options, state);
     out.push_str("</figcaption>");
+    out.push('\n');
+    indent(out, level);
+    out.push_str("</figure>");
+}
+
+/// A composite figure (PART 9 §4c): one `<figure>` carrying the
+/// `carve-figure-group` class first, an UNCONDITIONAL `carve-figure-panels`
+/// div wrapping the children, and the group caption - when the closer hosted
+/// one - as the trailing `<figcaption>`. Panels are the `Figure` and `Table`
+/// children, in source order: a `Figure` renders its usual body under a
+/// class-first `carve-figure-panel` opener, a `Table` is wrapped in an
+/// explicit panel `<figure>` (a table does not render as a figure on its own)
+/// and keeps its own `<caption>`. Everything else is preserved in place.
+fn render_figure_group(
+    out: &mut String,
+    g: &FigureGroup,
+    level: usize,
+    options: &Options<'_>,
+    state: &mut RenderState,
+) {
+    indent(out, level);
+    out.push_str(&format!(
+        "<figure{}>",
+        class_first_attrs("carve-figure-group", &g.attrs)
+    ));
+    out.push('\n');
+    indent(out, level + 1);
+    out.push_str("<div class=\"carve-figure-panels\">");
+    for child in &g.children {
+        let mut piece = String::new();
+        match child {
+            BlockNode::Figure(f) => {
+                indent(&mut piece, level + 2);
+                piece.push_str(&format!(
+                    "<figure{}>",
+                    class_first_attrs("carve-figure-panel", &f.attrs)
+                ));
+                render_figure_contents(&mut piece, f, level + 2, options, state);
+            }
+            BlockNode::Table(t) => {
+                indent(&mut piece, level + 2);
+                piece.push_str("<figure class=\"carve-figure-panel\">");
+                piece.push('\n');
+                render_table(&mut piece, t, level + 3, options, state);
+                piece.push('\n');
+                indent(&mut piece, level + 2);
+                piece.push_str("</figure>");
+            }
+            // Preserved in place; a block that renders nothing (a comment, a
+            // definition line) contributes no blank line to the div.
+            other => render_block(&mut piece, other, level + 2, options, state),
+        }
+        if !piece.is_empty() {
+            out.push('\n');
+            out.push_str(&piece);
+        }
+    }
+    out.push('\n');
+    indent(out, level + 1);
+    out.push_str("</div>");
+    if let Some(caption) = &g.caption {
+        out.push('\n');
+        indent(out, level + 1);
+        out.push_str("<figcaption>");
+        render_inlines(out, caption, options, state);
+        out.push_str("</figcaption>");
+    }
     out.push('\n');
     indent(out, level);
     out.push_str("</figure>");
@@ -2546,8 +2668,13 @@ fn render_inline_after(
             }
         }
         InlineNode::CaptionNumber(n) => {
-            if let Some(number) = n.number {
-                out.push_str(&number.to_string());
+            match n.number {
+                Some(number) => out.push_str(&number.to_string()),
+                // An unresolved placeholder stays the literal `#` the author
+                // wrote - the visible failure this language prefers to a
+                // silent one (PART 9 §4c names the panel-caption case), and
+                // what the Markdown, plain and terminal targets already emit.
+                None => out.push('#'),
             }
         }
         InlineNode::Mention(m) => {

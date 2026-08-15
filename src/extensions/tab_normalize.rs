@@ -135,6 +135,14 @@ impl TabNormalize {
                 self.visit_inlines(&mut f.caption);
                 self.visit_figure_target(f);
             }
+            BlockNode::FigureGroup(g) => {
+                if let Some(caption) = &mut g.caption {
+                    self.visit_inlines(caption);
+                }
+                for child in &mut g.children {
+                    self.visit_block(child);
+                }
+            }
             BlockNode::Extension(e) => {
                 for child in &mut e.children {
                     self.visit_block(child);

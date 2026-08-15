@@ -387,6 +387,7 @@ const IMPLEMENTED: &[&str] = &[
     "an-editorial-comment-s-bracket-is-content-not-the-close",
     "an-image-s-alt-text-closes-where-a-link-s-text-closes",
     "an-inline-note-s-content-resolves-after-the-note",
+    "composite-figures",
 ];
 
 fn corpus_dir() -> PathBuf {

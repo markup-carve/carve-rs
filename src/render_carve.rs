@@ -161,6 +161,7 @@ fn strip_generated_ids(blocks: &mut [BlockNode], had_any: &mut bool) {
                     strip_generated_ids(&mut b.children, had_any);
                 }
             }
+            BlockNode::FigureGroup(g) => strip_generated_ids(&mut g.children, had_any),
             BlockNode::DefinitionList(dl) => {
                 for entry in dl.items.iter_mut() {
                     for definition in entry.definitions.iter_mut() {
@@ -192,6 +193,7 @@ fn collect_heading_ids(blocks: &[BlockNode], out: &mut Vec<Option<String>>) {
                     collect_heading_ids(&b.children, out);
                 }
             }
+            BlockNode::FigureGroup(g) => collect_heading_ids(&g.children, out),
             BlockNode::DefinitionList(dl) => {
                 for entry in dl.items.iter() {
                     for definition in entry.definitions.iter() {
@@ -285,6 +287,7 @@ fn emptied_description_lines(blocks: &[BlockNode], into: &mut HashSet<usize>) {
                     emptied_description_lines(&quote.children, into);
                 }
             }
+            BlockNode::FigureGroup(group) => emptied_description_lines(&group.children, into),
             BlockNode::List(list) => {
                 for item in &list.items {
                     // A definition the author wrote BETWEEN two of an item's
@@ -703,6 +706,14 @@ fn normalize_escapes_block(block: &mut BlockNode) {
             normalize_escapes_inlines(&mut f.caption);
             normalize_escapes_figure_target(f);
         }
+        BlockNode::FigureGroup(g) => {
+            if let Some(caption) = &mut g.caption {
+                normalize_escapes_inlines(caption);
+            }
+            for child in &mut g.children {
+                normalize_escapes_block(child);
+            }
+        }
         BlockNode::Extension(e) => {
             for child in &mut e.children {
                 normalize_escapes_block(child);
@@ -834,6 +845,12 @@ fn hosts_caption(block: &BlockNode) -> bool {
         | BlockNode::CodeBlock(_)
         | BlockNode::BlockQuote(_)
         | BlockNode::BlockImage(_) => true,
+        // The group's closer hosts the caption slot (§4c). With the slot
+        // already filled, a following `^ ` paragraph re-parses as a paragraph
+        // either way and §4 asks for the minimal form - so only an
+        // UNCAPTIONED group makes the escape necessary (corpus
+        // 318-composite-figures-6 is the detached shape that needs it).
+        BlockNode::FigureGroup(group) => group.caption.is_none(),
         BlockNode::Paragraph(paragraph) if paragraph.children.len() == 1 => {
             match &paragraph.children[0] {
                 InlineNode::Image(image) => !image.src.is_empty(),
@@ -1218,6 +1235,22 @@ fn render_block(node: &BlockNode, ctx: &mut CarveContext) -> String {
             &with_reset_colon_fence_depth(ctx, |ctx| render_definition_list(&list.items, ctx)),
         ),
         BlockNode::Figure(figure) => with_block_attrs(&figure.attrs, &render_figure(figure, ctx)),
+        BlockNode::FigureGroup(group) => {
+            // §10g: the authored form - the attribute line where attributes
+            // exist, the bare opener, the children, the closer at the opener's
+            // width, and the group caption as a `^ ` line AFTER the closer.
+            let fence = colon_fence_for(ctx);
+            let body = render_inside_colon_container(&group.children, ctx);
+            let caption = group
+                .caption
+                .as_ref()
+                .map(|caption| format!("\n^ {}", render_inlines(caption, ctx)))
+                .unwrap_or_default();
+            with_block_attrs(
+                &group.attrs,
+                &format!("{fence} figure\n{body}\n{fence}{caption}"),
+            )
+        }
         BlockNode::BlockImage(image) => render_image(image),
         BlockNode::RawBlock(raw) => {
             let fence = safe_fence(&raw.content, 3);

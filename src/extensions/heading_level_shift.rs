@@ -104,6 +104,7 @@ fn shift_block(block: &mut BlockNode, shift: u8) {
                 shift_blocks(&mut quote.children, shift);
             }
         }
+        BlockNode::FigureGroup(group) => shift_blocks(&mut group.children, shift),
         _ => {}
     }
 }

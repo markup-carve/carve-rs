@@ -215,6 +215,14 @@ fn rewrite_markers_block(
                 }
             }
         }
+        BlockNode::FigureGroup(g) => {
+            for child in &mut g.children {
+                rewrite_markers_block(child, counts, display);
+            }
+            if let Some(caption) = &mut g.caption {
+                rewrite_markers_inline(caption, counts, display);
+            }
+        }
         BlockNode::Figure(f) => {
             rewrite_markers_inline(&mut f.caption, counts, display);
             match &mut f.target {

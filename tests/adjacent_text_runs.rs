@@ -354,6 +354,12 @@ fn walk_block<'a>(
             }
         }
         BlockNode::Figure(n) => inline_lists.push(&n.caption),
+        BlockNode::FigureGroup(n) => {
+            if let Some(caption) = &n.caption {
+                inline_lists.push(caption);
+            }
+            child_blocks.extend(n.children.iter());
+        }
         BlockNode::Extension(n) => {
             if let Some(summary) = &n.summary {
                 inline_lists.push(summary);

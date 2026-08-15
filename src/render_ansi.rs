@@ -231,6 +231,7 @@ fn render_block(node: &BlockNode, ctx: &mut AnsiContext, depth: usize) -> String
             render_definition_list(&list.items, ctx, true, depth + 1)
         }
         BlockNode::Figure(figure) => render_figure(figure, ctx, depth + 1),
+        BlockNode::FigureGroup(group) => render_figure_group(group, ctx, depth + 1),
         // Terminate the block image so the next block is not glued onto it.
         BlockNode::BlockImage(image) => format!("{}\n\n", render_image(image)),
         BlockNode::RawBlock(raw) => format!(
@@ -533,12 +534,66 @@ fn table_row(cells: &[RenderedCell], widths: &[usize]) -> String {
     format!("{sep}{}{sep}\n", parts.join(&sep))
 }
 
+/// PART 11 §10g T2, same shape as the plain-text target: group caption first
+/// (styled like every caption on this target), then each panel's caption line
+/// over its host's usual degradation, stray content in place, a blank line
+/// between the pieces.
+fn render_figure_group(node: &FigureGroup, ctx: &mut AnsiContext, depth: usize) -> String {
+    if depth > MAX_RENDER_DEPTH {
+        crate::render_depth::record("ansi");
+        return String::new();
+    }
+    let caption_style = ITALIC.to_string() + DIM;
+    let mut parts: Vec<String> = Vec::new();
+    if let Some(caption) = &node.caption {
+        parts.push(style(
+            trim_non_nbsp(&render_block_inlines(caption, ctx)),
+            &caption_style,
+        ));
+    }
+    for child in &node.children {
+        match child {
+            BlockNode::Figure(figure) => {
+                let caption = style(
+                    trim_non_nbsp(&render_block_inlines(&figure.caption, ctx)),
+                    &caption_style,
+                );
+                let target = render_figure_target(figure, ctx, depth);
+                parts.push(format!("{caption}\n{target}"));
+            }
+            other => {
+                let piece = render_block(other, ctx, depth);
+                let piece = piece.trim_end();
+                if !piece.is_empty() {
+                    parts.push(piece.to_string());
+                }
+            }
+        }
+    }
+    if parts.is_empty() {
+        return String::new();
+    }
+    format!("{}\n\n", parts.join("\n\n"))
+}
+
 fn render_figure(node: &Figure, ctx: &mut AnsiContext, depth: usize) -> String {
     if depth > MAX_RENDER_DEPTH {
         crate::render_depth::record("ansi");
         return String::new();
     }
-    let target = match &node.target {
+    let target = render_figure_target(node, ctx, depth);
+    let sep = match &node.target {
+        FigureTarget::BlockQuote(_) => "\n\n",
+        _ => "\n",
+    };
+    format!("{target}{sep}{}", render_caption(&node.caption, ctx))
+}
+
+/// A figure's TARGET degraded on its own, without the caption - shared by the
+/// plain figure and the figure group, whose panels put the caption FIRST
+/// (§10g T2).
+fn render_figure_target(node: &Figure, ctx: &mut AnsiContext, depth: usize) -> String {
+    match &node.target {
         FigureTarget::Image(image) => render_image(image),
         FigureTarget::Table(table) => render_table(table, ctx).trim_end().to_string(),
         FigureTarget::BlockQuote(quote) => {
@@ -556,12 +611,7 @@ fn render_figure(node: &Figure, ctx: &mut AnsiContext, depth: usize) -> String {
                 .trim_end()
                 .to_string()
         }
-    };
-    let sep = match &node.target {
-        FigureTarget::BlockQuote(_) => "\n\n",
-        _ => "\n",
-    };
-    format!("{target}{sep}{}", render_caption(&node.caption, ctx))
+    }
 }
 
 fn render_caption(nodes: &[InlineNode], ctx: &mut AnsiContext) -> String {

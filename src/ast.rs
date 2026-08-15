@@ -176,6 +176,7 @@ pub enum BlockNode {
     LineBlock(LineBlock),
     DefinitionList(DefinitionList),
     Figure(Figure),
+    FigureGroup(FigureGroup),
     AbbreviationDef(AbbreviationDef),
     LinkReferenceDefinition(LinkReferenceDefinition),
     RawBlock(RawBlock),
@@ -464,6 +465,27 @@ pub enum FigureTarget {
     Table(Table),
     CodeBlock(CodeBlock),
     Paragraph(Paragraph),
+}
+
+/// A composite figure: one figure-numbering unit holding ordered panels
+/// (PART 9 §4c, a bare `::: figure` container).
+///
+/// `children` are the body's blocks in source order; the PANELS are the
+/// `Figure` and `Table` nodes among them, derived by type rather than stored
+/// in a second list, and stray non-panel content is preserved in place.
+/// Discriminated from `Figure` by the node TYPE: every `Figure` carries a
+/// `target`, this node deliberately does not, and it has no title, label or
+/// short-caption slot - its one authored metadata channel is the group
+/// caption on the closing fence (carve#1118/carve#1121 own the rest).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FigureGroup {
+    pub attrs: Option<Attrs>,
+    pub children: Vec<BlockNode>,
+    /// The group caption (the `^ ` line after the closing fence). `None`
+    /// means the group is uncaptioned - never an empty placeholder.
+    pub caption: Option<Vec<InlineNode>>,
+    /// Span in the original source, when the parser could determine it.
+    pub pos: Option<Pos>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

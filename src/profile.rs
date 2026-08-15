@@ -64,6 +64,7 @@ pub const CANONICAL_BLOCK_TYPES: &[&str] = &[
     "line_block",
     "comment",
     "figure",
+    "figure_group",
     "caption",
     // Both definition kinds are in the normative Block vocabulary
     // (markup-carve/carve#771, ruled by markup-carve/carve#826). Without them
@@ -149,6 +150,7 @@ pub fn canonical_block_type(node: &BlockNode) -> Option<&'static str> {
         BlockNode::LineBlock(_) => Some("line_block"),
         BlockNode::DefinitionList(_) => Some("definition_list"),
         BlockNode::Figure(_) => Some("figure"),
+        BlockNode::FigureGroup(_) => Some("figure_group"),
         BlockNode::RawBlock(_) => Some("raw_block"),
         BlockNode::Comment(_) => Some("comment"),
         BlockNode::BlockImage(_) => Some("image"),

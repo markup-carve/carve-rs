@@ -26,6 +26,27 @@
 //! `render_html_with_options`, and the diagnostics describe the output the
 //! author will actually get.
 //!
+//! PART 9 §4c adds the composite-figure findings (markup-carve/carve#1122),
+//! each a diagnostic over a valid parse:
+//!
+//! `figure-group-opener-metadata`
+//! : a `::: figure` opener carrying a quoted title or a `[label]` stays a
+//!   generic container - the group has no title or label slot by design.
+//!
+//! `figure-group-nested`
+//! : a bare `::: figure` opener inside an open group's body stays a generic
+//!   container; groups do not nest.
+//!
+//! `figure-group-panel-number`
+//! : a `#` placeholder in a PANEL caption has nothing to resolve against and
+//!   stays literal - panels are not sequence units.
+//!
+//! §4c also names `figure-group-empty` and `figure-group-single-panel` as
+//! STRICT-PROFILE findings. This surface has no profile or severity axis yet,
+//! and reporting them unconditionally would flag documents the clause calls
+//! valid and ordinary, so they wait for that axis rather than shipping under
+//! the wrong severity.
+//!
 //! Rule ids and messages match carve-js' `lintCarve` (`src/lint.ts`) - "same
 //! rule, same id" is what parity means here, and a consumer reading
 //! diagnostics from two engines must not see one warning under two spellings.
@@ -115,8 +136,114 @@ pub fn lint_carve_with_options(source: &str, options: &Options<'_>) -> Vec<LintW
     for body in doc.footnote_defs.values() {
         walk_blocks(body, &mut visit);
     }
+    collect_figure_group_warnings(&doc.children, false, &to_byte, &mut out);
+    for body in doc.footnote_defs.values() {
+        collect_figure_group_warnings(body, false, &to_byte, &mut out);
+    }
     out.sort_by_key(|w| (w.start, w.end, w.rule));
     out
+}
+
+/// The PART 9 §4c findings: what a `::: figure` spelling silently is not.
+///
+/// `in_group` says the walk is inside an open composite figure's body, at any
+/// depth - the state that turns a BARE `figure` opener from a group into the
+/// demoted generic container `figure-group-nested` reports. The parser makes
+/// the same decision with the same scope (`IN_FIGURE_GROUP`), which is why a
+/// bare `figure` admonition is only reported where that flag would have been
+/// set: anywhere else the node can only come from an ingested tree, which this
+/// surface never sees (it parses the source itself).
+fn collect_figure_group_warnings(
+    blocks: &[BlockNode],
+    in_group: bool,
+    to_byte: &dyn Fn(usize) -> usize,
+    out: &mut Vec<LintWarning>,
+) {
+    for block in blocks {
+        match block {
+            BlockNode::Admonition(a) => {
+                if a.kind == "figure" {
+                    if a.title.is_some() || a.label.is_some() {
+                        out.push(warning(
+                            a.pos,
+                            to_byte,
+                            "figure-group-opener-metadata",
+                            "A `::: figure` opener carrying a quoted title or a [label] stays a \
+                             generic container, not a composite figure: the group has no title or \
+                             label slot (PART 9 \u{a7}4c). Its one authored metadata channel is \
+                             the `^ ` caption after the closing fence."
+                                .to_string(),
+                        ));
+                    } else if in_group {
+                        out.push(warning(
+                            a.pos,
+                            to_byte,
+                            "figure-group-nested",
+                            "Composite figures do not nest (PART 9 \u{a7}4c): a bare `::: figure` \
+                             opener inside an open group's body stays a generic container. Close \
+                             the outer group first, or drop the inner fence."
+                                .to_string(),
+                        ));
+                    }
+                }
+                collect_figure_group_warnings(&a.children, in_group, to_byte, out);
+            }
+            BlockNode::FigureGroup(g) => {
+                for child in &g.children {
+                    let panel_caption = match child {
+                        BlockNode::Figure(f) => Some(&f.caption),
+                        BlockNode::Table(t) => t.caption.as_ref(),
+                        _ => None,
+                    };
+                    if let Some(caption) = panel_caption {
+                        for node in caption.iter() {
+                            if let InlineNode::CaptionNumber(n) = node {
+                                out.push(warning(
+                                    n.pos,
+                                    to_byte,
+                                    "figure-group-panel-number",
+                                    "A `#` placeholder in a panel caption stays literal: panels \
+                                     are not sequence units, so it has nothing to resolve against \
+                                     (PART 9 \u{a7}4c). Number the GROUP caption instead, or drop \
+                                     the `#`."
+                                        .to_string(),
+                                ));
+                            }
+                        }
+                    }
+                }
+                collect_figure_group_warnings(&g.children, true, to_byte, out);
+            }
+            BlockNode::Div(d) => collect_figure_group_warnings(&d.children, in_group, to_byte, out),
+            BlockNode::BlockQuote(b) => {
+                collect_figure_group_warnings(&b.children, in_group, to_byte, out)
+            }
+            BlockNode::LineBlock(lb) => {
+                collect_figure_group_warnings(&lb.children, in_group, to_byte, out)
+            }
+            BlockNode::List(l) => {
+                for item in &l.items {
+                    collect_figure_group_warnings(&item.children, in_group, to_byte, out);
+                }
+            }
+            BlockNode::DefinitionList(dl) => {
+                for item in &dl.items {
+                    for def in &item.definitions {
+                        collect_figure_group_warnings(&def.children, in_group, to_byte, out);
+                    }
+                }
+            }
+            BlockNode::Figure(f) => {
+                if let FigureTarget::BlockQuote(b) = &f.target {
+                    collect_figure_group_warnings(&b.children, in_group, to_byte, out);
+                }
+            }
+            BlockNode::Extension(e) => {
+                collect_figure_group_warnings(&e.children, in_group, to_byte, out)
+            }
+            _ => {}
+        }
+    }
 }
 
 /// Byte offset of each codepoint in `source`, plus one past the end.
@@ -366,6 +493,13 @@ fn walk_block(node: &BlockNode, visit: &mut Visit<'_>) {
             walk_inlines(&n.caption, visit);
             if let Some(short) = &n.short_caption {
                 walk_inlines(short, visit);
+            }
+        }
+        BlockNode::FigureGroup(n) => {
+            report("figure_group", &n.attrs, n.pos, visit);
+            walk_blocks(&n.children, visit);
+            if let Some(caption) = &n.caption {
+                walk_inlines(caption, visit);
             }
         }
         // Carries no `attrs` field and no children.

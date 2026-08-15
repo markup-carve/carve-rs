@@ -367,6 +367,13 @@ impl Seeder {
                 }
                 self.walk_inlines(&f.caption);
             }
+            BlockNode::FigureGroup(g) => {
+                self.reserve_attrs(&g.attrs);
+                self.walk_blocks(&g.children);
+                if let Some(caption) = &g.caption {
+                    self.walk_inlines(caption);
+                }
+            }
             BlockNode::Extension(e) => {
                 self.reserve_attrs(&e.attrs);
                 self.walk_blocks(&e.children);
