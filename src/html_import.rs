@@ -490,6 +490,17 @@ impl<'a> Importer<'a> {
                 }
             }
         }
+        // `<caption>` is a DIRECT child of the table and carries the table's own
+        // caption, which `Table::caption` has a slot for and Carve spells `^ text`
+        // after the rows. The row walk below looks only for `tr`, so before this
+        // the element was skipped and the caption left the document silently -
+        // pandoc emits exactly this shape for every captioned table.
+        let caption_children: Option<Vec<Handle>> = h
+            .children
+            .borrow()
+            .iter()
+            .find(|c| Importer::tag(c).as_deref() == Some("caption"))
+            .map(|c| c.children.borrow().iter().cloned().collect());
         let mut trs = Vec::new();
         rows(h, &mut trs);
         let mut result = Vec::new();
@@ -559,9 +570,13 @@ impl<'a> Importer<'a> {
                 }
             }
         }
+        let caption = match caption_children {
+            Some(kids) => Some(self.inlines(&kids, &format!("{path}/caption[1]"), depth + 1)?),
+            None => None,
+        };
         Ok(Table {
             attrs,
-            caption: None,
+            caption,
             short_caption: None,
             rows: result,
             pos: None,
