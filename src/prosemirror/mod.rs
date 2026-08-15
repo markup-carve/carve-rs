@@ -25,11 +25,6 @@ pub struct ProseMirrorDoc {
 struct SchemaMap {
     names: BTreeMap<String, Vec<String>>,
     accepts: BTreeMap<String, Vec<String>>,
-    /// Types whose entry says it exists for the profile vocabulary only - an
-    /// admonition is a div with a type class, an autolink is a link whose text
-    /// is its destination. They share a ProseMirror name with the type that
-    /// owns it, so a reverse lookup has to prefer the owner.
-    profile_only: std::collections::BTreeSet<String>,
     unmapped: BTreeMap<String, String>,
 }
 
@@ -49,7 +44,6 @@ fn schema_map() -> &'static SchemaMap {
         };
         let mut names = BTreeMap::new();
         let mut accepts = BTreeMap::new();
-        let mut profile_only = std::collections::BTreeSet::new();
         for (ty, entry) in types {
             let Json::Object(entry) = entry else { continue };
             let pm = match entry.get("pm") {
@@ -64,10 +58,6 @@ fn schema_map() -> &'static SchemaMap {
                 _ => Vec::new(),
             };
             names.insert(ty.clone(), pm);
-            if matches!(entry.get("notes"), Some(Json::String(n)) if n.starts_with("profile vocabulary only"))
-            {
-                profile_only.insert(ty.clone());
-            }
             let accepted = match entry.get("accepts") {
                 Some(Json::Array(values)) => values
                     .iter()
@@ -94,7 +84,6 @@ fn schema_map() -> &'static SchemaMap {
         SchemaMap {
             names,
             accepts,
-            profile_only,
             unmapped,
         }
     })

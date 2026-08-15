@@ -42,34 +42,13 @@ struct Reader {
 
 impl Reader {
     fn resolve(&self, name: &str) -> Option<(String, usize)> {
-        // Two Carve types claim the same ProseMirror name, and in both cases
-        // the loser is a profile-vocabulary alias of the winner: an admonition
-        // is a div with a type class, an autolink is a link whose text is its
-        // destination. The map records that in its notes and carve-php picks
-        // the right one only because PHP preserves the file's key order, where
-        // `div` and `link` come first.
-        //
-        // A BTreeMap sorts, so the alphabetical winner here would be the ALIAS
-        // in both cases - `admonition` over `div`, `autolink` over `link`. That
-        // is not a tie to break by luck: resolving carveDiv to `admonition`
-        // sent every labelled div down the admonition path, where the label is
-        // not carried, and `:::[First]` came back as a bare div with the word
-        // gone and nothing reported.
-        //
-        // The map already says which is which - both aliases open their notes
-        // with "profile vocabulary only" - so the owner wins by asking the map
-        // rather than by a list kept in step by hand.
-        for (ty, names) in self
-            .map
-            .names
-            .iter()
-            .filter(|(ty, _)| !self.map.profile_only.contains(*ty))
-        {
-            if let Some(index) = names.iter().position(|n| n == name) {
-                return Some((ty.clone(), index));
-            }
-        }
-
+        // Two Carve types can claim one ProseMirror name - `carveDiv` for
+        // both `div` and `admonition`, `link` for both `link` and `autolink` -
+        // and which one this returns therefore depends on map iteration order,
+        // which differs between engines. That is deliberately NOT arbitrated
+        // here. Every colliding pair is handled by a single match arm that
+        // decides from the node's own state, so the answer this gives for such
+        // a name does not change the result.
         for (ty, names) in &self.map.names {
             if let Some(index) = names.iter().position(|n| n == name) {
                 return Some((ty.clone(), index));
@@ -192,14 +171,33 @@ impl Reader {
                 remove_nulls(&mut n);
                 Ok(n)
             }
-            "block_quote" | "div" | "line_block" => {
-                if ty == "div" && flavor == 0 {
+            // `div` and `admonition` share one ProseMirror name, so which of
+            // them a `carveDiv` resolved to is not a fact about the schema - it
+            // is a fact about map iteration order, and the two engines that do
+            // this walk the map in different orders. Deciding here from the
+            // node's own state makes the question moot: whichever type
+            // resolution named, the same code runs and the payload decides.
+            //
+            // They used to be two arms that each re-decided, which is the shape
+            // that let them drift - only one of them carried the label, so
+            // `:::[First]` lost its heading when resolution happened to pick
+            // the other. The `link`/`autolink` pair has always been one arm for
+            // the same reason, branching on `carveAutolink`.
+            "block_quote" | "div" | "line_block" | "admonition" => {
+                // `admonition` is not a container type of its own: an
+                // admonition that turns out to have no kind IS a div.
+                let container_ty = if ty == "admonition" {
+                    "div"
+                } else {
+                    ty.as_str()
+                };
+                if container_ty == "div" && flavor == 0 {
                     if let Some(kind) = admonition_kind(a).map(str::to_owned) {
                         return self.admonition(obj, &kind);
                     }
                 }
-                let mut n = self.container(obj, &ty, "children", false)?;
-                if ty == "div" {
+                let mut n = self.container(obj, container_ty, "children", false)?;
+                if container_ty == "div" {
                     add_flavor_class(&mut n, flavor);
                     // The div's visible heading. `container` only carries
                     // attributes, and the label is a field of its own.
@@ -211,10 +209,6 @@ impl Reader {
                 }
                 Ok(n)
             }
-            "admonition" => match admonition_kind(a).map(str::to_owned) {
-                Some(kind) => self.admonition(obj, &kind),
-                None => self.container(obj, "div", "children", false),
-            },
             "list" => self.list(obj, flavor),
             "table" => self.table(obj),
             "definition_list" => self.definition_list(obj),

@@ -1,4 +1,4 @@
-use carve::{from_prosemirror, parse, render_html, to_prosemirror};
+use carve::{from_prosemirror, parse, render_carve, render_html, to_prosemirror};
 use serde_json::{json, Value};
 use std::collections::BTreeSet;
 use std::fs;
@@ -405,61 +405,72 @@ fn no_aliased_type_is_named_by_the_map() {
     }
 }
 
-/// No ProseMirror name is left to be resolved by map iteration order.
+/// A name two Carve types claim resolves by the payload, not by map order.
 ///
-/// Two Carve types can claim one ProseMirror name, and in both current cases
-/// the second claimant is a profile-vocabulary alias of the first: an
-/// admonition is a div with a type class, an autolink is a link whose text is
-/// its destination. carve-php resolves these correctly by accident - PHP walks
-/// the map in the file's key order, where the owner happens to come first.
-/// This engine walks a sorted map, where the ALIAS wins both times.
+/// `carveDiv` is claimed by both `div` and `admonition`, and `link` by both
+/// `link` and `autolink`. Which one a reverse lookup returns depends on the
+/// order the map is walked in - carve-php preserves the file's key order and
+/// gets the owner, this engine sorts and gets the alias - so nothing may
+/// depend on the answer. Both pairs are handled by one match arm that reads
+/// the node's own state.
 ///
-/// That is not a cosmetic difference. `carveDiv` resolving to `admonition`
-/// routed every labelled div down a path that does not carry the label, so
-/// `:::[First]` came back as a bare div with the word gone and nothing
-/// reported dropped. `from_pm.rs` names the owner explicitly; this test fails
-/// if the map grows a collision that list has not been told about.
+/// These assert the behavior rather than the arbitration. An earlier version
+/// picked the owner by sniffing the entry's notes for the phrase "profile
+/// vocabulary only", which a copy-edit upstream would have silently undone;
+/// what a reader cares about is that a labelled div is still a labelled div.
 #[test]
-fn no_prose_mirror_name_resolves_by_alphabet() {
-    const OWNED: &[(&str, &str)] = &[("carveDiv", "div"), ("link", "link")];
+fn a_carve_div_with_no_kind_is_a_div_and_keeps_its_label() {
+    let payload = json!({"type": "doc", "content": [{
+        "type": "carveDiv",
+        "attrs": {"label": "First"},
+        "content": [{"type": "paragraph", "content": [{"type": "text", "text": "Body."}]}]
+    }]});
+    let doc = from_prosemirror(&payload.to_string()).expect("the payload converts");
+    let html = render_html(&doc).unwrap();
 
-    let map: Value = serde_json::from_str(SCHEMA_MAP).expect("the vendored map is valid JSON");
-    let types = map["types"].as_object().expect("the map names types");
+    assert!(html.contains("First"), "the label survives: {html}");
+    assert!(
+        !html.contains("<aside"),
+        "a div is not an admonition: {html}"
+    );
+}
 
-    let mut claims: std::collections::BTreeMap<String, Vec<String>> = Default::default();
-    for (carve_type, entry) in types {
-        let accepts = entry["accepts"]
-            .as_array()
-            .map(|v| {
-                v.iter()
-                    .filter_map(Value::as_str)
-                    .map(str::to_owned)
-                    .collect()
-            })
-            .unwrap_or_else(Vec::new);
-        for name in mapped_names(&map, carve_type).into_iter().chain(accepts) {
-            claims.entry(name).or_default().push(carve_type.clone());
-        }
-    }
+#[test]
+fn a_carve_div_with_a_kind_is_an_admonition() {
+    let payload = json!({"type": "doc", "content": [{
+        "type": "carveDiv",
+        "attrs": {"class": "note"},
+        "content": [{"type": "paragraph", "content": [{"type": "text", "text": "Body."}]}]
+    }]});
+    let doc = from_prosemirror(&payload.to_string()).expect("the payload converts");
+    let html = render_html(&doc).unwrap();
 
-    for (name, mut owners) in claims {
-        if owners.len() < 2 {
-            continue;
-        }
-        owners.sort();
-        let declared = OWNED.iter().find(|(pm, _)| *pm == name);
-        let (_, owner) = declared.unwrap_or_else(|| {
-            panic!(
-                "`{name}` is claimed by {owners:?} and nothing says which owns it - \
-                 the sorted map would hand it to `{}`. Name the owner in from_pm.rs.",
-                owners[0]
-            )
-        });
-        assert!(
-            owners.iter().any(|t| t == owner),
-            "`{name}` is declared owned by `{owner}`, which no longer claims it: {owners:?}"
-        );
-    }
+    assert!(
+        html.contains("<aside"),
+        "a kind makes it an admonition: {html}"
+    );
+}
+
+#[test]
+fn an_autolink_mark_stays_an_autolink_and_a_link_stays_a_link() {
+    let both = json!({"type": "doc", "content": [{"type": "paragraph", "content": [
+        {"type": "text", "text": "https://example.com",
+         "marks": [{"type": "link", "attrs": {"href": "https://example.com", "carveAutolink": true}}]},
+        {"type": "text", "text": " and "},
+        {"type": "text", "text": "words",
+         "marks": [{"type": "link", "attrs": {"href": "https://example.com"}}]}
+    ]}]});
+    let doc = from_prosemirror(&both.to_string()).expect("the payload converts");
+    let source = render_carve(&doc).expect("the document writes back");
+
+    assert!(
+        source.contains("<https://example.com>"),
+        "autolink spelling: {source}"
+    );
+    assert!(
+        source.contains("[words](https://example.com)"),
+        "link spelling: {source}"
+    );
 }
 
 /// An unstamped admonition title is the opener, not an authored attribute.
