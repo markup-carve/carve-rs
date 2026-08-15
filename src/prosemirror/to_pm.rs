@@ -106,6 +106,9 @@ impl Renderer {
                 let mut a = attrs(n.attrs.as_ref());
                 if n.ordered {
                     a.insert("start".into(), Json::Number(n.start.unwrap_or(1) as i64));
+                    if n.start.is_some() {
+                        a.insert("carveListStartExplicit".into(), Json::Bool(true));
+                    }
                 }
                 if n.bare_marker {
                     a.insert("carveBareMarker".into(), Json::Bool(true));
@@ -147,6 +150,15 @@ impl Renderer {
             ),
             BlockNode::Table(n) => return self.table(n),
             BlockNode::Admonition(n) => {
+                if n.title
+                    .as_ref()
+                    .is_some_and(|title| title.iter().any(|v| !matches!(v, InlineNode::Text(_))))
+                {
+                    self.degraded.insert(
+                        "admonition".into(),
+                        "title markup is flattened into a ProseMirror attribute".into(),
+                    );
+                }
                 let mut a = attrs(n.attrs.as_ref());
                 let mut classes = a
                     .remove("class")
@@ -163,8 +175,26 @@ impl Renderer {
                 }
                 classes.push_str(&n.kind);
                 a.insert("class".into(), Json::String(classes));
+                // The class alone cannot say this was an admonition rather
+                // than a div that happens to carry the word: `kind` is free
+                // text, so the way back would have to guess from a list of
+                // known kinds, and any kind outside that list comes back as a
+                // plain div. That is how `::: footnotes` lost its placement -
+                // it parses as an admonition whose kind is `footnotes`, which
+                // no such list contains. The kind rides explicitly, the way
+                // this bridge already carries the other engine state an editor
+                // model has no place for.
+                a.insert("carveAdmonitionKind".into(), Json::String(n.kind.clone()));
+                // NOT `title`: an admonition may also carry an authored
+                // `title` attribute, and writing the opener's title into the
+                // same key made the two indistinguishable - one corpus
+                // document has both, and the attribute won. The opener title
+                // is structure, so it rides under its own name like the kind.
                 if let Some(title) = &n.title {
-                    a.insert("title".into(), Json::String(plain_text(title)));
+                    a.insert(
+                        "carveAdmonitionTitle".into(),
+                        Json::String(plain_text(title)),
+                    );
                 }
                 if let Some(label) = &n.label {
                     a.insert("label".into(), Json::String(label.clone()));
@@ -172,7 +202,15 @@ impl Renderer {
                 (self.name("admonition")?, a, self.blocks(&n.children))
             }
             BlockNode::Div(n) => {
-                let a = attrs(n.attrs.as_ref());
+                let mut a = attrs(n.attrs.as_ref());
+                // The label is the div's visible heading, and nothing else
+                // carries it: the corpus round trip caught `::: note [First]`
+                // coming back as a bare div with the word gone and nothing
+                // reported. carve-grammars spells the attribute `label`, so
+                // this does too rather than inventing a fourth spelling.
+                if let Some(label) = n.label.as_ref().filter(|l| !l.is_empty()) {
+                    a.insert("label".into(), Json::String(label.clone()));
+                }
                 let classes = n
                     .attrs
                     .as_ref()
@@ -418,6 +456,7 @@ impl Renderer {
                 self.push_text(out, &n.value, &next);
             }
             InlineNode::Link(n) => {
+                let before = out.len();
                 let mut a = attrs(n.attrs.as_ref());
                 a.insert("href".into(), Json::String(n.href.clone()));
                 if let Some(t) = &n.title {
@@ -440,6 +479,9 @@ impl Renderer {
                 for c in &n.children {
                     self.inline(c, &next, out);
                 }
+                if out.len() == before {
+                    self.drop_type("link", Some("an empty mark has no carrier in ProseMirror"));
+                }
             }
             InlineNode::AutoLink(n) => {
                 let mut a = attrs(n.attrs.as_ref());
@@ -458,6 +500,7 @@ impl Renderer {
                 }
             }
             InlineNode::Span(n) => {
+                let before = out.len();
                 let mut next = marks.to_vec();
                 let Some(name) = self.name("span") else {
                     return;
@@ -465,6 +508,9 @@ impl Renderer {
                 next.push(mark(name, attrs(n.attrs.as_ref())));
                 for c in &n.children {
                     self.inline(c, &next, out);
+                }
+                if out.len() == before {
+                    self.drop_type("span", Some("an empty mark has no carrier in ProseMirror"));
                 }
             }
             InlineNode::Math(n) => {
@@ -786,6 +832,23 @@ fn attrs(a: Option<&Attrs>) -> Object {
         for (k, v) in &a.key_values {
             out.entry(k.clone())
                 .or_insert_with(|| Json::String(v.clone()));
+        }
+        if !a.order.is_empty() {
+            out.insert(
+                "carveAttrOrder".into(),
+                Json::Array(
+                    a.order
+                        .iter()
+                        .map(|slot| {
+                            Json::String(match slot {
+                                AttrSlot::Id => "#id".into(),
+                                AttrSlot::Class => ".class".into(),
+                                AttrSlot::Key(k) => k.clone(),
+                            })
+                        })
+                        .collect(),
+                ),
+            );
         }
     }
     out

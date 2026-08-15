@@ -1,5 +1,6 @@
 //! Conversion from the Carve AST to the ProseMirror/CarveKit JSON shape.
 
+mod from_pm;
 mod to_pm;
 
 use std::collections::BTreeMap;
@@ -7,6 +8,7 @@ use std::sync::OnceLock;
 
 use crate::ast_json::{parse_value, Json};
 
+pub use from_pm::{from_prosemirror, ProseMirrorError};
 pub use to_pm::to_prosemirror;
 
 /// The result of converting a Carve document for a ProseMirror editor.
@@ -22,6 +24,12 @@ pub struct ProseMirrorDoc {
 
 struct SchemaMap {
     names: BTreeMap<String, Vec<String>>,
+    accepts: BTreeMap<String, Vec<String>>,
+    /// Types whose entry says it exists for the profile vocabulary only - an
+    /// admonition is a div with a type class, an autolink is a link whose text
+    /// is its destination. They share a ProseMirror name with the type that
+    /// owns it, so a reverse lookup has to prefer the owner.
+    profile_only: std::collections::BTreeSet<String>,
     unmapped: BTreeMap<String, String>,
 }
 
@@ -40,6 +48,8 @@ fn schema_map() -> &'static SchemaMap {
             panic!("schema map types is not an object")
         };
         let mut names = BTreeMap::new();
+        let mut accepts = BTreeMap::new();
+        let mut profile_only = std::collections::BTreeSet::new();
         for (ty, entry) in types {
             let Json::Object(entry) = entry else { continue };
             let pm = match entry.get("pm") {
@@ -54,6 +64,21 @@ fn schema_map() -> &'static SchemaMap {
                 _ => Vec::new(),
             };
             names.insert(ty.clone(), pm);
+            if matches!(entry.get("notes"), Some(Json::String(n)) if n.starts_with("profile vocabulary only"))
+            {
+                profile_only.insert(ty.clone());
+            }
+            let accepted = match entry.get("accepts") {
+                Some(Json::Array(values)) => values
+                    .iter()
+                    .filter_map(|v| match v {
+                        Json::String(s) => Some(s.clone()),
+                        _ => None,
+                    })
+                    .collect(),
+                _ => Vec::new(),
+            };
+            accepts.insert(ty.clone(), accepted);
         }
         let Json::Object(unmapped_values) = root.get("unmapped").expect("schema map has unmapped")
         else {
@@ -66,6 +91,11 @@ fn schema_map() -> &'static SchemaMap {
                 _ => None,
             })
             .collect();
-        SchemaMap { names, unmapped }
+        SchemaMap {
+            names,
+            accepts,
+            profile_only,
+            unmapped,
+        }
     })
 }

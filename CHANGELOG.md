@@ -9,6 +9,23 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **A ProseMirror/Tiptap bridge: `to_prosemirror`, `from_prosemirror`,
+  `ProseMirrorDoc` and `ProseMirrorError`.** carve-php and carve-grammars
+  already had one; this engine had none, so every binding over it - carve-py,
+  carve-rb, carve-go, carve-wasm - could only reach an editor by rendering HTML
+  and letting the editor re-derive the document, which drops whatever no editor
+  extension declares and records nothing.
+
+  The outbound side reports what the editor model cannot hold: `dropped` for
+  content that is gone, `degraded` for a node type that is gone while its text
+  survives. The inbound side treats a ProseMirror name the map does not know as
+  an error rather than a skip. Node and mark names come from the map
+  carve-grammars publishes, vendored under `resources/` with its source commit
+  and shipped with the crate; none is written out in the conversion.
+
+  On the shared corpus, 791 documents report nothing lost and round-trip to
+  byte-identical HTML, and 215 report what they lost.
+
 - **`lint_carve` / `lint_carve_with_options`, and the `LintWarning` they
   return** (markup-carve/carve#1131, markup-carve/carve#1132). carve-rs' first
   lint surface, carrying the two diagnostics PART 9 §10 implies and had nowhere

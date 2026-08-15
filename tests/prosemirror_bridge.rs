@@ -1,4 +1,4 @@
-use carve::{parse, to_prosemirror};
+use carve::{from_prosemirror, parse, render_html, to_prosemirror};
 use serde_json::{json, Value};
 use std::collections::BTreeSet;
 use std::fs;
@@ -165,10 +165,25 @@ fn prose_mirror_names_only_come_from_the_map() {
         "/src/prosemirror/to_pm.rs"
     ))
     .to_owned();
+    let mut inbound = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/prosemirror/from_pm.rs"
+    ))
+    .to_owned();
     for carve_type in map["types"].as_object().expect("types is an object").keys() {
         source = source.replace(&format!("name(\"{carve_type}\")"), "name(LOOKUP)");
+        source = source.replace(
+            &format!("drop_type(\"{carve_type}\""),
+            "drop_type(CARVE_TYPE",
+        );
         source = source.replace("name(ty)", "name(LOOKUP)");
+        // The inbound implementation necessarily names the CARVE side of the
+        // mapping. Remove that vocabulary before asking whether a PM spelling
+        // was restated; equal spellings (text, paragraph, link...) are not PM
+        // literals merely because the two schemas agree on them.
+        inbound = inbound.replace(&format!("\"{carve_type}\""), "CARVE_TYPE");
     }
+    source.push_str(&inbound);
     source = source.replace("o.insert(\"text\".into()", "o.insert(TEXT_ATTRIBUTE.into()");
     let leaked: Vec<_> = map["types"]
         .as_object()
@@ -178,6 +193,96 @@ fn prose_mirror_names_only_come_from_the_map() {
         .filter(|name| source.contains(&format!("\"{name}\"")))
         .collect();
     assert!(leaked.is_empty(), "hardcoded ProseMirror names: {leaked:?}");
+}
+
+#[test]
+fn unknown_inbound_name_is_an_error() {
+    let error = from_prosemirror(r#"{"type":"doc","content":[{"type":"somethingNobodyMapped"}]}"#)
+        .expect_err("unknown nodes must not be skipped");
+    assert!(error.to_string().contains("somethingNobodyMapped"));
+}
+
+#[test]
+fn stock_mention_is_accepted_but_never_emitted() {
+    let doc = from_prosemirror(r#"{"type":"doc","content":[{"type":"paragraph","content":[{"type":"mention","attrs":{"id":"alice"}}]}]}"#)
+        .expect("the map's accepts spelling is inbound");
+    let output = to_prosemirror(&doc);
+    assert!(!output.json.contains(r#""type":"mention""#));
+}
+
+#[test]
+fn inbound_mention_flavor_comes_from_the_arriving_name() {
+    let map: Value = serde_json::from_str(SCHEMA_MAP).expect("schema map is JSON");
+    let names = mapped_names(&map, "mention");
+    let input = json!({"type":"doc","content":[{"type":"paragraph","content":[
+        {"type":names[0],"attrs":{"id":"alice"}}, {"type":"text","text":" "},
+        {"type":names[1],"attrs":{"id":"topic"}}
+    ]}]});
+    let doc = from_prosemirror(&input.to_string()).expect("mapped mention flavors import");
+    let html = render_html(&doc).unwrap();
+    assert!(html.contains("class=\"mention\""));
+    assert!(html.contains("class=\"tag\""));
+    assert!(html.contains("@alice"));
+    assert!(html.contains("#topic"));
+}
+
+#[test]
+fn adjacent_equal_marks_merge_on_import() {
+    let doc = from_prosemirror(
+        r#"{"type":"doc","content":[{"type":"paragraph","content":[
+        {"type":"text","text":"bold ","marks":[{"type":"bold"}]},
+        {"type":"text","text":"and ","marks":[{"type":"bold"},{"type":"italic"}]},
+        {"type":"text","text":"bold","marks":[{"type":"bold"}]}
+    ]}]}"#,
+    )
+    .expect("marked text imports");
+    let html = render_html(&doc).unwrap();
+    assert_eq!(html.matches("<strong>").count(), 1);
+    assert_eq!(html, "<p><strong>bold <em>and </em>bold</strong></p>");
+}
+
+#[test]
+fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
+    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus");
+    let mut covered = 0usize;
+    let mut lossy = 0usize;
+    for entry in fs::read_dir(corpus).expect("corpus directory exists") {
+        let path = entry.expect("corpus entry is readable").path();
+        if path.extension().and_then(|v| v.to_str()) != Some("crv") {
+            continue;
+        }
+        let original = parse(&fs::read_to_string(&path).expect("corpus source is readable"));
+        let pm = to_prosemirror(&original);
+        if pm.dropped.is_empty() && pm.degraded.is_empty() {
+            let returned =
+                from_prosemirror(&pm.json).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+            assert_eq!(
+                render_html(&returned).unwrap(),
+                render_html(&original).unwrap(),
+                "{}",
+                path.display()
+            );
+            covered += 1;
+        } else {
+            lossy += 1;
+        }
+    }
+    eprintln!("ProseMirror corpus: {covered} strict, {lossy} reported lossy");
+    // A ratchet, not a floor of one. `covered > 0` passes with a single
+    // document, so a change that quietly moved hundreds of documents out of
+    // the strict set - by reporting a type as dropped rather than carrying it -
+    // would not fail anything. Raise these when the numbers improve.
+    const STRICT: usize = 791;
+    const LOSSY: usize = 215;
+    assert!(
+        covered >= STRICT,
+        "strict round trips fell from {STRICT} to {covered}"
+    );
+    assert!(
+        lossy <= LOSSY,
+        "reported-lossy documents rose from {LOSSY} to {lossy}"
+    );
+    assert_eq!(covered + lossy, STRICT + LOSSY, "the corpus size moved");
 }
 
 #[test]
@@ -298,4 +403,88 @@ fn no_aliased_type_is_named_by_the_map() {
             "`{alias}` resolves through `{through}`, which the map does not name"
         );
     }
+}
+
+/// No ProseMirror name is left to be resolved by map iteration order.
+///
+/// Two Carve types can claim one ProseMirror name, and in both current cases
+/// the second claimant is a profile-vocabulary alias of the first: an
+/// admonition is a div with a type class, an autolink is a link whose text is
+/// its destination. carve-php resolves these correctly by accident - PHP walks
+/// the map in the file's key order, where the owner happens to come first.
+/// This engine walks a sorted map, where the ALIAS wins both times.
+///
+/// That is not a cosmetic difference. `carveDiv` resolving to `admonition`
+/// routed every labelled div down a path that does not carry the label, so
+/// `:::[First]` came back as a bare div with the word gone and nothing
+/// reported dropped. `from_pm.rs` names the owner explicitly; this test fails
+/// if the map grows a collision that list has not been told about.
+#[test]
+fn no_prose_mirror_name_resolves_by_alphabet() {
+    const OWNED: &[(&str, &str)] = &[("carveDiv", "div"), ("link", "link")];
+
+    let map: Value = serde_json::from_str(SCHEMA_MAP).expect("the vendored map is valid JSON");
+    let types = map["types"].as_object().expect("the map names types");
+
+    let mut claims: std::collections::BTreeMap<String, Vec<String>> = Default::default();
+    for (carve_type, entry) in types {
+        let accepts = entry["accepts"]
+            .as_array()
+            .map(|v| {
+                v.iter()
+                    .filter_map(Value::as_str)
+                    .map(str::to_owned)
+                    .collect()
+            })
+            .unwrap_or_else(Vec::new);
+        for name in mapped_names(&map, carve_type).into_iter().chain(accepts) {
+            claims.entry(name).or_default().push(carve_type.clone());
+        }
+    }
+
+    for (name, mut owners) in claims {
+        if owners.len() < 2 {
+            continue;
+        }
+        owners.sort();
+        let declared = OWNED.iter().find(|(pm, _)| *pm == name);
+        let (_, owner) = declared.unwrap_or_else(|| {
+            panic!(
+                "`{name}` is claimed by {owners:?} and nothing says which owns it - \
+                 the sorted map would hand it to `{}`. Name the owner in from_pm.rs.",
+                owners[0]
+            )
+        });
+        assert!(
+            owners.iter().any(|t| t == owner),
+            "`{name}` is declared owned by `{owner}`, which no longer claims it: {owners:?}"
+        );
+    }
+}
+
+/// An unstamped admonition title is the opener, not an authored attribute.
+///
+/// The outbound side stamps the opener title under its own key so an authored
+/// `title` attribute can keep `title`. A payload from an editor that does not
+/// stamp it still has to work, and there `title` is all there is - but then it
+/// is the opener, and letting it through the attribute pass as well renders the
+/// words twice: once as the visible title, once as `title="..."`.
+#[test]
+fn an_unstamped_admonition_title_does_not_become_an_attribute() {
+    let payload = json!({"type": "doc", "content": [{
+        "type": "carveDiv",
+        "attrs": {"class": "note", "title": "Heads up"},
+        "content": [{"type": "paragraph", "content": [{"type": "text", "text": "Body."}]}]
+    }]});
+    let doc = from_prosemirror(&payload.to_string()).expect("the payload converts");
+    let html = render_html(&doc).unwrap();
+
+    assert!(
+        html.contains("Heads up"),
+        "the opener title is rendered: {html}"
+    );
+    assert!(
+        !html.contains("title=\"Heads up\""),
+        "the opener must not also be an authored attribute: {html}"
+    );
 }
