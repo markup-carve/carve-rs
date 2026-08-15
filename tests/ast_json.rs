@@ -78,6 +78,17 @@ fn normalize(mut doc: carve::Document) -> carve::Document {
     /// wire format writes `[H](#H)` where the original writes `[H][]`. carve-php
     /// has the same gap (carve-php#711). Erased here so the round trip measures
     /// what the FORMAT carries, with the gap stated rather than hidden.
+    /// THIS WALK MIRRORS `resolve_reference_links_inline`, and the completeness
+    /// is the point rather than the coverage. The resolver is what SETS the
+    /// flag, so any container it descends into can carry one - and a container
+    /// missing here does not hide a difference, it invents one: the parsed side
+    /// keeps `true`, the decoded side has the default, and the sweep fails on a
+    /// document that round-trips perfectly well.
+    ///
+    /// It failed exactly that way once. The resolver gained an arm for an inline
+    /// note (markup-carve/carve#1203) and this walk did not, so
+    /// `315-an-inline-note-s-content-resolves-after-the-note-5` reported a
+    /// round-trip mismatch on a field the format does not carry.
     fn inlines(nodes: &mut [carve::InlineNode]) {
         for node in nodes {
             match node {
@@ -87,6 +98,24 @@ fn normalize(mut doc: carve::Document) -> carve::Document {
                 }
                 carve::InlineNode::Emphasis(e) => inlines(&mut e.children),
                 carve::InlineNode::Span(sp) => inlines(&mut sp.children),
+                carve::InlineNode::Extension(e) => inlines(&mut e.children),
+                carve::InlineNode::Footnote(f) => {
+                    if let Some(inline) = &mut f.inline {
+                        inlines(inline);
+                    }
+                }
+                carve::InlineNode::CriticInsert(c) => inlines(&mut c.children),
+                carve::InlineNode::CriticDelete(c) => inlines(&mut c.children),
+                carve::InlineNode::CitationGroup(g) => {
+                    for item in &mut g.items {
+                        if let Some(prefix) = &mut item.prefix {
+                            inlines(prefix);
+                        }
+                        if let Some(locator) = &mut item.locator {
+                            inlines(locator);
+                        }
+                    }
+                }
                 _ => {}
             }
         }

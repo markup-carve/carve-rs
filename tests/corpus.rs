@@ -372,6 +372,21 @@ const IMPLEMENTED: &[&str] = &[
     "a-note-s-content-recognizes-no-note",
     "a-reference-link-s-text-survives-its-own-frame",
     "an-empty-inline-note-is-literal",
+    // markup-carve/carve#1203, #1206 and the pin move behind them, nineteen
+    // documents in three categories. Every one was rendered through this engine
+    // and diffed against its committed HTML - and against carve-js f05f3a7 on
+    // all five targets - before being listed here.
+    //
+    // Three needed an engine change, all in
+    // `an-inline-note-s-content-resolves-after-the-note` (documents 3, 4 and 5):
+    // a reference link, an image reference and a collapsed reference inside a
+    // note's content did not resolve. The `carve` and `markdown` rows of
+    // `an-image-s-alt-text-closes-where-a-link-s-text-closes` and
+    // `an-editorial-comment-s-bracket-is-content-not-the-close` were the writer
+    // half, fixed one branch earlier; their HTML already matched at the old pin.
+    "an-editorial-comment-s-bracket-is-content-not-the-close",
+    "an-image-s-alt-text-closes-where-a-link-s-text-closes",
+    "an-inline-note-s-content-resolves-after-the-note",
 ];
 
 fn corpus_dir() -> PathBuf {

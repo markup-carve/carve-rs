@@ -14650,6 +14650,35 @@ fn resolve_reference_links_inline(
                 resolve_reference_links_inline(&mut e.children, defs, heading_index);
                 out.push(node);
             }
+            // AN INLINE NOTE'S CONTENT IS ORDINARY INLINE CONTENT
+            // (markup-carve/carve#1203). PART 9 §16 disables FOOTNOTE
+            // recognition inside a note and says nothing about references, so a
+            // reference written there resolves like any other. This walk had no
+            // arm for it, so `^[see [t][r]]` reached the reader as literal text
+            // while `*[t][r]*` one node over resolved.
+            //
+            // The crossref pass a few hundred lines up already descends here,
+            // which is why `^[see </#h>]` worked and this did not: one rule,
+            // two walks, and only one of them complete.
+            InlineNode::Footnote(f) => {
+                if let Some(inline) = &mut f.inline {
+                    resolve_reference_links_inline(inline, defs, heading_index);
+                }
+                out.push(node);
+            }
+            // The same gap, measured rather than assumed: both critic ranges
+            // hold inline children and both left a reference inside them
+            // unresolved. `CriticSubstitute` and `CriticComment` are NOT here
+            // because they hold strings rather than children - there is nothing
+            // to descend into, and an arm for them could not fail.
+            InlineNode::CriticInsert(c) => {
+                resolve_reference_links_inline(&mut c.children, defs, heading_index);
+                out.push(node);
+            }
+            InlineNode::CriticDelete(c) => {
+                resolve_reference_links_inline(&mut c.children, defs, heading_index);
+                out.push(node);
+            }
             InlineNode::CitationGroup(g) => {
                 for item in &mut g.items {
                     if let Some(prefix) = &mut item.prefix {
