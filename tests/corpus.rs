@@ -393,6 +393,12 @@ const IMPLEMENTED: &[&str] = &[
     // controls, the shapes the reordered slot must NOT change. The other four
     // carry a block after a marker run and needed the engine change.
     "cell-attributes-bind-after-the-kind-and-alignment-markers",
+    // Added with the spec bump to carve 395c083 (markup-carve/carve#1229). Both
+    // documents already matched, HTML and `.fmt` sidecar alike: the writer
+    // stopped emitting the spaced form one release earlier
+    // (markup-carve/carve-rs#987). What was missing was the corpus pin that says
+    // so, which is what makes a regression here visible.
+    "the-canonical-writer-glues-a-code-fence-to-its-info-string",
 ];
 
 fn corpus_dir() -> PathBuf {
@@ -973,4 +979,8 @@ corpus_test!(
 corpus_test!(
     c_cell_attributes_bind_after_the_kind_and_alignment_markers,
     "cell-attributes-bind-after-the-kind-and-alignment-markers"
+);
+corpus_test!(
+    c_the_canonical_writer_glues_a_code_fence_to_its_info_string,
+    "the-canonical-writer-glues-a-code-fence-to-its-info-string"
 );
