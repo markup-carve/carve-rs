@@ -151,6 +151,7 @@ impl<'a> Importer<'a> {
                 | "blockquote"
                 | "ul"
                 | "ol"
+                | "dl"
                 | "pre"
                 | "hr"
                 | "table"
@@ -442,6 +443,9 @@ impl<'a> Importer<'a> {
                 pos: None,
             })]);
         }
+        if tag == "dl" {
+            return self.definition_list(h, path, depth, attrs);
+        }
         if tag == "table" {
             return Ok(vec![BlockNode::Table(self.table(h, path, depth, attrs)?)]);
         }
@@ -473,6 +477,143 @@ impl<'a> Importer<'a> {
             path,
         );
         self.blocks(&children, path, depth + 1)
+    }
+    /// `<dl>` to `definition_list`.
+    ///
+    /// Before this the element had no branch at all, so it fell through to the
+    /// unwrapping path: every term and every definition became inline content
+    /// of one paragraph, and a two-entry glossary imported as a single run of
+    /// words with no separator between a term and its own definition. The
+    /// diagnostics said `element-unwrapped`, which is true of the element and
+    /// says nothing about the document losing its structure.
+    ///
+    /// HTML5 gives `dl` two content models: `dt`/`dd` as direct children, or
+    /// one `div` per group wrapping them. Both spell the same list, so the
+    /// wrapper is unwrapped transparently - one level, which is the only level
+    /// HTML5 allows. A `div` nested inside a wrapper is not a group; its terms
+    /// stay unread rather than this importer inventing a flattening the source
+    /// did not say.
+    ///
+    /// A group is a run of terms followed by a run of definitions, which is the
+    /// same grouping the parser builds from `::` and `:` lines, so an imported
+    /// list and a hand-written one produce the same tree.
+    fn definition_list(
+        &mut self,
+        h: &Handle,
+        path: &str,
+        depth: usize,
+        attrs: Option<Attrs>,
+    ) -> Result<Vec<BlockNode>, HtmlImportError> {
+        let mut entries: Vec<(String, Handle)> = Vec::new();
+        for (i, child) in h.children.borrow().iter().enumerate() {
+            let Some(tag) = Self::tag(child) else {
+                continue;
+            };
+            match tag.as_str() {
+                "dt" | "dd" => entries.push((tag, child.clone())),
+                "div" => {
+                    let p = format!("{path}/div[{}]", i + 1);
+                    // The wrapper groups rows for styling and carries nothing
+                    // the `::` form spells, so it goes. Its attributes are read
+                    // anyway: that is what reports a `style` or an event
+                    // handler on it, and what makes an id or a class it does
+                    // carry a stated loss rather than a silent one.
+                    if self.attrs(child, &p).is_some() {
+                        self.diag(
+                            HtmlImportDiagnosticCode::AttributeDropped,
+                            "Dropped the attributes of a <div> group wrapper in <dl>; a definition-list group has no slot for them".into(),
+                            HtmlImportSeverity::Info,
+                            &p,
+                        );
+                    }
+                    for (j, wrapped) in child.children.borrow().iter().enumerate() {
+                        let Some(inner) = Self::tag(wrapped) else {
+                            continue;
+                        };
+                        if inner == "dt" || inner == "dd" {
+                            entries.push((inner, wrapped.clone()));
+                        } else {
+                            // One level unwraps, which is the only level HTML5
+                            // allows, so a `div` inside the wrapper is not a
+                            // group. It is still reported: a doubly-wrapped
+                            // list otherwise imports to nothing at all, which
+                            // is the silent shape this row exists to remove.
+                            self.dropped_in_dl(&inner, &format!("{p}/{inner}[{}]", j + 1));
+                        }
+                    }
+                }
+                other => self.dropped_in_dl(&other, &format!("{path}/{other}[{}]", i + 1)),
+            }
+        }
+
+        let mut before: Vec<BlockNode> = Vec::new();
+        let mut items: Vec<DefinitionItem> = Vec::new();
+        let mut terms: Vec<DefinitionTerm> = Vec::new();
+        let mut definitions: Vec<DefinitionDef> = Vec::new();
+        for (i, (tag, node)) in entries.iter().enumerate() {
+            let p = format!("{path}/{tag}[{}]", i + 1);
+            if tag == "dt" {
+                if !definitions.is_empty() {
+                    items.push(DefinitionItem {
+                        terms: std::mem::take(&mut terms),
+                        definitions: std::mem::take(&mut definitions),
+                        pos: None,
+                    });
+                }
+                terms.push(DefinitionTerm {
+                    attrs: self.attrs(node, &p),
+                    children: self.inlines(&node.children.borrow(), &p, depth + 1)?,
+                    pos: None,
+                });
+                continue;
+            }
+            if terms.is_empty() && definitions.is_empty() {
+                // A `dd` before any `dt` is not valid HTML5, but a sliced-up
+                // editor export produces one. It cannot become a group: a
+                // definition line under an empty `::` re-parses as a paragraph,
+                // so writing one would trade a silent loss for a corrupt
+                // document. The content is emitted ahead of the list instead,
+                // which keeps every word and stays valid Carve, and the
+                // diagnostic states the role that did not survive.
+                self.diag(
+                    HtmlImportDiagnosticCode::ElementUnwrapped,
+                    "A <dd> with no <dt> before it kept its content but not its role: it is emitted as blocks ahead of the definition list".into(),
+                    HtmlImportSeverity::Warning,
+                    &p,
+                );
+                before.extend(self.blocks(&node.children.borrow(), &p, depth + 1)?);
+                continue;
+            }
+            definitions.push(DefinitionDef {
+                attrs: self.attrs(node, &p),
+                children: self.blocks(&node.children.borrow(), &p, depth + 1)?,
+                pos: None,
+            });
+        }
+        if !terms.is_empty() || !definitions.is_empty() {
+            items.push(DefinitionItem {
+                terms,
+                definitions,
+                pos: None,
+            });
+        }
+        if items.is_empty() {
+            return Ok(before);
+        }
+        before.push(BlockNode::DefinitionList(DefinitionList {
+            attrs,
+            items,
+            pos: None,
+        }));
+        Ok(before)
+    }
+    fn dropped_in_dl(&mut self, tag: &str, path: &str) {
+        self.diag(
+            HtmlImportDiagnosticCode::ElementDropped,
+            format!("Dropped <{tag}> inside <dl>: only <dt>, <dd> and a single <div> group wrapper are definition-list content"),
+            HtmlImportSeverity::Warning,
+            path,
+        );
     }
     fn table(
         &mut self,
