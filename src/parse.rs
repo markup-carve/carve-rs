@@ -416,9 +416,6 @@ fn fill_crossref_hrefs(doc: &mut Document, lowercase_ids: bool) {
                 BlockNode::Paragraph(p) => inlines(&mut p.children, index),
                 BlockNode::Heading(h) => inlines(&mut h.children, index),
                 BlockNode::BlockQuote(b) => {
-                    if let Some(attribution) = &mut b.attribution {
-                        inlines(attribution, index);
-                    }
                     blocks(&mut b.children, index);
                 }
                 BlockNode::Div(d) => blocks(&mut d.children, index),
@@ -2810,9 +2807,6 @@ fn fill_offsets(blocks: &mut [BlockNode], line_starts: &[usize]) {
                 }
             }
             BlockNode::BlockQuote(b) => {
-                if let Some(attribution) = &mut b.attribution {
-                    apply_inline_offsets(attribution, line_starts);
-                }
                 fill_offsets(&mut b.children, line_starts);
             }
             BlockNode::Div(d) => fill_offsets(&mut d.children, line_starts),
@@ -5077,21 +5071,22 @@ fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     }
     let inner = inner.into_source();
     let children = parse_mapped_source(&inner, options);
-    let mut quote = BlockQuote {
+    let quote = BlockQuote {
         pos: span_of(cur, span_start, cur.pos, options),
         attrs: None,
-        attribution: None,
         children,
     };
-    // PART 9 §4a: the caption on a quote is its ATTRIBUTION, so no figure wraps
-    // it - it takes no number, and nothing walking the tree for figures finds
-    // it (carve#1159). The span still runs from the quote's first line through
-    // the caption the cursor just consumed.
-    if let Some(attribution) = consume_attribution(cur, options) {
-        quote.attribution = Some(attribution);
-        quote.pos = span_of(cur, span_start, cur.pos, options);
+    if let Some(caption) = consume_caption(cur, options) {
+        BlockNode::Figure(Figure {
+            attrs: None,
+            target: FigureTarget::BlockQuote(quote),
+            caption,
+            short_caption: None,
+            pos: span_of(cur, span_start, cur.pos, options),
+        })
+    } else {
+        BlockNode::BlockQuote(quote)
     }
-    BlockNode::BlockQuote(quote)
 }
 
 fn is_list_marker(line: &str) -> bool {
@@ -8676,13 +8671,6 @@ fn image_is_block(cur: &mut LineCursor) -> bool {
     let interrupts = interrupts_paragraph(cur, &next_owned);
     cur.pos = saved;
     interrupts
-}
-
-/// A quote's attribution (PART 9 §4a): the same slot as a caption, parsed
-/// without caption context so a bare `#` stays literal - an attribution has no
-/// number to place, and §4a says the placeholder does not resolve there.
-fn consume_attribution(cur: &mut LineCursor, options: &Options<'_>) -> Option<Vec<InlineNode>> {
-    consume_caption_slot(cur, options, false)
 }
 
 fn consume_caption(cur: &mut LineCursor, options: &Options<'_>) -> Option<Vec<InlineNode>> {
@@ -13744,9 +13732,6 @@ fn apply_abbreviations_block(block: &mut BlockNode, index: &AbbreviationIndex<'_
             }
         }
         BlockNode::BlockQuote(b) => {
-            if let Some(attribution) = &mut b.attribution {
-                apply_abbreviations_inline(attribution, index);
-            }
             for child in &mut b.children {
                 apply_abbreviations_block(child, index);
             }
@@ -14432,9 +14417,6 @@ fn resolve_reference_links_block(
             }
         }
         BlockNode::BlockQuote(b) => {
-            if let Some(attribution) = &mut b.attribution {
-                resolve_reference_links_inline(attribution, defs, heading_index);
-            }
             for child in &mut b.children {
                 resolve_reference_links_block(child, defs, heading_index);
             }
@@ -15340,9 +15322,6 @@ fn coalesce_block(block: &mut BlockNode) {
             }
         }
         BlockNode::BlockQuote(b) => {
-            if let Some(attribution) = &mut b.attribution {
-                coalesce_inlines(attribution);
-            }
             for child in &mut b.children {
                 coalesce_block(child);
             }

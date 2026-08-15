@@ -324,7 +324,6 @@ impl Builder {
             Frame::BlockQuote(children) => self.block(BlockNode::BlockQuote(BlockQuote {
                 attrs: None,
                 children,
-                attribution: None,
                 pos: None,
             })),
             Frame::List {

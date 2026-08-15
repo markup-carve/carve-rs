@@ -391,9 +391,6 @@ fn walk_block(node: &BlockNode, visit: &mut Visit<'_>) {
 fn walk_block_quote(n: &BlockQuote, visit: &mut Visit<'_>) {
     report("block_quote", &n.attrs, n.pos, visit);
     walk_blocks(&n.children, visit);
-    if let Some(attribution) = &n.attribution {
-        walk_inlines(attribution, visit);
-    }
 }
 
 fn walk_table(n: &Table, visit: &mut Visit<'_>) {

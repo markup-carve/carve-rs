@@ -84,25 +84,6 @@ fn ansi_parity() {
 }
 
 #[test]
-fn blockquote_attribution_stays_attached_in_non_html_renderers() {
-    // This pinned the OPPOSITE - the attribution as a sibling separated by a
-    // blank line - and that spacing was the defect (PART 11 §10c). The words
-    // survived, the attachment did not: re-read, the attribution was a paragraph
-    // that merely followed a quotation rather than its source.
-    let input = "> q\n^ Attr";
-
-    assert_eq!(
-        carve::to_markdown(input),
-        "> q\n>\n> <footer>Attr</footer>\n"
-    );
-    assert_eq!(carve::to_plain_text(input), "\"q\"\nAttr\n");
-    assert_eq!(
-        carve::to_ansi(input),
-        "\x1b[36m\x1b[2m│\x1b[0m q\n\x1b[36m\x1b[2m│\x1b[0m\n\x1b[36m\x1b[2m│\x1b[0m \x1b[3m\x1b[2mAttr\x1b[0m\n"
-    );
-}
-
-#[test]
 fn markdown_code_fence_keeps_quoted_header() {
     assert_eq!(
         carve::to_markdown("```js \"Title\"\nx\n```"),

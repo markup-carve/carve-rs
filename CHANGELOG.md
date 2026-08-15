@@ -198,15 +198,6 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   around it, so `[x]{#k .key kbd}` is `<kbd id="k" class="key">x</kbd>`, and
   where nothing is left over there is no wrapper at all. A derived `title` or
   `datetime` yields to an authored one of the same name.
-- **A caption on a block quote is now that quote's attribution** (PART 9 §4a,
-  markup-carve/carve#1159). `> To be` followed by `^ Hamlet` no longer parses as
-  a `figure` wrapping a `block_quote`; it is a `block_quote` carrying an
-  `attribution`, and HTML renders `<footer>Hamlet</footer>` inside the
-  `<blockquote>` rather than a `<figure>` / `<figcaption>` pair. A quote is not
-  a figure, takes no number, and no longer turns up in a walk for figures. The
-  Markdown, plain-text, ANSI and Carve writers all carry the attribution, and
-  the HTML importer reads a trailing `<footer>` in a `<blockquote>` back as the
-  attribution so the renderer's own output round-trips.
 - **Every `<th>` carries a `scope`** (PART 10 §T9, markup-carve/carve#1159).
   `col` for a header cell in the head-row run, `row` for one below it, on pipe
   tables and list tables alike. An authored `scope` replaces the emitted one
@@ -517,18 +508,6 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   AST-ingest path and used to write the caption with no separator at all,
   welding the words onto the last data cell (`| a |Fruit prices` on Markdown,
   `aFruit prices` on plain text).
-
-- **A quote attribution stays attached to its quote on every target**
-  (markup-carve/carve#1179, PART 11 §10c). It used to follow the quote as a
-  sibling separated by a blank line, which kept the words but not what they
-  mean - read back the attribution was attached to nothing, and a round trip
-  produced a blockquote with no attribution at all. Markdown now emits a
-  `<footer>` element inside the quote (that target already writes `<u>`,
-  `<mark>` and `<ins>` where Markdown has no spelling, and through a CommonMark
-  reader `<footer>` opens an HTML block rather than being wrapped in a
-  paragraph, so the rendered HTML matches the HTML target's); the terminal
-  carries its quote bar onto the attribution line; plain text attaches by
-  adjacency, dropping the blank line. A quote with no attribution is unchanged.
 
 - **An authored `abbr` wins on the Markdown, ANSI and plain targets**
   (markup-carve/carve#1176). markup-carve/carve#1127 ruled that an explicit

@@ -96,36 +96,26 @@ fn an_item_with_only_its_marker_line_is_unchanged() {
     assert_eq!(children.len(), 1);
 }
 
-/// A quote carrying an attribution kept line and column and offsets of 0..0:
-/// the walk filled its children and its attribution and skipped the quote
-/// itself, so the quote reported a span that selects nothing and every block
-/// inside it fell outside its own parent (carve#565).
-///
-/// The fixture used to reach the quote through a figure wrapping it. §4a
-/// removed that wrapper - the caption is the quote's attribution now
-/// (carve#1159) - so the quote is a direct child, and the span it has to get
-/// right is its own.
+/// A captioned quote and its target both carry real, nested offsets.
 #[test]
-fn an_attributed_quote_carries_real_offsets() {
+fn a_captioned_quote_carries_real_offsets() {
     let source = "Intro\n\n> Stay hungry\n^ Steve Jobs\n";
     let doc = document(source);
-    let BlockNode::BlockQuote(quote) = &doc.children[1] else {
-        panic!("expected a quote second, got {:?}", doc.children[1]);
+    let BlockNode::Figure(figure) = &doc.children[1] else {
+        panic!("expected a figure second, got {:?}", doc.children[1]);
     };
-    assert!(
-        quote.attribution.is_some(),
-        "the caption line did not attach as an attribution"
-    );
-    let pos = quote.pos.expect("the quote carries no position");
+    let carve::ast::FigureTarget::BlockQuote(quote) = &figure.target else {
+        panic!("expected a block quote target");
+    };
+    let pos = figure.pos.expect("the figure carries no position");
 
     assert!(
         pos.end_offset > pos.start_offset,
-        "quote span is empty: [{}, {}]",
+        "figure span is empty: [{}, {}]",
         pos.start_offset,
         pos.end_offset,
     );
-    // The span runs from the quote's first line THROUGH the attribution, so it
-    // contains every child and the attribution alike.
+    // The figure span runs from the quote through its caption.
     for child in &quote.children {
         let child_pos = child_pos(child).expect("a child of the quote carries no position");
         assert!(
