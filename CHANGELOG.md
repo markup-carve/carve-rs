@@ -198,6 +198,38 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **A table cell's attribute block binds after the kind and alignment markers**
+  (PART 9 §5 T10, markup-carve/carve#1226). One order, both productions: `=`,
+  then the alignment marker, then the block, glued to whatever precedes it.
+  `|={.total} Total |`, `|=~{#score} Score |` and `|>{.num} 9 |` set the cell's
+  attributes; before this the braces reached the output as text, because the
+  slot was read ahead of the markers and nothing after them was looked at.
+
+  What that cost: an attributed HEADER cell had no spelling at all. The only
+  shape available, `|{#x}=R|`, is ambiguous by construction, and this grammar
+  reads it as a data cell whose content starts with `=`, so the canonical
+  writer's own output for `<th id="x">R</th>` came back as
+  `<td id="x">=R</td>` and the PART 11 §1 round-trip invariant failed on it.
+
+  This REINTERPRETS one released spelling rather than erroring on it:
+  `|{#x}< content |` was documented as attributes followed by a left-alignment
+  marker, and the `<` is no longer in a marker position, so it is literal
+  content and the cell is not aligned. That document already rendered
+  `<td id="x">&lt; content</td>` here, so no output moves; what moves is the
+  documented reading. Row attributes are unchanged - they still glue to the
+  row's closing `|`.
+
+  The canonical writer emits the new order, which is the migration: a table
+  written to the old spelling is rewritten by `carve fmt`. It also parts a
+  cell's marker run from content that opens a valid attribute block with one
+  space (`|= {.x} y |`), so a cell whose text begins with a brace keeps it.
+
+  A header row carrying attributes is no longer written as data cells under a
+  bare `|---|` delimiter row. That fallback existed for the two header shapes
+  the grammar could not spell, and an attributed header cell is not one of them
+  any more: `|={#x} R |= B |` is written as itself. A span marker promoted to a
+  header cell is still unspellable and keeps the fallback.
+
 - **HTML import maps the seven semantic elements to the span attribute that
   spells them** (PART 9 §10, markup-carve/carve#1140). `<kbd>Tab</kbd>` imported
   as `Tab`, with an `element-unwrapped` diagnostic recording the loss, and an
