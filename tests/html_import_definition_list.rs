@@ -220,3 +220,46 @@ fn a_definition_list_between_paragraphs_stays_its_own_block() {
         "Before\n\n:: T\n:  D\n\nAfter\n"
     );
 }
+
+/// The importer's node and depth limits are what make it safe on untrusted
+/// HTML, and a walk of its own has to pay into them or they are limits the
+/// input can step around. The group wrapper is the case that matters: it is
+/// not a node in the result, but it is a level of nesting and of recursion.
+#[test]
+fn the_definition_list_walk_pays_into_the_importers_limits() {
+    let many_terms = format!("<dl>{}</dl>", "<dt></dt>".repeat(64));
+    assert_eq!(
+        html_to_ast(
+            &many_terms,
+            &HtmlImportOptions {
+                max_nodes: 8,
+                ..Default::default()
+            },
+        )
+        .unwrap_err(),
+        carve::HtmlImportError::NodeLimit
+    );
+
+    // A group wrapper costs a level of depth: the same chain of definitions
+    // fits without one and does not fit with one.
+    let nest = |open: &str, close: &str, n: usize| {
+        let mut html = String::new();
+        for _ in 0..n {
+            html.push_str(open);
+        }
+        html.push('x');
+        for _ in 0..n {
+            html.push_str(close);
+        }
+        html
+    };
+    let options = HtmlImportOptions {
+        max_depth: 18,
+        ..Default::default()
+    };
+    assert!(html_to_ast(&nest("<dl><dd>", "</dd></dl>", 4), &options).is_ok());
+    assert_eq!(
+        html_to_ast(&nest("<dl><div><dd>", "</dd></div></dl>", 4), &options).unwrap_err(),
+        carve::HtmlImportError::DepthLimit
+    );
+}

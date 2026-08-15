@@ -504,13 +504,20 @@ impl<'a> Importer<'a> {
         depth: usize,
         attrs: Option<Attrs>,
     ) -> Result<Vec<BlockNode>, HtmlImportError> {
-        let mut entries: Vec<(String, Handle)> = Vec::new();
+        // Each entry carries the depth of the element it came from, so a term
+        // reached through a group wrapper descends from one level deeper than a
+        // direct one. `enter` is called for every element this walk visits: the
+        // wrapper is not a node in the result, but it is a level of nesting and
+        // of recursion, and a limit a wrapper chain can step around is not a
+        // limit.
+        let mut entries: Vec<(String, Handle, usize)> = Vec::new();
         for (i, child) in h.children.borrow().iter().enumerate() {
             let Some(tag) = Self::tag(child) else {
                 continue;
             };
+            self.enter(depth + 1)?;
             match tag.as_str() {
-                "dt" | "dd" => entries.push((tag, child.clone())),
+                "dt" | "dd" => entries.push((tag, child.clone(), depth + 1)),
                 "div" => {
                     let p = format!("{path}/div[{}]", i + 1);
                     // The wrapper groups rows for styling and carries nothing
@@ -530,8 +537,9 @@ impl<'a> Importer<'a> {
                         let Some(inner) = Self::tag(wrapped) else {
                             continue;
                         };
+                        self.enter(depth + 2)?;
                         if inner == "dt" || inner == "dd" {
-                            entries.push((inner, wrapped.clone()));
+                            entries.push((inner, wrapped.clone(), depth + 2));
                         } else {
                             // One level unwraps, which is the only level HTML5
                             // allows, so a `div` inside the wrapper is not a
@@ -550,7 +558,7 @@ impl<'a> Importer<'a> {
         let mut items: Vec<DefinitionItem> = Vec::new();
         let mut terms: Vec<DefinitionTerm> = Vec::new();
         let mut definitions: Vec<DefinitionDef> = Vec::new();
-        for (i, (tag, node)) in entries.iter().enumerate() {
+        for (i, (tag, node, node_depth)) in entries.iter().enumerate() {
             let p = format!("{path}/{tag}[{}]", i + 1);
             if tag == "dt" {
                 if !definitions.is_empty() {
@@ -562,7 +570,7 @@ impl<'a> Importer<'a> {
                 }
                 terms.push(DefinitionTerm {
                     attrs: self.attrs(node, &p),
-                    children: self.inlines(&node.children.borrow(), &p, depth + 1)?,
+                    children: self.inlines(&node.children.borrow(), &p, node_depth + 1)?,
                     pos: None,
                 });
                 continue;
@@ -581,12 +589,12 @@ impl<'a> Importer<'a> {
                     HtmlImportSeverity::Warning,
                     &p,
                 );
-                before.extend(self.blocks(&node.children.borrow(), &p, depth + 1)?);
+                before.extend(self.blocks(&node.children.borrow(), &p, node_depth + 1)?);
                 continue;
             }
             definitions.push(DefinitionDef {
                 attrs: self.attrs(node, &p),
-                children: self.blocks(&node.children.borrow(), &p, depth + 1)?,
+                children: self.blocks(&node.children.borrow(), &p, node_depth + 1)?,
                 pos: None,
             });
         }
