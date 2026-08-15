@@ -424,3 +424,27 @@ fn an_explicitly_empty_value_is_the_bare_boolean() {
         assert_eq!(result.value, carve, "{html}");
     }
 }
+
+/// `<table><caption>` is how HTML captions a table, and it is what pandoc emits
+/// for every captioned table. The row walk looks only for `tr`, so the caption
+/// element was skipped and its text left the document with no diagnostic at all.
+/// The slot was already there: `Table::caption` exists, the parser fills it, and
+/// Carve spells it `^ text` after the rows (carve-js#1071 is the same gap).
+#[test]
+fn a_table_keeps_its_own_caption_on_import() {
+    let result = html_to_carve(
+        "<table><caption>Fruit prices</caption><thead><tr><th>A</th></tr></thead><tbody><tr><td>1</td></tr></tbody></table>",
+        &HtmlImportOptions::default(),
+    )
+    .unwrap();
+    assert!(
+        result.value.contains("^ Fruit prices"),
+        "the table caption was dropped: {}",
+        result.value
+    );
+    assert!(
+        result.report.diagnostics.is_empty(),
+        "a representable caption should report nothing: {:?}",
+        result.report.diagnostics
+    );
+}
