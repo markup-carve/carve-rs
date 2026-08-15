@@ -253,6 +253,24 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`<ol type="a">` imports as a numbering style, not as nothing.** `type` was
+  on the list of attributes the HTML importer does not report, which read as
+  handled and was not: nothing ever set `List::ol_type`, so the value was
+  dropped without a word and an `<ol type="a">` imported as a decimal list.
+  Carve spells all four styles in the marker itself - `a.`, `A.`, `i.`, `I.` -
+  so the marker is where the style now goes, which also makes it work at any
+  depth. `type="1"` is the decimal default and stays plain. Three shapes have
+  markers this engine's own parser reads back as a different list - an
+  alphabetic sequence running past `z`, a one-item alphabetic list at position 9
+  whose `i.` reads as Roman, and a one-item Roman list at 5, 10, 50, 100, 500 or
+  1000 whose lone letter reads as alphabetic. Those keep the raw `type`
+  attribute, which still renders the right `<ol>`, and now say so.
+
+- **`<ins>` keeps its element on HTML import.** It had no branch, so an
+  insertion fell through to the unwrapping path: the element was lost and the
+  import reported it as unsupported markup, though Carve spells it `{+ +}` and
+  renders that straight back to `<ins>`.
+
 - **A definition list survives HTML import.** `<dl>` had no branch in the
   importer, so the element fell through to the unwrapping path: every `<dt>` and
   every `<dd>` became inline content of one paragraph, and a two-entry glossary
