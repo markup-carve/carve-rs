@@ -99,6 +99,13 @@ struct Importer<'a> {
     nodes: usize,
 }
 
+/// The largest position a Roman marker is written for: `MMMCMXCIX`, the end of
+/// the classic range. Past it the additive form grows without bound - the
+/// marker for position `n` carries `n / 1000` copies of `m` - and `start` is an
+/// author-supplied integer, so the cap is what stops a twenty-byte attribute
+/// from buying an arbitrarily large marker once per item.
+const MAX_ROMAN_MARKER: usize = 3999;
+
 impl<'a> Importer<'a> {
     fn enter(&mut self, depth: usize) -> Result<(), HtmlImportError> {
         if depth > self.opts.max_depth {
@@ -430,11 +437,17 @@ impl<'a> Importer<'a> {
             } else {
                 None
             };
+            let mut attrs = attrs;
+            let ol_type = if ordered {
+                self.ordered_list_type(h, start.unwrap_or(1), items.len(), &mut attrs, path)
+            } else {
+                None
+            };
             return Ok(vec![BlockNode::List(List {
                 attrs,
                 ordered,
                 start,
-                ol_type: None,
+                ol_type,
                 bare_marker: false,
                 delim: None,
                 bullet_char: None,
@@ -477,6 +490,87 @@ impl<'a> Importer<'a> {
             path,
         );
         self.blocks(&children, path, depth + 1)
+    }
+    /// The numbering style this `<ol>` is written with, or `None` for decimal.
+    ///
+    /// `type` was on the list of attributes the importer does not report, which
+    /// read as "handled" and was not: nothing ever set `List::ol_type`, so an
+    /// `<ol type="a">` imported as a decimal list and the style left the
+    /// document without a word. Carve spells all four styles in the MARKER, so
+    /// the marker is where the style goes - and being in the marker it works at
+    /// any depth, where an attribute block on a nested list would not.
+    ///
+    /// `None` is also the answer for the shapes whose markers this engine's own
+    /// parser reads back as a different list, because a marker that re-parses
+    /// wrong is worse than an attribute that at least renders the right `<ol>`.
+    /// The three shapes were measured against `parse` rather than reasoned
+    /// about, since the overlap between one-letter alphabetic markers and Roman
+    /// numerals is resolved by the parser and not by a rule stated anywhere:
+    ///
+    /// - an alphabetic sequence that would run past `z` (`aa.` is not a marker);
+    /// - a one-item alphabetic list at position 9, whose `i.` reads as Roman;
+    /// - a one-item Roman list at 5, 10, 50, 100, 500 or 1000, whose `v.`,
+    ///   `x.`, `l.`, `c.`, `d.` or `m.` reads as alphabetic. Position 1 is not
+    ///   among them: the parser resolves a lone `i.` to Roman, which is what it
+    ///   would have meant;
+    /// - a Roman list running past `MMMCMXCIX`, where the additive form stops
+    ///   being a numeral anyone reads and starts being a run of `m` whose
+    ///   length is the start value over a thousand. That one is a resource
+    ///   bound as much as a legibility one: `start` is an author-supplied
+    ///   integer, so without it a twenty-byte attribute buys a marker of
+    ///   arbitrary size, once per item.
+    ///
+    /// In those cases the raw `type` is KEPT as an attribute, which still
+    /// renders the right `<ol>`, and the diagnostic says the style could not
+    /// reach the marker. Before this it was dropped in silence.
+    fn ordered_list_type(
+        &mut self,
+        h: &Handle,
+        start: usize,
+        items: usize,
+        attrs: &mut Option<Attrs>,
+        path: &str,
+    ) -> Option<OrderedListType> {
+        let value = Self::attr(h, "type")?;
+        // `1` is the decimal default and the plain marker already means it.
+        if value.is_empty() || value == "1" {
+            return None;
+        }
+        let spelled = match value.as_str() {
+            "a" => Some(OrderedListType::LowerAlpha),
+            "A" => Some(OrderedListType::UpperAlpha),
+            "i" => Some(OrderedListType::LowerRoman),
+            "I" => Some(OrderedListType::UpperRoman),
+            _ => None,
+        };
+        let last = start.saturating_add(items.saturating_sub(1));
+        let representable = match spelled {
+            Some(OrderedListType::LowerAlpha) | Some(OrderedListType::UpperAlpha) => {
+                start >= 1 && last <= 26 && !(items == 1 && start == 9)
+            }
+            Some(OrderedListType::LowerRoman) | Some(OrderedListType::UpperRoman) => {
+                start >= 1
+                    && last <= MAX_ROMAN_MARKER
+                    && !(items == 1 && matches!(start, 5 | 10 | 50 | 100 | 500 | 1000))
+            }
+            None => false,
+        };
+        if let (Some(ty), true) = (spelled, representable) {
+            return Some(ty);
+        }
+        attrs
+            .get_or_insert_with(Attrs::default)
+            .key_values
+            .insert("type".into(), value.clone());
+        self.diag(
+            HtmlImportDiagnosticCode::RawPreserved,
+            format!(
+                "Kept type=\"{value}\" as a raw attribute on <ol> instead of the marker: this list's markers would read back as a different list"
+            ),
+            HtmlImportSeverity::Info,
+            path,
+        );
+        None
     }
     /// `<dl>` to `definition_list`.
     ///
@@ -781,6 +875,15 @@ impl<'a> Importer<'a> {
             "em" | "i" => emphasis(EmphasisKind::Italic),
             "strong" | "b" => emphasis(EmphasisKind::Strong),
             "del" | "s" | "strike" => emphasis(EmphasisKind::Strike),
+            // `<ins>` has a marker of its own, `{+ +}`, which renders back to
+            // `<ins>`. Without this branch it fell through to the unwrapping
+            // path, so an insertion lost its element AND was reported as
+            // unsupported markup - twice wrong, since Carve can spell it.
+            "ins" => InlineNode::CriticInsert(CriticInsert {
+                attrs,
+                children,
+                pos: None,
+            }),
             "u" => emphasis(EmphasisKind::Underline),
             "mark" => emphasis(EmphasisKind::Highlight),
             "sub" => emphasis(EmphasisKind::Sub),
