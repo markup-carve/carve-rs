@@ -1,0 +1,281 @@
+{
+  "version": 1,
+  "about": "Carve node type to ProseMirror node/mark name, for engines building a Carve <-> ProseMirror bridge. Carve type names are the normative vocabulary from the spec (docs/profiles.md); the ProseMirror names are this package's CarveKit schema. Consumers read this rather than restating the mapping, which is how carve-php once ended up emitting `citation-group` against everyone else's underscores. `pm` is the name CarveKit registers; an optional `accepts` lists further names a bridge should recognize on the way in, for concepts a stock Tiptap extension already spells differently.",
+  "carveSpecVocabulary": "spec/docs/profiles.md",
+  "proseMirrorSchema": "tiptap/carve-kit.js (CarveKit)",
+  "types": {
+    "document": {
+      "kind": "node",
+      "pm": "doc"
+    },
+    "paragraph": {
+      "kind": "node",
+      "pm": "paragraph"
+    },
+    "heading": {
+      "kind": "node",
+      "pm": "heading",
+      "notes": "level plus authored id, classes, and key/value attributes"
+    },
+    "text": {
+      "kind": "node",
+      "pm": "text"
+    },
+    "hard_break": {
+      "kind": "node",
+      "pm": "hardBreak"
+    },
+    "block_quote": {
+      "kind": "node",
+      "pm": "blockquote"
+    },
+    "code_block": {
+      "kind": "node",
+      "pm": "codeBlock",
+      "notes": "language attr; languageRaw carries the unnormalized info string"
+    },
+    "thematic_break": {
+      "kind": "node",
+      "pm": "horizontalRule"
+    },
+    "list": {
+      "kind": "node",
+      "pm": [
+        "bulletList",
+        "orderedList",
+        "taskList"
+      ],
+      "notes": "listType selects; taskList when items carry a task marker"
+    },
+    "list_item": {
+      "kind": "node",
+      "pm": [
+        "listItem",
+        "taskItem"
+      ],
+      "notes": "taskItem inside a taskList"
+    },
+    "table": {
+      "kind": "node",
+      "pm": "table"
+    },
+    "table_row": {
+      "kind": "node",
+      "pm": "tableRow"
+    },
+    "table_cell": {
+      "kind": "node",
+      "pm": [
+        "tableCell",
+        "tableHeader"
+      ],
+      "notes": "tableHeader for `|=` cells"
+    },
+    "image": {
+      "kind": "node",
+      "pm": "image"
+    },
+    "math": {
+      "kind": "node",
+      "pm": "carveMath",
+      "notes": "inline atom; display attr for the `$$` form"
+    },
+    "footnote_ref": {
+      "kind": "node",
+      "pm": "carveFootnote"
+    },
+    "footnote": {
+      "kind": "node",
+      "pm": "carveFootnoteDefinition"
+    },
+    "div": {
+      "kind": "node",
+      "pm": [
+        "carveDiv",
+        "carveTabSet",
+        "carveTab"
+      ],
+      "notes": "carveTabSet/carveTab are the `tabs`/`tab` classes; every other class is carveDiv"
+    },
+    "admonition": {
+      "kind": "node",
+      "pm": "carveDiv",
+      "notes": "profile vocabulary only: an admonition is a div with a type class"
+    },
+    "definition_list": {
+      "kind": "node",
+      "pm": "definitionList"
+    },
+    "definition_term": {
+      "kind": "node",
+      "pm": "definitionTerm"
+    },
+    "definition_description": {
+      "kind": "node",
+      "pm": "definitionDescription"
+    },
+    "figure": {
+      "kind": "node",
+      "pm": "carveFigure"
+    },
+    "caption": {
+      "kind": "node",
+      "pm": "carveCaption"
+    },
+    "line_block": {
+      "kind": "node",
+      "pm": "carveLineBlock"
+    },
+    "raw_block": {
+      "kind": "node",
+      "pm": "carveRawBlock"
+    },
+    "comment": {
+      "kind": "node",
+      "pm": ["carveComment", "carveCommentInline"],
+      "notes": "block attr distinguishes %% line comments from fenced comments"
+    },
+    "mention": {
+      "kind": "node",
+      "pm": [
+        "carveMention",
+        "carveTag"
+      ],
+      "accepts": [
+        "mention"
+      ],
+      "notes": "carveTag for the `#tag` flavor. `accepts` lists names a bridge should ALSO recognize on the way in that CarveKit does not itself register: `mention` is stock tiptap/extension-mention, and refusing it made a plain editor fail on a concept Carve already models fully."
+    },
+    "inline_extension": {
+      "kind": "node",
+      "pm": "carveEmbed",
+      "notes": "partial: only media embeds are modeled, via the directive stamped in carveSource"
+    },
+    "frontmatter": {
+      "kind": "node",
+      "pm": "carveFrontmatter",
+      "notes": "atom; content and format attrs"
+    },
+    "link_reference_definition": {
+      "kind": "node",
+      "pm": "carveLinkRefDef",
+      "notes": "atom; label, href and title attrs. Carrying the definition is what lets a `[text][label]` reference keep its spelling"
+    },
+    "inline_footnote": {
+      "kind": "node",
+      "pm": "carveInlineNote",
+      "notes": "inline content; the number is a resolution artifact and is not carried"
+    },
+    "raw_inline": {
+      "kind": "node",
+      "pm": "carveRawInline",
+      "notes": "inline atom; content and format attrs"
+    },
+    "literal_inline": {
+      "kind": "node",
+      "pm": "carveLiteral",
+      "notes": "inline atom; content attr"
+    },
+    "substitution": {
+      "kind": "node",
+      "pm": "carveSubstitution",
+      "notes": "inline atom; oldText and newText attrs"
+    },
+    "symbol": {
+      "kind": "node",
+      "pm": "carveSymbol",
+      "notes": "inline atom; name attr"
+    },
+    "citation_group": {
+      "kind": "node",
+      "pm": "carveCitation",
+      "notes": "inline atom; raw and integral attrs, plus items whose prefix/locator/suffix are ProseMirror inline arrays"
+    },
+    "heading_ref": {
+      "kind": "node",
+      "pm": "carveCrossref",
+      "notes": "inline atom; target attr. The resolved href is a resolution artifact and is not carried"
+    },
+    "section": {
+      "kind": "node",
+      "pm": "carveSection",
+      "notes": "a rendering wrapper: the bridge hoists its children through a carveSection node so the heading and body survive"
+    },
+    "strong": {
+      "kind": "mark",
+      "pm": "bold"
+    },
+    "emphasis": {
+      "kind": "mark",
+      "pm": "italic"
+    },
+    "underline": {
+      "kind": "mark",
+      "pm": "underline"
+    },
+    "strike": {
+      "kind": "mark",
+      "pm": "strike"
+    },
+    "code": {
+      "kind": "mark",
+      "pm": "code"
+    },
+    "highlight": {
+      "kind": "mark",
+      "pm": "highlight"
+    },
+    "subscript": {
+      "kind": "mark",
+      "pm": "subscript"
+    },
+    "superscript": {
+      "kind": "mark",
+      "pm": "superscript"
+    },
+    "insert": {
+      "kind": "mark",
+      "pm": "carveInsert"
+    },
+    "delete": {
+      "kind": "mark",
+      "pm": "carveDelete"
+    },
+    "critic_comment": {
+      "kind": "mark",
+      "pm": "carveCriticComment",
+      "notes": "content is literal, so it rides on a text node under the mark - the same shape `code` uses"
+    },
+    "span": {
+      "kind": "mark",
+      "pm": "carveSpan",
+      "notes": "carries id, class and extra attributes. Stock tiptap/extension-text-style emits `textStyle`, deliberately NOT accepted: it is a carrier mark for color/fontFamily/fontSize, so mapping it here would put presentational attributes into a Carve document. An application that wants that registers `textStyle` itself."
+    },
+    "abbreviation": {
+      "kind": "mark",
+      "pm": "carveAbbreviation"
+    },
+    "link": {
+      "kind": "mark",
+      "pm": "link"
+    },
+    "autolink": {
+      "kind": "mark",
+      "pm": "link",
+      "notes": "profile vocabulary only: an autolink is a link whose text is its destination"
+    }
+  },
+  "unmapped": {
+    "abbreviation_def": "abbreviation definitions ride on the doc node's attrs",
+    "caption_number": "numbered captions are a resolution artifact, not editor content",
+    "raw_text": "raw text is the payload of a raw block, not a node an editor holds",
+    "escaped_text": "escaping is a source-level concern; the editor holds the escaped character as text",
+    "smart_punctuation": "smart-typography output is lossy on reparse, so it is not modeled",
+    "soft_break": "a soft break is whitespace in the ProseMirror model"
+  },
+  "_provenance": {
+    "source": "markup-carve/carve-grammars tiptap/schema-map.json",
+    "commit": "e09b460c23fceaf532f724f3ef73e0b6a355d4f7",
+    "refresh": "copy the file from carve-grammars and update commit; the schema-map test asserts every AST type still has a decision"
+  }
+}
