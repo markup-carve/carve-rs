@@ -57,6 +57,16 @@ mod wire_fields;
 /// something a consumer can be expected to absorb (carve-rs#404). The writer's
 /// own staging markers moved to U+E010.. to free it.
 pub(crate) const NBSP_PLACEHOLDER: char = '\u{e000}';
+/// The Carve specification version this engine implements.
+///
+/// `carve fmt --stamp` writes it into a document and [`needs_review`] compares
+/// an existing stamp against it, so a stale value tells a reader their document
+/// is current when it is not. It is not kept correct by hand: the test
+/// `the_version_a_build_reports_is_the_one_that_shipped` compares it against the
+/// `Version:` field of the vendored grammar on every run.
+///
+/// The version of the crate itself is `CARGO_PKG_VERSION` - derived from the
+/// manifest, never written out a second time here.
 pub const SPEC_VERSION: &str = "0.1";
 
 pub use ast::*;
