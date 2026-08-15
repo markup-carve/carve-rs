@@ -42,7 +42,10 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   terminal degrade deterministically per PART 11 §10g; the canonical writer
   emits the authored form back; AST JSON gains the additive `figure_group`
   node (PART 12 §16), and the HTML importer reads the engine's own group
-  shape back. An opener carrying a quoted title or a `[label]`, and a bare
+  shape back. The ProseMirror bridge has no editor node for it - the
+  vendored carve-grammars schema map predates §4c - so a group degrades to the
+  generic container there, keeping every panel and the group caption and
+  reporting the grouping it could not hold. An opener carrying a quoted title or a `[label]`, and a bare
   opener nested inside an open group, stay generic containers - `carve lint`
   reports them as `figure-group-opener-metadata` / `figure-group-nested`, and
   a panel-caption placeholder as `figure-group-panel-number`.

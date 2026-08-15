@@ -272,8 +272,15 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // document, so a change that quietly moved hundreds of documents out of
     // the strict set - by reporting a type as dropped rather than carrying it -
     // would not fail anything. Raise these when the numbers improve.
-    const STRICT: usize = 791;
-    const LOSSY: usize = 215;
+    //
+    // 791/215 to 793/224 is the eleven composite-figure documents arriving with
+    // the spec pin, and nothing else: the corpus went from 1006 pairs to 1017,
+    // the eleven added pairs are all `318-composite-figures*`, and no existing
+    // pair changed content. Two of them hold no node the editor schema lacks
+    // and round-trip strictly; the other nine carry a `figure_group`, which
+    // degrades to the generic container and is reported.
+    const STRICT: usize = 793;
+    const LOSSY: usize = 224;
     assert!(
         covered >= STRICT,
         "strict round trips fell from {STRICT} to {covered}"

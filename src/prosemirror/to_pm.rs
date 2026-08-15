@@ -272,6 +272,25 @@ impl Renderer {
                 }
                 (self.name("figure")?, attrs(n.attrs.as_ref()), children)
             }
+            BlockNode::FigureGroup(n) => {
+                // The vendored carve-grammars map has no name for
+                // `figure_group`: the editor schema predates PART 9 §4c, and
+                // adding one HERE would fork the map this bridge exists to
+                // read rather than repeat. So the group degrades to the
+                // generic container the map does have - the same `carveDiv`
+                // an admonition rides on - keeping every panel and the group
+                // caption, and losing only the fact that they were one figure.
+                self.degrade("figure_group");
+                let mut children = self.blocks(&n.children);
+                if let Some(caption) = &n.caption {
+                    children.push(node_with(
+                        self.name("caption")?,
+                        Object::new(),
+                        self.inlines(caption, &[]),
+                    ));
+                }
+                (self.name("div")?, attrs(n.attrs.as_ref()), children)
+            }
             BlockNode::AbbreviationDef(_) => {
                 self.drop_type("abbreviation_def", None);
                 return None;
