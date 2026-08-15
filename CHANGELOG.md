@@ -332,6 +332,18 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`carve migrate --from djot` freezes a braced run whose opener is never
+  closed on its line** (markup-carve/carve#1130, markup-carve/carve-rs#995). The
+  escaper's unit is a LINE, but a braced run is not: `a {,x` on one line and
+  `y,} b` on the next render one subscript spanning the soft break. An unclosed
+  opener was left bare, so two lines of literal Djot text came back as Carve
+  markup. It is now escaped when it OPENS a run - `{ ,x, }`, whose delimiter has
+  a space against it, opens nothing and is still left alone, and a bare pair with
+  no closer is still left alone too, which the shared escaper corpus pins
+  separately. The escaped and unescaped spellings render identically wherever
+  the run really was literal, so this only changes documents the old output
+  turned into markup.
+
 - **`<details>/<summary>` imports as a `::: details` admonition.** The element
   had no branch, so it unwrapped: the summary and the body were flushed into
   the same inline run and a disclosure widget arrived as one paragraph whose
