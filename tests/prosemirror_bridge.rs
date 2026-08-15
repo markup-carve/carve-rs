@@ -279,7 +279,13 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // pair changed content. Two of them hold no node the editor schema lacks
     // and round-trip strictly; the other nine carry a `figure_group`, which
     // degrades to the generic container and is reported.
-    const STRICT: usize = 793;
+    // 793/224 to 799/224 is the six `319-cell-attributes-bind-after-the-kind-
+    // and-alignment-markers` documents arriving with the spec pin, and nothing
+    // else: the corpus went from 1017 pairs to 1023, the six added pairs are
+    // all `319-*`, and no existing pair changed content. All six are tables the
+    // editor schema covers whole, so all six land in the strict set and the
+    // reported-lossy count does not move.
+    const STRICT: usize = 799;
     const LOSSY: usize = 224;
     assert!(
         covered >= STRICT,

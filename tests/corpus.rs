@@ -388,6 +388,11 @@ const IMPLEMENTED: &[&str] = &[
     "an-image-s-alt-text-closes-where-a-link-s-text-closes",
     "an-inline-note-s-content-resolves-after-the-note",
     "composite-figures",
+    // Added with the spec bump to carve 3ac58ce (markup-carve/carve#1226). Two
+    // of the six documents already matched at the previous pin -- both are the
+    // controls, the shapes the reordered slot must NOT change. The other four
+    // carry a block after a marker run and needed the engine change.
+    "cell-attributes-bind-after-the-kind-and-alignment-markers",
 ];
 
 fn corpus_dir() -> PathBuf {
@@ -964,4 +969,8 @@ corpus_test!(
 corpus_test!(
     c_fence_opened_on_a_list_marker_line,
     "a-fence-opened-on-a-list-marker-line-body-below-the-content-column"
+);
+corpus_test!(
+    c_cell_attributes_bind_after_the_kind_and_alignment_markers,
+    "cell-attributes-bind-after-the-kind-and-alignment-markers"
 );

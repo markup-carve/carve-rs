@@ -1515,16 +1515,21 @@ fn colon_fence_for(ctx: &CarveContext) -> String {
 /// cells - brought every body cell back aligned, so `parse(fmt(x)) == parse(x)`
 /// did not hold (carve issue 359).
 ///
-/// Two header shapes have no native spelling, because `header_cell` in the
-/// grammar is `'=' [alignment_marker] content` and admits neither an attribute
-/// block nor a span marker:
+/// One header shape has no native spelling, because `span_cell` is an
+/// ALTERNATIVE to `header_cell` in the grammar rather than a suffix of one:
 ///
 /// ```text
 /// | < | b |     a span marker promoted to a header cell
-/// |{.x} a | b | a header cell carrying attributes
 /// ```
 ///
-/// Those still need a delimiter row to promote the first row. It is emitted BARE
+/// An attributed header cell used to be the second such shape, and is not one
+/// any more: `header_cell` now reads `'=' [alignment_marker] [cell_attributes]
+/// content` (PART 9 §5 T10), so `|={.x} a |` spells it natively. Writing it as a
+/// data cell under a delimiter row was never wrong, but it is no longer the
+/// canonical form, and the fallback that produced it was the very shape the
+/// clause exists to retire.
+///
+/// The span shape still needs a delimiter row to promote the first row. It is emitted BARE
 /// (`|---|---|`), never with colons: the cells keep their own alignment markers,
 /// so the delimiter contributes structure only and cannot spill alignment down
 /// the column.
@@ -1535,11 +1540,10 @@ fn render_table(node: &Table, ctx: &mut CarveContext) -> String {
         .first()
         .is_some_and(|row| !row.cells.is_empty() && row.cells.iter().all(|cell| cell.header));
     let needs_delimiter = header_row
-        && node.rows.first().is_some_and(|row| {
-            row.cells
-                .iter()
-                .any(|cell| cell.span.is_some() || cell.attrs.is_some())
-        });
+        && node
+            .rows
+            .first()
+            .is_some_and(|row| row.cells.iter().any(|cell| cell.span.is_some()));
 
     for (row_index, row) in node.rows.iter().enumerate() {
         let mut cells = Vec::new();
@@ -1616,11 +1620,17 @@ fn render_table_cell(cell: &TableCell, ctx: &mut CarveContext, mark_header: bool
         };
     }
     let align = align_marker(cell.align);
+    // CELL ATTRIBUTES BIND LAST (grammar §20 T10): the kind marker first, then
+    // the alignment marker, then the attribute block, glued to the marker run.
+    // Writing the block AHEAD of the markers had no spelling for an attributed
+    // header cell at all -- it emitted `|{#x}=R|`, which the reader takes as a
+    // data cell whose content is `=R`, so `toHtml(fmt(x)) != toHtml(x)` on
+    // every attributed header cell.
     let prefix = format!(
         "{}{}{}",
-        attrs,
         if cell.header && mark_header { "=" } else { "" },
-        align
+        align,
+        attrs
     );
     ctx.table_cell_depth += 1;
     let content = render_inlines(&cell.children, ctx);
@@ -1640,8 +1650,17 @@ fn render_table_cell(cell: &TableCell, ctx: &mut CarveContext, mark_header: bool
     // strikethrough here, so a backslash would change the content rather than
     // protect it. `<` and `>` reach this already escaped as literal text, which
     // is why `~` was the only spelling that broke.
+    let merges_into_the_marker_run =
+        align.is_empty() && attrs.is_empty() && content.starts_with(['<', '>', '~']);
+    // THE CONTENT'S OWN BRACE CAN MERGE INTO THE ATTRIBUTE SLOT, for the same
+    // reason and now that the slot sits after the markers. A cell whose text
+    // begins with a valid attribute block (`|={.x} y|`) hands that block to the
+    // reader as the CELL's attributes and loses it from the content. One space
+    // parts them: a block with whitespace in front of it is ordinary content
+    // (grammar §20 T10), and the reader trims that padding.
+    let merges_into_the_attribute_slot = attrs.is_empty() && content.starts_with('{');
     let separator =
-        if !prefix.is_empty() && align.is_empty() && content.starts_with(['<', '>', '~']) {
+        if !prefix.is_empty() && (merges_into_the_marker_run || merges_into_the_attribute_slot) {
             " "
         } else {
             ""

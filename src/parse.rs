@@ -9294,34 +9294,6 @@ fn parse_table_cell(
     options: &Options<'_>,
     anchor: Option<(usize, isize)>,
 ) -> TableCell {
-    // A `{...}` attribute block GLUED to the opening pipe (no leading space)
-    // sets the cell's attributes; the rest, after optional whitespace, is the
-    // content. `read_attrs_at` is quote-aware and validates the whole payload,
-    // so a partially-invalid or empty block reads as None and the `{` stays
-    // content. A space before the brace (`| {.x}`) is also ordinary content.
-    // An attributed cell is never a bare span marker -- its content is literal.
-    if cell.as_bytes().first() == Some(&b'{') {
-        let cell_bytes = cell.as_bytes();
-        let last_close_brace = cell_bytes.iter().rposition(|&b| b == b'}');
-        if let Some((attrs, next)) = read_attrs_at(cell_bytes, 0, last_close_brace) {
-            return TableCell {
-                header: false,
-                span: None,
-                align: None,
-                attrs: Some(attrs),
-                // PART 7: cell padding is U+0020 only.
-                children: parse_cell_inlines(
-                    cell,
-                    trim_cell_padding(&cell[next..]),
-                    options,
-                    anchor,
-                ),
-                // The caller places the cell: it knows where the row line sits.
-                pos: None,
-            };
-        }
-    }
-
     // A leading `=` marks a HEADER cell, but only when GLUED to the `|` (no
     // leading whitespace), per grammar §20. `| =x |` (space before `=`) is a
     // literal `<td>`, matching carve-js / carve-php; check the RAW cell, not
@@ -9336,18 +9308,18 @@ fn parse_table_cell(
     // (carve-rs#459).
     let body = if header { &cell[1..] } else { cell };
     let trimmed = trim_cell_padding(body); // PART 7: cell padding is U+0020 only.
-    let mut text = trimmed;
-    // A whitespace-delimited lone marker is a span cell rather than alignment,
-    // which is the one case a glued marker does not win: `|<|` is a colspan in
-    // every engine. A header cell is already marked by its `=`, so a marker
-    // glued after it is alignment even when it is the whole content (`|=<|`).
+                                           // A whitespace-delimited lone marker is a span cell rather than alignment,
+                                           // which is the one case a glued marker does not win: `|<|` is a colspan in
+                                           // every engine. A header cell is already marked by its `=`, so a marker
+                                           // glued after it is alignment even when it is the whole content (`|=<|`).
     let lone_span = !header && (trimmed == "<" || trimmed == "^");
+    let mut after_markers = body;
     let align = if lone_span {
         None
     } else {
         match body.as_bytes().first() {
             Some(&marker @ (b'>' | b'<' | b'~')) => {
-                text = trim_cell_padding(&body[1..]); // PART 7: cell padding is U+0020 only.
+                after_markers = &body[1..];
                 Some(match marker {
                     b'>' => TableAlign::Right,
                     b'<' => TableAlign::Left,
@@ -9357,13 +9329,43 @@ fn parse_table_cell(
             _ => None,
         }
     };
-    // `span_cell` is an ALTERNATIVE to `data_cell` in the grammar, not a suffix
-    // of one, so a cell that already carried an alignment marker cannot also be
-    // a span: whatever follows the marker is content. Without this, `|<<|` read
-    // its first `<` as alignment and its second as a lone colspan marker and
-    // emitted an empty cell (carve-rs#459).
+    // CELL ATTRIBUTES BIND LAST (grammar §20 T10, corpus
+    // 319-cell-attributes-bind-after-the-kind-and-alignment-markers). A `{...}`
+    // block sets the cell's attributes and is GLUED to whatever precedes it: to
+    // the marker run where the cell has one (`|=<{.x} ...`), to the opening `|`
+    // where it has none (`|{.x} ...`). One order, both productions.
+    //
+    // Reading it AHEAD of the markers instead left an attributed HEADER cell
+    // unspellable: the only shape available, `|{#x}=R|`, is ambiguous by
+    // construction and this grammar reads it as a data cell whose content
+    // starts with `=`, so the canonical writer's spelling for `<th id="x">R</th>`
+    // came back as `<td id="x">=R</td>` and the PART 11 round-trip invariant
+    // failed on it. Once `=` has committed the cell to header, everything after
+    // it is unambiguous.
+    //
+    // `read_attrs_at` is quote-aware and validates the whole payload, so a
+    // partially-invalid or empty block reads as None and the `{` stays content.
+    // A space before the brace (`| {.x}`, `|= {.x}`) is also ordinary content.
+    let mut attrs = None;
+    let mut rest = after_markers;
+    if after_markers.as_bytes().first() == Some(&b'{') {
+        let after_bytes = after_markers.as_bytes();
+        let last_close_brace = after_bytes.iter().rposition(|&b| b == b'}');
+        if let Some((read, next)) = read_attrs_at(after_bytes, 0, last_close_brace) {
+            attrs = Some(read);
+            rest = &after_markers[next..];
+        }
+    }
+    let text = trim_cell_padding(rest); // PART 7: cell padding is U+0020 only.
+                                        // `span_cell` is an ALTERNATIVE to `data_cell` in the grammar, not a suffix
+                                        // of one, so a cell that already carried an alignment marker cannot also be
+                                        // a span: whatever follows the marker is content. Without this, `|<<|` read
+                                        // its first `<` as alignment and its second as a lone colspan marker and
+                                        // emitted an empty cell (carve-rs#459). A cell carrying attributes is never
+                                        // a bare span marker either -- its content is literal even if it is just
+                                        // `^` or `<`.
     let span = match text {
-        _ if align.is_some() => None,
+        _ if align.is_some() || attrs.is_some() => None,
         "^" => Some(TableCellSpan::Rowspan),
         "<" => Some(TableCellSpan::Colspan),
         _ => None,
@@ -9372,12 +9374,13 @@ fn parse_table_cell(
         header,
         span,
         align,
-        attrs: None,
+        attrs,
         children: if span.is_some() {
             Vec::new()
         } else {
             parse_cell_inlines(cell, text, options, anchor)
         },
+        // The caller places the cell: it knows where the row line sits.
         pos: None,
     }
 }
