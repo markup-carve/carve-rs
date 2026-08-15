@@ -15,7 +15,7 @@ keywords = ["carve", "markup", "parser", "html", "djot"]
 categories = ["parser-implementations", "text-processing"]
 # Ship only the crate sources + metadata. The integration tests pull in the
 # `tests/spec` submodule (1200+ corpus/doc files) which consumers do not need.
-include = ["/src/**/*", "/Cargo.toml", "/README.md", "/LICENSE", "/CHANGELOG.md"]
+include = ["/src/**/*", "/resources/**/*", "/Cargo.toml", "/README.md", "/LICENSE", "/CHANGELOG.md"]
 
 [dependencies]
 html5ever = "0.27"
