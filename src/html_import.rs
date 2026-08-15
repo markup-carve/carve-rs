@@ -375,46 +375,9 @@ impl<'a> Importer<'a> {
             })]);
         }
         if tag == "blockquote" {
-            // A trailing `<footer>` is the quote's ATTRIBUTION (PART 9 §4a).
-            // This renderer emits the source of a quotation that way, so
-            // reading it back as an ordinary second paragraph meant the
-            // engine's own HTML did not survive a round trip - the `^ ` line
-            // was gone from the Carve it wrote (carve#1159).
-            //
-            // The LAST footer, because that is the one the renderer emits and
-            // the one an author puts after the quoted text; an earlier one
-            // stays an ordinary block.
-            // The slot holds INLINE content, so a footer carrying blocks does
-            // not fit it. Flattening one would run its paragraphs together
-            // with no separator; leaving it an ordinary block inside the quote
-            // keeps every word, which is the better answer when the shape
-            // cannot be represented.
-            let footer = children.iter().rposition(|n| {
-                Self::tag(n).as_deref() == Some("footer")
-                    && !n.children.borrow().iter().any(|c| {
-                        Self::tag(c)
-                            .as_deref()
-                            .map(Self::is_block_tag)
-                            .unwrap_or(false)
-                    })
-            });
-            let attribution = match footer {
-                Some(index) => {
-                    let inner = children[index].children.borrow().clone();
-                    Some(self.inlines(&inner, path, depth + 1)?)
-                }
-                None => None,
-            };
-            let body: Vec<_> = children
-                .iter()
-                .enumerate()
-                .filter(|(index, _)| Some(*index) != footer)
-                .map(|(_, node)| node.clone())
-                .collect();
             return Ok(vec![BlockNode::BlockQuote(BlockQuote {
                 attrs,
-                children: self.blocks(&body, path, depth + 1)?,
-                attribution,
+                children: self.blocks(&children, path, depth + 1)?,
                 pos: None,
             })]);
         }

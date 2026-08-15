@@ -370,16 +370,6 @@ fn collect_footnotes_block(
             }
         }
         BlockNode::BlockQuote(b) => {
-            if let Some(attribution) = &mut b.attribution {
-                collect_footnotes_inline(
-                    assign_ref_ids,
-                    attribution,
-                    def_labels,
-                    label_indices,
-                    seen,
-                    order,
-                );
-            }
             for child in &mut b.children {
                 collect_footnotes_block(
                     assign_ref_ids,
@@ -1490,10 +1480,7 @@ fn render_blockquote(
     state: &mut RenderState,
 ) {
     indent(out, level);
-    // PART 9 §4a: an attribution renders INSIDE the quote, where a quotation's
-    // source belongs, and forces the expanded form - the compact one has
-    // nowhere to put a second element (carve#1159).
-    if b.attribution.is_none() && b.children.len() == 1 {
+    if b.children.len() == 1 {
         if let BlockNode::Paragraph(p) = &b.children[0] {
             out.push_str("<blockquote");
             write_attrs(out, &b.attrs);
@@ -1515,13 +1502,6 @@ fn render_blockquote(
         }
         out.push_str(&child);
         first = false;
-    }
-    if let Some(attribution) = &b.attribution {
-        out.push('\n');
-        indent(out, level + 1);
-        out.push_str("<footer>");
-        render_inlines(out, attribution, options, state);
-        out.push_str("</footer>");
     }
     out.push('\n');
     indent(out, level);

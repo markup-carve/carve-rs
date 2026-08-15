@@ -46,7 +46,6 @@ fn nested(depth: usize) -> Document {
         block = BlockNode::BlockQuote(BlockQuote {
             attrs: None,
             children: vec![block],
-            attribution: None,
             pos: None,
         });
     }

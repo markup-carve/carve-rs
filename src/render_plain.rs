@@ -193,18 +193,7 @@ fn render_block(node: &BlockNode, depth: usize) -> String {
                 "\"{}\"",
                 trim_block_output(&render_blocks(&quote.children, depth + 1))
             );
-            // PART 11 §10c T3. ADJACENCY, not a blank line. A blank line is what
-            // separates blocks on this target, so putting one here said the
-            // attribution was a block of its own rather than the quotation's
-            // source - the words survived, the attachment did not. No
-            // punctuation is invented: a dash prefix would put a character in
-            // the output the author never wrote.
-            match &quote.attribution {
-                Some(attribution) => {
-                    format!("{quoted}\n{}\n\n", render_inlines(attribution).trim())
-                }
-                None => format!("{quoted}\n\n"),
-            }
+            format!("{quoted}\n\n")
         }
         BlockNode::List(list) => render_list(list, depth + 1),
         BlockNode::ThematicBreak(_) => "---\n\n".to_string(),

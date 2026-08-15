@@ -305,9 +305,6 @@ impl ProfileFilter<'_> {
                 }
             }
             BlockNode::BlockQuote(bq) => {
-                if let Some(attribution) = &mut bq.attribution {
-                    self.filter_inlines(attribution, depth + 1)?;
-                }
                 self.filter_blocks(&mut bq.children, depth)?;
             }
             BlockNode::Table(table) => {
@@ -860,15 +857,6 @@ fn extract_block_text(node: &BlockNode, smart: SmartTypographyMode) -> String {
                     paras.push(format!("> {text}"));
                 }
             }
-            if let Some(attribution) = &bq.attribution {
-                let text: String = attribution
-                    .iter()
-                    .map(|n| extract_inline_text(n, smart))
-                    .collect();
-                if !text.is_empty() {
-                    paras.push(format!("^ {text}"));
-                }
-            }
             paras.join("\n")
         }
         BlockNode::DefinitionList(dl) => {
@@ -1090,9 +1078,6 @@ fn cleanup_block_children(block: &mut BlockNode) {
             }
         }
         BlockNode::BlockQuote(bq) => {
-            if let Some(attribution) = &mut bq.attribution {
-                cleanup_inlines(attribution);
-            }
             cleanup_blocks(&mut bq.children);
         }
         BlockNode::Table(t) => {

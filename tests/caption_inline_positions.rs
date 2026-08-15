@@ -10,13 +10,7 @@
 
 use carve::ast::{BlockNode, InlineNode};
 
-/// The inline content a `^ ` line produced, whichever slot it landed in.
-///
-/// A quote's `^ ` line is its ATTRIBUTION now, not a figure caption (PART 9
-/// §4a, carve#1159) - a DIFFERENT field, reached by a different arm of every
-/// walker, and it failed the offsets exactly the way a figure caption did
-/// before carve-rs#333. So both slots are driven through the same rows here
-/// rather than the quote fixtures being retired to an image host.
+/// The inline content produced by a `^ ` caption line.
 fn caption_of(source: &str) -> Vec<InlineNode> {
     let options = carve::Options {
         positions: true,
@@ -25,11 +19,7 @@ fn caption_of(source: &str) -> Vec<InlineNode> {
     let doc = carve::parse_with_options(source, &options);
     match &doc.children[0] {
         BlockNode::Figure(figure) => figure.caption.clone(),
-        BlockNode::BlockQuote(quote) => quote
-            .attribution
-            .clone()
-            .expect("the fixture's caption line did not attach to the quote"),
-        _ => panic!("the fixture parsed as neither a figure nor a quote"),
+        _ => panic!("the fixture did not parse as a figure"),
     }
 }
 
@@ -56,8 +46,7 @@ fn a_caption_slices_back_to_its_source() {
     assert_eq!(slice, value);
 }
 
-/// The same row on the slot carve-rs#333 was filed about, so retargeting the
-/// fixtures above at the attribution cannot quietly drop the figure's caption.
+/// The same row on the image host carve-rs#333 was filed about.
 #[test]
 fn a_figure_caption_slices_back_to_its_source_too() {
     let source = "![a](b.png)\n^ Steve Jobs\n";

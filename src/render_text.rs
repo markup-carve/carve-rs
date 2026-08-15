@@ -115,9 +115,6 @@ fn collect_block_quote(
     suppressed: bool,
     out: &mut ConsumedAbbreviations,
 ) {
-    if let Some(attribution) = &quote.attribution {
-        collect_inlines(attribution, suppressed, out);
-    }
     collect_blocks(&quote.children, suppressed, out);
 }
 

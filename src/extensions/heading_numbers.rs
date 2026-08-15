@@ -294,9 +294,6 @@ fn rewrite_links_blocks(
             BlockNode::Heading(h) => rewrite_links_inlines(&mut h.children, by_id, opts),
             BlockNode::Paragraph(p) => rewrite_links_inlines(&mut p.children, by_id, opts),
             BlockNode::BlockQuote(b) => {
-                if let Some(attribution) = &mut b.attribution {
-                    rewrite_links_inlines(attribution, by_id, opts);
-                }
                 rewrite_links_blocks(&mut b.children, by_id, opts);
             }
             BlockNode::Div(d) => rewrite_links_blocks(&mut d.children, by_id, opts),
