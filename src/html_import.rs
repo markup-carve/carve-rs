@@ -174,6 +174,7 @@ impl<'a> Importer<'a> {
                 | "nav"
                 | "header"
                 | "footer"
+                | "figure"
         )
     }
 
@@ -485,6 +486,15 @@ impl<'a> Importer<'a> {
                 children: self.blocks(&children, path, depth + 1)?,
                 pos: None,
             })]);
+        }
+        // This engine's own composite-figure shape (PART 9 §4c) comes back as
+        // the node it left as. Only the exact own-output classes take these
+        // paths; any other <figure> stays an unsupported element below.
+        if tag == "figure" && Self::first_class(h).as_deref() == Some("carve-figure-group") {
+            return self.figure_group(h, path, depth, attrs);
+        }
+        if tag == "figure" && Self::first_class(h).as_deref() == Some("carve-figure-panel") {
+            return self.figure_panel(h, path, depth, attrs);
         }
         if self.opts.mode == HtmlImportMode::Roundtrip {
             self.diag(
@@ -798,6 +808,142 @@ impl<'a> Importer<'a> {
             path,
         );
     }
+    /// The element's FIRST class, the slot this engine's structural classes
+    /// lead from (`carve-figure-group`, `carve-figure-panel`).
+    fn first_class(handle: &Handle) -> Option<String> {
+        Self::attr(handle, "class")?
+            .split_whitespace()
+            .next()
+            .map(str::to_string)
+    }
+
+    /// Drop a structural class the renderer injected; what remains is what the
+    /// author wrote. `None` when nothing else was carried.
+    fn without_structural_class(attrs: Option<Attrs>, class: &str) -> Option<Attrs> {
+        let mut attrs = attrs?;
+        attrs.classes.retain(|c| c != class);
+        if attrs.classes.is_empty() && attrs.id.is_none() && attrs.key_values.is_empty() {
+            return None;
+        }
+        Some(attrs)
+    }
+
+    /// `<figure class="carve-figure-group">` back to the `figure_group` node
+    /// it rendered from: the unconditional panels div unwraps into `children`
+    /// (each panel routed back through [`Self::figure_panel`]), and the
+    /// trailing `<figcaption>` is the group caption (PART 9 §4c).
+    fn figure_group(
+        &mut self,
+        h: &Handle,
+        path: &str,
+        depth: usize,
+        attrs: Option<Attrs>,
+    ) -> Result<Vec<BlockNode>, HtmlImportError> {
+        let attrs = Self::without_structural_class(attrs, "carve-figure-group");
+        let mut children = Vec::new();
+        let mut caption = None;
+        for (i, child) in h.children.borrow().iter().enumerate() {
+            match Self::tag(child).as_deref() {
+                Some("div")
+                    if Self::first_class(child).as_deref() == Some("carve-figure-panels") =>
+                {
+                    let p = format!("{path}/div[{}]", i + 1);
+                    children = self.blocks(&child.children.borrow(), &p, depth + 1)?;
+                }
+                Some("figcaption") => {
+                    let p = format!("{path}/figcaption[{}]", i + 1);
+                    caption = Some(self.inlines(&child.children.borrow(), &p, depth + 1)?);
+                }
+                _ => {}
+            }
+        }
+        Ok(vec![BlockNode::FigureGroup(FigureGroup {
+            attrs,
+            children,
+            caption,
+            pos: None,
+        })])
+    }
+
+    /// `<figure class="carve-figure-panel">` back to the node it wrapped: the
+    /// host plus its `<figcaption>` rebuild the `figure` the caption pass
+    /// produced; a bare wrapped table (whose caption is its own `<caption>`)
+    /// unwraps to the table node.
+    fn figure_panel(
+        &mut self,
+        h: &Handle,
+        path: &str,
+        depth: usize,
+        attrs: Option<Attrs>,
+    ) -> Result<Vec<BlockNode>, HtmlImportError> {
+        let attrs = Self::without_structural_class(attrs, "carve-figure-panel");
+        let mut caption = None;
+        let mut host = Vec::new();
+        for child in h.children.borrow().iter() {
+            if Self::tag(child).as_deref() == Some("figcaption") {
+                caption = Some(self.inlines(&child.children.borrow(), path, depth + 1)?);
+                continue;
+            }
+            // Pretty-printed margins between the wrapper and its host. Kept,
+            // they lead the rebuilt image paragraph with a space, and the
+            // writer's indented image line then re-parses as prose.
+            if let NodeData::Text { contents } = &child.data {
+                if contents.borrow().trim().is_empty() {
+                    continue;
+                }
+            }
+            host.push(child.clone());
+        }
+        let mut blocks = self.blocks(&host, path, depth + 1)?;
+        let Some(caption) = caption else {
+            return Ok(blocks);
+        };
+        if blocks.len() == 1 {
+            let target = match blocks.remove(0) {
+                // A sole image renders bare inside the panel, so it comes back
+                // as a one-image paragraph; the figure the parser builds holds
+                // the IMAGE as its target.
+                BlockNode::Paragraph(p)
+                    if p.children.len() == 1 && matches!(p.children[0], InlineNode::Image(_)) =>
+                {
+                    match p.children.into_iter().next() {
+                        Some(InlineNode::Image(img)) => FigureTarget::Image(img),
+                        _ => unreachable!("the match guard saw an image"),
+                    }
+                }
+                BlockNode::Paragraph(p) => FigureTarget::Paragraph(p),
+                BlockNode::BlockImage(img) => FigureTarget::Image(img),
+                BlockNode::BlockQuote(quote) => FigureTarget::BlockQuote(quote),
+                BlockNode::Table(table) => FigureTarget::Table(table),
+                BlockNode::CodeBlock(code) => FigureTarget::CodeBlock(code),
+                other => {
+                    blocks.insert(0, other);
+                    blocks.push(BlockNode::Paragraph(Paragraph {
+                        attrs: None,
+                        children: caption,
+                        at_content_column: true,
+                        pos: None,
+                    }));
+                    return Ok(blocks);
+                }
+            };
+            return Ok(vec![BlockNode::Figure(Figure {
+                attrs,
+                target,
+                caption,
+                short_caption: None,
+                pos: None,
+            })]);
+        }
+        blocks.push(BlockNode::Paragraph(Paragraph {
+            attrs: None,
+            children: caption,
+            at_content_column: true,
+            pos: None,
+        }));
+        Ok(blocks)
+    }
+
     fn table(
         &mut self,
         h: &Handle,

@@ -808,6 +808,14 @@ fn annotate_citations_block(
                 }
             }
         }
+        BlockNode::FigureGroup(g) => {
+            for child in &mut g.children {
+                annotate_citations_block(child, defs, mode, has_bib, seen, order, uses);
+            }
+            if let Some(caption) = &mut g.caption {
+                annotate_citations_inline(caption, defs, mode, has_bib, seen, order, uses);
+            }
+        }
         BlockNode::Figure(f) => {
             annotate_citations_inline(&mut f.caption, defs, mode, has_bib, seen, order, uses);
             match &mut f.target {

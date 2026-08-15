@@ -322,6 +322,7 @@ fn render_block(node: &BlockNode, ctx: &mut MarkdownContext, depth: usize) -> St
             render_definition_list(&list.items, ctx, true, depth + 1)
         }
         BlockNode::Figure(figure) => render_figure(figure, ctx, depth + 1),
+        BlockNode::FigureGroup(group) => render_figure_group(group, ctx, depth + 1),
         // A standalone block image is its own block: terminate it so the next
         // block is not glued onto the image (render_image stays newline-free
         // because it is shared with inline image rendering).
@@ -615,30 +616,41 @@ fn render_table(node: &Table, ctx: &mut MarkdownContext) -> String {
     out
 }
 
+/// PART 11 §10g T1: Markdown has no figure grouping, so the group degrades to
+/// its content in order - each panel's host as it already degrades, each panel
+/// caption as an emphasized `*...*` paragraph after its host, preserved stray
+/// content in place, and the group caption LAST as a bold `**...**` paragraph
+/// with its number resolved. Emphasis and bold rather than invented syntax:
+/// the spelling the admonition title already uses for authored text with no
+/// native slot.
+fn render_figure_group(node: &FigureGroup, ctx: &mut MarkdownContext, depth: usize) -> String {
+    if depth > MAX_RENDER_DEPTH {
+        crate::render_depth::record("markdown");
+        return String::new();
+    }
+    let mut out = String::new();
+    for child in &node.children {
+        match child {
+            BlockNode::Figure(figure) => {
+                let target = render_figure_target(figure, ctx, depth);
+                let caption = render_block_inlines(&figure.caption, ctx);
+                out.push_str(&format!("{target}\n\n*{caption}*\n\n"));
+            }
+            other => out.push_str(&render_block(other, ctx, depth)),
+        }
+    }
+    if let Some(caption) = &node.caption {
+        out.push_str(&format!("**{}**\n\n", render_block_inlines(caption, ctx)));
+    }
+    out
+}
+
 fn render_figure(node: &Figure, ctx: &mut MarkdownContext, depth: usize) -> String {
     if depth > MAX_RENDER_DEPTH {
         crate::render_depth::record("markdown");
         return String::new();
     }
-    let target = match &node.target {
-        FigureTarget::Image(image) => render_image(image),
-        FigureTarget::Table(table) => render_table(table, ctx).trim().to_string(),
-        FigureTarget::BlockQuote(quote) => {
-            render_block(&BlockNode::BlockQuote(quote.clone()), ctx, depth + 1)
-                .trim()
-                .to_string()
-        }
-        FigureTarget::CodeBlock(cb) => {
-            render_block(&BlockNode::CodeBlock(cb.clone()), ctx, depth + 1)
-                .trim()
-                .to_string()
-        }
-        FigureTarget::Paragraph(p) => {
-            render_block(&BlockNode::Paragraph(p.clone()), ctx, depth + 1)
-                .trim()
-                .to_string()
-        }
-    };
+    let target = render_figure_target(node, ctx, depth);
     // The caption sits on its own line directly under the figure (`\n`) - an
     // image target used to glue it on (`![a](/u)cap`). A blockquote target keeps
     // the blank-line separation.
@@ -661,6 +673,31 @@ fn render_figure(node: &Figure, ctx: &mut MarkdownContext, depth: usize) -> Stri
         "{target}{sep}{}\n\n",
         render_block_inlines(&node.caption, ctx)
     )
+}
+
+/// A figure's TARGET degraded on its own, without the caption - shared by the
+/// plain figure (which glues its caption under it) and the figure group
+/// (whose panel captions take the §10g T1 emphasized-paragraph form instead).
+fn render_figure_target(node: &Figure, ctx: &mut MarkdownContext, depth: usize) -> String {
+    match &node.target {
+        FigureTarget::Image(image) => render_image(image),
+        FigureTarget::Table(table) => render_table(table, ctx).trim().to_string(),
+        FigureTarget::BlockQuote(quote) => {
+            render_block(&BlockNode::BlockQuote(quote.clone()), ctx, depth + 1)
+                .trim()
+                .to_string()
+        }
+        FigureTarget::CodeBlock(cb) => {
+            render_block(&BlockNode::CodeBlock(cb.clone()), ctx, depth + 1)
+                .trim()
+                .to_string()
+        }
+        FigureTarget::Paragraph(p) => {
+            render_block(&BlockNode::Paragraph(p.clone()), ctx, depth + 1)
+                .trim()
+                .to_string()
+        }
+    }
 }
 
 fn render_footnote_defs(doc: &Document, ctx: &mut MarkdownContext) -> String {
@@ -1626,6 +1663,12 @@ where
                     }
                     FigureTarget::Image(_) | FigureTarget::CodeBlock(_) => {}
                 }
+            }
+            BlockNode::FigureGroup(group) => {
+                if let Some(caption) = &group.caption {
+                    visit(block, Some(caption));
+                }
+                walk_blocks(&group.children, depth + 1, visit);
             }
             BlockNode::Extension(extension) => walk_blocks(&extension.children, depth + 1, visit),
             _ => {}

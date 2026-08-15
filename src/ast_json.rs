@@ -596,6 +596,7 @@ pub(crate) fn block_pos(node: &BlockNode) -> Option<&Pos> {
         BlockNode::LineBlock(n) => n.pos.as_ref(),
         BlockNode::DefinitionList(n) => n.pos.as_ref(),
         BlockNode::Figure(n) => n.pos.as_ref(),
+        BlockNode::FigureGroup(n) => n.pos.as_ref(),
         BlockNode::AbbreviationDef(n) => n.pos.as_ref(),
         BlockNode::RawBlock(n) => n.pos.as_ref(),
         BlockNode::Comment(n) => n.pos.as_ref(),
@@ -744,6 +745,21 @@ fn write_block(out: &mut String, node: &BlockNode) {
             w.field("caption", |out| write_inlines(out, &n.caption));
             if let Some(short_caption) = &n.short_caption {
                 w.field("shortCaption", |out| write_inlines(out, short_caption));
+            }
+            write_attrs_field(&mut w, &n.attrs);
+            write_pos_field(&mut w, &n.pos);
+            w.finish();
+        }
+        BlockNode::FigureGroup(n) => {
+            // PART 12 §16: `children` in source order (a consumer derives the
+            // panel list by type, the way the renderer does - there is no
+            // second `panels` key to disagree with them), `caption` only when
+            // the closer hosted one - absent means uncaptioned, never an
+            // empty placeholder.
+            let mut w = typed(out, "figure_group");
+            w.field("children", |out| write_blocks(out, &n.children));
+            if let Some(caption) = &n.caption {
+                w.field("caption", |out| write_inlines(out, caption));
             }
             write_attrs_field(&mut w, &n.attrs);
             write_pos_field(&mut w, &n.pos);
@@ -1583,6 +1599,12 @@ fn decode_block(value: &Json) -> Result<BlockNode, AstJsonError> {
             caption: decode_inlines(required_array(obj, "figure", "caption")?)?,
             short_caption: optional_inlines(obj, "shortCaption")?,
             pos: optional_pos(obj, "figure")?,
+        })),
+        "figure_group" => Ok(BlockNode::FigureGroup(FigureGroup {
+            attrs: optional_attrs(obj)?,
+            children: decode_blocks(required_array(obj, "figure_group", "children")?)?,
+            caption: optional_inlines(obj, "caption")?,
+            pos: optional_pos(obj, "figure_group")?,
         })),
         "link_reference_definition" => Ok(BlockNode::LinkReferenceDefinition(
             LinkReferenceDefinition {

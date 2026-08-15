@@ -394,6 +394,12 @@ impl ProfileFilter<'_> {
                 self.filter_inlines(&mut fig.caption, depth + 1)?;
                 self.recurse_figure_target(fig, depth + 1)?;
             }
+            BlockNode::FigureGroup(group) => {
+                if let Some(caption) = &mut group.caption {
+                    self.filter_inlines(caption, depth + 1)?;
+                }
+                self.filter_blocks(&mut group.children, depth)?;
+            }
             BlockNode::Extension(ext) => self.filter_blocks(&mut ext.children, depth)?,
         }
         Ok(())
@@ -917,6 +923,24 @@ fn extract_block_text(node: &BlockNode, smart: SmartTypographyMode) -> String {
         BlockNode::Div(div) => block_children_join(&div.children, smart),
         BlockNode::LineBlock(lb) => block_children_join(&lb.children, smart),
         BlockNode::Extension(ext) => block_children_join(&ext.children, smart),
+        BlockNode::FigureGroup(group) => {
+            let mut parts: Vec<String> = group
+                .children
+                .iter()
+                .map(|child| extract_block_text(child, smart))
+                .filter(|text| !text.is_empty())
+                .collect();
+            if let Some(caption) = &group.caption {
+                let caption: String = caption
+                    .iter()
+                    .map(|n| extract_inline_text(n, smart))
+                    .collect();
+                if !caption.is_empty() {
+                    parts.push(caption);
+                }
+            }
+            parts.join("\n")
+        }
         BlockNode::Figure(fig) => {
             let target = match &fig.target {
                 FigureTarget::Image(img) => image_text(img),
@@ -1106,6 +1130,12 @@ fn cleanup_block_children(block: &mut BlockNode) {
             }
         }
         BlockNode::Figure(fig) => cleanup_inlines(&mut fig.caption),
+        BlockNode::FigureGroup(group) => {
+            if let Some(caption) = &mut group.caption {
+                cleanup_inlines(caption);
+            }
+            cleanup_blocks(&mut group.children);
+        }
         BlockNode::Extension(ext) => cleanup_blocks(&mut ext.children),
         _ => {}
     }
@@ -1156,6 +1186,10 @@ fn is_empty_block(node: &BlockNode) -> bool {
         BlockNode::LineBlock(lb) => lb.children.is_empty(),
         BlockNode::DefinitionList(dl) => dl.items.is_empty(),
         BlockNode::Figure(_) => false,
+        // The panels div is unconditional (PART 9 SS4c), so an emptied group
+        // still renders a coherent shell only when it truly has nothing left:
+        // no children and no caption.
+        BlockNode::FigureGroup(group) => group.children.is_empty() && group.caption.is_none(),
         BlockNode::Extension(ext) => ext.children.is_empty(),
     }
 }

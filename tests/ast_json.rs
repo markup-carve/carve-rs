@@ -161,6 +161,12 @@ fn normalize(mut doc: carve::Document) -> carve::Document {
                         blocks(&mut q.children);
                     }
                 }
+                carve::BlockNode::FigureGroup(g) => {
+                    blocks(&mut g.children);
+                    if let Some(caption) = &mut g.caption {
+                        inlines(caption);
+                    }
+                }
                 _ => {}
             }
         }

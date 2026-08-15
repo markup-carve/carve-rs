@@ -141,6 +141,12 @@ impl SmartQuotes {
                         FigureTarget::CodeBlock(_) | FigureTarget::Image(_) => {}
                     }
                 }
+                BlockNode::FigureGroup(g) => {
+                    if let Some(caption) = &mut g.caption {
+                        self.visit_inlines(caption);
+                    }
+                    self.visit_blocks(&mut g.children);
+                }
                 BlockNode::Extension(e) => self.visit_blocks(&mut e.children),
                 BlockNode::CodeBlock(_)
                 | BlockNode::AbbreviationDef(_)

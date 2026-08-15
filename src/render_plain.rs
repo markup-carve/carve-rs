@@ -225,6 +225,7 @@ fn render_block(node: &BlockNode, depth: usize) -> String {
         }
         BlockNode::DefinitionList(list) => render_definition_list(&list.items, true, depth + 1),
         BlockNode::Figure(figure) => render_figure(figure, depth + 1),
+        BlockNode::FigureGroup(group) => render_figure_group(group, depth + 1),
         // Terminate the block image so the next block is not glued onto it.
         BlockNode::BlockImage(image) => format!("{}\n\n", render_image(image)),
         BlockNode::Extension(extension) => render_blocks(&extension.children, depth + 1),
@@ -366,26 +367,47 @@ fn render_table(node: &Table) -> String {
     out
 }
 
+/// PART 11 §10g T2: the group caption comes FIRST, its number resolved - on a
+/// caption-less target it is the only line that says what the following blocks
+/// are one of - then each panel as its caption line over its host's usual
+/// degradation, stray content in place, a blank line between the pieces.
+fn render_figure_group(node: &FigureGroup, depth: usize) -> String {
+    if depth > MAX_RENDER_DEPTH {
+        crate::render_depth::record("plain");
+        return String::new();
+    }
+    let mut parts: Vec<String> = Vec::new();
+    if let Some(caption) = &node.caption {
+        parts.push(trim_non_nbsp(&render_inlines(caption)).to_string());
+    }
+    for child in &node.children {
+        match child {
+            BlockNode::Figure(figure) => {
+                let caption = trim_non_nbsp(&render_inlines(&figure.caption)).to_string();
+                let target = render_figure_target(figure, depth);
+                parts.push(format!("{caption}\n{target}"));
+            }
+            other => {
+                let piece = render_block(other, depth);
+                let piece = piece.trim_end();
+                if !piece.is_empty() {
+                    parts.push(piece.to_string());
+                }
+            }
+        }
+    }
+    if parts.is_empty() {
+        return String::new();
+    }
+    format!("{}\n\n", parts.join("\n\n"))
+}
+
 fn render_figure(node: &Figure, depth: usize) -> String {
     if depth > MAX_RENDER_DEPTH {
         crate::render_depth::record("plain");
         return String::new();
     }
-    let target = match &node.target {
-        FigureTarget::Image(image) => render_image(image),
-        FigureTarget::Table(table) => render_table(table).trim().to_string(),
-        FigureTarget::BlockQuote(quote) => {
-            render_block(&BlockNode::BlockQuote(quote.clone()), depth + 1)
-                .trim()
-                .to_string()
-        }
-        FigureTarget::CodeBlock(cb) => render_block(&BlockNode::CodeBlock(cb.clone()), depth + 1)
-            .trim()
-            .to_string(),
-        FigureTarget::Paragraph(p) => render_block(&BlockNode::Paragraph(p.clone()), depth + 1)
-            .trim()
-            .to_string(),
-    };
+    let target = render_figure_target(node, depth);
     // The caption sits on its own line directly under the figure (`\n`) - an
     // image target used to glue it on. A blockquote target keeps the blank-line
     // separation. End with the block separator so a following block is not glued
@@ -402,6 +424,27 @@ fn render_figure(node: &Figure, depth: usize) -> String {
         _ => "\n",
     };
     format!("{target}{sep}{}\n\n", render_inlines(&node.caption))
+}
+
+/// A figure's TARGET degraded on its own, without the caption - shared by the
+/// plain figure and the figure group, whose panels put the caption FIRST
+/// (§10g T2).
+fn render_figure_target(node: &Figure, depth: usize) -> String {
+    match &node.target {
+        FigureTarget::Image(image) => render_image(image),
+        FigureTarget::Table(table) => render_table(table).trim().to_string(),
+        FigureTarget::BlockQuote(quote) => {
+            render_block(&BlockNode::BlockQuote(quote.clone()), depth + 1)
+                .trim()
+                .to_string()
+        }
+        FigureTarget::CodeBlock(cb) => render_block(&BlockNode::CodeBlock(cb.clone()), depth + 1)
+            .trim()
+            .to_string(),
+        FigureTarget::Paragraph(p) => render_block(&BlockNode::Paragraph(p.clone()), depth + 1)
+            .trim()
+            .to_string(),
+    }
 }
 
 fn render_footnote_defs(doc: &Document) -> String {

@@ -26,6 +26,36 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   On the shared corpus, 791 documents report nothing lost and round-trip to
   byte-identical HTML, and 215 report what they lost.
 
+- **Composite figures: a bare `::: figure` container is one figure of ordered
+  panels** (PART 9 §4c, markup-carve/carve#1122). Its direct captionable
+  children - the `figure` nodes the unchanged inner caption rules build, and
+  `table` nodes - are the PANELS, in source order; stray content between them
+  is preserved in place. The `^ ` caption after the CLOSING fence is the
+  caption of the whole group - caption placement's sixth host, this container
+  kind only - with the usual one-optional-blank-line allowance; two blank
+  lines detach it. The group is ONE numbering unit: `^ Figure #:` draws one
+  number, panels draw nothing, and a panel with an id resolves `</#id>` as the
+  group number plus a letter by panel order ("Figure 2a"). A `#` placeholder
+  in a PANEL caption stays the literal `#` on every target. HTML renders the
+  class-first `carve-figure-group` / `carve-figure-panel` shape with an
+  unconditional `carve-figure-panels` div; Markdown, plain text and the
+  terminal degrade deterministically per PART 11 §10g; the canonical writer
+  emits the authored form back; AST JSON gains the additive `figure_group`
+  node (PART 12 §16), and the HTML importer reads the engine's own group
+  shape back. The ProseMirror bridge has no editor node for it - the
+  vendored carve-grammars schema map predates §4c - so a group degrades to the
+  generic container there, keeping every panel and the group caption and
+  reporting the grouping it could not hold. An opener carrying a quoted title or a `[label]`, and a bare
+  opener nested inside an open group, stay generic containers - `carve lint`
+  reports them as `figure-group-opener-metadata` / `figure-group-nested`, and
+  a panel-caption placeholder as `figure-group-panel-number`.
+
+- **An unresolved caption-number placeholder renders as the literal `#` in
+  HTML**, matching what the Markdown, plain-text and terminal targets already
+  emitted. Reachable from a parse only inside a figure group's panel captions;
+  on the ingest path a `caption_number` without a number now shows the visible
+  `#` instead of disappearing.
+
 - **`lint_carve` / `lint_carve_with_options`, and the `LintWarning` they
   return** (markup-carve/carve#1131, markup-carve/carve#1132). carve-rs' first
   lint surface, carrying the two diagnostics PART 9 §10 implies and had nowhere

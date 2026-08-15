@@ -28,6 +28,7 @@ pub(crate) const WIRE_FIELDS: &[(&str, &[&str])] = &[
     ("emphasis", &["attrs", "children", "pos", "type"]),
     ("escaped_text", &["attrs", "pos", "type", "value"]),
     ("figure", &["attrs", "caption", "pos", "shortCaption", "target", "type"]),
+    ("figure_group", &["attrs", "caption", "children", "pos", "type"]),
     ("footnote", &["attrs", "children", "label", "pos", "type"]),
     ("footnote_ref", &["attrs", "id", "number", "pos", "type"]),
     ("frontmatter", &["content", "format", "pos", "type"]),

@@ -97,6 +97,12 @@ fn collect_block(block: &BlockNode, suppressed: bool, out: &mut ConsumedAbbrevia
             }
             collect_inlines(&f.caption, suppressed, out);
         }
+        BlockNode::FigureGroup(g) => {
+            collect_blocks(&g.children, suppressed, out);
+            if let Some(caption) = &g.caption {
+                collect_inlines(caption, suppressed, out);
+            }
+        }
         BlockNode::Extension(e) => collect_blocks(&e.children, suppressed, out),
         // A code block's text is never abbreviation-expanded, and the remaining
         // block kinds carry no inline children at all.

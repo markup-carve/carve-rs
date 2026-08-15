@@ -271,11 +271,13 @@
     "raw_text": "raw text is the payload of a raw block, not a node an editor holds",
     "escaped_text": "escaping is a source-level concern; the editor holds the escaped character as text",
     "smart_punctuation": "smart-typography output is lossy on reparse, so it is not modeled",
-    "soft_break": "a soft break is whitespace in the ProseMirror model"
+    "soft_break": "a soft break is whitespace in the ProseMirror model",
+    "figure_group": "the editor schema has no composite figure; the panels and the group caption survive inside the generic container, but the fact that they were one figure does not"
   },
   "_provenance": {
     "source": "markup-carve/carve-grammars tiptap/schema-map.json",
     "commit": "e09b460c23fceaf532f724f3ef73e0b6a355d4f7",
-    "refresh": "copy the file from carve-grammars and update commit; the schema-map test asserts every AST type still has a decision"
+    "refresh": "copy the file from carve-grammars and update commit; the schema-map test asserts every AST type still has a decision",
+    "pendingUpstream": "the `figure_group` entry under unmapped is local: PART 9 section 4c is newer than the schema map, so carve-grammars carries no decision for it yet. Keep it across the next refresh until upstream does."
   }
 }
