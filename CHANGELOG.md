@@ -253,6 +253,25 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`<details>/<summary>` imports as a `::: details` admonition.** The element
+  had no branch, so it unwrapped: the summary and the body were flushed into
+  the same inline run and a disclosure widget arrived as one paragraph whose
+  first words were its summary, with nothing between them. It now imports as
+  the admonition Carve already has, which the bundled details extension renders
+  straight back to `<details>/<summary>`, so the round trip closes. `open` is
+  kept as an attribute instead of being reported dropped, since the extension
+  puts it back on the tag. A second `<summary>` is not one under HTML5 and
+  stays body content, reported as before.
+
+- **`<q>` imports as the marks it renders as.** It unwrapped and reported
+  `element-unwrapped` while doing it, which claimed a loss where the only thing
+  lost is a tag whose entire rendered effect can be written into the text. The
+  quotation marks are now emitted, alternating between the double and single
+  pair with nesting the way every user agent renders them, and the element
+  reports nothing because the mapping is deliberate. An id or a class on the
+  element is kept on a span; a `cite` URL still has no slot and is still
+  reported.
+
 - **`<ol type="a">` imports as a numbering style, not as nothing.** `type` was
   on the list of attributes the HTML importer does not report, which read as
   handled and was not: nothing ever set `List::ol_type`, so the value was
