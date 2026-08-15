@@ -253,6 +253,24 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A definition list survives HTML import.** `<dl>` had no branch in the
+  importer, so the element fell through to the unwrapping path: every `<dt>` and
+  every `<dd>` became inline content of one paragraph, and a two-entry glossary
+  imported as a single run of words with no separator between a term and its own
+  definition. `DefinitionList` was already there - the parser fills it from `::`
+  and `:` lines and the canonical writer emits it - so this is a mapping that
+  was missing, not a model that was. Both HTML5 content models read: `dt`/`dd`
+  as direct children, and one `div` per group wrapping them, which is the form
+  Word, Google Docs and several editors emit because it is the one CSS grid can
+  style. Several `<dt>` before a `<dd>` are one group with several terms, and a
+  definition holding blocks keeps them as blocks. Three shapes have no
+  definition-list home and are now reported instead of vanishing: a `div` inside
+  the wrapper (HTML5 allows one level and no more), any other element between
+  the terms, and the attributes of a group wrapper. A `<dd>` before any `<dt>`
+  is not valid HTML5 but a sliced-up editor export produces one; its content is
+  emitted ahead of the list rather than under an empty `::`, which would read
+  back as a paragraph and trade a silent loss for a corrupt document.
+
 - **`carve fmt` writes a code fence with no space before its info string.** The
   canonical writer emitted the Djot spelling, so it rewrote the authored
   ` ```rust ` to ` ``` rust `, and `markdown_to_carve` produced the same.
