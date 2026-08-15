@@ -655,15 +655,23 @@ mod tests {
 
     #[test]
     fn a_fence_keeps_its_language_and_body() {
+        // The Markdown source is the lenient spelling and the output is the
+        // canonical one: `fenced_code_block` names the no-space form canonical
+        // and says it is what the X->Carve converters emit, and this importer
+        // ends at the canonical writer.
         assert_eq!(
             markdown_to_carve("``` js\nlet x = 1\n```"),
-            "``` js\nlet x = 1\n```\n"
+            "```js\nlet x = 1\n```\n"
+        );
+        assert_eq!(
+            markdown_to_carve("```js\nlet x = 1\n```"),
+            "```js\nlet x = 1\n```\n"
         );
     }
 
     #[test]
     fn an_info_string_contributes_only_its_first_word() {
-        assert!(markdown_to_carve("``` js title=x\ny\n```").starts_with("``` js\n"));
+        assert!(markdown_to_carve("``` js title=x\ny\n```").starts_with("```js\n"));
     }
 
     #[test]

@@ -398,7 +398,7 @@ fn mark_inline_code_and_a_code_block_are_left_alone() {
         &HtmlImportOptions::default(),
     )
     .unwrap();
-    assert_eq!(block.value, "``` js\nx()\n```\n");
+    assert_eq!(block.value, "```js\nx()\n```\n");
 }
 
 /// An EXPLICITLY empty value is the bare boolean too, which the compact form

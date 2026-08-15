@@ -253,6 +253,17 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`carve fmt` writes a code fence with no space before its info string.** The
+  canonical writer emitted the Djot spelling, so it rewrote the authored
+  ` ```rust ` to ` ``` rust `, and `markdown_to_carve` produced the same.
+  `fenced_code_block` names the no-space form canonical while leaving the reader
+  lenient, and the leniency is why nothing caught this: both spellings parse to
+  the same tree, so the writer's own invariants held either way. The separators
+  INSIDE the info string are a different slot and are unchanged - a header or
+  label still takes exactly one space, since ` ```rust"t" ` is not a fence
+  opener at all. Reading ` ``` rust ` keeps working, and a raw block was already
+  writing the tight ` ```=html `.
+
 - **A reference inside an inline note, a critic insertion or a critic deletion
   resolves** (markup-carve/carve#1203, PART 9 §16). §16 disables FOOTNOTE
   recognition inside a note and says nothing about references, so a note's

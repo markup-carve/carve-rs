@@ -2082,11 +2082,16 @@ fn code_fence_info(lang: Option<&str>, title: Option<&str>, label: Option<&str>)
     if let Some(label) = label {
         parts.push(format!("[{}]", write_flat_bracket_run(label)));
     }
-    if parts.is_empty() {
-        String::new()
-    } else {
-        format!(" {}", parts.join(" "))
-    }
+    // NO SPACE between the fence run and the info string. `fenced_code_block`
+    // names the slot OPTIONAL and the no-space form CANONICAL: "The no-space
+    // form (```php) is canonical and is what the X->Carve converters emit." The
+    // reader stays lenient and accepts both, which is why a single-pass output
+    // check never caught this: ``` js re-parses to the same tree.
+    //
+    // The separators BETWEEN the parts are a different slot and stay: inside
+    // `code_fence_info` they are `space+`, mandatory, so ```js"t" is not a
+    // fence opener at all and joining without one would lose the header.
+    parts.join(" ")
 }
 
 fn safe_fence(content: &str, min: usize) -> String {
