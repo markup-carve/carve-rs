@@ -679,12 +679,13 @@ impl<'a> Importer<'a> {
         }
         if tag == "ul" || tag == "ol" {
             let ordered = tag == "ol";
-            let mut items = Vec::new();
-            for (i, li) in children
+            let list_items: Vec<Handle> = children
                 .iter()
                 .filter(|n| Self::tag(n).as_deref() == Some("li"))
-                .enumerate()
-            {
+                .cloned()
+                .collect();
+            let mut items = Vec::new();
+            for (i, li) in list_items.iter().enumerate() {
                 let p = format!("{path}/li[{}]", i + 1);
                 items.push(ListItem {
                     attrs: self.attrs(li, &p),
@@ -693,6 +694,37 @@ impl<'a> Importer<'a> {
                     pos: None,
                 });
             }
+            // Tightness is decided by the ITEM SHAPE, on the SOURCE markup
+            // rather than on what the import made of it (carve#1210: "a
+            // bare-text <li> imports as a TIGHT list item; <li><p>...</p></li>
+            // stays loose. HTML draws the tight/loose distinction the same way
+            // Carve does, and import preserves source structure rather than
+            // normalizing"). Corpus-convert 27 and 28 are the two halves.
+            //
+            // Carve spells tightness per LIST, not per item, so a MIXED list
+            // has to resolve one way, and it resolves LOOSE - the way
+            // CommonMark resolves it, where one paragraph item loosens the
+            // whole list. Resolving it tight instead would drop the paragraph
+            // that item actually spelled, which is the loss this rule exists to
+            // prevent.
+            //
+            // ONLY A DIRECT `<p>` VOTES, which is what makes the predicate one
+            // line instead of a list of exemptions. An item holding only a
+            // sublist, only a block quote, only a code block, or nothing at all
+            // spells no paragraph, so it does not loosen the list and does not
+            // come back with a `<p>` its source never wrote; a nested `<ul>`
+            // beside bare text is structure, not a paragraph wrapper, so
+            // `<li>one<ul>…</ul></li>` is the HTML of a tight item with a
+            // sublist. Asking instead whether every item is BARE TEXT loosens
+            // all four of those shapes, which is the over-application
+            // markup-carve/carve-js#1106 shipped and markup-carve/carve-js#1110
+            // corrected.
+            let tight = !list_items.iter().any(|li| {
+                li.children
+                    .borrow()
+                    .iter()
+                    .any(|child| Self::tag(child).as_deref() == Some("p"))
+            });
             let start = if ordered {
                 Self::attr(h, "start")
                     .and_then(|s| s.parse().ok())
@@ -714,7 +746,7 @@ impl<'a> Importer<'a> {
                 bare_marker: false,
                 delim: None,
                 bullet_char: None,
-                tight: false,
+                tight,
                 items,
                 pos: None,
             })]);

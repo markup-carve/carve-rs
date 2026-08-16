@@ -55,27 +55,31 @@ fn a_deletion_still_maps_the_way_it_did() {
     assert_eq!(imported("<p>a <del>gone</del> b</p>"), "a ~gone~ b\n");
 }
 
+/// The items are bare text, so the lists import TIGHT (carve#1210,
+/// corpus-convert 27) and the style still has to reach every marker. Before
+/// that ruling shipped here the importer wrote every `<li>` as its own
+/// paragraph, and these expectations carried the blank line that produced.
 #[test]
 fn an_ordered_lists_style_reaches_the_marker() {
     for (html, carve, style) in [
         (
             "<ol type=\"a\"><li>x</li><li>y</li></ol>",
-            "a. x\n\nb. y\n",
+            "a. x\nb. y\n",
             OrderedListType::LowerAlpha,
         ),
         (
             "<ol type=\"A\"><li>x</li><li>y</li></ol>",
-            "A. x\n\nB. y\n",
+            "A. x\nB. y\n",
             OrderedListType::UpperAlpha,
         ),
         (
             "<ol type=\"i\"><li>x</li><li>y</li></ol>",
-            "i. x\n\nii. y\n",
+            "i. x\nii. y\n",
             OrderedListType::LowerRoman,
         ),
         (
             "<ol type=\"I\" start=\"3\"><li>x</li><li>y</li></ol>",
-            "III. x\n\nIV. y\n",
+            "III. x\nIV. y\n",
             OrderedListType::UpperRoman,
         ),
     ] {
