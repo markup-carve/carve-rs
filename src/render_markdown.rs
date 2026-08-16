@@ -228,7 +228,7 @@ fn render_block(node: &BlockNode, ctx: &mut MarkdownContext, depth: usize) -> St
             )
         }
         BlockNode::CodeBlock(code) => {
-            let content = strip_controls(&code.content);
+            let content = resolve_nbsp(&strip_controls(&code.content));
             let fence = safe_fence(&content, 3);
             let mut info = code
                 .lang
@@ -766,12 +766,7 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
             if is_literal_crossref(&text.value) {
                 strip_controls(&text.value)
             } else {
-                // The generated-NBSP placeholder (escaped space `\ ` / verse
-                // indent) round-trips to a literal non-breaking space in
-                // Markdown, matching the other renderers' source projection.
-                escape_text(
-                    &strip_controls(&text.value).replace(crate::NBSP_PLACEHOLDER, "\u{00a0}"),
-                )
+                escape_text(&resolve_nbsp(&strip_controls(&text.value)))
             }
         }
         // Not escaped: a smart-typography run is either a glyph (nothing to
@@ -821,7 +816,7 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
                 )
             }
         },
-        InlineNode::Code(code) => render_code(&strip_controls(&code.value)),
+        InlineNode::Code(code) => render_code(&resolve_nbsp(&strip_controls(&code.value))),
         InlineNode::Link(link) => render_link(link, ctx, depth + 1),
         InlineNode::Image(image) => render_image(image),
         InlineNode::Span(span) => {
@@ -871,7 +866,7 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
             // §27: emitted by EVERY renderer, never dropped. It is prose, not
             // code, so no code fence -- the content becomes literal text with
             // Markdown metacharacters escaped so `*not bold*` stays visible.
-            escape_text(&strip_controls(&lit.content))
+            escape_text(&resolve_nbsp(&strip_controls(&lit.content)))
         }
         InlineNode::Symbol(symbol) => format!(":{}:", symbol.name),
         InlineNode::AutoLink(link) => format!(
@@ -1276,6 +1271,24 @@ fn strip_controls(input: &str) -> String {
         .filter(|c| !(SENTINEL_FIRST..=SENTINEL_LAST).contains(c))
         .collect();
     strip_control_chars(&sentinels_gone)
+}
+
+/// Resolve the no-break-space sentinel U+E000 to a literal U+00A0, Markdown's
+/// no-break space.
+///
+/// PART 12 §3 puts the sentinel on FOUR fields - `text.value`, `code.value`,
+/// `code_block.content` and `literal_inline.content` - and a consumer MUST map
+/// it on all of them rather than emit it. Only `raw_block.content` is excluded:
+/// that one is byte-for-byte passthrough, so a U+E000 in it is payload and
+/// mapping it would corrupt what the node exists to carry.
+///
+/// Two sources put it there and BOTH have to survive this: an escaped space
+/// (`\ `), which is a single sentinel, and a line block's preserved indentation
+/// (PART 9 §23), which is a RUN of one sentinel per space. Replacing every
+/// occurrence covers both; a fix that only knew about the escaped space would
+/// map the first and leave the rest.
+fn resolve_nbsp(text: &str) -> String {
+    text.replace(crate::NBSP_PLACEHOLDER, "\u{00a0}")
 }
 
 /// Escape `<>&` so embedded raw HTML cannot become live markup downstream.

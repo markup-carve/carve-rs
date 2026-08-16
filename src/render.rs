@@ -1321,7 +1321,14 @@ fn render_code_block(out: &mut String, c: &CodeBlock, level: usize) {
         out.push('"');
     }
     out.push('>');
-    write_escaped_text(out, &c.content);
+    // A code block's content is VERBATIM but not RAW: PART 12 §3 puts the
+    // no-break-space sentinel U+E000 on `code_block.content` alongside
+    // `text.value`, `code.value` and `literal_inline.content`, and a consumer
+    // MUST map it rather than emit it. Only `raw_block.content` is excluded,
+    // because that one is byte-for-byte passthrough. Writing the private-use
+    // character through is not merely untidy - a downstream typesetter draws
+    // the font's `.notdef` box for it, silently.
+    write_escaped_text_nbsp(out, &c.content);
     out.push_str("\n</code></pre>");
 }
 
