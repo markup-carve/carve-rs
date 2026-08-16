@@ -810,6 +810,9 @@ fn write_block(out: &mut String, node: &BlockNode) {
         BlockNode::Comment(n) => {
             let mut w = typed(out, "comment");
             w.field("block", |out| write_bool(out, n.block));
+            if n.delimited {
+                w.field("delimited", |out| write_bool(out, true));
+            }
             w.field("content", |out| write_string(out, &n.content));
             write_pos_field(&mut w, &n.pos);
             w.finish();
@@ -1250,6 +1253,9 @@ fn write_inline(out: &mut String, node: &InlineNode) {
         InlineNode::Comment(n) => {
             let mut w = typed(out, "comment");
             w.field("block", |out| write_bool(out, false));
+            if n.delimited {
+                w.field("delimited", |out| write_bool(out, true));
+            }
             w.field("content", |out| write_string(out, &n.content));
             write_pos_field(&mut w, &n.pos);
             w.finish();
@@ -1666,6 +1672,7 @@ fn decode_block(value: &Json) -> Result<BlockNode, AstJsonError> {
         })),
         "comment" => Ok(BlockNode::Comment(Comment {
             block: required_bool(obj, "comment", "block")?,
+            delimited: optional_bool(obj, "delimited")?.unwrap_or(false),
             content: required_string(obj, "comment", "content")?.to_string(),
             pos: optional_pos(obj, "comment")?,
         })),
@@ -2142,6 +2149,7 @@ fn decode_inline(value: &Json) -> Result<InlineNode, AstJsonError> {
         // table above; `block` says which one a payload names.
         "comment" => Ok(InlineNode::Comment(Comment {
             block: required_bool(obj, "comment", "block")?,
+            delimited: optional_bool(obj, "delimited")?.unwrap_or(false),
             content: required_string(obj, "comment", "content")?.to_string(),
             pos: optional_pos(obj, "comment")?,
         })),

@@ -1268,7 +1268,9 @@ fn render_block(node: &BlockNode, ctx: &mut CarveContext) -> String {
             )
         }
         BlockNode::Comment(comment) => {
-            if comment.block {
+            if comment.delimited {
+                format!("{{% {} %}}", comment.content)
+            } else if comment.block {
                 render_block_comment(&comment.content)
             } else {
                 format!("%% {}", comment.content)
@@ -1742,7 +1744,7 @@ fn render_inlines_with_caption(
         // back as `{,y,}%% c`, and re-parsing carve-rs's own output turned the
         // comment into literal text. PART 11 section 1a states the test: read
         // the bytes the writer just produced, not the source it came from.
-        if matches!(node, InlineNode::Comment(_)) && needs_comment_space(&out) {
+        if matches!(node, InlineNode::Comment(c) if !c.delimited) && needs_comment_space(&out) {
             out.push(' ');
         }
         out.push_str(&rendered);
@@ -1783,6 +1785,7 @@ fn render_inline(
         // whitespace before the marker (it is not part of the text); the space
         // that puts it back is decided in `render_inlines`, on the bytes
         // already emitted for this line.
+        InlineNode::Comment(c) if c.delimited => format!("{{% {} %}}", c.content),
         InlineNode::Comment(c) => format!("%% {}", c.content),
         InlineNode::Text(text) => escape_text(
             &resolve_nbsp_placeholder(&text.value, ctx.line_block_depth > 0),

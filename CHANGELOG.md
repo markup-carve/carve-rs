@@ -17,6 +17,14 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   restate them. No emitted byte changes. `--mode` and `--adapter` read their
   values back through the same list, which is also what the schema admits.
 
+- **Delimited inline comments are a behavior change:** `foo {% bar %} baz`
+  used to render its braces and now hides the middle, producing `foo  baz`
+  (PART 9 §21a, markup-carve/carve#1239). The first `%}` closes the comment;
+  unterminated openers remain literal, verbatim contexts remain opaque, and the
+  AST/canonical writer preserve the `{% … %}` spelling with optional
+  `delimited: true`. The new `braced-comment-in-a-template-source` lint rule
+  mitigates Liquid, Nunjucks, or Twig source reaching the parser as text.
+
 - **`Table::row_groups`, and the HTML importer states one where a reader cannot
   derive it** (PART 12 §15, markup-carve/carve#1210 P1 under decision D1 as
   ruled). The field was named in the wire allowlist and had no Rust type, no

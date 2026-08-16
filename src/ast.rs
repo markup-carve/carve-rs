@@ -570,6 +570,7 @@ pub struct RawBlock {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Comment {
     pub block: bool,
+    pub delimited: bool,
     pub content: String,
     /// Span in the original source, when the parser could determine it.
     pub pos: Option<Pos>,

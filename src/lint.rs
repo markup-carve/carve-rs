@@ -140,8 +140,64 @@ pub fn lint_carve_with_options(source: &str, options: &Options<'_>) -> Vec<LintW
     for body in doc.footnote_defs.values() {
         collect_figure_group_warnings(body, false, &to_byte, &mut out);
     }
+    collect_template_source_warning(source, &doc, &mut out);
     out.sort_by_key(|w| (w.start, w.end, w.rule));
     out
+}
+
+fn collect_template_source_warning(source: &str, doc: &Document, out: &mut Vec<LintWarning>) {
+    // The AST test keeps verbatim contexts opaque. The source scan then asks
+    // the separate, document-level question: does this look like a template
+    // file that reached Carve before its template engine ran?
+    let json = crate::ast_json::to_json(doc);
+    let mut comment_starts = Vec::new();
+    let mut json_at = 0;
+    while let Some(rel) = json[json_at..].find("\"delimited\":true") {
+        let field = json_at + rel;
+        let Some(offset_rel) = json[field..].find("\"startOffset\":") else {
+            break;
+        };
+        let digits = &json[field + offset_rel + "\"startOffset\":".len()..];
+        let digit_len = digits.bytes().take_while(u8::is_ascii_digit).count();
+        if let Ok(offset) = digits[..digit_len].parse::<usize>() {
+            comment_starts.push(offset);
+        }
+        json_at = field + "\"delimited\":true".len();
+    }
+    if comment_starts.is_empty() {
+        return;
+    }
+    let mut at = 0;
+    while let Some(rel) = source[at..].find("{%") {
+        let start = at + rel;
+        let Some(close_rel) = source[start + 2..].find("%}") else {
+            break;
+        };
+        let end = start + 2 + close_rel + 2;
+        let codepoint_start = source[..start].chars().count();
+        if !comment_starts.contains(&codepoint_start) {
+            at = end;
+            continue;
+        }
+        let tag = source[start + 2..end - 2].trim();
+        let shaped = matches!(tag, "raw" | "endraw" | "endif" | "endfor" | "endblock")
+            || ["if", "for", "block"].iter().any(|head| {
+                tag.strip_prefix(head)
+                    .is_some_and(|rest| rest.starts_with(char::is_whitespace))
+            });
+        if shaped {
+            let line_start = source[..start].rfind('\n').map_or(0, |p| p + 1);
+            out.push(LintWarning {
+                line: source[..start].bytes().filter(|b| *b == b'\n').count() + 1,
+                column: source[line_start..start].chars().count() + 1,
+                rule: "braced-comment-in-a-template-source",
+                message: "This `{% … %}` comment is a template tag. Liquid and Nunjucks render before the converter runs, so a page that wraps its tags in `{% raw %}` hands Carve bare template text - and PART 9 §21a makes that text a comment. Reported, never rewritten: only the author knows which of the two the document meant.".to_string(),
+                start,
+                end,
+            });
+        }
+        at = end;
+    }
 }
 
 /// The PART 9 §4c findings: what a `::: figure` spelling silently is not.
