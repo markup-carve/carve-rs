@@ -161,7 +161,7 @@ pub fn lint_carve_with_options(source: &str, options: &Options<'_>) -> Vec<LintW
         collect_figure_group_warnings(body, false, &to_byte, &mut out);
     }
     collect_template_source_warning(source, &doc, &mut out);
-    collect_unattached_block_attribute_warnings(source, &unattached, &mut out);
+    collect_unattached_block_attribute_warnings(source, &unattached, &to_byte, &mut out);
     out.sort_by_key(|w| (w.start, w.end, w.rule));
     out
 }
@@ -175,6 +175,7 @@ pub fn lint_carve_with_options(source: &str, options: &Options<'_>) -> Vec<LintW
 fn collect_unattached_block_attribute_warnings(
     source: &str,
     spans: &[Pos],
+    to_byte: &dyn Fn(usize) -> usize,
     out: &mut Vec<LintWarning>,
 ) {
     if spans.is_empty() {
@@ -182,8 +183,17 @@ fn collect_unattached_block_attribute_warnings(
     }
     let line_starts = line_start_offsets(source);
     for pos in spans {
-        let start = byte_offset_at(source, &line_starts, pos.start_line, pos.start_column);
-        let end = byte_offset_at(source, &line_starts, pos.end_line, pos.end_column).max(start);
+        let start = to_byte(codepoint_offset_at(
+            &line_starts,
+            pos.start_line,
+            pos.start_column,
+        ));
+        let end = to_byte(codepoint_offset_at(
+            &line_starts,
+            pos.end_line,
+            pos.end_column,
+        ))
+        .max(start);
         out.push(LintWarning {
             line: pos.start_line.max(1),
             column: pos.start_column.max(1),
@@ -198,36 +208,36 @@ fn collect_unattached_block_attribute_warnings(
     }
 }
 
-/// Byte offset of the start of each 1-based source line.
+/// Codepoint offset of the start of each 1-based source line, in the ORIGINAL
+/// text.
+///
+/// THE PARSER'S OWN TABLE, not a second one. Turning a (line, column) pair back
+/// into an offset is a question about NORMALIZATION: a leading BOM is stripped
+/// and both CRLF and a lone CR collapse to LF before the parser sees a line
+/// (PART 1), so a table that counts only `\n` and keeps the BOM disagrees with
+/// the positions it is being asked to place. The disagreement is silent -
+/// `para\r\r{.k}\r` produced an empty span at end of input, and `<BOM>{.k}`
+/// highlighted the mark and lost the closing brace. Reusing
+/// `original_line_start_offsets` is what keeps one answer to the question, and
+/// it is the same table `fill_offsets` places every node with.
 fn line_start_offsets(source: &str) -> Vec<usize> {
-    let mut starts = vec![0usize];
-    for (i, b) in source.bytes().enumerate() {
-        if b == b'\n' {
-            starts.push(i + 1);
-        }
-    }
-    starts
+    crate::parse::original_line_start_offsets(source)
 }
 
-/// The BYTE offset of a 1-based (line, column) pair, where the column counts
-/// CHARACTERS - which is the unit [`Pos`] carries (PART 12 §4).
+/// The CODEPOINT offset of a 1-based (line, column) pair.
 ///
-/// Computed from the source rather than read off the node, because these spans
-/// are taken during the parse and `fill_offsets` only ever runs over nodes that
-/// reached the tree. An unattached attribute reaches none by definition.
-fn byte_offset_at(source: &str, line_starts: &[usize], line: usize, column: usize) -> usize {
+/// `line_starts` holds codepoint offsets and [`Pos`] counts columns in
+/// codepoints too (PART 12 §4), so this is one addition; the conversion to bytes
+/// is the caller's `to_byte`, the same map every other rule here goes through.
+///
+/// Computed rather than read off a node, because these spans are taken DURING
+/// the parse and `fill_offsets` only ever runs over nodes that reached the tree.
+/// An unattached attribute reaches none, by definition.
+fn codepoint_offset_at(line_starts: &[usize], line: usize, column: usize) -> usize {
     let Some(&line_start) = line_starts.get(line.saturating_sub(1)) else {
-        return source.len();
+        return line_starts.last().copied().unwrap_or(0);
     };
-    let rest = &source[line_start..];
-    let line_text = rest.split('\n').next().unwrap_or(rest);
-    let chars = column.saturating_sub(1);
-    line_start
-        + line_text
-            .char_indices()
-            .nth(chars)
-            .map(|(i, _)| i)
-            .unwrap_or(line_text.len())
+    line_start + column.saturating_sub(1)
 }
 
 fn collect_template_source_warning(source: &str, doc: &Document, out: &mut Vec<LintWarning>) {

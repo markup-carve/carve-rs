@@ -227,3 +227,53 @@ fn a_probe_parse_does_not_report_what_the_real_parse_answered() {
     assert_eq!(found.len(), 1, "{found:?}");
     assert_eq!((found[0].line, found[0].column), (2, 3), "{found:?}");
 }
+
+// ---------------------------------------------------------------------------
+// The two the diagnostic itself could get wrong. Found by review.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn a_block_that_takes_no_attributes_is_not_a_block_they_reached() {
+    // `apply_attrs_to_block` ends in `_ => {}`, so handing it a COMMENT discards
+    // the set exactly as having no block at all would - and §15 A2a's "float
+    // past what renders nothing" cannot save it, because a `+` attaches ONE
+    // block and there is no next one to float to. This dropped the attributes
+    // with nothing reporting it, while its document-level twin reported them.
+    let found = unattached("- a\n+\n{.x}\n%% c\n");
+
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert_eq!(found[0].line, 3, "{found:?}");
+    assert_eq!(html("- a\n+\n{.x}\n%% c\n"), "<ul>\n  <li>a</li>\n</ul>");
+    // The twin, which always reported.
+    assert_eq!(unattached("{.x}\n\n%% c\n").len(), 1);
+}
+
+#[test]
+fn the_span_survives_the_normalization_the_parser_did_first() {
+    // The positions arrive as (line, column) taken during the parse, so turning
+    // them back into offsets is a question about NORMALIZATION: a leading BOM is
+    // stripped and both CRLF and a lone CR collapse to LF before the parser sees
+    // a line. A table that counts only `\n` and keeps the BOM disagrees, and the
+    // disagreement is silent - an empty span at end of input in the first case,
+    // and the mark highlighted with the closing brace lost in the second.
+    for src in [
+        "para\r\r{.k}\r",
+        "para\r\n\r\n{.k}\r\n",
+        "\u{feff}para\n\n{.k}\n",
+    ] {
+        let found = unattached(src);
+
+        assert_eq!(found.len(), 1, "{src:?} {found:?}");
+        assert_eq!(
+            &src[found[0].start..found[0].end],
+            "{.k}",
+            "{src:?} {found:?}"
+        );
+    }
+    // A leading BOM with nothing in front of the attribute, which is where the
+    // off-by-one was widest.
+    let src = "\u{feff}{.k}\n";
+    let found = unattached(src);
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert_eq!(&src[found[0].start..found[0].end], "{.k}", "{found:?}");
+}

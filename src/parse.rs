@@ -3233,7 +3233,7 @@ fn owned_inline_pos(node: &InlineNode) -> Option<Pos> {
 /// '\r' - so the entry count matches the normalized line count, and skips a
 /// leading BOM so line 0 starts at the first real character rather than at the
 /// mark (carve#876).
-fn original_line_start_offsets(source: &str) -> Vec<usize> {
+pub(crate) fn original_line_start_offsets(source: &str) -> Vec<usize> {
     let mut chars = source.chars().peekable();
     let mut starts = Vec::new();
     let mut count = 0usize;
@@ -6015,21 +6015,26 @@ fn parse_continuation_block(
         let reaches_nothing = match &block {
             None => true,
             Some(BlockNode::Paragraph(p)) => p.children.is_empty(),
+            // AND A BLOCK THAT TAKES NO ATTRIBUTES IS NOT ONE EITHER.
+            // `apply_attrs_to_block` ends in `_ => {}`, so handing it a comment
+            // or an abbreviation definition discards the set exactly as having
+            // no block at all would - and §15 A2a's "float past what renders
+            // nothing" cannot save it here, because a `+` attaches ONE block and
+            // there is no next one to float to. `- a` / `+` / `{.x}` / `%% c`
+            // dropped the attributes with nothing reporting it, while the
+            // document-level twin `{.x}` / blank / `%% c` reported them.
+            Some(BlockNode::Comment(_)) | Some(BlockNode::AbbreviationDef(_)) => true,
             Some(_) => false,
         };
         if reaches_nothing {
             note_unattached_block_attrs(floating_attrs_pos);
         } else if let Some(node) = &mut block {
-            // NO INVISIBLE-BLOCK GUARD HERE, deliberately. `parse_blocks` skips
-            // an `AbbreviationDef` or a `Comment` before attaching (§15 A2a)
-            // because it holds the set for the NEXT block; a `+` attaches ONE
-            // block, so there is no next one and the set is dropped either way.
-            // The equivalent `matches!` was written here first and then removed:
-            // `apply_attrs_to_block` ends in `_ => {}`, so neither node type
-            // takes attributes, an abbreviation definition is collected by the
-            // prepass and never reaches this parser at all, and the guard could
-            // not change a single byte of HTML or of the AST. A check that
-            // cannot fail is the defect class markup-carve/carve#755 catalogs.
+            // The invisible-block guard is now ABOVE, in `reaches_nothing`.
+            // It was removed from here once, correctly: it could not change a
+            // byte of HTML or of the AST, and a check that cannot fail is the
+            // defect class markup-carve/carve#755 catalogs. §15 A4's diagnostic
+            // is what gives it something to change - the set is still dropped
+            // either way, and now the drop is reported.
             apply_attrs_to_block(node, attrs);
         }
     }
