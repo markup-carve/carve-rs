@@ -1733,7 +1733,16 @@ fn render_inlines_with_caption(
             ctx.note_content_depth > 0,
             ctx.escape_mode,
         );
-        let rendered = render_inline(node, ctx, prev, next, caption_can_open, opens_a_note);
+        let opens_verbatim = next_node_opens_a_verbatim_span(nodes.get(idx + 1));
+        let rendered = render_inline(
+            node,
+            ctx,
+            prev,
+            next,
+            caption_can_open,
+            opens_a_note,
+            opens_verbatim,
+        );
         // A COMMENT'S SEPARATING SPACE IS DECIDED ON THE EMITTED BYTES, not on
         // the previous NODE (carve#1028). `%%` opens a comment only at the
         // start of a line or after whitespace, so the writer owes one space
@@ -1778,6 +1787,7 @@ fn render_inline(
     next_char: char,
     caption_can_open: bool,
     next_opens_a_note: bool,
+    next_opens_a_verbatim_span: bool,
 ) -> String {
     match node {
         // The one target that publishes it: the author wrote `%% note`, and
@@ -1796,9 +1806,10 @@ fn render_inline(
             caption_can_open && ctx.table_cell_depth == 0,
             prev_char,
             next_char,
-            NoteEscape {
+            NeighbourEscape {
                 in_note_content: ctx.note_content_depth > 0,
                 next_node_opens_a_note: next_opens_a_note,
+                next_node_opens_a_verbatim_span: next_opens_a_verbatim_span,
             },
         ),
         InlineNode::EscapedText(text) => format!("\\{}", text.value),
@@ -1890,9 +1901,10 @@ fn render_inline(
             false,
             prev_char,
             next_char,
-            NoteEscape {
+            NeighbourEscape {
                 in_note_content: ctx.note_content_depth > 0,
                 next_node_opens_a_note: next_opens_a_note,
+                next_node_opens_a_verbatim_span: next_opens_a_verbatim_span,
             },
         ),
         InlineNode::Footnote(footnote) => {
@@ -2730,15 +2742,23 @@ fn collapse_breaks(text: &str) -> String {
     trim_non_nbsp(&out).to_string()
 }
 
-/// What the caret-before-a-bracket decision needs that one text node cannot say.
+/// What an escape decision needs that one text node cannot say.
+///
+/// Both facts here are about what SURROUNDS the node: whether it sits inside a
+/// note's content, and what the node after it writes. A text node holds neither,
+/// and `boundary_text` cannot supply the second - it reports a code span's
+/// CONTENT while the span writes a backtick ahead of it.
 #[derive(Clone, Copy)]
-struct NoteEscape {
+struct NeighbourEscape {
     /// Inside an inline note's content, where PART 9 §16 disables note
     /// recognition at every depth.
     in_note_content: bool,
     /// The `[` arrived as the NEXT node's boundary character, and that node
     /// opens a note with it.
     next_node_opens_a_note: bool,
+    /// The next node writes [`render_code`]'s backtick fence at byte zero, so a
+    /// `$`, `$$` or `!` this node ends on binds to it.
+    next_node_opens_a_verbatim_span: bool,
 }
 
 /// Whether the `^` before the `[` at `bracket` needs its escape.
@@ -2756,7 +2776,12 @@ struct NoteEscape {
 /// handed to the minimal/conservative vote (§4) rather than guessed, which is
 /// what the `mode` argument is for: the two passes then differ, W3 parses both,
 /// and the bare form is emitted exactly when it re-parses the same.
-fn caret_needs_its_escape(text: &str, bracket: usize, note: NoteEscape, mode: EscapeMode) -> bool {
+fn caret_needs_its_escape(
+    text: &str,
+    bracket: usize,
+    note: NeighbourEscape,
+    mode: EscapeMode,
+) -> bool {
     if note.in_note_content {
         return false;
     }
@@ -2795,6 +2820,24 @@ fn leading_verbatim_text(node: &InlineNode) -> Option<&str> {
     }
 }
 
+/// Does the node FOLLOWING a text node begin, in the output, with the BACKTICK
+/// FENCE a `$`, `$$` or `!` sigil would bind to?
+///
+/// Asked of the node rather than of [`boundary_text`], which reports a code
+/// span's CONTENT and so cannot answer it: `a $` before a code span holding
+/// `x+y` sees `x` as its neighbour character while the output puts a backtick
+/// there.
+///
+/// A code span and a raw inline are the two nodes that write [`render_code`]'s
+/// fence at byte zero. Math and an inline literal write their own sigil first
+/// (`$` and `!`), so the fence is not adjacent to the text at all.
+fn next_node_opens_a_verbatim_span(next: Option<&InlineNode>) -> bool {
+    matches!(
+        next,
+        Some(InlineNode::Code(_)) | Some(InlineNode::RawInline(_))
+    )
+}
+
 /// Does the node FOLLOWING a text node begin, in the output, with a bracket run
 /// that opens a note?
 ///
@@ -2810,9 +2853,10 @@ fn next_node_opens_a_note(
         Some(text) => caret_needs_its_escape(
             text,
             0,
-            NoteEscape {
+            NeighbourEscape {
                 in_note_content,
                 next_node_opens_a_note: false,
+                next_node_opens_a_verbatim_span: false,
             },
             mode,
         ),
@@ -2827,8 +2871,38 @@ fn escape_text(
     caption_can_open: bool,
     previous_boundary: char,
     next_boundary: char,
-    note: NoteEscape,
+    note: NeighbourEscape,
 ) -> String {
+    // The offset of the first `$` of a trailing `$`-run, or of a trailing `!`,
+    // when a verbatim span follows this text in the OUTPUT. Both sigils bind to
+    // the backtick fence that node writes: `$` makes the span inline math, `$$`
+    // display math, `!` an inline literal - so text the source meant as text
+    // re-parses as markup that was never written, silently and with no
+    // diagnostic. PART 11 §2 escapes exactly this, "if and only if omitting the
+    // escape would change the re-parsed AST", and corpus-convert
+    // 05-markdown-verbatim-sigils-stay-text is the document that asks.
+    //
+    // The whole run is escaped, not just the last one: in `\$$`x`` the SECOND
+    // dollar still opens inline math. This mirrors carve-js
+    // (`escapeCarveConstructsSpelledLikeText`) and carve-php, which do it in
+    // their line-rewriting Markdown converters; carve-rs's importers are
+    // AST-first and hand the job to this writer, so this is where the rule has
+    // to live - and living here covers every importer at once rather than one.
+    //
+    // Only a run that REACHES the end of this node matters. A sigil with
+    // anything after it inside the node is not adjacent to the fence, and a
+    // literal backtick inside the node is escaped unconditionally below, so no
+    // span opens against it either.
+    let verbatim_sigil_at = note
+        .next_node_opens_a_verbatim_span
+        .then(|| {
+            let trimmed = text.trim_end_matches('$');
+            if trimmed.len() < text.len() {
+                return Some(trimmed.len());
+            }
+            text.strip_suffix('!').map(str::len)
+        })
+        .flatten();
     let mut out = String::new();
     // A `^` is only dangerous where a caption marker could be read: at the
     // start of a line. Anywhere else it is literal text - superscript is
@@ -2901,8 +2975,11 @@ fn escape_text(
         // HERE, rather than escaping the class it belongs to.
         let colon_cannot_open = ch == ':' && !at_line_start;
         at_line_start = ch == '\n';
-        let unconditional =
-            matches!(ch, '\\' | '`' | '"' | '\'') || caret_opens_a_caption || caret_opens_inline;
+        let opens_a_verbatim_construct = verbatim_sigil_at.is_some_and(|start| offset >= start);
+        let unconditional = matches!(ch, '\\' | '`' | '"' | '\'')
+            || caret_opens_a_caption
+            || caret_opens_inline
+            || opens_a_verbatim_construct;
         let candidate = matches!(
             ch,
             '*' | '_'

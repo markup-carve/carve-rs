@@ -430,6 +430,40 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Text that ends on a `$`, `$$` or `!` in front of a verbatim span is escaped,
+  so a migrated document keeps saying what its author wrote**
+  (markup-carve/carve#1130, corpus-convert
+  `05-markdown-verbatim-sigils-stay-text`). Each of those sigils binds to the
+  backtick fence the next node writes, so a Markdown paragraph reading `a $`
+  followed by a code span migrated to `` a $`x+y` b `` - inline math, a
+  construct the source never spelled, produced with no diagnostic. `$$` made
+  display math and `!` an inline literal the same way. The canonical writer now
+  escapes the whole sigil run where it sits against that fence, which is where
+  the rule belongs in this engine: carve-js and carve-php escape it in their
+  line-rewriting Markdown converters, while carve-rs's importers are AST-first
+  and hand the source-writing job to the writer - so one rule covers the
+  Markdown and HTML importers and PART 12 ingest at once. It fires per
+  OCCURRENCE, as PART 11 §2 asks: a sigil with a space or any other character
+  between it and the fence, a sigil at the end of a run with nothing after it,
+  and a next node that writes its own sigil ahead of the fence all stay bare.
+
+- **A bare-text `<li>` imports as a TIGHT list item** (markup-carve/carve#1210,
+  corpus-convert `27-html-a-bare-text-list-item-imports-tight` and
+  `28-html-a-mixed-list-stays-loose`). The HTML importer hardwired every list to
+  loose, so `<ul><li>one</li><li>two</li></ul>` came back as `- one` / blank /
+  `- two` and rendered `<li><p>one</p></li>` - a paragraph the source never
+  wrote, on every bare-text list an imported document holds. HTML draws the
+  tight/loose distinction the same way Carve does, and import preserves source
+  structure rather than normalizing it, so tightness is now read from the item
+  shape: a list is tight unless one of its items has a direct `<p>` child.
+  Carve spells tightness per LIST, so a MIXED list resolves the way CommonMark
+  resolves it and stays LOOSE - normalizing it tight would drop the paragraph
+  that item actually spelled. Only a direct `<p>` votes, so an item holding only
+  a sublist, only a block quote, only a code block, or nothing spells no
+  paragraph and does not loosen its list; a nested `<ul>` beside bare text is
+  structure rather than a paragraph wrapper, and a task-list `<input>` is
+  consumed into the `[x]` marker and never votes.
+
 - **A block-attribute line before a NESTED LIST inside a list item reaches that
   list.** `- a` / blank / `  {.x}` / `  - b` published a bare `<ul>`: the
   attributes were not rendered as literal text and no warning was produced, they
