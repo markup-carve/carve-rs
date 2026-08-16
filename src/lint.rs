@@ -490,6 +490,10 @@ fn walk_block(node: &BlockNode, visit: &mut Visit<'_>) {
             report("heading", &n.attrs, n.pos, visit);
             walk_inlines(&n.children, visit);
         }
+        BlockNode::CitationDefinition(n) => {
+            report("citation_definition", &n.attrs, n.pos, visit);
+            walk_inlines(&n.children, visit);
+        }
         BlockNode::Paragraph(n) => {
             report("paragraph", &n.attrs, n.pos, visit);
             walk_inlines(&n.children, visit);

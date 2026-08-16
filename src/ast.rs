@@ -179,6 +179,7 @@ pub enum BlockNode {
     FigureGroup(FigureGroup),
     AbbreviationDef(AbbreviationDef),
     LinkReferenceDefinition(LinkReferenceDefinition),
+    CitationDefinition(CitationDefinition),
     RawBlock(RawBlock),
     Comment(Comment),
     Extension(BlockExtension),
@@ -559,6 +560,33 @@ pub struct LinkReferenceDefinition {
     pub pos: Option<Pos>,
 }
 
+/// A `[@key]: {author= year=} entry` bibliography line (PART 12 §18).
+///
+/// Shaped after [`LinkReferenceDefinition`] rather than after the footnote,
+/// which is the closer of the two analogues: a footnote body holds BLOCKS,
+/// while a citation definition holds a metadata run plus one line of rendered
+/// text. So the entry is `children` of INLINE nodes and the metadata lands in
+/// `attrs`, with `key` where the link kind has `label` - `citation.key`
+/// already names the same string at the use site.
+///
+/// Renders nothing where it sits; the entry's text renders in the references
+/// list the Citations extension builds. Tier-2: with the extension off,
+/// `[@key]: entry` is ordinary paragraph text, so a default-profile parse
+/// never produces this type.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CitationDefinition {
+    /// The citation key as the author wrote it, without the `@`.
+    pub key: String,
+    /// The entry's inline content: what follows the `]: ` separator and the
+    /// optional metadata block. May be empty.
+    pub children: Vec<InlineNode>,
+    /// The leading `{author= year=}` metadata block, when the definition
+    /// carries one.
+    pub attrs: Option<Attrs>,
+    /// Span in the original source, when the parser could determine it.
+    pub pos: Option<Pos>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RawBlock {
     pub format: String,
@@ -632,6 +660,42 @@ pub enum InlineNode {
 }
 
 impl InlineNode {
+    /// The node's span in the original source, when the parser could determine
+    /// one. EXHAUSTIVE on purpose: a `_ => None` arm here would silently answer
+    /// "unpositioned" for a variant added later, and the one caller derives a
+    /// block's `pos` from the first and last positioned node on a line.
+    pub(crate) fn pos(&self) -> Option<&Pos> {
+        match self {
+            Self::Text(n) => n.pos.as_ref(),
+            Self::EscapedText(n) => n.pos.as_ref(),
+            Self::SmartPunctuation(n) => n.pos.as_ref(),
+            Self::Emphasis(n) => n.pos.as_ref(),
+            Self::Code(n) => n.pos.as_ref(),
+            Self::Link(n) => n.pos.as_ref(),
+            Self::Image(n) => n.pos.as_ref(),
+            Self::Span(n) => n.pos.as_ref(),
+            Self::Math(n) => n.pos.as_ref(),
+            Self::RawInline(n) => n.pos.as_ref(),
+            Self::LiteralInline(n) => n.pos.as_ref(),
+            Self::Symbol(n) => n.pos.as_ref(),
+            Self::AutoLink(n) => n.pos.as_ref(),
+            Self::CrossRef(n) => n.pos.as_ref(),
+            Self::CaptionNumber(n) => n.pos.as_ref(),
+            Self::Mention(n) => n.pos.as_ref(),
+            Self::Tag(n) => n.pos.as_ref(),
+            Self::CitationGroup(n) => n.pos.as_ref(),
+            Self::Extension(n) => n.pos.as_ref(),
+            Self::Abbreviation(n) => n.pos.as_ref(),
+            Self::Footnote(n) => n.pos.as_ref(),
+            Self::SoftBreak(n) | Self::HardBreak(n) => n.pos.as_ref(),
+            Self::CriticInsert(n) => n.pos.as_ref(),
+            Self::CriticDelete(n) => n.pos.as_ref(),
+            Self::CriticSubstitute(n) => n.pos.as_ref(),
+            Self::CriticComment(n) => n.pos.as_ref(),
+            Self::Comment(n) => n.pos.as_ref(),
+        }
+    }
+
     pub fn text(value: impl Into<String>) -> Self {
         Self::Text(Text {
             value: value.into(),

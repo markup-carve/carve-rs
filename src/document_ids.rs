@@ -317,6 +317,12 @@ impl Seeder {
                 self.reserve_attrs(&p.attrs);
                 self.walk_inlines(&p.children);
             }
+            BlockNode::CitationDefinition(d) => {
+                // The entry is inline content that renders in the references
+                // list, so an id authored inside it is claimed like any other.
+                self.reserve_attrs(&d.attrs);
+                self.walk_inlines(&d.children);
+            }
             BlockNode::CodeBlock(c) => self.reserve_attrs(&c.attrs),
             BlockNode::List(l) => {
                 self.reserve_attrs(&l.attrs);

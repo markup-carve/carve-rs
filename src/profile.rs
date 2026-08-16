@@ -72,6 +72,10 @@ pub const CANONICAL_BLOCK_TYPES: &[&str] = &[
     // answers allowed for a type the same profile denies on the node path.
     "abbreviation_def",
     "link_reference_definition",
+    // The third definition kind, ruled a node by PART 12 section 18
+    // (markup-carve/carve#1279). Tier-2: only a parse with the Citations
+    // extension on can produce it.
+    "citation_definition",
 ];
 
 /// Canonical inline node-type vocabulary (snake_case).
@@ -127,6 +131,7 @@ pub const CANONICAL_INLINE_TYPES: &[&str] = &[
 pub fn canonical_block_type(node: &BlockNode) -> Option<&'static str> {
     match node {
         BlockNode::LinkReferenceDefinition(_) => Some("link_reference_definition"),
+        BlockNode::CitationDefinition(_) => Some("citation_definition"),
         BlockNode::Heading(_) => Some("heading"),
         BlockNode::Paragraph(_) => Some("paragraph"),
         BlockNode::CodeBlock(_) => Some("code_block"),

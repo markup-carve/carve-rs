@@ -648,6 +648,7 @@ fn normalize_escapes_block(block: &mut BlockNode) {
     match block {
         // No inline children: the label, destination and title are plain strings.
         BlockNode::LinkReferenceDefinition(_) => {}
+        BlockNode::CitationDefinition(d) => normalize_escapes_inlines(&mut d.children),
         BlockNode::Heading(h) => normalize_escapes_inlines(&mut h.children),
         BlockNode::Paragraph(p) => normalize_escapes_inlines(&mut p.children),
         BlockNode::List(l) => {
@@ -1060,6 +1061,11 @@ fn render_item_blocks(blocks: &[BlockNode], tight: bool, ctx: &mut CarveContext)
 
 fn render_block(node: &BlockNode, ctx: &mut CarveContext) -> String {
     match node {
+        // PART 12 section 18: renders nothing where it sits, on this target as
+        // on every other. The Carve writer parses without the Citations
+        // extension, so a definition line round-trips as the paragraph text it
+        // is there; a tree carrying the node arrived from somewhere else.
+        BlockNode::CitationDefinition(_) => String::new(),
         BlockNode::LinkReferenceDefinition(def) => {
             // Unless a definition list already wrote it on its own description
             // line, where the author put it - writing it twice would define the

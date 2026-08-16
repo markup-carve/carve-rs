@@ -600,6 +600,7 @@ pub(crate) fn first_block_pos(children: &[BlockNode]) -> Option<&Pos> {
 pub(crate) fn block_pos(node: &BlockNode) -> Option<&Pos> {
     match node {
         BlockNode::LinkReferenceDefinition(n) => n.pos.as_ref(),
+        BlockNode::CitationDefinition(n) => n.pos.as_ref(),
         BlockNode::Heading(n) => n.pos.as_ref(),
         BlockNode::Paragraph(n) => n.pos.as_ref(),
         BlockNode::CodeBlock(n) => n.pos.as_ref(),
@@ -789,6 +790,19 @@ fn write_block(out: &mut String, node: &BlockNode) {
             if let Some(title) = &n.title {
                 w.field("title", |out| write_string(out, title));
             }
+            write_attrs_field(&mut w, &n.attrs);
+            write_pos_field(&mut w, &n.pos);
+            w.finish();
+        }
+        BlockNode::CitationDefinition(n) => {
+            // PART 12 section 18: `key` and `children` are required, `attrs`
+            // rides along when the definition line carried a metadata block.
+            // Shaped after section 10's link reference definition, so the entry
+            // is INLINE content - a footnote body holds blocks and this does
+            // not.
+            let mut w = typed(out, "citation_definition");
+            w.field("key", |out| write_string(out, &n.key));
+            w.field("children", |out| write_inlines(out, &n.children));
             write_attrs_field(&mut w, &n.attrs);
             write_pos_field(&mut w, &n.pos);
             w.finish();
@@ -1660,6 +1674,12 @@ fn decode_block(value: &Json) -> Result<BlockNode, AstJsonError> {
                 pos: optional_pos(obj, "link_reference_definition")?,
             },
         )),
+        "citation_definition" => Ok(BlockNode::CitationDefinition(CitationDefinition {
+            key: required_string(obj, "citation_definition", "key")?.to_string(),
+            children: decode_inlines(required_array(obj, "citation_definition", "children")?)?,
+            attrs: optional_attrs(obj)?,
+            pos: optional_pos(obj, "citation_definition")?,
+        })),
         "abbreviation_def" => Ok(BlockNode::AbbreviationDef(AbbreviationDef {
             abbr: required_string(obj, "abbreviation_def", "abbr")?.to_string(),
             expansion: required_string(obj, "abbreviation_def", "expansion")?.to_string(),
