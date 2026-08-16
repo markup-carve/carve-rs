@@ -313,6 +313,26 @@ fn measure_scaling(build: &impl Fn(usize) -> String) -> Scaling {
 /// Only the sizes move; the interleaving, the rounds and the median are shared,
 /// because a second spelling of the timing is what this helper exists to avoid.
 fn measure_scaling_at(build: &impl Fn(usize) -> String, small_n: usize, large_n: usize) -> Scaling {
+    measure_conversion_scaling_at(
+        &|source| drop(carve::to_html(source)),
+        build,
+        small_n,
+        large_n,
+    )
+}
+
+/// `measure_scaling_at` over any conversion, not just `to_html`.
+///
+/// Split out so a shape whose cost lives on ANOTHER entry point - an HTML
+/// import, say - is measured by THIS calibration rather than by a second
+/// spelling of the timing. The interleaving, the rounds and the best-of are
+/// exactly what this helper exists to keep in one place.
+fn measure_conversion_scaling_at(
+    convert: &impl Fn(&str),
+    build: &impl Fn(usize) -> String,
+    small_n: usize,
+    large_n: usize,
+) -> Scaling {
     let _guard = perf_guard();
     let small = build(small_n);
     let large = build(large_n);
@@ -320,12 +340,12 @@ fn measure_scaling_at(build: &impl Fn(usize) -> String, small_n: usize, large_n:
     let large_bytes = large.len() as f64;
 
     // Prime caches/allocator so round 1 does not measure warm-up.
-    let _ = carve::to_html(&small);
-    let _ = carve::to_html(&large);
+    convert(&small);
+    convert(&large);
 
     let time_once = |source: &str| {
         let start = Instant::now();
-        let _ = carve::to_html(source);
+        convert(source);
         start.elapsed().as_secs_f64()
     };
 
@@ -391,7 +411,24 @@ fn assert_near_linear_at(
     small_n: usize,
     large_n: usize,
 ) {
-    let scaling = measure_scaling_at(&build, small_n, large_n);
+    assert_conversion_near_linear_at(
+        |source| drop(carve::to_html(source)),
+        build,
+        label,
+        small_n,
+        large_n,
+    );
+}
+
+/// `assert_near_linear_at` over any conversion. See `measure_conversion_scaling_at`.
+fn assert_conversion_near_linear_at(
+    convert: impl Fn(&str),
+    build: impl Fn(usize) -> String,
+    label: &str,
+    small_n: usize,
+    large_n: usize,
+) {
+    let scaling = measure_conversion_scaling_at(&convert, &build, small_n, large_n);
 
     let ratio = scaling.per_byte_ratio();
     assert!(
@@ -970,5 +1007,76 @@ fn plus_attached_comment_fence_closer_lookahead_is_indexed() {
         "plus-attached-closed-comment-fence",
         2_000,
         8_000,
+    );
+}
+
+/// A REAL EXPORT'S FOOTNOTE SHAPE: one reference per note, every note in one
+/// list. This is what Word, Google Docs and Pandoc all produce, and it is the
+/// shape that exposes a pairing pass which asks a question of every candidate
+/// about every OTHER candidate.
+fn footnote_shaped_export(notes: usize) -> String {
+    let mut body = String::new();
+    let mut definitions = String::new();
+    for index in 1..=notes {
+        let _ = writeln!(
+            body,
+            "<p>text {index}<a href=\"#fn{index}\" id=\"fnref{index}\">\
+             <sup>{index}</sup></a> tail.</p>"
+        );
+        let _ = writeln!(
+            definitions,
+            "<li id=\"fn{index}\"><p>note {index}\
+             <a href=\"#fnref{index}\">back</a></p></li>"
+        );
+    }
+    format!("{body}<section class=\"footnotes\"><hr /><ol>{definitions}</ol></section>")
+}
+
+fn import_footnote_shaped(adapter: carve::HtmlImportAdapter) -> impl Fn(&str) {
+    move |html: &str| {
+        let options = carve::HtmlImportOptions {
+            adapter,
+            ..Default::default()
+        };
+        let _ = carve::html_to_carve(html, &options);
+    }
+}
+
+/// RECOGNIZING FOOTNOTE-SHAPED HTML MUST NOT COST THE DOCUMENT TWICE
+/// (markup-carve/carve#1210).
+///
+/// Three steps of the adapter pass started out quadratic in carve-php: which
+/// candidate reads the same mutual pair from the other end, which block
+/// contains another block, and whether an anchor sits inside a note. On a
+/// document that is mostly notes each of those is O(notes^2), and carve-php
+/// measured 0.603s at 800 notes before the fix. Each is answered here from an
+/// index instead - the back anchor names the inverse, the containers are found
+/// by climbing once per note, and the set of nodes inside a note is built once.
+///
+/// One note is two blocks and an anchor pair, so the file's default 50k/200k
+/// would build a document two orders of magnitude past what the shape needs.
+/// 250/1000 keeps the same 4x multiple.
+#[test]
+fn footnote_shaped_html_is_not_paired_candidate_against_candidate() {
+    assert_conversion_near_linear_at(
+        import_footnote_shaped(carve::HtmlImportAdapter::Word),
+        footnote_shaped_export,
+        "footnote-shaped HTML under the word adapter",
+        250,
+        1_000,
+    );
+}
+
+/// The control, and not decoration: it walks the SAME document through the
+/// same importer with the adapter pass switched off, so a reading that blames
+/// the pass has to survive the same document measuring linear without it.
+#[test]
+fn the_same_footnote_document_is_bounded_without_the_adapter() {
+    assert_conversion_near_linear_at(
+        import_footnote_shaped(carve::HtmlImportAdapter::Generic),
+        footnote_shaped_export,
+        "the same document under the generic adapter",
+        250,
+        1_000,
     );
 }
