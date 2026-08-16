@@ -227,11 +227,12 @@ fn refuse_unknown_fields(node: &Json, path: &str) -> Result<(), AstJsonError> {
                         }
                     }
                     // The records the schema closes but gives no `type`, reached
-                    // through an ARRAY property of a typed node - today only
+                    // through an ARRAY property of a typed node -
                     // `citation_group.items`, whose entries are `citation`
-                    // objects. The type-keyed check above cannot see them and
-                    // the helper loop cannot either, so a citation carrying any
-                    // extra field rode straight in.
+                    // objects, and `table.rowGroups.bodies`. The type-keyed
+                    // check above cannot see them and the helper loop cannot
+                    // either, so a citation carrying any extra field rode
+                    // straight in.
                     for (position, allowed) in crate::wire_fields::WIRE_UNTYPED_ARRAY_FIELDS {
                         let Some((owner, property)) = position.split_once('.') else {
                             continue;
@@ -239,7 +240,21 @@ fn refuse_unknown_fields(node: &Json, path: &str) -> Result<(), AstJsonError> {
                         if *ty != *owner {
                             continue;
                         }
-                        let Some(Json::Array(items)) = obj.get(property) else {
+                        // The property may sit under an untyped object of its
+                        // own - `table.rowGroups.bodies` - so the path is
+                        // WALKED rather than read as one key. Without this a
+                        // body group was the one record on the wire nothing
+                        // closed.
+                        let mut holder = Some(obj);
+                        let mut steps: Vec<&str> = property.split('.').collect();
+                        let leaf = steps.pop().unwrap_or(property);
+                        for step in steps {
+                            holder = match holder.and_then(|o| o.get(step)) {
+                                Some(Json::Object(inner)) => Some(inner),
+                                _ => None,
+                            };
+                        }
+                        let Some(Json::Array(items)) = holder.and_then(|o| o.get(leaf)) else {
                             continue;
                         };
                         for (index, item) in items.iter().enumerate() {
@@ -880,8 +895,32 @@ fn write_table(out: &mut String, n: &Table) {
     if let Some(short_caption) = &n.short_caption {
         w.field("shortCaption", |out| write_inlines(out, short_caption));
     }
+    if let Some(groups) = &n.row_groups {
+        w.field("rowGroups", |out| write_row_groups(out, groups));
+    }
     write_attrs_field(&mut w, &n.attrs);
     write_pos_field(&mut w, &n.pos);
+    w.finish();
+}
+
+fn write_row_groups(out: &mut String, n: &TableRowGroups) {
+    let mut w = Writer::new(out);
+    w.field("headRows", |out| write_usize(out, n.head_rows));
+    w.field("bodies", |out| {
+        write_array(out, &n.bodies, write_body_group)
+    });
+    w.field("footRows", |out| write_usize(out, n.foot_rows));
+    w.finish();
+}
+
+fn write_body_group(out: &mut String, n: &TableBodyGroup) {
+    let mut w = Writer::new(out);
+    w.field("headRows", |out| write_usize(out, n.head_rows));
+    w.field("bodyRows", |out| write_usize(out, n.body_rows));
+    if let Some(columns) = n.row_head_columns {
+        w.field("rowHeadColumns", |out| write_usize(out, columns));
+    }
+    write_attrs_field(&mut w, &n.attrs);
     w.finish();
 }
 
@@ -1663,15 +1702,74 @@ fn decode_list_item(value: &Json) -> Result<ListItem, AstJsonError> {
 }
 
 fn decode_table(obj: &BTreeMap<String, Json>) -> Result<Table, AstJsonError> {
+    let rows: Vec<TableRow> = required_array(obj, "table", "rows")?
+        .iter()
+        .map(decode_table_row)
+        .collect::<Result<_, _>>()?;
+    let row_groups = match obj.get("rowGroups") {
+        Some(value) => Some(decode_row_groups(value, rows.len())?),
+        None => None,
+    };
     Ok(Table {
         attrs: optional_attrs(obj)?,
         caption: optional_inlines(obj, "caption")?,
         short_caption: optional_inlines(obj, "shortCaption")?,
-        rows: required_array(obj, "table", "rows")?
-            .iter()
-            .map(decode_table_row)
-            .collect::<Result<_, _>>()?,
+        rows,
+        row_groups,
         pos: optional_pos(obj, "table")?,
+    })
+}
+
+/// PART 12 §15's partition MUST, checked HERE because here it can fail.
+///
+/// The counts have to account for every row exactly once. JSON Schema cannot
+/// express a sum across fields, so the schema does not check it and a
+/// non-summing partition validates; the importer cannot check it either, because
+/// there the counts and the rows are built from the same list. A payload
+/// arriving from elsewhere is the one place the two can disagree.
+fn decode_row_groups(value: &Json, rows: usize) -> Result<TableRowGroups, AstJsonError> {
+    let obj = value.as_object("table.rowGroups")?;
+    let head_rows = required_usize(obj, "table.rowGroups", "headRows")?;
+    let foot_rows = required_usize(obj, "table.rowGroups", "footRows")?;
+    let bodies = required_array(obj, "table.rowGroups", "bodies")?
+        .iter()
+        .map(|body| {
+            let body = body.as_object("table.rowGroups.bodies[]")?;
+            Ok(TableBodyGroup {
+                head_rows: required_usize(body, "table.rowGroups.bodies[]", "headRows")?,
+                body_rows: required_usize(body, "table.rowGroups.bodies[]", "bodyRows")?,
+                row_head_columns: optional_usize(body, "rowHeadColumns")?,
+                attrs: optional_attrs(body)?,
+            })
+        })
+        .collect::<Result<Vec<_>, AstJsonError>>()?;
+    // CHECKED, because every one of these is a number off untrusted JSON and
+    // `as_usize` bounds none of them. Two counts near `usize::MAX` wrap to a
+    // small total in release and panic in debug, so the sum could both abort the
+    // process and, wrapped, ACCEPT a partition that consumes nothing.
+    let counted = bodies
+        .iter()
+        .try_fold(head_rows, |total, body| {
+            total
+                .checked_add(body.head_rows)?
+                .checked_add(body.body_rows)
+        })
+        .and_then(|total| total.checked_add(foot_rows));
+    let Some(counted) = counted else {
+        return Err(AstJsonError::new(
+            "table.rowGroups does not partition the table's rows: its counts do not add up to a number of rows (PART 12 §15)".to_owned(),
+        ));
+    };
+    if counted != rows {
+        return Err(AstJsonError::new(format!(
+            "table.rowGroups does not partition the table's rows: the head, bodies and foot account for {counted} row{} of {rows} (PART 12 §15)",
+            if counted == 1 { "" } else { "s" }
+        )));
+    }
+    Ok(TableRowGroups {
+        head_rows,
+        bodies,
+        foot_rows,
     })
 }
 

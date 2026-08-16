@@ -74,6 +74,7 @@ pub(crate) const WIRE_FIELDS: &[(&str, &[&str])] = &[
 pub(crate) const WIRE_HELPER_FIELDS: &[(&str, &[&str])] = &[
     ("attrs", &["classes", "id", "keyValues", "order"]),
     ("pos", &["endColumn", "endLine", "endOffset", "startColumn", "startLine", "startOffset"]),
+    ("rowGroups", &["bodies", "footRows", "headRows"]),
 ];
 
 /// Properties the schema names for an untyped record in an array,
@@ -81,4 +82,5 @@ pub(crate) const WIRE_HELPER_FIELDS: &[(&str, &[&str])] = &[
 #[rustfmt::skip]
 pub(crate) const WIRE_UNTYPED_ARRAY_FIELDS: &[(&str, &[&str])] = &[
     ("citation_group.items", &["key", "locator", "locatorLabel", "locatorValue", "number", "prefix", "suffix", "suppressAuthor", "useIndex"]),
+    ("table.rowGroups.bodies", &["attrs", "bodyRows", "headRows", "rowHeadColumns"]),
 ];

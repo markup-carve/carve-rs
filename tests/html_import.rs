@@ -97,6 +97,7 @@ fn shared_contract_fixtures_match() {
                 HtmlImportDiagnosticCode::StyleUnmapped => "style-unmapped",
                 HtmlImportDiagnosticCode::TableDegraded => "table-degraded",
                 HtmlImportDiagnosticCode::RawPreserved => "raw-preserved",
+                HtmlImportDiagnosticCode::StructureUnspellable => "structure-unspellable",
                 HtmlImportDiagnosticCode::DiagnosticsTruncated => "diagnostics-truncated",
             })
             .collect::<Vec<_>>();
