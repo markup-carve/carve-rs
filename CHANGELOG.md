@@ -373,6 +373,33 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A table's sections and rows keep the attributes they have a slot for.** A
+  `<tbody id="totals">` and a `<tr class="warn">` fell into the empty `attrs`
+  slot with no diagnostic at all, though the model has a place for both:
+  `TableRow::attrs`, which the writer spells on the closing pipe and every
+  renderer emits on the `<tr>`, and the body group's `attrs` in
+  `Table::row_groups`. A `<tbody>` carrying attributes makes the table's
+  grouping say something its rows cannot, so the field is emitted to hold them;
+  the head and the foot are stated as row COUNTS and have no slot, so a
+  `<thead>` or `<tfoot>` that carries any is reported by name with
+  `attribute-dropped`, as is a `<tbody>` whose grouping was dropped for another
+  reason. A section with NO rows is read too - it is one of the table's
+  sections, and the list is collected during the walk rather than derived from
+  the rows, which had missed it - and reported, because a body group is the run
+  of rows it consumes and one with none is not a group. Reading these elements
+  at all also puts them on the ordinary attribute path, so an unsupported
+  attribute on a `<tr>` or a section reports the way it does anywhere else,
+  where nothing was said about them before. Ported from
+  markup-carve/carve-js#1096.
+
+- **A `<colgroup>` says that it was dropped.** A table's column structure went
+  out in silence: Carve has no column model to hold it, not a narrower slot but
+  none at all, and the import said nothing. It is reported with
+  `element-dropped` now, at the `<colgroup>`'s own path, which covers the
+  `<col>`s inside it the way one report covers a dropped subtree everywhere
+  else. Whether Carve should have a column model is a separate question; a loss
+  the reader is never told about is one they cannot work around either way.
+
 - **The Markdown writer leaves no trailing space on an emptied marker.** A list
   item or definition whose whole body was COLLECTED - a link reference
   definition, a footnote definition - wrote its marker with the separator space
