@@ -448,11 +448,21 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Three tiers, the same rule carve-js and carve-php now apply. An
   `<annotation>` whose `encoding` is exactly `application/x-tex`, `text/x-tex`
   or `LaTeX`, and which is a direct child of the element's own `<semantics>`,
-  supplies the content. Otherwise `alttext` does, with an `element-unwrapped`
+  supplies the content. Otherwise `alttext` does, with an `encoding-assumed`
   info recording that MathML does not declare what `alttext` holds. Otherwise
   there is no TeX in the source: `safe` and `semantic` drop the element with an
   `element-dropped` warning naming it, and `roundtrip` keeps the whole element
   as raw HTML, which is what that mode already did.
+
+  `encoding-assumed` is the ninth code in the import schema's enum
+  (markup-carve/carve#1235), and it is the one the `alttext` read reports rather
+  than `element-unwrapped`. Unwrapping is a note about the input's structure and
+  loses no meaning; an assumed encoding is a warning about the OUTPUT, because
+  MathML never states what `alttext` holds and the math node may carry something
+  that is not TeX at all. A consumer told only that an element is gone cannot
+  tell a harmless structural event from content that may be in the wrong
+  language entirely, and that is the one signal it could act on. The severity
+  stays `info`, matching carve-js: the spec maps no code to a severity.
 
   `display="block"` sets the node's display flag. The TeX body is taken as
   written, `{\displaystyle ...}` and all; only the whitespace around it is

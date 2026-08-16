@@ -45,6 +45,16 @@ pub enum HtmlImportDiagnosticCode {
     /// only a WRITER loses it (PART 12 §16). Reported by `html_to_carve`;
     /// `html_to_ast` keeps the structure and says nothing.
     StructureUnspellable,
+    /// The source did not declare how to read a value and this importer picked
+    /// an encoding anyway, so the node it produced is only correct if that
+    /// guess holds.
+    ///
+    /// Deliberately NOT `ElementUnwrapped`: unwrapping is a note about the
+    /// input's structure and loses no meaning, while an assumed encoding is a
+    /// warning about the OUTPUT. A consumer told only that an element is gone
+    /// cannot tell a harmless structural event from content that may be in the
+    /// wrong language entirely, and that is the one signal it could act on.
+    EncodingAssumed,
     DiagnosticsTruncated,
 }
 
@@ -1911,9 +1921,15 @@ impl<'a> Importer<'a> {
                 // falls through to `alttext`, and reading the presence of the
                 // element would make that fall-through the one tier-2 read
                 // that says nothing.
+                //
+                // `encoding-assumed` is the code because the loss is in the
+                // OUTPUT: MathML never states what `alttext` holds, so the
+                // math node may carry something that is not TeX at all.
+                // `element-unwrapped` would describe a structural event the
+                // consumer cannot act on (carve#1235).
                 if tier == 2 {
                     self.diag(
-                        HtmlImportDiagnosticCode::ElementUnwrapped,
+                        HtmlImportDiagnosticCode::EncodingAssumed,
                         "Read <math> through its alttext: MathML does not declare the encoding of alttext, so TeX is assumed".into(),
                         HtmlImportSeverity::Info,
                         path,

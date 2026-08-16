@@ -500,6 +500,7 @@ fn html_report_json(report: &carve::HtmlImportReport) -> String {
                     carve::HtmlImportDiagnosticCode::StructureUnspellable => {
                         "structure-unspellable"
                     }
+                    carve::HtmlImportDiagnosticCode::EncodingAssumed => "encoding-assumed",
                     carve::HtmlImportDiagnosticCode::DiagnosticsTruncated =>
                         "diagnostics-truncated",
                 },
