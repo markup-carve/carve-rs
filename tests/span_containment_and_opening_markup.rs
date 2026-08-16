@@ -414,7 +414,11 @@ fn opens_with(ty: &str, ahead: &str) -> Option<bool> {
         "caption_number" | "heading" | "tag" => first == '#',
         "code" | "raw_inline" | "raw_block" => first == '`',
         "code_block" => first == '`' || first == '~',
-        "comment" => first == '%',
+        // Two spellings open a comment: the line/fence form `%%`, and the
+        // delimited inline form `{% ... %}` the 321 corpus category pins. The
+        // second one is why this is not just `first == '%'` - `{` alone would
+        // be too loose, since the brace opens half the inline table below.
+        "comment" => first == '%' || ahead.starts_with("{%"),
         "critic_comment" | "delete" | "insert" | "subscript" | "substitution" | "superscript" => {
             first == '{'
         }
