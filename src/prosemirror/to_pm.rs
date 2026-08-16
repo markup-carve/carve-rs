@@ -501,12 +501,13 @@ impl Renderer {
                 let Some(name) = self.name("link") else {
                     return;
                 };
+                let carried = a.clone();
                 next.push(mark(name, a));
                 for c in &n.children {
                     self.inline(c, &next, out);
                 }
                 if out.len() == before {
-                    self.drop_type("link", Some("an empty mark has no carrier in ProseMirror"));
+                    self.empty_mark("link", carried, marks, out);
                 }
             }
             InlineNode::AutoLink(n) => {
@@ -536,7 +537,7 @@ impl Renderer {
                     self.inline(c, &next, out);
                 }
                 if out.len() == before {
-                    self.drop_type("span", Some("an empty mark has no carrier in ProseMirror"));
+                    self.empty_mark("span", attrs(n.attrs.as_ref()), marks, out);
                 }
             }
             InlineNode::Math(n) => {
@@ -734,6 +735,7 @@ impl Renderer {
         marks: &[Json],
         out: &mut Vec<Json>,
     ) {
+        let before = out.len();
         let mut next = marks.to_vec();
         let Some(name) = self.name(ty) else {
             return;
@@ -742,6 +744,32 @@ impl Renderer {
         for c in children {
             self.inline(c, &next, out);
         }
+        if out.len() == before {
+            self.empty_mark(ty, attrs(a), marks, out);
+        }
+    }
+
+    /// A mark with no content, as the atom `markCarrierNodes` declares for it.
+    ///
+    /// A ProseMirror mark cannot span zero characters, so walking the children
+    /// of `[](/u)`, `[]{.a}`, `{++}` or `{--}` produces nothing at all and the
+    /// construct leaves the document. Two of these at least reported
+    /// themselves dropped; the critic pair reported nothing, so `{++}` was
+    /// deleted from the source in silence.
+    fn empty_mark(&mut self, ty: &str, mark_attrs: Object, marks: &[Json], out: &mut Vec<Json>) {
+        let Some(mark_type) = self.name(ty) else {
+            return;
+        };
+        let Some(carrier) = self.map.mark_carrier.as_deref() else {
+            self.drop_type(ty, Some("the vendored map declares no empty-mark carrier"));
+            return;
+        };
+        let mut a = Object::new();
+        a.insert("markType".into(), Json::String(mark_type.into()));
+        if !mark_attrs.is_empty() {
+            a.insert("markAttrs".into(), Json::Object(mark_attrs));
+        }
+        out.push(node_marked(carrier, a, Vec::new(), marks));
     }
     fn image(&mut self, n: &Image, marks: &[Json]) -> Option<Json> {
         let mut a = attrs(n.attrs.as_ref());
@@ -852,7 +880,19 @@ fn mark(name: &str, attrs: Object) -> Json {
 fn attrs(a: Option<&Attrs>) -> Object {
     let mut out = Object::new();
     if let Some(a) = a {
-        if let Some(id) = &a.id {
+        // A RECORDED run that does not name `#id` proves the id was not
+        // authored: the only ids Carve synthesizes are heading ids, and the
+        // parser writes `#id` into `order` for every id somebody typed. The
+        // map's `id` is the authored id, so a generated one does not go in it -
+        // it is a resolution artifact, regenerated when the document renders.
+        //
+        // Only where the run was recorded, though. A heading with no attribute
+        // line at all carries its generated id and an EMPTY order, which says
+        // nothing either way, and reading it as proof would drop an authored id
+        // out of any AST that reached this bridge without an order.
+        let generated_id =
+            !a.order.is_empty() && !a.order.iter().any(|s| matches!(s, AttrSlot::Id));
+        if let Some(id) = a.id.as_ref().filter(|_| !generated_id) {
             out.insert("id".into(), Json::String(id.clone()));
         }
         if !a.classes.is_empty() {

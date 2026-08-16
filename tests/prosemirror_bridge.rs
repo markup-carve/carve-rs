@@ -46,22 +46,22 @@ const ALIASED_TYPES: &[(&str, &str)] = &[("tag", "mention")];
 // differing fails, and a document that stops differing fails too, so a fix has
 // to delete its entry rather than let the gate quietly cover less.
 //
-// The causes, all pre-existing and none of them fixed here:
+// The causes. The three the bridge half of carve-grammars#240 addressed are
+// gone from this list; what is left is one defect with a long tail, plus three
+// small ones:
 //
-//  - 78 documents gain an attribute line the author never wrote. A generated
-//    heading id comes back slotted as authored (`# Title` returns as
-//    `{#Title}` + `# Title`), and an admonition's kind comes back as an
-//    authored class (`::: note` returns as `{.note}` + `::: note`). The
-//    outbound side stamps both into `attrs`; the inbound side cannot tell a
-//    stamped value from an authored one and slots everything it finds.
-//  - 5 reference definitions come back with their structural title repeated as
+//  - 56 documents gain an attribute line the author never wrote, carrying a
+//    GENERATED heading id: `# Title` returns as `{#Title}` + `# Title`. The
+//    outbound side stamps the id into `attrs.id`, and where the heading has no
+//    attribute run at all there is nothing to say the id was not authored. A
+//    run that IS recorded settles it - it names every slot somebody typed - and
+//    that case is now read correctly; the headings left here have no run.
+//  - 6 reference definitions come back with their structural title repeated as
 //    an authored attribute: `[a]: /u "T"` returns as `[a]: /u "T" {title=T}`.
 //  - 1 document loses an attribute outright: 108-security-hardening-11 writes
 //    `[safe](https://example.com){href=javascript:steal}` and gets
 //    `[safe](https://example.com)` back.
-//  - 18 documents combine one of the above with a reflow: a block opener
-//    written inside a list item returns as an attached `+` block, and
-//    `/*x*/` returns as `*/x/*`.
+//  - 2 documents reflow their emphasis delimiters: `/*x*/` returns as `*/x/*`.
 const SOURCE_LOSSY: &[&str] = &[
     "02-headings-2.crv",
     "02-headings-4.crv",
@@ -70,13 +70,6 @@ const SOURCE_LOSSY: &[&str] = &[
     "03-links-13.crv",
     "108-security-hardening-11.crv",
     "111-cross-references-resolve-inside-footnote-bodies.crv",
-    "116-fence-opener-with-a-nested-list-body-inside-a-list-item-2.crv",
-    "116-fence-opener-with-a-nested-list-body-inside-a-list-item-3.crv",
-    "116-fence-opener-with-a-nested-list-body-inside-a-list-item-4.crv",
-    "116-fence-opener-with-a-nested-list-body-inside-a-list-item-5.crv",
-    "116-fence-opener-with-a-nested-list-body-inside-a-list-item-6.crv",
-    "116-fence-opener-with-a-nested-list-body-inside-a-list-item-7.crv",
-    "116-fence-opener-with-a-nested-list-body-inside-a-list-item.crv",
     "118-cyclic-cross-reference-resolves-to-one-level-2.crv",
     "118-cyclic-cross-reference-resolves-to-one-level-3.crv",
     "118-cyclic-cross-reference-resolves-to-one-level.crv",
@@ -86,7 +79,6 @@ const SOURCE_LOSSY: &[&str] = &[
     "122-footnotes-placement.crv",
     "130-bold-italic-delimiter-needs-content-3.crv",
     "130-bold-italic-delimiter-needs-content-4.crv",
-    "148-colon-fence-as-a-block-opener-in-a-list-item-2.crv",
     "15-heading-ids-2.crv",
     "15-heading-ids-3.crv",
     "15-heading-ids-5.crv",
@@ -101,21 +93,10 @@ const SOURCE_LOSSY: &[&str] = &[
     "213-a-tag-inside-a-literal-brace-run-is-still-a-tag.crv",
     "217-a-heading-id-keeps-a-non-ascii-space.crv",
     "221-a-heading-reference-folds-unicode-normalization-but-not-compatibility.crv",
-    "225-a-footnote-body-s-last-block-when-it-is-not-a-paragraph-gets-a-synthesized-paragraph-for-the-backlink-4.crv",
-    "24-generic-divs-3.crv",
-    "24-generic-divs-5.crv",
-    "249-trailing-whitespace-after-a-block-marker-3.crv",
-    "254-colon-fence-separator-must-be-a-space-10.crv",
-    "255-colon-fence-metadata-slots-must-be-a-space-too-5.crv",
     "26-comments-5.crv",
     "265-a-reference-definition-s-metadata-slots-take-exactly-one-space-3.crv",
     "266-a-reference-definition-is-anchored-at-end-of-line-16.crv",
     "268-trailing-whitespace-on-a-content-line-is-dropped-4.crv",
-    "270-a-real-div-in-a-container-and-the-flush-left-line-after-it-2.crv",
-    "270-a-real-div-in-a-container-and-the-flush-left-line-after-it-3.crv",
-    "271-the-flush-left-line-after-a-container-a-quoted-line-opened-2.crv",
-    "271-the-flush-left-line-after-a-container-a-quoted-line-opened-3.crv",
-    "271-the-flush-left-line-after-a-container-a-quoted-line-opened.crv",
     "275-a-collapsed-reference-reaches-a-heading-by-the-heading-s-rendered-text-10.crv",
     "275-a-collapsed-reference-reaches-a-heading-by-the-heading-s-rendered-text-11.crv",
     "275-a-collapsed-reference-reaches-a-heading-by-the-heading-s-rendered-text-2.crv",
@@ -129,30 +110,12 @@ const SOURCE_LOSSY: &[&str] = &[
     "288-heading-index-plain-text-covers-visible-leaves-and-rejects-an-empty-key-3.crv",
     "288-heading-index-plain-text-covers-visible-leaves-and-rejects-an-empty-key-4.crv",
     "288-heading-index-plain-text-covers-visible-leaves-and-rejects-an-empty-key.crv",
-    "291-a-fence-keeps-the-blank-line-at-the-end-of-its-content-3.crv",
     "306-a-captioned-quote-holds-more-than-one-block-5.crv",
     "315-an-inline-note-s-content-resolves-after-the-note-5.crv",
     "315-an-inline-note-s-content-resolves-after-the-note-6.crv",
     "315-an-inline-note-s-content-resolves-after-the-note-7.crv",
     "315-an-inline-note-s-content-resolves-after-the-note.crv",
-    "318-composite-figures-7.crv",
-    "318-composite-figures-8.crv",
     "35-cross-reference.crv",
-    "42-admonitions-10.crv",
-    "42-admonitions-2.crv",
-    "42-admonitions-3.crv",
-    "42-admonitions-4.crv",
-    "42-admonitions-9.crv",
-    "42-admonitions.crv",
-    "68-nested-containers-2.crv",
-    "68-nested-containers-4.crv",
-    "68-nested-containers-5.crv",
-    "68-nested-containers.crv",
-    "69-opaque-spans-inside-a-container-2.crv",
-    "69-opaque-spans-inside-a-container-3.crv",
-    "69-opaque-spans-inside-a-container-4.crv",
-    "69-opaque-spans-inside-a-container-5.crv",
-    "69-opaque-spans-inside-a-container.crv",
     "71-attribute-edge-cases-14.crv",
     "75-list-nesting-and-looseness-4.crv",
     "75-list-nesting-and-looseness-7.crv",
@@ -305,6 +268,18 @@ fn prose_mirror_names_only_come_from_the_map() {
         source = source.replace(
             &format!("drop_type(\"{carve_type}\""),
             "drop_type(CARVE_TYPE",
+        );
+        // Same shape as `drop_type`: the argument is the CARVE type, which for
+        // `link` happens to be spelled the way ProseMirror spells it too.
+        source = source.replace(
+            &format!("empty_mark(\"{carve_type}\""),
+            "empty_mark(CARVE_TYPE",
+        );
+        // Same shape as `drop_type`: the argument is the CARVE type, which for
+        // `link` happens to be spelled the way ProseMirror spells it too.
+        source = source.replace(
+            &format!("empty_mark(\"{carve_type}\""),
+            "empty_mark(CARVE_TYPE",
         );
         source = source.replace("name(ty)", "name(LOOKUP)");
         // The inbound implementation necessarily names the CARVE side of the
@@ -465,8 +440,15 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // `324-an-abbreviation-definition-in-an-item-body-is-paragraph-text-5`
     // drops `abbreviation_def`. The other twenty-six land in the strict set,
     // and the declared source-lossy set above does not move.
-    const STRICT: usize = 827;
-    const LOSSY: usize = 226;
+    // 827/226 to 829/224 is the two documents whose only unbridgeable node was
+    // a mark with no content, and nothing else: the corpus is the same 1053
+    // pairs. `03-links-8` writes an empty-label link and
+    // `307-an-empty-inline-note-is-literal-3` an empty span; both reported
+    // themselves dropped, which kept them out of the strict set entirely, and
+    // both now ride the carrier `markCarrierNodes` declares. Both write back
+    // byte-identical source, so neither joins the set above.
+    const STRICT: usize = 829;
+    const LOSSY: usize = 224;
     assert!(
         covered >= STRICT,
         "strict round trips fell from {STRICT} to {covered}"
@@ -764,4 +746,279 @@ fn a_line_comment_is_not_promoted_to_a_delimited_one() {
         assert_eq!(after, before, "{source:?}");
         assert!(!after.contains("{%"), "{after:?}");
     }
+}
+
+/// carve-grammars#240, part 1: the run comes back in the order it was WRITTEN.
+///
+/// The AST records the run as a list of slots - `#id`, `.class`, and each key
+/// by its own name - and the bridge carries that list verbatim as
+/// `carveAttrOrder`. Writing the canonical `#id .class key="val"` instead is a
+/// respelling of the author's line, and an HTML comparison cannot see it: both
+/// spellings render the same element.
+///
+/// The source is asserted, not the HTML, for exactly that reason.
+#[test]
+fn an_attribute_run_comes_back_in_the_order_it_was_written() {
+    // carve-grammars wire fixture `attribute-run-in-authored-order`. Its order
+    // is none of `#id .class key`, `.class #id key` or any other fixed
+    // sequence, so a bridge that sorts cannot pass it by accident.
+    let (before, after) = round_trip("[x]{key=c .a #b}\n");
+    assert_eq!(after, before);
+    assert_eq!(after, "[x]{key=c .a #b}\n");
+
+    // Every slot in one run, in three different orders.
+    for source in ["[x]{#i .a k=v}\n", "[x]{.a k=v #i}\n", "[x]{k=v #i .a}\n"] {
+        let (before, after) = round_trip(source);
+        assert_eq!(after, before, "{source:?}");
+    }
+
+    // The order rides on the wire under the name the map gives it.
+    let (value, _) = pm("[x]{key=c .a #b}\n");
+    assert_eq!(
+        value.pointer("/content/0/content/0/marks/0/attrs/carveAttrOrder"),
+        Some(&json!(["key", ".class", "#id"]))
+    );
+}
+
+/// The replay is against the document as it stands, not as it was written.
+///
+/// An editor may have added a class, assigned an id, or removed a key since.
+/// A slot the run names that is gone is skipped; an attribute the run does not
+/// name is still an attribute and goes after the ones it does. Dropping it was
+/// a deletion: a class an editor toggled on never reached the source.
+#[test]
+fn a_run_that_no_longer_matches_the_document_keeps_every_attribute() {
+    let span = |attrs: Value| {
+        json!({"type": "doc", "content": [{"type": "paragraph", "content": [
+            {"type": "text", "text": "x", "marks": [{"type": "carveSpan", "attrs": attrs}]}
+        ]}]})
+    };
+    let source = |payload: &Value| {
+        render_carve(&from_prosemirror(&payload.to_string()).expect("the payload converts"))
+            .expect("the document writes back")
+    };
+
+    // A class the run does not name survives, after the slots it does name.
+    assert_eq!(
+        source(&span(
+            json!({"carveAttrOrder": ["k", "#id"], "id": "i", "class": "added", "k": "v"})
+        )),
+        "[x]{k=v #i .added}\n"
+    );
+    // An id the run does not name survives too.
+    assert_eq!(
+        source(&span(
+            json!({"carveAttrOrder": [".class"], "class": "a", "id": "i", "later": "v"})
+        )),
+        "[x]{.a #i later=v}\n"
+    );
+    // A slot the run names that the document no longer has is skipped.
+    assert_eq!(
+        source(&span(
+            json!({"carveAttrOrder": ["#id", ".class", "gone"], "class": "a"})
+        )),
+        "[x]{.a}\n"
+    );
+    // With no run at all, the canonical spelling: `#id .class key="val"`.
+    assert_eq!(
+        source(&span(json!({"class": "a", "id": "i", "k": "v"}))),
+        "[x]{#i .a k=v}\n"
+    );
+}
+
+/// A recorded run that does not name `#id` proves the id was not authored.
+///
+/// The only ids Carve synthesizes are heading ids, and they are a resolution
+/// artifact - regenerated whenever the document renders. Slotting one into the
+/// wire's `id`, which the map defines as the AUTHORED id, wrote it back as an
+/// attribute line the author never typed.
+#[test]
+fn a_generated_heading_id_is_not_an_authored_one() {
+    let (before, after) = round_trip("{title=\"a\"}\n# H\n");
+    assert_eq!(after, before);
+    assert!(!after.contains("#H"), "{after:?}");
+}
+
+/// carve-grammars#240, part 2: an attribute run on inline code is the code
+/// mark's, and the mark carries all four slots.
+#[test]
+fn an_attribute_run_on_inline_code_survives() {
+    // carve-grammars wire fixture `inline-code-with-attributes`.
+    let (before, after) = round_trip("A `code`{#i .cls k=v} span.\n");
+    assert_eq!(after, before);
+    assert_eq!(after, "A `code`{#i .cls k=v} span.\n");
+
+    let (value, _) = pm("A `code`{#i .cls k=v} span.\n");
+    let mark = value
+        .pointer("/content/0/content/1/marks/0")
+        .expect("the code mark is on the text");
+    assert_eq!(mark.pointer("/attrs/id"), Some(&json!("i")));
+    assert_eq!(mark.pointer("/attrs/class"), Some(&json!("cls")));
+    assert_eq!(
+        mark.pointer("/attrs/carveAttrOrder"),
+        Some(&json!(["#id", ".class", "k"]))
+    );
+}
+
+/// carve-grammars#240, part 3: a mark with no content rides the carrier node
+/// `markCarrierNodes` declares.
+///
+/// A ProseMirror mark cannot span zero characters, so walking the children of
+/// `[](/u)` or `[]{.a}` produces nothing and the construct left the document.
+/// The wire shape is asserted against the published fixture, not just the
+/// round trip, because the vocabulary is the half that drifts between bridges.
+#[test]
+fn an_empty_label_link_comes_back() {
+    // carve-grammars wire fixture `empty-label-link`.
+    let source = "[](https://example.com \"T\"){.a #i}\n";
+    let (before, after) = round_trip(source);
+    assert_eq!(after, before);
+    assert_eq!(after, source);
+
+    let (value, _) = pm(source);
+    assert_eq!(
+        value.pointer("/content/0/content/0"),
+        Some(&json!({
+            "type": "carveEmptyMark",
+            "attrs": {
+                "markType": "link",
+                "markAttrs": {
+                    "href": "https://example.com",
+                    "title": "T",
+                    "id": "i",
+                    "class": "a",
+                    "carveAttrOrder": [".class", "#id"]
+                }
+            }
+        }))
+    );
+}
+
+/// The same carrier for an empty span and for the two editorial marks.
+///
+/// `{++}` and `{--}` did not even report themselves: the outbound side walked
+/// their children, found none, and returned - so the marks were deleted from
+/// the source and the report was empty.
+#[test]
+fn an_empty_span_and_the_editorial_marks_come_back() {
+    // carve-grammars wire fixture `empty-span-and-editorial-marks`.
+    let source = "a []{.x} b {++} c {--} d\n";
+    let (before, after) = round_trip(source);
+    assert_eq!(after, before);
+    assert_eq!(after, source);
+
+    let (value, report) = pm(source);
+    assert!(report.dropped.is_empty(), "{:?}", report.dropped);
+    assert_eq!(
+        value.pointer("/content/0/content"),
+        Some(&json!([
+            {"type": "text", "text": "a "},
+            {"type": "carveEmptyMark", "attrs": {"markType": "carveSpan", "markAttrs": {
+                "class": "x", "carveAttrOrder": [".class"]
+            }}},
+            {"type": "text", "text": " b "},
+            {"type": "carveEmptyMark", "attrs": {"markType": "carveInsert"}},
+            {"type": "text", "text": " c "},
+            {"type": "carveEmptyMark", "attrs": {"markType": "carveDelete"}},
+            {"type": "text", "text": " d"}
+        ]))
+    );
+}
+
+/// Two empty marks side by side are two constructs.
+///
+/// Import merges adjacent runs of equal marks, which is right for text an
+/// editor split in two and wrong for these: neither has text, so merging them
+/// leaves one and deletes the other.
+#[test]
+fn two_adjacent_empty_marks_stay_two() {
+    let (before, after) = round_trip("a []{.x} []{.x} b\n");
+    assert_eq!(after, before);
+    assert_eq!(after.matches("[]{.x}").count(), 2, "{after:?}");
+}
+
+/// An admonition's kind is the opener word, not an authored class.
+///
+/// The outbound side appends the kind to the classes, because that is where it
+/// lives once the element is rendered. Reading it back as authored wrote it
+/// twice - `{.note}` above `::: note` - which is the same defect as the
+/// generated heading id, in the other slot.
+#[test]
+fn an_admonition_kind_does_not_come_back_as_an_authored_class() {
+    let (before, after) = round_trip("::: note\nBody.\n:::\n");
+    assert_eq!(after, before);
+    assert!(!after.contains("{.note}"), "{after:?}");
+
+    // An authored class next to the kind keeps its own copy.
+    let (before, after) = round_trip("{.extra}\n::: note\nBody.\n:::\n");
+    assert_eq!(after, before);
+    assert!(after.contains(".extra"), "{after:?}");
+}
+
+/// The carrier name is read from the map, like every other ProseMirror name.
+///
+/// `prose_mirror_names_only_come_from_the_map` sweeps `types`; the carrier
+/// lives in `markCarrierNodes`, which is a section of its own, so a bridge that
+/// reads only `types` cannot name it and one that hardcodes it is not reading
+/// the map at all.
+#[test]
+fn the_empty_mark_carrier_is_named_by_the_map_and_not_by_the_source() {
+    let map: Value = serde_json::from_str(SCHEMA_MAP).expect("schema map is JSON");
+    let carriers = map["markCarrierNodes"]
+        .as_object()
+        .expect("the map declares its mark carriers");
+    let declared: Vec<&String> = carriers
+        .iter()
+        .filter(|(_, entry)| entry["attrs"]["markType"].is_string())
+        .map(|(name, _)| name)
+        .collect();
+    assert_eq!(declared.len(), 1, "one carrier stands in for a mark");
+
+    let source = format!(
+        "{}{}",
+        include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/src/prosemirror/to_pm.rs"
+        )),
+        include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/src/prosemirror/from_pm.rs"
+        ))
+    );
+    for name in declared {
+        assert!(
+            !source.contains(&format!("\"{name}\"")),
+            "the carrier name `{name}` is hardcoded rather than read from the map"
+        );
+        // And it really is what the bridge emits for a mark with no content.
+        assert!(
+            pm("[](/u)\n").1.json.contains(name.as_str()),
+            "an empty-label link does not ride `{name}`"
+        );
+    }
+}
+
+/// A preservation node is part of the wire, not an unknown name.
+///
+/// This engine writes no `carveUnsupported` and cannot yet read one back, so a
+/// payload carrying one has to say which of the two it is. Reporting it the
+/// way a typo is reported sends the reader looking for a schema mismatch that
+/// is not there.
+#[test]
+fn a_preservation_node_is_answered_as_what_it_is() {
+    let map: Value = serde_json::from_str(SCHEMA_MAP).expect("schema map is JSON");
+    let name = map["preservationNodes"]
+        .as_object()
+        .expect("the map declares its preservation nodes")
+        .iter()
+        .find(|(_, entry)| entry["attrs"]["carveSource"].is_string())
+        .map(|(name, _)| name.clone())
+        .expect("a preservation node carries carveSource");
+
+    let payload = json!({"type": "doc", "content": [
+        {"type": name, "attrs": {"carveSource": "::: x\n:::\n", "carveType": "div"}}
+    ]});
+    let error = from_prosemirror(&payload.to_string()).expect_err("it is not readable yet");
+    assert!(error.to_string().contains(&name), "{error}");
+    assert!(error.to_string().contains("preserves"), "{error}");
 }
