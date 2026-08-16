@@ -129,6 +129,22 @@ struct BuiltCell {
     rowspan: usize,
 }
 
+/// A table's `<thead>` / `<tbody>` / `<tfoot>`, collected on the way THROUGH it
+/// rather than read back off its rows.
+///
+/// The two vectors are parallel and a row's section id indexes both. Deriving
+/// the list from the rows was the shape that missed a section with no rows -
+/// `<tbody id="empty"></tbody>` is one of the table's sections and its
+/// attributes are as lost as any other's, but no row points at it.
+struct Sections {
+    /// The section's tag name, which is what says whether it has a slot at all.
+    tags: Vec<String>,
+    /// The section's own attributes and the path to report them at. Taken by
+    /// `row_groups` when it places them on a body group, so what is left is
+    /// exactly what nothing holds.
+    attrs: Vec<Option<(Attrs, String)>>,
+}
+
 /// The `<annotation>` encodings that DECLARE their payload to be TeX.
 ///
 /// Matched case-insensitively against the WHOLE value, never as a substring.
@@ -456,6 +472,18 @@ impl<'a> Importer<'a> {
             Some(out)
         }
     }
+    /// The NAMES of the attributes `attrs` kept, for a report that says which
+    /// ones were lost rather than that some were.
+    fn attr_names(attrs: &Attrs) -> Vec<String> {
+        attrs
+            .id
+            .iter()
+            .map(|_| "id".to_owned())
+            .chain((!attrs.classes.is_empty()).then(|| "class".to_owned()))
+            .chain(attrs.key_values.keys().cloned())
+            .collect()
+    }
+
     fn blocks(
         &mut self,
         handles: &[Handle],
@@ -1125,6 +1153,7 @@ impl<'a> Importer<'a> {
     fn span_grid(
         &mut self,
         built: Vec<Vec<BuiltCell>>,
+        row_attrs: &[Option<Attrs>],
         path: &str,
         depth: usize,
     ) -> Result<Vec<TableRow>, HtmlImportError> {
@@ -1214,7 +1243,9 @@ impl<'a> Importer<'a> {
             }
             rows.push(TableRow {
                 cells,
-                attrs: None,
+                // The `<tr>`'s own attributes, which `TableRow::attrs` has a
+                // slot for and the writer spells on the closing pipe.
+                attrs: row_attrs.get(r).cloned().flatten(),
                 pos: None,
             });
             carried = carried
@@ -1224,6 +1255,26 @@ impl<'a> Importer<'a> {
                 .collect();
         }
         Ok(rows)
+    }
+
+    /// The `<colgroup>` children of a table, which carry COLUMN structure Carve
+    /// has nowhere to put.
+    ///
+    /// Only `<colgroup>` is looked for, and a `<col>` is not. Every `<col>` is
+    /// inside one after parsing - "in table" insertion mode answers a `col`
+    /// start tag by inserting an implied `<colgroup>` first, so a run of bare
+    /// `<col>`s arrives as one wrapper holding all of them - and reporting the
+    /// wrapper covers its children the way one report covers a dropped subtree
+    /// everywhere else. A `| "col"` arm here matched nothing on any input, which
+    /// is the check that cannot fail (carve#755).
+    fn column_groups(h: &Handle, path: &str) -> Vec<String> {
+        h.children
+            .borrow()
+            .iter()
+            .enumerate()
+            .filter(|(_, c)| Self::tag(c).as_deref() == Some("colgroup"))
+            .map(|(i, _)| format!("{path}/colgroup[{}]", i + 1))
+            .collect()
     }
 
     fn table(
@@ -1237,10 +1288,18 @@ impl<'a> Importer<'a> {
         // an id minted when the walk enters one. A rowspan stops at its ROW
         // GROUP in HTML, so the group is not bookkeeping here: it is what says
         // how far down a span reaches.
+        //
+        // The sections themselves are collected here too, on the way through,
+        // rather than read back off the rows afterwards: a section with NO rows
+        // is one of the table's sections as well, and deriving the list from the
+        // rows leaves a `<tbody id="empty"></tbody>` unread and its attributes
+        // unreported.
         fn rows(
             h: &Handle,
+            path: &str,
             section: Option<usize>,
             section_tags: &mut Vec<String>,
+            section_nodes: &mut Vec<(Handle, String)>,
             out: &mut Vec<(Handle, Option<usize>)>,
         ) {
             if Importer::tag(h).as_deref() == Some("tr") {
@@ -1250,12 +1309,21 @@ impl<'a> Importer<'a> {
             let own = match Importer::tag(h).as_deref() {
                 Some(tag @ ("thead" | "tbody" | "tfoot")) => {
                     section_tags.push(tag.to_owned());
+                    section_nodes.push((h.clone(), path.to_owned()));
                     Some(section_tags.len() - 1)
                 }
                 _ => section,
             };
-            for c in h.children.borrow().iter() {
-                rows(c, own, section_tags, out);
+            for (i, c) in h.children.borrow().iter().enumerate() {
+                let tag = Importer::tag(c).unwrap_or_default();
+                rows(
+                    c,
+                    &format!("{path}/{tag}[{}]", i + 1),
+                    own,
+                    section_tags,
+                    section_nodes,
+                    out,
+                );
             }
         }
         // `<caption>` is a DIRECT child of the table and carries the table's own
@@ -1290,7 +1358,44 @@ impl<'a> Importer<'a> {
             .map(|(_, c)| c.children.borrow().iter().cloned().collect());
         let mut trs = Vec::new();
         let mut section_tags: Vec<String> = Vec::new();
-        rows(h, None, &mut section_tags, &mut trs);
+        let mut section_nodes: Vec<(Handle, String)> = Vec::new();
+        rows(
+            h,
+            path,
+            None,
+            &mut section_tags,
+            &mut section_nodes,
+            &mut trs,
+        );
+        // The attributes of the SECTIONS, read once and in document order,
+        // parallel to `section_tags` so a row's section id indexes both. Only a
+        // `<tbody>` has a slot for them - the body group `row_groups` states -
+        // so `row_groups` TAKES what it places out of this and whatever is left
+        // is reported below. Nothing read them before: a `<tbody id="totals">`
+        // fell into the empty `attrs` slot with no diagnostic at all
+        // (carve#1210).
+        let mut sections = Sections {
+            tags: section_tags,
+            attrs: Vec::with_capacity(section_nodes.len()),
+        };
+        for (node, section_path) in &section_nodes {
+            let own = self
+                .attrs(node, section_path)
+                .map(|a| (a, section_path.clone()));
+            sections.attrs.push(own);
+        }
+        // A `<colgroup>` and its `<col>` children state COLUMN structure, and
+        // Carve has no column model to put it in - not a narrower slot, none at
+        // all. Dropped as it always was, said out loud now, because a loss the
+        // reader is never told about is the one they cannot work around.
+        for p in Self::column_groups(h, path) {
+            self.diag(
+                HtmlImportDiagnosticCode::ElementDropped,
+                "Dropped <colgroup>: Carve has no column model, and a table's columns are only the cells its rows carry".into(),
+                HtmlImportSeverity::Warning,
+                &p,
+            );
+        }
         let source_cells = |tr: &Handle| -> Vec<Handle> {
             tr.children
                 .borrow()
@@ -1382,7 +1487,18 @@ impl<'a> Importer<'a> {
             }
             built.push(row);
         }
-        let mut result = self.span_grid(built, path, depth)?;
+        // A `<tr>`'s own attributes have a slot - `TableRow::attrs`, which the
+        // writer spells on the closing pipe and every renderer emits on the
+        // `<tr>` - and went in silence before this. Reading them at all also
+        // puts a `<tr>` on the ordinary attribute path, so an unsupported one
+        // reports the way it does on any other element.
+        let row_attrs: Vec<Option<Attrs>> = (0..trs.len())
+            .map(|r| {
+                let p = format!("{path}/tr[{}]", r + 1);
+                self.attrs(&trs[r].0, &p)
+            })
+            .collect();
+        let mut result = self.span_grid(built, &row_attrs, path, depth)?;
 
         // A `scope` equal to the positional default carries no information the
         // renderer cannot reproduce, and importing it would write this engine's
@@ -1416,12 +1532,44 @@ impl<'a> Importer<'a> {
             .collect();
         let row_groups = self.row_groups(
             &trs,
-            &section_tags,
             &header_rows,
             &result,
             leading_header_rows,
             path,
+            &mut sections,
         );
+        // Whatever `row_groups` did not place. A `<thead>` and a `<tfoot>` have
+        // no slot at all - the field states the head and the foot as row COUNTS
+        // - and a `<tbody>`'s attributes reach nothing when the field itself was
+        // not kept.
+        let sections_with_rows: BTreeSet<usize> = trs.iter().filter_map(|(_, s)| *s).collect();
+        for (id, slot) in sections.attrs.iter().enumerate() {
+            let Some((own, own_path)) = slot else {
+                continue;
+            };
+            let tag = sections.tags.get(id).map(String::as_str).unwrap_or("tbody");
+            // A body group IS the run of rows it consumes, so a section with
+            // none is not a group and has nowhere to put them. Stating it as a
+            // zero-count group would put a body in the partition that describes
+            // no rows.
+            let reason = match tag {
+                "thead" => "a table's head is stated as a row count and has no attribute slot",
+                "tfoot" => "a table's foot is stated as a row count and has no attribute slot",
+                _ if sections_with_rows.contains(&id) => {
+                    "the row grouping this body belongs to was not kept, and nothing else holds it"
+                }
+                _ => "a body group is the rows it consumes, and this one has none",
+            };
+            self.diag(
+                HtmlImportDiagnosticCode::AttributeDropped,
+                format!(
+                    "Dropped {} on <{tag}>: {reason}",
+                    Self::attr_names(own).join(", ")
+                ),
+                HtmlImportSeverity::Warning,
+                own_path,
+            );
+        }
         let caption = match caption_children {
             Some(kids) => Some(self.inlines(&kids, &format!("{path}/caption[1]"), depth + 1)?),
             None => None,
@@ -1453,6 +1601,13 @@ impl<'a> Importer<'a> {
     /// (Word and pandoc both emit `<thead><tr><td>`), where the derived head is
     /// empty and the stated one is not.
     ///
+    /// A `<tbody>`'s own attributes are one of those disagreements: the derived
+    /// structure has no way to say them, so a body carrying any is not derivable
+    /// and the field is emitted to hold them in the body group's `attrs`. Only a
+    /// BODY has that slot - the head and the foot are stated as counts - so a
+    /// `<thead>` or `<tfoot>` that carries attributes is reported by the caller,
+    /// along with a `<tbody>` whose group was dropped for another reason.
+    ///
     /// The counts are NOT checked against `rows.len()` here. They are built from
     /// the same row list the rows are built from, so a check at this point
     /// cannot fail; PART 12 §15's MUST is enforced where a payload arrives from
@@ -1460,11 +1615,11 @@ impl<'a> Importer<'a> {
     fn row_groups(
         &mut self,
         trs: &[(Handle, Option<usize>)],
-        section_tags: &[String],
         header_rows: &[bool],
         rows: &[TableRow],
         leading_header_rows: usize,
         path: &str,
+        sections: &mut Sections,
     ) -> Option<TableRowGroups> {
         if trs.is_empty() {
             return None;
@@ -1472,7 +1627,7 @@ impl<'a> Importer<'a> {
         let section_of = |index: usize| -> &str {
             trs[index]
                 .1
-                .and_then(|id| section_tags.get(id))
+                .and_then(|id| sections.tags.get(id))
                 .map(String::as_str)
                 .unwrap_or("tbody")
         };
@@ -1522,11 +1677,21 @@ impl<'a> Importer<'a> {
             } else {
                 0
             };
+            // The `<tbody>`'s own attributes: the body group is where the
+            // exchanged model puts them, and a body is the only section with a
+            // slot. TAKEN here rather than after the `derivable` return below,
+            // because a body carrying any is never derivable - that is what the
+            // clause says - so the field is returned whenever one was taken, and
+            // the only return that skips this point is the one before the loop.
+            let own = section
+                .and_then(|id| sections.attrs.get_mut(id))
+                .and_then(Option::take)
+                .map(|(a, _)| a);
             bodies.push(TableBodyGroup {
                 head_rows: group_head,
                 body_rows: index - body_start,
                 row_head_columns: (row_head_columns > 0).then_some(row_head_columns),
-                attrs: None,
+                attrs: own,
             });
         }
 
@@ -1545,9 +1710,12 @@ impl<'a> Importer<'a> {
             let absorbed = leading_header_rows.min(bodies[0].head_rows);
             head_rows = absorbed;
             bodies[0].head_rows -= absorbed;
+            // A group carrying attributes is not empty, whatever its counts say:
+            // dropping it here would drop them with it.
             if bodies[0].head_rows == 0
                 && bodies[0].body_rows == 0
                 && bodies[0].row_head_columns.is_none()
+                && bodies[0].attrs.is_none()
             {
                 bodies.clear();
             }
@@ -1556,9 +1724,9 @@ impl<'a> Importer<'a> {
         let derivable = head_rows == leading_header_rows
             && foot_rows == 0
             && bodies.len() <= 1
-            && bodies
-                .iter()
-                .all(|b| b.head_rows == 0 && b.row_head_columns.unwrap_or(0) == 0);
+            && bodies.iter().all(|b| {
+                b.head_rows == 0 && b.row_head_columns.unwrap_or(0) == 0 && b.attrs.is_none()
+            });
         if derivable {
             return None;
         }
