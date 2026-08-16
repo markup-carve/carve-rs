@@ -5116,7 +5116,22 @@ fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                         || (trim_ascii(next) == "+" && indent_columns(next) == 0)
                 },
             );
-            while cur.pos < end {
+            // ONE BLOCK, AND THE BOUNDARY IS THAT BLOCK'S EXTENT (§17 L3, ruled
+            // in markup-carve/carve#1290). The scan above finds the boundary -
+            // the next blank line, `>` line or further `+` - and the marker
+            // attaches ONE block up to it, not everything up to it. The block
+            // may still be many lines long: a wrapped paragraph, a list, a
+            // nested quote, a fenced block. So the extent is measured by parsing
+            // one block out of it rather than by taking the whole run.
+            //
+            // The list-item form already counted this way - `parse_continuation_
+            // block` calls the single-block parser and advances by what it
+            // consumed - and this branch was the one place where the two
+            // spellings of the same clause disagreed: `> quoted` / `+` / `para`
+            // / `# H` pulled the heading into the quote as well.
+            let attach_end =
+                cur.pos + attached_one_block_lines(&cursor_lines[cur.pos..end], options);
+            while cur.pos < attach_end {
                 let next = cur.lines[cur.pos];
                 // Attached lines are spliced in verbatim, so the container took
                 // nothing beyond whatever an outer one already had.
@@ -5535,6 +5550,32 @@ fn has_indexed_comment_closer_after(
 /// `comment_closers` is the caller's lazily built exact-width `%%%` closer
 /// index. It is a parameter rather than a local because REBUILDING it per call
 /// is quadratic on a document full of comment openers.
+/// How many of `slice`'s lines the ONE block a `+` continuation marker attaches
+/// occupies (§17 L3, markup-carve/carve#1290).
+///
+/// `slice` is the marker's EXTENT, already bounded by the caller's blank-line /
+/// sibling / further-`+` scan. Within it the marker takes one block, which is
+/// exactly what the single-block parser consumes - a wrapped paragraph, a list,
+/// a quote and a fenced block are each one block and each many lines.
+///
+/// The block is parsed here only to be MEASURED; the caller splices the lines
+/// into the container's body, where they parse again in their real context.
+/// Measuring by re-parsing rather than by a second line scan keeps one
+/// definition of where a block ends - a scan would be a copy of the block
+/// grammar that could drift from it silently.
+///
+/// At least one line, always. A parser that consumed nothing would leave the
+/// caller's cursor where it was, and the container loop would see the same line
+/// forever.
+fn attached_one_block_lines(slice: &[&str], options: &Options<'_>) -> usize {
+    if slice.is_empty() {
+        return 0;
+    }
+    let mut sub = LineCursor::new_with_cols(slice, None, None);
+    parse_block(&mut sub, options);
+    sub.pos.clamp(1, slice.len())
+}
+
 fn attached_block_end(
     lines: &[&str],
     start: usize,
