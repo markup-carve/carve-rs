@@ -454,8 +454,19 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // nothing else: the corpus went from 1023 pairs to 1025, the two added
     // pairs are both `320-*`, and no existing pair changed content. Both are
     // code blocks the editor schema covers whole.
-    const STRICT: usize = 801;
-    const LOSSY: usize = 224;
+    // 801/224 to 827/226 is the twenty-eight documents arriving with the spec
+    // pin, and nothing else: the corpus went from 1025 pairs to 1053, the
+    // twenty-eight added pairs are the eight `321-delimited-comments`, the ten
+    // `322-an-attribute-block-reaches-the-nested-list-it-precedes`, the five
+    // `323-a-block-attached-after-an-invisible-line-leaves-the-item-tight` and
+    // the five `324-an-abbreviation-definition-in-an-item-body-is-paragraph-
+    // text`, and no existing pair changed content. Exactly two of them report:
+    // `321-delimited-comments-7` degrades `escaped_text`, and
+    // `324-an-abbreviation-definition-in-an-item-body-is-paragraph-text-5`
+    // drops `abbreviation_def`. The other twenty-six land in the strict set,
+    // and the declared source-lossy set above does not move.
+    const STRICT: usize = 827;
+    const LOSSY: usize = 226;
     assert!(
         covered >= STRICT,
         "strict round trips fell from {STRICT} to {covered}"

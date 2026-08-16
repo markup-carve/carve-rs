@@ -6897,6 +6897,19 @@ pub(crate) fn line_starts_paragraph(line: &str) -> bool {
         && !is_table_start(line)
         && !is_definition_list_start(line)
         && detect_list_marker_full(line).is_none()
+        // A flush-left block-attribute line floats forward to the block below
+        // it (§15), which is exactly why `interrupts_paragraph` lets it end an
+        // open paragraph. Missing it here is the same omission read from the
+        // other side: the writer asks this function whether a child's first
+        // line would FOLD into the paragraph above, and answered `{.x}` with
+        // yes. It then wrote the child behind a `+` at the item's MARKER
+        // column, where a following `- b` is a SIBLING item rather than the
+        // nested list the attributes were reaching for, so
+        // `- a` / `  {.x}` / `  - b` came back as two items and a literal
+        // `{.x}` (corpus 322/323). The indented branch above is deliberately
+        // untouched: under the strict column-0 rule an INDENTED attr line is
+        // lazy paragraph text, not a floater.
+        && parse_standalone_attrs(line).is_none()
         && !trim_ascii_start(line).starts_with("%%")
 }
 

@@ -399,6 +399,10 @@ const IMPLEMENTED: &[&str] = &[
     // (markup-carve/carve-rs#987). What was missing was the corpus pin that says
     // so, which is what makes a regression here visible.
     "the-canonical-writer-glues-a-code-fence-to-its-info-string",
+    "a-block-attached-after-an-invisible-line-leaves-the-item-tight",
+    "an-abbreviation-definition-in-an-item-body-is-paragraph-text",
+    "an-attribute-block-reaches-the-nested-list-it-precedes",
+    "delimited-comments",
 ];
 
 fn corpus_dir() -> PathBuf {
