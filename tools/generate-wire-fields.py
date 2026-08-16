@@ -28,6 +28,11 @@ TARGET = ROOT / "src/wire_fields.rs"
 
 HELPERS = ("attrs", "pos")
 
+# Engine features whose normative schema change is still on an unmerged spec
+# branch. Keep the pinned corpus revision unchanged; once that pin contains a
+# field, the set insertion below is simply a no-op.
+PENDING_NODE_FIELDS = {"comment": ("delimited",)}
+
 
 def render(schema: dict) -> str:
     defs = schema.get("$defs", {})
@@ -42,6 +47,11 @@ def render(schema: dict) -> str:
         if definition.get("additionalProperties") is not False:
             raise SystemExit(f"{type_const} is not closed in the schema; section 11 has nothing to check against")
         by_type[type_const] = sorted(properties)
+
+    for type_const, fields in PENDING_NODE_FIELDS.items():
+        if type_const not in by_type:
+            raise SystemExit(f"pending field names unknown node type {type_const}")
+        by_type[type_const] = sorted(set(by_type[type_const]).union(fields))
 
     helpers: dict[str, list[str]] = {}
     for name in HELPERS:

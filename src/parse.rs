@@ -3599,6 +3599,7 @@ fn take_comment_block(cur: &mut LineCursor, options: &Options<'_>) -> CommentBlo
             }
             return CommentBlock::Consumed(Some(Box::new(BlockNode::Comment(Comment {
                 block: true,
+                delimited: false,
                 content: content.join("\n"),
                 pos,
             }))));
@@ -3628,6 +3629,7 @@ fn take_comment_block(cur: &mut LineCursor, options: &Options<'_>) -> CommentBlo
         }
         return CommentBlock::Consumed(Some(Box::new(BlockNode::Comment(Comment {
             block: false,
+            delimited: false,
             content,
             pos,
         }))));
@@ -11169,6 +11171,7 @@ fn parse_inline_context(
     } else {
         None
     };
+    let last_delimited_comment_close = bytes.windows(2).rposition(|w| w == b"%}");
     // For each tracked `X}` pair (`+} -} ~} #}` for critic, plus the forced-
     // emphasis delimiters), record the leading byte's LAST position. Built only
     // when a `}` exists at all, since every such pair ends in `}`.
@@ -11272,6 +11275,41 @@ fn parse_inline_context(
             }
         }
 
+        // Explicitly delimited inline comment. The first closer wins; without
+        // one the opener remains ordinary visible text. Backslash escapes have
+        // already been consumed, and code/raw spans consume their whole run.
+        if c == b'{'
+            && bytes.get(i + 1) == Some(&b'%')
+            && last_delimited_comment_close.is_some_and(|close| close >= i + 2)
+        {
+            if let Some(close_rel) = bytes[i + 2..].windows(2).position(|w| w == b"%}") {
+                let close = i + 2 + close_rel;
+                flush_text(
+                    &mut out,
+                    &mut buf,
+                    positions,
+                    base,
+                    &mut buf_start,
+                    &mut buf_placeable,
+                    &mut buf_src_delta,
+                );
+                let raw = String::from_utf8_lossy(&bytes[i + 2..close]);
+                let without_leading = raw.strip_prefix(' ').unwrap_or(&raw);
+                let content = without_leading
+                    .strip_suffix(' ')
+                    .unwrap_or(without_leading)
+                    .to_string();
+                out.push(InlineNode::Comment(Comment {
+                    block: false,
+                    delimited: true,
+                    content,
+                    pos: inline_pos(positions, base + i, base + close + 2),
+                }));
+                i = close + 2;
+                continue;
+            }
+        }
+
         // Trailing line comment: `%%` at start of line or after whitespace runs
         // to end of line and is dropped (`text %% comment`).
         if c == b'%'
@@ -11310,6 +11348,7 @@ fn parse_inline_context(
                 .to_string();
             out.push(InlineNode::Comment(Comment {
                 block: false,
+                delimited: false,
                 content,
                 pos: inline_pos(positions, base + comment_start, base + i),
             }));
