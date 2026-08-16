@@ -1591,6 +1591,11 @@ fn plain_inlines(nodes: &[InlineNode]) -> String {
             // An inline literal renders as visible prose (§27), so it feeds a
             // Markdown heading slug like a code span does.
             InlineNode::LiteralInline(lit) => out.push_str(&lit.content),
+            // Math is verbatim visible text, so it feeds this slug like a code
+            // span does. The THIRD spelling of the derivation carve#1283 moves;
+            // the arm goes in all three at once because a heading id derived
+            // three ways has to be one id.
+            InlineNode::Math(math) => out.push_str(&math.content),
             // A cross-reference contributes NOTHING to the slug, exactly as in
             // `render::plain_inlines`. By this point resolution has turned it
             // into a Link carrying the target heading's text, so counting it

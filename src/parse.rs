@@ -16190,6 +16190,13 @@ fn plain_inlines_parse(nodes: &[InlineNode]) -> String {
             // An inline literal renders as visible prose (§27), so it feeds the
             // parse-time cross-reference slug like a code span does.
             InlineNode::LiteralInline(l) => out.push_str(&l.content),
+            // Math is verbatim text the reader sees, so it feeds the parse-time
+            // slug exactly as a code span does. MEASURED: this arm feeds PART 9R
+            // R1's `by_text` index, and `plain_inlines_typography` is the one the
+            // rendered id derives through. Without this one a heading published
+            // `id="a-x-b"` while `[a $`x` b][]` still resolved to `a-b`, linking
+            // to an anchor no element carried (carve#1283).
+            InlineNode::Math(m) => out.push_str(&m.content),
             InlineNode::Link(l) => out.push_str(&plain_inlines_parse(&l.children)),
             InlineNode::AutoLink(a) => out.push_str(&a.text),
             InlineNode::Image(i) => out.push_str(&i.alt),

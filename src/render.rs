@@ -1256,6 +1256,10 @@ pub(crate) fn plain_inlines_typography(
             // its content to a heading slug -- otherwise `` # !`Cat` `` would
             // slug to the empty fallback and `</#cat>` could never resolve.
             InlineNode::LiteralInline(lit) => out.push_str(&lit.content),
+            // Math is verbatim text the reader sees (carve-js groups its arm
+            // with the inline literal for exactly this reason), so it feeds a
+            // heading id like a code span does. Mirrors `plain_inlines_parse`.
+            InlineNode::Math(m) => out.push_str(&m.content),
             // A `</#id>` cross-reference contributes nothing to a heading id: the
             // id is derived from the heading text as authored, before cross-ref
             // resolution turns the reference into a Link. Skipping it here keeps
