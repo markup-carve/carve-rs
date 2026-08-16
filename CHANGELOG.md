@@ -332,6 +332,15 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **The Markdown writer leaves no trailing space on an emptied marker.** A list
+  item or definition whose whole body was COLLECTED - a link reference
+  definition, a footnote definition - wrote its marker with the separator space
+  still attached, so the line ended in whitespace: `"- "` and `": "` where
+  carve-js writes `"-"` and `":"`. No golden in the corpus ends a line in a
+  space, and this writer's own continuation pad already refuses to pad an empty
+  line for the same reason - trailing whitespace is what editors and
+  `git apply --whitespace=fix` rewrite behind the writer.
+
 - **An HTML table's `colspan` and `rowspan` survive the import as the
   continuation cells Carve has for them** (markup-carve/carve#1210 P1). The
   model already carried both - `TableCell::span` is in PART 12, the writer

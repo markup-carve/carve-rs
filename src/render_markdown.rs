@@ -476,7 +476,16 @@ fn render_list(node: &List, ctx: &mut MarkdownContext, depth: usize) -> String {
         // itself. Carve's own content-column model is lenient enough to read it
         // back as a list, which is why this was invisible from inside the
         // engine and only pandoc showed it (carve#1069, carve-php#1142).
-        out.push_str(&format!("{prefix}{}\n", lines.next().unwrap_or_default()));
+        // An item whose content was collected away -- a link reference or a
+        // footnote definition is the whole item -- leaves the marker alone on
+        // its line. The marker's own separator is then trailing whitespace,
+        // which is what the continuation pad below already refuses to write.
+        let first = lines.next().unwrap_or_default();
+        if first.is_empty() {
+            out.push_str(&format!("{}\n", prefix.trim_end()));
+        } else {
+            out.push_str(&format!("{prefix}{first}\n"));
+        }
         let continuation = " ".repeat(prefix.len());
         for line in lines {
             // A line with no content takes no pad: PART 11 section 7 emits such
@@ -512,10 +521,16 @@ fn render_definition_list(
             out.push_str(&format!("**{}**\n", render_block_inlines(term, ctx)));
         }
         for definition in &item.definitions {
-            out.push_str(&format!(
-                ": {}\n",
-                trim_block_output(&render_blocks(definition, ctx, depth + 1))
-            ));
+            // Same rule as the list marker above: a definition whose body was
+            // collected away writes the marker bare rather than with the
+            // separator space left dangling at the end of the line.
+            let rendered = render_blocks(definition, ctx, depth + 1);
+            let body = trim_block_output(&rendered);
+            if body.is_empty() {
+                out.push_str(":\n");
+            } else {
+                out.push_str(&format!(": {body}\n"));
+            }
         }
     }
     if trailing_blank {
