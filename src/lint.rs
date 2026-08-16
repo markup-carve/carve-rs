@@ -47,6 +47,20 @@
 //! valid and ordinary, so they wait for that axis rather than shipping under
 //! the wrong severity.
 //!
+//! PART 9 §15 A4 adds one more, and it is the first rule here that the AST
+//! cannot answer (markup-carve/carve#1281):
+//!
+//! `unattached-block-attribute`
+//! : a floating `{…}` that reaches no block, because the document or the
+//!   CONTAINER holding it ended first. `> {.k}` on a quote's last line renders
+//!   neither on the quote nor on anything after it.
+//!
+//! An unattached attribute leaves NOTHING behind - no node, and no attrs on a
+//! neighbour - which is exactly what makes it worth reporting and exactly why
+//! the walk above cannot find it. The parser records where it dropped one and
+//! this surface reads that record, rather than re-deriving the attachment rule
+//! from the source and risking a second answer.
+//!
 //! Rule ids and messages match carve-js' `lintCarve` (`src/lint.ts`) - "same
 //! rule, same id" is what parity means here, and a consumer reading
 //! diagnostics from two engines must not see one warning under two spellings.
@@ -108,7 +122,13 @@ pub fn lint_carve_with_options(source: &str, options: &Options<'_>) -> Vec<LintW
         ..Options::default()
     };
     parse_options.extensions.clone_from(&options.extensions);
-    let doc = parse_with_options(source, &parse_options);
+    // The one rule the AST cannot answer. An unattached block attribute leaves
+    // NOTHING behind - no node, no attrs on a neighbour - which is precisely why
+    // §15 A4 needs a diagnostic, and why the parser has to say where it dropped
+    // one rather than the linter guessing from the source.
+    let (doc, unattached) = crate::parse::collecting_unattached_block_attrs(|| {
+        parse_with_options(source, &parse_options)
+    });
 
     let element_names = semantic_span_order(options);
     let byte_at = codepoint_to_byte_map(source);
@@ -141,8 +161,83 @@ pub fn lint_carve_with_options(source: &str, options: &Options<'_>) -> Vec<LintW
         collect_figure_group_warnings(body, false, &to_byte, &mut out);
     }
     collect_template_source_warning(source, &doc, &mut out);
+    collect_unattached_block_attribute_warnings(source, &unattached, &to_byte, &mut out);
     out.sort_by_key(|w| (w.start, w.end, w.rule));
     out
+}
+
+/// PART 9 §15 A4: a floating `{…}` that ran out of blocks to attach to.
+///
+/// Both ways of running out are the same finding - the DOCUMENT ended, or the
+/// CONTAINER holding the attribute did. Nothing is emitted for it either way, so
+/// `> {.k}` written on a quote's last line renders neither on the quote nor on
+/// anything after it, and without this the loss is invisible.
+fn collect_unattached_block_attribute_warnings(
+    source: &str,
+    spans: &[Pos],
+    to_byte: &dyn Fn(usize) -> usize,
+    out: &mut Vec<LintWarning>,
+) {
+    if spans.is_empty() {
+        return;
+    }
+    let line_starts = line_start_offsets(source);
+    for pos in spans {
+        let start = to_byte(codepoint_offset_at(
+            &line_starts,
+            pos.start_line,
+            pos.start_column,
+        ));
+        let end = to_byte(codepoint_offset_at(
+            &line_starts,
+            pos.end_line,
+            pos.end_column,
+        ))
+        .max(start);
+        out.push(LintWarning {
+            line: pos.start_line.max(1),
+            column: pos.start_column.max(1),
+            rule: "unattached-block-attribute",
+            message: "This block attribute reaches no block: the document or the container \
+                      holding it ended first, so nothing is emitted for it. Move it in front of \
+                      the block it belongs to, or delete it."
+                .to_string(),
+            start,
+            end,
+        });
+    }
+}
+
+/// Codepoint offset of the start of each 1-based source line, in the ORIGINAL
+/// text.
+///
+/// THE PARSER'S OWN TABLE, not a second one. Turning a (line, column) pair back
+/// into an offset is a question about NORMALIZATION: a leading BOM is stripped
+/// and both CRLF and a lone CR collapse to LF before the parser sees a line
+/// (PART 1), so a table that counts only `\n` and keeps the BOM disagrees with
+/// the positions it is being asked to place. The disagreement is silent -
+/// `para\r\r{.k}\r` produced an empty span at end of input, and `<BOM>{.k}`
+/// highlighted the mark and lost the closing brace. Reusing
+/// `original_line_start_offsets` is what keeps one answer to the question, and
+/// it is the same table `fill_offsets` places every node with.
+fn line_start_offsets(source: &str) -> Vec<usize> {
+    crate::parse::original_line_start_offsets(source)
+}
+
+/// The CODEPOINT offset of a 1-based (line, column) pair.
+///
+/// `line_starts` holds codepoint offsets and [`Pos`] counts columns in
+/// codepoints too (PART 12 §4), so this is one addition; the conversion to bytes
+/// is the caller's `to_byte`, the same map every other rule here goes through.
+///
+/// Computed rather than read off a node, because these spans are taken DURING
+/// the parse and `fill_offsets` only ever runs over nodes that reached the tree.
+/// An unattached attribute reaches none, by definition.
+fn codepoint_offset_at(line_starts: &[usize], line: usize, column: usize) -> usize {
+    let Some(&line_start) = line_starts.get(line.saturating_sub(1)) else {
+        return line_starts.last().copied().unwrap_or(0);
+    };
+    line_start + column.saturating_sub(1)
 }
 
 fn collect_template_source_warning(source: &str, doc: &Document, out: &mut Vec<LintWarning>) {

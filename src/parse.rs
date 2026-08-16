@@ -6,7 +6,7 @@
 use crate::ast::Pos;
 use crate::ast::*;
 use crate::extension::{BlockMatch, InlineMatch, MatcherContext, Options};
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, HashMap};
 
 /// The line a collected definition leaves behind, and the marker that says it
@@ -130,6 +130,100 @@ thread_local! {
     // Plain initializer for the same MSRV reason as `NESTING_DEPTH` above.
     #[allow(clippy::missing_const_for_thread_local)]
     static IN_FIGURE_GROUP: Cell<bool> = Cell::new(false);
+}
+
+thread_local! {
+    // WHERE A FLOATING ATTRIBUTE RAN OUT OF BLOCKS (PART 9 §15 A4, ruled in
+    // markup-carve/carve#1281). `None` while nobody is collecting, which is
+    // every parse but the linter's - a `Some` is installed for the duration of
+    // one call and taken back out at the end.
+    //
+    // A thread-local rather than an out-parameter because the drop happens
+    // wherever a container's body finished, deep inside a recursion that returns
+    // `Vec<BlockNode>` through a dozen call sites - the same reason the depth
+    // counter and the figure-group flag above live here.
+    //
+    // Plain initializer for the same MSRV reason as `NESTING_DEPTH`.
+    #[allow(clippy::missing_const_for_thread_local)]
+    static UNATTACHED_BLOCK_ATTRS: RefCell<Option<Vec<Pos>>> = const { RefCell::new(None) };
+}
+
+/// Run `f`, collecting the source spans of every block attribute that reached
+/// no block (PART 9 §15 A4).
+///
+/// The two ways to run out of following blocks - the end of the DOCUMENT and
+/// the end of the CONTAINER holding the attribute - meet at one site, because a
+/// container's body is parsed by its own [`parse_blocks`] call: a set still
+/// pending when that call's loop ends is a set with nothing left in scope.
+///
+/// Positions are only recorded when the caller asked for them ([`Options`]
+/// `positions`), since a span is what makes a diagnostic locatable and there is
+/// nothing useful to report without one.
+pub(crate) fn collecting_unattached_block_attrs<T>(f: impl FnOnce() -> T) -> (T, Vec<Pos>) {
+    let previous = UNATTACHED_BLOCK_ATTRS.with(|slot| slot.replace(Some(Vec::new())));
+    let out = f();
+    let collected = UNATTACHED_BLOCK_ATTRS.with(|slot| slot.replace(previous));
+    (out, collected.unwrap_or_default())
+}
+
+/// Record one dangling attribute run, if anybody is collecting.
+fn note_unattached_block_attrs(pos: Option<Pos>) {
+    if probing() {
+        return;
+    }
+    let Some(pos) = pos else { return };
+    UNATTACHED_BLOCK_ATTRS.with(|slot| {
+        if let Some(spans) = slot.borrow_mut().as_mut() {
+            spans.push(pos);
+        }
+    });
+}
+
+thread_local! {
+    // Set while a PROBE is parsing a candidate source to answer a question about
+    // it - "does this body end in an open paragraph", "does it end in a heading".
+    // Those parses are thrown away, and their pending-attribute state is a fact
+    // about a FRAGMENT rather than about the document: `:  d` / `   {.k}` /
+    // `tail` probes the body `d` / `{.k}` WITHOUT the line the attribute might
+    // still reach, so a recorder that counted probes reported an attribute the
+    // finished parse had attached.
+    //
+    // Plain initializer for the same MSRV reason as `NESTING_DEPTH`.
+    #[allow(clippy::missing_const_for_thread_local)]
+    static PROBING: Cell<bool> = const { Cell::new(false) };
+}
+
+/// RAII guard marking a throwaway parse, restoring the previous value on drop
+/// (panic unwind included), the discipline [`DepthGuard`] keeps.
+struct ProbeGuard {
+    previous: bool,
+}
+
+impl ProbeGuard {
+    fn enter() -> ProbeGuard {
+        ProbeGuard {
+            previous: PROBING.with(|p| p.replace(true)),
+        }
+    }
+}
+
+impl Drop for ProbeGuard {
+    fn drop(&mut self) {
+        PROBING.with(|p| p.set(self.previous));
+    }
+}
+
+fn probing() -> bool {
+    PROBING.with(|p| p.get())
+}
+
+/// Parse `source` to ANSWER A QUESTION about it, not to publish it.
+///
+/// What such a parse notices about attributes it could not place is a fact about
+/// the fragment, so it is suppressed - see [`PROBING`].
+fn probe_blocks(source: &str, options: &Options<'_>) -> Vec<BlockNode> {
+    let _probing = ProbeGuard::enter();
+    parse_blocks_with_options(source, options)
 }
 
 /// RAII guard that marks the current thread as parsing a figure group's body,
@@ -3139,7 +3233,7 @@ fn owned_inline_pos(node: &InlineNode) -> Option<Pos> {
 /// '\r' - so the entry count matches the normalized line count, and skips a
 /// leading BOM so line 0 starts at the first real character rather than at the
 /// mark (carve#876).
-fn original_line_start_offsets(source: &str) -> Vec<usize> {
+pub(crate) fn original_line_start_offsets(source: &str) -> Vec<usize> {
     let mut chars = source.chars().peekable();
     let mut starts = Vec::new();
     let mut count = 0usize;
@@ -3687,6 +3781,10 @@ fn parse_blocks(cur: &mut LineCursor, options: &Options<'_>) -> Vec<BlockNode> {
     };
     let mut out = Vec::new();
     let mut pending_attrs: Option<Attrs> = None;
+    // Where the pending run STARTED, for §15 A4's diagnostic. The FIRST block of
+    // a stacked run, because that is where the author began writing attributes
+    // that reach nothing - the run merges into one set and is reported once.
+    let mut pending_attrs_pos: Option<Pos> = None;
     while !cur.eof() {
         let line = cur.peek().unwrap();
         // A standalone `{attr}` block opener fires only at the container's
@@ -3713,8 +3811,12 @@ fn parse_blocks(cur: &mut LineCursor, options: &Options<'_>) -> Vec<BlockNode> {
             }
         }
         if line_flush {
+            let attrs_start = cur.pos;
             if let Some(attrs) = parse_standalone_attrs_block(cur) {
                 merge_attrs(&mut pending_attrs, attrs);
+                if pending_attrs_pos.is_none() {
+                    pending_attrs_pos = span_of(cur, attrs_start, cur.pos, options);
+                }
                 continue;
             }
         }
@@ -3734,6 +3836,7 @@ fn parse_blocks(cur: &mut LineCursor, options: &Options<'_>) -> Vec<BlockNode> {
             if !renders_nothing {
                 if let Some(attrs) = pending_attrs.take() {
                     apply_attrs_to_block(&mut node, attrs);
+                    pending_attrs_pos = None;
                 }
             }
             // Resolve a code fence's opener title to the `title` attribute (after
@@ -3751,6 +3854,16 @@ fn parse_blocks(cur: &mut LineCursor, options: &Options<'_>) -> Vec<BlockNode> {
             }
             out.push(node);
         }
+    }
+    // DROP IF DANGLING, AND SAY SO (§15 A4, markup-carve/carve#1281). The loop
+    // has run out of lines, so there is no next block for this set to float to.
+    // This one site covers both ways of running out, because a container's body
+    // is parsed by its own call: at document level the input ended, and inside a
+    // quote, an item, a `dd` or a footnote body the CONTAINER ended. Nothing is
+    // emitted for the attribute either way - what changes is that the processor
+    // now reports it rather than discarding it silently.
+    if pending_attrs.is_some() {
+        note_unattached_block_attrs(pending_attrs_pos);
     }
     out
 }
@@ -5867,14 +5980,19 @@ fn parse_continuation_block(
     // Attribute blocks STACK, so this takes the whole leading run and merges
     // it, the way `parse_blocks` merges consecutive lines into one slot.
     let mut floating_attrs: Option<Attrs> = None;
+    let mut floating_attrs_pos: Option<Pos> = None;
     while let Some(line) = sub.peek() {
         if indent_columns(line) != base_indent || !trim_ascii_start(line).starts_with('{') {
             break;
         }
+        let attrs_start = sub.pos;
         let Some(attrs) = parse_standalone_attrs_block(&mut sub) else {
             break;
         };
         merge_attrs(&mut floating_attrs, attrs);
+        if floating_attrs_pos.is_none() {
+            floating_attrs_pos = span_of(&sub, attrs_start, sub.pos, options);
+        }
     }
     // The block starts where the attribute run ended, which is what the source
     // stamp below has to name: `parse_blocks` likewise takes `start_line` after
@@ -5883,17 +6001,40 @@ fn parse_continuation_block(
     let block_start = sub.pos;
     let mut block = parse_block(&mut sub, options);
     if let Some(attrs) = floating_attrs {
-        if let Some(node) = &mut block {
-            // NO INVISIBLE-BLOCK GUARD HERE, deliberately. `parse_blocks` skips
-            // an `AbbreviationDef` or a `Comment` before attaching (§15 A2a)
-            // because it holds the set for the NEXT block; a `+` attaches ONE
-            // block, so there is no next one and the set is dropped either way.
-            // The equivalent `matches!` was written here first and then removed:
-            // `apply_attrs_to_block` ends in `_ => {}`, so neither node type
-            // takes attributes, an abbreviation definition is collected by the
-            // prepass and never reaches this parser at all, and the guard could
-            // not change a single byte of HTML or of the AST. A check that
-            // cannot fail is the defect class markup-carve/carve#755 catalogs.
+        // AN EMPTY PARAGRAPH IS NOT A BLOCK THE AUTHOR WROTE THESE FOR. It is
+        // what a `parse_block` call returns when the extent held no content -
+        // `- a` / `+` / `{.x}` / blank / `> q`, where §17 L3 bounds the
+        // attachment at the blank - and `parse_list` filters it out again, so
+        // attributes applied to it were discarded one step later without
+        // anything noticing. The set reaches nothing; §15 A4 drops it and says
+        // so (markup-carve/carve#1281).
+        //
+        // This does NOT change a byte of HTML or of the AST: the node it used
+        // to attach to never reached the tree. What it changes is that the loss
+        // is now reported, which is the whole of the rule.
+        let reaches_nothing = match &block {
+            None => true,
+            Some(BlockNode::Paragraph(p)) => p.children.is_empty(),
+            // AND A BLOCK THAT TAKES NO ATTRIBUTES IS NOT ONE EITHER.
+            // `apply_attrs_to_block` ends in `_ => {}`, so handing it a comment
+            // or an abbreviation definition discards the set exactly as having
+            // no block at all would - and §15 A2a's "float past what renders
+            // nothing" cannot save it here, because a `+` attaches ONE block and
+            // there is no next one to float to. `- a` / `+` / `{.x}` / `%% c`
+            // dropped the attributes with nothing reporting it, while the
+            // document-level twin `{.x}` / blank / `%% c` reported them.
+            Some(BlockNode::Comment(_)) | Some(BlockNode::AbbreviationDef(_)) => true,
+            Some(_) => false,
+        };
+        if reaches_nothing {
+            note_unattached_block_attrs(floating_attrs_pos);
+        } else if let Some(node) = &mut block {
+            // The invisible-block guard is now ABOVE, in `reaches_nothing`.
+            // It was removed from here once, correctly: it could not change a
+            // byte of HTML or of the AST, and a check that cannot fail is the
+            // defect class markup-carve/carve#755 catalogs. §15 A4's diagnostic
+            // is what gives it something to change - the set is still dropped
+            // either way, and now the drop is reported.
             apply_attrs_to_block(node, attrs);
         }
     }
@@ -5993,6 +6134,10 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     // so a set of attributes can only ever reach the sub-list that directly
     // follows it, and one that reaches nothing is dropped exactly as before.
     let mut pending_attrs: Option<Attrs> = None;
+    // Where that set was written, for §15 A4's diagnostic. This slot holds
+    // attributes LIFTED off a chunk (`split_trailing_attrs`), so the span comes
+    // from the chunk's own maps rather than from the cursor.
+    let mut pending_attrs_pos: Option<Pos> = None;
     // The current item's content column (where its content begins after the
     // marker). Nested content and sub-blocks of the last item dedent by this, so
     // it persists across iterations and is updated as each item is opened.
@@ -6022,6 +6167,10 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         if trim_ascii(line) == "+" && indent_columns(line) == base_indent {
             cur.consume();
             pending_blank = false;
+            // A marker is not the block these were written for either (§15 A4).
+            note_unattached_block_attrs(
+                pending_attrs_pos.take().filter(|_| pending_attrs.is_some()),
+            );
             pending_attrs = None;
             if let Some(block) = parse_continuation_block(cur, options, base_indent) {
                 // An EMPTY paragraph is not content and must not become one of
@@ -6126,9 +6275,9 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                     // have made the nested list the one target that keeps just
                     // the final block. Each split shortens the chunk, so this
                     // terminates.
-                    let mut split_stack: Vec<Attrs> = Vec::new();
-                    while let Some(attrs) = split_trailing_attrs(&mut nested) {
-                        split_stack.push(attrs);
+                    let mut split_stack: Vec<(Attrs, Option<Pos>)> = Vec::new();
+                    while let Some(split) = split_trailing_attrs(&mut nested) {
+                        split_stack.push(split);
                     }
                     let mut nested_children = parse_mapped_source(&nested, options);
                     // Attributes held from an EARLIER chunk attach here when
@@ -6143,11 +6292,15 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                             .find(|block| !matches!(block, BlockNode::Comment(_)))
                         {
                             apply_attrs_to_block(target, pending_attrs.take().unwrap());
+                            pending_attrs_pos = None;
                         }
                     }
                     // Back into SOURCE order, so the merge resolves a repeated
                     // key the way `parse_blocks` resolves it at top level.
-                    for attrs in split_stack.into_iter().rev() {
+                    for (attrs, pos) in split_stack.into_iter().rev() {
+                        if pending_attrs.is_none() {
+                            pending_attrs_pos = pos;
+                        }
                         merge_attrs(&mut pending_attrs, attrs);
                     }
                     // A blank before an indented sub-block loosens only when it
@@ -6294,6 +6447,7 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 // below picks the block that counts - a comment renders nothing
                 // and is not what the author wrote the attributes for.
                 if let Some(attrs) = pending_attrs.take() {
+                    pending_attrs_pos = None;
                     if let Some(target) = nested_children
                         .iter_mut()
                         .find(|block| !matches!(block, BlockNode::Comment(_)))
@@ -6333,7 +6487,10 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         // attributes still held were written in front of something that never
         // came, and a sibling is not that something - drop them here rather
         // than let them reach a sub-list further down the list, which is not
-        // where the author put them (carve-rs#1007).
+        // where the author put them (carve-rs#1007). Reported rather than
+        // silent, like every other way of running out (§15 A4,
+        // markup-carve/carve#1281).
+        note_unattached_block_attrs(pending_attrs_pos.take().filter(|_| pending_attrs.is_some()));
         pending_attrs = None;
         if marker.ordered != is_ordered || marker.checked.is_some() != is_task {
             break;
@@ -6893,6 +7050,13 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             }
         }
     }
+    // THE LIST ENDED, so a set still held here was written in front of a block
+    // that never came (§15 A4). This is the list's own slot, separate from the
+    // one `parse_blocks` keeps for a container BODY - attributes reach it only
+    // by being lifted off a chunk, and only this loop can place them.
+    if pending_attrs.is_some() {
+        note_unattached_block_attrs(pending_attrs_pos);
+    }
     widen_items_over_children(&mut items);
     let mut list_pos =
         span_of(cur, span_start, cur.pos, options).or_else(|| span_across_items(&items));
@@ -7258,7 +7422,7 @@ fn detect_list_marker_full(line: &str) -> Option<ListMarker<'_>> {
 /// flush-left lazy text following an indented heading-in-item should fold into
 /// the heading (heading continuation) rather than ending the item.
 fn nested_ends_with_heading(nested: &str, options: &Options<'_>) -> bool {
-    block_ends_with_heading(parse_blocks_with_options(nested, options).last())
+    block_ends_with_heading(probe_blocks(nested, options).last())
 }
 
 /// Whether the deepest trailing block is a heading. A heading folds trailing
@@ -7350,7 +7514,7 @@ fn body_ends_with_open_paragraph(body: &str, options: &Options<'_>) -> bool {
 /// and must stay INSIDE the item rather than ending it. A code block or table
 /// has no open paragraph, so it does NOT fold (the dedented line ends the item).
 fn nested_ends_with_open_paragraph(nested: &str, options: &Options<'_>) -> bool {
-    let blocks = parse_blocks_with_options(nested, options);
+    let blocks = probe_blocks(nested, options);
     // A comment renders NOTHING, so it closes no paragraph and must not end the
     // item either (§24 C3, carve#624). `- a` / ` %% c` / `b` folds `b` into the
     // item, where a VISIBLE block in the comment's place would end it - the
@@ -8925,11 +9089,49 @@ impl DefinitionBodyFence {
 /// without consulting the shared predicate at all, so an arm added THERE would
 /// move the list's pinned answers as well as this one. Written here, it reaches
 /// the definition body and nothing else.
+/// Whether `source`'s last non-blank line is a standalone block-attribute line,
+/// written flush at the body's own column.
+///
+/// The source is already dedented to that column, so "flush" is column 0 here -
+/// the strict column-0 rule, which is what keeps an INDENTED `{…}` ordinary
+/// paragraph text.
+fn body_ends_with_an_attribute_line(source: &str) -> bool {
+    source
+        .lines()
+        .rev()
+        .find(|line| !is_blank_line(line))
+        .is_some_and(|line| {
+            !line.starts_with([' ', '\t']) && parse_standalone_attrs(line).is_some()
+        })
+}
+
 fn definition_body_takes_the_fold(source: &str, options: &Options<'_>) -> bool {
+    // A BLOCK-ATTRIBUTE LINE LEAVES NO NODE, so the block-level test below
+    // cannot see it - and it INTERRUPTS an open paragraph (§15 A1), which is the
+    // one thing that test is asking about. `d` / `{.k}` parses to a single
+    // paragraph, exactly as `d` alone does, so a body ending in an attribute
+    // line reported the paragraph the attribute had already closed, and a
+    // flush-left line folded in: `:: t` / `:  d` / `   {.k}` / `tail` published
+    // `tail` INSIDE the `dd`, wearing a class the author wrote for a block that
+    // never came (markup-carve/carve#1281; the question is S4's, which that
+    // ruling leaves to markup-carve/carve#1280).
+    //
+    // The docblock above already listed "a block-attribute line that left no
+    // block at all" among the things this answers. It did - for a body that is
+    // ONLY the attribute line, where there is no paragraph node either. With
+    // content in front of it there was one, and it answered for that.
+    //
+    // The WRAPPED spelling (`{.k` / `#x}`) is deliberately NOT covered: a
+    // multi-line attribute block interrupts no open paragraph anywhere in this
+    // engine, at document level as much as here, and making it do so is a §10 I5
+    // question rather than this one.
+    if body_ends_with_an_attribute_line(source) {
+        return false;
+    }
     if nested_ends_with_open_paragraph(source, options) {
         return true;
     }
-    let blocks = parse_blocks_with_options(source, options);
+    let blocks = probe_blocks(source, options);
     let mut end = blocks.len();
     // Past a trailing run of comments, for the reason
     // `nested_ends_with_open_paragraph` gives: a comment renders nothing, so it
@@ -11122,7 +11324,7 @@ fn open_quote_at_end(s: &str) -> Option<char> {
 /// validated by `parse_standalone_attrs_block` - the same reader the top-level
 /// path uses - and the split only happens when that reader consumes the run
 /// exactly.
-fn split_trailing_attrs(nested: &mut MappedSource) -> Option<Attrs> {
+fn split_trailing_attrs(nested: &mut MappedSource) -> Option<(Attrs, Option<Pos>)> {
     let lines: Vec<&str> = nested.source.lines().collect();
     if lines.is_empty() {
         return None;
@@ -11167,6 +11369,12 @@ fn split_trailing_attrs(nested: &mut MappedSource) -> Option<Attrs> {
     if !probe.eof() {
         return None;
     }
+    // WHERE THE RUN WAS WRITTEN, for §15 A4's diagnostic - taken BEFORE the
+    // maps are truncated below, since after that the split-off lines have no
+    // entries left to read. A set lifted off a chunk and never placed is
+    // dropped when the list ends or when a sibling marker opens
+    // (markup-carve/carve#1281), and the drop is a finding wherever it happens.
+    let pos = mapped_span_of(nested, start, lines.len(), &lines);
     let line_count = lines.len();
     let kept: Vec<&str> = lines[..start].to_vec();
     let source = kept.join("\n");
@@ -11184,7 +11392,46 @@ fn split_trailing_attrs(nested: &mut MappedSource) -> Option<Attrs> {
     if nested.line_map.len() == line_count {
         nested.line_map.truncate(start);
     }
-    Some(attrs)
+    Some((attrs, pos))
+}
+
+/// The document span of `lines[start..end]` inside a collected chunk.
+///
+/// [`span_of`] answers this for a [`LineCursor`], which carries the same two
+/// maps under different names; a chunk that has already been split off has no
+/// cursor over it, so the same arithmetic is done here. `None` when the chunk
+/// carries no line map - positions are opt-in, and a span nobody asked for is
+/// not worth inventing.
+fn mapped_span_of(nested: &MappedSource, start: usize, end: usize, lines: &[&str]) -> Option<Pos> {
+    let last = end.saturating_sub(1).max(start);
+    let start_line = *nested.line_map.get(start)?;
+    let start_line = start_line?;
+    let end_line = nested
+        .line_map
+        .get(last)
+        .copied()
+        .flatten()
+        .unwrap_or(start_line);
+    let stripped = nested.col_map.get(start).copied().flatten().unwrap_or(0);
+    let end_stripped = nested
+        .col_map
+        .get(last)
+        .copied()
+        .flatten()
+        .unwrap_or(stripped);
+    let indent = lines
+        .get(start)
+        .map(|l| l.chars().count() - trim_ascii_start(l).chars().count())
+        .unwrap_or(0);
+    let width = lines.get(last).map(|l| l.chars().count()).unwrap_or(0);
+    Some(Pos {
+        start_line,
+        end_line,
+        start_column: (stripped.max(0) as usize) + indent + 1,
+        end_column: (end_stripped.max(0) as usize) + width + 1,
+        start_offset: 0,
+        end_offset: 0,
+    })
 }
 
 fn merge_attrs(target: &mut Option<Attrs>, incoming: Attrs) {
