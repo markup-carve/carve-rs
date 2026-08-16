@@ -104,6 +104,11 @@ fn a_pretty_printed_annotation_keeps_its_body_and_loses_its_indentation() {
 
 /// Tier 2. MathML does not declare what `alttext` holds - `alttext="x squared"`
 /// is as valid as one holding TeX - so the assumption is reported.
+///
+/// The CODE is the assertion, not just the message: `encoding-assumed` says the
+/// produced math node is only correct if the guess holds, which is a claim about
+/// the OUTPUT. `element-unwrapped` would report a structural event the consumer
+/// cannot act on (carve#1235).
 #[test]
 fn alttext_supplies_the_tex_and_says_that_it_assumed_the_encoding() {
     let html = r#"<p><math alttext="x^2"><mi>x</mi></math></p>"#;
@@ -111,7 +116,7 @@ fn alttext_supplies_the_tex_and_says_that_it_assumed_the_encoding() {
     assert_eq!(
         diagnostics(html),
         vec![(
-            HtmlImportDiagnosticCode::ElementUnwrapped,
+            HtmlImportDiagnosticCode::EncodingAssumed,
             "Read <math> through its alttext: MathML does not declare the encoding of alttext, so TeX is assumed".to_string()
         )]
     );
