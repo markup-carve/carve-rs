@@ -37,13 +37,13 @@ fn a_span_survives_the_import_as_a_continuation_cell() {
         (
             "a header-wide column",
             "<table><tr><th>a</th><th>b</th></tr><tr><td colspan=\"2\">wide</td></tr></table>",
-            "|=a|=b|\n| wide | < |\n",
+            "|= a |= b |\n| wide | < |\n",
             "<tr><td colspan=\"2\">wide</td></tr>",
         ),
         (
             "a cell held over a row",
             "<table><tr><th>a</th><th>b</th></tr><tr><td rowspan=\"2\">tall</td><td>x</td></tr><tr><td>y</td></tr></table>",
-            "|=a|=b|\n| tall | x |\n| ^ | y |\n",
+            "|= a |= b |\n| tall | x |\n| ^ | y |\n",
             "<tr><td rowspan=\"2\">tall</td><td>x</td></tr>",
         ),
         (
@@ -51,7 +51,7 @@ fn a_span_survives_the_import_as_a_continuation_cell() {
             "<table><tr><th>a</th><th>b</th><th>c</th></tr><tr><td colspan=\"2\" rowspan=\"2\">X</td><td>c</td></tr><tr><td>f</td></tr></table>",
             // A cell spanning BOTH ways carries a mark into each column it
             // covers, so the row below it opens with two `^` rather than one.
-            "|=a|=b|=c|\n| X | < | c |\n| ^ | ^ | f |\n",
+            "|= a |= b |= c |\n| X | < | c |\n| ^ | ^ | f |\n",
             "<tr><td rowspan=\"2\" colspan=\"2\">X</td><td>c</td></tr>",
         ),
         (
@@ -78,7 +78,7 @@ fn a_span_survives_the_import_as_a_continuation_cell() {
             // `span_cell` is an ALTERNATIVE to `header_cell` in the grammar, so
             // a header row carrying one is promoted by the delimiter row
             // instead of by an `=` on each cell.
-            "| Group | < |\n|---|---|\n|=a|=b|\n| 1 | 2 |\n",
+            "| Group | < |\n|---|---|\n|= a |= b |\n| 1 | 2 |\n",
             "<tr><th scope=\"col\" colspan=\"2\">Group</th></tr>",
         ),
         (
@@ -126,7 +126,7 @@ fn a_rowspan_of_zero_reaches_the_end_of_its_row_group() {
     let (written, _) = round_trip(
         "<table><thead><tr><th>h</th></tr></thead><tbody><tr><td rowspan=\"0\">b</td><td>x</td></tr><tr><td>y</td></tr></tbody><tfoot><tr><td>f</td></tr><tr><td>g</td></tr></tfoot></table>",
     );
-    assert_eq!(written, "|=h|\n| b | x |\n| ^ | y |\n| f |\n| g |\n");
+    assert_eq!(written, "|= h |\n| b | x |\n| ^ | y |\n| f |\n| g |\n");
 }
 
 /// And a POSITIVE rowspan stops there too, whatever the number says: a browser
@@ -148,7 +148,7 @@ fn a_rowspan_stops_at_its_row_group_whatever_the_number_says() {
 fn a_rowspan_leaving_the_derived_head_is_clipped_and_reported() {
     let html = "<table><tr><th rowspan=\"2\">H</th><th>A</th></tr><tr><td>B</td></tr></table>";
     let (written, rendered) = round_trip(html);
-    assert_eq!(written, "|=H|=A|\n| B |\n");
+    assert_eq!(written, "|= H |= A |\n| B |\n");
     assert!(
         !rendered.contains("rowspan"),
         "the clipped span was written anyway: {rendered}"
@@ -175,7 +175,7 @@ fn a_rowspan_leaving_the_derived_head_is_clipped_and_reported() {
 fn a_rowspan_inside_the_header_rows_is_untouched() {
     let html = "<table><tr><th rowspan=\"2\">H</th><th>A</th></tr><tr><th>B</th></tr><tr><td>1</td><td>2</td></tr></table>";
     let (written, rendered) = round_trip(html);
-    assert_eq!(written, "|=H|=A|\n| ^ |=B|\n| 1 | 2 |\n");
+    assert_eq!(written, "|= H |= A |\n| ^ |= B |\n| 1 | 2 |\n");
     assert!(
         rendered.contains("rowspan=\"2\""),
         "the span was lost: {rendered}"
