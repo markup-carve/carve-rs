@@ -430,6 +430,40 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A block-attribute line written after a `+` continuation marker is an
+  attribute block, and the block it precedes stays inside the list item**
+  (markup-carve/carve-rs#1020, rule decided in markup-carve/carve#1238). The
+  line read as ordinary paragraph text, and the block the attributes were
+  written for then landed outside the item, where carve-js and carve-php put it
+  inside carrying the attributes:
+
+  ```
+  - a
+  +
+  {.x}
+  > q
+  ```
+
+  ```html
+  <ul>
+    <li>a
+      <blockquote class="x"><p>q</p></blockquote>
+    </li>
+  </ul>
+  ```
+
+  PART 2 lists `block_attributes` among the alternatives of `block` and PART 11
+  spells `continuation_marker_block = continuation_marker, block`, so the marker
+  admits one and PART 9 §15 floats it to the block that follows. Consecutive
+  attribute lines merge into one set and a block spanning lines is read whole,
+  as everywhere else. The marker's own job is unchanged: with no attribute line
+  the attachment is what it was, and the braces must sit at the marker's own
+  column, so an indented `{…}` line stays literal text. A `+` inside a nested
+  list attaches at its own column. The `- +` first-block form takes the same
+  repair. A set that reaches nothing - because a blank line, a sibling marker or
+  a further `+` ends the attachment first - is dropped rather than published as
+  text, the way a set at the end of any other block stream is.
+
 - **The ProseMirror bridge no longer deletes the text after a delimited
   comment.** `to_prosemirror` did not carry the PART 9 §21a `delimited` flag and
   `from_prosemirror` could not restore it, so every `{% ... %}` comment came
