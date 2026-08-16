@@ -1552,25 +1552,58 @@ fn render_table(
         render_inlines(out, caption, options, state);
         out.push_str("</caption>");
     }
-    // The leading run of rows whose cells are ALL header cells forms <thead>.
-    // A row that merely contains a header cell (a row header) stays in the body.
-    let header_count = t
-        .rows
-        .iter()
-        .take_while(|row| !row.cells.is_empty() && row.cells.iter().all(|cell| cell.header))
-        .count();
-    let has_header = header_count > 0;
-    let body_start = header_count;
     // Computed once over ALL rows: a `^` in a body row extends the cell above
     // it even when that cell is in a header row, so a header cell can carry a
     // rowspan that crosses the thead/tbody boundary (matches carve-js).
     let (rowspan_cols, orphan_carets) = compute_rowspans(t);
+    // The leading run of rows whose cells are ALL header cells forms <thead>.
+    // A row that merely contains a header cell (a row header) stays in the body.
+    //
+    // A continuation that RESOLVES is transparent here, because it renders
+    // nothing: the cell it continues is what occupies the column, and asking
+    // whether the marker itself is a header asks about a cell that is not
+    // there. Counting it dropped the row under a header rowspan out of the
+    // head, so `|=H|=A|` over `| ^ |=B|` moved B into the body (carve-js skips
+    // it the same way).
+    let header_count = t
+        .rows
+        .iter()
+        .enumerate()
+        .take_while(|(r, row)| {
+            let consumed = consumed_rowspan_cols(*r, &rowspan_cols);
+            let resolved = |i: usize, cell: &TableCell| match cell.span {
+                Some(TableCellSpan::Rowspan) => !orphan_carets.contains(&(*r, i)),
+                Some(TableCellSpan::Colspan) => colspan_target(row, i, &consumed).is_some(),
+                None => false,
+            };
+            row.cells
+                .iter()
+                .enumerate()
+                .any(|(i, cell)| !resolved(i, cell))
+                && row
+                    .cells
+                    .iter()
+                    .enumerate()
+                    .all(|(i, cell)| cell.header || resolved(i, cell))
+        })
+        .count();
+    let has_header = header_count > 0;
+    let body_start = header_count;
     if has_header {
         out.push('\n');
         indent(out, level + 1);
         out.push_str("<thead>");
         for (row_idx, header) in t.rows[..header_count].iter().enumerate() {
-            render_table_row(out, header, true, options, row_idx, &rowspan_cols, state);
+            render_table_row(
+                out,
+                header,
+                true,
+                options,
+                row_idx,
+                &rowspan_cols,
+                &orphan_carets,
+                state,
+            );
         }
         out.push_str("</thead>");
     }
@@ -1601,6 +1634,7 @@ fn render_table(
     out.push_str("</table>");
 }
 
+#[allow(clippy::too_many_arguments)]
 fn render_table_row(
     out: &mut String,
     row: &TableRow,
@@ -1608,12 +1642,27 @@ fn render_table_row(
     options: &Options<'_>,
     row_idx: usize,
     rowspan_cols: &BTreeMap<(usize, usize), usize>,
+    orphan_carets: &BTreeSet<(usize, usize)>,
     state: &mut RenderState,
 ) {
     out.push_str("<tr");
     write_attrs(out, &row.attrs);
     out.push('>');
+    // A head row resolves its continuations the same way a body row does. It
+    // used to resolve neither: a `^` rendered an empty `<th>` BESIDE the
+    // `rowspan` its origin already carried, and a `<` rendered an empty `<th>`
+    // instead of widening the cell to its left - so a header cell spanning
+    // columns lost the span and gained a column the table does not have.
+    let consumed_cols = consumed_rowspan_cols(row_idx, rowspan_cols);
+    let colspan_counts = compute_colspans(row, &consumed_cols);
     for (col, cell) in row.cells.iter().enumerate() {
+        if cell.span == Some(TableCellSpan::Rowspan) {
+            if orphan_carets.contains(&(row_idx, col)) {
+                let scope = cell_scope_attr(cell, true, in_head);
+                write!(out, "<th{scope}></th>").unwrap();
+            }
+            continue;
+        }
         let tag = if in_head || cell.header { "th" } else { "td" };
         let mut extra = String::new();
         let mut emitted: Vec<&str> = Vec::new();
@@ -1622,6 +1671,18 @@ fn render_table_row(
         if let Some(span) = rowspan_cols.get(&(row_idx, col)) {
             extra.push_str(&format!(" rowspan=\"{}\"", span));
             emitted.push("rowspan");
+        }
+        if cell.span == Some(TableCellSpan::Colspan) {
+            if colspan_target(row, col, &consumed_cols).is_none() {
+                let scope = cell_scope_attr(cell, true, in_head);
+                write!(out, "<{tag}{scope}></{tag}>").unwrap();
+            }
+            continue;
+        }
+        let colspan = colspan_counts.get(&col).copied().unwrap_or(1);
+        if colspan > 1 {
+            extra.push_str(&format!(" colspan=\"{}\"", colspan));
+            emitted.push("colspan");
         }
         let align = render_align_attr(cell.align.or_else(|| row_align(row, col)));
         if !align.is_empty() {

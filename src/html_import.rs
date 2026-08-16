@@ -6,7 +6,7 @@ use crate::{render_carve, RenderDepthError};
 use html5ever::tendril::TendrilSink;
 use html5ever::{serialize, serialize::SerializeOpts};
 use markup5ever_rcdom::{Handle, NodeData, RcDom, SerializableHandle};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HtmlImportMode {
@@ -109,6 +109,19 @@ struct Importer<'a> {
 /// author-supplied integer, so the cap is what stops a twenty-byte attribute
 /// from buying an arbitrarily large marker once per item.
 const MAX_ROMAN_MARKER: usize = 3999;
+
+/// HTML's own maxima for the two span attributes, and the largest value read as
+/// a number at all before it defaults.
+const MAX_COLSPAN: usize = 1000;
+const MAX_ROWSPAN: usize = 65534;
+const MAX_SAFE_SPAN: u64 = 9_007_199_254_740_991;
+
+/// One imported cell, with the two spans resolved but not yet laid out.
+struct BuiltCell {
+    cell: TableCell,
+    colspan: usize,
+    rowspan: usize,
+}
 
 impl<'a> Importer<'a> {
     fn enter(&mut self, depth: usize) -> Result<(), HtmlImportError> {
@@ -944,6 +957,154 @@ impl<'a> Importer<'a> {
         Ok(blocks)
     }
 
+    /// A `colspan` / `rowspan` value, by HTML's rules: a non-negative integer,
+    /// clamped to the attribute's own maximum, defaulting when it is not one.
+    ///
+    /// The clamp is not decoration. Each unit of a span becomes a CELL below, so
+    /// an unclamped `colspan="1000000000"` is a 30-byte input asking for a
+    /// billion of them; the generated cells are charged to `max_nodes` on top of
+    /// this, so the two together bound what a table can cost.
+    fn span_count(cell: &Handle, name: &str, max: usize, min: usize) -> usize {
+        let Some(raw) = Self::attr(cell, name) else {
+            return 1;
+        };
+        let raw = raw.trim();
+        if raw.is_empty() || !raw.bytes().all(|b| b.is_ascii_digit()) {
+            return 1;
+        }
+        // The same cutoff carve-js reaches through `Number.isSafeInteger`, named
+        // rather than inherited, so a value past it defaults on every engine
+        // instead of clamping on one and defaulting on another.
+        match raw.parse::<u64>() {
+            // Clamped in `u64` and converted after, so a value above `usize` on
+            // a 32-bit target reaches the maximum rather than truncating to
+            // something under it.
+            Ok(value) if value <= MAX_SAFE_SPAN => value.clamp(min as u64, max as u64) as usize,
+            _ => 1,
+        }
+    }
+
+    /// The imported cells, laid out with the continuation cells Carve spells `^`
+    /// (this cell continues the one above) and `<` (it continues the one to its
+    /// left).
+    ///
+    /// The model already carried both - `TableCell::span` is in PART 12 and the
+    /// HTML renderer derives `rowspan` / `colspan` from a run of them - and the
+    /// import simply threw them away: a spanning cell was written as an ordinary
+    /// one and the row came up short, so `<td colspan="2">` produced a 1-cell
+    /// row under a 2-column header, with `table-degraded` as the only trace.
+    ///
+    /// The renderer resolves a continuation by POSITION IN THE ROW'S CELL ARRAY,
+    /// not by grid column - `^` attaches to the nearest row above whose cell at
+    /// the same index is not itself a continuation - so a carried span occupies
+    /// ONE array slot however many columns it covers, and the cells after it in
+    /// the row shift left by the rest. Placing the carried marks first and
+    /// filling the row's own cells around them is what keeps those indexes
+    /// aligned.
+    fn span_grid(
+        &mut self,
+        built: Vec<Vec<BuiltCell>>,
+        path: &str,
+        depth: usize,
+    ) -> Result<Vec<TableRow>, HtmlImportError> {
+        fn continuation(span: TableCellSpan, header: bool) -> TableCell {
+            TableCell {
+                header,
+                span: Some(span),
+                align: None,
+                attrs: None,
+                children: Vec::new(),
+                pos: None,
+            }
+        }
+        let mut carried: Vec<(usize, usize)> = Vec::new();
+        let mut rows = Vec::with_capacity(built.len());
+        for (r, source_cells) in built.into_iter().enumerate() {
+            let marks: BTreeSet<usize> = carried.iter().map(|&(index, _)| index).collect();
+            let mut cells: Vec<TableCell> = Vec::new();
+            let mut opened: Vec<(usize, usize)> = Vec::new();
+            for BuiltCell {
+                cell,
+                colspan,
+                rowspan,
+            } in source_cells
+            {
+                while marks.contains(&cells.len()) {
+                    self.enter(depth)?;
+                    cells.push(continuation(TableCellSpan::Rowspan, false));
+                }
+                // Every slot the cell occupies in THIS row, so a rowspan can
+                // carry a mark into each of them.
+                let mut covered = vec![cells.len()];
+                let header = cell.header;
+                cells.push(cell);
+                for _ in 1..colspan {
+                    while marks.contains(&cells.len()) {
+                        self.enter(depth)?;
+                        cells.push(continuation(TableCellSpan::Rowspan, false));
+                    }
+                    covered.push(cells.len());
+                    self.enter(depth)?;
+                    cells.push(continuation(TableCellSpan::Colspan, header));
+                }
+                // A cell spanning BOTH ways carries a mark for each column it
+                // covers, not one for its origin. The renderer resolves a `^`
+                // against the cell at the SAME INDEX above it, so a single mark
+                // left the next rowspan in the row resolving against a column it
+                // does not own: `<td colspan="2" rowspan="2">A</td>` beside
+                // `<td rowspan="2">B</td>` wrote `| ^ |  | ^ |` over them, which
+                // renders a cell the table does not have and reports inventing
+                // it.
+                if rowspan > 1 {
+                    opened.extend(covered.into_iter().map(|index| (index, rowspan - 1)));
+                }
+            }
+            // A mark past the end of this row's own cells. Placing it still costs
+            // nothing - it is a cell the span already owns - but a GAP before it
+            // does: the index has to be kept, and an empty cell there is one the
+            // source did not have. Only that invention is reported.
+            let furthest = marks.iter().next_back().copied();
+            let mut invented = false;
+            if let Some(furthest) = furthest {
+                while cells.len() <= furthest {
+                    self.enter(depth)?;
+                    if marks.contains(&cells.len()) {
+                        cells.push(continuation(TableCellSpan::Rowspan, false));
+                    } else {
+                        cells.push(TableCell {
+                            header: false,
+                            span: None,
+                            align: None,
+                            attrs: None,
+                            children: Vec::new(),
+                            pos: None,
+                        });
+                        invented = true;
+                    }
+                }
+            }
+            if invented {
+                self.diag(
+                    HtmlImportDiagnosticCode::TableDegraded,
+                    "Filled a row that is shorter than the spans reaching into it, with a cell the source did not have".into(),
+                    HtmlImportSeverity::Warning,
+                    &format!("{path}/tr[{}]", r + 1),
+                );
+            }
+            rows.push(TableRow {
+                cells,
+                attrs: None,
+                pos: None,
+            });
+            carried = carried
+                .into_iter()
+                .filter_map(|(index, left)| (left > 1).then_some((index, left - 1)))
+                .chain(opened)
+                .collect();
+        }
+        Ok(rows)
+    }
+
     fn table(
         &mut self,
         h: &Handle,
@@ -951,13 +1112,30 @@ impl<'a> Importer<'a> {
         depth: usize,
         attrs: Option<Attrs>,
     ) -> Result<Table, HtmlImportError> {
-        fn rows(h: &Handle, out: &mut Vec<Handle>) {
+        // Each row remembers the `<thead>` / `<tbody>` / `<tfoot>` it is in, by
+        // an id minted when the walk enters one. A rowspan stops at its ROW
+        // GROUP in HTML, so the group is not bookkeeping here: it is what says
+        // how far down a span reaches.
+        fn rows(
+            h: &Handle,
+            section: Option<usize>,
+            next_id: &mut usize,
+            out: &mut Vec<(Handle, Option<usize>)>,
+        ) {
             if Importer::tag(h).as_deref() == Some("tr") {
-                out.push(h.clone());
-            } else {
-                for c in h.children.borrow().iter() {
-                    rows(c, out);
+                out.push((h.clone(), section));
+                return;
+            }
+            let own = match Importer::tag(h).as_deref() {
+                Some("thead" | "tbody" | "tfoot") => {
+                    let id = *next_id;
+                    *next_id += 1;
+                    Some(id)
                 }
+                _ => section,
+            };
+            for c in h.children.borrow().iter() {
+                rows(c, own, next_id, out);
             }
         }
         // `<caption>` is a DIRECT child of the table and carries the table's own
@@ -965,73 +1143,141 @@ impl<'a> Importer<'a> {
         // after the rows. The row walk below looks only for `tr`, so before this
         // the element was skipped and the caption left the document silently -
         // pandoc emits exactly this shape for every captioned table.
-        let caption_children: Option<Vec<Handle>> = h
+        let captions: Vec<(usize, Handle)> = h
             .children
             .borrow()
             .iter()
-            .find(|c| Importer::tag(c).as_deref() == Some("caption"))
-            .map(|c| c.children.borrow().iter().cloned().collect());
+            .enumerate()
+            .filter(|(_, c)| Importer::tag(c).as_deref() == Some("caption"))
+            .map(|(i, c)| (i, c.clone()))
+            .collect();
+        // The PARSER keeps the first `^ ` line and reads the second as a
+        // paragraph, so a table that arrives with two captions loses one either
+        // way. Reported rather than dropped in silence, and by the same rule the
+        // parser uses, so the import and a re-read of its own output agree on
+        // which one survives.
+        for (i, _) in captions.iter().skip(1) {
+            self.diag(
+                HtmlImportDiagnosticCode::TableDegraded,
+                "Dropped a second <caption>: a table has one caption, and the first one wins"
+                    .into(),
+                HtmlImportSeverity::Warning,
+                &format!("{path}/caption[{}]", i + 1),
+            );
+        }
+        let caption_children: Option<Vec<Handle>> = captions
+            .first()
+            .map(|(_, c)| c.children.borrow().iter().cloned().collect());
         let mut trs = Vec::new();
-        rows(h, &mut trs);
-        let mut result = Vec::new();
-        for (r, tr) in trs.iter().enumerate() {
-            let mut cells = Vec::new();
-            for (c, cell) in tr
-                .children
+        rows(h, None, &mut 0, &mut trs);
+        let source_cells = |tr: &Handle| -> Vec<Handle> {
+            tr.children
                 .borrow()
                 .iter()
                 .filter(|n| matches!(Self::tag(n).as_deref(), Some("td" | "th")))
-                .enumerate()
-            {
+                .cloned()
+                .collect()
+        };
+        // PART 10 SST9 gives every `th` a `scope` from its POSITION: `col` in
+        // the leading run of all-header rows, `row` for a header cell below it.
+        // Read off the SOURCE rows, because the run ENDS at the first row
+        // carrying a `td` and the built rows carry continuation cells that are
+        // neither.
+        let leading_header_rows = trs
+            .iter()
+            .take_while(|(tr, _)| {
+                let cells = source_cells(tr);
+                !cells.is_empty() && cells.iter().all(|n| Self::tag(n).as_deref() == Some("th"))
+            })
+            .count();
+        // How many rows are left in each row's own group, INCLUDING it. Computed
+        // once: asking per cell means scanning the whole table for each one,
+        // which is quadratic in the row count.
+        let mut totals: BTreeMap<Option<usize>, usize> = BTreeMap::new();
+        for (_, section) in &trs {
+            *totals.entry(*section).or_insert(0) += 1;
+        }
+        let mut seen: BTreeMap<Option<usize>, usize> = BTreeMap::new();
+        let remaining_in_group: Vec<usize> = trs
+            .iter()
+            .map(|(_, section)| {
+                let index = seen.entry(*section).or_insert(0);
+                let left = totals.get(section).copied().unwrap_or(1) - *index;
+                *index += 1;
+                left
+            })
+            .collect();
+        let mut built: Vec<Vec<BuiltCell>> = Vec::with_capacity(trs.len());
+        for (r, (tr, _)) in trs.iter().enumerate() {
+            let mut row = Vec::new();
+            for (c, cell) in source_cells(tr).iter().enumerate() {
                 let p = format!(
                     "{path}/tr[{}]/{}[{}]",
                     r + 1,
                     Self::tag(cell).unwrap(),
                     c + 1
                 );
-                if Self::attr(cell, "rowspan").as_deref().unwrap_or("1") != "1"
-                    || Self::attr(cell, "colspan").as_deref().unwrap_or("1") != "1"
-                {
+                let colspan = Self::span_count(cell, "colspan", MAX_COLSPAN, 1);
+                // A rowspan stops at its ROW GROUP in HTML, and `rowspan="0"`
+                // means exactly "to the end of it". Both are resolved against the
+                // group the row is actually in, so a `<tfoot>` below the body is
+                // not swallowed by a cell the layout stops at the body's last
+                // row.
+                let declared = Self::span_count(cell, "rowspan", MAX_ROWSPAN, 0);
+                let left = remaining_in_group[r];
+                let mut rowspan = if declared == 0 {
+                    left
+                } else {
+                    declared.min(left)
+                };
+                // And it stops at the head the RENDERER will synthesize. Carve
+                // derives the head from the leading run of all-header rows, so a
+                // span reaching out of that run lands in a `<thead>` with its
+                // other rows in the `<tbody>` - which browsers clip, making the
+                // written table say something the source table did not. Clipped
+                // here instead, where it can be reported: the alternative is a
+                // document that claims a grid it does not render.
+                if r < leading_header_rows && r + rowspan > leading_header_rows {
                     self.diag(
                         HtmlImportDiagnosticCode::TableDegraded,
-                        "Table spans were flattened by this importer".into(),
+                        "Clipped a rowspan at the header rows: Carve derives the head from the leading header rows, and a span leaving them crosses a boundary browsers clip anyway".into(),
                         HtmlImportSeverity::Warning,
                         &p,
                     );
+                    rowspan = leading_header_rows - r;
                 }
-                cells.push(TableCell {
-                    header: Self::tag(cell).as_deref() == Some("th"),
-                    span: None,
-                    align: None,
-                    attrs: self.attrs(cell, &p),
-                    children: self.inlines(&cell.children.borrow(), &p, depth + 1)?,
-                    pos: None,
+                row.push(BuiltCell {
+                    cell: TableCell {
+                        header: Self::tag(cell).as_deref() == Some("th"),
+                        span: None,
+                        align: None,
+                        attrs: self.attrs(cell, &p),
+                        children: self.inlines(&cell.children.borrow(), &p, depth + 1)?,
+                        pos: None,
+                    },
+                    colspan,
+                    rowspan,
                 });
             }
-            result.push(TableRow {
-                cells,
-                attrs: None,
-                pos: None,
-            });
+            built.push(row);
         }
+        let mut result = self.span_grid(built, path, depth)?;
 
-        // PART 10 SST9 gives every `th` a `scope` from its POSITION: `col` in
-        // the leading run of all-header rows, `row` for a header cell below it.
-        // A value equal to that default carries no information the renderer
-        // cannot reproduce, and importing it would write this engine's own
-        // output back as if the author had written it. A value the default
+        // A `scope` equal to the positional default carries no information the
+        // renderer cannot reproduce, and importing it would write this engine's
+        // own output back as if the author had written it. A value the default
         // cannot explain - `colgroup`, `rowgroup`, which have no marker
         // spelling - is the only way to get it, so it stays (carve-rs#944).
-        let head_run = result
-            .iter()
-            .take_while(|row| !row.cells.is_empty() && row.cells.iter().all(|c| c.header))
-            .count();
         for (r, row) in result.iter_mut().enumerate() {
             for cell in row.cells.iter_mut() {
                 if !cell.header {
                     continue;
                 }
-                let default = if r < head_run { "col" } else { "row" };
+                let default = if r < leading_header_rows {
+                    "col"
+                } else {
+                    "row"
+                };
                 let Some(attrs) = cell.attrs.as_mut() else {
                     continue;
                 };

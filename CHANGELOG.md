@@ -332,6 +332,35 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **An HTML table's `colspan` and `rowspan` survive the import as the
+  continuation cells Carve has for them** (markup-carve/carve#1210 P1). The
+  model already carried both - `TableCell::span` is in PART 12, the writer
+  spells them `^` (this cell continues the one above) and `<` (it continues the
+  one to its left), and the HTML renderer derives the two attributes from a run
+  of them - and the import threw them away: a spanning cell was written as an
+  ordinary one and its row came up short, so `<td colspan="2">` produced a
+  one-cell row under a two-column header with a `table-degraded` warning as the
+  only trace. That warning is gone with the loss it named. Four further defects
+  on the same path went with it: a rowspan crossed its ROW GROUP, so a cell in
+  the last body row wrote continuations into the `<tfoot>` below it; a rowspan
+  leaving the head the renderer derives claimed a grid browsers clip, and is now
+  clipped where it can be reported; `rowspan="0"` ("to the end of this row
+  group") was not honored; and neither span was bounded, so `colspan` could ask
+  for a billion cells from thirty bytes. A row shorter than the spans reaching
+  into it reports the one cell it has to invent, and a table arriving with two
+  `<caption>` elements says which one it kept instead of dropping the second in
+  silence.
+
+- **A table's HEAD row resolves its continuation cells.** It resolved neither,
+  while body rows resolved both: a `<` rendered an empty `<th>` instead of
+  widening the cell to its left, so a header cell spanning columns lost the span
+  and the table gained a column it does not have, and a `^` rendered an empty
+  `<th>` beside the `rowspan` its origin already carried. A resolved
+  continuation is also transparent to the head/body split now, so the row under
+  a header rowspan stays in the head instead of being pushed into the body by a
+  marker that renders nothing. Hand-written source hit all three; carve-js
+  renders each the way this now does.
+
 - **`carve migrate --from djot` freezes a braced run whose opener is never
   closed on its line** (markup-carve/carve#1130, markup-carve/carve-rs#995). The
   escaper's unit is a LINE, but a braced run is not: `a {,x` on one line and
