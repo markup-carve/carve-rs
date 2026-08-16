@@ -54,6 +54,34 @@ fn a_tilde_fence_takes_a_tab_padded_closer_too() {
     assert_eq!(to_html("~~~\nx\n~~~\t\n"), "<pre><code>x\n</code></pre>");
 }
 
+/// THE CLOSER INDEX makes the same test, and a `false` from it is FINAL - the
+/// exact scan never re-examines a line the index rejected. A fence that has to
+/// INTERRUPT an open paragraph asks the index first, so this shape fails while
+/// the closer itself is already right.
+///
+/// The INFO STRING is what makes the case reach the index at all: a bare
+/// ```` ``` ```` opener is closer-shaped itself and seeds the index on its own
+/// line, which hides a narrow prefilter. ```` ```php ```` is not, so the
+/// tab-padded closer is the only entry there is.
+#[test]
+fn a_tab_padded_closer_lets_the_fence_interrupt_a_paragraph() {
+    assert_eq!(
+        to_html("para\n```php\nx\n```\t\n"),
+        "<p>para</p>\n<pre><code class=\"language-php\">x\n</code></pre>",
+        "the index refused the closer, so the fence never interrupted"
+    );
+}
+
+/// CONTROL: the same shape with a space-padded closer, which the index took
+/// before this change too.
+#[test]
+fn a_space_padded_closer_lets_the_fence_interrupt_a_paragraph() {
+    assert_eq!(
+        to_html("para\n```php\nx\n``` \n"),
+        "<p>para</p>\n<pre><code class=\"language-php\">x\n</code></pre>"
+    );
+}
+
 /// A tab with CONTENT after it is not a closer at all - the separator half of
 /// the rule, seen from the closing end. The line stays inside the block.
 #[test]
