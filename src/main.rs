@@ -333,16 +333,18 @@ fn run_migrate(args: &[String]) -> ExitCode {
                 i += 1;
                 from = args.get(i).cloned();
             }
+            // Both flags read the SAME vocabulary the report writes back out,
+            // so a mode the CLI takes is always a mode the schema admits.
             "--mode" => {
                 i += 1;
                 mode = match args.get(i).map(String::as_str) {
-                    Some("safe") => carve::HtmlImportMode::Safe,
-                    Some("semantic") => carve::HtmlImportMode::Semantic,
-                    Some("roundtrip") => carve::HtmlImportMode::Roundtrip,
-                    Some(other) => {
-                        eprintln!("carve migrate: unknown mode {other}");
-                        return ExitCode::FAILURE;
-                    }
+                    Some(value) => match carve::HtmlImportMode::from_name(value) {
+                        Some(mode) => mode,
+                        None => {
+                            eprintln!("carve migrate: unknown mode {value}");
+                            return ExitCode::FAILURE;
+                        }
+                    },
                     None => {
                         eprintln!("carve migrate: --mode requires a value");
                         return ExitCode::FAILURE;
@@ -352,17 +354,13 @@ fn run_migrate(args: &[String]) -> ExitCode {
             "--adapter" => {
                 i += 1;
                 adapter = match args.get(i).map(String::as_str) {
-                    Some("generic") => carve::HtmlImportAdapter::Generic,
-                    Some("tiptap") => carve::HtmlImportAdapter::Tiptap,
-                    Some("prosemirror") => carve::HtmlImportAdapter::Prosemirror,
-                    Some("ckeditor") => carve::HtmlImportAdapter::Ckeditor,
-                    Some("tinymce") => carve::HtmlImportAdapter::Tinymce,
-                    Some("word") => carve::HtmlImportAdapter::Word,
-                    Some("google-docs") => carve::HtmlImportAdapter::GoogleDocs,
-                    Some(other) => {
-                        eprintln!("carve migrate: unknown adapter {other}");
-                        return ExitCode::FAILURE;
-                    }
+                    Some(value) => match carve::HtmlImportAdapter::from_name(value) {
+                        Some(adapter) => adapter,
+                        None => {
+                            eprintln!("carve migrate: unknown adapter {value}");
+                            return ExitCode::FAILURE;
+                        }
+                    },
                     None => {
                         eprintln!("carve migrate: --adapter requires a value");
                         return ExitCode::FAILURE;
@@ -462,25 +460,14 @@ fn run_migrate(args: &[String]) -> ExitCode {
     }
 }
 
+/// The HTML import report as JSON (the spec's HTML import contract,
+/// "Result and diagnostics").
+///
+/// Every spelling comes from the vocabulary's own `as_str`, never from a copy
+/// kept here: `tests/the_report_answers_to_the_published_schema.rs` holds
+/// those to `resources/html-import-schema.json`, and a second table in this
+/// file would be outside what that test can see.
 fn html_report_json(report: &carve::HtmlImportReport) -> String {
-    fn mode(v: carve::HtmlImportMode) -> &'static str {
-        match v {
-            carve::HtmlImportMode::Safe => "safe",
-            carve::HtmlImportMode::Semantic => "semantic",
-            carve::HtmlImportMode::Roundtrip => "roundtrip",
-        }
-    }
-    fn adapter(v: carve::HtmlImportAdapter) -> &'static str {
-        match v {
-            carve::HtmlImportAdapter::Generic => "generic",
-            carve::HtmlImportAdapter::Tiptap => "tiptap",
-            carve::HtmlImportAdapter::Prosemirror => "prosemirror",
-            carve::HtmlImportAdapter::Ckeditor => "ckeditor",
-            carve::HtmlImportAdapter::Tinymce => "tinymce",
-            carve::HtmlImportAdapter::Word => "word",
-            carve::HtmlImportAdapter::GoogleDocs => "google-docs",
-        }
-    }
     fn esc(s: &str) -> String {
         format!("{s:?}")
     }
@@ -490,26 +477,9 @@ fn html_report_json(report: &carve::HtmlImportReport) -> String {
         .map(|d| {
             format!(
                 "{{\"code\":\"{}\",\"message\":{},\"severity\":\"{}\"{}}}",
-                match d.code {
-                    carve::HtmlImportDiagnosticCode::ElementDropped => "element-dropped",
-                    carve::HtmlImportDiagnosticCode::ElementUnwrapped => "element-unwrapped",
-                    carve::HtmlImportDiagnosticCode::AttributeDropped => "attribute-dropped",
-                    carve::HtmlImportDiagnosticCode::StyleUnmapped => "style-unmapped",
-                    carve::HtmlImportDiagnosticCode::TableDegraded => "table-degraded",
-                    carve::HtmlImportDiagnosticCode::RawPreserved => "raw-preserved",
-                    carve::HtmlImportDiagnosticCode::StructureUnspellable => {
-                        "structure-unspellable"
-                    }
-                    carve::HtmlImportDiagnosticCode::EncodingAssumed => "encoding-assumed",
-                    carve::HtmlImportDiagnosticCode::DiagnosticsTruncated =>
-                        "diagnostics-truncated",
-                },
+                d.code.as_str(),
                 esc(&d.message),
-                match d.severity {
-                    carve::HtmlImportSeverity::Info => "info",
-                    carve::HtmlImportSeverity::Warning => "warning",
-                    carve::HtmlImportSeverity::Error => "error",
-                },
+                d.severity.as_str(),
                 d.path
                     .as_ref()
                     .map(|p| format!(",\"path\":{}", esc(p)))
@@ -520,8 +490,8 @@ fn html_report_json(report: &carve::HtmlImportReport) -> String {
         .join(",");
     format!(
         "{{\"mode\":\"{}\",\"adapter\":\"{}\",\"diagnostics\":[{}]}}",
-        mode(report.mode),
-        adapter(report.adapter),
+        report.mode.as_str(),
+        report.adapter.as_str(),
         diagnostics
     )
 }

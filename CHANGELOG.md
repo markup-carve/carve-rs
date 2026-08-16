@@ -9,6 +9,14 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`ALL`, `as_str` and `from_name` on the four HTML import report
+  vocabularies** (`HtmlImportMode`, `HtmlImportAdapter`, `HtmlImportSeverity`,
+  `HtmlImportDiagnosticCode`). The wire spellings the CLI writes into the JSON
+  report were a private table inside the binary; they are now the enums' own,
+  so a consumer building or reading an import report no longer has to
+  restate them. No emitted byte changes. `--mode` and `--adapter` read their
+  values back through the same list, which is also what the schema admits.
+
 - **`Table::row_groups`, and the HTML importer states one where a reader cannot
   derive it** (PART 12 §15, markup-carve/carve#1210 P1 under decision D1 as
   ruled). The field was named in the wire allowlist and had no Rust type, no

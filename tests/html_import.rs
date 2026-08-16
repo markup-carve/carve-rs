@@ -90,17 +90,11 @@ fn shared_contract_fixtures_match() {
             .report
             .diagnostics
             .iter()
-            .map(|d| match d.code {
-                HtmlImportDiagnosticCode::ElementDropped => "element-dropped",
-                HtmlImportDiagnosticCode::ElementUnwrapped => "element-unwrapped",
-                HtmlImportDiagnosticCode::AttributeDropped => "attribute-dropped",
-                HtmlImportDiagnosticCode::StyleUnmapped => "style-unmapped",
-                HtmlImportDiagnosticCode::TableDegraded => "table-degraded",
-                HtmlImportDiagnosticCode::RawPreserved => "raw-preserved",
-                HtmlImportDiagnosticCode::StructureUnspellable => "structure-unspellable",
-                HtmlImportDiagnosticCode::EncodingAssumed => "encoding-assumed",
-                HtmlImportDiagnosticCode::DiagnosticsTruncated => "diagnostics-truncated",
-            })
+            // The vocabulary's own spelling, not a third copy of the table:
+            // with a copy here the fixtures compared this test's idea of the
+            // codes against the shared ones and left the engine's own spelling
+            // unpinned.
+            .map(|d| d.code.as_str())
             .collect::<Vec<_>>();
         assert_eq!(actual_codes, expected_codes, "{}", dir.display());
     }
