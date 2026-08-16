@@ -335,7 +335,7 @@ fn an_inline_span_at_top_level_stays_inline() {
 fn an_inline_span_in_a_table_cell_stays_inline() {
     assert_eq!(
         carve("| h |\n|---|\n| a <span>b</span> c |\n"),
-        "|=h|\n| a <span>b</span> c |\n",
+        "|= h |\n| a <span>b</span> c |\n",
     );
 }
 

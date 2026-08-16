@@ -227,6 +227,18 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Every table cell pads its content in the canonical form.** `carve fmt` wrote
+  a cell that carries a prefix - the kind marker `=`, an alignment marker, an
+  attribute block - with its content glued to that prefix: `|=Heading|`,
+  `|={.total}Total|=99|`. It now writes `|= Heading |` and
+  `|={.total} Total |= 99 |`. The prefix still touches the opening pipe, because
+  a space in front of it makes it literal content; only the content is padded,
+  the way an unprefixed cell always was. An empty cell takes a single space.
+  Beyond readability this removes the two guards that inserted a space only for
+  content starting with `<`, `>`, `~` or `{`: the alignment sigil and the
+  attribute slot are read glued off the untrimmed cell, and padding every cell
+  covers that without enumerating characters.
+
 - **A table cell's attribute block binds after the kind and alignment markers**
   (PART 9 §5 T10, markup-carve/carve#1226). One order, both productions: `=`,
   then the alignment marker, then the block, glued to whatever precedes it.
@@ -360,6 +372,15 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (#892), so mixed-indent documents parse to one structure.
 
 ### Fixed
+
+- **The Markdown writer leaves no trailing space on an emptied marker.** A list
+  item or definition whose whole body was COLLECTED - a link reference
+  definition, a footnote definition - wrote its marker with the separator space
+  still attached, so the line ended in whitespace: `"- "` and `": "` where
+  carve-js writes `"-"` and `":"`. No golden in the corpus ends a line in a
+  space, and this writer's own continuation pad already refuses to pad an empty
+  line for the same reason - trailing whitespace is what editors and
+  `git apply --whitespace=fix` rewrite behind the writer.
 
 - **An HTML table's `colspan` and `rowspan` survive the import as the
   continuation cells Carve has for them** (markup-carve/carve#1210 P1). The

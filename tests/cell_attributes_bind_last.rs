@@ -129,7 +129,7 @@ fn an_attributed_header_row_no_longer_falls_back_to_a_delimiter_row() {
     // must stop claiming it - otherwise the canonical form is still the shape
     // this rule exists to retire.
     let src = carve::to_carve("|={#x} R |= B |\n| 1 | 2 |");
-    assert!(src.contains("|={#x}R|=B|"), "got {src}");
+    assert!(src.contains("|={#x} R |= B |"), "got {src}");
     assert!(!src.contains("---"), "a delimiter row was emitted: {src}");
 
     // A span marker promoted to a header cell is still unspellable - `span_cell`
