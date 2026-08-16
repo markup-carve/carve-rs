@@ -259,6 +259,31 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **An HTML import diagnostic's `path` is rooted at the imported fragment**
+  (markup-carve/carve#1257). Every path led with the wrappers html5ever's
+  document parser synthesizes, so an event handler on a top-level `<p>` was
+  reported at `/html[1]/body[2]/p[1]` and named the parser rather than the
+  input. It is now reported at `/p[1]`. `<html>`, `<head>` and `<body>`
+  contribute neither a path segment nor a sibling position - an input that
+  spells them itself gets the same path as the bare fragment, and a `<head>`'s
+  own content is numbered into one run with the body's - and a doctype takes
+  no index. The two rules that decide the rest of the string are unchanged:
+  `[n]` still counts among ALL child nodes, text included, and a path still
+  names the importer's traversal, with table sections flattened and rows
+  numbered across the whole table. The field is a human-readable locator, not
+  an XPath expression, and must not be resolved as one. The wrapper elements'
+  own attributes also stop producing a diagnostic, because an element that is
+  not part of the fragment cannot be the subject of one. Imported content is
+  unchanged for every input that has no `<head>` content; where an input does
+  have some, the head's and the body's children now form one run rather than
+  two, so a `<title>`'s text can join the paragraph the body opens with
+  instead of standing alone. Both import budgets
+  stop being spent on them, so each admits more of the caller's own content
+  than it did: the walk no longer descends four levels of scaffolding before
+  reaching the first element the input wrote, and no longer charges three
+  nodes for elements the input does not contain. Measured on `<p>x</p>`, which
+  needed `max_nodes` 5 and now needs 2.
+
 - **Every table cell pads its content in the canonical form.** `carve fmt` wrote
   a cell that carries a prefix - the kind marker `=`, an alignment marker, an
   attribute block - with its content glued to that prefix: `|=Heading|`,

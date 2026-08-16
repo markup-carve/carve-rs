@@ -2251,6 +2251,38 @@ impl<'a> Importer<'a> {
     }
 }
 
+/// The nodes an import walks, and the ones a diagnostic `path` is rooted at.
+///
+/// A `path` names the imported FRAGMENT, so the wrappers an HTML parser is
+/// obliged to synthesize are not part of it. `<html>`, `<head>` and `<body>`
+/// contribute neither a path segment nor a sibling position: their children
+/// stand exactly where they stood, in one run. html5ever's `parse_document`
+/// builds all three for any input, a bare `<p>` included, so reading the
+/// document's own children made every path lead with `/html[1]/body[2]` and
+/// name the parser instead of the input.
+///
+/// A doctype is skipped rather than kept as a sibling. It is not a node of the
+/// fragment, and counting it would shift the index of everything after it - the
+/// same reason the wrappers do not count.
+///
+/// A comment is kept: it IS a node of the fragment, and drops out of the
+/// content on its own further down without disturbing the numbering.
+fn fragment_top_level(node: &Handle) -> Vec<Handle> {
+    let mut out = Vec::new();
+    for child in node.children.borrow().iter() {
+        match &child.data {
+            NodeData::Doctype { .. } => {}
+            NodeData::Element { name, .. }
+                if matches!(name.local.as_ref(), "html" | "head" | "body") =>
+            {
+                out.extend(fragment_top_level(child));
+            }
+            _ => out.push(child.clone()),
+        }
+    }
+    out
+}
+
 /// Every element in the subtree, in document order.
 fn footnote_document_elements(root: &Handle) -> Vec<Handle> {
     let mut elements = Vec::new();
@@ -2940,7 +2972,7 @@ fn import(
         }
         _ => BTreeMap::new(),
     };
-    let children = importer.blocks(&dom.document.children.borrow(), "", 0)?;
+    let children = importer.blocks(&fragment_top_level(&dom.document), "", 0)?;
     if writing {
         for (path, message) in std::mem::take(&mut importer.unspellable) {
             importer.diag(

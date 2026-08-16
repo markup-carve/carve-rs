@@ -242,6 +242,14 @@ fn the_definition_list_walk_pays_into_the_importers_limits() {
 
     // A group wrapper costs a level of depth: the same chain of definitions
     // fits without one and does not fit with one.
+    //
+    // The bound is 14 rather than the 18 it was because the walk no longer
+    // descends through the `<html>`/`<head>`/`<body>` the HTML parser
+    // synthesizes: those four levels used to be charged to every import,
+    // whatever the input, so a caller's `max_depth` described the parser's
+    // scaffolding as much as their own content (markup-carve/carve#1257). What
+    // this test is about is unchanged - the wrapper still costs a level, and
+    // the pair still straddles the limit.
     let nest = |open: &str, close: &str, n: usize| {
         let mut html = String::new();
         for _ in 0..n {
@@ -254,7 +262,7 @@ fn the_definition_list_walk_pays_into_the_importers_limits() {
         html
     };
     let options = HtmlImportOptions {
-        max_depth: 18,
+        max_depth: 14,
         ..Default::default()
     };
     assert!(html_to_ast(&nest("<dl><dd>", "</dd></dl>", 4), &options).is_ok());
