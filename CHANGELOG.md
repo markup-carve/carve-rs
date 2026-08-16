@@ -74,8 +74,9 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   number, panels draw nothing, and a panel with an id resolves `</#id>` as the
   group number plus a letter by panel order ("Figure 2a"). A `#` placeholder
   in a PANEL caption stays the literal `#` on every target. HTML renders the
-  class-first `carve-figure-group` / `carve-figure-panel` shape with an
-  unconditional `carve-figure-panels` div; Markdown, plain text and the
+  class-first `carve-figure-group` / `carve-figure-panel` shape, panels nesting
+  directly in the group with no wrapper element between them and the group's
+  `<figcaption>` last; Markdown, plain text and the
   terminal degrade deterministically per PART 11 §10g; the canonical writer
   emits the authored form back; AST JSON gains the additive `figure_group`
   node (PART 12 §16), and the HTML importer reads the engine's own group

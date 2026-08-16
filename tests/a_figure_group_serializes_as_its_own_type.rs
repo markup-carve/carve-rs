@@ -59,13 +59,13 @@ fn ingest_requires_children() {
 
 #[test]
 fn a_hand_built_group_renders_through_the_ingest_path() {
-    // A group the parse never made - stray content only, no panels - still
-    // renders the unconditional panels div (§4c).
+    // A group the parse never made - stray content only, no panels - holds
+    // that content directly (§4c).
     let payload = r#"{"type":"document","children":[{"type":"figure_group","children":[{"type":"paragraph","children":[{"type":"text","value":"stray"}]}]}],"srcByteLength":0}"#;
     let doc = carve::from_json(payload).expect("decodes");
     assert_eq!(
         carve::render_html(&doc).expect("renders"),
-        "<figure class=\"carve-figure-group\">\n  <div class=\"carve-figure-panels\">\n    <p>stray</p>\n  </div>\n</figure>"
+        "<figure class=\"carve-figure-group\">\n  <p>stray</p>\n</figure>"
     );
 }
 

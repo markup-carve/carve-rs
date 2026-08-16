@@ -1,11 +1,12 @@
 //! The HTML importer reads this engine's own composite-figure shape back.
 //!
 //! `<figure class="carve-figure-group">` returns as a `figure_group`: the
-//! structural classes come off, the panels div unwraps, each
-//! `carve-figure-panel` figure rebuilds the figure it wrapped, and the
-//! trailing `<figcaption>` is the group caption - closing the render/import
-//! round trip for PART 9 §4c output. A `<figure>` WITHOUT the own-output
-//! class is still an unsupported element and keeps the pre-§4c treatment.
+//! structural classes come off, each `carve-figure-panel` figure rebuilds the
+//! figure it wrapped, and the group's own `<figcaption>` - its LAST direct
+//! one, since a panel's sits a level down - is the group caption. That closes
+//! the render/import round trip for PART 9 §4c output. A `<figure>` WITHOUT
+//! the own-output class is still an unsupported element and keeps the pre-§4c
+//! treatment.
 
 fn round_trip(source: &str) -> String {
     let html = carve::to_html(source);
