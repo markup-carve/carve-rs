@@ -8,43 +8,87 @@ use html5ever::{serialize, serialize::SerializeOpts};
 use markup5ever_rcdom::{Handle, NodeData, RcDom, SerializableHandle};
 use std::collections::{BTreeMap, BTreeSet};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum HtmlImportMode {
-    Safe,
-    Semantic,
-    Roundtrip,
+/// Declares one of the import report's closed vocabularies together with the
+/// spelling each variant takes on the wire.
+///
+/// The enum, [`ALL`](HtmlImportDiagnosticCode::ALL) and
+/// [`as_str`](HtmlImportDiagnosticCode::as_str) come out of ONE table on
+/// purpose. `resources/html-import-schema.json` in the spec fixes these
+/// vocabularies, and the test that holds the crate to it can only look at the
+/// variants the list hands it: a hand-written list would let a new variant
+/// ship unlisted, unspelled by the schema, and unnoticed - the same
+/// check-that-cannot-fail the test exists to remove, moved one level up.
+/// Written this way the compiler refuses a variant that skips either.
+macro_rules! report_vocabulary {
+    (
+        $(#[$enum_meta:meta])*
+        $name:ident {
+            $( $(#[$variant_meta:meta])* $variant:ident => $spelling:literal ),+ $(,)?
+        }
+    ) => {
+        $(#[$enum_meta])*
+        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+        pub enum $name {
+            $( $(#[$variant_meta])* $variant, )+
+        }
+
+        impl $name {
+            /// Every variant, in declaration order.
+            pub const ALL: &'static [Self] = &[ $( Self::$variant, )+ ];
+
+            /// The variant's spelling in the JSON import report. The spec's
+            /// `resources/html-import-schema.json` admits exactly the set
+            /// these return.
+            pub fn as_str(self) -> &'static str {
+                match self {
+                    $( Self::$variant => $spelling, )+
+                }
+            }
+
+            /// The variant a wire spelling names, or `None` when the
+            /// vocabulary has no such member. The inverse of `as_str`, so a
+            /// caller that accepts a name accepts exactly what the report can
+            /// write back.
+            pub fn from_name(name: &str) -> Option<Self> {
+                Self::ALL.iter().copied().find(|v| v.as_str() == name)
+            }
+        }
+    };
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum HtmlImportAdapter {
-    Generic,
-    Tiptap,
-    Prosemirror,
-    Ckeditor,
-    Tinymce,
-    Word,
-    GoogleDocs,
-}
+report_vocabulary!(HtmlImportMode {
+    Safe => "safe",
+    Semantic => "semantic",
+    Roundtrip => "roundtrip",
+});
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum HtmlImportSeverity {
-    Info,
-    Warning,
-    Error,
-}
+report_vocabulary!(HtmlImportAdapter {
+    Generic => "generic",
+    Tiptap => "tiptap",
+    Prosemirror => "prosemirror",
+    Ckeditor => "ckeditor",
+    Tinymce => "tinymce",
+    Word => "word",
+    GoogleDocs => "google-docs",
+});
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum HtmlImportDiagnosticCode {
-    ElementDropped,
-    ElementUnwrapped,
-    AttributeDropped,
-    StyleUnmapped,
-    TableDegraded,
-    RawPreserved,
+report_vocabulary!(HtmlImportSeverity {
+    Info => "info",
+    Warning => "warning",
+    Error => "error",
+});
+
+report_vocabulary!(HtmlImportDiagnosticCode {
+    ElementDropped => "element-dropped",
+    ElementUnwrapped => "element-unwrapped",
+    AttributeDropped => "attribute-dropped",
+    StyleUnmapped => "style-unmapped",
+    TableDegraded => "table-degraded",
+    RawPreserved => "raw-preserved",
     /// A structure the AST holds and Carve 0.1 SOURCE has no spelling for, so
     /// only a WRITER loses it (PART 12 §16). Reported by `html_to_carve`;
     /// `html_to_ast` keeps the structure and says nothing.
-    StructureUnspellable,
+    StructureUnspellable => "structure-unspellable",
     /// The source did not declare how to read a value and this importer picked
     /// an encoding anyway, so the node it produced is only correct if that
     /// guess holds.
@@ -54,9 +98,9 @@ pub enum HtmlImportDiagnosticCode {
     /// warning about the OUTPUT. A consumer told only that an element is gone
     /// cannot tell a harmless structural event from content that may be in the
     /// wrong language entirely, and that is the one signal it could act on.
-    EncodingAssumed,
-    DiagnosticsTruncated,
-}
+    EncodingAssumed => "encoding-assumed",
+    DiagnosticsTruncated => "diagnostics-truncated",
+});
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HtmlImportDiagnostic {
