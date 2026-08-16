@@ -17,6 +17,12 @@
 //! list spellings beside it (carve#326). The list path reaches that answer
 //! without consulting `nested_ends_with_open_paragraph` at all, so the exception
 //! is written where it reaches the definition body and nothing else.
+//!
+//! TWO ROWS BELOW STOPPED BEING DIVERGENCES. The attribute and thematic-break
+//! twins used to answer differently from their bodies; markup-carve/carve#1280
+//! ruled S4 uniform across containers, and both twins now end where the body
+//! ends. They stay in this file because the row is still worth pinning - what
+//! changed is that the list column agrees instead of disagreeing.
 
 fn html(src: &str) -> String {
     carve::to_html(src).trim().to_string()
@@ -48,12 +54,20 @@ fn a_closed_admonition_body_does_not_take_the_fold() {
 }
 
 #[test]
-fn a_definition_attribute_is_left_empty_but_a_marker_line_attribute_floats() {
+fn an_attribute_body_does_not_take_the_fold() {
     assert_eq!(
         html(":: t\n:  {.a}\nlazy\n"),
         "<dl>\n  <dt>t</dt>\n  <dd></dd>\n</dl>\n<p>lazy</p>"
     );
-    assert!(list_twin("- {.a}\nlazy\n").contains("<li><p class=\"a\">lazy</p></li>"));
+    // The list twin used to be the odd one out here: it pulled `lazy` into the
+    // item so the attribute had something to attach to. markup-carve/carve#1280
+    // ruled S4 uniform and the twin now answers like the body above - the
+    // attribute leaves no open paragraph, so the container ends and the
+    // attribute is dropped in scope (§15 A4, markup-carve/carve#1281).
+    assert_eq!(
+        list_twin("- {.a}\nlazy\n"),
+        "<ul>\n  <li></li>\n</ul>\n<p>lazy</p>"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -72,14 +86,17 @@ fn a_table_body_does_not_take_the_fold() {
 }
 
 #[test]
-fn a_definition_thematic_break_does_not_fold_but_a_marker_line_one_keeps_the_item_open() {
+fn a_thematic_break_body_does_not_take_the_fold() {
     assert_eq!(
         html(":: t\n:  ---\nlazy\n"),
         "<dl>\n  <dt>t</dt>\n  <dd>\n    <hr>\n  </dd>\n</dl>\n<p>lazy</p>"
     );
-    let list = list_twin("- ---\nlazy\n");
-    assert!(list.contains("<hr>\n    lazy\n  </li>"));
-    assert!(!list.ends_with("<p>lazy</p>"));
+    // The other twin that used to disagree with its body, and for the same
+    // reason (markup-carve/carve#1280). A break holds nothing at all.
+    assert_eq!(
+        list_twin("- ---\nlazy\n"),
+        "<ul>\n  <li>\n    <hr>\n  </li>\n</ul>\n<p>lazy</p>"
+    );
 }
 
 #[test]

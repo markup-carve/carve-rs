@@ -6103,10 +6103,7 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                     fold_lazy_run_and_resume(
                         cur,
                         &mut nested,
-                        |src| {
-                            nested_ends_with_heading(src, options)
-                                || nested_ends_with_open_paragraph(src, options)
-                        },
+                        |src| collected_body_takes_the_lazy_line(src, options),
                         |cur| {
                             collect_item_continuation_block_mapped(
                                 cur,
@@ -6282,10 +6279,7 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 fold_lazy_run_and_resume(
                     cur,
                     &mut nested,
-                    |src| {
-                        nested_ends_with_open_paragraph(src, options)
-                            || nested_ends_with_heading(src, options)
-                    },
+                    |src| collected_body_takes_the_lazy_line(src, options),
                     |cur| collect_indented_block_mapped(cur, sub_indent - 1, content_col),
                 );
                 let mut nested_children = parse_mapped_source(&nested, options);
@@ -6473,19 +6467,23 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         if parse_standalone_attrs(marker.content).is_some() {
             let mut stream = item_marker_source(cur, marker.content, item_at);
             stream.append(collect_indented_block_mapped(cur, base_indent, content_col));
-            // The attribute line floats onto the item's first following block;
-            // a flush-left line therefore remains item-owned even when it would
-            // interrupt an ordinary open paragraph.
-            if let Some(line) = cur.peek().map(str::to_string) {
-                if !is_blank_line(&line) && indent_columns(&line) == 0 && !is_list_marker(&line) {
-                    stream.push_newline_at(
-                        trim_ascii_start(&line).to_string(),
-                        cur.source_line(cur.pos),
-                        cur.source_col(cur.pos),
-                    );
-                    cur.consume();
-                }
-            }
+            // A FLUSH-LEFT line is not the block this attribute floats onto.
+            //
+            // This used to pull that line INTO the item so the attributes could
+            // reach it - which is the same absorb-a-flush-left-block behavior
+            // PART 1 S4 refuses (markup-carve/carve#1280), and it made the item
+            // swallow a block the author wrote outside it purely because an
+            // attribute line was looking for a target. `- {.k}` / `# H`
+            // published `<li><h1 class="k">` where the heading belongs at
+            // document level, and `- {.k}` / `tail` published a classed
+            // paragraph inside the item.
+            //
+            // An attribute line leaves no open paragraph, so the flush-left
+            // line ends the item and the attribute has nothing left in scope: it
+            // is dropped where it was written rather than travelling out of its
+            // container (§15 A4, markup-carve/carve#1281). The indented
+            // spelling - `- {a=b .c}` / `  # H`, corpus 170 - reaches the item's
+            // content column and is collected above, so it still attaches.
             // A blank line between the item's blocks loosens the list, whatever
             // the marker-line lead happens to be. This branch and the two beside
             // it build their item and `continue` past the loosening test the
@@ -6618,35 +6616,45 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             let swallowed_blank_separator =
                 cur.pos > before_block && is_blank_line(cur.lines[cur.pos - 1]);
             let marker_line_was_the_whole_block = cur.pos == before_block;
-            // A marker-line attribute floats onto the block that follows it.
-            // That following line is ownership, not paragraph interruption, so
-            // even a line the ordinary lazy gate would call an interrupter must
-            // enter this item.
-            if trim_ascii(marker.content).starts_with('{') {
-                if let Some(line) = cur.peek().map(str::to_string) {
-                    if !is_blank_line(&line) && indent_columns(&line) == 0 && !is_list_marker(&line)
-                    {
-                        stream.push_newline_at(
-                            trim_ascii_start(&line).to_string(),
-                            cur.source_line(cur.pos),
-                            cur.source_col(cur.pos),
-                        );
-                        cur.consume();
-                    }
-                }
-            }
             fold_lazy_run_and_resume(
                 cur,
                 &mut stream,
                 |src| {
-                    !swallowed_blank_separator
-                        && (nested_ends_with_heading(src, options)
-                            || (marker_line_was_the_whole_block && is_table_start(marker.content))
-                            || detect_thematic_break(marker.content)
-                            || parse_footnote_def_line(marker.content).is_some()
-                            || parse_link_def_line(marker.content).is_some()
-                            || marker_content_is_attr_line(marker.content)
-                            || trim_ascii_start(marker.content).starts_with("%%"))
+                    if swallowed_blank_separator {
+                        return false;
+                    }
+                    // NO OPEN PARAGRAPH, NO LAZY LINE (PART 1 S4, ruled in
+                    // markup-carve/carve#1280). The marker line's content is the
+                    // item's FIRST BLOCK, so `- # H` writes a heading there
+                    // exactly as `- ` plus an indented `# H` would, and a block
+                    // that leaves no open paragraph leaves none wherever it was
+                    // written. Ask S4's one question of the body and let the
+                    // answer decide, instead of enumerating the kinds that fold.
+                    //
+                    // The enumeration this replaces listed the heading, table,
+                    // thematic break, comment, link reference definition,
+                    // footnote definition and attribute-block spellings as
+                    // FOLDING - eight kinds, none of which holds an open
+                    // paragraph, and every one of which the same engine already
+                    // ended on in a block quote (`> # H` / `tail`). One rule
+                    // stated for one container and not the other.
+                    //
+                    // Only when the marker line IS the whole block. Once the
+                    // item collected lines at its CONTENT COLUMN the same
+                    // question has a different answer under S4, and the clause
+                    // leaves that half deliberately open (corpus
+                    // 75-list-nesting-and-looseness-4 pins the folding answer
+                    // for a nested spelling of it) - so that path keeps the
+                    // enumeration it had.
+                    if marker_line_was_the_whole_block {
+                        return body_ends_with_open_paragraph(src, options);
+                    }
+                    nested_ends_with_heading(src, options)
+                        || detect_thematic_break(marker.content)
+                        || parse_footnote_def_line(marker.content).is_some()
+                        || parse_link_def_line(marker.content).is_some()
+                        || marker_content_is_attr_line(marker.content)
+                        || trim_ascii_start(marker.content).starts_with("%%")
                 },
                 |cur| collect_indented_block_mapped(cur, base_indent, content_col),
             );
@@ -6930,15 +6938,18 @@ fn marker_content_starts_block(content: &str, cur: &LineCursor<'_>, content_col:
     if detect_fence_open(content).is_some() {
         return true;
     }
-    if let Some(open) = detect_comment_fence_line(content) {
-        return cur.lines[cur.pos..].iter().enumerate().any(|(idx, line)| {
-            let indent = indent_columns(line);
-            if idx > 0 && indent < content_col {
-                return false;
-            }
-            let line = slice_columns(line, content_col.min(indent), false);
-            is_comment_fence_close(&line, open.fence_len)
-        });
+    // A COMMENT fence is an opener on the same terms as the code fence above
+    // it: it OPENS, closer or no closer. This used to scan ahead for a closer
+    // AT THE CONTENT COLUMN and fall through to the lead-paragraph path when it
+    // found none, which made `- %%%` / `c` / `%%%` collect `c` as item text -
+    // the item reaching past its own end for a body written at column 0, which
+    // is the shape PART 1 S4 refuses (markup-carve/carve#1280). Its closer
+    // travels with its opener: the item holds an empty comment and what follows
+    // re-parses at document level, the same derivation `- ``` ` already gets
+    // (§S4 A FENCED BODY IS NOT A PARAGRAPH) and the same output the quote
+    // spelling `> %%%` already produced.
+    if detect_comment_fence_line(content).is_some() {
+        return true;
     }
     // A LINE comment, like the comment FENCE just above it. Left out, `- %% c`
     // routed to the lead-PARAGRAPH path, where the inline scanner consumed the
@@ -7257,6 +7268,56 @@ fn block_ends_with_heading(block: Option<&BlockNode>) -> bool {
         ),
         _ => false,
     }
+}
+
+/// S4's lazy question for a body collected at a list item's CONTENT COLUMN:
+/// does a following flush-left line fold into it?
+///
+/// DEPTH IS NOT A PARAMETER (carve-rs#1025). When the body's last line is a
+/// SUB-ITEM's marker line, the innermost container's last block is that
+/// marker's CONTENT, so S4's question is asked of it directly - the same
+/// question `- # H` / `tail` answers one level up (markup-carve/carve#1280).
+/// Without this the two levels disagree: the sub-item refuses the line on
+/// re-parse while this collector has already claimed it, and the line lands in
+/// the OUTER item, which is a third answer no engine produces.
+///
+/// Everything else keeps the heading rule (carve#326). A line at the sub-item's
+/// CONTENT COLUMN is not a marker line, and that is the half the clause leaves
+/// deliberately open - corpus 75-list-nesting-and-looseness-4 pins it folding.
+fn collected_body_takes_the_lazy_line(src: &str, options: &Options<'_>) -> bool {
+    if let Some(content) = trailing_marker_line_content(src) {
+        return body_ends_with_open_paragraph(&content, options);
+    }
+    nested_ends_with_heading(src, options) || nested_ends_with_open_paragraph(src, options)
+}
+
+/// The marker-line CONTENT of a collected body whose last line opens a list
+/// item, if that is what its last line is.
+///
+/// `- a` / `  - # N` collects `a` / `- # N`, and the block a following
+/// flush-left line would have to fold into is the sub-item's - which is the
+/// marker's content, `# N`. A body whose last line is anything else (a line at
+/// the sub-item's content column, a paragraph, a fence) is not this shape.
+fn trailing_marker_line_content(body: &str) -> Option<String> {
+    let last = body.lines().rev().find(|line| !is_blank_line(line))?;
+    let marker = detect_list_marker_full(last)?;
+    Some(marker.content.to_string())
+}
+
+/// PART 1 S4's one question, asked of a container's WHOLE body: does the last
+/// block leave a paragraph open?
+///
+/// [`nested_ends_with_open_paragraph`] answers the same question for a body
+/// collected BESIDE a marker line that is still holding a paragraph of its own,
+/// which is why it looks PAST a trailing run of comments: there the open
+/// paragraph is the marker line's, and an invisible block did not close it.
+/// Here the body is all there is - `- %% c` writes the comment as the item's
+/// first and only block, so there is no earlier paragraph for it to leave open,
+/// and looking past it would find one that was never written
+/// (markup-carve/carve#1280).
+fn body_ends_with_open_paragraph(body: &str, options: &Options<'_>) -> bool {
+    let blocks = parse_blocks_with_options(body, options);
+    block_ends_with_open_paragraph(blocks.last(), colon_fences_left_open(body))
 }
 
 /// Whether the collected nested block ends in an OPEN paragraph -- i.e. its
