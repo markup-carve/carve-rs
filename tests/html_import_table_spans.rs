@@ -166,7 +166,7 @@ fn a_rowspan_leaving_the_derived_head_is_clipped_and_reported() {
     let result = html_to_carve(html, &HtmlImportOptions::default()).unwrap();
     assert_eq!(
         result.report.diagnostics[0].path.as_deref(),
-        Some("/html[1]/body[2]/table[1]/tr[1]/th[1]")
+        Some("/table[1]/tr[1]/th[1]")
     );
 }
 

@@ -208,8 +208,8 @@ fn a_head_or_a_foot_is_reported_by_name() {
             HtmlImportDiagnosticCode::AttributeDropped
         ),
         vec![
-            "/html[1]/body[2]/table[1]/thead[1]",
-            "/html[1]/body[2]/table[1]/tfoot[3]",
+            "/table[1]/thead[1]",
+            "/table[1]/tfoot[3]",
         ]
     );
 }
@@ -233,7 +233,7 @@ fn a_section_with_no_rows_is_reported() {
             "<table><tbody id=\"empty\"></tbody><tbody><tr><td>1</td></tr></tbody></table>",
             HtmlImportDiagnosticCode::AttributeDropped
         ),
-        vec!["/html[1]/body[2]/table[1]/tbody[1]"]
+        vec!["/table[1]/tbody[1]"]
     );
 }
 
@@ -296,7 +296,7 @@ fn an_unsupported_attribute_on_a_row_or_a_section_reports_as_it_does_elsewhere()
             "<table><tr><td>a</td></tr><tr onclick=\"x\"><td>b</td></tr></table>",
             HtmlImportDiagnosticCode::AttributeDropped
         ),
-        vec!["/html[1]/body[2]/table[1]/tr[2]"]
+        vec!["/table[1]/tr[2]"]
     );
     assert_eq!(
         messages(
@@ -328,7 +328,7 @@ fn a_column_group_is_reported_rather_than_dropped_in_silence() {
             .map(|d| (d.severity, d.path)),
         Some((
             HtmlImportSeverity::Warning,
-            Some("/html[1]/body[2]/table[1]/colgroup[1]".to_owned())
+            Some("/table[1]/colgroup[1]".to_owned())
         ))
     );
     // Two of them are two reports, and the report covers the `<col>`s inside the
@@ -339,8 +339,8 @@ fn a_column_group_is_reported_rather_than_dropped_in_silence() {
             HtmlImportDiagnosticCode::ElementDropped
         ),
         vec![
-            "/html[1]/body[2]/table[1]/colgroup[1]",
-            "/html[1]/body[2]/table[1]/colgroup[2]",
+            "/table[1]/colgroup[1]",
+            "/table[1]/colgroup[2]",
         ]
     );
     // A `<col>` written with NO wrapper is reported through the one the parser
@@ -352,7 +352,7 @@ fn a_column_group_is_reported_rather_than_dropped_in_silence() {
             "<table><col span=\"2\"><col><tr><td>a</td><td>b</td></tr></table>",
             HtmlImportDiagnosticCode::ElementDropped
         ),
-        vec!["/html[1]/body[2]/table[1]/colgroup[1]"]
+        vec!["/table[1]/colgroup[1]"]
     );
     // One that opens BELOW the rows is its own wrapper, at its own path.
     assert_eq!(
@@ -360,7 +360,7 @@ fn a_column_group_is_reported_rather_than_dropped_in_silence() {
             "<table><tr><td>a</td></tr><col></table>",
             HtmlImportDiagnosticCode::ElementDropped
         ),
-        vec!["/html[1]/body[2]/table[1]/colgroup[2]"]
+        vec!["/table[1]/colgroup[2]"]
     );
     // A table with no column structure says nothing.
     assert_eq!(

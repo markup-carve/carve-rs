@@ -239,7 +239,7 @@ fn a_report_carrying_any_single_code_validates() {
                     "code": code.as_str(),
                     "message": "sample",
                     "severity": severity.as_str(),
-                    "path": "/html[1]/body[1]",
+                    "path": "/p[1]",
                 }],
             });
             let errors = errors_for(&schema, &report);

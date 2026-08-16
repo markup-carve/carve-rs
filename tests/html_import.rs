@@ -97,6 +97,138 @@ fn shared_contract_fixtures_match() {
             .map(|d| d.code.as_str())
             .collect::<Vec<_>>();
         assert_eq!(actual_codes, expected_codes, "{}", dir.display());
+        // Every OTHER field the fixture states, compared too. A fixture
+        // diagnostic is a MINIMUM match - it may leave `path` out, and most do -
+        // but a field it does state is the shared contract's answer for that
+        // field, and a field nobody compares is a field each engine answers on
+        // its own. `path` is the one that happened to: three engines invented
+        // three rootings and the loop that was supposed to catch it read only
+        // the codes (markup-carve/carve#1257). `message` and `severity` were
+        // unread here for the same reason and are pinned with it.
+        for (index, expected_diagnostic) in expected_report["diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .enumerate()
+        {
+            let actual = &result.report.diagnostics[index];
+            let at = format!("{} diagnostic {index}", dir.display());
+            if let Some(path) = expected_diagnostic["path"].as_str() {
+                assert_eq!(actual.path.as_deref(), Some(path), "{at} path");
+            }
+            if let Some(message) = expected_diagnostic["message"].as_str() {
+                assert_eq!(actual.message, message, "{at} message");
+            }
+            if let Some(severity) = expected_diagnostic["severity"].as_str() {
+                assert_eq!(actual.severity.as_str(), severity, "{at} severity");
+            }
+        }
+    }
+}
+
+/// PART 12 §16, the three rules a diagnostic `path` follows, asserted one at a
+/// time. An end-to-end path pins all three at once and stays green when two of
+/// them are right, which is the state this engine was in: its index basis and
+/// its traversal already agreed with the shared convention and only its ROOT
+/// did not (markup-carve/carve#1257).
+///
+/// The convention: rooted at the imported fragment, `[n]` counting among ALL
+/// child nodes (text included), naming the importer's own traversal rather than
+/// the parsed DOM. It is a human-readable locator, not an XPath expression.
+mod diagnostic_path {
+    use super::*;
+
+    fn paths(html: &str) -> Vec<String> {
+        html_to_ast(html, &HtmlImportOptions::default())
+            .unwrap()
+            .report
+            .diagnostics
+            .iter()
+            .map(|d| d.path.clone().unwrap_or_default())
+            .collect()
+    }
+
+    /// ROOT. The parser's synthesized `<html>`/`<head>`/`<body>` name the
+    /// parser, not the input, so they are not in the path - whether the input
+    /// spelled them or not.
+    #[test]
+    fn a_path_is_rooted_at_the_fragment_not_at_the_document() {
+        assert_eq!(paths("<p onclick=\"x()\">t</p>"), vec!["/p[1]"]);
+        assert_eq!(
+            paths("<html><body><p onclick=\"x()\">t</p></body></html>"),
+            vec!["/p[1]"],
+            "an input that spells the wrappers itself gets the same path as the bare fragment"
+        );
+        assert_eq!(
+            paths("<!DOCTYPE html><html><body><p onclick=\"x()\">t</p></body></html>"),
+            vec!["/p[1]"],
+            "a doctype is not a node of the fragment and does not take an index"
+        );
+    }
+
+    /// The synthesized `<head>` is what made the wrapper prefix read
+    /// `body[2]` rather than `body[1]`, and the head's own content is numbered
+    /// into the same run as the body's - one fragment, one sequence.
+    #[test]
+    fn a_head_is_neither_a_segment_nor_a_gap_in_the_numbering() {
+        assert_eq!(
+            paths(
+                "<html><head><title>T</title></head><body><p onclick=\"x()\">t</p></body></html>"
+            ),
+            vec!["/title[1]", "/p[2]"]
+        );
+    }
+
+    /// INDEX BASIS. `[n]` is the position among ALL child nodes. A text node
+    /// takes a number; counting elements only would make both of these `[1]`.
+    #[test]
+    fn an_index_counts_every_child_node_including_text() {
+        assert_eq!(paths("lead text<p onclick=\"x()\">t</p>"), vec!["/p[2]"]);
+        assert_eq!(
+            paths("<p>lead <em>e</em> <kbd onclick=\"x()\">K</kbd></p>"),
+            vec!["/p[1]/kbd[4]"],
+            "text, em, text, kbd - the kbd is the 4th node, not the 2nd element"
+        );
+        assert_eq!(
+            paths("<!-- c --><p onclick=\"x()\">t</p>"),
+            vec!["/p[2]"],
+            "a comment is a node of the fragment and takes an index"
+        );
+    }
+
+    /// TRAVERSAL. The path names the importer's walk, not the parsed DOM:
+    /// `<thead>`/`<tbody>` are flattened away and rows are numbered across the
+    /// whole table. Naming the DOM would give `/table[1]/tbody[2]/tr[1]/td[1]`.
+    #[test]
+    fn a_table_path_names_the_traversal_and_not_the_dom() {
+        assert_eq!(
+            paths(
+                "<table><thead><tr><th>h</th></tr></thead>\
+                 <tbody><tr><td onclick=\"x()\">c</td></tr></tbody></table>"
+            ),
+            vec!["/table[1]/tr[2]/td[1]"]
+        );
+        assert_eq!(
+            paths("<table><tr><td onclick=\"x()\">c</td></tr></table>"),
+            vec!["/table[1]/tr[1]/td[1]"],
+            "the tbody the parser inserts for a bare row is flattened the same way"
+        );
+        assert_eq!(
+            paths(
+                "<table><tr><td>a</td><td>b</td><td rowspan=\"2\">c</td></tr>\
+                 <tr><td>d</td></tr></table>"
+            ),
+            vec!["/table[1]/tr[2]"],
+            "a diagnostic about a ROW, not a cell, is rooted and numbered the same way"
+        );
+    }
+
+    /// The wrappers carry no attributes into a diagnostic either: an element
+    /// that is not part of the fragment cannot be the subject of one.
+    #[test]
+    fn a_wrapper_element_is_not_a_diagnostic_subject() {
+        assert!(paths("<html><body onclick=\"x()\"><p>t</p></body></html>").is_empty());
+        assert!(paths("<html onclick=\"x()\"><body><p>t</p></body></html>").is_empty());
     }
 }
 
