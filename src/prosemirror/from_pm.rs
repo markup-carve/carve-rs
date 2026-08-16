@@ -224,6 +224,10 @@ impl Reader {
                 &ty,
                 [
                     ("block", bool_json(a, "block", true)),
+                    // A payload that does not carry the flag is the `%%`
+                    // spelling, which is what an editor that never saw a
+                    // delimited comment would have produced.
+                    ("delimited", bool_json(a, "delimited", false)),
                     ("content", Json::String(text_content(obj))),
                 ],
             )),
@@ -692,6 +696,7 @@ impl Reader {
                 "comment",
                 [
                     ("block", Json::Bool(false)),
+                    ("delimited", bool_json(a, "delimited", false)),
                     ("content", string_json(a, "content", "")),
                 ],
             ),

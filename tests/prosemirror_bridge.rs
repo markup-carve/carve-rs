@@ -37,6 +37,136 @@ const NOT_IN_CORPUS: &[(&str, &str)] = &[
 // carve-php did exactly that and the entry turned out to be dead.
 const ALIASED_TYPES: &[(&str, &str)] = &[("tag", "mention")];
 
+// Documents whose CANONICAL CARVE SOURCE does not survive the bridge round
+// trip, with the cause. Every one of them renders byte-identical HTML - that is
+// precisely why the HTML comparison this gate used to make could not see them,
+// and why the list is this long the first time anybody looked.
+//
+// This is a declared ratchet, asserted as an exact set: a document that starts
+// differing fails, and a document that stops differing fails too, so a fix has
+// to delete its entry rather than let the gate quietly cover less.
+//
+// The causes, all pre-existing and none of them fixed here:
+//
+//  - 78 documents gain an attribute line the author never wrote. A generated
+//    heading id comes back slotted as authored (`# Title` returns as
+//    `{#Title}` + `# Title`), and an admonition's kind comes back as an
+//    authored class (`::: note` returns as `{.note}` + `::: note`). The
+//    outbound side stamps both into `attrs`; the inbound side cannot tell a
+//    stamped value from an authored one and slots everything it finds.
+//  - 5 reference definitions come back with their structural title repeated as
+//    an authored attribute: `[a]: /u "T"` returns as `[a]: /u "T" {title=T}`.
+//  - 1 document loses an attribute outright: 108-security-hardening-11 writes
+//    `[safe](https://example.com){href=javascript:steal}` and gets
+//    `[safe](https://example.com)` back.
+//  - 18 documents combine one of the above with a reflow: a block opener
+//    written inside a list item returns as an attached `+` block, and
+//    `/*x*/` returns as `*/x/*`.
+const SOURCE_LOSSY: &[&str] = &[
+    "02-headings-2.crv",
+    "02-headings-4.crv",
+    "02-headings-6.crv",
+    "02-headings.crv",
+    "03-links-13.crv",
+    "108-security-hardening-11.crv",
+    "111-cross-references-resolve-inside-footnote-bodies.crv",
+    "116-fence-opener-with-a-nested-list-body-inside-a-list-item-2.crv",
+    "116-fence-opener-with-a-nested-list-body-inside-a-list-item-3.crv",
+    "116-fence-opener-with-a-nested-list-body-inside-a-list-item-4.crv",
+    "116-fence-opener-with-a-nested-list-body-inside-a-list-item-5.crv",
+    "116-fence-opener-with-a-nested-list-body-inside-a-list-item-6.crv",
+    "116-fence-opener-with-a-nested-list-body-inside-a-list-item-7.crv",
+    "116-fence-opener-with-a-nested-list-body-inside-a-list-item.crv",
+    "118-cyclic-cross-reference-resolves-to-one-level-2.crv",
+    "118-cyclic-cross-reference-resolves-to-one-level-3.crv",
+    "118-cyclic-cross-reference-resolves-to-one-level.crv",
+    "119-trojan-source-heading-ids-are-nfc-normalized-and-strip-invisible-controls-2.crv",
+    "119-trojan-source-heading-ids-are-nfc-normalized-and-strip-invisible-controls-3.crv",
+    "119-trojan-source-heading-ids-are-nfc-normalized-and-strip-invisible-controls.crv",
+    "122-footnotes-placement.crv",
+    "130-bold-italic-delimiter-needs-content-3.crv",
+    "130-bold-italic-delimiter-needs-content-4.crv",
+    "148-colon-fence-as-a-block-opener-in-a-list-item-2.crv",
+    "15-heading-ids-2.crv",
+    "15-heading-ids-3.crv",
+    "15-heading-ids-5.crv",
+    "15-heading-ids-6.crv",
+    "15-heading-ids.crv",
+    "16-reference-link-6.crv",
+    "16-reference-link-7.crv",
+    "16-reference-link.crv",
+    "170-headings-inside-containers-are-not-wrapped.crv",
+    "173-implicit-heading-references-with-no-definition.crv",
+    "199-a-collapsed-image-reference-uses-its-alt-text-as-the-label.crv",
+    "213-a-tag-inside-a-literal-brace-run-is-still-a-tag.crv",
+    "217-a-heading-id-keeps-a-non-ascii-space.crv",
+    "221-a-heading-reference-folds-unicode-normalization-but-not-compatibility.crv",
+    "225-a-footnote-body-s-last-block-when-it-is-not-a-paragraph-gets-a-synthesized-paragraph-for-the-backlink-4.crv",
+    "24-generic-divs-3.crv",
+    "24-generic-divs-5.crv",
+    "249-trailing-whitespace-after-a-block-marker-3.crv",
+    "254-colon-fence-separator-must-be-a-space-10.crv",
+    "255-colon-fence-metadata-slots-must-be-a-space-too-5.crv",
+    "26-comments-5.crv",
+    "265-a-reference-definition-s-metadata-slots-take-exactly-one-space-3.crv",
+    "266-a-reference-definition-is-anchored-at-end-of-line-16.crv",
+    "268-trailing-whitespace-on-a-content-line-is-dropped-4.crv",
+    "270-a-real-div-in-a-container-and-the-flush-left-line-after-it-2.crv",
+    "270-a-real-div-in-a-container-and-the-flush-left-line-after-it-3.crv",
+    "271-the-flush-left-line-after-a-container-a-quoted-line-opened-2.crv",
+    "271-the-flush-left-line-after-a-container-a-quoted-line-opened-3.crv",
+    "271-the-flush-left-line-after-a-container-a-quoted-line-opened.crv",
+    "275-a-collapsed-reference-reaches-a-heading-by-the-heading-s-rendered-text-10.crv",
+    "275-a-collapsed-reference-reaches-a-heading-by-the-heading-s-rendered-text-11.crv",
+    "275-a-collapsed-reference-reaches-a-heading-by-the-heading-s-rendered-text-2.crv",
+    "275-a-collapsed-reference-reaches-a-heading-by-the-heading-s-rendered-text-3.crv",
+    "275-a-collapsed-reference-reaches-a-heading-by-the-heading-s-rendered-text-5.crv",
+    "275-a-collapsed-reference-reaches-a-heading-by-the-heading-s-rendered-text-7.crv",
+    "275-a-collapsed-reference-reaches-a-heading-by-the-heading-s-rendered-text-8.crv",
+    "275-a-collapsed-reference-reaches-a-heading-by-the-heading-s-rendered-text-9.crv",
+    "275-a-collapsed-reference-reaches-a-heading-by-the-heading-s-rendered-text.crv",
+    "288-heading-index-plain-text-covers-visible-leaves-and-rejects-an-empty-key-2.crv",
+    "288-heading-index-plain-text-covers-visible-leaves-and-rejects-an-empty-key-3.crv",
+    "288-heading-index-plain-text-covers-visible-leaves-and-rejects-an-empty-key-4.crv",
+    "288-heading-index-plain-text-covers-visible-leaves-and-rejects-an-empty-key.crv",
+    "291-a-fence-keeps-the-blank-line-at-the-end-of-its-content-3.crv",
+    "306-a-captioned-quote-holds-more-than-one-block-5.crv",
+    "315-an-inline-note-s-content-resolves-after-the-note-5.crv",
+    "315-an-inline-note-s-content-resolves-after-the-note-6.crv",
+    "315-an-inline-note-s-content-resolves-after-the-note-7.crv",
+    "315-an-inline-note-s-content-resolves-after-the-note.crv",
+    "318-composite-figures-7.crv",
+    "318-composite-figures-8.crv",
+    "35-cross-reference.crv",
+    "42-admonitions-10.crv",
+    "42-admonitions-2.crv",
+    "42-admonitions-3.crv",
+    "42-admonitions-4.crv",
+    "42-admonitions-9.crv",
+    "42-admonitions.crv",
+    "68-nested-containers-2.crv",
+    "68-nested-containers-4.crv",
+    "68-nested-containers-5.crv",
+    "68-nested-containers.crv",
+    "69-opaque-spans-inside-a-container-2.crv",
+    "69-opaque-spans-inside-a-container-3.crv",
+    "69-opaque-spans-inside-a-container-4.crv",
+    "69-opaque-spans-inside-a-container-5.crv",
+    "69-opaque-spans-inside-a-container.crv",
+    "71-attribute-edge-cases-14.crv",
+    "75-list-nesting-and-looseness-4.crv",
+    "75-list-nesting-and-looseness-7.crv",
+    "81-paragraph-interruption-18.crv",
+    "81-paragraph-interruption.crv",
+    "82-blockquote-lazy-continuation-3.crv",
+    "82-blockquote-lazy-continuation-4.crv",
+    "84-single-line-headings-2.crv",
+    "84-single-line-headings-3.crv",
+    "84-single-line-headings-4.crv",
+    "84-single-line-headings.crv",
+    "86-list-lazy-continuation-2.crv",
+];
+
 fn pm(source: &str) -> (Value, carve::ProseMirrorDoc) {
     let result = to_prosemirror(&parse(source));
     let value = serde_json::from_str(&result.json).expect("bridge emits JSON");
@@ -241,11 +371,25 @@ fn adjacent_equal_marks_merge_on_import() {
     assert_eq!(html, "<p><strong>bold <em>and </em>bold</strong></p>");
 }
 
+/// The corpus round trip, compared as CANONICAL CARVE SOURCE.
+///
+/// It used to compare HTML. An HTML comparison cannot fail for the whole class
+/// of defect this corpus exists to catch: anything that renders to nothing, or
+/// renders the same from a different node, is invisible to it. A comment is the
+/// clean example - `{% c %}` and `%% c` both render to nothing, so the bridge
+/// could swap one spelling for the other, delete the rest of the author's line
+/// on the next parse, and this gate stayed green. carve-php compares canonical
+/// source for exactly this reason; this is the same comparison.
+///
+/// The HTML comparison is kept as well. It is not redundant: two documents can
+/// write the same source and still render differently, because resolution
+/// results (footnote and caption numbers) are not spelled in the source.
 #[test]
 fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus");
     let mut covered = 0usize;
     let mut lossy = 0usize;
+    let mut source_lossy: Vec<String> = Vec::new();
     for entry in fs::read_dir(corpus).expect("corpus directory exists") {
         let path = entry.expect("corpus entry is readable").path();
         if path.extension().and_then(|v| v.to_str()) != Some("crv") {
@@ -262,11 +406,31 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
                 "{}",
                 path.display()
             );
+            let name = path
+                .file_name()
+                .expect("a corpus entry has a file name")
+                .to_string_lossy()
+                .into_owned();
+            let before = render_carve(&original).expect("the corpus document writes back");
+            let after = render_carve(&returned).expect("the returned document writes back");
+            if before != after {
+                if !SOURCE_LOSSY.contains(&name.as_str()) {
+                    panic!(
+                        "{name}: the round trip changed the canonical source\n  before: {before:?}\n  after : {after:?}"
+                    );
+                }
+                source_lossy.push(name);
+            }
             covered += 1;
         } else {
             lossy += 1;
         }
     }
+    source_lossy.sort();
+    assert_eq!(
+        source_lossy, SOURCE_LOSSY,
+        "the declared source-lossy set moved - add or delete the entry, do not widen a count"
+    );
     eprintln!("ProseMirror corpus: {covered} strict, {lossy} reported lossy");
     // A ratchet, not a floor of one. `covered > 0` passes with a single
     // document, so a change that quietly moved hundreds of documents out of
@@ -516,4 +680,77 @@ fn an_unstamped_admonition_title_does_not_become_an_attribute() {
         !html.contains("title=\"Heads up\""),
         "the opener must not also be an authored attribute: {html}"
     );
+}
+
+/// One bridge round trip, reported as canonical Carve source before and after.
+///
+/// Source, not HTML: a comment renders to nothing, so an HTML comparison agrees
+/// with itself whether or not the comment came back the way it went in.
+fn round_trip(source: &str) -> (String, String) {
+    let original = parse(source);
+    let pm = to_prosemirror(&original);
+    assert!(pm.dropped.is_empty(), "dropped: {:?}", pm.dropped);
+    assert!(pm.degraded.is_empty(), "degraded: {:?}", pm.degraded);
+    let returned = from_prosemirror(&pm.json).expect("the payload converts back");
+    (
+        render_carve(&original).expect("the document writes back"),
+        render_carve(&returned).expect("the returned document writes back"),
+    )
+}
+
+/// PART 9 §21a: a delimited inline comment ends at `%}`, a `%%` comment ends at
+/// the end of the line. Losing the distinction is not a spelling change, it is
+/// a deletion: everything the author wrote after the comment on that line is
+/// inside the comment on the next parse.
+#[test]
+fn a_delimited_inline_comment_keeps_its_delimiters() {
+    let source = "foo {% bar %} baz\n";
+    let (before, after) = round_trip(source);
+
+    assert_eq!(
+        after, before,
+        "the delimited spelling is the node's identity"
+    );
+    assert!(
+        !after.contains("%%"),
+        "a delimited comment must not return as a line comment: {after:?}"
+    );
+    // The user-visible symptom, stated as itself: the text after the comment is
+    // still in the document once the written-back source is read again.
+    let reparsed = render_html(&parse(&after)).expect("the written source parses");
+    assert!(
+        reparsed.contains("baz"),
+        "the trailing text survives: {reparsed:?}"
+    );
+    assert_eq!(
+        reparsed,
+        render_html(&parse(&before)).expect("the original source parses")
+    );
+}
+
+/// The same loss in the other direction: a delimited comment's body is hidden,
+/// and a `%%` comment hides only its own line, so a multi-line body degraded to
+/// `%%` publishes everything from its second line on.
+#[test]
+fn a_delimited_block_comment_does_not_leak_its_body() {
+    let source = "{%\nhidden\n%}\n\nafter\n";
+    let (before, after) = round_trip(source);
+
+    assert_eq!(after, before);
+    let reparsed = render_html(&parse(&after)).expect("the written source parses");
+    assert!(
+        !reparsed.contains("hidden"),
+        "a hidden body must not become visible: {reparsed:?}"
+    );
+    assert!(reparsed.contains("after"));
+}
+
+/// The flag is carried, not invented: a `%%` comment stays a `%%` comment.
+#[test]
+fn a_line_comment_is_not_promoted_to_a_delimited_one() {
+    for source in ["foo %% bar\n", "%% a whole line\n\nafter\n"] {
+        let (before, after) = round_trip(source);
+        assert_eq!(after, before, "{source:?}");
+        assert!(!after.contains("{%"), "{after:?}");
+    }
 }

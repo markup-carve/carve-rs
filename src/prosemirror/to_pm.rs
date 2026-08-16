@@ -311,7 +311,14 @@ impl Renderer {
             ),
             BlockNode::Comment(n) => (
                 self.nth_name("comment", 0)?,
-                BTreeMap::from([("block".into(), Json::Bool(n.block))]),
+                BTreeMap::from([
+                    ("block".into(), Json::Bool(n.block)),
+                    // §21a: the delimiters are the node's identity, not
+                    // decoration. Drop the flag and a `{% ... %}` comment
+                    // returns spelled `%%`, which runs to end of line and eats
+                    // whatever followed it on that line.
+                    ("delimited".into(), Json::Bool(n.delimited)),
+                ]),
                 self.text_content(&n.content, &[]),
             ),
             BlockNode::Extension(_) => {
@@ -708,7 +715,10 @@ impl Renderer {
                 };
                 out.push(node_marked(
                     name,
-                    BTreeMap::from([("content".into(), Json::String(n.content.clone()))]),
+                    BTreeMap::from([
+                        ("content".into(), Json::String(n.content.clone())),
+                        ("delimited".into(), Json::Bool(n.delimited)),
+                    ]),
                     Vec::new(),
                     marks,
                 ));

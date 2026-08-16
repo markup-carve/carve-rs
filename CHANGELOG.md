@@ -430,6 +430,30 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **The ProseMirror bridge no longer deletes the text after a delimited
+  comment.** `to_prosemirror` did not carry the PART 9 §21a `delimited` flag and
+  `from_prosemirror` could not restore it, so every `{% ... %}` comment came
+  back spelled `%%`. A `%%` comment runs to the end of its line, so a round trip
+  through an editor turned
+
+  ```
+  foo {% bar %} baz
+  ```
+
+  into
+
+  ```
+  foo %% bar baz
+  ```
+
+  and the next parse of that document had lost ` baz`. The block spelling failed
+  the other way: a fenced `{% ... %}` comment degraded to `%%`, which hides only
+  its own line, so every line of a hidden body from the second one on was
+  published as ordinary visible text. Neither loss was reported - `dropped` and
+  `degraded` were both empty. The flag now rides in both directions, for the
+  block and the inline node, and a payload that does not carry it is still read
+  as the `%%` spelling.
+
 - **Text that ends on a `$`, `$$` or `!` in front of a verbatim span is escaped,
   so a migrated document keeps saying what its author wrote**
   (markup-carve/carve#1130, corpus-convert
@@ -463,6 +487,7 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   paragraph and does not loosen its list; a nested `<ul>` beside bare text is
   structure rather than a paragraph wrapper, and a task-list `<input>` is
   consumed into the `[x]` marker and never votes.
+
 
 - **A block-attribute line before a NESTED LIST inside a list item reaches that
   list.** `- a` / blank / `  {.x}` / `  - b` published a bare `<ul>`: the
