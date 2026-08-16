@@ -1565,30 +1565,32 @@ fn render_table(node: &Table, ctx: &mut CarveContext) -> String {
     rows.join("\n")
 }
 
-struct RenderedCell {
-    text: String,
-    tight: bool,
+/// A cell's written form: its PREFIX glued to the opening pipe, then one
+/// space, then the content, then one space before the closing pipe.
+///
+/// The prefix has to touch the pipe - a space in front of `=` or of an
+/// attribute block makes it literal content - but the CONTENT does not, and
+/// the padded form is the readable one. It is also the safe one: the alignment
+/// sigil and the attribute slot are both read GLUED off the untrimmed cell, so
+/// a glued content character was handed to one of them (carve-rs#819). This
+/// used to be two guards, each enumerating the characters that merge; the
+/// space covers every cell without a list.
+///
+/// An EMPTY cell takes a single space, not two, so a column does not grow a
+/// space each time the document is formatted.
+fn pad_cell(prefix: &str, content: &str) -> String {
+    if content.is_empty() {
+        format!("{prefix} ")
+    } else {
+        format!("{prefix} {content} ")
+    }
 }
 
-fn render_table_row(cells: &[RenderedCell], attrs: &str) -> String {
-    format!(
-        "|{}|{}",
-        cells
-            .iter()
-            .map(|cell| {
-                if cell.tight {
-                    cell.text.clone()
-                } else {
-                    format!(" {} ", cell.text)
-                }
-            })
-            .collect::<Vec<_>>()
-            .join("|"),
-        attrs
-    )
+fn render_table_row(cells: &[String], attrs: &str) -> String {
+    format!("|{}|{}", cells.join("|"), attrs)
 }
 
-fn render_table_cell(cell: &TableCell, ctx: &mut CarveContext, mark_header: bool) -> RenderedCell {
+fn render_table_cell(cell: &TableCell, ctx: &mut CarveContext, mark_header: bool) -> String {
     let attrs = render_attrs(&cell.attrs);
     // A lone span marker keeps a SPACE before it. Glued to the opening pipe, `<`
     // is also the left-alignment sigil, and the two readings differ: the
@@ -1607,17 +1609,7 @@ fn render_table_cell(cell: &TableCell, ctx: &mut CarveContext, mark_header: bool
         } else {
             "<"
         };
-        return if attrs.is_empty() {
-            RenderedCell {
-                text: marker.to_string(),
-                tight: false,
-            }
-        } else {
-            RenderedCell {
-                text: format!("{attrs} {marker}"),
-                tight: true,
-            }
-        };
+        return pad_cell(&attrs, marker);
     }
     let align = align_marker(cell.align);
     // CELL ATTRIBUTES BIND LAST (grammar §20 T10): the kind marker first, then
@@ -1635,40 +1627,14 @@ fn render_table_cell(cell: &TableCell, ctx: &mut CarveContext, mark_header: bool
     ctx.table_cell_depth += 1;
     let content = render_inlines(&cell.children, ctx);
     ctx.table_cell_depth -= 1;
-    // A MARKER AND THE CONTENT'S FIRST CHARACTER CAN MERGE INTO A LONGER MARKER
-    // RUN. The header `=` is read glued to the pipe and the ALIGNMENT sigil is
-    // read glued after it, off the UNTRIMMED cell - so a prefix carrying no
-    // alignment of its own hands its next character to the alignment reader.
-    // `| ~x~ |`, a header cell holding a strikethrough, came back as `|=~x~|`,
-    // which re-reads as a CENTERED column holding the text `x~`: the
-    // strikethrough gone and every cell in the column centered by a marker
-    // nobody wrote (carve-rs#819).
-    //
-    // ONE SPACE PARTS THEM, and it costs nothing: only the marker's position
-    // relative to the PIPE is significant, and the reader trims the padding
-    // after it. Escaping the character instead would be wrong - `~` opens a real
-    // strikethrough here, so a backslash would change the content rather than
-    // protect it. `<` and `>` reach this already escaped as literal text, which
-    // is why `~` was the only spelling that broke.
-    let merges_into_the_marker_run =
-        align.is_empty() && attrs.is_empty() && content.starts_with(['<', '>', '~']);
-    // THE CONTENT'S OWN BRACE CAN MERGE INTO THE ATTRIBUTE SLOT, for the same
-    // reason and now that the slot sits after the markers. A cell whose text
-    // begins with a valid attribute block (`|={.x} y|`) hands that block to the
-    // reader as the CELL's attributes and loses it from the content. One space
-    // parts them: a block with whitespace in front of it is ordinary content
-    // (grammar §20 T10), and the reader trims that padding.
-    let merges_into_the_attribute_slot = attrs.is_empty() && content.starts_with('{');
-    let separator =
-        if !prefix.is_empty() && (merges_into_the_marker_run || merges_into_the_attribute_slot) {
-            " "
-        } else {
-            ""
-        };
-    RenderedCell {
-        text: format!("{prefix}{separator}{content}"),
-        tight: !prefix.is_empty(),
-    }
+    // The space `pad_cell` writes after the prefix is what keeps the content's
+    // first character content. The header `=` is read glued to the pipe and the
+    // alignment sigil glued after it, off the UNTRIMMED cell, and a cell whose
+    // text begins with an attribute block used to hand that block to the
+    // reader as the CELL's attributes: `| ~x~ |` came back as `|=~x~|`, a
+    // CENTERED column holding `x~` (carve-rs#819). Padding every cell parts
+    // them without enumerating which characters merge.
+    pad_cell(&prefix, &content)
 }
 
 fn render_figure(node: &Figure, ctx: &mut CarveContext) -> String {

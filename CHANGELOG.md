@@ -198,6 +198,18 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Every table cell pads its content in the canonical form.** `carve fmt` wrote
+  a cell that carries a prefix - the kind marker `=`, an alignment marker, an
+  attribute block - with its content glued to that prefix: `|=Heading|`,
+  `|={.total}Total|=99|`. It now writes `|= Heading |` and
+  `|={.total} Total |= 99 |`. The prefix still touches the opening pipe, because
+  a space in front of it makes it literal content; only the content is padded,
+  the way an unprefixed cell always was. An empty cell takes a single space.
+  Beyond readability this removes the two guards that inserted a space only for
+  content starting with `<`, `>`, `~` or `{`: the alignment sigil and the
+  attribute slot are read glued off the untrimmed cell, and padding every cell
+  covers that without enumerating characters.
+
 - **A table cell's attribute block binds after the kind and alignment markers**
   (PART 9 §5 T10, markup-carve/carve#1226). One order, both productions: `=`,
   then the alignment marker, then the block, glued to whatever precedes it.
