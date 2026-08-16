@@ -38,6 +38,23 @@ with a warning in `safe` and `semantic` and preserved verbatim in
 `roundtrip` - its children are a token stream, and concatenating them reads
 `<mfrac><mn>1</mn><mn>2</mn></mfrac>` as `12` rather than as one half.
 
+`--adapter word` and `--adapter google-docs` add one recognition the `generic`
+default does not risk: footnote-shaped HTML. A word processor writes a note as
+a body anchor and a definition block that link to each other, and none of them
+uses the `doc-noteref` / `doc-endnotes` roles a Carve engine writes, so under
+`generic` a note arrives as a literal link beside an orphaned list. Under those
+two adapters the pair is matched through the fragment each anchor addresses and
+written back as a footnote reference and definition, whatever the ids are
+called - Word's `_ftnref1`/`_ftn1`, Google Docs' `ftnt_ref1`/`ftnt1`,
+LibreOffice's `sdfootnote1anc`/`sdfootnote1sym` and Pandoc's `fnref1`/`fn1` all
+pair by the same rule. Back-links, the marker anchors they sit on, and the rule
+separating the notes from the body are generated navigation and are dropped. A
+reference whose target is missing stays a link, and a definition nothing
+references stays ordinary content rather than becoming a definition that renders
+as nothing. Name the adapter only for input you know came from that editor: on
+arbitrary HTML a mutually linked anchor pair is not proof of a footnote, which
+is why `generic` stays out.
+
 Markdown migration is `markdown_to_ast` and `markdown_to_carve`, or
 `carve migrate --from markdown input.md`. It parses the source to a tree and
 writes it canonically, so the output is the document rather than the author's

@@ -6,7 +6,8 @@ use crate::{render_carve, RenderDepthError};
 use html5ever::tendril::TendrilSink;
 use html5ever::{serialize, serialize::SerializeOpts};
 use markup5ever_rcdom::{Handle, NodeData, RcDom, SerializableHandle};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::rc::Rc;
 
 /// Declares one of the import report's closed vocabularies together with the
 /// spelling each variant takes on the wire.
@@ -161,6 +162,14 @@ struct Importer<'a> {
     quote_depth: usize,
     /// The losses a WRITER takes, held back until one writes (PART 12 §16).
     unspellable: Vec<(String, String)>,
+    /// The reference sites the adapter footnote pass recognized: the node
+    /// `inline` must read as a footnote reference, and the label it carries.
+    ///
+    /// Keyed by node ADDRESS, and the entry holds the handle it was keyed by -
+    /// which is what makes the address a valid key. A key whose node had been
+    /// dropped would be an address the allocator may hand to a live node next,
+    /// so the map pins every node it can answer for.
+    footnote_refs: HashMap<usize, (Handle, String)>,
 }
 
 /// The largest position a Roman marker is written for: `MMMCMXCIX`, the end of
@@ -206,6 +215,32 @@ struct Sections {
 /// word `text` contains it - so `<annotation encoding="text/plain">` would
 /// have been read as an equation.
 const TEX_ANNOTATION_ENCODINGS: [&str; 3] = ["application/x-tex", "text/x-tex", "latex"];
+
+/// The elements a footnote definition body can be spelled as.
+const FOOTNOTE_DEFINITION_BLOCKS: [&str; 7] =
+    ["li", "div", "section", "aside", "p", "td", "blockquote"];
+
+/// The elements a per-footnote wrapper can be spelled as.
+///
+/// Word wraps each definition in `<div style='mso-element:footnote' id=ftn1>`
+/// and LibreOffice in `<div id="sdfootnote1">`, so the block holding the body
+/// is one level above the paragraph the back-anchor sits in.
+const FOOTNOTE_WRAPPER_BLOCKS: [&str; 4] = ["div", "li", "section", "aside"];
+
+/// A footnote-reference candidate: the anchor, the definition block its
+/// fragment resolves to, and the fragment itself.
+struct FootnoteCandidate {
+    reference: Handle,
+    block: Handle,
+    fragment: String,
+}
+
+/// One recognized note: its block and every reference bound to it.
+struct FootnoteGroup {
+    block: Handle,
+    refs: Vec<Handle>,
+    fragments: Vec<String>,
+}
 
 impl<'a> Importer<'a> {
     fn enter(&mut self, depth: usize) -> Result<(), HtmlImportError> {
@@ -1883,6 +1918,20 @@ impl<'a> Importer<'a> {
         if let NodeData::Text { contents } = &h.data {
             return Ok(vec![InlineNode::text(collapse(&contents.borrow()))]);
         }
+        // A site the adapter footnote pass recognized. The pass runs before
+        // this walk and records the node rather than rewriting the tree into
+        // a synthetic element, so nothing here depends on a tag name that
+        // real HTML could also spell.
+        if let Some((_, label)) = self.footnote_refs.get(&node_key(h)) {
+            return Ok(vec![InlineNode::Footnote(Footnote {
+                attrs: None,
+                id: Some(label.clone()),
+                inline: None,
+                number: None,
+                ref_id: None,
+                pos: None,
+            })]);
+        }
         let Some(tag) = Self::tag(h) else {
             return Ok(Vec::new());
         };
@@ -2104,6 +2153,705 @@ impl<'a> Importer<'a> {
         };
         Ok(vec![node])
     }
+
+    // ------------------------------------------------------------------
+    // Adapter footnotes: word-processor footnote-shaped HTML to footnotes.
+    //
+    // Ports markup-carve/carve-php#1303 (with the branch pins of #1307) and
+    // markup-carve/carve-js#1103. The shapes were measured, not recalled -
+    // Word's two saves, Google Docs, LibreOffice and Pandoc 1.x agree on
+    // almost nothing, and what all of them do have is a MUTUALLY LINKED
+    // ANCHOR PAIR: the body reference addresses the note and the note
+    // addresses the reference back. That pair, not a vendor class name and
+    // not the `fn1`/`fnref1` id convention, is the signature matched here.
+    //
+    // The spec permits this shape of work - "Adapters may normalize
+    // editor-specific markup before the core policy" - but it does not rule
+    // on footnote import, so every decision below is this importer's,
+    // written down rather than left silent. No diagnostics on the edge
+    // cases, deliberately: in each of them the Carve source keeps what the
+    // HTML said, so there is nothing lossy to report.
+    // ------------------------------------------------------------------
+
+    /// Recognize footnote pairs, record each reference site for `inline` to
+    /// read as a footnote reference, detach the note blocks, and return their
+    /// bodies keyed 1..N by document order.
+    ///
+    /// Labels are assigned 1..N over the notes in document order rather than
+    /// parsed out of the ids: an id is generated navigation an engine
+    /// regenerates, and `_ftn1` or `sdfootnote1sym` is not a label any Carve
+    /// source could carry anyway.
+    fn adapter_footnotes(
+        &mut self,
+        root: &Handle,
+    ) -> Result<BTreeMap<String, Vec<BlockNode>>, HtmlImportError> {
+        let elements = footnote_document_elements(root);
+        let mut order: HashMap<usize, usize> = HashMap::with_capacity(elements.len());
+        for (index, element) in elements.iter().enumerate() {
+            order.insert(node_key(element), index);
+        }
+
+        let targets = footnote_fragment_targets(&elements);
+        let candidates =
+            resolve_footnote_pair_direction(footnote_pair_candidates(&elements, &targets), &order);
+        if candidates.is_empty() {
+            return Ok(BTreeMap::new());
+        }
+
+        let definitions = attach_remaining_footnote_references(
+            &elements,
+            group_footnote_definitions(candidates, &order),
+        );
+
+        let mut defs = BTreeMap::new();
+        let mut containers: Vec<Handle> = Vec::new();
+        let mut seen: HashSet<usize> = HashSet::new();
+
+        for (index, definition) in definitions.iter().enumerate() {
+            let label = (index + 1).to_string();
+            if index == 0 {
+                remove_footnote_separator(&definition.block);
+            }
+
+            let identities: Vec<String> = definition
+                .refs
+                .iter()
+                .map(footnote_anchor_identity)
+                .filter(|identity| !identity.is_empty())
+                .collect();
+            strip_footnote_backlinks(&definition.block, &identities, &definition.fragments);
+
+            let body: Vec<Handle> = definition.block.children.borrow().clone();
+            let blocks = self.blocks(&body, &format!("footnote[{label}]"), 1)?;
+            defs.insert(label.clone(), blocks);
+
+            for reference in &definition.refs {
+                let site = footnote_reference_site(reference);
+                self.footnote_refs
+                    .insert(node_key(&site), (site.clone(), label.clone()));
+            }
+
+            if let Some(container) = footnote_parent(&definition.block) {
+                if seen.insert(node_key(&container)) {
+                    containers.push(container);
+                }
+            }
+            footnote_detach(&definition.block);
+        }
+
+        // Kept unique, because every note in one list names the SAME
+        // container: pruning it once per note walked that list's children
+        // once per note, which is quadratic on a document that is mostly
+        // notes.
+        for container in &containers {
+            prune_empty_footnote_container(container);
+        }
+
+        Ok(defs)
+    }
+}
+
+/// Every element in the subtree, in document order.
+fn footnote_document_elements(root: &Handle) -> Vec<Handle> {
+    let mut elements = Vec::new();
+    let mut stack: Vec<Handle> = root.children.borrow().iter().rev().cloned().collect();
+    while let Some(node) = stack.pop() {
+        if !matches!(node.data, NodeData::Element { .. }) {
+            continue;
+        }
+        let children = node.children.borrow();
+        for child in children.iter().rev() {
+            stack.push(child.clone());
+        }
+        drop(children);
+        elements.push(node);
+    }
+    elements
+}
+
+/// Map every same-document fragment name to the element it addresses.
+///
+/// `id` first and `name` second, in two passes rather than one, so an `id`
+/// always wins over the legacy `<a name>` form when both spell one fragment.
+fn footnote_fragment_targets(elements: &[Handle]) -> HashMap<String, Handle> {
+    let mut targets: HashMap<String, Handle> = HashMap::new();
+    for element in elements {
+        if let Some(id) = Importer::attr(element, "id") {
+            if !id.is_empty() {
+                targets.entry(id).or_insert_with(|| element.clone());
+            }
+        }
+    }
+    for element in elements {
+        if Importer::tag(element).as_deref() != Some("a") {
+            continue;
+        }
+        if let Some(name) = Importer::attr(element, "name") {
+            if !name.is_empty() {
+                targets.entry(name).or_insert_with(|| element.clone());
+            }
+        }
+    }
+    targets
+}
+
+/// Every anchor that could be a footnote reference, with the block it would
+/// bind to. A candidate needs the mutual back-link or an explicit reference
+/// marker; an anchor inside its own would-be note is never one.
+fn footnote_pair_candidates(
+    elements: &[Handle],
+    targets: &HashMap<String, Handle>,
+) -> Vec<FootnoteCandidate> {
+    let mut anchors: Vec<(Handle, String)> = Vec::new();
+    let mut used: HashSet<String> = HashSet::new();
+    for element in elements {
+        if Importer::tag(element).as_deref() != Some("a") {
+            continue;
+        }
+        let href = Importer::attr(element, "href").unwrap_or_default();
+        let Some(fragment) = href.strip_prefix('#') else {
+            continue;
+        };
+        if fragment.is_empty() || !targets.contains_key(fragment) {
+            continue;
+        }
+        used.insert(fragment.to_string());
+        anchors.push((element.clone(), fragment.to_string()));
+    }
+
+    let mut candidates = Vec::new();
+    for (anchor, fragment) in anchors {
+        let Some(block) = resolve_footnote_definition_block(&targets[&fragment], &used) else {
+            continue;
+        };
+        if footnote_contains(&block, &anchor) {
+            continue;
+        }
+
+        let identity = footnote_anchor_identity(&anchor);
+        let mutual = !identity.is_empty() && footnote_block_links_to(&block, &identity);
+        if !mutual && !is_footnote_reference_marked(&anchor) {
+            continue;
+        }
+
+        candidates.push(FootnoteCandidate {
+            reference: anchor,
+            block,
+            fragment,
+        });
+    }
+    candidates
+}
+
+/// The block a reference's target belongs to.
+///
+/// The target itself when it is already a block (Pandoc's `<li id="fn1">`),
+/// otherwise the nearest block ancestor of the anchor the fragment names.
+/// Then ONE guarded climb, because Word and LibreOffice wrap each note in a
+/// dedicated `<div id=...>` and the body can be several paragraphs inside it:
+/// the climb only happens into a wrapper that carries an id and holds exactly
+/// one referenced target, which is what keeps a shared container (Google Docs'
+/// one trailing `<div>` around every note) from swallowing its siblings.
+///
+/// A fragment whose nearest block would be the document itself is refused -
+/// taking it would move every block in the document into one note - which here
+/// is the climb running off the top past `<body>` and `<html>`, neither of
+/// which is a definition block.
+fn resolve_footnote_definition_block(target: &Handle, used: &HashSet<String>) -> Option<Handle> {
+    let mut block = target.clone();
+    while !Importer::tag(&block)
+        .map(|tag| FOOTNOTE_DEFINITION_BLOCKS.contains(&tag.as_str()))
+        .unwrap_or(false)
+    {
+        let parent = footnote_parent(&block)?;
+        if !matches!(parent.data, NodeData::Element { .. }) {
+            return None;
+        }
+        block = parent;
+    }
+
+    if let Some(parent) = footnote_parent(&block) {
+        let wraps = Importer::tag(&parent)
+            .map(|tag| FOOTNOTE_WRAPPER_BLOCKS.contains(&tag.as_str()))
+            .unwrap_or(false);
+        if wraps
+            && !Importer::attr(&parent, "id").unwrap_or_default().is_empty()
+            && count_footnote_targets(&parent, used) == 1
+        {
+            block = parent;
+        }
+    }
+
+    Some(block)
+}
+
+/// How many referenced fragment targets this element holds, itself included.
+fn count_footnote_targets(node: &Handle, used: &HashSet<String>) -> usize {
+    let mut count = usize::from(is_footnote_fragment_target(node, used));
+    for child in node.children.borrow().iter() {
+        if matches!(child.data, NodeData::Element { .. }) {
+            count += count_footnote_targets(child, used);
+        }
+    }
+    count
+}
+
+fn is_footnote_fragment_target(node: &Handle, used: &HashSet<String>) -> bool {
+    if let Some(id) = Importer::attr(node, "id") {
+        if !id.is_empty() && used.contains(&id) {
+            return true;
+        }
+    }
+    if Importer::tag(node).as_deref() != Some("a") {
+        return false;
+    }
+    Importer::attr(node, "name")
+        .map(|name| !name.is_empty() && used.contains(&name))
+        .unwrap_or(false)
+}
+
+/// Keep one side of every mutually linked anchor pair.
+///
+/// The pair is symmetric, so both directions produce a candidate and one of
+/// them is the back-link reading as a reference. An explicit marker decides
+/// where there is one; otherwise document order does, because a footnote
+/// reference precedes the note it opens in every export shape measured.
+fn resolve_footnote_pair_direction(
+    candidates: Vec<FootnoteCandidate>,
+    order: &HashMap<usize, usize>,
+) -> Vec<FootnoteCandidate> {
+    let mut by_reference: HashMap<usize, usize> = HashMap::with_capacity(candidates.len());
+    for (index, candidate) in candidates.iter().enumerate() {
+        by_reference.insert(node_key(&candidate.reference), index);
+    }
+
+    let mut kept = Vec::new();
+    for (index, candidate) in candidates.iter().enumerate() {
+        let inverse = inverse_footnote_candidate(&candidates, &by_reference, candidate);
+        if inverse
+            .map(|other| footnote_reference_side_wins(&candidates[other], candidate, order))
+            .unwrap_or(false)
+        {
+            continue;
+        }
+        kept.push(index);
+    }
+
+    let mut out = Vec::with_capacity(kept.len());
+    let mut remaining: Vec<Option<FootnoteCandidate>> = candidates.into_iter().map(Some).collect();
+    for index in kept {
+        if let Some(candidate) = remaining[index].take() {
+            out.push(candidate);
+        }
+    }
+    out
+}
+
+/// The candidate that reads the same mutual pair from the other end.
+///
+/// Found through the back anchor the candidate's own block holds rather than
+/// by comparing every candidate with every other: a document with a thousand
+/// notes made that scan a thousand times a thousand containment walks, and the
+/// anchor names the inverse directly.
+fn inverse_footnote_candidate(
+    candidates: &[FootnoteCandidate],
+    by_reference: &HashMap<usize, usize>,
+    candidate: &FootnoteCandidate,
+) -> Option<usize> {
+    let identity = footnote_anchor_identity(&candidate.reference);
+    if identity.is_empty() {
+        return None;
+    }
+    let wanted = format!("#{identity}");
+    for anchor in footnote_anchors_under(&candidate.block) {
+        if Importer::attr(&anchor, "href").as_deref() != Some(wanted.as_str()) {
+            continue;
+        }
+        let Some(&index) = by_reference.get(&node_key(&anchor)) else {
+            continue;
+        };
+        if footnote_contains(&candidates[index].block, &candidate.reference) {
+            return Some(index);
+        }
+    }
+    None
+}
+
+fn footnote_reference_side_wins(
+    first: &FootnoteCandidate,
+    second: &FootnoteCandidate,
+    order: &HashMap<usize, usize>,
+) -> bool {
+    let first_marked = is_footnote_reference_marked(&first.reference);
+    let second_marked = is_footnote_reference_marked(&second.reference);
+    if first_marked != second_marked {
+        return first_marked;
+    }
+
+    let first_back = is_footnote_backlink_marked(&first.reference);
+    let second_back = is_footnote_backlink_marked(&second.reference);
+    if first_back != second_back {
+        return second_back;
+    }
+
+    order.get(&node_key(&first.reference)).copied().unwrap_or(0)
+        < order
+            .get(&node_key(&second.reference))
+            .copied()
+            .unwrap_or(0)
+}
+
+/// One entry per definition block, carrying every reference bound to it.
+///
+/// A block that contains another definition block is a container, not a note:
+/// keeping both would move a subtree into two places at once. The containers
+/// are found by climbing from each block, one walk per note rather than one
+/// per PAIR of notes.
+fn group_footnote_definitions(
+    candidates: Vec<FootnoteCandidate>,
+    order: &HashMap<usize, usize>,
+) -> Vec<FootnoteGroup> {
+    let mut index_of: HashMap<usize, usize> = HashMap::new();
+    let mut groups: Vec<FootnoteGroup> = Vec::new();
+    for candidate in candidates {
+        let key = node_key(&candidate.block);
+        let index = *index_of.entry(key).or_insert_with(|| {
+            groups.push(FootnoteGroup {
+                block: candidate.block.clone(),
+                refs: Vec::new(),
+                fragments: Vec::new(),
+            });
+            groups.len() - 1
+        });
+        groups[index].refs.push(candidate.reference);
+        if !groups[index].fragments.contains(&candidate.fragment) {
+            groups[index].fragments.push(candidate.fragment);
+        }
+    }
+
+    let mut containers: HashSet<usize> = HashSet::new();
+    for group in &groups {
+        let mut ancestor = footnote_parent(&group.block);
+        while let Some(node) = ancestor {
+            if index_of.contains_key(&node_key(&node)) {
+                containers.insert(node_key(&node));
+            }
+            ancestor = footnote_parent(&node);
+        }
+    }
+
+    let mut kept: Vec<FootnoteGroup> = groups
+        .into_iter()
+        .filter(|group| !containers.contains(&node_key(&group.block)))
+        .collect();
+    kept.sort_by_key(|group| order.get(&node_key(&group.block)).copied().unwrap_or(0));
+    kept
+}
+
+/// Bind every remaining anchor that addresses a confirmed note.
+///
+/// Once a block IS a footnote definition, an anchor pointing at it is a
+/// reference to it whatever it looks like. This matters for the second and
+/// later reference to one note: only one of them can be the back-link's
+/// target, so the mutual pair that confirmed the note cannot confirm them, and
+/// without this they stayed literal links beside a `[^1]`. An anchor inside a
+/// note stays a link - a note's body may address another note.
+fn attach_remaining_footnote_references(
+    elements: &[Handle],
+    mut definitions: Vec<FootnoteGroup>,
+) -> Vec<FootnoteGroup> {
+    let mut by_fragment: HashMap<String, usize> = HashMap::new();
+    for (index, definition) in definitions.iter().enumerate() {
+        for fragment in &definition.fragments {
+            by_fragment.insert(fragment.clone(), index);
+        }
+    }
+
+    // Which elements sit inside a note, computed once: asking each anchor
+    // whether it is inside any note walked the tree once per anchor and per
+    // note, which is quadratic on a document that is mostly notes.
+    let mut inside: HashSet<usize> = HashSet::new();
+    for definition in &definitions {
+        for element in footnote_document_elements(&definition.block) {
+            inside.insert(node_key(&element));
+        }
+        inside.insert(node_key(&definition.block));
+    }
+
+    for element in elements {
+        if Importer::tag(element).as_deref() != Some("a") {
+            continue;
+        }
+        let href = Importer::attr(element, "href").unwrap_or_default();
+        let Some(fragment) = href.strip_prefix('#') else {
+            continue;
+        };
+        let Some(&index) = by_fragment.get(fragment) else {
+            continue;
+        };
+        if inside.contains(&node_key(element)) {
+            continue;
+        }
+        if !definitions[index]
+            .refs
+            .iter()
+            .any(|reference| Rc::ptr_eq(reference, element))
+        {
+            definitions[index].refs.push(element.clone());
+        }
+    }
+
+    definitions
+}
+
+fn footnote_anchor_identity(anchor: &Handle) -> String {
+    match Importer::attr(anchor, "id") {
+        Some(id) if !id.is_empty() => id,
+        _ => Importer::attr(anchor, "name").unwrap_or_default(),
+    }
+}
+
+fn footnote_block_links_to(block: &Handle, fragment: &str) -> bool {
+    let wanted = format!("#{fragment}");
+    footnote_anchors_under(block)
+        .iter()
+        .any(|anchor| Importer::attr(anchor, "href").as_deref() == Some(wanted.as_str()))
+}
+
+fn footnote_anchors_under(node: &Handle) -> Vec<Handle> {
+    footnote_document_elements(node)
+        .into_iter()
+        .filter(|element| Importer::tag(element).as_deref() == Some("a"))
+        .collect()
+}
+
+/// `footnoteRef` is Pandoc 1.x's spelling of `footnote-ref`, which it used
+/// together with a back-link carrying no attributes at all.
+fn is_footnote_reference_marked(anchor: &Handle) -> bool {
+    if Importer::attr(anchor, "role").as_deref() == Some("doc-noteref") {
+        return true;
+    }
+    footnote_has_class(anchor, "footnote-ref") || footnote_has_class(anchor, "footnoteRef")
+}
+
+fn is_footnote_backlink_marked(anchor: &Handle) -> bool {
+    if Importer::attr(anchor, "role").as_deref() == Some("doc-backlink") {
+        return true;
+    }
+    footnote_has_class(anchor, "footnote-back")
+}
+
+fn footnote_has_class(node: &Handle, wanted: &str) -> bool {
+    Importer::attr(node, "class")
+        .unwrap_or_default()
+        .split_whitespace()
+        .any(|class| class == wanted)
+}
+
+fn node_key(handle: &Handle) -> usize {
+    Rc::as_ptr(handle) as usize
+}
+
+/// The node's parent, restored into the cell it was read out of.
+///
+/// `Cell` has no borrow, so the only way to look at a `Weak` inside one is to
+/// take it and put it back.
+fn footnote_parent(node: &Handle) -> Option<Handle> {
+    let weak = node.parent.take();
+    let parent = weak.as_ref().and_then(|parent| parent.upgrade());
+    node.parent.set(weak);
+    parent
+}
+
+fn footnote_contains(ancestor: &Handle, node: &Handle) -> bool {
+    let mut current = footnote_parent(node);
+    while let Some(handle) = current {
+        if Rc::ptr_eq(&handle, ancestor) {
+            return true;
+        }
+        current = footnote_parent(&handle);
+    }
+    false
+}
+
+fn footnote_detach(node: &Handle) {
+    let Some(parent) = footnote_parent(node) else {
+        return;
+    };
+    let mut children = parent.children.borrow_mut();
+    if let Some(index) = children.iter().position(|child| Rc::ptr_eq(child, node)) {
+        children.remove(index);
+    }
+    drop(children);
+    node.parent.set(None);
+}
+
+fn footnote_previous_sibling(node: &Handle) -> Option<Handle> {
+    let parent = footnote_parent(node)?;
+    let children = parent.children.borrow();
+    let index = children.iter().position(|child| Rc::ptr_eq(child, node))?;
+    if index == 0 {
+        return None;
+    }
+    Some(children[index - 1].clone())
+}
+
+/// Remove the rule that separates the notes from the body.
+///
+/// Every producer measured emits one, and it is chrome rather than content:
+/// Pandoc puts `<hr />` inside the section, Word `<br clear=all><hr ...>`
+/// inside the footnote-list div, Google Docs a bare `<hr class="cN">` as a
+/// sibling of the notes. Only the first two would be swept up by pruning an
+/// emptied container, so the separator is looked for explicitly - at the first
+/// note, and at each of its ancestors, taking only what immediately precedes
+/// it.
+fn remove_footnote_separator(first: &Handle) {
+    let mut node = first.clone();
+    loop {
+        let mut previous = footnote_previous_sibling(&node);
+        while let Some(candidate) = &previous {
+            if !is_footnote_chrome_node(candidate) {
+                break;
+            }
+            previous = footnote_previous_sibling(candidate);
+        }
+
+        if let Some(candidate) = previous {
+            match Importer::tag(&candidate).as_deref() {
+                Some("hr") | Some("br") => {
+                    footnote_detach(&candidate);
+                    continue;
+                }
+                _ => return,
+            }
+        }
+
+        let Some(parent) = footnote_parent(&node) else {
+            return;
+        };
+        match Importer::tag(&parent).as_deref() {
+            Some("body") | Some("html") | None => return,
+            Some(_) => node = parent,
+        }
+    }
+}
+
+/// Whether a node is part of the separator's packaging rather than content.
+///
+/// Word brackets the `<br clear=all><hr>` inside the footnote-list div in
+/// downlevel-revealed conditionals, `<![if !supportFootnotes]>` and the
+/// matching `<![endif]>`. Those are NOT comments in the source, but html5ever
+/// follows the HTML grammar and reads `<!` without `--` as a BOGUS COMMENT, so
+/// here they arrive as comment nodes - measured, not assumed - and the comment
+/// branch is what recognizes them. carve-php reads the same bytes back as TEXT
+/// because libxml has no such production, which is why its port carries a
+/// pattern for the text spelling that this one has no way to reach.
+fn is_footnote_chrome_node(node: &Handle) -> bool {
+    match &node.data {
+        NodeData::Comment { .. } => true,
+        NodeData::Text { contents } => contents.borrow().trim().is_empty(),
+        _ => false,
+    }
+}
+
+/// Remove the navigation an engine regenerates: the back-link, and the marker
+/// anchor Word, Google Docs and LibreOffice put it on.
+///
+/// Carried into the note body it would render as a stray link to a fragment
+/// that no longer exists, and the visible marker it wraps (`[1]`, `1`, the
+/// return arrow) would be written into the note's own text. The third clause -
+/// an anchor that IS the fragment target the reference points at, with a
+/// fragment href - is what removes the marker anchor that is the note's anchor
+/// and its back-link and its visible marker in one element.
+fn strip_footnote_backlinks(block: &Handle, identities: &[String], fragments: &[String]) {
+    for anchor in footnote_anchors_under(block) {
+        let href = Importer::attr(&anchor, "href").unwrap_or_default();
+        let target = href.strip_prefix('#');
+        let points_back = target
+            .map(|fragment| identities.iter().any(|identity| identity == fragment))
+            .unwrap_or(false);
+        let is_marker = target.is_some() && fragments.contains(&footnote_anchor_identity(&anchor));
+        if !is_footnote_backlink_marked(&anchor) && !points_back && !is_marker {
+            continue;
+        }
+
+        let parent = footnote_parent(&anchor);
+        footnote_detach(&anchor);
+        let Some(parent) = parent else { continue };
+        if !matches!(
+            Importer::tag(&parent).as_deref(),
+            Some("sup") | Some("span")
+        ) {
+            continue;
+        }
+        let emptied = parent
+            .children
+            .borrow()
+            .iter()
+            .all(|child| match &child.data {
+                NodeData::Element { .. } => false,
+                NodeData::Text { contents } => contents.borrow().trim().is_empty(),
+                _ => true,
+            });
+        if emptied {
+            footnote_detach(&parent);
+        }
+    }
+}
+
+/// The node a reference occupies: the anchor, or the `<sup>` that holds
+/// nothing but the anchor.
+///
+/// Google Docs and Pandoc put the `<sup>` outside the anchor, so taking only
+/// the anchor would leave `{^...^}` wrapped around the reference. One carrying
+/// anything else - an element or non-blank text - keeps its content, and the
+/// reference binds inside it.
+fn footnote_reference_site(reference: &Handle) -> Handle {
+    let Some(parent) = footnote_parent(reference) else {
+        return reference.clone();
+    };
+    if Importer::tag(&parent).as_deref() != Some("sup") {
+        return reference.clone();
+    }
+    for child in parent.children.borrow().iter() {
+        match &child.data {
+            NodeData::Element { .. } if !Rc::ptr_eq(child, reference) => {
+                return reference.clone();
+            }
+            NodeData::Text { contents } if !contents.borrow().trim().is_empty() => {
+                return reference.clone();
+            }
+            _ => {}
+        }
+    }
+    parent.clone()
+}
+
+/// Drop a container the notes left empty, so the `<hr>` and the `<ol>` that
+/// held them do not import as a thematic break beside an empty list.
+///
+/// A separator written AFTER the notes survives the explicit search and is
+/// swept up here instead.
+fn prune_empty_footnote_container(node: &Handle) {
+    let mut current = Some(node.clone());
+    while let Some(handle) = current {
+        match Importer::tag(&handle).as_deref() {
+            None | Some("body") | Some("html") => return,
+            Some(_) => {}
+        }
+        let holds_content = handle.children.borrow().iter().any(|child| {
+            if is_footnote_chrome_node(child) {
+                return false;
+            }
+            !matches!(Importer::tag(child).as_deref(), Some("hr") | Some("br"))
+        });
+        if holds_content {
+            return;
+        }
+        let parent = footnote_parent(&handle);
+        footnote_detach(&handle);
+        current = parent;
+    }
 }
 
 /// Whether an HTML element name is one of the seven PART 9 §10 spells as a
@@ -2178,6 +2926,19 @@ fn import(
         nodes: 0,
         quote_depth: 0,
         unspellable: Vec::new(),
+        footnote_refs: HashMap::new(),
+    };
+    // Rewrite an editor's footnote-shaped HTML before the core policy reads
+    // the tree, exactly as the adapter contract allows ("Adapters may
+    // normalize editor-specific markup before the core policy"). `generic`
+    // stays out: it takes arbitrary HTML, where a mutually linked anchor pair
+    // is not proof of a footnote, and the caller naming an adapter is the
+    // declaration of provenance that makes the recognition safe.
+    let footnote_defs = match options.adapter {
+        HtmlImportAdapter::Word | HtmlImportAdapter::GoogleDocs => {
+            importer.adapter_footnotes(&dom.document)?
+        }
+        _ => BTreeMap::new(),
     };
     let children = importer.blocks(&dom.document.children.borrow(), "", 0)?;
     if writing {
@@ -2194,7 +2955,7 @@ fn import(
         value: Document {
             frontmatter: BTreeMap::new(),
             frontmatter_raw: None,
-            footnote_defs: BTreeMap::new(),
+            footnote_defs,
             footnote_def_pos: BTreeMap::new(),
             children,
             source_len: 0,
