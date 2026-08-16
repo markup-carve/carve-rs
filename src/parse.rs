@@ -5129,8 +5129,16 @@ fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             // consumed - and this branch was the one place where the two
             // spellings of the same clause disagreed: `> quoted` / `+` / `para`
             // / `# H` pulled the heading into the quote as well.
-            let attach_end =
-                cur.pos + attached_one_block_lines(&cursor_lines[cur.pos..end], options);
+            //
+            // Under a MEASUREMENT PROBE the whole extent is spliced instead. The
+            // probe only wants a line count, and this marker's own division of
+            // its content cannot change how many lines the block above it spans
+            // - measuring here as well would double the work per nesting level.
+            let attach_end = if measuring_attached_block() {
+                end
+            } else {
+                cur.pos + attached_one_block_lines(&cursor_lines[cur.pos..end], options)
+            };
             while cur.pos < attach_end {
                 let next = cur.lines[cur.pos];
                 // Attached lines are spliced in verbatim, so the container took
@@ -5564,6 +5572,33 @@ fn has_indexed_comment_closer_after(
 /// definition of where a block ends - a scan would be a copy of the block
 /// grammar that could drift from it silently.
 ///
+/// A LEADING ATTRIBUTE RUN IS PART OF THE BLOCK IT FLOATS ONTO. Only
+/// `parse_blocks` owns a pending-attribute slot, and this is a `parse_block`
+/// call, so an attribute line left to it reads as a paragraph and the
+/// measurement stops in front of the block the attributes were written for.
+/// `> q` / `+` / `{.x}` / `# h` then attached the attribute line ALONE, dropped
+/// the attributes and left the heading outside the quote - where the list form
+/// attaches an attributed heading. The run is consumed here so the block behind
+/// it is what gets measured, exactly as `parse_continuation_block` does it.
+///
+/// A SELF-DELIMITING BLOCK IS NOT PARSED AT ALL. A fence and a colon container
+/// end at a CLOSER, which is a line-level fact that `attached_block_end` already
+/// reads with these same helpers - so their extent is taken from the lines and
+/// the body is never walked. This is what keeps a deeply nested attachment
+/// affordable: parsing the body would re-walk the whole subtree at every level
+/// above it. Measured on `> q` / `+` / `::: d` nested to the cap: 9.52 s when the
+/// probe parsed the container, 0.2 s when it reads the closer, against 0.22 s
+/// for the same document before this clause was implemented at all.
+///
+/// MEASURING DOES NOT NEST either. The probe parses the attached block and the
+/// caller then parses those same lines again, so an inner `+` under a probe
+/// would be measured twice per level - doubling per level, at 0.02 s / 0.06 s /
+/// 0.26 s / 1.05 s for depths 8 / 10 / 12 / 14 against a flat 0.00 s before. An
+/// inner marker under a probe therefore splices its whole extent instead. That
+/// cannot change the answer here: what this returns is a LINE COUNT, and a
+/// block's line extent is decided by closers, quote prefixes and indentation -
+/// never by how an inner marker divided its own content.
+///
 /// At least one line, always. A parser that consumed nothing would leave the
 /// caller's cursor where it was, and the container loop would see the same line
 /// forever.
@@ -5571,9 +5606,108 @@ fn attached_one_block_lines(slice: &[&str], options: &Options<'_>) -> usize {
     if slice.is_empty() {
         return 0;
     }
+    // A cache OF ITS OWN, never the caller's. The closer index is keyed by line
+    // number, and `slice` is renumbered from the container's own lines - handing
+    // it an index built over those would read a closer at the wrong place.
+    let mut comment_closers: Option<HashMap<usize, usize>> = None;
+    let _measuring = MeasuringGuard::enter();
     let mut sub = LineCursor::new_with_cols(slice, None, None);
+    while let Some(line) = sub.peek() {
+        if line.starts_with([' ', '\t']) || !line.starts_with('{') {
+            break;
+        }
+        if parse_standalone_attrs_block(&mut sub).is_none() {
+            break;
+        }
+    }
+    if let Some(end) = self_delimiting_block_end(slice, sub.pos, &mut comment_closers) {
+        return end.clamp(1, slice.len());
+    }
     parse_block(&mut sub, options);
     sub.pos.clamp(1, slice.len())
+}
+
+/// One past the last line of the self-delimiting block opening at `slice[start]`,
+/// or `None` when that line opens none.
+///
+/// The five openers and the four helpers are the ones [`attached_block_end`]
+/// skips regions with, reused rather than restated: a fence or colon container
+/// runs to its closer, or to end of input when it has none, and nothing inside
+/// it can shorten that.
+fn self_delimiting_block_end(
+    slice: &[&str],
+    start: usize,
+    comment_closers: &mut Option<HashMap<usize, usize>>,
+) -> Option<usize> {
+    let line = *slice.get(start)?;
+    if let Some(open) = detect_fence_open(line) {
+        let mut i = start + 1;
+        while i < slice.len() {
+            if is_fence_close(slice[i], open) {
+                return Some(i + 1);
+            }
+            i += 1;
+        }
+        return Some(slice.len());
+    }
+    if let Some(open) = detect_comment_fence_line(line) {
+        if has_indexed_comment_closer_after(slice, comment_closers, start + 1, open.fence_len) {
+            if let Some(close) =
+                (start + 1..slice.len()).find(|&j| is_comment_fence_close(slice[j], open.fence_len))
+            {
+                return Some(close + 1);
+            }
+        }
+        // §28: with no closer ahead it is not a fence, it is a `%%` line
+        // comment - one line, and the lines after it are just lines.
+        return Some(start + 1);
+    }
+    if let Some(fence_len) = detect_line_block_open(line) {
+        return Some(find_line_block_end(slice, start, fence_len));
+    }
+    if let Some(fence_len) = detect_hardbreaks_block_open(line) {
+        return Some(find_colon_container_end(slice, start, fence_len));
+    }
+    if let Some(open) = detect_container_open(line) {
+        return Some(find_colon_container_end(slice, start, open.fence_len));
+    }
+    None
+}
+
+thread_local! {
+    // Set while [`attached_one_block_lines`] is measuring, so a `+` marker
+    // reached inside the probe splices its extent rather than running a probe of
+    // its own. See that function for why the count is unaffected and for the
+    // cost this avoids.
+    //
+    // Plain initializer for the same MSRV reason as `NESTING_DEPTH`.
+    #[allow(clippy::missing_const_for_thread_local)]
+    static MEASURING_ATTACHED_BLOCK: Cell<bool> = const { Cell::new(false) };
+}
+
+/// RAII flag for the measurement probe, restoring the previous value on drop
+/// (panic unwind included), the discipline [`DepthGuard`] keeps for the depth
+/// counter.
+struct MeasuringGuard {
+    previous: bool,
+}
+
+impl MeasuringGuard {
+    fn enter() -> MeasuringGuard {
+        MeasuringGuard {
+            previous: MEASURING_ATTACHED_BLOCK.with(|m| m.replace(true)),
+        }
+    }
+}
+
+impl Drop for MeasuringGuard {
+    fn drop(&mut self) {
+        MEASURING_ATTACHED_BLOCK.with(|m| m.set(self.previous));
+    }
+}
+
+fn measuring_attached_block() -> bool {
+    MEASURING_ATTACHED_BLOCK.with(|m| m.get())
 }
 
 fn attached_block_end(

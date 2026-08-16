@@ -164,3 +164,64 @@ fn control_a_quote_line_after_the_attachment_still_reaches_the_quote() {
 fn control_a_lone_plus_outside_a_container_is_literal() {
     assert_eq!(html("+\n"), "<p>+</p>");
 }
+
+// ---------------------------------------------------------------------------
+// The two the measurement itself could get wrong. Found by review.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn an_attribute_run_is_measured_with_the_block_it_floats_onto() {
+    // Only `parse_blocks` owns a pending-attribute slot, and the measurement is
+    // a `parse_block` call - so an attribute line left to it reads as a
+    // paragraph and the measurement stops in FRONT of the block the attributes
+    // were written for. That attached the attribute line alone, dropped the
+    // attributes and left the heading outside the quote.
+    assert_eq!(
+        html("> q\n+\n{.x}\n# h\n"),
+        "<blockquote>\n  <p>q</p>\n  <h1 class=\"x\" id=\"h\">h</h1>\n</blockquote>"
+    );
+    // The list twin, which reaches the same answer down its own path.
+    assert_eq!(
+        html("- a\n+\n{.x}\n# h\n"),
+        "<ul>\n  <li>a\n    <h1 class=\"x\" id=\"h\">h</h1>\n  </li>\n</ul>"
+    );
+}
+
+#[test]
+fn a_nested_attachment_terminates() {
+    // The probe parses the attached block and the caller parses those lines
+    // again, so a `+`-attached container holding another `+` attachment paid
+    // twice per level: nested to 14 that took 1.05 s where the same document
+    // cost 0.00 s before the clause was implemented, and at the nesting cap it
+    // was 9.52 s against 0.22 s. Two changes fix it - a self-delimiting block is
+    // measured by its CLOSER rather than by parsing its body, and a marker
+    // reached under a probe splices instead of probing again.
+    //
+    // Asserted as OUTPUT, not as a stopwatch: a wall-clock assertion measures
+    // the machine. What this pins is that a document at a depth where the
+    // doubling was plainly visible still parses and still holds its innermost
+    // content. The numbers live in the commit message and beside the function.
+    let mut body = String::from("para\n");
+    for _ in 0..16 {
+        body = format!("> q\n+\n:::\n{body}:::\n");
+    }
+    let out = html(&body);
+
+    assert!(out.contains("<p>para</p>"), "{out}");
+    assert!(out.matches("<blockquote>").count() >= 2, "{out}");
+}
+
+#[test]
+fn a_self_delimiting_block_is_measured_by_its_closer() {
+    // The extent of a fence or colon container is a line-level fact, so the
+    // probe reads the closer rather than walking the body. These pin that the
+    // two ways of measuring agree on where the block ends.
+    assert_eq!(
+        html("> q\n+\n::: d\ninner\n:::\ntail\n"),
+        "<blockquote>\n  <p>q</p>\n  <div class=\"d\">\n    <p>inner</p>\n  </div>\n</blockquote>\n<p>tail</p>"
+    );
+    assert_eq!(
+        html("> q\n+\n```\ncode\n```\ntail\n"),
+        "<blockquote>\n  <p>q</p>\n  <pre><code>code\n</code></pre>\n</blockquote>\n<p>tail</p>"
+    );
+}

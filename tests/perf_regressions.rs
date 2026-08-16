@@ -1080,3 +1080,42 @@ fn the_same_footnote_document_is_bounded_without_the_adapter() {
         1_000,
     );
 }
+
+#[test]
+fn a_nested_continuation_attachment_is_bounded() {
+    on_big_stack(|| {
+        // §17 L3 attaches ONE block, so a `+` has to know where the attached
+        // block ends. Measuring that by PARSING the block makes a `+`-attached
+        // container holding another `+` attachment pay for its subtree once per
+        // level above it: this document took 28.71 s that way, against 0.65 s
+        // before the clause was implemented at all and 0.85 s with the extent
+        // read from the container's CLOSER instead.
+        //
+        // Three documents nested to the depth cap, ~2400 lines in total. The
+        // shape matters more than the size - the blow-up is in the DEPTH, and
+        // widening the bodies barely moved it (9.65 s to 9.72 s at one copy),
+        // which is why this repeats the document rather than enlarging it.
+        let mut one = String::from("para\n");
+        for _ in 0..200 {
+            one = format!("> q\n+\n::: d\n{one}:::\n");
+        }
+        let source = [one.as_str(), one.as_str(), one.as_str()].join("\n");
+
+        let start = Instant::now();
+        let html = carve::to_html(&source);
+
+        // Past MAX_NESTING_DEPTH the innermost levels degrade rather than
+        // recursing, so what is asserted is that the content SURVIVES - once per
+        // copy - and not that it reaches a paragraph node.
+        assert_eq!(
+            html.matches("para").count(),
+            3,
+            "expected the innermost content of each copy"
+        );
+        assert!(
+            start.elapsed().as_secs_f32() < MAX_SECS,
+            "nested continuation attachment took {:?}",
+            start.elapsed()
+        );
+    });
+}
