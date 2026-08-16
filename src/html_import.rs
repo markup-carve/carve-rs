@@ -706,6 +706,31 @@ impl<'a> Importer<'a> {
             } else {
                 None
             };
+            // Tightness is decided by the ITEM SHAPE (ruled, spec
+            // docs/html-import.md "Lists keep the source's tightness";
+            // corpus-convert 27/28): a bare-text `<li>one</li>` is a tight
+            // item, a paragraph-wrapped `<li><p>one</p></li>` a loose one, and
+            // import preserves what the source spelled rather than
+            // normalizing it.
+            //
+            // Carve spells tightness per LIST, not per item, so a MIXED list
+            // has to resolve one way, and it resolves the way CommonMark
+            // resolves it: ONE paragraph item loosens the whole list.
+            // Resolving tight instead would drop the paragraph that item
+            // actually spelled - the loss this rule exists to prevent.
+            //
+            // Only a direct `<p>` votes. A nested `<ul>` beside bare text is
+            // structure, not a paragraph wrapper, so `<li>one<ul>...</ul></li>`
+            // is the HTML of a tight item with a sublist.
+            let tight = !children
+                .iter()
+                .filter(|n| Self::tag(n).as_deref() == Some("li"))
+                .any(|li| {
+                    li.children
+                        .borrow()
+                        .iter()
+                        .any(|child| Self::tag(child).as_deref() == Some("p"))
+                });
             return Ok(vec![BlockNode::List(List {
                 attrs,
                 ordered,
@@ -714,7 +739,7 @@ impl<'a> Importer<'a> {
                 bare_marker: false,
                 delim: None,
                 bullet_char: None,
-                tight: false,
+                tight,
                 items,
                 pos: None,
             })]);

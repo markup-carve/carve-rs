@@ -320,11 +320,10 @@ fn two_references_to_one_note_both_bind() {
 /// A note body is block content, not one line: the writer indents the
 /// continuation so the paragraphs and the list stay inside the note.
 ///
-/// The item comes back as `<li><p>one</p></li>` rather than `<li>one</li>`
-/// because this importer writes every `<li>` as its own paragraph and the
-/// blank line between items makes the list loose. That is what a plain
-/// `<ul><li>one</li></ul>` does under `generic` too - it is the importer's
-/// standing shape, not something the note body does to it.
+/// The items come back as `<li>one</li>`: a bare-text `<li>` is a tight item
+/// and the import keeps the source's tightness (corpus-convert 27). That is
+/// what a plain `<ul><li>one</li></ul>` does under `generic` too - it is the
+/// importer's standing shape, not something the note body does to it.
 #[test]
 fn a_note_body_keeps_its_blocks() {
     let rendered = to_html(&imported(concat!(
@@ -336,7 +335,7 @@ fn a_note_body_keeps_its_blocks() {
     )));
 
     assert!(rendered.contains("<p>First para.</p>"), "{rendered}");
-    assert!(rendered.contains("<li><p>one</p></li>"), "{rendered}");
+    assert!(rendered.contains("<li>one</li>"), "{rendered}");
     assert!(rendered.contains("<p>Last para."), "{rendered}");
     assert_eq!(rendered.matches("<li id=\"fn1\">").count(), 1, "{rendered}");
     let note = &rendered[rendered.find("<li id=\"fn1\">").unwrap()..];

@@ -1733,7 +1733,21 @@ fn render_inlines_with_caption(
             ctx.note_content_depth > 0,
             ctx.escape_mode,
         );
-        let rendered = render_inline(node, ctx, prev, next, caption_can_open, opens_a_note);
+        // A code span's emitted bytes open with a backtick run, which is the
+        // one live backtick the writer ever puts next to a text node (a
+        // backtick INSIDE one is escaped unconditionally) - so it is the one
+        // place a trailing `$`/`!` sigil can fuse into a math or literal span
+        // on re-parse (PART 11 §2; corpus-convert 05).
+        let opens_a_code_span = matches!(nodes.get(idx + 1), Some(InlineNode::Code(_)));
+        let rendered = render_inline(
+            node,
+            ctx,
+            prev,
+            next,
+            caption_can_open,
+            opens_a_note,
+            opens_a_code_span,
+        );
         // A COMMENT'S SEPARATING SPACE IS DECIDED ON THE EMITTED BYTES, not on
         // the previous NODE (carve#1028). `%%` opens a comment only at the
         // start of a line or after whitespace, so the writer owes one space
@@ -1778,6 +1792,7 @@ fn render_inline(
     next_char: char,
     caption_can_open: bool,
     next_opens_a_note: bool,
+    next_opens_a_code_span: bool,
 ) -> String {
     match node {
         // The one target that publishes it: the author wrote `%% note`, and
@@ -1800,6 +1815,7 @@ fn render_inline(
                 in_note_content: ctx.note_content_depth > 0,
                 next_node_opens_a_note: next_opens_a_note,
             },
+            next_opens_a_code_span,
         ),
         InlineNode::EscapedText(text) => format!("\\{}", text.value),
         InlineNode::SmartPunctuation(s) => s.value.clone(),
@@ -1894,6 +1910,9 @@ fn render_inline(
                 in_note_content: ctx.note_content_depth > 0,
                 next_node_opens_a_note: next_opens_a_note,
             },
+            // An abbreviation's term renders inside its own construct, so
+            // nothing it ends with sits against the next node's bytes.
+            false,
         ),
         InlineNode::Footnote(footnote) => {
             let body = if let Some(inline) = &footnote.inline {
@@ -2820,6 +2839,7 @@ fn next_node_opens_a_note(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn escape_text(
     text: &str,
     mode: EscapeMode,
@@ -2828,6 +2848,7 @@ fn escape_text(
     previous_boundary: char,
     next_boundary: char,
     note: NoteEscape,
+    next_node_opens_a_code_span: bool,
 ) -> String {
     let mut out = String::new();
     // A `^` is only dangerous where a caption marker could be read: at the
@@ -2900,9 +2921,23 @@ fn escape_text(
         // Same shape as the caret above: ask what the character could open
         // HERE, rather than escaping the class it belongs to.
         let colon_cannot_open = ch == ':' && !at_line_start;
+        // A verbatim sigil directly before a code span fuses with it on
+        // re-parse: a dollar run's last dollars plus the span's opening
+        // backtick spell a math span, and a final `!` spells a literal span
+        // (PART 9 sections 22 and 27), where this node says TEXT. Every
+        // dollar of the trailing run is escaped, not just the first - with
+        // only the first escaped, the remaining dollar still opens inline
+        // math against the backtick - while `!` is a one-character prefix,
+        // so only the final character can fuse (ruled stays-text escapes,
+        // carve#1130; corpus-convert 05).
+        let sigil_fuses_with_a_code_span = next_node_opens_a_code_span
+            && ((ch == '$' && text.as_bytes()[offset..].iter().all(|&b| b == b'$'))
+                || (ch == '!' && offset + ch.len_utf8() == text.len()));
         at_line_start = ch == '\n';
-        let unconditional =
-            matches!(ch, '\\' | '`' | '"' | '\'') || caret_opens_a_caption || caret_opens_inline;
+        let unconditional = matches!(ch, '\\' | '`' | '"' | '\'')
+            || caret_opens_a_caption
+            || caret_opens_inline
+            || sigil_fuses_with_a_code_span;
         let candidate = matches!(
             ch,
             '*' | '_'

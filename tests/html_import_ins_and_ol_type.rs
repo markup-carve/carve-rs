@@ -60,22 +60,22 @@ fn an_ordered_lists_style_reaches_the_marker() {
     for (html, carve, style) in [
         (
             "<ol type=\"a\"><li>x</li><li>y</li></ol>",
-            "a. x\n\nb. y\n",
+            "a. x\nb. y\n",
             OrderedListType::LowerAlpha,
         ),
         (
             "<ol type=\"A\"><li>x</li><li>y</li></ol>",
-            "A. x\n\nB. y\n",
+            "A. x\nB. y\n",
             OrderedListType::UpperAlpha,
         ),
         (
             "<ol type=\"i\"><li>x</li><li>y</li></ol>",
-            "i. x\n\nii. y\n",
+            "i. x\nii. y\n",
             OrderedListType::LowerRoman,
         ),
         (
             "<ol type=\"I\" start=\"3\"><li>x</li><li>y</li></ol>",
-            "III. x\n\nIV. y\n",
+            "III. x\nIV. y\n",
             OrderedListType::UpperRoman,
         ),
     ] {

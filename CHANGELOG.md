@@ -430,6 +430,25 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **An imported HTML list keeps the tightness its source spelled**
+  (markup-carve/carve#1210, corpus-convert 27/28). A bare-text `<li>one</li>`
+  is a tight item, a paragraph-wrapped `<li><p>one</p></li>` a loose one, and
+  the import preserves the source's own markup instead of flattening every
+  list to loose. Carve spells tightness per LIST, so a mixed list resolves the
+  way CommonMark resolves it - one paragraph item loosens the whole list - and
+  only a direct `<p>` votes: a nested list beside bare text is structure, not
+  a paragraph wrapper.
+
+- **A verbatim sigil directly before a code span stays literal text**
+  (the stays-text escapes ruled on carve#1130, corpus-convert 05). Markdown's
+  `` a $`x+y` b `` says a dollar and then a code span, but the bytes are
+  exactly Carve's math span, so the migrated document rendered math where the
+  source said text - and `$$` (display math) and `!` (a literal span) fused
+  the same way. The canonical writer now escapes a trailing dollar run or
+  bang in front of a code span - every dollar of the run, since with only the
+  first escaped the remaining one still opens inline math - which covers the
+  Markdown migration and any ingested tree carrying the same adjacency.
+
 - **A block-attribute line before a NESTED LIST inside a list item reaches that
   list.** `- a` / blank / `  {.x}` / `  - b` published a bare `<ul>`: the
   attributes were not rendered as literal text and no warning was produced, they
