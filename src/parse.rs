@@ -5754,6 +5754,16 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     let mut items: Vec<ListItem> = Vec::new();
     let mut tight = true;
     let mut pending_blank = false;
+    // A block-attribute block that ended a continuation chunk, waiting for the
+    // SUB-LIST it was written in front of. The chunk boundary is what separated
+    // them (see `split_trailing_attrs`), so this carries them across it.
+    //
+    // It survives blank lines, because a blank does not break attachment
+    // anywhere else either - `{.x}` / blank / `- b` at document level attaches.
+    // Everything that opens an item or attaches a block of its own clears it,
+    // so a set of attributes can only ever reach the sub-list that directly
+    // follows it, and one that reaches nothing is dropped exactly as before.
+    let mut pending_attrs: Option<Attrs> = None;
     // The current item's content column (where its content begins after the
     // marker). Nested content and sub-blocks of the last item dedent by this, so
     // it persists across iterations and is updated as each item is opened.
@@ -5783,6 +5793,7 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         if trim_ascii(line) == "+" && indent_columns(line) == base_indent {
             cur.consume();
             pending_blank = false;
+            pending_attrs = None;
             if let Some(block) = parse_continuation_block(cur, options, base_indent) {
                 // An EMPTY paragraph is not content and must not become one of
                 // the item's blocks. It arises when the attached block's whole
@@ -5876,7 +5887,43 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                             )
                         },
                     );
-                    let nested_children = parse_mapped_source(&nested, options);
+                    // A `{…}` block that ENDS this chunk was written in front of
+                    // whatever comes next, and what comes next is in the next
+                    // chunk - the collector broke on the sub-list marker. Hold
+                    // it rather than letting the chunk's own pending slot drop
+                    // it (carve-rs#1007). Split BEFORE parsing, so the block it
+                    // was going to attach to inside this chunk is unaffected.
+                    //
+                    // Repeatedly, because attribute blocks STACK: `{.x}` /
+                    // `{#i}` in front of one block merges into a single set
+                    // everywhere else, and lifting only the last one off would
+                    // have made the nested list the one target that keeps just
+                    // the final block. Each split shortens the chunk, so this
+                    // terminates.
+                    let mut split_stack: Vec<Attrs> = Vec::new();
+                    while let Some(attrs) = split_trailing_attrs(&mut nested) {
+                        split_stack.push(attrs);
+                    }
+                    let mut nested_children = parse_mapped_source(&nested, options);
+                    // Attributes held from an EARLIER chunk attach here when
+                    // this one opens with a block, which is the case where a
+                    // blank line sits between the `{…}` and its target. The
+                    // sub-list branch is the other consumer; between them, a set
+                    // of attributes reaches the first block written after it
+                    // whichever chunk that landed in.
+                    if pending_attrs.is_some() {
+                        if let Some(target) = nested_children
+                            .iter_mut()
+                            .find(|block| !matches!(block, BlockNode::Comment(_)))
+                        {
+                            apply_attrs_to_block(target, pending_attrs.take().unwrap());
+                        }
+                    }
+                    // Back into SOURCE order, so the merge resolves a repeated
+                    // key the way `parse_blocks` resolves it at top level.
+                    for attrs in split_stack.into_iter().rev() {
+                        merge_attrs(&mut pending_attrs, attrs);
+                    }
                     // A blank before an indented sub-block loosens only when it
                     // is a genuine second paragraph (#74 compact list blocks).
                     // Skip what renders NOTHING when looking for that
@@ -6012,7 +6059,25 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                     },
                     |cur| collect_indented_block_mapped(cur, sub_indent - 1, content_col),
                 );
-                let nested_children = parse_mapped_source(&nested, options);
+                let mut nested_children = parse_mapped_source(&nested, options);
+                // The block-attribute block written in front of this sub-list,
+                // carried across the chunk boundary that separated them
+                // (carve-rs#1007). It lands on the nested LIST, not on the item
+                // and not on the outer list: `apply_attrs_to_block` already has
+                // the arm, and a list is a block like the paragraph, quote and
+                // fence in this position that have always taken them.
+                //
+                // The first non-comment child, matching how the looseness check
+                // below picks the block that counts - a comment renders nothing
+                // and is not what the author wrote the attributes for.
+                if let Some(attrs) = pending_attrs.take() {
+                    if let Some(target) = nested_children
+                        .iter_mut()
+                        .find(|block| !matches!(block, BlockNode::Comment(_)))
+                    {
+                        apply_attrs_to_block(target, attrs);
+                    }
+                }
                 // A blank line INSIDE the outer item -- swallowed into the nested
                 // source by the collection above -- that directly separates the
                 // sub-list from a following PARAGRAPH still attached to the outer
@@ -6041,6 +6106,12 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             }
             break;
         }
+        // Past the sub-list branch, so this marker opens a SIBLING item. Any
+        // attributes still held were written in front of something that never
+        // came, and a sibling is not that something - drop them here rather
+        // than let them reach a sub-list further down the list, which is not
+        // where the author put them (carve-rs#1007).
+        pending_attrs = None;
         if marker.ordered != is_ordered || marker.checked.is_some() != is_task {
             break;
         }
@@ -10701,6 +10772,95 @@ fn open_quote_at_end(s: &str) -> Option<char> {
         }
     }
     quote
+}
+
+/// Split a TRAILING standalone block-attribute block off a collected chunk,
+/// returning its attributes and shortening the chunk to the lines before it.
+///
+/// WHY A LIST ITEM NEEDS THIS AND NOTHING ELSE DOES. `parse_blocks` owns the
+/// only pending-attribute slot, and it attaches a `{…}` line to the block that
+/// follows it in the SAME stream. Inside a list item that stream is a chunk:
+/// `collect_item_continuation_block_mapped` stops at a marker sitting at the
+/// item's content column, so `parse_list` can own the sub-list and its
+/// looseness bookkeeping. That stop puts the attribute line at the END of one
+/// chunk and the nested list at the start of a different one, each parsed with
+/// its own slot - so the attributes had nothing to attach to and were dropped
+/// where `parse_blocks` returns (markup-carve/carve-rs#1007).
+///
+/// A paragraph, block quote or code fence in that position is not a marker, so
+/// the collector never breaks and both lines land in one chunk, which is why
+/// only a NESTED LIST lost them. Handing the split-off attributes to the
+/// sub-list branch reunites the two halves without teaching `parse_blocks` to
+/// return leftovers, which would thread a new value through every one of its
+/// callers.
+///
+/// The block may span lines (`{#id` / `.foo}`), so the whole trailing run is
+/// validated by `parse_standalone_attrs_block` - the same reader the top-level
+/// path uses - and the split only happens when that reader consumes the run
+/// exactly.
+fn split_trailing_attrs(nested: &mut MappedSource) -> Option<Attrs> {
+    let lines: Vec<&str> = nested.source.lines().collect();
+    if lines.is_empty() {
+        return None;
+    }
+    // A trailing attribute block ends on the last line, so that line must close
+    // one. Anything else is ordinary content and there is nothing to split.
+    if !trim_ascii_end(lines[lines.len() - 1]).ends_with('}') {
+        return None;
+    }
+    // Walk back to the line that OPENS the run. A blank ends the search: a
+    // block-attribute block is contiguous.
+    let mut start = lines.len() - 1;
+    loop {
+        let line = lines[start];
+        if is_blank_line(line) {
+            return None;
+        }
+        // FLUSH LEFT, the same guard `parse_blocks` puts on this call
+        // (`line_flush`). The chunk is already dedented by the item's content
+        // column, so flush here means AT that column - and a line PAST it is
+        // ordinary text, which is what corpus 87-compact-list-blocks-10 pins:
+        // `- a` / blank / three spaces / `{.c}` is a second paragraph reading
+        // `{.c}`, not an attribute block. Trimming the indent away instead
+        // deleted that paragraph and re-tightened the item.
+        if line.starts_with('{') {
+            break;
+        }
+        if line.starts_with([' ', '\t']) {
+            return None;
+        }
+        if start == 0 {
+            return None;
+        }
+        start -= 1;
+    }
+    let tail: Vec<&str> = lines[start..].to_vec();
+    let mut probe = LineCursor::new_with_cols(&tail, None, None);
+    let attrs = parse_standalone_attrs_block(&mut probe)?;
+    // Only a run the reader consumed WHOLE is the chunk's trailing attribute
+    // block. A partial consume means the lines after it are content, and
+    // splitting there would silently delete them.
+    if !probe.eof() {
+        return None;
+    }
+    let line_count = lines.len();
+    let kept: Vec<&str> = lines[..start].to_vec();
+    let source = kept.join("\n");
+    nested.source = source;
+    // Both maps are read by LINE INDEX, and the kept lines keep the indices
+    // they had, so trailing entries are simply never reached - trimming them is
+    // tidiness, not correctness. It is only safe on a map that is index-aligned
+    // with the chunk: `push_newline_at` skips a LEADING run of unmapped lines
+    // rather than storing `None` for them, so a shorter `line_map` is offset
+    // from the lines and cutting it at `start` would drop an entry belonging to
+    // a line being KEPT. Leave such a map alone; its extra entries cost nothing.
+    if nested.col_map.len() == line_count {
+        nested.col_map.truncate(start);
+    }
+    if nested.line_map.len() == line_count {
+        nested.line_map.truncate(start);
+    }
+    Some(attrs)
 }
 
 fn merge_attrs(target: &mut Option<Attrs>, incoming: Attrs) {

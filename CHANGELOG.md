@@ -405,6 +405,30 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A block-attribute line before a NESTED LIST inside a list item reaches that
+  list.** `- a` / blank / `  {.x}` / `  - b` published a bare `<ul>`: the
+  attributes were not rendered as literal text and no warning was produced, they
+  were simply gone. A paragraph, a block quote and a code fence written in the
+  same position all attached, and so did a list one nesting level up, so a
+  nested list was the only block type there that lost them. `parse_blocks` owns
+  the one pending-attribute slot and attaches a `{…}` line to the next block in
+  the same stream; inside an item that stream is a chunk, and the continuation
+  collector stops at a marker sitting at the item's content column so
+  `parse_list` can own the sub-list and its looseness bookkeeping - which left
+  the attributes at the end of one chunk and the list at the start of another,
+  each with its own slot. That break happens with or without a blank line before
+  the attribute line, so both spellings attach, as does the form where the
+  attribute line is the TAIL of a chunk that also holds content (`para` /
+  `{.x}` / sub-list). The target is the nested `<ul>`/`<ol>`, not the `<li>` and
+  not the outer list; the marker-abutting `-{.x} item` form, which is the only
+  spelling that reaches an `<li>`, is untouched at every nesting level. The
+  braces must sit AT the item's content column, the same flush-left guard the
+  top-level path applies - one column further in they are a paragraph reading
+  `{.x}`, which `87-compact-list-blocks-10` pins. Stacked attribute blocks
+  merge into one set the way they do everywhere else, and a paragraph that
+  merely ends in a brace keeps its text. Item tightness is unchanged
+  (PART 9 §17 L2). Rule decided in markup-carve/carve#1238.
+
 - **A table's sections and rows keep the attributes they have a slot for.** A
   `<tbody id="totals">` and a `<tr class="warn">` fell into the empty `attrs`
   slot with no diagnostic at all, though the model has a place for both:
