@@ -55,13 +55,15 @@ fn tab_separated_hash_on_marker_line_stays_text() {
 }
 
 #[test]
-fn flush_left_lazy_text_stays_in_the_item_beside_the_heading() {
-    // The lazy line still belongs to the item rather than floating out to a
-    // top-level paragraph, but it no longer folds INTO the heading: a heading
-    // ends at its newline (matches carve-js / carve-php).
+fn flush_left_text_after_the_heading_ends_the_item() {
+    // A heading ends at its newline (PART 2 SINGLE-LINE HEADINGS), so it leaves
+    // no open paragraph - and PART 1 S4's lazy branch wants one. The line used
+    // to stay in the item beside the heading; markup-carve/carve#1280 ruled that
+    // a list item ends here exactly as a block quote does, and `> # H` / `tail`
+    // was already read that way by every engine.
     assert_eq!(
         carve::to_html("- # H\nlazy\n"),
-        "<ul>\n  <li>\n    <h1 id=\"H\">H</h1>\n    lazy\n  </li>\n</ul>"
+        "<ul>\n  <li>\n    <h1 id=\"H\">H</h1>\n  </li>\n</ul>\n<p>lazy</p>"
     );
 }
 

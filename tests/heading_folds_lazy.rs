@@ -4,6 +4,13 @@
 //! does is fold into the heading itself: a heading ends at its newline (PART 2
 //! SINGLE-LINE HEADINGS, carve#451), so the line lands beside the heading as
 //! the item's own content. Matches carve-js / carve-php.
+//!
+//! THE MARKER-LINE HALF OF THIS FILE MOVED. markup-carve/carve#1280 ruled PART 1
+//! S4 uniform - lazy continuation extends an OPEN PARAGRAPH and nothing else -
+//! and a heading written as a marker's content leaves none, so `- # H` / `tail`
+//! ends the item at any depth. What survives here is the CONTENT-COLUMN half,
+//! which the clause leaves deliberately open because corpus
+//! 75-list-nesting-and-looseness-4 pins the folding answer for it.
 
 #[test]
 fn indented_item_heading_after_blank_keeps_the_lazy_line_in_the_item() {
@@ -14,10 +21,14 @@ fn indented_item_heading_after_blank_keeps_the_lazy_line_in_the_item() {
 }
 
 #[test]
-fn nested_marker_line_heading_keeps_the_lazy_line_in_the_item() {
+fn nested_marker_line_heading_ends_the_item_like_an_unnested_one() {
+    // Depth is not a parameter (carve-rs#1025). This engine used to fold here
+    // and END on `- - # H` / `tail`, two documents that differ only in how many
+    // items wrap the heading. Ending is the answer the ruling settled on, so
+    // this one moved to meet the other rather than the reverse.
     assert_eq!(
         carve::to_html("- a\n  - # N\nlazy\n"),
-        "<ul>\n  <li>a\n    <ul>\n      <li>\n        <h1 id=\"N\">N</h1>\n        lazy\n      </li>\n    </ul>\n  </li>\n</ul>"
+        "<ul>\n  <li>a\n    <ul>\n      <li>\n        <h1 id=\"N\">N</h1>\n      </li>\n    </ul>\n  </li>\n</ul>\n<p>lazy</p>"
     );
 }
 

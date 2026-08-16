@@ -66,13 +66,21 @@ fn a_marker_line_quote_is_collected_through_another_path_and_answers_alike() {
 }
 
 #[test]
-fn a_marker_line_heading_folds_and_resumes_too() {
-    // A heading keeps the item open for flush-left text (carve#326). That fold
-    // has the same tail: `b` is the item's, and it lands in the lazy run rather
-    // than as a separately collected block.
+fn a_marker_line_heading_takes_no_fold_to_resume_from() {
+    // A heading on the MARKER LINE used to keep the item open for flush-left
+    // text (carve#326), and this pinned the resume that followed the fold.
+    // markup-carve/carve#1280 ruled that a heading leaves no open paragraph and
+    // the item therefore ends, so there is no fold here to resume from: `lazy`
+    // and its own indented continuation are one top-level paragraph.
     assert_eq!(
         html("- # h\nlazy\n  b\n"),
-        "<ul>\n  <li>\n    <h1 id=\"h\">h</h1>\n    lazy\nb\n  </li>\n</ul>"
+        "<ul>\n  <li>\n    <h1 id=\"h\">h</h1>\n  </li>\n</ul>\n<p>lazy\nb</p>"
+    );
+    // The CONTENT-COLUMN spelling still folds and still resumes, which is the
+    // behavior this test was written for. That half of the clause stays open.
+    assert_eq!(
+        html("- x\n  # h\nlazy\n  b\n"),
+        "<ul>\n  <li>x\n    <h1 id=\"h\">h</h1>\n    lazy\nb\n  </li>\n</ul>"
     );
 }
 
