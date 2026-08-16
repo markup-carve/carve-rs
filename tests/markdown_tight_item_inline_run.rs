@@ -167,7 +167,7 @@ fn the_shapes_that_were_already_right_stay_right() {
     assert_eq!(carve("> a *b* c\n"), "> a /b/ c\n");
     assert_eq!(
         carve("| a *b* c | d |\n|---|---|\n| 1 | 2 |\n"),
-        "|=a /b/ c|=d|\n| 1 | 2 |\n"
+        "|= a /b/ c |= d |\n| 1 | 2 |\n"
     );
 }
 
