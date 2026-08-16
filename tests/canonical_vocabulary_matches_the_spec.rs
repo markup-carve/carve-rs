@@ -19,6 +19,17 @@
 
 use carve::profile::{Profile, CANONICAL_BLOCK_TYPES, CANONICAL_INLINE_TYPES};
 
+/// Block types this engine names that the PINNED page does not list yet,
+/// because the clause landed after the pin and the pins move once, at the end
+/// of a release.
+///
+/// Self-clearing: an entry the pinned page HAS listed fails below, so this
+/// cannot quietly become a permanent exemption. `citation_definition` is ruled
+/// a node by PART 12 section 18 (markup-carve/carve#1279), which lands in
+/// `docs/profiles.md`'s Block vocabulary; carve-rs emits it from this release
+/// on (markup-carve/carve#1276).
+const AHEAD_OF_THE_PIN: &[&str] = &["citation_definition"];
+
 /// The page's own list for one axis, as data.
 fn spec_vocabulary(axis: &str) -> Vec<String> {
     let page = std::fs::read_to_string(
@@ -61,6 +72,23 @@ fn spec_vocabulary(axis: &str) -> Vec<String> {
     names
 }
 
+/// The page's list for one axis, plus the names this engine is ahead of the pin
+/// on. The Inline axis has none, so it is the page's list unchanged.
+fn expected_vocabulary(axis: &str) -> Vec<String> {
+    let mut names = spec_vocabulary(axis);
+    if axis == "Block" {
+        for pending in AHEAD_OF_THE_PIN {
+            assert!(
+                !names.iter().any(|n| n == pending),
+                "the pinned profiles.md now lists `{pending}` - drop it from AHEAD_OF_THE_PIN"
+            );
+            names.push((*pending).to_string());
+        }
+        names.sort();
+    }
+    names
+}
+
 fn sorted(types: &[&str]) -> Vec<String> {
     let mut out: Vec<String> = types.iter().map(|t| (*t).to_string()).collect();
     out.sort();
@@ -88,12 +116,15 @@ fn the_block_vocabulary_matches_the_spec() {
     // BOTH directions: a type the page lists and this engine cannot name is a
     // deny a host cannot express, and a type this engine names that the page
     // omits is a name the spec never promised.
-    assert_eq!(sorted(CANONICAL_BLOCK_TYPES), spec_vocabulary("Block"));
+    assert_eq!(sorted(CANONICAL_BLOCK_TYPES), expected_vocabulary("Block"));
 }
 
 #[test]
 fn the_inline_vocabulary_matches_the_spec() {
-    assert_eq!(sorted(CANONICAL_INLINE_TYPES), spec_vocabulary("Inline"));
+    assert_eq!(
+        sorted(CANONICAL_INLINE_TYPES),
+        expected_vocabulary("Inline")
+    );
 }
 
 #[test]
@@ -102,7 +133,7 @@ fn denying_a_spec_listed_type_reaches_the_string_api() {
     // went wrong in carve-js: the filter denied the type and `is_type_allowed`
     // said it was allowed, because the name was outside the vocabulary.
     for axis in ["Block", "Inline"] {
-        for name in spec_vocabulary(axis) {
+        for name in expected_vocabulary(axis) {
             let profile = if axis == "Block" {
                 Profile::full().deny_block(&[name.as_str()])
             } else {

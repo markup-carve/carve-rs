@@ -239,6 +239,7 @@ impl ProfileFilter<'_> {
         match block {
             BlockNode::Heading(h) => self.filter_inlines(&mut h.children, depth)?,
             BlockNode::Paragraph(p) => self.filter_inlines(&mut p.children, depth)?,
+            BlockNode::CitationDefinition(d) => self.filter_inlines(&mut d.children, depth)?,
             BlockNode::CodeBlock(_)
             | BlockNode::RawBlock(_)
             | BlockNode::Comment(_)
@@ -663,6 +664,7 @@ impl ProfileFilter<'_> {
             BlockNode::Comment(_)
                 | BlockNode::AbbreviationDef(_)
                 | BlockNode::LinkReferenceDefinition(_)
+                | BlockNode::CitationDefinition(_)
         ) {
             return Ok(None);
         }
@@ -821,7 +823,7 @@ fn image_text(img: &Image) -> String {
 fn extract_block_text(node: &BlockNode, smart: SmartTypographyMode) -> String {
     match node {
         // The definition line renders nothing, so it contributes no text.
-        BlockNode::LinkReferenceDefinition(_) => String::new(),
+        BlockNode::LinkReferenceDefinition(_) | BlockNode::CitationDefinition(_) => String::new(),
         BlockNode::Heading(h) => {
             let prefix = "#".repeat(h.level as usize) + " ";
             let text: String = h
@@ -1164,6 +1166,10 @@ fn is_empty_block(node: &BlockNode) -> bool {
         // A definition always carries a label and a destination, so it is never
         // the empty node this asks about.
         BlockNode::LinkReferenceDefinition(_) => false,
+        // A citation definition always carries its key, so an entry with no
+        // inline content is still the line the author wrote (PART 12 section 18
+        // requires the field, not its contents).
+        BlockNode::CitationDefinition(_) => false,
         // Content-bearing nodes are non-empty if they have content.
         BlockNode::CodeBlock(c) => c.content.is_empty(),
         BlockNode::RawBlock(r) => r.content.is_empty(),

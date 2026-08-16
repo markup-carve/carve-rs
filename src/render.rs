@@ -191,6 +191,7 @@ fn render_blocks(
             BlockNode::Comment(_)
                 | BlockNode::AbbreviationDef(_)
                 | BlockNode::LinkReferenceDefinition(_)
+                | BlockNode::CitationDefinition(_)
         ) {
             continue;
         }
@@ -262,6 +263,7 @@ fn render_document_blocks(
             BlockNode::Comment(_)
                 | BlockNode::AbbreviationDef(_)
                 | BlockNode::LinkReferenceDefinition(_)
+                | BlockNode::CitationDefinition(_)
         ) {
             i += 1;
             continue;
@@ -788,6 +790,7 @@ fn collect_footnotes_inline_scoped(
 fn block_source_line(block: &BlockNode) -> Option<&str> {
     let attrs = match block {
         BlockNode::LinkReferenceDefinition(n) => n.attrs.as_ref(),
+        BlockNode::CitationDefinition(n) => n.attrs.as_ref(),
         BlockNode::Heading(n) => n.attrs.as_ref(),
         BlockNode::Paragraph(n) => n.attrs.as_ref(),
         BlockNode::ThematicBreak(n) => n.attrs.as_ref(),
@@ -974,6 +977,7 @@ fn render_section(
             BlockNode::Comment(_)
                 | BlockNode::AbbreviationDef(_)
                 | BlockNode::LinkReferenceDefinition(_)
+                | BlockNode::CitationDefinition(_)
         ) {
             i += 1;
             continue;
@@ -1028,6 +1032,10 @@ fn render_block(
         // link or image that resolves the label (PART 9R R1). carve-js and
         // carve-php emit nothing for it here too.
         BlockNode::LinkReferenceDefinition(_) => {}
+        // PART 12 section 18: the same, for the same reason. The entry's text
+        // renders in the references list the Citations extension builds, not
+        // where the line was written.
+        BlockNode::CitationDefinition(_) => {}
         BlockNode::Heading(h) => render_heading(out, h, level, options, state),
         BlockNode::Paragraph(p) => render_paragraph(out, p, level, options, state),
         BlockNode::CodeBlock(c) => render_code_block(out, c, level),

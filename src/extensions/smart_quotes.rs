@@ -87,6 +87,7 @@ impl SmartQuotes {
             match block {
                 BlockNode::Heading(h) => self.visit_inlines(&mut h.children),
                 BlockNode::Paragraph(p) => self.visit_inlines(&mut p.children),
+                BlockNode::CitationDefinition(d) => self.visit_inlines(&mut d.children),
                 BlockNode::List(l) => {
                     for item in &mut l.items {
                         self.visit_blocks(&mut item.children);

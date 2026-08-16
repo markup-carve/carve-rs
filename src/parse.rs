@@ -2824,6 +2824,11 @@ fn fill_offsets(blocks: &mut [BlockNode], line_starts: &[usize]) {
             BlockNode::BlockImage(i) => i.pos.as_mut(),
             BlockNode::DefinitionList(d) => d.pos.as_mut(),
             BlockNode::AbbreviationDef(a) => a.pos.as_mut(),
+            // The Citations extension builds this one in `after_parse`, which
+            // runs after this pass, and derives its `pos` from inline positions
+            // this pass has already converted - so there is nothing here to
+            // convert, and an arm is still required rather than a `_`.
+            BlockNode::CitationDefinition(d) => d.pos.as_mut(),
             BlockNode::Extension(e) => e.pos.as_mut(),
             // EXHAUSTIVE on purpose. A `_ => None` arm here is why an
             // `abbreviation_def` shipped with a correct line and column and
@@ -10983,7 +10988,13 @@ fn stamp_source_line(node: &mut BlockNode, line: usize) {
         BlockNode::FigureGroup(n) => Some(&mut n.attrs),
         BlockNode::Extension(n) => Some(&mut n.attrs),
         BlockNode::BlockImage(n) => Some(&mut n.attrs),
-        BlockNode::AbbreviationDef(_) | BlockNode::RawBlock(_) | BlockNode::Comment(_) => None,
+        // A citation definition's attributes are the metadata block on its own
+        // line, not a preceding block-attribute line - same as the link
+        // reference definition above.
+        BlockNode::AbbreviationDef(_)
+        | BlockNode::CitationDefinition(_)
+        | BlockNode::RawBlock(_)
+        | BlockNode::Comment(_) => None,
     };
     let Some(opt) = slot else {
         return;

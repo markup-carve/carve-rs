@@ -63,6 +63,7 @@ fn collect_block(block: &BlockNode, suppressed: bool, out: &mut ConsumedAbbrevia
     match block {
         BlockNode::Heading(h) => collect_inlines(&h.children, suppressed, out),
         BlockNode::Paragraph(p) => collect_inlines(&p.children, suppressed, out),
+        BlockNode::CitationDefinition(d) => collect_inlines(&d.children, suppressed, out),
         BlockNode::List(l) => {
             for item in &l.items {
                 collect_blocks(&item.children, suppressed, out);

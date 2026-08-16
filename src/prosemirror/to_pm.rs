@@ -295,6 +295,14 @@ impl Renderer {
                 self.drop_type("abbreviation_def", None);
                 return None;
             }
+            // Compile-required arm for the PART 12 section 18 node
+            // (markup-carve/carve#1276). Dropped like the abbreviation
+            // definition above: a ProseMirror schema has no node for a
+            // definition line, and the pair carries it in the sidecar.
+            BlockNode::CitationDefinition(_) => {
+                self.drop_type("citation_definition", None);
+                return None;
+            }
             BlockNode::LinkReferenceDefinition(n) => {
                 let mut a = attrs(n.attrs.as_ref());
                 a.insert("label".into(), Json::String(n.label.clone()));

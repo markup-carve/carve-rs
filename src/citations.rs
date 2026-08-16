@@ -516,18 +516,38 @@ fn collect_defs(blocks: Vec<BlockNode>, defs: &mut BTreeMap<String, Def>) -> Vec
                 let original_children = p.children;
                 let lines = split_on_soft_breaks(original_children);
                 let mut kept = Vec::new();
-                for line in lines {
-                    if let Some((key, def)) = as_definition(&line) {
-                        defs.insert(key, def);
-                    } else {
+                let mut first_kept: Option<usize> = None;
+                // PART 12 §18: the line is a NODE, not state the parser keeps to
+                // itself. It renders nothing where it sits - the entry's text
+                // renders in the references list built below - but it was
+                // written somewhere, and dropping it discarded its `pos` and
+                // with it any chance of reproducing the line
+                // (markup-carve/carve#1276).
+                let mut before = Vec::new();
+                let mut after = Vec::new();
+                for (index, line) in lines.into_iter().enumerate() {
+                    let Some((key, def, node)) = as_definition(&line) else {
+                        first_kept.get_or_insert(index);
                         kept.push(line);
+                        continue;
+                    };
+                    defs.insert(key, def);
+                    // Source order across the siblings this paragraph becomes:
+                    // a definition written above the paragraph's first surviving
+                    // line is a sibling above it, so `pos` runs forwards between
+                    // adjacent blocks (the ordering §7 spends a clause on).
+                    if first_kept.is_none() {
+                        before.push(BlockNode::CitationDefinition(node));
+                    } else {
+                        after.push(BlockNode::CitationDefinition(node));
                     }
                 }
-                if kept.is_empty() {
-                    continue;
+                out.append(&mut before);
+                if !kept.is_empty() {
+                    p.children = join_with_soft_breaks(kept);
+                    out.push(BlockNode::Paragraph(p));
                 }
-                p.children = join_with_soft_breaks(kept);
-                out.push(BlockNode::Paragraph(p));
+                out.append(&mut after);
             }
             BlockNode::List(mut l) => {
                 for item in &mut l.items {
@@ -576,7 +596,41 @@ fn join_with_soft_breaks(lines: Vec<Vec<InlineNode>>) -> Vec<InlineNode> {
     out
 }
 
-fn as_definition(line: &[InlineNode]) -> Option<(String, Def)> {
+/// The `pos` of a definition LINE, derived from the inline nodes on it.
+///
+/// The leading citation group carries none: an extension's inline match builds
+/// its own node and the position pass has nothing to attach there. So the start
+/// is taken from the first node that does carry one and walked back across the
+/// group's own source text. Columns and offsets count CODEPOINTS (PART 12 §4),
+/// so the walk-back counts characters rather than bytes.
+///
+/// `None` when the caller did not ask for positions - `pos` is opt-in, and a
+/// span invented from nothing would be worse than its absence.
+fn definition_pos(line: &[InlineNode], raw: &str) -> Option<Pos> {
+    let start = match line.first()?.pos() {
+        Some(pos) => (pos.start_line, pos.start_column, pos.start_offset),
+        None => {
+            let next = line.iter().skip(1).find_map(InlineNode::pos)?;
+            let width = raw.chars().count();
+            (
+                next.start_line,
+                next.start_column.saturating_sub(width),
+                next.start_offset.saturating_sub(width),
+            )
+        }
+    };
+    let last = line.iter().rev().find_map(InlineNode::pos)?;
+    Some(Pos {
+        start_line: start.0,
+        end_line: last.end_line,
+        start_column: start.1,
+        end_column: last.end_column,
+        start_offset: start.2,
+        end_offset: last.end_offset,
+    })
+}
+
+fn as_definition(line: &[InlineNode]) -> Option<(String, Def, CitationDefinition)> {
     let InlineNode::CitationGroup(group) = line.first()? else {
         return None;
     };
@@ -594,6 +648,7 @@ fn as_definition(line: &[InlineNode]) -> Option<(String, Def)> {
         return None;
     }
 
+    let pos = definition_pos(line, &group.raw);
     let mut entry = line[1..].to_vec();
     if let InlineNode::Text(head) = &mut entry[0] {
         head.value = head.value.trim_start_matches(':').trim_start().to_string();
@@ -604,8 +659,14 @@ fn as_definition(line: &[InlineNode]) -> Option<(String, Def)> {
         year: None,
         csl_text: None,
     };
-    consume_leading_attrs(&mut def);
-    Some((item.key.clone(), def))
+    let attrs = consume_leading_attrs(&mut def);
+    let node = CitationDefinition {
+        key: item.key.clone(),
+        children: def.entry.clone(),
+        attrs,
+        pos,
+    };
+    Some((item.key.clone(), def, node))
 }
 
 /// Build a `Def` from a CSL-JSON entry using the minimal fixed template (§6.3):
@@ -682,23 +743,21 @@ fn csl_year(issued: Option<&CslDate>) -> Option<String> {
     issued.literal.clone()
 }
 
-fn consume_leading_attrs(def: &mut Def) {
-    let Some(first) = def.entry.first() else {
-        return;
-    };
-    let Some(first_text) = inline_source_text(first) else {
-        return;
-    };
+/// Strip the leading `{author= year=}` metadata block off the entry, and return
+/// it as the node's `attrs` (PART 12 §18) - the same slot §10 gives a link
+/// reference definition's trailing attribute block. `None` when the line
+/// carries no metadata block, so the field is simply absent on the wire.
+fn consume_leading_attrs(def: &mut Def) -> Option<Attrs> {
+    let first = def.entry.first()?;
+    let first_text = inline_source_text(first)?;
     if !first_text.starts_with('{') {
-        return;
+        return None;
     }
 
     let mut source = String::new();
     let mut close_at: Option<(usize, usize)> = None;
     for (idx, node) in def.entry.iter().enumerate() {
-        let Some(text) = inline_source_text(node) else {
-            return;
-        };
+        let text = inline_source_text(node)?;
         if let Some(close) = text.find('}') {
             let attr_end = source.len() + close;
             source.push_str(text);
@@ -708,9 +767,7 @@ fn consume_leading_attrs(def: &mut Def) {
         source.push_str(text);
     }
 
-    let Some((close_node, close)) = close_at else {
-        return;
-    };
+    let (close_node, close) = close_at?;
     let attrs = &source[1..close];
     def.author = attr_value(attrs, "author");
     def.year = attr_value(attrs, "year");
@@ -719,6 +776,32 @@ fn consume_leading_attrs(def: &mut Def) {
     if !tail.is_empty() {
         def.entry.insert(0, InlineNode::text(tail));
     }
+    let metadata = metadata_attrs(attrs);
+    // An empty or key-less block (`{}`) publishes no `attrs` rather than an
+    // empty object: the field carries the metadata, and there is none.
+    (!metadata.key_values.is_empty()).then_some(metadata)
+}
+
+/// The metadata block as [`Attrs`]. EVERY `key=value` token, not just the
+/// `author` and `year` the numbering and author-date modes read: the field is
+/// the block the author wrote, and publishing only the two keys this extension
+/// happens to consume would make the tree a report of what was understood
+/// rather than of what was written.
+fn metadata_attrs(source: &str) -> Attrs {
+    let mut attrs = Attrs::default();
+    for token in source.split_whitespace() {
+        let Some((key, value)) = token.split_once('=') else {
+            continue;
+        };
+        if key.is_empty() {
+            continue;
+        }
+        let value = value.trim_matches('"').trim_matches('\'').to_string();
+        if attrs.key_values.insert(key.to_string(), value).is_none() {
+            attrs.order.push(AttrSlot::Key(key.to_string()));
+        }
+    }
+    attrs
 }
 
 fn inline_source_text(node: &InlineNode) -> Option<&str> {
