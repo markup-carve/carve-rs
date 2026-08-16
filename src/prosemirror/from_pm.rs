@@ -1095,11 +1095,18 @@ fn merge_same(a: &mut Json, b: &Json) -> bool {
     if let (Some(Json::Array(ac)), Some(Json::Array(bc))) =
         (ao.get_mut("children"), bo.get("children"))
     {
-        // Two marks that are both EMPTY are two constructs, not one run split
-        // in two: merging `[]{.x} []{.x}` leaves a single `[]{.x}` and deletes
-        // the other. Merging exists to rejoin text an editor split, and text
-        // is what makes the two halves one run.
-        if ac.is_empty() && bc.is_empty() {
+        // An EMPTY mark is a construct of its own, not half of a run: merging
+        // it into a neighbour leaves one node and deletes the other. Merging
+        // exists to rejoin text an editor split in two, and text is what makes
+        // the two halves one run - so EITHER side being empty refuses it, not
+        // only both.
+        //
+        // Both-empty was the shape the carrier was written for (`[]{.x}[]{.x}`).
+        // One-empty is the same loss and was still merged: `[]{.x}[a]{.x}`,
+        // `[](/u)[a](/u)` and `{++}{++a++}` each came back with the empty
+        // construct gone, in silence - the mark had a carrier by then, so
+        // nothing reported it dropped.
+        if ac.is_empty() || bc.is_empty() {
             return false;
         }
         ac.extend(bc.clone());

@@ -930,11 +930,77 @@ fn an_empty_span_and_the_editorial_marks_come_back() {
 /// Import merges adjacent runs of equal marks, which is right for text an
 /// editor split in two and wrong for these: neither has text, so merging them
 /// leaves one and deletes the other.
+///
+/// SIDE BY SIDE MEANS NO TEXT BETWEEN THEM. `a []{.x} []{.x} b` reads as two
+/// adjacent marks and is not: the space is a text node, so the two carriers
+/// never meet in the child list and the merge that would delete one is never
+/// reached. Written that way the case passed with the guard removed, which
+/// made it a check that could not fail. The rows below are the shapes that do
+/// meet - one per carrier the map declares, because the merge compares `type`
+/// and `attrs` and each carrier spells those differently.
 #[test]
 fn two_adjacent_empty_marks_stay_two() {
+    // The span, at both ends of a paragraph and in the middle of one.
+    for source in ["a []{.x}[]{.x} b\n", "[]{.x}[]{.x}\n"] {
+        let (before, after) = round_trip(source);
+        assert_eq!(after, before);
+        assert_eq!(after.matches("[]{.x}").count(), 2, "{after:?}");
+    }
+
+    // The critic pair, which reported nothing at all when it was dropped.
+    for (source, construct) in [("a {++}{++} b\n", "{++}"), ("a {--}{--} b\n", "{--}")] {
+        let (before, after) = round_trip(source);
+        assert_eq!(after, before);
+        assert_eq!(after.matches(construct).count(), 2, "{after:?}");
+    }
+
+    // The empty-label link, whose carrier attributes are the mark's own
+    // `href`/`title` rather than an attribute run.
+    let (before, after) = round_trip("a [](/u)[](/u) b\n");
+    assert_eq!(after, before);
+    assert_eq!(after.matches("[](/u)").count(), 2, "{after:?}");
+
+    // A space between them is NOT this case, and is kept as the control that
+    // says so: it round trips for a different reason.
     let (before, after) = round_trip("a []{.x} []{.x} b\n");
     assert_eq!(after, before);
-    assert_eq!(after.matches("[]{.x}").count(), 2, "{after:?}");
+}
+
+/// An empty mark next to an EQUAL NON-EMPTY one is still two constructs.
+///
+/// The merge compares `type` and `attrs`, so `[]{.x}` and `[a]{.x}` match on
+/// both and only the child lists tell them apart. Refusing the merge for two
+/// empty marks left this half: one side carried text, so the guard did not
+/// fire and the empty construct was folded into its neighbour and deleted.
+///
+/// It is silent. The carrier means the outbound side no longer reports the
+/// mark dropped, so the loss happens on the way back with an empty report -
+/// which is why the round trip has to compare the SOURCE to see it at all.
+#[test]
+fn an_empty_mark_is_not_absorbed_by_an_equal_neighbour() {
+    // Both orders, because the merge folds `b` into `a` and the empty one may
+    // be either.
+    for (source, construct, count) in [
+        ("[]{.x}[a]{.x}\n", "{.x}", 2),
+        ("[a]{.x}[]{.x}\n", "{.x}", 2),
+        ("[](/u)[a](/u)\n", "](/u)", 2),
+        ("[a](/u)[](/u)\n", "](/u)", 2),
+        ("{++}{++a++}\n", "{++", 2),
+        ("{++a++}{++}\n", "{++", 2),
+        ("{--}{--a--}\n", "{--", 2),
+    ] {
+        let (before, after) = round_trip(source);
+        assert_eq!(after, before, "{source:?}");
+        assert_eq!(after.matches(construct).count(), count, "{after:?}");
+    }
+
+    // CONTROL. Two NON-EMPTY runs of the same mark still merge, so the guard
+    // narrowed the merge rather than switching it off. That the merged form is
+    // not the source is the merge's own pre-existing lossiness, not this
+    // guard's - asserting it here is what stops a later `return false` for
+    // every neighbour passing as a fix.
+    let (_, after) = round_trip("[a]{.x}[b]{.x}\n");
+    assert_eq!(after, "[ab]{.x}\n");
 }
 
 /// An admonition's kind is the opener word, not an authored class.
