@@ -5667,10 +5667,59 @@ fn parse_continuation_block(
         cur.line_map.is_some().then_some(line_map.as_slice()),
         cur.col_map.is_some().then_some(col_map.as_slice()),
     );
+    // A BLOCK-ATTRIBUTE LINE IS A BLOCK, AND IT FLOATS TO THE NEXT ONE.
+    // PART 2 lists `block_attributes` among the alternatives of `block`, so
+    // PART 11's `continuation_marker_block = continuation_marker, block` admits
+    // one after the marker, and PART 9 §15 sends it to the block that follows.
+    // `parse_blocks` owns the only pending-attribute slot and this is a
+    // `parse_block` call, so the line arrived here with nothing to read it and
+    // fell through to a paragraph: `- a` / `+` / `{.x}` / `> q` rendered a
+    // literal `{.x}` in the item and left the quote OUTSIDE it, where carve-js
+    // and carve-php put the quote inside carrying the class
+    // (markup-carve/carve-rs#1020, rule in markup-carve/carve#1238).
+    //
+    // AT THE MARKER'S OWN COLUMN, the same guard `parse_blocks` spells as
+    // `line_flush`. These lines are taken VERBATIM (see above), so "flush"
+    // is measured against `base_indent` rather than against column 0 - a `+`
+    // inside a nested list attaches at ITS column. A line one column further in
+    // is ordinary text (strict column-0 rule, docs/divergence-from-djot.md §11).
+    //
+    // Attribute blocks STACK, so this takes the whole leading run and merges
+    // it, the way `parse_blocks` merges consecutive lines into one slot.
+    let mut floating_attrs: Option<Attrs> = None;
+    while let Some(line) = sub.peek() {
+        if indent_columns(line) != base_indent || !trim_ascii_start(line).starts_with('{') {
+            break;
+        }
+        let Some(attrs) = parse_standalone_attrs_block(&mut sub) else {
+            break;
+        };
+        merge_attrs(&mut floating_attrs, attrs);
+    }
+    // The block starts where the attribute run ended, which is what the source
+    // stamp below has to name: `parse_blocks` likewise takes `start_line` after
+    // its own attribute lines are consumed. Stamping the slice's first line
+    // would point an editor's scroll-sync at the `{…}` line instead.
+    let block_start = sub.pos;
     let mut block = parse_block(&mut sub, options);
+    if let Some(attrs) = floating_attrs {
+        if let Some(node) = &mut block {
+            // NO INVISIBLE-BLOCK GUARD HERE, deliberately. `parse_blocks` skips
+            // an `AbbreviationDef` or a `Comment` before attaching (§15 A2a)
+            // because it holds the set for the NEXT block; a `+` attaches ONE
+            // block, so there is no next one and the set is dropped either way.
+            // The equivalent `matches!` was written here first and then removed:
+            // `apply_attrs_to_block` ends in `_ => {}`, so neither node type
+            // takes attributes, an abbreviation definition is collected by the
+            // prepass and never reaches this parser at all, and the guard could
+            // not change a single byte of HTML or of the AST. A check that
+            // cannot fail is the defect class markup-carve/carve#755 catalogs.
+            apply_attrs_to_block(node, attrs);
+        }
+    }
     if options.source_lines {
         if let Some(block) = &mut block {
-            if let Some(line) = line_map.first().copied().flatten() {
+            if let Some(line) = line_map.get(block_start).copied().flatten() {
                 stamp_source_line(block, line);
             }
         }
