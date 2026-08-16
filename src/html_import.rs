@@ -123,6 +123,14 @@ struct BuiltCell {
     rowspan: usize,
 }
 
+/// The `<annotation>` encodings that DECLARE their payload to be TeX.
+///
+/// Matched case-insensitively against the WHOLE value, never as a substring.
+/// A substring test for `tex` accepts every `text/*` encoding there is - the
+/// word `text` contains it - so `<annotation encoding="text/plain">` would
+/// have been read as an equation.
+const TEX_ANNOTATION_ENCODINGS: [&str; 3] = ["application/x-tex", "text/x-tex", "latex"];
+
 impl<'a> Importer<'a> {
     fn enter(&mut self, depth: usize) -> Result<(), HtmlImportError> {
         if depth > self.opts.max_depth {
@@ -258,6 +266,107 @@ impl<'a> Importer<'a> {
             format!("<{tag}{attributes}>{inner}</{tag}>")
         }
     }
+    /// Tiers 1 and 2 of carve#1210's D6: the TeX the producer already put in
+    /// the element, and which tier supplied it.
+    ///
+    /// 1. an `<annotation>` whose `encoding` DECLARES TeX;
+    /// 2. else the `alttext` attribute, whose contents MathML does not declare
+    ///    - hence the tier, and hence the `info` the caller reports for it.
+    ///
+    /// Annotation first, and the order carries the ruling: where a declared
+    /// encoding and an undeclared attribute disagree, the declared one wins.
+    ///
+    /// The body is taken as written, `{\displaystyle …}` wrapper and all -
+    /// Carve math content is opaque TeX and rewriting it would be a second
+    /// decision. The whitespace AROUND it is not part of the equation and is
+    /// trimmed, because keeping it builds a node this engine cannot write and
+    /// read back: `$`\n  x^2\n`$` returns from its own writer as `\nx^2\n`,
+    /// the indentation gone, which is exactly the shape a pretty-printed
+    /// annotation produces.
+    ///
+    /// `None` is tier 3, whose two answers are the caller's.
+    fn math_tex(h: &Handle) -> Option<(u8, String)> {
+        if let Some(annotated) = Self::tex_annotation(h) {
+            return Some((1, annotated));
+        }
+        let alttext = Self::attr(h, "alttext")?;
+        let trimmed = alttext.trim();
+        if trimmed.is_empty() {
+            return None;
+        }
+        Some((2, trimmed.to_string()))
+    }
+    /// The `<annotation>` a `<semantics>` carries, if it declares TeX.
+    ///
+    /// Both hops are DIRECT children - the `<semantics>` of the `<math>`, the
+    /// annotation of that `<semantics>`. A recursive search reaches the
+    /// `<annotation>` nested inside an `<annotation-xml>` payload, which
+    /// describes the equation in another language and is not a presentation of
+    /// the outer element at all.
+    ///
+    /// An annotation that declares TeX and then holds nothing does not settle
+    /// the tier: the search continues, because a later sibling may hold the
+    /// equation and stopping at the empty one would answer with the wrong tier.
+    fn tex_annotation(h: &Handle) -> Option<String> {
+        for semantics in h.children.borrow().iter() {
+            if Self::tag(semantics).as_deref() != Some("semantics") {
+                continue;
+            }
+            for annotation in semantics.children.borrow().iter() {
+                if Self::tag(annotation).as_deref() != Some("annotation") {
+                    continue;
+                }
+                let Some(encoding) = Self::attr(annotation, "encoding") else {
+                    continue;
+                };
+                if !TEX_ANNOTATION_ENCODINGS
+                    .contains(&encoding.trim().to_ascii_lowercase().as_str())
+                {
+                    continue;
+                }
+                let text = Self::flat_text(annotation);
+                let trimmed = text.trim();
+                if !trimmed.is_empty() {
+                    return Some(trimmed.to_string());
+                }
+            }
+        }
+        None
+    }
+    /// `text()` without its recursion, for the annotation - which is read to
+    /// settle the tier, so it is read before any depth counter has seen it. At
+    /// a caller-raised `max_depth` a recursive read is the thing that fails
+    /// first, and a blown stack is not the typed error this API promises.
+    fn flat_text(h: &Handle) -> String {
+        let mut out = String::new();
+        let mut pending = vec![h.clone()];
+        while let Some(current) = pending.pop() {
+            if let NodeData::Text { contents } = &current.data {
+                out.push_str(&contents.borrow());
+            }
+            let children = current.children.borrow();
+            for child in children.iter().rev() {
+                pending.push(child.clone());
+            }
+        }
+        out
+    }
+    /// Charge a subtree the import will not walk against the budget one it
+    /// walks would pay, and check its depth on the way.
+    ///
+    /// Explicit stack rather than recursion: this runs on input the DOM parser
+    /// accepted at any depth, and its whole point is to reach `max_depth`
+    /// before something that recurses does.
+    fn charge_subtree(&mut self, h: &Handle, depth: usize) -> Result<(), HtmlImportError> {
+        let mut pending = vec![(h.clone(), depth)];
+        while let Some((current, current_depth)) = pending.pop() {
+            for child in current.children.borrow().iter() {
+                self.enter(current_depth + 1)?;
+                pending.push((child.clone(), current_depth + 1));
+            }
+        }
+        Ok(())
+    }
     fn attrs(&mut self, handle: &Handle, path: &str) -> Option<Attrs> {
         let tag = Self::tag(handle).unwrap_or_default();
         let mut out = Attrs::default();
@@ -319,6 +428,12 @@ impl<'a> Importer<'a> {
                         | ("img", "src" | "alt")
                         | ("ol", "start" | "type")
                         | ("td" | "th", "rowspan" | "colspan")
+                        // READ by the math branch and carried to the node, so
+                        // reporting them dropped would name a loss that does
+                        // not happen. `xmlns` is the namespace declaration that
+                        // makes the element MathML in the first place: consumed
+                        // by having been recognized, not discarded.
+                        | ("math", "display" | "alttext" | "xmlns")
                 ) {
                     self.diag(
                         HtmlImportDiagnosticCode::AttributeDropped,
@@ -1377,6 +1492,64 @@ impl<'a> Importer<'a> {
                 })]);
             }
             return Ok(quoted);
+        }
+        if tag == "math" {
+            // MathML -> `math`, as carve#1210's D6 rules it: a three-tier
+            // lookup for TeX the producer already put in the source, and no
+            // MathML-to-TeX converter in any engine.
+            //
+            // THE DECISION IS THE THIRD TIER, and it is a drop rather than a
+            // degrade. MathML's children are a token stream, so concatenating
+            // them is not a lossy rendering of the equation but a different
+            // value: the children of `<math><mfrac><mn>1</mn><mn>2</mn></mfrac>
+            // </math>` concatenate to `12`, one half arriving as twelve. A
+            // plausible wrong value survives review, where a missing equation
+            // and a warning naming it do not. That is the line between math and
+            // the embeds at the end of this method: a `<video>`'s children ARE
+            // fallback content the author wrote for exactly this case.
+            //
+            // `roundtrip` keeps the whole element instead, by falling through
+            // to the raw arm below. Carve's own HTML spells math as a `<span>`,
+            // so a `<math>` reaching that mode is foreign markup by definition
+            // and its contract is to preserve it verbatim.
+            if let Some((tier, content)) = Self::math_tex(h) {
+                // The subtree is charged here because the mapping returns
+                // without walking it. `max_nodes` and `max_depth` must not
+                // depend on which branch an element takes.
+                self.charge_subtree(h, depth)?;
+                let attrs = self.attrs(h, path);
+                // Reported on the tier that SUPPLIED the content, not on which
+                // one was available: an annotation holding only whitespace
+                // falls through to `alttext`, and reading the presence of the
+                // element would make that fall-through the one tier-2 read
+                // that says nothing.
+                if tier == 2 {
+                    self.diag(
+                        HtmlImportDiagnosticCode::ElementUnwrapped,
+                        "Read <math> through its alttext: MathML does not declare the encoding of alttext, so TeX is assumed".into(),
+                        HtmlImportSeverity::Info,
+                        path,
+                    );
+                }
+                return Ok(vec![InlineNode::Math(Math {
+                    attrs,
+                    display: Self::attr(h, "display").as_deref() == Some("block"),
+                    content,
+                    pos: None,
+                })]);
+            }
+            if self.opts.mode != HtmlImportMode::Roundtrip {
+                self.charge_subtree(h, depth)?;
+                // No attribute walk on the way out: the element and everything
+                // riding on it is gone, and this warning covers all of it.
+                self.diag(
+                    HtmlImportDiagnosticCode::ElementDropped,
+                    "Dropped <math>: no TeX annotation and no alttext, and its children are a token stream, not an equation".into(),
+                    HtmlImportSeverity::Warning,
+                    path,
+                );
+                return Ok(Vec::new());
+            }
         }
         let attrs = self.attrs(h, path);
         let children = self.inlines(&h.children.borrow(), path, depth + 1)?;

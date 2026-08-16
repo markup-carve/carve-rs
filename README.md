@@ -30,6 +30,14 @@ trusted-roundtrip policies. The CLI equivalent is:
 carve migrate --from html --mode safe --report report.json input.html
 ```
 
+A `<math>` element is read for the TeX it already carries: a `<semantics>`
+annotation declaring `application/x-tex`, `text/x-tex` or `LaTeX`, else
+`alttext` with the assumption reported. There is no MathML-to-TeX converter
+here by decision (carve#1210 D6), so an element carrying neither is dropped
+with a warning in `safe` and `semantic` and preserved verbatim in
+`roundtrip` - its children are a token stream, and concatenating them reads
+`<mfrac><mn>1</mn><mn>2</mn></mfrac>` as `12` rather than as one half.
+
 Markdown migration is `markdown_to_ast` and `markdown_to_carve`, or
 `carve migrate --from markdown input.md`. It parses the source to a tree and
 writes it canonically, so the output is the document rather than the author's
