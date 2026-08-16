@@ -488,6 +488,25 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   merely ends in a brace keeps its text. Item tightness is unchanged
   (PART 9 §17 L2). Rule decided in markup-carve/carve#1238.
 
+- **A code block resolves the no-break-space sentinel instead of emitting it**
+  (PART 12 §3, markup-carve/carve#1262). The sentinel U+E000 rides on four
+  fields - `text.value`, `code.value`, `code_block.content` and
+  `literal_inline.content` - and the rule is the same on all four: a consumer
+  maps it to its target's no-break space, or to an ordinary space where the
+  target has none, and does not emit it. The HTML target mapped three of them
+  and wrote the private-use character straight into `<pre><code>`; the Markdown
+  target mapped only `text.value`, so a code span, an inline literal and a
+  fenced block each leaked it there too. HTML now emits `&nbsp;` and Markdown a
+  literal U+00A0, matching carve-js and carve-php byte for byte, and a literal
+  U+00A0 inside a code block folds to `&nbsp;` with them as well. Both sources
+  of the sentinel are covered: an escaped space, which is one, and a line
+  block's preserved indentation, which is a run of one per space. Plain and
+  ANSI already fell back to an ordinary space. `raw_block.content` is excluded
+  from the rule and is unchanged - it is byte-for-byte passthrough, so a
+  U+E000 in it is payload. A private-use codepoint is not invisible downstream:
+  a typesetter draws its font's `.notdef` box for it, wider than the space it
+  stands for, and emits no warning.
+
 - **A table's sections and rows keep the attributes they have a slot for.** A
   `<tbody id="totals">` and a `<tr class="warn">` fell into the empty `attrs`
   slot with no diagnostic at all, though the model has a place for both:
