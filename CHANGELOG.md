@@ -975,8 +975,9 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **A math span's base class keeps the class slot in place** (PART 10 §1,
   markup-carve/carve#1164). `math inline` / `math display` was written ahead of
   everything, so an id the author wrote BEFORE any class came out after it. The
-  `render_attrs_with_base_class` helper carve#1168 added for the `ext-NAME`
-  fallback already implements the rule; the math span simply never used it.
+  `render_attrs_with_base_class` helper markup-carve/carve#1168 added for the
+  `ext-NAME` fallback already implements the rule; the math span simply never
+  used it.
 - **An abbreviation expands inside a span** (markup-carve/carve#1151). PART 9R R3
   matches a term in rendered text at word boundaries and says nothing about the
   container it sits in, but `apply_abbreviations_inline` matched `Emphasis`,
@@ -984,7 +985,8 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `[HTML]{.x}` and `[HTML]{kbd}` silently dropped an expansion that `*HTML*` and
   `[HTML](/u)` got. PART 9 §10 made the second spelling a documented feature,
   which put the loss inside a construct the docs teach.
-- **The HTML importer keeps an authored table-cell `scope`** (carve-rs#944).
+- **The HTML importer keeps an authored table-cell `scope`**
+  (markup-carve/carve-rs#944).
   `<th scope="colgroup">` imported with the value gone, so a second conversion
   back to HTML could not produce it. `colgroup` and `rowgroup` have no marker
   spelling and no positional derivation, so an authored one is the only way to
@@ -992,7 +994,9 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   emits - `col` in the head-row run, `row` below it - is still dropped, because
   importing that would write this engine's own output back in as if the author
   had typed it.
-- **A hash in Djot source is not a Carve tag** (markup-carve/carve-php#1191).
+- **A hash in Djot source is not a Carve tag** (reported against carve-php as
+  markup-carve/carve-php#1191, third engine after
+  markup-carve/carve-php#1201 and markup-carve/carve-js#1010).
   A tag is the one Carve inline construct that is not a pair - `#x` opens on
   its own and needs no closer - so nothing downstream neutralizes it and
   escaping an enclosing brace cannot either. Djot has no hashtag at all, so
@@ -1023,8 +1027,11 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and in the mapped collector (#909, #910, #911, #915).
 
 - **Adjacent sibling lists stay separate through fmt** (#900), lazy lines
-  fold into deep item paragraphs (#896), and a structural `<ol>` attribute
-  no longer leads the author's own (#895).
+  fold into deep item paragraphs (#896), and an `<ol>`'s structural `type` or
+  `start` is emitted ahead of the attributes the author wrote (#895,
+  markup-carve/carve#1090), so `{k=v .attr}` over `a. alpha` renders as
+  `<ol type="a" k="v" class="attr">` - the order carve-js, carve-php and
+  reference djot already emitted, and the one PART 11 §5.1 now states.
 
 - **A value-less attribute is written as a boolean and LANG is no longer
   folded** (#938), and an attribute needs a separator before it (#942).
