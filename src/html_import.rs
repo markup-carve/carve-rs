@@ -524,6 +524,13 @@ impl<'a> Importer<'a> {
                     // attribute `{open}`. Dropping it would import a disclosure
                     // that starts open as one that starts closed.
                     || (name == "open" && tag == "details")
+                    // A `<blockquote>`'s `cite` is REPRESENTABLE, so it is kept
+                    // rather than diagnosed as dropped. The round trip is
+                    // lossless in both directions: `{cite=u}` above `> q`
+                    // renders `<blockquote cite="u">` again, so carrying the
+                    // attribute costs nothing and losing the source of a quote
+                    // costs the reader the provenance (carve#1286).
+                    || (name == "cite" && tag == "blockquote")
                 {
                     out.key_values.insert(name, value);
                 } else if name == "style" {
@@ -777,7 +784,93 @@ impl<'a> Importer<'a> {
             return self.figure_group(h, path, depth, attrs);
         }
         if tag == "figure" && Self::first_class(h).as_deref() == Some("carve-figure-panel") {
-            return self.figure_panel(h, path, depth, attrs);
+            return self.figure_panel(h, path, depth, attrs, true);
+        }
+        // Any OTHER `<figure>` is a foreign one, and it rebuilds through the
+        // same path: its `<figcaption>` becomes the caption line and its content
+        // becomes the target. Unwrapped instead, the caption text ran straight
+        // onto the content it captioned - `<figure><img><figcaption>cap` came
+        // back as `![a](i.png)cap`, one paragraph in which the figure is gone
+        // rather than degraded (carve#1286, carve-rs#1027). `figure_panel`
+        // already carries the every-target mapping and the multi-block
+        // fallback, so a foreign figure gets the ruled shape for free.
+        //
+        // NOT in roundtrip mode, which promises the original bytes back for
+        // anything this engine cannot guarantee, and says so with a
+        // `raw-preserved` warning. The rebuild is only lossless for the targets
+        // the caption-line syntax re-parses: a figure around a bare PARAGRAPH
+        // writes `x` then `^ cap`, which reads back as one paragraph of prose
+        // with the caption as literal text, and one around a LIST detaches the
+        // caption into a paragraph of its own. Taking this path in roundtrip
+        // mode would trade a documented warning for a silent structural loss, so
+        // the raw fallback below keeps that mode's contract intact.
+        if tag == "figure" && self.opts.mode != HtmlImportMode::Roundtrip {
+            let carried = attrs.clone();
+            let blocks = self.figure_panel(h, path, depth, attrs, false)?;
+            // A rebuild that produced a FIGURE lost nothing: the wrapper became
+            // the node and its attributes came with it, so there is nothing to
+            // report. Anything else is `figure_panel`'s fallback - no caption to
+            // bind, a target the caption line does not attach to, or several
+            // body blocks - and there the wrapper and its attributes are gone.
+            // That is the same loss the generic path used to announce, so it is
+            // announced here too rather than becoming silent (carve#1286).
+            // Whether the rebuild is LOSSLESS is a question about the written
+            // form, not about the node: `figure_panel` hands back a `Figure` for
+            // targets the writer cannot spell as one, and taking the node at
+            // face value would make those the only lossy shapes that say
+            // nothing. But WHERE it is said matters as much: a target the writer
+            // cannot spell is a WRITER loss, not an import one. The AST keeps a
+            // proper `Figure` with its attributes, so `html_to_ast` must not be
+            // told anything - which is the split PART 12 §16 draws and what
+            // `unspellable` is for: those messages surface only when writing.
+            // Measured, one figure per target:
+            //
+            // - image, code block and quote write a caption line the parser
+            //   reads back as a figure. Nothing is lost anywhere.
+            // - a TABLE writes `^ cap` onto the table, which reads back as a
+            //   `<table><caption>`. The caption survives and so do the
+            //   attributes, but on the TABLE, so only the wrapper is gone.
+            // - a PARAGRAPH writes `x` then `^ cap`, which reads back as one
+            //   paragraph of prose: the caption line does not attach to prose,
+            //   so the wrapper and its attributes both go.
+            //
+            // Anything that is NOT a single figure is a real IMPORT loss - the
+            // AST has no figure either - so it stays a plain diagnostic.
+            match blocks.as_slice() {
+                [BlockNode::Figure(f)] => {
+                    let lost = match f.target {
+                        FigureTarget::Table(_) => Some(
+                            "A <figure> around a table has no Carve spelling: the written table \
+                             carries the caption and the figure's attributes, and reads back as a \
+                             captioned table rather than a figure",
+                        ),
+                        FigureTarget::Paragraph(_) => Some(
+                            "A <figure> around a paragraph has no Carve spelling: the written \
+                             caption line does not attach to prose, so it reads back as one \
+                             paragraph and the figure and its attributes are gone",
+                        ),
+                        _ => None,
+                    };
+                    if let Some(message) = lost {
+                        self.unspellable.push((path.to_owned(), message.into()));
+                    }
+                }
+                _ => {
+                    self.diag(
+                        HtmlImportDiagnosticCode::ElementUnwrapped,
+                        format!("Unwrapped unsupported <{tag}> element"),
+                        HtmlImportSeverity::Info,
+                        path,
+                    );
+                    self.report_unplaceable_attrs(
+                        carried,
+                        tag.as_str(),
+                        "the figure did not survive as a figure",
+                        path,
+                    );
+                }
+            }
+            return Ok(blocks);
         }
         if self.opts.mode == HtmlImportMode::Roundtrip {
             self.diag(
@@ -1111,6 +1204,82 @@ impl<'a> Importer<'a> {
         Some(attrs)
     }
 
+    /// A `<figcaption>`'s inlines, charged and diagnosed like any other element.
+    ///
+    /// A caption line has NO attribute slot, so whatever the figcaption carried
+    /// cannot come with it. Routing through `attrs` anyway is what keeps the
+    /// importer honest: the event-handler and `style` diagnostics fire from
+    /// there, and anything still standing afterwards is reported as dropped
+    /// rather than vanishing. Reading the caption's children WITHOUT this
+    /// silently discarded an `onclick` - the one attribute whose loss a reader
+    /// most needs told - and skipped the element's own charge against
+    /// `max_nodes` and one level of `max_depth` (carve#1286).
+    fn caption_inlines(
+        &mut self,
+        h: &Handle,
+        path: &str,
+        depth: usize,
+    ) -> Result<Vec<InlineNode>, HtmlImportError> {
+        self.enter(depth)?;
+        let carried = self.attrs(h, path);
+        self.report_unplaceable_attrs(
+            carried,
+            "figcaption",
+            "a caption line carries no attributes",
+            path,
+        );
+        self.inlines(&h.children.borrow(), path, depth + 1)
+    }
+
+    /// Whether an inline run carries nothing a reader would see.
+    ///
+    /// Asked STRUCTURALLY, of the node list itself, rather than by flattening to
+    /// text: a flattener answers only for the node kinds it has an arm for, and
+    /// the one in the renderer has none for `Span`, so a caption reading
+    /// `<span class="label">Caption</span>` flattened to the empty string and
+    /// this call would have thrown the caption away. Emptiness must not depend
+    /// on another function's coverage, so only a whitespace-only text node
+    /// counts as blank and every other node counts as content.
+    fn inlines_are_blank(nodes: &[InlineNode]) -> bool {
+        nodes.iter().all(|n| match n {
+            InlineNode::Text(t) => t.value.trim().is_empty(),
+            _ => false,
+        })
+    }
+
+    /// Report attributes that survived [`Self::attrs`] but have nowhere to go.
+    ///
+    /// `attrs` diagnoses what it REFUSES (event handlers, unmapped CSS) and
+    /// hands back what it accepted. When the caller then has no slot for the
+    /// result, staying quiet would report the refused attributes and swallow the
+    /// accepted ones, which is the wrong way round: the reader is told about the
+    /// `onclick` and not about the `id` that also went missing (carve#1286).
+    fn report_unplaceable_attrs(
+        &mut self,
+        attrs: Option<Attrs>,
+        tag: &str,
+        because: &str,
+        path: &str,
+    ) {
+        let Some(attrs) = attrs else {
+            return;
+        };
+        let mut dropped: Vec<String> = Vec::new();
+        if let Some(id) = attrs.id {
+            dropped.push(format!("id=\"{id}\""));
+        }
+        dropped.extend(attrs.classes.iter().map(|c| format!("class=\"{c}\"")));
+        dropped.extend(attrs.key_values.keys().map(|k| k.to_string()));
+        for name in dropped {
+            self.diag(
+                HtmlImportDiagnosticCode::AttributeDropped,
+                format!("Dropped {name} on <{tag}>: {because}"),
+                HtmlImportSeverity::Info,
+                path,
+            );
+        }
+    }
+
     /// `<figure class="carve-figure-group">` back to the `figure_group` node
     /// it rendered from (PART 9 §4c). The panels nest DIRECTLY, so the group's
     /// own caption is its LAST direct `<figcaption>` child - a panel's
@@ -1132,7 +1301,7 @@ impl<'a> Importer<'a> {
         let mut caption = None;
         if let Some(i) = caption_at {
             let p = format!("{path}/figcaption[{}]", i + 1);
-            caption = Some(self.inlines(&nodes[i].children.borrow(), &p, depth + 1)?);
+            caption = Some(self.caption_inlines(&nodes[i], &p, depth + 1)?);
         }
         let body = nodes
             .iter()
@@ -1156,30 +1325,105 @@ impl<'a> Importer<'a> {
     /// host plus its `<figcaption>` rebuild the `figure` the caption pass
     /// produced; a bare wrapped table (whose caption is its own `<caption>`)
     /// unwraps to the table node.
+    ///
+    /// `own_output` says whether the wrapper was THIS engine's panel, in which
+    /// case the `carve-figure-panel` class is structural and comes back off. A
+    /// FOREIGN figure keeps every class it carried: only a class in FIRST
+    /// position identifies an own-output panel above, so `class="custom
+    /// carve-figure-panel"` arrives here as somebody else's markup, and stripping
+    /// the name out of it would silently edit an author's class list
+    /// (carve#1286).
     fn figure_panel(
         &mut self,
         h: &Handle,
         path: &str,
         depth: usize,
         attrs: Option<Attrs>,
+        own_output: bool,
     ) -> Result<Vec<BlockNode>, HtmlImportError> {
-        let attrs = Self::without_structural_class(attrs, "carve-figure-panel");
+        let attrs = if own_output {
+            Self::without_structural_class(attrs, "carve-figure-panel")
+        } else {
+            attrs
+        };
         let mut caption = None;
         let mut host = Vec::new();
         for child in h.children.borrow().iter() {
             if Self::tag(child).as_deref() == Some("figcaption") {
-                caption = Some(self.inlines(&child.children.borrow(), path, depth + 1)?);
-                continue;
-            }
-            // Pretty-printed margins between the wrapper and its host. Kept,
-            // they lead the rebuilt image paragraph with a space, and the
-            // writer's indented image line then re-parses as prose.
-            if let NodeData::Text { contents } = &child.data {
-                if contents.borrow().trim().is_empty() {
+                // The first NON-BLANK one captions. HTML allows at most one, so
+                // a second is somebody's malformed markup - but overwriting the
+                // caption with it threw the first one's text away entirely,
+                // which is content loss rather than a structural downgrade.
+                // Extras fall through to the host instead, where the generic
+                // unwrap keeps their text and reports it (carve#1286).
+                //
+                // Non-blank rather than merely first, because a blank caption is
+                // treated as absent below: if the first one is blank, a later
+                // one is the only caption the figure has, and captioning with it
+                // keeps a visible string in the role its author gave it instead
+                // of demoting it to content. No text is lost either way.
+                if caption.is_none() {
+                    let p = format!("{path}/figcaption");
+                    let inlines = self.caption_inlines(child, &p, depth + 1)?;
+                    // An EMPTY caption is not a caption. Kept as one it wrote a
+                    // bare `^` line, which re-parses as a literal caret in a
+                    // paragraph: the figure destroyed AND a character in the
+                    // output the author never typed. Treated as absent it takes
+                    // the no-caption path, which writes the content alone and
+                    // reports the wrapper as unwrapped (carve#1286). carve-js
+                    // writes the bare `^`, so this diverges from it knowingly -
+                    // matching it would mean reproducing the corruption.
+                    if !Self::inlines_are_blank(&inlines) {
+                        caption = Some(inlines);
+                    }
                     continue;
                 }
             }
             host.push(child.clone());
+        }
+        // Pretty-printed margins between the wrapper and its host. Kept, they
+        // lead the rebuilt image paragraph with a space, and the writer's
+        // indented image line then re-parses as prose.
+        //
+        // LEADING and TRAILING whitespace in a container is insignificant, and
+        // that is all a margin ever is. Whitespace BETWEEN siblings is a word
+        // boundary the reader can see, whether or not it carries a newline -
+        // HTML collapses either to one space - so dropping it joined a foreign
+        // `<span>a</span> <span>b</span>` into `ab` (carve#1286). Own output
+        // puts nothing but margins here, so it keeps the blunter rule.
+        let is_blank_text = |n: &Handle| match &n.data {
+            NodeData::Text { contents } => contents.borrow().trim().is_empty(),
+            _ => false,
+        };
+        if own_output {
+            host.retain(|c| !is_blank_text(c));
+        } else {
+            // A COMMENT is invisible, so a margin does not stop being a margin
+            // for sitting on the far side of one. Trimming only text left
+            // `<figure><!--x--> <img>` holding a stray space beside the image,
+            // which made the host a paragraph rather than an image - the output
+            // was unchanged but the figure was then reported as unwrapped when
+            // it had not been (carve#1286).
+            let is_margin =
+                |n: &Handle| is_blank_text(n) || matches!(&n.data, NodeData::Comment { .. });
+            // Found once and drained once. Removing from the front one node at
+            // a time shifts the rest on every step, which is quadratic in the
+            // number of leading margins - and margins are attacker-controlled
+            // and cost nothing to repeat, so the bound has to be reached by
+            // charging them rather than by grinding through them.
+            let lead = host.iter().take_while(|c| is_margin(c)).count();
+            host.drain(..lead);
+            let tail = host.iter().rev().take_while(|c| is_margin(c)).count();
+            host.truncate(host.len() - tail);
+            let trimmed = lead + tail;
+            // A node dropped here never reaches `blocks`, so it would never be
+            // charged - and a margin is the cheapest thing an author can repeat.
+            // Discarding it is not the same as never having walked it, so the
+            // budget is spent either way and `<figure>` gains no free ride the
+            // rest of the importer does not give.
+            for _ in 0..trimmed {
+                self.enter(depth + 1)?;
+            }
         }
         let mut blocks = self.blocks(&host, path, depth + 1)?;
         let Some(caption) = caption else {

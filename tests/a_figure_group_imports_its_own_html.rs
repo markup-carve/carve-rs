@@ -5,8 +5,9 @@
 //! figure it wrapped, and the group's own `<figcaption>` - its LAST direct
 //! one, since a panel's sits a level down - is the group caption. That closes
 //! the render/import round trip for PART 9 §4c output. A `<figure>` WITHOUT
-//! the own-output class is still an unsupported element and keeps the pre-§4c
-//! treatment.
+//! the own-output class is a FOREIGN figure and rebuilds through the same
+//! `figure_panel` path (carve#1286); see
+//! `a_foreign_figure_imports_as_a_caption_line`.
 
 fn round_trip(source: &str) -> String {
     let html = carve::to_html(source);
