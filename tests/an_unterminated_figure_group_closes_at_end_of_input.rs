@@ -11,7 +11,7 @@ fn the_body_still_forms_panels() {
     let html = carve::to_html("::: figure\n![one](a.png)\n^ (a) One\n");
     assert_eq!(
         html,
-        "<figure class=\"carve-figure-group\">\n  <div class=\"carve-figure-panels\">\n    <figure class=\"carve-figure-panel\">\n      <img src=\"a.png\" alt=\"one\">\n      <figcaption>(a) One</figcaption>\n    </figure>\n  </div>\n</figure>"
+        "<figure class=\"carve-figure-group\">\n  <figure class=\"carve-figure-panel\">\n    <img src=\"a.png\" alt=\"one\">\n    <figcaption>(a) One</figcaption>\n  </figure>\n</figure>"
     );
 }
 
@@ -22,7 +22,7 @@ fn the_ladder_fast_path_builds_the_same_group() {
     let html = carve::to_html("::: figure\n:::: note\ntext\n");
     assert_eq!(
         html,
-        "<figure class=\"carve-figure-group\">\n  <div class=\"carve-figure-panels\">\n    <aside class=\"admonition note\">\n      <p>text</p>\n    </aside>\n  </div>\n</figure>"
+        "<figure class=\"carve-figure-group\">\n  <aside class=\"admonition note\">\n    <p>text</p>\n  </aside>\n</figure>"
     );
 }
 
@@ -31,7 +31,7 @@ fn a_nested_bare_opener_demotes_on_the_ladder_too() {
     let html = carve::to_html("::: figure\n:::: figure\ntext\n");
     assert_eq!(
         html,
-        "<figure class=\"carve-figure-group\">\n  <div class=\"carve-figure-panels\">\n    <div class=\"figure\">\n      <p>text</p>\n    </div>\n  </div>\n</figure>"
+        "<figure class=\"carve-figure-group\">\n  <div class=\"figure\">\n    <p>text</p>\n  </div>\n</figure>"
     );
 }
 

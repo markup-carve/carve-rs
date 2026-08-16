@@ -1045,9 +1045,11 @@ impl<'a> Importer<'a> {
     }
 
     /// `<figure class="carve-figure-group">` back to the `figure_group` node
-    /// it rendered from: the unconditional panels div unwraps into `children`
-    /// (each panel routed back through [`Self::figure_panel`]), and the
-    /// trailing `<figcaption>` is the group caption (PART 9 §4c).
+    /// it rendered from (PART 9 §4c). The panels nest DIRECTLY, so the group's
+    /// own caption is its LAST direct `<figcaption>` child - a panel's
+    /// figcaption sits a level down inside the panel figure and is never read
+    /// as the group's - and everything else is the child list, each panel
+    /// routed back through [`Self::figure_panel`].
     fn figure_group(
         &mut self,
         h: &Handle,
@@ -1056,23 +1058,25 @@ impl<'a> Importer<'a> {
         attrs: Option<Attrs>,
     ) -> Result<Vec<BlockNode>, HtmlImportError> {
         let attrs = Self::without_structural_class(attrs, "carve-figure-group");
-        let mut children = Vec::new();
+        let nodes = h.children.borrow();
+        let caption_at = nodes
+            .iter()
+            .rposition(|c| Self::tag(c).as_deref() == Some("figcaption"));
         let mut caption = None;
-        for (i, child) in h.children.borrow().iter().enumerate() {
-            match Self::tag(child).as_deref() {
-                Some("div")
-                    if Self::first_class(child).as_deref() == Some("carve-figure-panels") =>
-                {
-                    let p = format!("{path}/div[{}]", i + 1);
-                    children = self.blocks(&child.children.borrow(), &p, depth + 1)?;
-                }
-                Some("figcaption") => {
-                    let p = format!("{path}/figcaption[{}]", i + 1);
-                    caption = Some(self.inlines(&child.children.borrow(), &p, depth + 1)?);
-                }
-                _ => {}
-            }
+        if let Some(i) = caption_at {
+            let p = format!("{path}/figcaption[{}]", i + 1);
+            caption = Some(self.inlines(&nodes[i].children.borrow(), &p, depth + 1)?);
         }
+        let body = nodes
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| Some(*i) != caption_at)
+            .map(|(_, c)| c.clone())
+            .collect::<Vec<_>>();
+        // The children list is read out before the walk, so nothing below runs
+        // while this node's `RefCell` is still borrowed.
+        drop(nodes);
+        let children = self.blocks(&body, path, depth + 1)?;
         Ok(vec![BlockNode::FigureGroup(FigureGroup {
             attrs,
             children,

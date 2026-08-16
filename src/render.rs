@@ -2218,13 +2218,20 @@ fn render_figure_contents(
 }
 
 /// A composite figure (PART 9 §4c): one `<figure>` carrying the
-/// `carve-figure-group` class first, an UNCONDITIONAL `carve-figure-panels`
-/// div wrapping the children, and the group caption - when the closer hosted
-/// one - as the trailing `<figcaption>`. Panels are the `Figure` and `Table`
-/// children, in source order: a `Figure` renders its usual body under a
-/// class-first `carve-figure-panel` opener, a `Table` is wrapped in an
-/// explicit panel `<figure>` (a table does not render as a figure on its own)
-/// and keeps its own `<caption>`. Everything else is preserved in place.
+/// `carve-figure-group` class first, its children DIRECTLY inside it, and the
+/// group caption - when the closer hosted one - as the trailing
+/// `<figcaption>`. Panels are the `Figure` and `Table` children, in source
+/// order: a `Figure` renders its usual body under a class-first
+/// `carve-figure-panel` opener, a `Table` is wrapped in an explicit panel
+/// `<figure>` (a table does not render as a figure on its own) and keeps its
+/// own `<caption>`. Everything else is preserved in place.
+///
+/// No wrapper element sits between the group and its panels. HTML's figure
+/// content model is one figcaption, first or last, plus flow content - and a
+/// figure is itself flow content, so the panel figures are exactly what the
+/// group element admits and the intermediate div carried nothing a consumer
+/// could not read from the panel class. It is also the shape Pandoc's writers
+/// produce for native subfigures, so one stylesheet serves both.
 fn render_figure_group(
     out: &mut String,
     g: &FigureGroup,
@@ -2237,41 +2244,35 @@ fn render_figure_group(
         "<figure{}>",
         class_first_attrs("carve-figure-group", &g.attrs)
     ));
-    out.push('\n');
-    indent(out, level + 1);
-    out.push_str("<div class=\"carve-figure-panels\">");
     for child in &g.children {
         let mut piece = String::new();
         match child {
             BlockNode::Figure(f) => {
-                indent(&mut piece, level + 2);
+                indent(&mut piece, level + 1);
                 piece.push_str(&format!(
                     "<figure{}>",
                     class_first_attrs("carve-figure-panel", &f.attrs)
                 ));
-                render_figure_contents(&mut piece, f, level + 2, options, state);
+                render_figure_contents(&mut piece, f, level + 1, options, state);
             }
             BlockNode::Table(t) => {
-                indent(&mut piece, level + 2);
+                indent(&mut piece, level + 1);
                 piece.push_str("<figure class=\"carve-figure-panel\">");
                 piece.push('\n');
-                render_table(&mut piece, t, level + 3, options, state);
+                render_table(&mut piece, t, level + 2, options, state);
                 piece.push('\n');
-                indent(&mut piece, level + 2);
+                indent(&mut piece, level + 1);
                 piece.push_str("</figure>");
             }
             // Preserved in place; a block that renders nothing (a comment, a
-            // definition line) contributes no blank line to the div.
-            other => render_block(&mut piece, other, level + 2, options, state),
+            // definition line) contributes no blank line to the group.
+            other => render_block(&mut piece, other, level + 1, options, state),
         }
         if !piece.is_empty() {
             out.push('\n');
             out.push_str(&piece);
         }
     }
-    out.push('\n');
-    indent(out, level + 1);
-    out.push_str("</div>");
     if let Some(caption) = &g.caption {
         out.push('\n');
         indent(out, level + 1);
