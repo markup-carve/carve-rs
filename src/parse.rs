@@ -6587,9 +6587,30 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             // marker-line content rather than a collected line - so the
             // collector's fenced-body guard is seeded from it (corpus 276).
             item_open_fence = detect_fence_open(marker.content);
+            // A COMMENT FENCE OPENED ON THE MARKER LINE TAKES ITS BODY FROM THE
+            // CONTENT COLUMN AND NOWHERE ELSE.
+            //
+            // The code fence beside it gets this from the collector's open-fence
+            // guard (`fence.is_some() && indent < strip_cols`), which is keyed on
+            // a `FenceOpen` and so never sees a `%%%` opener. Left at the
+            // ordinary floor the collector took BELOW-column lines as the item's,
+            // and the recursive parse then read them as the comment's body - so
+            // `- %%%` / ` hidden` / ` %%%` published an empty item and DELETED
+            // `hidden`. A line below the content column reaches no container
+            // (§24 C3): it ends the item and re-parses outside it, exactly as
+            // `- ``` ` / ` x` / ` ``` ` already does.
+            //
+            // Raising the floor to `content_col - 1` says that directly, and it
+            // is the same expression the sub-list and lazy-resume collectors use
+            // for "at or past this column only".
+            let body_floor = if detect_comment_fence_line(marker.content).is_some() {
+                content_col.saturating_sub(1)
+            } else {
+                base_indent
+            };
             stream.append(collect_indented_block_mapped_after_fence(
                 cur,
-                base_indent,
+                body_floor,
                 content_col,
                 &mut item_open_fence,
             ));

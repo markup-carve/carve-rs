@@ -236,3 +236,15 @@ fn control_the_two_rows_that_already_ended_are_unchanged() {
     assert!(html("- ```\nx\n```\ntail\n").contains("</code></pre>\n  </li>\n</ul>"));
     assert!(html("- :::\n  :::\ntail\n").contains("</div>\n  </li>\n</ul>\n<p>tail</p>"));
 }
+
+#[test]
+fn control_a_comment_fence_body_below_the_content_column_is_not_swallowed() {
+    // Recognizing the marker-line comment fence unconditionally is what lets
+    // `- %%%` / `c` / `%%%` end the item. It must not also let the item reach
+    // DOWN for a body: a line below the content column reaches no container
+    // (§24 C3) and is not the fence's content. Collected as one, it vanished
+    // into the comment and `hidden` was deleted from the output.
+    let out = html("- %%%\n hidden\n %%%\ntail\n");
+
+    assert!(out.contains("hidden"), "{out}");
+}
