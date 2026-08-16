@@ -2318,7 +2318,10 @@ fn frontmatter_pos(source: &str, block_end: usize) -> Pos {
 /// the same call for `titleSp+`.
 ///
 /// TRAILING whitespace after the token is the line-ending rule rather than this
-/// slot, so it stays tolerated - matching the spec oracle.
+/// slot, so it stays tolerated - matching the spec oracle. THE SAME IS TRUE
+/// WITH NO TOKEN AT ALL: `---<TAB>` is a bare opener whose whole tail is
+/// trailing, because a frontmatter delimiter takes no content on its line and
+/// there is therefore no slot for the terminal to govern (carve#1295).
 pub(crate) fn frontmatter_format_token(after_marker: &str) -> Option<&str> {
     // WHITESPACE IS SPACE OR TAB (PART 7, carve#977), at both of this
     // function's slots.
@@ -2339,21 +2342,36 @@ pub(crate) fn frontmatter_format_token(after_marker: &str) -> Option<&str> {
     let token_start = after_marker
         .find(|c: char| !matches!(c, ' ' | '\t'))
         .unwrap_or(after_marker.len());
+    let kind = trim_ascii_end(&after_marker[token_start..]);
+    // NOTHING AFTER THE MARKER: the run is the LINE ENDING, not this slot.
+    //
+    // POSITION DECIDES (carve#1295). A tab BEFORE content is a separator and
+    // the terminal is `space` alone; a tab with nothing after it is TRAILING,
+    // and PART 2's NO TRAILING WHITESPACE drops it - its run is `whitespace`,
+    // `' ' | '\t'`. A frontmatter delimiter takes no content on its line, so
+    // `---<TAB>` lands on the trailing side and opens the block.
+    //
+    // It was reaching the space-only test below, which refused it - while the
+    // same line still read as a THEMATIC BREAK. One trailing tab disqualified
+    // one construct and not the other, on the same line.
+    //
+    // The test order is what carries this: the emptiness question is asked
+    // BEFORE the terminal question, because the terminal only governs a slot
+    // and there is no slot on a content-less line.
+    if kind.is_empty() {
+        return Some(kind);
+    }
     if after_marker[..token_start].chars().any(|c| c != ' ') {
         return None;
     }
-    let kind = trim_ascii_end(&after_marker[token_start..]);
     // AND EXACTLY ONE SPACE (carve#912). `frontmatter_open = "---", [space],
     // [frontmatter_format]` spells the slot as one; a wider run makes the line
     // no typed opener, and since it is not a thematic break either it is
     // ordinary paragraph text that the metadata lines fold into.
-    //
-    // Only where a token FOLLOWS. With nothing after it the run is the line
-    // ending rather than this slot, and `---<SP><SP>` stays an untyped opener.
-    if !kind.is_empty() && token_start > 1 {
+    if token_start > 1 {
         return None;
     }
-    if !kind.is_empty() && !kind.chars().all(|c| c.is_ascii_alphanumeric()) {
+    if !kind.chars().all(|c| c.is_ascii_alphanumeric()) {
         return None;
     }
     Some(kind)
@@ -3593,7 +3611,12 @@ fn build_code_closer_last_index(lines: &[&str]) -> HashMap<u8, Vec<usize>> {
             continue;
         }
         let run = bytes.iter().take_while(|&&b| b == fence_char).count();
-        if !bytes[run..].iter().all(|&b| b == b' ') {
+        // The same tail test `is_fence_close` makes, and it has to be: `false`
+        // from this index is FINAL, so a tail this prefilter rejects can never
+        // be re-examined by the exact scan. A trailing tab is dropped
+        // whitespace at a closer (carve#1295), so admitting it here is what
+        // lets the scan below ever see the line.
+        if !bytes[run..].iter().all(|&b| b == b' ' || b == b'\t') {
             continue;
         }
         let by_len = per_char.entry(fence_char).or_default();
@@ -4554,6 +4577,18 @@ fn unescape_quoted_header(s: &str) -> String {
     out
 }
 
+/// A CLOSER TAKES NO CONTENT, so its tail is the LINE ENDING and not a slot.
+///
+/// PART 2's NO TRAILING WHITESPACE governs it: the run is `whitespace`,
+/// `' ' | '\t'`, it is dropped, and it is not content. That is the whole reason
+/// a tab is accepted here while the OPENER refuses one - the opener's tab sits
+/// before an info string, where it is a separator and MARKER SEPARATORS AND
+/// PADDING SLOTS spells the terminal `space` alone. Position decides, not the
+/// construct (carve#1295), so the two halves of the fence disagree on purpose.
+///
+/// A tab with content after it is still not a closer: the loop stops at the
+/// first non-whitespace byte and the line then fails the end-of-line test, so
+/// ```` ```<TAB>php ```` closes nothing.
 fn is_fence_close(line: &str, open: FenceOpen) -> bool {
     let bytes = line.as_bytes();
     let mut i = 0;
@@ -4564,7 +4599,7 @@ fn is_fence_close(line: &str, open: FenceOpen) -> bool {
     if i - start < open.fence_len {
         return false;
     }
-    while i < bytes.len() && bytes[i] == b' ' {
+    while i < bytes.len() && (bytes[i] == b' ' || bytes[i] == b'\t') {
         i += 1;
     }
     i == bytes.len()
