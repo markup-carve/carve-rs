@@ -41,6 +41,10 @@ pub enum HtmlImportDiagnosticCode {
     StyleUnmapped,
     TableDegraded,
     RawPreserved,
+    /// A structure the AST holds and Carve 0.1 SOURCE has no spelling for, so
+    /// only a WRITER loses it (PART 12 §16). Reported by `html_to_carve`;
+    /// `html_to_ast` keeps the structure and says nothing.
+    StructureUnspellable,
     DiagnosticsTruncated,
 }
 
@@ -101,6 +105,8 @@ struct Importer<'a> {
     /// leaves the marks to the user agent and every one of them alternates, so
     /// the depth is what chooses between the double and the single pair.
     quote_depth: usize,
+    /// The losses a WRITER takes, held back until one writes (PART 12 §16).
+    unspellable: Vec<(String, String)>,
 }
 
 /// The largest position a Roman marker is written for: `MMMCMXCIX`, the end of
@@ -1234,7 +1240,7 @@ impl<'a> Importer<'a> {
         fn rows(
             h: &Handle,
             section: Option<usize>,
-            next_id: &mut usize,
+            section_tags: &mut Vec<String>,
             out: &mut Vec<(Handle, Option<usize>)>,
         ) {
             if Importer::tag(h).as_deref() == Some("tr") {
@@ -1242,15 +1248,14 @@ impl<'a> Importer<'a> {
                 return;
             }
             let own = match Importer::tag(h).as_deref() {
-                Some("thead" | "tbody" | "tfoot") => {
-                    let id = *next_id;
-                    *next_id += 1;
-                    Some(id)
+                Some(tag @ ("thead" | "tbody" | "tfoot")) => {
+                    section_tags.push(tag.to_owned());
+                    Some(section_tags.len() - 1)
                 }
                 _ => section,
             };
             for c in h.children.borrow().iter() {
-                rows(c, own, next_id, out);
+                rows(c, own, section_tags, out);
             }
         }
         // `<caption>` is a DIRECT child of the table and carries the table's own
@@ -1284,7 +1289,8 @@ impl<'a> Importer<'a> {
             .first()
             .map(|(_, c)| c.children.borrow().iter().cloned().collect());
         let mut trs = Vec::new();
-        rows(h, None, &mut 0, &mut trs);
+        let mut section_tags: Vec<String> = Vec::new();
+        rows(h, None, &mut section_tags, &mut trs);
         let source_cells = |tr: &Handle| -> Vec<Handle> {
             tr.children
                 .borrow()
@@ -1401,6 +1407,21 @@ impl<'a> Importer<'a> {
                 }
             }
         }
+        let header_rows: Vec<bool> = trs
+            .iter()
+            .map(|(tr, _)| {
+                let cells = source_cells(tr);
+                !cells.is_empty() && cells.iter().all(|n| Self::tag(n).as_deref() == Some("th"))
+            })
+            .collect();
+        let row_groups = self.row_groups(
+            &trs,
+            &section_tags,
+            &header_rows,
+            &result,
+            leading_header_rows,
+            path,
+        );
         let caption = match caption_children {
             Some(kids) => Some(self.inlines(&kids, &format!("{path}/caption[1]"), depth + 1)?),
             None => None,
@@ -1410,8 +1431,207 @@ impl<'a> Importer<'a> {
             caption,
             short_caption: None,
             rows: result,
+            row_groups,
             pos: None,
         })
+    }
+
+    /// `<thead>` / `<tbody>` / `<tfoot>` to `Table::row_groups`, when the
+    /// partition says something a reader cannot derive (carve#1210 D1, ruled as
+    /// (b); pandoc-carve#61 implements the same rule and carve-js followed).
+    ///
+    /// Every renderer already derives a structure from the rows alone: the
+    /// leading run of all-header rows is the head, everything after it is one
+    /// body, there is no foot and there are no row-head columns. A `<thead>`
+    /// over a `<tbody>` is exactly that, so emitting the field for it would put
+    /// structure into every imported table that Carve source cannot spell and
+    /// hand-written Carve never carries.
+    ///
+    /// So it is emitted only where the two DISAGREE: a `<tfoot>`, a second
+    /// `<tbody>`, a body with its own intermediate header rows, a body with
+    /// row-head columns, or a `<thead>` whose rows are not all header cells
+    /// (Word and pandoc both emit `<thead><tr><td>`), where the derived head is
+    /// empty and the stated one is not.
+    ///
+    /// The counts are NOT checked against `rows.len()` here. They are built from
+    /// the same row list the rows are built from, so a check at this point
+    /// cannot fail; PART 12 §15's MUST is enforced where a payload arrives from
+    /// elsewhere, in `from_json`.
+    fn row_groups(
+        &mut self,
+        trs: &[(Handle, Option<usize>)],
+        section_tags: &[String],
+        header_rows: &[bool],
+        rows: &[TableRow],
+        leading_header_rows: usize,
+        path: &str,
+    ) -> Option<TableRowGroups> {
+        if trs.is_empty() {
+            return None;
+        }
+        let section_of = |index: usize| -> &str {
+            trs[index]
+                .1
+                .and_then(|id| section_tags.get(id))
+                .map(String::as_str)
+                .unwrap_or("tbody")
+        };
+        // The head is a PREFIX of `rows` and the foot a SUFFIX, which is what
+        // the field can express. A `<thead>` that is not first, or a `<tfoot>`
+        // with rows after it, is a table this cannot describe.
+        let head_rows = (0..trs.len())
+            .find(|&i| section_of(i) != "thead")
+            .unwrap_or(trs.len());
+        let mut foot_rows = 0;
+        while foot_rows < trs.len() - head_rows && section_of(trs.len() - 1 - foot_rows) == "tfoot"
+        {
+            foot_rows += 1;
+        }
+        let middle = head_rows..trs.len() - foot_rows;
+        if middle
+            .clone()
+            .any(|i| matches!(section_of(i), "thead" | "tfoot"))
+        {
+            self.diag(
+                HtmlImportDiagnosticCode::TableDegraded,
+                "Dropped the row grouping of a table whose <thead> or <tfoot> is not at the edge of its rows: the head is a prefix of the rows and the foot a suffix".into(),
+                HtmlImportSeverity::Warning,
+                path,
+            );
+            return None;
+        }
+
+        let mut bodies: Vec<TableBodyGroup> = Vec::new();
+        let mut index = middle.start;
+        while index < middle.end {
+            let section = trs[index].1;
+            let start = index;
+            while index < middle.end && trs[index].1 == section {
+                index += 1;
+            }
+            let mut group_head = 0;
+            while start + group_head < index && header_rows[start + group_head] {
+                group_head += 1;
+            }
+            // A group whose rows are ALL header rows is an intermediate header
+            // with nothing under it, which is what the counts say and not
+            // something to reinterpret.
+            let body_start = start + group_head;
+            let row_head_columns = if body_start < index {
+                Self::row_head_columns(rows, body_start..index)
+            } else {
+                0
+            };
+            bodies.push(TableBodyGroup {
+                head_rows: group_head,
+                body_rows: index - body_start,
+                row_head_columns: (row_head_columns > 0).then_some(row_head_columns),
+                attrs: None,
+            });
+        }
+
+        // No `<thead>` at all: the leading run of header rows is what every
+        // renderer reads as the head, so it is counted as one here too. Without
+        // this, the ORDINARY table - a header row and some data rows, with only
+        // the implicit `<tbody>` the HTML parser inserts - comes out with an
+        // intermediate header and no head, which is a different statement about
+        // the same table and puts the field on nearly every document.
+        //
+        // ONE body only. With a second one, the header-only first body is a
+        // BOUNDARY the field exists to record, and absorbing it away leaves a
+        // single ordinary body that the derivation reproduces.
+        let mut head_rows = head_rows;
+        if head_rows == 0 && bodies.len() == 1 && leading_header_rows > 0 {
+            let absorbed = leading_header_rows.min(bodies[0].head_rows);
+            head_rows = absorbed;
+            bodies[0].head_rows -= absorbed;
+            if bodies[0].head_rows == 0
+                && bodies[0].body_rows == 0
+                && bodies[0].row_head_columns.is_none()
+            {
+                bodies.clear();
+            }
+        }
+
+        let derivable = head_rows == leading_header_rows
+            && foot_rows == 0
+            && bodies.len() <= 1
+            && bodies
+                .iter()
+                .all(|b| b.head_rows == 0 && b.row_head_columns.unwrap_or(0) == 0);
+        if derivable {
+            return None;
+        }
+        // Carve SOURCE has no spelling for the field, so a writer loses it. The
+        // AST keeps it and `html_to_carve` reports it, which is the split PART
+        // 12 §16 draws.
+        self.unspellable.push((
+            path.to_owned(),
+            "A table with an explicit head/body/foot grouping has no Carve spelling; the written table keeps only the structure a reader derives from its rows".into(),
+        ));
+        Some(TableRowGroups {
+            head_rows,
+            bodies,
+            foot_rows,
+        })
+    }
+
+    /// Leading COLUMNS that are header cells in every row of the group.
+    ///
+    /// Counted over the expanded grid rather than over the source cells, because
+    /// columns and cells are not the same thing: `<th colspan="2">` is one
+    /// element and two columns, and a `<th rowspan="2">` leaves the row below it
+    /// starting with a data ELEMENT while a header still occupies the column.
+    ///
+    /// A `<` needs no resolution: `span_grid` builds a colspan continuation
+    /// carrying its ORIGIN's header flag. A `^` is built with the flag cleared,
+    /// because the cell it continues is in another row, so that one is resolved
+    /// upward.
+    ///
+    /// One SLOT is one column here, which is what makes the count a simple walk.
+    /// It is true because `span_grid` carries a mark into each column a spanning
+    /// cell covers rather than one for its origin, so no `^` ever stands for
+    /// more than one column. carve-js carries the single mark and needs the
+    /// width of the origin to undo it; a width lookup here could not change an
+    /// answer, so there is none.
+    fn row_head_columns(rows: &[TableRow], group: std::ops::Range<usize>) -> usize {
+        fn origin_row(rows: &[TableRow], r: usize, c: usize) -> Option<usize> {
+            let mut up = r;
+            while up > 0 {
+                up -= 1;
+                if rows[up].cells.get(c).and_then(|cell| cell.span).is_none() {
+                    return Some(up);
+                }
+            }
+            None
+        }
+        fn header_at(rows: &[TableRow], r: usize, c: usize) -> bool {
+            let Some(cell) = rows[r].cells.get(c) else {
+                return false;
+            };
+            if cell.span == Some(TableCellSpan::Rowspan) {
+                return match origin_row(rows, r, c) {
+                    Some(up) => header_at(rows, up, c),
+                    None => false,
+                };
+            }
+            cell.header
+        }
+        let leading = |r: usize| -> usize {
+            let cells = &rows[r].cells;
+            let mut columns = 0;
+            while columns < cells.len() && header_at(rows, r, columns) {
+                columns += 1;
+            }
+            // An all-header row would say every column is a row head, which is
+            // what an intermediate HEADER row is, not a row-head column.
+            if columns == cells.len() {
+                0
+            } else {
+                columns
+            }
+        };
+        group.map(leading).min().unwrap_or(0)
     }
     fn inlines(
         &mut self,
@@ -1709,14 +1929,35 @@ pub fn html_to_ast(
     html: &str,
     options: &HtmlImportOptions,
 ) -> Result<HtmlImportResult<Document>, HtmlImportError> {
+    import(html, options, false)
+}
+
+/// The import both entry points share. `writing` is what separates them: the
+/// losses a WRITER takes are reported only when one runs (PART 12 §16).
+fn import(
+    html: &str,
+    options: &HtmlImportOptions,
+    writing: bool,
+) -> Result<HtmlImportResult<Document>, HtmlImportError> {
     let dom = html5ever::parse_document(RcDom::default(), Default::default()).one(html);
     let mut importer = Importer {
         opts: options,
         diagnostics: Vec::new(),
         nodes: 0,
         quote_depth: 0,
+        unspellable: Vec::new(),
     };
     let children = importer.blocks(&dom.document.children.borrow(), "", 0)?;
+    if writing {
+        for (path, message) in std::mem::take(&mut importer.unspellable) {
+            importer.diag(
+                HtmlImportDiagnosticCode::StructureUnspellable,
+                message,
+                HtmlImportSeverity::Warning,
+                &path,
+            );
+        }
+    }
     Ok(HtmlImportResult {
         value: Document {
             frontmatter: BTreeMap::new(),
@@ -1739,7 +1980,7 @@ pub fn html_to_carve(
     html: &str,
     options: &HtmlImportOptions,
 ) -> Result<HtmlImportResult<String>, HtmlImportError> {
-    let result = html_to_ast(html, options)?;
+    let result = import(html, options, true)?;
     let value =
         render_carve(&result.value).map_err(|_: RenderDepthError| HtmlImportError::RenderDepth)?;
     Ok(HtmlImportResult {

@@ -497,6 +497,9 @@ fn html_report_json(report: &carve::HtmlImportReport) -> String {
                     carve::HtmlImportDiagnosticCode::StyleUnmapped => "style-unmapped",
                     carve::HtmlImportDiagnosticCode::TableDegraded => "table-degraded",
                     carve::HtmlImportDiagnosticCode::RawPreserved => "raw-preserved",
+                    carve::HtmlImportDiagnosticCode::StructureUnspellable => {
+                        "structure-unspellable"
+                    }
                     carve::HtmlImportDiagnosticCode::DiagnosticsTruncated =>
                         "diagnostics-truncated",
                 },

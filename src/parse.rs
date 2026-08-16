@@ -8997,6 +8997,7 @@ fn parse_table(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         caption,
         short_caption: None,
         rows,
+        row_groups: None,
     })
 }
 

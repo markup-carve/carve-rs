@@ -9,6 +9,35 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`Table::row_groups`, and the HTML importer states one where a reader cannot
+  derive it** (PART 12 §15, markup-carve/carve#1210 P1 under decision D1 as
+  ruled). The field was named in the wire allowlist and had no Rust type, no
+  producer and no consumer, so a `<tfoot>`, a second `<tbody>`, a body with its
+  own intermediate header rows, a body with row-head columns, and a `<thead>`
+  whose rows are not header cells all flattened into the row list in silence.
+  Every renderer already derives the leading run of all-header rows as the head,
+  everything after it as one body, no foot and no row-head columns, so the field
+  is emitted only where the stated partition and that derivation DISAGREE - an
+  ordinary head/body table gains nothing. A `<thead>` or `<tfoot>` away from the
+  edge of the rows is a partition the field cannot describe, and is refused with
+  a `table-degraded` diagnostic rather than described wrongly. `row_head_columns`
+  counts COLUMNS over the expanded grid, which spans make different from cells.
+
+  Carve 0.1 source has no spelling for the field, so `html_to_ast` states the
+  partition and says nothing while `html_to_carve` reports the loss - the split
+  PART 12 §16 draws. That report needed a diagnostic code this engine did not
+  have: `structure-unspellable` is the eighth in the import schema's enum and
+  carve-rs produced none of them.
+
+  §15's summing MUST is enforced on the INPUT path, in `from_json`, where a
+  payload from elsewhere can actually contradict its rows. JSON Schema cannot
+  express a sum across fields, so a non-summing partition validates against the
+  schema; the importer builds the counts from the same row list the rows come
+  from, so a check there could not fail and is not there. The sum is CHECKED:
+  the counts are numbers off untrusted JSON and nothing bounds them, so two near
+  the maximum would panic the process in a debug build and, wrapped, let a
+  partition that consumes nothing through in a release one.
+
 - **A ProseMirror/Tiptap bridge: `to_prosemirror`, `from_prosemirror`,
   `ProseMirrorDoc` and `ProseMirrorError`.** carve-php and carve-grammars
   already had one; this engine had none, so every binding over it - carve-py,

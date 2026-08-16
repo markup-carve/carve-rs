@@ -296,8 +296,44 @@ pub struct Table {
     /// Structured publishing/navigation label; Carve 0.1 source has no spelling.
     pub short_caption: Option<Vec<InlineNode>>,
     pub rows: Vec<TableRow>,
+    /// An explicit head/body/foot partition of `rows`, imported from or destined
+    /// for a format whose table model has one. Carve 0.1 source has no spelling
+    /// for it, so a parse never sets it.
+    pub row_groups: Option<TableRowGroups>,
     /// Span in the original source, when the parser could determine it.
     pub pos: Option<Pos>,
+}
+
+/// An explicit head/body/foot partition of a table's rows (PART 12 §15).
+///
+/// It holds COUNTS, never rows: they consume `rows` in order, head first, then
+/// each body, then the foot, and they MUST account for every row exactly once.
+/// Absent means the implicit structure every renderer already derives - the
+/// leading run of header rows as the head, everything after it as one body, no
+/// foot, no row-head columns - so a tree without it does not change shape. HTML,
+/// plain and ANSI output ignore it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TableRowGroups {
+    /// Rows at the start of `rows` forming the table head.
+    pub head_rows: usize,
+    /// The body groups, in order, each consuming the next
+    /// `head_rows + body_rows` rows.
+    pub bodies: Vec<TableBodyGroup>,
+    /// Rows at the end of `rows` forming the table foot.
+    pub foot_rows: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TableBodyGroup {
+    /// Rows at the start of this group forming its intermediate header.
+    pub head_rows: usize,
+    /// Rows in this group after its intermediate header.
+    pub body_rows: usize,
+    /// Leading columns of this group's rows that are row headers. `None` means
+    /// zero. It sits on the group rather than on the table because that is where
+    /// the exchanged model puts it.
+    pub row_head_columns: Option<usize>,
+    pub attrs: Option<Attrs>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

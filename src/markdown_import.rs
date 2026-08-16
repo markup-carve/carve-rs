@@ -419,6 +419,7 @@ impl Builder {
                 caption: None,
                 short_caption: None,
                 rows,
+                row_groups: None,
                 pos: None,
             })),
             Frame::TableRow { cells, .. } => {
