@@ -464,6 +464,50 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   a further `+` ends the attachment first - is dropped rather than published as
   text, the way a set at the end of any other block stream is.
 
+- **The ProseMirror bridge keeps the attribute run the author typed, and
+  carries a mark with no content** (markup-carve/carve-grammars#240). Three
+  losses, all invisible to an HTML comparison because all three render the same
+  element:
+
+  An attribute run an editor changed lost whatever the recorded order did not
+  name. A class toggled on in the editor, or an id assigned there, was written
+  into `attrs` but not into `carveAttrOrder`, and the writer emitted only the
+  slots the order named. A run that names a slot the document no longer has is
+  skipped, an attribute the run does not name is appended after the ones it
+  does, and with no run at all the canonical `#id .class key="val"` is written.
+  The reverse case is also fixed: a heading id Carve generated was slotted as
+  authored, so `{title="a"}` + `# H` came back as `{title="a" #H}` + `# H`. A
+  recorded run that does not name `#id` proves the id was generated, and the
+  same reasoning removes an admonition's kind from the classes it is appended
+  to, so `::: note` no longer returns as `{.note}` + `::: note`.
+
+  The `code` mark now takes `id`, `class` and `carveAttrOrder` on the wire, the
+  same slots as every other attributed node.
+
+  A mark with no content rides the `carveEmptyMark` atom that carve-grammars'
+  `markCarrierNodes` section declares. A ProseMirror mark cannot span zero
+  characters, so walking the children of these produced nothing and the
+  construct left the document - `[](https://example.com)` and `[]{.a}` at least
+  reported themselves dropped, while `{++}` and `{--}` were deleted in silence.
+  Given
+
+  ```
+  a []{.x} b {++} c {--} d
+  ```
+
+  a round trip through an editor returned
+
+  ```
+  a  b  c  d
+  ```
+
+  and now returns the line unchanged. Two adjacent empty marks stay two.
+
+  Value quoting and class interleaving are not recoverable and are not faked:
+  the AST records a value, not whether it was quoted, and its order collapses
+  all classes to one slot, so `k=1` may come back `k="1"` and `{.a #i .b}` comes
+  back `{.a .b #i}`.
+
 - **The ProseMirror bridge no longer deletes the text after a delimited
   comment.** `to_prosemirror` did not carry the PART 9 §21a `delimited` flag and
   `from_prosemirror` could not restore it, so every `{% ... %}` comment came

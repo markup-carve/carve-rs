@@ -274,10 +274,41 @@
     "soft_break": "a soft break is whitespace in the ProseMirror model",
     "figure_group": "the editor schema has no composite figure; the panels and the group caption survive inside the generic container, but the fact that they were one figure does not"
   },
+  "preservationNodes": {
+    "about": "Not Carve types: the two nodes a bridge writes when it has no editable node for a construct. They are PART OF THE WIRE, not an implementation detail of one bridge - carve-grammars produced them for 179 of 1025 corpus documents and carve-php refused every one, because an unknown ProseMirror name is an error rather than a skip. A bridge reading one writes `carveSource` back as Carve source, verbatim; a bridge that cannot must say so rather than drop the node.",
+    "carveUnsupported": {
+      "kind": "node",
+      "group": "block",
+      "attrs": {
+        "carveSource": "the construct as written, exactly; written back verbatim",
+        "carveType": "the Carve node type the atom stands in for, so a caller can say WHAT was preserved"
+      }
+    },
+    "carveUnsupportedInline": {
+      "kind": "node",
+      "group": "inline",
+      "attrs": {
+        "carveSource": "the construct as written, exactly; written back verbatim",
+        "carveType": "the Carve node type the atom stands in for"
+      }
+    }
+  },
+  "markCarrierNodes": {
+    "about": "Not a Carve type either: the node a bridge writes for a MARK WITH NO CONTENT. A ProseMirror mark cannot span zero characters, and four Carve constructs parse to a mark-producing node with no children - `[](https://example.com)`, `[]{.a}`, `{++}` and `{--}`. Walking their children produces nothing, so before this node existed each one simply disappeared: a document that was only an empty-label link came back EMPTY, and nothing reported it. A bridge writes this atom instead and reads it back as the construct it names; a bridge that cannot must say so through its dropped/degraded report rather than drop the node.",
+    "carveEmptyMark": {
+      "kind": "node",
+      "group": "inline",
+      "attrs": {
+        "markAttrs": "the mark's own attributes, as one map: a link's `href`/`title` and any authored run, a span's id/class/key-values. Absent where the mark had none",
+        "markType": "the ProseMirror mark this atom stands for: `link`, `carveSpan`, `carveAbbreviation`, `carveInsert` or `carveDelete`"
+      }
+    }
+  },
   "_provenance": {
     "source": "markup-carve/carve-grammars tiptap/schema-map.json",
     "commit": "e09b460c23fceaf532f724f3ef73e0b6a355d4f7",
     "refresh": "copy the file from carve-grammars and update commit; the schema-map test asserts every AST type still has a decision",
-    "pendingUpstream": "the `figure_group` entry under unmapped is local: PART 9 section 4c is newer than the schema map, so carve-grammars carries no decision for it yet. Keep it across the next refresh until upstream does."
+    "pendingUpstream": "the `figure_group` entry under unmapped is local: PART 9 section 4c is newer than the schema map, so carve-grammars carries no decision for it yet. Keep it across the next refresh until upstream does.",
+    "partialSections": "`preservationNodes` and `markCarrierNodes` are copied verbatim from carve-grammars 228f003, ahead of the rest of the file. A whole-file refresh to 228f003 also gives `inline_extension` a second, PRIMARY ProseMirror name, which moves what this engine emits for every inline extension - a change of its own, not a side effect of adding a section. Take the rest of 228f003 in that change and drop this note."
   }
 }

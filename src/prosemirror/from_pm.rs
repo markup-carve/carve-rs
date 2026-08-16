@@ -110,9 +110,22 @@ impl Reader {
     }
 
     fn known(&self, name: &str) -> Result<(String, usize), ProseMirrorError> {
-        self.resolve(name).ok_or_else(|| {
-            ProseMirrorError::new(format!("Unknown ProseMirror node or mark type `{name}`"))
-        })
+        if let Some(resolved) = self.resolve(name) {
+            return Ok(resolved);
+        }
+        // A preservation node is part of the wire, not an unknown name: it is
+        // what a bridge writes for a construct its editor schema has no node
+        // for, and its `carveSource` is the construct verbatim. This engine
+        // never writes one and cannot yet read one, so it says which of the two
+        // it is rather than reporting the name as unrecognized.
+        if self.map.preservation.contains(name) {
+            return Err(ProseMirrorError::new(format!(
+                "`{name}` preserves Carve source this engine cannot yet read back"
+            )));
+        }
+        Err(ProseMirrorError::new(format!(
+            "Unknown ProseMirror node or mark type `{name}`"
+        )))
     }
 
     fn block(&mut self, value: &Json) -> Result<Json, ProseMirrorError> {
@@ -286,6 +299,10 @@ impl Reader {
         } else {
             &["carveAdmonitionTitle"]
         };
+        // The kind is the opener word, and the outbound side appends it to the
+        // classes because that is where an admonition's kind lives once it is
+        // rendered. Leaving it there on the way back writes it twice: once as
+        // `::: note` and once as an authored `{.note}` the author never typed.
         let mut n = with_attrs(
             node(
                 "admonition",
@@ -296,7 +313,7 @@ impl Reader {
                     ("children", Json::Array(children)),
                 ],
             ),
-            &without(a, consumed),
+            &without(&without_class_word(a, kind), consumed),
         );
         remove_nulls(&mut n);
         Ok(n)
@@ -530,8 +547,13 @@ impl Reader {
         for value in values {
             let obj = object_ref(value, "inline")?;
             let name = string_field(obj, "type")?;
+            if Some(name) == self.map.mark_carrier.as_deref() {
+                let built = vec![self.empty_mark(obj)?];
+                self.apply_marks(obj, built, &mut out)?;
+                continue;
+            }
             let (ty, flavor) = self.known(name)?;
-            let mut built = if ty == "text" {
+            let built = if ty == "text" {
                 vec![node(
                     "text",
                     [(
@@ -542,18 +564,46 @@ impl Reader {
             } else {
                 vec![self.inline_atom(obj, &ty, flavor)?]
             };
-            if let Some(Json::Array(marks)) = obj.get("marks") {
-                for mark in marks.iter().rev() {
-                    let mo = object_ref(mark, "mark")?;
-                    let mn = string_field(mo, "type")?;
-                    let (mty, _) = self.known(mn)?;
-                    let inner = built;
-                    built = vec![self.wrap_mark(&mty, attrs_obj(mo), inner)?];
-                }
-            }
-            append_merged(&mut out, built);
+            self.apply_marks(obj, built, &mut out)?;
         }
         Ok(out)
+    }
+
+    fn apply_marks(
+        &mut self,
+        obj: &Object,
+        mut built: Vec<Json>,
+        out: &mut Vec<Json>,
+    ) -> Result<(), ProseMirrorError> {
+        if let Some(Json::Array(marks)) = obj.get("marks") {
+            for mark in marks.iter().rev() {
+                let mo = object_ref(mark, "mark")?;
+                let mn = string_field(mo, "type")?;
+                let (mty, _) = self.known(mn)?;
+                let inner = built;
+                built = vec![self.wrap_mark(&mty, attrs_obj(mo), inner)?];
+            }
+        }
+        append_merged(out, built);
+        Ok(())
+    }
+
+    /// The atom a mark with no content arrives as, read back as that mark.
+    ///
+    /// `markType` is the ProseMirror name, so it resolves through the same map
+    /// the outbound side wrote it from, and `markAttrs` is the mark's own
+    /// attribute map - absent where the mark had none.
+    fn empty_mark(&mut self, obj: &Object) -> Result<Json, ProseMirrorError> {
+        let a = attrs_obj(obj);
+        let mark_type = string_opt(a, "markType").ok_or_else(|| {
+            ProseMirrorError::new("An empty-mark carrier needs the ProseMirror name it stands for")
+        })?;
+        let (ty, _) = self.known(mark_type)?;
+        let mark_attrs = match a.get("markAttrs") {
+            Some(Json::Object(o)) => o.clone(),
+            _ => Object::new(),
+        };
+        self.wrap_mark(&ty, &mark_attrs, Vec::new())
     }
 
     fn wrap_mark(
@@ -751,6 +801,27 @@ fn attrs_obj(o: &Object) -> &Object {
         _ => empty_object(),
     }
 }
+/// A copy of the attributes with one occurrence of `word` gone from `class`.
+///
+/// The LAST occurrence, because that is the one the outbound side appended; an
+/// author who really wrote `{.note}` on a `::: note` keeps their own copy.
+fn without_class_word(o: &Object, word: &str) -> Object {
+    let mut out = o.clone();
+    let Some(Json::String(class)) = o.get("class") else {
+        return out;
+    };
+    let mut parts: Vec<&str> = class.split_whitespace().collect();
+    let Some(position) = parts.iter().rposition(|part| *part == word) else {
+        return out;
+    };
+    parts.remove(position);
+    if parts.is_empty() {
+        out.remove("class");
+    } else {
+        out.insert("class".into(), Json::String(parts.join(" ")));
+    }
+    out
+}
 fn without(o: &Object, keys: &[&str]) -> Object {
     o.iter()
         .filter(|(k, _)| !keys.contains(&k.as_str()))
@@ -846,29 +917,51 @@ fn with_attrs(mut n: Json, a: &Object) -> Json {
     }
     if id.is_some() || !classes.is_empty() || !kv.is_empty() {
         let mut ao = Object::new();
-        let authored_order = matches!(a.get("carveAttrOrder"), Some(Json::Array(_)));
-        let mut order = match a.get("carveAttrOrder") {
-            Some(Json::Array(v)) => v.clone(),
+        // The run is replayed in the order it was WRITTEN in, and an editor is
+        // free to have changed the document since: a slot the run names that is
+        // now gone is skipped by the writer, and an attribute the run does not
+        // name - a class the editor toggled on, an id it assigned - is still an
+        // attribute and goes after the ones the run does name. Leaving it out
+        // of `order` deleted it: `carveAttrOrder: ["k", "#id"]` plus a class
+        // wrote `{k=v #i}` and the class was gone.
+        //
+        // With no run to replay the three appends run in sequence and produce
+        // the canonical `#id .class key="val"` - which is also why the id is
+        // appended before the classes rather than after.
+        let authored: Vec<&str> = match a.get("carveAttrOrder") {
+            Some(Json::Array(v)) => v
+                .iter()
+                .filter_map(|s| match s {
+                    Json::String(s) => Some(s.as_str()),
+                    _ => None,
+                })
+                .collect(),
             _ => Vec::new(),
         };
+        let mut order: Vec<Json> = authored
+            .iter()
+            .map(|s| Json::String((*s).to_owned()))
+            .collect();
         if let Some(v) = id {
             ao.insert("id".into(), Json::String(v));
+            if !authored.contains(&"#id") {
+                order.push(Json::String("#id".into()));
+            }
         }
         if !classes.is_empty() {
             ao.insert(
                 "classes".into(),
                 Json::Array(classes.into_iter().map(Json::String).collect()),
             );
-            if !authored_order {
+            if !authored.contains(&".class") {
                 order.push(Json::String(".class".into()));
             }
         }
-        if ao.contains_key("id") && !authored_order {
-            order.push(Json::String("#id".into()));
-        }
         if !kv.is_empty() {
-            if !authored_order {
-                order.extend(kv.keys().cloned().map(Json::String));
+            for key in kv.keys() {
+                if !authored.contains(&key.as_str()) {
+                    order.push(Json::String(key.clone()));
+                }
             }
             ao.insert("keyValues".into(), Json::Object(kv));
         }
@@ -1002,6 +1095,13 @@ fn merge_same(a: &mut Json, b: &Json) -> bool {
     if let (Some(Json::Array(ac)), Some(Json::Array(bc))) =
         (ao.get_mut("children"), bo.get("children"))
     {
+        // Two marks that are both EMPTY are two constructs, not one run split
+        // in two: merging `[]{.x} []{.x}` leaves a single `[]{.x}` and deletes
+        // the other. Merging exists to rejoin text an editor split, and text
+        // is what makes the two halves one run.
+        if ac.is_empty() && bc.is_empty() {
+            return false;
+        }
         ac.extend(bc.clone());
         true
     } else {
