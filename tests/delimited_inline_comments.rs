@@ -69,10 +69,16 @@ fn ast_and_canonical_writer_preserve_the_author_choice() {
 
 #[test]
 fn template_source_shape_reports_without_rewriting() {
+    // ONE WARNING PER TAG-SHAPED COMMENT: the opener and the closer both
+    // vanish into comments, and both are reported. `{% note %}` in the same
+    // document is an ordinary comment and is not (carve validation.md).
     let source = "{% raw %} {{ value }} {% endraw %}\n\nText {% note %}.";
     let warnings = lint_carve(source);
-    assert_eq!(warnings.len(), 1, "{warnings:?}");
-    assert_eq!(warnings[0].rule, "braced-comment-in-a-template-source");
+    assert_eq!(warnings.len(), 2, "{warnings:?}");
+    assert!(warnings
+        .iter()
+        .all(|w| w.rule == "braced-comment-in-a-template-source"));
+    assert_eq!(warnings.iter().map(|w| w.line).collect::<Vec<_>>(), [1, 1]);
     assert_eq!(
         to_carve(source),
         "{% raw %} {{ value }} {% endraw %}\n\nText {% note %}.\n"

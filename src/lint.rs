@@ -191,11 +191,10 @@ fn collect_template_source_warning(source: &str, doc: &Document, out: &mut Vec<L
                 line: source[..start].bytes().filter(|b| *b == b'\n').count() + 1,
                 column: source[line_start..start].chars().count() + 1,
                 rule: "braced-comment-in-a-template-source",
-                message: "A `{% … %}` comment appears in a document that also carries template tags. Liquid and Nunjucks render before the converter runs, so a page that wraps its tags in `{% raw %}` hands Carve bare template text - and PART 9 §21a makes that text a comment. Reported, never rewritten: only the author knows which of the two the document meant.".to_string(),
+                message: "This `{% … %}` comment is a template tag. Liquid and Nunjucks render before the converter runs, so a page that wraps its tags in `{% raw %}` hands Carve bare template text - and PART 9 §21a makes that text a comment. Reported, never rewritten: only the author knows which of the two the document meant.".to_string(),
                 start,
                 end,
             });
-            return;
         }
         at = end;
     }
