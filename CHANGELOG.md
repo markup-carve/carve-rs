@@ -360,6 +360,29 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   a header rowspan stays in the head instead of being pushed into the body by a
   marker that renders nothing. Hand-written source hit all three; carve-js
   renders each the way this now does.
+- **A MathML element imports as the TeX it carries, and is dropped when it
+  carries none** (markup-carve/carve#1210 D6). `<math>` had no branch in the
+  HTML importer, so it took the arm that unwraps an unmapped inline element to
+  its children. MathML's children are a token stream rather than fallback
+  content, so that concatenation is not a degraded equation but a different
+  value: `<math><mfrac><mn>1</mn><mn>2</mn></mfrac></math>` arrived as `12`,
+  one half read back as twelve.
+
+  Three tiers, the same rule carve-js and carve-php now apply. An
+  `<annotation>` whose `encoding` is exactly `application/x-tex`, `text/x-tex`
+  or `LaTeX`, and which is a direct child of the element's own `<semantics>`,
+  supplies the content. Otherwise `alttext` does, with an `element-unwrapped`
+  info recording that MathML does not declare what `alttext` holds. Otherwise
+  there is no TeX in the source: `safe` and `semantic` drop the element with an
+  `element-dropped` warning naming it, and `roundtrip` keeps the whole element
+  as raw HTML, which is what that mode already did.
+
+  `display="block"` sets the node's display flag. The TeX body is taken as
+  written, `{\displaystyle ...}` and all; only the whitespace around it is
+  trimmed, because a pretty-printed annotation otherwise builds a node this
+  engine cannot write and read back. The subtree the mapping does not walk is
+  charged against `max_nodes` and `max_depth` anyway, so the limits do not
+  depend on which branch an element takes.
 
 - **`carve migrate --from djot` freezes a braced run whose opener is never
   closed on its line** (markup-carve/carve#1130, markup-carve/carve-rs#995). The
