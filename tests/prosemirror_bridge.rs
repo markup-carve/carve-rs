@@ -67,6 +67,13 @@ const ALIASED_TYPES: &[(&str, &str)] = &[("tag", "mention")];
 //    `[safe](https://example.com){href=javascript:steal}` and gets
 //    `[safe](https://example.com)` back.
 //  - 2 documents reflow their emphasis delimiters: `/*x*/` returns as `*/x/*`.
+//  - 1 link moves an AUTHORED `title` attribute into the structural title slot:
+//    `[z](safe.html){title="T"}` returns as `[z](safe.html "T")`. The inverse of
+//    the reference-definition bullet above and the same cause - the two
+//    spellings share one field, and nothing records which one the author typed.
+//    Arrived with the 483bcea corpus, whose `title` case is there to pin that a
+//    PROSE attribute is NOT tokenized by PART 9 §25; the round trip is
+//    orthogonal to that and the HTML is byte-identical either way.
 const SOURCE_LOSSY: &[&str] = &[
     "02-headings-2.crv",
     "02-headings-4.crv",
@@ -139,6 +146,7 @@ const SOURCE_LOSSY: &[&str] = &[
     "332-which-inline-content-a-heading-id-is-derived-from-8.crv",
     "332-which-inline-content-a-heading-id-is-derived-from-9.crv",
     "332-which-inline-content-a-heading-id-is-derived-from.crv",
+    "342-url-list-attributes-are-probed-token-wise-10.crv",
     "35-cross-reference.crv",
     "71-attribute-edge-cases-14.crv",
     "75-list-nesting-and-looseness-4.crv",
@@ -498,7 +506,22 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // seven hold no node the editor schema lacks, so all seven land in the
     // strict set, none reports, and none joins the source-lossy set above -
     // which is why LOSSY does not move and the declared set is untouched.
-    const STRICT: usize = 900;
+    // 900/231 to 910/231 is the ten documents arriving with the 483bcea spec
+    // pin, and nothing else: the corpus went from 1131 pairs to 1141, and the
+    // ten added pairs are the `342-url-list-attributes-are-probed-token-wise`
+    // documents that pin PART 9 §25's token-wise probe. Attributed rather than
+    // fitted, and here the attribution is structural instead of a diff of two
+    // classification dumps: the clause this pin carries lives entirely in
+    // `sanitize_attr_value`, which no path this test walks ever calls - the
+    // bridge maps nodes and the canonical writer writes source, and neither
+    // hardens an attribute value. So no pre-existing document CAN move, and the
+    // whole delta is the ten new ones. All ten are a link or an image with an
+    // attribute run, which the editor schema covers whole, so all ten land in
+    // the strict set and none reports. One of them joins the declared
+    // source-lossy set above: document 10 is the only corpus link that spells
+    // `title` as an authored attribute, and it comes back in the structural
+    // title slot.
+    const STRICT: usize = 910;
     const LOSSY: usize = 231;
     assert!(
         covered >= STRICT,

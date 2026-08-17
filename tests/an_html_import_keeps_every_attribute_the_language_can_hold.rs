@@ -68,12 +68,14 @@ fn the_two_sinks_only_the_shared_filter_knows_are_refused() {
 /// `srcset` is REFUSED ON THE WAY IN, and it is the one refusal here that is
 /// not derived.
 ///
-/// §25's value sanitizer reads only the scheme that LEADS a value, so a
-/// list-valued URL attribute hides a live URL behind a safe one. `srcset` was
-/// dropped by the keep list ending before it, which made the hole unreachable
-/// through an import; widening retention is what would have opened it. The §25
-/// half is `markup-carve/carve#1320`, ruled ship-then-fix - refusing the
-/// attribute here neither waits on it nor duplicates it.
+/// This is the IMPORTER declining to admit a list-valued URL attribute the
+/// keep list never reached, which is a separate decision from what the
+/// renderer does with one an author wrote by hand. The §25 half is
+/// `markup-carve/carve#1320`, now ruled and implemented - the value sanitizer
+/// probes a URL-list value at every candidate rather than at its head, see
+/// `tests/a_url_list_attribute_is_probed_at_every_candidate.rs`. The refusal
+/// here neither waits on that nor duplicates it: admitting the attribute would
+/// be widening retention, and that is its own call.
 #[test]
 fn a_list_valued_url_attribute_is_refused_rather_than_carried() {
     let source =
