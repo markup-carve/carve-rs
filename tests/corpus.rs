@@ -421,6 +421,7 @@ const IMPLEMENTED: &[&str] = &[
     "a-wider-comment-fence-inside-an-item-hides-its-body-the-same-way",
     "an-abbreviation-inside-a-comment-defines-nothing",
     "url-list-attributes-are-probed-token-wise",
+    "an-escaped-hash-keeps-its-escape-at-a-container-s-content-position",
 ];
 
 fn corpus_dir() -> PathBuf {

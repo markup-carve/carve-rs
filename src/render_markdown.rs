@@ -1552,7 +1552,21 @@ fn resolve_narrowed_escapes(text: &str) -> String {
     }
     let line: Vec<char> = text.chars().map(|c| candidate(c).unwrap_or(c)).collect();
     let mut out = String::with_capacity(text.len());
+    // WHERE THE CURRENT LINE'S CONTENT BEGINS, carried rather than re-derived.
+    //
+    // M2b's position test used to answer by scanning BACKWARD from the
+    // candidate to the line's newline, once per candidate - so a line whose
+    // every character is a candidate paid an O(n) scan n times over, which is
+    // the quadratic markup-carve/carve#1331 measured at 33x the pre-§8b writer.
+    // The position is a property of the LINE, not of the candidate, so it is
+    // computed once when a line opens and read in O(1) after that.
+    let mut content_start = content_position(&line, 0);
     for (i, raw) in text.chars().enumerate() {
+        if raw == '\n' {
+            content_start = content_position(&line, i + 1);
+            out.push(raw);
+            continue;
+        }
         // TWO FAMILIES, TWO TESTS. M1b asks whether a delimiter of the same
         // character stands beside the candidate; M2b asks whether the
         // candidate stands where an ATX heading could open. Dispatched on
@@ -1561,7 +1575,7 @@ fn resolve_narrowed_escapes(text: &str) -> String {
         // one is M2b's.
         let keep = match (narrowed_character(raw), authored_character(raw)) {
             (Some(ch), _) => Some((ch, adjacent_to_live_delimiter(&line, i, ch))),
-            (None, Some(ch)) => Some((ch, opens_an_atx_heading(&line, i))),
+            (None, Some(ch)) => Some((ch, opens_an_atx_heading(&line, i, content_start))),
             (None, None) => None,
         };
 
@@ -1585,23 +1599,40 @@ fn resolve_narrowed_escapes(text: &str) -> String {
 /// the index carries across.
 ///
 /// Three conditions, all of them CommonMark's: the character stands at the
-/// line's content position, which admits up to three leading spaces; the run of
-/// hashes starting there is one to six long; and the run is closed by a space, a
-/// tab or the end of the line. A tag, an issue reference and a hex colour fail
-/// the third even at a line's start, which is why the test is spelled on the run
-/// rather than on the position alone.
-fn opens_an_atx_heading(line: &[char], index: usize) -> bool {
-    let start = line[..index]
-        .iter()
-        .rposition(|c| *c == '\n')
-        .map_or(0, |at| at + 1);
-
-    let prefix = &line[start..index];
-    if prefix.len() > 3 || !prefix.iter().all(|c| *c == ' ') {
+/// line's CONTENT POSITION; the run of hashes starting there is one to six
+/// long; and the run is closed by a space, a tab or the end of the line. A tag,
+/// an issue reference and a hex colour fail the third even at a line's start,
+/// which is why the test is spelled on the run rather than on the position
+/// alone.
+///
+/// `content_start` is the line's content position, computed once per line by
+/// [`content_position`] rather than re-derived here. Column 0 is the content
+/// position only of a line no container encloses (markup-carve/carve#1332).
+///
+/// THE RUN IS COUNTED TO SEVEN AND NO FURTHER. The comparison only asks whether
+/// the run EXCEEDS six, and seven is the smallest count that still answers that.
+/// Behaviour is identical either way - a run longer than six is refused on the
+/// count alone, so `line.get(index + run)` is only ever reached when the count is
+/// exact.
+///
+/// IT IS DEFENSIVE RATHER THAN LOAD-BEARING, and the perf rows say so by NOT
+/// separating it: removing the bound leaves them green. The position test above
+/// returns before it for every candidate but the one AT the content position, so
+/// the count already runs at most once per line whatever its bound. It stays
+/// because it costs nothing and because that ordering is the only thing keeping
+/// it cheap - a future edit that tests the run first would reintroduce
+/// markup-carve/carve#1331's other half, and would find the bound already in
+/// place.
+fn opens_an_atx_heading(line: &[char], index: usize, content_start: usize) -> bool {
+    if index != content_start {
         return false;
     }
 
-    let run = line[index..].iter().take_while(|c| **c == '#').count();
+    let run = line[index..]
+        .iter()
+        .take_while(|c| **c == '#')
+        .take(7)
+        .count();
     if run > 6 {
         return false;
     }
@@ -1610,6 +1641,103 @@ fn opens_an_atx_heading(line: &[char], index: usize) -> bool {
         Some(' ' | '\t' | '\n') | None => true,
         Some(_) => false,
     }
+}
+
+/// Where the CONTENT of the line beginning at `line_start` begins, which is
+/// after every container prefix the writer put in front of it (PART 11 §8b,
+/// markup-carve/carve#1332).
+///
+/// Column 0 is the content position only of a line no container encloses.
+/// Measuring from column 0 unconditionally is what made `> \# heading` emit
+/// `> # heading`, which CommonMark reads back as a heading inside the quote -
+/// content corruption on a plain round trip (markup-carve/carve#1330).
+///
+/// The prefixes are the ones this writer EMITS, read back off the line it
+/// emitted: a quote marker, a bullet, a task marker, an ordered marker, a
+/// footnote definition's label, and the indentation any of them pads its
+/// continuation lines with. They nest, so the scan loops rather than matching
+/// once - `> > ` is two quote markers and `- ` inside `- ` is a pad and a
+/// bullet.
+///
+/// A DEFINITION-LIST body and a colon fence are deliberately absent: the
+/// Markdown target flattens both to column 0, so there is no prefix in front of
+/// their content to pass over.
+///
+/// Indentation is consumed whether or not a marker follows it, because a
+/// continuation line's pad IS the container's prefix - a paragraph line inside
+/// an item sits at the item's content column, and a hash there opens a heading
+/// exactly as one at column 0 does outside.
+fn content_position(line: &[char], line_start: usize) -> usize {
+    let mut at = line_start;
+    loop {
+        while line.get(at) == Some(&' ') {
+            at += 1;
+        }
+        match container_prefix_end(line, at) {
+            Some(end) => at = end,
+            None => return at,
+        }
+    }
+}
+
+/// One container prefix at `at`, and where it ends. See [`content_position`].
+fn container_prefix_end(line: &[char], at: usize) -> Option<usize> {
+    let ch = *line.get(at)?;
+
+    // A quote marker takes ONE following space, the separator this writer emits.
+    // A blank quote line is written bare (`>`), so the space is optional.
+    if ch == '>' {
+        return Some(if line.get(at + 1) == Some(&' ') {
+            at + 2
+        } else {
+            at + 1
+        });
+    }
+
+    // A task marker before the plain bullet it starts with, so `- [ ] ` is read
+    // whole rather than as a bullet followed by a bracket.
+    if matches!(ch, '-' | '*' | '+') && line.get(at + 1) == Some(&' ') {
+        if line.get(at + 2) == Some(&'[')
+            && matches!(line.get(at + 3), Some(' ' | 'x' | 'X'))
+            && line.get(at + 4) == Some(&']')
+            && line.get(at + 5) == Some(&' ')
+        {
+            return Some(at + 6);
+        }
+        return Some(at + 2);
+    }
+
+    // An ordered marker: digits, then the authored delimiter, then the
+    // separator. The digit run is bounded the way `protect_paragraph_list_markers`
+    // bounds its own - a number no writer emits is not a marker.
+    if ch.is_ascii_digit() {
+        let mut end = at;
+        while end - at < 9 && line.get(end).is_some_and(char::is_ascii_digit) {
+            end += 1;
+        }
+        if matches!(line.get(end), Some('.' | ')')) && line.get(end + 1) == Some(&' ') {
+            return Some(end + 2);
+        }
+        return None;
+    }
+
+    // A footnote definition's label, which this writer emits as `[^id]: `. An
+    // abbreviation definition (`*[X]: `) is NOT one: its body is not a container
+    // and holds no block content for a hash to open.
+    if ch == '[' && line.get(at + 1) == Some(&'^') {
+        let mut end = at + 2;
+        while !matches!(line.get(end), None | Some('\n') | Some(']')) {
+            end += 1;
+        }
+        if line.get(end) == Some(&']')
+            && line.get(end + 1) == Some(&':')
+            && line.get(end + 2) == Some(&' ')
+        {
+            return Some(end + 3);
+        }
+    }
+
+    None
 }
 
 fn flatten_heading_text(text: &str) -> String {
