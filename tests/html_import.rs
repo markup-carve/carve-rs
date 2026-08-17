@@ -466,10 +466,19 @@ fn every_mode_maps_the_seven_identically() {
         );
         assert!(result.report.diagnostics.is_empty(), "{mode:?}");
 
+        // `dir` rides ALONGSIDE the marker rather than being dropped: the
+        // importer keeps every attribute Carve can hold, and a compact
+        // semantic span's attribute slot holds one (carve-rs#1060).
         let exotic = html_to_carve("<p><kbd dir=\"rtl\">k</kbd></p>", &options).unwrap();
-        assert_eq!(exotic.value, "[k]{kbd}\n", "{mode:?}");
+        assert_eq!(exotic.value, "[k]{dir=rtl kbd}\n", "{mode:?}");
+        assert!(exotic.report.diagnostics.is_empty(), "{mode:?}");
+
+        // The one name the marker cannot share is its OWN. Dropping it is
+        // reported rather than silently overwritten by the empty marker value.
+        let collision = html_to_carve("<p><kbd kbd=\"lit\">k</kbd></p>", &options).unwrap();
+        assert_eq!(collision.value, "[k]{kbd}\n", "{mode:?}");
         assert_eq!(
-            exotic
+            collision
                 .report
                 .diagnostics
                 .iter()

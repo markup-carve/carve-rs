@@ -3256,7 +3256,14 @@ fn escape_attr_name_value(text: &str) -> String {
         .collect()
 }
 
-fn is_attr_identifier(text: &str) -> bool {
+/// Whether a name has a BARE spelling in Carve attribute syntax.
+///
+/// The writer's rule, shared with the HTML importer so the importer cannot keep
+/// a name the writer would silently rewrite: `escape_attr_key` strips every
+/// character this rejects, so `xlink:href` would come back as `xlinkhref` and
+/// the document would claim an attribute the author never wrote
+/// (carve-rs#1060).
+pub(crate) fn is_attr_identifier(text: &str) -> bool {
     let mut chars = text.chars();
     chars
         .next()

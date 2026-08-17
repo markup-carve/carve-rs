@@ -174,16 +174,24 @@ fn control_a_blockquote_without_a_cite_is_unchanged() {
     );
 }
 
-/// CONTROL: `cite` is kept on a `<blockquote>` and NOWHERE else. The allowlist
-/// entry is keyed on the tag, so a `<q cite>` or a `<p cite>` still drops it
-/// rather than the branch widening to every element.
+/// `cite` is kept on a `<blockquote>` AND everywhere else. The tag-keyed
+/// allowlist entry became unnecessary when the policy turned into a refusal
+/// list: an attribute Carve can hold is kept wherever the author wrote it, and
+/// nothing is reported because nothing is lost (carve-rs#1060).
 #[test]
-fn control_cite_is_kept_only_on_a_blockquote() {
-    assert_eq!(import("<p cite=\"u\">q</p>"), "q\n");
-    let d = diagnostics("<p cite=\"u\">q</p>");
+fn cite_is_kept_on_any_element_not_only_a_blockquote() {
+    assert_eq!(import("<p cite=\"u\">q</p>"), "{cite=u}\nq\n");
     assert!(
-        d.iter().any(|m| m.contains("cite")),
-        "a cite outside a blockquote must still be reported: {d:?}"
+        diagnostics("<p cite=\"u\">q</p>").is_empty(),
+        "a kept attribute must not also be reported lost"
+    );
+    // The one exception is the element whose own MARKER owns the key: a
+    // `<cite>` becomes `{cite}`, so a `cite` attribute on it has no room.
+    assert!(
+        diagnostics("<p><cite cite=\"u\">q</cite></p>")
+            .iter()
+            .any(|m| m.contains("cite")),
+        "the marker collision must be named, not silently overwritten"
     );
 }
 
