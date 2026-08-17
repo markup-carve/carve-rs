@@ -854,7 +854,10 @@ fn extract_footnote_defs(
         // container prefix first, then test the bare content (corpus 115).
         // The footnote prepass asks per LINE which column a definition reaches
         // (see `reached_by`), so the innermost column alone is not enough here.
-        let item_content_col = columns.observe(
+        // Called for its effect on the column stack, not for its return: every
+        // question below asks `reached_by` about a specific column instead of
+        // taking the innermost one (carve-rs#1054).
+        columns.observe(
             lines[i],
             in_fence.is_some() || in_line_block.is_some() || in_comment_fence.is_some(),
         );
@@ -933,15 +936,23 @@ fn extract_footnote_defs(
             i += 1;
             continue;
         } else if let Some((open, open_col)) =
-            detect_comment_fence_opener_in_container(lines[i], item_content_col)
+            detect_comment_fence_opener_in_container(lines[i], &columns)
         {
+            // THE CONTAINER'S COLUMN BOUNDS THE SPAN, NOT THE DELIMITER'S. The
+            // bound ends the container at the first line that dedents below it,
+            // so measuring from where the `%%%` happens to be written read a
+            // legal body line as the end: `- item` / `    %%%` / `  [r]: /u` /
+            // `    %%%` put the fence at 4 and its body at 2, still inside the
+            // item, and the fence was declined (carve-rs#1054). The column the
+            // fence REACHES is the one the container actually holds.
+            let bound_col = columns.reached_by(open_col);
             if comment_fence_closers
                 .get(&open.fence_len)
                 .is_some_and(|close_at| *close_at > i)
                 && (open_col == 0
                     || container_closers
                         .get_or_insert_with(|| ContainerCommentClosers::build(&lines))
-                        .closes(&lines, i, open_col, open.fence_len))
+                        .closes(&lines, i, bound_col, open.fence_len))
             {
                 in_comment_fence = Some(open.fence_len);
                 body.push(lines[i].to_string());
@@ -1457,15 +1468,19 @@ fn extract_link_defs(source: &str) -> (String, BTreeMap<String, LinkDef>) {
             body.push(line.to_string());
             continue;
         } else if let Some((open, open_col)) =
-            detect_comment_fence_opener_in_container(line, content_col)
+            detect_comment_fence_opener_in_container(line, &columns)
         {
+            // Same two columns as the footnote prepass above: the fence is
+            // gated by the column it REACHES, and the span is bounded by the
+            // column the container holds rather than by the delimiter's own.
+            let bound_col = columns.reached_by(open_col);
             if comment_closers
                 .get(&open.fence_len)
                 .is_some_and(|close_at| *close_at > line_index)
                 && (open_col == 0
                     || container_closers
                         .get_or_insert_with(|| ContainerCommentClosers::build(&all_lines))
-                        .closes(&all_lines, line_index, open_col, open.fence_len))
+                        .closes(&all_lines, line_index, bound_col, open.fence_len))
             {
                 in_comment_fence = Some(open.fence_len);
                 body.push(line.to_string());
@@ -4357,12 +4372,24 @@ fn is_comment_fence_close_any_column(line: &str, fence_len: usize) -> bool {
 ///
 /// Returns the fence and the COLUMN its `%` run starts at, which is what bounds
 /// its body - see `container_comment_fence_closes`.
+/// A comment fence opener, and the column it is written at, when that column
+/// reaches a live list item.
+///
+/// WHICH COLUMN THE FENCE REACHES, not which one is innermost. `- - inner`
+/// opens two items on one line and leaves BOTH content columns live, 2 and 4
+/// (carve#655); a fence written at 2 is the outer item's, and asking the
+/// innermost column alone declined it while the outer item was still open
+/// (carve-rs#1054). `reached_by` is the question the definition scan beside this
+/// one already asks, so both halves now measure against the same thing.
+///
+/// The gate that remains is the §24 C3 one: a fence reaching no live column at
+/// all is below the container and is not its comment.
 fn detect_comment_fence_opener_in_container(
     line: &str,
-    content_col: usize,
+    columns: &ContentColumns,
 ) -> Option<(CommentFenceOpen, usize)> {
     let (open, col) = detect_comment_fence_opener_at_any_column(line)?;
-    if col > 0 && (content_col == 0 || col < content_col) {
+    if col > 0 && columns.reached_by(col) == 0 {
         return None;
     }
     Some((open, col))
