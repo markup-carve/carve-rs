@@ -93,3 +93,50 @@ fn a_smart_punctuation_trigger_keeps_its_escape() {
 fn a_code_span_keeps_its_own_backslash() {
     assert_eq!(md("`a \\# b`"), "`a \\# b`");
 }
+
+/// M2b's POSITION IS AFTER THE CONTAINER PREFIX, at any depth or combination
+/// (markup-carve/carve#1332). Column 0 is the content position only of a line
+/// no container encloses.
+///
+/// Measuring from column 0 unconditionally is what made `> \# heading` emit
+/// `> # heading` - which CommonMark reads back as a heading inside the quote,
+/// so a plain round trip corrupted the document rather than merely reformatting
+/// it (markup-carve/carve#1330).
+#[test]
+fn the_content_position_is_measured_past_every_container_prefix() {
+    for (input, want) in [
+        ("> \\# heading", "> \\# heading"),
+        ("> > \\# deep", "> > \\# deep"),
+        ("- \\# heading", "- \\# heading"),
+        ("1. \\# heading", "1. \\# heading"),
+        ("1) \\# heading", "1) \\# heading"),
+        ("- [ ] \\# heading", "- [ ] \\# heading"),
+        ("- [x] \\# heading", "- [x] \\# heading"),
+        ("[^a]: \\# heading\n\ntext[^a]", "text[^a]"),
+    ] {
+        assert!(
+            md(input).contains(want),
+            "input {input:?} wanted {want:?}, got {:?}",
+            md(input)
+        );
+    }
+}
+
+/// AND ONLY AT THAT POSITION. The prefix moves the content position; it does
+/// not make the whole line one. Each of these is the same prefix as a row above
+/// with the hash one step past where a heading could open, and each drops the
+/// escape - which is the half that says the fix is a position rather than a
+/// blanket "inside a container, keep everything".
+#[test]
+fn a_hash_past_the_content_position_still_drops_its_escape() {
+    for (input, want) in [
+        ("> C\\# is a language", "> C# is a language"),
+        ("- C\\# is a language", "- C# is a language"),
+        ("> issue \\#123 fixed", "> issue #123 fixed"),
+        // The position passes and the RUN does not, behind a prefix exactly as
+        // it does at column 0.
+        ("- \\#tag rest", "- #tag rest"),
+    ] {
+        assert_eq!(md(input), want, "input {input:?}");
+    }
+}

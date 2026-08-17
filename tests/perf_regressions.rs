@@ -1233,3 +1233,91 @@ fn a_carried_run_costs_one_scan_per_row() {
         40_000,
     );
 }
+
+/// ESCAPE-HEAVY MARKDOWN OUTPUT, scaled by the number of lines.
+///
+/// THE MARKDOWN TARGET HAD NO SCALING ROW AT ALL, in any engine, which is why
+/// markup-carve/carve#1331's 33x regression shipped invisibly. That absence is
+/// worth closing on its own: a target with no scaling row is a target where the
+/// next regression is also silent.
+///
+/// Every `\#` is an authored escape and reaches PART 11 §8b M2b's
+/// content-position test, and every line carries a container prefix so the test
+/// is decided past one rather than at column 0. FIXED-WIDTH UNITS - one line,
+/// always the same line - so the byte multiple and the unit multiple agree.
+fn escape_heavy_markdown_lines(n: usize) -> String {
+    "> \\#\\#\\# and \\# and \\#\\# tail\n>\n".repeat(n)
+}
+
+#[test]
+fn the_markdown_target_scales_linearly_on_escape_heavy_input() {
+    assert_conversion_near_linear_at(
+        |source| drop(carve::to_markdown(source)),
+        escape_heavy_markdown_lines,
+        "escape-heavy markdown",
+        25_000,
+        100_000,
+    );
+}
+
+/// A single line of N ADJACENT authored escapes - the shape markup-carve/carve#1331
+/// measured, where §8b M2b's two O(n) scans per candidate met a line on which
+/// every character is a candidate.
+///
+/// FIXED-WIDTH UNITS: one `\#` is one unit and two bytes, always.
+fn adjacent_authored_escapes(n: usize) -> String {
+    let mut source = String::with_capacity(n * 2 + 1);
+    source.push_str(&"\\#".repeat(n));
+    source.push('\n');
+    source
+}
+
+/// The same run behind a CONTAINER PREFIX, which is where the content position
+/// is measured from on the emitted line (markup-carve/carve#1332). Its own row
+/// because a fix that hoisted the scan for unprefixed lines only would stay
+/// quadratic here.
+fn adjacent_authored_escapes_in_a_quote(n: usize) -> String {
+    let mut source = String::with_capacity(n * 2 + 3);
+    source.push_str("> ");
+    source.push_str(&"\\#".repeat(n));
+    source.push('\n');
+    source
+}
+
+/// THIS ROW IS A SHARE, NOT A SLOPE, and the reason is worth reading before
+/// changing it to a slope. A single line of 100k escapes is ALREADY superlinear
+/// in the PARSER - measured at 3.22x per byte over a 4x input on `carve::parse`
+/// alone, with no renderer involved - so a scaling row over this shape reports
+/// the parser's cost and would stay red however linear the writer became. The
+/// row above scales; this one isolates.
+///
+/// What it isolates is the Markdown target's OWN share of the work, by pricing
+/// it against the HTML target on the same input. The two run the same parse, so
+/// whatever the parse costs cancels, and what is left is what each writer adds.
+/// Before markup-carve/carve#1331 the Markdown target cost about 29x the HTML
+/// target on this shape; after, about 0.7x. A bound of 3x sits between them with
+/// an order of magnitude of room on either side, and it cannot be satisfied by a
+/// parser that gets slower.
+fn assert_markdown_costs_no_more_than_html(build: impl Fn(usize) -> String, label: &str) {
+    let markdown =
+        measure_conversion_scaling_at(&|s| drop(carve::to_markdown(s)), &build, 25_000, 100_000);
+    let html = measure_conversion_scaling_at(&|s| drop(carve::to_html(s)), &build, 25_000, 100_000);
+
+    let share = markdown.large_per_byte / html.large_per_byte;
+    assert!(
+        share < 3.0,
+        "{label}: the markdown target cost {share:.2}x the html target per byte \
+         (healthy ~0.7x, a per-candidate line scan ~29x): markdown={:.4}us/byte html={:.4}us/byte",
+        markdown.large_per_byte * 1e6,
+        html.large_per_byte * 1e6
+    );
+}
+
+#[test]
+fn an_adjacent_escape_run_costs_the_markdown_target_no_more_than_the_html_target() {
+    assert_markdown_costs_no_more_than_html(adjacent_authored_escapes, "adjacent authored escapes");
+    assert_markdown_costs_no_more_than_html(
+        adjacent_authored_escapes_in_a_quote,
+        "adjacent authored escapes behind a quote prefix",
+    );
+}
