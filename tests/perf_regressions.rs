@@ -1119,3 +1119,35 @@ fn a_nested_continuation_attachment_is_bounded() {
         );
     });
 }
+
+/// A definition body's marker line asks PART 1 S4's question of its own content
+/// (carve-rs#1049), and that question is answered by PARSING the body. The
+/// answer therefore has to stay a per-entry cost: a predicate that re-read the
+/// whole preceding document, or one that got asked once per line instead of
+/// once per body, would turn a run of definition entries quadratic without
+/// changing a byte of output.
+///
+/// FIXED-WIDTH UNITS, so the byte multiple and the unit multiple agree and the
+/// per-byte ratio means what the label says. Each entry is the same length: an
+/// eight-digit term, a marker line holding a HEADING - the kind whose answer
+/// this change moved - and the flush-left line the rule is asked about.
+fn definition_marker_line_blocks(n: usize) -> String {
+    let mut source = String::with_capacity(n * 24);
+    for i in 0..n {
+        writeln!(source, ":: t{i:08}\n:  # H\ntail\n").unwrap();
+    }
+    source
+}
+
+#[test]
+fn definition_marker_line_s4_is_answered_per_entry() {
+    // No `perf_guard` here: `measure_conversion_scaling_at` takes it, and
+    // `PERF_LOCK` is a plain `Mutex`, so a second acquisition on the same
+    // thread deadlocks rather than nesting.
+    assert_near_linear_at(
+        definition_marker_line_blocks,
+        "definition marker-line S4",
+        10_000,
+        40_000,
+    );
+}

@@ -10,7 +10,9 @@
 //! and a heading written as a marker's content leaves none, so `- # H` / `tail`
 //! ends the item at any depth. What survives here is the CONTENT-COLUMN half,
 //! which the clause leaves deliberately open because corpus
-//! 75-list-nesting-and-looseness-4 pins the folding answer for it.
+//! 75-list-nesting-and-looseness-4 pins the folding answer for it. A DEFINITION
+//! BODY'S marker line answers the same way as a list item's since
+//! carve-rs#1049, and the row below is what that changed here.
 
 #[test]
 fn indented_item_heading_after_blank_keeps_the_lazy_line_in_the_item() {
@@ -43,14 +45,15 @@ fn deeply_nested_indented_heading_keeps_the_lazy_line_in_the_item() {
 }
 
 #[test]
-fn heading_ending_a_definition_body_keeps_the_lazy_line_in_the_body() {
-    // A heading that ends a definition list's definition body also keeps the
-    // following flush-left line inside it (the recursive check descends through
-    // the definition list, not just plain lists) -- as a paragraph, since the
-    // definition body is loose.
+fn heading_on_a_definition_marker_line_ends_the_body_but_not_the_item() {
+    // THE DEFINITION BODY'S MARKER LINE MOVED TOO (carve-rs#1049). `:  # H` is
+    // the body's first block, so S4 ends the body there the way `- # H` ends an
+    // item - the line no longer lands in the `dd`. The ITEM is a level up and
+    // its own body was collected at a CONTENT COLUMN, which is the half the
+    // clause leaves open, so the line stays inside the `li` beside the `dl`.
     assert_eq!(
         carve::to_html("- one\n  :: term\n  :  # H\nlazy\n"),
-        "<ul>\n  <li>one\n    <dl>\n      <dt>term</dt>\n      <dd>\n        <h1 id=\"H\">H</h1>\n        <p>lazy</p>\n      </dd>\n    </dl>\n  </li>\n</ul>"
+        "<ul>\n  <li>one\n    <dl>\n      <dt>term</dt>\n      <dd>\n        <h1 id=\"H\">H</h1>\n      </dd>\n    </dl>\n    lazy\n  </li>\n</ul>"
     );
 }
 

@@ -9469,7 +9469,30 @@ fn body_ends_with_an_attribute_line(source: &str) -> bool {
     }
 }
 
-fn definition_body_takes_the_fold(source: &str, options: &Options<'_>) -> bool {
+/// `marker_line_is_the_whole_body` is true while nothing has been collected at
+/// the body's own column, so `source` is the `:  ` marker line's content and
+/// nothing else. THAT is the half PART 1 S4 rules on (markup-carve/carve#1280,
+/// carve-rs#1049): the marker line's content is the body's FIRST BLOCK, so
+/// `:  # H` writes a heading there exactly as `:  ` plus an indented `# H`
+/// would, and a block that leaves no open paragraph leaves none wherever it was
+/// written. Ask S4's one question and let the answer decide.
+///
+/// The enumeration below answered it from a LIST of kinds instead, and the list
+/// disagreed with itself: a table, a thematic break and an attribute block ended
+/// the body, while a HEADING and a COMMENT folded - and the LIST spelling of
+/// both of those ends, in this same engine, one clause over. So the same
+/// document got two answers depending on which of the five kinds sat on the
+/// marker.
+///
+/// Once lines ARE collected at the body's content column the clause leaves the
+/// question deliberately open - corpus 75-list-nesting-and-looseness-4 pins the
+/// folding answer for the list spelling of that half - so that path keeps the
+/// enumeration, exactly as the list path does one call site over.
+fn definition_body_takes_the_fold(
+    source: &str,
+    marker_line_is_the_whole_body: bool,
+    options: &Options<'_>,
+) -> bool {
     // A BLOCK-ATTRIBUTE LINE LEAVES NO NODE, so the block-level test below
     // cannot see it - and it INTERRUPTS an open paragraph (§15 A1), which is the
     // one thing that test is asking about. `d` / `{.k}` parses to a single
@@ -9492,7 +9515,17 @@ fn definition_body_takes_the_fold(source: &str, options: &Options<'_>) -> bool {
     if body_ends_with_an_attribute_line(source) {
         return false;
     }
-    if nested_ends_with_open_paragraph(source, options) {
+    // S4's question, asked of the WHOLE body. `body_ends_with_open_paragraph`
+    // is the same predicate the list's marker-line path asks, and it does NOT
+    // look past a trailing run of comments: there the open paragraph would have
+    // to be one written EARLIER on the marker line, and here the comment IS the
+    // marker line, so there is no earlier paragraph for it to leave open
+    // (`:  %% c` / `tail`, matching `- %% c` / `tail`).
+    if if marker_line_is_the_whole_body {
+        body_ends_with_open_paragraph(source, options)
+    } else {
+        nested_ends_with_open_paragraph(source, options)
+    } {
         return true;
     }
     let blocks = probe_blocks(source, options);
@@ -9508,20 +9541,23 @@ fn definition_body_takes_the_fold(source: &str, options: &Options<'_>) -> bool {
     }
     matches!(
         blocks[end - 1],
-        // See above.
-        BlockNode::Heading(_)
-            // AN IMAGE BLOCK IS ONLY A BLOCK UNTIL SOMETHING FOLDS INTO IT.
-            // `image_is_block` makes a bare image line a block ONLY when the
-            // next line does not fold, and a `^ ` caption is an inline
-            // continuation a following line extends. Both are decided by the
-            // line AFTER the body, which is exactly the line this predicate is
-            // being asked about and which the collected source therefore does
-            // not contain yet. Reading the block off a body that stops one line
-            // early turned `:  ![a](i.png)` / `lazy` into a standalone image
-            // plus a top-level paragraph, where the list twin folds - the same
-            // read-the-body-so-far trap the fence guard exists to avoid.
-            | BlockNode::BlockImage(_)
-            | BlockNode::Figure(_)
+        // See above. A HEADING FOLDS ONLY AT THE CONTENT COLUMN, which is the
+        // half carve#1280 leaves open; on the marker line S4 has already
+        // answered above, and the answer is that it does not.
+        BlockNode::Heading(_) if !marker_line_is_the_whole_body
+    ) || matches!(
+        blocks[end - 1],
+        // AN IMAGE BLOCK IS ONLY A BLOCK UNTIL SOMETHING FOLDS INTO IT.
+        // `image_is_block` makes a bare image line a block ONLY when the
+        // next line does not fold, and a `^ ` caption is an inline
+        // continuation a following line extends. Both are decided by the
+        // line AFTER the body, which is exactly the line this predicate is
+        // being asked about and which the collected source therefore does
+        // not contain yet. Reading the block off a body that stops one line
+        // early turned `:  ![a](i.png)` / `lazy` into a standalone image
+        // plus a top-level paragraph, where the list twin folds - the same
+        // read-the-body-so-far trap the fence guard exists to avoid.
+        BlockNode::BlockImage(_) | BlockNode::Figure(_)
     )
 }
 
@@ -9646,7 +9682,14 @@ fn collect_definition_body(
                 so_far.push('\n');
                 so_far.push_str(collected);
             }
-            if !definition_body_takes_the_fold(&so_far, options) {
+            // NOTHING HAS BEEN COLLECTED AT THE BODY'S COLUMN YET, so the body
+            // is the marker line's own content and S4's one question is asked of
+            // it directly (PART 1 S4, ruled uniform in markup-carve/carve#1280).
+            // That is the half `marker_line_was_the_whole_block` answers for a
+            // list item one call site over; a definition body IS such a
+            // container (markup-carve/carve#956) and the container KIND is not a
+            // parameter of the rule (markup-carve/carve#920).
+            if !definition_body_takes_the_fold(&so_far, lines.is_empty(), options) {
                 break;
             }
             // BELOW THE BODY'S COLUMN THE BODY ENDS (markup-carve/carve#932).
