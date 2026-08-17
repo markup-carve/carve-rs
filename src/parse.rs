@@ -11374,6 +11374,59 @@ struct Stanza {
     at: Option<Pos>,
     end_cols: Vec<Option<isize>>,
     start_cols: Vec<Option<isize>>,
+    /// The comment-only body lines this stanza had, as `(line index, node)`.
+    /// Their text is already gone from `lines` - see `verse_comment_line`.
+    comments: Vec<(usize, Comment)>,
+}
+
+/// A verse body line that is nothing but a comment (grammar PART 9 §23, IT IS
+/// REMOVED AT THE BLOCK LAYER). Returns the comment's content.
+///
+/// ONLY a line whose FIRST character is `%` qualifies: `comment_line`'s optional
+/// `[whitespace]` prefix has nothing to consume in verse, where a leading run is
+/// CONTENT, so an indented `%%` line is ordinary text. The line is measured
+/// AFTER the fence's own structural indent is stripped, which is the reference
+/// column the rest of the block measures against.
+fn verse_comment_line(stripped: &str) -> Option<String> {
+    let rest = stripped.strip_prefix("%%")?;
+    Some(rest.trim_start().to_string())
+}
+
+/// Put the comment-only lines back, at the content position of the line each
+/// one came from.
+///
+/// The block layer emptied those lines before the stanza reached the inline
+/// parser, which is the whole point of the clause: no inline run can reach a
+/// comment, so an unclosed verbatim run opened on an EARLIER line cannot claim
+/// it (carve#1333). The node is still published, because the author wrote it and
+/// PART 12 has a `comment` node for it.
+///
+/// Line k begins just after the k-th break. Where a stanza has no k-th break the
+/// comment is dropped: the only way that happens is an unclosed verbatim run
+/// swallowing the boundary, and inside that run there is no place for a node -
+/// the run's own value carries the emptied line as a newline, like every other
+/// break it swallows.
+fn splice_verse_comments(
+    mut inlines: Vec<InlineNode>,
+    comments: Vec<(usize, Comment)>,
+) -> Vec<InlineNode> {
+    if comments.is_empty() {
+        return inlines;
+    }
+    let mut line_starts = vec![0usize];
+    for (i, node) in inlines.iter().enumerate() {
+        if matches!(node, InlineNode::HardBreak(_)) {
+            line_starts.push(i + 1);
+        }
+    }
+    // Descending, so an insertion never moves an index still to be used.
+    for (line, comment) in comments.into_iter().rev() {
+        let Some(at) = line_starts.get(line).copied() else {
+            continue;
+        };
+        inlines.insert(at, InlineNode::Comment(comment));
+    }
+    inlines
 }
 
 /// Give every line-block hard break a span, even where the stanza's TEXT has
@@ -11394,6 +11447,7 @@ fn place_line_block_breaks(
     lines: &LineBuffer,
     end_cols: &[Option<isize>],
     start_cols: &[Option<isize>],
+    emptied: &[usize],
     options: &Options<'_>,
 ) -> Vec<InlineNode> {
     if !options.positions {
@@ -11408,7 +11462,12 @@ fn place_line_block_breaks(
             };
             let k = break_index;
             break_index += 1;
-            if brk.pos.is_some() {
+            // A break ending a line the block layer EMPTIED is recomputed even
+            // when the inline parser gave it one: what that parser measured is
+            // the emptied line, which ends at column 1, and the newline the
+            // author wrote is at the end of the comment they wrote
+            // (grammar PART 9 §23).
+            if brk.pos.is_some() && !emptied.contains(&k) {
                 return InlineNode::HardBreak(brk);
             }
             // Start: just past the last character of line k. End: the first
@@ -11451,6 +11510,7 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     let mut stanza_col_map: Vec<Option<isize>> = Vec::new();
     let mut stanza_end_cols: Vec<Option<isize>> = Vec::new();
     let mut stanza_start_cols: Vec<Option<isize>> = Vec::new();
+    let mut stanza_comments: Vec<(usize, Comment)> = Vec::new();
     // Where the open stanza began, and where it ended - the CURSOR's own line
     // indices, which still point at the source. The rewritten verse text cannot
     // give a column back, but the lines a stanza occupies are not in doubt.
@@ -11480,6 +11540,7 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                     at: at.and_then(|start| span_of(cur, start, stanza_end, options)),
                     end_cols,
                     start_cols,
+                    comments: std::mem::take(&mut stanza_comments),
                 });
             }
             continue;
@@ -11487,6 +11548,18 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         stanza_start.get_or_insert(line_at);
         stanza_end = cur.pos;
         let stripped = strip_leading_columns(line, base_indent);
+        // A COMMENT-ONLY BODY LINE IS DECIDED HERE, with the other block-layer
+        // decisions and BEFORE any inline content exists (grammar PART 9 §23, IT
+        // IS REMOVED AT THE BLOCK LAYER). Leaving it to the inline parser let
+        // §21's verbatim exclusion claim the line, so a stray backtick anywhere
+        // above PUBLISHED the comment's own text inside the code span - the one
+        // outcome a comment may never have (carve#1333).
+        //
+        // The line stays: what is removed is its TEXT, so the stanza keeps its
+        // shape and the boundary below it still hardens into the `<br>` the
+        // author wrote. The comment itself is put back after the inline run, by
+        // `splice_verse_comments`.
+        let comment = verse_comment_line(&stripped);
         let expanded = expand_line_block_ws(&stripped);
         // A verse line stays placeable only while the rewrite is a SPACE
         // PROMOTED IN PLACE: one space becomes one placeholder, so every column
@@ -11557,7 +11630,32 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 .map(|stripped_cols| stripped_cols + line.chars().count() as isize),
         );
         stanza_start_cols.push(cur.source_col(line_at));
-        stanza.push(expanded);
+        if let Some(content) = comment {
+            let lead = (line.chars().count() - stripped.chars().count()) as isize;
+            let start = cur.source_col(line_at).map(|col| col + lead);
+            let pos = match (options.positions.then_some(()).and(source_line), start) {
+                (Some(at), Some(start)) => Some(Pos {
+                    start_line: at,
+                    start_column: document_column(start, 0),
+                    end_line: at,
+                    end_column: document_column(start, stripped.chars().count()),
+                    ..Default::default()
+                }),
+                _ => None,
+            };
+            stanza_comments.push((
+                stanza.len(),
+                Comment {
+                    block: false,
+                    delimited: false,
+                    content,
+                    pos,
+                },
+            ));
+            stanza.push(String::new());
+        } else {
+            stanza.push(expanded);
+        }
         stanza_line_map.push(source_line);
     }
     if !stanza.is_empty() {
@@ -11573,6 +11671,7 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             at: at.and_then(|start| span_of(cur, start, stanza_end, options)),
             end_cols: stanza_end_cols,
             start_cols: stanza_start_cols,
+            comments: stanza_comments,
         });
     }
 
@@ -11584,6 +11683,7 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                  at,
                  end_cols,
                  start_cols,
+                 comments,
              }| {
                 let source_line = lines.line_map.first().copied().flatten();
                 let anchors: Vec<Option<(usize, isize)>> = lines
@@ -11603,8 +11703,16 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                             other => other,
                         })
                         .collect();
-                let inlines =
-                    place_line_block_breaks(inlines, &lines, &end_cols, &start_cols, options);
+                let emptied: Vec<usize> = comments.iter().map(|(line, _)| *line).collect();
+                let inlines = place_line_block_breaks(
+                    inlines,
+                    &lines,
+                    &end_cols,
+                    &start_cols,
+                    &emptied,
+                    options,
+                );
+                let inlines = splice_verse_comments(inlines, comments);
                 let mut node = BlockNode::Paragraph(Paragraph {
                     attrs: None,
                     children: inlines,

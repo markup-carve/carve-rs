@@ -1762,6 +1762,16 @@ fn render_inlines_with_caption(
         if matches!(node, InlineNode::Comment(c) if !c.delimited) && needs_comment_space(&out) {
             out.push(' ');
         }
+        // PART 11 §7c. A line block hardens every line boundary itself, so a
+        // `hard_break` there is spelled as a BARE NEWLINE - except on the two
+        // lines where a bare newline would not be READ BACK as one, and both are
+        // decided on the bytes already emitted for this line, the way §1a says.
+        if ctx.line_block_depth > 0
+            && matches!(node, InlineNode::HardBreak(_))
+            && verse_break_needs_backslash(&out)
+        {
+            out.push('\\');
+        }
         out.push_str(&rendered);
         if matches!(node, InlineNode::SoftBreak(_)) {
             caption_can_open = first_line && line_node_count == 1 && line_hosts_caption;
@@ -3320,6 +3330,29 @@ fn needs_comment_space(emitted: &str) -> bool {
         None => false,
         Some(last) => last != '\n' && !last.is_whitespace(),
     }
+}
+
+/// Does a line block's hard break need its backslash, given the bytes already
+/// emitted for the line it ends (PART 11 §7c)?
+///
+/// The bare newline is right for most verse lines and wrong for exactly two,
+/// which are the two where §7's own precondition - "where the PARSER discards
+/// trailing whitespace the writer may too" - does not hold:
+///
+///   - the line's content is EMPTY. A bare newline leaves a BLANK line, which
+///     ends the stanza, so one stanza is written back as two.
+///   - the line's content ends in a LONE space. A bare newline makes that space
+///     line-trailing, where PART 2 drops it. A run of TWO OR MORE columns is
+///     already NBSP content (PART 9 §23 MEDIAL GAPS) and survives on its own.
+fn verse_break_needs_backslash(emitted: &str) -> bool {
+    let line = match emitted.rfind('\n') {
+        Some(at) => &emitted[at + 1..],
+        None => emitted,
+    };
+    if line.is_empty() {
+        return true;
+    }
+    line.ends_with(' ') && !line.ends_with("  ")
 }
 
 fn last_boundary(node: &InlineNode) -> Option<char> {

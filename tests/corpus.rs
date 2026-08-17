@@ -422,6 +422,13 @@ const IMPLEMENTED: &[&str] = &[
     "an-abbreviation-inside-a-comment-defines-nothing",
     "url-list-attributes-are-probed-token-wise",
     "an-escaped-hash-keeps-its-escape-at-a-container-s-content-position",
+    // Added with the spec bump to carve 7c70cff (markup-carve/carve#1333 and
+    // #1334), seven documents in two categories. Six already matched at the
+    // previous pin; the seventh is the one this engine published a comment on,
+    // and it needed the parser change. Their `.fmt` sidecars are the half that
+    // moved most: `corpus_canonical_form` reads five of them and two were wrong.
+    "a-comment-only-line-in-a-line-block-is-removed-before-any-inline-run",
+    "a-line-block-s-hard-break-keeps-its-backslash",
 ];
 
 fn corpus_dir() -> PathBuf {
