@@ -542,7 +542,21 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // the same node `321-delimited-comments-7` reports - and one also degrades a
     // `soft_break`. Neither can join the strict set while an authored escape is
     // what the document exists to pin, so this raise is LOSSY only.
-    const STRICT: usize = 912;
+    // 912/233 to 923/233 is the eleven documents arriving with the 9015c3b spec
+    // pin, and nothing else: the corpus went from 1145 pairs to 1156, and the
+    // eleven added pairs are the four `344-a-comment-only-line-in-a-line-block-
+    // is-removed-before-any-inline-run`, the three `345-a-line-block-s-hard-
+    // break-keeps-its-backslash` and the four `346-a-line-block-s-last-body-
+    // line-keeps-its-backslash` documents that pin PART 9 section 23's
+    // block-layer removal and PART 11 section 7c's writer property. Attributed
+    // by DIFFING THE CLASSIFICATION at both pins under ONE build: the diff is
+    // exactly these eleven names on the new side and empty on the old, so no
+    // pre-existing document moved in either direction. All eleven are a line
+    // block of paragraphs, breaks, text and comments - every one of them a node
+    // the editor schema covers - so all eleven land in the strict set, none
+    // reports, and none writes back a different source, which is why LOSSY does
+    // not move and the declared source-lossy set is untouched.
+    const STRICT: usize = 923;
     const LOSSY: usize = 233;
     assert!(
         covered >= STRICT,

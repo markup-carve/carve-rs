@@ -422,6 +422,17 @@ const IMPLEMENTED: &[&str] = &[
     "an-abbreviation-inside-a-comment-defines-nothing",
     "url-list-attributes-are-probed-token-wise",
     "an-escaped-hash-keeps-its-escape-at-a-container-s-content-position",
+    // Added with the spec bump to carve 9015c3b (markup-carve/carve#1333, #1334
+    // and #1340), eleven documents in three categories. Every HTML but one
+    // already matched at the previous pin - the exception is the document this
+    // engine published a comment on, which needed the parser change. The `.fmt`
+    // sidecars are the half that moved: `corpus_canonical_form` reads nine of
+    // them and five were wrong, four of those under the amended §7c, which is
+    // now the PROPERTY a bare newline has to satisfy rather than a list of the
+    // places it does not.
+    "a-comment-only-line-in-a-line-block-is-removed-before-any-inline-run",
+    "a-line-block-s-hard-break-keeps-its-backslash",
+    "a-line-block-s-last-body-line-keeps-its-backslash",
 ];
 
 fn corpus_dir() -> PathBuf {

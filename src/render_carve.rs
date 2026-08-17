@@ -1762,6 +1762,50 @@ fn render_inlines_with_caption(
         if matches!(node, InlineNode::Comment(c) if !c.delimited) && needs_comment_space(&out) {
             out.push(' ');
         }
+        // PART 11 §7c, stated as the PROPERTY it rests on: a `hard_break` in a
+        // line block is written BARE where, and only where, re-reading that
+        // newline yields the same tree; everywhere else it is the PART 3 form.
+        // A bare newline re-derives a break at a boundary BETWEEN two body
+        // lines and nowhere else, because that is the boundary PART 9 §23
+        // hardens. The cases below are consequences of that property, not a
+        // list to check - the clause WAS a list, and the case it did not reach
+        // is the first one under it.
+        let mut rendered = rendered;
+        if ctx.line_block_depth > 0 && matches!(node, InlineNode::HardBreak(_)) {
+            // THE LAST BODY LINE, WHATEVER IT ENDS IN. The body's end is not a
+            // boundary between two lines, so nothing hardens there and the
+            // break can only be the AUTHOR'S own. The newline after it belongs
+            // to the closing fence, or to the blank line before the next
+            // stanza, so the backslash is written WITHOUT one. Measured on a
+            // last body line ending in a backslash, with and without a run of
+            // spaces before it: both lose the break outright, and neither has a
+            // lone trailing space for the case below to catch.
+            //
+            // WHICH LINE IS LAST IS DECIDED BY THE BREAKS, however the author
+            // spelled them: a break ENDS the line it stands at the end of, and
+            // what follows it is the next body line - including one that
+            // renders nothing. So this is the last NODE of the stanza's own
+            // sequence, and `inline_depth == 1` keeps it to that sequence: a
+            // break that merely ends the children of an emphasis has content
+            // after it on the same line.
+            let ends_the_stanza = ctx.inline_depth == 1 && idx + 1 == nodes.len();
+            // A LINE WHOSE LAST NODE IS A COMMENT IS EXEMPT, and the exemption
+            // is keyed on the NODE rather than on the line's position. The
+            // marker runs to the END of its line, so a trailing space there is
+            // INSIDE the note and not content PART 2 is about to take - and a
+            // backslash written to protect it lands in the note's own content,
+            // because the block layer claims the whole line before the inline
+            // parser sees it. An EMPTY comment line is where this bites.
+            let inside_a_comment = idx
+                .checked_sub(1)
+                .is_some_and(|prev| matches!(&nodes[prev], InlineNode::Comment(c) if !c.delimited));
+            if !inside_a_comment && (ends_the_stanza || verse_break_needs_backslash(&out)) {
+                out.push('\\');
+            }
+            if ends_the_stanza {
+                rendered = String::new();
+            }
+        }
         out.push_str(&rendered);
         if matches!(node, InlineNode::SoftBreak(_)) {
             caption_can_open = first_line && line_node_count == 1 && line_hosts_caption;
@@ -1802,6 +1846,14 @@ fn render_inline(
         // that puts it back is decided in `render_inlines`, on the bytes
         // already emitted for this line.
         InlineNode::Comment(c) if c.delimited => format!("{{% {} %}}", c.content),
+        // An EMPTY comment is the marker and nothing else. The space after the
+        // marker separates it from content, and with no content it is line
+        // TRAILING whitespace, which PART 2 discards on the way back in and §7
+        // therefore lets the writer drop. Emitting it left every empty comment
+        // line one space long, and in a line block that space is exactly what
+        // §7c's LONE SPACE case looks for, so the writer proposed a backslash
+        // for a line that had nothing to protect (PART 11 §7c).
+        InlineNode::Comment(c) if c.content.is_empty() => "%%".to_string(),
         InlineNode::Comment(c) => format!("%% {}", c.content),
         InlineNode::Text(text) => escape_text(
             &resolve_nbsp_placeholder(&text.value, ctx.line_block_depth > 0),
@@ -1840,7 +1892,8 @@ fn render_inline(
             format!("{body}{}", render_attrs(&emphasis.attrs))
         }
         InlineNode::Code(code) => {
-            format!("{}{}", render_code(&code.value), render_attrs(&code.attrs))
+            let value = spell_verse_empty_lines(&code.value, ctx.line_block_depth > 0);
+            format!("{}{}", render_code(&value), render_attrs(&code.attrs))
         }
         InlineNode::Link(link) => render_link(link, ctx),
         InlineNode::Image(image) => render_image(image),
@@ -1855,13 +1908,17 @@ fn render_inline(
         InlineNode::Math(math) => format!(
             "{}{}{}",
             if math.display { "$$" } else { "$" },
-            render_code(&math.content),
+            render_code(&spell_verse_empty_lines(
+                &math.content,
+                ctx.line_block_depth > 0
+            )),
             render_attrs(&math.attrs)
         ),
         InlineNode::RawInline(raw) => {
+            let content = spell_verse_empty_lines(&raw.content, ctx.line_block_depth > 0);
             format!(
                 "{}{{={}}}",
-                render_code(&raw.content),
+                render_code(&content),
                 escape_format(&raw.format)
             )
         }
@@ -1870,7 +1927,8 @@ fn render_inline(
             // the ordinary inline attribute block (same as a code span carries).
             // `render_code` widens the backtick fence when the content holds
             // backticks, so the round-trip re-parses identically.
-            format!("!{}{}", render_code(&lit.content), render_attrs(&lit.attrs))
+            let content = spell_verse_empty_lines(&lit.content, ctx.line_block_depth > 0);
+            format!("!{}{}", render_code(&content), render_attrs(&lit.attrs))
         }
         InlineNode::Symbol(symbol) => format!(
             ":{}:{}",
@@ -2084,6 +2142,43 @@ fn render_emphasis(delim: &str, content: &str, prev_char: char, next_char: char)
 
 fn is_word_boundary(ch: char) -> bool {
     ch.is_ascii_alphanumeric() || ch == '_'
+}
+
+/// Spell an EMPTY LINE inside a verbatim value the one way verse can spell one.
+///
+/// A run that stays open in a line block swallows the line boundaries it crosses
+/// as newlines, and a comment-only line is emptied above it (PART 9 §23), so its
+/// value can hold an empty line. The writer cannot emit that line as a blank
+/// one: a blank line ENDS THE STANZA, and the run comes back split. A `\` is no
+/// help either - inside the run it is content, not a break.
+///
+/// A comment line is what is left, and it is exact rather than a workaround: it
+/// is removed at the BLOCK layer, before the run exists, so it leaves the
+/// emptied line the value already holds.
+///
+/// The FIRST and LAST segments are skipped, and neither is a line of its own:
+/// the first is the tail of the line the run OPENED on, and the last is the line
+/// the CLOSING fence goes out on. Spelling the last one would put the fence
+/// inside the comment, where the block layer takes it with the rest of the line
+/// and the run never closes at all.
+fn spell_verse_empty_lines(content: &str, in_line_block: bool) -> String {
+    if !in_line_block || !content.contains('\n') {
+        return content.to_string();
+    }
+    let segments: Vec<&str> = content.split('\n').collect();
+    let last = segments.len() - 1;
+    let mut out = String::with_capacity(content.len());
+    for (i, segment) in segments.iter().enumerate() {
+        if i > 0 {
+            out.push('\n');
+        }
+        if i > 0 && i < last && segment.is_empty() {
+            out.push_str("%%");
+            continue;
+        }
+        out.push_str(segment);
+    }
+    out
 }
 
 fn render_code(content: &str) -> String {
@@ -3320,6 +3415,45 @@ fn needs_comment_space(emitted: &str) -> bool {
         None => false,
         Some(last) => last != '\n' && !last.is_whitespace(),
     }
+}
+
+/// Does a line block's hard break need its backslash, given the bytes already
+/// emitted for the line it ends (PART 11 §7c)?
+///
+/// Consequences §7c draws from its property, all of them about the line the
+/// break ENDS and all of them places where §7's own precondition - "where the
+/// PARSER discards trailing whitespace the writer may too" - does not hold:
+///
+///   - the line's content is EMPTY. A bare newline leaves a BLANK line, which
+///     ends the stanza, so one stanza is written back as two.
+///   - the line's content ends in a LONE trailing column. A bare newline makes
+///     it line-trailing, where PART 2 drops it. A run of TWO OR MORE columns is
+///     already NBSP content (PART 9 §23 MEDIAL GAPS) and survives on its own.
+///
+/// A LONE TRAILING COLUMN IS NOT ONLY A SPACE. An ESCAPED space is one too, and
+/// it is lost harder: §2a writes an escaped space at the END of a line as a bare
+/// backslash, on the ground that canonical source must not depend on an editor
+/// preserving the byte after it - and in verse a bare backslash at end of line
+/// is a HARD BREAK, so the column does not come back at all. The `\` this
+/// returns is what puts the escape back INSIDE the line, where §2a's expansion
+/// keeps its space. Derived from the property rather than read off the clause's
+/// list, which names the plain space only.
+///
+/// THE LAST BODY LINE, the remaining consequence, is decided by the caller: it
+/// is a fact about the break's place in the stanza, not about the bytes on its
+/// line.
+fn verse_break_needs_backslash(emitted: &str) -> bool {
+    let line = match emitted.rfind('\n') {
+        Some(at) => &emitted[at + 1..],
+        None => emitted,
+    };
+    if line.is_empty() {
+        return true;
+    }
+    if line.ends_with(sentinel(S_ESCAPED_SPACE)) {
+        return true;
+    }
+    line.ends_with(' ') && !line.ends_with("  ")
 }
 
 fn last_boundary(node: &InlineNode) -> Option<char> {
