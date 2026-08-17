@@ -90,6 +90,27 @@ fn the_open_run_seeds_only_the_column_it_was_open_in() {
     );
 }
 
+/// The two halves composed, which is the only shape that pins the RESEED
+/// rather than the line-start seed.
+///
+/// `the_open_run_seeds_only_the_column_it_was_open_in` passes with no reseed at
+/// all: its continuation holds one pipe and that pipe separates either way. The
+/// reseed only decides when the seeded column's own content carries a pipe -
+/// here the run is open in the SECOND column and the continuation's second
+/// column holds `c | d`, so the first pipe separates and the second is content.
+///
+/// Dropping the reseed splits at both, and the third segment is dropped for
+/// want of a column: `| d` disappears and the run's cell is left short. That is
+/// the content loss the executable spec's `splitRow(line, openRun, openRunAt)`
+/// was given its second parameter for.
+#[test]
+fn the_reseed_lets_a_later_column_keep_its_own_pipe() {
+    assert_eq!(
+        to_html("| x | a `b |\n+ y | c | d` |\n"),
+        table_html("    <tr><td>x y</td><td>a <code>b c | d</code></td></tr>")
+    );
+}
+
 /// The run stays open across as many continuation rows as it takes.
 #[test]
 fn an_open_run_reaches_the_last_continuation_row() {
