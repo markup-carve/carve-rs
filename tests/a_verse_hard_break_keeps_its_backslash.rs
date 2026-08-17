@@ -1,6 +1,12 @@
-//! The canonical writer spells a line block's `hard_break` as a bare newline,
-//! except where the bare newline would be RE-READ as something else
-//! (grammar PART 11 §7c; carve#1334).
+//! A line block's `hard_break` is written BARE where, and only where, re-reading
+//! that newline yields the same tree (grammar PART 11 §7c; carve#1334, amended
+//! by carve#1340).
+//!
+//! §7c is a PROPERTY, not a list. A bare newline re-derives a break at a
+//! boundary BETWEEN two body lines and nowhere else, because that is the
+//! boundary PART 9 §23 hardens; the cases below are consequences of that. The
+//! clause was first written as a list of two, and the case it did not reach -
+//! the last body line - is pinned here beside them.
 //!
 //! Every one of these failed silently for as long as it did because the render
 //! cannot see it: `to_html(fmt(x)) == to_html(x)` held while the space was
@@ -171,4 +177,81 @@ fn an_empty_line_inside_a_run_writes_back_as_a_comment_line() {
         "the comment came back from a tree that does not hold it: {out:?}"
     );
     round_trips(source);
+}
+
+/// The last body line's backslash carries NO newline of its own: the newline
+/// after it belongs to the closing fence. Emitting one leaves a blank line
+/// inside the block, which is a stanza boundary the author did not write.
+#[test]
+fn a_last_line_break_writes_no_newline_of_its_own() {
+    assert_eq!(carve::to_carve("::: |\na\\\n:::\n"), "::: |\na\\\n:::\n");
+    assert_eq!(
+        carve::to_carve("::: |\na  \\\n:::\n"),
+        "::: |\na  \\\n:::\n"
+    );
+}
+
+/// WHICH LINE IS LAST IS DECIDED BY THE BREAKS, however the author spelled
+/// them. `a` over a comment and `a \` over the same comment are one document
+/// apart by a backslash, and the comment is a node in both - so the last body
+/// line here is the COMMENT, and the backslash on the line above is there under
+/// the lone-space case rather than under the last-line one.
+///
+/// ASSERTED ON THE BYTES, because the round-trip gate cannot see this one: a
+/// dropped `comment` node renders nothing either way, and a writer that lost it
+/// would still satisfy every invariant in `round_trips`.
+#[test]
+fn a_boundary_the_author_spelled_is_still_a_boundary() {
+    assert_eq!(
+        carve::to_carve("::: |\na \\\n%% c\n:::\n"),
+        "::: |\na \\\n%% c\n:::\n"
+    );
+    assert_eq!(
+        carve::to_carve("::: |\na\n%% c\n:::\n"),
+        "::: |\na\n%% c\n:::\n"
+    );
+}
+
+/// An EMPTY comment is the marker and nothing else. The space after the marker
+/// separates it from content; with no content it is line-trailing whitespace,
+/// which PART 2 discards and §7 therefore lets the writer drop - and in a line
+/// block it is the very space §7c's lone-space case looks for, so emitting it
+/// made the writer propose a backslash for a line with nothing to protect.
+#[test]
+fn an_empty_comment_writes_back_as_the_bare_marker() {
+    assert_eq!(
+        carve::to_carve("::: |\na\n%%\nb\n:::\n"),
+        "::: |\na\n%%\nb\n:::\n"
+    );
+    assert_eq!(carve::to_carve("a %%\n"), "a %%\n");
+}
+
+/// THE EXEMPTION IS KEYED ON THE NODE, NOT ON THE LINE'S POSITION, which is the
+/// same clause reaching the last-body-line consequence: a writer that appends
+/// the backslash to whatever it emitted last on the final line writes it inside
+/// the note, on a line where there was no break to protect.
+///
+/// Reached through the AST, because no SOURCE produces this tree - the marker
+/// runs to the end of its line, so an authored comment never has a break after
+/// it. An ingested document can, and PART 11 answers for that document too.
+#[test]
+fn a_trailing_break_after_a_comment_writes_nothing_into_the_note() {
+    let wire = r#"{"type":"document","srcByteLength":0,"children":[
+        {"type":"line_block","children":[
+            {"type":"paragraph","children":[
+                {"type":"text","value":"a"},
+                {"type":"hard_break"},
+                {"type":"comment","block":false,"content":"c"},
+                {"type":"hard_break"}
+            ]}
+        ]}
+    ]}"#;
+    let doc = carve::from_json(wire).expect("the wire document decodes");
+    let out = carve::render_carve(&doc).expect("a decoded tree renders");
+
+    assert_eq!(out, "::: |\na\n%% c\n:::\n");
+    assert!(
+        !out.contains("%% c\\"),
+        "a backslash landed inside the note: {out:?}"
+    );
 }

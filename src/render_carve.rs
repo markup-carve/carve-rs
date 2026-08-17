@@ -1762,34 +1762,48 @@ fn render_inlines_with_caption(
         if matches!(node, InlineNode::Comment(c) if !c.delimited) && needs_comment_space(&out) {
             out.push(' ');
         }
-        // PART 11 §7c. A line block hardens every line boundary itself, so a
-        // `hard_break` there is spelled as a BARE NEWLINE - except on the lines
-        // where a bare newline would not be READ BACK as one, decided on the
-        // bytes already emitted for this line, the way §1a says.
+        // PART 11 §7c, stated as the PROPERTY it rests on: a `hard_break` in a
+        // line block is written BARE where, and only where, re-reading that
+        // newline yields the same tree; everywhere else it is the PART 3 form.
+        // A bare newline re-derives a break at a boundary BETWEEN two body
+        // lines and nowhere else, because that is the boundary PART 9 §23
+        // hardens. The cases below are consequences of that property, not a
+        // list to check - the clause WAS a list, and the case it did not reach
+        // is the first one under it.
+        let mut rendered = rendered;
         if ctx.line_block_depth > 0 && matches!(node, InlineNode::HardBreak(_)) {
-            // §7c enumerates two cases, and both are about the line the break
-            // ENDS. A break that ends the STANZA has no line after it to be
-            // re-read against, so the clause's own ground - "the tree is
-            // identical either way" - does not hold there: a bare newline
-            // becomes the blank line that ends the stanza, and the break is
-            // simply gone. Measured on `a\` and `a  \` as a block's last body
-            // line, neither of which involves whitespace at all.
+            // THE LAST BODY LINE, WHATEVER IT ENDS IN. The body's end is not a
+            // boundary between two lines, so nothing hardens there and the
+            // break can only be the AUTHOR'S own. The newline after it belongs
+            // to the closing fence, or to the blank line before the next
+            // stanza, so the backslash is written WITHOUT one. Measured on a
+            // last body line ending in a backslash, with and without a run of
+            // spaces before it: both lose the break outright, and neither has a
+            // lone trailing space for the case below to catch.
             //
-            // `inline_depth == 1` keeps this to a stanza's own line list. A
-            // break that merely ends the children of an emphasis or a link has
-            // content after it on the same line, so it is not a stanza's last.
+            // WHICH LINE IS LAST IS DECIDED BY THE BREAKS, however the author
+            // spelled them: a break ENDS the line it stands at the end of, and
+            // what follows it is the next body line - including one that
+            // renders nothing. So this is the last NODE of the stanza's own
+            // sequence, and `inline_depth == 1` keeps it to that sequence: a
+            // break that merely ends the children of an emphasis has content
+            // after it on the same line.
             let ends_the_stanza = ctx.inline_depth == 1 && idx + 1 == nodes.len();
-            // A LINE ENDING IN A COMMENT takes no backslash, whatever else is
-            // true of it: `%%` runs to end of line, so the backslash would land
-            // inside the comment's CONTENT rather than after the line. An empty
-            // comment writes back as `%% `, whose trailing space is the very
-            // thing the lone-space case looks for, so this is not a corner -
-            // it is the shape that first published a `\` as comment text.
+            // A LINE WHOSE LAST NODE IS A COMMENT IS EXEMPT, and the exemption
+            // is keyed on the NODE rather than on the line's position. The
+            // marker runs to the END of its line, so a trailing space there is
+            // INSIDE the note and not content PART 2 is about to take - and a
+            // backslash written to protect it lands in the note's own content,
+            // because the block layer claims the whole line before the inline
+            // parser sees it. An EMPTY comment line is where this bites.
             let inside_a_comment = idx
                 .checked_sub(1)
                 .is_some_and(|prev| matches!(&nodes[prev], InlineNode::Comment(c) if !c.delimited));
             if !inside_a_comment && (ends_the_stanza || verse_break_needs_backslash(&out)) {
                 out.push('\\');
+            }
+            if ends_the_stanza {
+                rendered = String::new();
             }
         }
         out.push_str(&rendered);
@@ -1832,6 +1846,14 @@ fn render_inline(
         // that puts it back is decided in `render_inlines`, on the bytes
         // already emitted for this line.
         InlineNode::Comment(c) if c.delimited => format!("{{% {} %}}", c.content),
+        // An EMPTY comment is the marker and nothing else. The space after the
+        // marker separates it from content, and with no content it is line
+        // TRAILING whitespace, which PART 2 discards on the way back in and §7
+        // therefore lets the writer drop. Emitting it left every empty comment
+        // line one space long, and in a line block that space is exactly what
+        // §7c's LONE SPACE case looks for, so the writer proposed a backslash
+        // for a line that had nothing to protect (PART 11 §7c).
+        InlineNode::Comment(c) if c.content.is_empty() => "%%".to_string(),
         InlineNode::Comment(c) => format!("%% {}", c.content),
         InlineNode::Text(text) => escape_text(
             &resolve_nbsp_placeholder(&text.value, ctx.line_block_depth > 0),
@@ -3398,15 +3420,18 @@ fn needs_comment_space(emitted: &str) -> bool {
 /// Does a line block's hard break need its backslash, given the bytes already
 /// emitted for the line it ends (PART 11 §7c)?
 ///
-/// The bare newline is right for most verse lines and wrong for exactly two,
-/// which are the two where §7's own precondition - "where the PARSER discards
-/// trailing whitespace the writer may too" - does not hold:
+/// Two of the three consequences §7c draws from its property, both about the
+/// line the break ENDS and both places where §7's own precondition - "where the
+/// PARSER discards trailing whitespace the writer may too" - does not hold:
 ///
 ///   - the line's content is EMPTY. A bare newline leaves a BLANK line, which
 ///     ends the stanza, so one stanza is written back as two.
 ///   - the line's content ends in a LONE space. A bare newline makes that space
 ///     line-trailing, where PART 2 drops it. A run of TWO OR MORE columns is
 ///     already NBSP content (PART 9 §23 MEDIAL GAPS) and survives on its own.
+///
+/// The third, THE LAST BODY LINE, is decided by the caller: it is a fact about
+/// the break's place in the stanza, not about the bytes on its line.
 fn verse_break_needs_backslash(emitted: &str) -> bool {
     let line = match emitted.rfind('\n') {
         Some(at) => &emitted[at + 1..],
