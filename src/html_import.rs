@@ -586,18 +586,19 @@ impl<'a> Importer<'a> {
                     );
                 } else if name == "srcset" {
                     // REFUSED ON THE WAY IN, and the one refusal here that is
-                    // not derived. §25's value sanitizer reads only the scheme
-                    // that LEADS a value, so a list-valued attribute hides a
-                    // live URL behind a safe one:
+                    // not derived. This is the IMPORTER declining to admit a
+                    // list-valued URL attribute the keep list never reached,
+                    // which is a separate decision from what the renderer does
+                    // with one an author wrote by hand:
                     //
                     //     srcset="safe.png 1x, javascript:alert(1) 2x"
                     //
-                    // passes the filter whole. `srcset` was dropped by the keep
-                    // list ending before it, so the hole is unreachable through
-                    // an import today and widening retention is what would open
-                    // it. The §25 half is markup-carve/carve#1320, ruled
-                    // ship-then-fix; refusing the attribute here does not wait
-                    // on it and does not duplicate it.
+                    // The §25 half is markup-carve/carve#1320, now ruled and
+                    // implemented - `sanitize_attr_value` probes a URL-list
+                    // value at every candidate rather than at its head. The
+                    // refusal here neither waits on that nor duplicates it:
+                    // admitting the attribute would be widening retention, and
+                    // that is its own call.
                     self.diag(
                         HtmlImportDiagnosticCode::AttributeDropped,
                         format!("Dropped list-valued URL attribute {name} on <{tag}>"),

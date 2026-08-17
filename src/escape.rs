@@ -165,20 +165,108 @@ pub fn is_valid_attr_name(name: &str) -> bool {
     chars.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.' || c == ':' || c == '-')
 }
 
-/// Blank an attribute value carrying a dangerous URL scheme or a CSS
-/// `expression(...)`, so an author cannot smuggle script through an attribute
-/// the name filter allows (e.g. `background`, `style`). The scheme is
+/// The four attributes whose value is a LIST of URLs a consumer resolves or
+/// fetches, with the separators that attribute's own grammar uses. PART 9 §25
+/// probes these token-wise instead of at the value's head, so a dangerous
+/// scheme cannot hide behind a safe one (markup-carve/carve#1320).
+///
+/// THE SEPARATORS DIFFER BETWEEN THE TWO HALVES AND THAT IS DELIBERATE.
+/// `ping` and `attributionsrc` are space-separated sets whose grammar holds no
+/// comma at all, so splitting them on commas would blank a single legitimate
+/// URL that merely carries one in its path - the binding false-positive bound.
+/// `srcset` and `imagesrcset` are comma-separated candidate strings, and there
+/// the comma has to count: a whitespace-only split misses
+/// `safe.png 1x,javascript:alert(1) 2x` outright, because with no space after
+/// the comma the second candidate hides inside the first one's descriptor.
+///
+/// The split is on ASCII whitespace and not the wider Unicode class, because
+/// that is where both grammars put their boundaries: `a<U+202F>javascript:x`
+/// is ONE token to a consumer and resolves as a relative URL. The per-token
+/// STRIP is wider than the split - see `is_url_probe_skippable` - so
+/// `<U+202F>javascript:` still blanks wherever it sits.
+///
+/// Prose attributes are NOT in the set and must not be tokenized: `title`,
+/// `alt` and `aria-label` legitimately carry colons, and tokenizing them would
+/// refuse ordinary text.
+const URL_LIST_ATTRS: [(&str, bool); 4] = [
+    // (name, comma is also a separator)
+    ("srcset", true),
+    ("imagesrcset", true),
+    ("ping", false),
+    ("attributionsrc", false),
+];
+
+/// The separators for a URL-list attribute name, or `None` when the name is
+/// not one. THE NAME MATCH IS CASE-INSENSITIVE, like the `on` prefix in the
+/// same clause: an attribute block may spell it in any case and the element
+/// still carries the author's spelling, so matching the exact bytes would
+/// leave `SRCSET` unprobed.
+fn url_list_separators(name: &str) -> Option<fn(char) -> bool> {
+    fn ascii_ws(c: char) -> bool {
+        matches!(c, '\t' | '\n' | '\u{0C}' | '\r' | ' ')
+    }
+    fn ascii_ws_or_comma(c: char) -> bool {
+        c == ',' || ascii_ws(c)
+    }
+    URL_LIST_ATTRS
+        .iter()
+        .find(|(candidate, _)| name.eq_ignore_ascii_case(candidate))
+        .map(|(_, commas)| {
+            if *commas {
+                ascii_ws_or_comma as fn(char) -> bool
+            } else {
+                ascii_ws as fn(char) -> bool
+            }
+        })
+}
+
+/// THE probe PART 9 §25 applies to an attribute value: read the scheme that
+/// leads it and answer whether that scheme is denylisted. The scheme is
 /// normalized - every control and whitespace character removed, see
 /// `is_url_probe_skippable` - before comparison, to defeat `java\tscript:` and
 /// `java<DEL>script:` style evasion alike.
+///
+/// The token-wise rule below runs THIS SAME function per token rather than a
+/// parallel path, so the two cannot drift: the rule changes WHERE the probe
+/// runs, not WHAT it denies.
+fn leads_with_dangerous_scheme(value: &str) -> bool {
+    let Some(colon) = value.find(':') else {
+        return false;
+    };
+    let scheme: String = value[..colon]
+        .chars()
+        .filter(|c| !is_url_probe_skippable(*c))
+        .collect::<String>()
+        .to_ascii_lowercase();
+    DANGEROUS_VALUE_SCHEMES.contains(&scheme.as_str())
+}
+
+/// Blank an attribute value carrying a dangerous URL scheme or a CSS
+/// `expression(...)`, so an author cannot smuggle script through an attribute
+/// the name filter allows (e.g. `background`, `style`).
+///
+/// For the four URL-list attributes the probe runs on EVERY non-empty token
+/// rather than on the value's head, and any hit blanks the WHOLE value. What
+/// is blanked is the whole value and not the offending candidate: excising one
+/// would make the rendered attribute differ from the author's bytes, which
+/// this clause already declined to do, and it would give one value a third
+/// outcome when the defect being fixed is that one value already had two.
+///
+/// The comma split OVER-BLANKS one shape and that is the chosen side:
+/// `srcset="https://example.com/a,data:x 1x"` is ONE candidate to a consumer
+/// and is blanked here anyway. Reading it exactly would mean requiring the
+/// HTML candidate-list algorithm from three engines that have to agree byte
+/// for byte. Do not "fix" it - the corpus pins it, along with the `ping`
+/// counterpart that must NOT blank.
 pub fn sanitize_attr_value<'a>(name: &str, value: &'a str) -> std::borrow::Cow<'a, str> {
-    if let Some(colon) = value.find(':') {
-        let scheme: String = value[..colon]
-            .chars()
-            .filter(|c| !is_url_probe_skippable(*c))
-            .collect::<String>()
-            .to_ascii_lowercase();
-        if DANGEROUS_VALUE_SCHEMES.contains(&scheme.as_str()) {
+    if leads_with_dangerous_scheme(value) {
+        return std::borrow::Cow::Borrowed("");
+    }
+    if let Some(is_separator) = url_list_separators(name) {
+        if value
+            .split(is_separator)
+            .any(|token| !token.is_empty() && leads_with_dangerous_scheme(token))
+        {
             return std::borrow::Cow::Borrowed("");
         }
     }

@@ -420,6 +420,7 @@ const IMPLEMENTED: &[&str] = &[
     "a-footnote-definition-inside-an-item-s-comment-registers-nothing",
     "a-wider-comment-fence-inside-an-item-hides-its-body-the-same-way",
     "an-abbreviation-inside-a-comment-defines-nothing",
+    "url-list-attributes-are-probed-token-wise",
 ];
 
 fn corpus_dir() -> PathBuf {
