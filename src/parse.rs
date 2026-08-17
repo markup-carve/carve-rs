@@ -836,6 +836,9 @@ fn extract_footnote_defs(
     // document was skipped. Tracked only to gate the opener.
     let mut in_comment_fence: Option<usize> = None;
     let comment_fence_closers = comment_fence_close_index(&lines);
+    // Built on the first CONTAINER-scoped opener and never for a document that
+    // has none, which is every document that only ever writes `%%%` at column 0.
+    let mut container_closers: Option<ContainerCommentClosers> = None;
     let mut comment_closers: Option<HashMap<usize, usize>> = None;
     // See ContentColumns: a definition on an item's CONTINUATION line carries no
     // marker, so without this the line kept its indentation, stopped looking
@@ -851,7 +854,7 @@ fn extract_footnote_defs(
         // container prefix first, then test the bare content (corpus 115).
         // The footnote prepass asks per LINE which column a definition reaches
         // (see `reached_by`), so the innermost column alone is not enough here.
-        let _ = columns.observe(
+        let item_content_col = columns.observe(
             lines[i],
             in_fence.is_some() || in_line_block.is_some() || in_comment_fence.is_some(),
         );
@@ -929,10 +932,16 @@ fn extract_footnote_defs(
             body_line_map.push(Some(first_source_line + i));
             i += 1;
             continue;
-        } else if let Some(open) = detect_comment_fence_line(lines[i]) {
+        } else if let Some((open, open_col)) =
+            detect_comment_fence_opener_in_container(lines[i], item_content_col)
+        {
             if comment_fence_closers
                 .get(&open.fence_len)
                 .is_some_and(|close_at| *close_at > i)
+                && (open_col == 0
+                    || container_closers
+                        .get_or_insert_with(|| ContainerCommentClosers::build(&lines))
+                        .closes(&lines, i, open_col, open.fence_len))
             {
                 in_comment_fence = Some(open.fence_len);
                 body.push(lines[i].to_string());
@@ -1309,6 +1318,9 @@ fn extract_link_defs(source: &str) -> (String, BTreeMap<String, LinkDef>) {
     // before the state is entered - see comment_fence_closes.
     let all_lines: Vec<&str> = source.lines().collect();
     let comment_closers = comment_fence_close_index(&all_lines);
+    // See the note in `extract_footnote_defs`: lazy, so a document with no
+    // container-scoped comment fence pays nothing for it.
+    let mut container_closers: Option<ContainerCommentClosers> = None;
     // Suffix maxima make the "could this opener close later?" rejection O(1).
     // The exact scan below is then needed only when a compatible closer really
     // exists; once found, the fence state makes all intervening opener-shaped
@@ -1444,10 +1456,16 @@ fn extract_link_defs(source: &str) -> (String, BTreeMap<String, LinkDef>) {
             // stopped (carve-php#698); this brings the third engine into line.
             body.push(line.to_string());
             continue;
-        } else if let Some(open) = detect_comment_fence_line(line) {
+        } else if let Some((open, open_col)) =
+            detect_comment_fence_opener_in_container(line, content_col)
+        {
             if comment_closers
                 .get(&open.fence_len)
                 .is_some_and(|close_at| *close_at > line_index)
+                && (open_col == 0
+                    || container_closers
+                        .get_or_insert_with(|| ContainerCommentClosers::build(&all_lines))
+                        .closes(&all_lines, line_index, open_col, open.fence_len))
             {
                 in_comment_fence = Some(open.fence_len);
                 body.push(line.to_string());
@@ -4298,6 +4316,224 @@ fn detect_comment_fence_line_any_column(line: &str) -> Option<CommentFenceOpen> 
 /// The closer counterpart of `detect_comment_fence_line_any_column`.
 fn is_comment_fence_close_any_column(line: &str, fence_len: usize) -> bool {
     is_comment_fence_close(trim_ascii_start(line), fence_len)
+}
+
+/// The opener as the definition PRE-PASSES may read it: past leading
+/// whitespace, and past a list marker on the fence's own line.
+///
+/// PART 9 §24 S1 places a line by the column it REACHES and never by its first
+/// character, and §28 makes a comment fence's body verbatim and invisible
+/// wherever the fence sits. Neither clause is scoped to column 0, and the block
+/// parser already reads both spellings (it consumes `- %%%` through
+/// `marker.content`). The pre-passes read only the strict column-0 form, so a
+/// fence indented to a list item's content column was invisible to them and they
+/// walked into its body and registered from it: `- item` / `  %%%` /
+/// `  [r]: /url` / `  %%%` left the label live in the link table while the
+/// comment rendered nothing, so a later `[r][]` resolved against text the author
+/// had commented out (markup-carve/carve-rs#1047). A footnote definition there
+/// was worse still - it produced a whole endnote section nobody wrote.
+///
+/// A BLOCKQUOTE prefix is deliberately NOT stripped here. `> %%%` /
+/// `> [r]: /url` / `> %%%` registers in carve-js, carve-php and carve-rs alike
+/// and only the executable oracle leaves it literal, so that shape is an open
+/// cross-engine question rather than this engine's defect; widening the strip
+/// would answer it unilaterally.
+/// The widening is to a fence AT a live list item's content column, and no
+/// further. Both of the shapes just outside it are refused, and both refusals
+/// are load-bearing:
+///
+/// - An indented fence with NO live content column is a top-level comment, and a
+///   top-level comment's body may sit BELOW its own fence
+///   (`comment_body_is_relative_to_its_fence`). Its real closer can therefore be
+///   at a column this line-based pass cannot bound, and guessing mispaired the
+///   delimiters of ` %%%` / `x` / `  %%%`: the pass rejected the true pair, took
+///   the second delimiter as an opener, and let a later `%%% tail` close it, so
+///   the definition in between was swallowed.
+/// - A fence BELOW a live content column keeps the item open without being the
+///   item's content (§24 C3). Entering opacity there freezes the stale content
+///   column across the blank line that actually ends the list, so a line the
+///   block parser reads as a top-level paragraph gets stripped to the dead
+///   column and registered.
+///
+/// Returns the fence and the COLUMN its `%` run starts at, which is what bounds
+/// its body - see `container_comment_fence_closes`.
+fn detect_comment_fence_opener_in_container(
+    line: &str,
+    content_col: usize,
+) -> Option<(CommentFenceOpen, usize)> {
+    let (open, col) = detect_comment_fence_opener_at_any_column(line)?;
+    if col > 0 && (content_col == 0 || col < content_col) {
+        return None;
+    }
+    Some((open, col))
+}
+
+fn detect_comment_fence_opener_at_any_column(line: &str) -> Option<(CommentFenceOpen, usize)> {
+    let mut rest = line;
+    let mut col = 0usize;
+    loop {
+        let trimmed = trim_ascii_start(rest);
+        col = advance_columns(&rest[..rest.len() - trimmed.len()], col);
+        rest = trimmed;
+        let Some(marker) = detect_list_marker_full(rest) else {
+            break;
+        };
+        let consumed = marker.content.as_ptr() as usize - rest.as_ptr() as usize;
+        if consumed == 0 {
+            break;
+        }
+        col = advance_columns(&rest[..consumed], col);
+        rest = marker.content;
+    }
+    detect_comment_fence_line(rest).map(|open| (open, col))
+}
+
+/// `indent_columns`, continued from a column already reached. Tab stops are
+/// measured from the start of the line, so a marker's own width has to be walked
+/// rather than counted in bytes.
+fn advance_columns(prefix: &str, mut col: usize) -> usize {
+    for byte in prefix.bytes() {
+        if byte == b'\t' {
+            col += 4 - (col % 4);
+        } else {
+            col += 1;
+        }
+    }
+    col
+}
+
+// Counts the lines the container-comment dedent walk visits.
+//
+// The whole point of the index below is that this stays proportional to the
+// DOCUMENT rather than to openers times container length, and a count is the
+// only way to state that without a clock - see the note on `quote_prefix_calls`
+// for why this repo counts work instead of timing it. Test-only, so a release
+// build carries nothing.
+#[cfg(test)]
+thread_local! {
+    pub(crate) static CONTAINER_DEDENT_STEPS: std::cell::Cell<u64> =
+        const { std::cell::Cell::new(0) };
+}
+
+/// Does a comment fence opened INSIDE a container close before that container
+/// ends?
+///
+/// `comment_fence_close_index` answers "is there a closer of this length
+/// anywhere later", which is the whole question for a column-0 opener: nothing
+/// bounds its body but the end of input. A fence inside a container is bounded
+/// by the container, and a `%%%` written back at column 0 does not close it -
+/// the block parser has ended the item long before, and reads the indented fence
+/// as an unterminated one-line comment instead. Entering the fence state on that
+/// far closer swallowed everything in between, so an item holding `%%%` and
+/// `hidden`, then a blank, then `[r]: /url`, then a blank and a column-0 `%%%`,
+/// lost a definition that carve-rs and the oracle both register. That is a worse
+/// defect than the one the container-aware opener fixes, which is why the bound
+/// is part of the same change. (carve-js loses that definition today - a
+/// separate divergence, not something to reproduce here.)
+///
+/// The container's extent is approximated the way the rest of this line-based
+/// pre-pass approximates: the first non-blank line that dedents past the fence's
+/// own column ends it, and blank lines are transparent. Only reached for a fence
+/// that is not at column 0, so a column-0 opener costs exactly what it did
+/// before.
+///
+/// INDEXED rather than scanned, for the reason `comment_fence_close_index`
+/// exists: one container can hold many openers, and walking it once per opener
+/// is the quadratic shape this file's perf suite guards. `m` fence widths above
+/// `m * m` filler lines, with every matching closer only past the dedent, made
+/// each opener walk the whole container - O(m^3) work for an O(m^2) document,
+/// measured at 3x on 1.8 MB and widening with size.
+///
+/// Two facts answer the question without the walk. `closer` is the first
+/// comment-fence closer of this exact width after the opener, from an index
+/// built once. `dedent` is the first non-blank line after it whose indent falls
+/// below the fence's column. The fence closes inside its container exactly when
+/// `closer < dedent`: a closer past the dedent is outside the container, and a
+/// dedented line that happens to be a closer is outside it too.
+///
+/// `dedent` is memoized per COLUMN, which is what makes a run of openers at one
+/// column cost a single walk between them rather than one each: once the first
+/// dedent below column `k` after line `p` is known, it is still the answer for
+/// every query point in `p..dedent`. Openers at different columns keep separate
+/// entries, so alternating columns do not evict each other.
+///
+/// A list MARKER inside the body is deliberately not a stop. carve-rs's block
+/// parser ends a contained comment at one, which is a divergence of its own -
+/// `- item` / `  %%%` / `  - x` / `  y` / `  %%%` renders `x` and `y` where the
+/// oracle and carve-js render an empty item, with no definition anywhere in
+/// sight. Stopping here would put this scan back in step with that bug and, in
+/// doing so, resume registering a definition written under the marker - the very
+/// thing carve-rs#1047 is about. So the scan stays with the clause, the
+/// definition stops registering, and the body still leaks until the block parser
+/// is fixed.
+#[derive(Default)]
+struct ContainerCommentClosers {
+    /// Line index of every comment-fence closer, keyed by its exact `%` run and
+    /// ascending within each key.
+    by_width: HashMap<usize, Vec<usize>>,
+    /// column -> (query point the answer was computed from, the answer).
+    dedents: HashMap<usize, (usize, usize)>,
+}
+
+impl ContainerCommentClosers {
+    fn build(lines: &[&str]) -> Self {
+        let mut by_width: HashMap<usize, Vec<usize>> = HashMap::new();
+        for (index, line) in lines.iter().enumerate() {
+            // The same reading `comment_fence_close_index` uses: leading
+            // whitespace is not part of the delimiter, a tail is ignored, and
+            // nothing else is stripped, so a `> %%%` is not a closer here.
+            let run = trim_ascii_end(trim_ascii_start(line))
+                .bytes()
+                .take_while(|byte| *byte == b'%')
+                .count();
+            if run >= 3 {
+                by_width.entry(run).or_default().push(index);
+            }
+        }
+        Self {
+            by_width,
+            dedents: HashMap::new(),
+        }
+    }
+
+    fn closes(
+        &mut self,
+        lines: &[&str],
+        open_at: usize,
+        open_col: usize,
+        fence_len: usize,
+    ) -> bool {
+        let Some(positions) = self.by_width.get(&fence_len) else {
+            return false;
+        };
+        let next = positions.partition_point(|at| *at <= open_at);
+        let Some(&closer) = positions.get(next) else {
+            return false;
+        };
+        closer < self.first_dedent(lines, open_at, open_col)
+    }
+
+    fn first_dedent(&mut self, lines: &[&str], open_at: usize, open_col: usize) -> usize {
+        if let Some(&(from, at)) = self.dedents.get(&open_col) {
+            if from <= open_at && open_at < at {
+                return at;
+            }
+        }
+        let mut at = lines.len();
+        for (offset, line) in lines[open_at + 1..].iter().enumerate() {
+            #[cfg(test)]
+            CONTAINER_DEDENT_STEPS.with(|c| c.set(c.get() + 1));
+            if is_blank_line(line) {
+                continue;
+            }
+            if indent_columns(line) < open_col {
+                at = open_at + 1 + offset;
+                break;
+            }
+        }
+        self.dedents.insert(open_col, (open_at, at));
+        at
+    }
 }
 
 fn detect_comment_fence_line(line: &str) -> Option<CommentFenceOpen> {
@@ -17517,6 +17753,109 @@ fn find_emphasis_close(bytes: &[u8], from: usize, delim: u8) -> Option<usize> {
         j += 1;
     }
     None
+}
+
+#[cfg(test)]
+mod container_comment_dedent_steps {
+    //! COUNTED guard on the container-comment dedent walk
+    //! (markup-carve/carve-rs#1047).
+    //!
+    //! Counted rather than timed, for the reason the module below it records at
+    //! length: a call count is a property of the algorithm and reproduces
+    //! byte-identically across runs and loads, while this repo's timing tests
+    //! had to be serialized against each other to stop them flaking.
+    //!
+    //! The subject is the shape the first version of the fix had. One container
+    //! can hold many comment openers, and answering "does this one close inside
+    //! its container" by walking forward from each meant walking the whole
+    //! container once per opener - O(m^3) work for an O(m^2) document, which is
+    //! exactly the class `comment_fence_close_index` exists to avoid for
+    //! column-0 openers.
+
+    use super::CONTAINER_DEDENT_STEPS;
+
+    /// Dedent-walk steps over one full parse-and-render of `src`, on its own
+    /// thread so the thread-local tally cannot pick up another test's.
+    fn steps_for(src: String) -> u64 {
+        std::thread::Builder::new()
+            .stack_size(16 * 1024 * 1024)
+            .spawn(move || {
+                CONTAINER_DEDENT_STEPS.with(|c| c.set(0));
+                let _ = crate::to_html(&src);
+                CONTAINER_DEDENT_STEPS.with(|c| c.get())
+            })
+            .expect("spawn the counting thread")
+            .join()
+            .expect("the counting thread parses without panicking")
+    }
+
+    /// `m` comment openers of distinct widths at one item's content column,
+    /// above `m * m` filler lines, with every matching closer only past the
+    /// dedent. Every opener therefore passes the document-wide "is there a
+    /// closer of this width later" test and none of them closes inside the
+    /// item, which is the worst case for the container bound.
+    ///
+    /// The work is the line count: a walk that visits the container once has to
+    /// grow with it, and one that visits it per opener cannot stay flat.
+    fn openers_over_one_container(m: usize) -> (String, u64) {
+        let mut out = String::from("- x\n");
+        for i in 0..m {
+            out.push_str("  ");
+            out.push_str(&"%".repeat(3 + i));
+            out.push_str(" o\n");
+        }
+        for _ in 0..m * m {
+            out.push_str("  filler line here\n");
+        }
+        for i in 0..m {
+            out.push_str(&"%".repeat(3 + i));
+            out.push('\n');
+        }
+        out.push_str("\n[r][]\n");
+        let lines = out.lines().count() as u64;
+        (out, lines)
+    }
+
+    /// The walk must cost steps in proportion to the DOCUMENT, not to openers
+    /// times container length.
+    ///
+    /// Three claims, in the shape `quote_prefix_calls` uses:
+    ///
+    /// 1. A floor. The first opener at a column has to walk to the dedent to
+    ///    learn where it is, so a zero count is a dead counter rather than a
+    ///    faster parser, and the two claims below would both pass on one.
+    /// 2. A ceiling, wide enough for honest drift: the two definition
+    ///    pre-passes each hold their own memo, so one walk of the container
+    ///    apiece is already two steps per line.
+    /// 3. The shape, which is the load-bearing half. A per-opener walk makes the
+    ///    per-line cost climb with `m` - measured at about 118 steps per line at
+    ///    m=60 against 238 at m=120 - while one walk per column per pre-pass
+    ///    holds it flat at about 2.
+    #[test]
+    fn many_openers_over_one_container_walk_it_once_apiece() {
+        let (small_src, small_lines) = openers_over_one_container(60);
+        let (large_src, large_lines) = openers_over_one_container(120);
+        let small_steps = steps_for(small_src);
+        let large_steps = steps_for(large_src);
+
+        assert!(
+            small_steps > 0 && large_steps > 0,
+            "the dedent-step counter is dead: {small_steps} and {large_steps} steps",
+        );
+        assert!(
+            large_steps <= 8 * large_lines,
+            "{large_steps} steps over {large_lines} lines ({:.1} each): \
+             the container is being re-walked per opener",
+            large_steps as f64 / large_lines as f64,
+        );
+        assert!(
+            large_steps * small_lines * 10 <= small_steps * large_lines * 11,
+            "the per-line dedent cost climbs with size ({:.1} at {small_lines} lines, \
+             {:.1} at {large_lines}): the container is being re-walked per opener",
+            small_steps as f64 / small_lines as f64,
+            large_steps as f64 / large_lines as f64,
+        );
+    }
 }
 
 #[cfg(test)]
