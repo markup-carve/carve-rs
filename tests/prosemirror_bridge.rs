@@ -521,7 +521,17 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // source-lossy set above: document 10 is the only corpus link that spells
     // `title` as an authored attribute, and it comes back in the structural
     // title slot.
-    const STRICT: usize = 910;
+    // 910/231 to 912/231 is the two documents arriving with the 5951e6d spec
+    // pin, and nothing else: the corpus went from 1141 pairs to 1143, and the
+    // two added pairs are `342-url-list-attributes-are-probed-token-wise` 11
+    // and 12, which pin that PART 9 §25's token pass runs IN ADDITION TO the
+    // value-wide probe rather than instead of it. Same structural attribution
+    // as the bullet above - the clause lives in `sanitize_attr_value`, which no
+    // path this test walks calls - so no pre-existing document can move. Both
+    // are a link and an image with an attribute run, which the editor schema
+    // covers whole, so both land in the strict set, neither reports, and
+    // neither joins the declared source-lossy set.
+    const STRICT: usize = 912;
     const LOSSY: usize = 231;
     assert!(
         covered >= STRICT,
