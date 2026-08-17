@@ -2857,7 +2857,29 @@ fn parse_inline_lines_with_anchor(
     options: &Options<'_>,
     lines: Vec<Option<(usize, isize)>>,
 ) -> Vec<InlineNode> {
-    parse_inline_with_anchor(text, options, InlineAnchor { lines: &lines })
+    parse_inline_with_anchor(text, options, InlineAnchor::lines(&lines))
+}
+
+/// The same, for a text whose segments are NOT separated by newlines.
+///
+/// `breaks` are the byte offsets at which the next entry of `lines` takes over.
+/// A table cell rebuilt across a `+` continuation is the only text shaped this
+/// way: its fragments come from different source lines and are joined by a
+/// manufactured space, so nothing in the text itself marks where one ends.
+fn parse_inline_segments_with_anchor(
+    text: &str,
+    options: &Options<'_>,
+    lines: Vec<Option<(usize, isize)>>,
+    breaks: Vec<usize>,
+) -> Vec<InlineNode> {
+    parse_inline_with_anchor(
+        text,
+        options,
+        InlineAnchor {
+            lines: &lines,
+            breaks: &breaks,
+        },
+    )
 }
 
 /// Build a span for the lines `[start, end)` of `cur`, in the ORIGINAL source.
@@ -9536,7 +9558,7 @@ fn trim_cell_padding_start(s: &str) -> &str {
 
 fn parse_table(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     let span_start = cur.pos;
-    let mut rows = Vec::new();
+    let mut rows: Vec<TableRow> = Vec::new();
     // GFM-style header separator: a delimiter row directly after the first row
     // turns that row into a header and sets per-column alignment. The colons land
     // on the HEADER cells only, matching what the native `|=<` markers produce.
@@ -9552,39 +9574,12 @@ fn parse_table(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     let mut first_is_delim = false;
     let mut saw_separator = false;
     while let Some(line) = cur.peek() {
-        // Continue on a `|` row or a `+` multi-line-cell continuation.
-        if !is_table_start(line) && !is_table_continuation(line) {
+        // ONLY a `|` row opens an iteration. A `+` continuation is taken by the
+        // row it continues, below, so reaching one here means the row above did
+        // not want it - after a delimiter row, where a continuation has only a
+        // HEADER to attach to and the table ends instead.
+        if !is_table_start(line) {
             break;
-        }
-        if is_table_continuation(line) {
-            if saw_separator && rows.len() == 1 {
-                break;
-            }
-            let cont_at = cur.pos;
-            cur.consume();
-            if let Some(last) = rows.last_mut() {
-                apply_table_continuation(
-                    last,
-                    line,
-                    options,
-                    cur.source_line(cont_at)
-                        .zip(cur.source_col(cont_at))
-                        .filter(|_| options.positions),
-                );
-                // The row now RUNS to this line. It stays one contiguous range
-                // that no sibling row overlaps, so it keeps a position - unlike
-                // the cell the continuation extends, whose content sits in two
-                // column ranges with another column's content between them.
-                if let (Some(pos), Some(end)) = (
-                    last.pos.as_mut(),
-                    span_of(cur, cont_at, cont_at + 1, options),
-                ) {
-                    pos.end_line = end.end_line;
-                    pos.end_column = end.end_column;
-                    pos.end_offset = end.end_offset;
-                }
-            }
-            continue;
         }
         let row_at = cur.pos;
         cur.consume();
@@ -9600,18 +9595,51 @@ fn parse_table(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             apply_column_aligns(&mut rows[0], &column_aligns);
             continue;
         }
+        // THE CONTINUATIONS ARE TAKEN WITH THE ROW, not applied to a finished
+        // one. A `+` row extends a CELL, and the cell is the block an unclosed
+        // inline run reaches the end of (carve#1293), so the cell's content
+        // must be assembled before it is parsed - which means the row parser
+        // has to see every line the row runs to at once.
+        let mut conts: Vec<(&str, Option<(usize, isize)>)> = Vec::new();
+        let mut last_cont_at = None;
+        while let Some(next) = cur.peek() {
+            if !is_table_continuation(next) {
+                break;
+            }
+            let cont_at = cur.pos;
+            cur.consume();
+            conts.push((
+                next,
+                cur.source_line(cont_at)
+                    .zip(cur.source_col(cont_at))
+                    .filter(|_| options.positions),
+            ));
+            last_cont_at = Some(cont_at);
+        }
         let mut row = parse_table_row(
             line,
+            &conts,
             options,
             options
                 .positions
                 .then(|| (cur.source_line(row_at), cur.source_col(row_at)))
                 .and_then(|(l, c)| Some((l?, c?))),
         );
-        // The row is one line here; a `+` continuation extends it below. The
-        // cursor is the only place that knows where this line sits, which is
-        // why `parse_table_row` cannot do it itself.
+        // The cursor is the only place that knows where these lines sit, which
+        // is why `parse_table_row` cannot place the row itself.
         row.pos = span_of(cur, row_at, row_at + 1, options);
+        // The row RUNS to its last continuation. It stays one contiguous range
+        // that no sibling row overlaps, so it keeps a position - unlike the
+        // cell a continuation extends, whose content sits in two column ranges
+        // with another column's content between them.
+        if let (Some(pos), Some(end)) = (
+            row.pos.as_mut(),
+            last_cont_at.and_then(|at| span_of(cur, at, at + 1, options)),
+        ) {
+            pos.end_line = end.end_line;
+            pos.end_column = end.end_column;
+            pos.end_offset = end.end_offset;
+        }
         rows.push(row);
     }
     // The caption FIRST, then the span: a caption is one of the table's
@@ -9719,62 +9747,31 @@ fn apply_column_aligns(row: &mut TableRow, aligns: &[Option<TableAlign>]) {
     }
 }
 
-/// `base` is the continuation line's (source line, columns already stripped by
-/// an enclosing container) - the same pair `parse_table_row` takes, and used the
-/// same way. Without it the text a continuation adds cannot be placed.
-fn apply_table_continuation(
-    row: &mut TableRow,
-    line: &str,
-    options: &Options<'_>,
-    base: Option<(usize, isize)>,
-) {
-    let mut content = trim_ascii(line);
-    if let Some(stripped) = content.strip_prefix('+') {
-        content = stripped;
-    }
-    if let Some(stripped) = content.strip_suffix('|') {
-        content = stripped;
-    }
-    // Where `content` starts inside `line`, in CHARS - see `parse_table_row`,
-    // which does the same arithmetic on the row line.
-    let content_off = base.map(|_| {
-        let bytes = (content.as_ptr() as usize).saturating_sub(line.as_ptr() as usize);
-        line[..bytes].chars().count()
-    });
-    for (idx, cell) in split_table_cells_ranged(content).into_iter().enumerate() {
-        let text = trim_cell_padding(&cell.text); // PART 7: cell padding is U+0020 only.
-        if text.is_empty() {
-            continue;
-        }
-        // Trimming moved the start; count what it took so the anchor lands on
-        // the first character of the text and not on the padding before it.
-        let lead = cell.text.chars().count() - trim_cell_padding_start(&cell.text).chars().count(); // PART 7: cell padding is U+0020 only.
-        let anchor = match (base, content_off) {
-            (Some((line_no, stripped)), Some(off)) => {
-                Some((line_no, stripped + (off + cell.start + lead) as isize))
-            }
-            _ => None,
-        };
-        if let Some(target) = row.cells.get_mut(idx) {
-            // Its value is now reassembled from discontiguous fragments; no
-            // single exact source extent exists for the cell.
-            target.pos = None;
-            if !target.children.is_empty() {
-                // The joiner is MANUFACTURED - the source has a line break
-                // here, not a space - so it carries no position.
-                target.children.push(InlineNode::text(" ".to_string()));
-            }
-            target
-                .children
-                .extend(parse_inline_lines_with_anchor(text, options, vec![anchor]));
-        }
-    }
+/// A cell's content contributed by ONE `+` continuation row, with the anchor
+/// its own source line gives it.
+struct CellFragment {
+    text: String,
+    anchor: Option<(usize, isize)>,
 }
 
 /// `base` is the row line's (source line, columns already stripped by an
 /// enclosing container). Without it a cell cannot be placed: this function is
 /// handed an already-split line and cannot know where it sits.
-fn parse_table_row(line: &str, options: &Options<'_>, base: Option<(usize, isize)>) -> TableRow {
+///
+/// `conts` are the `+` CONTINUATION lines that belong to this row, each with
+/// the same pair for its own line. They are taken here rather than applied
+/// afterwards because a continuation extends a CELL, and the cell is the block
+/// an unclosed inline run reaches the end of (carve#1293) - so the cell's
+/// content has to be assembled BEFORE it is parsed, not parsed twice and
+/// concatenated. Parsing each fragment on its own closed the run at the row's
+/// pipe and opened a fresh one for the continuation, which published an empty
+/// `<code></code>` that no clause in the language produces.
+fn parse_table_row(
+    line: &str,
+    conts: &[(&str, Option<(usize, isize)>)],
+    options: &Options<'_>,
+    base: Option<(usize, isize)>,
+) -> TableRow {
     let mut content = trim_ascii(line);
     let (attrs, body) = split_row_attrs(content);
     content = body;
@@ -9787,13 +9784,16 @@ fn parse_table_row(line: &str, options: &Options<'_>, base: Option<(usize, isize
     // Where `content` starts inside `line`, in CHARS: it is a slice of `line`
     // after trimming, the row-attribute split and the outer pipes, so the byte
     // distance between them is exact.
-    let content_off = base.map(|_| {
-        let bytes = (content.as_ptr() as usize).saturating_sub(line.as_ptr() as usize);
-        line[..bytes].chars().count()
-    });
-    let cells = split_table_cells_ranged(content)
+    let content_off = base.map(|_| char_offset_of(line, content));
+    let split = split_table_cells_ranged(content);
+    let mut fragments: Vec<Vec<CellFragment>> =
+        (0..split.cells.len()).map(|_| Vec::new()).collect();
+    collect_continuation_fragments(conts, &split, &mut fragments);
+    let cells = split
+        .cells
         .into_iter()
-        .map(|slice| {
+        .enumerate()
+        .map(|(idx, slice)| {
             // The cell's own start column, which is also the anchor its inline
             // content is parsed against: the cell text is a verbatim slice of
             // the row now that the escaped pipe is preserved, so an offset
@@ -9804,8 +9804,13 @@ fn parse_table_row(line: &str, options: &Options<'_>, base: Option<(usize, isize
                 }
                 _ => None,
             };
-            let mut cell = parse_table_cell(&slice.text, options, cell_anchor);
-            if let (Some((line_no, stripped)), Some(off)) = (base, content_off) {
+            let extra = &fragments[idx];
+            let mut cell = parse_table_cell(&slice.text, options, cell_anchor, extra);
+            if !extra.is_empty() {
+                // Its value is now reassembled from discontiguous fragments; no
+                // single exact source extent exists for the cell.
+                cell.pos = None;
+            } else if let (Some((line_no, stripped)), Some(off)) = (base, content_off) {
                 cell.pos = Some(Pos {
                     start_line: line_no,
                     end_line: line_no,
@@ -9826,6 +9831,69 @@ fn parse_table_row(line: &str, options: &Options<'_>, base: Option<(usize, isize
     }
 }
 
+/// Where `part` starts inside `whole`, in CHARS.
+///
+/// `part` must be a SUB-SLICE of `whole` - it always is at the call sites, which
+/// only ever narrow - so the byte distance between the two pointers is exact and
+/// converts without re-scanning.
+fn char_offset_of(whole: &str, part: &str) -> usize {
+    let bytes = (part.as_ptr() as usize).saturating_sub(whole.as_ptr() as usize);
+    whole[..bytes].chars().count()
+}
+
+/// Cut each continuation line into cells and file every non-empty one under the
+/// column it extends.
+///
+/// The verbatim run a line leaves OPEN is carried into the next one: a `+` row
+/// continues the cell, so a run the row's closing pipe did not close is still
+/// open where the continuation picks that cell up (carve#1293). An EMPTY cell
+/// contributes nothing - not even the joining space - which is what lets a
+/// continuation address one column of a wide row.
+fn collect_continuation_fragments(
+    conts: &[(&str, Option<(usize, isize)>)],
+    row: &RowSplit,
+    fragments: &mut [Vec<CellFragment>],
+) {
+    let mut open_run = row.open_run;
+    let mut open_run_at = row.open_run_at;
+    for (line, base) in conts {
+        let mut content = trim_ascii(line);
+        if let Some(stripped) = content.strip_prefix('+') {
+            content = stripped;
+        }
+        if let Some(stripped) = content.strip_suffix('|') {
+            content = stripped;
+        }
+        let content_off = base.map(|_| char_offset_of(line, content));
+        let split = split_table_cells_seeded(content, open_run, open_run_at);
+        open_run = split.open_run;
+        open_run_at = split.open_run_at;
+        for (idx, cell) in split.cells.iter().enumerate() {
+            let text = trim_cell_padding(&cell.text); // PART 7: cell padding is U+0020 only.
+            if text.is_empty() {
+                continue;
+            }
+            // Trimming moved the start; count what it took so the anchor lands
+            // on the first character of the text and not on the padding before
+            // it.
+            let lead =
+                cell.text.chars().count() - trim_cell_padding_start(&cell.text).chars().count(); // PART 7: cell padding is U+0020 only.
+            let anchor = match (base, content_off) {
+                (Some((line_no, stripped)), Some(off)) => {
+                    Some((*line_no, stripped + (off + cell.start + lead) as isize))
+                }
+                _ => None,
+            };
+            if let Some(slot) = fragments.get_mut(idx) {
+                slot.push(CellFragment {
+                    text: text.to_string(),
+                    anchor,
+                });
+            }
+        }
+    }
+}
+
 /// A cell as it sits in the row: its resolved text, and the CHAR range of the
 /// source it came from.
 ///
@@ -9839,15 +9907,50 @@ struct CellSlice {
 
 fn split_table_cells(content: &str) -> Vec<String> {
     split_table_cells_ranged(content)
+        .cells
         .into_iter()
         .map(|c| c.text)
         .collect()
 }
 
-fn split_table_cells_ranged(content: &str) -> Vec<CellSlice> {
+/// A row line cut into cells, together with the verbatim run its closing pipe
+/// did NOT close.
+///
+/// The leftover run is what a `+` continuation row is scanned with. A row's
+/// closing pipe closes the row even with a run still open (carve#1284), so the
+/// run survives the row boundary - and by construction it sits in the LAST
+/// cell, since once open it swallows every `|` but the closer.
+struct RowSplit {
+    cells: Vec<CellSlice>,
+    /// Whether a verbatim run is still open at end of line.
+    open_run: bool,
+    /// The cell index that run is open in: the last one.
+    open_run_at: usize,
+}
+
+fn split_table_cells_ranged(content: &str) -> RowSplit {
+    split_table_cells_seeded(content, false, 0)
+}
+
+/// `open_run` / `open_run_at` seed the scanner with a verbatim run left OPEN by
+/// the row this line CONTINUES (carve#1293).
+///
+/// A `+` continuation extends the cell, so the block an unclosed run reaches
+/// the end of is that whole cell, continuation included: the pipes it spans on
+/// the continuation row are its content, exactly as they are on the row that
+/// opened it. Scanning a continuation with a fresh scanner cut the line at a
+/// pipe INSIDE the run, and every segment past the first was then dropped for
+/// want of a column to join - content loss rather than a different answer.
+///
+/// THE SEED BELONGS TO ONE COLUMN. The run was open in the row above's LAST
+/// cell, and a continuation joins PER COLUMN, so the columns before it are
+/// scanned normally and the pipe that ends them still separates. Seeding the
+/// whole line instead swallows those separators and pushes the continuation
+/// into the wrong cell.
+fn split_table_cells_seeded(content: &str, open_run: bool, open_run_at: usize) -> RowSplit {
     let mut cells = Vec::new();
     let mut buf = String::new();
-    let mut code_ticks = 0usize;
+    let mut code_ticks = usize::from(open_run && open_run_at == 0);
     let mut index = 0usize;
     let mut cell_start = 0usize;
     let mut chars = content.chars().peekable();
@@ -9888,6 +9991,9 @@ fn split_table_cells_ranged(content: &str) -> Vec<CellSlice> {
                 end: index - 1,
             });
             cell_start = index;
+            if cells.len() == open_run_at && open_run {
+                code_ticks = 1;
+            }
             continue;
         }
         buf.push(ch);
@@ -9897,7 +10003,12 @@ fn split_table_cells_ranged(content: &str) -> Vec<CellSlice> {
         start: cell_start,
         end: index,
     });
-    cells
+    let open_run_at = cells.len() - 1;
+    RowSplit {
+        cells,
+        open_run: code_ticks == 1,
+        open_run_at,
+    }
 }
 
 /// Parse a cell's inline content, anchored when the caller knows where the
@@ -9911,23 +10022,66 @@ fn parse_cell_inlines(
     slice: &str,
     options: &Options<'_>,
     anchor: Option<(usize, isize)>,
+    extra: &[CellFragment],
 ) -> Vec<InlineNode> {
-    let Some((line_no, base_col)) = anchor else {
-        return parse_inline_with_options(slice, options);
-    };
-    let bytes = (slice.as_ptr() as usize).saturating_sub(cell.as_ptr() as usize);
-    let off = cell[..bytes].chars().count();
-    parse_inline_lines_with_anchor(
-        slice,
-        options,
-        vec![Some((line_no, base_col + off as isize))],
-    )
+    let base = anchor
+        .map(|(line_no, base_col)| (line_no, base_col + char_offset_of(cell, slice) as isize));
+    parse_cell_content(slice, options, base, extra)
+}
+
+/// The cell's content as ONE inline block, its `+` continuation fragments
+/// included.
+///
+/// THE CELL IS THE BLOCK (carve#1293). An unclosed inline verbatim run runs to
+/// the end of the block it is in, and a `+` continuation extends the cell, so
+/// the run has to be able to close on the continuation - which it cannot do if
+/// each fragment is parsed by itself and the results concatenated. That is what
+/// published `a <code>b</code> c<code></code>`: the run closed at the row's
+/// pipe and a fresh one opened for the continuation, leaving an empty span no
+/// clause in this language produces.
+///
+/// The JOINER is a manufactured space, because the source has a line break here
+/// and the cell does not. It belongs to no source line, so it gets an anchor
+/// segment of its own carrying NO anchor: a node whose span crosses it can then
+/// place neither end and carries no position at all, which is the rule already
+/// in force for a run joined across a gap (PART 12 section 4, absent beats
+/// wrong). A node that lies wholly inside one fragment keeps its own position.
+fn parse_cell_content(
+    slice: &str,
+    options: &Options<'_>,
+    base: Option<(usize, isize)>,
+    extra: &[CellFragment],
+) -> Vec<InlineNode> {
+    if extra.is_empty() {
+        let Some(anchor) = base else {
+            return parse_inline_with_options(slice, options);
+        };
+        return parse_inline_lines_with_anchor(slice, options, vec![Some(anchor)]);
+    }
+    let mut text = String::from(slice);
+    let mut lines = vec![base];
+    let mut breaks = Vec::new();
+    for fragment in extra {
+        if !text.is_empty() {
+            // The joiner is the LAST character of the segment before it, which
+            // is where a newline sits in an ordinary multi-line text. Opening
+            // the next segment on it instead puts the exclusive end of a span
+            // that stops just short of it into the following segment, and every
+            // node at the end of a fragment loses its position.
+            text.push(' ');
+        }
+        breaks.push(text.len());
+        text.push_str(&fragment.text);
+        lines.push(fragment.anchor);
+    }
+    parse_inline_segments_with_anchor(&text, options, lines, breaks)
 }
 
 fn parse_table_cell(
     cell: &str,
     options: &Options<'_>,
     anchor: Option<(usize, isize)>,
+    extra: &[CellFragment],
 ) -> TableCell {
     // A leading `=` marks a HEADER cell, but only when GLUED to the `|` (no
     // leading whitespace), per grammar §20. `| =x |` (space before `=`) is a
@@ -10011,9 +10165,13 @@ fn parse_table_cell(
         align,
         attrs,
         children: if span.is_some() {
-            Vec::new()
+            // A span cell renders nothing of its own - it widens a neighbour -
+            // so its own content is empty. A continuation still files its
+            // fragments under this column, and they stay in the tree where they
+            // always were.
+            parse_cell_content("", options, None, extra)
         } else {
-            parse_cell_inlines(cell, text, options, anchor)
+            parse_cell_inlines(cell, text, options, anchor, extra)
         },
         // The caller places the cell: it knows where the row line sits.
         pos: None,
@@ -11726,12 +11884,46 @@ struct InlineBounds<'a> {
 
 pub(crate) struct InlineAnchor<'a> {
     lines: &'a [Option<(usize, isize)>],
+    /// Byte offsets in the text at which a new anchor SEGMENT begins without a
+    /// newline being there to mark it.
+    ///
+    /// A newline in the text is the ordinary way one line ends and the next
+    /// begins, and it needs no list. A TABLE CELL rebuilt across a `+`
+    /// continuation has no newline in it - the fragments are joined by a
+    /// manufactured space - and yet each fragment sits on a different source
+    /// line. Without this the whole cell reads as one line and every position
+    /// past the first fragment lands on the row line at a column that holds
+    /// something else.
+    ///
+    /// Each break opens a segment, so `lines` is indexed by segment rather than
+    /// by newline count.
+    ///
+    /// A BREAK IS A GAP, which a newline is not. The source holds characters
+    /// between two segments that the text does not - a closing pipe, a line
+    /// break, a `+` and an opening pipe - so a span reaching across one would
+    /// not select its own text. Any node that crosses a break is therefore left
+    /// unplaced: absent beats wrong (PART 12 section 4). A newline needs no such
+    /// rule because it is IN the text, so a span across it still selects itself.
+    ///
+    /// Offsets are ASCENDING and each one sits IN FRONT OF A CHARACTER, never
+    /// at end of text - a segment with nothing in it would have no position to
+    /// give.
+    breaks: &'a [usize],
+}
+
+impl<'a> InlineAnchor<'a> {
+    fn lines(lines: &'a [Option<(usize, isize)>]) -> Self {
+        Self { lines, breaks: &[] }
+    }
 }
 
 struct InlinePositionMap<'a> {
     lines: &'a [Option<(usize, isize)>],
     byte_line: Vec<usize>,
     byte_column: Vec<usize>,
+    /// Whether the segments are separated by GAPS rather than by newlines -
+    /// see `InlineAnchor::breaks`. A span across a gap carries no position.
+    gapped: bool,
 }
 
 impl<'a> InlinePositionMap<'a> {
@@ -11740,7 +11932,15 @@ impl<'a> InlinePositionMap<'a> {
         let mut byte_column = vec![0usize; text.len() + 1];
         let mut line = 0usize;
         let mut column = 0usize;
+        let mut breaks = anchor.breaks.iter().copied().peekable();
         for (byte, ch) in text.char_indices() {
+            // A break OPENS a segment, so it is applied BEFORE the character it
+            // sits in front of rather than after the one behind it.
+            while breaks.peek() == Some(&byte) {
+                breaks.next();
+                line += 1;
+                column = 0;
+            }
             byte_line[byte] = line;
             byte_column[byte] = column;
             for idx in byte + 1..byte + ch.len_utf8() {
@@ -11760,6 +11960,7 @@ impl<'a> InlinePositionMap<'a> {
             lines: anchor.lines,
             byte_line,
             byte_column,
+            gapped: !anchor.breaks.is_empty(),
         }
     }
 
@@ -11769,6 +11970,9 @@ impl<'a> InlinePositionMap<'a> {
         }
         let start_line_idx = *self.byte_line.get(start)?;
         let end_line_idx = *self.byte_line.get(end)?;
+        if self.gapped && start_line_idx != end_line_idx {
+            return None;
+        }
         for idx in start_line_idx..=end_line_idx {
             self.lines.get(idx).copied().flatten()?;
         }
@@ -11880,7 +12084,7 @@ fn parse_caption_inline_with_anchor(
     if !options.positions {
         return parse_caption_inline_with_options(text, options, caption_context);
     }
-    let map = InlinePositionMap::new(text, InlineAnchor { lines: &lines });
+    let map = InlinePositionMap::new(text, InlineAnchor::lines(&lines));
     parse_inline_context(text, options, true, false, Some(&map), 0)
 }
 
