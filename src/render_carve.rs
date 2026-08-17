@@ -1763,14 +1763,34 @@ fn render_inlines_with_caption(
             out.push(' ');
         }
         // PART 11 §7c. A line block hardens every line boundary itself, so a
-        // `hard_break` there is spelled as a BARE NEWLINE - except on the two
-        // lines where a bare newline would not be READ BACK as one, and both are
-        // decided on the bytes already emitted for this line, the way §1a says.
-        if ctx.line_block_depth > 0
-            && matches!(node, InlineNode::HardBreak(_))
-            && verse_break_needs_backslash(&out)
-        {
-            out.push('\\');
+        // `hard_break` there is spelled as a BARE NEWLINE - except on the lines
+        // where a bare newline would not be READ BACK as one, decided on the
+        // bytes already emitted for this line, the way §1a says.
+        if ctx.line_block_depth > 0 && matches!(node, InlineNode::HardBreak(_)) {
+            // §7c enumerates two cases, and both are about the line the break
+            // ENDS. A break that ends the STANZA has no line after it to be
+            // re-read against, so the clause's own ground - "the tree is
+            // identical either way" - does not hold there: a bare newline
+            // becomes the blank line that ends the stanza, and the break is
+            // simply gone. Measured on `a\` and `a  \` as a block's last body
+            // line, neither of which involves whitespace at all.
+            //
+            // `inline_depth == 1` keeps this to a stanza's own line list. A
+            // break that merely ends the children of an emphasis or a link has
+            // content after it on the same line, so it is not a stanza's last.
+            let ends_the_stanza = ctx.inline_depth == 1 && idx + 1 == nodes.len();
+            // A LINE ENDING IN A COMMENT takes no backslash, whatever else is
+            // true of it: `%%` runs to end of line, so the backslash would land
+            // inside the comment's CONTENT rather than after the line. An empty
+            // comment writes back as `%% `, whose trailing space is the very
+            // thing the lone-space case looks for, so this is not a corner -
+            // it is the shape that first published a `\` as comment text.
+            let inside_a_comment = idx
+                .checked_sub(1)
+                .is_some_and(|prev| matches!(&nodes[prev], InlineNode::Comment(c) if !c.delimited));
+            if !inside_a_comment && (ends_the_stanza || verse_break_needs_backslash(&out)) {
+                out.push('\\');
+            }
         }
         out.push_str(&rendered);
         if matches!(node, InlineNode::SoftBreak(_)) {
@@ -1850,7 +1870,8 @@ fn render_inline(
             format!("{body}{}", render_attrs(&emphasis.attrs))
         }
         InlineNode::Code(code) => {
-            format!("{}{}", render_code(&code.value), render_attrs(&code.attrs))
+            let value = spell_verse_empty_lines(&code.value, ctx.line_block_depth > 0);
+            format!("{}{}", render_code(&value), render_attrs(&code.attrs))
         }
         InlineNode::Link(link) => render_link(link, ctx),
         InlineNode::Image(image) => render_image(image),
@@ -1865,13 +1886,17 @@ fn render_inline(
         InlineNode::Math(math) => format!(
             "{}{}{}",
             if math.display { "$$" } else { "$" },
-            render_code(&math.content),
+            render_code(&spell_verse_empty_lines(
+                &math.content,
+                ctx.line_block_depth > 0
+            )),
             render_attrs(&math.attrs)
         ),
         InlineNode::RawInline(raw) => {
+            let content = spell_verse_empty_lines(&raw.content, ctx.line_block_depth > 0);
             format!(
                 "{}{{={}}}",
-                render_code(&raw.content),
+                render_code(&content),
                 escape_format(&raw.format)
             )
         }
@@ -1880,7 +1905,8 @@ fn render_inline(
             // the ordinary inline attribute block (same as a code span carries).
             // `render_code` widens the backtick fence when the content holds
             // backticks, so the round-trip re-parses identically.
-            format!("!{}{}", render_code(&lit.content), render_attrs(&lit.attrs))
+            let content = spell_verse_empty_lines(&lit.content, ctx.line_block_depth > 0);
+            format!("!{}{}", render_code(&content), render_attrs(&lit.attrs))
         }
         InlineNode::Symbol(symbol) => format!(
             ":{}:{}",
@@ -2094,6 +2120,43 @@ fn render_emphasis(delim: &str, content: &str, prev_char: char, next_char: char)
 
 fn is_word_boundary(ch: char) -> bool {
     ch.is_ascii_alphanumeric() || ch == '_'
+}
+
+/// Spell an EMPTY LINE inside a verbatim value the one way verse can spell one.
+///
+/// A run that stays open in a line block swallows the line boundaries it crosses
+/// as newlines, and a comment-only line is emptied above it (PART 9 §23), so its
+/// value can hold an empty line. The writer cannot emit that line as a blank
+/// one: a blank line ENDS THE STANZA, and the run comes back split. A `\` is no
+/// help either - inside the run it is content, not a break.
+///
+/// A comment line is what is left, and it is exact rather than a workaround: it
+/// is removed at the BLOCK layer, before the run exists, so it leaves the
+/// emptied line the value already holds.
+///
+/// The FIRST and LAST segments are skipped, and neither is a line of its own:
+/// the first is the tail of the line the run OPENED on, and the last is the line
+/// the CLOSING fence goes out on. Spelling the last one would put the fence
+/// inside the comment, where the block layer takes it with the rest of the line
+/// and the run never closes at all.
+fn spell_verse_empty_lines(content: &str, in_line_block: bool) -> String {
+    if !in_line_block || !content.contains('\n') {
+        return content.to_string();
+    }
+    let segments: Vec<&str> = content.split('\n').collect();
+    let last = segments.len() - 1;
+    let mut out = String::with_capacity(content.len());
+    for (i, segment) in segments.iter().enumerate() {
+        if i > 0 {
+            out.push('\n');
+        }
+        if i > 0 && i < last && segment.is_empty() {
+            out.push_str("%%");
+            continue;
+        }
+        out.push_str(segment);
+    }
+    out
 }
 
 fn render_code(content: &str) -> String {

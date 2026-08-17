@@ -11406,27 +11406,34 @@ fn verse_comment_line(stripped: &str) -> Option<String> {
 /// swallowing the boundary, and inside that run there is no place for a node -
 /// the run's own value carries the emptied line as a newline, like every other
 /// break it swallows.
+/// ONE PASS, building a new vector rather than inserting into the old one. The
+/// comments arrive in line order, at most one per line, so the walk can consume
+/// them alongside the breaks - and a stanza of nothing but comment lines is a
+/// document an author can write, where repeated `Vec::insert` would be
+/// quadratic in the block's length.
 fn splice_verse_comments(
-    mut inlines: Vec<InlineNode>,
+    inlines: Vec<InlineNode>,
     comments: Vec<(usize, Comment)>,
 ) -> Vec<InlineNode> {
     if comments.is_empty() {
         return inlines;
     }
-    let mut line_starts = vec![0usize];
-    for (i, node) in inlines.iter().enumerate() {
-        if matches!(node, InlineNode::HardBreak(_)) {
-            line_starts.push(i + 1);
+    let mut out = Vec::with_capacity(inlines.len() + comments.len());
+    let mut pending = comments.into_iter().peekable();
+    let mut nodes = inlines.into_iter();
+    let mut line = 0usize;
+    loop {
+        while let Some((_, comment)) = pending.next_if(|(at, _)| *at == line) {
+            out.push(InlineNode::Comment(comment));
+        }
+        let Some(node) = nodes.next() else { break };
+        let boundary = matches!(node, InlineNode::HardBreak(_));
+        out.push(node);
+        if boundary {
+            line += 1;
         }
     }
-    // Descending, so an insertion never moves an index still to be used.
-    for (line, comment) in comments.into_iter().rev() {
-        let Some(at) = line_starts.get(line).copied() else {
-            continue;
-        };
-        inlines.insert(at, InlineNode::Comment(comment));
-    }
-    inlines
+    out
 }
 
 /// Give every line-block hard break a span, even where the stanza's TEXT has
@@ -11467,7 +11474,7 @@ fn place_line_block_breaks(
             // the emptied line, which ends at column 1, and the newline the
             // author wrote is at the end of the comment they wrote
             // (grammar PART 9 §23).
-            if brk.pos.is_some() && !emptied.contains(&k) {
+            if brk.pos.is_some() && emptied.binary_search(&k).is_err() {
                 return InlineNode::HardBreak(brk);
             }
             // Start: just past the last character of line k. End: the first
