@@ -4457,15 +4457,15 @@ thread_local! {
 /// every query point in `p..dedent`. Openers at different columns keep separate
 /// entries, so alternating columns do not evict each other.
 ///
-/// A list MARKER inside the body is deliberately not a stop. carve-rs's block
-/// parser ends a contained comment at one, which is a divergence of its own -
-/// `- item` / `  %%%` / `  - x` / `  y` / `  %%%` renders `x` and `y` where the
-/// oracle and carve-js render an empty item, with no definition anywhere in
-/// sight. Stopping here would put this scan back in step with that bug and, in
-/// doing so, resume registering a definition written under the marker - the very
-/// thing carve-rs#1047 is about. So the scan stays with the clause, the
-/// definition stops registering, and the body still leaks until the block parser
-/// is fixed.
+/// A list MARKER inside the body is not a stop, and the block parser now agrees.
+/// It used to end a contained comment at one, so `- item` / `  %%%` / `  - x` /
+/// `  y` / `  %%%` rendered `x` and `y` where the oracle and carve-js render an
+/// empty item. This scan stayed with the clause through that, which made the two
+/// halves disagree: the definition stopped registering while the body still
+/// leaked. carve-rs#1053 fixed the block parser's side - its content-column
+/// marker gate now treats an open comment span as opaque, the way it already
+/// treated a code fence - so both halves answer §28 the same way and the shape
+/// is correct end to end.
 #[derive(Default)]
 struct ContainerCommentClosers {
     /// Line index of every comment-fence closer, keyed by its exact `%` run and
@@ -8477,10 +8477,29 @@ fn collect_indented_block_mapped_with(
         // from by two characters. Without the guard the marker severed the
         // verbatim body: the fence closed empty, the marker opened a sub-list,
         // and the fence's own closer became an empty code span.
+        //
+        // A COMMENT BODY IS VERBATIM FOR THE SAME REASON (§28, carve-rs#1053).
+        // §28 makes a comment's body opaque exactly as §24 makes a code fence's,
+        // so the marker inside one is comment text and severing the chunk there
+        // is the same defect in a second spelling. Left out, the opener landed
+        // in a chunk of its own and re-parsed as an unterminated fence - which
+        // §28 degrades to a `%%` line comment - the marker opened a sub-list,
+        // and the closer degraded the same way in the next chunk. Both
+        // delimiters vanished and the body rendered: the one outcome a comment
+        // may never have. A heading or a block quote in that position was
+        // already correct, but by omission - they never set `is_marker` - so the
+        // asymmetry was in this gate, not in any opener set.
+        //
+        // `comment_fence` is the state the PRECEDING lines left, because the
+        // tracker below has not run for this line yet, which is what makes it
+        // the right question here: it is set only where a closer really follows
+        // (§28), so an unterminated `%%%` still degrades and a marker under it
+        // still stops the chunk.
         if stop_at_content_column_marker
             && is_marker
             && indent >= strip_cols
             && fence.is_none()
+            && comment_fence.is_none()
             && colon_open.is_empty()
         {
             break;
@@ -8515,7 +8534,21 @@ fn collect_indented_block_mapped_with(
             if is_comment_fence_close_any_column(line, fence_len) {
                 comment_fence = None;
             }
-        } else if let Some(open) = detect_comment_fence_line_any_column(line) {
+        } else if let Some(open) =
+            detect_comment_fence_line_any_column(line).filter(|_| fence.is_none())
+        {
+            // A `%%%` INSIDE A CODE FENCE IS CODE TEXT, so it opens no span
+            // (§24, and the same reading of §28 the marker gate above applies).
+            // `fence` is the state the preceding lines left, so the code fence's
+            // own opener and closer still read as themselves and only body lines
+            // are excluded. Without the filter the span opened on code text and
+            // was still open at the code fence's end, which suppressed the
+            // marker gate for the REAL comment that followed: `- item` / a code
+            // fence holding `%%%` / `  - x` / `  %%%` / `  - z` / `  %%%` put
+            // `z` on the page, where the delimiters around it should have hidden
+            // it. The dedent below reads the same state, so opening it on code
+            // text was already wrong before the gate started asking.
+            //
             // §28: a fence with NO closer ahead is not a fence - it degrades to
             // an ordinary `%%` line comment, and the lines after it are just
             // lines. Opening the span anyway dedented the next one by the span's
@@ -8738,10 +8771,12 @@ fn collect_indented_block_plain_with(
         // from by two characters. Without the guard the marker severed the
         // verbatim body: the fence closed empty, the marker opened a sub-list,
         // and the fence's own closer became an empty code span.
+        // Same comment-body guard as the mapped collector above (§28, #1053).
         if stop_at_content_column_marker
             && is_marker
             && indent >= strip_cols
             && fence.is_none()
+            && comment_fence.is_none()
             && colon_open.is_empty()
         {
             break;
@@ -8760,9 +8795,12 @@ fn collect_indented_block_plain_with(
             if is_comment_fence_close_any_column(line, fence_len) {
                 comment_fence = None;
             }
-        } else if let Some(open) = detect_comment_fence_line_any_column(line) {
+        } else if let Some(open) =
+            detect_comment_fence_line_any_column(line).filter(|_| fence.is_none())
+        {
             // See the mapped collector: a fence with no closer ahead degrades to
-            // a line comment (§28), so it opens no span (carve-rs#586).
+            // a line comment (§28), so it opens no span (carve-rs#586); and a
+            // `%%%` inside a code fence is code text, so it opens none either.
             if cur.has_comment_closer_after(cur.pos + 1, open.fence_len) {
                 comment_fence = Some((open.fence_len, indent));
                 comment_fence_strip = Some(if indent < strip_cols { 0 } else { strip_cols });
