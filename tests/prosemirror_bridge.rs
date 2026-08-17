@@ -531,8 +531,19 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // are a link and an image with an attribute run, which the editor schema
     // covers whole, so both land in the strict set, neither reports, and
     // neither joins the declared source-lossy set.
+    // 912/231 to 912/233 is the two documents arriving with the 5866bd0 spec
+    // pin, and nothing else: the corpus went from 1143 pairs to 1145, and the
+    // two added pairs are the `343-an-escaped-hash-keeps-its-escape-at-a-
+    // container-s-content-position` documents that pin PART 11 §8b's content
+    // position. Attributed by DIFFING THE REPORTING SETS at both pins under one
+    // build: the set grows by exactly these two names and no pre-existing
+    // document appears on either side, so the strict count does not move at all.
+    // Both report for a reason already declared above - `escaped_text` degrades,
+    // the same node `321-delimited-comments-7` reports - and one also degrades a
+    // `soft_break`. Neither can join the strict set while an authored escape is
+    // what the document exists to pin, so this raise is LOSSY only.
     const STRICT: usize = 912;
-    const LOSSY: usize = 231;
+    const LOSSY: usize = 233;
     assert!(
         covered >= STRICT,
         "strict round trips fell from {STRICT} to {covered}"
