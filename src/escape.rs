@@ -263,10 +263,11 @@ pub fn sanitize_attr_value<'a>(name: &str, value: &'a str) -> std::borrow::Cow<'
         return std::borrow::Cow::Borrowed("");
     }
     if let Some(is_separator) = url_list_separators(name) {
-        if value
-            .split(is_separator)
-            .any(|token| !token.is_empty() && leads_with_dangerous_scheme(token))
-        {
+        // The clause says "every NON-EMPTY token", and that qualifier costs
+        // nothing to honour here: an empty token holds no colon, so the probe
+        // answers no for it already. Guarding on it explicitly would add a
+        // condition that cannot fail, which reads like a defense and is not.
+        if value.split(is_separator).any(leads_with_dangerous_scheme) {
             return std::borrow::Cow::Borrowed("");
         }
     }
