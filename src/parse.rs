@@ -8661,8 +8661,24 @@ fn interrupts_paragraph(cur: &mut LineCursor<'_>, line: &str) -> bool {
     // whitespace, so without this guard an INDENTED `{...}` line would interrupt
     // where an indented `> q` / `# h` does not; an indented attr line is lazy
     // paragraph text under the strict column-0 rule (§24 C3), not a floater.
-    if !line.starts_with([' ', '\t']) && parse_standalone_attrs(line).is_some() {
-        return true;
+    //
+    // The WRAPPED spelling (`{.k` / `#x}`) interrupts on the same grounds. Only
+    // the single-line form was tested here, so `{.k` folded into the paragraph
+    // as literal text: the author's braces reached the page and the attributes
+    // reached nothing (markup-carve/carve-rs#1039). The continuation lines come
+    // from the CURSOR, and only when `line` is the line it is parked on - every
+    // other caller passes a line this cursor is not standing at, and guessing a
+    // block's extent from an unrelated position is how a probe reads a closer
+    // that is not there.
+    if !line.starts_with([' ', '\t']) {
+        if parse_standalone_attrs(line).is_some() {
+            return true;
+        }
+        if cur.lines.get(cur.pos).copied() == Some(line)
+            && standalone_attrs_block_len(&cur.lines[cur.pos..]).is_some()
+        {
+            return true;
+        }
     }
     // Symmetric §10: a list marker (bullet OR task OR ordered) does NOT
     // interrupt a paragraph -- a list needs a blank line before it. Only the
@@ -8790,8 +8806,24 @@ fn interrupts_paragraph_with_rest(line: &str, rest: &[&str]) -> bool {
     }
     // Flush-left only (see interrupts_paragraph): an indented `{...}` line is
     // lazy paragraph text under the strict column-0 rule, not a floating attr.
-    if !line.starts_with([' ', '\t']) && parse_standalone_attrs(line).is_some() {
-        return true;
+    //
+    // The WRAPPED spelling interrupts too, which is what `rest` is for. Only the
+    // single-line form was tested here, so `{.k` opened nothing and folded into
+    // the paragraph as literal text - the author's braces reached the page and
+    // the attributes reached nothing (markup-carve/carve-rs#1039, and the half
+    // of markup-carve/carve#1281's `329-...-6` that the container's end does not
+    // answer on its own).
+    //
+    // The brace test comes FIRST so the common line costs nothing: this
+    // predicate is asked of every blank-separated block, and copying `rest`
+    // for a heading or a paragraph line would make that quadratic.
+    if !line.starts_with([' ', '\t']) && trim_ascii(line).starts_with('{') {
+        let mut block: Vec<&str> = Vec::with_capacity(rest.len() + 1);
+        block.push(line);
+        block.extend_from_slice(rest);
+        if standalone_attrs_block_len(&block).is_some() {
+            return true;
+        }
     }
     if detect_heading(line).is_some()
         || detect_thematic_break(line)
@@ -9177,13 +9209,28 @@ impl DefinitionBodyFence {
 /// the strict column-0 rule, which is what keeps an INDENTED `{…}` ordinary
 /// paragraph text.
 fn body_ends_with_an_attribute_line(source: &str) -> bool {
-    source
-        .lines()
-        .rev()
-        .find(|line| !is_blank_line(line))
-        .is_some_and(|line| {
-            !line.starts_with([' ', '\t']) && parse_standalone_attrs(line).is_some()
-        })
+    let lines: Vec<&str> = source.lines().collect();
+    let Some(end) = lines.iter().rposition(|line| !is_blank_line(line)) else {
+        return false;
+    };
+    // The WRAPPED spelling (`{.k` / `#x}`) counts too. This used to test the
+    // last line alone, so a block that closed on it but OPENED on an earlier one
+    // was invisible here and the body was read as ending in a paragraph
+    // (markup-carve/carve#1281's `329-...-6`, markup-carve/carve-rs#1039).
+    //
+    // The scan walks back only over the current run of non-blank lines, because
+    // an attribute block is refused at a blank line - so the start can never be
+    // further back than that.
+    let mut start = end;
+    loop {
+        if standalone_attrs_block_len(&lines[start..]) == Some(end - start + 1) {
+            return true;
+        }
+        if start == 0 || is_blank_line(lines[start - 1]) {
+            return false;
+        }
+        start -= 1;
+    }
 }
 
 fn definition_body_takes_the_fold(source: &str, options: &Options<'_>) -> bool {
@@ -11472,6 +11519,8 @@ fn parse_standalone_attrs_block(cur: &mut LineCursor) -> Option<Attrs> {
         cur.consume();
         return Some(attrs);
     }
+    // See `standalone_attrs_block_len` for the cursor-free twin of everything
+    // below; the two must keep answering the same way.
     // A COMPLETE single line (already closes with `}`) that parse_standalone_attrs
     // rejected is not a valid attribute block -- do NOT rescue it via the
     // multi-line strip-outer path below, which would parse an interior `}{` as an
@@ -11521,6 +11570,67 @@ fn parse_standalone_attrs_block(cur: &mut LineCursor) -> Option<Attrs> {
                     }
                     return Some(attrs);
                 }
+            }
+            return None;
+        }
+    }
+    None
+}
+
+/// How many LINES a standalone attribute block occupies when one starts at
+/// `lines[0]`, or `None` when these lines do not spell one.
+///
+/// The cursor-free twin of `parse_standalone_attrs_block`, for the predicates
+/// that must ask "does an attribute block sit here" without a cursor to consume
+/// from. Both follow the same rules: a single complete line, or a run joined
+/// until one closes with `}`, refused at a blank line and refused when a quoted
+/// value is left open across a break (PART 4, markup-carve/carve#888).
+///
+/// FLUSH-LEFT ONLY, like every caller's own guard: an indented `{...}` is lazy
+/// paragraph text under the strict column-0 rule (PART 9 section 24 C3).
+fn standalone_attrs_block_len(lines: &[&str]) -> Option<usize> {
+    let first = *lines.first()?;
+    if first.starts_with([' ', '\t']) {
+        return None;
+    }
+    // AN ATTRIBUTE BLOCK OPENS WITH A BRACE, and refusing everything else here
+    // is what keeps this cheap. `interrupts_paragraph` asks this question of
+    // EVERY continuation line, and without the guard a paragraph whose lines
+    // never end in `}` sends the join loop below over the whole remainder once
+    // per line - quadratic time and allocation on ordinary prose that has no
+    // attributes in it at all.
+    if !trim_ascii(first).starts_with('{') {
+        return None;
+    }
+    if parse_standalone_attrs(first).is_some() {
+        return Some(1);
+    }
+    // Same refusal as the cursor form: a line that already closes and was
+    // rejected is not rescued by the multi-line join.
+    if trim_ascii_end(first).ends_with('}') {
+        return None;
+    }
+    let mut joined = String::new();
+    let mut quote: Option<char> = None;
+    for (count, line) in lines.iter().enumerate() {
+        if is_blank_line(line) {
+            return None;
+        }
+        if !joined.is_empty() {
+            if quote.is_some() {
+                return None;
+            }
+            joined.push(' ');
+        }
+        joined.push_str(trim_ascii(line));
+        quote = open_quote_at_end(trim_ascii(line));
+        if trim_ascii_end(line).ends_with('}') {
+            let inner = trim_ascii(&joined);
+            if inner.starts_with('{')
+                && inner.ends_with('}')
+                && parse_attrs_with(&inner[1..inner.len() - 1], false).is_some()
+            {
+                return Some(count + 1);
             }
             return None;
         }
