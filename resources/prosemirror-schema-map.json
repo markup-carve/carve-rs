@@ -267,6 +267,7 @@
   },
   "unmapped": {
     "abbreviation_def": "abbreviation definitions ride on the doc node's attrs",
+    "citation_definition": "a ProseMirror schema has no node for a definition line, so the bridge drops it and the pair carries it in the sidecar, exactly as the abbreviation definition above",
     "caption_number": "numbered captions are a resolution artifact, not editor content",
     "raw_text": "raw text is the payload of a raw block, not a node an editor holds",
     "escaped_text": "escaping is a source-level concern; the editor holds the escaped character as text",
@@ -308,7 +309,7 @@
     "source": "markup-carve/carve-grammars tiptap/schema-map.json",
     "commit": "e09b460c23fceaf532f724f3ef73e0b6a355d4f7",
     "refresh": "copy the file from carve-grammars and update commit; the schema-map test asserts every AST type still has a decision",
-    "pendingUpstream": "the `figure_group` entry under unmapped is local: PART 9 section 4c is newer than the schema map, so carve-grammars carries no decision for it yet. Keep it across the next refresh until upstream does.",
+    "pendingUpstream": "the `figure_group` and `citation_definition` entries under unmapped are local: PART 9 section 4c and PART 12 section 18 are newer than the schema map, so carve-grammars carries no decision for either yet. `citation_definition` records what to_pm.rs already does - it has an explicit arm that drops the type - rather than choosing a mapping the bridge does not implement. Keep both across the next refresh until upstream does.",
     "partialSections": "`preservationNodes` and `markCarrierNodes` are copied verbatim from carve-grammars 228f003, ahead of the rest of the file. A whole-file refresh to 228f003 also gives `inline_extension` a second, PRIMARY ProseMirror name, which moves what this engine emits for every inline extension - a change of its own, not a side effect of adding a section. Take the rest of 228f003 in that change and drop this note."
   }
 }
