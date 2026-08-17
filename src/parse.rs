@@ -226,6 +226,18 @@ fn probe_blocks(source: &str, options: &Options<'_>) -> Vec<BlockNode> {
     parse_blocks_with_options(source, options)
 }
 
+/// [`probe_blocks`] for a fragment that stands at the DOCUMENT level.
+///
+/// The level is not a detail the caller may leave at its default: an
+/// abbreviation definition is only recognised there (see the `at_document_level`
+/// arm of `line_starts_block`), so a probe run one level down reads `*[HTML]: x`
+/// as an ordinary paragraph and answers every question about the line after it
+/// the wrong way.
+fn probe_blocks_at_document_level(source: &str, options: &Options<'_>) -> Vec<BlockNode> {
+    let _probing = ProbeGuard::enter();
+    parse_blocks_with_options_at_level(source, options, true)
+}
+
 /// RAII guard that marks the current thread as parsing a figure group's body,
 /// restoring the previous state on drop (panic unwind included), the same
 /// discipline [`DepthGuard`] keeps for the depth counter.
@@ -366,7 +378,7 @@ fn parse_with_options_mode(source: &str, options: &Options<'_>, mode: ParseMode)
         .count()
         + 1;
     let (body, footnote_defs_src, mut footnote_def_pos, note_link_defs) =
-        extract_footnote_defs(body, body_start_line, options.positions);
+        extract_footnote_defs(body, body_start_line, options.positions, options);
     let (body_source, mut link_defs) = extract_link_defs(&body.source);
     // A definition written inside a footnote body is document-level metadata,
     // and a definition at the top level WINS over one of the same label there -
@@ -811,8 +823,13 @@ fn extract_footnote_defs(
     source: &str,
     first_source_line: usize,
     positions: bool,
+    options: &Options<'_>,
 ) -> FootnoteExtraction {
     let lines: Vec<&str> = source.lines().collect();
+    // See `probe_budget_for`: spent by `line_folds_into_an_open_paragraph`, and
+    // running out only ever collects a definition this guard would have left as
+    // text.
+    let mut probe_budget = probe_budget_for(lines.len());
     let mut body = Vec::new();
     let mut body_line_map = Vec::new();
     let mut defs = BTreeMap::new();
@@ -982,7 +999,27 @@ fn extract_footnote_defs(
             stripped.structural,
             columns.reached_by(leading_ws(stripped.bare)),
         );
-        if let Some((label, first)) = parse_footnote_def_line(def_line) {
+        if let Some((label, first)) = parse_footnote_def_line(def_line).filter(|_| {
+            // A LIST MARKER on a line the block parser folds into an open
+            // paragraph is lazy paragraph text, and the definition behind it is
+            // part of that text (markup-carve/carve-rs#1024). Cutting it out
+            // deleted the author's line AND defined a note nobody wrote.
+            //
+            // The marker test is what SCOPES the guard, and it reads the RAW
+            // line. §10 gives a list the property this turns on - it does not
+            // interrupt an open paragraph - and a quote does not have it, so
+            // `r` then `> [^f]: t` opens a real quote whose definition IS
+            // collected, in all three engines. A quoted marker (`> - [^f]: t`)
+            // does not match here either, so the same shape inside a quote is
+            // still collected; `line_folds_into_an_open_paragraph` answers that
+            // one correctly if it is ever asked, but widening what asks it is a
+            // separate change with its own controls.
+            //
+            // Everything past the marker is the block parser's answer, not this
+            // pass's guess. See `line_folds_into_an_open_paragraph`.
+            !(detect_list_marker_full(lines[i]).is_some()
+                && line_folds_into_an_open_paragraph(&body, lines[i], options, &mut probe_budget))
+        }) {
             let def_start_line = first_source_line + i;
             // The definition's OWN extent, before the body is collected.
             //
@@ -1296,6 +1333,212 @@ struct LinkDef {
     /// table is `label -> (url, title?, attrs?)`, and R1 transfers these to
     /// every link that resolves the label (carve#604).
     attrs: Option<Attrs>,
+}
+
+/// How many LINES the definition pre-pass may hand to the block parser to
+/// answer [`line_folds_into_an_open_paragraph`], for one document.
+///
+/// The question is answered by parsing, and what has to be parsed is the run of
+/// lines back to the last blank one - so a document that is one long blank-free
+/// run of definition-shaped marker lines asks it once per line over a run that
+/// grows by one each time, which is quadratic. The budget makes the pre-pass
+/// linear again by capping the total, and running out is SAFE in the direction
+/// that matters: an unanswered question is answered `false`, which collects the
+/// definition exactly as the engine did before this guard existed. A document
+/// has to be built to reach it - the question is only asked for a line that is
+/// both a list marker and a footnote definition behind it.
+fn probe_budget_for(lines: usize) -> usize {
+    lines.saturating_mul(4).saturating_add(4096)
+}
+
+/// One level of a probe's LAST-CHILD CHAIN: what kind of node the level ends
+/// with, and - carried alongside in [`OpenFrame`] - how many nodes it holds.
+///
+/// A list's ITEMS and a definition list's are levels of their own rather than
+/// blocks, and they have to be, because the count that separates a sibling item
+/// from a lazy continuation lives exactly there: `- a` / `  lazy` and the same
+/// with `- [^f]: t` under it hold the identical blocks at every OTHER level and
+/// differ only in how many items the list has.
+#[derive(PartialEq, Eq)]
+enum ProbeLevel {
+    Blocks(std::mem::Discriminant<BlockNode>),
+    ListItems,
+    DefinitionItems,
+}
+
+/// The chain of still-open levels a parse ends in, from the document level down
+/// to the innermost last node.
+struct OpenFrame {
+    levels: Vec<(ProbeLevel, usize)>,
+    /// Whether the innermost node the chain reached is a paragraph. Read from
+    /// the chain rather than re-derived, so the two always describe one walk.
+    ends_in_paragraph: bool,
+}
+
+/// The child level a block holds, for the last-child walk [`open_frame`] makes.
+///
+/// EXHAUSTIVE ON PURPOSE, with no `_` arm: a block kind added later is a
+/// compile error here rather than a silent answer. And the answer a `Leaf` gives
+/// is the safe one anyway - a level the walk cannot enter ends the chain on a
+/// node that is not a paragraph, so the caller declines to suppress.
+enum ProbeChildren<'a> {
+    Blocks(&'a [BlockNode]),
+    ListItems(&'a [ListItem]),
+    DefinitionItems(&'a [DefinitionItem]),
+    Leaf,
+}
+
+fn probe_children(block: &BlockNode) -> ProbeChildren<'_> {
+    match block {
+        BlockNode::BlockQuote(b) => ProbeChildren::Blocks(&b.children),
+        BlockNode::Div(b) => ProbeChildren::Blocks(&b.children),
+        BlockNode::Admonition(b) => ProbeChildren::Blocks(&b.children),
+        BlockNode::FigureGroup(b) => ProbeChildren::Blocks(&b.children),
+        BlockNode::LineBlock(b) => ProbeChildren::Blocks(&b.children),
+        BlockNode::Extension(b) => ProbeChildren::Blocks(&b.children),
+        BlockNode::List(b) => ProbeChildren::ListItems(&b.items),
+        BlockNode::DefinitionList(b) => ProbeChildren::DefinitionItems(&b.items),
+        BlockNode::Heading(_)
+        | BlockNode::Paragraph(_)
+        | BlockNode::CodeBlock(_)
+        | BlockNode::Table(_)
+        | BlockNode::Figure(_)
+        | BlockNode::AbbreviationDef(_)
+        | BlockNode::LinkReferenceDefinition(_)
+        | BlockNode::CitationDefinition(_)
+        | BlockNode::RawBlock(_)
+        | BlockNode::Comment(_)
+        | BlockNode::BlockImage(_)
+        | BlockNode::ThematicBreak(_) => ProbeChildren::Leaf,
+    }
+}
+
+fn open_frame(blocks: &[BlockNode]) -> OpenFrame {
+    let paragraph = std::mem::discriminant(&BlockNode::Paragraph(Paragraph::default()));
+    let mut frame = OpenFrame {
+        levels: Vec::new(),
+        ends_in_paragraph: false,
+    };
+    let mut blocks = blocks;
+    loop {
+        let Some(last) = blocks.last() else {
+            return frame;
+        };
+        let kind = std::mem::discriminant(last);
+        frame.ends_in_paragraph = kind == paragraph;
+        frame.levels.push((ProbeLevel::Blocks(kind), blocks.len()));
+        match probe_children(last) {
+            ProbeChildren::Blocks(children) => blocks = children,
+            ProbeChildren::ListItems(items) => {
+                frame.ends_in_paragraph = false;
+                let Some(item) = items.last() else {
+                    return frame;
+                };
+                frame.levels.push((ProbeLevel::ListItems, items.len()));
+                blocks = &item.children;
+            }
+            ProbeChildren::DefinitionItems(items) => {
+                frame.ends_in_paragraph = false;
+                let Some(item) = items.last() else {
+                    return frame;
+                };
+                frame
+                    .levels
+                    .push((ProbeLevel::DefinitionItems, items.len()));
+                let Some(def) = item.definitions.last() else {
+                    return frame;
+                };
+                blocks = &def.children;
+            }
+            ProbeChildren::Leaf => return frame,
+        }
+    }
+}
+
+/// Does the BLOCK PARSER fold `line` into a paragraph that was already open?
+///
+/// This is the question the footnote pre-pass has to answer before it may cut a
+/// definition out of a line, and the pre-pass has no business answering it
+/// itself. §10 says a list does not interrupt an open paragraph, so `r` then
+/// `. [^f]: t` is one paragraph holding both lines - and a pre-pass that
+/// collects the definition out of the second line deletes text the block parser
+/// keeps and defines a note nobody wrote (markup-carve/carve-rs#1024).
+///
+/// THE ANSWER IS ASKED OF THE PARSER, NOT ENUMERATED. The predicate this
+/// replaced listed the openers a line can be and called every line it did not
+/// recognise ordinary paragraph text - so every opener nobody thought of
+/// answered "a paragraph is open", and that answer SUPPRESSES a collection the
+/// engine used to make. Four such openers were found and closed; one review
+/// pass then found three more of the same class, and a custom `match_block`
+/// extension is a fourth that cannot be listed at all, because the pre-pass does
+/// not know the extension's syntax. The list is unbounded by construction, so
+/// there is no version of it that is finished.
+///
+/// So the run is handed to the block parser TWICE, once without `line` and once
+/// with it, and the two open frames are compared. A line that folds into an open
+/// paragraph adds NO node anywhere: every level holds what it held, and the
+/// innermost one is still a paragraph. A line that opens anything - a sibling
+/// item, a nested list, a quote, a container, a block an extension defines -
+/// changes a count somewhere along that chain, and the frames differ. The parser
+/// answers for its own extensions for free, which is the case no list could have
+/// covered.
+///
+/// FAILING SAFE IS THE DEFAULT AND NOT A CLAIM. Every early return here is
+/// `false`, and `false` declines to suppress: an empty run, an exhausted budget,
+/// a chain the walk cannot enter, a probe that ends in anything but a paragraph.
+/// The worst an unrecognised shape can do is collect the definition the way the
+/// engine did before the guard existed, which is a defect that reports itself.
+/// It can never make the pre-pass delete an author's line unasked.
+///
+/// THE RUN IS BOUNDED BY THE LAST BLANK LINE, which is sound and not an
+/// approximation: a blank line closes every paragraph in every container, so a
+/// paragraph still open at the end of `body` began after the last blank one.
+/// Losing the container frame ABOVE that blank can only cost a suppression -
+/// an indented run read at the document level parses its marker lines as list
+/// items rather than as lazy text - which is the safe direction again.
+///
+/// The run is taken from `body`, the document THIS PASS has extracted so far,
+/// not from the raw source: a definition already collected is gone from the
+/// parser's input, and a probe that still saw it would read the paragraph it is
+/// not. Link definitions are the other half of the same point - they are
+/// stripped downstream of here, so the probe strips them too, and `[a]: /u` is
+/// the line it leaves rather than the paragraph a raw parse would find.
+fn line_folds_into_an_open_paragraph(
+    body: &[String],
+    line: &str,
+    options: &Options<'_>,
+    budget: &mut usize,
+) -> bool {
+    let run_start = body
+        .iter()
+        .rposition(|written| is_blank_line(written))
+        .map_or(0, |blank| blank + 1);
+    let run = &body[run_start..];
+    if run.is_empty() {
+        return false;
+    }
+    // Both probes, so the budget measures the work rather than the question.
+    let cost = run.len().saturating_mul(2).saturating_add(1);
+    if *budget < cost {
+        return false;
+    }
+    *budget -= cost;
+
+    let before = run.join("\n");
+    let mut after = String::with_capacity(before.len() + line.len() + 1);
+    after.push_str(&before);
+    after.push('\n');
+    after.push_str(line);
+
+    let before = open_frame(&probe_blocks_at_document_level(
+        &extract_link_defs(&before).0,
+        options,
+    ));
+    let after = open_frame(&probe_blocks_at_document_level(
+        &extract_link_defs(&after).0,
+        options,
+    ));
+    after.ends_in_paragraph && before.levels == after.levels
 }
 
 fn extract_link_defs(source: &str) -> (String, BTreeMap<String, LinkDef>) {
