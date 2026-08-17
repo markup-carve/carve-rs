@@ -213,6 +213,51 @@ fn a_quote_that_opens_on_the_marker_line_hides_its_comment_body() {
 }
 
 #[test]
+fn every_prefix_a_fence_can_be_reached_through_hides_its_body() {
+    // markup-carve/carve-rs#1080, the general form of the same question. This
+    // family has been closed one prefix at a time - column 0, then indented,
+    // then quoted, then quote-in-item - and enumerating them is why it kept
+    // coming back, so the row that matters is that ONE reading of the prefix
+    // answers all of them rather than a case per spelling.
+    //
+    // Every prefix here is a container prefix the block parser already walks,
+    // and each row carries its own control: the same definition at the same
+    // prefix with no fence around it, which must still register. Without that
+    // control a row can read "correct" because the definition never reached
+    // that prefix at all, which is a coincidence rather than the fence being
+    // read.
+    let rows = [
+        ("> ", "> "),
+        ("> > ", "> > "),
+        ("- > ", "  > "),
+        ("- > > ", "  > > "),
+        ("- - > ", "    > "),
+        ("> - ", ">   "),
+        ("1. > ", "   > "),
+        ("> > - ", "> >   "),
+        ("- > - ", "  >   "),
+    ];
+    for (open, cont) in rows {
+        let control = format!("{open}x\n{cont}[r]: /url\n\nSee [r][].\n");
+        assert!(
+            html(&control).contains("href=\"/url\""),
+            "the control stopped registering at {open:?}, so the row below proves nothing",
+        );
+
+        let fenced = format!("{open}%%%\n{cont}[r]: /url\n{cont}%%%\n\nSee [r][].\n");
+        let out = html(&fenced);
+        assert!(!out.contains("href=\"/url\""), "registered at {open:?}");
+        assert!(!out.contains("[r]: /url"), "body leaked at {open:?}");
+
+        let note = format!("{open}%%%\n{cont}[^f]: note\n{cont}%%%\n\nSee [^f].\n");
+        assert!(
+            !html(&note).contains("doc-noteref"),
+            "registered a footnote at {open:?}",
+        );
+    }
+}
+
+#[test]
 fn a_closer_that_has_left_the_item_does_not_close_a_marker_line_quote() {
     // Why the quoted bound carries a column as well as a depth, and the case the
     // blank line cannot answer. NO blank line here, so the blank half of the
