@@ -9696,6 +9696,32 @@ fn is_delim_cell(s: &str) -> bool {
     i == b.len()
 }
 
+/// Strip a row's CLOSING pipe, unless that pipe is escaped.
+///
+/// An escaped closing pipe is still an escape (markup-carve/carve#1293). The
+/// row closes there either way, because the line ends in a pipe; what the
+/// escape decides is what the CELL holds, which is a literal pipe and not an
+/// orphaned backslash. Leaving the `\|` pair in the content is what says that:
+/// the splitter already reads the escape at every other position and keeps the
+/// pair, so the cell ends up holding one pipe and the row is not split there.
+///
+/// Cutting the pipe off blindly left a trailing `\` behind, which the inline
+/// parser then read as a hard break - `| a b \|` published a `<br>` where the
+/// author wrote a pipe.
+///
+/// A pipe preceded by an EVEN number of backslashes is not escaped: the
+/// backslashes escape each other, so the pipe is the plain closer.
+fn strip_row_closing_pipe(content: &str) -> &str {
+    let Some(stripped) = content.strip_suffix('|') else {
+        return content;
+    };
+    let backslashes = stripped.len() - stripped.trim_end_matches('\\').len();
+    if backslashes % 2 == 1 {
+        return content;
+    }
+    stripped
+}
+
 /// A delimiter row: every cell is a delimiter cell (and there is at least one).
 fn is_delim_row(line: &str) -> bool {
     let mut content = trim_ascii(line);
@@ -9778,9 +9804,7 @@ fn parse_table_row(
     if let Some(stripped) = content.strip_prefix('|') {
         content = stripped;
     }
-    if let Some(stripped) = content.strip_suffix('|') {
-        content = stripped;
-    }
+    content = strip_row_closing_pipe(content);
     // Where `content` starts inside `line`, in CHARS: it is a slice of `line`
     // after trimming, the row-attribute split and the outer pipes, so the byte
     // distance between them is exact.
@@ -9861,9 +9885,10 @@ fn collect_continuation_fragments(
         if let Some(stripped) = content.strip_prefix('+') {
             content = stripped;
         }
-        if let Some(stripped) = content.strip_suffix('|') {
-            content = stripped;
-        }
+        // The same rule as the row's own closer above: the escape is honored
+        // wherever it appears, and a continuation row's last pipe is not an
+        // exception (markup-carve/carve#1293).
+        content = strip_row_closing_pipe(content);
         let content_off = base.map(|_| char_offset_of(line, content));
         let split = split_table_cells_seeded(content, open_run, open_run_at);
         open_run = split.open_run;
