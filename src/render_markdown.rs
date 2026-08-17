@@ -749,19 +749,32 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
         return String::new();
     }
     match node {
-        // Reproduce the author's escape. `\-\-` was written precisely so a
-        // downstream processor with smart punctuation on would not read an en
-        // dash; emitting the character bare loses exactly that (carve issue
-        // 350).
+        // Reproduce the author's escape where it protects something ON THIS
+        // TARGET. `\-\-` was written precisely so a downstream processor with
+        // smart punctuation on would not read an en dash; emitting the
+        // character bare loses exactly that (carve issue 350), so the triggers
+        // §8 names are kept whatever their position.
         //
-        // NO SENTINEL HERE, and PART 11 §8a M2 says why: M1b is a rule about a
-        // character that reached this writer inside a TEXT node - one the Carve
-        // grammar did not read as an opener and the author did not mark. This
-        // is the other case. The author said which reading they meant, M2 gives
-        // it back whatever the character, and the line test never sees it. The
-        // underscore used to take the sentinel here and lose its backslash to
-        // the intraword rule, which was M1b deciding a node M1 never governed.
-        InlineNode::EscapedText(text) => format!("\\{}", text.value),
+        // PART 11 §8b narrows the rest, on the finding §8a already states.
+        // M2a: a character this target's readers never read as markup is
+        // emitted BARE, which is Carve's own delimiters. M2b: the hash is read
+        // as markup only where it would open an ATX heading, so it takes a
+        // sentinel and is decided on the line like M1b's candidates.
+        //
+        // Every character Markdown CAN read keeps M2 as written. The bracket
+        // in particular keeps its escape at every position, which is what
+        // leaves §8a's argument about the two link grammars standing: an
+        // author who meant `[a](b)` as text still gets it back.
+        InlineNode::EscapedText(text) => {
+            let mut chars = text.value.chars();
+            match (chars.next(), chars.next()) {
+                (Some(ch), None) if AUTHORED_INERT.contains(&ch) => ch.to_string(),
+                (Some(ch), None) if authored_sentinel(ch).is_some() => {
+                    authored_sentinel(ch).expect("checked above").to_string()
+                }
+                _ => format!("\\{}", text.value),
+            }
+        }
         InlineNode::Text(text) => {
             if is_literal_crossref(&text.value) {
                 strip_controls(&text.value)
@@ -1232,7 +1245,40 @@ fn escape_text(text: &str) -> String {
 /// one: `strip_controls` drops the whole range on the way in, and every path to
 /// the output runs through it.
 const SENTINEL_FIRST: char = '\u{E004}';
-const SENTINEL_LAST: char = '\u{E006}';
+const SENTINEL_LAST: char = '\u{E007}';
+
+/// PART 11 §8b M2a: characters this target's readers never read as markup, at
+/// ANY position on the line.
+///
+/// An `escaped_text` node holding one of these is emitted BARE. They are
+/// Carve's own delimiters and Markdown has no reading for them, so the escape
+/// protects nothing and lands inside an identifier.
+///
+/// `~` is NOT here: GFM reads `~x~` as strikethrough. Nor are the
+/// smart-punctuation triggers `"`, `'`, `-` and `.`, which §8b keeps whatever
+/// their position, because a processor with substitution on rewrites the TEXT
+/// rather than reading markup.
+const AUTHORED_INERT: [char; 8] = ['{', '}', '^', ',', '%', ':', '/', '@'];
+
+/// The sentinel for an AUTHORED escape §8b M2b decides on the line.
+///
+/// A second family rather than a wider first one, because the two are decided
+/// by DIFFERENT tests: M1b asks about an adjacent delimiter of the same
+/// character, M2b asks where on the line the character stands.
+fn authored_sentinel(ch: char) -> Option<char> {
+    match ch {
+        '#' => Some('\u{E007}'),
+        _ => None,
+    }
+}
+
+/// The character an authored sentinel stands for, or `None` for anything else.
+fn authored_character(ch: char) -> Option<char> {
+    match ch {
+        '\u{E007}' => Some('#'),
+        _ => None,
+    }
+}
 
 /// The sentinel for a narrowed character (`_`, `#`, `[`).
 fn narrowed_sentinel(ch: char) -> char {
@@ -1494,30 +1540,76 @@ fn adjacent_to_live_delimiter(line: &[char], i: usize, ch: char) -> bool {
 /// assembled document also contains regions this renderer must reproduce
 /// byte-exact - code spans, code blocks, link destinations, titles, raw HTML -
 /// and a backslash there is content, not an escape. Matching `\_` rewrote those
-/// too (carve-js issue 400). It also keeps M2 out of the question: an
-/// author-escaped character is an `escaped_text` node emitted AS AN ESCAPE, and
-/// it never carries a sentinel, so nothing here can unescape it.
+/// too (carve-js issue 400). It is also what keeps §8b M2b off a backslash the
+/// author wrote inside such a region: the hash decided here reached the output
+/// as a SENTINEL this writer emitted for an `escaped_text` node, and a literal
+/// `\#` in a code span never becomes one.
 fn resolve_narrowed_escapes(text: &str) -> String {
-    if !text.chars().any(|c| narrowed_character(c).is_some()) {
+    let candidate = |c: char| narrowed_character(c).or_else(|| authored_character(c));
+
+    if !text.chars().any(|c| candidate(c).is_some()) {
         return text.to_string();
     }
-    let line: Vec<char> = text
-        .chars()
-        .map(|c| narrowed_character(c).unwrap_or(c))
-        .collect();
+    let line: Vec<char> = text.chars().map(|c| candidate(c).unwrap_or(c)).collect();
     let mut out = String::with_capacity(text.len());
     for (i, raw) in text.chars().enumerate() {
-        match narrowed_character(raw) {
-            Some(ch) => {
-                if adjacent_to_live_delimiter(&line, i, ch) {
-                    out.push('\\');
-                }
+        // TWO FAMILIES, TWO TESTS. M1b asks whether a delimiter of the same
+        // character stands beside the candidate; M2b asks whether the
+        // candidate stands where an ATX heading could open. Dispatched on
+        // which family the sentinel came from, because the character alone
+        // does not say: a `#` in a text node is M1b's and an author-escaped
+        // one is M2b's.
+        let keep = match (narrowed_character(raw), authored_character(raw)) {
+            (Some(ch), _) => Some((ch, adjacent_to_live_delimiter(&line, i, ch))),
+            (None, Some(ch)) => Some((ch, opens_an_atx_heading(&line, i))),
+            (None, None) => None,
+        };
+
+        match keep {
+            Some((ch, true)) => {
+                out.push('\\');
                 out.push(ch);
             }
+            Some((ch, false)) => out.push(ch),
             None => out.push(raw),
         }
     }
     out
+}
+
+/// Whether the `#` at `index` would open an ATX heading (PART 11 §8b M2b).
+///
+/// `line` is the assembled output with every candidate resolved to its BARE
+/// character, the same view M1b decides on, indexed by CHARACTER rather than by
+/// byte - a sentinel is one `char` exactly like the character it stands for, so
+/// the index carries across.
+///
+/// Three conditions, all of them CommonMark's: the character stands at the
+/// line's content position, which admits up to three leading spaces; the run of
+/// hashes starting there is one to six long; and the run is closed by a space, a
+/// tab or the end of the line. A tag, an issue reference and a hex colour fail
+/// the third even at a line's start, which is why the test is spelled on the run
+/// rather than on the position alone.
+fn opens_an_atx_heading(line: &[char], index: usize) -> bool {
+    let start = line[..index]
+        .iter()
+        .rposition(|c| *c == '\n')
+        .map_or(0, |at| at + 1);
+
+    let prefix = &line[start..index];
+    if prefix.len() > 3 || !prefix.iter().all(|c| *c == ' ') {
+        return false;
+    }
+
+    let run = line[index..].iter().take_while(|c| **c == '#').count();
+    if run > 6 {
+        return false;
+    }
+
+    match line.get(index + run) {
+        Some(' ' | '\t' | '\n') | None => true,
+        Some(_) => false,
+    }
 }
 
 fn flatten_heading_text(text: &str) -> String {
