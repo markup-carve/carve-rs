@@ -9960,15 +9960,37 @@ fn split_table_cells_ranged(content: &str) -> RowSplit {
 fn split_table_cells_seeded(content: &str, open_run: bool, open_run_at: usize) -> RowSplit {
     let mut cells = Vec::new();
     let mut buf = String::new();
-    let mut code_ticks = usize::from(open_run && open_run_at == 0);
+    // The WIDTH of the verbatim run this scanner is inside, or `None` when it
+    // is outside one. A parity toggle stood here and counted single backticks,
+    // so a run of two closed itself the moment it opened and the pipe after it
+    // split the row (markup-carve/carve#1284, corpus `328-...-4`). The tell was
+    // that one backtick and three worked while two did not - the signature of
+    // parity rather than of a delimiter.
+    //
+    // A verbatim run is opened by a RUN of N backticks and closed by a run of
+    // EXACTLY N; a run of any other width inside it is content. That is the
+    // same rule the inline parser already applies, and this scanner only needs
+    // it to know which pipes are separators.
+    let mut open_len: Option<usize> = (open_run && open_run_at == 0).then_some(1);
     let mut index = 0usize;
     let mut cell_start = 0usize;
     let mut chars = content.chars().peekable();
     while let Some(ch) = chars.next() {
         index += 1;
         if ch == '`' {
-            code_ticks ^= 1;
+            let mut run = 1usize;
             buf.push(ch);
+            while chars.peek() == Some(&'`') {
+                chars.next();
+                index += 1;
+                run += 1;
+                buf.push('`');
+            }
+            match open_len {
+                None => open_len = Some(run),
+                Some(width) if width == run => open_len = None,
+                Some(_) => {}
+            }
             continue;
         }
         if ch == '\\' {
@@ -9993,7 +10015,7 @@ fn split_table_cells_seeded(content: &str, open_run: bool, open_run_at: usize) -
             }
             continue;
         }
-        if ch == '|' && code_ticks == 0 {
+        if ch == '|' && open_len.is_none() {
             cells.push(CellSlice {
                 text: std::mem::take(&mut buf),
                 start: cell_start,
@@ -10002,7 +10024,10 @@ fn split_table_cells_seeded(content: &str, open_run: bool, open_run_at: usize) -
             });
             cell_start = index;
             if cells.len() == open_run_at && open_run {
-                code_ticks = 1;
+                // Re-seed at the column the row above left open. The width is
+                // not carried across the continuation, so this keeps the
+                // single-backtick assumption the parity toggle had.
+                open_len = Some(1);
             }
             continue;
         }
@@ -10016,7 +10041,7 @@ fn split_table_cells_seeded(content: &str, open_run: bool, open_run_at: usize) -
     let open_run_at = cells.len() - 1;
     RowSplit {
         cells,
-        open_run: code_ticks == 1,
+        open_run: open_len.is_some(),
         open_run_at,
     }
 }
