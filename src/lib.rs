@@ -189,9 +189,8 @@ pub fn to_ansi(source: &str) -> String {
 /// profile filtering, heading-id enrichment, or other render-time transforms.
 pub fn to_carve(source: &str) -> String {
     // The SAME text the parser reads. `raw_frontmatter` scans for the block's
-    // closing `---` line and `restore_inline_comments` walks the source lines;
-    // both ran on the RAW string while `parse_for_carve` ran on a normalized
-    // copy. On CRLF input the closer scan (`\n---\n`) missed, so `to_carve`
+    // closing `---` line on the RAW string while `parse_for_carve` ran on a
+    // normalized copy. On CRLF input the closer scan (`\n---\n`) missed, so `to_carve`
     // concluded there was no frontmatter while the parser had already found it
     // - and the document fell through to `render_frontmatter`, which rebuilds
     // the block from the parsed key/value map. That map has no format token, so
@@ -207,87 +206,26 @@ pub fn to_carve(source: &str) -> String {
     }
     let rendered = render_carve(&doc)
         .expect("the parse cap sits below the render ceiling, so a parsed tree never reaches it");
-    let body = restore_inline_comments(source, &rendered);
+    // The writer's own output, unedited. `restore_inline_comments` used to walk
+    // the SOURCE lines here and graft each trailing `%%` back onto the first
+    // formatted line equal to the part before it. It could not repair what it
+    // was written for: `render_carve` emits `InlineNode::Comment` itself, so a
+    // line the writer carried the comment onto already ENDS in the marker and is
+    // therefore not equal to the rendering of the part before it. The graft
+    // landed on some OTHER equal line or matched nothing - inert or harmful,
+    // never corrective - and on `a` over `a %%` inside a line block it wrote the
+    // marker onto both (carve-rs#1076). Only the trailing newline it also
+    // guaranteed is kept.
+    let body = if rendered.ends_with('\n') {
+        rendered
+    } else {
+        format!("{rendered}\n")
+    };
     match frontmatter {
         Some(frontmatter) if body.trim().is_empty() => format!("{frontmatter}\n"),
         Some(frontmatter) => format!("{frontmatter}\n\n{body}"),
         None => body,
     }
-}
-
-fn restore_inline_comments(source: &str, formatted: &str) -> String {
-    let mut lines = formatted.lines().map(str::to_string).collect::<Vec<_>>();
-    // Formatting preserves block order, so match comment-bearing source lines to
-    // formatted lines in order: advance a cursor and consume each match so a
-    // repeated line cannot pull a later comment onto an earlier duplicate.
-    let mut cursor = 0;
-    for source_line in source.lines() {
-        let Some((before, comment)) = split_inline_comment(source_line) else {
-            continue;
-        };
-        if before.trim().is_empty() {
-            continue;
-        }
-        let marker = render_carve(&parse::parse_for_carve(before)).expect(
-            "the parse cap sits below the render ceiling, so a parsed tree never reaches it",
-        );
-        let marker = marker.trim_end();
-        if marker.is_empty() {
-            continue;
-        }
-        if let Some(offset) = lines[cursor..]
-            .iter()
-            .position(|line| line.as_str() == marker)
-        {
-            let idx = cursor + offset;
-            lines[idx].push(' ');
-            lines[idx].push_str(comment);
-            cursor = idx + 1;
-        }
-    }
-    format!("{}\n", lines.join("\n"))
-}
-
-fn split_inline_comment(line: &str) -> Option<(&str, &str)> {
-    let bytes = line.as_bytes();
-    let mut in_code = false;
-    let mut i = 0;
-    while i + 1 < bytes.len() {
-        if bytes[i] == b'`' {
-            in_code = !in_code;
-            i += 1;
-            continue;
-        }
-        if !in_code
-            && bytes[i] == b'%'
-            && bytes[i + 1] == b'%'
-            && (i == 0 || matches!(bytes[i - 1], b' ' | b'\t'))
-        {
-            // A run of three or more `%` opening the line's CONTENT is a
-            // comment-BLOCK fence, not an inline comment - `%%%` on its own
-            // line delimits a block (PART 9 SS28), and only `%%` inside a line
-            // is the trailing-comment marker.
-            //
-            // Treating a fence as an inline comment made this function graft
-            // the fence text onto an unrelated formatted line. Inside a
-            // blockquote `> %%%` split into `>` plus `%%%`, and `>` renders as
-            // the blank quoted line, so the fence was appended THERE - which
-            // unbalanced the real fence and republished the commented-out body
-            // as visible text (carve-rs#432).
-            //
-            // Only the top-level case escaped, and by accident: there the part
-            // before the fence is empty, so the caller's `before.trim()` guard
-            // skipped it.
-            let run = bytes[i..].iter().take_while(|b| **b == b'%').count();
-            let content_starts_here = line[..i].bytes().all(|b| matches!(b, b' ' | b'\t' | b'>'));
-            if run >= 3 && content_starts_here {
-                return None;
-            }
-            return Some((line[..i].trim_end(), &line[i..]));
-        }
-        i += 1;
-    }
-    None
 }
 
 fn raw_frontmatter(source: &str) -> (Option<String>, &str) {
