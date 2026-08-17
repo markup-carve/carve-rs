@@ -10273,7 +10273,10 @@ fn collect_continuation_fragments(
     row: &RowSplit,
     fragments: &mut [Vec<CellFragment>],
 ) {
-    let mut open_run = row.open_run;
+    // The run's WIDTH travels with it, not just the fact that one is open: a
+    // run closes on a run of exactly its own length, on the continuation row as
+    // much as on the row that opened it (carve-rs#1051).
+    let mut open_len = row.open_len;
     let mut open_run_at = row.open_run_at;
     for (line, base) in conts {
         let mut content = trim_ascii(line);
@@ -10285,8 +10288,8 @@ fn collect_continuation_fragments(
         // exception (markup-carve/carve#1293).
         content = strip_row_closing_pipe(content);
         let content_off = base.map(|_| char_offset_of(line, content));
-        let split = split_table_cells_seeded(content, open_run, open_run_at);
-        open_run = split.open_run;
+        let split = split_table_cells_seeded(content, open_len, open_run_at);
+        open_len = split.open_len;
         open_run_at = split.open_run_at;
         for (idx, cell) in split.cells.iter().enumerate() {
             let text = trim_cell_padding(&cell.text); // PART 7: cell padding is U+0020 only.
@@ -10342,18 +10345,29 @@ fn split_table_cells(content: &str) -> Vec<String> {
 /// cell, since once open it swallows every `|` but the closer.
 struct RowSplit {
     cells: Vec<CellSlice>,
-    /// Whether a verbatim run is still open at end of line.
-    open_run: bool,
+    /// The WIDTH of the verbatim run still open at end of line, or `None` when
+    /// none is.
+    ///
+    /// THE WIDTH, not a flag. A run closes on a run of EXACTLY its own length
+    /// (PART 9 §22), which is the rule this scanner already applies WITHIN a
+    /// line - and it used to carry only "a run is open" across the row
+    /// boundary, re-seeding the continuation at one backtick. So a run opened
+    /// with two was closed by a single one on the continuation row, the pipe
+    /// behind it split again, and the segment after it had no column to join:
+    /// content loss, by a different route than the fresh scanner the per-column
+    /// carry replaced (carve-rs#1051).
+    open_len: Option<usize>,
     /// The cell index that run is open in: the last one.
     open_run_at: usize,
 }
 
 fn split_table_cells_ranged(content: &str) -> RowSplit {
-    split_table_cells_seeded(content, false, 0)
+    split_table_cells_seeded(content, None, 0)
 }
 
-/// `open_run` / `open_run_at` seed the scanner with a verbatim run left OPEN by
-/// the row this line CONTINUES (carve#1293).
+/// `seed_len` / `open_run_at` seed the scanner with a verbatim run left OPEN by
+/// the row this line CONTINUES (carve#1293), and with the WIDTH that run was
+/// opened at.
 ///
 /// A `+` continuation extends the cell, so the block an unclosed run reaches
 /// the end of is that whole cell, continuation included: the pipes it spans on
@@ -10367,7 +10381,18 @@ fn split_table_cells_ranged(content: &str) -> RowSplit {
 /// scanned normally and the pipe that ends them still separates. Seeding the
 /// whole line instead swallows those separators and pushes the continuation
 /// into the wrong cell.
-fn split_table_cells_seeded(content: &str, open_run: bool, open_run_at: usize) -> RowSplit {
+///
+/// AND THE SEED CARRIES ITS WIDTH. A run closes on a run of EXACTLY its own
+/// length, which is the rule the scanner below already applies within a line;
+/// re-seeding the continuation at one backtick made the boundary the one place
+/// where the same scanner answered the width question a second way, and a run
+/// of two was then closed by a single one on the continuation row
+/// (carve-rs#1051).
+fn split_table_cells_seeded(
+    content: &str,
+    seed_len: Option<usize>,
+    open_run_at: usize,
+) -> RowSplit {
     let mut cells = Vec::new();
     let mut buf = String::new();
     // The WIDTH of the verbatim run this scanner is inside, or `None` when it
@@ -10381,7 +10406,11 @@ fn split_table_cells_seeded(content: &str, open_run: bool, open_run_at: usize) -
     // EXACTLY N; a run of any other width inside it is content. That is the
     // same rule the inline parser already applies, and this scanner only needs
     // it to know which pipes are separators.
-    let mut open_len: Option<usize> = (open_run && open_run_at == 0).then_some(1);
+    //
+    // ACROSS THE ROW BOUNDARY TOO, which is why the seed is a width and not a
+    // flag: the run the continuation picks up was opened at some length on the
+    // row above, and only a run of that same length closes it here.
+    let mut open_len: Option<usize> = if open_run_at == 0 { seed_len } else { None };
     let mut index = 0usize;
     let mut cell_start = 0usize;
     let mut chars = content.chars().peekable();
@@ -10433,11 +10462,12 @@ fn split_table_cells_seeded(content: &str, open_run: bool, open_run_at: usize) -
                 end: index - 1,
             });
             cell_start = index;
-            if cells.len() == open_run_at && open_run {
-                // Re-seed at the column the row above left open. The width is
-                // not carried across the continuation, so this keeps the
-                // single-backtick assumption the parity toggle had.
-                open_len = Some(1);
+            if cells.len() == open_run_at {
+                // Re-seed at the column the row above left open, AT THE WIDTH
+                // that row opened it. `None` here is not a seed and leaves the
+                // scanner outside a run, which is the same thing it was doing
+                // for every other column.
+                open_len = seed_len;
             }
             continue;
         }
@@ -10451,7 +10481,7 @@ fn split_table_cells_seeded(content: &str, open_run: bool, open_run_at: usize) -
     let open_run_at = cells.len() - 1;
     RowSplit {
         cells,
-        open_run: open_len.is_some(),
+        open_len,
         open_run_at,
     }
 }

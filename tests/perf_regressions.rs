@@ -1194,3 +1194,42 @@ fn a_quoted_run_of_unclosed_braces_is_scanned_once() {
         flat.large_per_byte * 1e6
     );
 }
+
+/// A `+` continuation row is scanned with the verbatim run its predecessor left
+/// open, at that run's WIDTH (carve-rs#1051). The carry is per row and per
+/// column, so the cost has to stay per row: a scanner that re-read the rows
+/// above to recover the width, or that re-split the assembled cell once per
+/// fragment, would turn a table of carrying rows quadratic without changing a
+/// byte of output.
+///
+/// FIXED-WIDTH UNITS - every row and every continuation is the same length - so
+/// the byte multiple and the unit multiple agree.
+fn carrying_continuation_rows(n: usize) -> String {
+    "| aaaa ``bb |\n+ cc ` | dd`` |\n\n".repeat(n)
+}
+
+/// ONE cell carrying a run across n continuation rows, which is the other axis:
+/// the fragments accumulate on a single column instead of on n separate tables.
+fn one_cell_carrying_across_many_rows(n: usize) -> String {
+    let mut source = String::from("| aaaa ``bb |\n");
+    for _ in 0..n {
+        source.push_str("+ cccc dddd |\n");
+    }
+    source
+}
+
+#[test]
+fn a_carried_run_costs_one_scan_per_row() {
+    assert_near_linear_at(
+        carrying_continuation_rows,
+        "carrying continuation rows",
+        10_000,
+        40_000,
+    );
+    assert_near_linear_at(
+        one_cell_carrying_across_many_rows,
+        "one cell carrying across many rows",
+        10_000,
+        40_000,
+    );
+}
