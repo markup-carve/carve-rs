@@ -4365,6 +4365,20 @@ struct FenceOpen {
 }
 
 fn detect_fence_open(line: &str) -> Option<FenceOpen> {
+    // A TRAILING whitespace run is dropped before the separator below is asked
+    // anything (markup-carve/carve#1295, markup-carve/carve-rs#1022's `330-2`).
+    //
+    // Two clauses meet on this line and POSITION decides which governs. A tab
+    // BEFORE content is the marker-to-content separator, which is the `space`
+    // terminal and nothing else, so ```` ```<TAB>php ```` opens no fence - that
+    // refusal is the `== b' '` test below and it stays. A tab at the END of the
+    // line with nothing after it never reaches that slot: it is trailing
+    // whitespace on a content line, PART 2 drops it, and what is left is the
+    // bare opener. Read that way the two clauses never overlap.
+    //
+    // Trailing SPACES already behaved this way, by being eaten further down; a
+    // tab had no such path and left a fence that refused to open.
+    let line = trim_ascii_end(line);
     let bytes = line.as_bytes();
     let mut i = 0;
     if bytes.is_empty() {
