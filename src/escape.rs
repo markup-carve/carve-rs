@@ -259,6 +259,18 @@ fn leads_with_dangerous_scheme(value: &str) -> bool {
 /// for byte. Do not "fix" it - the corpus pins it, along with the `ping`
 /// counterpart that must NOT blank.
 pub fn sanitize_attr_value<'a>(name: &str, value: &'a str) -> std::borrow::Cow<'a, str> {
+    // THE TOKEN PASS IS ADDED TO THE VALUE-WIDE PROBE, NOT SWAPPED FOR IT.
+    // The clause changes WHERE the probe runs, not WHAT it denies, so the head
+    // probe stays and the tokens are probed as well. Swapping would DENY LESS
+    // than this engine denied before the ruling, shipping a regression as a
+    // security fix: `ping="java script:alert(1)"` splits into `java` and
+    // `script:alert(1)`, neither of them a denied scheme, while the value-wide
+    // probe's strip closes exactly the gap the whitespace split opens.
+    //
+    // THE CORPUS CANNOT SEE THIS. A token-only engine passes all 1141
+    // documents, the ten that pin the ruling included, so the three engines
+    // could diverge on a security boundary with the conformance suite green.
+    // It is pinned by a test row here, matching markup-carve/carve-js#1164.
     if leads_with_dangerous_scheme(value) {
         return std::borrow::Cow::Borrowed("");
     }

@@ -203,14 +203,46 @@ fn a_prose_attribute_carrying_a_colon_is_not_tokenized() {
     );
 }
 
-/// A NON-LIST URL ATTRIBUTE KEEPS THE LEADING RULE EXACTLY AS IT WAS. `href`
-/// is one URL, so a colon-bearing token after the first is part of that URL
-/// and not a second candidate.
+/// A NON-LIST URL ATTRIBUTE KEEPS THE LEADING RULE EXACTLY AS IT WAS.
+/// `background` is one URL, so a colon-bearing token after the first is part
+/// of that URL and not a second candidate.
 #[test]
 fn a_single_url_attribute_keeps_the_leading_scheme_rule() {
     assert_eq!(
         h(r#"[z](safe.html){background="ok.png data:x"}"#),
         r#"<p><a href="safe.html" background="ok.png data:x">z</a></p>"#
+    );
+    // ... and its head probe still strips a split scheme, which is the
+    // behavior the token rule replaces rather than joins for the four names.
+    assert_eq!(
+        h("[z](safe.html){background=\"java\tscript:alert(1)\"}"),
+        r#"<p><a href="safe.html" background="">z</a></p>"#
+    );
+}
+
+/// THE TOKEN PASS IS ADDED TO THE VALUE-WIDE PROBE, NOT SWAPPED FOR IT, AND
+/// THIS ROW IS THE ONLY THING THAT SAYS SO. The clause changes WHERE the probe
+/// runs, not WHAT it denies, so the head probe stays.
+///
+/// Split on ASCII whitespace, `java script:alert(1)` is two clean tokens and a
+/// token-ONLY engine emits it verbatim - denying LESS than this engine denied
+/// before the ruling, which would be a regression shipped as a security fix.
+/// The value-wide probe's strip closes exactly the gap the whitespace split
+/// opens.
+///
+/// THE CORPUS CANNOT CATCH THIS. A token-only engine passes all 1141 documents
+/// including the ten that pin the ruling, so without this row three engines
+/// could diverge on a security boundary with a green conformance suite. Pinned
+/// the same way in `markup-carve/carve-js#1164`.
+#[test]
+fn a_scheme_split_across_a_separator_is_still_denied_by_the_value_wide_probe() {
+    assert_eq!(
+        h(r#"[y](safe.html){ping="java script:alert(1)"}"#),
+        r#"<p><a href="safe.html" ping="">y</a></p>"#
+    );
+    assert_eq!(
+        h(r#"![a](safe.png){srcset="java script:alert(1) 1x"}"#),
+        r#"<img src="safe.png" alt="a" srcset="">"#
     );
 }
 
