@@ -23,12 +23,13 @@ use carve::profile::{Profile, CANONICAL_BLOCK_TYPES, CANONICAL_INLINE_TYPES};
 /// because the clause landed after the pin and the pins move once, at the end
 /// of a release.
 ///
-/// Self-clearing: an entry the pinned page HAS listed fails below, so this
-/// cannot quietly become a permanent exemption. `citation_definition` is ruled
-/// a node by PART 12 section 18 (markup-carve/carve#1279), which lands in
-/// `docs/profiles.md`'s Block vocabulary; carve-rs emits it from this release
-/// on (markup-carve/carve#1276).
-const AHEAD_OF_THE_PIN: &[&str] = &["citation_definition"];
+/// Self-clearing, and it just cleared. `citation_definition` was the only entry:
+/// PART 12 section 18 ruled it a node (markup-carve/carve#1279) and carve-rs has
+/// emitted it since markup-carve/carve#1276, but the pinned `docs/profiles.md`
+/// did not list it yet. This pin bump brings the page that does, so the name is
+/// no longer ahead of anything and the exemption comes out with it - which is
+/// what the assertion below forces, rather than leaving a permanent carve-out.
+const AHEAD_OF_THE_PIN: &[&str] = &[];
 
 /// The page's own list for one axis, as data.
 fn spec_vocabulary(axis: &str) -> Vec<String> {
