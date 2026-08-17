@@ -30,9 +30,22 @@ fn a_single_line_marker_block_ends_the_item_at_the_following_flush_left_line() {
 }
 
 #[test]
-fn a_fence_opener_rejects_a_tab_after_the_run() {
-    assert!(!carve::to_html("```\t\n").contains("<pre><code>"));
-    assert!(!carve::to_html("~~~\t\n").contains("<pre><code>"));
+fn a_fence_opener_accepts_a_tab_at_the_end_of_its_line() {
+    // This pair used to assert the REFUSAL. markup-carve/carve#1295 ruled the
+    // question by POSITION rather than by construct: a tab BEFORE content is
+    // the marker-to-content separator and still opens nothing, but a tab at the
+    // END of the line with nothing after it is trailing whitespace on a content
+    // line, PART 2 drops it, and what is left is the bare opener.
+    //
+    // The refusal these lines pinned was therefore the separator's answer given
+    // to a line that never reaches the separator. The row that did not move is
+    // asserted underneath, and `a_fence_opener_drops_its_trailing_tab.rs` holds
+    // the full pair with its controls.
+    assert!(carve::to_html("```\t\n").contains("<pre><code>"));
+    assert!(carve::to_html("~~~\t\n").contains("<pre><code>"));
+    // Unchanged: a tab in front of the info string is the separator, so the
+    // backtick run is an ordinary inline verbatim run.
+    assert!(!carve::to_html("```\tphp\nx\n```\n").contains("<pre><code>"));
 }
 
 #[test]
