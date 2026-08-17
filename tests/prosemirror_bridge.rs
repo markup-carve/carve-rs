@@ -50,7 +50,7 @@ const ALIASED_TYPES: &[(&str, &str)] = &[("tag", "mention")];
 // gone from this list; what is left is one defect with a long tail, plus three
 // small ones:
 //
-//  - 75 documents gain an attribute line the author never wrote, carrying a
+//  - 78 documents gain an attribute line the author never wrote, carrying a
 //    GENERATED heading id: `# Title` returns as `{#Title}` + `# Title`. The
 //    outbound side stamps the id into `attrs.id`, and where the heading has no
 //    attribute run at all there is nothing to say the id was not authored. A
@@ -61,6 +61,12 @@ const ALIASED_TYPES: &[(&str, &str)] = &[("tag", "mention")];
 //    checked against its own before/after: they are further instances of this
 //    one cause, not a new one, so the fix that empties this bullet empties all
 //    of them together.
+//    3 more arrived with the cd52a50 corpus (`326-...-14`, `-16` and `-17`),
+//    which pins a column-0 line after a container whose last block left no
+//    paragraph open. Each is a heading with NO attribute run written inside a
+//    list item, and each was checked against its own before/after the same way:
+//    `- - # H` returns as `- - {#H}` over an indented `# H`, and the two deeper
+//    spellings do the same at their own depth. Same one cause.
 //  - 6 reference definitions come back with their structural title repeated as
 //    an authored attribute: `[a]: /u "T"` returns as `[a]: /u "T" {title=T}`.
 //  - 1 document loses an attribute outright: 108-security-hardening-11 writes
@@ -129,6 +135,9 @@ const SOURCE_LOSSY: &[&str] = &[
     "315-an-inline-note-s-content-resolves-after-the-note.crv",
     "326-a-column-0-line-after-a-container-s-last-block-when-that-block-left-no-paragraph-open-10.crv",
     "326-a-column-0-line-after-a-container-s-last-block-when-that-block-left-no-paragraph-open-11.crv",
+    "326-a-column-0-line-after-a-container-s-last-block-when-that-block-left-no-paragraph-open-14.crv",
+    "326-a-column-0-line-after-a-container-s-last-block-when-that-block-left-no-paragraph-open-16.crv",
+    "326-a-column-0-line-after-a-container-s-last-block-when-that-block-left-no-paragraph-open-17.crv",
     "326-a-column-0-line-after-a-container-s-last-block-when-that-block-left-no-paragraph-open-2.crv",
     "326-a-column-0-line-after-a-container-s-last-block-when-that-block-left-no-paragraph-open.crv",
     "327-a-continuation-marker-attaches-one-block-and-the-boundary-is-that-block-s-extent-8.crv",
@@ -556,8 +565,33 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // the editor schema covers - so all eleven land in the strict set, none
     // reports, and none writes back a different source, which is why LOSSY does
     // not move and the declared source-lossy set is untouched.
-    const STRICT: usize = 923;
-    const LOSSY: usize = 233;
+    // 923/233 to 933/242 is the nineteen documents arriving with the 7666027
+    // spec pin, and nothing else: the corpus went from 1156 pairs to 1175, and
+    // the added pairs are sixteen more `326-a-column-0-line-after-a-container-
+    // s-last-block-when-that-block-left-no-paragraph-open` (14 through 29),
+    // which pin that no open paragraph means no lazy line at every depth and
+    // after an interrupter, plus the three `347-a-comment-fence-reached-
+    // through-a-quote-registers-nothing-either` documents this branch exists
+    // for. Attributed by DIFFING THE CLASSIFICATION at both pins under ONE
+    // build: the diff is exactly these nineteen names on the new side and empty
+    // on the old, and no pre-existing document changed class in either
+    // direction.
+    //
+    // Ten land in the strict set and nine report. All nine report for one
+    // reason already declared above - `soft_break` degrades, the same node
+    // `343-an-escaped-hash-...` reports - because each is a container whose last
+    // block left no paragraph open, so the column-0 line below it folds in and
+    // the boundary survives as a soft break. None of the nine can join the
+    // strict set while that fold is what the document exists to pin.
+    //
+    // Three of the ten strict ones also join the declared source-lossy set
+    // above: `326-...-14`, `-16` and `-17` are the only ones of the nineteen
+    // that write a heading, and a heading with no attribute run comes back
+    // carrying its generated id. The three `347` documents write a quote, a
+    // comment fence and a definition - all covered whole - so they land strict
+    // and write back unchanged.
+    const STRICT: usize = 933;
+    const LOSSY: usize = 242;
     assert!(
         covered >= STRICT,
         "strict round trips fell from {STRICT} to {covered}"
