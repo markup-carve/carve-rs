@@ -829,7 +829,7 @@ fn extract_footnote_defs(
     // See `probe_budget_for`: spent by `line_folds_into_an_open_paragraph`, and
     // running out only ever collects a definition this guard would have left as
     // text.
-    let mut probe_budget = probe_budget_for(lines.len());
+    let mut probe_budget = probe_budget_for(source.len());
     let mut body = Vec::new();
     let mut body_line_map = Vec::new();
     let mut defs = BTreeMap::new();
@@ -1335,7 +1335,7 @@ struct LinkDef {
     attrs: Option<Attrs>,
 }
 
-/// How many LINES the definition pre-pass may hand to the block parser to
+/// How many BYTES the definition pre-pass may hand to the block parser to
 /// answer [`line_folds_into_an_open_paragraph`], for one document.
 ///
 /// The question is answered by parsing, and what has to be parsed is the run of
@@ -1347,8 +1347,14 @@ struct LinkDef {
 /// definition exactly as the engine did before this guard existed. A document
 /// has to be built to reach it - the question is only asked for a line that is
 /// both a list marker and a footnote definition behind it.
-fn probe_budget_for(lines: usize) -> usize {
-    lines.saturating_mul(4).saturating_add(4096)
+///
+/// BYTES RATHER THAN LINES, because a probe costs what it PARSES and a line is
+/// not a unit of that. Counting lines prices one long line and one short one
+/// the same, so a run holding a single huge line under many short
+/// definition-shaped ones buys as many full re-parses of that line as it has
+/// candidates - the amplification the cap exists to bound, priced at zero.
+fn probe_budget_for(source_bytes: usize) -> usize {
+    source_bytes.saturating_mul(4).saturating_add(4096)
 }
 
 /// One level of a probe's LAST-CHILD CHAIN: what kind of node the level ends
@@ -1517,8 +1523,14 @@ fn line_folds_into_an_open_paragraph(
     if run.is_empty() {
         return false;
     }
-    // Both probes, so the budget measures the work rather than the question.
-    let cost = run.len().saturating_mul(2).saturating_add(1);
+    // What the two probes will PARSE, which is the run twice over plus the
+    // candidate line - so the price is the work rather than the question.
+    let cost = run
+        .iter()
+        .map(|written| written.len().saturating_add(1))
+        .fold(0usize, |total, len| total.saturating_add(len))
+        .saturating_mul(2)
+        .saturating_add(line.len());
     if *budget < cost {
         return false;
     }
