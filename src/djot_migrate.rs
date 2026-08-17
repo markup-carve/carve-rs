@@ -759,6 +759,32 @@ pub(crate) fn escape_plain_carve_syntax(source: &str, handled: HandledDelimiters
         i += 1;
     }
 
+    // A MENTION is the tag's sibling and needs the same rule for the same
+    // reason: it opens on its own, so nothing downstream neutralizes it.
+    // Ported from carve-php#1381, which fixed the same gap there. Djot has no
+    // mention either, so prose quoting a framework directive came back as a
+    // span that existed nowhere in the source.
+    //
+    // Mirrors `parse_mention` rather than approximating it: a mention opens on
+    // an `@` NOT preceded by an alphanumeric or `_` and followed by a name
+    // character. The preceding-character test is what leaves an email address
+    // alone, since `foo@bar` has a letter before the `@`.
+    let mut i = 0;
+    while i < mask.len() {
+        if mask[i] != b'@' || is_escaped(mask, i) {
+            i += 1;
+            continue;
+        }
+        let before_ok = i == 0 || !(mask[i - 1].is_ascii_alphanumeric() || mask[i - 1] == b'_');
+        let opens_mention = mask
+            .get(i + 1)
+            .is_some_and(|b| b.is_ascii_alphanumeric() || *b == b'_' || *b == b'-');
+        if before_ok && opens_mention {
+            at.push(i);
+        }
+        i += 1;
+    }
+
     if at.is_empty() {
         return source.to_string();
     }
@@ -1223,6 +1249,54 @@ mod escape_corpus {
         assert_eq!(
             escape_plain_carve_syntax("a ~x~ b", HandledDelimiters::PLAIN),
             "a \\~x~ b"
+        );
+    }
+
+    /// An at-sign that opens a Carve mention is escaped when it arrives as
+    /// text. The sibling of the tag rule, ported from carve-php#1381.
+    #[test]
+    fn an_at_sign_in_source_text_is_not_a_mention() {
+        for (input, want) in [
+            ("hi @user ok", "hi \\@user ok"),
+            ("@click toggles it", "\\@click toggles it"),
+            ("use @keydown.window here", "use \\@keydown.window here"),
+            ("see (@can) there", "see (\\@can) there"),
+            ("the @-form", "the \\@-form"),
+            ("@can and @click", "\\@can and \\@click"),
+        ] {
+            assert_eq!(
+                escape_plain_carve_syntax(input, HandledDelimiters::DJOT),
+                want,
+                "input {input:?}"
+            );
+        }
+    }
+
+    /// BOUND: the escape mirrors the parser's opener, so an at-sign the parser
+    /// never opens on gains no backslash.
+    #[test]
+    fn an_at_sign_that_opens_nothing_is_left_bare() {
+        for input in [
+            "mail me at foo@bar.de",
+            "a@b",
+            "name @ handle",
+            "ping @, later",
+            "ends with @",
+        ] {
+            assert_eq!(
+                escape_plain_carve_syntax(input, HandledDelimiters::DJOT),
+                input,
+                "input {input:?}"
+            );
+        }
+    }
+
+    /// BOUND: an at-sign the source already escaped is not escaped twice.
+    #[test]
+    fn an_already_escaped_at_sign_is_left_alone() {
+        assert_eq!(
+            escape_plain_carve_syntax("hi \\@user ok", HandledDelimiters::DJOT),
+            "hi \\@user ok"
         );
     }
 }
