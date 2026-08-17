@@ -11,12 +11,15 @@
 //! paragraph and not about any one block kind. Each row below is asserted
 //! against its list spelling, which already answers the way the clause requires.
 //!
-//! THE HEADING IS THE EXCEPTION and it is a CONTROL here, not a defect: a
-//! heading is not a paragraph either, yet `heading_folds_lazy.rs` pins the
-//! following flush-left line INSIDE the body, and pins the same answer for four
-//! list spellings beside it (carve#326). The list path reaches that answer
-//! without consulting `nested_ends_with_open_paragraph` at all, so the exception
-//! is written where it reaches the definition body and nothing else.
+//! THE HEADING STOPPED BEING THE EXCEPTION (carve-rs#1049). It was pinned here
+//! as a control, folding where every other row closed, and the COMMENT folded
+//! beside it - both because the body's answer came from an ENUMERATION of block
+//! kinds rather than from S4's one question. The list spelling of both already
+//! ended, in this same engine, so the enumeration made one document give two
+//! answers depending on which kind sat on the marker. On the MARKER LINE the
+//! question is now asked directly and all five kinds agree; at a CONTENT COLUMN
+//! the clause is open and the enumeration stands, which is the row
+//! `a_heading_at_the_bodys_content_column_still_takes_the_fold` holds.
 //!
 //! TWO ROWS BELOW STOPPED BEING DIVERGENCES. The attribute and thematic-break
 //! twins used to answer differently from their bodies; markup-carve/carve#1280
@@ -132,12 +135,47 @@ fn control_an_ordinary_paragraph_body_still_takes_the_fold() {
 }
 
 #[test]
-fn control_a_heading_body_still_takes_the_fold() {
-    // The exception, pinned again beside the rows it does not move with.
-    // `heading_folds_lazy.rs` holds the nested spelling this repeats.
+fn a_heading_body_moved_to_join_the_rows_it_used_to_be_an_exception_to() {
+    // It was a control, and it was the last row in this file whose list twin
+    // said something else. `markup-carve/carve#1280` rules PART 1 S4 uniform,
+    // and the marker line's content is the body's FIRST BLOCK - so a heading
+    // written there leaves no open paragraph and ends the body, exactly as
+    // `- # H` / `lazy` already ended the item (carve-rs#1049).
     assert_eq!(
         html(":: t\n:  # H\nlazy\n"),
-        "<dl>\n  <dt>t</dt>\n  <dd>\n    <h1 id=\"H\">H</h1>\n    <p>lazy</p>\n  </dd>\n</dl>"
+        "<dl>\n  <dt>t</dt>\n  <dd>\n    <h1 id=\"H\">H</h1>\n  </dd>\n</dl>\n<p>lazy</p>"
+    );
+    assert_eq!(
+        list_twin("- # H\nlazy\n"),
+        "<ul>\n  <li>\n    <h1 id=\"H\">H</h1>\n  </li>\n</ul>\n<p>lazy</p>"
+    );
+}
+
+#[test]
+fn a_comment_body_ends_the_body_like_its_list_twin() {
+    // The other kind the enumeration answered backwards. A comment renders
+    // nothing, and the predicate looked PAST a trailing run of them at whatever
+    // they were sitting on - but on the marker line the comment IS the body's
+    // first block, so there is no earlier paragraph for it to leave open.
+    assert_eq!(
+        html(":: t\n:  %% c\nlazy\n"),
+        "<dl>\n  <dt>t</dt>\n  <dd></dd>\n</dl>\n<p>lazy</p>"
+    );
+    assert_eq!(
+        list_twin("- %% c\nlazy\n"),
+        "<ul>\n  <li></li>\n</ul>\n<p>lazy</p>"
+    );
+}
+
+#[test]
+fn a_heading_at_the_bodys_content_column_still_takes_the_fold() {
+    // THE OTHER HALF OF S4, which the ruling leaves deliberately open: corpus
+    // 75-list-nesting-and-looseness-4 pins the folding answer for a line at a
+    // CONTENT COLUMN, so a heading collected there keeps it. This is the row
+    // that makes the marker-line change above a narrowing rather than a sweep.
+    assert_eq!(
+        html(":: t\n:  d\n\n   # H\nlazy\n"),
+        "<dl>\n  <dt>t</dt>\n  <dd>\n    <p>d</p>\n    <h1 id=\"H\">H</h1>\n    <p>lazy</p>\n  </dd>\n</dl>"
     );
 }
 
