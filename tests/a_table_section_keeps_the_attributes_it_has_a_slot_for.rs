@@ -298,12 +298,27 @@ fn an_unsupported_attribute_on_a_row_or_a_section_reports_as_it_does_elsewhere()
         ),
         vec!["/table[1]/tr[2]"]
     );
+    // A body's OWN attribute is no longer dropped on the way in: the importer
+    // keeps every attribute Carve can hold, and a body group is the one section
+    // with a slot for them (carve-rs#1060). It reaches the AST, so nothing is
+    // reported dropped; what the Carve WRITER cannot spell is the grouping
+    // itself, which is the separate report this table already carries.
+    let html = "<table><tbody align=\"left\"><tr><td>a</td></tr></tbody></table>";
     assert_eq!(
-        messages(
-            "<table><tbody align=\"left\"><tr><td>a</td></tr></tbody></table>",
-            HtmlImportDiagnosticCode::AttributeDropped
-        ),
-        vec!["Dropped unsupported attribute align on <tbody>"]
+        messages(html, HtmlImportDiagnosticCode::AttributeDropped),
+        Vec::<String>::new()
+    );
+    assert_eq!(
+        table_of(html)
+            .row_groups
+            .as_ref()
+            .and_then(|g| g.bodies[0].attrs.clone())
+            .map(|a| a.key_values),
+        Some(
+            [("align".to_string(), "left".to_string())]
+                .into_iter()
+                .collect()
+        )
     );
 }
 

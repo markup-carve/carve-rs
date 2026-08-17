@@ -156,10 +156,17 @@ fn a_quotations_own_attributes_survive_in_a_span() {
     );
 }
 
-/// CONTROL. `cite` is a URL with no slot on a span and is still reported. The
-/// quotation stopping being an unwrap must not turn its attributes silent too.
+/// CONTROL. `cite` is a URL the span HAS a slot for, so it rides along rather
+/// than being reported: the importer keeps every attribute Carve can hold and
+/// refuses only what is dangerous (carve-rs#1060). The quotation stopping being
+/// an unwrap must not turn its attributes silent, and it does not - nothing is
+/// lost, so nothing is reported.
 #[test]
-fn a_quotations_cite_url_is_still_reported() {
+fn a_quotations_cite_url_rides_the_span() {
+    assert_eq!(
+        imported("<p><q cite=\"https://x.example\">t</q></p>"),
+        "[\u{201c}t\u{201d}]{cite=https://x.example}\n"
+    );
     let result = html_to_ast(
         "<p><q cite=\"https://x.example\">t</q></p>",
         &HtmlImportOptions::default(),
@@ -172,7 +179,7 @@ fn a_quotations_cite_url_is_still_reported() {
             .iter()
             .map(|d| d.code)
             .collect::<Vec<_>>(),
-        vec![HtmlImportDiagnosticCode::AttributeDropped]
+        Vec::<HtmlImportDiagnosticCode>::new()
     );
 }
 
@@ -218,11 +225,16 @@ fn the_summarys_own_attributes_are_read() {
 }
 
 /// The pair written is the English one. A quotation a user agent would render
-/// with different marks is one carrying a `lang`, which has no slot here and is
-/// already reported as a dropped attribute - so the locale is not decided in
-/// silence: the signal that would have chosen another pair IS the diagnostic.
+/// with different marks is one carrying a `lang`, and the locale is not decided
+/// in silence: the `lang` SURVIVES, in the `{:fr}` shorthand the language has
+/// for it, so the signal that would have chosen another pair is in the document
+/// rather than in a diagnostic about its loss (carve-rs#1060).
 #[test]
-fn a_quotation_in_another_language_reports_the_lang_it_could_not_keep() {
+fn a_quotation_in_another_language_keeps_the_lang_that_would_choose_the_pair() {
+    assert_eq!(
+        imported("<p><q lang=\"fr\">bonjour</q></p>"),
+        "[\u{201c}bonjour\u{201d}]{:fr}\n"
+    );
     let result = html_to_ast(
         "<p><q lang=\"fr\">bonjour</q></p>",
         &HtmlImportOptions::default(),
@@ -235,6 +247,6 @@ fn a_quotation_in_another_language_reports_the_lang_it_could_not_keep() {
             .iter()
             .map(|d| d.code)
             .collect::<Vec<_>>(),
-        vec![HtmlImportDiagnosticCode::AttributeDropped]
+        Vec::<HtmlImportDiagnosticCode>::new()
     );
 }

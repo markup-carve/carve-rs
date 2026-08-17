@@ -1,7 +1,9 @@
 //! HTML5-to-Carve migration boundary.
 
 use crate::ast::*;
+use crate::escape::is_dangerous_attr_name;
 use crate::render::{semantic_value_target, EXTENDED_SEMANTIC_SPAN_ORDER};
+use crate::render_carve::is_attr_identifier;
 use crate::{render_carve, RenderDepthError};
 use html5ever::tendril::TendrilSink;
 use html5ever::{serialize, serialize::SerializeOpts};
@@ -485,10 +487,27 @@ impl<'a> Importer<'a> {
             for attr in attrs.borrow().iter() {
                 let name = attr.name.local.to_string();
                 let value = attr.value.to_string();
-                if name.starts_with("on") {
+                // THE REFUSAL IS DERIVED, NOT ENUMERATED. `is_dangerous_attr_name`
+                // is the PART 9 §25 name filter the HTML renderer already
+                // applies, so the importer refuses exactly what the renderer
+                // would blank and the two cannot drift apart. Spelling a second
+                // `starts_with("on")` here agreed on handlers and diverged on
+                // `srcdoc` and `formaction`, which the renderer refuses and the
+                // importer used to keep as "unsupported" by accident of the
+                // keep list ending before them (carve-rs#1060).
+                if is_dangerous_attr_name(&name) {
+                    // The handler wording is a SHARED CONTRACT: the spec's
+                    // `html-import` report fixtures pin it byte for byte, so
+                    // the two sinks the filter adds are named separately rather
+                    // than folded into one message that would move it.
+                    let what = if name.to_ascii_lowercase().starts_with("on") {
+                        "event-handler"
+                    } else {
+                        "active-content"
+                    };
                     self.diag(
                         HtmlImportDiagnosticCode::AttributeDropped,
-                        format!("Dropped event-handler attribute {name} on <{tag}>"),
+                        format!("Dropped {what} attribute {name} on <{tag}>"),
                         HtmlImportSeverity::Warning,
                         path,
                     );
@@ -507,32 +526,6 @@ impl<'a> Importer<'a> {
                     // would spell the same string twice - and diagnosing it as
                     // dropped, which is where `datetime` used to land, would
                     // report a loss that no longer happens (carve#1140).
-                } else if (name.starts_with("data-")
-                    && name != "data-djot-src"
-                    && name != "data-carve-src")
-                    || (name == "title" && tag != "a" && tag != "img")
-                    // A header cell's `scope` is REPRESENTABLE (PART 10 SST9)
-                    // and is kept here, so a value the positional default
-                    // cannot explain survives the import. `import_table` drops
-                    // it again when it merely restates that default, which is
-                    // what stops this engine's own output being read back as
-                    // if the author had typed it (carve-rs#944).
-                    || (name == "scope" && (tag == "th" || tag == "td"))
-                    // `open` on a `<details>` is REPRESENTABLE: the details
-                    // extension reads it off the admonition's attributes and
-                    // puts it back on the tag, and Carve spells a valueless
-                    // attribute `{open}`. Dropping it would import a disclosure
-                    // that starts open as one that starts closed.
-                    || (name == "open" && tag == "details")
-                    // A `<blockquote>`'s `cite` is REPRESENTABLE, so it is kept
-                    // rather than diagnosed as dropped. The round trip is
-                    // lossless in both directions: `{cite=u}` above `> q`
-                    // renders `<blockquote cite="u">` again, so carrying the
-                    // attribute costs nothing and losing the source of a quote
-                    // costs the reader the provenance (carve#1286).
-                    || (name == "cite" && tag == "blockquote")
-                {
-                    out.key_values.insert(name, value);
                 } else if name == "style" {
                     self.diag(
                         HtmlImportDiagnosticCode::StyleUnmapped,
@@ -540,10 +533,18 @@ impl<'a> Importer<'a> {
                         HtmlImportSeverity::Info,
                         path,
                     );
-                } else if !matches!(
+                } else if matches!(
                     (tag.as_str(), name.as_str()),
                     ("a", "href")
                         | ("img", "src" | "alt")
+                        // A link's and an image's `title` is READ straight off
+                        // the element into `Link.title` / `Image.title` and
+                        // written back from the destination slot. The keep list
+                        // spelled this as `title && tag != "a" && tag != "img"`;
+                        // the refusal list has to spell it here instead, or the
+                        // attribute comes out TWICE - once in the slot and once
+                        // as `{title=…}` (carve-rs#1060).
+                        | ("a" | "img", "title")
                         | ("ol", "start" | "type")
                         | ("td" | "th", "rowspan" | "colspan")
                         // READ by the math branch and carried to the node, so
@@ -553,12 +554,75 @@ impl<'a> Importer<'a> {
                         // by having been recognized, not discarded.
                         | ("math", "display" | "alttext" | "xmlns")
                 ) {
+                    // CONSUMED by the branch that builds this node, and written
+                    // back from there. Keeping it here as well would spell the
+                    // same string twice, and diagnosing it would name a loss
+                    // that does not happen.
+                } else if name == "data-djot-src" || name == "data-carve-src" {
+                    // The round-trip provenance markers this engine WRITES.
+                    // Reading one back as an ordinary attribute would let an
+                    // import restate a source the document no longer has.
                     self.diag(
                         HtmlImportDiagnosticCode::AttributeDropped,
-                        format!("Dropped unsupported attribute {name} on <{tag}>"),
+                        format!("Dropped round-trip marker attribute {name} on <{tag}>"),
                         HtmlImportSeverity::Info,
                         path,
                     );
+                } else if is_semantic_span_tag(&tag) && name == tag {
+                    // THE MARKER OWNS THIS KEY. A compact semantic span is
+                    // written `[t]{cite}`, so the tag name becomes an attribute
+                    // key on the way out. An element carrying an attribute of
+                    // its own name would have it overwritten by that marker,
+                    // silently: `<cite cite="https://x">` stored the key twice
+                    // and the URL lost to the empty marker value. The keep list
+                    // hid this by refusing `cite` on everything but a
+                    // `<blockquote>`; naming the drop is the honest form
+                    // (carve-rs#1060).
+                    self.diag(
+                        HtmlImportDiagnosticCode::AttributeDropped,
+                        format!("Dropped attribute {name} on <{tag}>: the semantic span's marker owns that key"),
+                        HtmlImportSeverity::Info,
+                        path,
+                    );
+                } else if name == "srcset" {
+                    // REFUSED ON THE WAY IN, and the one refusal here that is
+                    // not derived. §25's value sanitizer reads only the scheme
+                    // that LEADS a value, so a list-valued attribute hides a
+                    // live URL behind a safe one:
+                    //
+                    //     srcset="safe.png 1x, javascript:alert(1) 2x"
+                    //
+                    // passes the filter whole. `srcset` was dropped by the keep
+                    // list ending before it, so the hole is unreachable through
+                    // an import today and widening retention is what would open
+                    // it. The §25 half is markup-carve/carve#1320, ruled
+                    // ship-then-fix; refusing the attribute here does not wait
+                    // on it and does not duplicate it.
+                    self.diag(
+                        HtmlImportDiagnosticCode::AttributeDropped,
+                        format!("Dropped list-valued URL attribute {name} on <{tag}>"),
+                        HtmlImportSeverity::Warning,
+                        path,
+                    );
+                } else if !is_attr_identifier(&name) {
+                    // No BARE spelling in Carve attribute syntax. The writer's
+                    // `escape_attr_key` strips every character the rule
+                    // rejects, so keeping `xlink:href` would emit `xlinkhref`
+                    // and the document would claim an attribute nobody wrote.
+                    // Losing it loudly beats renaming it quietly.
+                    self.diag(
+                        HtmlImportDiagnosticCode::AttributeDropped,
+                        format!("Dropped attribute {name} on <{tag}>: not a Carve attribute name"),
+                        HtmlImportSeverity::Info,
+                        path,
+                    );
+                } else {
+                    // EVERYTHING ELSE IS KEPT. Carve's attribute syntax can
+                    // hold the pair, the renderer refuses what is dangerous,
+                    // and the author wrote it. Dropping `aria-label` was an
+                    // accessibility regression applied silently and in bulk to
+                    // exactly the documents an importer runs on (carve-rs#1060).
+                    out.key_values.insert(name, value);
                 }
             }
         }
@@ -634,6 +698,11 @@ impl<'a> Importer<'a> {
         let attrs = self.attrs(h, path);
         let children = h.children.borrow();
         if tag == "html" || tag == "head" || tag == "body" {
+            // No attribute report here, and deliberately none: `fragment_top_level`
+            // strips the scaffold before the walk begins, so an attribute on
+            // `<html>` or `<body>` never reaches `attrs` and a check placed
+            // here could not fire. That silent drop is older than this policy
+            // and is pinned by `unwrapped_wrappers_are_not_a_path` below.
             return self.blocks(&children, path, depth + 1);
         }
         if matches!(tag.as_str(), "h1" | "h2" | "h3" | "h4" | "h5" | "h6") {
@@ -889,6 +958,18 @@ impl<'a> Importer<'a> {
             HtmlImportDiagnosticCode::ElementUnwrapped,
             format!("Unwrapped unsupported <{tag}> element"),
             HtmlImportSeverity::Info,
+            path,
+        );
+        // AN UNWRAPPED ELEMENT TAKES ITS ATTRIBUTES WITH IT. `<section
+        // role="region">`, `<article>`, `<aside>`, `<main>`, `<nav>` and
+        // `<form>` all land here and keep only their children. The keep list
+        // refused most of these names inside `attrs` and reported them there,
+        // so widening retention without this would have converted a reported
+        // loss into a silent one - the opposite of what carve-rs#1060 asks for.
+        self.report_unplaceable_attrs(
+            attrs,
+            tag.as_str(),
+            "the element was unwrapped and has no node to carry it",
             path,
         );
         self.blocks(&children, path, depth + 1)
@@ -2376,7 +2457,19 @@ impl<'a> Importer<'a> {
                 raw_ref: None,
                 pos: None,
             }),
-            "br" => InlineNode::hard_break(),
+            "br" => {
+                // A hard break has NO ATTRIBUTE SLOT: `Break` carries only a
+                // position, so `<br clear="all">` has nowhere to put it. Naming
+                // the drop is all this can do; staying quiet would be the
+                // silent loss carve-rs#1060 is about.
+                self.report_unplaceable_attrs(
+                    attrs,
+                    "br",
+                    "a hard break carries no attributes",
+                    path,
+                );
+                InlineNode::hard_break()
+            }
             "span" if attrs.is_some() => InlineNode::Span(Span {
                 attrs,
                 children,
@@ -2422,6 +2515,15 @@ impl<'a> Importer<'a> {
                     HtmlImportDiagnosticCode::ElementUnwrapped,
                     format!("Unwrapped unsupported <{tag}> element"),
                     HtmlImportSeverity::Info,
+                    path,
+                );
+                // The inline twin of the block unwrap above: `<small>`,
+                // `<bdi dir="rtl">`, `<bdo>`, `<ruby>`, `<button>`, `<label>`
+                // keep their children and nothing else.
+                self.report_unplaceable_attrs(
+                    attrs,
+                    tag.as_str(),
+                    "the element was unwrapped and has no node to carry it",
                     path,
                 );
                 return Ok(children);
