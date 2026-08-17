@@ -5430,6 +5430,18 @@ fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     // than read on every quoted line. Reading it per line is what would put
     // markup-carve/carve-rs#731's cubic walk back.
     let mut in_fence: Option<FenceOpen> = None;
+    // ONE BLOCK IS ONE BLOCK HOWEVER MANY LINES IT TAKES (§15 A5). A wrapped
+    // attribute block (`{.k` / `#x}`) closes the quoted paragraph exactly as the
+    // single-line `{.k}` does, and the lines after its opener are its own
+    // content rather than paragraph text. `ParaOpen` decides from ONE line, so
+    // the block's extent is tracked here beside the code fence's - the same
+    // shape, for the same reason (markup-carve/carve-rs#1050).
+    let mut attrs_block_rest: usize = 0;
+    // The first line index the block lookahead is still worth running on. A scan
+    // that walked to a blank line, or to the end of the quoted run, without
+    // meeting a line that could CLOSE an attribute block has proved the same for
+    // every line it passed - see `quoted_attrs_block_len`.
+    let mut attrs_scan_floor: usize = 0;
     while let Some(line) = cur.peek() {
         if let Some(stripped) = strip_blockquote_prefix(line) {
             let source_line = cur.source_line(cur.pos);
@@ -5438,7 +5450,13 @@ fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             // The quote marker (and its optional space) is a pure prefix, so the
             // quoted line's columns are knowable in the document.
             let stripped_at = stripped_col(cur.source_col(at), line, stripped);
-            if let Some(open) = in_fence {
+            if attrs_block_rest > 0 {
+                // Inside a wrapped attribute block the opener already closed the
+                // paragraph; its remaining lines close nothing further and open
+                // nothing either.
+                attrs_block_rest -= 1;
+                para_open = ParaOpen::Closed;
+            } else if let Some(open) = in_fence {
                 if is_fence_close(stripped, open) {
                     in_fence = None;
                 }
@@ -5488,6 +5506,33 @@ fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                     false
                 };
                 para_open = ParaOpen::from_line(stripped, inherited_absorption);
+                // A WRAPPED ATTRIBUTE BLOCK CLOSES THE PARAGRAPH TOO, and only
+                // the lines after its opener can tell it apart from prose that
+                // happens to start with a brace. `ParaOpen` is handed ONE line
+                // and passes an empty rest slice to
+                // `interrupts_paragraph_with_rest`, so the single-line `{.k}`
+                // closed the quoted paragraph while `{.k` / `#x}` did not: the
+                // quote went on collecting, the column-0 line folded in, and the
+                // author's attributes landed on it INSIDE the container they
+                // were written to end (markup-carve/carve-rs#1050). §15 A5 makes
+                // one block one block however many lines it takes, so the two
+                // spellings answer alike.
+                if at >= attrs_scan_floor {
+                    match quoted_attrs_block_len(stripped, &cur.lines[cur.pos..]) {
+                        QuotedAttrsBlock::Block(len) => {
+                            para_open = ParaOpen::Closed;
+                            attrs_block_rest = len - 1;
+                        }
+                        // The scan already proved no block can start inside the
+                        // window it walked, so the next lines skip it. That is
+                        // what keeps a run of brace-shaped lines that close
+                        // nothing linear instead of scanned once per line.
+                        QuotedAttrsBlock::NoneWithin(window) => {
+                            attrs_scan_floor = at + window;
+                        }
+                        QuotedAttrsBlock::No => {}
+                    }
+                }
                 // Advancing the absorption flag needs the verdict, and getting
                 // the verdict is the walk. So force it only where the answer
                 // can change the flag. While the flag is OFF, a line carrying
@@ -11915,6 +11960,86 @@ fn standalone_attrs_block_len(lines: &[&str]) -> Option<usize> {
         }
     }
     None
+}
+
+/// What a quoted line says about a standalone attribute block starting on it.
+enum QuotedAttrsBlock {
+    /// One starts here and spans this many QUOTED lines.
+    Block(usize),
+    /// None starts here, and none can start on any of the next `0..n` lines
+    /// either: the scan walked that far without meeting a line that could CLOSE
+    /// one. See [`quoted_attrs_block_len`] for why that generalizes.
+    NoneWithin(usize),
+    /// None starts here. A later line may still open one.
+    No,
+}
+
+/// Whether a standalone attribute block starts on the quoted line `stripped`,
+/// and how many QUOTED lines it takes.
+///
+/// `stripped` is the current line with ONE quote marker taken off, and `rest`
+/// is the raw document from the next line on. Both are walked down to their
+/// INNERMOST quoted content, exactly as [`ParaOpen::resolve`] does: a lazy line
+/// continues the innermost open paragraph, so what an attribute block ends is
+/// the innermost paragraph too, and a block written at depth 2 has to answer
+/// like one written at depth 1 (markup-carve/carve#506).
+///
+/// THE BRACE GUARD COMES FIRST AND IS TESTED ON THE UNWALKED LINE. Every quoted
+/// line reaches this, and the walk costs one strip per remaining quote marker -
+/// which is precisely the per-line cost `ParaOpen` was built to defer
+/// (markup-carve/carve-rs#731). A line with no `{` anywhere on it cannot open an
+/// attribute block at any depth, so a quote ladder pays one `memchr` and stops.
+///
+/// AND THE SCAN REPORTS WHAT IT PROVED, so a run of brace-shaped lines that
+/// close nothing is walked ONCE rather than once per line. A block ends at the
+/// first line with a trailing `}`; if the walk reaches a blank line or the end
+/// of the quoted run without meeting one, no line it passed can open a block
+/// either, and `NoneWithin` hands the caller that window to skip. Without it a
+/// quoted `{a` repeated n times pays an O(n) scan per line - a second quadratic
+/// on top of the one the inner paragraph parse already has on that shape.
+fn quoted_attrs_block_len<'a>(stripped: &'a str, rest: &[&'a str]) -> QuotedAttrsBlock {
+    if !stripped.contains('{') {
+        return QuotedAttrsBlock::No;
+    }
+    fn innermost(mut line: &str) -> &str {
+        while let Some(next) = strip_blockquote_prefix(line) {
+            line = next;
+        }
+        line
+    }
+    let first = innermost(stripped);
+    // The single-line spelling is already answered by
+    // `interrupts_paragraph_with_rest`, which `ParaOpen` consults. Only the
+    // WRAPPED one needs the lookahead, and refusing a complete line here keeps
+    // this from being a second answer to a question that already has one.
+    if trim_ascii_end(first).ends_with('}') {
+        return QuotedAttrsBlock::No;
+    }
+    let mut block: Vec<&str> = vec![first];
+    let mut met_a_closer = false;
+    for line in rest {
+        // The block lives INSIDE the quote: an unprefixed line is the lazy
+        // continuation the caller is deciding about, not part of the block.
+        let Some(next) = strip_blockquote_prefix(line) else {
+            break;
+        };
+        let inner = innermost(next);
+        block.push(inner);
+        if is_blank_line(inner) {
+            break;
+        }
+        if trim_ascii_end(inner).ends_with('}') {
+            met_a_closer = true;
+            break;
+        }
+    }
+    match standalone_attrs_block_len(&block) {
+        Some(len) => QuotedAttrsBlock::Block(len),
+        // A closer was there and the join was still refused - a later line may
+        // open a block that ends on that same closer, so nothing is proved.
+        None if met_a_closer => QuotedAttrsBlock::No,
+        None => QuotedAttrsBlock::NoneWithin(block.len()),
+    }
 }
 
 /// The quote a run leaves OPEN at its end.
