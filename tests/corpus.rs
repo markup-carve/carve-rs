@@ -403,6 +403,16 @@ const IMPLEMENTED: &[&str] = &[
     "an-abbreviation-definition-in-an-item-body-is-paragraph-text",
     "an-attribute-block-reaches-the-nested-list-it-precedes",
     "delimited-comments",
+    "a-column-0-line-after-a-container-s-last-block-when-that-block-left-no-paragraph-open",
+    "a-continuation-marker-attaches-one-block-and-the-boundary-is-that-block-s-extent",
+    "a-continuation-row-s-open-run-and-an-escaped-closing-pipe",
+    "a-label-beginning-with-an-at-sign-is-not-a-reference-label",
+    "an-attribute-line-after-a-continuation-marker-attributes-the-attached-block",
+    "an-unclosed-inline-run-in-a-line-block-reaches-the-end-of-the-block",
+    "an-unclosed-verbatim-run-in-a-row-stops-at-the-closing-pipe",
+    "which-inline-content-a-heading-id-is-derived-from",
+    "a-floating-attribute-is-scoped-to-the-container-that-holds-it",
+    "a-tab-after-a-fence-or-a-frontmatter-opener-depends-on-where-it-sits",
 ];
 
 fn corpus_dir() -> PathBuf {

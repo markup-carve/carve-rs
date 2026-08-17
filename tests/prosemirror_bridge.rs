@@ -50,12 +50,17 @@ const ALIASED_TYPES: &[(&str, &str)] = &[("tag", "mention")];
 // gone from this list; what is left is one defect with a long tail, plus three
 // small ones:
 //
-//  - 56 documents gain an attribute line the author never wrote, carrying a
+//  - 75 documents gain an attribute line the author never wrote, carrying a
 //    GENERATED heading id: `# Title` returns as `{#Title}` + `# Title`. The
 //    outbound side stamps the id into `attrs.id`, and where the heading has no
 //    attribute run at all there is nothing to say the id was not authored. A
 //    run that IS recorded settles it - it names every slot somebody typed - and
 //    that case is now read correctly; the headings left here have no run.
+//    19 of them arrived with the b6917ab corpus, which added a category for the
+//    derivation itself plus headings opened inside a container. Each was
+//    checked against its own before/after: they are further instances of this
+//    one cause, not a new one, so the fix that empties this bullet empties all
+//    of them together.
 //  - 6 reference definitions come back with their structural title repeated as
 //    an authored attribute: `[a]: /u "T"` returns as `[a]: /u "T" {title=T}`.
 //  - 1 document loses an attribute outright: 108-security-hardening-11 writes
@@ -115,6 +120,25 @@ const SOURCE_LOSSY: &[&str] = &[
     "315-an-inline-note-s-content-resolves-after-the-note-6.crv",
     "315-an-inline-note-s-content-resolves-after-the-note-7.crv",
     "315-an-inline-note-s-content-resolves-after-the-note.crv",
+    "326-a-column-0-line-after-a-container-s-last-block-when-that-block-left-no-paragraph-open-10.crv",
+    "326-a-column-0-line-after-a-container-s-last-block-when-that-block-left-no-paragraph-open-11.crv",
+    "326-a-column-0-line-after-a-container-s-last-block-when-that-block-left-no-paragraph-open-2.crv",
+    "326-a-column-0-line-after-a-container-s-last-block-when-that-block-left-no-paragraph-open.crv",
+    "327-a-continuation-marker-attaches-one-block-and-the-boundary-is-that-block-s-extent-8.crv",
+    "327-a-continuation-marker-attaches-one-block-and-the-boundary-is-that-block-s-extent-9.crv",
+    "329-a-floating-attribute-is-scoped-to-the-container-that-holds-it-4.crv",
+    "332-which-inline-content-a-heading-id-is-derived-from-10.crv",
+    "332-which-inline-content-a-heading-id-is-derived-from-11.crv",
+    "332-which-inline-content-a-heading-id-is-derived-from-12.crv",
+    "332-which-inline-content-a-heading-id-is-derived-from-2.crv",
+    "332-which-inline-content-a-heading-id-is-derived-from-3.crv",
+    "332-which-inline-content-a-heading-id-is-derived-from-4.crv",
+    "332-which-inline-content-a-heading-id-is-derived-from-5.crv",
+    "332-which-inline-content-a-heading-id-is-derived-from-6.crv",
+    "332-which-inline-content-a-heading-id-is-derived-from-7.crv",
+    "332-which-inline-content-a-heading-id-is-derived-from-8.crv",
+    "332-which-inline-content-a-heading-id-is-derived-from-9.crv",
+    "332-which-inline-content-a-heading-id-is-derived-from.crv",
     "35-cross-reference.crv",
     "71-attribute-edge-cases-14.crv",
     "75-list-nesting-and-looseness-4.crv",
@@ -447,8 +471,22 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // themselves dropped, which kept them out of the strict set entirely, and
     // both now ride the carrier `markCarrierNodes` declares. Both write back
     // byte-identical source, so neither joins the set above.
-    const STRICT: usize = 829;
-    const LOSSY: usize = 224;
+    // 829/224 to 893/231 is the seventy-one documents arriving with the
+    // b6917ab spec pin, and nothing else: the corpus went from 1053 pairs to
+    // 1124, no existing pair was removed or changed content, and the 224
+    // documents that reported at the old pin are the identical 224 that report
+    // here - the count rose only by new documents, so nothing regressed out of
+    // the strict set. Sixty-four of the seventy-one land in the strict set. The
+    // seven that report all DEGRADE and none drops: `326-a-column-0-line-...`
+    // 12 and 13, `327-a-continuation-marker-...` 3 and 4, and `330-a-tab-after-
+    // a-fence-...-3` carry a `soft_break`, that `330-*` one also
+    // `smart_punctuation`, and the two `333-a-continuation-row-s-open-run-and-
+    // an-escaped-closing-pipe` carry `escaped_text`. All three types are
+    // already declared unmapped, so no new cause appears here. Nineteen of the
+    // sixty-four join the source-lossy set above, every one of them the
+    // generated-heading-id cause the first bullet describes.
+    const STRICT: usize = 893;
+    const LOSSY: usize = 231;
     assert!(
         covered >= STRICT,
         "strict round trips fell from {STRICT} to {covered}"

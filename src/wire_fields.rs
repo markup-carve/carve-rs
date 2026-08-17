@@ -14,6 +14,7 @@ pub(crate) const WIRE_FIELDS: &[(&str, &[&str])] = &[
     ("autolink", &["attrs", "href", "pos", "text", "type"]),
     ("block_quote", &["attrs", "children", "pos", "type"]),
     ("caption_number", &["attrs", "n", "pos", "type"]),
+    ("citation_definition", &["attrs", "children", "key", "pos", "type"]),
     ("citation_group", &["attrs", "items", "mode", "pos", "raw", "type"]),
     ("code", &["attrs", "pos", "type", "value"]),
     ("code_block", &["attrs", "content", "header", "label", "lang", "pos", "type"]),
