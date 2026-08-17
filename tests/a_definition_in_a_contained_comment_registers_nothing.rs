@@ -174,27 +174,37 @@ fn a_lazy_marker_line_carries_its_comment_and_its_definition_as_text() {
 }
 
 #[test]
-fn a_list_marker_in_the_body_stops_the_registration_but_not_the_leak() {
-    // The one shape where the reference resolves correctly and the document is
-    // still wrong, and the second half is not this change's doing. carve-rs's
-    // block parser ends a contained comment at a list marker, so the body leaks
-    // with no definition in sight at all:
-    let leaks = html("- item\n  %%%\n  - x\n  y\n  %%%\n\ntail\n");
-    assert!(leaks.contains('x') && leaks.contains('y'), "{leaks}");
-
-    // Put a definition under that marker and the pre-pass, which now follows the
-    // clause rather than the block parser, declines to register it. The
-    // reference stays literal, which is the answer the oracle and carve-js give;
-    // the line leaks alongside the rest of the body, which is the block parser's
-    // pre-existing bug becoming visible rather than being masked by a definition
-    // silently eaten out of the source.
+fn a_list_marker_in_the_body_neither_registers_nor_leaks() {
+    // This test used to pin the leak. The pre-pass half was already right - the
+    // reference stayed literal - while the block parser ended the comment at the
+    // marker and rendered the body, so the shape was half correct and pinned as
+    // such, deliberately, so that fixing the block parser would show up here.
+    // markup-carve/carve-rs#1053 fixed it: the marker gate in the item's line
+    // collector now treats an open comment span as opaque, the way it already
+    // treated a code fence and a colon container.
     //
-    // Pinned so that fixing the block parser is a visible edit here.
+    // No definition needed to show it, and none present:
+    assert_eq!(
+        html("- item\n  %%%\n  - x\n  y\n  %%%\n\ntail\n"),
+        "<ul>\n  <li>item</li>\n</ul>\n<p>tail</p>"
+    );
+
+    // With a definition under the marker, both halves now agree: the reference
+    // stays literal AND the line it would have come from renders nothing. The
+    // old answer resolved neither cleanly - the definition was invisible and the
+    // rest of the body was on the page.
     let out = html("- item\n  %%%\n  - x\n  [r]: /u\n  %%%\n\ntail [r][]\n");
     assert!(out.contains("tail [r][]"), "reference resolved: {out}");
+    assert!(!out.contains("[r]: /u"), "definition leaked: {out}");
+    assert!(!out.contains('x'), "body leaked: {out}");
+
+    // The §28 degradation is untouched: with no closer ahead the opener is an
+    // ordinary `%%` line comment, nothing is opaque, and the marker still ends
+    // the chunk and opens a sub-list.
+    let unclosed = html("- item\n  %%%\n  - x\n  y\n\ntail\n");
     assert!(
-        out.contains("[r]: /u"),
-        "definition was eaten silently: {out}"
+        unclosed.contains('x') && unclosed.contains('y'),
+        "{unclosed}"
     );
 }
 
