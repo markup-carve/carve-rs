@@ -1151,3 +1151,46 @@ fn definition_marker_line_s4_is_answered_per_entry() {
         40_000,
     );
 }
+
+/// A quoted line that OPENS a brace and never closes it sends the wrapped-
+/// attribute-block lookahead over the rest of the quote (carve-rs#1050). The
+/// scan reports the window it proved empty, so a run of such lines is walked
+/// ONCE rather than once per line.
+///
+/// WHAT IS MEASURED IS THE PER-BYTE COST AGAINST THE SAME RUN UNQUOTED, not the
+/// growth ratio. Both documents are already superlinear on this shape - the
+/// paragraph parse copies the remainder per line, at the top level as much as
+/// inside a quote - and a second per-line scan in the collector DOUBLES the
+/// constant while leaving the exponent alone. A growth-ratio row therefore
+/// cannot see it: the un-barriered scan measured 3.8x against a healthy 3.6x and
+/// a ratio guard passed it. Per byte, at 8000 lines, it measured 20.6us against
+/// the flat document's 12.0us, where the barriered scan measures 7.7us against
+/// 9.9us. The pre-existing superlinearity is deliberately NOT hidden by this
+/// row; it is the baseline the quote is held to, and it is a separate defect.
+///
+/// The quoted document is fixed-width and two bytes per line wider, so equal
+/// per-line work reads BELOW 1.0 (6/8 = 0.75, measured 0.78). The bound sits at
+/// 1.2: half again above the healthy figure, and a third below the regression.
+fn quoted_unclosed_brace_lines(n: usize) -> String {
+    "> {abcd\n".repeat(n)
+}
+
+fn unquoted_unclosed_brace_lines(n: usize) -> String {
+    "{abcd\n".repeat(n)
+}
+
+#[test]
+fn a_quoted_run_of_unclosed_braces_is_scanned_once() {
+    let quoted = measure_scaling_at(&quoted_unclosed_brace_lines, 4_000, 8_000);
+    let flat = measure_scaling_at(&unquoted_unclosed_brace_lines, 4_000, 8_000);
+
+    let cost = quoted.large_per_byte / flat.large_per_byte;
+    assert!(
+        cost < 1.2,
+        "a quoted run of unclosed braces cost {cost:.2}x per byte against the same run \
+         unquoted (equal per-line work reads ~0.78x; a per-line rescan in the quote \
+         collector reads ~1.7x): quoted={:.4}us/byte flat={:.4}us/byte",
+        quoted.large_per_byte * 1e6,
+        flat.large_per_byte * 1e6
+    );
+}
