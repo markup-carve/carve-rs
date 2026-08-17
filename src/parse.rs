@@ -8868,7 +8868,15 @@ fn parse_definition_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNo
                 break;
             }
             term_text.push('\n');
-            term_text.push_str(&owned);
+            // A term's continuation line is a CONTENT LINE, so its trailing
+            // whitespace run does not reach the output - the same rule the
+            // term's FIRST line already follows two statements up, and the one
+            // markup-carve/carve#926 made general (markup-carve/carve#1289).
+            // Stripping here, at the source layer, is what keeps the exception
+            // intact: spaces INSIDE a verbatim run are the construct's content
+            // and end at its closing delimiter, so an all-space `` `  ` `` term
+            // is untouched by a trim that only ever sees the end of a line.
+            term_text.push_str(trim_ascii_end(&owned));
             if let Some(term_anchors) = &mut term_anchors {
                 term_anchors.push(inline_anchor_for_line(cur, cur.pos, &owned));
             }
@@ -8924,7 +8932,9 @@ fn parse_definition_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNo
                     break;
                 }
                 text.push('\n');
-                text.push_str(&owned);
+                // Same rule as the first term's continuation above: a CONSECUTIVE
+                // term folds its lines the same way, so it drops the same run.
+                text.push_str(trim_ascii_end(&owned));
                 if let Some(anchors) = &mut anchors {
                     anchors.push(inline_anchor_for_line(cur, cur.pos, &owned));
                 }
