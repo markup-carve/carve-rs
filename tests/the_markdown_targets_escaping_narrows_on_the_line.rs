@@ -116,14 +116,19 @@ fn control_a_closing_bracket_still_takes_m1_unconditionally() {
     assert_eq!(md("a [x] b"), "a [x\\] b");
 }
 
-/// M2: a character the AUTHOR escaped is an `escaped_text` node and is emitted
-/// AS AN ESCAPE whatever the character, untouched by M1b. It used to take the
+/// M2 as §8b leaves it. An `escaped_text` node whose character COULD be read as
+/// markup keeps its escape, whether or not the line test would have kept it:
+/// `_` can pair and `*` can open emphasis at any position, so neither narrows,
+/// and M1b never governed either of them here. The underscore used to take the
 /// sentinel and lose its backslash to the old intraword rule, which was M1b
 /// deciding a node M1 never governed.
+///
+/// The hash moved to §8b M2b, whose reading is positional rather than a
+/// property of the character; the sibling file covers it.
 #[test]
 fn an_authored_escape_is_emitted_as_an_escape() {
     assert_eq!(md("a \\_ b"), "a \\_ b");
-    assert_eq!(md("a \\# b"), "a \\# b");
+    assert_eq!(md("a\\*b"), "a\\*b");
     assert_eq!(md("company\\_id"), "company\\_id");
 }
 
@@ -131,11 +136,13 @@ fn an_authored_escape_is_emitted_as_an_escape() {
 // The sentinel scheme, and the guard the sibling review caught.
 // ---------------------------------------------------------------------------
 
-/// The three sentinels are private-use characters, and author content carrying
-/// one must not be read back as an escape this renderer emitted.
+/// The sentinels are private-use characters, and author content carrying one
+/// must not be read back as an escape this renderer emitted. U+E007 is §8b
+/// M2b's, and it takes the same guard as §8a M1b's three: the run widened, so
+/// this case widens with it or it stops covering the last member.
 #[test]
 fn author_supplied_sentinel_characters_never_reach_the_output() {
-    for sentinel in ['\u{E004}', '\u{E005}', '\u{E006}'] {
+    for sentinel in ['\u{E004}', '\u{E005}', '\u{E006}', '\u{E007}'] {
         let out = md(&format!("a{sentinel}b"));
         assert!(
             !out.contains(sentinel),

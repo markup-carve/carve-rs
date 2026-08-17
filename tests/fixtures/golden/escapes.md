@@ -1,1 +1,1 @@
-literal \* and \# and \_
+literal \* and # and \_
