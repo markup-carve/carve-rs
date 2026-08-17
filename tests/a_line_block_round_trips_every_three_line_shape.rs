@@ -6,7 +6,7 @@
 //! the one after it - an empty line ends the stanza, a trailing space is
 //! stripped, a run opened above swallows what follows - so the defects live in
 //! COMBINATIONS, and a fixture suite can only ever hold a few of them. This
-//! generates the combinations instead: nineteen shapes in three positions, 6859
+//! generates the combinations instead: twenty-one shapes in three positions, 9261
 //! documents, asserted against the invariant rather than against a golden.
 //!
 //! Two of the three assertions here cannot fail on some of these documents - a
@@ -34,6 +34,8 @@ const SHAPES: &[&str] = &[
     "a \\",      // the reported shape: a lone space held interior by the `\`
     "a  \\",     // the same with a run that needs no backslash
     "\\",        // a backslash alone: how a stanza carries an EMPTY verse line
+    "a\\ ",      // an ESCAPED trailing column, which section 2a writes bare
+    "a\\ \\",    // the same column held interior by the break after it
     "",          // a blank line, which ENDS the stanza
     "  ",        // whitespace only, which is a blank line too
     "%%",        // a comment line with empty content

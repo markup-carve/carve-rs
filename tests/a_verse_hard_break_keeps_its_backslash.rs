@@ -255,3 +255,29 @@ fn a_trailing_break_after_a_comment_writes_nothing_into_the_note() {
         "a backslash landed inside the note: {out:?}"
     );
 }
+
+/// A LONE TRAILING COLUMN IS NOT ONLY A SPACE. §7c's list names the plain one;
+/// an ESCAPED space is the same consequence of the same property, and it is lost
+/// harder - PART 11 §2a writes an escaped space at the END of a line as a bare
+/// backslash, and in verse a bare backslash at end of line is a HARD BREAK, so
+/// the column does not come back at all.
+///
+/// Derived from the property rather than read off the list, which is the whole
+/// reason carve#1340 made the property normative and the bullets consequences.
+#[test]
+fn an_escaped_trailing_column_keeps_the_break_that_holds_it_interior() {
+    for source in [
+        "::: |\na\\ \\\nb\n:::\n",
+        "::: |\na\\ \\ \nb\n:::\n",
+        "::: |\na\\ \\\n:::\n",
+    ] {
+        round_trips(source);
+    }
+
+    // The escape comes back with its space, because the break's backslash puts
+    // it back INSIDE the line where §2a keeps it.
+    assert_eq!(
+        carve::to_carve("::: |\na\\ \\\nb\n:::\n"),
+        "::: |\na\\ \\\nb\n:::\n"
+    );
+}

@@ -3420,24 +3420,37 @@ fn needs_comment_space(emitted: &str) -> bool {
 /// Does a line block's hard break need its backslash, given the bytes already
 /// emitted for the line it ends (PART 11 §7c)?
 ///
-/// Two of the three consequences §7c draws from its property, both about the
-/// line the break ENDS and both places where §7's own precondition - "where the
+/// Consequences §7c draws from its property, all of them about the line the
+/// break ENDS and all of them places where §7's own precondition - "where the
 /// PARSER discards trailing whitespace the writer may too" - does not hold:
 ///
 ///   - the line's content is EMPTY. A bare newline leaves a BLANK line, which
 ///     ends the stanza, so one stanza is written back as two.
-///   - the line's content ends in a LONE space. A bare newline makes that space
-///     line-trailing, where PART 2 drops it. A run of TWO OR MORE columns is
+///   - the line's content ends in a LONE trailing column. A bare newline makes
+///     it line-trailing, where PART 2 drops it. A run of TWO OR MORE columns is
 ///     already NBSP content (PART 9 §23 MEDIAL GAPS) and survives on its own.
 ///
-/// The third, THE LAST BODY LINE, is decided by the caller: it is a fact about
-/// the break's place in the stanza, not about the bytes on its line.
+/// A LONE TRAILING COLUMN IS NOT ONLY A SPACE. An ESCAPED space is one too, and
+/// it is lost harder: §2a writes an escaped space at the END of a line as a bare
+/// backslash, on the ground that canonical source must not depend on an editor
+/// preserving the byte after it - and in verse a bare backslash at end of line
+/// is a HARD BREAK, so the column does not come back at all. The `\` this
+/// returns is what puts the escape back INSIDE the line, where §2a's expansion
+/// keeps its space. Derived from the property rather than read off the clause's
+/// list, which names the plain space only.
+///
+/// THE LAST BODY LINE, the remaining consequence, is decided by the caller: it
+/// is a fact about the break's place in the stanza, not about the bytes on its
+/// line.
 fn verse_break_needs_backslash(emitted: &str) -> bool {
     let line = match emitted.rfind('\n') {
         Some(at) => &emitted[at + 1..],
         None => emitted,
     };
     if line.is_empty() {
+        return true;
+    }
+    if line.ends_with(sentinel(S_ESCAPED_SPACE)) {
         return true;
     }
     line.ends_with(' ') && !line.ends_with("  ")
