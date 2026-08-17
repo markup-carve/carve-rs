@@ -433,6 +433,7 @@ const IMPLEMENTED: &[&str] = &[
     "a-comment-only-line-in-a-line-block-is-removed-before-any-inline-run",
     "a-line-block-s-hard-break-keeps-its-backslash",
     "a-line-block-s-last-body-line-keeps-its-backslash",
+    "a-comment-fence-reached-through-a-quote-registers-nothing-either",
 ];
 
 fn corpus_dir() -> PathBuf {

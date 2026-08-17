@@ -209,16 +209,22 @@ fn a_list_marker_in_the_body_neither_registers_nor_leaks() {
 }
 
 #[test]
-fn a_definition_in_a_quoted_comment_still_registers() {
-    // NOT a control - a pinned open question. carve-js, carve-php and carve-rs
-    // all register here and only the executable oracle leaves it literal, so it
-    // is a cross-engine divergence needing its own ruling rather than this
-    // engine's defect, and markup-carve/carve-rs#1047 carved it out
-    // deliberately. Widening the container strip to blockquotes would have
-    // answered it unilaterally; pinned so that a later answer is a visible edit
-    // rather than a side effect.
-    assert!(html("> %%%\n> [r]: /url\n> %%%\n\n[r][]\n").contains("href=\"/url\""));
-    assert!(html("- item\n  > %%%\n  > [r]: /url\n  > %%%\n\n[r][]\n").contains("href=\"/url\""));
+fn a_definition_in_a_quoted_comment_registers_nothing_either() {
+    // This assertion used to run the other way, and deliberately: the quoted
+    // spelling was a pinned open question rather than a control. All three
+    // engines registered here and only the executable oracle left it literal,
+    // so markup-carve/carve-rs#1047 carved it out instead of answering it as a
+    // side effect of widening the container strip - pinned so that a later
+    // answer would be a visible edit.
+    //
+    // markup-carve/carve#1341 is that answer, and it is the ruling §28 already
+    // implied: the fence's body is verbatim wherever the fence sits, so the
+    // prefix that reaches it cannot decide whether a definition registers. The
+    // corpus now pins it (`347`), and this edit is the visible one the carve-out
+    // was left open for. See `a_definition_in_a_quoted_comment_registers_nothing`
+    // for the rest of the shape.
+    assert!(!html("> %%%\n> [r]: /url\n> %%%\n\n[r][]\n").contains("href=\"/url\""));
+    assert!(!html("- item\n  > %%%\n  > [r]: /url\n  > %%%\n\n[r][]\n").contains("href=\"/url\""));
 }
 
 #[test]
