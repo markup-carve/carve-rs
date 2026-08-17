@@ -411,6 +411,8 @@ const IMPLEMENTED: &[&str] = &[
     "an-unclosed-inline-run-in-a-line-block-reaches-the-end-of-the-block",
     "an-unclosed-verbatim-run-in-a-row-stops-at-the-closing-pipe",
     "which-inline-content-a-heading-id-is-derived-from",
+    "a-floating-attribute-is-scoped-to-the-container-that-holds-it",
+    "a-tab-after-a-fence-or-a-frontmatter-opener-depends-on-where-it-sits",
 ];
 
 fn corpus_dir() -> PathBuf {
