@@ -485,7 +485,20 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // already declared unmapped, so no new cause appears here. Nineteen of the
     // sixty-four join the source-lossy set above, every one of them the
     // generated-heading-id cause the first bullet describes.
-    const STRICT: usize = 893;
+    // 893/231 to 900/231 is the seven documents arriving with the 8b80822 spec
+    // pin, and nothing else: the corpus went from 1124 pairs to 1131, and the
+    // seven added pairs are the `335-a-comment-fence-at-an-item-s-content-
+    // column-registers-nothing-either` through `341-a-comment-fence-inside-a-
+    // colon-container-registers-nothing` documents that pin a comment fence
+    // hiding its body at every column. The raise is attributed rather than
+    // fitted: every document was classified at BOTH pins and the two dumps
+    // diffed, and no pre-existing document appears on either side of that diff.
+    // So the 1124 documents carried over still contribute exactly 893 and 231,
+    // document for document, and the whole delta is the seven new ones. All
+    // seven hold no node the editor schema lacks, so all seven land in the
+    // strict set, none reports, and none joins the source-lossy set above -
+    // which is why LOSSY does not move and the declared set is untouched.
+    const STRICT: usize = 900;
     const LOSSY: usize = 231;
     assert!(
         covered >= STRICT,

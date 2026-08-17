@@ -413,6 +413,13 @@ const IMPLEMENTED: &[&str] = &[
     "which-inline-content-a-heading-id-is-derived-from",
     "a-floating-attribute-is-scoped-to-the-container-that-holds-it",
     "a-tab-after-a-fence-or-a-frontmatter-opener-depends-on-where-it-sits",
+    "a-comment-fence-at-an-item-s-content-column-registers-nothing-either",
+    "a-comment-fence-inside-a-colon-container-registers-nothing",
+    "a-comment-fence-one-item-deeper-registers-nothing-either",
+    "a-comment-fence-opened-on-an-item-s-marker-line-hides-its-body-too",
+    "a-footnote-definition-inside-an-item-s-comment-registers-nothing",
+    "a-wider-comment-fence-inside-an-item-hides-its-body-the-same-way",
+    "an-abbreviation-inside-a-comment-defines-nothing",
 ];
 
 fn corpus_dir() -> PathBuf {
