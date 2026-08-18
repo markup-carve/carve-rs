@@ -1164,3 +1164,23 @@ pub struct CriticComment {
     /// Span in the original source, when the parser could determine it.
     pub pos: Option<Pos>,
 }
+
+/// Whether a block PUBLISHES NOTHING, in every target.
+///
+/// §17 L1a: an invisible construct has no visible effect. Wherever the SHAPE of
+/// the output depends on how many blocks a container holds, it is these that
+/// must not be counted - a comment, an abbreviation definition and a link
+/// reference definition all leave a node in the tree and nothing on the page.
+///
+/// Named once because it was spelled three times by hand, and the one place it
+/// was not spelled is where a `dd` counted a trailing comment as a second block
+/// and rendered loose while its LIST twin, which filters the same set, stayed
+/// tight.
+pub(crate) fn publishes_nothing(block: &BlockNode) -> bool {
+    matches!(
+        block,
+        BlockNode::Comment(_)
+            | BlockNode::AbbreviationDef(_)
+            | BlockNode::LinkReferenceDefinition(_)
+    )
+}

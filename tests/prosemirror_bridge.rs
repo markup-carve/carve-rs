@@ -616,8 +616,35 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // back (PART 11 section 7c, amended by the same ruling). The spec ships a
     // `.fmt` sidecar for that document spelling it exactly that way. The
     // ROUND TRIP is unaffected: both sides of the comparison drop it.
-    const STRICT: usize = 938;
-    const LOSSY: usize = 242;
+    // 938/242 to 954/256 is the thirty documents arriving with the b273a57 spec
+    // pin, and nothing else: the corpus went from 1180 pairs to 1210, and the
+    // added pairs are the seven `349-a-container-whose-table-ends-on-a-
+    // continuation-row`, the six `350-a-definition-at-a-container-s-content-
+    // column`, the ten `351-a-bracketed-construct-spanning-a-line-boundary`,
+    // the five `352-a-bracketed-construct-s-identifiers-stay-on-one-line` and
+    // the three `353-a-bracketed-construct-spanning-a-verse-boundary`
+    // documents.
+    //
+    // Attributed with the ENGINE CHANGE HELD SEPARATE, because this branch
+    // changes which line a container takes. Both pins were classified under ONE
+    // build - the build carrying this branch - and the diff of the two dumps is
+    // exactly the thirty new names on the new side and EMPTY on the old. At the
+    // old pin that build still reports 938/242, document for document, which is
+    // the whole statement that the three fixes moved nothing here: the numbers
+    // this file already declared were established on the engine before them.
+    //
+    // Sixteen land in the strict set and fourteen report. All fourteen report
+    // for one cause already declared above - `soft_break` degrades, the same
+    // node `343-an-escaped-hash-...` reports - and none DROPS anything, so no
+    // new cause appears. Ten of the fourteen are the bracketed-construct
+    // documents, which exist to pin a construct spanning a line boundary and
+    // therefore hold a soft break by construction; the other four are the two
+    // below-column controls and the two shapes where the flush-left line folds
+    // in, where the fold is what the document pins. None of the thirty joins the
+    // declared source-lossy set above, which is asserted directly rather than
+    // counted.
+    const STRICT: usize = 954;
+    const LOSSY: usize = 256;
     assert!(
         covered >= STRICT,
         "strict round trips fell from {STRICT} to {covered}"
