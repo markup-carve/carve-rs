@@ -7523,9 +7523,10 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                     // below the item's content column, no paragraph remains
                     // for that line to continue (markup-carve/carve#1376).
                     if definition_ended_paragraph
-                        && cur
-                            .peek()
-                            .is_some_and(|line| indent_columns(line) < content_col)
+                        && cur.peek().is_some_and(|line| {
+                            let indent = indent_columns(line);
+                            indent > 0 && indent < content_col
+                        })
                     {
                         break;
                     }
