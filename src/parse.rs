@@ -10341,6 +10341,25 @@ fn collect_definition_body(
     options: &Options<'_>,
 ) -> MappedSource {
     let mut lines: Vec<String> = Vec::new();
+    // A LAZY LINE THAT FOLDED LEFT A PARAGRAPH OPEN, by construction: it reached
+    // the fold only by being flush-left and not interrupting, which is what
+    // paragraph text is. So the next flush-left line's answer is already known
+    // and does not need asking.
+    //
+    // It has to be known, rather than merely nice to know. `so_far` is rebuilt
+    // from every line collected so far and then PARSED, once per lazy line, so a
+    // paragraph continued lazily under a `:  ` body cost O(n^2) in both the copy
+    // and the parse: 32 KB took 22.9 seconds, growing 4x per doubling. That is
+    // the §25 shape - a document a reader could plausibly write, degrading
+    // superlinearly - and the LIST twin one call site over is linear on the same
+    // input, which is what says it is a defect rather than the price of the
+    // rule.
+    //
+    // Only a lazy fold may set it. Every other way a line joins the body -- a
+    // collected line at the body's own column, a `+` attached block -- can put a
+    // fence, a table or a container at the end of it, so each of those clears it
+    // and the next question is asked in full.
+    let mut folded_a_lazy_line = false;
     let mut line_map: Vec<Option<usize>> = Vec::new();
     // Codepoints taken off the front of each line, kept in lockstep with
     // `lines`. `None` means unknown, and a block starting there gets no
@@ -10373,6 +10392,7 @@ fn collect_definition_body(
                 cur.consume();
             }
             if !attached.lines.is_empty() {
+                folded_a_lazy_line = false;
                 lines.push(String::new());
                 line_map.push(None);
                 col_map.push(None);
@@ -10408,6 +10428,7 @@ fn collect_definition_body(
                     c + line.chars().count().saturating_sub(sliced.chars().count()) as isize
                 }));
                 fence.track(&sliced);
+                folded_a_lazy_line = false;
                 lines.push(sliced);
                 line_map.push(cur.source_line(cur.pos));
                 cur.consume();
@@ -10444,10 +10465,13 @@ fn collect_definition_body(
             // block-attribute line left with no block at all are the others,
             // and each of them folded here while the LIST twin closed
             // (carve-rs#790). Same clause, same answer.
-            let mut so_far = String::from(seed);
-            for collected in &lines {
-                so_far.push('\n');
-                so_far.push_str(collected);
+            let mut so_far = String::new();
+            if !folded_a_lazy_line {
+                so_far.push_str(seed);
+                for collected in &lines {
+                    so_far.push('\n');
+                    so_far.push_str(collected);
+                }
             }
             // NOTHING HAS BEEN COLLECTED AT THE BODY'S COLUMN YET, so the body
             // is the marker line's own content and S4's one question is asked of
@@ -10456,7 +10480,9 @@ fn collect_definition_body(
             // list item one call site over; a definition body IS such a
             // container (markup-carve/carve#956) and the container KIND is not a
             // parameter of the rule (markup-carve/carve#920).
-            if !definition_body_takes_the_fold(&so_far, lines.is_empty(), options) {
+            if !folded_a_lazy_line
+                && !definition_body_takes_the_fold(&so_far, lines.is_empty(), options)
+            {
                 break;
             }
             // BELOW THE BODY'S COLUMN THE BODY ENDS (markup-carve/carve#932).
@@ -10483,6 +10509,7 @@ fn collect_definition_body(
             // djot). A block opener ends the definition.
             let owned = line.to_string();
             if !interrupts_paragraph(cur, &owned) {
+                folded_a_lazy_line = true;
                 lines.push(owned);
                 line_map.push(cur.source_line(cur.pos));
                 col_map.push(cur.source_col(cur.pos));
@@ -10500,6 +10527,7 @@ fn collect_definition_body(
         }
         match cur.lines.get(cur.pos + look).copied() {
             Some(after) if !is_blank_line(after) && indent_columns(after) >= 3 => {
+                folded_a_lazy_line = false;
                 for _ in 0..look {
                     lines.push(String::new());
                     line_map.push(cur.source_line(cur.pos));
