@@ -161,6 +161,7 @@ const SOURCE_LOSSY: &[&str] = &[
     "356-a-quote-inside-a-quote-is-asked-what-it-ends-on-6.crv",
     "356-a-quote-inside-a-quote-is-asked-what-it-ends-on-7.crv",
     "356-a-quote-inside-a-quote-is-asked-what-it-ends-on.crv",
+    "360-a-definition-behind-an-alternating-container-prefix-registers-at-the-innermost-content-column-3.crv",
     "71-attribute-edge-cases-14.crv",
     "75-list-nesting-and-looseness-4.crv",
     "75-list-nesting-and-looseness-7.crv",
@@ -649,7 +650,29 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // its generated id - the first bullet's cause, unchanged. That set is
     // asserted by name rather than counted, so the four are declared there and
     // nothing else moved.
-    const STRICT: usize = 978;
+    // 978/263 to 982/263 is the FOUR documents arriving with the 33bf24d spec
+    // pin, and nothing else: the corpus went from 1241 pairs to 1245, and the
+    // added pairs are all of category 360 - a definition behind an alternating
+    // container prefix, its footnote kind, the heading control at the same
+    // column, and the peeled control.
+    //
+    // Attributed with the ENGINE CHANGE HELD SEPARATE, because this branch
+    // changes which column the definition pre-pass reaches. Both pins were
+    // classified under ONE build - the build carrying this branch - and at the
+    // OLD pin that build still reports 978/263 with the declared source-lossy
+    // set unchanged, which are the numbers this file already carried before
+    // this branch existed. So the whole delta is the four new documents.
+    //
+    // All four land in the strict set and none reports: three of them are a
+    // list, a quote and a definition, and the fourth is a heading, all inside
+    // the editor schema. LOSSY therefore does not move.
+    //
+    // ONE of the four joins the declared source-lossy set above. `360-...-3` is
+    // the heading control, and a heading with no attribute run comes back
+    // carrying its generated id - the first bullet's cause, unchanged. That set
+    // is asserted by name rather than counted, so the one is declared there and
+    // nothing else moved.
+    const STRICT: usize = 982;
     const LOSSY: usize = 263;
     assert!(
         covered >= STRICT,
