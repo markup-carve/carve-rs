@@ -73,7 +73,8 @@
     },
     "image": {
       "kind": "node",
-      "pm": "image"
+      "pm": "image",
+      "notes": "carveLinkTitle carries the structural image title; title remains available to the authored attribute run"
     },
     "math": {
       "kind": "node",
@@ -159,7 +160,7 @@
     "link_reference_definition": {
       "kind": "node",
       "pm": "carveLinkRefDef",
-      "notes": "atom; label, href and title attrs. Carrying the definition is what lets a `[text][label]` reference keep its spelling"
+      "notes": "atom; label and href attrs; carveLinkTitle carries the structural title while title remains available to the authored attribute run. Carrying the definition is what lets a `[text][label]` reference keep its spelling"
     },
     "inline_footnote": {
       "kind": "node",
@@ -257,7 +258,8 @@
     },
     "link": {
       "kind": "mark",
-      "pm": "link"
+      "pm": "link",
+      "notes": "carveLinkTitle carries the structural link title; title remains available to the authored attribute run"
     },
     "autolink": {
       "kind": "mark",
