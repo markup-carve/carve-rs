@@ -176,10 +176,12 @@ fn a_sibling_item_carries_none_of_the_previous_items_fence() {
         squash(&to_html("- ```\n  x\n- b\n z\n")),
         "<ul> <li> <pre><code>x </code></pre> </li> <li>b z</li> </ul>"
     );
-    // And the sibling's OWN fence is still followed after that drop.
+    // And the sibling's own closer-less fence is paragraph text after that
+    // drop, so its below-column lazy line remains in the sibling (§10 I4,
+    // corpus 367).
     assert_eq!(
         squash(&to_html("- ```\n  x\n- b\n  ```\n  q\n y\n")),
-        "<ul> <li> <pre><code>x </code></pre> </li> <li>b <code> q</code></li> </ul> <p>y</p>"
+        "<ul> <li> <pre><code>x </code></pre> </li> <li>b <code> q y</code></li> </ul>"
     );
 }
 

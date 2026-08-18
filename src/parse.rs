@@ -8208,15 +8208,29 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             let suppress_colon_interrupt = para_lines
                 .iter()
                 .any(|line| is_invalid_colon_fence_opener_text(line));
-            if interrupts_paragraph_as_container(cur, &dedented)
-                && !(suppress_colon_interrupt && is_suppressed_colon_fence_line(&dedented))
-            {
+            let interrupts = interrupts_paragraph_as_container(cur, &dedented)
+                && !(suppress_colon_interrupt && is_suppressed_colon_fence_line(&dedented));
+            if interrupts {
                 break;
             }
             if let Some(anchors) = &mut anchors {
                 anchors.push(inline_anchor_for_line(cur, cur.pos, &dedented));
             }
-            track_collected_fence(&mut item_open_fence, &dedented, true);
+            // A code-fence-shaped line with no closer is inline paragraph text
+            // (§10 I4), not an open fenced body. Do not seed the layout fence
+            // tracker when no compatible closer exists anywhere ahead: doing
+            // so closes the item before the next below-column lazy line (corpus
+            // 367). A closer outside this item still matters to the established
+            // layout rule (corpus 276), hence the broader suffix-index check.
+            let rejected_fence_has_closer = detect_fence_open(&dedented).is_some_and(|open| {
+                cur.has_code_closer_after(cur.pos + 1, open.fence_char, open.fence_len)
+            });
+            if item_open_fence.is_some()
+                || detect_fence_open(&dedented).is_none()
+                || rejected_fence_has_closer
+            {
+                track_collected_fence(&mut item_open_fence, &dedented, true);
+            }
             para_lines.push(dedented);
             cur.consume();
         }
@@ -10693,7 +10707,20 @@ fn collect_definition_body(
                 col_map.push(cur.source_col(cur.pos).map(|c| {
                     c + line.chars().count().saturating_sub(sliced.chars().count()) as isize
                 }));
-                fence.track(&sliced);
+                // As in a list item, an unterminated fence at the definition
+                // body's content column stays in its open paragraph (§10 I4).
+                // Tracking one as a real fence would eject the next lazy line
+                // from the `<dd>` (corpus 367). Keep the established behavior
+                // when any compatible closer does occur later, as for lists.
+                let rejected_fence_has_closer = detect_fence_open(&sliced).is_some_and(|open| {
+                    cur.has_code_closer_after(cur.pos + 1, open.fence_char, open.fence_len)
+                });
+                if fence.open.is_some()
+                    || detect_fence_open(&sliced).is_none()
+                    || rejected_fence_has_closer
+                {
+                    fence.track(&sliced);
+                }
                 folded_a_lazy_line = false;
                 lines.push(sliced);
                 line_map.push(cur.source_line(cur.pos));
