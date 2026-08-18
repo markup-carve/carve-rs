@@ -174,21 +174,27 @@ fn the_top_level_spelling_did_not_move() {
 }
 
 #[test]
-fn the_soft_to_hard_conversion_is_untouched() {
-    // markup-carve/carve#1351 asks whether §23 hardens a boundary inside a
-    // closed inline container. It is OPEN, and this change deliberately does not
-    // answer it: the conversion still runs on the stanza's top level only, so a
-    // nested boundary keeps its soft spelling and renders as a bare newline.
+fn the_soft_to_hard_conversion_moved_and_this_pass_did_not() {
+    // THIS ASSERTION USED TO RUN THE OTHER WAY, and that was the point.
+    // markup-carve/carve#1351 asked whether §23 hardens a boundary inside a
+    // closed inline container; while it was open this file pinned the spelling
+    // the engine then had, so that moving it would be a decision rather than a
+    // side effect of the comment placement. The ruling landed on Reading A, and
+    // this is the visible edit it was left open for.
     //
-    // Pinned so that moving it is a decision rather than a side effect of this
-    // pass. If markup-carve/carve#1351 lands on the other reading, THIS is the
-    // assertion that changes, and the comment placement above does not.
+    // The placement pass above is unchanged by it, which is what the carve-out
+    // predicted: it asks where the boundary IS and never what it is called.
     assert_eq!(
         to_html("::: |\n*a\nb\nc*\n:::\n"),
-        "<div class=\"line-block\">\n  <p><strong>a\nb\nc</strong></p>\n</div>"
+        "<div class=\"line-block\">\n  <p><strong>a<br>\nb<br>\nc</strong></p>\n</div>"
     );
-    // The same three lines without the emphasis harden on every boundary.
-    assert!(to_html("::: |\na\nb\nc\n:::\n").contains("<br>"));
+    // The same three lines without the emphasis harden the same way, which is
+    // the equality the ruling turned on - one boundary, one break, whatever
+    // container it happens to sit in.
+    assert_eq!(
+        to_html("::: |\na\nb\nc\n:::\n").matches("<br>").count(),
+        to_html("::: |\n*a\nb\nc*\n:::\n").matches("<br>").count()
+    );
 }
 
 #[test]

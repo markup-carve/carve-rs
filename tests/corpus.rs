@@ -434,6 +434,7 @@ const IMPLEMENTED: &[&str] = &[
     "a-line-block-s-hard-break-keeps-its-backslash",
     "a-line-block-s-last-body-line-keeps-its-backslash",
     "a-comment-fence-reached-through-a-quote-registers-nothing-either",
+    "a-closed-inline-construct-spanning-a-verse-boundary",
 ];
 
 fn corpus_dir() -> PathBuf {
