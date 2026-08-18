@@ -1691,6 +1691,11 @@ fn render_table_cell(cell: &TableCell, ctx: &mut CarveContext, mark_header: bool
         Some(TableVerticalAlign::Bottom) => "v",
         None => "",
     };
+    let inherited_horizontal = if align.is_empty() && !valign.is_empty() {
+        "?"
+    } else {
+        ""
+    };
     // CELL ATTRIBUTES BIND LAST (grammar §20 T10): the kind marker first, then
     // the alignment marker, then the attribute block, glued to the marker run.
     // Writing the block AHEAD of the markers had no spelling for an attributed
@@ -1698,9 +1703,10 @@ fn render_table_cell(cell: &TableCell, ctx: &mut CarveContext, mark_header: bool
     // data cell whose content is `=R`, so `toHtml(fmt(x)) != toHtml(x)` on
     // every attributed header cell.
     let prefix = format!(
-        "{}{}{}{}",
+        "{}{}{}{}{}",
         if cell.header && mark_header { "=" } else { "" },
         align,
+        inherited_horizontal,
         valign,
         attrs
     );

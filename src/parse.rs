@@ -11665,13 +11665,25 @@ fn parse_table_cell(
     } else {
         let run = body
             .bytes()
-            .take_while(|marker| matches!(marker, b'>' | b'<' | b'~' | b'^' | b'v'))
+            .take_while(|marker| matches!(marker, b'>' | b'<' | b'~' | b'^' | b'v' | b'?'))
             .count();
+        let inherited_horizontal = run == 2
+            && body.as_bytes().first() == Some(&b'?')
+            && body
+                .as_bytes()
+                .get(1)
+                .is_some_and(|marker| matches!(marker, b'^' | b'~' | b'v'));
         let mut saw_horizontal = false;
         let mut saw_vertical = false;
         let mut axes_valid = true;
         for (index, marker) in body.bytes().take(run).enumerate() {
-            if marker == b'~'
+            if marker == b'?' {
+                if inherited_horizontal && index == 0 {
+                    continue;
+                }
+                axes_valid = false;
+                break;
+            } else if marker == b'~'
                 && !saw_horizontal
                 && !saw_vertical
                 && body
@@ -11701,7 +11713,7 @@ fn parse_table_cell(
             .as_bytes()
             .get(run)
             .is_some_and(|b| *b == b' ' || *b == b'{');
-        let valid = run > 0 && axes_valid && saw_horizontal && terminated;
+        let valid = run > 0 && axes_valid && (saw_horizontal || inherited_horizontal) && terminated;
         if valid {
             after_markers = &body[run..];
         }

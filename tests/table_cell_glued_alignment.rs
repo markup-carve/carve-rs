@@ -107,3 +107,26 @@ fn a_vertical_marker_needs_a_horizontal_partner() {
         "the canonical form writes horizontal before vertical"
     );
 }
+
+#[test]
+fn question_mark_inherits_horizontal_alignment_only() {
+    let source = "|=>^ H |\n|?v x |\n";
+    let html = carve::to_html(source);
+    assert!(
+        html.contains(r#"<td style="text-align: right; vertical-align: bottom;">x</td>"#),
+        "got {html}"
+    );
+    assert!(
+        carve::to_carve(source).contains("|?v x |"),
+        "the writer keeps the vertical-only cell explicit"
+    );
+
+    for (source, visible) in [
+        ("| ? |", "<td>?</td>"),
+        ("|v? x |", "<td>v? x</td>"),
+        ("|?< x |", "<td>?&lt; x</td>"),
+    ] {
+        let html = carve::to_html(source);
+        assert!(html.contains(visible), "got {html}");
+    }
+}
