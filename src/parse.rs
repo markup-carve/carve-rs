@@ -19988,6 +19988,29 @@ mod promote_block_images_is_iterative {
         children
     }
 
+    /// Nothing pinned that this pass descends into a BLOCK QUOTE.
+    ///
+    /// Found by mutation while turning the pass into a worklist: drop the
+    /// `BlockNode::BlockQuote` arm and all 155 corpus tests still pass, as do
+    /// `reference_image_fmt`, `unresolved_reference_shape`,
+    /// `caption_inside_a_list_item`, `non_html_parity` and
+    /// `position_spans_match_source`. The behavior does change - the quote
+    /// publishes `<p><img ...></p>` instead of a bare block image - so the
+    /// descent set was live and simply unpinned. Every other arm has a corpus
+    /// document behind it; this one did not.
+    #[test]
+    fn a_resolved_reference_image_promotes_inside_a_block_quote() {
+        let html = crate::to_html("> ![a][i]\n\n[i]: p.png\n");
+        assert!(
+            !html.contains("<p>"),
+            "the sole image in the quote must promote to a block image, got: {html}"
+        );
+        assert!(
+            html.contains("<img src=\"p.png\" alt=\"a\">"),
+            "got: {html}"
+        );
+    }
+
     /// THE PROOF that the pass costs no native stack per level.
     ///
     /// The thread's stack is 256 KiB and the tree is 4000 levels deep. The
