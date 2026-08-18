@@ -11663,33 +11663,36 @@ fn parse_table_cell(
     let (align, valign) = if lone_span {
         (None, None)
     } else {
-        let mut run = 0usize;
+        let run = body
+            .bytes()
+            .take_while(|marker| matches!(marker, b'>' | b'<' | b'~' | b'^' | b'v'))
+            .count();
         let mut saw_horizontal = false;
         let mut saw_vertical = false;
-        for marker in body.bytes() {
-            if !matches!(marker, b'>' | b'<' | b'~' | b'^' | b'v') {
-                break;
-            }
+        let mut axes_valid = true;
+        for marker in body.bytes().take(run) {
             if matches!(marker, b'>' | b'<' | b'~') {
                 if !saw_horizontal {
                     saw_horizontal = true;
                 } else if marker == b'~' && !saw_vertical {
                     saw_vertical = true;
                 } else {
+                    axes_valid = false;
                     break;
                 }
             } else if !saw_vertical {
                 saw_vertical = true;
             } else {
+                axes_valid = false;
                 break;
             }
-            run += 1;
         }
         let markers = &body.as_bytes()[..run];
-        let terminated = body.as_bytes().get(run).is_some_and(|b| {
-            b.is_ascii_whitespace() || *b == b'{' || matches!(b, b'>' | b'<' | b'~' | b'^' | b'v')
-        });
-        let valid = run > 0 && terminated;
+        let terminated = body
+            .as_bytes()
+            .get(run)
+            .is_some_and(|b| *b == b' ' || *b == b'{');
+        let valid = run > 0 && axes_valid && terminated;
         if valid {
             after_markers = &body[run..];
         }
