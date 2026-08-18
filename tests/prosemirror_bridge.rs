@@ -672,8 +672,27 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // carrying its generated id - the first bullet's cause, unchanged. That set
     // is asserted by name rather than counted, so the one is declared there and
     // nothing else moved.
-    const STRICT: usize = 982;
-    const LOSSY: usize = 263;
+    // 982/263 to 984/266 is the FIVE documents arriving with the 662e861 spec
+    // pin, and nothing else: the corpus went from 1245 pairs to 1250, and the
+    // added pairs are all of category 361 - a paragraph opened after a block in
+    // an item, its fence and quote-held spellings, and the two controls that
+    // must NOT fold.
+    //
+    // Attributed with the ENGINE CHANGE HELD SEPARATE, because this branch
+    // changes which lines an item keeps. Both pins were classified under ONE
+    // build - the build carrying this branch - and at the OLD pin that build
+    // still reports 982/263 with the declared source-lossy set unchanged, which
+    // are the numbers this file already carried before this branch existed. So
+    // the whole delta is the five new documents.
+    //
+    // Three of the five report and two are strict, and the three report for one
+    // cause already declared above: `soft_break` degrades, and a document whose
+    // whole point is a line FOLDING into an open paragraph holds a soft break by
+    // construction. The two that do not fold are the controls, and they carry no
+    // break. Nothing DROPS, so no new cause appears, and none of the five joins
+    // the declared source-lossy set.
+    const STRICT: usize = 984;
+    const LOSSY: usize = 266;
     assert!(
         covered >= STRICT,
         "strict round trips fell from {STRICT} to {covered}"
