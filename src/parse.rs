@@ -11640,15 +11640,39 @@ fn verse_comment_line(stripped: &str) -> Option<String> {
 /// it (carve#1333). The node is still published, because the author wrote it and
 /// PART 12 has a `comment` node for it.
 ///
-/// Line k begins just after the k-th break. Where a stanza has no k-th break the
-/// comment is dropped: the only way that happens is an unclosed verbatim run
-/// swallowing the boundary, and inside that run there is no place for a node -
-/// the run's own value carries the emptied line as a newline, like every other
-/// break it swallows.
-/// ONE PASS, building a new vector rather than inserting into the old one. The
+/// Line k begins just after the k-th boundary. Where a stanza has no k-th
+/// boundary the comment is dropped: the only way that happens is an UNCLOSED
+/// verbatim run swallowing the rest of the stanza, and inside that run there is
+/// no place for a node - the run's own value carries the emptied line as a
+/// newline, like every other break it swallows.
+///
+/// COUNT A BOUNDARY HOWEVER IT IS SPELLED, AND AT EVERY DEPTH. This walk used to
+/// count top-level `HardBreak` nodes, which is one of the three spellings a
+/// stanza boundary has, and the two it missed each lost a comment:
+///
+/// - An inline container that opens on one body line and closes on a later one
+///   holds the boundaries between them as its OWN children, so a top-level walk
+///   never sees them and a comment whose line ended under a `strong` found
+///   nowhere to sit (markup-carve/carve-rs#1079). The boundary is the same
+///   boundary at either depth, so the node goes back at it at either depth.
+/// - A CLOSED verbatim run spanning a boundary carries that newline in its
+///   value rather than as a node, so counting nodes alone reported a line number
+///   short and every comment after it was placed a line late. `carve fmt` then
+///   wrote it onto the following line, merging the author's comment text into
+///   the next line's text.
+///
+/// What does NOT follow is the soft-to-hard conversion, which stays on the
+/// stanza's top level where its caller does it. A break inside a closed inline
+/// construct keeps its soft spelling here, which is what carve-js#1127 ruled and
+/// what carve-php produces; whether §23 reaches it is open on
+/// markup-carve/carve#1351. Either answer keeps this pass, because the comment
+/// belongs at the boundary whichever way the boundary is spelled - which is why
+/// this walk asks where the boundary IS and never what it is called.
+///
+/// ONE PASS, building new vectors rather than inserting into the old ones. The
 /// comments arrive in line order, at most one per line, so the walk can consume
-/// them alongside the breaks - and a stanza of nothing but comment lines is a
-/// document an author can write, where repeated `Vec::insert` would be
+/// them alongside the boundaries - and a stanza of nothing but comment lines is
+/// a document an author can write, where repeated `Vec::insert` would be
 /// quadratic in the block's length.
 fn splice_verse_comments(
     inlines: Vec<InlineNode>,
@@ -11657,20 +11681,103 @@ fn splice_verse_comments(
     if comments.is_empty() {
         return inlines;
     }
-    let mut out = Vec::with_capacity(inlines.len() + comments.len());
     let mut pending = comments.into_iter().peekable();
-    let mut nodes = inlines.into_iter();
     let mut line = 0usize;
-    loop {
-        while let Some((_, comment)) = pending.next_if(|(at, _)| *at == line) {
+    let mut out = splice_verse_comments_into(inlines, &mut pending, &mut line);
+    // A COMMENT ON THE STANZA'S LAST LINE has no boundary after it to sit
+    // before, so it goes at the end - the boundary that OPENS its line is still
+    // there, which is what says the line is still there. The walk drains before
+    // each node and so never reaches this one.
+    //
+    // STILL GATED ON THE LINE. Anything left over after that is a comment whose
+    // line has no boundary at all, which is the open verbatim run swallowing the
+    // rest of the stanza: the run carries the emptied line as a newline and
+    // there is no place inside it for a node. Those stay dropped, as they were -
+    // pushing the leftovers unconditionally puts the note back at a position the
+    // author never wrote.
+    while let Some((_, comment)) = pending.next_if(|(at, _)| *at == line) {
+        out.push(InlineNode::Comment(comment));
+    }
+    out
+}
+
+/// One level of `splice_verse_comments`, sharing the caller's line counter so a
+/// boundary counts once wherever in the tree it turns up.
+fn splice_verse_comments_into(
+    inlines: Vec<InlineNode>,
+    pending: &mut std::iter::Peekable<std::vec::IntoIter<(usize, Comment)>>,
+    line: &mut usize,
+) -> Vec<InlineNode> {
+    let mut out = Vec::with_capacity(inlines.len());
+    for mut node in inlines {
+        // The comment sits BEFORE the boundary that ends its line: the line is
+        // empty now, so there is nothing else on it.
+        while let Some((_, comment)) = pending.next_if(|(at, _)| *at == *line) {
             out.push(InlineNode::Comment(comment));
         }
-        let Some(node) = nodes.next() else { break };
-        let boundary = matches!(node, InlineNode::HardBreak(_));
-        out.push(node);
-        if boundary {
-            line += 1;
+        // Nothing left to place, so nothing left to count for: the rest of this
+        // level is carried through without descending into it.
+        if pending.peek().is_none() {
+            out.push(node);
+            continue;
         }
+        match &mut node {
+            InlineNode::SoftBreak(_) | InlineNode::HardBreak(_) => *line += 1,
+            // A verbatim run's newlines are boundaries it ATE. §23 says the run
+            // "carries the break, and what it carries is a NEWLINE", so each one
+            // ends a body line exactly as a break node does.
+            InlineNode::Code(n) => *line += n.value.matches('\n').count(),
+            InlineNode::Math(n) => *line += n.content.matches('\n').count(),
+            InlineNode::RawInline(n) => *line += n.content.matches('\n').count(),
+            InlineNode::LiteralInline(n) => *line += n.content.matches('\n').count(),
+            // EVERY SLOT AN INLINE NODE HOLDS INLINES IN, not just `children`.
+            // An inline footnote carries its body in `inline` and a citation
+            // item carries three arrays of its own, so a walk that knew only
+            // `children` missed those containers and the emptied line stayed
+            // pending - `^[a` / `%% secret` / `c]` wrote the line back as an
+            // empty one (markup-carve/carve-js#1184 found the same two slots).
+            InlineNode::Emphasis(n) => {
+                n.children =
+                    splice_verse_comments_into(std::mem::take(&mut n.children), pending, line)
+            }
+            InlineNode::Link(n) => {
+                n.children =
+                    splice_verse_comments_into(std::mem::take(&mut n.children), pending, line)
+            }
+            InlineNode::Span(n) => {
+                n.children =
+                    splice_verse_comments_into(std::mem::take(&mut n.children), pending, line)
+            }
+            InlineNode::Extension(n) => {
+                n.children =
+                    splice_verse_comments_into(std::mem::take(&mut n.children), pending, line)
+            }
+            InlineNode::Footnote(n) => {
+                if let Some(inline) = &mut n.inline {
+                    *inline = splice_verse_comments_into(std::mem::take(inline), pending, line);
+                }
+            }
+            InlineNode::CitationGroup(group) => {
+                for item in &mut group.items {
+                    for field in [&mut item.prefix, &mut item.locator, &mut item.suffix]
+                        .into_iter()
+                        .flatten()
+                    {
+                        *field = splice_verse_comments_into(std::mem::take(field), pending, line);
+                    }
+                }
+            }
+            InlineNode::CriticInsert(n) => {
+                n.children =
+                    splice_verse_comments_into(std::mem::take(&mut n.children), pending, line)
+            }
+            InlineNode::CriticDelete(n) => {
+                n.children =
+                    splice_verse_comments_into(std::mem::take(&mut n.children), pending, line)
+            }
+            _ => {}
+        }
+        out.push(node);
     }
     out
 }
