@@ -1483,16 +1483,19 @@ fn render_list_item(
             out.push_str(html);
         }
         Part::Block(html) => {
-            // A task item whose first child is a block still shows its checkbox
-            // (defensive: no current input yields a block-first task item -- an
-            // empty task marker renders `[ ]` as literal text -- but if one ever
-            // did, dropping the marker would silently lose it).
-            if !checkbox.is_empty() {
-                out.push('\n');
-                out.push_str(checkbox);
-            } else {
-                out.push('\n');
-            }
+            // THE CHECKBOX IS A PROPERTY OF THE ITEM, NOT OF ITS FIRST BLOCK.
+            // It is written directly after the `<li>` opener whatever the
+            // marker line goes on to open, and nothing about that block
+            // reaches it. Only the CONTENT moves: it sits beside the checkbox
+            // when the first block renders inline, and on its own indented
+            // line below it when it does not. Deciding the checkbox's
+            // placement from the block that follows it wrote it at column 0,
+            // outside the indentation every other child of an `<li>` gets, for
+            // every non-paragraph lead -- a quote, a heading, a thematic
+            // break, a fence, a `:::` div, a table row (carve#1381,
+            // corpus 363).
+            out.push_str(checkbox);
+            out.push('\n');
             out.push_str(html);
         }
     }
