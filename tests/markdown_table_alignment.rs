@@ -25,10 +25,10 @@ fn right_and_center_come_from_the_header() {
 }
 
 #[test]
-fn the_doubled_marker_form_is_read() {
+fn an_invalid_doubled_marker_does_not_align_the_column() {
     assert_eq!(
         separator_row("|=<< Note |= Plain |\n| a | b |\n"),
-        "| :--- | --- |"
+        "| --- | --- |"
     );
 }
 

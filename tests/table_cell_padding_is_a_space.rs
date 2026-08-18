@@ -259,20 +259,15 @@ fn control_a_space_after_a_cell_attribute_block_is_padding() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn a_tab_after_a_per_cell_alignment_marker_is_content() {
+fn a_tab_after_a_per_cell_alignment_marker_invalidates_the_marker() {
     // NOT a corpus document either. `data_cell` reads
     // `[cell_attributes], [alignment_marker], {space}, cell_content, {space}`,
-    // so a cell carrying a GLUED `<` / `>` / `~` marker has its padding slot
-    // AFTER that marker - a fourth trim site, on its own branch, that no
-    // document in the category exercises.
-    //
-    // Found by mutation: reverting that branch alone left all 24 other
-    // assertions green. The cell still aligns, because the marker is glued to
-    // the pipe and the narrowing does not touch it; only the padding after it
-    // changes, so the tab survives into the cell.
+    // so only a literal space (or an immediately following attribute block)
+    // terminates the marker run. A tab keeps the entire would-be marker in
+    // visible content.
     assert_eq!(
         html("|<\tx |>\ty |\n"),
-        "<table>\n  <tbody>\n    <tr><td style=\"text-align: left;\">\tx</td><td style=\"text-align: right;\">\ty</td></tr>\n  </tbody>\n</table>"
+        "<table>\n  <tbody>\n    <tr><td>&lt;\tx</td><td>&gt;\ty</td></tr>\n  </tbody>\n</table>"
     );
 }
 

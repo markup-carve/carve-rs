@@ -58,12 +58,12 @@ fn a_marker_after_whitespace_is_content_not_alignment() {
 }
 
 #[test]
-fn a_glued_marker_still_aligns() {
-    // Corpus 53-table-doubled-alignment-marker: the first `<` aligns, the
-    // second is literal content.
+fn valid_glued_markers_align_and_invalid_runs_stay_literal() {
+    // A duplicate-axis run is invalid as a whole, so neither marker is
+    // consumed as alignment.
     let header = carve::to_html("|=<< Note |= B |\n| 1 | 2 |");
     assert!(
-        header.contains(r#"<th scope="col" style="text-align: left;">&lt; Note</th>"#),
+        header.contains(r#"<th scope="col">&lt;&lt; Note</th>"#),
         "got {header}"
     );
 
@@ -75,12 +75,7 @@ fn a_glued_marker_still_aligns() {
         "got {lone}"
     );
 
-    // And in a DATA cell a glued marker followed by content aligns, leaving the
-    // rest literal - the `span_cell` alternative does not apply once a marker
-    // has been taken.
+    // The same complete-run fallback applies in a data cell.
     let data = body_row("|<<|");
-    assert!(
-        data.contains(r#"<td style="text-align: left;">&lt;</td>"#),
-        "got {data}"
-    );
+    assert!(data.contains(r#"<td>&lt;&lt;</td>"#), "got {data}");
 }
