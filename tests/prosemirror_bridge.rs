@@ -49,11 +49,9 @@ const ALIASED_TYPES: &[(&str, &str)] = &[("tag", "mention")];
 // The generated-heading-id defect is gone from this list: the bridge uses the
 // writer's minimal-form calculation to distinguish a derived id from an
 // authored, unslotted id (#1110). The two `title` classes are gone with it:
-// `title` is one wire field for two Carve slots, and `carveAttrOrder` - the
-// record of which slot somebody typed - is now written truthfully by the
-// outbound side and read by the importer, so a structural title stops coming
-// back as `{title=T}` and an authored one stops moving into the structural
-// slot. What remains is two unrelated defects:
+// the structural title now has the namespaced `carveLinkTitle` field while
+// `title` and `carveAttrOrder` carry an authored attribute. What remains is two
+// unrelated defects:
 //  - 1 document loses an attribute outright: 108-security-hardening-11 writes
 //    `[safe](https://example.com){href=javascript:steal}` and gets
 //    `[safe](https://example.com)` back.
@@ -1072,9 +1070,8 @@ fn an_ingested_heading_id_the_text_no_longer_derives_still_travels() {
     assert_eq!(render_carve(&returned).unwrap(), "{#old}\n# new\n");
 }
 
-/// `title` is one wire field for two Carve slots. With no run naming it, the
-/// field is the STRUCTURAL slot - the quoted string after the URL - and it must
-/// not come back as an authored attribute as well.
+/// A structural title uses its namespaced wire slot and does not come back as
+/// an authored attribute as well.
 #[test]
 fn a_structural_title_does_not_come_back_as_an_authored_attribute() {
     for source in [
@@ -1105,25 +1102,69 @@ fn an_authored_title_attribute_does_not_move_into_the_structural_slot() {
     }
 }
 
-/// A document holding BOTH spellings cannot be carried by one field, and the
-/// structural one wins it. The run then has to stop naming `title`: a run that
-/// still named it would describe a value that is not on the wire, and the
-/// importer would read the structural title back as an authored attribute -
-/// which is the defect the pair of rules above exists to stop.
+/// The namespaced structural slot lets both authored title spellings survive.
 #[test]
-fn the_run_stops_naming_title_where_the_structural_slot_wins_the_field() {
-    let (value, _) = pm("[z](safe.html \"S\"){title=A}\n");
-    let mark = value
+fn structural_and_authored_titles_both_survive() {
+    let (wire, _) = pm("[z](safe.html \"S\"){title=A}\n");
+    let wire_attrs = wire
         .pointer("/content/0/content/0/marks/0/attrs")
         .expect("the link mark carries attributes");
-    assert_eq!(mark.pointer("/title"), Some(&json!("S")));
-    assert_eq!(mark.pointer("/carveAttrOrder"), None);
-    // And a run naming anything else keeps the rest of its slots.
+    assert_eq!(wire_attrs.pointer("/carveLinkTitle"), Some(&json!("S")));
+    assert_eq!(wire_attrs.pointer("/title"), Some(&json!("A")));
+    assert_eq!(
+        wire_attrs.pointer("/carveAttrOrder"),
+        Some(&json!(["title"]))
+    );
+
+    for source in [
+        "[z](safe.html \"S\"){title=A}\n",
+        "![i](s.png \"S\"){title=A}\n",
+        "[a]: /u \"S\" {title=A}\n",
+    ] {
+        let (before, after) = round_trip(source);
+        assert_eq!(after, before);
+        assert_eq!(after, source);
+    }
+
     let (value, _) = pm("[z](safe.html \"S\"){#i title=A}\n");
-    let mark = value
+    let attrs = value
         .pointer("/content/0/content/0/marks/0/attrs")
         .expect("the link mark carries attributes");
-    assert_eq!(mark.pointer("/carveAttrOrder"), Some(&json!(["#id"])));
+    assert_eq!(attrs.pointer("/carveLinkTitle"), Some(&json!("S")));
+    assert_eq!(attrs.pointer("/title"), Some(&json!("A")));
+    assert_eq!(
+        attrs.pointer("/carveAttrOrder"),
+        Some(&json!(["#id", "title"]))
+    );
+}
+
+/// Stored payloads from before `carveLinkTitle` used `title` for either slot.
+/// `carveAttrOrder` remains enough to read both legacy meanings correctly.
+#[test]
+fn legacy_overloaded_title_payloads_remain_readable() {
+    let structural = json!({"type":"doc","content":[{
+        "type":"paragraph","content":[{"type":"text","text":"z","marks":[{
+            "type":"link","attrs":{"href":"/u","title":"S"}
+        }]}]
+    }]});
+    assert_eq!(
+        render_carve(&from_prosemirror(&structural.to_string()).expect("legacy payload imports"))
+            .unwrap(),
+        "[z](/u \"S\")\n"
+    );
+
+    let authored = json!({"type":"doc","content":[{
+        "type":"paragraph","content":[{"type":"text","text":"z","marks":[{
+            "type":"link","attrs":{
+                "href":"/u","title":"A","carveAttrOrder":["title"]
+            }
+        }]}]
+    }]});
+    assert_eq!(
+        render_carve(&from_prosemirror(&authored.to_string()).expect("legacy payload imports"))
+            .unwrap(),
+        "[z](/u){title=A}\n"
+    );
 }
 
 /// carve-grammars#240, part 2: an attribute run on inline code is the code
@@ -1171,7 +1212,7 @@ fn an_empty_label_link_comes_back() {
                 "markType": "link",
                 "markAttrs": {
                     "href": "https://example.com",
-                    "title": "T",
+                    "carveLinkTitle": "T",
                     "id": "i",
                     "class": "a",
                     "carveAttrOrder": [".class", "#id"]
