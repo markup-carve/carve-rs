@@ -446,6 +446,7 @@ const IMPLEMENTED: &[&str] = &[
     "a-quote-inside-a-quote-is-asked-what-it-ends-on",
     "what-a-content-column-block-does-not-reach",
     "a-footnote-definition-s-block-runs-to-the-end-of-its-body",
+    "a-definition-behind-an-alternating-container-prefix-registers-at-the-innermost-content-column",
 ];
 
 fn corpus_dir() -> PathBuf {

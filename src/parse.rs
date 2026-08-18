@@ -684,27 +684,19 @@ impl ContentColumns {
         }
     }
 
-    /// The number of blockquote prefixes a line opens with.
-    ///
-    /// Only FLUSH-LEFT markers count, and each one is stripped before the next
-    /// is looked for - which is what a container prefix is. An INDENTED `>` is
-    /// not a container the line sits in; it is a quote OPENING inside the
-    /// current one, and the column it is written at is what decides whose block
-    /// it is (§24 C3). That distinction is what makes case 3 keep the item's
-    /// column while case 1 discards it.
-    fn quote_depth(line: &str) -> usize {
-        let mut depth = 0;
-        let mut rest = line;
-        while let Some(inner) = strip_blockquote_prefix(rest) {
-            depth += 1;
-            rest = inner;
-        }
-        depth
-    }
-
     /// Feed the next RAW line (quote markers included). `opaque` suppresses
     /// tracking inside a fence or a line block, where `- verse` is content
     /// rather than a marker and a `>` is text rather than a container.
+    ///
+    /// THE COLUMN IS REACHED BY COMPOSING THE STRIPS, NOT BY WALKING THE
+    /// PREFIX (PART 1 S4). A `>` written at an item's content column is that
+    /// item's container prefix exactly as a flush-left one is, so the walk
+    /// peels ONE level at a time and records each level's markers in that
+    /// level's own frame. Counting only the flush-left `>` runs left every
+    /// list opened inside an indented quote invisible: `- > - - x` recorded
+    /// the outer item and nothing else, so a definition at the inner item's
+    /// content column read as lazy text - while the same body with one
+    /// container peeled off (`> - - x`) registered (carve-rs#1096).
     fn observe(&mut self, raw_line: &str, opaque: bool) -> usize {
         let bare = without_blockquote_prefixes(raw_line);
         let was_prev_blank = self.prev_blank;
@@ -715,15 +707,75 @@ impl ContentColumns {
         // A blank line does not open or close a container: a quote's blank
         // continuation is commonly written without the `>`, and treating its
         // absence as leaving the quote would drop the columns of the item the
-        // next line still belongs to.
-        if !trim_ascii(bare).is_empty() {
-            let depth = Self::quote_depth(raw_line);
-            self.frames.truncate(depth + 1);
-            while self.frames.len() < depth + 1 {
+        // next line still belongs to. It opens nothing either, so it is fed to
+        // the innermost frame as it stands rather than walked.
+        if trim_ascii(bare).is_empty() {
+            let level = self.frames.len() - 1;
+            self.observe_segment(level, bare, was_prev_blank);
+            return self.current().cols.last().copied().unwrap_or(0);
+        }
+        let mut rest = raw_line;
+        let mut level = 0usize;
+        loop {
+            while let Some(inner) = strip_blockquote_prefix(rest) {
+                rest = inner;
+                level += 1;
+            }
+            while self.frames.len() <= level {
                 self.frames.push(ColumnFrame::default());
             }
+            self.observe_segment(level, rest, was_prev_blank);
+            let Some(offset) = self.next_quote_offset(level, rest) else {
+                break;
+            };
+            rest = &rest[offset..];
         }
-        let line = bare;
+        self.frames.truncate(level + 1);
+        self.current().cols.last().copied().unwrap_or(0)
+    }
+
+    /// Where this level hands off to the NEXT container level, if it does: the
+    /// byte offset of a `>` that is this level's own content column rather than
+    /// text sitting in it.
+    ///
+    /// Two spellings reach the same column and both are container prefixes.
+    /// `- > x` writes the quote straight after the marker, where the item's
+    /// content begins. `  > x` writes it at the column that marker established,
+    /// which is the spelling every CONTINUATION line uses - and the one a
+    /// flush-left walk can never see.
+    fn next_quote_offset(&self, level: usize, line: &str) -> Option<usize> {
+        let mut inside = line;
+        let mut consumed_marker = false;
+        while let Some(marker) = detect_list_marker_full(inside) {
+            if marker.content.as_ptr() as usize <= inside.as_ptr() as usize {
+                break;
+            }
+            inside = marker.content;
+            consumed_marker = true;
+        }
+        if consumed_marker {
+            // The item's content begins exactly here, so a `>` at this position
+            // is written AT the content column.
+            return inside
+                .starts_with('>')
+                .then(|| inside.as_ptr() as usize - line.as_ptr() as usize);
+        }
+        // EXACTLY a live content column, never past one: an indented `>` that
+        // reaches no open item is ordinary text, and the block parser reads it
+        // that way too (carve-rs#1082).
+        let content_col = self.reached_by_at(level, leading_ws(line));
+        let bytes = line.as_bytes();
+        (content_col > 0
+            && bytes.len() > content_col
+            && bytes[..content_col].iter().all(|b| *b == b' ')
+            && bytes[content_col] == b'>')
+            .then_some(content_col)
+    }
+
+    /// Record ONE container level's own markers. `line` is the raw line with
+    /// every prefix up to and including this level's quote markers removed, so
+    /// its columns are measured inside that container.
+    fn observe_segment(&mut self, level: usize, line: &str, was_prev_blank: bool) {
         let indent = leading_ws(line);
         let raw_trimmed = trim_ascii(line);
         let starts_block = is_heading_marker_line(raw_trimmed)
@@ -734,24 +786,24 @@ impl ContentColumns {
             // A term opens the list (or re-opens it at a new indent). Its own
             // line has no content column: `:: t` holds the TERM, and only the
             // `:  ` line below it opens a body.
-            let frame = self.current_mut();
+            let frame = &mut self.frames[level];
             while frame.cols.last().is_some_and(|col| *col > term_indent) {
                 frame.cols.pop();
             }
             frame.def_list = Some(term_indent);
         } else if let Some(body_indent) =
-            detect_prepass_def_body(line).filter(|at| self.current().def_list == Some(*at))
+            detect_prepass_def_body(line).filter(|at| self.frames[level].def_list == Some(*at))
         {
             // `:  ` is three columns wide, so the body's content begins three
             // past the marker - the same arithmetic the collector does when it
             // slices the continuation lines it takes.
-            let frame = self.current_mut();
+            let frame = &mut self.frames[level];
             while frame.cols.last().is_some_and(|col| *col > body_indent) {
                 frame.cols.pop();
             }
             frame.cols.push(body_indent + DEF_BODY_MARKER_WIDTH);
         } else if let Some((marker_indent, marker_width)) = detect_prepass_list_marker(line) {
-            let cols = &mut self.current_mut().cols;
+            let cols = &mut self.frames[level].cols;
             while cols.last().is_some_and(|col| *col > marker_indent) {
                 cols.pop();
             }
@@ -770,10 +822,10 @@ impl ContentColumns {
                     break;
                 }
                 offset += nested_width;
-                self.current_mut().cols.push(offset);
+                self.frames[level].cols.push(offset);
             }
         } else if !raw_trimmed.is_empty() && (was_prev_blank || starts_block) {
-            let frame = self.current_mut();
+            let frame = &mut self.frames[level];
             while frame.cols.last().is_some_and(|col| *col > indent) {
                 frame.cols.pop();
             }
@@ -784,18 +836,11 @@ impl ContentColumns {
                 frame.def_list = None;
             }
         }
-        self.current().cols.last().copied().unwrap_or(0)
     }
 
     fn current(&self) -> &ColumnFrame {
         self.frames
             .last()
-            .expect("the document frame is never popped")
-    }
-
-    fn current_mut(&mut self) -> &mut ColumnFrame {
-        self.frames
-            .last_mut()
             .expect("the document frame is never popped")
     }
 
@@ -809,12 +854,24 @@ impl ContentColumns {
     /// Only the INNERMOST container's columns are consulted: a column measured
     /// outside the quote a line sits in is not a column that line can reach.
     fn reached_by(&self, indent: usize) -> usize {
-        self.current()
-            .cols
-            .iter()
-            .copied()
-            .filter(|col| *col <= indent)
-            .max()
+        self.reached_by_at(self.frames.len() - 1, indent)
+    }
+
+    /// `reached_by`, asked of a NAMED container level rather than the innermost
+    /// one. The composed walk needs it: a `>` written at an outer item's content
+    /// column is measured against THAT item's columns, and the innermost frame's
+    /// columns are in a different coordinate system entirely.
+    fn reached_by_at(&self, level: usize, indent: usize) -> usize {
+        self.frames
+            .get(level)
+            .and_then(|frame| {
+                frame
+                    .cols
+                    .iter()
+                    .copied()
+                    .filter(|col| *col <= indent)
+                    .max()
+            })
             .unwrap_or(0)
     }
 }
@@ -2370,15 +2427,23 @@ fn strip_container_prefixes_at<'a>(
     // `  >   > [r]: /url` needs the question twice, once per item that holds a
     // quote. Asking once left the inner one unstripped.
     let mut cut = 0usize;
+    // WHICH LEVEL the question is asked at, not just how deep the walk has got.
+    // Each hop enters one more container, and the column a `>` must sit at is
+    // that container's, measured in its own coordinates - so the frame the
+    // walk consults advances with it. Asking the innermost frame every time
+    // answered for the wrong depth as soon as a nested quote opened a list
+    // (carve-rs#1096).
+    let mut level = 0usize;
     loop {
         let mut inside = &line[cut..];
         while let Some(rest) = strip_blockquote_prefix(inside) {
             inside = rest;
+            level += 1;
         }
         if let Some(marker) = detect_list_marker_full(inside) {
             inside = marker.content;
         }
-        let content_col = columns.reached_by(leading_ws(inside));
+        let content_col = columns.reached_by_at(level, leading_ws(inside));
         if content_col == 0
             || inside.len() <= content_col
             || !inside.as_bytes()[..content_col].iter().all(|b| *b == b' ')
