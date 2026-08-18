@@ -29,6 +29,19 @@
 //! asked. So `:  a` / `   [r]: /u` and `:  a` / `   %% c` are the same shape by
 //! then, and one answer closes both.
 //!
+//! markup-carve/carve#1364 then generalized all three: §24 C3 makes the content
+//! column the container body's own column 0, so a line there is read as a BLOCK,
+//! and a block ends the paragraph above it - WHAT IT RENDERS IS NOT A PARAMETER.
+//! The list item answers a comment the same way the `dd` does, and so does the
+//! `%%%` fence spelling, which travels with its opener. The §17 L1a objection
+//! does not reach it: whether a line IS a paragraph and whether it ENDS one are
+//! different questions, and the ATTRIBUTE BLOCK settles that by measurement -
+//! it is invisible, it ends the item, and every implementation already agrees.
+//!
+//! markup-carve/carve#1355 is the same rule one container in: a quote inside a
+//! quote is asked what IT ends on, so the run is read at the depth the line sits
+//! at.
+//!
 //! WHAT DELIBERATELY DOES NOT MOVE is at the bottom of this file. Every row
 //! there is an intended survivor with a reason, not an untested corner.
 
@@ -223,20 +236,118 @@ fn an_abbreviation_definition_at_that_column_is_ordinary_prose() {
     );
 }
 
-/// THE COMMENT'S LIST-ITEM SPELLING IS NOT DECIDED, and this engine must not
-/// decide it as a side effect. `- a` / `  %% c` / `tail` folds in all three
-/// engines and in the executable spec while the `dd` spelling one construct over
-/// does not, and markup-carve/carve#1358 records that division rather than
-/// closing it: §17 L1a refuses to let an invisible construct have a visible
-/// effect (markup-carve/carve#625) and the argument cuts both ways. Both answers
-/// are pinned by the corpus today, so this row is an INTENDED SURVIVOR - it goes
-/// red only when someone unifies the two containers without a ruling.
+/// Corpus `357-2` and `357-3`. markup-carve/carve#1364 closed the division
+/// markup-carve/carve#1358 had recorded, and closed it the other way: the LIST
+/// ITEM answers a comment exactly as the `dd` does. The `%%%` fence spelling
+/// travels with its opener (§24 C3), so it answers alike or the rule is being
+/// read off a delimiter.
 #[test]
-fn the_list_item_spelling_of_the_comment_still_folds() {
-    let out = html("- a\n  %% c\ntail\n");
+fn a_comment_at_a_list_items_content_column_ends_the_paragraph_too() {
+    for src in ["- a\n  %% c\ntail\n", "- a\n  %%% c\n  %%%\ntail\n"] {
+        assert_eq!(html(src), "<ul>\n  <li>a</li>\n</ul>\n<p>tail</p>", "{src}");
+    }
+}
+
+/// The measurement the ruling rests on rather than an argument: an ATTRIBUTE
+/// BLOCK at the same column is invisible, ends the item, and every
+/// implementation already agrees it does. Corpus `357`. It is the control that
+/// says "a block ends the paragraph whatever it renders" is describing what
+/// engines do, not proposing something new.
+#[test]
+fn an_attribute_block_at_that_column_already_ended_it() {
+    assert_eq!(
+        html("- a\n  {.k}\ntail\n"),
+        "<ul>\n  <li>a</li>\n</ul>\n<p>tail</p>"
+    );
+}
+
+/// THE RULE IS OVER THE BLOCK, NOT OVER ITS FIRST LINE (markup-carve/carve#1357,
+/// corpus `357-4`). A footnote definition's indented BODY continuation is part
+/// of that block - the footnote parser consumes it and permits no lazy
+/// continuation into it - so the two spellings of one definition stop answering
+/// differently.
+#[test]
+fn a_footnote_definitions_body_continuation_is_part_of_its_block() {
+    let with_body = html("- a\n  [^f]: t\n    more\ntail\n\nx[^f]\n");
+    let without = html("- a\n  [^f]: t\ntail\n\nx[^f]\n");
+    for out in [&with_body, &without] {
+        assert!(
+            out.starts_with("<ul>\n  <li>a</li>\n</ul>\n<p>tail</p>"),
+            "{out}"
+        );
+    }
+}
+
+/// THE CONTROL THAT SAYS IT IS ABOUT THE BLOCK'S EXTENT and not about
+/// indentation (corpus `357-6`). A LINK reference definition has no body: it is
+/// one line in Carve, so the indented line under it is ordinary container text
+/// that REOPENS the paragraph, and the flush-left line folds. A fix widened from
+/// the footnote to every definition moves this row.
+#[test]
+fn a_link_definition_has_no_body_for_an_indented_line_to_join() {
+    let expected = format!(
+        "<ul>\n  <li>a\n    {}T{}\ntail\n  </li>\n</ul>\n<p><a href=\"/u\">r</a></p>",
+        '\u{201c}', '\u{201d}'
+    );
+    assert_eq!(html("- a\n  [r]: /u\n    \"T\"\ntail\n\n[r][]\n"), expected);
+}
+
+/// BELOW the content column nothing changes: §24 C3's comment exception keeps
+/// S4's lazy path open, so the line under it still folds. Corpus `183`, and
+/// `192` for the comment-fence spelling under a nested item. This is the row a
+/// fix that answered "a comment ends the paragraph" everywhere would move, and
+/// it is a COLUMN question rather than a construct question - which is why the
+/// answer is read from the line just consumed rather than from the collected
+/// body, where the dedent has already erased it.
+#[test]
+fn a_comment_below_the_content_column_still_lets_the_line_under_it_fold() {
+    assert_eq!(
+        html("- a\n %% c\nb\n"),
+        "<ul>\n  <li>a\n    b\n  </li>\n</ul>"
+    );
+    let nested = html("- - a\n %%% c\n x\n %%%\n b\n");
+    let expected = [
+        "<ul>",
+        "  <li>",
+        "    <ul>",
+        "      <li>a",
+        "        b",
+        "      </li>",
+        "    </ul>",
+        "  </li>",
+        "</ul>",
+    ]
+    .join("\n");
+    assert_eq!(nested, expected);
+}
+
+/// markup-carve/carve#1355, corpus `356-8` and `356-9`: a quote inside a quote
+/// is asked what IT ends on, so the run is read at the depth the line sits at.
+#[test]
+fn a_quote_inside_a_quote_is_asked_what_it_ends_on() {
+    for src in [
+        "> > | a |\n> > + b |\ntail\n",
+        "> > > | a |\n> > > + b |\ntail\n",
+    ] {
+        let out = html(src);
+        assert!(out.ends_with("</blockquote>\n<p>tail</p>"), "{src}\n{out}");
+        assert!(out.contains("<td>a b</td>"), "{src}\n{out}");
+    }
+}
+
+/// A RUN LIVES INSIDE ONE CONTAINER, which is what the depth is carried for.
+/// `> > | a |` over `> + b |` is a table in the INNER quote and then a line of
+/// the OUTER one, written after the inner quote ended - so the `+` line has no
+/// table above it at its own level and is prose. Not a corpus row; recorded as
+/// this engine's reading of markup-carve/carve#1345 at a depth change, and it is
+/// the row a fix that stripped to the innermost content without carrying the
+/// depth would move.
+#[test]
+fn a_table_run_does_not_survive_a_change_of_depth() {
+    let out = html("> > | a |\n> + b |\ntail\n");
     assert!(
-        out.contains("tail") && !out.contains("<p>tail</p>"),
-        "the list item's answer to a comment was changed without a ruling:\n{out}"
+        out.contains("<p>+ b |\ntail</p>"),
+        "the run leaked across a depth change:\n{out}"
     );
 }
 

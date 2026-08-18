@@ -1172,10 +1172,12 @@ pub struct CriticComment {
 /// must not be counted - a comment, an abbreviation definition and a link
 /// reference definition all leave a node in the tree and nothing on the page.
 ///
-/// Named once because it was spelled three times by hand, and the one place it
-/// was not spelled is where a `dd` counted a trailing comment as a second block
-/// and rendered loose while its LIST twin, which filters the same set, stayed
-/// tight.
+/// Named here because the same three arms are spelled by hand at two sites in
+/// the parser, and the one place they were NOT spelled is where a `dd` counted a
+/// trailing comment as a second block and rendered loose while its LIST twin,
+/// which filters the same set, stayed tight. The two existing sites are left as
+/// they are: one of them counts a different set (no link reference definition),
+/// so folding them together is a change of behavior rather than a rename.
 pub(crate) fn publishes_nothing(block: &BlockNode) -> bool {
     matches!(
         block,

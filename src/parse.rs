@@ -7246,7 +7246,8 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                     fold_lazy_run_and_resume(
                         cur,
                         &mut nested,
-                        |src| collected_body_takes_the_lazy_line(src, options),
+                        content_col,
+                        |src, below| collected_body_takes_the_lazy_line(src, below, options),
                         |cur| {
                             collect_item_continuation_block_mapped(
                                 cur,
@@ -7426,7 +7427,8 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 fold_lazy_run_and_resume(
                     cur,
                     &mut nested,
-                    |src| collected_body_takes_the_lazy_line(src, options),
+                    content_col,
+                    |src, below| collected_body_takes_the_lazy_line(src, below, options),
                     |cur| collect_indented_block_mapped(cur, sub_indent - 1, content_col),
                 );
                 let mut nested_children = parse_mapped_source(&nested, options);
@@ -7583,7 +7585,8 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             fold_lazy_run_and_resume(
                 cur,
                 &mut stream,
-                |src| !after_blank && nested_ends_with_open_paragraph(src, options),
+                content_col,
+                |src, below| !after_blank && nested_ends_with_open_paragraph(src, below, options),
                 |cur| collect_indented_block_mapped(cur, base_indent, content_col),
             );
             // A blank line between the item's blocks loosens the list, whatever
@@ -7687,7 +7690,11 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 if !has_lazy {
                     break;
                 }
-                if !nested_ends_with_open_paragraph(&stream.source, options) {
+                if !nested_ends_with_open_paragraph(
+                    &stream.source,
+                    last_consumed_line_below_column(cur, content_col),
+                    options,
+                ) {
                     break;
                 }
                 let before = cur.pos;
@@ -7791,7 +7798,8 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             fold_lazy_run_and_resume(
                 cur,
                 &mut stream,
-                |src| {
+                content_col,
+                |src, _below| {
                     if swallowed_blank_separator {
                         return false;
                     }
@@ -8463,11 +8471,37 @@ fn block_ends_with_heading(block: Option<&BlockNode>) -> bool {
 /// Everything else keeps the heading rule (carve#326). A line at the sub-item's
 /// CONTENT COLUMN is not a marker line, and that is the half the clause leaves
 /// deliberately open - corpus 75-list-nesting-and-looseness-4 pins it folding.
-fn collected_body_takes_the_lazy_line(src: &str, options: &Options<'_>) -> bool {
+fn collected_body_takes_the_lazy_line(
+    src: &str,
+    trailing_below_column: bool,
+    options: &Options<'_>,
+) -> bool {
     if let Some(content) = trailing_marker_line_content(src) {
         return body_ends_with_open_paragraph(&content, options);
     }
-    nested_ends_with_heading(src, options) || nested_ends_with_open_paragraph(src, options)
+    nested_ends_with_heading(src, options)
+        || nested_ends_with_open_paragraph(src, trailing_below_column, options)
+}
+
+/// Whether the line JUST CONSUMED was written BELOW the container's content
+/// column.
+///
+/// §24 C3's comment exception turns on the column, and the collected body
+/// cannot say what it was: the body is DEDENTED by whatever each line supplied,
+/// up to the content column, so a line at column 1 under a content column of 2
+/// and one at column 2 both arrive flush.
+///
+/// Read from the CURSOR rather than from the collector's `col_map`, which looks
+/// like it carries this and does not: the map is only built when positions are
+/// on, so on the plain `--html` path it is EMPTY and every answer read from it
+/// would be the same one. That is a check that cannot fire, and it is the same
+/// reason the `after_blank` test beside the quote path reads the line just
+/// consumed instead of the collected text.
+fn last_consumed_line_below_column(cur: &LineCursor, content_col: usize) -> bool {
+    if content_col == 0 || cur.pos == 0 {
+        return false;
+    }
+    indent_columns(cur.lines[cur.pos - 1]) < content_col
 }
 
 /// The marker-line CONTENT of a collected body whose last line opens a list
@@ -8507,30 +8541,50 @@ fn body_ends_with_open_paragraph(body: &str, options: &Options<'_>) -> bool {
 /// block is a paragraph, the dedented line is the quote's own lazy continuation
 /// and must stay INSIDE the item rather than ending it. A code block or table
 /// has no open paragraph, so it does NOT fold (the dedented line ends the item).
-fn nested_ends_with_open_paragraph(nested: &str, options: &Options<'_>) -> bool {
+fn nested_ends_with_open_paragraph(
+    nested: &str,
+    trailing_below_column: bool,
+    options: &Options<'_>,
+) -> bool {
     let blocks = probe_blocks(nested, options);
-    // A comment renders NOTHING, so it closes no paragraph and must not end the
-    // item either (§24 C3, carve#624). `- a` / ` %% c` / `b` folds `b` into the
-    // item, where a VISIBLE block in the comment's place would end it - the
-    // comment is consumed without the lazy frame, which keeps it invisible and
-    // leaves the item open. Look past a trailing run of comments at whatever
-    // they were sitting on.
+    // A COMMENT AT THE CONTENT COLUMN IS A BLOCK, AND A BLOCK ENDS THE PARAGRAPH
+    // IT SITS UNDER, whatever it renders (PART 1 S4, markup-carve/carve#1364).
+    // §24 C3 makes the content column the container body's own column 0, so a
+    // line there is read as a block - and a block ends the paragraph above it
+    // whether or not anything reaches the page. This walk used to look PAST a
+    // trailing run of comments at whatever they were sitting on, which is the
+    // reading that made `- a` / `  %% c` / `tail` fold while the `dd` spelling
+    // one construct over did not.
     //
-    // Comments ONLY, unlike the two `renders_nothing` checks elsewhere in this
-    // file, which also count an abbreviation definition. Inside an item there is
-    // no such node to count: a definition written there is not a definition at
-    // all (carve#611), it is the literal text the author typed, so it is visible
-    // and closes nothing to look past. Both engines agree byte for byte -
-    // `- a` / `  *[HTML]: x` / `b` is one item holding all three lines.
+    // The §17 L1a objection does not reach it: whether a line IS a paragraph
+    // (markup-carve/carve#621, #625) and whether it ENDS one are different
+    // questions, and the ATTRIBUTE BLOCK settles it by measurement - it is
+    // invisible, it ends the item, and every implementation already agrees.
+    //
+    // BELOW the content column nothing changes, because a line down there never
+    // reaches this predicate as a block: `- a` / `  %% c` / ` b` keeps `b` in
+    // the item (corpus 358, and 189/192 for the nested spelling).
     let mut end = blocks.len();
-    while end > 0 && matches!(blocks[end - 1], BlockNode::Comment(_)) {
-        end -= 1;
-    }
-    if end == 0 {
-        // Everything collected renders nothing, so the still-open paragraph is
-        // the one on the MARKER line. An empty collection is a different thing
-        // and keeps the old answer.
-        return !blocks.is_empty();
+    if trailing_below_column {
+        // §24 C3's COMMENT EXCEPTION, which the clause above says is unchanged.
+        // A comment written BELOW the content column is not a block of this
+        // container - it reaches the container only through S4's lazy fold - so
+        // it ends nothing and the line under it still folds: `- a` / ` %% c` /
+        // `b` keeps `b` in the item (corpus 183, and 192 for the fence
+        // spelling). The dedented body cannot say which of the two it was, since
+        // a line at column 1 under a content column of 2 and one at column 2
+        // both arrive flush; the caller reads it off the collector's own map.
+        while end > 0 && matches!(blocks[end - 1], BlockNode::Comment(_)) {
+            end -= 1;
+        }
+        if end == 0 {
+            // Everything collected renders nothing, so the still-open paragraph
+            // is the one on the MARKER line. An empty collection is a different
+            // thing and keeps the old answer.
+            return !blocks.is_empty();
+        }
+    } else if end == 0 {
+        return false;
     }
 
     // AN UNTERMINATED DIV IS A CONTAINER LIKE ANY OTHER (carve#939). PART 1 S4
@@ -8864,14 +8918,17 @@ fn lazy_line_pending(cur: &mut LineCursor) -> bool {
 fn fold_lazy_run_and_resume(
     cur: &mut LineCursor,
     nested: &mut MappedSource,
-    mut open: impl FnMut(&str) -> bool,
+    content_col: usize,
+    mut open: impl FnMut(&str, bool) -> bool,
     mut resume: impl FnMut(&mut LineCursor) -> MappedSource,
 ) {
     loop {
         if !lazy_line_pending(cur) {
             break;
         }
-        if !open(&nested.source) {
+        // The column the run ended at, taken before the fold consumes anything.
+        let below = last_consumed_line_below_column(cur, content_col);
+        if !open(&nested.source, below) {
             break;
         }
         let before = cur.pos;
@@ -10282,16 +10339,10 @@ fn definition_body_takes_the_fold(
     // to be one written EARLIER on the marker line, and here the comment IS the
     // marker line, so there is no earlier paragraph for it to leave open
     // (`:  %% c` / `tail`, matching `- %% c` / `tail`).
-    // S4's question, asked of the WHOLE body. `body_ends_with_open_paragraph`
-    // is the same predicate the list's marker-line path asks, and it does NOT
-    // look past a trailing run of comments: there the open paragraph would have
-    // to be one written EARLIER on the marker line, and here the comment IS the
-    // marker line, so there is no earlier paragraph for it to leave open
-    // (`:  %% c` / `tail`, matching `- %% c` / `tail`).
     if if marker_line_is_the_whole_body {
         body_ends_with_open_paragraph(source, options)
     } else {
-        nested_ends_with_open_paragraph(source, options)
+        nested_ends_with_open_paragraph(source, false, options)
     } {
         return true;
     }
@@ -10834,6 +10885,9 @@ struct TableRun {
     /// Whether the last line consumed was a row that goes on to take
     /// continuations. False right after the separator row.
     takes_continuations: bool,
+    /// How many quote markers the run's own lines sit behind, inside the
+    /// container being read. A run does not survive a change of depth.
+    depth: usize,
 }
 
 impl TableRun {
@@ -10848,6 +10902,51 @@ impl TableRun {
     /// guard is on the continuation, so the two halves of one table cannot be
     /// read at two different columns.
     fn observe(&mut self, line: &str) -> bool {
+        // A PIPE IS THE PRE-TEST, and it has to be one. Both `is_table_start`
+        // and `is_table_continuation` require a closing `|`, so a line holding
+        // no pipe at all is neither a row nor a continuation row and no run
+        // survives it - which is answerable from the BYTES, before anything is
+        // stripped.
+        //
+        // Without it the walk below ran on every quoted line at every depth,
+        // which is one strip per marker per line: a depth ladder of ordinary
+        // prose went from 16 strips per unit of work to 79.5, and
+        // `a_depth_ladder_costs_strips_in_proportion_to_its_markers` caught it.
+        // Same shape as §12's absorption pre-test one function over
+        // (markup-carve/carve-rs#738), and conservative in the same direction:
+        // it can only force a walk that was not needed, never skip one that was.
+        //
+        // The reset is unconditional here rather than depth-aware, which costs
+        // nothing: with no run open the depth is re-read from the next line that
+        // opens one.
+        if !line.as_bytes().contains(&b'|') {
+            *self = TableRun::default();
+            return false;
+        }
+        // A QUOTE INSIDE A QUOTE IS ASKED WHAT IT ENDS ON (markup-carve/carve#1355,
+        // corpus 356). The line is read at the depth it sits at: `> > | a |` in
+        // an outer quote arrives here as `> | a |`, which is not a row at this
+        // level and is a row one level in. Stripping to the innermost content is
+        // the same walk `ParaOpen::resolve` makes for the same reason - a lazy
+        // line continues the innermost open paragraph however many containers it
+        // failed to match (markup-carve/carve#506).
+        //
+        // The DEPTH is carried with it, because a run lives inside ONE container.
+        // Without it `> > | a |` over `> + b |` would read as two lines of one
+        // table, where the second is content of the OUTER quote written after the
+        // inner one ended - and a `+ ...|` with no table above it AT ITS OWN
+        // LEVEL is prose (markup-carve/carve#1345).
+        let mut innermost = line;
+        let mut depth = 0usize;
+        while let Some(rest) = strip_blockquote_prefix(innermost) {
+            depth += 1;
+            innermost = rest;
+        }
+        if self.rows.is_some() && depth != self.depth {
+            *self = TableRun::default();
+        }
+        self.depth = depth;
+        let line = innermost;
         let flush = !line.starts_with([' ', '\t']);
         if flush && is_table_start(line) {
             let rows = self.rows.unwrap_or(0);
@@ -10868,7 +10967,9 @@ impl TableRun {
         if self.takes_continuations && flush && is_table_continuation(line) {
             return true;
         }
+        let depth = self.depth;
         *self = TableRun::default();
+        self.depth = depth;
         false
     }
 }

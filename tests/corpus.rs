@@ -440,6 +440,11 @@ const IMPLEMENTED: &[&str] = &[
     "a-bracketed-construct-spanning-a-verse-boundary",
     "a-container-whose-table-ends-on-a-continuation-row",
     "a-definition-at-a-container-s-content-column",
+    "a-block-at-a-container-s-content-column-ends-the-paragraph-whatever-it-renders",
+    "a-container-whose-table-ends-on-a-joined-header-row",
+    "a-continuation-row-joins-the-row-above-it-whatever-its-cells-hold",
+    "a-quote-inside-a-quote-is-asked-what-it-ends-on",
+    "what-a-content-column-block-does-not-reach",
 ];
 
 fn corpus_dir() -> PathBuf {
