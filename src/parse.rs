@@ -11722,7 +11722,7 @@ fn parse_table_cell(
         if valid {
             after_markers = &body[run..];
         }
-        let horizontal_marker = valid
+        let horizontal_marker = (valid && !inherited_horizontal)
             .then(|| {
                 markers.iter().enumerate().find_map(|(index, marker)| {
                     let vertical_first_middle = *marker == b'~'
