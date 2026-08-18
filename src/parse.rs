@@ -4393,11 +4393,21 @@ fn take_comment_block(cur: &mut LineCursor, options: &Options<'_>) -> CommentBlo
     CommentBlock::NotAComment
 }
 
-fn parse_blocks(cur: &mut LineCursor, options: &Options<'_>) -> Vec<BlockNode> {
-    // Recursion cap (see MAX_NESTING_DEPTH). Over the cap, flatten everything
-    // still in the cursor into one paragraph rather than recursing further,
-    // matching the carve-php degrade behavior.
-    let Some(_depth) = DepthGuard::enter() else {
+/// The over-cap degrade, in a frame of its OWN.
+///
+/// PART 9 §25 caps nesting at `MAX_NESTING_DEPTH`, and this is what the cap
+/// produces: everything still in the cursor, flattened into one paragraph. It
+/// runs at most once per parse, at the deepest point.
+///
+/// It is a separate `#[inline(never)]` function because inlining it back into
+/// `parse_blocks` costs stack on EVERY level, not only the one that reaches the
+/// cap: LLVM reserves the slots for the `BlockNode` this branch builds in the
+/// recursive hub's frame, so a cold path that runs once was charged 200 times
+/// over. The cap is what bounds depth; it should not be what inflates the cost
+/// of each level (markup-carve/carve-wasm#44).
+#[inline(never)]
+#[cold]
+fn over_cap_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> Vec<BlockNode> {
         let span_start = cur.pos;
         let mut rest: Vec<&str> = Vec::new();
         while let Some(line) = cur.consume() {
@@ -4428,12 +4438,21 @@ fn parse_blocks(cur: &mut LineCursor, options: &Options<'_>) -> Vec<BlockNode> {
         } else {
             parse_flattened_inline(&text, options)
         };
-        return vec![BlockNode::Paragraph(Paragraph {
+        vec![BlockNode::Paragraph(Paragraph {
             attrs: None,
             children,
             pos: span_of(cur, span_start, cur.pos, options),
             ..Default::default()
-        })];
+        })]
+}
+
+fn parse_blocks(cur: &mut LineCursor, options: &Options<'_>) -> Vec<BlockNode> {
+    // Recursion cap (see MAX_NESTING_DEPTH). Over the cap, flatten everything
+    // still in the cursor into one paragraph rather than recursing further,
+    // matching the carve-php degrade behavior. The degrade itself lives in
+    // `over_cap_paragraph`, out of this frame - see its doc comment.
+    let Some(_depth) = DepthGuard::enter() else {
+        return over_cap_paragraph(cur, options);
     };
     let mut out = Vec::new();
     let mut pending_attrs: Option<Attrs> = None;
@@ -18098,152 +18117,170 @@ fn caption_first_line_has_content(children: &[InlineNode]) -> bool {
     false
 }
 
+/// Promote sole-image paragraphs, driven by an EXPLICIT WORKLIST rather than by
+/// recursion.
+///
+/// PART 9 §25 bounds the tree at `MAX_NESTING_DEPTH`, and this pass runs over a
+/// tree the parser has already capped - so its depth was never unbounded. Its
+/// COST was: the frame here is ~1.6 KB (a `BlockNode` is 472 bytes and this pass
+/// moves them by value), so a document at the cap spent ~330 KB of stack in this
+/// one pass, and on a wasm host with a 1 MiB stack that is a third of the budget
+/// for a walk that only descends. A worklist makes the cost O(1) in depth, which
+/// is the shape the cap should have had all along (markup-carve/carve-php#1407
+/// settled the same point for a different walk: a loop, not a frame per level).
+///
+/// Sibling order within a level is unchanged; levels are visited in a different
+/// order than the recursion used, which is sound because each block's promotion
+/// reads and writes only that block.
 fn promote_block_images(blocks: &mut [BlockNode], figures_only: bool) {
-    for block in blocks.iter_mut() {
-        // The sole-image -> block-image promotion is skipped in `figures_only`
-        // mode (the formatter): a paragraph and a bare block image serialize
-        // identically, so the only effect there would be dropping a leading
-        // block-attribute line (`{#id}`) that the paragraph carries but a bare
-        // block image cannot. The formatter keeps it a paragraph so those attrs
-        // survive.
-        //
-        // Only a REAL image (direct or resolved reference) promotes. An
-        // unresolved reference image keeps its `ref_label` and renders as
-        // literal source inside the paragraph; promoting it would drop that
-        // required `<p>` wrapper.
-        let single_image = !figures_only
-            && matches!(
+    let mut worklist: Vec<&mut [BlockNode]> = vec![blocks];
+    while let Some(level) = worklist.pop() {
+        for block in level {
+            // The sole-image -> block-image promotion is skipped in `figures_only`
+            // mode (the formatter): a paragraph and a bare block image serialize
+            // identically, so the only effect there would be dropping a leading
+            // block-attribute line (`{#id}`) that the paragraph carries but a bare
+            // block image cannot. The formatter keeps it a paragraph so those attrs
+            // survive.
+            //
+            // Only a REAL image (direct or resolved reference) promotes. An
+            // unresolved reference image keeps its `ref_label` and renders as
+            // literal source inside the paragraph; promoting it would drop that
+            // required `<p>` wrapper.
+            let single_image = !figures_only
+                && matches!(
+                    block,
+                    BlockNode::Paragraph(p)
+                        if p.children.len() == 1
+                            && matches!(&p.children[0], InlineNode::Image(img) if !is_unresolved_image(img))
+                );
+            if single_image {
+                // Take the children out first so the paragraph borrow ends before
+                // `block` is reassigned. A leading block-attribute line (`{#id}`)
+                // landed on the paragraph; carry it onto the promoted block image
+                // (its own inline attrs win on conflict, §15), matching a direct
+                // block image -- otherwise the id would be lost with the wrapper.
+                let (mut children, para_attrs) = match block {
+                    BlockNode::Paragraph(p) => (std::mem::take(&mut p.children), p.attrs.take()),
+                    _ => unreachable!(),
+                };
+                if let InlineNode::Image(mut img) = children.remove(0) {
+                    if let Some(attrs) = para_attrs {
+                        merge_leading_attrs(&mut img.attrs, attrs);
+                    }
+                    *block = BlockNode::BlockImage(img);
+                }
+                continue;
+            }
+            // A resolved reference image on its own line followed by a `^ ` caption
+            // becomes a Figure, matching a direct-image figure and carve-php. A
+            // reference image arrives here as `Paragraph[Image, SoftBreak,
+            // "^ caption…"]` (the syntactic block-image/caption pass only knows the
+            // inline `![…](…)` form); an unresolved ref keeps `ref_label` and stays
+            // literal. The caption inlines are already parsed
+            // (paragraph interruption already stopped the caption at a block opener,
+            // so a multi-line caption keeps its interior soft breaks); strip the
+            // `^ ` marker from the leading Text.
+            // Strict column-0 (docs/divergence-from-djot.md §11): the image must have
+            // sat at its container's content column. An INDENTED image + caption is
+            // literal paragraph text (a `<p>` with an inline image and a literal
+            // `^ caption` line), matching carve-php / carve-js -- so gate on
+            // `at_content_column`. A flush-left DIRECT image + caption never reaches
+            // here (it became a Figure at parse time); this path serves resolved
+            // REFERENCE images, which likewise promote only when flush-left.
+            let ref_figure = matches!(
                 block,
                 BlockNode::Paragraph(p)
-                    if p.children.len() == 1
+                    if p.at_content_column
+                        && p.children.len() >= 3
                         && matches!(&p.children[0], InlineNode::Image(img) if !is_unresolved_image(img))
+                        && matches!(p.children[1], InlineNode::SoftBreak(_))
+                        && matches!(&p.children[2], InlineNode::Text(t) if caption_marker_len(&t.value).is_some())
+                        && caption_first_line_has_content(&p.children)
             );
-        if single_image {
-            // Take the children out first so the paragraph borrow ends before
-            // `block` is reassigned. A leading block-attribute line (`{#id}`)
-            // landed on the paragraph; carry it onto the promoted block image
-            // (its own inline attrs win on conflict, §15), matching a direct
-            // block image -- otherwise the id would be lost with the wrapper.
-            let (mut children, para_attrs) = match block {
-                BlockNode::Paragraph(p) => (std::mem::take(&mut p.children), p.attrs.take()),
-                _ => unreachable!(),
-            };
-            if let InlineNode::Image(mut img) = children.remove(0) {
-                if let Some(attrs) = para_attrs {
-                    merge_leading_attrs(&mut img.attrs, attrs);
-                }
-                *block = BlockNode::BlockImage(img);
-            }
-            continue;
-        }
-        // A resolved reference image on its own line followed by a `^ ` caption
-        // becomes a Figure, matching a direct-image figure and carve-php. A
-        // reference image arrives here as `Paragraph[Image, SoftBreak,
-        // "^ caption…"]` (the syntactic block-image/caption pass only knows the
-        // inline `![…](…)` form); an unresolved ref keeps `ref_label` and stays
-        // literal. The caption inlines are already parsed
-        // (paragraph interruption already stopped the caption at a block opener,
-        // so a multi-line caption keeps its interior soft breaks); strip the
-        // `^ ` marker from the leading Text.
-        // Strict column-0 (docs/divergence-from-djot.md §11): the image must have
-        // sat at its container's content column. An INDENTED image + caption is
-        // literal paragraph text (a `<p>` with an inline image and a literal
-        // `^ caption` line), matching carve-php / carve-js -- so gate on
-        // `at_content_column`. A flush-left DIRECT image + caption never reaches
-        // here (it became a Figure at parse time); this path serves resolved
-        // REFERENCE images, which likewise promote only when flush-left.
-        let ref_figure = matches!(
-            block,
-            BlockNode::Paragraph(p)
-                if p.at_content_column
-                    && p.children.len() >= 3
-                    && matches!(&p.children[0], InlineNode::Image(img) if !is_unresolved_image(img))
-                    && matches!(p.children[1], InlineNode::SoftBreak(_))
-                    && matches!(&p.children[2], InlineNode::Text(t) if caption_marker_len(&t.value).is_some())
-                    && caption_first_line_has_content(&p.children)
-        );
-        if ref_figure {
-            // Carry a leading block-attribute line (`{#id}` etc.) from the
-            // paragraph onto the figure, matching a direct-image figure (which
-            // takes the attrs at parse time) and carve-php -- otherwise
-            // `carve fmt` would drop it.
-            // The paragraph's own span IS the figure's: it opened at the
-            // image and ran to the end of the caption, which is exactly the
-            // construct the author wrote. Taken here, before the paragraph is
-            // dismantled, because nothing downstream can reconstruct it -- the
-            // image and the caption inlines are placed, but the figure's own
-            // extent only exists on the node being replaced (carve-rs#737).
-            let (mut children, attrs, para_pos) = match block {
-                BlockNode::Paragraph(p) => (
-                    std::mem::take(&mut p.children),
-                    p.attrs.take(),
-                    p.pos.take(),
-                ),
-                _ => unreachable!(),
-            };
-            let InlineNode::Image(img) = children.remove(0) else {
-                unreachable!()
-            };
-            children.remove(0); // the soft break
-            if let InlineNode::Text(t) = &mut children[0] {
-                let n = caption_marker_len(&t.value).unwrap();
-                let rest = t.value[n..].to_string();
-                if rest.is_empty() {
-                    children.remove(0);
-                } else {
-                    t.value = rest;
-                    // The SPAN moves with the value. Stripping the marker from
-                    // the text and leaving the position covering it left a node
-                    // whose span did not slice back to its own content - span
-                    // 9..14 reading `^ cap` for the value `cap` (carve-rs#620,
-                    // corpus 207). The direct-image path never had this: it
-                    // parses the caption from the text after the marker, so its
-                    // anchor is right to begin with, and only this post-parse
-                    // promotion edits a node the parser already positioned.
-                    //
-                    // The marker is `^` plus spaces, so bytes and codepoints
-                    // advance together and one `n` serves both the offset and
-                    // the column.
-                    if let Some(pos) = &mut t.pos {
-                        pos.start_offset += n;
-                        pos.start_column += n;
+            if ref_figure {
+                // Carry a leading block-attribute line (`{#id}` etc.) from the
+                // paragraph onto the figure, matching a direct-image figure (which
+                // takes the attrs at parse time) and carve-php -- otherwise
+                // `carve fmt` would drop it.
+                // The paragraph's own span IS the figure's: it opened at the
+                // image and ran to the end of the caption, which is exactly the
+                // construct the author wrote. Taken here, before the paragraph is
+                // dismantled, because nothing downstream can reconstruct it -- the
+                // image and the caption inlines are placed, but the figure's own
+                // extent only exists on the node being replaced (carve-rs#737).
+                let (mut children, attrs, para_pos) = match block {
+                    BlockNode::Paragraph(p) => (
+                        std::mem::take(&mut p.children),
+                        p.attrs.take(),
+                        p.pos.take(),
+                    ),
+                    _ => unreachable!(),
+                };
+                let InlineNode::Image(img) = children.remove(0) else {
+                    unreachable!()
+                };
+                children.remove(0); // the soft break
+                if let InlineNode::Text(t) = &mut children[0] {
+                    let n = caption_marker_len(&t.value).unwrap();
+                    let rest = t.value[n..].to_string();
+                    if rest.is_empty() {
+                        children.remove(0);
+                    } else {
+                        t.value = rest;
+                        // The SPAN moves with the value. Stripping the marker from
+                        // the text and leaving the position covering it left a node
+                        // whose span did not slice back to its own content - span
+                        // 9..14 reading `^ cap` for the value `cap` (carve-rs#620,
+                        // corpus 207). The direct-image path never had this: it
+                        // parses the caption from the text after the marker, so its
+                        // anchor is right to begin with, and only this post-parse
+                        // promotion edits a node the parser already positioned.
+                        //
+                        // The marker is `^` plus spaces, so bytes and codepoints
+                        // advance together and one `n` serves both the offset and
+                        // the column.
+                        if let Some(pos) = &mut t.pos {
+                            pos.start_offset += n;
+                            pos.start_column += n;
+                        }
                     }
                 }
+                *block = BlockNode::Figure(Figure {
+                    attrs,
+                    target: Box::new(FigureTarget::Image(img)),
+                    caption: children,
+                    short_caption: None,
+                    // PART 12 §4 exempts a REASSEMBLED node, and this one is not:
+                    // its lines are contiguous and the direct-image path publishes
+                    // exactly this span for the same construct. markup-carve/carve#913
+                    // rules `pos` markup-inclusive with a parent's span containing
+                    // every child's, which the paragraph's span already satisfies.
+                    pos: para_pos,
+                });
+                continue;
             }
-            *block = BlockNode::Figure(Figure {
-                attrs,
-                target: Box::new(FigureTarget::Image(img)),
-                caption: children,
-                short_caption: None,
-                // PART 12 §4 exempts a REASSEMBLED node, and this one is not:
-                // its lines are contiguous and the direct-image path publishes
-                // exactly this span for the same construct. markup-carve/carve#913
-                // rules `pos` markup-inclusive with a parent's span containing
-                // every child's, which the paragraph's span already satisfies.
-                pos: para_pos,
-            });
-            continue;
-        }
-        match block {
-            BlockNode::BlockQuote(b) => promote_block_images(&mut b.children, figures_only),
-            BlockNode::Admonition(a) => promote_block_images(&mut a.children, figures_only),
-            // Descend into the group so an image-with-caption paragraph built
-            // from a resolved reference image still becomes a panel (§4c).
-            BlockNode::FigureGroup(g) => promote_block_images(&mut g.children, figures_only),
-            BlockNode::Div(d) => promote_block_images(&mut d.children, figures_only),
-            BlockNode::List(l) => {
-                for item in &mut l.items {
-                    promote_block_images(&mut item.children, figures_only);
-                }
-            }
-            BlockNode::DefinitionList(d) => {
-                for item in &mut d.items {
-                    for def in &mut item.definitions {
-                        promote_block_images(def, figures_only);
+            match block {
+                BlockNode::BlockQuote(b) => worklist.push(b.children.as_mut_slice()),
+                BlockNode::Admonition(a) => worklist.push(a.children.as_mut_slice()),
+                // Descend into the group so an image-with-caption paragraph built
+                // from a resolved reference image still becomes a panel (§4c).
+                BlockNode::FigureGroup(g) => worklist.push(g.children.as_mut_slice()),
+                BlockNode::Div(d) => worklist.push(d.children.as_mut_slice()),
+                BlockNode::List(l) => {
+                    for item in &mut l.items {
+                        worklist.push(item.children.as_mut_slice());
                     }
                 }
+                BlockNode::DefinitionList(d) => {
+                    for item in &mut d.items {
+                        for def in &mut item.definitions {
+                            worklist.push(def.as_mut_slice());
+                        }
+                    }
+                }
+                _ => {}
             }
-            _ => {}
         }
     }
 }
@@ -19929,5 +19966,55 @@ mod footnote_body_floor_unit {
         // spellings, so the constant is pinned on its own.
         assert_eq!(footnote_body_floor("[^a]: x"), 2);
         assert_eq!(footnote_body_floor("    [^a]: x"), 6);
+    }
+}
+
+#[cfg(test)]
+mod promote_block_images_is_iterative {
+    use super::promote_block_images;
+    use crate::ast::{BlockNode, Div};
+
+    /// Nest `depth` divs, innermost first, and return the outer level.
+    fn nested_divs(depth: usize) -> Vec<BlockNode> {
+        let mut children: Vec<BlockNode> = Vec::new();
+        for _ in 0..depth {
+            children = vec![BlockNode::Div(Div {
+                attrs: None,
+                label: None,
+                children,
+                pos: None,
+            })];
+        }
+        children
+    }
+
+    /// THE PROOF that the pass costs no native stack per level.
+    ///
+    /// The thread's stack is 256 KiB and the tree is 4000 levels deep. The
+    /// recursive spelling this pass had until markup-carve/carve-wasm#44 spent
+    /// about 1.4 KiB of stack per level, so it needed roughly 5.5 MiB here and
+    /// aborted the process; the worklist spelling needs a constant frame and a
+    /// heap vector. Revert `promote_block_images` to recursion and this test
+    /// takes the whole run down with it, which is what makes it load-bearing.
+    ///
+    /// The tree is deliberately deeper than `MAX_NESTING_DEPTH`: the pass also
+    /// runs over documents this crate did not parse (`from_json` reaches far
+    /// past the parser's cap), so the parser's cap is not a bound on it.
+    ///
+    /// The tree is leaked rather than dropped. Teardown is compiler-generated
+    /// recursive drop glue and would overflow on its own, which would prove
+    /// nothing about this pass.
+    #[test]
+    fn a_four_thousand_level_tree_survives_a_small_stack() {
+        let worker = std::thread::Builder::new()
+            .stack_size(256 * 1024)
+            .spawn(|| {
+                let mut blocks = nested_divs(4000);
+                promote_block_images(&mut blocks, false);
+                promote_block_images(&mut blocks, true);
+                std::mem::forget(blocks);
+            })
+            .expect("spawn");
+        worker.join().expect("the pass must not overflow the stack");
     }
 }
