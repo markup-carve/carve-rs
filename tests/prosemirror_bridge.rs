@@ -50,7 +50,7 @@ const ALIASED_TYPES: &[(&str, &str)] = &[("tag", "mention")];
 // gone from this list; what is left is one defect with a long tail, plus three
 // small ones:
 //
-//  - 78 documents gain an attribute line the author never wrote, carrying a
+//  - 79 documents gain an attribute line the author never wrote, carrying a
 //    GENERATED heading id: `# Title` returns as `{#Title}` + `# Title`. The
 //    outbound side stamps the id into `attrs.id`, and where the heading has no
 //    attribute run at all there is nothing to say the id was not authored. A
@@ -67,6 +67,14 @@ const ALIASED_TYPES: &[(&str, &str)] = &[("tag", "mention")];
 //    list item, and each was checked against its own before/after the same way:
 //    `- - # H` returns as `- - {#H}` over an indented `# H`, and the two deeper
 //    spellings do the same at their own depth. Same one cause.
+//    1 more arrived with the 22f7f47 corpus (`363-...`), whose second item is a
+//    heading with NO attribute run opened on a TASK marker line: `- [x] # h`
+//    returns as `- [x] {#h}` over an indented `# h`. The checkbox is not
+//    implicated - the item's other two leads, a quote and a thematic break,
+//    both survive the round trip, and `- [x] > q`, `- [x] ---` and `- [ ] a`
+//    each write back byte-identical source. A bare `# h` with no list at all
+//    already returns as `{#h}` + `# h`, which is this same cause with nothing
+//    else in the document. Same one cause.
 //  - 6 reference definitions come back with their structural title repeated as
 //    an authored attribute: `[a]: /u "T"` returns as `[a]: /u "T" {title=T}`.
 //  - 1 document loses an attribute outright: 108-security-hardening-11 writes
@@ -162,6 +170,7 @@ const SOURCE_LOSSY: &[&str] = &[
     "356-a-quote-inside-a-quote-is-asked-what-it-ends-on-7.crv",
     "356-a-quote-inside-a-quote-is-asked-what-it-ends-on.crv",
     "360-a-definition-behind-an-alternating-container-prefix-registers-at-the-innermost-content-column-3.crv",
+    "363-a-task-item-s-checkbox-is-not-decided-by-its-first-block.crv",
     "71-attribute-edge-cases-14.crv",
     "75-list-nesting-and-looseness-4.crv",
     "75-list-nesting-and-looseness-7.crv",
@@ -709,8 +718,24 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // so ends the item, leaving a block of its own with no break in it. Nothing
     // DROPS, so no new cause appears, and none of the three joins the declared
     // source-lossy set.
-    const STRICT: usize = 986;
-    const LOSSY: usize = 267;
+    // 986/267 to 991/268 is the SIX documents arriving with the 22f7f47 spec
+    // pin, and nothing else: the corpus went from 1253 pairs to 1259, the added
+    // pairs are all of categories 363, 364 and 365, and no existing pair was
+    // removed or changed content.
+    //
+    // Five are strict and one reports, and the one that reports does so for a
+    // cause already declared above: `364-...-2` degrades a `soft_break`, which
+    // a document about a line FOLDING into an open paragraph holds by
+    // construction. Its base pair `364-...` does not fold and carries no break,
+    // so it is strict. All three `365-...` pairs are strict and write back
+    // byte-identical source. Nothing DROPS, so no new cause appears.
+    //
+    // `363-...` is strict but joins the declared source-lossy set above, for
+    // the generated-heading-id cause already listed there and for no reason
+    // connected to this branch's engine change - see that bullet for the
+    // measurement separating the heading from the checkbox.
+    const STRICT: usize = 991;
+    const LOSSY: usize = 268;
     assert!(
         covered >= STRICT,
         "strict round trips fell from {STRICT} to {covered}"
