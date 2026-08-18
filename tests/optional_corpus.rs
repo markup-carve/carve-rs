@@ -72,6 +72,13 @@ fn list_table_columns_and_foot() {
 }
 
 #[test]
+fn list_table_local_headers() {
+    let list_table = carve::ListTable::new();
+    let options = carve::Options::new().with_extension(&list_table);
+    assert_optional_pair("45-list-table-local-headers", options);
+}
+
+#[test]
 fn citations_numbered() {
     let citations = carve::Citations::new();
     let options = carve::Options::new().with_extension(&citations);
