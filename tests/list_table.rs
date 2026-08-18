@@ -175,6 +175,26 @@ fn header_rows_and_cols_combine() {
 }
 
 #[test]
+fn footer_rows_render_one_per_line() {
+    assert_eq!(
+        h("{footer-rows=2}\n{header-cols=1}\n::: list-table\n- - Region\n  - Q1\n- - EMEA\n  - 10\n- - Region\n  - Q1\n- - EMEA\n  - 10\n:::"),
+        [
+            "<table>",
+            "  <tbody>",
+            "    <tr><th scope=\"row\">Region</th><td>Q1</td></tr>",
+            "    <tr><th scope=\"row\">EMEA</th><td>10</td></tr>",
+            "  </tbody>",
+            "  <tfoot>",
+            "    <tr><th scope=\"row\">Region</th><td>Q1</td></tr>",
+            "    <tr><th scope=\"row\">EMEA</th><td>10</td></tr>",
+            "  </tfoot>",
+            "</table>",
+        ]
+        .join("\n")
+    );
+}
+
+#[test]
 fn block_cell_keeps_wrappers() {
     // A multi-block cell (paragraph + list) keeps its block wrappers; the
     // single-cell A collapses to inline content.

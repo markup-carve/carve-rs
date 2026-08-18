@@ -374,6 +374,7 @@ fn render_table(node: &BlockExtension, ctx: &RenderContext<'_>) -> String {
     if foot_start < grid.len() {
         let mut foot = String::new();
         for (offset, grid_row) in grid.iter().skip(foot_start).enumerate() {
+            foot.push_str("    ");
             foot.push_str(&render_row(
                 grid_row,
                 foot_start + offset,
@@ -385,8 +386,10 @@ fn render_table(node: &BlockExtension, ctx: &RenderContext<'_>) -> String {
                 ctx,
                 &columns,
             ));
+            foot.push('\n');
         }
-        lines.push(format!("  <tfoot>{foot}</tfoot>"));
+        let foot = foot.trim_end_matches('\n');
+        lines.push(format!("  <tfoot>\n{foot}\n  </tfoot>"));
     }
 
     let attrs = table_attrs(node.attrs.as_ref(), ctx);
