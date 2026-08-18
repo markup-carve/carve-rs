@@ -11577,14 +11577,35 @@ fn parse_table_cell(
     let align = if lone_span {
         None
     } else {
-        let run = body.bytes().take_while(|b| matches!(b, b'>' | b'<' | b'~' | b'^' | b'v')).count();
+        let run = body
+            .bytes()
+            .take_while(|b| matches!(b, b'>' | b'<' | b'~' | b'^' | b'v'))
+            .count();
         let markers = &body.as_bytes()[..run];
-        let horizontal = markers.iter().filter(|b| matches!(b, b'>' | b'<' | b'~')).count();
+        let horizontal = markers
+            .iter()
+            .filter(|b| matches!(b, b'>' | b'<' | b'~'))
+            .count();
         let vertical = markers.iter().filter(|b| matches!(b, b'^' | b'v')).count()
-            + markers.iter().filter(|b| **b == b'~').count().saturating_sub(1);
-        let terminated = body.as_bytes().get(run).is_some_and(|b| b.is_ascii_whitespace() || *b == b'{');
+            + markers
+                .iter()
+                .filter(|b| **b == b'~')
+                .count()
+                .saturating_sub(1);
+        let terminated = body
+            .as_bytes()
+            .get(run)
+            .is_some_and(|b| b.is_ascii_whitespace() || *b == b'{');
         let valid = run > 0 && terminated && (horizontal <= 1 || markers == b"~~") && vertical <= 1;
-        match valid.then(|| markers.iter().find(|b| matches!(b, b'>' | b'<' | b'~')).copied()).flatten() {
+        match valid
+            .then(|| {
+                markers
+                    .iter()
+                    .find(|b| matches!(b, b'>' | b'<' | b'~'))
+                    .copied()
+            })
+            .flatten()
+        {
             Some(marker) => {
                 after_markers = &body[run..];
                 Some(match marker {
