@@ -115,7 +115,7 @@ thread_local! {
 /// Computed with `assigned_heading_ids` - the pass the renderer itself uses -
 /// over a copy with those ids removed, so this cannot answer differently from
 /// the parse it is predicting.
-fn redundant_heading_ids(doc: &Document) -> std::collections::BTreeSet<String> {
+pub(crate) fn redundant_heading_ids(doc: &Document) -> std::collections::BTreeSet<String> {
     let mut stripped = doc.clone();
     let mut had_any = false;
     strip_generated_ids(&mut stripped.children, &mut had_any);
