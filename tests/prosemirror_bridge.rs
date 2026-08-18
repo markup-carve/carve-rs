@@ -590,7 +590,33 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // carrying its generated id. The three `347` documents write a quote, a
     // comment fence and a definition - all covered whole - so they land strict
     // and write back unchanged.
-    const STRICT: usize = 933;
+    // 933/233 to 938/242 was the previous bump; 933/242 to 938/242 is the five
+    // documents arriving with the 7c7f1e3 spec pin, and nothing else: the corpus
+    // went from 1175 pairs to 1180, and the five added pairs are the
+    // `348-a-closed-inline-construct-spanning-a-verse-boundary` documents that
+    // pin PART 9 section 23 hardening a soft break at every depth.
+    //
+    // Attributed with the ENGINE CHANGE HELD SEPARATE, because this branch
+    // changes the tree that the bridge maps. Three classifications under one
+    // build each: the old engine at `7666027`, the new engine at `7666027`, and
+    // the new engine at `7c7f1e3`. The first two are IDENTICAL - hardening a
+    // break changes `soft_break` to `hard_break`, and the bridge covers both, so
+    // no pre-existing document moved in either direction. The third differs from
+    // the second by exactly the five new names and nothing else.
+    //
+    // All five land in the strict set and none reports: a line block of
+    // paragraphs, breaks, text and emphasis is entirely inside the editor
+    // schema. LOSSY therefore does not move.
+    //
+    // One of them writes back a different source and still does NOT join the
+    // declared set above, which is worth stating because it looks like it
+    // should. `348-...-4` is authored with a backslash break inside the
+    // emphasis, and the canonical writer now drops it - a bare newline hardens
+    // at that depth too, so the backslash is no longer what gives the break
+    // back (PART 11 section 7c, amended by the same ruling). The spec ships a
+    // `.fmt` sidecar for that document spelling it exactly that way. The
+    // ROUND TRIP is unaffected: both sides of the comparison drop it.
+    const STRICT: usize = 938;
     const LOSSY: usize = 242;
     assert!(
         covered >= STRICT,

@@ -11661,19 +11661,96 @@ fn verse_comment_line(stripped: &str) -> Option<String> {
 ///   wrote it onto the following line, merging the author's comment text into
 ///   the next line's text.
 ///
-/// What does NOT follow is the soft-to-hard conversion, which stays on the
-/// stanza's top level where its caller does it. A break inside a closed inline
-/// construct keeps its soft spelling here, which is what carve-js#1127 ruled and
-/// what carve-php produces; whether §23 reaches it is open on
-/// markup-carve/carve#1351. Either answer keeps this pass, because the comment
-/// belongs at the boundary whichever way the boundary is spelled - which is why
-/// this walk asks where the boundary IS and never what it is called.
+/// The soft-to-hard conversion is a SEPARATE walk over the same slots
+/// (`harden_verse_breaks`), and it always was - it just used to stop at the
+/// stanza's top level. markup-carve/carve#1351 ruled that it does not, so both
+/// walks now reach the same depths. This one is unchanged by that: it asks where
+/// the boundary IS and never what it is called, which is why either answer kept
+/// it.
 ///
 /// ONE PASS, building new vectors rather than inserting into the old ones. The
 /// comments arrive in line order, at most one per line, so the walk can consume
 /// them alongside the boundaries - and a stanza of nothing but comment lines is
 /// a document an author can write, where repeated `Vec::insert` would be
 /// quadratic in the block's length.
+/// PART 9 §23: every SOFT line break inside a stanza becomes a HARD break, at
+/// EVERY DEPTH (markup-carve/carve#1351, corpus `348`).
+///
+/// The conversion used to run on the stanza's top-level nodes only, so a closed
+/// inline construct spanning a boundary kept the bare newline: `*a` / `b*`
+/// rendered `a\nb` inside the `strong` while the same two lines without the
+/// emphasis got a `<br>`. This engine broke the clause's own invariant against
+/// itself - `*a\` / `b*` DID emit the `<br>` inside the `strong`, so one line
+/// boundary in one container gave two different answers depending on how it was
+/// spelled.
+///
+/// DRIVEN BY NODE KIND, which is what §23's neighbour A BACKSLASH BREAK IS NOT
+/// ADDITIVE fixes as the test. Both worked exemptions there turn on there being
+/// no node: a backslash consumes its own newline, and a verbatim run carries the
+/// newline as its content, so "there is no boundary left in the tree". An
+/// emphasis run consumes nothing - the boundary is a node beside its text - so
+/// the exemption never reached it, and the difference is in KIND rather than in
+/// depth.
+///
+/// Both exemptions therefore need no code here and get none. A verbatim run has
+/// no children to walk and no break node inside it, so `a `b` / `c` d` keeps its
+/// bare newline (corpus `348-2`); and a `hard_break` is already hard, so a
+/// backslash inside emphasis still produces exactly one `<br>` (corpus `348-4`).
+///
+/// The slots are the ones `splice_verse_comments_into` walks, for the same
+/// reason: a boundary is a child of whatever construct spans it, whichever slot
+/// that construct keeps its inlines in.
+fn harden_verse_breaks(inlines: Vec<InlineNode>) -> Vec<InlineNode> {
+    inlines
+        .into_iter()
+        .map(|node| match node {
+            // The hard break here IS the source's line ending, so it keeps the
+            // soft break's span rather than being rebuilt without one.
+            InlineNode::SoftBreak(b) => InlineNode::HardBreak(b),
+            InlineNode::Emphasis(mut n) => {
+                n.children = harden_verse_breaks(n.children);
+                InlineNode::Emphasis(n)
+            }
+            InlineNode::Link(mut n) => {
+                n.children = harden_verse_breaks(n.children);
+                InlineNode::Link(n)
+            }
+            InlineNode::Span(mut n) => {
+                n.children = harden_verse_breaks(n.children);
+                InlineNode::Span(n)
+            }
+            InlineNode::Extension(mut n) => {
+                n.children = harden_verse_breaks(n.children);
+                InlineNode::Extension(n)
+            }
+            InlineNode::CriticInsert(mut n) => {
+                n.children = harden_verse_breaks(n.children);
+                InlineNode::CriticInsert(n)
+            }
+            InlineNode::CriticDelete(mut n) => {
+                n.children = harden_verse_breaks(n.children);
+                InlineNode::CriticDelete(n)
+            }
+            InlineNode::Footnote(mut n) => {
+                n.inline = n.inline.map(harden_verse_breaks);
+                InlineNode::Footnote(n)
+            }
+            InlineNode::CitationGroup(mut group) => {
+                for item in &mut group.items {
+                    for field in [&mut item.prefix, &mut item.locator, &mut item.suffix]
+                        .into_iter()
+                        .flatten()
+                    {
+                        *field = harden_verse_breaks(std::mem::take(field));
+                    }
+                }
+                InlineNode::CitationGroup(group)
+            }
+            other => other,
+        })
+        .collect()
+}
+
 fn splice_verse_comments(
     inlines: Vec<InlineNode>,
     comments: Vec<(usize, Comment)>,
@@ -12045,17 +12122,14 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                     .zip(lines.col_map.iter())
                     .map(|(line_no, col)| Some(((*line_no)?, (*col)?)))
                     .collect();
-                let inlines =
-                    parse_inline_lines_with_anchor(&lines.lines.join("\n"), options, anchors)
-                        .into_iter()
-                        .map(|n| match n {
-                            // A hard break here IS the source's line ending, so it
-                            // keeps the soft break's span rather than being rebuilt
-                            // without one.
-                            InlineNode::SoftBreak(b) => InlineNode::HardBreak(b),
-                            other => other,
-                        })
-                        .collect();
+                // AT EVERY DEPTH (PART 9 section 23, markup-carve/carve#1351).
+                // See `harden_verse_breaks` for why the test is node kind and
+                // not depth, and why both exemptions need no code.
+                let inlines = harden_verse_breaks(parse_inline_lines_with_anchor(
+                    &lines.lines.join("\n"),
+                    options,
+                    anchors,
+                ));
                 let emptied: Vec<usize> = comments.iter().map(|(line, _)| *line).collect();
                 let inlines = place_line_block_breaks(
                     inlines,
