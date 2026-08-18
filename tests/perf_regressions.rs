@@ -1,3 +1,4 @@
+use carve::{html_to_ast, HtmlImportOptions, Index, Options};
 use std::fmt::Write as _;
 use std::sync::Mutex;
 use std::time::Instant;
@@ -1393,5 +1394,96 @@ fn a_definition_bodys_lazy_run_asks_s4_once_per_line() {
          in a list item: dd={:.4}us/byte li={:.4}us/byte",
         body.large_per_byte * 1e6,
         item.large_per_byte * 1e6
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Guards moved here from ordinary test binaries (carve-rs#1092)
+//
+// carve-rs#1088 gave this file its own CI step, run alone and single-threaded,
+// because `cargo nextest` is process-per-test and `PERF_LOCK` cannot serialize
+// across processes. Four wall-clock guards were left outside it, so they ran in
+// the same step as ~3900 other tests - the exact condition the split removed.
+// The two ABSOLUTE ones (10s in `abbreviation_security`, 5s in `ast_merge`) are
+// catastrophic-only and wide enough to survive it. The two RATIO ones were not:
+// the note on `PERF_LOCK` above records that a median over five rounds still
+// tripped at 2.02x against a 2.0 cutoff under contention, and that the fix was
+// best-of-N plus alternating which size is timed first. Neither of the two did
+// either, and one took a SINGLE sample per size.
+//
+// So they move rather than loosen, and they are restated through the calibrated
+// helpers instead of a fourth hand-rolled spelling of the timing. The
+// deterministic half of each - the output-size assertion - stays in its own
+// file, where no runner can perturb it.
+// ---------------------------------------------------------------------------
+
+/// FIXED-WIDTH ROWS, so the byte multiple and the row multiple agree and the
+/// per-byte form of the claim is the same claim.
+fn tall_html_table(rows: usize) -> String {
+    let mut html = String::from("<table><tbody>");
+    for i in 0..rows {
+        write!(html, "<tr><td>{i}</td><td>x</td></tr>").unwrap();
+    }
+    html.push_str("</tbody></table>");
+    html
+}
+
+/// A TALL HTML TABLE is read in time proportional to its rows.
+///
+/// From `tests/html_import_table_spans.rs`, where it took one sample at 2000
+/// rows and one at 8000 and asserted `large < small * 10`. A row group looked
+/// up once per CELL rather than once per row reads ~16x at 4x the rows where
+/// linear work reads ~4x, so the claim is sound; two single samples taken on a
+/// runner shared with ~3900 other test processes are not the way to measure it.
+#[test]
+fn a_tall_html_table_is_read_in_time_proportional_to_its_rows() {
+    assert_conversion_near_linear_at(
+        |html| {
+            html_to_ast(html, &HtmlImportOptions::default()).expect("the table imports");
+        },
+        tall_html_table,
+        "a tall HTML table",
+        8_000,
+        32_000,
+    );
+}
+
+/// MANY `::: index` BLOCKS after a very large term cost nothing extra.
+///
+/// From `tests/index_terms.rs`. Once the budget is spent, later blocks must NOT
+/// re-escape the large term: with the path closed extra blocks are nearly free,
+/// with it open each one re-escapes a 500 KB term and the cost tracks the block
+/// count.
+///
+/// Asserted on the WALL CLOCK at the two sizes rather than per BYTE, because the
+/// term dominates the document: doubling the blocks barely moves the byte count,
+/// so a per-byte ratio would report the term rather than the blocks. That is the
+/// one thing `assert_conversion_near_linear_at` cannot express for this shape,
+/// which is why the measurement comes from the shared helper - with its rounds,
+/// its alternation and its best-of - and only the verdict is spelled here.
+#[test]
+fn many_index_blocks_after_a_large_term_cost_nothing_extra() {
+    let big_term = "x".repeat(500_000);
+    let build = |blocks: usize| {
+        let mut source = format!(":index[{big_term}]\n\n");
+        for _ in 0..blocks {
+            source.push_str("::: index\n:::\n\n");
+        }
+        source
+    };
+    let render = |source: &str| {
+        let index = Index::new();
+        let options = Options::new().with_extension(&index);
+        drop(carve::to_html_with_options(source, &options));
+    };
+    let scaling = measure_conversion_scaling_at(&render, &build, 100, 200);
+    let ratio = scaling.large_secs / scaling.small_secs.max(f64::MIN_POSITIVE);
+    assert!(
+        ratio < 1.5,
+        "doubling the index blocks changed render time {ratio:.2}x; \
+         later blocks are re-escaping the large term ({:.4}s at 100 blocks, \
+         {:.4}s at 200)",
+        scaling.small_secs,
+        scaling.large_secs
     );
 }
