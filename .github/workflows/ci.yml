@@ -69,7 +69,27 @@ jobs:
       #
       # It also reports per-test timings, which is the part that makes the
       # next change to this file measurable rather than guessed.
-      - run: cargo nextest run
+      # THE TIMING SUITE RUNS ALONE, and it has to be told to.
+      #
+      # `tests/perf_regressions.rs` measures wall clock, and carve-rs#523 fixed
+      # its flake with a `static PERF_LOCK` mutex that serializes its 34 timing
+      # tests against each other. That lock works because `cargo test` runs the
+      # tests of one binary as THREADS in one process.
+      #
+      # Nextest runs every test in its OWN PROCESS. A static mutex cannot be
+      # contended across processes, so the switch above silently turned that
+      # lock into a check that cannot fire: the timing tests went back to
+      # competing, now against all ~3900 tests rather than only each other.
+      # `a_quoted_run_of_unclosed_braces_is_scanned_once` reported 1.79x - its
+      # documented regression signature - on runs with no source change, and
+      # main went red intermittently on commits that touch no engine code.
+      #
+      # So the isolation the lock used to provide comes from the RUNNER now:
+      # everything else first, then the timing suite by itself, single-threaded.
+      # Splitting the run costs one extra process launch and keeps the whole
+      # point of nextest for the other ~3900 tests.
+      - run: cargo nextest run -E 'not binary(perf_regressions)'
+      - run: cargo nextest run -E 'binary(perf_regressions)' --test-threads 1
       # NEXTEST DOES NOT RUN DOCTESTS, by design - they need a compiler
       # invocation per test rather than a binary to schedule. This crate has
       # doctests (`src/extensions/*` carry worked examples), so dropping this
