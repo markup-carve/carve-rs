@@ -6,7 +6,7 @@
 //! the one after it - an empty line ends the stanza, a trailing space is
 //! stripped, a run opened above swallows what follows - so the defects live in
 //! COMBINATIONS, and a fixture suite can only ever hold a few of them. This
-//! generates the combinations instead: twenty-one shapes in three positions, 9261
+//! generates the combinations instead: twenty-two shapes in three positions, 10648
 //! documents, asserted against the invariant rather than against a golden.
 //!
 //! Two of the three assertions here cannot fail on some of these documents - a
@@ -16,16 +16,12 @@
 /// One verse body line each, chosen so that every clause the two rulings touch
 /// has a shape that exercises it and a shape that must NOT trigger it.
 ///
-/// ONE SHAPE IS HELD OUT: a trailing comment with EMPTY content, `a` followed by
-/// the bare marker. It is absent because it reaches a defect that predates both
-/// rulings and belongs to neither - `restore_inline_comments` re-grafts a source
-/// line's trailing comment onto the FIRST formatted line equal to the part
-/// before it, so a plain `a` line above picks up a second copy of a comment the
-/// `comment` node already wrote further down. It reproduces on 0.1.2 with this
-/// branch's rules reverted; filed at markup-carve/carve-rs#1076, and the shape
-/// comes back with the fix. The §7c comment exemption it would have exercised is
-/// pinned by the bare comment line below and by
-/// `a_verse_hard_break_keeps_its_backslash`.
+/// `a %%` - a trailing comment with EMPTY content - was held out while
+/// `restore_inline_comments` re-grafted a source line's trailing comment onto the
+/// first formatted line equal to the part before it, so the plain `a` shape above
+/// it picked up a second copy of a comment the `comment` node had already written
+/// further down (carve-rs#1076). The writer carries the comment on its own, the
+/// re-graft is gone, and the shape is back.
 const SHAPES: &[&str] = &[
     "a",         // plain content
     "a ",        // a LONE trailing space, which PART 2 strips off a bare line
@@ -46,6 +42,7 @@ const SHAPES: &[&str] = &[
     "`",         // a bare opener
     "a `b` c",   // a run that closes on its own line
     "x %% c",    // a TRAILING comment, which is a different construct
+    "a %%",      // a trailing comment with EMPTY content (carve-rs#1076)
     "a\tb",      // a tab, which makes the line's text unplaceable
     "/em/ *st*", // ordinary inline markup
 ];
