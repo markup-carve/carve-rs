@@ -110,6 +110,29 @@ fn corpus_363_renders_byte_for_byte() {
 }
 
 #[test]
+fn a_task_item_whose_content_all_renders_to_nothing_keeps_its_checkbox() {
+    // The THIRD place the opener is built - neither arm above, but the
+    // `parts.is_empty()` path taken when every child is filtered out for
+    // rendering to nothing. A comment is the reachable spelling: `- [ ] %% c`
+    // has a task marker and no surviving content, and the checkbox is a
+    // property of the ITEM, so it does not leave with the content.
+    //
+    // Asserted as a PROPERTY, not as a byte shape. No corpus document holds
+    // this spelling - dropping the checkbox here passed all 1259 and the whole
+    // suite - so there is no oracle rendering to compare against, and pinning
+    // this engine's exact bytes would assert agreement nobody has measured.
+    // What carve#1381 settles is that the checkbox survives, and that is what
+    // this checks.
+    for state in [' ', 'x'] {
+        let html = to_html(&format!("- [{state}] %% c\n"));
+        assert!(
+            html.contains("<input type=\"checkbox\""),
+            "[{state}] with no surviving content must keep its checkbox, got:\n{html}"
+        );
+    }
+}
+
+#[test]
 fn a_plain_item_still_writes_no_checkbox() {
     // The near miss a naive reading of the fix would also change: an item with
     // no task marker has an empty checkbox string, and pushing it must not
