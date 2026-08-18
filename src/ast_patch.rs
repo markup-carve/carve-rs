@@ -4,7 +4,7 @@ use std::collections::BTreeSet;
 use std::fmt;
 
 use crate::ast::Document;
-use crate::ast_json::{from_json, parse_value, to_json, value_to_json, AstJsonError, Json};
+use crate::ast_json::{from_json, parse_value, try_to_json, value_to_json, AstJsonError, Json};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AstPatchOperation {
@@ -184,8 +184,8 @@ pub fn create_ast_patch(
     before: &Document,
     after: &Document,
 ) -> Result<Vec<AstPatchOperation>, AstPatchError> {
-    let before = parse_value(&to_json(before))?;
-    let after = parse_value(&to_json(after))?;
+    let before = parse_value(&try_to_json(before)?)?;
+    let after = parse_value(&try_to_json(after)?)?;
     let mut operations = Vec::new();
     build(&before, &after, "", &mut operations);
     Ok(operations)
@@ -307,7 +307,7 @@ pub fn apply_ast_patch(
     ast: &Document,
     operations: &[AstPatchOperation],
 ) -> Result<Document, AstPatchError> {
-    let mut root = clean(&parse_value(&to_json(ast))?, true);
+    let mut root = clean(&parse_value(&try_to_json(ast)?)?, true);
     for operation in operations {
         let path = match operation {
             AstPatchOperation::Add { path, .. }

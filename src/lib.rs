@@ -72,7 +72,7 @@ pub(crate) const NBSP_PLACEHOLDER: char = '\u{e000}';
 pub const SPEC_VERSION: &str = "0.1";
 
 pub use ast::*;
-pub use ast_json::{from_json, to_json, AstJsonError};
+pub use ast_json::{from_json, to_json, try_to_json, AstJsonError};
 pub use ast_merge::{
     merge_ast, merge_ast_with_resolver, MergeConflict, MergeConflictReason, MergeResolution,
     MergeResult,

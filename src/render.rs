@@ -43,7 +43,7 @@ use std::fmt::Write as _;
 /// The factor covers the deepest AST-per-source ratio the parser can produce
 /// (a list or definition list at two levels each, plus the leaf paragraph),
 /// with the same absolute margin on top for the blocks a container subtree adds.
-pub const MAX_RENDER_DEPTH: usize = crate::parse::MAX_NESTING_DEPTH * 3 + 32;
+pub const MAX_RENDER_DEPTH: usize = crate::parse::MAX_NESTING_DEPTH * 2 + 32;
 
 /// Render a tree that did NOT come from the parser, refusing at the ceiling.
 ///
@@ -177,6 +177,19 @@ pub(crate) fn render_blocks_at_with_state(
     render_blocks(nodes, level, options, state)
 }
 
+pub(crate) fn render_blocks_with_state_from_depth(
+    nodes: &[BlockNode],
+    options: &Options<'_>,
+    depth: usize,
+    state: &mut RenderState,
+) -> String {
+    let previous = state.block_depth_bias;
+    state.block_depth_bias = depth;
+    let output = render_blocks(nodes, 0, options, state);
+    state.block_depth_bias = previous;
+    output
+}
+
 fn render_blocks(
     nodes: &[BlockNode],
     level: usize,
@@ -234,6 +247,8 @@ pub(crate) struct RenderState {
     heading_counts: BTreeMap<String, usize>,
     crossref_index: crate::parse::CrossrefIndex,
     link_depth: usize,
+    inline_depth: usize,
+    block_depth_bias: usize,
     /// Mirrors `Options::lowercase_heading_ids` so the `<section id>` derived
     /// here matches the parse-time id index (and the resolved cross-ref hrefs).
     lowercase_heading_ids: bool,
@@ -1023,7 +1038,7 @@ fn render_block(
     options: &Options<'_>,
     state: &mut RenderState,
 ) {
-    if level > MAX_RENDER_DEPTH {
+    if level.saturating_add(state.block_depth_bias) > MAX_RENDER_DEPTH {
         crate::render_depth::record("html");
         return;
     }
@@ -1232,6 +1247,18 @@ pub(crate) fn plain_inlines_typography(
     nodes: &[InlineNode],
     smart: crate::extension::SmartTypographyMode,
 ) -> String {
+    plain_inlines_typography_at(nodes, smart, 0)
+}
+
+fn plain_inlines_typography_at(
+    nodes: &[InlineNode],
+    smart: crate::extension::SmartTypographyMode,
+    depth: usize,
+) -> String {
+    if depth > MAX_RENDER_DEPTH {
+        crate::render_depth::record("html");
+        return String::new();
+    }
     let mut out = String::new();
     let source = smart == crate::extension::SmartTypographyMode::Source;
     for node in nodes {
@@ -1250,7 +1277,9 @@ pub(crate) fn plain_inlines_typography(
                     out.push_str(smart_punctuation_glyph(s));
                 }
             }
-            InlineNode::Emphasis(e) => out.push_str(&plain_inlines_typography(&e.children, smart)),
+            InlineNode::Emphasis(e) => {
+                out.push_str(&plain_inlines_typography_at(&e.children, smart, depth + 1))
+            }
             InlineNode::Code(s) => out.push_str(&s.value),
             // An inline literal renders as visible prose (§27), so it contributes
             // its content to a heading slug -- otherwise `` # !`Cat` `` would
@@ -1267,10 +1296,14 @@ pub(crate) fn plain_inlines_typography(
             // build the cross-reference index (so `# A </#a>` keeps id `A`, not
             // `A-A`). Mirrors `plain_inlines_parse`, which never saw the Link.
             InlineNode::Link(l) if l.from_crossref => {}
-            InlineNode::Link(l) => out.push_str(&plain_inlines_typography(&l.children, smart)),
+            InlineNode::Link(l) => {
+                out.push_str(&plain_inlines_typography_at(&l.children, smart, depth + 1))
+            }
             InlineNode::AutoLink(a) => out.push_str(&a.text),
             InlineNode::Image(i) => out.push_str(&i.alt),
-            InlineNode::Extension(e) => out.push_str(&plain_inlines_typography(&e.children, smart)),
+            InlineNode::Extension(e) => {
+                out.push_str(&plain_inlines_typography_at(&e.children, smart, depth + 1))
+            }
             InlineNode::CitationGroup(g) => out.push_str(&g.raw),
             InlineNode::Abbreviation(a) => out.push_str(&a.abbr),
             InlineNode::Mention(m) => {
@@ -2524,9 +2557,15 @@ fn render_inlines_stateful(
     options: &Options<'_>,
     state: &mut RenderState,
 ) {
+    if state.inline_depth > MAX_RENDER_DEPTH {
+        crate::render_depth::record("html");
+        return;
+    }
+    state.inline_depth += 1;
     for node in nodes {
         render_inline_after(out, node, options, state);
     }
+    state.inline_depth -= 1;
 }
 
 const SEMANTIC_SPAN_ORDER: [&str; 3] = ["abbr", "time", "kbd"];
@@ -3040,15 +3079,23 @@ fn render_citation_group(
 
 /// Flatten inline nodes to plain text (for `data-*` attribute values).
 fn flatten_text(nodes: &[InlineNode]) -> String {
+    flatten_text_at(nodes, 0)
+}
+
+fn flatten_text_at(nodes: &[InlineNode], depth: usize) -> String {
+    if depth > MAX_RENDER_DEPTH {
+        crate::render_depth::record("html");
+        return String::new();
+    }
     let mut out = String::new();
     for node in nodes {
         match node {
             InlineNode::Text(t) => out.push_str(&t.value),
             InlineNode::SmartPunctuation(s) => out.push_str(smart_punctuation_glyph(s)),
-            InlineNode::Emphasis(e) => out.push_str(&flatten_text(&e.children)),
-            InlineNode::Link(l) => out.push_str(&flatten_text(&l.children)),
-            InlineNode::Span(s) => out.push_str(&flatten_text(&s.children)),
-            InlineNode::Extension(e) => out.push_str(&flatten_text(&e.children)),
+            InlineNode::Emphasis(e) => out.push_str(&flatten_text_at(&e.children, depth + 1)),
+            InlineNode::Link(l) => out.push_str(&flatten_text_at(&l.children, depth + 1)),
+            InlineNode::Span(s) => out.push_str(&flatten_text_at(&s.children, depth + 1)),
+            InlineNode::Extension(e) => out.push_str(&flatten_text_at(&e.children, depth + 1)),
             _ => {}
         }
     }

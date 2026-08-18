@@ -20,6 +20,13 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Depth limits now guard every recursive input and output path** (#1119,
+  #1120, #1121, #1124). HTML inline rendering and extension re-entry share the
+  live render budget, AST JSON encoding has a fallible `try_to_json` entry
+  point used by merge and patch, and the render ceiling is reachable by a
+  valid wire document while remaining above every parser-produced tree.
+- **The block parser returns its large node through a box** (#1119), removing a
+  `BlockNode`-sized return slot from each recursive parser frame.
 - **Definitions collected at a list item's content column close its paragraph**
   (markup-carve/carve#1376). A following line below that column no longer uses
   the comment-only continuation path; bare-dot items use the bullet column.

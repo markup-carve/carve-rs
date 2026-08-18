@@ -132,6 +132,7 @@ fn non_html_renderers_bound_programmatic_block_depth() {
         // still hold: the recursion stayed bounded (no overflow to get here) and
         // the caller is told which renderer stopped and where.
         for (target, rendered) in [
+            ("html", carve::render_html(&doc)),
             ("markdown", carve::render_markdown(&doc)),
             ("plain", carve::render_plain_text(&doc)),
             ("ansi", carve::render_ansi(&doc)),
@@ -173,6 +174,7 @@ fn non_html_renderers_bound_programmatic_inline_depth() {
         };
 
         for (target, rendered) in [
+            ("html", carve::render_html(&doc)),
             ("markdown", carve::render_markdown(&doc)),
             ("plain", carve::render_plain_text(&doc)),
             ("ansi", carve::render_ansi(&doc)),
