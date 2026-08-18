@@ -3,7 +3,7 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use crate::ast::Document;
-use crate::ast_json::{from_json, parse_value, to_json, value_to_json, AstJsonError, Json};
+use crate::ast_json::{from_json, parse_value, value_to_json, AstJsonError, Json};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MergeConflictReason {
@@ -595,9 +595,9 @@ fn merge_ast_inner(
     theirs: &Document,
     resolver: &mut Resolver<'_>,
 ) -> Result<MergeResult, AstJsonError> {
-    let base = parse_value(&to_json(base))?;
-    let ours = parse_value(&to_json(ours))?;
-    let theirs = parse_value(&to_json(theirs))?;
+    let base = parse_value(&crate::ast_json::try_to_json(base)?)?;
+    let ours = parse_value(&crate::ast_json::try_to_json(ours)?)?;
+    let theirs = parse_value(&crate::ast_json::try_to_json(theirs)?)?;
     let mut conflicts = Vec::new();
     let Some(mut merged) = merge_value(
         Some(&base),

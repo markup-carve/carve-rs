@@ -3,6 +3,7 @@
 //! This module intentionally has no serde dependency. It contains the small
 //! JSON writer and parser needed for the schema-backed AST interchange format.
 
+use std::cell::Cell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
@@ -45,7 +46,11 @@ pub(crate) fn parse_value(input: &str) -> Result<Json, AstJsonError> {
 }
 
 pub(crate) fn value_to_json(value: &Json) -> String {
-    fn write(out: &mut String, value: &Json) {
+    fn write(out: &mut String, value: &Json, depth: usize) {
+        assert!(
+            depth <= MAX_JSON_DEPTH,
+            "JSON value exceeds the encoder's depth budget"
+        );
         match value {
             Json::Null => out.push_str("null"),
             Json::Bool(value) => out.push_str(if *value { "true" } else { "false" }),
@@ -58,7 +63,7 @@ pub(crate) fn value_to_json(value: &Json) -> String {
                     if index != 0 {
                         out.push(',');
                     }
-                    write(out, value);
+                    write(out, value, depth + 1);
                 }
                 out.push(']');
             }
@@ -70,21 +75,69 @@ pub(crate) fn value_to_json(value: &Json) -> String {
                     }
                     write_string(out, key);
                     out.push(':');
-                    write(out, value);
+                    write(out, value, depth + 1);
                 }
                 out.push('}');
             }
         }
     }
     let mut out = String::new();
-    write(&mut out, value);
+    write(&mut out, value, 0);
     out
 }
 
-pub fn to_json(doc: &Document) -> String {
+thread_local! {
+    static ENCODE_DEPTH: Cell<usize> = const { Cell::new(0) };
+    static ENCODE_REFUSED: Cell<bool> = const { Cell::new(false) };
+}
+
+struct EncodeDepthGuard;
+
+impl EncodeDepthGuard {
+    fn enter() -> Option<Self> {
+        ENCODE_DEPTH.with(|depth| {
+            let current = depth.get();
+            // Every recursive AST node costs at least its object and the
+            // containing `children` array on the wire. Refuse at the cheapest
+            // possible conversion so anything accepted here remains readable
+            // by this module's structural-depth guard.
+            if current >= MAX_JSON_DEPTH / 2 {
+                ENCODE_REFUSED.with(|refused| refused.set(true));
+                None
+            } else {
+                depth.set(current + 1);
+                Some(Self)
+            }
+        })
+    }
+}
+
+impl Drop for EncodeDepthGuard {
+    fn drop(&mut self) {
+        ENCODE_DEPTH.with(|depth| depth.set(depth.get() - 1));
+    }
+}
+
+/// Serialize an AST, refusing a programmatically constructed tree beyond the
+/// same depth budget used by the JSON reader.
+pub fn try_to_json(doc: &Document) -> Result<String, AstJsonError> {
+    ENCODE_DEPTH.with(|depth| depth.set(0));
+    ENCODE_REFUSED.with(|refused| refused.set(false));
     let mut out = String::new();
     write_document(&mut out, doc);
-    out
+    if ENCODE_REFUSED.with(Cell::get) {
+        Err(AstJsonError::new(
+            "JSON nests deeper than the encoder's depth budget",
+        ))
+    } else {
+        Ok(out)
+    }
+}
+
+/// Serialize an AST. Prefer [`try_to_json`] for trees not produced by the
+/// parser; this compatibility entry point panics on an over-depth API tree.
+pub fn to_json(doc: &Document) -> String {
+    try_to_json(doc).expect("AST JSON encoder depth budget exceeded")
 }
 
 pub(crate) fn source_layout_positions(doc: &Document) -> Vec<(String, usize, usize)> {
@@ -677,6 +730,9 @@ fn write_footnote_def(
 }
 
 fn write_block(out: &mut String, node: &BlockNode) {
+    let Some(_depth) = EncodeDepthGuard::enter() else {
+        return;
+    };
     match node {
         BlockNode::Heading(n) => {
             let mut w = typed(out, "heading");
@@ -1089,6 +1145,9 @@ fn write_figure_target(out: &mut String, target: &FigureTarget) {
 }
 
 fn write_inline(out: &mut String, node: &InlineNode) {
+    let Some(_depth) = EncodeDepthGuard::enter() else {
+        return;
+    };
     match node {
         InlineNode::Text(n) => {
             let mut w = typed(out, "text");
