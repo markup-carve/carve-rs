@@ -7,6 +7,11 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **A vertical table-cell marker requires a horizontal partner.** Lone `^` and
+  `v` prefixes remain visible content; paired two-axis runs are unchanged.
+
 ### Fixed
 
 - **Definitions collected at a list item's content column close its paragraph**

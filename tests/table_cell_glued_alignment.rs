@@ -79,3 +79,55 @@ fn valid_glued_markers_align_and_invalid_runs_stay_literal() {
     let data = body_row("|<<|");
     assert!(data.contains(r#"<td>&lt;&lt;</td>"#), "got {data}");
 }
+
+#[test]
+fn a_vertical_marker_needs_a_horizontal_partner() {
+    let html = carve::to_html(
+        "|=^ Top |=v Bottom |=<^ Paired |=v> Reverse |=~> Middle |\n| a | b | c | d | e |",
+    );
+    assert!(html.contains(r#"<th scope="col">^ Top</th>"#), "got {html}");
+    assert!(
+        html.contains(r#"<th scope="col">v Bottom</th>"#),
+        "got {html}"
+    );
+    assert!(
+        html.contains("text-align: left; vertical-align: top;"),
+        "got {html}"
+    );
+    assert!(
+        html.contains(r#"<th scope="col">v&gt; Reverse</th>"#),
+        "got {html}"
+    );
+    assert!(
+        html.contains(r#"<th scope="col">~&gt; Middle</th>"#),
+        "got {html}"
+    );
+    assert!(
+        carve::to_carve("|=>~ Middle |\n| e |\n").contains("|=>~ Middle |"),
+        "the valid form is horizontal before vertical"
+    );
+}
+
+#[test]
+fn question_mark_inherits_horizontal_alignment_only() {
+    let source = "|=>^ H |\n|?v x |\n";
+    let html = carve::to_html(source);
+    assert!(
+        html.contains(r#"<td style="text-align: right; vertical-align: bottom;">x</td>"#),
+        "got {html}"
+    );
+    assert!(
+        carve::to_carve(source).contains("|?v x |"),
+        "the writer keeps the vertical-only cell explicit"
+    );
+
+    for (source, visible) in [
+        ("| ? |", "<td>?</td>"),
+        ("|v? x |", "<td>v? x</td>"),
+        ("|?< x |", "<td>?&lt; x</td>"),
+        ("|^< x |", "<td>^&lt; x</td>"),
+    ] {
+        let html = carve::to_html(source);
+        assert!(html.contains(visible), "got {html}");
+    }
+}

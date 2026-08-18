@@ -11696,13 +11696,39 @@ fn parse_table_cell(
     } else {
         let run = body
             .bytes()
-            .take_while(|marker| matches!(marker, b'>' | b'<' | b'~' | b'^' | b'v'))
+            .take_while(|marker| matches!(marker, b'>' | b'<' | b'~' | b'^' | b'v' | b'?'))
             .count();
+        let inherited_horizontal = run == 2
+            && body.as_bytes().first() == Some(&b'?')
+            && body
+                .as_bytes()
+                .get(1)
+                .is_some_and(|marker| matches!(marker, b'^' | b'~' | b'v'));
         let mut saw_horizontal = false;
         let mut saw_vertical = false;
-        let mut axes_valid = true;
-        for marker in body.bytes().take(run) {
-            if matches!(marker, b'>' | b'<' | b'~') {
+        let mut axes_valid = !matches!(body.as_bytes().first(), Some(b'^' | b'v'))
+            && !(body.as_bytes().first() == Some(&b'~')
+                && body
+                    .as_bytes()
+                    .get(1)
+                    .is_some_and(|marker| matches!(marker, b'>' | b'<')));
+        for (index, marker) in body.bytes().take(run).enumerate() {
+            if marker == b'?' {
+                if inherited_horizontal && index == 0 {
+                    continue;
+                }
+                axes_valid = false;
+                break;
+            } else if marker == b'~'
+                && !saw_horizontal
+                && !saw_vertical
+                && body
+                    .as_bytes()
+                    .get(index + 1)
+                    .is_some_and(|next| matches!(next, b'>' | b'<'))
+            {
+                saw_vertical = true;
+            } else if matches!(marker, b'>' | b'<' | b'~') {
                 if !saw_horizontal {
                     saw_horizontal = true;
                 } else if marker == b'~' && !saw_vertical {
@@ -11723,16 +11749,21 @@ fn parse_table_cell(
             .as_bytes()
             .get(run)
             .is_some_and(|b| *b == b' ' || *b == b'{');
-        let valid = run > 0 && axes_valid && terminated;
+        let valid = run > 0 && axes_valid && (saw_horizontal || inherited_horizontal) && terminated;
         if valid {
             after_markers = &body[run..];
         }
         let horizontal_marker = valid
             .then(|| {
-                markers
-                    .iter()
-                    .find(|b| matches!(b, b'>' | b'<' | b'~'))
-                    .copied()
+                markers.iter().enumerate().find_map(|(index, marker)| {
+                    let vertical_first_middle = *marker == b'~'
+                        && index == 0
+                        && markers
+                            .get(1)
+                            .is_some_and(|next| matches!(next, b'>' | b'<'));
+                    (!vertical_first_middle && matches!(marker, b'>' | b'<' | b'~'))
+                        .then_some(*marker)
+                })
             })
             .flatten();
         let align = horizontal_marker.map(|marker| match marker {
@@ -11746,7 +11777,7 @@ fn parse_table_cell(
             Some(TableVerticalAlign::Top)
         } else if markers.contains(&b'v') {
             Some(TableVerticalAlign::Bottom)
-        } else if markers == b"~~" {
+        } else if markers.len() == 2 {
             Some(TableVerticalAlign::Middle)
         } else {
             None
