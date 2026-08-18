@@ -33,10 +33,29 @@ jobs:
         with:
           toolchain: ${{ matrix.toolchain }}
       - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
       - run: cargo build --all-targets
-      - run: cargo test
+      # WHY NEXTEST: the test step is ~13 minutes against a ~40 second warm
+      # build, so what costs time here is RUNNING the tests, not compiling
+      # them. Cargo runs test TARGETS one after another, and this crate has
+      # ~400 of them holding ~3700 test functions - so the runner alternates
+      # between a short burst of parallelism inside one binary and a
+      # serialization point, ~400 times. Nextest schedules every test from
+      # every binary through ONE queue instead, which is the case this crate
+      # is close to the worst shape for under cargo's scheduler.
+      #
+      # It also reports per-test timings, which is the part that makes the
+      # next change to this file measurable rather than guessed.
+      - run: cargo nextest run
+      # NEXTEST DOES NOT RUN DOCTESTS, by design - they need a compiler
+      # invocation per test rather than a binary to schedule. This crate has
+      # doctests (`src/extensions/*` carry worked examples), so dropping this
+      # line would silently stop testing them while the job stayed green.
+      - run: cargo test --doc
 
-      # `cargo test` already fails when a corpus category is missing from
+      # The test run already fails when a corpus category is missing from
       # IMPLEMENTED - that guard is why a spec bump lands red. This says whether
       # the missing ones are a LIST problem or an ENGINE problem, which is the
       # part a human otherwise has to work out by hand (carve#729):
