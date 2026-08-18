@@ -449,6 +449,9 @@ const IMPLEMENTED: &[&str] = &[
     "a-definition-behind-an-alternating-container-prefix-registers-at-the-innermost-content-column",
     "a-paragraph-opened-after-a-block-in-an-item-is-still-open-for-a-lazy-line",
     "an-unterminated-container-does-not-extend-the-item-past-a-blank-line",
+    "a-blank-line-before-a-sibling-marker-separates-the-items-whatever-consumed-it",
+    "a-task-item-s-checkbox-is-not-decided-by-its-first-block",
+    "only-lazy-folding-demotes-a-marker-line-colon-opener",
 ];
 
 fn corpus_dir() -> PathBuf {
