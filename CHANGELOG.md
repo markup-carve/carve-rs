@@ -9,6 +9,11 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A structural link title and an authored `title` attribute both survive the
+  ProseMirror bridge** (#1115). Links, images and reference definitions now put
+  the quoted structural title in `carveLinkTitle`, leaving `title` and
+  `carveAttrOrder` to carry `{title=...}` without either value winning the same
+  field. Older payloads using the overloaded `title` field remain readable.
 - **A structural title and an authored `title` attribute no longer swap places
   across the ProseMirror round trip** (#1105, follows #1110). The two spellings
   share one wire field, and `carveAttrOrder` - the record of which one the

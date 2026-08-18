@@ -989,9 +989,11 @@ fn title_is_authored(a: &Object) -> bool {
         if v.iter().any(|s| matches!(s, Json::String(s) if s == "title")))
 }
 
-/// The structural title slot: the wire's `title`, unless the run claims it.
+/// The structural title slot, with the old overloaded `title` as a fallback.
 fn structural_title(a: &Object, authored: bool) -> Json {
-    if authored {
+    if a.contains_key("carveLinkTitle") {
+        optional_string(a, "carveLinkTitle")
+    } else if authored {
         Json::Null
     } else {
         optional_string(a, "title")
@@ -1002,9 +1004,9 @@ fn structural_title(a: &Object, authored: bool) -> Json {
 /// it - in which case `title` is one of the attributes and stays.
 fn attr_run(a: &Object, authored: bool) -> Object {
     if authored {
-        a.clone()
+        without(a, &["carveLinkTitle"])
     } else {
-        without(a, &["title"])
+        without(a, &["carveLinkTitle", "title"])
     }
 }
 
@@ -1021,6 +1023,7 @@ fn is_structural_attr(k: &str) -> bool {
             | "carveFenceLabel"
             | "carveFenceTitle"
             | "carveHeadingRef"
+            | "carveLinkTitle"
             | "carveListMarker"
             | "carveListStartExplicit"
             | "carveListStyle"
