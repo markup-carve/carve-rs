@@ -4408,42 +4408,42 @@ fn take_comment_block(cur: &mut LineCursor, options: &Options<'_>) -> CommentBlo
 #[inline(never)]
 #[cold]
 fn over_cap_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> Vec<BlockNode> {
-        let span_start = cur.pos;
-        let mut rest: Vec<&str> = Vec::new();
-        while let Some(line) = cur.consume() {
-            rest.push(line);
-        }
-        let text = rest.join("\n");
-        // Check line-wise: `is_blank_line` only trims spaces/tabs, so a joined
-        // multi-line all-blank tail (which contains newlines) must be tested
-        // per line, not on the joined string.
-        if rest.iter().all(|line| is_blank_line(line)) {
-            return Vec::new();
-        }
-        // The SECOND over-cap producer, and a real one. The colon-fence
-        // document that named carve-rs#716 never reaches this branch - it
-        // degrades through `parse_capped_colon_body` instead - but a deep quote
-        // ladder and a deep list ladder both arrive here with positions on, and
-        // published nothing either. The lines are contiguous and still in the
-        // cursor, so the span is the ordinary one and the anchors are the
-        // ordinary ones; `rest` holds the lines VERBATIM, so a line's anchor is
-        // its own stripped column.
-        let children = if options.positions {
-            let anchors = rest
-                .iter()
-                .enumerate()
-                .map(|(idx, line)| inline_anchor_for_line(cur, span_start + idx, line))
-                .collect();
-            parse_flattened_inline_with_anchors(&text, options, anchors)
-        } else {
-            parse_flattened_inline(&text, options)
-        };
-        vec![BlockNode::Paragraph(Paragraph {
-            attrs: None,
-            children,
-            pos: span_of(cur, span_start, cur.pos, options),
-            ..Default::default()
-        })]
+    let span_start = cur.pos;
+    let mut rest: Vec<&str> = Vec::new();
+    while let Some(line) = cur.consume() {
+        rest.push(line);
+    }
+    let text = rest.join("\n");
+    // Check line-wise: `is_blank_line` only trims spaces/tabs, so a joined
+    // multi-line all-blank tail (which contains newlines) must be tested
+    // per line, not on the joined string.
+    if rest.iter().all(|line| is_blank_line(line)) {
+        return Vec::new();
+    }
+    // The SECOND over-cap producer, and a real one. The colon-fence
+    // document that named carve-rs#716 never reaches this branch - it
+    // degrades through `parse_capped_colon_body` instead - but a deep quote
+    // ladder and a deep list ladder both arrive here with positions on, and
+    // published nothing either. The lines are contiguous and still in the
+    // cursor, so the span is the ordinary one and the anchors are the
+    // ordinary ones; `rest` holds the lines VERBATIM, so a line's anchor is
+    // its own stripped column.
+    let children = if options.positions {
+        let anchors = rest
+            .iter()
+            .enumerate()
+            .map(|(idx, line)| inline_anchor_for_line(cur, span_start + idx, line))
+            .collect();
+        parse_flattened_inline_with_anchors(&text, options, anchors)
+    } else {
+        parse_flattened_inline(&text, options)
+    };
+    vec![BlockNode::Paragraph(Paragraph {
+        attrs: None,
+        children,
+        pos: span_of(cur, span_start, cur.pos, options),
+        ..Default::default()
+    })]
 }
 
 fn parse_blocks(cur: &mut LineCursor, options: &Options<'_>) -> Vec<BlockNode> {

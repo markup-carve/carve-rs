@@ -23,7 +23,12 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Definitions collected at a list item's content column close its paragraph**
   (markup-carve/carve#1376). A following line below that column no longer uses
   the comment-only continuation path; bare-dot items use the bullet column.
-
+- **Parsing a document at the nesting cap costs far less native stack**
+  (markup-carve/carve-wasm#44). `promote_block_images` is a worklist instead of
+  a recursion, and the over-cap degrade moved out of `parse_blocks`' frame.
+  Measured on corpus document 182, parsing dropped from 347 KiB of stack to
+  103 KiB, which is what a host with a small stack - a wasm module's 1 MiB, for
+  instance - had been running out of. No output changed.
 - **A structural link title and an authored `title` attribute both survive the
   ProseMirror bridge** (#1115). Links, images and reference definitions now put
   the quoted structural title in `carveLinkTitle`, leaving `title` and
