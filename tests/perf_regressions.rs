@@ -18,6 +18,14 @@ use std::time::Instant;
 /// The estimator and the bounds are untouched. This removes the cause instead
 /// of widening the tolerance - a ratio bound that had to be loosened to survive
 /// its own test suite would no longer be measuring the engine.
+///
+/// IT ONLY SERIALIZES WITHIN ONE PROCESS, which is all `cargo test` needs: it
+/// runs a binary's tests as threads. `cargo nextest` runs every test in its own
+/// process, so this mutex is never contended there and carries nothing - a check
+/// that cannot fire. The isolation comes from the CI step instead, which runs
+/// this binary on its own and single-threaded; see the note beside it in
+/// `.github/workflows/ci.yml`. The lock stays because `cargo test` is still how
+/// this file is run locally, and it is the whole guard there.
 static PERF_LOCK: Mutex<()> = Mutex::new(());
 
 /// Take the timing lock, ignoring poisoning: a panic in one perf test must not
