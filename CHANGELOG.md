@@ -7,6 +7,11 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **A vertical table-cell marker requires a horizontal partner.** Lone `^` and
+  `v` prefixes remain visible content; paired two-axis runs are unchanged.
+
 ### Fixed
 
 - **A structural link title and an authored `title` attribute both survive the

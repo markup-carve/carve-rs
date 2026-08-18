@@ -1687,13 +1687,7 @@ fn render_table_cell(cell: &TableCell, ctx: &mut CarveContext, mark_header: bool
     let align = align_marker(cell.align);
     let valign = match cell.valign {
         Some(TableVerticalAlign::Top) => "^",
-        Some(TableVerticalAlign::Middle) => {
-            if cell.align == Some(TableAlign::Center) {
-                "~"
-            } else {
-                "~~"
-            }
-        }
+        Some(TableVerticalAlign::Middle) => "~",
         Some(TableVerticalAlign::Bottom) => "v",
         None => "",
     };

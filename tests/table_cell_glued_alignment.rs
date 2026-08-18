@@ -79,3 +79,31 @@ fn valid_glued_markers_align_and_invalid_runs_stay_literal() {
     let data = body_row("|<<|");
     assert!(data.contains(r#"<td>&lt;&lt;</td>"#), "got {data}");
 }
+
+#[test]
+fn a_vertical_marker_needs_a_horizontal_partner() {
+    let html = carve::to_html(
+        "|=^ Top |=v Bottom |=<^ Paired |=v> Reverse |=~> Middle |\n| a | b | c | d | e |",
+    );
+    assert!(html.contains(r#"<th scope="col">^ Top</th>"#), "got {html}");
+    assert!(
+        html.contains(r#"<th scope="col">v Bottom</th>"#),
+        "got {html}"
+    );
+    assert!(
+        html.contains("text-align: left; vertical-align: top;"),
+        "got {html}"
+    );
+    assert!(
+        html.contains("text-align: right; vertical-align: bottom;"),
+        "got {html}"
+    );
+    assert!(
+        html.contains("text-align: right; vertical-align: middle;"),
+        "got {html}"
+    );
+    assert!(
+        carve::to_carve("|=~> Middle |\n| e |\n").contains("|=>~ Middle |"),
+        "the canonical form writes horizontal before vertical"
+    );
+}
