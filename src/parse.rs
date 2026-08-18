@@ -19997,9 +19997,11 @@ mod promote_block_images_is_iterative {
     /// heap vector. Revert `promote_block_images` to recursion and this test
     /// takes the whole run down with it, which is what makes it load-bearing.
     ///
-    /// The tree is deliberately deeper than `MAX_NESTING_DEPTH`: the pass also
-    /// runs over documents this crate did not parse (`from_json` reaches far
-    /// past the parser's cap), so the parser's cap is not a bound on it.
+    /// 4000 levels is far past `MAX_NESTING_DEPTH`, and deliberately so. The
+    /// pass runs only over parser-produced trees, so 200 is the real ceiling
+    /// and 200 recursive levels would still fit a test thread - the depth here
+    /// is chosen so the difference between the two spellings cannot be read as
+    /// measurement noise.
     ///
     /// The tree is leaked rather than dropped. Teardown is compiler-generated
     /// recursive drop glue and would overflow on its own, which would prove
