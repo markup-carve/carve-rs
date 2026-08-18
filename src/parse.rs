@@ -11577,16 +11577,28 @@ fn parse_table_cell(
     let align = if lone_span {
         None
     } else {
-        match body.as_bytes().first() {
-            Some(&marker @ (b'>' | b'<' | b'~')) => {
-                after_markers = &body[1..];
+        let run = body.bytes().take_while(|b| matches!(b, b'>' | b'<' | b'~' | b'^' | b'v')).count();
+        let markers = &body.as_bytes()[..run];
+        let horizontal = markers.iter().filter(|b| matches!(b, b'>' | b'<' | b'~')).count();
+        let vertical = markers.iter().filter(|b| matches!(b, b'^' | b'v')).count()
+            + markers.iter().filter(|b| **b == b'~').count().saturating_sub(1);
+        let terminated = body.as_bytes().get(run).is_some_and(|b| b.is_ascii_whitespace() || *b == b'{');
+        let valid = run > 0 && terminated && (horizontal <= 1 || markers == b"~~") && vertical <= 1;
+        match valid.then(|| markers.iter().find(|b| matches!(b, b'>' | b'<' | b'~')).copied()).flatten() {
+            Some(marker) => {
+                after_markers = &body[run..];
                 Some(match marker {
                     b'>' => TableAlign::Right,
                     b'<' => TableAlign::Left,
                     _ => TableAlign::Center,
                 })
             }
-            _ => None,
+            _ => {
+                if valid {
+                    after_markers = &body[run..];
+                }
+                None
+            }
         }
     };
     // CELL ATTRIBUTES BIND LAST (grammar §20 T10, corpus
