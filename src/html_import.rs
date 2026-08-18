@@ -2259,10 +2259,68 @@ impl<'a> Importer<'a> {
         depth: usize,
     ) -> Result<Vec<InlineNode>, HtmlImportError> {
         let mut out = Vec::new();
+        // A FLATTEN PRESERVES THE BOUNDARY IT DISSOLVES (PART 11 §1b,
+        // markup-carve/carve#1325). A slot that takes INLINE content only - a
+        // caption line, a fence title, a table cell, an image's alternative
+        // text, a definition term - cannot carry blocks, so a producer handed
+        // block content for one flattens it. The flatten is lossy by
+        // construction and §1's round-trip invariant is not the rule that
+        // applies; what the producer still owes is the BOUNDARY.
+        //
+        // THE UNIT IS THE TOKEN, NOT THE NODE, and that difference is the whole
+        // rule: `onetwo` and `one two` are both a single `text` node, and the
+        // boundary a reader recovers from one and not the other is a token
+        // boundary. Two blocks joined with nothing lost it as CONTENT
+        // (`<p>one</p><p>two</p>` -> `onetwo`) and as STRUCTURE
+        // (`*a**b*` re-reads as one strong run holding a literal asterisk;
+        // two code spans re-read as one holding the joined delimiters).
+        //
+        // ONE SPACE, at every such boundary, conditioned on nothing further. A
+        // space ends a word and ends a delimiter run, and is neither punctuation
+        // nor alphanumeric, so it cannot combine with either side into a
+        // construct neither block wrote. Conditioning it on the neighbouring
+        // characters is the source-pattern test §1a already refuses.
+        //
+        // A BLOCK THAT CONTRIBUTES NOTHING IS NOT A SIDE, which is why the state
+        // below is over CONTRIBUTED content rather than over sibling positions:
+        // `<p>a</p><p></p><p>b</p>` holds three blocks and one join, so the slot
+        // is `a b` and not `a  b`.
+        //
+        // INTER-ELEMENT WHITESPACE IS LAYOUT, NOT A TOKEN. A pretty-printed
+        // document puts a newline and an indent between the blocks, and those
+        // runs contribute nothing to the slot - so inside a flatten they are
+        // dropped rather than kept beside the separator, which would emit the
+        // `a  b` this clause explicitly refuses one case over. Only inside a
+        // flatten: between two INLINE siblings the same run IS content, and
+        // `<strong>a</strong> <em>b</em>` must keep its space.
+        let flattening = handles
+            .iter()
+            .any(|h| Self::tag(h).as_deref().is_some_and(Self::is_block_tag));
+        let mut published = false;
+        let mut boundary_pending = false;
         for (i, h) in handles.iter().enumerate() {
             let tag = Self::tag(h).unwrap_or_else(|| "text()".into());
             let path = format!("{parent}/{tag}[{}]", i + 1);
-            out.extend(self.inline(h, &path, depth)?);
+            // `tag` is already the element's name, or the synthetic `text()` for a
+            // node that has none - and that is not a block tag, so this needs no
+            // second call to build the same String again.
+            let is_block = Self::is_block_tag(&tag);
+            if is_block && published {
+                boundary_pending = true;
+            }
+            let produced = self.inline(h, &path, depth)?;
+            let contributes = !Self::inlines_are_blank(&produced);
+            if !contributes && flattening {
+                continue;
+            }
+            if contributes && boundary_pending {
+                out.push(InlineNode::text(" ".to_string()));
+            }
+            out.extend(produced);
+            if contributes {
+                published = true;
+                boundary_pending = is_block;
+            }
         }
         Ok(coalesce(out))
     }
