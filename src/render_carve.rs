@@ -123,13 +123,27 @@ thread_local! {
 pub(crate) fn redundant_heading_ids(doc: &Document) -> std::collections::BTreeSet<String> {
     let mut stripped = doc.clone();
     let mut had_any = false;
+    // The SAME two walks `assigned_heading_ids` makes, in the same order:
+    // `doc.children`, then the footnote definitions. Both halves are needed and
+    // in this order, because the answer is read off a POSITIONAL zip against
+    // that pass. Stopping at `doc.children` truncated the zip, so no heading in
+    // a footnote definition could ever be answered and every one of them was
+    // written back as authored source: `[^a]: # h` returned as `[^a]: {#h}`
+    // over an indented `# h`, the carve-rs#1105 shape in the one place this
+    // predicate could not see.
     strip_generated_ids(&mut stripped.children, &mut had_any);
+    for blocks in stripped.footnote_defs.values_mut() {
+        strip_generated_ids(blocks, &mut had_any);
+    }
     if !had_any {
         return std::collections::BTreeSet::new();
     }
     let fresh = crate::document_ids::assigned_heading_ids(&stripped, false);
     let mut present = Vec::new();
     collect_heading_ids(&doc.children, &mut present);
+    for blocks in doc.footnote_defs.values() {
+        collect_heading_ids(blocks, &mut present);
+    }
     present
         .into_iter()
         .zip(fresh)

@@ -7,6 +7,19 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **A structural title and an authored `title` attribute no longer swap places
+  across the ProseMirror round trip** (#1105, follows #1110). The two spellings
+  share one wire field, and `carveAttrOrder` - the record of which one the
+  author typed - was written untruthfully and never read, so `[a]: /u "T"` came
+  back as `[a]: /u "T" {title=T}` and `[z](safe.html){title="T"}` as
+  `[z](safe.html "T")`. Links, images and reference definitions all.
+- **The Carve writer does not turn a generated heading id into source inside a
+  footnote definition** (#1105). The redundancy test walked the document body
+  only, so `[^a]: # h` was written back as `[^a]: {#h}` over an indented `# h`,
+  an attribute line the author never wrote.
+
 ## [0.1.3] - 2026-08-18
 
 ### Security

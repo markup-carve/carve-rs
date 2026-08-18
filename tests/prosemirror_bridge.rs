@@ -46,33 +46,22 @@ const ALIASED_TYPES: &[(&str, &str)] = &[("tag", "mention")];
 // differing fails, and a document that stops differing fails too, so a fix has
 // to delete its entry rather than let the gate quietly cover less.
 //
-// The generated-heading-id defect is gone from this list: the bridge now uses
-// the writer's minimal-form calculation to distinguish a derived id from an
-// authored, unslotted id. What remains is three small classes:
-//  - 6 reference definitions come back with their structural title repeated as
-//    an authored attribute: `[a]: /u "T"` returns as `[a]: /u "T" {title=T}`.
+// The generated-heading-id defect is gone from this list: the bridge uses the
+// writer's minimal-form calculation to distinguish a derived id from an
+// authored, unslotted id (#1110). The two `title` classes are gone with it:
+// `title` is one wire field for two Carve slots, and `carveAttrOrder` - the
+// record of which slot somebody typed - is now written truthfully by the
+// outbound side and read by the importer, so a structural title stops coming
+// back as `{title=T}` and an authored one stops moving into the structural
+// slot. What remains is two unrelated defects:
 //  - 1 document loses an attribute outright: 108-security-hardening-11 writes
 //    `[safe](https://example.com){href=javascript:steal}` and gets
 //    `[safe](https://example.com)` back.
 //  - 2 documents reflow their emphasis delimiters: `/*x*/` returns as `*/x/*`.
-//  - 1 link moves an AUTHORED `title` attribute into the structural title slot:
-//    `[z](safe.html){title="T"}` returns as `[z](safe.html "T")`. The inverse of
-//    the reference-definition bullet above and the same cause - the two
-//    spellings share one field, and nothing records which one the author typed.
-//    Arrived with the 483bcea corpus, whose `title` case is there to pin that a
-//    PROSE attribute is NOT tokenized by PART 9 §25; the round trip is
-//    orthogonal to that and the HTML is byte-identical either way.
 const SOURCE_LOSSY: &[&str] = &[
     "108-security-hardening-11.crv",
     "130-bold-italic-delimiter-needs-content-3.crv",
     "130-bold-italic-delimiter-needs-content-4.crv",
-    "16-reference-link-6.crv",
-    "16-reference-link-7.crv",
-    "16-reference-link.crv",
-    "199-a-collapsed-image-reference-uses-its-alt-text-as-the-label.crv",
-    "265-a-reference-definition-s-metadata-slots-take-exactly-one-space-3.crv",
-    "266-a-reference-definition-is-anchored-at-end-of-line-16.crv",
-    "342-url-list-attributes-are-probed-token-wise-10.crv",
 ];
 
 fn pm(source: &str) -> (Value, carve::ProseMirrorDoc) {
@@ -1017,6 +1006,122 @@ fn a_generated_heading_id_is_not_an_authored_one() {
     let (before, after) = round_trip("# H\n");
     assert_eq!(after, before);
     assert!(!after.contains("#H"), "{after:?}");
+    // The wire too, not only what comes back off it.
+    let (value, _) = pm("# H\n");
+    assert_eq!(value.pointer("/content/0/attrs/level"), Some(&json!(1)));
+    assert_eq!(value.pointer("/content/0/attrs/id"), None);
+}
+
+/// A DEDUPLICATED generated id is the case a per-heading test cannot reach.
+///
+/// `h-2` is a function of the whole document rather than of the heading, so a
+/// redundancy test that slugged the heading text alone would call it authored
+/// and write it out.
+#[test]
+fn a_deduplicated_generated_heading_id_is_not_an_authored_one_either() {
+    let (before, after) = round_trip("# h\n\n# h\n");
+    assert_eq!(after, before);
+    assert!(!after.contains('{'), "{after:?}");
+}
+
+/// The guard on the recorded run, which the derivation test alone cannot cover:
+/// `# h` derives `h`, and this document ALSO writes `{#h}`. The two agree, so
+/// deciding on the derivation by itself would delete the author's line.
+///
+/// THE FIRST HEADING IS LOAD-BEARING. `redundant_heading_ids` returns the empty
+/// set for a document in which no heading carries an unslotted id, and `{#h}`
+/// alone is such a document - so without a heading whose id IS generated,
+/// nothing is ever in the set, the guard is never reached, and this reads as a
+/// check that cannot fail. Measured: with the run guard deleted and only the
+/// one-heading document, this stayed green and the corpus caught it instead.
+#[test]
+fn an_authored_heading_id_a_fresh_parse_would_also_derive_stays_authored() {
+    let source = "# other\n\n{#h}\n# h\n";
+    let (value, _) = pm(source);
+    assert_eq!(value.pointer("/content/1/attrs/id"), Some(&json!("h")));
+    assert_eq!(
+        value.pointer("/content/1/attrs/carveAttrOrder"),
+        Some(&json!(["#id"]))
+    );
+    // The first heading's id is generated and gone, which is what puts `h` into
+    // the redundancy set in the first place.
+    assert_eq!(value.pointer("/content/0/attrs/id"), None);
+    let (before, after) = round_trip(source);
+    assert_eq!(after, before);
+    assert!(after.contains("{#h}"), "{after:?}");
+}
+
+/// The other direction of minimal form, which stops this from being "drop every
+/// unslotted id": an AST that reached the bridge from somewhere other than a
+/// parse, holding a heading whose text was edited after the id was assigned. A
+/// fresh parse derives `new`, so `old` is the only place that lives.
+#[test]
+fn an_ingested_heading_id_the_text_no_longer_derives_still_travels() {
+    let doc = carve::from_json(
+        r#"{"type":"document","children":[{"type":"heading","level":1,
+        "children":[{"type":"text","value":"new"}],"attrs":{"id":"old"}}],
+        "srcByteLength":5}"#,
+    )
+    .expect("the AST JSON ingests");
+    let bridged = to_prosemirror(&doc);
+    let value: Value = serde_json::from_str(&bridged.json).expect("the bridge emits JSON");
+    assert_eq!(value.pointer("/content/0/attrs/id"), Some(&json!("old")));
+    let returned = from_prosemirror(&bridged.json).expect("it imports");
+    assert_eq!(render_carve(&returned).unwrap(), "{#old}\n# new\n");
+}
+
+/// `title` is one wire field for two Carve slots. With no run naming it, the
+/// field is the STRUCTURAL slot - the quoted string after the URL - and it must
+/// not come back as an authored attribute as well.
+#[test]
+fn a_structural_title_does_not_come_back_as_an_authored_attribute() {
+    for source in [
+        "[a]: /u \"T\"\n",
+        "[z](safe.html \"T\")\n",
+        "![i](s.png \"T\")\n",
+    ] {
+        let (before, after) = round_trip(source);
+        assert_eq!(after, before);
+        assert_eq!(after, source);
+        assert!(!after.contains("title="), "{source:?}: {after:?}");
+    }
+}
+
+/// The inverse. The run names `title`, so the field is the ATTRIBUTE, and the
+/// structural slot stays empty.
+#[test]
+fn an_authored_title_attribute_does_not_move_into_the_structural_slot() {
+    for (source, structural) in [
+        ("[a]: /u {title=T}\n", "/u \"T\""),
+        ("[z](safe.html){title=T}\n", "safe.html \"T\""),
+        ("![i](s.png){title=T}\n", "s.png \"T\""),
+    ] {
+        let (before, after) = round_trip(source);
+        assert_eq!(after, before);
+        assert_eq!(after, source);
+        assert!(!after.contains(structural), "{source:?}: {after:?}");
+    }
+}
+
+/// A document holding BOTH spellings cannot be carried by one field, and the
+/// structural one wins it. The run then has to stop naming `title`: a run that
+/// still named it would describe a value that is not on the wire, and the
+/// importer would read the structural title back as an authored attribute -
+/// which is the defect the pair of rules above exists to stop.
+#[test]
+fn the_run_stops_naming_title_where_the_structural_slot_wins_the_field() {
+    let (value, _) = pm("[z](safe.html \"S\"){title=A}\n");
+    let mark = value
+        .pointer("/content/0/content/0/marks/0/attrs")
+        .expect("the link mark carries attributes");
+    assert_eq!(mark.pointer("/title"), Some(&json!("S")));
+    assert_eq!(mark.pointer("/carveAttrOrder"), None);
+    // And a run naming anything else keeps the rest of its slots.
+    let (value, _) = pm("[z](safe.html \"S\"){#i title=A}\n");
+    let mark = value
+        .pointer("/content/0/content/0/marks/0/attrs")
+        .expect("the link mark carries attributes");
+    assert_eq!(mark.pointer("/carveAttrOrder"), Some(&json!(["#id"])));
 }
 
 /// carve-grammars#240, part 2: an attribute run on inline code is the code

@@ -78,3 +78,52 @@ fn the_writer_keeps_an_authored_id() {
         .expect("decode");
     assert_eq!(carve::render_carve(&doc).expect("write"), AUTHORED);
 }
+
+/// A footnote definition is part of the document the writer gives back, and a
+/// heading inside one derives its id the same way any other heading does.
+///
+/// The redundancy test walked `document.children` only, so a heading in a
+/// footnote definition fell off the end of a positional comparison and was
+/// written back as authored source: `[^a]: # h` came back as `[^a]: {#h}` over
+/// an indented `# h`. The carve-rs#1105 shape, one container over, in the one
+/// place the predicate could not see.
+#[test]
+fn the_writer_does_not_turn_a_generated_id_into_source_inside_a_footnote() {
+    const IN_FOOTNOTE: &str = "[^a]\n\n[^a]: # h\n";
+    let written = carve::render_carve(&carve::parse(IN_FOOTNOTE)).expect("write");
+    assert_eq!(written, IN_FOOTNOTE);
+    // Both directions: the heading is there, and the attribute run is not.
+    assert!(written.contains("# h"), "{written:?}");
+    assert!(!written.contains("{#h}"), "{written:?}");
+}
+
+/// And an AUTHORED id inside a footnote definition still comes back - the test
+/// above must not widen into "drop every id a footnote definition holds".
+#[test]
+fn the_writer_keeps_an_authored_id_inside_a_footnote() {
+    const IN_FOOTNOTE: &str = "[^a]\n\n[^a]: {#chosen}\n  # h\n";
+    assert_eq!(
+        carve::render_carve(&carve::parse(IN_FOOTNOTE)).expect("write"),
+        IN_FOOTNOTE
+    );
+}
+
+/// The other direction of the minimal-form test, which nothing else in this
+/// file reaches: an id a fresh parse would NOT re-derive has to be written,
+/// because the id is the only place that information lives.
+///
+/// Reachable from an ingested tree whose heading text was edited after the id
+/// was assigned. Without this case, a predicate that called every unslotted id
+/// redundant passed the whole of this file and lost the id in silence.
+#[test]
+fn the_writer_keeps_an_ingested_id_the_text_no_longer_derives() {
+    let doc = carve::ast_json::from_json(
+        r#"{"type":"document","children":[{"type":"heading","level":1,
+        "children":[{"type":"text","value":"new"}],"attrs":{"id":"old"}}],
+        "srcByteLength":5}"#,
+    )
+    .expect("decode");
+    let written = carve::render_carve(&doc).expect("write");
+    assert_eq!(written, "{#old}\n# new\n");
+    assert!(written.contains("{#old}"), "{written:?}");
+}
