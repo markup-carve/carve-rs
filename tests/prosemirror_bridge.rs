@@ -46,35 +46,9 @@ const ALIASED_TYPES: &[(&str, &str)] = &[("tag", "mention")];
 // differing fails, and a document that stops differing fails too, so a fix has
 // to delete its entry rather than let the gate quietly cover less.
 //
-// The causes. The three the bridge half of carve-grammars#240 addressed are
-// gone from this list; what is left is one defect with a long tail, plus three
-// small ones:
-//
-//  - 79 documents gain an attribute line the author never wrote, carrying a
-//    GENERATED heading id: `# Title` returns as `{#Title}` + `# Title`. The
-//    outbound side stamps the id into `attrs.id`, and where the heading has no
-//    attribute run at all there is nothing to say the id was not authored. A
-//    run that IS recorded settles it - it names every slot somebody typed - and
-//    that case is now read correctly; the headings left here have no run.
-//    19 of them arrived with the b6917ab corpus, which added a category for the
-//    derivation itself plus headings opened inside a container. Each was
-//    checked against its own before/after: they are further instances of this
-//    one cause, not a new one, so the fix that empties this bullet empties all
-//    of them together.
-//    3 more arrived with the cd52a50 corpus (`326-...-14`, `-16` and `-17`),
-//    which pins a column-0 line after a container whose last block left no
-//    paragraph open. Each is a heading with NO attribute run written inside a
-//    list item, and each was checked against its own before/after the same way:
-//    `- - # H` returns as `- - {#H}` over an indented `# H`, and the two deeper
-//    spellings do the same at their own depth. Same one cause.
-//    1 more arrived with the 22f7f47 corpus (`363-...`), whose second item is a
-//    heading with NO attribute run opened on a TASK marker line: `- [x] # h`
-//    returns as `- [x] {#h}` over an indented `# h`. The checkbox is not
-//    implicated - the item's other two leads, a quote and a thematic break,
-//    both survive the round trip, and `- [x] > q`, `- [x] ---` and `- [ ] a`
-//    each write back byte-identical source. A bare `# h` with no list at all
-//    already returns as `{#h}` + `# h`, which is this same cause with nothing
-//    else in the document. Same one cause.
+// The generated-heading-id defect is gone from this list: the bridge now uses
+// the writer's minimal-form calculation to distinguish a derived id from an
+// authored, unslotted id. What remains is three small classes:
 //  - 6 reference definitions come back with their structural title repeated as
 //    an authored attribute: `[a]: /u "T"` returns as `[a]: /u "T" {title=T}`.
 //  - 1 document loses an attribute outright: 108-security-hardening-11 writes
@@ -89,100 +63,16 @@ const ALIASED_TYPES: &[(&str, &str)] = &[("tag", "mention")];
 //    PROSE attribute is NOT tokenized by PART 9 §25; the round trip is
 //    orthogonal to that and the HTML is byte-identical either way.
 const SOURCE_LOSSY: &[&str] = &[
-    "02-headings-2.crv",
-    "02-headings-4.crv",
-    "02-headings-6.crv",
-    "02-headings.crv",
-    "03-links-13.crv",
     "108-security-hardening-11.crv",
-    "111-cross-references-resolve-inside-footnote-bodies.crv",
-    "118-cyclic-cross-reference-resolves-to-one-level-2.crv",
-    "118-cyclic-cross-reference-resolves-to-one-level-3.crv",
-    "118-cyclic-cross-reference-resolves-to-one-level.crv",
-    "119-trojan-source-heading-ids-are-nfc-normalized-and-strip-invisible-controls-2.crv",
-    "119-trojan-source-heading-ids-are-nfc-normalized-and-strip-invisible-controls-3.crv",
-    "119-trojan-source-heading-ids-are-nfc-normalized-and-strip-invisible-controls.crv",
-    "122-footnotes-placement.crv",
     "130-bold-italic-delimiter-needs-content-3.crv",
     "130-bold-italic-delimiter-needs-content-4.crv",
-    "15-heading-ids-2.crv",
-    "15-heading-ids-3.crv",
-    "15-heading-ids-5.crv",
-    "15-heading-ids-6.crv",
-    "15-heading-ids.crv",
     "16-reference-link-6.crv",
     "16-reference-link-7.crv",
     "16-reference-link.crv",
-    "170-headings-inside-containers-are-not-wrapped.crv",
-    "173-implicit-heading-references-with-no-definition.crv",
     "199-a-collapsed-image-reference-uses-its-alt-text-as-the-label.crv",
-    "213-a-tag-inside-a-literal-brace-run-is-still-a-tag.crv",
-    "217-a-heading-id-keeps-a-non-ascii-space.crv",
-    "221-a-heading-reference-folds-unicode-normalization-but-not-compatibility.crv",
-    "26-comments-5.crv",
     "265-a-reference-definition-s-metadata-slots-take-exactly-one-space-3.crv",
     "266-a-reference-definition-is-anchored-at-end-of-line-16.crv",
-    "268-trailing-whitespace-on-a-content-line-is-dropped-4.crv",
-    "275-a-collapsed-reference-reaches-a-heading-by-the-heading-s-rendered-text-10.crv",
-    "275-a-collapsed-reference-reaches-a-heading-by-the-heading-s-rendered-text-11.crv",
-    "275-a-collapsed-reference-reaches-a-heading-by-the-heading-s-rendered-text-2.crv",
-    "275-a-collapsed-reference-reaches-a-heading-by-the-heading-s-rendered-text-3.crv",
-    "275-a-collapsed-reference-reaches-a-heading-by-the-heading-s-rendered-text-5.crv",
-    "275-a-collapsed-reference-reaches-a-heading-by-the-heading-s-rendered-text-7.crv",
-    "275-a-collapsed-reference-reaches-a-heading-by-the-heading-s-rendered-text-8.crv",
-    "275-a-collapsed-reference-reaches-a-heading-by-the-heading-s-rendered-text-9.crv",
-    "275-a-collapsed-reference-reaches-a-heading-by-the-heading-s-rendered-text.crv",
-    "288-heading-index-plain-text-covers-visible-leaves-and-rejects-an-empty-key-2.crv",
-    "288-heading-index-plain-text-covers-visible-leaves-and-rejects-an-empty-key-3.crv",
-    "288-heading-index-plain-text-covers-visible-leaves-and-rejects-an-empty-key-4.crv",
-    "288-heading-index-plain-text-covers-visible-leaves-and-rejects-an-empty-key.crv",
-    "306-a-captioned-quote-holds-more-than-one-block-5.crv",
-    "315-an-inline-note-s-content-resolves-after-the-note-5.crv",
-    "315-an-inline-note-s-content-resolves-after-the-note-6.crv",
-    "315-an-inline-note-s-content-resolves-after-the-note-7.crv",
-    "315-an-inline-note-s-content-resolves-after-the-note.crv",
-    "326-a-column-0-line-after-a-container-s-last-block-when-that-block-left-no-paragraph-open-10.crv",
-    "326-a-column-0-line-after-a-container-s-last-block-when-that-block-left-no-paragraph-open-11.crv",
-    "326-a-column-0-line-after-a-container-s-last-block-when-that-block-left-no-paragraph-open-14.crv",
-    "326-a-column-0-line-after-a-container-s-last-block-when-that-block-left-no-paragraph-open-16.crv",
-    "326-a-column-0-line-after-a-container-s-last-block-when-that-block-left-no-paragraph-open-17.crv",
-    "326-a-column-0-line-after-a-container-s-last-block-when-that-block-left-no-paragraph-open-2.crv",
-    "326-a-column-0-line-after-a-container-s-last-block-when-that-block-left-no-paragraph-open.crv",
-    "327-a-continuation-marker-attaches-one-block-and-the-boundary-is-that-block-s-extent-8.crv",
-    "327-a-continuation-marker-attaches-one-block-and-the-boundary-is-that-block-s-extent-9.crv",
-    "329-a-floating-attribute-is-scoped-to-the-container-that-holds-it-4.crv",
-    "332-which-inline-content-a-heading-id-is-derived-from-10.crv",
-    "332-which-inline-content-a-heading-id-is-derived-from-11.crv",
-    "332-which-inline-content-a-heading-id-is-derived-from-12.crv",
-    "332-which-inline-content-a-heading-id-is-derived-from-2.crv",
-    "332-which-inline-content-a-heading-id-is-derived-from-3.crv",
-    "332-which-inline-content-a-heading-id-is-derived-from-4.crv",
-    "332-which-inline-content-a-heading-id-is-derived-from-5.crv",
-    "332-which-inline-content-a-heading-id-is-derived-from-6.crv",
-    "332-which-inline-content-a-heading-id-is-derived-from-7.crv",
-    "332-which-inline-content-a-heading-id-is-derived-from-8.crv",
-    "332-which-inline-content-a-heading-id-is-derived-from-9.crv",
-    "332-which-inline-content-a-heading-id-is-derived-from.crv",
     "342-url-list-attributes-are-probed-token-wise-10.crv",
-    "35-cross-reference.crv",
-    "356-a-quote-inside-a-quote-is-asked-what-it-ends-on-2.crv",
-    "356-a-quote-inside-a-quote-is-asked-what-it-ends-on-6.crv",
-    "356-a-quote-inside-a-quote-is-asked-what-it-ends-on-7.crv",
-    "356-a-quote-inside-a-quote-is-asked-what-it-ends-on.crv",
-    "360-a-definition-behind-an-alternating-container-prefix-registers-at-the-innermost-content-column-3.crv",
-    "363-a-task-item-s-checkbox-is-not-decided-by-its-first-block.crv",
-    "71-attribute-edge-cases-14.crv",
-    "75-list-nesting-and-looseness-4.crv",
-    "75-list-nesting-and-looseness-7.crv",
-    "81-paragraph-interruption-18.crv",
-    "81-paragraph-interruption.crv",
-    "82-blockquote-lazy-continuation-3.crv",
-    "82-blockquote-lazy-continuation-4.crv",
-    "84-single-line-headings-2.crv",
-    "84-single-line-headings-3.crv",
-    "84-single-line-headings-4.crv",
-    "84-single-line-headings.crv",
-    "86-list-lazy-continuation-2.crv",
 ];
 
 fn pm(source: &str) -> (Value, carve::ProseMirrorDoc) {
@@ -1121,7 +1011,7 @@ fn a_run_that_no_longer_matches_the_document_keeps_every_attribute() {
 /// attribute line the author never typed.
 #[test]
 fn a_generated_heading_id_is_not_an_authored_one() {
-    let (before, after) = round_trip("{title=\"a\"}\n# H\n");
+    let (before, after) = round_trip("# H\n");
     assert_eq!(after, before);
     assert!(!after.contains("#H"), "{after:?}");
 }
