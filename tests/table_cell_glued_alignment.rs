@@ -95,16 +95,16 @@ fn a_vertical_marker_needs_a_horizontal_partner() {
         "got {html}"
     );
     assert!(
-        html.contains("text-align: right; vertical-align: bottom;"),
+        html.contains(r#"<th scope="col">v&gt; Reverse</th>"#),
         "got {html}"
     );
     assert!(
-        html.contains("text-align: right; vertical-align: middle;"),
+        html.contains(r#"<th scope="col">~&gt; Middle</th>"#),
         "got {html}"
     );
     assert!(
-        carve::to_carve("|=~> Middle |\n| e |\n").contains("|=>~ Middle |"),
-        "the canonical form writes horizontal before vertical"
+        carve::to_carve("|=>~ Middle |\n| e |\n").contains("|=>~ Middle |"),
+        "the valid form is horizontal before vertical"
     );
 }
 
@@ -125,6 +125,7 @@ fn question_mark_inherits_horizontal_alignment_only() {
         ("| ? |", "<td>?</td>"),
         ("|v? x |", "<td>v? x</td>"),
         ("|?< x |", "<td>?&lt; x</td>"),
+        ("|^< x |", "<td>^&lt; x</td>"),
     ] {
         let html = carve::to_html(source);
         assert!(html.contains(visible), "got {html}");

@@ -11675,7 +11675,12 @@ fn parse_table_cell(
                 .is_some_and(|marker| matches!(marker, b'^' | b'~' | b'v'));
         let mut saw_horizontal = false;
         let mut saw_vertical = false;
-        let mut axes_valid = true;
+        let mut axes_valid = !matches!(body.as_bytes().first(), Some(b'^' | b'v'))
+            && !(body.as_bytes().first() == Some(&b'~')
+                && body
+                    .as_bytes()
+                    .get(1)
+                    .is_some_and(|marker| matches!(marker, b'>' | b'<')));
         for (index, marker) in body.bytes().take(run).enumerate() {
             if marker == b'?' {
                 if inherited_horizontal && index == 0 {
