@@ -909,7 +909,7 @@ impl<'a> Importer<'a> {
             // AST has no figure either - so it stays a plain diagnostic.
             match blocks.as_slice() {
                 [BlockNode::Figure(f)] => {
-                    let lost = match f.target {
+                    let lost = match *f.target {
                         FigureTarget::Table(_) => Some(
                             "A <figure> around a table has no Carve spelling: the written table \
                              carries the caption and the figure's attributes, and reads back as a \
@@ -1543,7 +1543,7 @@ impl<'a> Importer<'a> {
             };
             return Ok(vec![BlockNode::Figure(Figure {
                 attrs,
-                target,
+                target: Box::new(target),
                 caption,
                 short_caption: None,
                 pos: None,

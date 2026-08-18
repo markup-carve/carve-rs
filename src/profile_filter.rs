@@ -414,7 +414,7 @@ impl ProfileFilter<'_> {
         // The figure target is a single-node field; carve-php treats it as an
         // ordinary child, so a denied target must be filtered. Wrap it in a
         // one-element block list and re-use the block machinery.
-        let target_block: BlockNode = match &fig.target {
+        let target_block: BlockNode = match &*fig.target {
             FigureTarget::Image(img) => BlockNode::BlockImage(img.clone()),
             FigureTarget::BlockQuote(bq) => BlockNode::BlockQuote(bq.clone()),
             FigureTarget::Table(t) => BlockNode::Table(t.clone()),
@@ -424,24 +424,24 @@ impl ProfileFilter<'_> {
         let mut wrapper = vec![target_block];
         self.filter_blocks(&mut wrapper, depth)?;
         match wrapper.into_iter().next() {
-            Some(BlockNode::BlockImage(img)) => fig.target = FigureTarget::Image(img),
-            Some(BlockNode::BlockQuote(bq)) => fig.target = FigureTarget::BlockQuote(bq),
-            Some(BlockNode::Table(t)) => fig.target = FigureTarget::Table(t),
-            Some(BlockNode::CodeBlock(c)) => fig.target = FigureTarget::CodeBlock(c),
-            Some(BlockNode::Paragraph(p)) => fig.target = FigureTarget::Paragraph(p),
+            Some(BlockNode::BlockImage(img)) => *fig.target = FigureTarget::Image(img),
+            Some(BlockNode::BlockQuote(bq)) => *fig.target = FigureTarget::BlockQuote(bq),
+            Some(BlockNode::Table(t)) => *fig.target = FigureTarget::Table(t),
+            Some(BlockNode::CodeBlock(c)) => *fig.target = FigureTarget::CodeBlock(c),
+            Some(BlockNode::Paragraph(p)) => *fig.target = FigureTarget::Paragraph(p),
             // Replaced into a different node (to_text paragraph) or stripped:
             // collapse the figure target into a paragraph fallback so the
             // figure still renders something coherent.
             Some(other) => {
                 let text = extract_block_text(&other, self.smart);
-                fig.target = FigureTarget::Paragraph(Paragraph {
+                *fig.target = FigureTarget::Paragraph(Paragraph {
                     attrs: None,
                     children: text_with_breaks(&text),
                     ..Default::default()
                 });
             }
             None => {
-                fig.target = FigureTarget::Paragraph(Paragraph {
+                *fig.target = FigureTarget::Paragraph(Paragraph {
                     attrs: None,
                     children: Vec::new(),
                     ..Default::default()
@@ -945,7 +945,7 @@ fn extract_block_text(node: &BlockNode, smart: SmartTypographyMode) -> String {
             parts.join("\n")
         }
         BlockNode::Figure(fig) => {
-            let target = match &fig.target {
+            let target = match &*fig.target {
                 FigureTarget::Image(img) => image_text(img),
                 FigureTarget::BlockQuote(bq) => {
                     extract_block_text(&BlockNode::BlockQuote(bq.clone()), smart)

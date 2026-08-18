@@ -100,7 +100,7 @@ fn shift_block(block: &mut BlockNode, shift: u8) {
         // Only the blockquote target can hold one; an image, a table, a code
         // block and a paragraph cannot.
         BlockNode::Figure(figure) => {
-            if let FigureTarget::BlockQuote(quote) = &mut figure.target {
+            if let FigureTarget::BlockQuote(quote) = &mut *figure.target {
                 shift_blocks(&mut quote.children, shift);
             }
         }

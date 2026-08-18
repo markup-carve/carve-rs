@@ -225,7 +225,7 @@ fn rewrite_markers_block(
         }
         BlockNode::Figure(f) => {
             rewrite_markers_inline(&mut f.caption, counts, display);
-            match &mut f.target {
+            match &mut *f.target {
                 FigureTarget::BlockQuote(b) => {
                     for child in &mut b.children {
                         rewrite_markers_block(child, counts, display);

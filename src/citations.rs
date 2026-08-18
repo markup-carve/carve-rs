@@ -901,7 +901,7 @@ fn annotate_citations_block(
         }
         BlockNode::Figure(f) => {
             annotate_citations_inline(&mut f.caption, defs, mode, has_bib, seen, order, uses);
-            match &mut f.target {
+            match &mut *f.target {
                 FigureTarget::BlockQuote(b) => {
                     for child in &mut b.children {
                         annotate_citations_block(child, defs, mode, has_bib, seen, order, uses);

@@ -106,7 +106,7 @@ fn the_reference_figures_span_contains_both_of_its_children() {
     // tree.
     let f = figure(REF);
     let parent = require(f.pos, "the reference figure");
-    let FigureTarget::Image(image) = &f.target else {
+    let FigureTarget::Image(image) = &*f.target else {
         panic!("the figure's target is not an image");
     };
     let child = require(image.pos, "the figure's image");

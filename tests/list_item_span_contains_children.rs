@@ -104,7 +104,7 @@ fn a_captioned_quote_carries_real_offsets() {
     let BlockNode::Figure(figure) = &doc.children[1] else {
         panic!("expected a figure second, got {:?}", doc.children[1]);
     };
-    let carve::ast::FigureTarget::BlockQuote(quote) = &figure.target else {
+    let carve::ast::FigureTarget::BlockQuote(quote) = &*figure.target else {
         panic!("expected a block quote target");
     };
     let pos = figure.pos.expect("the figure carries no position");

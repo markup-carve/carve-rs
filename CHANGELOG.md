@@ -11,6 +11,12 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - **A vertical table-cell marker requires a horizontal partner.** Lone `^` and
   `v` prefixes remain visible content; paired two-axis runs are unchanged.
+- **`Figure::target` is now `Box<FigureTarget>`** (#1119). Breaking, for callers
+  that construct or match a figure through the public AST. `Figure` embedded a
+  whole `Table` or `CodeBlock`, which set `BlockNode` at 472 bytes against 264
+  for the next largest variant; it is 272 bytes now. Every recursive walk moves
+  those by value, so a nesting level costs less in stack across parse, clone,
+  drop, render and serialize (markup-carve/carve-wasm#44).
 
 ### Fixed
 

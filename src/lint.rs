@@ -481,7 +481,7 @@ fn collect_figure_group_warnings(
                 }
             }
             BlockNode::Figure(f) => {
-                if let FigureTarget::BlockQuote(b) = &f.target {
+                if let FigureTarget::BlockQuote(b) = &*f.target {
                     collect_figure_group_warnings(&b.children, in_group, to_byte, out);
                 }
             }
@@ -729,7 +729,7 @@ fn walk_block(node: &BlockNode, visit: &mut Visit<'_>) {
         }
         BlockNode::Figure(n) => {
             report("figure", &n.attrs, n.pos, visit);
-            match &n.target {
+            match &*n.target {
                 FigureTarget::Image(image) => report("image", &image.attrs, image.pos, visit),
                 FigureTarget::BlockQuote(quote) => walk_block_quote(quote, visit),
                 FigureTarget::Table(table) => walk_table(table, visit),

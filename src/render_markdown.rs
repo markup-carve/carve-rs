@@ -678,7 +678,7 @@ fn render_figure(node: &Figure, ctx: &mut MarkdownContext, depth: usize) -> Stri
     // was the empty string, so the caption was written with no line break at all
     // - `| a |Fruit prices` - fusing the words INTO the last data cell rather
     // than merely following it.
-    let sep = match &node.target {
+    let sep = match &*node.target {
         FigureTarget::BlockQuote(_) | FigureTarget::Table(_) => "\n\n",
         _ => "\n",
     };
@@ -694,7 +694,7 @@ fn render_figure(node: &Figure, ctx: &mut MarkdownContext, depth: usize) -> Stri
 /// plain figure (which glues its caption under it) and the figure group
 /// (whose panel captions take the §10g T1 emphasized-paragraph form instead).
 fn render_figure_target(node: &Figure, ctx: &mut MarkdownContext, depth: usize) -> String {
-    match &node.target {
+    match &*node.target {
         FigureTarget::Image(image) => render_image(image),
         FigureTarget::Table(table) => render_table(table, ctx).trim().to_string(),
         FigureTarget::BlockQuote(quote) => {
@@ -1904,7 +1904,7 @@ where
             }
             BlockNode::Figure(figure) => {
                 visit(block, Some(&figure.caption));
-                match &figure.target {
+                match &*figure.target {
                     FigureTarget::BlockQuote(quote) => {
                         walk_blocks(&quote.children, depth + 1, visit)
                     }
