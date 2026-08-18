@@ -881,11 +881,7 @@ fn extract_footnote_defs(
         // A quote nested in a list item sits AT the item's content column, so
         // the prefix scan needs that column to see it (carve-rs#588).
         let after_term = i > 0 && opens_definition_entry(lines[i - 1]);
-        let stripped = strip_container_prefixes_at(
-            lines[i],
-            columns.reached_by(leading_ws(lines[i])),
-            after_term,
-        );
+        let stripped = strip_container_prefixes_at(lines[i], &columns, after_term);
         let in_container = !stripped.structural.is_empty();
         // A footnote definition is NEVER collected from inside a fenced code
         // block: a `[^x]: ...` line there is literal content. The prepass has
@@ -1644,8 +1640,7 @@ fn extract_link_defs(source: &str) -> (String, BTreeMap<String, LinkDef>) {
         // A quote nested in a list item sits AT the item's content column, so
         // the prefix scan needs that column to see it (carve-rs#588).
         let after_term = line_index > 0 && opens_definition_entry(all_lines[line_index - 1]);
-        let stripped =
-            strip_container_prefixes_at(line, columns.reached_by(leading_ws(line)), after_term);
+        let stripped = strip_container_prefixes_at(line, &columns, after_term);
         // A marker after an already-open paragraph is lazy paragraph text, not
         // a new container from which this line-oriented pre-pass may collect a
         // definition (`r\n. [f]: t`).
@@ -2288,15 +2283,52 @@ fn strip_container_prefixes(mut line: &str, after_term: bool) -> StrippedContain
 /// `    > [r]: /u` is indented text, not a quote, and stays uncollected.
 fn strip_container_prefixes_at<'a>(
     line: &'a str,
-    content_col: usize,
+    columns: &ContentColumns,
     after_term: bool,
 ) -> StrippedContainerLine<'a> {
-    if content_col > 0
-        && line.len() > content_col
-        && line.as_bytes()[..content_col].iter().all(|b| *b == b' ')
-        && line.as_bytes()[content_col] == b'>'
-    {
-        let inner = strip_container_prefixes(&line[content_col..], after_term);
+    // ASKED AFTER THE QUOTE MARKERS, because that is where the column it asks
+    // about is measured. `at_content_column` records why: columns are counted
+    // INSIDE the quote, so the item opened by `> - a` has content column 2 and
+    // not 4. Asking about the raw line answered for the wrong depth - the indent
+    // before a `>` is zero on a line that starts with one, so `> - a` /
+    // `>   > [r]: /u` found no column, the inner quote was never stripped, and
+    // the definition inside it stayed paragraph text where the block parser
+    // publishes it (markup-carve/carve-rs#1082).
+    //
+    // The column is still what decides, which is the whole rule: an indented `>`
+    // opens a quote only AT a live item's content column. `> a` / `>   > b` has
+    // no item, so no column matches, the `>` is ordinary text, and this pass
+    // agrees with the block parser about that too.
+    // AND ASKED AGAIN AT EACH DEPTH, because the prefixes alternate. Each hop
+    // consumes one indent-then-quote, and the markers between two hops are what
+    // the workhorse below already walks - so `- > - > x` /
+    // `  >   > [r]: /url` needs the question twice, once per item that holds a
+    // quote. Asking once left the inner one unstripped.
+    let mut cut = 0usize;
+    loop {
+        let mut inside = &line[cut..];
+        while let Some(rest) = strip_blockquote_prefix(inside) {
+            inside = rest;
+        }
+        if let Some(marker) = detect_list_marker_full(inside) {
+            inside = marker.content;
+        }
+        let content_col = columns.reached_by(leading_ws(inside));
+        if content_col == 0
+            || inside.len() <= content_col
+            || !inside.as_bytes()[..content_col].iter().all(|b| *b == b' ')
+            || inside.as_bytes()[content_col] != b'>'
+        {
+            break;
+        }
+        let next = (inside.as_ptr() as usize - line.as_ptr() as usize) + content_col;
+        if next <= cut {
+            break;
+        }
+        cut = next;
+    }
+    if cut > 0 {
+        let inner = strip_container_prefixes(&line[cut..], after_term);
         let structural_len = inner.bare.as_ptr() as usize - line.as_ptr() as usize;
         return StrippedContainerLine {
             structural: &line[..structural_len],
