@@ -36,6 +36,7 @@ pub mod prosemirror;
 mod render;
 mod render_ansi;
 mod render_carve;
+mod render_carve_error;
 mod render_depth;
 mod render_markdown;
 mod render_plain;
@@ -113,6 +114,7 @@ pub use prosemirror::{from_prosemirror, to_prosemirror, ProseMirrorDoc, ProseMir
 pub use render::{render_html, render_html_with_options, MAX_RENDER_DEPTH};
 pub use render_ansi::{render_ansi, render_ansi_with_options};
 pub use render_carve::render_carve;
+pub use render_carve_error::{RenderCarveError, SourceUnspellable};
 pub use render_depth::RenderDepthError;
 pub use render_markdown::{render_markdown, render_markdown_with_options};
 pub use render_plain::{render_plain_text, render_plain_text_with_options};

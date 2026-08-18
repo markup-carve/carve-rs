@@ -4,7 +4,7 @@ use crate::ast::*;
 use crate::escape::is_dangerous_attr_name;
 use crate::render::{semantic_value_target, EXTENDED_SEMANTIC_SPAN_ORDER};
 use crate::render_carve::is_attr_identifier;
-use crate::{render_carve, RenderDepthError};
+use crate::{render_carve, RenderCarveError};
 use html5ever::tendril::TendrilSink;
 use html5ever::{serialize, serialize::SerializeOpts};
 use markup5ever_rcdom::{Handle, NodeData, RcDom, SerializableHandle};
@@ -152,6 +152,7 @@ pub enum HtmlImportError {
     DepthLimit,
     NodeLimit,
     RenderDepth,
+    SourceUnspellable,
 }
 
 struct Importer<'a> {
@@ -3443,8 +3444,10 @@ pub fn html_to_carve(
     options: &HtmlImportOptions,
 ) -> Result<HtmlImportResult<String>, HtmlImportError> {
     let result = import(html, options, true)?;
-    let value =
-        render_carve(&result.value).map_err(|_: RenderDepthError| HtmlImportError::RenderDepth)?;
+    let value = render_carve(&result.value).map_err(|error| match error {
+        RenderCarveError::Depth(_) => HtmlImportError::RenderDepth,
+        RenderCarveError::SourceUnspellable(_) => HtmlImportError::SourceUnspellable,
+    })?;
     Ok(HtmlImportResult {
         value,
         report: result.report,

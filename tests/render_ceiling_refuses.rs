@@ -15,7 +15,7 @@
 use std::collections::BTreeMap;
 
 use carve::{
-    BlockNode, BlockQuote, Document, InlineNode, Options, Paragraph, RenderDepthError,
+    BlockNode, BlockQuote, Document, InlineNode, Options, Paragraph, RenderCarveError,
     MAX_RENDER_DEPTH,
 };
 
@@ -60,19 +60,25 @@ fn nested(depth: usize) -> Document {
     }
 }
 
-fn render_all(doc: &Document) -> Vec<(&'static str, Result<String, RenderDepthError>)> {
+fn render_all(doc: &Document) -> Vec<(&'static str, Result<String, RenderCarveError>)> {
     let options = Options::default();
     vec![
-        ("html", carve::render_html_with_options(doc, &options)),
+        (
+            "html",
+            carve::render_html_with_options(doc, &options).map_err(Into::into),
+        ),
         (
             "markdown",
-            carve::render_markdown_with_options(doc, &options),
+            carve::render_markdown_with_options(doc, &options).map_err(Into::into),
         ),
         (
             "plain",
-            carve::render_plain_text_with_options(doc, &options),
+            carve::render_plain_text_with_options(doc, &options).map_err(Into::into),
         ),
-        ("ansi", carve::render_ansi_with_options(doc, &options)),
+        (
+            "ansi",
+            carve::render_ansi_with_options(doc, &options).map_err(Into::into),
+        ),
         ("carve", carve::render_carve(doc)),
     ]
 }
@@ -86,6 +92,9 @@ fn the_refusal_names_the_renderer_and_the_bound() {
         let doc = nested(MAX_RENDER_DEPTH + 16);
         for (target, rendered) in render_all(&doc) {
             let err = rendered.expect_err("past the ceiling every target refuses");
+            let RenderCarveError::Depth(err) = err else {
+                panic!("the ceiling must return a depth refusal");
+            };
             assert_eq!(err.renderer(), target);
             assert_eq!(err.limit(), MAX_RENDER_DEPTH);
             let shown = err.to_string();
