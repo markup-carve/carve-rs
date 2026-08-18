@@ -18,6 +18,7 @@ const IMPLEMENTED: &[&str] = &[
     "a-table-alignment-run-carries-two-independent-axes",
     "a-vertical-table-marker-needs-a-horizontal-partner",
     "a-table-cell-can-inherit-horizontal-alignment",
+    "a-collected-definition-closes-the-item-paragraph",
     "an-all-blank-raw-payload-still-emits-its-line",
     // Added with the spec bump to carve 68b71c2. Every document in each of the
     // four was rendered through this engine and matched its committed HTML

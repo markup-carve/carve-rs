@@ -620,11 +620,12 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // Category 369 then adds the four quote-reachability documents from
     // carve#1384. One stays strict and three report the existing container
     // boundary/source-layout loss; the bridge introduces no new loss cause.
-    // Categories 372-374 each add one strict document: the blank raw payload
-    // preserves its source, and both table alignment cases round-trip without
-    // introducing a new loss cause.
+    // Categories 372, 373 and 375 each add one strict document: the blank raw
+    // payload preserves its source, and both table alignment cases round-trip
+    // without introducing a new loss cause. Category 374's four definition
+    // boundary documents report already-declared source-layout losses.
     const STRICT: usize = 1003;
-    const LOSSY: usize = 276;
+    const LOSSY: usize = 280;
     assert!(
         covered >= STRICT,
         "strict round trips fell from {STRICT} to {covered}"
