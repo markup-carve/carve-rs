@@ -447,6 +447,7 @@ const IMPLEMENTED: &[&str] = &[
     "what-a-content-column-block-does-not-reach",
     "a-footnote-definition-s-block-runs-to-the-end-of-its-body",
     "a-definition-behind-an-alternating-container-prefix-registers-at-the-innermost-content-column",
+    "a-paragraph-opened-after-a-block-in-an-item-is-still-open-for-a-lazy-line",
 ];
 
 fn corpus_dir() -> PathBuf {
