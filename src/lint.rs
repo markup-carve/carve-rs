@@ -162,8 +162,104 @@ pub fn lint_carve_with_options(source: &str, options: &Options<'_>) -> Vec<LintW
     }
     collect_template_source_warning(source, &doc, &mut out);
     collect_unattached_block_attribute_warnings(source, &unattached, &to_byte, &mut out);
+    collect_table_column_warnings(source, &mut out);
     out.sort_by_key(|w| (w.start, w.end, w.rule));
     out
+}
+
+fn collect_table_column_warnings(source: &str, out: &mut Vec<LintWarning>) {
+    let lines: Vec<&str> = source.lines().collect();
+    let mut line_start = 0usize;
+    for (index, line) in lines.iter().enumerate() {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with('|') {
+            let bytes = line.as_bytes();
+            let mut i = 0;
+            while i < bytes.len() {
+                if bytes[i] == b'|' {
+                    let mut start = i + 1;
+                    if bytes.get(start) == Some(&b'=') {
+                        start += 1;
+                    }
+                    let mut end = start;
+                    while matches!(bytes.get(end), Some(b'<' | b'>' | b'~' | b'^' | b'v'))
+                        && end - start < 2
+                    {
+                        end += 1;
+                    }
+                    if end > start
+                        && bytes.get(end).is_some_and(|b| {
+                            !b.is_ascii_whitespace()
+                                && *b != b'{'
+                                && !matches!(b, b'<' | b'>' | b'~' | b'^' | b'v')
+                        })
+                    {
+                        out.push(LintWarning { line: index + 1, column: start + 1, rule: "table-alignment-run-padding", message: format!("The table alignment run {:?} has no terminating space, so it is literal cell content. Add a space after the run to make it alignment.", &line[start..end]), start: line_start + start, end: line_start + end });
+                    }
+                }
+                i += 1;
+            }
+        } else if ["aligns", "valigns", "widths"]
+            .iter()
+            .any(|k| line.contains(&format!("{k}=")))
+        {
+            let next = lines.get(index + 1).copied().unwrap_or("");
+            if next.trim_start().starts_with('|') {
+                let columns = next.matches('|').count().saturating_sub(1);
+                for key in ["aligns", "valigns", "widths"] {
+                    let Some(key_at) = line.find(&format!("{key}=")) else {
+                        continue;
+                    };
+                    let value_at = key_at + key.len() + 1;
+                    let rest = &line[value_at..];
+                    let raw = if let Some(q) = rest.strip_prefix('"') {
+                        q.split('"').next().unwrap_or("")
+                    } else {
+                        rest.split(|c: char| c.is_whitespace() || c == '}')
+                            .next()
+                            .unwrap_or("")
+                    };
+                    let values: Vec<&str> = raw.split(',').collect();
+                    let push = |out: &mut Vec<LintWarning>, rule, message: String| {
+                        out.push(LintWarning {
+                            line: index + 1,
+                            column: key_at + 1,
+                            rule,
+                            message,
+                            start: line_start + key_at,
+                            end: line_start + key_at + key.len(),
+                        })
+                    };
+                    if values.len() < columns {
+                        push(out, "table-column-arity", format!("{key} supplies {} column entries for a {columns}-column table; the unset tail is valid but may be accidental.", values.len()));
+                    }
+                    if key == "widths"
+                        && values
+                            .iter()
+                            .filter_map(|v| v.trim().parse::<f64>().ok())
+                            .sum::<f64>()
+                            > 100.0
+                    {
+                        push(
+                            out,
+                            "table-width-total",
+                            "The specified table column widths total more than 100%.".to_owned(),
+                        );
+                    }
+                    let overlap = (key == "aligns"
+                        && (next.contains("|=<") || next.contains("|=>") || next.contains("|=~")))
+                        || (key == "valigns"
+                            && (next.contains("|=^")
+                                || next.contains("|=v")
+                                || next.contains("|=~")));
+                    if overlap {
+                        push(out, "table-column-overlap", "A column supplies the same alignment axis both in the table and in a table attribute; the in-table marker wins.".to_owned());
+                    }
+                }
+            }
+        }
+        line_start += line.len() + 1;
+    }
 }
 
 /// PART 9 §15 A4: a floating `{…}` that ran out of blocks to attach to.

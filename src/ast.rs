@@ -296,6 +296,8 @@ pub struct Table {
     pub caption: Option<Vec<InlineNode>>,
     /// Structured publishing/navigation label; Carve 0.1 source has no spelling.
     pub short_caption: Option<Vec<InlineNode>>,
+    /// Per-column publishing metadata, resolved from positional table attrs.
+    pub columns: Vec<TableColumn>,
     pub rows: Vec<TableRow>,
     /// An explicit head/body/foot partition of `rows`, imported from or destined
     /// for a format whose table model has one. Carve 0.1 source has no spelling
@@ -351,6 +353,7 @@ pub struct TableCell {
     pub header: bool,
     pub span: Option<TableCellSpan>,
     pub align: Option<TableAlign>,
+    pub valign: Option<TableVerticalAlign>,
     /// Author attributes from a `{...}` glued to the cell's opening pipe.
     pub attrs: Option<Attrs>,
     pub children: Vec<InlineNode>,
@@ -369,6 +372,24 @@ pub enum TableAlign {
     Left,
     Right,
     Center,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TableColumn {
+    pub align: Option<TableAlign>,
+    pub valign: Option<TableVerticalAlign>,
+    /// Fraction of the table width, in `(0, 1]`.
+    pub width: Option<f64>,
+}
+
+// Widths are finite values validated at the AST boundary.
+impl Eq for TableColumn {}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TableVerticalAlign {
+    Top,
+    Middle,
+    Bottom,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

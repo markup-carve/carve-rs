@@ -34,6 +34,7 @@ pub(crate) enum Json {
     Null,
     Bool(bool),
     Number(i64),
+    Float(f64),
     String(String),
     Array(Vec<Json>),
     Object(BTreeMap<String, Json>),
@@ -49,6 +50,7 @@ pub(crate) fn value_to_json(value: &Json) -> String {
             Json::Null => out.push_str("null"),
             Json::Bool(value) => out.push_str(if *value { "true" } else { "false" }),
             Json::Number(value) => out.push_str(&value.to_string()),
+            Json::Float(value) => out.push_str(&value.to_string()),
             Json::String(value) => write_string(out, value),
             Json::Array(values) => {
                 out.push('[');
@@ -909,6 +911,18 @@ fn write_list_item(out: &mut String, n: &ListItem) {
 fn write_table(out: &mut String, n: &Table) {
     let mut w = typed(out, "table");
     w.field("rows", |out| write_array(out, &n.rows, write_table_row));
+    let derived;
+    let columns = if n.columns.is_empty() {
+        derived = columns_from_table_attrs(n.attrs.as_ref());
+        &derived
+    } else {
+        &n.columns
+    };
+    if !columns.is_empty() {
+        w.field("columns", |out| {
+            write_array(out, columns, write_table_column)
+        });
+    }
     if let Some(caption) = &n.caption {
         w.field("caption", |out| write_inlines(out, caption));
     }
@@ -920,6 +934,54 @@ fn write_table(out: &mut String, n: &Table) {
     }
     write_attrs_field(&mut w, &n.attrs);
     write_pos_field(&mut w, &n.pos);
+    w.finish();
+}
+
+fn columns_from_table_attrs(attrs: Option<&Attrs>) -> Vec<TableColumn> {
+    let values = |key| {
+        attrs
+            .and_then(|a| a.key_values.get(key))
+            .map(|v| v.split(',').collect::<Vec<_>>())
+            .unwrap_or_default()
+    };
+    let aligns = values("aligns");
+    let valigns = values("valigns");
+    let widths = values("widths");
+    let len = aligns.len().max(valigns.len()).max(widths.len());
+    (0..len)
+        .map(|i| TableColumn {
+            align: aligns.get(i).and_then(|v| match *v {
+                "left" => Some(TableAlign::Left),
+                "right" => Some(TableAlign::Right),
+                "center" => Some(TableAlign::Center),
+                _ => None,
+            }),
+            valign: valigns.get(i).and_then(|v| match *v {
+                "top" => Some(TableVerticalAlign::Top),
+                "middle" => Some(TableVerticalAlign::Middle),
+                "bottom" => Some(TableVerticalAlign::Bottom),
+                _ => None,
+            }),
+            width: widths
+                .get(i)
+                .and_then(|v| v.parse::<f64>().ok())
+                .filter(|v| *v > 0.0 && *v <= 100.0)
+                .map(|v| v / 100.0),
+        })
+        .collect()
+}
+
+fn write_table_column(out: &mut String, n: &TableColumn) {
+    let mut w = Writer::new(out);
+    if let Some(align) = n.align {
+        w.field("align", |out| write_string(out, align_json(align)));
+    }
+    if let Some(valign) = n.valign {
+        w.field("valign", |out| write_string(out, valign_json(valign)));
+    }
+    if let Some(width) = n.width {
+        w.field("width", |out| out.push_str(&width.to_string()));
+    }
     w.finish();
 }
 
@@ -969,6 +1031,9 @@ fn write_table_cell(out: &mut String, n: &TableCell) {
     }
     if let Some(align) = n.align {
         w.field("align", |out| write_string(out, align_json(align)));
+    }
+    if let Some(valign) = n.valign {
+        w.field("valign", |out| write_string(out, valign_json(valign)));
     }
     write_attrs_field(&mut w, &n.attrs);
     write_pos_field(&mut w, &n.pos);
@@ -1542,6 +1607,14 @@ fn align_json(t: TableAlign) -> &'static str {
     }
 }
 
+fn valign_json(t: TableVerticalAlign) -> &'static str {
+    match t {
+        TableVerticalAlign::Top => "top",
+        TableVerticalAlign::Middle => "middle",
+        TableVerticalAlign::Bottom => "bottom",
+    }
+}
+
 pub(crate) fn emphasis_type(t: EmphasisKind) -> &'static str {
     match t {
         EmphasisKind::Italic => "emphasis",
@@ -1744,9 +1817,44 @@ fn decode_table(obj: &BTreeMap<String, Json>) -> Result<Table, AstJsonError> {
         attrs: optional_attrs(obj)?,
         caption: optional_inlines(obj, "caption")?,
         short_caption: optional_inlines(obj, "shortCaption")?,
+        columns: match obj.get("columns") {
+            Some(Json::Array(values)) => values
+                .iter()
+                .map(decode_table_column)
+                .collect::<Result<_, _>>()?,
+            Some(_) => {
+                return Err(AstJsonError::new(
+                    "table.columns must be an array".to_owned(),
+                ))
+            }
+            None => Vec::new(),
+        },
         rows,
         row_groups,
         pos: optional_pos(obj, "table")?,
+    })
+}
+
+fn decode_table_column(value: &Json) -> Result<TableColumn, AstJsonError> {
+    let obj = value.as_object("table.columns[]")?;
+    let width = match obj.get("width") {
+        Some(Json::Number(v)) if *v > 0 && *v <= 1 => Some(*v as f64),
+        Some(Json::Float(v)) if *v > 0.0 && *v <= 1.0 => Some(*v),
+        Some(_) => {
+            return Err(AstJsonError::new(
+                "table.columns[].width must be in (0, 1]".to_owned(),
+            ))
+        }
+        None => None,
+    };
+    Ok(TableColumn {
+        align: optional_string(obj, "align")?
+            .map(decode_table_align)
+            .transpose()?,
+        valign: optional_string(obj, "valign")?
+            .map(decode_table_valign)
+            .transpose()?,
+        width,
     })
 }
 
@@ -1826,6 +1934,9 @@ fn decode_table_cell(value: &Json) -> Result<TableCell, AstJsonError> {
             .transpose()?,
         align: optional_string(obj, "align")?
             .map(decode_table_align)
+            .transpose()?,
+        valign: optional_string(obj, "valign")?
+            .map(decode_table_valign)
             .transpose()?,
         attrs: optional_attrs(obj)?,
         children: decode_inlines(required_array(obj, "table_cell", "children")?)?,
@@ -2260,6 +2371,17 @@ fn decode_table_align(value: &str) -> Result<TableAlign, AstJsonError> {
     }
 }
 
+fn decode_table_valign(value: &str) -> Result<TableVerticalAlign, AstJsonError> {
+    match value {
+        "top" => Ok(TableVerticalAlign::Top),
+        "middle" => Ok(TableVerticalAlign::Middle),
+        "bottom" => Ok(TableVerticalAlign::Bottom),
+        other => Err(AstJsonError::new(format!(
+            "table_cell.valign has invalid value {other:?}"
+        ))),
+    }
+}
+
 fn optional_marker_char(
     obj: &BTreeMap<String, Json>,
     field: &str,
@@ -2561,7 +2683,7 @@ impl<'a> Parser<'a> {
             Some(b'"') => self.parse_string().map(Json::String),
             Some(b'[') => self.nested(Self::parse_array),
             Some(b'{') => self.nested(Self::parse_object),
-            Some(b'-' | b'0'..=b'9') => self.parse_number().map(Json::Number),
+            Some(b'-' | b'0'..=b'9') => self.parse_number(),
             Some(_) => Err(self.err("unexpected character in JSON value")),
             None => Err(self.err("unexpected end of input")),
         }
@@ -2694,7 +2816,7 @@ impl<'a> Parser<'a> {
         Ok(value)
     }
 
-    fn parse_number(&mut self) -> Result<i64, AstJsonError> {
+    fn parse_number(&mut self) -> Result<Json, AstJsonError> {
         let start = self.pos;
         self.consume(b'-');
         match self.peek() {
@@ -2709,12 +2831,41 @@ impl<'a> Parser<'a> {
             }
             _ => return Err(self.err("invalid JSON number")),
         }
-        if matches!(self.peek(), Some(b'.' | b'e' | b'E')) {
-            return Err(self.err("JSON AST numbers must be integers"));
+        let mut is_float = false;
+        if self.consume(b'.') {
+            is_float = true;
+            let digit_start = self.pos;
+            while matches!(self.peek(), Some(b'0'..=b'9')) {
+                self.pos += 1;
+            }
+            if self.pos == digit_start {
+                return Err(self.err("invalid JSON number"));
+            }
         }
-        self.input[start..self.pos]
-            .parse::<i64>()
-            .map_err(|_| self.err("JSON number is out of range"))
+        if matches!(self.peek(), Some(b'e' | b'E')) {
+            is_float = true;
+            self.pos += 1;
+            if matches!(self.peek(), Some(b'+' | b'-')) {
+                self.pos += 1;
+            }
+            let digit_start = self.pos;
+            while matches!(self.peek(), Some(b'0'..=b'9')) {
+                self.pos += 1;
+            }
+            if self.pos == digit_start {
+                return Err(self.err("invalid JSON number"));
+            }
+        }
+        let raw = &self.input[start..self.pos];
+        if is_float {
+            raw.parse::<f64>()
+                .map(Json::Float)
+                .map_err(|_| self.err("JSON number is out of range"))
+        } else {
+            raw.parse::<i64>()
+                .map(Json::Number)
+                .map_err(|_| self.err("JSON number is out of range"))
+        }
     }
 
     fn skip_ws(&mut self) {

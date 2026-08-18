@@ -1210,7 +1210,53 @@ fn render_block(node: &BlockNode, ctx: &mut CarveContext) -> String {
             }
             with_block_attrs(&rule.attrs, &marker.to_string().repeat(3))
         }
-        BlockNode::Table(table) => with_block_attrs(&table.attrs, &render_table(table, ctx)),
+        BlockNode::Table(table) => {
+            let mut attrs = table.attrs.clone();
+            if !table.columns.is_empty() {
+                let attrs = attrs.get_or_insert_with(Attrs::default);
+                let align = table
+                    .columns
+                    .iter()
+                    .map(|c| {
+                        c.align
+                            .map(|v| match v {
+                                TableAlign::Left => "left",
+                                TableAlign::Right => "right",
+                                TableAlign::Center => "center",
+                            })
+                            .unwrap_or("")
+                    })
+                    .collect::<Vec<_>>()
+                    .join(",");
+                let valign = table
+                    .columns
+                    .iter()
+                    .map(|c| {
+                        c.valign
+                            .map(|v| match v {
+                                TableVerticalAlign::Top => "top",
+                                TableVerticalAlign::Middle => "middle",
+                                TableVerticalAlign::Bottom => "bottom",
+                            })
+                            .unwrap_or("")
+                    })
+                    .collect::<Vec<_>>()
+                    .join(",");
+                let widths = table
+                    .columns
+                    .iter()
+                    .map(|c| c.width.map(|v| (v * 100.0).to_string()).unwrap_or_default())
+                    .collect::<Vec<_>>()
+                    .join(",");
+                for (key, value) in [("aligns", align), ("valigns", valign), ("widths", widths)] {
+                    if !value.chars().all(|c| c == ',') && !attrs.key_values.contains_key(key) {
+                        attrs.key_values.insert(key.to_owned(), value);
+                        attrs.order.push(AttrSlot::Key(key.to_owned()));
+                    }
+                }
+            }
+            with_block_attrs(&attrs, &render_table(table, ctx))
+        }
         BlockNode::Admonition(admonition) => {
             let title = admonition
                 .title
@@ -1639,6 +1685,18 @@ fn render_table_cell(cell: &TableCell, ctx: &mut CarveContext, mark_header: bool
         return pad_cell(&attrs, marker);
     }
     let align = align_marker(cell.align);
+    let valign = match cell.valign {
+        Some(TableVerticalAlign::Top) => "^",
+        Some(TableVerticalAlign::Middle) => {
+            if cell.align == Some(TableAlign::Center) {
+                "~"
+            } else {
+                "~~"
+            }
+        }
+        Some(TableVerticalAlign::Bottom) => "v",
+        None => "",
+    };
     // CELL ATTRIBUTES BIND LAST (grammar §20 T10): the kind marker first, then
     // the alignment marker, then the attribute block, glued to the marker run.
     // Writing the block AHEAD of the markers had no spelling for an attributed
@@ -1646,9 +1704,10 @@ fn render_table_cell(cell: &TableCell, ctx: &mut CarveContext, mark_header: bool
     // data cell whose content is `=R`, so `toHtml(fmt(x)) != toHtml(x)` on
     // every attributed header cell.
     let prefix = format!(
-        "{}{}{}",
+        "{}{}{}{}",
         if cell.header && mark_header { "=" } else { "" },
         align,
+        valign,
         attrs
     );
     ctx.table_cell_depth += 1;

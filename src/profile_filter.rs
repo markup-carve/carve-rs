@@ -803,6 +803,7 @@ fn text_cell(text: &str) -> TableCell {
         header: false,
         span: None,
         align: None,
+        valign: None,
         attrs: None,
         children: vec![InlineNode::text(text.to_string())],
         // A cell this filter synthesizes has no source of its own.

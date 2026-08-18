@@ -411,6 +411,19 @@ impl Renderer {
                             ),
                         );
                     }
+                    if let Some(valign) = cell.valign {
+                        a.insert(
+                            "verticalAlignment".into(),
+                            Json::String(
+                                match valign {
+                                    TableVerticalAlign::Top => "top",
+                                    TableVerticalAlign::Middle => "middle",
+                                    TableVerticalAlign::Bottom => "bottom",
+                                }
+                                .into(),
+                            ),
+                        );
+                    }
                     if let Some(span) = cell.span {
                         a.insert(
                             "carveSpanMarker".into(),

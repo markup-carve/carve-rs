@@ -1563,9 +1563,21 @@ fn render_table(
     options: &Options<'_>,
     state: &mut RenderState,
 ) {
+    let mut resolved = t.clone();
+    if resolved.columns.is_empty() {
+        resolved.columns = columns_from_attrs(resolved.attrs.as_ref());
+    }
+    let t = &resolved;
     indent(out, level);
     out.push_str("<table");
-    write_attrs(out, &t.attrs);
+    let mut table_attrs = t.attrs.clone();
+    if let Some(attrs) = &mut table_attrs {
+        attrs
+            .key_values
+            .retain(|k, _| !matches!(k.as_str(), "aligns" | "valigns" | "widths"));
+        attrs.order.retain(|s| !matches!(s, AttrSlot::Key(k) if matches!(k.as_str(), "aligns" | "valigns" | "widths")));
+    }
+    write_attrs(out, &table_attrs);
     out.push('>');
     if let Some(caption) = &t.caption {
         out.push('\n');
@@ -1573,6 +1585,23 @@ fn render_table(
         out.push_str("<caption>");
         render_inlines(out, caption, options, state);
         out.push_str("</caption>");
+    }
+    if t.columns.iter().any(|c| c.width.is_some()) {
+        out.push('\n');
+        indent(out, level + 1);
+        out.push_str("<colgroup>");
+        for column in &t.columns {
+            out.push('\n');
+            indent(out, level + 2);
+            out.push_str("<col");
+            if let Some(width) = column.width {
+                write!(out, " style=\"width: {}%;\"", width * 100.0).unwrap();
+            }
+            out.push('>');
+        }
+        out.push('\n');
+        indent(out, level + 1);
+        out.push_str("</colgroup>");
     }
     // Computed once over ALL rows: a `^` in a body row extends the cell above
     // it even when that cell is in a header row, so a header cell can carry a
@@ -1625,6 +1654,7 @@ fn render_table(
                 &rowspan_cols,
                 &orphan_carets,
                 state,
+                t,
             );
         }
         out.push_str("</thead>");
@@ -1656,6 +1686,40 @@ fn render_table(
     out.push_str("</table>");
 }
 
+fn columns_from_attrs(attrs: Option<&Attrs>) -> Vec<TableColumn> {
+    let values = |key| {
+        attrs
+            .and_then(|a| a.key_values.get(key))
+            .map(|v| v.split(',').collect::<Vec<_>>())
+            .unwrap_or_default()
+    };
+    let aligns = values("aligns");
+    let valigns = values("valigns");
+    let widths = values("widths");
+    let len = aligns.len().max(valigns.len()).max(widths.len());
+    (0..len)
+        .map(|i| TableColumn {
+            align: aligns.get(i).and_then(|v| match *v {
+                "left" => Some(TableAlign::Left),
+                "right" => Some(TableAlign::Right),
+                "center" => Some(TableAlign::Center),
+                _ => None,
+            }),
+            valign: valigns.get(i).and_then(|v| match *v {
+                "top" => Some(TableVerticalAlign::Top),
+                "middle" => Some(TableVerticalAlign::Middle),
+                "bottom" => Some(TableVerticalAlign::Bottom),
+                _ => None,
+            }),
+            width: widths
+                .get(i)
+                .and_then(|v| v.parse::<f64>().ok())
+                .filter(|v| *v > 0.0 && *v <= 100.0)
+                .map(|v| v / 100.0),
+        })
+        .collect()
+}
+
 #[allow(clippy::too_many_arguments)]
 fn render_table_row(
     out: &mut String,
@@ -1666,6 +1730,7 @@ fn render_table_row(
     rowspan_cols: &BTreeMap<(usize, usize), usize>,
     orphan_carets: &BTreeSet<(usize, usize)>,
     state: &mut RenderState,
+    table: &Table,
 ) {
     out.push_str("<tr");
     write_attrs(out, &row.attrs);
@@ -1706,8 +1771,8 @@ fn render_table_row(
             extra.push_str(&format!(" colspan=\"{}\"", colspan));
             emitted.push("colspan");
         }
-        let align = render_align_attr(cell.align.or_else(|| row_align(row, col)));
-        if !align.is_empty() {
+        let style = table_cell_style(cell, table, col, row_align(row, col));
+        if !style.is_empty() {
             emitted.push("style");
         }
         out.push('<');
@@ -1715,7 +1780,7 @@ fn render_table_row(
         out.push_str(&cell_scope_attr(cell, tag == "th", in_head));
         out.push_str(&render_cell_author_attrs(&cell.attrs, &emitted));
         out.push_str(&extra);
-        out.push_str(&align);
+        out.push_str(&style);
         out.push('>');
         render_inlines(out, &cell.children, options, state);
         out.push_str("</");
@@ -1777,11 +1842,14 @@ fn render_table_body_row(
             attrs.push_str(&format!(" colspan=\"{}\"", colspan));
             emitted.push("colspan");
         }
-        if let Some(align) = cell
-            .align
-            .or_else(|| table_column_align(ctx.table, cell_index))
-        {
-            attrs.push_str(&align_attr(align));
+        let style = table_cell_style(
+            cell,
+            ctx.table,
+            cell_index,
+            table_column_align(ctx.table, cell_index),
+        );
+        if !style.is_empty() {
+            attrs.push_str(&style);
             emitted.push("style");
         }
         // A `|=` cell in a body row is a row header: <th> inside <tbody>.
@@ -1806,11 +1874,56 @@ fn row_align(row: &TableRow, col: usize) -> Option<TableAlign> {
 }
 
 fn table_column_align(table: &Table, col: usize) -> Option<TableAlign> {
-    table.rows.first()?.cells.get(col)?.align
+    table
+        .rows
+        .first()
+        .and_then(|r| r.cells.get(col))
+        .and_then(|c| c.align)
+        .or_else(|| table.columns.get(col).and_then(|c| c.align))
 }
 
-fn render_align_attr(align: Option<TableAlign>) -> String {
-    align.map(align_attr).unwrap_or_default()
+fn table_cell_style(
+    cell: &TableCell,
+    table: &Table,
+    col: usize,
+    inherited_align: Option<TableAlign>,
+) -> String {
+    let align = cell
+        .align
+        .or(inherited_align)
+        .or_else(|| table.columns.get(col).and_then(|c| c.align));
+    let valign = cell
+        .valign
+        .or_else(|| {
+            table
+                .rows
+                .first()
+                .and_then(|r| r.cells.get(col))
+                .and_then(|c| c.valign)
+        })
+        .or_else(|| table.columns.get(col).and_then(|c| c.valign));
+    if align.is_none() && valign.is_none() {
+        return String::new();
+    }
+    let mut declarations = String::new();
+    if let Some(a) = align {
+        declarations.push_str(match a {
+            TableAlign::Left => "text-align: left;",
+            TableAlign::Right => "text-align: right;",
+            TableAlign::Center => "text-align: center;",
+        });
+    }
+    if align.is_some() && valign.is_some() {
+        declarations.push(' ');
+    }
+    if let Some(v) = valign {
+        declarations.push_str(match v {
+            TableVerticalAlign::Top => "vertical-align: top;",
+            TableVerticalAlign::Middle => "vertical-align: middle;",
+            TableVerticalAlign::Bottom => "vertical-align: bottom;",
+        });
+    }
+    format!(" style=\"{declarations}\"")
 }
 
 /// Render a cell's author attributes, dropping any key that collides (case
@@ -1867,15 +1980,6 @@ fn render_cell_author_attrs(attrs: &Option<Attrs>, emitted: &[&str]) -> String {
         _ => true,
     });
     render_attrs(&Some(filtered))
-}
-
-fn align_attr(align: TableAlign) -> String {
-    let value = match align {
-        TableAlign::Left => "left",
-        TableAlign::Right => "right",
-        TableAlign::Center => "center",
-    };
-    format!(" style=\"text-align: {value};\"")
 }
 
 fn consumed_rowspan_cols(row_idx: usize, rowspan_cols: &RowspanCols) -> BTreeSet<usize> {
