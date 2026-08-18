@@ -512,7 +512,7 @@ fn collect_footnotes_block(
                 seen,
                 order,
             );
-            match &mut f.target {
+            match &mut *f.target {
                 FigureTarget::BlockQuote(b) => {
                     for child in &mut b.children {
                         collect_footnotes_block(
@@ -2317,7 +2317,7 @@ fn render_figure_contents(
     state: &mut RenderState,
 ) {
     out.push('\n');
-    match &f.target {
+    match &*f.target {
         FigureTarget::Image(img) => {
             indent(out, level + 1);
             render_image(out, img);

@@ -126,7 +126,7 @@ impl SmartQuotes {
                 }
                 BlockNode::Figure(f) => {
                     self.visit_inlines(&mut f.caption);
-                    match &mut f.target {
+                    match &mut *f.target {
                         FigureTarget::BlockQuote(b) => self.visit_blocks(&mut b.children),
                         FigureTarget::Table(t) => {
                             if let Some(c) = &mut t.caption {

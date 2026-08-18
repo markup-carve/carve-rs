@@ -419,7 +419,7 @@ fn render_figure(node: &Figure, depth: usize) -> String {
     // this is the same construct reaching the same writer through the AST-ingest
     // path, so it takes the same separator. Losing the words INTO a cell is the
     // failure docs/graceful-degradation.md forbids and PART 11 §10e names.
-    let sep = match &node.target {
+    let sep = match &*node.target {
         FigureTarget::BlockQuote(_) => "\n\n",
         _ => "\n",
     };
@@ -430,7 +430,7 @@ fn render_figure(node: &Figure, depth: usize) -> String {
 /// plain figure and the figure group, whose panels put the caption FIRST
 /// (§10g T2).
 fn render_figure_target(node: &Figure, depth: usize) -> String {
-    match &node.target {
+    match &*node.target {
         FigureTarget::Image(image) => render_image(image),
         FigureTarget::Table(table) => render_table(table).trim().to_string(),
         FigureTarget::BlockQuote(quote) => {

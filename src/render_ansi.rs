@@ -582,7 +582,7 @@ fn render_figure(node: &Figure, ctx: &mut AnsiContext, depth: usize) -> String {
         return String::new();
     }
     let target = render_figure_target(node, ctx, depth);
-    let sep = match &node.target {
+    let sep = match &*node.target {
         FigureTarget::BlockQuote(_) => "\n\n",
         _ => "\n",
     };
@@ -593,7 +593,7 @@ fn render_figure(node: &Figure, ctx: &mut AnsiContext, depth: usize) -> String {
 /// plain figure and the figure group, whose panels put the caption FIRST
 /// (§10g T2).
 fn render_figure_target(node: &Figure, ctx: &mut AnsiContext, depth: usize) -> String {
-    match &node.target {
+    match &*node.target {
         FigureTarget::Image(image) => render_image(image),
         FigureTarget::Table(table) => render_table(table, ctx).trim_end().to_string(),
         FigureTarget::BlockQuote(quote) => {

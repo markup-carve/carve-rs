@@ -213,7 +213,7 @@ fn check(
         }
         BlockNode::Figure(figure) => {
             check_inline_nodes(&figure.caption, source, file, checked_inline_text, wrong);
-            if let FigureTarget::BlockQuote(quote) = &figure.target {
+            if let FigureTarget::BlockQuote(quote) = &*figure.target {
                 quote.children.iter().for_each(|c| {
                     check(c, source, file, checked_blocks, checked_inline_text, wrong)
                 });
