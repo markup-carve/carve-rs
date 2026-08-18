@@ -90,7 +90,7 @@ fn kind(value: &Json) -> String {
         Json::Array(_) => "array".into(),
         Json::Null => "null".into(),
         Json::Bool(_) => "boolean".into(),
-        Json::Number(_) => "number".into(),
+        Json::Number(_) | Json::Float(_) => "number".into(),
         Json::String(_) => "string".into(),
     }
 }

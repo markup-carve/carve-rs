@@ -65,6 +65,13 @@ fn symbol_map() {
 }
 
 #[test]
+fn list_table_columns_and_foot() {
+    let list_table = carve::ListTable::new();
+    let options = carve::Options::new().with_extension(&list_table);
+    assert_optional_pair("44-list-table-columns-and-foot", options);
+}
+
+#[test]
 fn citations_numbered() {
     let citations = carve::Citations::new();
     let options = carve::Options::new().with_extension(&citations);

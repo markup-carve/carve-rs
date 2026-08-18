@@ -37,6 +37,7 @@ def base_category(slug: str) -> str:
 
 
 DECLARATION = "const IMPLEMENTED: &[&str] = &["
+GAPS_DECLARATION = "const KNOWN_GAPS: &[&str] = &["
 
 
 def read_allowlist(source: str) -> tuple[list[str], int, int]:
@@ -67,16 +68,11 @@ def main() -> int:
         print(f"no corpus at {CORPUS} - run: git submodule update --init", file=sys.stderr)
         return 2
 
-    binary = next(
-        (p for p in (ROOT / "target/release/carve", ROOT / "target/debug/carve") if p.exists()),
-        None,
-    )
-    if binary is None:
-        print("no built binary - run: cargo build --release", file=sys.stderr)
-        return 2
-
     source = TESTS.read_text()
     allowed, body_start, body_end = read_allowlist(source)
+    gap_start = source.index(GAPS_DECLARATION) + len(GAPS_DECLARATION)
+    gap_end = source.index("];", gap_start)
+    known_gaps = re.findall(r'"([^"]+)"', source[gap_start:gap_end])
 
     pairs: dict[str, list[str]] = {}
     for crv in sorted(CORPUS.glob("*.crv")):
@@ -84,10 +80,18 @@ def main() -> int:
             continue
         pairs.setdefault(base_category(crv.stem), []).append(crv.stem)
 
-    missing = [c for c in pairs if c not in allowed]
+    missing = [c for c in pairs if c not in allowed and c not in known_gaps]
     if not missing:
         print(f"sync-implemented: all {len(pairs)} corpus categories are in IMPLEMENTED.")
         return 0
+
+    binary = next(
+        (p for p in (ROOT / "target/release/carve", ROOT / "target/debug/carve") if p.exists()),
+        None,
+    )
+    if binary is None:
+        print("no built binary - run: cargo build --release", file=sys.stderr)
+        return 2
 
     passing, failing = [], []
     for category in sorted(missing):

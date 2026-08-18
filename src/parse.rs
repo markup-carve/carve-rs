@@ -11019,6 +11019,7 @@ fn parse_table(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         attrs: None,
         caption,
         short_caption: None,
+        columns: Vec::new(),
         rows,
         row_groups: None,
     })
@@ -11659,53 +11660,64 @@ fn parse_table_cell(
                                            // glued after it is alignment even when it is the whole content (`|=<|`).
     let lone_span = !header && (trimmed == "<" || trimmed == "^");
     let mut after_markers = body;
-    let align = if lone_span {
-        None
+    let (align, valign) = if lone_span {
+        (None, None)
     } else {
-        let run = body
-            .bytes()
-            .take_while(|b| matches!(b, b'>' | b'<' | b'~' | b'^' | b'v'))
-            .count();
+        let mut run = 0usize;
+        let mut saw_horizontal = false;
+        let mut saw_vertical = false;
+        for marker in body.bytes() {
+            if !matches!(marker, b'>' | b'<' | b'~' | b'^' | b'v') {
+                break;
+            }
+            if matches!(marker, b'>' | b'<' | b'~') {
+                if !saw_horizontal {
+                    saw_horizontal = true;
+                } else if marker == b'~' && !saw_vertical {
+                    saw_vertical = true;
+                } else {
+                    break;
+                }
+            } else if !saw_vertical {
+                saw_vertical = true;
+            } else {
+                break;
+            }
+            run += 1;
+        }
         let markers = &body.as_bytes()[..run];
-        let horizontal = markers
-            .iter()
-            .filter(|b| matches!(b, b'>' | b'<' | b'~'))
-            .count();
-        let vertical = markers.iter().filter(|b| matches!(b, b'^' | b'v')).count()
-            + markers
-                .iter()
-                .filter(|b| **b == b'~')
-                .count()
-                .saturating_sub(1);
-        let terminated = body
-            .as_bytes()
-            .get(run)
-            .is_some_and(|b| b.is_ascii_whitespace() || *b == b'{');
-        let valid = run > 0 && terminated && (horizontal <= 1 || markers == b"~~") && vertical <= 1;
-        match valid
+        let terminated = body.as_bytes().get(run).is_some_and(|b| {
+            b.is_ascii_whitespace() || *b == b'{' || matches!(b, b'>' | b'<' | b'~' | b'^' | b'v')
+        });
+        let valid = run > 0 && terminated;
+        if valid {
+            after_markers = &body[run..];
+        }
+        let horizontal_marker = valid
             .then(|| {
                 markers
                     .iter()
                     .find(|b| matches!(b, b'>' | b'<' | b'~'))
                     .copied()
             })
-            .flatten()
-        {
-            Some(marker) => {
-                after_markers = &body[run..];
-                Some(match marker {
-                    b'>' => TableAlign::Right,
-                    b'<' => TableAlign::Left,
-                    _ => TableAlign::Center,
-                })
-            }
-            _ => {
-                if valid {
-                    after_markers = &body[run..];
-                }
-                None
-            }
-        }
+            .flatten();
+        let align = horizontal_marker.map(|marker| match marker {
+            b'>' => TableAlign::Right,
+            b'<' => TableAlign::Left,
+            _ => TableAlign::Center,
+        });
+        let valign = if !valid {
+            None
+        } else if markers.contains(&b'^') {
+            Some(TableVerticalAlign::Top)
+        } else if markers.contains(&b'v') {
+            Some(TableVerticalAlign::Bottom)
+        } else if markers == b"~~" {
+            Some(TableVerticalAlign::Middle)
+        } else {
+            None
+        };
+        (align, valign)
     };
     // CELL ATTRIBUTES BIND LAST (grammar §20 T10, corpus
     // 319-cell-attributes-bind-after-the-kind-and-alignment-markers). A `{...}`
@@ -11752,6 +11764,7 @@ fn parse_table_cell(
         header,
         span,
         align,
+        valign,
         attrs,
         children: if span.is_some() {
             // A span cell renders nothing of its own - it widens a neighbour -
@@ -13758,7 +13771,10 @@ fn apply_attrs_to_block(node: &mut BlockNode, attrs: Attrs) {
         BlockNode::CodeBlock(n) => n.attrs = Some(attrs),
         BlockNode::List(n) => n.attrs = Some(attrs),
         BlockNode::BlockQuote(n) => n.attrs = Some(attrs),
-        BlockNode::Table(n) => n.attrs = Some(attrs),
+        BlockNode::Table(n) => {
+            n.columns = table_columns_from_attrs(&attrs);
+            n.attrs = Some(attrs);
+        }
         // A typed colon-fence opener may already carry its own attribute
         // block (`::: note {.x}`); a leading block-attribute line is earlier
         // in source, so its classes come first and the opener's win on
@@ -13777,6 +13793,41 @@ fn apply_attrs_to_block(node: &mut BlockNode, attrs: Attrs) {
         BlockNode::BlockImage(img) => merge_leading_attrs(&mut img.attrs, attrs),
         _ => {}
     }
+}
+
+fn table_columns_from_attrs(attrs: &Attrs) -> Vec<TableColumn> {
+    let split = |key: &str| {
+        attrs
+            .key_values
+            .get(key)
+            .map(|v| v.split(',').collect::<Vec<_>>())
+            .unwrap_or_default()
+    };
+    let aligns = split("aligns");
+    let valigns = split("valigns");
+    let widths = split("widths");
+    let len = aligns.len().max(valigns.len()).max(widths.len());
+    (0..len)
+        .map(|i| TableColumn {
+            align: aligns.get(i).and_then(|v| match *v {
+                "left" => Some(TableAlign::Left),
+                "right" => Some(TableAlign::Right),
+                "center" => Some(TableAlign::Center),
+                _ => None,
+            }),
+            valign: valigns.get(i).and_then(|v| match *v {
+                "top" => Some(TableVerticalAlign::Top),
+                "middle" => Some(TableVerticalAlign::Middle),
+                "bottom" => Some(TableVerticalAlign::Bottom),
+                _ => None,
+            }),
+            width: widths
+                .get(i)
+                .and_then(|v| v.parse::<f64>().ok())
+                .filter(|v| *v > 0.0 && *v <= 100.0)
+                .map(|v| v / 100.0),
+        })
+        .collect()
 }
 
 fn apply_attrs_to_inline(node: &mut InlineNode, attrs: Attrs) {

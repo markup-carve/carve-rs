@@ -421,6 +421,7 @@ impl Reader {
                             ("header", Json::Bool(flavor == 1)),
                             ("children", Json::Array(self.table_cell_inlines(ce)?)),
                             ("align", optional_string(ca, "alignment")),
+                            ("valign", optional_string(ca, "verticalAlignment")),
                             (
                                 "span",
                                 match string_opt(ca, "carveSpanMarker") {
@@ -1013,6 +1014,7 @@ fn is_structural_attr(k: &str) -> bool {
         k,
         "alt"
             | "alignment"
+            | "verticalAlignment"
             | "carveAttrOrder"
             | "carveAutolink"
             | "carveAdmonitionKind"
