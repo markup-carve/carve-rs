@@ -7894,12 +7894,27 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                     if marker_line_was_the_whole_block {
                         return body_ends_with_open_paragraph(src, options);
                     }
-                    nested_ends_with_heading(src, options)
-                        || detect_thematic_break(marker.content)
-                        || parse_footnote_def_line(marker.content).is_some()
-                        || parse_link_def_line(marker.content).is_some()
-                        || marker_content_is_attr_line(marker.content)
-                        || trim_ascii_start(marker.content).starts_with("%%")
+                    // S4 DOES NOT ASK WHETHER THE OPEN PARAGRAPH IS THE
+                    // CONTAINER'S FIRST BLOCK (markup-carve/carve#1370, a
+                    // clarifying passage on the same clause). The half left open
+                    // above is settled: an item whose first block is a table, a
+                    // fence or a heading and whose next line is prose holds an
+                    // open paragraph exactly as an item that began with prose
+                    // does. The blocks before that paragraph are spent - they
+                    // answered S4 while they were the item's last block and
+                    // stopped answering it when prose reopened one.
+                    //
+                    // Without this the engine rendered `b` AS the item's prose
+                    // and then declined to treat its paragraph as open, which is
+                    // one line answered two ways in a single parse
+                    // (carve-rs#1098).
+                    //
+                    // The enumeration stays BESIDE it rather than under it. Its
+                    // terms are the shapes that fold with NO open paragraph - a
+                    // trailing heading, and the invisible blocks - so it answers
+                    // a different question and neither term subsumes the other.
+                    body_ends_with_open_paragraph(src, options)
+                        || nested_ends_with_heading(src, options)
                 },
                 |cur| collect_indented_block_mapped(cur, base_indent, content_col),
             );
