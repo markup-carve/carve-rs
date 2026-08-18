@@ -275,31 +275,10 @@ fn a_lone_caption_after_the_rows_is_not_a_degradation() {
     assert_eq!(diagnostics(html), vec![]);
 }
 
-/// A row's group is looked up once per row rather than once per cell. Asserted
-/// as a RATIO so it states the shape of the work and not the speed of the
-/// machine: at four times the rows, linear work stays near 4x while a per-cell
-/// scan of the whole table goes to roughly 16x.
-#[test]
-fn a_tall_table_is_read_in_time_proportional_to_its_rows() {
-    fn table(rows: usize) -> String {
-        let mut html = String::from("<table><tbody>");
-        for i in 0..rows {
-            html.push_str(&format!("<tr><td>{i}</td><td>x</td></tr>"));
-        }
-        html.push_str("</tbody></table>");
-        html
-    }
-    fn time(rows: usize) -> u128 {
-        let html = table(rows);
-        let start = std::time::Instant::now();
-        html_to_ast(&html, &HtmlImportOptions::default()).unwrap();
-        start.elapsed().as_micros().max(1)
-    }
-    html_to_ast(&table(200), &HtmlImportOptions::default()).unwrap();
-    let small = time(2000);
-    let large = time(8000);
-    assert!(
-        large < small * 10,
-        "reading a table got superlinear in its rows: {small}us for 2000 rows, {large}us for 8000"
-    );
-}
+// The wall-clock guard that used to sit here - a tall table is read in time
+// proportional to its rows - moved to `tests/perf_regressions.rs`, which CI
+// runs alone and single-threaded (carve-rs#1092). It took ONE sample at 2000
+// rows and one at 8000 and compared them, which is the shape that made `main`
+// intermittently red on commits touching no engine code once the suite moved
+// to a process-per-test runner. The claim is unchanged; only where it is
+// measured is.
