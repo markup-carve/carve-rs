@@ -1329,3 +1329,69 @@ fn an_adjacent_escape_run_costs_the_markdown_target_no_more_than_the_html_target
         "adjacent authored escapes behind a quote prefix",
     );
 }
+
+/// A paragraph continued LAZILY under a `:  ` definition body.
+///
+/// One `:  ` marker line and then n flush-left lines, which is the shape a
+/// wrapped definition takes when the author does not re-indent. `n` counts
+/// lines and every line is the same length, so the byte multiple and the unit
+/// multiple agree.
+fn lazily_continued_definition_body(n: usize) -> String {
+    let mut source = String::from(":: term\n:  body\n");
+    for _ in 0..n {
+        source.push_str("more text on a wrapped line\n");
+    }
+    source
+}
+
+/// The LIST twin of the shape above, which is what says the cost is a defect
+/// rather than the price of asking S4's question. Same lines, same count, one
+/// container over.
+fn lazily_continued_list_item(n: usize) -> String {
+    let mut source = String::from("- body\n");
+    for _ in 0..n {
+        source.push_str("more text on a wrapped line\n");
+    }
+    source
+}
+
+/// S4's question is asked ONCE PER LINE, not once per line over the whole body
+/// collected so far.
+///
+/// `collect_definition_body` rebuilt the body from every line taken so far and
+/// PARSED it, once per lazy line, so a lazily continued definition body cost
+/// O(n^2) in both the copy and the parse: 32 KB of input took 22.9 seconds and
+/// grew 4.0x per doubling. A lazy line that folded left a paragraph open by
+/// construction - it reached the fold only by being flush-left and not
+/// interrupting - so the answer for the next one was already known.
+///
+/// PRE-EXISTING, and pinned here because nothing could see it: the corpus has no
+/// document long enough, and the list twin, which is what a reader would compare
+/// against, was already linear.
+#[test]
+fn a_definition_bodys_lazy_run_asks_s4_once_per_line() {
+    // NO `perf_guard()` here: `measure_conversion_scaling_at` takes it itself,
+    // and `PERF_LOCK` is a plain `Mutex`, so taking it in the test as well
+    // deadlocks the binary rather than serializing anything.
+    assert_near_linear_at(
+        lazily_continued_definition_body,
+        "a lazily continued definition body",
+        8_000,
+        32_000,
+    );
+
+    // AGAINST THE TWIN, because a slope alone cannot say the cost is wrong -
+    // only that it is not growing. The two containers ask the same question of
+    // the same lines, so the per-byte costs have to be within a small factor.
+    // Before the fix this read ~150x at these sizes.
+    let body = measure_scaling_at(&lazily_continued_definition_body, 8_000, 32_000);
+    let item = measure_scaling_at(&lazily_continued_list_item, 8_000, 32_000);
+    let cost = body.large_per_byte / item.large_per_byte.max(f64::MIN_POSITIVE);
+    assert!(
+        cost < 3.0,
+        "a lazily continued definition body cost {cost:.2}x per byte against the same run \
+         in a list item: dd={:.4}us/byte li={:.4}us/byte",
+        body.large_per_byte * 1e6,
+        item.large_per_byte * 1e6
+    );
+}

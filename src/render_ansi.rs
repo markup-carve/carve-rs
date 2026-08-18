@@ -630,7 +630,7 @@ fn render_footnote_defs(doc: &Document, ctx: &mut AnsiContext) -> String {
     for (label, blocks) in crate::ast_json::footnote_defs_in_source_order(doc) {
         out.push_str(&format!(
             "{} {}\n",
-            // The marker as written (PART 10 §10a): the caret is the construct.
+            // The marker as written (PART 11 §10a): the caret is the construct.
             style(
                 &format!("[^{}]", strip_terminal_controls(label)),
                 &(FG_CYAN.to_string() + DIM)

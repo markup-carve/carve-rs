@@ -451,7 +451,7 @@ fn render_footnote_defs(doc: &Document) -> String {
     let mut out = String::new();
     // SOURCE ORDER, not label order (§7; carve-rs#686). The map is a BTreeMap.
     for (label, blocks) in crate::ast_json::footnote_defs_in_source_order(doc) {
-        // The MARKER AS WRITTEN (PART 10 §10a): `[n]: …` is a LINK reference
+        // The MARKER AS WRITTEN (PART 11 §10a): `[n]: …` is a LINK reference
         // definition, so emitting one where the author wrote a footnote
         // definition turns it into a different construct on the way back.
         out.push_str(&format!(

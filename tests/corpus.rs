@@ -435,6 +435,17 @@ const IMPLEMENTED: &[&str] = &[
     "a-line-block-s-last-body-line-keeps-its-backslash",
     "a-comment-fence-reached-through-a-quote-registers-nothing-either",
     "a-closed-inline-construct-spanning-a-verse-boundary",
+    "a-bracketed-construct-s-identifiers-stay-on-one-line",
+    "a-bracketed-construct-spanning-a-line-boundary",
+    "a-bracketed-construct-spanning-a-verse-boundary",
+    "a-container-whose-table-ends-on-a-continuation-row",
+    "a-definition-at-a-container-s-content-column",
+    "a-block-at-a-container-s-content-column-ends-the-paragraph-whatever-it-renders",
+    "a-container-whose-table-ends-on-a-joined-header-row",
+    "a-continuation-row-joins-the-row-above-it-whatever-its-cells-hold",
+    "a-quote-inside-a-quote-is-asked-what-it-ends-on",
+    "what-a-content-column-block-does-not-reach",
+    "a-footnote-definition-s-block-runs-to-the-end-of-its-body",
 ];
 
 fn corpus_dir() -> PathBuf {

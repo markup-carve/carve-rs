@@ -157,6 +157,10 @@ const SOURCE_LOSSY: &[&str] = &[
     "332-which-inline-content-a-heading-id-is-derived-from.crv",
     "342-url-list-attributes-are-probed-token-wise-10.crv",
     "35-cross-reference.crv",
+    "356-a-quote-inside-a-quote-is-asked-what-it-ends-on-2.crv",
+    "356-a-quote-inside-a-quote-is-asked-what-it-ends-on-6.crv",
+    "356-a-quote-inside-a-quote-is-asked-what-it-ends-on-7.crv",
+    "356-a-quote-inside-a-quote-is-asked-what-it-ends-on.crv",
     "71-attribute-edge-cases-14.crv",
     "75-list-nesting-and-looseness-4.crv",
     "75-list-nesting-and-looseness-7.crv",
@@ -616,8 +620,37 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // back (PART 11 section 7c, amended by the same ruling). The spec ships a
     // `.fmt` sidecar for that document spelling it exactly that way. The
     // ROUND TRIP is unaffected: both sides of the comparison drop it.
-    const STRICT: usize = 938;
-    const LOSSY: usize = 242;
+    // 938/242 to 978/263 is the sixty-one documents arriving with the 0490ae5
+    // spec pin, and nothing else: the corpus went from 1180 pairs to 1241, and
+    // the added pairs are categories 349 through 359 - the table continuation
+    // row inside a container, the definition and the block at a container's
+    // content column, the bracketed constructs spanning a line, a verse and an
+    // identifier boundary, and the quote inside a quote.
+    //
+    // Attributed with the ENGINE CHANGE HELD SEPARATE, because this branch
+    // changes which line a container takes. Both pins were classified under ONE
+    // build - the build carrying this branch - and every one of the 1180
+    // documents common to the two pins holds its class: zero moved in either
+    // direction, none was removed, and at the OLD pin that build still reports
+    // 938/242, which are the numbers this file already declared before any of
+    // these fixes existed. So the whole delta is the sixty-one new documents.
+    //
+    // Forty land in the strict set and twenty-one report. All twenty-one report
+    // for one cause already declared above - `soft_break` degrades, the same
+    // node `343-an-escaped-hash-...` reports - and none DROPS anything, so no
+    // new cause appears. They are the documents that exist to pin a construct or
+    // a fold spanning a line boundary, so each holds a soft break by
+    // construction; one of the twenty-one also carries `smart_punctuation`,
+    // which is declared above as well.
+    //
+    // FOUR of the forty strict ones join the declared source-lossy set
+    // above: `356`, `-2`, `-6` and `-7` are the only ones of the sixty-one that
+    // write a HEADING, and a heading with no attribute run comes back carrying
+    // its generated id - the first bullet's cause, unchanged. That set is
+    // asserted by name rather than counted, so the four are declared there and
+    // nothing else moved.
+    const STRICT: usize = 978;
+    const LOSSY: usize = 263;
     assert!(
         covered >= STRICT,
         "strict round trips fell from {STRICT} to {covered}"

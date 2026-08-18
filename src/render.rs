@@ -2135,13 +2135,19 @@ fn render_definition_list(
         for def in &item.definitions {
             out.push('\n');
             indent(out, level + 1);
-            if def.len() == 1 {
-                if let BlockNode::Paragraph(p) = &def[0] {
-                    out.push_str(&format!("<dd{}>", render_attrs(&def.attrs)));
-                    render_inlines(out, &p.children, options, state);
-                    out.push_str("</dd>");
-                    continue;
-                }
+            // THE TIGHT FORM IS CHOSEN FROM WHAT PUBLISHES, not from the node
+            // count (§17 L1a). A trailing comment is a node and reaches no
+            // target, so counting nodes put `:  a` / `   %% c` in the loose
+            // form while the LIST twin, which filters the same set before
+            // deciding, stayed tight. Same clause, same answer - and the
+            // filtered blocks are what render below either way, so the two
+            // branches cannot disagree about which children exist.
+            let mut published = def.iter().filter(|child| !publishes_nothing(child));
+            if let (Some(BlockNode::Paragraph(p)), None) = (published.next(), published.next()) {
+                out.push_str(&format!("<dd{}>", render_attrs(&def.attrs)));
+                render_inlines(out, &p.children, options, state);
+                out.push_str("</dd>");
+                continue;
             }
             let blocks = rendered_children(def, level + 2, options, state);
             out.push_str(&format!("<dd{}>", render_attrs(&def.attrs)));
