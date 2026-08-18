@@ -614,10 +614,14 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // carve#1377 adds two heading/item documents. One is strict; the nested
     // control reports the existing container-boundary loss, so no new loss
     // cause is introduced.
-    // Categories 366-370 add eleven documents at the table-column spec pin:
+    // Categories 366-368 and 370-371 add eleven documents at the table-column
+    // spec pin:
     // seven stay strict and four report already-declared source-layout losses.
-    const STRICT: usize = 999;
-    const LOSSY: usize = 273;
+    // Category 369 then adds the four quote-reachability documents from
+    // carve#1384. One stays strict and three report the existing container
+    // boundary/source-layout loss; the bridge introduces no new loss cause.
+    const STRICT: usize = 1000;
+    const LOSSY: usize = 276;
     assert!(
         covered >= STRICT,
         "strict round trips fell from {STRICT} to {covered}"

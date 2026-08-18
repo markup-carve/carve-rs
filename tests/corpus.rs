@@ -13,6 +13,7 @@ use std::fs;
 use std::path::PathBuf;
 
 const IMPLEMENTED: &[&str] = &[
+    "a-quote-is-reached-by-its-marker-and-a-column-never-reaches-into-one",
     "table-columns-carry-alignment-vertical-alignment-and-widths",
     "a-table-alignment-run-carries-two-independent-axes",
     // Added with the spec bump to carve 68b71c2. Every document in each of the
