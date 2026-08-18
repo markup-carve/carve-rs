@@ -76,11 +76,11 @@ fn a_marker_line_heading_takes_no_fold_to_resume_from() {
         html("- # h\nlazy\n  b\n"),
         "<ul>\n  <li>\n    <h1 id=\"h\">h</h1>\n  </li>\n</ul>\n<p>lazy\nb</p>"
     );
-    // The CONTENT-COLUMN spelling still folds and still resumes, which is the
-    // behavior this test was written for. That half of the clause stays open.
+    // The content-column spelling is bounded too after carve#1377, so there is
+    // likewise no fold to resume from.
     assert_eq!(
         html("- x\n  # h\nlazy\n  b\n"),
-        "<ul>\n  <li>x\n    <h1 id=\"h\">h</h1>\n    lazy\nb\n  </li>\n</ul>"
+        "<ul>\n  <li>x\n    <h1 id=\"h\">h</h1>\n  </li>\n</ul>\n<p>lazy\nb</p>"
     );
 }
 

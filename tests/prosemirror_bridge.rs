@@ -624,8 +624,11 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // the generated-heading-id cause already listed there and for no reason
     // connected to this branch's engine change - see that bullet for the
     // measurement separating the heading from the checkbox.
-    const STRICT: usize = 991;
-    const LOSSY: usize = 268;
+    // carve#1377 adds two heading/item documents. One is strict; the nested
+    // control reports the existing container-boundary loss, so no new loss
+    // cause is introduced.
+    const STRICT: usize = 992;
+    const LOSSY: usize = 269;
     assert!(
         covered >= STRICT,
         "strict round trips fell from {STRICT} to {covered}"

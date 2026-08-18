@@ -452,6 +452,9 @@ const IMPLEMENTED: &[&str] = &[
     "a-blank-line-before-a-sibling-marker-separates-the-items-whatever-consumed-it",
     "a-task-item-s-checkbox-is-not-decided-by-its-first-block",
     "only-lazy-folding-demotes-a-marker-line-colon-opener",
+    // markup-carve/carve#1377: a content-column heading leaves no paragraph
+    // open for the following flush-left line.
+    "a-heading-at-an-item-s-content-column-leaves-no-paragraph-open",
 ];
 
 fn corpus_dir() -> PathBuf {

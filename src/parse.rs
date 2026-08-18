@@ -8013,10 +8013,10 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                     // one line answered two ways in a single parse
                     // (carve-rs#1098).
                     //
-                    // The enumeration stays BESIDE it rather than under it. Its
-                    // terms are the shapes that fold with NO open paragraph - a
-                    // trailing heading, and the invisible blocks - so it answers
-                    // a different question and neither term subsumes the other.
+                    // A direct trailing heading is bounded and supplements
+                    // nothing (carve#1377). If it belongs to a nested
+                    // definition or item, the enclosing paragraph may still
+                    // take the line after that inner container closes.
                     body_ends_with_open_paragraph(src, options)
                         || nested_ends_with_heading(src, options)
                 },
@@ -8599,38 +8599,20 @@ fn detect_list_marker_full(line: &str) -> Option<ListMarker<'_>> {
     None
 }
 
-/// After a nested block is collected for a list item, pull any immediately
-/// following column-0 lazy-continuation lines into it (plain text only -- not a
-/// blank line, a list marker, or a block-opener). Appended at column 0 so the
-/// recursive parse folds them into the DEEPEST open item, matching carve-js and
-/// carve-php (`- a` / `  - b` / `lazy` -> `<li>b lazy</li>`).
-/// Whether the collected nested block ends in a heading. Used to decide if
-/// flush-left lazy text following an indented heading-in-item should fold into
-/// the heading (heading continuation) rather than ending the item.
+/// Whether a collected body's deepest trailing block is a heading inside a
+/// nested list. The enclosing item must collect the flush-left line so it can
+/// close that inner item and continue the still-open outer paragraph; the
+/// heading's own collector no longer takes it (carve#1377).
 fn nested_ends_with_heading(nested: &str, options: &Options<'_>) -> bool {
     block_ends_with_heading(probe_blocks(nested, options).last())
 }
 
-/// Whether the deepest trailing block is a heading. A heading folds trailing
-/// plain text as continuation regardless of how deeply it is nested, so the
-/// check descends into a trailing list's last item (and block quote), matching
-/// the open-paragraph descent above (carve#326). `- a` / `  - # N` / `lazy`
-/// folds `lazy` into the sub-item's heading, not out to the top level.
 fn block_ends_with_heading(block: Option<&BlockNode>) -> bool {
     match block {
-        Some(BlockNode::Heading(_)) => true,
-        // NB: no block-quote descent. A flush-left line does not continue a
-        // heading INSIDE a quote (it is neither a quote line nor, at column 0, a
-        // heading continuation the quote would re-enter), so folding it in would
-        // attach it as stray item text rather than heading text. That case stays
-        // as it was (the line ends the item); only list and definition-list
-        // nesting fold.
         Some(BlockNode::List(l)) => {
-            block_ends_with_heading(l.items.last().and_then(|it| it.children.last()))
+            let trailing = l.items.last().and_then(|it| it.children.last());
+            matches!(trailing, Some(BlockNode::Heading(_))) || block_ends_with_heading(trailing)
         }
-        // A definition list has no explicit closer: a following flush-left line
-        // folds into its last definition's trailing block, so descend when that
-        // block is a heading (a bare term with no definition is not a heading).
         Some(BlockNode::DefinitionList(dl)) => block_ends_with_heading(
             dl.items
                 .last()
@@ -8652,9 +8634,8 @@ fn block_ends_with_heading(block: Option<&BlockNode>) -> bool {
 /// re-parse while this collector has already claimed it, and the line lands in
 /// the OUTER item, which is a third answer no engine produces.
 ///
-/// Everything else keeps the heading rule (carve#326). A line at the sub-item's
-/// CONTENT COLUMN is not a marker line, and that is the half the clause leaves
-/// deliberately open - corpus 75-list-nesting-and-looseness-4 pins it folding.
+/// A heading at the sub-item's CONTENT COLUMN is a bounded block too. It leaves
+/// no paragraph open, so the line ends the inner item (carve#1377).
 fn collected_body_takes_the_lazy_line(
     src: &str,
     trailing_below_column: bool,
@@ -8663,8 +8644,8 @@ fn collected_body_takes_the_lazy_line(
     if let Some(content) = trailing_marker_line_content(src) {
         return body_ends_with_open_paragraph(&content, options);
     }
-    nested_ends_with_heading(src, options)
-        || nested_ends_with_open_paragraph(src, trailing_below_column, options)
+    nested_ends_with_open_paragraph(src, trailing_below_column, options)
+        || nested_ends_with_heading(src, options)
 }
 
 /// Whether the line JUST CONSUMED was written BELOW the container's content
