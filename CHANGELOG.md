@@ -9,6 +9,10 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Definitions collected at a list item's content column close its paragraph**
+  (markup-carve/carve#1376). A following line below that column no longer uses
+  the comment-only continuation path; bare-dot items use the bullet column.
+
 - **A structural link title and an authored `title` attribute both survive the
   ProseMirror bridge** (#1115). Links, images and reference definitions now put
   the quoted structural title in `carveLinkTitle`, leaving `title` and

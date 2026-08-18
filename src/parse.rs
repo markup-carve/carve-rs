@@ -2092,6 +2092,11 @@ fn detect_prepass_list_marker(line: &str) -> Option<(usize, usize)> {
     }
     match bytes[i] {
         b'-' | b'*' => i += 1,
+        // The bare dot is a decimal ordered marker whose authored width is one
+        // column, exactly like a bullet. Leaving it out of the definition
+        // prepass made definitions at its content column render as literal
+        // item text even though the block parser recognized the list.
+        b'.' => i += 1,
         b'0'..=b'9' => {
             while i < bytes.len() && bytes[i].is_ascii_digit() {
                 i += 1;
@@ -7426,6 +7431,10 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                             )
                         },
                     );
+                    let definition_ended_paragraph = nested
+                        .source
+                        .lines()
+                        .any(|line| trim_ascii(line) == DEFINITION_PLACEHOLDER);
                     // A `{…}` block that ENDS this chunk was written in front of
                     // whatever comes next, and what comes next is in the next
                     // chunk - the collector broke on the sub-list marker. Hold
@@ -7509,6 +7518,17 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                         pending_blank = false;
                     }
                     last.children.extend(nested_children);
+                    // A collected definition is an I5 block, not the comment
+                    // exception. If the collector stopped on a nonzero line
+                    // below the item's content column, no paragraph remains
+                    // for that line to continue (markup-carve/carve#1376).
+                    if definition_ended_paragraph
+                        && cur
+                            .peek()
+                            .is_some_and(|line| indent_columns(line) < content_col)
+                    {
+                        break;
+                    }
                     continue;
                 }
             }
@@ -9246,6 +9266,7 @@ fn collect_indented_block_mapped_with(
     let mut colon_open: Vec<usize> = Vec::new();
     let mut comment_fence: Option<(usize, usize)> = None;
     let mut comment_fence_strip: Option<usize> = None;
+    let mut definition_ended_paragraph = false;
     while let Some(line) = cur.peek() {
         if is_blank_line(line) {
             // INSIDE AN OPEN FENCE A BLANK IS CONTENT. Mirrors the plain
@@ -9309,6 +9330,9 @@ fn collect_indented_block_mapped_with(
         }
         let indent = indent_columns(line);
         if indent <= parent_indent {
+            break;
+        }
+        if definition_ended_paragraph && indent < strip_cols {
             break;
         }
         // A FENCED BODY IS NOT A PARAGRAPH, so nothing below the content column
@@ -9434,6 +9458,7 @@ fn collect_indented_block_mapped_with(
             comment_fence_strip = None;
         }
         let (sliced, consumed, synthetic) = slice_columns_mapped(line, stripped, true);
+        definition_ended_paragraph = trim_ascii(&sliced) == DEFINITION_PLACEHOLDER;
         // A COLON LINE INSIDE A CODE OR COMMENT SPAN OPENS AND CLOSES NOTHING:
         // §28 makes both bodies verbatim, which is the same reading that keeps a
         // marker in one from being a marker. Read before the code tracker
@@ -9576,6 +9601,7 @@ fn collect_indented_block_plain_with(
     let mut colon_open: Vec<usize> = Vec::new();
     let mut comment_fence: Option<(usize, usize)> = None;
     let mut comment_fence_strip: Option<usize> = None;
+    let mut definition_ended_paragraph = false;
     while let Some(line) = cur.peek() {
         if is_blank_line(line) {
             // INSIDE AN OPEN FENCE A BLANK IS CONTENT, not a gap between blocks.
@@ -9619,6 +9645,9 @@ fn collect_indented_block_plain_with(
         }
         let indent = indent_columns(line);
         if indent <= parent_indent {
+            break;
+        }
+        if definition_ended_paragraph && indent < strip_cols {
             break;
         }
         // Same fenced-body guard as the mapped collector above (§24, #950).
@@ -9679,6 +9708,7 @@ fn collect_indented_block_plain_with(
             comment_fence_strip = None;
         }
         let sliced = slice_columns(line, stripped, true);
+        definition_ended_paragraph = trim_ascii(&sliced) == DEFINITION_PLACEHOLDER;
         // A COLON LINE INSIDE A CODE OR COMMENT SPAN OPENS AND CLOSES NOTHING:
         // §28 makes both bodies verbatim, which is the same reading that keeps a
         // marker in one from being a marker. Read before the code tracker
