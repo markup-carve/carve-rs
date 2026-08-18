@@ -9,10 +9,31 @@ on:
 env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: "-D warnings"
-  # ~340 integration-test binaries dominate the test job via compile and
+  # ~400 integration-test binaries dominate the test job via compile and
   # link time; line-tables-only keeps file:line in backtraces at a fraction
   # of the cost of full debug info.
   CARGO_PROFILE_DEV_DEBUG: "line-tables-only"
+  # OPTIMIZE THE CODE UNDER TEST. Measured on run 32074060975 with a warm
+  # cache, `cargo build --all-targets` takes 40s and `cargo test` takes
+  # 13m13s - so the job is paid in test EXECUTION, and execution runs the
+  # parser and the renderers over ~1150 corpus documents plus several
+  # generated sweeps. At opt-level 0 that is the slowest possible way to run
+  # exactly the code this crate exists to run fast.
+  #
+  # BOTH keys are needed and neither is redundant: an integration test builds
+  # the library as a DEPENDENCY, which takes profile.dev, while the test
+  # binary itself takes profile.test. Setting only the second would leave
+  # every corpus sweep calling an unoptimized parser.
+  #
+  # Set HERE rather than in Cargo.toml so a contributor's `cargo build` stays
+  # as fast as it is today - this is a CI trade (more compile, much less
+  # execution), not a repo-wide one.
+  #
+  # opt-level 2 rather than 3: 3 buys little on this shape and costs compile
+  # time, which is the side of the trade being spent. debug-assertions stay
+  # ON at both levels, so nothing stops being checked.
+  CARGO_PROFILE_DEV_OPT_LEVEL: "2"
+  CARGO_PROFILE_TEST_OPT_LEVEL: "2"
 
 jobs:
   test:
