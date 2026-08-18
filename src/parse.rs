@@ -444,6 +444,7 @@ fn parse_with_options_mode(source: &str, options: &Options<'_>, mode: ParseMode)
                 }
             }
         }
+        widen_over_hosted_definitions(&mut children, &footnote_def_pos);
     }
     let mut doc = Document {
         frontmatter,
@@ -1301,7 +1302,20 @@ fn extract_footnote_defs(
                     break;
                 }
             }
-            if positions && !in_container && i < lines.len() && is_blank_line(lines[i]) {
+            // ONLY FOR THE DEFINITION THIS POSITION DESCRIBES. The first
+            // definition for a label wins, both here and in `defs` below, so a
+            // later duplicate must not move the accepted one's end: this wrote
+            // the DUPLICATE's following line onto the FIRST definition's span,
+            // and the container that hosted the first one was then reported as
+            // running to it (carve-rs#1106). `defs` holds the label exactly
+            // when an earlier definition was accepted, which is the test.
+            let first_for_label = !defs.contains_key(label);
+            if positions
+                && !in_container
+                && first_for_label
+                && i < lines.len()
+                && is_blank_line(lines[i])
+            {
                 if let Some(pos) = def_positions.get_mut(label) {
                     pos.end_line = first_source_line + i;
                     pos.end_column = 1;
@@ -1346,9 +1360,7 @@ fn extract_footnote_defs(
                 // lands at column 0 and CLOSES the item it exists to keep
                 // open - the line after it leaves the list entirely.
                 let document_column = replacement.is_empty() && leading_ws(stripped.bare) == 0;
-                if replacement.is_empty() {
-                    replacement.push_str(&stripped.bare[..leading_ws(stripped.bare)]);
-                }
+                replacement.push_str(&stripped.bare[..leading_ws(stripped.bare)]);
                 replacement.push_str(if document_column {
                     DOCUMENT_DEFINITION_PLACEHOLDER
                 } else {
@@ -1953,9 +1965,7 @@ fn extract_link_defs(source: &str) -> (String, BTreeMap<String, LinkDef>) {
                 // lands at column 0 and CLOSES the item it exists to keep
                 // open - the line after it leaves the list entirely.
                 let document_column = replacement.is_empty() && leading_ws(stripped.bare) == 0;
-                if replacement.is_empty() {
-                    replacement.push_str(&stripped.bare[..leading_ws(stripped.bare)]);
-                }
+                replacement.push_str(&stripped.bare[..leading_ws(stripped.bare)]);
                 replacement.push_str(if document_column {
                     DOCUMENT_DEFINITION_PLACEHOLDER
                 } else {
@@ -3439,41 +3449,45 @@ fn span_of(cur: &LineCursor<'_>, start: usize, end: usize, options: &Options<'_>
 /// Fill the offset fields from the original source, in CODEPOINTS (PART 12
 /// section 4). Runs once per document: the line table is one pass, and the
 /// conversion is the identity for any document without an astral character.
+/// A block's own span, to write through.
+///
+/// EXHAUSTIVE on purpose. A `_ => None` arm here is why an `abbreviation_def`
+/// shipped with a correct line and column and offsets of `0..0` - present, and
+/// selecting nothing. That is the fourth node family to fail exactly that way,
+/// after figure captions, footnote definition bodies and definition terms. A
+/// new variant is now a compile error rather than a silent 0..0.
+fn block_pos_mut(block: &mut BlockNode) -> Option<&mut Pos> {
+    match block {
+        BlockNode::LinkReferenceDefinition(d) => d.pos.as_mut(),
+        BlockNode::Heading(h) => h.pos.as_mut(),
+        BlockNode::Paragraph(p) => p.pos.as_mut(),
+        BlockNode::ThematicBreak(t) => t.pos.as_mut(),
+        BlockNode::CodeBlock(c) => c.pos.as_mut(),
+        BlockNode::RawBlock(r) => r.pos.as_mut(),
+        BlockNode::Comment(c) => c.pos.as_mut(),
+        BlockNode::Div(d) => d.pos.as_mut(),
+        BlockNode::Admonition(a) => a.pos.as_mut(),
+        BlockNode::BlockQuote(b) => b.pos.as_mut(),
+        BlockNode::List(l) => l.pos.as_mut(),
+        BlockNode::Table(t) => t.pos.as_mut(),
+        BlockNode::LineBlock(l) => l.pos.as_mut(),
+        BlockNode::Figure(f) => f.pos.as_mut(),
+        BlockNode::FigureGroup(g) => g.pos.as_mut(),
+        BlockNode::BlockImage(i) => i.pos.as_mut(),
+        BlockNode::DefinitionList(d) => d.pos.as_mut(),
+        BlockNode::AbbreviationDef(a) => a.pos.as_mut(),
+        // The Citations extension builds this one in `after_parse`, which runs
+        // after `fill_offsets`, and derives its `pos` from inline positions
+        // that pass has already converted - so there is nothing there to
+        // convert, and an arm is still required rather than a `_`.
+        BlockNode::CitationDefinition(d) => d.pos.as_mut(),
+        BlockNode::Extension(e) => e.pos.as_mut(),
+    }
+}
+
 fn fill_offsets(blocks: &mut [BlockNode], line_starts: &[usize]) {
     for block in blocks {
-        let pos = match block {
-            BlockNode::LinkReferenceDefinition(d) => d.pos.as_mut(),
-            BlockNode::Heading(h) => h.pos.as_mut(),
-            BlockNode::Paragraph(p) => p.pos.as_mut(),
-            BlockNode::ThematicBreak(t) => t.pos.as_mut(),
-            BlockNode::CodeBlock(c) => c.pos.as_mut(),
-            BlockNode::RawBlock(r) => r.pos.as_mut(),
-            BlockNode::Comment(c) => c.pos.as_mut(),
-            BlockNode::Div(d) => d.pos.as_mut(),
-            BlockNode::Admonition(a) => a.pos.as_mut(),
-            BlockNode::BlockQuote(b) => b.pos.as_mut(),
-            BlockNode::List(l) => l.pos.as_mut(),
-            BlockNode::Table(t) => t.pos.as_mut(),
-            BlockNode::LineBlock(l) => l.pos.as_mut(),
-            BlockNode::Figure(f) => f.pos.as_mut(),
-            BlockNode::FigureGroup(g) => g.pos.as_mut(),
-            BlockNode::BlockImage(i) => i.pos.as_mut(),
-            BlockNode::DefinitionList(d) => d.pos.as_mut(),
-            BlockNode::AbbreviationDef(a) => a.pos.as_mut(),
-            // The Citations extension builds this one in `after_parse`, which
-            // runs after this pass, and derives its `pos` from inline positions
-            // this pass has already converted - so there is nothing here to
-            // convert, and an arm is still required rather than a `_`.
-            BlockNode::CitationDefinition(d) => d.pos.as_mut(),
-            BlockNode::Extension(e) => e.pos.as_mut(),
-            // EXHAUSTIVE on purpose. A `_ => None` arm here is why an
-            // `abbreviation_def` shipped with a correct line and column and
-            // offsets of `0..0` - present, and selecting nothing. That is the
-            // fourth node family to fail exactly that way, after figure
-            // captions, footnote definition bodies and definition terms. A new
-            // variant is now a compile error rather than a silent 0..0.
-        };
-        if let Some(pos) = pos {
+        if let Some(pos) = block_pos_mut(block) {
             apply_offsets(pos, line_starts);
         }
         // Recurse into the containers that hold blocks and inline content.
@@ -3653,6 +3667,96 @@ fn include_comment_indentation(blocks: &mut [BlockNode], source: &str, line_star
         }
     }
     walk(blocks, &source_lines, line_starts);
+}
+
+/// Widen a container over the DEFINITION it hosted.
+///
+/// A footnote definition is lifted out of the body before the block parser
+/// runs, and only ONE invisible placeholder is left behind, on the line the
+/// definition opened - padded, but not always to the same width the author
+/// wrote, and never covering the body's continuation lines. So a container
+/// that hosted a definition can end short of the source it consumed:
+/// `- a` / `  [^f]: t` / `    more` reported the list as ending on line 2, and
+/// `- > [^f]: t` ended the item at the placeholder rather than at the end of
+/// the line. carve-js and carve-php reach the definition's end in both, and
+/// PART 12 section 4 is markup-inclusive (markup-carve/carve#913): a
+/// container's extent has to cover the source it consumed.
+///
+/// Only a block whose span ENDS ON the definition's own line is widened. That
+/// placeholder is the last line such a block consumed, so it is precisely the
+/// block that consumed the definition; a block that ended earlier never
+/// reached it, and a block that ended later already covers it. This is why the
+/// list widens in the first example while its item, which ends on line 1, does
+/// not - the same split carve-js reports.
+///
+/// Runs after `fill_offsets`, because a definition's own end is only known
+/// once its body has been placed. Nothing re-derives a span from its children
+/// afterwards, so the widening is not undone.
+fn widen_over_hosted_definitions(blocks: &mut [BlockNode], def_pos: &BTreeMap<String, Pos>) {
+    // Keyed by the line the definition OPENS on, which is the line its
+    // placeholder stands on. Two definitions cannot open on one line.
+    //
+    // A SINGLE-LINE definition is kept too. It looks like it could never
+    // widen anything - the definition ends where its own line ends, and so
+    // does the container - but the placeholder is not always as wide as the
+    // line it replaced, and then the container ends inside its own last line.
+    // Filtering these out left `- > [^f]: t` reporting the item and the quote
+    // as ending at column 8 of an 11-column line.
+    let ends: HashMap<usize, Pos> = def_pos.values().map(|pos| (pos.start_line, *pos)).collect();
+    if ends.is_empty() {
+        return;
+    }
+    fn widen(pos: &mut Pos, ends: &HashMap<usize, Pos>) {
+        let Some(def) = ends.get(&pos.end_line) else {
+            return;
+        };
+        if def.end_offset <= pos.end_offset {
+            return;
+        }
+        pos.end_line = def.end_line;
+        pos.end_column = def.end_column;
+        pos.end_offset = def.end_offset;
+    }
+    fn walk(blocks: &mut [BlockNode], ends: &HashMap<usize, Pos>) {
+        for block in blocks {
+            if let Some(pos) = block_pos_mut(block) {
+                widen(pos, ends);
+            }
+            match block {
+                BlockNode::BlockQuote(n) => walk(&mut n.children, ends),
+                BlockNode::Div(n) => walk(&mut n.children, ends),
+                BlockNode::Admonition(n) => walk(&mut n.children, ends),
+                BlockNode::FigureGroup(n) => walk(&mut n.children, ends),
+                BlockNode::List(n) => {
+                    for item in &mut n.items {
+                        if let Some(pos) = item.pos.as_mut() {
+                            widen(pos, ends);
+                        }
+                        walk(&mut item.children, ends);
+                    }
+                }
+                BlockNode::LineBlock(n) => walk(&mut n.children, ends),
+                BlockNode::DefinitionList(n) => {
+                    for item in &mut n.items {
+                        for def in &mut item.definitions {
+                            if let Some(pos) = def.pos.as_mut() {
+                                widen(pos, ends);
+                            }
+                            walk(&mut def.children, ends);
+                        }
+                    }
+                }
+                BlockNode::Figure(n) => {
+                    if let FigureTarget::BlockQuote(q) = &mut n.target {
+                        walk(&mut q.children, ends);
+                    }
+                }
+                BlockNode::Extension(n) => walk(&mut n.children, ends),
+                _ => {}
+            }
+        }
+    }
+    walk(blocks, &ends);
 }
 
 /// Turn the line/column pair already on a span into codepoint offsets.
@@ -7909,10 +8013,10 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                     // one line answered two ways in a single parse
                     // (carve-rs#1098).
                     //
-                    // The enumeration stays BESIDE it rather than under it. Its
-                    // terms are the shapes that fold with NO open paragraph - a
-                    // trailing heading, and the invisible blocks - so it answers
-                    // a different question and neither term subsumes the other.
+                    // A direct trailing heading is bounded and supplements
+                    // nothing (carve#1377). If it belongs to a nested
+                    // definition or item, the enclosing paragraph may still
+                    // take the line after that inner container closes.
                     body_ends_with_open_paragraph(src, options)
                         || nested_ends_with_heading(src, options)
                 },
@@ -8495,38 +8599,20 @@ fn detect_list_marker_full(line: &str) -> Option<ListMarker<'_>> {
     None
 }
 
-/// After a nested block is collected for a list item, pull any immediately
-/// following column-0 lazy-continuation lines into it (plain text only -- not a
-/// blank line, a list marker, or a block-opener). Appended at column 0 so the
-/// recursive parse folds them into the DEEPEST open item, matching carve-js and
-/// carve-php (`- a` / `  - b` / `lazy` -> `<li>b lazy</li>`).
-/// Whether the collected nested block ends in a heading. Used to decide if
-/// flush-left lazy text following an indented heading-in-item should fold into
-/// the heading (heading continuation) rather than ending the item.
+/// Whether a collected body's deepest trailing block is a heading inside a
+/// nested list. The enclosing item must collect the flush-left line so it can
+/// close that inner item and continue the still-open outer paragraph; the
+/// heading's own collector no longer takes it (carve#1377).
 fn nested_ends_with_heading(nested: &str, options: &Options<'_>) -> bool {
     block_ends_with_heading(probe_blocks(nested, options).last())
 }
 
-/// Whether the deepest trailing block is a heading. A heading folds trailing
-/// plain text as continuation regardless of how deeply it is nested, so the
-/// check descends into a trailing list's last item (and block quote), matching
-/// the open-paragraph descent above (carve#326). `- a` / `  - # N` / `lazy`
-/// folds `lazy` into the sub-item's heading, not out to the top level.
 fn block_ends_with_heading(block: Option<&BlockNode>) -> bool {
     match block {
-        Some(BlockNode::Heading(_)) => true,
-        // NB: no block-quote descent. A flush-left line does not continue a
-        // heading INSIDE a quote (it is neither a quote line nor, at column 0, a
-        // heading continuation the quote would re-enter), so folding it in would
-        // attach it as stray item text rather than heading text. That case stays
-        // as it was (the line ends the item); only list and definition-list
-        // nesting fold.
         Some(BlockNode::List(l)) => {
-            block_ends_with_heading(l.items.last().and_then(|it| it.children.last()))
+            let trailing = l.items.last().and_then(|it| it.children.last());
+            matches!(trailing, Some(BlockNode::Heading(_))) || block_ends_with_heading(trailing)
         }
-        // A definition list has no explicit closer: a following flush-left line
-        // folds into its last definition's trailing block, so descend when that
-        // block is a heading (a bare term with no definition is not a heading).
         Some(BlockNode::DefinitionList(dl)) => block_ends_with_heading(
             dl.items
                 .last()
@@ -8548,9 +8634,8 @@ fn block_ends_with_heading(block: Option<&BlockNode>) -> bool {
 /// re-parse while this collector has already claimed it, and the line lands in
 /// the OUTER item, which is a third answer no engine produces.
 ///
-/// Everything else keeps the heading rule (carve#326). A line at the sub-item's
-/// CONTENT COLUMN is not a marker line, and that is the half the clause leaves
-/// deliberately open - corpus 75-list-nesting-and-looseness-4 pins it folding.
+/// A heading at the sub-item's CONTENT COLUMN is a bounded block too. It leaves
+/// no paragraph open, so the line ends the inner item (carve#1377).
 fn collected_body_takes_the_lazy_line(
     src: &str,
     trailing_below_column: bool,
@@ -8559,8 +8644,8 @@ fn collected_body_takes_the_lazy_line(
     if let Some(content) = trailing_marker_line_content(src) {
         return body_ends_with_open_paragraph(&content, options);
     }
-    nested_ends_with_heading(src, options)
-        || nested_ends_with_open_paragraph(src, trailing_below_column, options)
+    nested_ends_with_open_paragraph(src, trailing_below_column, options)
+        || nested_ends_with_heading(src, options)
 }
 
 /// Whether the line JUST CONSUMED was written BELOW the container's content

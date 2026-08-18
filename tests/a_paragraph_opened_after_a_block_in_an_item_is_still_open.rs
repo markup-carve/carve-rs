@@ -118,14 +118,11 @@ fn a_spent_first_block_no_longer_answers_for_the_item() {
 }
 
 #[test]
-fn a_heading_last_in_the_body_still_folds() {
-    // INTENDED SURVIVOR. A heading takes a flush-left line as its own
-    // continuation (PART 2, carve#326), which is a different question from
-    // whether a paragraph is open - so the heading term stays beside S4's
-    // question rather than under it.
+fn a_heading_last_in_the_body_leaves_no_paragraph_open() {
+    // A heading is bounded and closes the item's paragraph state (carve#1377).
     for (head, col) in HEADS {
         let src = format!("{head}# h\n{col}# i\ntail\n");
-        assert!(folds(&src), "{src}\n{}", to_html(&src));
+        assert!(!folds(&src), "{src}\n{}", to_html(&src));
     }
 }
 

@@ -1,9 +1,6 @@
-//! Trailing flush-left plain text after a heading stays INSIDE the item the
-//! heading belongs to, no matter how deeply that heading is nested - carve-rs
-//! once let it escape to a top-level paragraph (carve#326). What it no longer
-//! does is fold into the heading itself: a heading ends at its newline (PART 2
-//! SINGLE-LINE HEADINGS, carve#451), so the line lands beside the heading as
-//! the item's own content. Matches carve-js / carve-php.
+//! A heading at an item's content column is a bounded block and leaves no open
+//! paragraph. PART 1 S4 therefore closes that item before a flush-left line
+//! (markup-carve/carve#1377), just as for a marker-line heading.
 //!
 //! THE MARKER-LINE HALF OF THIS FILE MOVED. markup-carve/carve#1280 ruled PART 1
 //! S4 uniform - lazy continuation extends an OPEN PARAGRAPH and nothing else -
@@ -15,10 +12,10 @@
 //! carve-rs#1049, and the row below is what that changed here.
 
 #[test]
-fn indented_item_heading_after_blank_keeps_the_lazy_line_in_the_item() {
+fn indented_item_heading_after_blank_ends_the_item() {
     assert_eq!(
         carve::to_html("- text\n\n  # N\nlazy\n"),
-        "<ul>\n  <li>text\n    <h1 id=\"N\">N</h1>\n    lazy\n  </li>\n</ul>"
+        "<ul>\n  <li>text\n    <h1 id=\"N\">N</h1>\n  </li>\n</ul>\n<p>lazy</p>"
     );
 }
 
@@ -35,25 +32,22 @@ fn nested_marker_line_heading_ends_the_item_like_an_unnested_one() {
 }
 
 #[test]
-fn deeply_nested_indented_heading_keeps_the_lazy_line_in_the_item() {
-    // Corpus 73-list-nesting-and-looseness-4: the line is a paragraph in the
-    // item, rendered unwrapped because the list is tight.
+fn deeply_nested_indented_heading_closes_the_inner_item() {
+    // Corpus 75-list-nesting-and-looseness-4: the outer item remains available.
     assert_eq!(
         carve::to_html("- a\n  - b\n    # N\nlazy\n"),
-        "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <h1 id=\"N\">N</h1>\n        lazy\n      </li>\n    </ul>\n  </li>\n</ul>"
+        "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <h1 id=\"N\">N</h1>\n      </li>\n    </ul>\n    lazy\n  </li>\n</ul>"
     );
 }
 
 #[test]
-fn heading_on_a_definition_marker_line_ends_the_body_but_not_the_item() {
-    // THE DEFINITION BODY'S MARKER LINE MOVED TOO (carve-rs#1049). `:  # H` is
-    // the body's first block, so S4 ends the body there the way `- # H` ends an
-    // item - the line no longer lands in the `dd`. The ITEM is a level up and
-    // its own body was collected at a CONTENT COLUMN, which is the half the
-    // clause leaves open, so the line stays inside the `li` beside the `dl`.
+fn heading_on_a_definition_marker_line_leaves_no_outer_paragraph_either() {
+    // `:  # H` leaves no paragraph open in the definition, and the definition
+    // list has already interrupted the item's earlier prose. No container in
+    // the open stack can therefore take the flush-left line (PART 1 S4).
     assert_eq!(
         carve::to_html("- one\n  :: term\n  :  # H\nlazy\n"),
-        "<ul>\n  <li>one\n    <dl>\n      <dt>term</dt>\n      <dd>\n        <h1 id=\"H\">H</h1>\n      </dd>\n    </dl>\n    lazy\n  </li>\n</ul>"
+        "<ul>\n  <li>one\n    <dl>\n      <dt>term</dt>\n      <dd>\n        <h1 id=\"H\">H</h1>\n      </dd>\n    </dl>\n  </li>\n</ul>\n<p>lazy</p>"
     );
 }
 

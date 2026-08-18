@@ -638,6 +638,7 @@ fn json_string(value: &str) -> String {
 enum RenderError {
     Profile(carve::ProfileViolationError),
     Depth(carve::RenderDepthError),
+    Carve(carve::RenderCarveError),
 }
 
 impl std::fmt::Display for RenderError {
@@ -645,6 +646,7 @@ impl std::fmt::Display for RenderError {
         match self {
             RenderError::Profile(err) => write!(f, "profile violation: {err}"),
             RenderError::Depth(err) => write!(f, "{err}"),
+            RenderError::Carve(err) => write!(f, "{err}"),
         }
     }
 }
@@ -658,6 +660,12 @@ impl From<carve::ProfileViolationError> for RenderError {
 impl From<carve::RenderDepthError> for RenderError {
     fn from(err: carve::RenderDepthError) -> Self {
         RenderError::Depth(err)
+    }
+}
+
+impl From<carve::RenderCarveError> for RenderError {
+    fn from(err: carve::RenderCarveError) -> Self {
+        RenderError::Carve(err)
     }
 }
 

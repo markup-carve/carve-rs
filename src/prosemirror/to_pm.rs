@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::ast::*;
 use crate::ast_json::{value_to_json, Json};
@@ -12,6 +12,7 @@ pub fn to_prosemirror(doc: &Document) -> ProseMirrorDoc {
         map: schema_map(),
         dropped: BTreeMap::new(),
         degraded: BTreeMap::new(),
+        redundant_heading_ids: crate::render_carve::redundant_heading_ids(doc),
     };
     let Some(document_name) = renderer.name("document") else {
         return ProseMirrorDoc {
@@ -51,6 +52,7 @@ struct Renderer {
     map: &'static SchemaMap,
     dropped: BTreeMap<String, String>,
     degraded: BTreeMap<String, String>,
+    redundant_heading_ids: BTreeSet<String>,
 }
 
 impl Renderer {
@@ -63,7 +65,22 @@ impl Renderer {
             BlockNode::Heading(n) => (
                 self.name("heading")?,
                 structural_attrs(
-                    n.attrs.as_ref(),
+                    n.attrs
+                        .as_ref()
+                        .map(|a| {
+                            if a.id
+                                .as_ref()
+                                .is_some_and(|id| self.redundant_heading_ids.contains(id))
+                                && !a.order.iter().any(|slot| matches!(slot, AttrSlot::Id))
+                            {
+                                let mut authored = a.clone();
+                                authored.id = None;
+                                authored
+                            } else {
+                                a.clone()
+                            }
+                        })
+                        .as_ref(),
                     [("level", Json::Number(i64::from(n.level)))],
                 ),
                 self.inlines(&n.children, &[]),
@@ -308,7 +325,7 @@ impl Renderer {
                 a.insert("label".into(), Json::String(n.label.clone()));
                 a.insert("href".into(), Json::String(n.href.clone()));
                 if let Some(t) = &n.title {
-                    a.insert("title".into(), Json::String(t.clone()));
+                    set_structural_title(&mut a, t);
                 }
                 (self.name("link_reference_definition")?, a, Vec::new())
             }
@@ -494,7 +511,7 @@ impl Renderer {
                 let mut a = attrs(n.attrs.as_ref());
                 a.insert("href".into(), Json::String(n.href.clone()));
                 if let Some(t) = &n.title {
-                    a.insert("title".into(), Json::String(t.clone()));
+                    set_structural_title(&mut a, t);
                 }
                 if n.from_heading_reference {
                     a.insert("carveHeadingRef".into(), Json::Bool(true));
@@ -784,7 +801,7 @@ impl Renderer {
         a.insert("src".into(), Json::String(n.src.clone()));
         a.insert("alt".into(), Json::String(n.alt.clone()));
         if let Some(t) = &n.title {
-            a.insert("title".into(), Json::String(t.clone()));
+            set_structural_title(&mut a, t);
         }
         if let Some(r) = &n.ref_label {
             a.insert("carveRef".into(), Json::String(r.clone()));
@@ -930,6 +947,27 @@ fn attrs(a: Option<&Attrs>) -> Object {
     }
     out
 }
+/// Put a STRUCTURAL title into the wire's `title`.
+///
+/// One wire field carries two different Carve slots: a link, an image and a
+/// reference definition each have a structural title - the quoted string in
+/// `(url "T")` - and each can also carry an AUTHORED `{title=T}` attribute,
+/// which arrives here through the generic attribute run. `carveAttrOrder` is
+/// what records which one somebody typed, so where the structural slot wins the
+/// field the run must stop naming `title`: a run that still names it describes a
+/// value no longer on the wire, and the importer reads the structural title back
+/// as an authored attribute (carve-rs#1105).
+fn set_structural_title(a: &mut Object, title: &str) {
+    a.insert("title".into(), Json::String(title.to_owned()));
+    let Some(Json::Array(order)) = a.get_mut("carveAttrOrder") else {
+        return;
+    };
+    order.retain(|slot| !matches!(slot, Json::String(s) if s == "title"));
+    if order.is_empty() {
+        a.remove("carveAttrOrder");
+    }
+}
+
 fn structural_attrs<const N: usize>(a: Option<&Attrs>, values: [(&str, Json); N]) -> Object {
     let mut out = Object::new();
     for (k, v) in values {

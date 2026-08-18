@@ -59,15 +59,20 @@ enum EscapeMode {
     Conservative,
 }
 
-/// Render a tree that did NOT come from the parser, refusing at the ceiling.
+/// Render a tree as canonical Carve source.
 ///
-/// `Err` when the tree nests deeper than [`crate::MAX_RENDER_DEPTH`], naming the
-/// renderer and the bound (PART 9 §25). A parser-produced tree cannot reach it -
-/// the parse cap sits below the ceiling - so this fails only for a tree built
-/// through the API or read by `from_json`, which is the caller who can act on it.
-pub fn render_carve(doc: &Document) -> Result<String, crate::RenderDepthError> {
+/// Returns [`crate::RenderCarveError::Depth`] when a hand-built or ingested tree
+/// reaches the render ceiling, or [`crate::RenderCarveError::SourceUnspellable`]
+/// when emitting source would change the tree. Parser-produced trees cannot
+/// contain either condition.
+pub fn render_carve(doc: &Document) -> Result<String, crate::RenderCarveError> {
+    let source_watch = crate::render_carve_error::SourceSpellWatch::new();
     let watch = crate::render_depth::RenderDepthWatch::new();
-    watch.into_result(protect_leading_bom(render_carve_unguarded(doc)))
+    let output = protect_leading_bom(render_carve_unguarded(doc));
+    if let Some(error) = source_watch.error() {
+        return Err(error);
+    }
+    watch.into_result(output).map_err(Into::into)
 }
 
 /// A U+FEFF that would land at the head of the OUTPUT is written one column in.
@@ -115,16 +120,30 @@ thread_local! {
 /// Computed with `assigned_heading_ids` - the pass the renderer itself uses -
 /// over a copy with those ids removed, so this cannot answer differently from
 /// the parse it is predicting.
-fn redundant_heading_ids(doc: &Document) -> std::collections::BTreeSet<String> {
+pub(crate) fn redundant_heading_ids(doc: &Document) -> std::collections::BTreeSet<String> {
     let mut stripped = doc.clone();
     let mut had_any = false;
+    // The SAME two walks `assigned_heading_ids` makes, in the same order:
+    // `doc.children`, then the footnote definitions. Both halves are needed and
+    // in this order, because the answer is read off a POSITIONAL zip against
+    // that pass. Stopping at `doc.children` truncated the zip, so no heading in
+    // a footnote definition could ever be answered and every one of them was
+    // written back as authored source: `[^a]: # h` returned as `[^a]: {#h}`
+    // over an indented `# h`, the carve-rs#1105 shape in the one place this
+    // predicate could not see.
     strip_generated_ids(&mut stripped.children, &mut had_any);
+    for blocks in stripped.footnote_defs.values_mut() {
+        strip_generated_ids(blocks, &mut had_any);
+    }
     if !had_any {
         return std::collections::BTreeSet::new();
     }
     let fresh = crate::document_ids::assigned_heading_ids(&stripped, false);
     let mut present = Vec::new();
     collect_heading_ids(&doc.children, &mut present);
+    for blocks in doc.footnote_defs.values() {
+        collect_heading_ids(blocks, &mut present);
+    }
     present
         .into_iter()
         .zip(fresh)
@@ -1915,6 +1934,13 @@ fn render_inline(
             render_attrs(&math.attrs)
         ),
         InlineNode::RawInline(raw) => {
+            if raw.content.is_empty() {
+                crate::render_carve_error::record_unspellable(
+                    "raw_inline",
+                    "an empty raw inline has no Carve source spelling",
+                );
+                return String::new();
+            }
             let content = spell_verse_empty_lines(&raw.content, ctx.line_block_depth > 0);
             format!(
                 "{}{{={}}}",
