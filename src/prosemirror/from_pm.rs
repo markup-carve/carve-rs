@@ -245,16 +245,17 @@ impl Reader {
                 ],
             )),
             "link_reference_definition" => {
+                let authored = title_is_authored(a);
                 let mut n = with_attrs(
                     node(
                         &ty,
                         [
                             ("label", string_json(a, "label", "")),
                             ("href", string_json(a, "href", "")),
-                            ("title", optional_string(a, "title")),
+                            ("title", structural_title(a, authored)),
                         ],
                     ),
-                    a,
+                    &attr_run(a, authored),
                 );
                 remove_nulls(&mut n);
                 Ok(n)
@@ -643,18 +644,19 @@ impl Reader {
                         a,
                     )
                 } else {
+                    let authored = title_is_authored(a);
                     let mut n = with_attrs(
                         node(
                             "link",
                             [
                                 ("href", href),
                                 ("children", Json::Array(children)),
-                                ("title", optional_string(a, "title")),
+                                ("title", structural_title(a, authored)),
                                 ("ref", optional_string(a, "carveRef")),
                                 ("rawRef", optional_string(a, "carveRawRef")),
                             ],
                         ),
-                        &without(a, &["title"]),
+                        &attr_run(a, authored),
                     );
                     remove_nulls(&mut n);
                     n
@@ -682,19 +684,22 @@ impl Reader {
         let a = attrs_obj(obj);
         let n = match ty {
             "hard_break" => node(ty, []),
-            "image" => with_attrs(
-                node(
-                    ty,
-                    [
-                        ("src", string_json(a, "src", "")),
-                        ("alt", string_json(a, "alt", "")),
-                        ("title", optional_string(a, "title")),
-                        ("ref", optional_string(a, "carveRef")),
-                        ("rawRef", optional_string(a, "carveRawRef")),
-                    ],
-                ),
-                &without(a, &["title"]),
-            ),
+            "image" => {
+                let authored = title_is_authored(a);
+                with_attrs(
+                    node(
+                        ty,
+                        [
+                            ("src", string_json(a, "src", "")),
+                            ("alt", string_json(a, "alt", "")),
+                            ("title", structural_title(a, authored)),
+                            ("ref", optional_string(a, "carveRef")),
+                            ("rawRef", optional_string(a, "carveRawRef")),
+                        ],
+                    ),
+                    &attr_run(a, authored),
+                )
+            }
             "math" => with_attrs(
                 node(
                     ty,
@@ -970,6 +975,39 @@ fn with_attrs(mut n: Json, a: &Object) -> Json {
     }
     n
 }
+/// Whether the attribute run names `title`, which is to say the wire's `title`
+/// holds an AUTHORED `{title=...}` attribute rather than the structural title
+/// slot.
+///
+/// The two spellings share one wire field, and this run is the only record of
+/// which one the author typed. The outbound side keeps that record true - where
+/// the structural slot wins the field it drops `title` from the run - so reading
+/// it here is what stops `[z](safe.html){title="T"}` returning as
+/// `[z](safe.html "T")` (carve-rs#1105).
+fn title_is_authored(a: &Object) -> bool {
+    matches!(a.get("carveAttrOrder"), Some(Json::Array(v))
+        if v.iter().any(|s| matches!(s, Json::String(s) if s == "title")))
+}
+
+/// The structural title slot: the wire's `title`, unless the run claims it.
+fn structural_title(a: &Object, authored: bool) -> Json {
+    if authored {
+        Json::Null
+    } else {
+        optional_string(a, "title")
+    }
+}
+
+/// The attribute run: the wire attributes minus `title`, unless the run claims
+/// it - in which case `title` is one of the attributes and stays.
+fn attr_run(a: &Object, authored: bool) -> Object {
+    if authored {
+        a.clone()
+    } else {
+        without(a, &["title"])
+    }
+}
+
 fn is_structural_attr(k: &str) -> bool {
     matches!(
         k,
