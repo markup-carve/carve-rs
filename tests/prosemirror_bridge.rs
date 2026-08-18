@@ -691,8 +691,26 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // construction. The two that do not fold are the controls, and they carry no
     // break. Nothing DROPS, so no new cause appears, and none of the five joins
     // the declared source-lossy set.
-    const STRICT: usize = 984;
-    const LOSSY: usize = 266;
+    // 984/266 to 986/267 is the THREE documents arriving with the 275d99d spec
+    // pin, and nothing else: the corpus went from 1250 pairs to 1253, the added
+    // pairs are all of category 362 - an unterminated container does not extend
+    // the item past a blank line, together with its two controls - and no
+    // existing pair changed content.
+    //
+    // Nothing is held separate for an engine change, because this branch
+    // carries none. The ruling behind the category (carve#1379) is one this
+    // engine already followed; the executable spec was the reader that made
+    // the missing closer decide. So the whole delta is the three new documents.
+    //
+    // Two are strict and one reports, for a cause already declared above. The
+    // reporting one is the control with NO blank line, whose last line folds
+    // into the item's open paragraph and therefore holds a `soft_break`. The
+    // other two put a blank in front of that line, which ends the paragraph and
+    // so ends the item, leaving a block of its own with no break in it. Nothing
+    // DROPS, so no new cause appears, and none of the three joins the declared
+    // source-lossy set.
+    const STRICT: usize = 986;
+    const LOSSY: usize = 267;
     assert!(
         covered >= STRICT,
         "strict round trips fell from {STRICT} to {covered}"

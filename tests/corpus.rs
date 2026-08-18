@@ -448,6 +448,7 @@ const IMPLEMENTED: &[&str] = &[
     "a-footnote-definition-s-block-runs-to-the-end-of-its-body",
     "a-definition-behind-an-alternating-container-prefix-registers-at-the-innermost-content-column",
     "a-paragraph-opened-after-a-block-in-an-item-is-still-open-for-a-lazy-line",
+    "an-unterminated-container-does-not-extend-the-item-past-a-blank-line",
 ];
 
 fn corpus_dir() -> PathBuf {
