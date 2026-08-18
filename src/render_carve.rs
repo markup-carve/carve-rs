@@ -176,7 +176,7 @@ fn strip_generated_ids(blocks: &mut [BlockNode], had_any: &mut bool) {
                 }
             }
             BlockNode::Figure(f) => {
-                if let FigureTarget::BlockQuote(b) = &mut f.target {
+                if let FigureTarget::BlockQuote(b) = &mut *f.target {
                     strip_generated_ids(&mut b.children, had_any);
                 }
             }
@@ -208,7 +208,7 @@ fn collect_heading_ids(blocks: &[BlockNode], out: &mut Vec<Option<String>>) {
                 }
             }
             BlockNode::Figure(f) => {
-                if let FigureTarget::BlockQuote(b) = &f.target {
+                if let FigureTarget::BlockQuote(b) = &*f.target {
                     collect_heading_ids(&b.children, out);
                 }
             }
@@ -302,7 +302,7 @@ fn emptied_description_lines(blocks: &[BlockNode], into: &mut HashSet<usize>) {
             // in it is not collected - but the asymmetry would be a trap the
             // moment that changes.
             BlockNode::Figure(figure) => {
-                if let FigureTarget::BlockQuote(quote) = &figure.target {
+                if let FigureTarget::BlockQuote(quote) = &*figure.target {
                     emptied_description_lines(&quote.children, into);
                 }
             }
@@ -749,7 +749,7 @@ fn normalize_escapes_block(block: &mut BlockNode) {
 }
 
 fn normalize_escapes_figure_target(f: &mut crate::ast::Figure) {
-    match &mut f.target {
+    match &mut *f.target {
         FigureTarget::BlockQuote(b) => {
             for child in &mut b.children {
                 normalize_escapes_block(child);
@@ -1724,7 +1724,7 @@ fn render_table_cell(cell: &TableCell, ctx: &mut CarveContext, mark_header: bool
 }
 
 fn render_figure(node: &Figure, ctx: &mut CarveContext) -> String {
-    let target = match &node.target {
+    let target = match &*node.target {
         FigureTarget::Image(image) => render_image(image),
         FigureTarget::Table(table) => render_table(table, ctx),
         FigureTarget::BlockQuote(quote) => render_block(&BlockNode::BlockQuote(quote.clone()), ctx),

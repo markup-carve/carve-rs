@@ -182,7 +182,7 @@ fn number_blocks(blocks: &mut [BlockNode], in_blockquote: bool, state: &mut Numb
                 // Only a blockquote target can hold a heading; the resolver
                 // assigns its heading an id (as a quoted heading), so mirror
                 // that descent for first-id-wins.
-                if let FigureTarget::BlockQuote(b) = &mut f.target {
+                if let FigureTarget::BlockQuote(b) = &mut *f.target {
                     number_blocks(&mut b.children, true, state);
                 }
             }
@@ -331,7 +331,7 @@ fn rewrite_links_blocks(
             }
             BlockNode::Figure(f) => {
                 rewrite_links_inlines(&mut f.caption, by_id, opts);
-                if let FigureTarget::BlockQuote(b) = &mut f.target {
+                if let FigureTarget::BlockQuote(b) = &mut *f.target {
                     rewrite_links_blocks(&mut b.children, by_id, opts);
                 }
             }

@@ -361,7 +361,7 @@ impl Seeder {
             }
             BlockNode::Figure(f) => {
                 self.reserve_attrs(&f.attrs);
-                match &f.target {
+                match &*f.target {
                     FigureTarget::Image(i) => self.reserve_attrs(&i.attrs),
                     FigureTarget::BlockQuote(b) => self.walk_blockquote(b),
                     FigureTarget::Table(t) => self.walk_table(t),

@@ -508,7 +508,15 @@ pub struct DefinitionList {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Figure {
     pub attrs: Option<Attrs>,
-    pub target: FigureTarget,
+    /// BOXED to keep `BlockNode` small. `FigureTarget` embeds a whole `Table`
+    /// or `CodeBlock`, which made `Figure` the largest variant by far and so
+    /// set the size of EVERY `BlockNode`: 472 bytes, against 272 for the next
+    /// largest. Every recursive walk over the tree moves `BlockNode` values by
+    /// value, so that number is what a nesting level costs in stack, and PART 9
+    /// §25's cap of 200 levels multiplied it into most of a 1 MiB wasm stack
+    /// (markup-carve/carve-wasm#44). One indirection on a node kind that is
+    /// rare in real documents buys the cap back.
+    pub target: Box<FigureTarget>,
     pub caption: Vec<InlineNode>,
     /// Structured publishing/navigation label; ordinary renderers ignore it.
     pub short_caption: Option<Vec<InlineNode>>,

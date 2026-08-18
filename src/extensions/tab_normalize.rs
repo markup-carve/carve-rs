@@ -160,7 +160,7 @@ impl TabNormalize {
 
     fn visit_figure_target(&self, f: &mut crate::ast::Figure) {
         use crate::ast::FigureTarget;
-        match &mut f.target {
+        match &mut *f.target {
             FigureTarget::CodeBlock(c) => c.content = self.expand(&c.content),
             FigureTarget::BlockQuote(b) => {
                 for child in &mut b.children {
