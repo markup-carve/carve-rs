@@ -8,7 +8,7 @@
 //! engine getting this right (carve#352, corpus 132/133/157/161).
 //!
 //! The DEFINITION lines below carry their caret for a different rule:
-//! PART 10 §10a emits the marker as written, and `[a]: …` is a link
+//! PART 11 §10a emits the marker as written, and `[a]: …` is a link
 //! reference definition rather than this construct. Whether the
 //! REFERENCE marker should keep its caret on this target is carve#550,
 //! still open, so these pin it as it stands.

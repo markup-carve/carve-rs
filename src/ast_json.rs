@@ -886,7 +886,10 @@ fn write_code_block(out: &mut String, n: &CodeBlock) {
 fn write_block_quote(out: &mut String, n: &BlockQuote) {
     let mut w = typed(out, "block_quote");
     w.field("children", |out| write_blocks(out, &n.children));
-    // PART 9 §4a: the source of the quotation, absent when there is none.
+    // The ordinary attribute slot, like every other node's (PART 12 §3). This
+    // cited a "PART 9 §4a" for the source of the quotation: PART 9 has 4b and 4c
+    // and no 4a, and what this line writes is the attrs slot rather than an
+    // attribution of any kind.
     write_attrs_field(&mut w, &n.attrs);
     write_pos_field(&mut w, &n.pos);
     w.finish();

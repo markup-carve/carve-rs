@@ -445,6 +445,7 @@ const IMPLEMENTED: &[&str] = &[
     "a-continuation-row-joins-the-row-above-it-whatever-its-cells-hold",
     "a-quote-inside-a-quote-is-asked-what-it-ends-on",
     "what-a-content-column-block-does-not-reach",
+    "a-footnote-definition-s-block-runs-to-the-end-of-its-body",
 ];
 
 fn corpus_dir() -> PathBuf {
