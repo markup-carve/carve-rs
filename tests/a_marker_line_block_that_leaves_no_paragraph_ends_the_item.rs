@@ -14,11 +14,9 @@
 //! ended the quote in carve-rs, carve-js and carve-php alike; these are the
 //! same derivation with the same answer.
 //!
-//! DELIBERATELY OUT OF SCOPE, and asserted as such below: the same shapes at
-//! the item's CONTENT COLUMN. Extending the rule there moves corpus
-//! 75-list-nesting-and-looseness-4 to a third answer nobody has agreed to, so
-//! the clause leaves that half open and the controls at the bottom of this file
-//! pin it where it is.
+//! carve#1377 completed the same rule at an item's CONTENT COLUMN: a heading
+//! still leaves no paragraph open there, so the following flush-left line
+//! resumes only an enclosing item, if one exists.
 
 fn html(src: &str) -> String {
     carve::to_html(src)
@@ -166,7 +164,7 @@ fn the_same_answer_one_level_down() {
 
 // ---------------------------------------------------------------------------
 // CONTROLS. The rule has ONE parameter, so the controls are the documents where
-// that parameter has the other value - and the half the clause leaves open.
+// that parameter has the other value.
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -193,17 +191,14 @@ fn control_a_sibling_marker_still_opens_a_sibling() {
 }
 
 #[test]
-fn control_the_content_column_half_is_untouched() {
-    // OUT OF SCOPE, deliberately. The same heading one column further in still
-    // folds, and corpus 75-list-nesting-and-looseness-4 still reads as it did.
-    // A fix that reaches this document has overshot the ruling.
+fn a_heading_at_the_content_column_leaves_no_paragraph_open() {
     assert_eq!(
         html("- a\n  # H\ntail\n"),
-        "<ul>\n  <li>a\n    <h1 id=\"H\">H</h1>\n    tail\n  </li>\n</ul>"
+        "<ul>\n  <li>a\n    <h1 id=\"H\">H</h1>\n  </li>\n</ul>\n<p>tail</p>"
     );
     assert_eq!(
         html("- a\n  - b\n    # N\nlazy\n"),
-        "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <h1 id=\"N\">N</h1>\n        lazy\n      </li>\n    </ul>\n  </li>\n</ul>"
+        "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <h1 id=\"N\">N</h1>\n      </li>\n    </ul>\n    lazy\n  </li>\n</ul>"
     );
 }
 
