@@ -379,7 +379,9 @@ fn parse_with_options_mode(source: &str, options: &Options<'_>, mode: ParseMode)
         + 1;
     let (body, footnote_defs_src, mut footnote_def_pos, note_link_defs) =
         extract_footnote_defs(body, body_start_line, options.positions, options);
-    let (body_source, mut link_defs) = extract_link_defs(&body.source);
+    let mut link_def_probe_budget = probe_budget_for(body.source.len());
+    let (body_source, mut link_defs) =
+        extract_link_defs_guarded(&body.source, options, &mut link_def_probe_budget);
     // A definition written inside a footnote body is document-level metadata,
     // and a definition at the top level WINS over one of the same label there -
     // measured on carve-js and carve-php, which both resolve `[t][r]` to the
@@ -1457,7 +1459,9 @@ struct LinkDef {
 /// that matters: an unanswered question is answered `false`, which collects the
 /// definition exactly as the engine did before this guard existed. A document
 /// has to be built to reach it - the question is only asked for a line that is
-/// both a list marker and a footnote definition behind it.
+/// both a list marker and a definition behind it. Each pass that asks gets its
+/// own budget: the footnote pre-pass and, since carve#1425, the link-reference
+/// one.
 ///
 /// BYTES RATHER THAN LINES, because a probe costs what it PARSES and a line is
 /// not a unit of that. Counting lines prices one long line and one short one
@@ -1574,9 +1578,10 @@ fn open_frame(blocks: &[BlockNode]) -> OpenFrame {
 
 /// Does the BLOCK PARSER fold `line` into a paragraph that was already open?
 ///
-/// This is the question the footnote pre-pass has to answer before it may cut a
+/// This is the question a definition pre-pass has to answer before it may cut a
 /// definition out of a line, and the pre-pass has no business answering it
-/// itself. §10 says a list does not interrupt an open paragraph, so `r` then
+/// itself. Both passes ask it - the footnote one since carve-rs#1024, the
+/// link-reference one since carve#1425. §10 says a list does not interrupt an open paragraph, so `r` then
 /// `. [^f]: t` is one paragraph holding both lines - and a pre-pass that
 /// collects the definition out of the second line deletes text the block parser
 /// keeps and defines a note nobody wrote (markup-carve/carve-rs#1024).
@@ -1665,6 +1670,29 @@ fn line_folds_into_an_open_paragraph(
 }
 
 fn extract_link_defs(source: &str) -> (String, BTreeMap<String, LinkDef>) {
+    extract_link_defs_with_guard(source, None)
+}
+
+/// The pipeline's spelling, which asks the block parser before it cuts a
+/// definition out of a LIST MARKER line.
+///
+/// `guard` is `None` for the probe inside
+/// [`line_folds_into_an_open_paragraph`], which calls this pass to strip
+/// definitions from the run it parses. That is what breaks the recursion: the
+/// guarded pass asks the probe, the probe asks the unguarded pass, and the
+/// unguarded pass asks nothing.
+fn extract_link_defs_guarded(
+    source: &str,
+    options: &Options<'_>,
+    budget: &mut usize,
+) -> (String, BTreeMap<String, LinkDef>) {
+    extract_link_defs_with_guard(source, Some((options, budget)))
+}
+
+fn extract_link_defs_with_guard(
+    source: &str,
+    mut guard: Option<(&Options<'_>, &mut usize)>,
+) -> (String, BTreeMap<String, LinkDef>) {
     let mut body: Vec<String> = Vec::new();
     let mut defs = BTreeMap::new();
     let mut in_fence: Option<FenceOpen> = None;
@@ -1753,12 +1781,6 @@ fn extract_link_defs(source: &str) -> (String, BTreeMap<String, LinkDef>) {
         // the prefix scan needs that column to see it (carve-rs#588).
         let after_term = line_index > 0 && opens_definition_entry(all_lines[line_index - 1]);
         let stripped = strip_container_prefixes_at(line, &columns, after_term);
-        // A marker after an already-open paragraph is lazy paragraph text, not
-        // a new container from which this line-oriented pre-pass may collect a
-        // definition (`r\n. [f]: t`).
-        let marker_is_lazy_text = line_index > 0
-            && !is_blank_line(all_lines[line_index - 1])
-            && detect_list_marker_full(line).is_some();
         let raw_is_quoted = prepass_line_is_quoted(line);
         if let Some(fence_len) = in_line_block {
             // The line is KEPT whatever it looks like - that is the whole point.
@@ -1913,16 +1935,36 @@ fn extract_link_defs(source: &str) -> (String, BTreeMap<String, LinkDef>) {
         // implementations agree it defines nothing there. Zero columns is the
         // top-level case, where `text` / `  [r]: /u` is likewise text
         // everywhere - so this only ever fires inside a list item.
-        let def_line = if marker_is_lazy_text {
-            line
-        } else {
-            at_content_column(
-                stripped.bare,
-                stripped.structural,
-                columns.reached_by(leading_ws(stripped.bare)),
-            )
-        };
-        if let Some((label_part, target_part)) = parse_link_def_line(def_line) {
+        let def_line = at_content_column(
+            stripped.bare,
+            stripped.structural,
+            columns.reached_by(leading_ws(stripped.bare)),
+        );
+        if let Some((label_part, target_part)) = parse_link_def_line(def_line).filter(|_| {
+            // A LIST MARKER on a line the block parser folds into an open
+            // paragraph is lazy paragraph text, and the definition behind it is
+            // part of that text. Cutting it out deletes the author's line and
+            // defines a reference nobody wrote (markup-carve/carve#1425).
+            //
+            // THE PREVIOUS LINE IS NOT THE QUESTION. This guard used to ask
+            // whether that line was blank, which is a different question with a
+            // different answer: a heading, a comment, a definition of any of the
+            // three kinds and a marker line are all non-blank and all leave NO
+            // OPEN PARAGRAPH (grammar PART 0), so the cheap spelling refused a
+            // collection carve-js, carve-php and the executable spec all make -
+            // and the definition came back as visible item text. The footnote
+            // pass answered this for its own kind in carve-rs#1024 and left this
+            // one filed; this is that fix.
+            //
+            // The marker test SCOPES the guard and reads the RAW line, so a
+            // quoted marker (`> - [d]: u`) never reaches it and is collected as
+            // before - the same scope the footnote pass has, deliberately, so
+            // the two kinds answer alike.
+            !(detect_list_marker_full(line).is_some()
+                && guard.as_mut().is_some_and(|(options, budget)| {
+                    line_folds_into_an_open_paragraph(&body, line, options, budget)
+                }))
+        }) {
             // A reference definition needs a non-empty destination (carve-js
             // `RE_LINK_DEF` requires `(\S+)` after the colon). An empty target
             // (`[r]:` + only whitespace) is NOT a definition -- the line stays
