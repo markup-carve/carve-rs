@@ -7977,7 +7977,7 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             let mut stream = item_marker_source(cur, marker.content, item_at);
             let before_block = cur.pos;
             let collection_floor = if nested_definition_ended_paragraph {
-                nested_content_col.saturating_sub(1)
+                content_col.saturating_sub(1)
             } else {
                 base_indent
             };
@@ -7989,7 +7989,7 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             if !nested_definition_ended_paragraph
                 || cur
                     .peek()
-                    .is_some_and(|line| indent_columns(line) >= nested_content_col)
+                    .is_some_and(|line| indent_columns(line) >= content_col)
             {
                 stream.append(collect_indented_block_mapped(
                     cur,
