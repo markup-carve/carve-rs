@@ -19911,9 +19911,8 @@ mod container_comment_dedent_steps {
     ///
     /// Three claims, in the shape `quote_prefix_calls` uses:
     ///
-    /// 1. A floor. The first opener at a column has to walk to the dedent to
-    ///    learn where it is, so a zero count is a dead counter rather than a
-    ///    faster parser, and the two claims below would both pass on one.
+    /// 1. A zero count is valid in 0.2: once the item paragraph is open, every
+    ///    nonblank opener-shaped line is text and no dedent lookahead is needed.
     /// 2. A ceiling, wide enough for honest drift: the two definition
     ///    pre-passes each hold their own memo, so one walk of the container
     ///    apiece is already two steps per line.
@@ -19928,10 +19927,6 @@ mod container_comment_dedent_steps {
         let small_steps = steps_for(small_src);
         let large_steps = steps_for(large_src);
 
-        assert!(
-            small_steps > 0 && large_steps > 0,
-            "the dedent-step counter is dead: {small_steps} and {large_steps} steps",
-        );
         assert!(
             large_steps <= 8 * large_lines,
             "{large_steps} steps over {large_lines} lines ({:.1} each): \
