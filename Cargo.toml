@@ -2,7 +2,7 @@
 # Published crate name (`carve` is taken on crates.io). The library is still
 # imported as `carve` (see [lib].name) and the CLI binary is still `carve`.
 name = "carve-lang"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2021"
 rust-version = "1.75"
 description = "Rust parser and HTML renderer for the Carve markup language."
@@ -15,7 +15,19 @@ keywords = ["carve", "markup", "parser", "html", "djot"]
 categories = ["parser-implementations", "text-processing"]
 # Ship only the crate sources + metadata. The integration tests pull in the
 # `tests/spec` submodule (1200+ corpus/doc files) which consumers do not need.
-include = ["/src/**/*", "/Cargo.toml", "/README.md", "/LICENSE", "/CHANGELOG.md"]
+include = ["/src/**/*", "/resources/**/*", "/Cargo.toml", "/README.md", "/LICENSE", "/CHANGELOG.md"]
+
+[dependencies]
+html5ever = "0.27"
+markup5ever_rcdom = "0.3"
+# The Markdown importer parses to an AST first, the way the HTML importer uses
+# html5ever, rather than rewriting source lines. pulldown-cmark is the
+# ecosystem's CommonMark parser and emits an event stream that walks straight
+# into a Carve Document.
+pulldown-cmark = { version = "0.13", default-features = false }
+
+[dev-dependencies]
+serde_json = "1"
 
 [lib]
 name = "carve"

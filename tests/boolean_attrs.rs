@@ -36,10 +36,11 @@ fn mixes_with_key_value() {
 
 #[test]
 fn multiple_bare_words() {
-    assert_eq!(
-        html("[x]{kbd foo}"),
-        r#"<p><span kbd="" foo="">x</span></p>"#
-    );
+    // PART 9 §9: `kbd` renames the span, and what is left over RIDES the
+    // element rather than sitting on a wrapper around it (carve#1162). The
+    // remaining bare word is still a boolean attribute; only where it lands
+    // moved.
+    assert_eq!(html("[x]{kbd foo}"), r#"<p><kbd foo="">x</kbd></p>"#);
 }
 
 #[test]

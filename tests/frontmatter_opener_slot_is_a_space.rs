@@ -21,6 +21,13 @@
 //! carve-rs#720 and was only found in carve-rs#722, so both directions are
 //! watched here.
 //!
+//! THE SLOT ONLY EXISTS WHERE A TOKEN FOLLOWS (carve#1295). Whitespace with
+//! nothing after it on the line is not this slot but the LINE ENDING, and
+//! PART 2's NO TRAILING WHITESPACE governs it: the run there is `whitespace`,
+//! `' ' | '\t'`, it is dropped, and it is not content. So `---<TAB>yaml` is no
+//! typed opener while `---<TAB>` is a bare one. Every case below carries its
+//! token for that reason; the one that does not says so.
+//!
 //! TWO PRODUCERS. `split_frontmatter` (the parse path) and `raw_frontmatter`
 //! (the `fmt` path) each carried their own copy of the opener test. A `fmt` that
 //! disagrees with the parser about what a frontmatter block is would rewrite an
@@ -78,19 +85,28 @@ fn a_tab_does_not_pad_the_format_slot() {
 }
 
 #[test]
-fn a_tab_alone_does_not_pad_the_format_slot() {
-    // No token at all, just the run. A bare `---` IS an opener, so this case
-    // isolates the run from the token.
+fn a_tab_alone_is_not_this_slot_at_all() {
+    // No token at all, just the run - which is what takes this case OUT of the
+    // slot. POSITION DECIDES (carve#1295): whitespace before content is a
+    // separator and the terminal is `space` alone, whitespace with nothing
+    // after it is TRAILING and PART 2's NO TRAILING WHITESPACE drops it, run
+    // `' ' | '\t'`. A frontmatter delimiter takes no content on its line, so
+    // `---<TAB>` can only be the second, and the block opens.
     //
-    // The parse decision only. `fmt` writes this one back as the thematic break
-    // it now is, and a document that OPENS with a thematic break and carries a
-    // later `---` re-reads as frontmatter on the next parse - measured on the
-    // same build for a `***` opener, which this ticket does not touch. That is a
-    // separate defect in the writer, not this slot, so asserting it here would
-    // pin the wrong rule.
+    // This used to assert the opposite, and the note it carried recorded the
+    // cost: the same line was no frontmatter delimiter and still a THEMATIC
+    // BREAK, so `fmt` wrote it back as a rule and a later `---` then re-read as
+    // frontmatter on the next parse. One trailing tab disqualified one
+    // construct on the line and not the other. It now writes back as the
+    // canonical typed opener and the document is stable.
     assert!(
-        !has_frontmatter("---\t\na: 1\n---\nx\n"),
-        "tab, no token: opened a frontmatter block"
+        has_frontmatter("---\t\na: 1\n---\nx\n"),
+        "tab, no token: the tail is trailing whitespace, so the block opens"
+    );
+    assert_eq!(
+        fmt_first_line("---\t\na: 1\n---\nx\n"),
+        "---yaml",
+        "fmt writes the bare fence back as the typed opener it defaults to"
     );
 }
 

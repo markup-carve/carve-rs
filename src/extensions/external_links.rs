@@ -99,6 +99,7 @@ impl ExternalLinks {
         match block {
             BlockNode::Heading(h) => self.visit_inlines(&mut h.children),
             BlockNode::Paragraph(p) => self.visit_inlines(&mut p.children),
+            BlockNode::CitationDefinition(d) => self.visit_inlines(&mut d.children),
             BlockNode::List(l) => {
                 for item in &mut l.items {
                     for child in &mut item.children {
@@ -155,6 +156,14 @@ impl ExternalLinks {
                 self.visit_inlines(&mut f.caption);
                 self.visit_figure_target(f);
             }
+            BlockNode::FigureGroup(g) => {
+                if let Some(caption) = &mut g.caption {
+                    self.visit_inlines(caption);
+                }
+                for child in &mut g.children {
+                    self.visit_block(child);
+                }
+            }
             BlockNode::Extension(e) => {
                 for child in &mut e.children {
                     self.visit_block(child);
@@ -172,7 +181,7 @@ impl ExternalLinks {
 
     fn visit_figure_target(&self, f: &mut crate::ast::Figure) {
         use crate::ast::FigureTarget;
-        match &mut f.target {
+        match &mut *f.target {
             FigureTarget::BlockQuote(b) => {
                 for child in &mut b.children {
                     self.visit_block(child);

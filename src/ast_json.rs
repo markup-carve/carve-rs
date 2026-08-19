@@ -3,7 +3,8 @@
 //! This module intentionally has no serde dependency. It contains the small
 //! JSON writer and parser needed for the schema-backed AST interchange format.
 
-use std::collections::BTreeMap;
+use std::cell::Cell;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 use crate::ast::*;
@@ -30,19 +31,113 @@ impl fmt::Display for AstJsonError {
 impl std::error::Error for AstJsonError {}
 
 #[derive(Debug, Clone, PartialEq)]
-enum Json {
+pub(crate) enum Json {
     Null,
     Bool(bool),
     Number(i64),
+    Float(f64),
     String(String),
     Array(Vec<Json>),
     Object(BTreeMap<String, Json>),
 }
 
-pub fn to_json(doc: &Document) -> String {
+pub(crate) fn parse_value(input: &str) -> Result<Json, AstJsonError> {
+    Parser::new(input).parse()
+}
+
+pub(crate) fn value_to_json(value: &Json) -> String {
+    fn write(out: &mut String, value: &Json, depth: usize) {
+        assert!(
+            depth <= MAX_JSON_DEPTH,
+            "JSON value exceeds the encoder's depth budget"
+        );
+        match value {
+            Json::Null => out.push_str("null"),
+            Json::Bool(value) => out.push_str(if *value { "true" } else { "false" }),
+            Json::Number(value) => out.push_str(&value.to_string()),
+            Json::Float(value) => out.push_str(&value.to_string()),
+            Json::String(value) => write_string(out, value),
+            Json::Array(values) => {
+                out.push('[');
+                for (index, value) in values.iter().enumerate() {
+                    if index != 0 {
+                        out.push(',');
+                    }
+                    write(out, value, depth + 1);
+                }
+                out.push(']');
+            }
+            Json::Object(values) => {
+                out.push('{');
+                for (index, (key, value)) in values.iter().enumerate() {
+                    if index != 0 {
+                        out.push(',');
+                    }
+                    write_string(out, key);
+                    out.push(':');
+                    write(out, value, depth + 1);
+                }
+                out.push('}');
+            }
+        }
+    }
+    let mut out = String::new();
+    write(&mut out, value, 0);
+    out
+}
+
+thread_local! {
+    static ENCODE_DEPTH: Cell<usize> = const { Cell::new(0) };
+    static ENCODE_REFUSED: Cell<bool> = const { Cell::new(false) };
+}
+
+struct EncodeDepthGuard;
+
+impl EncodeDepthGuard {
+    fn enter() -> Option<Self> {
+        ENCODE_DEPTH.with(|depth| {
+            let current = depth.get();
+            // Every recursive AST node costs at least its object and the
+            // containing `children` array on the wire. Refuse at the cheapest
+            // possible conversion so anything accepted here remains readable
+            // by this module's structural-depth guard.
+            if current >= MAX_JSON_DEPTH / 2 {
+                ENCODE_REFUSED.with(|refused| refused.set(true));
+                None
+            } else {
+                depth.set(current + 1);
+                Some(Self)
+            }
+        })
+    }
+}
+
+impl Drop for EncodeDepthGuard {
+    fn drop(&mut self) {
+        ENCODE_DEPTH.with(|depth| depth.set(depth.get() - 1));
+    }
+}
+
+/// Serialize an AST, refusing a programmatically constructed tree beyond the
+/// same depth budget used by the JSON reader.
+pub fn try_to_json(doc: &Document) -> Result<String, AstJsonError> {
+    ENCODE_DEPTH.with(|depth| depth.set(0));
+    ENCODE_REFUSED.with(|refused| refused.set(false));
     let mut out = String::new();
     write_document(&mut out, doc);
-    out
+    if ENCODE_REFUSED.with(Cell::get) {
+        Err(AstJsonError::new(
+            "JSON nests deeper than the encoder's depth budget",
+        ))
+    } else {
+        Ok(out)
+    }
+}
+
+/// Serialize an AST. Prefer [`try_to_json`] for trees not produced by the
+/// parser; this compatibility entry point panics on an over-depth API tree.
+pub fn to_json(doc: &Document) -> String {
+    try_to_json(doc).expect("AST JSON encoder depth budget exceeded")
 }
 
 pub(crate) fn source_layout_positions(doc: &Document) -> Vec<(String, usize, usize)> {
@@ -187,11 +282,12 @@ fn refuse_unknown_fields(node: &Json, path: &str) -> Result<(), AstJsonError> {
                         }
                     }
                     // The records the schema closes but gives no `type`, reached
-                    // through an ARRAY property of a typed node - today only
+                    // through an ARRAY property of a typed node -
                     // `citation_group.items`, whose entries are `citation`
-                    // objects. The type-keyed check above cannot see them and
-                    // the helper loop cannot either, so a citation carrying any
-                    // extra field rode straight in.
+                    // objects, and `table.rowGroups.bodies`. The type-keyed
+                    // check above cannot see them and the helper loop cannot
+                    // either, so a citation carrying any extra field rode
+                    // straight in.
                     for (position, allowed) in crate::wire_fields::WIRE_UNTYPED_ARRAY_FIELDS {
                         let Some((owner, property)) = position.split_once('.') else {
                             continue;
@@ -199,7 +295,21 @@ fn refuse_unknown_fields(node: &Json, path: &str) -> Result<(), AstJsonError> {
                         if *ty != *owner {
                             continue;
                         }
-                        let Some(Json::Array(items)) = obj.get(property) else {
+                        // The property may sit under an untyped object of its
+                        // own - `table.rowGroups.bodies` - so the path is
+                        // WALKED rather than read as one key. Without this a
+                        // body group was the one record on the wire nothing
+                        // closed.
+                        let mut holder = Some(obj);
+                        let mut steps: Vec<&str> = property.split('.').collect();
+                        let leaf = steps.pop().unwrap_or(property);
+                        for step in steps {
+                            holder = match holder.and_then(|o| o.get(step)) {
+                                Some(Json::Object(inner)) => Some(inner),
+                                _ => None,
+                            };
+                        }
+                        let Some(Json::Array(items)) = holder.and_then(|o| o.get(leaf)) else {
                             continue;
                         };
                         for (index, item) in items.iter().enumerate() {
@@ -545,6 +655,7 @@ pub(crate) fn first_block_pos(children: &[BlockNode]) -> Option<&Pos> {
 pub(crate) fn block_pos(node: &BlockNode) -> Option<&Pos> {
     match node {
         BlockNode::LinkReferenceDefinition(n) => n.pos.as_ref(),
+        BlockNode::CitationDefinition(n) => n.pos.as_ref(),
         BlockNode::Heading(n) => n.pos.as_ref(),
         BlockNode::Paragraph(n) => n.pos.as_ref(),
         BlockNode::CodeBlock(n) => n.pos.as_ref(),
@@ -556,6 +667,7 @@ pub(crate) fn block_pos(node: &BlockNode) -> Option<&Pos> {
         BlockNode::LineBlock(n) => n.pos.as_ref(),
         BlockNode::DefinitionList(n) => n.pos.as_ref(),
         BlockNode::Figure(n) => n.pos.as_ref(),
+        BlockNode::FigureGroup(n) => n.pos.as_ref(),
         BlockNode::AbbreviationDef(n) => n.pos.as_ref(),
         BlockNode::RawBlock(n) => n.pos.as_ref(),
         BlockNode::Comment(n) => n.pos.as_ref(),
@@ -618,6 +730,9 @@ fn write_footnote_def(
 }
 
 fn write_block(out: &mut String, node: &BlockNode) {
+    let Some(_depth) = EncodeDepthGuard::enter() else {
+        return;
+    };
     match node {
         BlockNode::Heading(n) => {
             let mut w = typed(out, "heading");
@@ -702,6 +817,24 @@ fn write_block(out: &mut String, node: &BlockNode) {
             let mut w = typed(out, "figure");
             w.field("target", |out| write_figure_target(out, &n.target));
             w.field("caption", |out| write_inlines(out, &n.caption));
+            if let Some(short_caption) = &n.short_caption {
+                w.field("shortCaption", |out| write_inlines(out, short_caption));
+            }
+            write_attrs_field(&mut w, &n.attrs);
+            write_pos_field(&mut w, &n.pos);
+            w.finish();
+        }
+        BlockNode::FigureGroup(n) => {
+            // PART 12 §16: `children` in source order (a consumer derives the
+            // panel list by type, the way the renderer does - there is no
+            // second `panels` key to disagree with them), `caption` only when
+            // the closer hosted one - absent means uncaptioned, never an
+            // empty placeholder.
+            let mut w = typed(out, "figure_group");
+            w.field("children", |out| write_blocks(out, &n.children));
+            if let Some(caption) = &n.caption {
+                w.field("caption", |out| write_inlines(out, caption));
+            }
             write_attrs_field(&mut w, &n.attrs);
             write_pos_field(&mut w, &n.pos);
             w.finish();
@@ -715,6 +848,19 @@ fn write_block(out: &mut String, node: &BlockNode) {
             if let Some(title) = &n.title {
                 w.field("title", |out| write_string(out, title));
             }
+            write_attrs_field(&mut w, &n.attrs);
+            write_pos_field(&mut w, &n.pos);
+            w.finish();
+        }
+        BlockNode::CitationDefinition(n) => {
+            // PART 12 section 18: `key` and `children` are required, `attrs`
+            // rides along when the definition line carried a metadata block.
+            // Shaped after section 10's link reference definition, so the entry
+            // is INLINE content - a footnote body holds blocks and this does
+            // not.
+            let mut w = typed(out, "citation_definition");
+            w.field("key", |out| write_string(out, &n.key));
+            w.field("children", |out| write_inlines(out, &n.children));
             write_attrs_field(&mut w, &n.attrs);
             write_pos_field(&mut w, &n.pos);
             w.finish();
@@ -736,6 +882,9 @@ fn write_block(out: &mut String, node: &BlockNode) {
         BlockNode::Comment(n) => {
             let mut w = typed(out, "comment");
             w.field("block", |out| write_bool(out, n.block));
+            if n.delimited {
+                w.field("delimited", |out| write_bool(out, true));
+            }
             w.field("content", |out| write_string(out, &n.content));
             write_pos_field(&mut w, &n.pos);
             w.finish();
@@ -795,6 +944,10 @@ fn write_code_block(out: &mut String, n: &CodeBlock) {
 fn write_block_quote(out: &mut String, n: &BlockQuote) {
     let mut w = typed(out, "block_quote");
     w.field("children", |out| write_blocks(out, &n.children));
+    // The ordinary attribute slot, like every other node's (PART 12 §3). This
+    // cited a "PART 9 §4a" for the source of the quotation: PART 9 has 4b and 4c
+    // and no 4a, and what this line writes is the attrs slot rather than an
+    // attribution of any kind.
     write_attrs_field(&mut w, &n.attrs);
     write_pos_field(&mut w, &n.pos);
     w.finish();
@@ -814,11 +967,98 @@ fn write_list_item(out: &mut String, n: &ListItem) {
 fn write_table(out: &mut String, n: &Table) {
     let mut w = typed(out, "table");
     w.field("rows", |out| write_array(out, &n.rows, write_table_row));
+    let derived;
+    let columns = if n.columns.is_empty() {
+        derived = columns_from_table_attrs(n.attrs.as_ref());
+        &derived
+    } else {
+        &n.columns
+    };
+    if !columns.is_empty() {
+        w.field("columns", |out| {
+            write_array(out, columns, write_table_column)
+        });
+    }
     if let Some(caption) = &n.caption {
         w.field("caption", |out| write_inlines(out, caption));
     }
+    if let Some(short_caption) = &n.short_caption {
+        w.field("shortCaption", |out| write_inlines(out, short_caption));
+    }
+    if let Some(groups) = &n.row_groups {
+        w.field("rowGroups", |out| write_row_groups(out, groups));
+    }
     write_attrs_field(&mut w, &n.attrs);
     write_pos_field(&mut w, &n.pos);
+    w.finish();
+}
+
+fn columns_from_table_attrs(attrs: Option<&Attrs>) -> Vec<TableColumn> {
+    let values = |key| {
+        attrs
+            .and_then(|a| a.key_values.get(key))
+            .map(|v| v.split(',').collect::<Vec<_>>())
+            .unwrap_or_default()
+    };
+    let aligns = values("aligns");
+    let valigns = values("valigns");
+    let widths = values("widths");
+    let len = aligns.len().max(valigns.len()).max(widths.len());
+    (0..len)
+        .map(|i| TableColumn {
+            align: aligns.get(i).and_then(|v| match *v {
+                "left" => Some(TableAlign::Left),
+                "right" => Some(TableAlign::Right),
+                "center" => Some(TableAlign::Center),
+                _ => None,
+            }),
+            valign: valigns.get(i).and_then(|v| match *v {
+                "top" => Some(TableVerticalAlign::Top),
+                "middle" => Some(TableVerticalAlign::Middle),
+                "bottom" => Some(TableVerticalAlign::Bottom),
+                _ => None,
+            }),
+            width: widths
+                .get(i)
+                .and_then(|v| v.parse::<f64>().ok())
+                .filter(|v| *v > 0.0 && *v <= 100.0)
+                .map(|v| v / 100.0),
+        })
+        .collect()
+}
+
+fn write_table_column(out: &mut String, n: &TableColumn) {
+    let mut w = Writer::new(out);
+    if let Some(align) = n.align {
+        w.field("align", |out| write_string(out, align_json(align)));
+    }
+    if let Some(valign) = n.valign {
+        w.field("valign", |out| write_string(out, valign_json(valign)));
+    }
+    if let Some(width) = n.width {
+        w.field("width", |out| out.push_str(&width.to_string()));
+    }
+    w.finish();
+}
+
+fn write_row_groups(out: &mut String, n: &TableRowGroups) {
+    let mut w = Writer::new(out);
+    w.field("headRows", |out| write_usize(out, n.head_rows));
+    w.field("bodies", |out| {
+        write_array(out, &n.bodies, write_body_group)
+    });
+    w.field("footRows", |out| write_usize(out, n.foot_rows));
+    w.finish();
+}
+
+fn write_body_group(out: &mut String, n: &TableBodyGroup) {
+    let mut w = Writer::new(out);
+    w.field("headRows", |out| write_usize(out, n.head_rows));
+    w.field("bodyRows", |out| write_usize(out, n.body_rows));
+    if let Some(columns) = n.row_head_columns {
+        w.field("rowHeadColumns", |out| write_usize(out, columns));
+    }
+    write_attrs_field(&mut w, &n.attrs);
     w.finish();
 }
 
@@ -847,6 +1087,9 @@ fn write_table_cell(out: &mut String, n: &TableCell) {
     }
     if let Some(align) = n.align {
         w.field("align", |out| write_string(out, align_json(align)));
+    }
+    if let Some(valign) = n.valign {
+        w.field("valign", |out| write_string(out, valign_json(valign)));
     }
     write_attrs_field(&mut w, &n.attrs);
     write_pos_field(&mut w, &n.pos);
@@ -902,6 +1145,9 @@ fn write_figure_target(out: &mut String, target: &FigureTarget) {
 }
 
 fn write_inline(out: &mut String, node: &InlineNode) {
+    let Some(_depth) = EncodeDepthGuard::enter() else {
+        return;
+    };
     match node {
         InlineNode::Text(n) => {
             let mut w = typed(out, "text");
@@ -1148,6 +1394,9 @@ fn write_inline(out: &mut String, node: &InlineNode) {
         InlineNode::Comment(n) => {
             let mut w = typed(out, "comment");
             w.field("block", |out| write_bool(out, false));
+            if n.delimited {
+                w.field("delimited", |out| write_bool(out, true));
+            }
             w.field("content", |out| write_string(out, &n.content));
             write_pos_field(&mut w, &n.pos);
             w.finish();
@@ -1242,6 +1491,46 @@ fn write_attrs_field(w: &mut Writer<'_>, attrs: &Option<Attrs>) {
     }
 }
 
+/// `key_values` in the order the AUTHOR wrote them, which is what `attrs.order`
+/// records.
+///
+/// The map behind it is a `BTreeMap`, so iterating it publishes an ALPHABETICAL
+/// order that is this engine's storage choice and nothing the document said.
+/// `[x]{b=1 a=2}` came out as `{"keyValues":{"a":"1","b":"2"},"order":["b","a"]}`,
+/// which is one `attrs` object stating two different orders for the same three
+/// characters, and the HTML renderer, which reads `order`, already agreed with
+/// the second one. PART 12 §1 is explicit about which of the two is publishable:
+/// an implementation whose internals differ MAPS on the way out, it does not
+/// export its internals. `resources/ast-schema.json` calls `order`
+/// "Source-appearance order of the slots", and PART 11 §6 makes the author's
+/// attribute order a choice "the AST records".
+///
+/// A key `order` does not mention is still published, after the ones it does. An
+/// `Attrs` built programmatically records no order at all (the schema says so),
+/// and dropping its attributes to protect an ordering would lose the document to
+/// save the bookkeeping.
+fn ordered_key_values(attrs: &Attrs) -> Vec<(&str, &str)> {
+    let mut out: Vec<(&str, &str)> = Vec::with_capacity(attrs.key_values.len());
+    let mut seen: BTreeSet<&str> = BTreeSet::new();
+    for slot in &attrs.order {
+        let AttrSlot::Key(key) = slot else {
+            continue;
+        };
+        let Some((key, value)) = attrs.key_values.get_key_value(key.as_str()) else {
+            continue;
+        };
+        if seen.insert(key.as_str()) {
+            out.push((key.as_str(), value.as_str()));
+        }
+    }
+    for (key, value) in &attrs.key_values {
+        if seen.insert(key.as_str()) {
+            out.push((key.as_str(), value.as_str()));
+        }
+    }
+    out
+}
+
 fn write_attrs(out: &mut String, attrs: &Attrs) {
     let mut w = Writer::new(out);
     if let Some(id) = &attrs.id {
@@ -1253,7 +1542,7 @@ fn write_attrs(out: &mut String, attrs: &Attrs) {
     if !attrs.key_values.is_empty() {
         w.field("keyValues", |out| {
             let mut w = Writer::new(out);
-            for (key, value) in &attrs.key_values {
+            for (key, value) in ordered_key_values(attrs) {
                 w.field(key, |out| write_string(out, value));
             }
             w.finish();
@@ -1377,7 +1666,15 @@ fn align_json(t: TableAlign) -> &'static str {
     }
 }
 
-fn emphasis_type(t: EmphasisKind) -> &'static str {
+fn valign_json(t: TableVerticalAlign) -> &'static str {
+    match t {
+        TableVerticalAlign::Top => "top",
+        TableVerticalAlign::Middle => "middle",
+        TableVerticalAlign::Bottom => "bottom",
+    }
+}
+
+pub(crate) fn emphasis_type(t: EmphasisKind) -> &'static str {
     match t {
         EmphasisKind::Italic => "emphasis",
         EmphasisKind::Strong | EmphasisKind::BoldItalic => "strong",
@@ -1492,9 +1789,18 @@ fn decode_block(value: &Json) -> Result<BlockNode, AstJsonError> {
         })),
         "figure" => Ok(BlockNode::Figure(Figure {
             attrs: optional_attrs(obj)?,
-            target: decode_figure_target(required_value(obj, "figure", "target")?)?,
+            target: Box::new(decode_figure_target(required_value(
+                obj, "figure", "target",
+            )?)?),
             caption: decode_inlines(required_array(obj, "figure", "caption")?)?,
+            short_caption: optional_inlines(obj, "shortCaption")?,
             pos: optional_pos(obj, "figure")?,
+        })),
+        "figure_group" => Ok(BlockNode::FigureGroup(FigureGroup {
+            attrs: optional_attrs(obj)?,
+            children: decode_blocks(required_array(obj, "figure_group", "children")?)?,
+            caption: optional_inlines(obj, "caption")?,
+            pos: optional_pos(obj, "figure_group")?,
         })),
         "link_reference_definition" => Ok(BlockNode::LinkReferenceDefinition(
             LinkReferenceDefinition {
@@ -1505,6 +1811,12 @@ fn decode_block(value: &Json) -> Result<BlockNode, AstJsonError> {
                 pos: optional_pos(obj, "link_reference_definition")?,
             },
         )),
+        "citation_definition" => Ok(BlockNode::CitationDefinition(CitationDefinition {
+            key: required_string(obj, "citation_definition", "key")?.to_string(),
+            children: decode_inlines(required_array(obj, "citation_definition", "children")?)?,
+            attrs: optional_attrs(obj)?,
+            pos: optional_pos(obj, "citation_definition")?,
+        })),
         "abbreviation_def" => Ok(BlockNode::AbbreviationDef(AbbreviationDef {
             abbr: required_string(obj, "abbreviation_def", "abbr")?.to_string(),
             expansion: required_string(obj, "abbreviation_def", "expansion")?.to_string(),
@@ -1517,6 +1829,7 @@ fn decode_block(value: &Json) -> Result<BlockNode, AstJsonError> {
         })),
         "comment" => Ok(BlockNode::Comment(Comment {
             block: required_bool(obj, "comment", "block")?,
+            delimited: optional_bool(obj, "delimited")?.unwrap_or(false),
             content: required_string(obj, "comment", "content")?.to_string(),
             pos: optional_pos(obj, "comment")?,
         })),
@@ -1553,14 +1866,109 @@ fn decode_list_item(value: &Json) -> Result<ListItem, AstJsonError> {
 }
 
 fn decode_table(obj: &BTreeMap<String, Json>) -> Result<Table, AstJsonError> {
+    let rows: Vec<TableRow> = required_array(obj, "table", "rows")?
+        .iter()
+        .map(decode_table_row)
+        .collect::<Result<_, _>>()?;
+    let row_groups = match obj.get("rowGroups") {
+        Some(value) => Some(decode_row_groups(value, rows.len())?),
+        None => None,
+    };
     Ok(Table {
         attrs: optional_attrs(obj)?,
         caption: optional_inlines(obj, "caption")?,
-        rows: required_array(obj, "table", "rows")?
-            .iter()
-            .map(decode_table_row)
-            .collect::<Result<_, _>>()?,
+        short_caption: optional_inlines(obj, "shortCaption")?,
+        columns: match obj.get("columns") {
+            Some(Json::Array(values)) => values
+                .iter()
+                .map(decode_table_column)
+                .collect::<Result<_, _>>()?,
+            Some(_) => {
+                return Err(AstJsonError::new(
+                    "table.columns must be an array".to_owned(),
+                ))
+            }
+            None => Vec::new(),
+        },
+        rows,
+        row_groups,
         pos: optional_pos(obj, "table")?,
+    })
+}
+
+fn decode_table_column(value: &Json) -> Result<TableColumn, AstJsonError> {
+    let obj = value.as_object("table.columns[]")?;
+    let width = match obj.get("width") {
+        Some(Json::Number(v)) if *v > 0 && *v <= 1 => Some(*v as f64),
+        Some(Json::Float(v)) if *v > 0.0 && *v <= 1.0 => Some(*v),
+        Some(_) => {
+            return Err(AstJsonError::new(
+                "table.columns[].width must be in (0, 1]".to_owned(),
+            ))
+        }
+        None => None,
+    };
+    Ok(TableColumn {
+        align: optional_string(obj, "align")?
+            .map(decode_table_align)
+            .transpose()?,
+        valign: optional_string(obj, "valign")?
+            .map(decode_table_valign)
+            .transpose()?,
+        width,
+    })
+}
+
+/// PART 12 §15's partition MUST, checked HERE because here it can fail.
+///
+/// The counts have to account for every row exactly once. JSON Schema cannot
+/// express a sum across fields, so the schema does not check it and a
+/// non-summing partition validates; the importer cannot check it either, because
+/// there the counts and the rows are built from the same list. A payload
+/// arriving from elsewhere is the one place the two can disagree.
+fn decode_row_groups(value: &Json, rows: usize) -> Result<TableRowGroups, AstJsonError> {
+    let obj = value.as_object("table.rowGroups")?;
+    let head_rows = required_usize(obj, "table.rowGroups", "headRows")?;
+    let foot_rows = required_usize(obj, "table.rowGroups", "footRows")?;
+    let bodies = required_array(obj, "table.rowGroups", "bodies")?
+        .iter()
+        .map(|body| {
+            let body = body.as_object("table.rowGroups.bodies[]")?;
+            Ok(TableBodyGroup {
+                head_rows: required_usize(body, "table.rowGroups.bodies[]", "headRows")?,
+                body_rows: required_usize(body, "table.rowGroups.bodies[]", "bodyRows")?,
+                row_head_columns: optional_usize(body, "rowHeadColumns")?,
+                attrs: optional_attrs(body)?,
+            })
+        })
+        .collect::<Result<Vec<_>, AstJsonError>>()?;
+    // CHECKED, because every one of these is a number off untrusted JSON and
+    // `as_usize` bounds none of them. Two counts near `usize::MAX` wrap to a
+    // small total in release and panic in debug, so the sum could both abort the
+    // process and, wrapped, ACCEPT a partition that consumes nothing.
+    let counted = bodies
+        .iter()
+        .try_fold(head_rows, |total, body| {
+            total
+                .checked_add(body.head_rows)?
+                .checked_add(body.body_rows)
+        })
+        .and_then(|total| total.checked_add(foot_rows));
+    let Some(counted) = counted else {
+        return Err(AstJsonError::new(
+            "table.rowGroups does not partition the table's rows: its counts do not add up to a number of rows (PART 12 §15)".to_owned(),
+        ));
+    };
+    if counted != rows {
+        return Err(AstJsonError::new(format!(
+            "table.rowGroups does not partition the table's rows: the head, bodies and foot account for {counted} row{} of {rows} (PART 12 §15)",
+            if counted == 1 { "" } else { "s" }
+        )));
+    }
+    Ok(TableRowGroups {
+        head_rows,
+        bodies,
+        foot_rows,
     })
 }
 
@@ -1587,6 +1995,9 @@ fn decode_table_cell(value: &Json) -> Result<TableCell, AstJsonError> {
             .transpose()?,
         align: optional_string(obj, "align")?
             .map(decode_table_align)
+            .transpose()?,
+        valign: optional_string(obj, "valign")?
+            .map(decode_table_valign)
             .transpose()?,
         attrs: optional_attrs(obj)?,
         children: decode_inlines(required_array(obj, "table_cell", "children")?)?,
@@ -1933,6 +2344,7 @@ fn decode_inline(value: &Json) -> Result<InlineNode, AstJsonError> {
         // table above; `block` says which one a payload names.
         "comment" => Ok(InlineNode::Comment(Comment {
             block: required_bool(obj, "comment", "block")?,
+            delimited: optional_bool(obj, "delimited")?.unwrap_or(false),
             content: required_string(obj, "comment", "content")?.to_string(),
             pos: optional_pos(obj, "comment")?,
         })),
@@ -2016,6 +2428,17 @@ fn decode_table_align(value: &str) -> Result<TableAlign, AstJsonError> {
         "center" => Ok(TableAlign::Center),
         other => Err(AstJsonError::new(format!(
             "table_cell.align has invalid value {other:?}"
+        ))),
+    }
+}
+
+fn decode_table_valign(value: &str) -> Result<TableVerticalAlign, AstJsonError> {
+    match value {
+        "top" => Ok(TableVerticalAlign::Top),
+        "middle" => Ok(TableVerticalAlign::Middle),
+        "bottom" => Ok(TableVerticalAlign::Bottom),
+        other => Err(AstJsonError::new(format!(
+            "table_cell.valign has invalid value {other:?}"
         ))),
     }
 }
@@ -2321,7 +2744,7 @@ impl<'a> Parser<'a> {
             Some(b'"') => self.parse_string().map(Json::String),
             Some(b'[') => self.nested(Self::parse_array),
             Some(b'{') => self.nested(Self::parse_object),
-            Some(b'-' | b'0'..=b'9') => self.parse_number().map(Json::Number),
+            Some(b'-' | b'0'..=b'9') => self.parse_number(),
             Some(_) => Err(self.err("unexpected character in JSON value")),
             None => Err(self.err("unexpected end of input")),
         }
@@ -2454,7 +2877,7 @@ impl<'a> Parser<'a> {
         Ok(value)
     }
 
-    fn parse_number(&mut self) -> Result<i64, AstJsonError> {
+    fn parse_number(&mut self) -> Result<Json, AstJsonError> {
         let start = self.pos;
         self.consume(b'-');
         match self.peek() {
@@ -2469,12 +2892,41 @@ impl<'a> Parser<'a> {
             }
             _ => return Err(self.err("invalid JSON number")),
         }
-        if matches!(self.peek(), Some(b'.' | b'e' | b'E')) {
-            return Err(self.err("JSON AST numbers must be integers"));
+        let mut is_float = false;
+        if self.consume(b'.') {
+            is_float = true;
+            let digit_start = self.pos;
+            while matches!(self.peek(), Some(b'0'..=b'9')) {
+                self.pos += 1;
+            }
+            if self.pos == digit_start {
+                return Err(self.err("invalid JSON number"));
+            }
         }
-        self.input[start..self.pos]
-            .parse::<i64>()
-            .map_err(|_| self.err("JSON number is out of range"))
+        if matches!(self.peek(), Some(b'e' | b'E')) {
+            is_float = true;
+            self.pos += 1;
+            if matches!(self.peek(), Some(b'+' | b'-')) {
+                self.pos += 1;
+            }
+            let digit_start = self.pos;
+            while matches!(self.peek(), Some(b'0'..=b'9')) {
+                self.pos += 1;
+            }
+            if self.pos == digit_start {
+                return Err(self.err("invalid JSON number"));
+            }
+        }
+        let raw = &self.input[start..self.pos];
+        if is_float {
+            raw.parse::<f64>()
+                .map(Json::Float)
+                .map_err(|_| self.err("JSON number is out of range"))
+        } else {
+            raw.parse::<i64>()
+                .map(Json::Number)
+                .map_err(|_| self.err("JSON number is out of range"))
+        }
     }
 
     fn skip_ws(&mut self) {

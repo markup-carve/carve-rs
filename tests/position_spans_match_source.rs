@@ -213,11 +213,20 @@ fn check(
         }
         BlockNode::Figure(figure) => {
             check_inline_nodes(&figure.caption, source, file, checked_inline_text, wrong);
-            if let FigureTarget::BlockQuote(quote) = &figure.target {
+            if let FigureTarget::BlockQuote(quote) = &*figure.target {
                 quote.children.iter().for_each(|c| {
                     check(c, source, file, checked_blocks, checked_inline_text, wrong)
                 });
             }
+        }
+        BlockNode::FigureGroup(group) => {
+            if let Some(caption) = &group.caption {
+                check_inline_nodes(caption, source, file, checked_inline_text, wrong);
+            }
+            group
+                .children
+                .iter()
+                .for_each(|c| check(c, source, file, checked_blocks, checked_inline_text, wrong));
         }
         _ => {}
     }
@@ -236,7 +245,9 @@ fn block_pos(block: &BlockNode) -> Option<&Pos> {
         BlockNode::LineBlock(n) => n.pos.as_ref(),
         BlockNode::DefinitionList(n) => n.pos.as_ref(),
         BlockNode::Figure(n) => n.pos.as_ref(),
+        BlockNode::FigureGroup(n) => n.pos.as_ref(),
         BlockNode::LinkReferenceDefinition(n) => n.pos.as_ref(),
+        BlockNode::CitationDefinition(n) => n.pos.as_ref(),
         BlockNode::AbbreviationDef(n) => n.pos.as_ref(),
         BlockNode::RawBlock(n) => n.pos.as_ref(),
         BlockNode::Comment(n) => n.pos.as_ref(),

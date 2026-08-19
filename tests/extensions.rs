@@ -43,24 +43,76 @@ fn unknown_inline_extension_uses_fallback() {
 }
 
 #[test]
+fn the_semantic_span_extension_carries_the_other_four_and_the_old_spelling() {
+    use carve::extensions::semantic_span::SemanticSpan;
+    let ext = SemanticSpan;
+    let mut options = carve::Options::default();
+    options.extensions.push(&ext);
+
+    // The four names core does not reserve (spec PART 9 §10).
+    for (source, html) in [
+        ("[x]{samp}", "<samp>x</samp>"),
+        ("[x]{var}", "<var>x</var>"),
+        ("[Dune]{cite}", "<cite>Dune</cite>"),
+        (
+            "[CSS]{dfn=\"Cascading Style Sheets\"}",
+            "<dfn title=\"Cascading Style Sheets\">CSS</dfn>",
+        ),
+    ] {
+        assert_eq!(
+            carve::to_html_with_options(source, &options).trim(),
+            format!("<p>{html}</p>"),
+            "extension name {source}"
+        );
+    }
+
+    // The soft-deprecated `:name[...]` spelling, for all seven.
+    assert_eq!(
+        carve::to_html_with_options(":kbd[Ctrl]", &options).trim(),
+        "<p><kbd>Ctrl</kbd></p>"
+    );
+    assert_eq!(
+        carve::to_html_with_options(":samp[out]", &options).trim(),
+        "<p><samp>out</samp></p>"
+    );
+    // ...and no name outside the seven.
+    assert_eq!(
+        carve::to_html_with_options(":code[x]", &options).trim(),
+        "<p><span class=\"ext-code\">x</span></p>"
+    );
+}
+
+#[test]
 fn semantic_shorthands_render_as_html_elements() {
-    // The core semantic set renders as its matching tag (matches carve-js /
-    // carve-php), no extension required.
+    // PART 9 §9: core reserves THREE names, as SPAN ATTRIBUTES.
     for (name, html) in [
         ("kbd", "<kbd>x</kbd>"),
-        ("dfn", "<dfn>x</dfn>"),
         ("abbr", "<abbr>x</abbr>"),
-        ("cite", "<cite>x</cite>"),
-        ("samp", "<samp>x</samp>"),
-        ("var", "<var>x</var>"),
-        ("code", "<code>x</code>"),
-        ("mark", "<mark>x</mark>"),
         ("time", "<time>x</time>"),
     ] {
         assert_eq!(
-            carve::to_html(&format!(":{name}[x]")),
+            carve::to_html(&format!("[x]{{{name}}}")),
             format!("<p>{html}</p>"),
-            "semantic tag {name}"
+            "core semantic attribute {name}"
+        );
+    }
+
+    // The four the SemanticSpan extension carries stay ordinary attributes
+    // until it is registered, and NO `:name[...]` spelling is handled at all.
+    for name in ["samp", "var", "cite", "dfn"] {
+        assert_eq!(
+            carve::to_html(&format!("[x]{{{name}}}")),
+            format!("<p><span {name}=\"\">x</span></p>"),
+            "extension-only name {name}"
+        );
+    }
+    for name in [
+        "kbd", "abbr", "time", "samp", "var", "cite", "dfn", "code", "mark",
+    ] {
+        assert_eq!(
+            carve::to_html(&format!(":{name}[x]")),
+            format!("<p><span class=\"ext-{name}\">x</span></p>"),
+            "core must register no :{name}[...] handler"
         );
     }
     // A non-semantic name still falls back to a generic span.
@@ -68,6 +120,56 @@ fn semantic_shorthands_render_as_html_elements() {
         carve::to_html(":foo[x]"),
         "<p><span class=\"ext-foo\">x</span></p>"
     );
+
+    // PART 9 §9: the registry holds no element Carve already spells, so these
+    // two take the same fallback. `code` is why the rule is a rule: a code span
+    // is verbatim while an extension body is parsed, so the registry entry gave
+    // one tag two content models.
+    for (source, html) in [
+        (
+            ":code[*b*]",
+            "<span class=\"ext-code\"><strong>b</strong></span>",
+        ),
+        (
+            ":mark[*b*]",
+            "<span class=\"ext-mark\"><strong>b</strong></span>",
+        ),
+        ("`*b*`", "<code>*b*</code>"),
+        ("=*b*=", "<mark><strong>b</strong></mark>"),
+    ] {
+        assert_eq!(
+            carve::to_html(source),
+            format!("<p>{html}</p>"),
+            "the spelling Carve already has: {source}"
+        );
+    }
+
+    // SOURCE order, with the structural class merged at the author's class
+    // slot - so the id written first stays first (PART 10 §1, carve#1164).
+    // `onclick` is still dropped; that is the sanitizer, not the ordering.
+    assert_eq!(
+        carve::to_html(":time[*noon*]{#clock .local datetime=\"12:00\" onclick=\"x\"}"),
+        "<p><span id=\"clock\" class=\"ext-time local\" datetime=\"12:00\"><strong>noon</strong></span></p>"
+    );
+
+    // The same attributes on the COMPACT spelling, which core does reserve:
+    // hardened, and riding the element the author wrote them on.
+    assert_eq!(
+        carve::to_html("[*noon*]{#clock .local time=\"12:00\" onclick=\"x\"}"),
+        "<p><time datetime=\"12:00\" id=\"clock\" class=\"local\"><strong>noon</strong></time></p>"
+    );
+    assert_eq!(
+        carve::to_html(":widget[x]{.control}"),
+        "<p><span class=\"ext-widget control\">x</span></p>"
+    );
+}
+
+#[test]
+fn semantic_shorthands_are_content_on_non_html_targets_and_preserve_source() {
+    let source = ":abbr[*HTML*]{title=\"HyperText Markup Language\"}";
+    assert_eq!(carve::to_plain_text(source), "HTML\n");
+    assert!(carve::to_ansi(source).contains("HTML"));
+    assert_eq!(carve::to_carve(source), format!("{source}\n"));
 }
 
 struct Wiki;

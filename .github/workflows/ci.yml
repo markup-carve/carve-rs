@@ -9,6 +9,31 @@ on:
 env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: "-D warnings"
+  # ~400 integration-test binaries dominate the test job via compile and
+  # link time; line-tables-only keeps file:line in backtraces at a fraction
+  # of the cost of full debug info.
+  CARGO_PROFILE_DEV_DEBUG: "line-tables-only"
+  # OPTIMIZE THE CODE UNDER TEST. Measured on run 32074060975 with a warm
+  # cache, `cargo build --all-targets` takes 40s and `cargo test` takes
+  # 13m13s - so the job is paid in test EXECUTION, and execution runs the
+  # parser and the renderers over ~1150 corpus documents plus several
+  # generated sweeps. At opt-level 0 that is the slowest possible way to run
+  # exactly the code this crate exists to run fast.
+  #
+  # BOTH keys are needed and neither is redundant: an integration test builds
+  # the library as a DEPENDENCY, which takes profile.dev, while the test
+  # binary itself takes profile.test. Setting only the second would leave
+  # every corpus sweep calling an unoptimized parser.
+  #
+  # Set HERE rather than in Cargo.toml so a contributor's `cargo build` stays
+  # as fast as it is today - this is a CI trade (more compile, much less
+  # execution), not a repo-wide one.
+  #
+  # opt-level 2 rather than 3: 3 buys little on this shape and costs compile
+  # time, which is the side of the trade being spent. debug-assertions stay
+  # ON at both levels, so nothing stops being checked.
+  CARGO_PROFILE_DEV_OPT_LEVEL: "2"
+  CARGO_PROFILE_TEST_OPT_LEVEL: "2"
 
 jobs:
   test:
@@ -17,7 +42,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        toolchain: [stable, "1.75"]
+        # PRs run stable only; the MSRV leg runs on pushes to main, so a
+        # 1.75 regression is still caught on merge without doubling every
+        # PR's CI time.
+        toolchain: ${{ github.event_name == 'push' && fromJSON('["stable", "1.75"]') || fromJSON('["stable"]') }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -26,10 +54,49 @@ jobs:
         with:
           toolchain: ${{ matrix.toolchain }}
       - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
       - run: cargo build --all-targets
-      - run: cargo test
+      # WHY NEXTEST: the test step is ~13 minutes against a ~40 second warm
+      # build, so what costs time here is RUNNING the tests, not compiling
+      # them. Cargo runs test TARGETS one after another, and this crate has
+      # ~400 of them holding ~3700 test functions - so the runner alternates
+      # between a short burst of parallelism inside one binary and a
+      # serialization point, ~400 times. Nextest schedules every test from
+      # every binary through ONE queue instead, which is the case this crate
+      # is close to the worst shape for under cargo's scheduler.
+      #
+      # It also reports per-test timings, which is the part that makes the
+      # next change to this file measurable rather than guessed.
+      # THE TIMING SUITE RUNS ALONE, and it has to be told to.
+      #
+      # `tests/perf_regressions.rs` measures wall clock, and carve-rs#523 fixed
+      # its flake with a `static PERF_LOCK` mutex that serializes its 34 timing
+      # tests against each other. That lock works because `cargo test` runs the
+      # tests of one binary as THREADS in one process.
+      #
+      # Nextest runs every test in its OWN PROCESS. A static mutex cannot be
+      # contended across processes, so the switch above silently turned that
+      # lock into a check that cannot fire: the timing tests went back to
+      # competing, now against all ~3900 tests rather than only each other.
+      # `a_quoted_run_of_unclosed_braces_is_scanned_once` reported 1.79x - its
+      # documented regression signature - on runs with no source change, and
+      # main went red intermittently on commits that touch no engine code.
+      #
+      # So the isolation the lock used to provide comes from the RUNNER now:
+      # everything else first, then the timing suite by itself, single-threaded.
+      # Splitting the run costs one extra process launch and keeps the whole
+      # point of nextest for the other ~3900 tests.
+      - run: cargo nextest run -E 'not binary(perf_regressions)'
+      - run: cargo nextest run -E 'binary(perf_regressions)' --test-threads 1
+      # NEXTEST DOES NOT RUN DOCTESTS, by design - they need a compiler
+      # invocation per test rather than a binary to schedule. This crate has
+      # doctests (`src/extensions/*` carry worked examples), so dropping this
+      # line would silently stop testing them while the job stayed green.
+      - run: cargo test --doc
 
-      # `cargo test` already fails when a corpus category is missing from
+      # The test run already fails when a corpus category is missing from
       # IMPLEMENTED - that guard is why a spec bump lands red. This says whether
       # the missing ones are a LIST problem or an ENGINE problem, which is the
       # part a human otherwise has to work out by hand (carve#729):
@@ -37,8 +104,12 @@ jobs:
       # `tools/sync-implemented.py` (no --check) adds exactly those.
       - name: Is the allowlist behind the corpus, or is the engine?
         if: always()
+        # The tool prefers target/release/carve and falls back to the debug
+        # binary the build step just produced. A restored cache may still hold
+        # a STALE release binary from an older commit, so drop it rather than
+        # paying for a second, release-profile compile of the whole crate.
         run: |
-          cargo build --release
+          rm -rf target/release
           python3 tools/sync-implemented.py --check
 
   lints:

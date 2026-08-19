@@ -152,10 +152,8 @@ fn a_literal_bang_before_a_span_is_escaped() {
 }
 
 #[test]
-fn bang_before_an_unclosed_run_stays_literal() {
-    // Like `$` before an unclosed run: the `!` stays literal and the run
-    // becomes an ordinary (unclosed) code span.
-    assert_eq!(h("!`unclosed"), "<p>!<code>unclosed</code></p>");
+fn an_unclosed_literal_reaches_the_end_of_the_block() {
+    assert_eq!(h("!`unclosed"), "<p>unclosed</p>");
 }
 
 #[test]

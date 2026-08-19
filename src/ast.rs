@@ -10,8 +10,14 @@ use std::ops::{Deref, DerefMut};
 
 /// A node's span in the ORIGINAL source (spec PART 12 section 4).
 ///
-/// Lines and columns are 1-based; offsets are 0-based byte offsets. `end_column`
-/// and `end_offset` are exclusive.
+/// Lines are 1-based; columns and offsets count UNICODE CODEPOINTS, columns
+/// 1-based and offsets 0-based, with `end_column` and `end_offset` exclusive.
+/// This said "byte offsets", which is not what the parser records and not what
+/// PART 12 §4 pins - `docs/ast-json.md`: "columns and offsets count Unicode
+/// codepoints - not bytes, not UTF-16 code units". A consumer that slices a
+/// Rust `&str` with one of these PANICS on the first non-ASCII character before
+/// it, so the unit is worth stating correctly; `lint::LintWarning` converts to
+/// bytes for exactly that reason.
 ///
 /// Recording this is not free here: the parser works on lines whose container
 /// prefixes have already been stripped - a blockquote marker, a list indent -
@@ -170,8 +176,10 @@ pub enum BlockNode {
     LineBlock(LineBlock),
     DefinitionList(DefinitionList),
     Figure(Figure),
+    FigureGroup(FigureGroup),
     AbbreviationDef(AbbreviationDef),
     LinkReferenceDefinition(LinkReferenceDefinition),
+    CitationDefinition(CitationDefinition),
     RawBlock(RawBlock),
     Comment(Comment),
     Extension(BlockExtension),
@@ -286,9 +294,49 @@ pub struct BlockQuote {
 pub struct Table {
     pub attrs: Option<Attrs>,
     pub caption: Option<Vec<InlineNode>>,
+    /// Structured publishing/navigation label; Carve 0.1 source has no spelling.
+    pub short_caption: Option<Vec<InlineNode>>,
+    /// Per-column publishing metadata, resolved from positional table attrs.
+    pub columns: Vec<TableColumn>,
     pub rows: Vec<TableRow>,
+    /// An explicit head/body/foot partition of `rows`, imported from or destined
+    /// for a format whose table model has one. Carve 0.1 source has no spelling
+    /// for it, so a parse never sets it.
+    pub row_groups: Option<TableRowGroups>,
     /// Span in the original source, when the parser could determine it.
     pub pos: Option<Pos>,
+}
+
+/// An explicit head/body/foot partition of a table's rows (PART 12 §15).
+///
+/// It holds COUNTS, never rows: they consume `rows` in order, head first, then
+/// each body, then the foot, and they MUST account for every row exactly once.
+/// Absent means the implicit structure every renderer already derives - the
+/// leading run of header rows as the head, everything after it as one body, no
+/// foot, no row-head columns - so a tree without it does not change shape. HTML,
+/// plain and ANSI output ignore it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TableRowGroups {
+    /// Rows at the start of `rows` forming the table head.
+    pub head_rows: usize,
+    /// The body groups, in order, each consuming the next
+    /// `head_rows + body_rows` rows.
+    pub bodies: Vec<TableBodyGroup>,
+    /// Rows at the end of `rows` forming the table foot.
+    pub foot_rows: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TableBodyGroup {
+    /// Rows at the start of this group forming its intermediate header.
+    pub head_rows: usize,
+    /// Rows in this group after its intermediate header.
+    pub body_rows: usize,
+    /// Leading columns of this group's rows that are row headers. `None` means
+    /// zero. It sits on the group rather than on the table because that is where
+    /// the exchanged model puts it.
+    pub row_head_columns: Option<usize>,
+    pub attrs: Option<Attrs>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -305,6 +353,7 @@ pub struct TableCell {
     pub header: bool,
     pub span: Option<TableCellSpan>,
     pub align: Option<TableAlign>,
+    pub valign: Option<TableVerticalAlign>,
     /// Author attributes from a `{...}` glued to the cell's opening pipe.
     pub attrs: Option<Attrs>,
     pub children: Vec<InlineNode>,
@@ -323,6 +372,24 @@ pub enum TableAlign {
     Left,
     Right,
     Center,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TableColumn {
+    pub align: Option<TableAlign>,
+    pub valign: Option<TableVerticalAlign>,
+    /// Fraction of the table width, in `(0, 1]`.
+    pub width: Option<f64>,
+}
+
+// Widths are finite values validated at the AST boundary.
+impl Eq for TableColumn {}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TableVerticalAlign {
+    Top,
+    Middle,
+    Bottom,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -441,8 +508,18 @@ pub struct DefinitionList {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Figure {
     pub attrs: Option<Attrs>,
-    pub target: FigureTarget,
+    /// BOXED to keep `BlockNode` small. `FigureTarget` embeds a whole `Table`
+    /// or `CodeBlock`, which made `Figure` the largest variant by far and so
+    /// set the size of EVERY `BlockNode`: 472 bytes, against 272 for the next
+    /// largest. Every recursive walk over the tree moves `BlockNode` values by
+    /// value, so that number is what a nesting level costs in stack, and PART 9
+    /// §25's cap of 200 levels multiplied it into most of a 1 MiB wasm stack
+    /// (markup-carve/carve-wasm#44). One indirection on a node kind that is
+    /// rare in real documents buys the cap back.
+    pub target: Box<FigureTarget>,
     pub caption: Vec<InlineNode>,
+    /// Structured publishing/navigation label; ordinary renderers ignore it.
+    pub short_caption: Option<Vec<InlineNode>>,
     /// Span in the original source, when the parser could determine it.
     pub pos: Option<Pos>,
 }
@@ -454,6 +531,27 @@ pub enum FigureTarget {
     Table(Table),
     CodeBlock(CodeBlock),
     Paragraph(Paragraph),
+}
+
+/// A composite figure: one figure-numbering unit holding ordered panels
+/// (PART 9 §4c, a bare `::: figure` container).
+///
+/// `children` are the body's blocks in source order; the PANELS are the
+/// `Figure` and `Table` nodes among them, derived by type rather than stored
+/// in a second list, and stray non-panel content is preserved in place.
+/// Discriminated from `Figure` by the node TYPE: every `Figure` carries a
+/// `target`, this node deliberately does not, and it has no title, label or
+/// short-caption slot - its one authored metadata channel is the group
+/// caption on the closing fence (carve#1118/carve#1121 own the rest).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FigureGroup {
+    pub attrs: Option<Attrs>,
+    pub children: Vec<BlockNode>,
+    /// The group caption (the `^ ` line after the closing fence). `None`
+    /// means the group is uncaptioned - never an empty placeholder.
+    pub caption: Option<Vec<InlineNode>>,
+    /// Span in the original source, when the parser could determine it.
+    pub pos: Option<Pos>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -491,6 +589,33 @@ pub struct LinkReferenceDefinition {
     pub pos: Option<Pos>,
 }
 
+/// A `[@key]: {author= year=} entry` bibliography line (PART 12 §18).
+///
+/// Shaped after [`LinkReferenceDefinition`] rather than after the footnote,
+/// which is the closer of the two analogues: a footnote body holds BLOCKS,
+/// while a citation definition holds a metadata run plus one line of rendered
+/// text. So the entry is `children` of INLINE nodes and the metadata lands in
+/// `attrs`, with `key` where the link kind has `label` - `citation.key`
+/// already names the same string at the use site.
+///
+/// Renders nothing where it sits; the entry's text renders in the references
+/// list the Citations extension builds. Tier-2: with the extension off,
+/// `[@key]: entry` is ordinary paragraph text, so a default-profile parse
+/// never produces this type.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CitationDefinition {
+    /// The citation key as the author wrote it, without the `@`.
+    pub key: String,
+    /// The entry's inline content: what follows the `]: ` separator and the
+    /// optional metadata block. May be empty.
+    pub children: Vec<InlineNode>,
+    /// The leading `{author= year=}` metadata block, when the definition
+    /// carries one.
+    pub attrs: Option<Attrs>,
+    /// Span in the original source, when the parser could determine it.
+    pub pos: Option<Pos>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RawBlock {
     pub format: String,
@@ -502,6 +627,7 @@ pub struct RawBlock {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Comment {
     pub block: bool,
+    pub delimited: bool,
     pub content: String,
     /// Span in the original source, when the parser could determine it.
     pub pos: Option<Pos>,
@@ -563,6 +689,42 @@ pub enum InlineNode {
 }
 
 impl InlineNode {
+    /// The node's span in the original source, when the parser could determine
+    /// one. EXHAUSTIVE on purpose: a `_ => None` arm here would silently answer
+    /// "unpositioned" for a variant added later, and the one caller derives a
+    /// block's `pos` from the first and last positioned node on a line.
+    pub(crate) fn pos(&self) -> Option<&Pos> {
+        match self {
+            Self::Text(n) => n.pos.as_ref(),
+            Self::EscapedText(n) => n.pos.as_ref(),
+            Self::SmartPunctuation(n) => n.pos.as_ref(),
+            Self::Emphasis(n) => n.pos.as_ref(),
+            Self::Code(n) => n.pos.as_ref(),
+            Self::Link(n) => n.pos.as_ref(),
+            Self::Image(n) => n.pos.as_ref(),
+            Self::Span(n) => n.pos.as_ref(),
+            Self::Math(n) => n.pos.as_ref(),
+            Self::RawInline(n) => n.pos.as_ref(),
+            Self::LiteralInline(n) => n.pos.as_ref(),
+            Self::Symbol(n) => n.pos.as_ref(),
+            Self::AutoLink(n) => n.pos.as_ref(),
+            Self::CrossRef(n) => n.pos.as_ref(),
+            Self::CaptionNumber(n) => n.pos.as_ref(),
+            Self::Mention(n) => n.pos.as_ref(),
+            Self::Tag(n) => n.pos.as_ref(),
+            Self::CitationGroup(n) => n.pos.as_ref(),
+            Self::Extension(n) => n.pos.as_ref(),
+            Self::Abbreviation(n) => n.pos.as_ref(),
+            Self::Footnote(n) => n.pos.as_ref(),
+            Self::SoftBreak(n) | Self::HardBreak(n) => n.pos.as_ref(),
+            Self::CriticInsert(n) => n.pos.as_ref(),
+            Self::CriticDelete(n) => n.pos.as_ref(),
+            Self::CriticSubstitute(n) => n.pos.as_ref(),
+            Self::CriticComment(n) => n.pos.as_ref(),
+            Self::Comment(n) => n.pos.as_ref(),
+        }
+    }
+
     pub fn text(value: impl Into<String>) -> Self {
         Self::Text(Text {
             value: value.into(),
@@ -1030,4 +1192,26 @@ pub struct CriticComment {
     pub text: String,
     /// Span in the original source, when the parser could determine it.
     pub pos: Option<Pos>,
+}
+
+/// Whether a block PUBLISHES NOTHING, in every target.
+///
+/// §17 L1a: an invisible construct has no visible effect. Wherever the SHAPE of
+/// the output depends on how many blocks a container holds, it is these that
+/// must not be counted - a comment, an abbreviation definition and a link
+/// reference definition all leave a node in the tree and nothing on the page.
+///
+/// Named here because the same three arms are spelled by hand at two sites in
+/// the parser, and the one place they were NOT spelled is where a `dd` counted a
+/// trailing comment as a second block and rendered loose while its LIST twin,
+/// which filters the same set, stayed tight. The two existing sites are left as
+/// they are: one of them counts a different set (no link reference definition),
+/// so folding them together is a change of behavior rather than a rename.
+pub(crate) fn publishes_nothing(block: &BlockNode) -> bool {
+    matches!(
+        block,
+        BlockNode::Comment(_)
+            | BlockNode::AbbreviationDef(_)
+            | BlockNode::LinkReferenceDefinition(_)
+    )
 }

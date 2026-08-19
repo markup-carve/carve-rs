@@ -163,57 +163,34 @@ fn index_expansion_output_is_bounded() {
     );
 }
 
+/// One very large index term plus many `::: index` blocks. Once the budget is
+/// spent, later blocks must NOT re-escape the large term: the escape-then-reject
+/// CPU/allocation path has to stay closed.
+///
+/// THE OUTPUT-SIZE HALF ONLY. The claim is really about the CPU, and the
+/// wall-clock ratio that measures it now lives in `tests/perf_regressions.rs`,
+/// which CI runs alone and single-threaded (carve-rs#1092). It could not stay
+/// here: a ratio over two sub-measurements taken alongside ~3900 other test
+/// processes is the shape that made `main` intermittently red on commits
+/// touching no engine code, and this one took a best-of-2 with no alternation.
+/// What stays is the assertion that needs no clock at all.
 #[test]
-fn large_first_term_with_many_blocks_stays_fast() {
-    // One very large index term plus many `::: index` blocks. Once the budget is
-    // spent, later blocks must NOT re-escape the large term: the
-    // escape-then-reject CPU/allocation path has to stay closed.
-    //
-    // Asserted as a RATIO over block count, not a wall-clock ceiling. With the
-    // path closed, extra blocks are nearly free and doubling them barely moves
-    // the time; with it open, each block re-escapes the 2 MB term, so the cost
-    // tracks the block count and doubling roughly doubles it. A ceiling cannot
-    // separate those two on an unknown runner - the previous 5s bound measured
-    // 4.5s on an idle machine here and failed outright whenever the box was
-    // busy, which is a flake rather than a signal.
+fn large_first_term_with_many_blocks_stays_under_the_budget() {
     let big_term = "x".repeat(500_000);
-    let build = |blocks: usize| {
+    for blocks in [100usize, 200] {
         let mut source = format!(":index[{big_term}]\n\n");
         for _ in 0..blocks {
             source.push_str("::: index\n:::\n\n");
         }
-        source
-    };
-
-    let time_min = |source: &str| {
-        let mut best = f64::INFINITY;
-        for _ in 0..2 {
-            let start = std::time::Instant::now();
-            let html = h(source);
-            let elapsed = start.elapsed().as_secs_f64();
-            // Output stays bounded regardless of block count.
-            let budget = 1_000_000usize.max(8 * source.len());
-            assert!(
-                html.len() < 2 * budget,
-                "html output {} exceeded bounded ceiling {}",
-                html.len(),
-                2 * budget
-            );
-            best = best.min(elapsed);
-        }
-        best
-    };
-
-    let few = build(100);
-    let many = build(200);
-    let _ = h(&few); // warm up allocator/caches before timing
-    let ratio = time_min(&many) / time_min(&few).max(f64::MIN_POSITIVE);
-
-    assert!(
-        ratio < 1.5,
-        "doubling the index blocks changed render time {ratio:.2}x; \
-         later blocks are re-escaping the large term"
-    );
+        let html = h(&source);
+        let budget = 1_000_000usize.max(8 * source.len());
+        assert!(
+            html.len() < 2 * budget,
+            "html output {} exceeded bounded ceiling {} at {blocks} blocks",
+            html.len(),
+            2 * budget
+        );
+    }
 }
 
 #[test]

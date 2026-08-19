@@ -84,7 +84,11 @@ fn symbol_attrs_round_trip_in_carve_renderer() {
 }
 
 #[test]
-fn colon_inline_extension_still_wins() {
+fn colon_inline_extension_uses_generic_core_fallback() {
+    // PART 9 §9: :name[content] has no core semantic-span special case.
     assert_eq!(symbol_count(":kbd[Ctrl]"), 0);
-    assert_eq!(carve::to_html(":kbd[Ctrl]"), "<p><kbd>Ctrl</kbd></p>");
+    assert_eq!(
+        carve::to_html(":kbd[Ctrl]"),
+        "<p><span class=\"ext-kbd\">Ctrl</span></p>"
+    );
 }

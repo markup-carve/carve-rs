@@ -1,3 +1,4 @@
+use carve::{html_to_ast, HtmlImportOptions, Index, Options};
 use std::fmt::Write as _;
 use std::sync::Mutex;
 use std::time::Instant;
@@ -18,6 +19,14 @@ use std::time::Instant;
 /// The estimator and the bounds are untouched. This removes the cause instead
 /// of widening the tolerance - a ratio bound that had to be loosened to survive
 /// its own test suite would no longer be measuring the engine.
+///
+/// IT ONLY SERIALIZES WITHIN ONE PROCESS, which is all `cargo test` needs: it
+/// runs a binary's tests as threads. `cargo nextest` runs every test in its own
+/// process, so this mutex is never contended there and carries nothing - a check
+/// that cannot fire. The isolation comes from the CI step instead, which runs
+/// this binary on its own and single-threaded; see the note beside it in
+/// `.github/workflows/ci.yml`. The lock stays because `cargo test` is still how
+/// this file is run locally, and it is the whole guard there.
 static PERF_LOCK: Mutex<()> = Mutex::new(());
 
 /// Take the timing lock, ignoring poisoning: a panic in one perf test must not
@@ -313,6 +322,26 @@ fn measure_scaling(build: &impl Fn(usize) -> String) -> Scaling {
 /// Only the sizes move; the interleaving, the rounds and the median are shared,
 /// because a second spelling of the timing is what this helper exists to avoid.
 fn measure_scaling_at(build: &impl Fn(usize) -> String, small_n: usize, large_n: usize) -> Scaling {
+    measure_conversion_scaling_at(
+        &|source| drop(carve::to_html(source)),
+        build,
+        small_n,
+        large_n,
+    )
+}
+
+/// `measure_scaling_at` over any conversion, not just `to_html`.
+///
+/// Split out so a shape whose cost lives on ANOTHER entry point - an HTML
+/// import, say - is measured by THIS calibration rather than by a second
+/// spelling of the timing. The interleaving, the rounds and the best-of are
+/// exactly what this helper exists to keep in one place.
+fn measure_conversion_scaling_at(
+    convert: &impl Fn(&str),
+    build: &impl Fn(usize) -> String,
+    small_n: usize,
+    large_n: usize,
+) -> Scaling {
     let _guard = perf_guard();
     let small = build(small_n);
     let large = build(large_n);
@@ -320,12 +349,12 @@ fn measure_scaling_at(build: &impl Fn(usize) -> String, small_n: usize, large_n:
     let large_bytes = large.len() as f64;
 
     // Prime caches/allocator so round 1 does not measure warm-up.
-    let _ = carve::to_html(&small);
-    let _ = carve::to_html(&large);
+    convert(&small);
+    convert(&large);
 
     let time_once = |source: &str| {
         let start = Instant::now();
-        let _ = carve::to_html(source);
+        convert(source);
         start.elapsed().as_secs_f64()
     };
 
@@ -347,13 +376,22 @@ fn measure_scaling_at(build: &impl Fn(usize) -> String, small_n: usize, large_n:
         }
     }
 
-    let median = |mut xs: Vec<f64>| -> f64 {
-        xs.sort_by(|a, b| a.partial_cmp(b).unwrap());
-        xs[xs.len() / 2]
-    };
+    // BEST of the rounds, not the median. Scheduler noise is one-sided: it can
+    // only make a sample slower, never faster, so the minimum is the closest
+    // estimate of the parse's own cost and the median carries whatever load the
+    // machine happened to be under. With a median, the ratio clustered at
+    // 2.02-2.06x against a 2.0 cutoff and tripped roughly one run in three while
+    // the parse was unchanged - which trains everyone to re-run a red perf test,
+    // and that is how a real quadratic regression gets waved through
+    // (carve-rs#952).
+    //
+    // It does not weaken the guard. A quadratic shape is ~4x per byte at 4x the
+    // input in EVERY round, so its minimum is quadratic too; only the noise the
+    // threshold was catching goes away.
+    let best = |xs: Vec<f64>| -> f64 { xs.into_iter().fold(f64::INFINITY, f64::min) };
 
-    let small_secs = median(small_samples);
-    let large_secs = median(large_samples);
+    let small_secs = best(small_samples);
+    let large_secs = best(large_samples);
 
     Scaling {
         small_secs,
@@ -382,7 +420,24 @@ fn assert_near_linear_at(
     small_n: usize,
     large_n: usize,
 ) {
-    let scaling = measure_scaling_at(&build, small_n, large_n);
+    assert_conversion_near_linear_at(
+        |source| drop(carve::to_html(source)),
+        build,
+        label,
+        small_n,
+        large_n,
+    );
+}
+
+/// `assert_near_linear_at` over any conversion. See `measure_conversion_scaling_at`.
+fn assert_conversion_near_linear_at(
+    convert: impl Fn(&str),
+    build: impl Fn(usize) -> String,
+    label: &str,
+    small_n: usize,
+    large_n: usize,
+) {
+    let scaling = measure_conversion_scaling_at(&convert, &build, small_n, large_n);
 
     let ratio = scaling.per_byte_ratio();
     assert!(
@@ -961,5 +1016,492 @@ fn plus_attached_comment_fence_closer_lookahead_is_indexed() {
         "plus-attached-closed-comment-fence",
         2_000,
         8_000,
+    );
+}
+
+/// A REAL EXPORT'S FOOTNOTE SHAPE: one reference per note, every note in one
+/// list. This is what Word, Google Docs and Pandoc all produce, and it is the
+/// shape that exposes a pairing pass which asks a question of every candidate
+/// about every OTHER candidate.
+fn footnote_shaped_export(notes: usize) -> String {
+    let mut body = String::new();
+    let mut definitions = String::new();
+    for index in 1..=notes {
+        let _ = writeln!(
+            body,
+            "<p>text {index}<a href=\"#fn{index}\" id=\"fnref{index}\">\
+             <sup>{index}</sup></a> tail.</p>"
+        );
+        let _ = writeln!(
+            definitions,
+            "<li id=\"fn{index}\"><p>note {index}\
+             <a href=\"#fnref{index}\">back</a></p></li>"
+        );
+    }
+    format!("{body}<section class=\"footnotes\"><hr /><ol>{definitions}</ol></section>")
+}
+
+fn import_footnote_shaped(adapter: carve::HtmlImportAdapter) -> impl Fn(&str) {
+    move |html: &str| {
+        let options = carve::HtmlImportOptions {
+            adapter,
+            ..Default::default()
+        };
+        let _ = carve::html_to_carve(html, &options);
+    }
+}
+
+/// RECOGNIZING FOOTNOTE-SHAPED HTML MUST NOT COST THE DOCUMENT TWICE
+/// (markup-carve/carve#1210).
+///
+/// Three steps of the adapter pass started out quadratic in carve-php: which
+/// candidate reads the same mutual pair from the other end, which block
+/// contains another block, and whether an anchor sits inside a note. On a
+/// document that is mostly notes each of those is O(notes^2), and carve-php
+/// measured 0.603s at 800 notes before the fix. Each is answered here from an
+/// index instead - the back anchor names the inverse, the containers are found
+/// by climbing once per note, and the set of nodes inside a note is built once.
+///
+/// One note is two blocks and an anchor pair, so the file's default 50k/200k
+/// would build a document two orders of magnitude past what the shape needs.
+/// 250/1000 keeps the same 4x multiple.
+#[test]
+fn footnote_shaped_html_is_not_paired_candidate_against_candidate() {
+    assert_conversion_near_linear_at(
+        import_footnote_shaped(carve::HtmlImportAdapter::Word),
+        footnote_shaped_export,
+        "footnote-shaped HTML under the word adapter",
+        250,
+        1_000,
+    );
+}
+
+/// The control, and not decoration: it walks the SAME document through the
+/// same importer with the adapter pass switched off, so a reading that blames
+/// the pass has to survive the same document measuring linear without it.
+#[test]
+fn the_same_footnote_document_is_bounded_without_the_adapter() {
+    assert_conversion_near_linear_at(
+        import_footnote_shaped(carve::HtmlImportAdapter::Generic),
+        footnote_shaped_export,
+        "the same document under the generic adapter",
+        250,
+        1_000,
+    );
+}
+
+#[test]
+fn a_nested_continuation_attachment_is_bounded() {
+    on_big_stack(|| {
+        // §17 L3 attaches ONE block, so a `+` has to know where the attached
+        // block ends. Measuring that by PARSING the block makes a `+`-attached
+        // container holding another `+` attachment pay for its subtree once per
+        // level above it: this document took 28.71 s that way, against 0.65 s
+        // before the clause was implemented at all and 0.85 s with the extent
+        // read from the container's CLOSER instead.
+        //
+        // Three documents nested to the depth cap, ~2400 lines in total. The
+        // shape matters more than the size - the blow-up is in the DEPTH, and
+        // widening the bodies barely moved it (9.65 s to 9.72 s at one copy),
+        // which is why this repeats the document rather than enlarging it.
+        let mut one = String::from("para\n");
+        for _ in 0..200 {
+            one = format!("> q\n+\n::: d\n{one}:::\n");
+        }
+        let source = [one.as_str(), one.as_str(), one.as_str()].join("\n");
+
+        let start = Instant::now();
+        let html = carve::to_html(&source);
+
+        // Past MAX_NESTING_DEPTH the innermost levels degrade rather than
+        // recursing, so what is asserted is that the content SURVIVES - once per
+        // copy - and not that it reaches a paragraph node.
+        assert_eq!(
+            html.matches("para").count(),
+            3,
+            "expected the innermost content of each copy"
+        );
+        assert!(
+            start.elapsed().as_secs_f32() < MAX_SECS,
+            "nested continuation attachment took {:?}",
+            start.elapsed()
+        );
+    });
+}
+
+/// A definition body's marker line asks PART 1 S4's question of its own content
+/// (carve-rs#1049), and that question is answered by PARSING the body. The
+/// answer therefore has to stay a per-entry cost: a predicate that re-read the
+/// whole preceding document, or one that got asked once per line instead of
+/// once per body, would turn a run of definition entries quadratic without
+/// changing a byte of output.
+///
+/// FIXED-WIDTH UNITS, so the byte multiple and the unit multiple agree and the
+/// per-byte ratio means what the label says. Each entry is the same length: an
+/// eight-digit term, a marker line holding a HEADING - the kind whose answer
+/// this change moved - and the flush-left line the rule is asked about.
+fn definition_marker_line_blocks(n: usize) -> String {
+    let mut source = String::with_capacity(n * 24);
+    for i in 0..n {
+        writeln!(source, ":: t{i:08}\n:  # H\ntail\n").unwrap();
+    }
+    source
+}
+
+#[test]
+fn definition_marker_line_s4_is_answered_per_entry() {
+    // No `perf_guard` here: `measure_conversion_scaling_at` takes it, and
+    // `PERF_LOCK` is a plain `Mutex`, so a second acquisition on the same
+    // thread deadlocks rather than nesting.
+    assert_near_linear_at(
+        definition_marker_line_blocks,
+        "definition marker-line S4",
+        10_000,
+        40_000,
+    );
+}
+
+fn nested_marker_line_lazy_resume_blocks(n: usize) -> String {
+    let mut source = String::with_capacity(n * 24);
+    for i in 0..n {
+        writeln!(source, "* * u{i:08}\n%\n :\n").unwrap();
+    }
+    source
+}
+
+#[test]
+fn nested_marker_line_lazy_resume_is_answered_per_entry() {
+    assert_near_linear_at(
+        nested_marker_line_lazy_resume_blocks,
+        "nested marker-line lazy resume",
+        10_000,
+        40_000,
+    );
+}
+
+/// A quoted line that OPENS a brace and never closes it sends the wrapped-
+/// attribute-block lookahead over the rest of the quote (carve-rs#1050). The
+/// scan reports the window it proved empty, so a run of such lines is walked
+/// ONCE rather than once per line.
+///
+/// WHAT IS MEASURED IS THE PER-BYTE COST AGAINST THE SAME RUN UNQUOTED, not the
+/// growth ratio. Both documents are already superlinear on this shape - the
+/// paragraph parse copies the remainder per line, at the top level as much as
+/// inside a quote - and a second per-line scan in the collector DOUBLES the
+/// constant while leaving the exponent alone. A growth-ratio row therefore
+/// cannot see it: the un-barriered scan measured 3.8x against a healthy 3.6x and
+/// a ratio guard passed it. Per byte, at 8000 lines, it measured 20.6us against
+/// the flat document's 12.0us, where the barriered scan measures 7.7us against
+/// 9.9us. The pre-existing superlinearity is deliberately NOT hidden by this
+/// row; it is the baseline the quote is held to, and it is a separate defect.
+///
+/// The quoted document is fixed-width and two bytes per line wider, so equal
+/// per-line work reads BELOW 1.0 (6/8 = 0.75, measured 0.78). The bound sits at
+/// 1.2: half again above the healthy figure, and a third below the regression.
+fn quoted_unclosed_brace_lines(n: usize) -> String {
+    "> {abcd\n".repeat(n)
+}
+
+fn unquoted_unclosed_brace_lines(n: usize) -> String {
+    "{abcd\n".repeat(n)
+}
+
+#[test]
+fn a_quoted_run_of_unclosed_braces_is_scanned_once() {
+    let quoted = measure_scaling_at(&quoted_unclosed_brace_lines, 4_000, 8_000);
+    let flat = measure_scaling_at(&unquoted_unclosed_brace_lines, 4_000, 8_000);
+
+    let cost = quoted.large_per_byte / flat.large_per_byte;
+    assert!(
+        cost < 1.2,
+        "a quoted run of unclosed braces cost {cost:.2}x per byte against the same run \
+         unquoted (equal per-line work reads ~0.78x; a per-line rescan in the quote \
+         collector reads ~1.7x): quoted={:.4}us/byte flat={:.4}us/byte",
+        quoted.large_per_byte * 1e6,
+        flat.large_per_byte * 1e6
+    );
+}
+
+/// A `+` continuation row is scanned with the verbatim run its predecessor left
+/// open, at that run's WIDTH (carve-rs#1051). The carry is per row and per
+/// column, so the cost has to stay per row: a scanner that re-read the rows
+/// above to recover the width, or that re-split the assembled cell once per
+/// fragment, would turn a table of carrying rows quadratic without changing a
+/// byte of output.
+///
+/// FIXED-WIDTH UNITS - every row and every continuation is the same length - so
+/// the byte multiple and the unit multiple agree.
+fn carrying_continuation_rows(n: usize) -> String {
+    "| aaaa ``bb |\n+ cc ` | dd`` |\n\n".repeat(n)
+}
+
+/// ONE cell carrying a run across n continuation rows, which is the other axis:
+/// the fragments accumulate on a single column instead of on n separate tables.
+fn one_cell_carrying_across_many_rows(n: usize) -> String {
+    let mut source = String::from("| aaaa ``bb |\n");
+    for _ in 0..n {
+        source.push_str("+ cccc dddd |\n");
+    }
+    source
+}
+
+#[test]
+fn a_carried_run_costs_one_scan_per_row() {
+    assert_near_linear_at(
+        carrying_continuation_rows,
+        "carrying continuation rows",
+        10_000,
+        40_000,
+    );
+    assert_near_linear_at(
+        one_cell_carrying_across_many_rows,
+        "one cell carrying across many rows",
+        10_000,
+        40_000,
+    );
+}
+
+/// ESCAPE-HEAVY MARKDOWN OUTPUT, scaled by the number of lines.
+///
+/// THE MARKDOWN TARGET HAD NO SCALING ROW AT ALL, in any engine, which is why
+/// markup-carve/carve#1331's 33x regression shipped invisibly. That absence is
+/// worth closing on its own: a target with no scaling row is a target where the
+/// next regression is also silent.
+///
+/// Every `\#` is an authored escape and reaches PART 11 §8b M2b's
+/// content-position test, and every line carries a container prefix so the test
+/// is decided past one rather than at column 0. FIXED-WIDTH UNITS - one line,
+/// always the same line - so the byte multiple and the unit multiple agree.
+fn escape_heavy_markdown_lines(n: usize) -> String {
+    "> \\#\\#\\# and \\# and \\#\\# tail\n>\n".repeat(n)
+}
+
+#[test]
+fn the_markdown_target_scales_linearly_on_escape_heavy_input() {
+    assert_conversion_near_linear_at(
+        |source| drop(carve::to_markdown(source)),
+        escape_heavy_markdown_lines,
+        "escape-heavy markdown",
+        25_000,
+        100_000,
+    );
+}
+
+/// A single line of N ADJACENT authored escapes - the shape markup-carve/carve#1331
+/// measured, where §8b M2b's two O(n) scans per candidate met a line on which
+/// every character is a candidate.
+///
+/// FIXED-WIDTH UNITS: one `\#` is one unit and two bytes, always.
+fn adjacent_authored_escapes(n: usize) -> String {
+    let mut source = String::with_capacity(n * 2 + 1);
+    source.push_str(&"\\#".repeat(n));
+    source.push('\n');
+    source
+}
+
+/// The same run behind a CONTAINER PREFIX, which is where the content position
+/// is measured from on the emitted line (markup-carve/carve#1332). Its own row
+/// because a fix that hoisted the scan for unprefixed lines only would stay
+/// quadratic here.
+fn adjacent_authored_escapes_in_a_quote(n: usize) -> String {
+    let mut source = String::with_capacity(n * 2 + 3);
+    source.push_str("> ");
+    source.push_str(&"\\#".repeat(n));
+    source.push('\n');
+    source
+}
+
+/// THIS ROW IS A SHARE, NOT A SLOPE, and the reason is worth reading before
+/// changing it to a slope. A single line of 100k escapes is ALREADY superlinear
+/// in the PARSER - measured at 3.22x per byte over a 4x input on `carve::parse`
+/// alone, with no renderer involved - so a scaling row over this shape reports
+/// the parser's cost and would stay red however linear the writer became. The
+/// row above scales; this one isolates.
+///
+/// What it isolates is the Markdown target's OWN share of the work, by pricing
+/// it against the HTML target on the same input. The two run the same parse, so
+/// whatever the parse costs cancels, and what is left is what each writer adds.
+/// Before markup-carve/carve#1331 the Markdown target cost about 29x the HTML
+/// target on this shape; after, about 0.7x. A bound of 3x sits between them with
+/// an order of magnitude of room on either side, and it cannot be satisfied by a
+/// parser that gets slower.
+fn assert_markdown_costs_no_more_than_html(build: impl Fn(usize) -> String, label: &str) {
+    let markdown =
+        measure_conversion_scaling_at(&|s| drop(carve::to_markdown(s)), &build, 25_000, 100_000);
+    let html = measure_conversion_scaling_at(&|s| drop(carve::to_html(s)), &build, 25_000, 100_000);
+
+    let share = markdown.large_per_byte / html.large_per_byte;
+    assert!(
+        share < 3.0,
+        "{label}: the markdown target cost {share:.2}x the html target per byte \
+         (healthy ~0.7x, a per-candidate line scan ~29x): markdown={:.4}us/byte html={:.4}us/byte",
+        markdown.large_per_byte * 1e6,
+        html.large_per_byte * 1e6
+    );
+}
+
+#[test]
+fn an_adjacent_escape_run_costs_the_markdown_target_no_more_than_the_html_target() {
+    assert_markdown_costs_no_more_than_html(adjacent_authored_escapes, "adjacent authored escapes");
+    assert_markdown_costs_no_more_than_html(
+        adjacent_authored_escapes_in_a_quote,
+        "adjacent authored escapes behind a quote prefix",
+    );
+}
+
+/// A paragraph continued LAZILY under a `:  ` definition body.
+///
+/// One `:  ` marker line and then n flush-left lines, which is the shape a
+/// wrapped definition takes when the author does not re-indent. `n` counts
+/// lines and every line is the same length, so the byte multiple and the unit
+/// multiple agree.
+fn lazily_continued_definition_body(n: usize) -> String {
+    let mut source = String::from(":: term\n:  body\n");
+    for _ in 0..n {
+        source.push_str("more text on a wrapped line\n");
+    }
+    source
+}
+
+/// The LIST twin of the shape above, which is what says the cost is a defect
+/// rather than the price of asking S4's question. Same lines, same count, one
+/// container over.
+fn lazily_continued_list_item(n: usize) -> String {
+    let mut source = String::from("- body\n");
+    for _ in 0..n {
+        source.push_str("more text on a wrapped line\n");
+    }
+    source
+}
+
+/// S4's question is asked ONCE PER LINE, not once per line over the whole body
+/// collected so far.
+///
+/// `collect_definition_body` rebuilt the body from every line taken so far and
+/// PARSED it, once per lazy line, so a lazily continued definition body cost
+/// O(n^2) in both the copy and the parse: 32 KB of input took 22.9 seconds and
+/// grew 4.0x per doubling. A lazy line that folded left a paragraph open by
+/// construction - it reached the fold only by being flush-left and not
+/// interrupting - so the answer for the next one was already known.
+///
+/// PRE-EXISTING, and pinned here because nothing could see it: the corpus has no
+/// document long enough, and the list twin, which is what a reader would compare
+/// against, was already linear.
+#[test]
+fn a_definition_bodys_lazy_run_asks_s4_once_per_line() {
+    // NO `perf_guard()` here: `measure_conversion_scaling_at` takes it itself,
+    // and `PERF_LOCK` is a plain `Mutex`, so taking it in the test as well
+    // deadlocks the binary rather than serializing anything.
+    assert_near_linear_at(
+        lazily_continued_definition_body,
+        "a lazily continued definition body",
+        8_000,
+        32_000,
+    );
+
+    // AGAINST THE TWIN, because a slope alone cannot say the cost is wrong -
+    // only that it is not growing. The two containers ask the same question of
+    // the same lines, so the per-byte costs have to be within a small factor.
+    // Before the fix this read ~150x at these sizes.
+    let body = measure_scaling_at(&lazily_continued_definition_body, 8_000, 32_000);
+    let item = measure_scaling_at(&lazily_continued_list_item, 8_000, 32_000);
+    let cost = body.large_per_byte / item.large_per_byte.max(f64::MIN_POSITIVE);
+    assert!(
+        cost < 3.0,
+        "a lazily continued definition body cost {cost:.2}x per byte against the same run \
+         in a list item: dd={:.4}us/byte li={:.4}us/byte",
+        body.large_per_byte * 1e6,
+        item.large_per_byte * 1e6
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Guards moved here from ordinary test binaries (carve-rs#1092)
+//
+// carve-rs#1088 gave this file its own CI step, run alone and single-threaded,
+// because `cargo nextest` is process-per-test and `PERF_LOCK` cannot serialize
+// across processes. Four wall-clock guards were left outside it, so they ran in
+// the same step as ~3900 other tests - the exact condition the split removed.
+// The two ABSOLUTE ones (10s in `abbreviation_security`, 5s in `ast_merge`) are
+// catastrophic-only and wide enough to survive it. The two RATIO ones were not:
+// the note on `PERF_LOCK` above records that a median over five rounds still
+// tripped at 2.02x against a 2.0 cutoff under contention, and that the fix was
+// best-of-N plus alternating which size is timed first. Neither of the two did
+// either, and one took a SINGLE sample per size.
+//
+// So they move rather than loosen, and they are restated through the calibrated
+// helpers instead of a fourth hand-rolled spelling of the timing. The
+// deterministic half of each - the output-size assertion - stays in its own
+// file, where no runner can perturb it.
+// ---------------------------------------------------------------------------
+
+/// FIXED-WIDTH ROWS, so the byte multiple and the row multiple agree and the
+/// per-byte form of the claim is the same claim.
+fn tall_html_table(rows: usize) -> String {
+    let mut html = String::from("<table><tbody>");
+    for i in 0..rows {
+        write!(html, "<tr><td>{i}</td><td>x</td></tr>").unwrap();
+    }
+    html.push_str("</tbody></table>");
+    html
+}
+
+/// A TALL HTML TABLE is read in time proportional to its rows.
+///
+/// From `tests/html_import_table_spans.rs`, where it took one sample at 2000
+/// rows and one at 8000 and asserted `large < small * 10`. A row group looked
+/// up once per CELL rather than once per row reads ~16x at 4x the rows where
+/// linear work reads ~4x, so the claim is sound; two single samples taken on a
+/// runner shared with ~3900 other test processes are not the way to measure it.
+#[test]
+fn a_tall_html_table_is_read_in_time_proportional_to_its_rows() {
+    assert_conversion_near_linear_at(
+        |html| {
+            html_to_ast(html, &HtmlImportOptions::default()).expect("the table imports");
+        },
+        tall_html_table,
+        "a tall HTML table",
+        8_000,
+        32_000,
+    );
+}
+
+/// MANY `::: index` BLOCKS after a very large term cost nothing extra.
+///
+/// From `tests/index_terms.rs`. Once the budget is spent, later blocks must NOT
+/// re-escape the large term: with the path closed extra blocks are nearly free,
+/// with it open each one re-escapes a 500 KB term and the cost tracks the block
+/// count.
+///
+/// Asserted on the WALL CLOCK at the two sizes rather than per BYTE, because the
+/// term dominates the document: doubling the blocks barely moves the byte count,
+/// so a per-byte ratio would report the term rather than the blocks. That is the
+/// one thing `assert_conversion_near_linear_at` cannot express for this shape,
+/// which is why the measurement comes from the shared helper - with its rounds,
+/// its alternation and its best-of - and only the verdict is spelled here.
+#[test]
+fn many_index_blocks_after_a_large_term_cost_nothing_extra() {
+    let big_term = "x".repeat(500_000);
+    let build = |blocks: usize| {
+        let mut source = format!(":index[{big_term}]\n\n");
+        for _ in 0..blocks {
+            source.push_str("::: index\n:::\n\n");
+        }
+        source
+    };
+    let render = |source: &str| {
+        let index = Index::new();
+        let options = Options::new().with_extension(&index);
+        drop(carve::to_html_with_options(source, &options));
+    };
+    let scaling = measure_conversion_scaling_at(&render, &build, 100, 200);
+    let ratio = scaling.large_secs / scaling.small_secs.max(f64::MIN_POSITIVE);
+    assert!(
+        ratio < 1.5,
+        "doubling the index blocks changed render time {ratio:.2}x; \
+         later blocks are re-escaping the large term ({:.4}s at 100 blocks, \
+         {:.4}s at 200)",
+        scaling.small_secs,
+        scaling.large_secs
     );
 }

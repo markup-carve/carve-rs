@@ -7,7 +7,7 @@
 //! markers nobody wrote (carve#352, corpus 09-tables-3).
 
 const GFM: &str = "| Name | Age |\n|:-----|----:|\n| Alice | 28  |\n";
-const NATIVE: &str = "|=<Name|=>Age|\n| Alice | 28 |\n";
+const NATIVE: &str = "|=< Name |=> Age |\n| Alice | 28 |\n";
 
 #[test]
 fn formatting_does_not_invent_per_cell_markers() {
@@ -44,6 +44,9 @@ fn a_genuine_per_cell_override_survives() {
     // The header says right; one body cell overrides to left. That marker is not
     // redundant, and suppressing it would look identical from the outside to
     // suppressing the redundant ones.
-    let src = "|=Item|=>Qty|\n| Apple | 12 |\n| Subtotal |<12|\n";
-    assert_eq!(carve::to_carve(src), src);
+    let src = "|=Item|=> Qty|\n| Apple | 12 |\n| Subtotal |< 12|\n";
+    assert_eq!(
+        carve::to_carve(src),
+        "|= Item |=> Qty |\n| Apple | 12 |\n| Subtotal |< 12 |\n"
+    );
 }

@@ -47,6 +47,32 @@ rendering and win over a pool entry with the same key. Back-links appear only
 when a pool is supplied; plain Tier-2 citations are byte-identical to before.
 Resolving an arbitrary `.csl` style is out of scope (a renderer-plugin point).
 
+### The definition line in the tree
+
+A `[@key]: {author="Smith" year="2020"} entry` line is a `citation_definition`
+block node (PART 12 §18), produced by `parse_with_options` whenever the
+extension is on:
+
+```json
+{
+  "type": "citation_definition",
+  "key": "smith2020",
+  "children": [{ "type": "text", "value": "Smith, J. (2020). A Study. Pub." }],
+  "attrs": { "keyValues": { "author": "Smith", "year": "2020" } },
+  "pos": { "startLine": 3, "endLine": 3, "startColumn": 1, "endColumn": 78 }
+}
+```
+
+`key` is the citation key without the `@` - the same string `citation.key`
+carries at the use site. `children` is the entry's INLINE content: a footnote
+body holds blocks and this does not, which is why the node is shaped after the
+link reference definition. `attrs` holds the leading metadata block when the
+line carries one, and is absent otherwise.
+
+The node renders nothing where it sits on every target; the entry's text
+renders in the references list below. Tier-2: with the extension off the line
+is ordinary paragraph text and no `citation_definition` is produced.
+
 The generated citation ids (`cite-{key}-{n}` use-site anchors, `ref-{key}`
 reference entries) are deduplicated against the document id namespace
 (extensions contract §2.6): when an explicit `{#id}` attribute or a generated

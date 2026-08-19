@@ -1,6 +1,7 @@
 //! Row-level table attributes: a `{...}` block glued to a row's closing pipe
 //! sets the `<tr>` attributes (the row twin of a cell's opening-pipe block).
 //! Matches carve-php / carve-js.
+//! PART 10 §T9 independently gives each `<thead>` cell `scope="col"`.
 
 #[test]
 fn class_on_a_body_row() {
@@ -22,7 +23,7 @@ fn id_and_key_value() {
 fn header_row_and_gfm_separator() {
     assert_eq!(
         carve::to_html("| H |{.hd}\n|---|\n| c |{.bd}"),
-        "<table>\n  <thead><tr class=\"hd\"><th>H</th></tr></thead>\n  <tbody>\n    <tr class=\"bd\"><td>c</td></tr>\n  </tbody>\n</table>"
+        "<table>\n  <thead><tr class=\"hd\"><th scope=\"col\">H</th></tr></thead>\n  <tbody>\n    <tr class=\"bd\"><td>c</td></tr>\n  </tbody>\n</table>"
     );
 }
 

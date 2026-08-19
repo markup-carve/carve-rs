@@ -88,14 +88,11 @@ fn blank_inside_inner_item_does_not_loosen_outer() {
     // The blank precedes `c` (at the inner item's content column, so `c` nests
     // in item `b`); `d` then attaches to the outer item with NO blank of its own
     // directly before it. The blank belongs to the inner item, so the OUTER item
-    // stays tight (`<li>a`), not `<li><p>a</p>`. Because the outer item is tight,
-    // its trailing text `d` renders BARE, not wrapped in a paragraph.
-    // (carve-rs attaches `d` to the outer item; carve-js instead lazy-folds `d`
-    // into the inner paragraph as `<p>c\nd</p>` -- a pre-existing placement
-    // divergence orthogonal to the tight/loose rendering fixed here.)
+    // stays tight (`<li>a`), not `<li><p>a</p>`. The innermost open paragraph
+    // receives the lazy line, matching carve-js and carve-php.
     assert_eq!(
         carve::to_html("- a\n  - b\n\n    c\n  d\n"),
-        "<ul>\n  <li>a\n    <ul>\n      <li><p>b</p>\n        <p>c</p>\n      </li>\n    </ul>\n    d\n  </li>\n</ul>"
+        "<ul>\n  <li>a\n    <ul>\n      <li><p>b</p>\n        <p>c\nd</p>\n      </li>\n    </ul>\n  </li>\n</ul>"
     );
 }
 
@@ -104,11 +101,27 @@ fn blank_inside_inner_task_item_does_not_loosen_outer() {
     // Same as above with a TASK sub-item: the inner item's content column is the
     // bullet width (2), not the post-checkbox column, so `c` (indented to the
     // inner content column) nests in the task item and the blank belongs to the
-    // inner item. The OUTER item stays tight, so its trailing text `d` renders
-    // BARE. (Same pre-existing `d`-placement divergence from carve-js as above.)
+    // inner item. The OUTER item stays tight and the innermost open paragraph
+    // receives `d`, as it does in the other implementations.
     assert_eq!(
         carve::to_html("- a\n  - [ ] b\n\n    c\n  d\n"),
-        "<ul>\n  <li>a\n    <ul>\n      <li><input type=\"checkbox\" disabled> <p>b</p>\n        <p>c</p>\n      </li>\n    </ul>\n    d\n  </li>\n</ul>"
+        "<ul>\n  <li>a\n    <ul>\n      <li><input type=\"checkbox\" disabled> <p>b</p>\n        <p>c\nd</p>\n      </li>\n    </ul>\n  </li>\n</ul>"
+    );
+}
+
+#[test]
+fn flush_line_folds_into_an_items_second_open_paragraph() {
+    assert_eq!(
+        carve::to_html("1. item\n\n   spaced\nflush\n"),
+        "<ol>\n  <li><p>item</p>\n    <p>spaced\nflush</p>\n  </li>\n</ol>"
+    );
+}
+
+#[test]
+fn continuation_marker_after_the_second_paragraph_is_not_lazy_text() {
+    assert_eq!(
+        carve::to_html("1. item\n\n   spaced\n+\nquote\n"),
+        "<ol>\n  <li><p>item</p>\n    <p>spaced</p>\n    <p>quote</p>\n  </li>\n</ol>"
     );
 }
 

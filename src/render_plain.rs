@@ -29,6 +29,21 @@ thread_local! {
     static SMART_TYPOGRAPHY: std::cell::Cell<crate::extension::SmartTypographyMode> =
         const { std::cell::Cell::new(crate::extension::SmartTypographyMode::Glyph) };
     static LIST_DEPTH: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    /// The `(term, expansion)` pairs this render emits an expansion for, so the
+    /// definitions that supplied them can drop their line (PART 11 §10f).
+    static CONSUMED_ABBREVIATIONS: std::cell::RefCell<crate::render_text::ConsumedAbbreviations> =
+        const { std::cell::RefCell::new(crate::render_text::ConsumedAbbreviations::new()) };
+    /// Set while rendering a span that carries an authored `abbr`, exactly as
+    /// the Markdown and ANSI renderers carry it on their context struct.
+    ///
+    /// This target needed no such flag while its `Abbreviation` arm printed the
+    /// key alone, so the nested expansion could not escape by construction. §10f
+    /// gives that arm the expansion, which takes the guarantee away with it:
+    /// without the flag `[HTML]{abbr="Custom"}` under a definition would print
+    /// `HTML (Hyper Text Markup Language) (Custom)`, emitting the definition PART
+    /// 9 §9 says the authored value outranks.
+    static SUPPRESS_AUTOMATIC_ABBREVIATION: std::cell::Cell<bool> =
+        const { std::cell::Cell::new(false) };
 }
 
 fn footnote_is_defined(id: &str) -> bool {
@@ -102,6 +117,10 @@ fn render_plain_text_inner(
     CROSSREF_INDEX.with(|index| {
         *index.borrow_mut() = crate::parse::crossref_index_for_document(doc, lowercase_heading_ids);
     });
+    CONSUMED_ABBREVIATIONS.with(|set| {
+        *set.borrow_mut() = crate::render_text::consumed_abbreviation_definitions(doc);
+    });
+    SUPPRESS_AUTOMATIC_ABBREVIATION.with(|flag| flag.set(false));
     let out = render_blocks(&doc.children, 0);
     let footnotes = render_footnote_defs(doc);
     normalize(&format!("{out}{footnotes}"))
@@ -153,17 +172,28 @@ fn render_block(node: &BlockNode, depth: usize) -> String {
     }
     match node {
         // Renders nothing: a definition line is not prose.
-        BlockNode::LinkReferenceDefinition(_) => String::new(),
+        BlockNode::LinkReferenceDefinition(_) | BlockNode::CitationDefinition(_) => String::new(),
         BlockNode::Heading(heading) => format!("{}\n\n", render_inlines(&heading.children)),
         BlockNode::Paragraph(paragraph) => {
             format!("{}\n\n", render_inlines(&paragraph.children))
         }
-        BlockNode::CodeBlock(code) => format!("{}\n\n", strip_controls(&code.content)),
+        // Caption floor, the same one the `Div` arm below applies through
+        // `prepend_label`: a fence title (`"src/app.js"`) and a grouping label
+        // (`[Node]`) are authored text, and this target has nowhere to attach
+        // them, so they become standalone lines rather than being dropped. Title
+        // first when both are present, matching the div's order. Ported from
+        // carve-js#1044.
+        BlockNode::CodeBlock(code) => {
+            let body = format!("{}\n\n", strip_controls(&code.content));
+            let body = prepend_label(body, code.label.as_deref());
+            prepend_label(body, code.title.as_deref())
+        }
         BlockNode::BlockQuote(quote) => {
-            format!(
-                "\"{}\"\n\n",
+            let quoted = format!(
+                "\"{}\"",
                 trim_block_output(&render_blocks(&quote.children, depth + 1))
-            )
+            );
+            format!("{quoted}\n\n")
         }
         BlockNode::List(list) => render_list(list, depth + 1),
         BlockNode::ThematicBreak(_) => "---\n\n".to_string(),
@@ -195,15 +225,29 @@ fn render_block(node: &BlockNode, depth: usize) -> String {
         }
         BlockNode::DefinitionList(list) => render_definition_list(&list.items, true, depth + 1),
         BlockNode::Figure(figure) => render_figure(figure, depth + 1),
+        BlockNode::FigureGroup(group) => render_figure_group(group, depth + 1),
         // Terminate the block image so the next block is not glued onto it.
         BlockNode::BlockImage(image) => format!("{}\n\n", render_image(image)),
         BlockNode::Extension(extension) => render_blocks(&extension.children, depth + 1),
-        // PART 10 §10a - see the note in render_markdown.
-        BlockNode::AbbreviationDef(def) => format!(
-            "*[{}]: {}\n\n",
-            strip_controls(&def.abbr),
-            strip_controls(&def.expansion)
-        ),
+        // PART 11 §10a keeps the UNUSED definition here - see the note in
+        // render_markdown. §10f then splits the CONSUMED one by target: this one
+        // drops the line, because the `Abbreviation` arm now writes
+        // `TERM (expansion)` at every occurrence and the words would otherwise
+        // be emitted twice. Markdown keeps it, and the canonical writer must.
+        BlockNode::AbbreviationDef(def) => {
+            let consumed = CONSUMED_ABBREVIATIONS.with(|set| {
+                set.borrow()
+                    .contains(&(def.abbr.clone(), def.expansion.clone()))
+            });
+            if consumed {
+                return String::new();
+            }
+            format!(
+                "*[{}]: {}\n\n",
+                strip_controls(&def.abbr),
+                strip_controls(&def.expansion)
+            )
+        }
         BlockNode::RawBlock(_) | BlockNode::Comment(_) => String::new(),
     }
 }
@@ -323,12 +367,70 @@ fn render_table(node: &Table) -> String {
     out
 }
 
+/// PART 11 §10g T2: the group caption comes FIRST, its number resolved - on a
+/// caption-less target it is the only line that says what the following blocks
+/// are one of - then each panel as its caption line over its host's usual
+/// degradation, stray content in place, a blank line between the pieces.
+fn render_figure_group(node: &FigureGroup, depth: usize) -> String {
+    if depth > MAX_RENDER_DEPTH {
+        crate::render_depth::record("plain");
+        return String::new();
+    }
+    let mut parts: Vec<String> = Vec::new();
+    if let Some(caption) = &node.caption {
+        parts.push(trim_non_nbsp(&render_inlines(caption)).to_string());
+    }
+    for child in &node.children {
+        match child {
+            BlockNode::Figure(figure) => {
+                let caption = trim_non_nbsp(&render_inlines(&figure.caption)).to_string();
+                let target = render_figure_target(figure, depth);
+                parts.push(format!("{caption}\n{target}"));
+            }
+            other => {
+                let piece = render_block(other, depth);
+                let piece = piece.trim_end();
+                if !piece.is_empty() {
+                    parts.push(piece.to_string());
+                }
+            }
+        }
+    }
+    if parts.is_empty() {
+        return String::new();
+    }
+    format!("{}\n\n", parts.join("\n\n"))
+}
+
 fn render_figure(node: &Figure, depth: usize) -> String {
     if depth > MAX_RENDER_DEPTH {
         crate::render_depth::record("plain");
         return String::new();
     }
-    let target = match &node.target {
+    let target = render_figure_target(node, depth);
+    // The caption sits on its own line directly under the figure (`\n`) - an
+    // image target used to glue it on. A blockquote target keeps the blank-line
+    // separation. End with the block separator so a following block is not glued
+    // (matching carve-php).
+    //
+    // A TABLE TARGET took the empty string, so the caption was written with no
+    // line break at all - `aFruit prices` - fusing the words into the last cell.
+    // A captioned table this target renders directly separates them with `\n`;
+    // this is the same construct reaching the same writer through the AST-ingest
+    // path, so it takes the same separator. Losing the words INTO a cell is the
+    // failure docs/graceful-degradation.md forbids and PART 11 §10e names.
+    let sep = match &*node.target {
+        FigureTarget::BlockQuote(_) => "\n\n",
+        _ => "\n",
+    };
+    format!("{target}{sep}{}\n\n", render_inlines(&node.caption))
+}
+
+/// A figure's TARGET degraded on its own, without the caption - shared by the
+/// plain figure and the figure group, whose panels put the caption FIRST
+/// (§10g T2).
+fn render_figure_target(node: &Figure, depth: usize) -> String {
+    match &*node.target {
         FigureTarget::Image(image) => render_image(image),
         FigureTarget::Table(table) => render_table(table).trim().to_string(),
         FigureTarget::BlockQuote(quote) => {
@@ -342,24 +444,14 @@ fn render_figure(node: &Figure, depth: usize) -> String {
         FigureTarget::Paragraph(p) => render_block(&BlockNode::Paragraph(p.clone()), depth + 1)
             .trim()
             .to_string(),
-    };
-    // The caption sits on its own line directly under the figure (`\n`) - an
-    // image target used to glue it on. A blockquote target keeps the blank-line
-    // separation; a table drops the caption. End with the block separator so a
-    // following block is not glued (matching carve-php).
-    let sep = match &node.target {
-        FigureTarget::BlockQuote(_) => "\n\n",
-        FigureTarget::Table(_) => "",
-        _ => "\n",
-    };
-    format!("{target}{sep}{}\n\n", render_inlines(&node.caption))
+    }
 }
 
 fn render_footnote_defs(doc: &Document) -> String {
     let mut out = String::new();
     // SOURCE ORDER, not label order (§7; carve-rs#686). The map is a BTreeMap.
     for (label, blocks) in crate::ast_json::footnote_defs_in_source_order(doc) {
-        // The MARKER AS WRITTEN (PART 10 §10a): `[n]: …` is a LINK reference
+        // The MARKER AS WRITTEN (PART 11 §10a): `[n]: …` is a LINK reference
         // definition, so emitting one where the author wrote a footnote
         // definition turns it into a different construct on the way back.
         out.push_str(&format!(
@@ -411,7 +503,34 @@ fn render_inline(node: &InlineNode, depth: usize) -> String {
             }
         }
         InlineNode::Image(image) => render_image(image),
-        InlineNode::Span(span) => render_inlines_stateful(&span.children, depth + 1),
+        InlineNode::Span(span) => {
+            // An AUTHORED `abbr` outranks the document definition (PART 9 §9),
+            // and this target prints it as a parenthetical - already its idiom
+            // for an aside, since an inline footnote renders `(content)` here.
+            // Dropping it loses the text outright: `[HTML]{abbr="Custom"}` came
+            // out as bare `HTML` with "Custom" nowhere (carve#1176).
+            //
+            // The suppression flag is what keeps the definition's own expansion
+            // out from under it, matching the Markdown and ANSI renderers. This
+            // target got by without one only while the `Abbreviation` arm below
+            // printed the key alone; PART 11 §10f gives that arm the expansion,
+            // so the flag has to arrive with it.
+            let authored = span
+                .attrs
+                .as_ref()
+                .and_then(|a| a.key_values.get("abbr"))
+                .cloned();
+            let Some(authored) = authored else {
+                return render_inlines_stateful(&span.children, depth + 1);
+            };
+            let previous = SUPPRESS_AUTOMATIC_ABBREVIATION.with(|flag| flag.replace(true));
+            let inner = render_inlines_stateful(&span.children, depth + 1);
+            SUPPRESS_AUTOMATIC_ABBREVIATION.with(|flag| flag.set(previous));
+            if authored.is_empty() || !crate::abbr_budget::try_spend(authored.len()) {
+                return inner;
+            }
+            format!("{inner} ({})", strip_controls(&authored))
+        }
         InlineNode::Math(math) => strip_controls(&math.content),
         InlineNode::RawInline(_) => String::new(),
         // §27: always emitted (unlike raw passthrough above), as plain prose.
@@ -425,7 +544,28 @@ fn render_inline(node: &InlineNode, depth: usize) -> String {
         InlineNode::Mention(mention) => format!("@{}", strip_controls(&mention.user)),
         InlineNode::Tag(tag) => format!("#{}", strip_controls(&tag.name)),
         InlineNode::Extension(extension) => render_inlines_stateful(&extension.children, depth + 1),
-        InlineNode::Abbreviation(abbr) => strip_controls(&abbr.abbr),
+        InlineNode::Abbreviation(abbr) => {
+            // PART 11 §10f: `TERM (expansion)`, the same shape the terminal
+            // already writes and the same shape PART 9 §9's authored value takes
+            // above. It is the other half of that clause rather than an addition
+            // to it: §10f takes away the definition line this target used to
+            // lean on (carve#1178), so without the expansion here the author's
+            // text would be carried by nothing at all.
+            let key = strip_controls(&abbr.abbr);
+            // Inside a span carrying its own `abbr`, only the visible text
+            // (carve#1127).
+            if SUPPRESS_AUTOMATIC_ABBREVIATION.with(std::cell::Cell::get) {
+                return key;
+            }
+            // Bound cumulative expansion bytes (memory-amplification DoS): past
+            // the budget, degrade to the plain key exactly as the other targets
+            // do. See `crate::abbr_budget`.
+            if crate::abbr_budget::try_spend(abbr.expansion.len()) {
+                format!("{key} ({})", strip_controls(&abbr.expansion))
+            } else {
+                key
+            }
+        }
         InlineNode::Footnote(footnote) => {
             if let Some(inline) = &footnote.inline {
                 // Footnote content is its own context: render with a FRESH quote

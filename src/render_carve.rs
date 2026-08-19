@@ -34,6 +34,10 @@ struct CarveContext {
     /// Inside a table cell, where a leading `^` cannot open a caption: a
     /// caption marker is a BLOCK line, and a cell's content is not one.
     table_cell_depth: usize,
+    /// Inside an inline note's content, where PART 9 §16 disables note
+    /// recognition at every depth - so a `^[` written there opens nothing and
+    /// needs no escape.
+    note_content_depth: usize,
     after_caption_host: bool,
     paragraph_starts_after_caption_host: bool,
     escape_mode: EscapeMode,
@@ -55,15 +59,20 @@ enum EscapeMode {
     Conservative,
 }
 
-/// Render a tree that did NOT come from the parser, refusing at the ceiling.
+/// Render a tree as canonical Carve source.
 ///
-/// `Err` when the tree nests deeper than [`crate::MAX_RENDER_DEPTH`], naming the
-/// renderer and the bound (PART 9 §25). A parser-produced tree cannot reach it -
-/// the parse cap sits below the ceiling - so this fails only for a tree built
-/// through the API or read by `from_json`, which is the caller who can act on it.
-pub fn render_carve(doc: &Document) -> Result<String, crate::RenderDepthError> {
+/// Returns [`crate::RenderCarveError::Depth`] when a hand-built or ingested tree
+/// reaches the render ceiling, or [`crate::RenderCarveError::SourceUnspellable`]
+/// when emitting source would change the tree. Parser-produced trees cannot
+/// contain either condition.
+pub fn render_carve(doc: &Document) -> Result<String, crate::RenderCarveError> {
+    let source_watch = crate::render_carve_error::SourceSpellWatch::new();
     let watch = crate::render_depth::RenderDepthWatch::new();
-    watch.into_result(protect_leading_bom(render_carve_unguarded(doc)))
+    let output = protect_leading_bom(render_carve_unguarded(doc));
+    if let Some(error) = source_watch.error() {
+        return Err(error);
+    }
+    watch.into_result(output).map_err(Into::into)
 }
 
 /// A U+FEFF that would land at the head of the OUTPUT is written one column in.
@@ -111,16 +120,30 @@ thread_local! {
 /// Computed with `assigned_heading_ids` - the pass the renderer itself uses -
 /// over a copy with those ids removed, so this cannot answer differently from
 /// the parse it is predicting.
-fn redundant_heading_ids(doc: &Document) -> std::collections::BTreeSet<String> {
+pub(crate) fn redundant_heading_ids(doc: &Document) -> std::collections::BTreeSet<String> {
     let mut stripped = doc.clone();
     let mut had_any = false;
+    // The SAME two walks `assigned_heading_ids` makes, in the same order:
+    // `doc.children`, then the footnote definitions. Both halves are needed and
+    // in this order, because the answer is read off a POSITIONAL zip against
+    // that pass. Stopping at `doc.children` truncated the zip, so no heading in
+    // a footnote definition could ever be answered and every one of them was
+    // written back as authored source: `[^a]: # h` returned as `[^a]: {#h}`
+    // over an indented `# h`, the carve-rs#1105 shape in the one place this
+    // predicate could not see.
     strip_generated_ids(&mut stripped.children, &mut had_any);
+    for blocks in stripped.footnote_defs.values_mut() {
+        strip_generated_ids(blocks, &mut had_any);
+    }
     if !had_any {
         return std::collections::BTreeSet::new();
     }
     let fresh = crate::document_ids::assigned_heading_ids(&stripped, false);
     let mut present = Vec::new();
     collect_heading_ids(&doc.children, &mut present);
+    for blocks in doc.footnote_defs.values() {
+        collect_heading_ids(blocks, &mut present);
+    }
     present
         .into_iter()
         .zip(fresh)
@@ -153,10 +176,11 @@ fn strip_generated_ids(blocks: &mut [BlockNode], had_any: &mut bool) {
                 }
             }
             BlockNode::Figure(f) => {
-                if let FigureTarget::BlockQuote(b) = &mut f.target {
+                if let FigureTarget::BlockQuote(b) = &mut *f.target {
                     strip_generated_ids(&mut b.children, had_any);
                 }
             }
+            BlockNode::FigureGroup(g) => strip_generated_ids(&mut g.children, had_any),
             BlockNode::DefinitionList(dl) => {
                 for entry in dl.items.iter_mut() {
                     for definition in entry.definitions.iter_mut() {
@@ -184,10 +208,11 @@ fn collect_heading_ids(blocks: &[BlockNode], out: &mut Vec<Option<String>>) {
                 }
             }
             BlockNode::Figure(f) => {
-                if let FigureTarget::BlockQuote(b) = &f.target {
+                if let FigureTarget::BlockQuote(b) = &*f.target {
                     collect_heading_ids(&b.children, out);
                 }
             }
+            BlockNode::FigureGroup(g) => collect_heading_ids(&g.children, out),
             BlockNode::DefinitionList(dl) => {
                 for entry in dl.items.iter() {
                     for definition in entry.definitions.iter() {
@@ -243,13 +268,23 @@ fn render_carve_once(doc: &Document) -> String {
     conservative
 }
 
-/// The lines every EMPTIED description sits on, anywhere in the tree.
+/// The lines every EMPTIED marker-line container sits on, anywhere in the tree.
 ///
 /// Empty is the only case that matters: a description holding content writes
 /// that content and needs nothing from here. Collecting the set first keeps the
 /// map below empty - and its clones unmade - for every document that has no
 /// such description, which is all but two of the 638 corpus documents.
-fn emptied_description_lines(blocks: &[BlockNode], into: &mut HashSet<usize>) {
+fn emptied_marker_lines(blocks: &[BlockNode], into: &mut HashSet<usize>) {
+    emptied_marker_lines_at(blocks, 0, into);
+}
+
+/// `list_depth` is how many lists enclose `blocks`. It gates the emptied-item
+/// arm below and nothing else: at the TOP level the canonical form of an
+/// emptied item is `- +`, pinned by corpus fixtures 16-reference-link-4 and
+/// 117-footnote-definition-inside-a-container-is-collected-2, and it round-trips
+/// there because nothing follows at a shallower column for the marker to
+/// capture. carve-js and carve-php draw the line in the same place.
+fn emptied_marker_lines_at(blocks: &[BlockNode], list_depth: usize, into: &mut HashSet<usize>) {
     for block in blocks {
         match block {
             BlockNode::DefinitionList(list) => {
@@ -260,16 +295,18 @@ fn emptied_description_lines(blocks: &[BlockNode], into: &mut HashSet<usize>) {
                                 into.insert(pos.start_line);
                             }
                         } else {
-                            emptied_description_lines(&def.children, into);
+                            emptied_marker_lines_at(&def.children, list_depth, into);
                         }
                     }
                 }
             }
-            BlockNode::BlockQuote(quote) => emptied_description_lines(&quote.children, into),
-            BlockNode::Admonition(admonition) => {
-                emptied_description_lines(&admonition.children, into);
+            BlockNode::BlockQuote(quote) => {
+                emptied_marker_lines_at(&quote.children, list_depth, into)
             }
-            BlockNode::Div(div) => emptied_description_lines(&div.children, into),
+            BlockNode::Admonition(admonition) => {
+                emptied_marker_lines_at(&admonition.children, list_depth, into);
+            }
+            BlockNode::Div(div) => emptied_marker_lines_at(&div.children, list_depth, into),
             // The two other walks over this tree (`normalize_escapes_block` and
             // `redundant_heading_ids`) both descend into a figure's block-quote
             // target, so this one does too. No input reaches it today - a `dd`
@@ -277,12 +314,26 @@ fn emptied_description_lines(blocks: &[BlockNode], into: &mut HashSet<usize>) {
             // in it is not collected - but the asymmetry would be a trap the
             // moment that changes.
             BlockNode::Figure(figure) => {
-                if let FigureTarget::BlockQuote(quote) = &figure.target {
-                    emptied_description_lines(&quote.children, into);
+                if let FigureTarget::BlockQuote(quote) = &*figure.target {
+                    emptied_marker_lines_at(&quote.children, list_depth, into);
                 }
+            }
+            BlockNode::FigureGroup(group) => {
+                emptied_marker_lines_at(&group.children, list_depth, into)
             }
             BlockNode::List(list) => {
                 for item in &list.items {
+                    // A definition can be the only authored content on an
+                    // item's marker line. Collection hoists it to the document,
+                    // leaving an empty item whose own source span still names
+                    // that line. Put the definition back there; spelling the
+                    // item with `+` would attach the following outer content to
+                    // this inner item on the next parse (carve-rs#1144).
+                    if list_depth > 0 && item.children.is_empty() {
+                        if let Some(pos) = &item.pos {
+                            into.insert(pos.start_line);
+                        }
+                    }
                     // A definition the author wrote BETWEEN two of an item's
                     // blocks is the same case one level over: collecting it
                     // empties the line, and here that emptied line is what
@@ -299,11 +350,11 @@ fn emptied_description_lines(blocks: &[BlockNode], into: &mut HashSet<usize>) {
                             into.insert(line);
                         }
                     }
-                    emptied_description_lines(&item.children, into);
+                    emptied_marker_lines_at(&item.children, list_depth + 1, into);
                 }
             }
             BlockNode::Extension(extension) => {
-                emptied_description_lines(&extension.children, into);
+                emptied_marker_lines_at(&extension.children, list_depth, into);
             }
             _ => {}
         }
@@ -316,7 +367,7 @@ fn emptied_description_lines(blocks: &[BlockNode], into: &mut HashSet<usize>) {
 /// inside an item's gap. A definition on either belongs back on it.
 fn definitions_by_description_line(doc: &Document) -> HashMap<usize, DefinitionAtLine> {
     let mut lines = HashSet::new();
-    emptied_description_lines(&doc.children, &mut lines);
+    emptied_marker_lines(&doc.children, &mut lines);
     let mut out = HashMap::new();
     if lines.is_empty() {
         return out;
@@ -433,6 +484,7 @@ fn render_with_escapes_once(doc: &Document, escape_mode: EscapeMode) -> String {
         line_block_depth: 0,
         colon_fence_depth: 0,
         table_cell_depth: 0,
+        note_content_depth: 0,
         after_caption_host: false,
         paragraph_starts_after_caption_host: false,
         escape_mode,
@@ -627,6 +679,7 @@ fn normalize_escapes_block(block: &mut BlockNode) {
     match block {
         // No inline children: the label, destination and title are plain strings.
         BlockNode::LinkReferenceDefinition(_) => {}
+        BlockNode::CitationDefinition(d) => normalize_escapes_inlines(&mut d.children),
         BlockNode::Heading(h) => normalize_escapes_inlines(&mut h.children),
         BlockNode::Paragraph(p) => normalize_escapes_inlines(&mut p.children),
         BlockNode::List(l) => {
@@ -685,6 +738,14 @@ fn normalize_escapes_block(block: &mut BlockNode) {
             normalize_escapes_inlines(&mut f.caption);
             normalize_escapes_figure_target(f);
         }
+        BlockNode::FigureGroup(g) => {
+            if let Some(caption) = &mut g.caption {
+                normalize_escapes_inlines(caption);
+            }
+            for child in &mut g.children {
+                normalize_escapes_block(child);
+            }
+        }
         BlockNode::Extension(e) => {
             for child in &mut e.children {
                 normalize_escapes_block(child);
@@ -700,7 +761,7 @@ fn normalize_escapes_block(block: &mut BlockNode) {
 }
 
 fn normalize_escapes_figure_target(f: &mut crate::ast::Figure) {
-    match &mut f.target {
+    match &mut *f.target {
         FigureTarget::BlockQuote(b) => {
             for child in &mut b.children {
                 normalize_escapes_block(child);
@@ -759,6 +820,12 @@ fn hosts_caption(block: &BlockNode) -> bool {
         | BlockNode::CodeBlock(_)
         | BlockNode::BlockQuote(_)
         | BlockNode::BlockImage(_) => true,
+        // The group's closer hosts the caption slot (§4c). With the slot
+        // already filled, a following `^ ` paragraph re-parses as a paragraph
+        // either way and §4 asks for the minimal form - so only an
+        // UNCAPTIONED group makes the escape necessary (corpus
+        // 318-composite-figures-6 is the detached shape that needs it).
+        BlockNode::FigureGroup(group) => group.caption.is_none(),
         BlockNode::Paragraph(paragraph) if paragraph.children.len() == 1 => {
             match &paragraph.children[0] {
                 InlineNode::Image(image) => !image.src.is_empty(),
@@ -820,6 +887,30 @@ fn definition_in_gap(
     // string for a definition already marked written, so marking it first made
     // the gap render nothing and the document-level pass skip it too - the
     // definition disappeared from the document entirely.
+    let written = match definition {
+        DefinitionAtLine::Link(def) => render_block(&BlockNode::LinkReferenceDefinition(*def), ctx),
+        DefinitionAtLine::Footnote(label, blocks) => {
+            render_footnote_def_source(&label, &blocks, ctx)
+        }
+    };
+    if written.is_empty() {
+        return None;
+    }
+    ctx.written_in_place.insert(line);
+    Some(written)
+}
+
+/// Write the hoisted definition whose authored source line is `line`.
+///
+/// Rendering happens before the line is claimed because the document-level
+/// definition arm suppresses definitions that have already been written in
+/// place. This is shared by every marker-line container that collection can
+/// empty.
+fn definition_at_line(line: usize, ctx: &mut CarveContext) -> Option<String> {
+    if ctx.written_in_place.contains(&line) {
+        return None;
+    }
+    let definition = ctx.definitions_by_line.get(&line)?.clone();
     let written = match definition {
         DefinitionAtLine::Link(def) => render_block(&BlockNode::LinkReferenceDefinition(*def), ctx),
         DefinitionAtLine::Footnote(label, blocks) => {
@@ -990,6 +1081,11 @@ fn render_item_blocks(blocks: &[BlockNode], tight: bool, ctx: &mut CarveContext)
 
 fn render_block(node: &BlockNode, ctx: &mut CarveContext) -> String {
     match node {
+        // PART 12 section 18: renders nothing where it sits, on this target as
+        // on every other. The Carve writer parses without the Citations
+        // extension, so a definition line round-trips as the paragraph text it
+        // is there; a tree carrying the node arrived from somewhere else.
+        BlockNode::CitationDefinition(_) => String::new(),
         BlockNode::LinkReferenceDefinition(def) => {
             // Unless a definition list already wrote it on its own description
             // line, where the author put it - writing it twice would define the
@@ -1115,7 +1211,53 @@ fn render_block(node: &BlockNode, ctx: &mut CarveContext) -> String {
             }
             with_block_attrs(&rule.attrs, &marker.to_string().repeat(3))
         }
-        BlockNode::Table(table) => with_block_attrs(&table.attrs, &render_table(table, ctx)),
+        BlockNode::Table(table) => {
+            let mut attrs = table.attrs.clone();
+            if !table.columns.is_empty() {
+                let attrs = attrs.get_or_insert_with(Attrs::default);
+                let align = table
+                    .columns
+                    .iter()
+                    .map(|c| {
+                        c.align
+                            .map(|v| match v {
+                                TableAlign::Left => "left",
+                                TableAlign::Right => "right",
+                                TableAlign::Center => "center",
+                            })
+                            .unwrap_or("")
+                    })
+                    .collect::<Vec<_>>()
+                    .join(",");
+                let valign = table
+                    .columns
+                    .iter()
+                    .map(|c| {
+                        c.valign
+                            .map(|v| match v {
+                                TableVerticalAlign::Top => "top",
+                                TableVerticalAlign::Middle => "middle",
+                                TableVerticalAlign::Bottom => "bottom",
+                            })
+                            .unwrap_or("")
+                    })
+                    .collect::<Vec<_>>()
+                    .join(",");
+                let widths = table
+                    .columns
+                    .iter()
+                    .map(|c| c.width.map(|v| (v * 100.0).to_string()).unwrap_or_default())
+                    .collect::<Vec<_>>()
+                    .join(",");
+                for (key, value) in [("aligns", align), ("valigns", valign), ("widths", widths)] {
+                    if !value.chars().all(|c| c == ',') && !attrs.key_values.contains_key(key) {
+                        attrs.key_values.insert(key.to_owned(), value);
+                        attrs.order.push(AttrSlot::Key(key.to_owned()));
+                    }
+                }
+            }
+            with_block_attrs(&attrs, &render_table(table, ctx))
+        }
         BlockNode::Admonition(admonition) => {
             let title = admonition
                 .title
@@ -1125,7 +1267,7 @@ fn render_block(node: &BlockNode, ctx: &mut CarveContext) -> String {
             let label = admonition
                 .label
                 .as_ref()
-                .map(|label| format!(" [{}]", escape_bracket_text(label)))
+                .map(|label| format!(" [{}]", write_flat_bracket_run(label)))
                 .unwrap_or_default();
             let fence = colon_fence_for(ctx);
             let body = render_inside_colon_container(&admonition.children, ctx);
@@ -1154,7 +1296,7 @@ fn render_block(node: &BlockNode, ctx: &mut CarveContext) -> String {
             let label = div
                 .label
                 .as_ref()
-                .map(|label| format!(" [{}]", escape_bracket_text(label)))
+                .map(|label| format!(" [{}]", write_flat_bracket_run(label)))
                 .unwrap_or_default();
             let fence = colon_fence_for(ctx);
             let body = render_inside_colon_container(&div.children, ctx);
@@ -1165,13 +1307,36 @@ fn render_block(node: &BlockNode, ctx: &mut CarveContext) -> String {
             &with_reset_colon_fence_depth(ctx, |ctx| render_definition_list(&list.items, ctx)),
         ),
         BlockNode::Figure(figure) => with_block_attrs(&figure.attrs, &render_figure(figure, ctx)),
+        BlockNode::FigureGroup(group) => {
+            // §10g: the authored form - the attribute line where attributes
+            // exist, the bare opener, the children, the closer at the opener's
+            // width, and the group caption as a `^ ` line AFTER the closer.
+            let fence = colon_fence_for(ctx);
+            let body = render_inside_colon_container(&group.children, ctx);
+            let caption = group
+                .caption
+                .as_ref()
+                .map(|caption| format!("\n^ {}", render_inlines(caption, ctx)))
+                .unwrap_or_default();
+            with_block_attrs(
+                &group.attrs,
+                &format!("{fence} figure\n{body}\n{fence}{caption}"),
+            )
+        }
         BlockNode::BlockImage(image) => render_image(image),
         BlockNode::RawBlock(raw) => {
             let fence = safe_fence(&raw.content, 3);
-            format!(
-                "{fence}={}\n{}\n{fence}",
-                escape_format(&raw.format),
+            let all_blank = !raw.content.is_empty() && raw.content.chars().all(|c| c == '\n');
+            let body = if all_blank {
+                raw.content.clone()
+            } else {
                 protect_verbatim(&raw.content)
+            };
+            let separator = if all_blank { "" } else { "\n" };
+            format!(
+                "{fence}={}\n{}{separator}{fence}",
+                escape_format(&raw.format),
+                body
             )
         }
         BlockNode::AbbreviationDef(abbr) => {
@@ -1182,7 +1347,9 @@ fn render_block(node: &BlockNode, ctx: &mut CarveContext) -> String {
             )
         }
         BlockNode::Comment(comment) => {
-            if comment.block {
+            if comment.delimited {
+                format!("{{% {} %}}", comment.content)
+            } else if comment.block {
                 render_block_comment(&comment.content)
             } else {
                 format!("%% {}", comment.content)
@@ -1259,10 +1426,21 @@ fn render_list(node: &List, ctx: &mut CarveContext) -> String {
                 format!("{bullet}{item_attrs} ")
             };
         }
-        let mut content = render_item_blocks(&item.children, node.tight, ctx);
+        let (mut content, restored_marker_definition) = if item.children.is_empty() {
+            let restored = item
+                .pos
+                .as_ref()
+                .and_then(|pos| definition_at_line(pos.start_line, ctx));
+            let restored_marker_definition = restored.is_some();
+            (restored.unwrap_or_default(), restored_marker_definition)
+        } else {
+            (render_item_blocks(&item.children, node.tight, ctx), false)
+        };
         let trimmed_content = trim_non_nbsp(&content);
         if trimmed_content.is_empty()
-            || (trimmed_content.starts_with("[^") && trimmed_content.contains(": "))
+            || (!restored_marker_definition
+                && trimmed_content.starts_with("[^")
+                && trimmed_content.contains(": "))
         {
             content = "+".to_string();
         }
@@ -1400,18 +1578,8 @@ fn render_definition_list(items: &[DefinitionItem], ctx: &mut CarveContext) -> S
             // `:`, which re-parses into the term above it.
             if def.children.is_empty() {
                 let line = def.pos.as_ref().map(|pos| pos.start_line);
-                let written = line
-                    .and_then(|line| ctx.definitions_by_line.get(&line).cloned())
-                    .map(|definition| match definition {
-                        DefinitionAtLine::Link(def) => {
-                            render_block(&BlockNode::LinkReferenceDefinition(*def), ctx)
-                        }
-                        DefinitionAtLine::Footnote(label, blocks) => {
-                            render_footnote_def_source(&label, &blocks, ctx)
-                        }
-                    });
-                if let (Some(line), Some(written)) = (line, written) {
-                    ctx.written_in_place.insert(line);
+                let written = line.and_then(|line| definition_at_line(line, ctx));
+                if let Some(written) = written {
                     let mut written_lines = written.split('\n');
                     out.push(format!(":  {}", written_lines.next().unwrap_or_default()));
                     // A footnote body can be multi-line; its continuation lines
@@ -1447,16 +1615,21 @@ fn colon_fence_for(ctx: &CarveContext) -> String {
 /// cells - brought every body cell back aligned, so `parse(fmt(x)) == parse(x)`
 /// did not hold (carve issue 359).
 ///
-/// Two header shapes have no native spelling, because `header_cell` in the
-/// grammar is `'=' [alignment_marker] content` and admits neither an attribute
-/// block nor a span marker:
+/// One header shape has no native spelling, because `span_cell` is an
+/// ALTERNATIVE to `header_cell` in the grammar rather than a suffix of one:
 ///
 /// ```text
 /// | < | b |     a span marker promoted to a header cell
-/// |{.x} a | b | a header cell carrying attributes
 /// ```
 ///
-/// Those still need a delimiter row to promote the first row. It is emitted BARE
+/// An attributed header cell used to be the second such shape, and is not one
+/// any more: `header_cell` now reads `'=' [alignment_marker] [cell_attributes]
+/// content` (PART 9 §5 T10), so `|={.x} a |` spells it natively. Writing it as a
+/// data cell under a delimiter row was never wrong, but it is no longer the
+/// canonical form, and the fallback that produced it was the very shape the
+/// clause exists to retire.
+///
+/// The span shape still needs a delimiter row to promote the first row. It is emitted BARE
 /// (`|---|---|`), never with colons: the cells keep their own alignment markers,
 /// so the delimiter contributes structure only and cannot spill alignment down
 /// the column.
@@ -1467,11 +1640,10 @@ fn render_table(node: &Table, ctx: &mut CarveContext) -> String {
         .first()
         .is_some_and(|row| !row.cells.is_empty() && row.cells.iter().all(|cell| cell.header));
     let needs_delimiter = header_row
-        && node.rows.first().is_some_and(|row| {
-            row.cells
-                .iter()
-                .any(|cell| cell.span.is_some() || cell.attrs.is_some())
-        });
+        && node
+            .rows
+            .first()
+            .is_some_and(|row| row.cells.iter().any(|cell| cell.span.is_some()));
 
     for (row_index, row) in node.rows.iter().enumerate() {
         let mut cells = Vec::new();
@@ -1493,30 +1665,32 @@ fn render_table(node: &Table, ctx: &mut CarveContext) -> String {
     rows.join("\n")
 }
 
-struct RenderedCell {
-    text: String,
-    tight: bool,
+/// A cell's written form: its PREFIX glued to the opening pipe, then one
+/// space, then the content, then one space before the closing pipe.
+///
+/// The prefix has to touch the pipe - a space in front of `=` or of an
+/// attribute block makes it literal content - but the CONTENT does not, and
+/// the padded form is the readable one. It is also the safe one: the alignment
+/// sigil and the attribute slot are both read GLUED off the untrimmed cell, so
+/// a glued content character was handed to one of them (carve-rs#819). This
+/// used to be two guards, each enumerating the characters that merge; the
+/// space covers every cell without a list.
+///
+/// An EMPTY cell takes a single space, not two, so a column does not grow a
+/// space each time the document is formatted.
+fn pad_cell(prefix: &str, content: &str) -> String {
+    if content.is_empty() {
+        format!("{prefix} ")
+    } else {
+        format!("{prefix} {content} ")
+    }
 }
 
-fn render_table_row(cells: &[RenderedCell], attrs: &str) -> String {
-    format!(
-        "|{}|{}",
-        cells
-            .iter()
-            .map(|cell| {
-                if cell.tight {
-                    cell.text.clone()
-                } else {
-                    format!(" {} ", cell.text)
-                }
-            })
-            .collect::<Vec<_>>()
-            .join("|"),
-        attrs
-    )
+fn render_table_row(cells: &[String], attrs: &str) -> String {
+    format!("|{}|{}", cells.join("|"), attrs)
 }
 
-fn render_table_cell(cell: &TableCell, ctx: &mut CarveContext, mark_header: bool) -> RenderedCell {
+fn render_table_cell(cell: &TableCell, ctx: &mut CarveContext, mark_header: bool) -> String {
     let attrs = render_attrs(&cell.attrs);
     // A lone span marker keeps a SPACE before it. Glued to the opening pipe, `<`
     // is also the left-alignment sigil, and the two readings differ: the
@@ -1535,57 +1709,49 @@ fn render_table_cell(cell: &TableCell, ctx: &mut CarveContext, mark_header: bool
         } else {
             "<"
         };
-        return if attrs.is_empty() {
-            RenderedCell {
-                text: marker.to_string(),
-                tight: false,
-            }
-        } else {
-            RenderedCell {
-                text: format!("{attrs} {marker}"),
-                tight: true,
-            }
-        };
+        return pad_cell(&attrs, marker);
     }
     let align = align_marker(cell.align);
+    let valign = match cell.valign {
+        Some(TableVerticalAlign::Top) => "^",
+        Some(TableVerticalAlign::Middle) => "~",
+        Some(TableVerticalAlign::Bottom) => "v",
+        None => "",
+    };
+    let inherited_horizontal = if align.is_empty() && !valign.is_empty() {
+        "?"
+    } else {
+        ""
+    };
+    // CELL ATTRIBUTES BIND LAST (grammar §20 T10): the kind marker first, then
+    // the alignment marker, then the attribute block, glued to the marker run.
+    // Writing the block AHEAD of the markers had no spelling for an attributed
+    // header cell at all -- it emitted `|{#x}=R|`, which the reader takes as a
+    // data cell whose content is `=R`, so `toHtml(fmt(x)) != toHtml(x)` on
+    // every attributed header cell.
     let prefix = format!(
-        "{}{}{}",
-        attrs,
+        "{}{}{}{}{}",
         if cell.header && mark_header { "=" } else { "" },
-        align
+        align,
+        inherited_horizontal,
+        valign,
+        attrs
     );
     ctx.table_cell_depth += 1;
     let content = render_inlines(&cell.children, ctx);
     ctx.table_cell_depth -= 1;
-    // A MARKER AND THE CONTENT'S FIRST CHARACTER CAN MERGE INTO A LONGER MARKER
-    // RUN. The header `=` is read glued to the pipe and the ALIGNMENT sigil is
-    // read glued after it, off the UNTRIMMED cell - so a prefix carrying no
-    // alignment of its own hands its next character to the alignment reader.
-    // `| ~x~ |`, a header cell holding a strikethrough, came back as `|=~x~|`,
-    // which re-reads as a CENTERED column holding the text `x~`: the
-    // strikethrough gone and every cell in the column centered by a marker
-    // nobody wrote (carve-rs#819).
-    //
-    // ONE SPACE PARTS THEM, and it costs nothing: only the marker's position
-    // relative to the PIPE is significant, and the reader trims the padding
-    // after it. Escaping the character instead would be wrong - `~` opens a real
-    // strikethrough here, so a backslash would change the content rather than
-    // protect it. `<` and `>` reach this already escaped as literal text, which
-    // is why `~` was the only spelling that broke.
-    let separator =
-        if !prefix.is_empty() && align.is_empty() && content.starts_with(['<', '>', '~']) {
-            " "
-        } else {
-            ""
-        };
-    RenderedCell {
-        text: format!("{prefix}{separator}{content}"),
-        tight: !prefix.is_empty(),
-    }
+    // The space `pad_cell` writes after the prefix is what keeps the content's
+    // first character content. The header `=` is read glued to the pipe and the
+    // alignment sigil glued after it, off the UNTRIMMED cell, and a cell whose
+    // text begins with an attribute block used to hand that block to the
+    // reader as the CELL's attributes: `| ~x~ |` came back as `|=~x~|`, a
+    // CENTERED column holding `x~` (carve-rs#819). Padding every cell parts
+    // them without enumerating which characters merge.
+    pad_cell(&prefix, &content)
 }
 
 fn render_figure(node: &Figure, ctx: &mut CarveContext) -> String {
-    let target = match &node.target {
+    let target = match &*node.target {
         FigureTarget::Image(image) => render_image(image),
         FigureTarget::Table(table) => render_table(table, ctx),
         FigureTarget::BlockQuote(quote) => render_block(&BlockNode::BlockQuote(quote.clone()), ctx),
@@ -1602,7 +1768,7 @@ fn render_footnote_def_source(label: &str, blocks: &[BlockNode], ctx: &mut Carve
     // gives an empty definition an explicit spelling so formatting preserves
     // the definition and references to it keep resolving.
     if blocks.is_empty() {
-        return format!("[^{}]: {{empty}}", escape_footnote_label(label));
+        return format!("[^{}]: {{empty}}", write_flat_bracket_run(label));
     }
     let raw_body = render_blocks(blocks, ctx);
     let single_body;
@@ -1628,12 +1794,12 @@ fn render_footnote_def_source(label: &str, blocks: &[BlockNode], ctx: &mut Carve
     // of the note's pending attributes, so it reaches neither the endnote item
     // nor anything after it.
     if body.is_empty() {
-        return format!("[^{}]: {{empty}}", escape_footnote_label(label));
+        return format!("[^{}]: {{empty}}", write_flat_bracket_run(label));
     }
     let mut lines = body.split('\n');
     let mut def_lines = vec![format!(
         "[^{}]: {}",
-        escape_footnote_label(label),
+        write_flat_bracket_run(label),
         lines.next().unwrap_or_default()
     )];
     for line in lines {
@@ -1673,7 +1839,21 @@ fn render_inlines_with_caption(
             .get(idx + 1)
             .and_then(first_boundary)
             .unwrap_or_default();
-        let rendered = render_inline(node, ctx, prev, next, caption_can_open);
+        let opens_a_note = next_node_opens_a_note(
+            nodes.get(idx + 1),
+            ctx.note_content_depth > 0,
+            ctx.escape_mode,
+        );
+        let opens_verbatim = next_node_opens_a_verbatim_span(nodes.get(idx + 1));
+        let rendered = render_inline(
+            node,
+            ctx,
+            prev,
+            next,
+            caption_can_open,
+            opens_a_note,
+            opens_verbatim,
+        );
         // A COMMENT'S SEPARATING SPACE IS DECIDED ON THE EMITTED BYTES, not on
         // the previous NODE (carve#1028). `%%` opens a comment only at the
         // start of a line or after whitespace, so the writer owes one space
@@ -1684,8 +1864,52 @@ fn render_inlines_with_caption(
         // back as `{,y,}%% c`, and re-parsing carve-rs's own output turned the
         // comment into literal text. PART 11 section 1a states the test: read
         // the bytes the writer just produced, not the source it came from.
-        if matches!(node, InlineNode::Comment(_)) && needs_comment_space(&out) {
+        if matches!(node, InlineNode::Comment(c) if !c.delimited) && needs_comment_space(&out) {
             out.push(' ');
+        }
+        // PART 11 §7c, stated as the PROPERTY it rests on: a `hard_break` in a
+        // line block is written BARE where, and only where, re-reading that
+        // newline yields the same tree; everywhere else it is the PART 3 form.
+        // A bare newline re-derives a break at a boundary BETWEEN two body
+        // lines and nowhere else, because that is the boundary PART 9 §23
+        // hardens. The cases below are consequences of that property, not a
+        // list to check - the clause WAS a list, and the case it did not reach
+        // is the first one under it.
+        let mut rendered = rendered;
+        if ctx.line_block_depth > 0 && matches!(node, InlineNode::HardBreak(_)) {
+            // THE LAST BODY LINE, WHATEVER IT ENDS IN. The body's end is not a
+            // boundary between two lines, so nothing hardens there and the
+            // break can only be the AUTHOR'S own. The newline after it belongs
+            // to the closing fence, or to the blank line before the next
+            // stanza, so the backslash is written WITHOUT one. Measured on a
+            // last body line ending in a backslash, with and without a run of
+            // spaces before it: both lose the break outright, and neither has a
+            // lone trailing space for the case below to catch.
+            //
+            // WHICH LINE IS LAST IS DECIDED BY THE BREAKS, however the author
+            // spelled them: a break ENDS the line it stands at the end of, and
+            // what follows it is the next body line - including one that
+            // renders nothing. So this is the last NODE of the stanza's own
+            // sequence, and `inline_depth == 1` keeps it to that sequence: a
+            // break that merely ends the children of an emphasis has content
+            // after it on the same line.
+            let ends_the_stanza = ctx.inline_depth == 1 && idx + 1 == nodes.len();
+            // A LINE WHOSE LAST NODE IS A COMMENT IS EXEMPT, and the exemption
+            // is keyed on the NODE rather than on the line's position. The
+            // marker runs to the END of its line, so a trailing space there is
+            // INSIDE the note and not content PART 2 is about to take - and a
+            // backslash written to protect it lands in the note's own content,
+            // because the block layer claims the whole line before the inline
+            // parser sees it. An EMPTY comment line is where this bites.
+            let inside_a_comment = idx
+                .checked_sub(1)
+                .is_some_and(|prev| matches!(&nodes[prev], InlineNode::Comment(c) if !c.delimited));
+            if !inside_a_comment && (ends_the_stanza || verse_break_needs_backslash(&out)) {
+                out.push('\\');
+            }
+            if ends_the_stanza {
+                rendered = String::new();
+            }
         }
         out.push_str(&rendered);
         if matches!(node, InlineNode::SoftBreak(_)) {
@@ -1717,6 +1941,8 @@ fn render_inline(
     prev_char: char,
     next_char: char,
     caption_can_open: bool,
+    next_opens_a_note: bool,
+    next_opens_a_verbatim_span: bool,
 ) -> String {
     match node {
         // The one target that publishes it: the author wrote `%% note`, and
@@ -1724,6 +1950,15 @@ fn render_inline(
         // whitespace before the marker (it is not part of the text); the space
         // that puts it back is decided in `render_inlines`, on the bytes
         // already emitted for this line.
+        InlineNode::Comment(c) if c.delimited => format!("{{% {} %}}", c.content),
+        // An EMPTY comment is the marker and nothing else. The space after the
+        // marker separates it from content, and with no content it is line
+        // TRAILING whitespace, which PART 2 discards on the way back in and §7
+        // therefore lets the writer drop. Emitting it left every empty comment
+        // line one space long, and in a line block that space is exactly what
+        // §7c's LONE SPACE case looks for, so the writer proposed a backslash
+        // for a line that had nothing to protect (PART 11 §7c).
+        InlineNode::Comment(c) if c.content.is_empty() => "%%".to_string(),
         InlineNode::Comment(c) => format!("%% {}", c.content),
         InlineNode::Text(text) => escape_text(
             &resolve_nbsp_placeholder(&text.value, ctx.line_block_depth > 0),
@@ -1734,6 +1969,11 @@ fn render_inline(
             caption_can_open && ctx.table_cell_depth == 0,
             prev_char,
             next_char,
+            NeighbourEscape {
+                in_note_content: ctx.note_content_depth > 0,
+                next_node_opens_a_note: next_opens_a_note,
+                next_node_opens_a_verbatim_span: next_opens_a_verbatim_span,
+            },
         ),
         InlineNode::EscapedText(text) => format!("\\{}", text.value),
         InlineNode::SmartPunctuation(s) => s.value.clone(),
@@ -1757,7 +1997,8 @@ fn render_inline(
             format!("{body}{}", render_attrs(&emphasis.attrs))
         }
         InlineNode::Code(code) => {
-            format!("{}{}", render_code(&code.value), render_attrs(&code.attrs))
+            let value = spell_verse_empty_lines(&code.value, ctx.line_block_depth > 0);
+            format!("{}{}", render_code(&value), render_attrs(&code.attrs))
         }
         InlineNode::Link(link) => render_link(link, ctx),
         InlineNode::Image(image) => render_image(image),
@@ -1772,13 +2013,24 @@ fn render_inline(
         InlineNode::Math(math) => format!(
             "{}{}{}",
             if math.display { "$$" } else { "$" },
-            render_code(&math.content),
+            render_code(&spell_verse_empty_lines(
+                &math.content,
+                ctx.line_block_depth > 0
+            )),
             render_attrs(&math.attrs)
         ),
         InlineNode::RawInline(raw) => {
+            if raw.content.is_empty() {
+                crate::render_carve_error::record_unspellable(
+                    "raw_inline",
+                    "an empty raw inline has no Carve source spelling",
+                );
+                return String::new();
+            }
+            let content = spell_verse_empty_lines(&raw.content, ctx.line_block_depth > 0);
             format!(
                 "{}{{={}}}",
-                render_code(&raw.content),
+                render_code(&content),
                 escape_format(&raw.format)
             )
         }
@@ -1787,7 +2039,8 @@ fn render_inline(
             // the ordinary inline attribute block (same as a code span carries).
             // `render_code` widens the backtick fence when the content holds
             // backticks, so the round-trip re-parses identically.
-            format!("!{}{}", render_code(&lit.content), render_attrs(&lit.attrs))
+            let content = spell_verse_empty_lines(&lit.content, ctx.line_block_depth > 0);
+            format!("!{}{}", render_code(&content), render_attrs(&lit.attrs))
         }
         InlineNode::Symbol(symbol) => format!(
             ":{}:{}",
@@ -1811,16 +2064,38 @@ fn render_inline(
             render_inlines(&extension.children, ctx),
             render_attrs(&extension.attrs)
         ),
-        InlineNode::Abbreviation(abbr) => {
-            escape_text(&abbr.abbr, ctx.escape_mode, false, false, '\0', '\0')
-        }
+        // The neighbour characters are the REAL ones, not `\0`: this arm writes
+        // the abbreviation's own text into the same run as everything around
+        // it, so a `^` it ends on sits against whatever the next node writes.
+        // A `\0` here told the caret decision there was no neighbour, and an
+        // ingested abbreviation ending in `^` before a bracket run came back
+        // bare - bytes that re-parse as an inline note.
+        InlineNode::Abbreviation(abbr) => escape_text(
+            &abbr.abbr,
+            ctx.escape_mode,
+            false,
+            false,
+            prev_char,
+            next_char,
+            NeighbourEscape {
+                in_note_content: ctx.note_content_depth > 0,
+                next_node_opens_a_note: next_opens_a_note,
+                next_node_opens_a_verbatim_span: next_opens_a_verbatim_span,
+            },
+        ),
         InlineNode::Footnote(footnote) => {
             let body = if let Some(inline) = &footnote.inline {
-                format!("^[{}]", render_inlines(inline, ctx))
+                // PART 9 §16 parses a note's content with footnote recognition
+                // DISABLED, so a `^[` or a `[^` written inside it is ordinary
+                // text on the way back in and the writer owes it no escape.
+                ctx.note_content_depth += 1;
+                let content = render_inlines(inline, ctx);
+                ctx.note_content_depth -= 1;
+                format!("^[{content}]")
             } else {
                 format!(
                     "[^{}]",
-                    escape_footnote_label(footnote.id.as_deref().unwrap_or_default())
+                    write_flat_bracket_run(footnote.id.as_deref().unwrap_or_default())
                 )
             };
             format!("{body}{}", render_attrs(&footnote.attrs))
@@ -1981,6 +2256,43 @@ fn is_word_boundary(ch: char) -> bool {
     ch.is_ascii_alphanumeric() || ch == '_'
 }
 
+/// Spell an EMPTY LINE inside a verbatim value the one way verse can spell one.
+///
+/// A run that stays open in a line block swallows the line boundaries it crosses
+/// as newlines, and a comment-only line is emptied above it (PART 9 §23), so its
+/// value can hold an empty line. The writer cannot emit that line as a blank
+/// one: a blank line ENDS THE STANZA, and the run comes back split. A `\` is no
+/// help either - inside the run it is content, not a break.
+///
+/// A comment line is what is left, and it is exact rather than a workaround: it
+/// is removed at the BLOCK layer, before the run exists, so it leaves the
+/// emptied line the value already holds.
+///
+/// The FIRST and LAST segments are skipped, and neither is a line of its own:
+/// the first is the tail of the line the run OPENED on, and the last is the line
+/// the CLOSING fence goes out on. Spelling the last one would put the fence
+/// inside the comment, where the block layer takes it with the rest of the line
+/// and the run never closes at all.
+fn spell_verse_empty_lines(content: &str, in_line_block: bool) -> String {
+    if !in_line_block || !content.contains('\n') {
+        return content.to_string();
+    }
+    let segments: Vec<&str> = content.split('\n').collect();
+    let last = segments.len() - 1;
+    let mut out = String::with_capacity(content.len());
+    for (i, segment) in segments.iter().enumerate() {
+        if i > 0 {
+            out.push('\n');
+        }
+        if i > 0 && i < last && segment.is_empty() {
+            out.push_str("%%");
+            continue;
+        }
+        out.push_str(segment);
+    }
+    out
+}
+
 fn render_code(content: &str) -> String {
     let fence = safe_fence(content, 1);
     // Pad exactly where the parser strips, so the strip is reversible and fmt
@@ -2014,13 +2326,18 @@ fn code_fence_info(lang: Option<&str>, title: Option<&str>, label: Option<&str>)
         parts.push(format!("\"{}\"", escape_quoted(title)));
     }
     if let Some(label) = label {
-        parts.push(format!("[{}]", escape_bracket_text(label)));
+        parts.push(format!("[{}]", write_flat_bracket_run(label)));
     }
-    if parts.is_empty() {
-        String::new()
-    } else {
-        format!(" {}", parts.join(" "))
-    }
+    // NO SPACE between the fence run and the info string. `fenced_code_block`
+    // names the slot OPTIONAL and the no-space form CANONICAL: "The no-space
+    // form (```php) is canonical and is what the X->Carve converters emit." The
+    // reader stays lenient and accepts both, which is why a single-pass output
+    // check never caught this: ``` js re-parses to the same tree.
+    //
+    // The separators BETWEEN the parts are a different slot and stay: inside
+    // `code_fence_info` they are `space+`, mandatory, so ```js"t" is not a
+    // fence opener at all and joining without one would lose the header.
+    parts.join(" ")
 }
 
 fn safe_fence(content: &str, min: usize) -> String {
@@ -2060,11 +2377,24 @@ fn render_attrs(attrs: &Option<Attrs>) -> String {
     };
     let emit_key = |parts: &mut Vec<String>, key: &str| {
         if let Some(value) = attrs.key_values.get(key) {
-            parts.push(format!(
-                "{}={}",
-                escape_attr_key(key),
-                quote_attr_value(value)
-            ));
+            // EXACT key match, not case-insensitive: `LANG` and `lang` are
+            // different attribute names, so folding here rewrote
+            // `[x]{LANG=fr}` into `[x]{:fr}` and changed the name, which
+            // breaks PART 11 §1 (carve#1137).
+            if key == "lang" && is_language_tag(value) {
+                parts.push(format!(":{value}"));
+            } else if value.is_empty() && is_attr_identifier(key) {
+                // PART 11 §6c: a value-less attribute comes back as the bare
+                // name, which is the production the language has for it. A key
+                // needing escaping has no bare spelling to fall back to.
+                parts.push(escape_attr_key(key));
+            } else {
+                parts.push(format!(
+                    "{}={}",
+                    escape_attr_key(key),
+                    quote_attr_value(value)
+                ));
+            }
         }
     };
     if attrs.order.is_empty() {
@@ -2097,6 +2427,15 @@ fn render_attrs(attrs: &Option<Attrs>) -> String {
     } else {
         format!("{{{}}}", parts.join(" "))
     }
+}
+
+fn is_language_tag(value: &str) -> bool {
+    value.is_empty()
+        || value.split('-').all(|subtag| {
+            !subtag.is_empty()
+                && subtag.len() <= 8
+                && subtag.bytes().all(|byte| byte.is_ascii_alphanumeric())
+        })
 }
 
 fn quote_attr_value(value: &str) -> String {
@@ -2616,6 +2955,128 @@ fn collapse_breaks(text: &str) -> String {
     trim_non_nbsp(&out).to_string()
 }
 
+/// What an escape decision needs that one text node cannot say.
+///
+/// Both facts here are about what SURROUNDS the node: whether it sits inside a
+/// note's content, and what the node after it writes. A text node holds neither,
+/// and `boundary_text` cannot supply the second - it reports a code span's
+/// CONTENT while the span writes a backtick ahead of it.
+#[derive(Clone, Copy)]
+struct NeighbourEscape {
+    /// Inside an inline note's content, where PART 9 §16 disables note
+    /// recognition at every depth.
+    in_note_content: bool,
+    /// The `[` arrived as the NEXT node's boundary character, and that node
+    /// opens a note with it.
+    next_node_opens_a_note: bool,
+    /// The next node writes [`render_code`]'s backtick fence at byte zero, so a
+    /// `$`, `$$` or `!` this node ends on binds to it.
+    next_node_opens_a_verbatim_span: bool,
+}
+
+/// Whether the `^` before the `[` at `bracket` needs its escape.
+///
+/// PART 11 §2 escapes a character IF AND ONLY IF omitting the escape would
+/// change the re-parsed AST, and it takes the decision per OPENER OCCURRENCE.
+/// `^[` is only an occurrence where the note can FORM, and PART 9 §16 gives two
+/// shapes where it cannot: an empty or whitespace-only body is literal, and note
+/// recognition is DISABLED inside a note's own content, at every depth. Escaping
+/// either one is the over-escaping §2 calls a defect rather than a safe default.
+///
+/// Three of the four answers are certain and are taken here. The fourth is not:
+/// the run does not close in THIS text node, and a later node may still supply
+/// the `]` - or may not, which is the `x ^[a` that needs nothing. That one is
+/// handed to the minimal/conservative vote (§4) rather than guessed, which is
+/// what the `mode` argument is for: the two passes then differ, W3 parses both,
+/// and the bare form is emitted exactly when it re-parses the same.
+fn caret_needs_its_escape(
+    text: &str,
+    bracket: usize,
+    note: NeighbourEscape,
+    mode: EscapeMode,
+) -> bool {
+    if note.in_note_content {
+        return false;
+    }
+    let run = match text.get(bracket..) {
+        Some(rest) if rest.starts_with('[') => rest,
+        // The `[` is the next NODE's, so the run is not this node's to weigh -
+        // and it is not even certain to follow the caret in the output, since a
+        // node reporting a boundary character emits its own opener ahead of it.
+        // `next_node_opens_a_note` is that question, answered where the node was
+        // in hand.
+        _ => return note.next_node_opens_a_note,
+    };
+    match crate::parse::bracketed_run_body(run) {
+        Some(body) => !body.trim().is_empty(),
+        None => mode == EscapeMode::Conservative,
+    }
+}
+
+/// The characters a node writes VERBATIM at the very front of its output.
+///
+/// A different question from [`boundary_text`], which answers "what character is
+/// adjacent" for the emphasis and comment-spacing decisions and is happy to name
+/// one the node does not write first: a code span reports its content while
+/// writing a backtick ahead of it, escaped text reports the character while
+/// writing a backslash, and a mention, a tag and a symbol all write their sigil
+/// first. Only these three put their own value at byte zero.
+///
+/// The nodes that DO open with a bare `[` - a link, a span, a reference - report
+/// no boundary character at all, so they never reach this decision.
+fn leading_verbatim_text(node: &InlineNode) -> Option<&str> {
+    match node {
+        InlineNode::Text(text) => Some(&text.value),
+        InlineNode::SmartPunctuation(punctuation) => Some(&punctuation.value),
+        InlineNode::Abbreviation(abbr) => Some(&abbr.abbr),
+        _ => None,
+    }
+}
+
+/// Does the node FOLLOWING a text node begin, in the output, with the BACKTICK
+/// FENCE a `$`, `$$` or `!` sigil would bind to?
+///
+/// Asked of the node rather than of [`boundary_text`], which reports a code
+/// span's CONTENT and so cannot answer it: `a $` before a code span holding
+/// `x+y` sees `x` as its neighbour character while the output puts a backtick
+/// there.
+///
+/// A code span and a raw inline are the two nodes that write [`render_code`]'s
+/// fence at byte zero. Math and an inline literal write their own sigil first
+/// (`$` and `!`), so the fence is not adjacent to the text at all.
+fn next_node_opens_a_verbatim_span(next: Option<&InlineNode>) -> bool {
+    matches!(
+        next,
+        Some(InlineNode::Code(_)) | Some(InlineNode::RawInline(_))
+    )
+}
+
+/// Does the node FOLLOWING a text node begin, in the output, with a bracket run
+/// that opens a note?
+///
+/// This is what stops ``x ^`[t]` `` coming back ``x \^`[t]` ``: the code span
+/// reports a `[` as the adjacent character but writes a backtick, so the caret
+/// is not in front of a bracket in the output at all.
+fn next_node_opens_a_note(
+    next: Option<&InlineNode>,
+    in_note_content: bool,
+    mode: EscapeMode,
+) -> bool {
+    match next.and_then(leading_verbatim_text) {
+        Some(text) => caret_needs_its_escape(
+            text,
+            0,
+            NeighbourEscape {
+                in_note_content,
+                next_node_opens_a_note: false,
+                next_node_opens_a_verbatim_span: false,
+            },
+            mode,
+        ),
+        None => false,
+    }
+}
+
 fn escape_text(
     text: &str,
     mode: EscapeMode,
@@ -2623,7 +3084,38 @@ fn escape_text(
     caption_can_open: bool,
     previous_boundary: char,
     next_boundary: char,
+    note: NeighbourEscape,
 ) -> String {
+    // The offset of the first `$` of a trailing `$`-run, or of a trailing `!`,
+    // when a verbatim span follows this text in the OUTPUT. Both sigils bind to
+    // the backtick fence that node writes: `$` makes the span inline math, `$$`
+    // display math, `!` an inline literal - so text the source meant as text
+    // re-parses as markup that was never written, silently and with no
+    // diagnostic. PART 11 §2 escapes exactly this, "if and only if omitting the
+    // escape would change the re-parsed AST", and corpus-convert
+    // 05-markdown-verbatim-sigils-stay-text is the document that asks.
+    //
+    // The whole run is escaped, not just the last one: in `\$$`x`` the SECOND
+    // dollar still opens inline math. This mirrors carve-js
+    // (`escapeCarveConstructsSpelledLikeText`) and carve-php, which do it in
+    // their line-rewriting Markdown converters; carve-rs's importers are
+    // AST-first and hand the job to this writer, so this is where the rule has
+    // to live - and living here covers every importer at once rather than one.
+    //
+    // Only a run that REACHES the end of this node matters. A sigil with
+    // anything after it inside the node is not adjacent to the fence, and a
+    // literal backtick inside the node is escaped unconditionally below, so no
+    // span opens against it either.
+    let verbatim_sigil_at = note
+        .next_node_opens_a_verbatim_span
+        .then(|| {
+            let trimmed = text.trim_end_matches('$');
+            if trimmed.len() < text.len() {
+                return Some(trimmed.len());
+            }
+            text.strip_suffix('!').map(str::len)
+        })
+        .flatten();
     let mut out = String::new();
     // A `^` is only dangerous where a caption marker could be read: at the
     // start of a line. Anywhere else it is literal text - superscript is
@@ -2639,9 +3131,9 @@ fn escape_text(
     // every candidate in it, including the `:` that needs nothing. The corpus
     // pins that exact shape at 158-indented-image-and-caption-stay-literal.
     let mut at_line_start = opens_block_line;
-    let mut chars = text.chars().peekable();
+    let mut chars = text.char_indices().peekable();
     let mut previous = previous_boundary;
-    while let Some(ch) = chars.next() {
+    while let Some((offset, ch)) = chars.next() {
         // A CONTROL CHARACTER IS CONTENT, and the writer has to write it back.
         // This dropped 61 codepoints - every C0 control but tab/newline/return,
         // DEL, and the whole C1 block - none of which the parser or the HTML
@@ -2667,7 +3159,7 @@ fn escape_text(
         // of a line is not one - superscript is braced-only, so it is literal
         // text and needs no escape, which two of this repo's own tests already
         // pinned.
-        let next = chars.peek().copied().unwrap_or(next_boundary);
+        let next = chars.peek().map(|&(_, c)| c).unwrap_or(next_boundary);
         // SPACE ONLY, which is what the comment above already said and what the
         // code did not do. A tab after the marker leaves the line as prose -
         // corpus
@@ -2675,7 +3167,11 @@ fn escape_text(
         // is that document - so `^<TAB>` re-parses as text either way and PART 11
         // §4 asks for the minimal form when dropping the escape changes nothing.
         let caret_opens_a_caption = ch == '^' && at_line_start && caption_can_open && next == ' ';
-        let caret_opens_inline = ch == '^' && (next == '[' || previous == '{' || next == '}');
+        let caret_opens_inline = ch == '^'
+            && (previous == '{'
+                || next == '}'
+                || (next == '['
+                    && caret_needs_its_escape(text, offset + ch.len_utf8(), note, mode)));
         // A `:` opens something only where a marker can START: `:: term`,
         // `:  def` and `::: fence` are all recognized at the beginning of a
         // line, so the FIRST colon of that run is the one that has to be
@@ -2692,8 +3188,11 @@ fn escape_text(
         // HERE, rather than escaping the class it belongs to.
         let colon_cannot_open = ch == ':' && !at_line_start;
         at_line_start = ch == '\n';
-        let unconditional =
-            matches!(ch, '\\' | '`' | '"' | '\'') || caret_opens_a_caption || caret_opens_inline;
+        let opens_a_verbatim_construct = verbatim_sigil_at.is_some_and(|start| offset >= start);
+        let unconditional = matches!(ch, '\\' | '`' | '"' | '\'')
+            || caret_opens_a_caption
+            || caret_opens_inline
+            || opens_a_verbatim_construct;
         let candidate = matches!(
             ch,
             '*' | '_'
@@ -2732,7 +3231,30 @@ fn escape_plain_line(text: &str) -> String {
     text.replace('\n', " ")
 }
 
+/// An image's ALT TEXT, written between `![` and `]`.
+///
+/// ALT IS RAW. It is an HTML attribute, so nothing inside it is inline-parsed
+/// and no escape inside it is resolved: `![t\]z](/i.png)` gives `alt="t\]z"`,
+/// backslash and all. That is what makes escaping the wrong tool here - a `\]`
+/// the writer emits is not a neutralized bracket, it is two more characters of
+/// alt text, and the document says something else on the next read. It
+/// compounded, too, because each pass escaped the backslash the last pass wrote
+/// (markup-carve/carve#1197).
+///
+/// The run closes at the MATCHING `]`, by the same scan a link's text closes by,
+/// so the alt an author can write is exactly the alt that re-reads as itself and
+/// the writer's job is to put it back verbatim (markup-carve/carve#1206).
+///
+/// The fallback covers an alt with NO Carve spelling - a bare unbalanced `]`, or
+/// a run ending inside an unclosed code span. `parse` cannot produce one; an
+/// ingested AST can. Escaping is not a representation of that value either, but
+/// it keeps the image a well-formed image instead of letting a stray `]` split
+/// the line, and it settles: the escaped alt IS representable, so the pass after
+/// it writes the same bytes.
 fn escape_image_alt(text: &str) -> String {
+    if crate::parse::raw_bracket_run_closes(text) {
+        return text.to_string();
+    }
     text.replace('\\', "\\\\")
         .replace('[', "\\[")
         .replace(']', "\\]")
@@ -2830,16 +3352,42 @@ fn escape_quoted(text: &str) -> String {
     text.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
-fn escape_bracket_text(text: &str) -> String {
-    text.replace('\\', "\\\\").replace(']', "\\]")
+/// A FLAT raw bracketed run: a colon-fence or code-fence `[label]`, and a
+/// footnote's `[^id]` in both its definition and its references.
+///
+/// The same rule as an alt text and for the same reason - the value is raw, so
+/// an escape the writer emits reaches the reader as two characters of content
+/// rather than as a neutralized bracket - but a narrower close. These readers
+/// take the run up to the FIRST `]`, with no balance and no escape, so a run is
+/// representable exactly when it holds neither a `]` nor a line break.
+///
+/// One function for one rule. It was written twice and both spellings escaped,
+/// so `::: [a\b]` and `[^n\m]` grew a backslash on every format pass - a div
+/// label is rendered, so that document said something new each time, and the
+/// other three merely refused to settle.
+///
+/// WRITTEN AS AUTHORED WITH NO FALLBACK, unlike an alt text. A value holding a
+/// `]` has no spelling here either, but the escape is not a spelling of it: each
+/// of these readers requires the run to be the whole of what follows, so
+/// `[a\]b]` fails to match exactly as `[a]b]` does, and `::: [a\]b]` and
+/// `::: [a]b]` render the same paragraph, container and all. Where the construct
+/// survives as text instead - a code fence, a footnote definition - the escape
+/// only adds a backslash the reader can see. The branch would change no output
+/// anywhere, which is a branch that cannot fail, so it is not written.
+fn write_flat_bracket_run(text: &str) -> &str {
+    text
 }
 
-fn escape_footnote_label(text: &str) -> String {
-    escape_bracket_text(text)
-}
-
+/// NOT the same rule, deliberately.
+///
+/// [`detect_abbreviation_def`](crate::parse) reads the term as
+/// `is_ascii_alphanumeric`, per PART 5's `(letter | digit)+`, so neither
+/// character this escapes can reach it from a parse - and an ingested
+/// abbreviation carrying one has no `*[…]:` spelling with or without the
+/// backslash. Left as it stands rather than folded into the function above,
+/// which would claim a shared rule where there is only a shared shape.
 fn escape_abbr(text: &str) -> String {
-    escape_bracket_text(text)
+    text.replace('\\', "\\\\").replace(']', "\\]")
 }
 
 fn escape_identifier(text: &str) -> String {
@@ -2915,7 +3463,14 @@ fn escape_attr_name_value(text: &str) -> String {
         .collect()
 }
 
-fn is_attr_identifier(text: &str) -> bool {
+/// Whether a name has a BARE spelling in Carve attribute syntax.
+///
+/// The writer's rule, shared with the HTML importer so the importer cannot keep
+/// a name the writer would silently rewrite: `escape_attr_key` strips every
+/// character this rejects, so `xlink:href` would come back as `xlinkhref` and
+/// the document would claim an attribute the author never wrote
+/// (carve-rs#1060).
+pub(crate) fn is_attr_identifier(text: &str) -> bool {
     let mut chars = text.chars();
     chars
         .next()
@@ -2972,6 +3527,45 @@ fn needs_comment_space(emitted: &str) -> bool {
         None => false,
         Some(last) => last != '\n' && !last.is_whitespace(),
     }
+}
+
+/// Does a line block's hard break need its backslash, given the bytes already
+/// emitted for the line it ends (PART 11 §7c)?
+///
+/// Consequences §7c draws from its property, all of them about the line the
+/// break ENDS and all of them places where §7's own precondition - "where the
+/// PARSER discards trailing whitespace the writer may too" - does not hold:
+///
+///   - the line's content is EMPTY. A bare newline leaves a BLANK line, which
+///     ends the stanza, so one stanza is written back as two.
+///   - the line's content ends in a LONE trailing column. A bare newline makes
+///     it line-trailing, where PART 2 drops it. A run of TWO OR MORE columns is
+///     already NBSP content (PART 9 §23 MEDIAL GAPS) and survives on its own.
+///
+/// A LONE TRAILING COLUMN IS NOT ONLY A SPACE. An ESCAPED space is one too, and
+/// it is lost harder: §2a writes an escaped space at the END of a line as a bare
+/// backslash, on the ground that canonical source must not depend on an editor
+/// preserving the byte after it - and in verse a bare backslash at end of line
+/// is a HARD BREAK, so the column does not come back at all. The `\` this
+/// returns is what puts the escape back INSIDE the line, where §2a's expansion
+/// keeps its space. Derived from the property rather than read off the clause's
+/// list, which names the plain space only.
+///
+/// THE LAST BODY LINE, the remaining consequence, is decided by the caller: it
+/// is a fact about the break's place in the stanza, not about the bytes on its
+/// line.
+fn verse_break_needs_backslash(emitted: &str) -> bool {
+    let line = match emitted.rfind('\n') {
+        Some(at) => &emitted[at + 1..],
+        None => emitted,
+    };
+    if line.is_empty() {
+        return true;
+    }
+    if line.ends_with(sentinel(S_ESCAPED_SPACE)) {
+        return true;
+    }
+    line.ends_with(' ') && !line.ends_with("  ")
 }
 
 fn last_boundary(node: &InlineNode) -> Option<char> {

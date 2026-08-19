@@ -28,6 +28,11 @@ TARGET = ROOT / "src/wire_fields.rs"
 
 HELPERS = ("attrs", "pos")
 
+# Engine features whose normative schema change is still on an unmerged spec
+# branch. Keep the pinned corpus revision unchanged; once that pin contains a
+# field, the set insertion below is simply a no-op.
+PENDING_NODE_FIELDS = {"comment": ("delimited",)}
+
 
 def render(schema: dict) -> str:
     defs = schema.get("$defs", {})
@@ -43,12 +48,38 @@ def render(schema: dict) -> str:
             raise SystemExit(f"{type_const} is not closed in the schema; section 11 has nothing to check against")
         by_type[type_const] = sorted(properties)
 
+    for type_const, fields in PENDING_NODE_FIELDS.items():
+        if type_const not in by_type:
+            raise SystemExit(f"pending field names unknown node type {type_const}")
+        by_type[type_const] = sorted(set(by_type[type_const]).union(fields))
+
     helpers: dict[str, list[str]] = {}
     for name in HELPERS:
         definition = defs.get(name, {})
         if definition.get("additionalProperties") is not False:
             raise SystemExit(f"{name} is not closed in the schema; section 11 has nothing to check against")
         helpers[name] = sorted(definition["properties"])
+
+    # The same kind of record, but written INLINE on a node instead of pulled
+    # from `$defs` - `table.rowGroups`. `HELPERS` names the shared ones and
+    # cannot see these, so a key inside one rode straight in. Keyed by property
+    # name, which is how the runtime check reaches an object-valued property.
+    inline_objects: dict[str, list[str]] = {}
+    for definition in defs.values():
+        properties = definition.get("properties")
+        if not properties:
+            continue
+        type_const = properties.get("type", {}).get("const")
+        if not isinstance(type_const, str):
+            continue
+        for property_name, property_schema in sorted(properties.items()):
+            if property_schema.get("type") != "object":
+                continue
+            own = property_schema.get("properties")
+            if not own or property_schema.get("additionalProperties") is not False:
+                continue
+            inline_objects[property_name] = sorted(own)
+    helpers.update(inline_objects)
 
     # A record the schema CLOSES but gives no `type` of its own, reached through
     # an array-valued property of a typed node - `citation_group.items`, whose
@@ -81,6 +112,24 @@ def render(schema: dict) -> str:
                 continue  # open in the schema; section 11 has nothing to check
             key = f"{type_const}.{property_name}"
             untyped_arrays[key] = sorted(target_properties)
+
+        # And the same, one level down inside an inline object: the body groups
+        # of `table.rowGroups.bodies` are records the schema closes, reached
+        # through neither a `$defs` ref nor a top-level property. The runtime
+        # check walks the dotted path.
+        for property_name, property_schema in sorted(properties.items()):
+            if property_schema.get("type") != "object":
+                continue
+            for sub_name, sub_schema in sorted((property_schema.get("properties") or {}).items()):
+                if sub_schema.get("type") != "array":
+                    continue
+                items = sub_schema.get("items") or {}
+                item_properties = items.get("properties")
+                if not item_properties or items.get("additionalProperties") is not False:
+                    continue
+                if isinstance(item_properties.get("type", {}).get("const"), str):
+                    continue  # a typed node; WIRE_FIELDS already closes it
+                untyped_arrays[f"{type_const}.{property_name}.{sub_name}"] = sorted(item_properties)
 
     def table(entries: dict[str, list[str]], name: str, doc: str) -> str:
         rows = "".join(

@@ -1,6 +1,7 @@
 //! A span marker with nothing to merge renders an EMPTY cell, not dropped
 //! (spec PART 9 §5): a `^` in the first row, a `<` in the first column.
 //! Matches carve-js / carve-php.
+//! PART 10 §T9 gives cells in a promoted head-row run `scope="col"`.
 
 #[test]
 fn orphan_rowspan_marker_is_empty_cell() {
@@ -28,7 +29,7 @@ fn blocked_colspan_marker_is_empty_cell() {
         carve::to_html("| A | B | C |\n|---|---|---|\n| x | y | z |\n| ^ | < | d |"),
         concat!(
             "<table>\n",
-            "  <thead><tr><th>A</th><th>B</th><th>C</th></tr></thead>\n",
+            "  <thead><tr><th scope=\"col\">A</th><th scope=\"col\">B</th><th scope=\"col\">C</th></tr></thead>\n",
             "  <tbody>\n",
             "    <tr><td rowspan=\"2\">x</td><td>y</td><td>z</td></tr>\n",
             "    <tr><td></td><td>d</td></tr>\n",
@@ -46,7 +47,7 @@ fn colspan_marker_scans_left_past_consumed_rowspan_cell() {
         ),
         concat!(
             "<table>\n",
-            "  <thead><tr><th>p</th><th>q</th><th>r</th><th>s</th></tr></thead>\n",
+            "  <thead><tr><th scope=\"col\">p</th><th scope=\"col\">q</th><th scope=\"col\">r</th><th scope=\"col\">s</th></tr></thead>\n",
             "  <tbody>\n",
             "    <tr><td>a</td><td rowspan=\"2\">b</td><td>c</td><td>d</td></tr>\n",
             "    <tr><td colspan=\"2\">p</td><td>e</td></tr>\n",

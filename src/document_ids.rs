@@ -317,6 +317,12 @@ impl Seeder {
                 self.reserve_attrs(&p.attrs);
                 self.walk_inlines(&p.children);
             }
+            BlockNode::CitationDefinition(d) => {
+                // The entry is inline content that renders in the references
+                // list, so an id authored inside it is claimed like any other.
+                self.reserve_attrs(&d.attrs);
+                self.walk_inlines(&d.children);
+            }
             BlockNode::CodeBlock(c) => self.reserve_attrs(&c.attrs),
             BlockNode::List(l) => {
                 self.reserve_attrs(&l.attrs);
@@ -355,7 +361,7 @@ impl Seeder {
             }
             BlockNode::Figure(f) => {
                 self.reserve_attrs(&f.attrs);
-                match &f.target {
+                match &*f.target {
                     FigureTarget::Image(i) => self.reserve_attrs(&i.attrs),
                     FigureTarget::BlockQuote(b) => self.walk_blockquote(b),
                     FigureTarget::Table(t) => self.walk_table(t),
@@ -366,6 +372,13 @@ impl Seeder {
                     }
                 }
                 self.walk_inlines(&f.caption);
+            }
+            BlockNode::FigureGroup(g) => {
+                self.reserve_attrs(&g.attrs);
+                self.walk_blocks(&g.children);
+                if let Some(caption) = &g.caption {
+                    self.walk_inlines(caption);
+                }
             }
             BlockNode::Extension(e) => {
                 self.reserve_attrs(&e.attrs);

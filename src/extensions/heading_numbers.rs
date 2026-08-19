@@ -165,6 +165,7 @@ fn number_blocks(blocks: &mut [BlockNode], in_blockquote: bool, state: &mut Numb
             BlockNode::BlockQuote(b) => number_blocks(&mut b.children, true, state),
             BlockNode::Div(d) => number_blocks(&mut d.children, in_blockquote, state),
             BlockNode::Admonition(a) => number_blocks(&mut a.children, in_blockquote, state),
+            BlockNode::FigureGroup(g) => number_blocks(&mut g.children, in_blockquote, state),
             BlockNode::List(l) => {
                 for item in &mut l.items {
                     number_blocks(&mut item.children, in_blockquote, state);
@@ -181,7 +182,7 @@ fn number_blocks(blocks: &mut [BlockNode], in_blockquote: bool, state: &mut Numb
                 // Only a blockquote target can hold a heading; the resolver
                 // assigns its heading an id (as a quoted heading), so mirror
                 // that descent for first-id-wins.
-                if let FigureTarget::BlockQuote(b) = &mut f.target {
+                if let FigureTarget::BlockQuote(b) = &mut *f.target {
                     number_blocks(&mut b.children, true, state);
                 }
             }
@@ -330,9 +331,15 @@ fn rewrite_links_blocks(
             }
             BlockNode::Figure(f) => {
                 rewrite_links_inlines(&mut f.caption, by_id, opts);
-                if let FigureTarget::BlockQuote(b) = &mut f.target {
+                if let FigureTarget::BlockQuote(b) = &mut *f.target {
                     rewrite_links_blocks(&mut b.children, by_id, opts);
                 }
+            }
+            BlockNode::FigureGroup(g) => {
+                if let Some(caption) = &mut g.caption {
+                    rewrite_links_inlines(caption, by_id, opts);
+                }
+                rewrite_links_blocks(&mut g.children, by_id, opts);
             }
             BlockNode::Extension(e) => rewrite_links_blocks(&mut e.children, by_id, opts),
             _ => {}

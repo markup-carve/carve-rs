@@ -558,6 +558,9 @@ fn the_render_cap_still_bounds_a_hand_built_ast() {
         for depth in [carve::MAX_RENDER_DEPTH + 1, carve::MAX_RENDER_DEPTH + 200] {
             let err = carve::render_carve(&build(depth))
                 .expect_err("past the ceiling the canonical writer refuses");
+            let carve::RenderCarveError::Depth(err) = err else {
+                panic!("the ceiling must return a depth refusal");
+            };
             assert_eq!(err.renderer(), "carve");
             assert_eq!(err.limit(), carve::MAX_RENDER_DEPTH);
         }

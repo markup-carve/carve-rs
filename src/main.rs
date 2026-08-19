@@ -30,6 +30,13 @@ enum StampMode {
 }
 
 fn main() -> ExitCode {
+    let raw_args = std::env::args().skip(1).collect::<Vec<_>>();
+    if raw_args.first().map(String::as_str) == Some("merge") {
+        return run_merge(&raw_args[1..]);
+    }
+    if raw_args.first().map(String::as_str) == Some("migrate") {
+        return run_migrate(&raw_args[1..]);
+    }
     // Bundled interactive extensions, owned here so they outlive `options`
     // (which borrows them). Registered only when `--extensions` is passed, so
     // the default CLI behavior is unchanged. They are degradation-safe: in
@@ -43,6 +50,7 @@ fn main() -> ExitCode {
     // wavedrom, abc, vega-lite, chart), owned here so it outlives `options`.
     let fenced_presets = carve::FencedRender::presets();
     let math_block = carve::MathBlock::new();
+    let mut quote_locale: Option<String> = None;
 
     let mut options = carve::Options::new();
     let mut format = OutputFormat::Html;
@@ -140,6 +148,13 @@ fn main() -> ExitCode {
                     }
                 };
             }
+            "--quote-locale" => {
+                let Some(value) = args.next() else {
+                    eprintln!("carve: --quote-locale requires a locale");
+                    return ExitCode::FAILURE;
+                };
+                quote_locale = Some(value);
+            }
             "--profile-base-host" => {
                 let Some(value) = args.next() else {
                     eprintln!("carve: --profile-base-host requires a host");
@@ -188,6 +203,10 @@ fn main() -> ExitCode {
         for preset in &fenced_presets {
             options = options.with_extension(preset);
         }
+    }
+    let smart_quotes = quote_locale.as_deref().map(carve::SmartQuotes::new);
+    if let Some(extension) = &smart_quotes {
+        options = options.with_extension(extension);
     }
 
     let source = match input_paths.first().map(String::as_str) {
@@ -302,6 +321,316 @@ fn main() -> ExitCode {
     ExitCode::SUCCESS
 }
 
+fn run_migrate(args: &[String]) -> ExitCode {
+    let mut mode = carve::HtmlImportMode::Safe;
+    let mut adapter = carve::HtmlImportAdapter::Generic;
+    let mut report_path: Option<&str> = None;
+    let mut check_loss = false;
+    let mut input: Option<&str> = None;
+    let mut from: Option<String> = None;
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--from" => {
+                i += 1;
+                from = args.get(i).cloned();
+            }
+            // Both flags read the SAME vocabulary the report writes back out,
+            // so a mode the CLI takes is always a mode the schema admits.
+            "--mode" => {
+                i += 1;
+                mode = match args.get(i).map(String::as_str) {
+                    Some(value) => match carve::HtmlImportMode::from_name(value) {
+                        Some(mode) => mode,
+                        None => {
+                            eprintln!("carve migrate: unknown mode {value}");
+                            return ExitCode::FAILURE;
+                        }
+                    },
+                    None => {
+                        eprintln!("carve migrate: --mode requires a value");
+                        return ExitCode::FAILURE;
+                    }
+                };
+            }
+            "--adapter" => {
+                i += 1;
+                adapter = match args.get(i).map(String::as_str) {
+                    Some(value) => match carve::HtmlImportAdapter::from_name(value) {
+                        Some(adapter) => adapter,
+                        None => {
+                            eprintln!("carve migrate: unknown adapter {value}");
+                            return ExitCode::FAILURE;
+                        }
+                    },
+                    None => {
+                        eprintln!("carve migrate: --adapter requires a value");
+                        return ExitCode::FAILURE;
+                    }
+                };
+            }
+            "--report" => {
+                i += 1;
+                report_path = args.get(i).map(String::as_str);
+            }
+            "--check-loss" => check_loss = true,
+            "-" => input = Some("-"),
+            value if value.starts_with('-') => {
+                eprintln!("carve migrate: unknown option {value}");
+                return ExitCode::FAILURE;
+            }
+            value => {
+                if input.is_some() {
+                    eprintln!("carve migrate: takes at most one input file");
+                    return ExitCode::FAILURE;
+                }
+                input = Some(value);
+            }
+        }
+        i += 1;
+    }
+    let from = match from.as_deref() {
+        Some("html") | Some("markdown") | Some("md") | Some("djot") => {
+            from.clone().unwrap_or_default()
+        }
+        Some(other) => {
+            eprintln!("carve migrate: unknown source format {other}");
+            return ExitCode::FAILURE;
+        }
+        None => {
+            eprintln!("carve migrate: --from html, markdown or djot is required");
+            return ExitCode::FAILURE;
+        }
+    };
+    let source = match input {
+        None | Some("-") => {
+            let mut s = String::new();
+            if io::stdin().read_to_string(&mut s).is_err() {
+                return ExitCode::FAILURE;
+            }
+            s
+        }
+        Some(path) => match std::fs::read_to_string(path) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("carve migrate: cannot read {path}: {e}");
+                return ExitCode::FAILURE;
+            }
+        },
+    };
+    // Markdown and Djot have no import policy to apply and nothing to report
+    // as lost: each parses to a Carve document whole, so the mode/adapter/
+    // report options are HTML's alone and are silently unused here rather than
+    // rejected.
+    if from != "html" {
+        let carve = if from == "djot" {
+            carve::djot_to_carve(&source)
+        } else {
+            carve::markdown_to_carve(&source)
+        };
+        print!("{carve}");
+
+        return ExitCode::SUCCESS;
+    }
+
+    let options = carve::HtmlImportOptions {
+        mode,
+        adapter,
+        ..Default::default()
+    };
+    let result = match carve::html_to_carve(&source, &options) {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("carve migrate: {e:?}");
+            return ExitCode::FAILURE;
+        }
+    };
+    print!("{}", result.value);
+    let report = html_report_json(&result.report);
+    if let Some(path) = report_path {
+        if path == "-" {
+            eprintln!("{report}");
+        } else if let Err(e) = std::fs::write(path, format!("{report}\n")) {
+            eprintln!("carve migrate: cannot write report {path}: {e}");
+            return ExitCode::FAILURE;
+        }
+    }
+    if check_loss && !result.report.diagnostics.is_empty() {
+        ExitCode::FAILURE
+    } else {
+        ExitCode::SUCCESS
+    }
+}
+
+/// The HTML import report as JSON (the spec's HTML import contract,
+/// "Result and diagnostics").
+///
+/// Every spelling comes from the vocabulary's own `as_str`, never from a copy
+/// kept here: `tests/the_report_answers_to_the_published_schema.rs` holds
+/// those to `resources/html-import-schema.json`, and a second table in this
+/// file would be outside what that test can see.
+fn html_report_json(report: &carve::HtmlImportReport) -> String {
+    fn esc(s: &str) -> String {
+        format!("{s:?}")
+    }
+    let diagnostics = report
+        .diagnostics
+        .iter()
+        .map(|d| {
+            format!(
+                "{{\"code\":\"{}\",\"message\":{},\"severity\":\"{}\"{}}}",
+                d.code.as_str(),
+                esc(&d.message),
+                d.severity.as_str(),
+                d.path
+                    .as_ref()
+                    .map(|p| format!(",\"path\":{}", esc(p)))
+                    .unwrap_or_default()
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+    format!(
+        "{{\"mode\":\"{}\",\"adapter\":\"{}\",\"diagnostics\":[{}]}}",
+        report.mode.as_str(),
+        report.adapter.as_str(),
+        diagnostics
+    )
+}
+
+fn run_merge(args: &[String]) -> ExitCode {
+    if args.iter().any(|arg| arg == "-h" || arg == "--help") {
+        println!("usage: carve merge [--json] BASE OURS THEIRS");
+        return ExitCode::SUCCESS;
+    }
+    if let Some(option) = args
+        .iter()
+        .find(|arg| arg.starts_with('-') && arg.as_str() != "--json")
+    {
+        eprintln!("carve merge: unknown option: {option}");
+        return ExitCode::from(2);
+    }
+    let json = args.iter().any(|arg| arg == "--json");
+    let paths = args
+        .iter()
+        .filter(|arg| arg.as_str() != "--json")
+        .collect::<Vec<_>>();
+    if paths.len() != 3 {
+        eprintln!("carve merge: takes exactly three files (base, ours, theirs)");
+        return ExitCode::from(2);
+    }
+    let mut documents = Vec::new();
+    for path in paths {
+        let source = match std::fs::read_to_string(path) {
+            Ok(source) => source,
+            Err(error) => {
+                eprintln!("carve merge: cannot read {path}: {error}");
+                return ExitCode::from(2);
+            }
+        };
+        documents.push(carve::parse(&source));
+    }
+    match carve::merge_ast(&documents[0], &documents[1], &documents[2]) {
+        Ok(carve::MergeResult::Merged(document)) => {
+            let output = if json {
+                format!(
+                    "{{\"ok\":true,\"ast\":{},\"conflicts\":[]}}",
+                    carve::to_json(&document)
+                )
+            } else {
+                match carve::render_carve(&document) {
+                    Ok(output) => output,
+                    Err(error) => {
+                        eprintln!("carve merge: cannot serialize result: {error}");
+                        return ExitCode::FAILURE;
+                    }
+                }
+            };
+            print!("{output}");
+            if !output.ends_with('\n') {
+                println!();
+            }
+            ExitCode::SUCCESS
+        }
+        Ok(carve::MergeResult::Conflicts(conflicts)) => {
+            if json {
+                let items = conflicts
+                    .iter()
+                    .map(|item| {
+                        let deleted = if item.base.is_none()
+                            || item.ours.is_none()
+                            || item.theirs.is_none()
+                        {
+                            format!(
+                                ",\"deleted\":{{\"base\":{},\"ours\":{},\"theirs\":{}}}",
+                                item.base.is_none(),
+                                item.ours.is_none(),
+                                item.theirs.is_none(),
+                            )
+                        } else {
+                            String::new()
+                        };
+                        format!(
+                            "{{\"path\":{},\"reason\":{},\"base\":{},\"ours\":{},\"theirs\":{}{deleted}}}",
+                            json_string(&item.path),
+                            json_string(merge_reason(item.reason)),
+                            item.base.as_deref().unwrap_or("null"),
+                            item.ours.as_deref().unwrap_or("null"),
+                            item.theirs.as_deref().unwrap_or("null")
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join(",");
+                println!("{{\"ok\":false,\"ast\":null,\"conflicts\":[{items}]}}");
+            } else {
+                for item in &conflicts {
+                    eprintln!("conflict {} at {}", merge_reason(item.reason), item.path);
+                }
+                eprintln!(
+                    "{} structural conflict{}",
+                    conflicts.len(),
+                    if conflicts.len() == 1 { "" } else { "s" }
+                );
+            }
+            ExitCode::FAILURE
+        }
+        Err(error) => {
+            eprintln!("carve merge: {error}");
+            ExitCode::from(2)
+        }
+    }
+}
+
+fn merge_reason(reason: carve::MergeConflictReason) -> &'static str {
+    match reason {
+        carve::MergeConflictReason::BothChanged => "both-changed",
+        carve::MergeConflictReason::DeleteEdit => "delete-edit",
+        carve::MergeConflictReason::ConcurrentSequenceEdit => "concurrent-sequence-edit",
+    }
+}
+
+fn json_string(value: &str) -> String {
+    let mut output = String::from("\"");
+    for character in value.chars() {
+        match character {
+            '\"' => output.push_str("\\\""),
+            '\\' => output.push_str("\\\\"),
+            '\u{08}' => output.push_str("\\b"),
+            '\u{0c}' => output.push_str("\\f"),
+            '\n' => output.push_str("\\n"),
+            '\r' => output.push_str("\\r"),
+            '\t' => output.push_str("\\t"),
+            character if character <= '\u{1f}' => {
+                use std::fmt::Write as _;
+                let _ = write!(output, "\\u{:04x}", character as u32);
+            }
+            character => output.push(character),
+        }
+    }
+    output.push('\"');
+    output
+}
+
 /// What can stop `--from-json` from producing output.
 ///
 /// This path is the one where a renderer's §25 ceiling is reachable: the JSON
@@ -311,6 +640,7 @@ fn main() -> ExitCode {
 enum RenderError {
     Profile(carve::ProfileViolationError),
     Depth(carve::RenderDepthError),
+    Carve(carve::RenderCarveError),
 }
 
 impl std::fmt::Display for RenderError {
@@ -318,6 +648,7 @@ impl std::fmt::Display for RenderError {
         match self {
             RenderError::Profile(err) => write!(f, "profile violation: {err}"),
             RenderError::Depth(err) => write!(f, "{err}"),
+            RenderError::Carve(err) => write!(f, "{err}"),
         }
     }
 }
@@ -331,6 +662,12 @@ impl From<carve::ProfileViolationError> for RenderError {
 impl From<carve::RenderDepthError> for RenderError {
     fn from(err: carve::RenderDepthError) -> Self {
         RenderError::Depth(err)
+    }
+}
+
+impl From<carve::RenderCarveError> for RenderError {
+    fn from(err: carve::RenderCarveError) -> Self {
+        RenderError::Carve(err)
     }
 }
 
@@ -448,6 +785,12 @@ fn print_usage() {
          Usage:\n  \
          carve [options] [file]      render file (or stdin when omitted or `-`)\n  \
          carve fmt [options] [files] format Carve source to stdout\n  \
+         carve merge [--json] BASE OURS THEIRS\n  \
+                                     merge independent structural edits\n  \
+         carve migrate --from FORMAT [options] [file]\n                              \
+         convert html, markdown (md) or djot to Carve.\n                              \
+         --mode/--adapter/--report/--check-loss are html's\n                              \
+         alone: it is the only importer that drops anything\n  \
          carve -h                    show this help\n\n\
          Output format (default --html; last one wins):\n  \
          --html                      HTML\n  \
@@ -480,7 +823,8 @@ fn print_usage() {
          --profile NAME              restrict features (full|article|comment|minimal)\n  \
          --profile-base-host HOST    base host for the profile link policy\n  \
          --smart-typography MODE     glyph (default) or source: emit the runs\n                              \
-         the author typed instead of the resolved glyphs\n\n\
+         the author typed instead of the resolved glyphs\n  \
+         --quote-locale LOCALE       use locale-specific opening/closing quotes\n\n\
          Spec: https://markup-carve.github.io/carve/"
     );
 }

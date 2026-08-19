@@ -160,6 +160,23 @@ fn is_renderable(a: &Admonition) -> bool {
     if !outer.items.iter().all(|row| !row_cells(row).is_empty()) {
         return false;
     }
+    for row in &outer.items {
+        let cells = row_cells(row);
+        if structural_marker(cells[0].attrs.as_ref(), "header-row").is_none()
+            || cells
+                .iter()
+                .skip(1)
+                .any(|cell| structural_marker(cell.attrs.as_ref(), "header-row") != Some(false))
+            || cells
+                .iter()
+                .any(|cell| structural_marker(cell.attrs.as_ref(), "header").is_none())
+            || cells
+                .iter()
+                .any(|cell| !valid_cell_alignment(cell.attrs.as_ref()))
+        {
+            return false;
+        }
+    }
     // DoS guard: span resolution rescans prior rows (~O(rows^2)). Defer an
     // over-large table to the plain div (content preserved, no quadratic
     // blow-up). Limits match carve-php / carve-js.
@@ -185,6 +202,27 @@ fn row_cells(row: &ListItem) -> Vec<&ListItem> {
         }
     }
     cells
+}
+
+fn structural_marker(attrs: Option<&Attrs>, key: &str) -> Option<bool> {
+    let Some(value) = attrs.and_then(|attrs| attrs.key_values.get(key)) else {
+        return Some(false);
+    };
+    if value.is_empty() {
+        Some(true)
+    } else {
+        None
+    }
+}
+
+fn valid_cell_alignment(attrs: Option<&Attrs>) -> bool {
+    let value = |key| {
+        attrs
+            .and_then(|a| a.key_values.get(key))
+            .map(String::as_str)
+    };
+    matches!(value("align"), None | Some("left" | "right" | "center"))
+        && matches!(value("valign"), None | Some("top" | "middle" | "bottom"))
 }
 
 /// One source cell in the resolved grid (one entry per authored cell). Mirrors
@@ -222,18 +260,69 @@ fn render_table(node: &BlockExtension, ctx: &RenderContext<'_>) -> String {
     };
 
     let rows: Vec<Vec<&ListItem>> = outer.items.iter().map(row_cells).collect();
+    let local_headers: Vec<bool> = rows
+        .iter()
+        .map(|cells| structural_marker(cells[0].attrs.as_ref(), "header-row") == Some(true))
+        .collect();
 
     let header_rows = attr_count(node.attrs.as_ref(), "header-rows");
     let header_cols = attr_count(node.attrs.as_ref(), "header-cols");
+    let footer_rows =
+        attr_count(node.attrs.as_ref(), "footer-rows").min(rows.len().saturating_sub(header_rows));
+    let columns = list_table_columns(node.attrs.as_ref());
+    let foot_start = rows.len().saturating_sub(footer_rows);
+    let mut body_groups = Vec::new();
+    let mut start = header_rows;
+    let mut has_data = false;
+    for (row, is_header) in local_headers
+        .iter()
+        .copied()
+        .enumerate()
+        .take(foot_start)
+        .skip(header_rows)
+    {
+        if is_header && has_data {
+            body_groups.push((start, row));
+            start = row;
+            has_data = false;
+        }
+        if !is_header {
+            has_data = true;
+        }
+    }
+    if start < foot_start {
+        body_groups.push((start, foot_start));
+    }
+    let mut row_groups = vec![0usize; rows.len()];
+    for (index, (start, end)) in body_groups.iter().copied().enumerate() {
+        for group in &mut row_groups[start..end] {
+            *group = index + 1;
+        }
+    }
+    for group in &mut row_groups[foot_start..] {
+        *group = body_groups.len() + 1;
+    }
 
     // Resolve `^`/`<` span markers into a positional grid, mirroring the
     // pipe-table span model so the output matches an equivalent pipe table, then
     // flow each rendered cell into an output column past any rowspan from above.
-    let grid = resolve_spans(&rows, header_rows);
+    let grid = resolve_spans(&rows, &row_groups);
     let placement = place_columns(&grid);
     let column_count = placement.column_count;
 
     let mut lines: Vec<String> = Vec::new();
+
+    if columns.iter().any(|c| c.2.is_some()) {
+        let cols = columns
+            .iter()
+            .map(|c| match c.2 {
+                Some(w) => format!("    <col style=\"width: {w}%;\">"),
+                None => "    <col>".to_string(),
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        lines.push(format!("  <colgroup>\n{cols}\n  </colgroup>"));
+    }
 
     if let Some(summary) = &node.summary {
         let rendered = ctx.render_inlines(summary);
@@ -264,32 +353,56 @@ fn render_table(node: &BlockExtension, ctx: &RenderContext<'_>) -> String {
                 grid_row,
                 row_index,
                 header_rows,
+                &local_headers,
                 header_cols,
                 column_count,
                 &placement,
                 ctx,
+                &columns,
             ));
         }
         lines.push(format!("  <thead>{thead}</thead>"));
     }
 
-    if head_rows < grid.len() {
+    for (start, end) in body_groups {
         let mut tbody = String::new();
-        for (offset, grid_row) in grid.iter().skip(head_rows).enumerate() {
+        for (offset, grid_row) in grid.iter().take(end).skip(start).enumerate() {
             tbody.push_str("    ");
             tbody.push_str(&render_row(
                 grid_row,
-                offset + head_rows,
+                offset + start,
                 header_rows,
+                &local_headers,
                 header_cols,
                 column_count,
                 &placement,
                 ctx,
+                &columns,
             ));
             tbody.push('\n');
         }
         let tbody = tbody.trim_end_matches('\n');
         lines.push(format!("  <tbody>\n{tbody}\n  </tbody>"));
+    }
+    if foot_start < grid.len() {
+        let mut foot = String::new();
+        for (offset, grid_row) in grid.iter().skip(foot_start).enumerate() {
+            foot.push_str("    ");
+            foot.push_str(&render_row(
+                grid_row,
+                foot_start + offset,
+                header_rows,
+                &local_headers,
+                header_cols,
+                column_count,
+                &placement,
+                ctx,
+                &columns,
+            ));
+            foot.push('\n');
+        }
+        let foot = foot.trim_end_matches('\n');
+        lines.push(format!("  <tfoot>\n{foot}\n  </tfoot>"));
     }
 
     let attrs = table_attrs(node.attrs.as_ref(), ctx);
@@ -306,12 +419,14 @@ fn render_row(
     grid_row: &[GridEntry<'_>],
     row_index: usize,
     header_rows: usize,
+    local_headers: &[bool],
     header_cols: usize,
     column_count: usize,
     placement: &Placement,
     ctx: &RenderContext<'_>,
+    columns: &[(Option<&str>, Option<&str>, Option<f64>)],
 ) -> String {
-    let is_header_row = row_index < header_rows;
+    let is_header_row = row_index < header_rows || local_headers[row_index];
     let row_cols = &placement.cols[row_index];
     let mut html = String::new();
     let mut next_col = 0usize;
@@ -324,14 +439,54 @@ fn render_row(
         let Some(col) = row_cols[i] else {
             continue;
         };
-        let is_header_cell = is_header_row || col < header_cols;
+        let is_header_cell = is_header_row
+            || col < header_cols
+            || structural_marker(entry.cell.attrs.as_ref(), "header") == Some(true);
         let tag = if is_header_cell { "th" } else { "td" };
         let mut attr_html = String::new();
+        // PART 10 SST9, the same rule and the same position as the pipe table:
+        // `col` in the header-row run, `row` for a cell that is a header only
+        // because it falls inside `header-cols`. A ListTable and the pipe table
+        // it is equivalent to must not differ in accessibility markup.
+        if is_header_cell {
+            attr_html.push_str(if is_header_row {
+                " scope=\"col\""
+            } else {
+                " scope=\"row\""
+            });
+        }
         if entry.rowspan > 1 {
             attr_html.push_str(&format!(" rowspan=\"{}\"", entry.rowspan));
         }
         if entry.colspan > 1 {
             attr_html.push_str(&format!(" colspan=\"{}\"", entry.colspan));
+        }
+        if let Some((column_align, column_valign, _)) = columns.get(col) {
+            let align = entry
+                .cell
+                .attrs
+                .as_ref()
+                .and_then(|a| a.key_values.get("align").map(String::as_str))
+                .or(*column_align);
+            let valign = entry
+                .cell
+                .attrs
+                .as_ref()
+                .and_then(|a| a.key_values.get("valign").map(String::as_str))
+                .or(*column_valign);
+            let mut style = String::new();
+            if let Some(v) = align {
+                style.push_str(&format!("text-align: {v};"));
+            }
+            if align.is_some() && valign.is_some() {
+                style.push(' ');
+            }
+            if let Some(v) = valign {
+                style.push_str(&format!("vertical-align: {v};"));
+            }
+            if !style.is_empty() {
+                attr_html.push_str(&format!(" style=\"{style}\""));
+            }
         }
         attr_html.push_str(&cell_attrs(entry.cell.attrs.as_ref(), ctx));
         // A `^`/`<` marker (merged or not) renders no content, never literal
@@ -348,12 +503,19 @@ fn render_row(
     // Pad trailing columns so a ragged row stays rectangular.
     let mut col = next_col.max(placement.row_reach[row_index]);
     while col < column_count {
-        let tag = if is_header_row || col < header_cols {
-            "th"
+        let is_pad_header = is_header_row || col < header_cols;
+        let tag = if is_pad_header { "th" } else { "td" };
+        // A padded cell is still a header cell where the grid says so.
+        let scope = if is_pad_header {
+            if is_header_row {
+                " scope=\"col\""
+            } else {
+                " scope=\"row\""
+            }
         } else {
-            "td"
+            ""
         };
-        html.push_str(&format!("<{tag}></{tag}>"));
+        html.push_str(&format!("<{tag}{scope}></{tag}>"));
         col += 1;
     }
 
@@ -398,7 +560,7 @@ fn render_cell(cell: &ListItem, ctx: &RenderContext<'_>) -> String {
 /// - `header_rows` clamps rowspans at the header/body boundary: a `^` in a body
 ///   row whose source sits in the header rows finds no valid source and degrades
 ///   to an empty cell (an HTML cell cannot span row groups reliably).
-fn resolve_spans<'a>(rows: &[Vec<&'a ListItem>], header_rows: usize) -> Vec<Vec<GridEntry<'a>>> {
+fn resolve_spans<'a>(rows: &[Vec<&'a ListItem>], row_groups: &[usize]) -> Vec<Vec<GridEntry<'a>>> {
     let mut grid: Vec<Vec<GridEntry<'a>>> = rows
         .iter()
         .map(|cells| {
@@ -432,7 +594,7 @@ fn resolve_spans<'a>(rows: &[Vec<&'a ListItem>], header_rows: usize) -> Vec<Vec<
                 // extend a cell that originated in the header rows. Leave it
                 // unmerged (it then renders as an empty cell) so no `th rowspan`
                 // crosses into the body group.
-                let crosses_header = matches!(up, Some(u) if u < header_rows && r >= header_rows);
+                let crosses_header = matches!(up, Some(u) if row_groups[u] != row_groups[r]);
                 let has_source = matches!(up, Some(u) if u < grid.len() && c < grid[u].len());
                 if has_source && !crosses_header {
                     let u = up.unwrap();
@@ -462,6 +624,37 @@ fn resolve_spans<'a>(rows: &[Vec<&'a ListItem>], header_rows: usize) -> Vec<Vec<
     }
 
     grid
+}
+
+fn list_table_columns(attrs: Option<&Attrs>) -> Vec<(Option<&str>, Option<&str>, Option<f64>)> {
+    let value = |key| {
+        attrs
+            .and_then(|a| a.key_values.get(key))
+            .map(|v| v.split(',').collect::<Vec<_>>())
+            .unwrap_or_default()
+    };
+    let aligns = value("aligns");
+    let valigns = value("valigns");
+    let widths = value("widths");
+    let len = aligns.len().max(valigns.len()).max(widths.len());
+    (0..len)
+        .map(|i| {
+            (
+                aligns
+                    .get(i)
+                    .copied()
+                    .filter(|v| matches!(*v, "left" | "right" | "center")),
+                valigns
+                    .get(i)
+                    .copied()
+                    .filter(|v| matches!(*v, "top" | "middle" | "bottom")),
+                widths
+                    .get(i)
+                    .and_then(|v| v.parse::<f64>().ok())
+                    .filter(|v| *v > 0.0 && *v <= 100.0),
+            )
+        })
+        .collect()
 }
 
 /// Assign each rendered cell an output column by flowing it top-down past any
@@ -586,7 +779,12 @@ fn table_attrs(attrs: Option<&Attrs>, ctx: &RenderContext<'_>) -> String {
             ));
         }
     };
-    let is_consumed = |key: &str| key == "header-rows" || key == "header-cols";
+    let is_consumed = |key: &str| {
+        matches!(
+            key,
+            "header-rows" | "header-cols" | "footer-rows" | "aligns" | "valigns" | "widths"
+        )
+    };
 
     if attrs.order.is_empty() {
         emit_id(&mut out);
@@ -648,7 +846,12 @@ fn cell_attrs(attrs: Option<&Attrs>, ctx: &RenderContext<'_>) -> String {
     };
     let is_span = |key: &str| {
         let lower = key.to_ascii_lowercase();
-        lower == "rowspan" || lower == "colspan"
+        lower == "rowspan"
+            || lower == "colspan"
+            || lower == "header"
+            || lower == "header-row"
+            || lower == "align"
+            || lower == "valign"
     };
 
     if attrs.order.is_empty() {

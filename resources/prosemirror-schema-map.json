@@ -1,0 +1,317 @@
+{
+  "version": 1,
+  "about": "Carve node type to ProseMirror node/mark name, for engines building a Carve <-> ProseMirror bridge. Carve type names are the normative vocabulary from the spec (docs/profiles.md); the ProseMirror names are this package's CarveKit schema. Consumers read this rather than restating the mapping, which is how carve-php once ended up emitting `citation-group` against everyone else's underscores. `pm` is the name CarveKit registers; an optional `accepts` lists further names a bridge should recognize on the way in, for concepts a stock Tiptap extension already spells differently.",
+  "carveSpecVocabulary": "spec/docs/profiles.md",
+  "proseMirrorSchema": "tiptap/carve-kit.js (CarveKit)",
+  "types": {
+    "document": {
+      "kind": "node",
+      "pm": "doc"
+    },
+    "paragraph": {
+      "kind": "node",
+      "pm": "paragraph"
+    },
+    "heading": {
+      "kind": "node",
+      "pm": "heading",
+      "notes": "level plus authored id, classes, and key/value attributes"
+    },
+    "text": {
+      "kind": "node",
+      "pm": "text"
+    },
+    "hard_break": {
+      "kind": "node",
+      "pm": "hardBreak"
+    },
+    "block_quote": {
+      "kind": "node",
+      "pm": "blockquote"
+    },
+    "code_block": {
+      "kind": "node",
+      "pm": "codeBlock",
+      "notes": "language attr; languageRaw carries the unnormalized info string"
+    },
+    "thematic_break": {
+      "kind": "node",
+      "pm": "horizontalRule"
+    },
+    "list": {
+      "kind": "node",
+      "pm": [
+        "bulletList",
+        "orderedList",
+        "taskList"
+      ],
+      "notes": "listType selects; taskList when items carry a task marker"
+    },
+    "list_item": {
+      "kind": "node",
+      "pm": [
+        "listItem",
+        "taskItem"
+      ],
+      "notes": "taskItem inside a taskList"
+    },
+    "table": {
+      "kind": "node",
+      "pm": "table"
+    },
+    "table_row": {
+      "kind": "node",
+      "pm": "tableRow"
+    },
+    "table_cell": {
+      "kind": "node",
+      "pm": [
+        "tableCell",
+        "tableHeader"
+      ],
+      "notes": "tableHeader for `|=` cells"
+    },
+    "image": {
+      "kind": "node",
+      "pm": "image",
+      "notes": "carveLinkTitle carries the structural image title; title remains available to the authored attribute run"
+    },
+    "math": {
+      "kind": "node",
+      "pm": "carveMath",
+      "notes": "inline atom; display attr for the `$$` form"
+    },
+    "footnote_ref": {
+      "kind": "node",
+      "pm": "carveFootnote"
+    },
+    "footnote": {
+      "kind": "node",
+      "pm": "carveFootnoteDefinition"
+    },
+    "div": {
+      "kind": "node",
+      "pm": [
+        "carveDiv",
+        "carveTabSet",
+        "carveTab"
+      ],
+      "notes": "carveTabSet/carveTab are the `tabs`/`tab` classes; every other class is carveDiv"
+    },
+    "admonition": {
+      "kind": "node",
+      "pm": "carveDiv",
+      "notes": "profile vocabulary only: an admonition is a div with a type class"
+    },
+    "definition_list": {
+      "kind": "node",
+      "pm": "definitionList"
+    },
+    "definition_term": {
+      "kind": "node",
+      "pm": "definitionTerm"
+    },
+    "definition_description": {
+      "kind": "node",
+      "pm": "definitionDescription"
+    },
+    "figure": {
+      "kind": "node",
+      "pm": "carveFigure"
+    },
+    "caption": {
+      "kind": "node",
+      "pm": "carveCaption"
+    },
+    "line_block": {
+      "kind": "node",
+      "pm": "carveLineBlock"
+    },
+    "raw_block": {
+      "kind": "node",
+      "pm": "carveRawBlock"
+    },
+    "comment": {
+      "kind": "node",
+      "pm": ["carveComment", "carveCommentInline"],
+      "notes": "block attr distinguishes %% line comments from fenced comments"
+    },
+    "mention": {
+      "kind": "node",
+      "pm": [
+        "carveMention",
+        "carveTag"
+      ],
+      "accepts": [
+        "mention"
+      ],
+      "notes": "carveTag for the `#tag` flavor. `accepts` lists names a bridge should ALSO recognize on the way in that CarveKit does not itself register: `mention` is stock tiptap/extension-mention, and refusing it made a plain editor fail on a concept Carve already models fully."
+    },
+    "inline_extension": {
+      "kind": "node",
+      "pm": "carveEmbed",
+      "notes": "partial: only media embeds are modeled, via the directive stamped in carveSource"
+    },
+    "frontmatter": {
+      "kind": "node",
+      "pm": "carveFrontmatter",
+      "notes": "atom; content and format attrs"
+    },
+    "link_reference_definition": {
+      "kind": "node",
+      "pm": "carveLinkRefDef",
+      "notes": "atom; label and href attrs; carveLinkTitle carries the structural title while title remains available to the authored attribute run. Carrying the definition is what lets a `[text][label]` reference keep its spelling"
+    },
+    "inline_footnote": {
+      "kind": "node",
+      "pm": "carveInlineNote",
+      "notes": "inline content; the number is a resolution artifact and is not carried"
+    },
+    "raw_inline": {
+      "kind": "node",
+      "pm": "carveRawInline",
+      "notes": "inline atom; content and format attrs"
+    },
+    "literal_inline": {
+      "kind": "node",
+      "pm": "carveLiteral",
+      "notes": "inline atom; content attr"
+    },
+    "substitution": {
+      "kind": "node",
+      "pm": "carveSubstitution",
+      "notes": "inline atom; oldText and newText attrs"
+    },
+    "symbol": {
+      "kind": "node",
+      "pm": "carveSymbol",
+      "notes": "inline atom; name attr"
+    },
+    "citation_group": {
+      "kind": "node",
+      "pm": "carveCitation",
+      "notes": "inline atom; raw and integral attrs, plus items whose prefix/locator/suffix are ProseMirror inline arrays"
+    },
+    "heading_ref": {
+      "kind": "node",
+      "pm": "carveCrossref",
+      "notes": "inline atom; target attr. The resolved href is a resolution artifact and is not carried"
+    },
+    "section": {
+      "kind": "node",
+      "pm": "carveSection",
+      "notes": "a rendering wrapper: the bridge hoists its children through a carveSection node so the heading and body survive"
+    },
+    "strong": {
+      "kind": "mark",
+      "pm": "bold"
+    },
+    "emphasis": {
+      "kind": "mark",
+      "pm": "italic"
+    },
+    "underline": {
+      "kind": "mark",
+      "pm": "underline"
+    },
+    "strike": {
+      "kind": "mark",
+      "pm": "strike"
+    },
+    "code": {
+      "kind": "mark",
+      "pm": "code"
+    },
+    "highlight": {
+      "kind": "mark",
+      "pm": "highlight"
+    },
+    "subscript": {
+      "kind": "mark",
+      "pm": "subscript"
+    },
+    "superscript": {
+      "kind": "mark",
+      "pm": "superscript"
+    },
+    "insert": {
+      "kind": "mark",
+      "pm": "carveInsert"
+    },
+    "delete": {
+      "kind": "mark",
+      "pm": "carveDelete"
+    },
+    "critic_comment": {
+      "kind": "mark",
+      "pm": "carveCriticComment",
+      "notes": "content is literal, so it rides on a text node under the mark - the same shape `code` uses"
+    },
+    "span": {
+      "kind": "mark",
+      "pm": "carveSpan",
+      "notes": "carries id, class and extra attributes. Stock tiptap/extension-text-style emits `textStyle`, deliberately NOT accepted: it is a carrier mark for color/fontFamily/fontSize, so mapping it here would put presentational attributes into a Carve document. An application that wants that registers `textStyle` itself."
+    },
+    "abbreviation": {
+      "kind": "mark",
+      "pm": "carveAbbreviation"
+    },
+    "link": {
+      "kind": "mark",
+      "pm": "link",
+      "notes": "carveLinkTitle carries the structural link title; title remains available to the authored attribute run"
+    },
+    "autolink": {
+      "kind": "mark",
+      "pm": "link",
+      "notes": "profile vocabulary only: an autolink is a link whose text is its destination"
+    }
+  },
+  "unmapped": {
+    "abbreviation_def": "abbreviation definitions ride on the doc node's attrs",
+    "citation_definition": "a ProseMirror schema has no node for a definition line, so the bridge drops it and the pair carries it in the sidecar, exactly as the abbreviation definition above",
+    "caption_number": "numbered captions are a resolution artifact, not editor content",
+    "raw_text": "raw text is the payload of a raw block, not a node an editor holds",
+    "escaped_text": "escaping is a source-level concern; the editor holds the escaped character as text",
+    "smart_punctuation": "smart-typography output is lossy on reparse, so it is not modeled",
+    "soft_break": "a soft break is whitespace in the ProseMirror model",
+    "figure_group": "the editor schema has no composite figure; the panels and the group caption survive inside the generic container, but the fact that they were one figure does not"
+  },
+  "preservationNodes": {
+    "about": "Not Carve types: the two nodes a bridge writes when it has no editable node for a construct. They are PART OF THE WIRE, not an implementation detail of one bridge - carve-grammars produced them for 179 of 1025 corpus documents and carve-php refused every one, because an unknown ProseMirror name is an error rather than a skip. A bridge reading one writes `carveSource` back as Carve source, verbatim; a bridge that cannot must say so rather than drop the node.",
+    "carveUnsupported": {
+      "kind": "node",
+      "group": "block",
+      "attrs": {
+        "carveSource": "the construct as written, exactly; written back verbatim",
+        "carveType": "the Carve node type the atom stands in for, so a caller can say WHAT was preserved"
+      }
+    },
+    "carveUnsupportedInline": {
+      "kind": "node",
+      "group": "inline",
+      "attrs": {
+        "carveSource": "the construct as written, exactly; written back verbatim",
+        "carveType": "the Carve node type the atom stands in for"
+      }
+    }
+  },
+  "markCarrierNodes": {
+    "about": "Not a Carve type either: the node a bridge writes for a MARK WITH NO CONTENT. A ProseMirror mark cannot span zero characters, and four Carve constructs parse to a mark-producing node with no children - `[](https://example.com)`, `[]{.a}`, `{++}` and `{--}`. Walking their children produces nothing, so before this node existed each one simply disappeared: a document that was only an empty-label link came back EMPTY, and nothing reported it. A bridge writes this atom instead and reads it back as the construct it names; a bridge that cannot must say so through its dropped/degraded report rather than drop the node.",
+    "carveEmptyMark": {
+      "kind": "node",
+      "group": "inline",
+      "attrs": {
+        "markAttrs": "the mark's own attributes, as one map: a link's `href`/`title` and any authored run, a span's id/class/key-values. Absent where the mark had none",
+        "markType": "the ProseMirror mark this atom stands for: `link`, `carveSpan`, `carveAbbreviation`, `carveInsert` or `carveDelete`"
+      }
+    }
+  },
+  "_provenance": {
+    "source": "markup-carve/carve-grammars tiptap/schema-map.json",
+    "commit": "e09b460c23fceaf532f724f3ef73e0b6a355d4f7",
+    "refresh": "copy the file from carve-grammars and update commit; the schema-map test asserts every AST type still has a decision",
+    "pendingUpstream": "the `figure_group` and `citation_definition` entries under unmapped are local: PART 9 section 4c and PART 12 section 18 are newer than the schema map, so carve-grammars carries no decision for either yet. `citation_definition` records what to_pm.rs already does - it has an explicit arm that drops the type - rather than choosing a mapping the bridge does not implement. Keep both across the next refresh until upstream does.",
+    "partialSections": "`preservationNodes` and `markCarrierNodes` are copied verbatim from carve-grammars 228f003, ahead of the rest of the file. A whole-file refresh to 228f003 also gives `inline_extension` a second, PRIMARY ProseMirror name, which moves what this engine emits for every inline extension - a change of its own, not a side effect of adding a section. Take the rest of 228f003 in that change and drop this note."
+  }
+}

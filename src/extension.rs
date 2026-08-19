@@ -338,6 +338,17 @@ impl<'a> Options<'a> {
 pub trait CarveExtension {
     fn name(&self) -> &'static str;
 
+    /// Semantic span attribute names this extension adds (spec PART 9 §10).
+    ///
+    /// DECLARATIVE ON PURPOSE. The nesting order, the value mapping and §9's
+    /// riding rule live in ONE renderer; an extension that re-implemented them
+    /// for its own names would be a second copy of the feature, drifting from
+    /// core the first time either side changed. So an extension names what it
+    /// claims and core renders it.
+    fn semantic_span_names(&self) -> &'static [&'static str] {
+        &[]
+    }
+
     fn match_inline(
         &self,
         _text: &str,
@@ -484,9 +495,9 @@ pub struct RenderContext<'a> {
     /// `BlockExtensionRenderContext.level`).
     level: usize,
     /// The live document render state (heading-id counter) when rendering a
-    /// block extension, so [`RenderContext::render_blocks_at`] continues the
-    /// document's heading numbering across the extension boundary. `None` on
-    /// the inline path and at level-0 entry points.
+    /// block extension, so nested rendering continues the document's heading
+    /// numbering and depth budget across the extension boundary. `None` on the
+    /// inline path.
     state: Option<&'a std::cell::RefCell<&'a mut crate::render::RenderState>>,
 }
 
@@ -524,11 +535,23 @@ impl<'a> RenderContext<'a> {
         crate::render::render_inlines_inside_anchor(nodes, self.options)
     }
 
-    /// Render block nodes at level 0 (no leading indentation). Use
-    /// [`RenderContext::render_blocks_at`] to render at a specific nesting
+    /// Render block nodes at level 0 (no leading indentation), while preserving
+    /// the current recursion depth when called by a block extension. Use
+    /// [`RenderContext::render_blocks_at`] to render at a specific indentation
     /// level.
     pub fn render_blocks(&self, nodes: &[BlockNode]) -> String {
-        crate::render::render_blocks_with_options(nodes, self.options)
+        match self.state {
+            Some(cell) => {
+                let mut state = cell.borrow_mut();
+                crate::render::render_blocks_with_state_from_depth(
+                    nodes,
+                    self.options,
+                    self.level.saturating_add(1),
+                    &mut state,
+                )
+            }
+            None => crate::render::render_blocks_with_options(nodes, self.options),
+        }
     }
 
     /// Render block nodes indented to `level`, matching the core renderer's

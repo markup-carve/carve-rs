@@ -55,3 +55,26 @@ fn from_json_accepts_what_to_json_produced_at_the_parsers_own_depth_limit() {
         }
     });
 }
+
+#[test]
+fn the_encoder_refuses_an_api_tree_past_its_depth_budget() {
+    on_big_stack(|| {
+        let mut inline = carve::InlineNode::text("leaf");
+        for _ in 0..2_000 {
+            inline = carve::InlineNode::Emphasis(carve::Emphasis {
+                attrs: None,
+                kind: carve::EmphasisKind::Italic,
+                children: vec![inline],
+                pos: None,
+            });
+        }
+        let mut doc = carve::parse("leaf\n");
+        let carve::BlockNode::Paragraph(paragraph) = &mut doc.children[0] else {
+            unreachable!()
+        };
+        paragraph.children = vec![inline];
+
+        let error = carve::try_to_json(&doc).expect_err("deep API tree must refuse");
+        assert!(error.to_string().contains("encoder's depth budget"));
+    });
+}

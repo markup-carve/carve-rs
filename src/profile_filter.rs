@@ -239,6 +239,7 @@ impl ProfileFilter<'_> {
         match block {
             BlockNode::Heading(h) => self.filter_inlines(&mut h.children, depth)?,
             BlockNode::Paragraph(p) => self.filter_inlines(&mut p.children, depth)?,
+            BlockNode::CitationDefinition(d) => self.filter_inlines(&mut d.children, depth)?,
             BlockNode::CodeBlock(_)
             | BlockNode::RawBlock(_)
             | BlockNode::Comment(_)
@@ -394,6 +395,12 @@ impl ProfileFilter<'_> {
                 self.filter_inlines(&mut fig.caption, depth + 1)?;
                 self.recurse_figure_target(fig, depth + 1)?;
             }
+            BlockNode::FigureGroup(group) => {
+                if let Some(caption) = &mut group.caption {
+                    self.filter_inlines(caption, depth + 1)?;
+                }
+                self.filter_blocks(&mut group.children, depth)?;
+            }
             BlockNode::Extension(ext) => self.filter_blocks(&mut ext.children, depth)?,
         }
         Ok(())
@@ -407,7 +414,7 @@ impl ProfileFilter<'_> {
         // The figure target is a single-node field; carve-php treats it as an
         // ordinary child, so a denied target must be filtered. Wrap it in a
         // one-element block list and re-use the block machinery.
-        let target_block: BlockNode = match &fig.target {
+        let target_block: BlockNode = match &*fig.target {
             FigureTarget::Image(img) => BlockNode::BlockImage(img.clone()),
             FigureTarget::BlockQuote(bq) => BlockNode::BlockQuote(bq.clone()),
             FigureTarget::Table(t) => BlockNode::Table(t.clone()),
@@ -417,24 +424,24 @@ impl ProfileFilter<'_> {
         let mut wrapper = vec![target_block];
         self.filter_blocks(&mut wrapper, depth)?;
         match wrapper.into_iter().next() {
-            Some(BlockNode::BlockImage(img)) => fig.target = FigureTarget::Image(img),
-            Some(BlockNode::BlockQuote(bq)) => fig.target = FigureTarget::BlockQuote(bq),
-            Some(BlockNode::Table(t)) => fig.target = FigureTarget::Table(t),
-            Some(BlockNode::CodeBlock(c)) => fig.target = FigureTarget::CodeBlock(c),
-            Some(BlockNode::Paragraph(p)) => fig.target = FigureTarget::Paragraph(p),
+            Some(BlockNode::BlockImage(img)) => *fig.target = FigureTarget::Image(img),
+            Some(BlockNode::BlockQuote(bq)) => *fig.target = FigureTarget::BlockQuote(bq),
+            Some(BlockNode::Table(t)) => *fig.target = FigureTarget::Table(t),
+            Some(BlockNode::CodeBlock(c)) => *fig.target = FigureTarget::CodeBlock(c),
+            Some(BlockNode::Paragraph(p)) => *fig.target = FigureTarget::Paragraph(p),
             // Replaced into a different node (to_text paragraph) or stripped:
             // collapse the figure target into a paragraph fallback so the
             // figure still renders something coherent.
             Some(other) => {
                 let text = extract_block_text(&other, self.smart);
-                fig.target = FigureTarget::Paragraph(Paragraph {
+                *fig.target = FigureTarget::Paragraph(Paragraph {
                     attrs: None,
                     children: text_with_breaks(&text),
                     ..Default::default()
                 });
             }
             None => {
-                fig.target = FigureTarget::Paragraph(Paragraph {
+                *fig.target = FigureTarget::Paragraph(Paragraph {
                     attrs: None,
                     children: Vec::new(),
                     ..Default::default()
@@ -657,6 +664,7 @@ impl ProfileFilter<'_> {
             BlockNode::Comment(_)
                 | BlockNode::AbbreviationDef(_)
                 | BlockNode::LinkReferenceDefinition(_)
+                | BlockNode::CitationDefinition(_)
         ) {
             return Ok(None);
         }
@@ -795,6 +803,7 @@ fn text_cell(text: &str) -> TableCell {
         header: false,
         span: None,
         align: None,
+        valign: None,
         attrs: None,
         children: vec![InlineNode::text(text.to_string())],
         // A cell this filter synthesizes has no source of its own.
@@ -815,7 +824,7 @@ fn image_text(img: &Image) -> String {
 fn extract_block_text(node: &BlockNode, smart: SmartTypographyMode) -> String {
     match node {
         // The definition line renders nothing, so it contributes no text.
-        BlockNode::LinkReferenceDefinition(_) => String::new(),
+        BlockNode::LinkReferenceDefinition(_) | BlockNode::CitationDefinition(_) => String::new(),
         BlockNode::Heading(h) => {
             let prefix = "#".repeat(h.level as usize) + " ";
             let text: String = h
@@ -917,8 +926,26 @@ fn extract_block_text(node: &BlockNode, smart: SmartTypographyMode) -> String {
         BlockNode::Div(div) => block_children_join(&div.children, smart),
         BlockNode::LineBlock(lb) => block_children_join(&lb.children, smart),
         BlockNode::Extension(ext) => block_children_join(&ext.children, smart),
+        BlockNode::FigureGroup(group) => {
+            let mut parts: Vec<String> = group
+                .children
+                .iter()
+                .map(|child| extract_block_text(child, smart))
+                .filter(|text| !text.is_empty())
+                .collect();
+            if let Some(caption) = &group.caption {
+                let caption: String = caption
+                    .iter()
+                    .map(|n| extract_inline_text(n, smart))
+                    .collect();
+                if !caption.is_empty() {
+                    parts.push(caption);
+                }
+            }
+            parts.join("\n")
+        }
         BlockNode::Figure(fig) => {
-            let target = match &fig.target {
+            let target = match &*fig.target {
                 FigureTarget::Image(img) => image_text(img),
                 FigureTarget::BlockQuote(bq) => {
                     extract_block_text(&BlockNode::BlockQuote(bq.clone()), smart)
@@ -1106,6 +1133,12 @@ fn cleanup_block_children(block: &mut BlockNode) {
             }
         }
         BlockNode::Figure(fig) => cleanup_inlines(&mut fig.caption),
+        BlockNode::FigureGroup(group) => {
+            if let Some(caption) = &mut group.caption {
+                cleanup_inlines(caption);
+            }
+            cleanup_blocks(&mut group.children);
+        }
         BlockNode::Extension(ext) => cleanup_blocks(&mut ext.children),
         _ => {}
     }
@@ -1134,6 +1167,10 @@ fn is_empty_block(node: &BlockNode) -> bool {
         // A definition always carries a label and a destination, so it is never
         // the empty node this asks about.
         BlockNode::LinkReferenceDefinition(_) => false,
+        // A citation definition always carries its key, so an entry with no
+        // inline content is still the line the author wrote (PART 12 section 18
+        // requires the field, not its contents).
+        BlockNode::CitationDefinition(_) => false,
         // Content-bearing nodes are non-empty if they have content.
         BlockNode::CodeBlock(c) => c.content.is_empty(),
         BlockNode::RawBlock(r) => r.content.is_empty(),
@@ -1156,6 +1193,10 @@ fn is_empty_block(node: &BlockNode) -> bool {
         BlockNode::LineBlock(lb) => lb.children.is_empty(),
         BlockNode::DefinitionList(dl) => dl.items.is_empty(),
         BlockNode::Figure(_) => false,
+        // The panels div is unconditional (PART 9 SS4c), so an emptied group
+        // still renders a coherent shell only when it truly has nothing left:
+        // no children and no caption.
+        BlockNode::FigureGroup(group) => group.children.is_empty() && group.caption.is_none(),
         BlockNode::Extension(ext) => ext.children.is_empty(),
     }
 }

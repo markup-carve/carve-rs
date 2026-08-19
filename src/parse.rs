@@ -6,7 +6,7 @@
 use crate::ast::Pos;
 use crate::ast::*;
 use crate::extension::{BlockMatch, InlineMatch, MatcherContext, Options};
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, HashMap};
 
 /// The line a collected definition leaves behind, and the marker that says it
@@ -120,6 +120,154 @@ impl Drop for DepthGuard {
     }
 }
 
+thread_local! {
+    // GROUPS DO NOT NEST (PART 9 §4c): a bare `::: figure` opener anywhere
+    // inside an open group's body - at ANY depth, through divs, quotes and
+    // list items - is a generic Tier-2 container, not an inner group. The
+    // body parses through several re-entrant helpers on this thread, so the
+    // state lives beside the depth counter they already share.
+    //
+    // Plain initializer for the same MSRV reason as `NESTING_DEPTH` above.
+    #[allow(clippy::missing_const_for_thread_local)]
+    static IN_FIGURE_GROUP: Cell<bool> = Cell::new(false);
+}
+
+thread_local! {
+    // WHERE A FLOATING ATTRIBUTE RAN OUT OF BLOCKS (PART 9 §15 A4, ruled in
+    // markup-carve/carve#1281). `None` while nobody is collecting, which is
+    // every parse but the linter's - a `Some` is installed for the duration of
+    // one call and taken back out at the end.
+    //
+    // A thread-local rather than an out-parameter because the drop happens
+    // wherever a container's body finished, deep inside a recursion that returns
+    // `Vec<BlockNode>` through a dozen call sites - the same reason the depth
+    // counter and the figure-group flag above live here.
+    //
+    // Plain initializer for the same MSRV reason as `NESTING_DEPTH`.
+    #[allow(clippy::missing_const_for_thread_local)]
+    static UNATTACHED_BLOCK_ATTRS: RefCell<Option<Vec<Pos>>> = const { RefCell::new(None) };
+}
+
+/// Run `f`, collecting the source spans of every block attribute that reached
+/// no block (PART 9 §15 A4).
+///
+/// The two ways to run out of following blocks - the end of the DOCUMENT and
+/// the end of the CONTAINER holding the attribute - meet at one site, because a
+/// container's body is parsed by its own [`parse_blocks`] call: a set still
+/// pending when that call's loop ends is a set with nothing left in scope.
+///
+/// Positions are only recorded when the caller asked for them ([`Options`]
+/// `positions`), since a span is what makes a diagnostic locatable and there is
+/// nothing useful to report without one.
+pub(crate) fn collecting_unattached_block_attrs<T>(f: impl FnOnce() -> T) -> (T, Vec<Pos>) {
+    let previous = UNATTACHED_BLOCK_ATTRS.with(|slot| slot.replace(Some(Vec::new())));
+    let out = f();
+    let collected = UNATTACHED_BLOCK_ATTRS.with(|slot| slot.replace(previous));
+    (out, collected.unwrap_or_default())
+}
+
+/// Record one dangling attribute run, if anybody is collecting.
+fn note_unattached_block_attrs(pos: Option<Pos>) {
+    if probing() {
+        return;
+    }
+    let Some(pos) = pos else { return };
+    UNATTACHED_BLOCK_ATTRS.with(|slot| {
+        if let Some(spans) = slot.borrow_mut().as_mut() {
+            spans.push(pos);
+        }
+    });
+}
+
+thread_local! {
+    // Set while a PROBE is parsing a candidate source to answer a question about
+    // it - "does this body end in an open paragraph", "does it end in a heading".
+    // Those parses are thrown away, and their pending-attribute state is a fact
+    // about a FRAGMENT rather than about the document: `:  d` / `   {.k}` /
+    // `tail` probes the body `d` / `{.k}` WITHOUT the line the attribute might
+    // still reach, so a recorder that counted probes reported an attribute the
+    // finished parse had attached.
+    //
+    // Plain initializer for the same MSRV reason as `NESTING_DEPTH`.
+    #[allow(clippy::missing_const_for_thread_local)]
+    static PROBING: Cell<bool> = const { Cell::new(false) };
+}
+
+/// RAII guard marking a throwaway parse, restoring the previous value on drop
+/// (panic unwind included), the discipline [`DepthGuard`] keeps.
+struct ProbeGuard {
+    previous: bool,
+}
+
+impl ProbeGuard {
+    fn enter() -> ProbeGuard {
+        ProbeGuard {
+            previous: PROBING.with(|p| p.replace(true)),
+        }
+    }
+}
+
+impl Drop for ProbeGuard {
+    fn drop(&mut self) {
+        PROBING.with(|p| p.set(self.previous));
+    }
+}
+
+fn probing() -> bool {
+    PROBING.with(|p| p.get())
+}
+
+/// Parse `source` to ANSWER A QUESTION about it, not to publish it.
+///
+/// What such a parse notices about attributes it could not place is a fact about
+/// the fragment, so it is suppressed - see [`PROBING`].
+fn probe_blocks(source: &str, options: &Options<'_>) -> Vec<BlockNode> {
+    let _probing = ProbeGuard::enter();
+    parse_blocks_with_options(source, options)
+}
+
+/// [`probe_blocks`] for a fragment that stands at the DOCUMENT level.
+///
+/// The level is not a detail the caller may leave at its default: an
+/// abbreviation definition is only recognised there (see the `at_document_level`
+/// arm of `line_starts_block`), so a probe run one level down reads `*[HTML]: x`
+/// as an ordinary paragraph and answers every question about the line after it
+/// the wrong way.
+fn probe_blocks_at_document_level(source: &str, options: &Options<'_>) -> Vec<BlockNode> {
+    let _probing = ProbeGuard::enter();
+    parse_blocks_with_options_at_level(source, options, true)
+}
+
+/// RAII guard that marks the current thread as parsing a figure group's body,
+/// restoring the previous state on drop (panic unwind included), the same
+/// discipline [`DepthGuard`] keeps for the depth counter.
+struct FigureGroupGuard {
+    previous: bool,
+}
+
+impl FigureGroupGuard {
+    fn enter() -> FigureGroupGuard {
+        let previous = IN_FIGURE_GROUP.with(Cell::get);
+        IN_FIGURE_GROUP.with(|flag| flag.set(true));
+        FigureGroupGuard { previous }
+    }
+}
+
+impl Drop for FigureGroupGuard {
+    fn drop(&mut self) {
+        let previous = self.previous;
+        IN_FIGURE_GROUP.with(|flag| flag.set(previous));
+    }
+}
+
+/// Whether a container opener line is the BARE `::: figure` form - the fence,
+/// its separator and the kind word, NOTHING else (PART 9 §4c,
+/// `figure_group_open`). An opener carrying a quoted title or a label matches
+/// `admonition_open` instead and stays a generic container.
+fn is_bare_figure_open(open: &ContainerOpen) -> bool {
+    open.kind.as_deref() == Some("figure") && open.title.is_none() && open.label.is_none()
+}
+
 pub fn parse(source: &str) -> Document {
     parse_with_options(source, &Options::default())
 }
@@ -177,6 +325,36 @@ enum ParseMode {
 /// so there is one answer to that question rather than one per caller - the
 /// same reason carve-rs#725 had to unify the frontmatter OPENER test between
 /// these two callers.
+/// Join collected lines back into a source string, TERMINATED.
+///
+/// The parser rebuilds its source several times - a footnote body, the document
+/// body after definitions are lifted out, a container's collected lines - and
+/// each consumer splits it again with `str::lines()`. `join` alone makes that
+/// round trip lossy in exactly one place, a trailing EMPTY line:
+///
+/// ```text
+/// ["a", ""]  ->  join  ->  "a\n"    ->  lines()  ->  ["a"]      the blank is gone
+/// ["a", ""]  ->  here  ->  "a\n\n"   ->  lines()  ->  ["a", ""]  preserved
+/// ["a"]      ->  here  ->  "a\n"    ->  lines()  ->  ["a"]      unchanged
+/// ```
+///
+/// Every other line survives a plain `join` because the separator before it is
+/// still in the string; only the last one has nothing after it to imply it.
+/// `lines()` drops one trailing newline, so terminating changes the
+/// empty-last-line case and nothing else (markup-carve/carve-rs#908).
+fn joined_source<T: AsRef<str>>(lines: &[T]) -> String {
+    if lines.is_empty() {
+        return String::new();
+    }
+    let capacity = lines.iter().map(|line| line.as_ref().len() + 1).sum();
+    let mut joined = String::with_capacity(capacity);
+    for line in lines {
+        joined.push_str(line.as_ref());
+        joined.push('\n');
+    }
+    joined
+}
+
 pub(crate) fn normalize_source(source: &str) -> std::borrow::Cow<'_, str> {
     if !(source.starts_with('\u{feff}') || source.contains('\r') || source.contains('\0')) {
         return std::borrow::Cow::Borrowed(source);
@@ -203,9 +381,30 @@ fn parse_with_options_mode(source: &str, options: &Options<'_>, mode: ParseMode)
         .filter(|b| *b == b'\n')
         .count()
         + 1;
-    let (body, footnote_defs_src, mut footnote_def_pos, note_link_defs) =
-        extract_footnote_defs(body, body_start_line, options.positions);
-    let (body_source, mut link_defs) = extract_link_defs(&body.source);
+    let (body, footnote_defs_src, mut footnote_def_pos, note_link_defs) = if body.contains("[^") {
+        extract_footnote_defs(body, body_start_line, options.positions, options)
+    } else {
+        let body_line_count = body.lines().count();
+        (
+            MappedSource {
+                source: body.to_owned(),
+                line_map: (body_start_line..body_start_line + body_line_count)
+                    .map(Some)
+                    .collect(),
+                col_map: if options.positions {
+                    vec![Some(0); body_line_count]
+                } else {
+                    Vec::new()
+                },
+            },
+            BTreeMap::new(),
+            BTreeMap::new(),
+            BTreeMap::new(),
+        )
+    };
+    let mut link_def_probe_budget = probe_budget_for(body.source.len());
+    let (body_source, mut link_defs) =
+        extract_link_defs_guarded(&body.source, options, &mut link_def_probe_budget);
     // A definition written inside a footnote body is document-level metadata,
     // and a definition at the top level WINS over one of the same label there -
     // measured on carve-js and carve-php, which both resolve `[t][r]` to the
@@ -270,6 +469,7 @@ fn parse_with_options_mode(source: &str, options: &Options<'_>, mode: ParseMode)
                 }
             }
         }
+        widen_over_hosted_definitions(&mut children, &footnote_def_pos);
     }
     let mut doc = Document {
         frontmatter,
@@ -389,9 +589,17 @@ fn fill_crossref_hrefs(doc: &mut Document, lowercase_ids: bool) {
             match node {
                 BlockNode::Paragraph(p) => inlines(&mut p.children, index),
                 BlockNode::Heading(h) => inlines(&mut h.children, index),
-                BlockNode::BlockQuote(b) => blocks(&mut b.children, index),
+                BlockNode::BlockQuote(b) => {
+                    blocks(&mut b.children, index);
+                }
                 BlockNode::Div(d) => blocks(&mut d.children, index),
                 BlockNode::Figure(f) => inlines(&mut f.caption, index),
+                BlockNode::FigureGroup(g) => {
+                    blocks(&mut g.children, index);
+                    if let Some(caption) = &mut g.caption {
+                        inlines(caption, index);
+                    }
+                }
                 BlockNode::List(l) => {
                     for item in &mut l.items {
                         blocks(&mut item.children, index);
@@ -474,66 +682,154 @@ struct ContentColumns {
     /// depending on how deep the quote nesting is. Scoping by container answers
     /// "which columns are live" from structure instead of from an indent
     /// measured in whichever coordinate the caller happened to strip to.
-    frames: Vec<Vec<usize>>,
+    frames: Vec<ColumnFrame>,
     prev_blank: bool,
+}
+
+/// One container's live content columns, plus the definition list open inside
+/// it.
+///
+/// A DEFINITION BODY IS A CONTAINER WITH A CONTENT COLUMN, like a list item
+/// (PART 9 §24 C3, markup-carve/carve#1350). The columns alone could not say so:
+/// a `:  ` line opens a body whose content column is three past the marker, and
+/// a definition written there is that body's block - so it registers, and it
+/// interrupts. Without the open list recorded, a bare `:  x` line anywhere would
+/// claim a column that no `dd` was ever opened at.
+#[derive(Default)]
+struct ColumnFrame {
+    cols: Vec<usize>,
+    /// The indent of the innermost OPEN definition list, set by its `:: ` term.
+    def_list: Option<usize>,
 }
 
 impl ContentColumns {
     fn new() -> Self {
         Self {
-            frames: vec![Vec::new()],
+            frames: vec![ColumnFrame::default()],
             prev_blank: true,
         }
-    }
-
-    /// The number of blockquote prefixes a line opens with.
-    ///
-    /// Only FLUSH-LEFT markers count, and each one is stripped before the next
-    /// is looked for - which is what a container prefix is. An INDENTED `>` is
-    /// not a container the line sits in; it is a quote OPENING inside the
-    /// current one, and the column it is written at is what decides whose block
-    /// it is (§24 C3). That distinction is what makes case 3 keep the item's
-    /// column while case 1 discards it.
-    fn quote_depth(line: &str) -> usize {
-        let mut depth = 0;
-        let mut rest = line;
-        while let Some(inner) = strip_blockquote_prefix(rest) {
-            depth += 1;
-            rest = inner;
-        }
-        depth
     }
 
     /// Feed the next RAW line (quote markers included). `opaque` suppresses
     /// tracking inside a fence or a line block, where `- verse` is content
     /// rather than a marker and a `>` is text rather than a container.
+    ///
+    /// THE COLUMN IS REACHED BY COMPOSING THE STRIPS, NOT BY WALKING THE
+    /// PREFIX (PART 1 S4). A `>` written at an item's content column is that
+    /// item's container prefix exactly as a flush-left one is, so the walk
+    /// peels ONE level at a time and records each level's markers in that
+    /// level's own frame. Counting only the flush-left `>` runs left every
+    /// list opened inside an indented quote invisible: `- > - - x` recorded
+    /// the outer item and nothing else, so a definition at the inner item's
+    /// content column read as lazy text - while the same body with one
+    /// container peeled off (`> - - x`) registered (carve-rs#1096).
     fn observe(&mut self, raw_line: &str, opaque: bool) -> usize {
         let bare = without_blockquote_prefixes(raw_line);
         let was_prev_blank = self.prev_blank;
         self.prev_blank = trim_ascii(bare).is_empty();
         if opaque {
-            return self.current().last().copied().unwrap_or(0);
+            return self.current().cols.last().copied().unwrap_or(0);
         }
         // A blank line does not open or close a container: a quote's blank
         // continuation is commonly written without the `>`, and treating its
         // absence as leaving the quote would drop the columns of the item the
-        // next line still belongs to.
-        if !trim_ascii(bare).is_empty() {
-            let depth = Self::quote_depth(raw_line);
-            self.frames.truncate(depth + 1);
-            while self.frames.len() < depth + 1 {
-                self.frames.push(Vec::new());
-            }
+        // next line still belongs to. It opens nothing either, so it is fed to
+        // the innermost frame as it stands rather than walked.
+        if trim_ascii(bare).is_empty() {
+            let level = self.frames.len() - 1;
+            self.observe_segment(level, bare, was_prev_blank);
+            return self.current().cols.last().copied().unwrap_or(0);
         }
-        let line = bare;
+        let mut rest = raw_line;
+        let mut level = 0usize;
+        loop {
+            while let Some(inner) = strip_blockquote_prefix(rest) {
+                rest = inner;
+                level += 1;
+            }
+            while self.frames.len() <= level {
+                self.frames.push(ColumnFrame::default());
+            }
+            self.observe_segment(level, rest, was_prev_blank);
+            let Some(offset) = self.next_quote_offset(level, rest) else {
+                break;
+            };
+            rest = &rest[offset..];
+        }
+        self.frames.truncate(level + 1);
+        self.current().cols.last().copied().unwrap_or(0)
+    }
+
+    /// Where this level hands off to the NEXT container level, if it does: the
+    /// byte offset of a `>` that is this level's own content column rather than
+    /// text sitting in it.
+    ///
+    /// Two spellings reach the same column and both are container prefixes.
+    /// `- > x` writes the quote straight after the marker, where the item's
+    /// content begins. `  > x` writes it at the column that marker established,
+    /// which is the spelling every CONTINUATION line uses - and the one a
+    /// flush-left walk can never see.
+    fn next_quote_offset(&self, level: usize, line: &str) -> Option<usize> {
+        let mut inside = line;
+        let mut consumed_marker = false;
+        while let Some(marker) = detect_list_marker_full(inside) {
+            if marker.content.as_ptr() as usize <= inside.as_ptr() as usize {
+                break;
+            }
+            inside = marker.content;
+            consumed_marker = true;
+        }
+        if consumed_marker {
+            // The item's content begins exactly here, so a `>` at this position
+            // is written AT the content column.
+            return inside
+                .starts_with('>')
+                .then(|| inside.as_ptr() as usize - line.as_ptr() as usize);
+        }
+        // EXACTLY a live content column, never past one: an indented `>` that
+        // reaches no open item is ordinary text, and the block parser reads it
+        // that way too (carve-rs#1082).
+        let content_col = self.reached_by_at(level, leading_ws(line));
+        let bytes = line.as_bytes();
+        (content_col > 0
+            && bytes.len() > content_col
+            && bytes[..content_col].iter().all(|b| *b == b' ')
+            && bytes[content_col] == b'>')
+            .then_some(content_col)
+    }
+
+    /// Record ONE container level's own markers. `line` is the raw line with
+    /// every prefix up to and including this level's quote markers removed, so
+    /// its columns are measured inside that container.
+    fn observe_segment(&mut self, level: usize, line: &str, was_prev_blank: bool) {
         let indent = leading_ws(line);
         let raw_trimmed = trim_ascii(line);
         let starts_block = is_heading_marker_line(raw_trimmed)
             || raw_trimmed.starts_with('>')
             || detect_fence_open(raw_trimmed).is_some()
             || detect_thematic_break(raw_trimmed);
-        if let Some((marker_indent, marker_width)) = detect_prepass_list_marker(line) {
-            let cols = self.current_mut();
+        if let Some(term_indent) = detect_prepass_def_term(line) {
+            // A term opens the list (or re-opens it at a new indent). Its own
+            // line has no content column: `:: t` holds the TERM, and only the
+            // `:  ` line below it opens a body.
+            let frame = &mut self.frames[level];
+            while frame.cols.last().is_some_and(|col| *col > term_indent) {
+                frame.cols.pop();
+            }
+            frame.def_list = Some(term_indent);
+        } else if let Some(body_indent) =
+            detect_prepass_def_body(line).filter(|at| self.frames[level].def_list == Some(*at))
+        {
+            // `:  ` is three columns wide, so the body's content begins three
+            // past the marker - the same arithmetic the collector does when it
+            // slices the continuation lines it takes.
+            let frame = &mut self.frames[level];
+            while frame.cols.last().is_some_and(|col| *col > body_indent) {
+                frame.cols.pop();
+            }
+            frame.cols.push(body_indent + DEF_BODY_MARKER_WIDTH);
+        } else if let Some((marker_indent, marker_width)) = detect_prepass_list_marker(line) {
+            let cols = &mut self.frames[level].cols;
             while cols.last().is_some_and(|col| *col > marker_indent) {
                 cols.pop();
             }
@@ -552,37 +848,35 @@ impl ContentColumns {
                     break;
                 }
                 offset += nested_width;
-                self.current_mut().push(offset);
+                self.frames[level].cols.push(offset);
             }
         } else if !raw_trimmed.is_empty() && (was_prev_blank || starts_block) {
-            let cols = self.current_mut();
-            while cols.last().is_some_and(|col| *col > indent) {
-                cols.pop();
+            let frame = &mut self.frames[level];
+            while frame.cols.last().is_some_and(|col| *col > indent) {
+                frame.cols.pop();
+            }
+            // A line that dedents to or past the term's own column has left the
+            // definition list, so the next `:  ` line down there opens no body
+            // until another term does.
+            if frame.def_list.is_some_and(|at| indent <= at) {
+                frame.def_list = None;
             }
         }
-        self.current().last().copied().unwrap_or(0)
     }
 
-    fn current(&self) -> &Vec<usize> {
+    fn current(&self) -> &ColumnFrame {
         self.frames
             .last()
             .expect("the document frame is never popped")
     }
 
-    fn current_mut(&mut self) -> &mut Vec<usize> {
-        self.frames
-            .last_mut()
-            .expect("the document frame is never popped")
-    }
-
     fn has_open_item(&self) -> bool {
-        !self.current().is_empty()
+        !self.current().cols.is_empty()
     }
 
     fn current_content_col(&self) -> usize {
-        self.current().last().copied().unwrap_or(0)
+        self.current().cols.last().copied().unwrap_or(0)
     }
-
     /// The content column of the open item a line at `indent` actually reaches:
     /// the deepest one at or below it, or 0 when it reaches none.
     ///
@@ -593,11 +887,24 @@ impl ContentColumns {
     /// Only the INNERMOST container's columns are consulted: a column measured
     /// outside the quote a line sits in is not a column that line can reach.
     fn reached_by(&self, indent: usize) -> usize {
-        self.current()
-            .iter()
-            .copied()
-            .filter(|col| *col <= indent)
-            .max()
+        self.reached_by_at(self.frames.len() - 1, indent)
+    }
+
+    /// `reached_by`, asked of a NAMED container level rather than the innermost
+    /// one. The composed walk needs it: a `>` written at an outer item's content
+    /// column is measured against THAT item's columns, and the innermost frame's
+    /// columns are in a different coordinate system entirely.
+    fn reached_by_at(&self, level: usize, indent: usize) -> usize {
+        self.frames
+            .get(level)
+            .and_then(|frame| {
+                frame
+                    .cols
+                    .iter()
+                    .copied()
+                    .filter(|col| *col <= indent)
+                    .max()
+            })
             .unwrap_or(0)
     }
 }
@@ -649,8 +956,13 @@ fn extract_footnote_defs(
     source: &str,
     first_source_line: usize,
     positions: bool,
+    options: &Options<'_>,
 ) -> FootnoteExtraction {
     let lines: Vec<&str> = source.lines().collect();
+    // See `probe_budget_for`: spent by `line_folds_into_an_open_paragraph`, and
+    // running out only ever collects a definition this guard would have left as
+    // text.
+    let mut probe_budget = probe_budget_for(source.len());
     let mut body = Vec::new();
     let mut body_line_map = Vec::new();
     let mut defs = BTreeMap::new();
@@ -672,8 +984,11 @@ fn extract_footnote_defs(
     // an opener. Entering the state there left it open past the comment's own
     // closer - which is not a colon fence - and every later definition in the
     // document was skipped. Tracked only to gate the opener.
-    let mut in_comment_fence: Option<usize> = None;
+    let mut in_comment_fence: Option<OpenCommentFence> = None;
     let comment_fence_closers = comment_fence_close_index(&lines);
+    // Built on the first CONTAINER-scoped opener and never for a document that
+    // has none, which is every document that only ever writes `%%%` at column 0.
+    let mut container_closers: Option<ContainerCommentClosers> = None;
     let mut comment_closers: Option<HashMap<usize, usize>> = None;
     // See ContentColumns: a definition on an item's CONTINUATION line carries no
     // marker, so without this the line kept its indentation, stopped looking
@@ -709,18 +1024,17 @@ fn extract_footnote_defs(
         // container prefix first, then test the bare content (corpus 115).
         // The footnote prepass asks per LINE which column a definition reaches
         // (see `reached_by`), so the innermost column alone is not enough here.
-        let _ = columns.observe(
+        // Called for its effect on the column stack, not for its return: every
+        // question below asks `reached_by` about a specific column instead of
+        // taking the innermost one (carve-rs#1054).
+        columns.observe(
             lines[i],
             in_fence.is_some() || in_line_block.is_some() || in_comment_fence.is_some(),
         );
         // A quote nested in a list item sits AT the item's content column, so
         // the prefix scan needs that column to see it (carve-rs#588).
         let after_term = i > 0 && opens_definition_entry(lines[i - 1]);
-        let stripped = strip_container_prefixes_at(
-            lines[i],
-            columns.reached_by(leading_ws(lines[i])),
-            after_term,
-        );
+        let stripped = strip_container_prefixes_at(lines[i], &columns, after_term);
         let in_container = !stripped.structural.is_empty();
         // A footnote definition is NEVER collected from inside a fenced code
         // block: a `[^x]: ...` line there is literal content. The prepass has
@@ -767,15 +1081,16 @@ fn extract_footnote_defs(
         // exactly as it does today. That is the same limitation the comment on
         // this function already records, and the same answer: the sound fix is
         // collecting definitions during block parsing.
-        if let Some(fence_len) = in_comment_fence {
+        if let Some(open) = in_comment_fence {
             // ANY column, matching `comment_fence_close_index` and the block
             // parser. A comment fence closes at whatever indent its closer sits
             // at (PART 9 §24 C3, markup-carve/carve#629), so testing the strict
             // form here made this pass disagree with the one that decides: the
             // block parser closed the comment, this scan did not, and every
             // definition after it went unregistered and came back as visible
-            // text (#574 regression).
-            if is_comment_fence_close_any_column(lines[i], fence_len) {
+            // text (#574 regression). Any column AT THE OPENER'S QUOTE DEPTH -
+            // see `closes_open_comment_fence`.
+            if closes_open_comment_fence(lines[i], open) {
                 in_comment_fence = None;
             }
             // A comment's body is OPAQUE: a `[^a]: note` inside one is comment
@@ -787,12 +1102,28 @@ fn extract_footnote_defs(
             body_line_map.push(Some(first_source_line + i));
             i += 1;
             continue;
-        } else if let Some(open) = detect_comment_fence_line(lines[i]) {
-            if comment_fence_closers
-                .get(&open.fence_len)
-                .is_some_and(|close_at| *close_at > i)
-            {
-                in_comment_fence = Some(open.fence_len);
+        } else if let Some((open, scope)) = detect_comment_fence_opener_scoped(lines[i], &columns) {
+            // THE CONTAINER BOUNDS THE SPAN, NOT THE DELIMITER. For a column
+            // scope the bound ends the container at the first line that dedents
+            // below the column the fence REACHES, so measuring from where the
+            // `%%%` happens to be written read a legal body line as the end:
+            // `- item` / `    %%%` / `  [r]: /u` / `    %%%` put the fence at 4
+            // and its body at 2, still inside the item, and the fence was
+            // declined (carve-rs#1054). For a quote scope the blank line is the
+            // bound - see `CommentFenceScope`.
+            if comment_fence_scope_closes(
+                scope,
+                &lines,
+                i,
+                open.fence_len,
+                &columns,
+                &comment_fence_closers,
+                &mut container_closers,
+            ) {
+                in_comment_fence = Some(OpenCommentFence {
+                    fence_len: open.fence_len,
+                    quote_depth: scope.quote_depth(),
+                });
                 body.push(lines[i].to_string());
                 body_line_map.push(Some(first_source_line + i));
                 i += 1;
@@ -820,7 +1151,27 @@ fn extract_footnote_defs(
             stripped.structural,
             columns.reached_by(leading_ws(stripped.bare)),
         );
-        if let Some((label, first)) = parse_footnote_def_line(def_line) {
+        if let Some((label, first)) = parse_footnote_def_line(def_line).filter(|_| {
+            // A LIST MARKER on a line the block parser folds into an open
+            // paragraph is lazy paragraph text, and the definition behind it is
+            // part of that text (markup-carve/carve-rs#1024). Cutting it out
+            // deleted the author's line AND defined a note nobody wrote.
+            //
+            // The marker test is what SCOPES the guard, and it reads the RAW
+            // line. §10 gives a list the property this turns on - it does not
+            // interrupt an open paragraph - and a quote does not have it, so
+            // `r` then `> [^f]: t` opens a real quote whose definition IS
+            // collected, in all three engines. A quoted marker (`> - [^f]: t`)
+            // does not match here either, so the same shape inside a quote is
+            // still collected; `line_folds_into_an_open_paragraph` answers that
+            // one correctly if it is ever asked, but widening what asks it is a
+            // separate change with its own controls.
+            //
+            // Everything past the marker is the block parser's answer, not this
+            // pass's guess. See `line_folds_into_an_open_paragraph`.
+            !(marker_line_may_be_lazy(lines[i])
+                && line_folds_into_an_open_paragraph(&body, lines[i], options, &mut probe_budget))
+        }) {
             let def_start_line = first_source_line + i;
             // The definition's OWN extent, before the body is collected.
             //
@@ -1004,7 +1355,20 @@ fn extract_footnote_defs(
                     break;
                 }
             }
-            if positions && !in_container && i < lines.len() && is_blank_line(lines[i]) {
+            // ONLY FOR THE DEFINITION THIS POSITION DESCRIBES. The first
+            // definition for a label wins, both here and in `defs` below, so a
+            // later duplicate must not move the accepted one's end: this wrote
+            // the DUPLICATE's following line onto the FIRST definition's span,
+            // and the container that hosted the first one was then reported as
+            // running to it (carve-rs#1106). `defs` holds the label exactly
+            // when an earlier definition was accepted, which is the test.
+            let first_for_label = !defs.contains_key(label);
+            if positions
+                && !in_container
+                && first_for_label
+                && i < lines.len()
+                && is_blank_line(lines[i])
+            {
                 if let Some(pos) = def_positions.get_mut(label) {
                     pos.end_line = first_source_line + i;
                     pos.end_column = 1;
@@ -1049,9 +1413,7 @@ fn extract_footnote_defs(
                 // lands at column 0 and CLOSES the item it exists to keep
                 // open - the line after it leaves the list entirely.
                 let document_column = replacement.is_empty() && leading_ws(stripped.bare) == 0;
-                if replacement.is_empty() {
-                    replacement.push_str(&stripped.bare[..leading_ws(stripped.bare)]);
-                }
+                replacement.push_str(&stripped.bare[..leading_ws(stripped.bare)]);
                 replacement.push_str(if document_column {
                     DOCUMENT_DEFINITION_PLACEHOLDER
                 } else {
@@ -1087,7 +1449,7 @@ fn extract_footnote_defs(
             } else {
                 Vec::new()
             },
-            source: body.join("\n"),
+            source: joined_source(&body),
             line_map: body_line_map,
         },
         defs,
@@ -1140,8 +1502,275 @@ struct LinkDef {
     attrs: Option<Attrs>,
 }
 
+/// How many BYTES the definition pre-pass may hand to the block parser to
+/// answer [`line_folds_into_an_open_paragraph`], for one document.
+///
+/// The question is answered by parsing, and what has to be parsed is the run of
+/// lines back to the last blank one - so a document that is one long blank-free
+/// run of definition-shaped marker lines asks it once per line over a run that
+/// grows by one each time, which is quadratic. The budget makes the pre-pass
+/// linear again by capping the total, and running out is SAFE in the direction
+/// that matters: an unanswered question is answered `false`, which collects the
+/// definition exactly as the engine did before this guard existed. A document
+/// has to be built to reach it - the question is only asked for a line that is
+/// both a list marker and a definition behind it. Each pass that asks gets its
+/// own budget: the footnote pre-pass and, since carve#1425, the link-reference
+/// one.
+///
+/// BYTES RATHER THAN LINES, because a probe costs what it PARSES and a line is
+/// not a unit of that. Counting lines prices one long line and one short one
+/// the same, so a run holding a single huge line under many short
+/// definition-shaped ones buys as many full re-parses of that line as it has
+/// candidates - the amplification the cap exists to bound, priced at zero.
+fn probe_budget_for(source_bytes: usize) -> usize {
+    source_bytes.saturating_mul(4).saturating_add(4096)
+}
+
+/// One level of a probe's LAST-CHILD CHAIN: what kind of node the level ends
+/// with, and - carried alongside in [`OpenFrame`] - how many nodes it holds.
+///
+/// A list's ITEMS and a definition list's are levels of their own rather than
+/// blocks, and they have to be, because the count that separates a sibling item
+/// from a lazy continuation lives exactly there: `- a` / `  lazy` and the same
+/// with `- [^f]: t` under it hold the identical blocks at every OTHER level and
+/// differ only in how many items the list has.
+#[derive(PartialEq, Eq)]
+enum ProbeLevel {
+    Blocks(std::mem::Discriminant<BlockNode>),
+    ListItems,
+    DefinitionItems,
+}
+
+/// The chain of still-open levels a parse ends in, from the document level down
+/// to the innermost last node.
+struct OpenFrame {
+    levels: Vec<(ProbeLevel, usize)>,
+    /// Whether the innermost node the chain reached is a paragraph. Read from
+    /// the chain rather than re-derived, so the two always describe one walk.
+    ends_in_paragraph: bool,
+}
+
+/// The child level a block holds, for the last-child walk [`open_frame`] makes.
+///
+/// EXHAUSTIVE ON PURPOSE, with no `_` arm: a block kind added later is a
+/// compile error here rather than a silent answer. And the answer a `Leaf` gives
+/// is the safe one anyway - a level the walk cannot enter ends the chain on a
+/// node that is not a paragraph, so the caller declines to suppress.
+enum ProbeChildren<'a> {
+    Blocks(&'a [BlockNode]),
+    ListItems(&'a [ListItem]),
+    DefinitionItems(&'a [DefinitionItem]),
+    Leaf,
+}
+
+fn probe_children(block: &BlockNode) -> ProbeChildren<'_> {
+    match block {
+        BlockNode::BlockQuote(b) => ProbeChildren::Blocks(&b.children),
+        BlockNode::Div(b) => ProbeChildren::Blocks(&b.children),
+        BlockNode::Admonition(b) => ProbeChildren::Blocks(&b.children),
+        BlockNode::FigureGroup(b) => ProbeChildren::Blocks(&b.children),
+        BlockNode::LineBlock(b) => ProbeChildren::Blocks(&b.children),
+        BlockNode::Extension(b) => ProbeChildren::Blocks(&b.children),
+        BlockNode::List(b) => ProbeChildren::ListItems(&b.items),
+        BlockNode::DefinitionList(b) => ProbeChildren::DefinitionItems(&b.items),
+        BlockNode::Heading(_)
+        | BlockNode::Paragraph(_)
+        | BlockNode::CodeBlock(_)
+        | BlockNode::Table(_)
+        | BlockNode::Figure(_)
+        | BlockNode::AbbreviationDef(_)
+        | BlockNode::LinkReferenceDefinition(_)
+        | BlockNode::CitationDefinition(_)
+        | BlockNode::RawBlock(_)
+        | BlockNode::Comment(_)
+        | BlockNode::BlockImage(_)
+        | BlockNode::ThematicBreak(_) => ProbeChildren::Leaf,
+    }
+}
+
+fn open_frame(blocks: &[BlockNode]) -> OpenFrame {
+    let paragraph = std::mem::discriminant(&BlockNode::Paragraph(Paragraph::default()));
+    let mut frame = OpenFrame {
+        levels: Vec::new(),
+        ends_in_paragraph: false,
+    };
+    let mut blocks = blocks;
+    loop {
+        let Some(last) = blocks.last() else {
+            return frame;
+        };
+        let kind = std::mem::discriminant(last);
+        frame.ends_in_paragraph = kind == paragraph;
+        frame.levels.push((ProbeLevel::Blocks(kind), blocks.len()));
+        match probe_children(last) {
+            ProbeChildren::Blocks(children) => blocks = children,
+            ProbeChildren::ListItems(items) => {
+                frame.ends_in_paragraph = false;
+                let Some(item) = items.last() else {
+                    return frame;
+                };
+                frame.levels.push((ProbeLevel::ListItems, items.len()));
+                blocks = &item.children;
+            }
+            ProbeChildren::DefinitionItems(items) => {
+                frame.ends_in_paragraph = false;
+                let Some(item) = items.last() else {
+                    return frame;
+                };
+                frame
+                    .levels
+                    .push((ProbeLevel::DefinitionItems, items.len()));
+                let Some(def) = item.definitions.last() else {
+                    return frame;
+                };
+                blocks = &def.children;
+            }
+            ProbeChildren::Leaf => return frame,
+        }
+    }
+}
+
+/// Is `line` a list marker line the probe may be asked about - THROUGH its
+/// container prefixes?
+///
+/// This is the scope of the lazy guard, and only §10's property makes it a
+/// question at all: a list does not interrupt an open paragraph, so a marker
+/// line can be lazy text where a quote or a heading on the same line could not.
+///
+/// THE PREFIXES COME OFF FIRST (carve-rs#1142). Both passes used to test the RAW
+/// line, so `> - [d]: u` matched no marker, never reached the probe, and was
+/// collected out of the quote's open paragraph - which deleted the author's text
+/// and left a bare `-` on the page. The container was never the question: the
+/// run the probe parses carries the quote, so `>`, `:::` and the document level
+/// get the same answer from the same code.
+fn marker_line_may_be_lazy(line: &str) -> bool {
+    detect_list_marker_full(without_blockquote_prefixes(line)).is_some()
+}
+
+/// Does the BLOCK PARSER fold `line` into a paragraph that was already open?
+///
+/// This is the question a definition pre-pass has to answer before it may cut a
+/// definition out of a line, and the pre-pass has no business answering it
+/// itself. Both passes ask it - the footnote one since carve-rs#1024, the
+/// link-reference one since carve#1425. §10 says a list does not interrupt an open paragraph, so `r` then
+/// `. [^f]: t` is one paragraph holding both lines - and a pre-pass that
+/// collects the definition out of the second line deletes text the block parser
+/// keeps and defines a note nobody wrote (markup-carve/carve-rs#1024).
+///
+/// THE ANSWER IS ASKED OF THE PARSER, NOT ENUMERATED. The predicate this
+/// replaced listed the openers a line can be and called every line it did not
+/// recognise ordinary paragraph text - so every opener nobody thought of
+/// answered "a paragraph is open", and that answer SUPPRESSES a collection the
+/// engine used to make. Four such openers were found and closed; one review
+/// pass then found three more of the same class, and a custom `match_block`
+/// extension is a fourth that cannot be listed at all, because the pre-pass does
+/// not know the extension's syntax. The list is unbounded by construction, so
+/// there is no version of it that is finished.
+///
+/// So the run is handed to the block parser TWICE, once without `line` and once
+/// with it, and the two open frames are compared. A line that folds into an open
+/// paragraph adds NO node anywhere: every level holds what it held, and the
+/// innermost one is still a paragraph. A line that opens anything - a sibling
+/// item, a nested list, a quote, a container, a block an extension defines -
+/// changes a count somewhere along that chain, and the frames differ. The parser
+/// answers for its own extensions for free, which is the case no list could have
+/// covered.
+///
+/// FAILING SAFE IS THE DEFAULT AND NOT A CLAIM. Every early return here is
+/// `false`, and `false` declines to suppress: an empty run, an exhausted budget,
+/// a chain the walk cannot enter, a probe that ends in anything but a paragraph.
+/// The worst an unrecognised shape can do is collect the definition the way the
+/// engine did before the guard existed, which is a defect that reports itself.
+/// It can never make the pre-pass delete an author's line unasked.
+///
+/// THE RUN IS BOUNDED BY THE LAST BLANK LINE, which is sound and not an
+/// approximation: a blank line closes every paragraph in every container, so a
+/// paragraph still open at the end of `body` began after the last blank one.
+/// Losing the container frame ABOVE that blank can only cost a suppression -
+/// an indented run read at the document level parses its marker lines as list
+/// items rather than as lazy text - which is the safe direction again.
+///
+/// The run is taken from `body`, the document THIS PASS has extracted so far,
+/// not from the raw source: a definition already collected is gone from the
+/// parser's input, and a probe that still saw it would read the paragraph it is
+/// not. Link definitions are the other half of the same point - they are
+/// stripped downstream of here, so the probe strips them too, and `[a]: /u` is
+/// the line it leaves rather than the paragraph a raw parse would find.
+fn line_folds_into_an_open_paragraph(
+    body: &[impl AsRef<str>],
+    line: &str,
+    options: &Options<'_>,
+    budget: &mut usize,
+) -> bool {
+    let run_start = body
+        .iter()
+        .rposition(|written| is_blank_line(written.as_ref()))
+        .map_or(0, |blank| blank + 1);
+    let run = &body[run_start..];
+    if run.is_empty() {
+        return false;
+    }
+    // What the two probes will PARSE, which is the run twice over plus the
+    // candidate line - so the price is the work rather than the question.
+    let cost = run
+        .iter()
+        .map(|written| written.as_ref().len().saturating_add(1))
+        .fold(0usize, |total, len| total.saturating_add(len))
+        .saturating_mul(2)
+        .saturating_add(line.len());
+    if *budget < cost {
+        return false;
+    }
+    *budget -= cost;
+
+    let mut before = String::with_capacity(run.iter().map(|line| line.as_ref().len() + 1).sum());
+    for (index, written) in run.iter().enumerate() {
+        if index != 0 {
+            before.push('\n');
+        }
+        before.push_str(written.as_ref());
+    }
+    let mut after = String::with_capacity(before.len() + line.len() + 1);
+    after.push_str(&before);
+    after.push('\n');
+    after.push_str(line);
+
+    let before = open_frame(&probe_blocks_at_document_level(
+        &extract_link_defs(&before).0,
+        options,
+    ));
+    let after = open_frame(&probe_blocks_at_document_level(
+        &extract_link_defs(&after).0,
+        options,
+    ));
+    after.ends_in_paragraph && before.levels == after.levels
+}
+
 fn extract_link_defs(source: &str) -> (String, BTreeMap<String, LinkDef>) {
-    let mut body: Vec<String> = Vec::new();
+    extract_link_defs_with_guard(source, None)
+}
+
+/// The pipeline's spelling, which asks the block parser before it cuts a
+/// definition out of a LIST MARKER line.
+///
+/// `guard` is `None` for the probe inside
+/// [`line_folds_into_an_open_paragraph`], which calls this pass to strip
+/// definitions from the run it parses. That is what breaks the recursion: the
+/// guarded pass asks the probe, the probe asks the unguarded pass, and the
+/// unguarded pass asks nothing.
+fn extract_link_defs_guarded(
+    source: &str,
+    options: &Options<'_>,
+    budget: &mut usize,
+) -> (String, BTreeMap<String, LinkDef>) {
+    extract_link_defs_with_guard(source, Some((options, budget)))
+}
+
+fn extract_link_defs_with_guard(
+    source: &str,
+    mut guard: Option<(&Options<'_>, &mut usize)>,
+) -> (String, BTreeMap<String, LinkDef>) {
+    let mut body: Vec<std::borrow::Cow<'_, str>> = Vec::new();
     let mut defs = BTreeMap::new();
     let mut in_fence: Option<FenceOpen> = None;
     // A LINE BLOCK's body is inline content (`line_block_line = {whitespace},
@@ -1158,7 +1787,7 @@ fn extract_link_defs(source: &str) -> (String, BTreeMap<String, LinkDef>) {
     // an opener. Entering the state there left it open past the comment's own
     // closer - which is not a colon fence - and every later definition in the
     // document was skipped. Tracked only to gate the opener.
-    let mut in_comment_fence: Option<usize> = None;
+    let mut in_comment_fence: Option<OpenCommentFence> = None;
     // Track enclosing list item content columns so the strict fence test can be
     // re-based to the item's content column. This remains a line-based
     // approximation: tab-vs-space marker alignment is char-counted, the
@@ -1173,6 +1802,9 @@ fn extract_link_defs(source: &str) -> (String, BTreeMap<String, LinkDef>) {
     // before the state is entered - see comment_fence_closes.
     let all_lines: Vec<&str> = source.lines().collect();
     let comment_closers = comment_fence_close_index(&all_lines);
+    // See the note in `extract_footnote_defs`: lazy, so a document with no
+    // container-scoped comment fence pays nothing for it.
+    let mut container_closers: Option<ContainerCommentClosers> = None;
     // Suffix maxima make the "could this opener close later?" rejection O(1).
     // The exact scan below is then needed only when a compatible closer really
     // exists; once found, the fence state makes all intervening opener-shaped
@@ -1232,7 +1864,7 @@ fn extract_link_defs(source: &str) -> (String, BTreeMap<String, LinkDef>) {
             && !structural_description
             && !definition_body_boundary
         {
-            body.push(line.to_string());
+            body.push(line.to_string().into());
             continue;
         }
         if structural_blank
@@ -1258,14 +1890,7 @@ fn extract_link_defs(source: &str) -> (String, BTreeMap<String, LinkDef>) {
         // A quote nested in a list item sits AT the item's content column, so
         // the prefix scan needs that column to see it (carve-rs#588).
         let after_term = line_index > 0 && opens_definition_entry(all_lines[line_index - 1]);
-        let stripped =
-            strip_container_prefixes_at(line, columns.reached_by(leading_ws(line)), after_term);
-        // A marker after an already-open paragraph is lazy paragraph text, not
-        // a new container from which this line-oriented pre-pass may collect a
-        // definition (`r\n. [f]: t`).
-        let marker_is_lazy_text = line_index > 0
-            && !is_blank_line(all_lines[line_index - 1])
-            && detect_list_marker_full(line).is_some();
+        let stripped = strip_container_prefixes_at(line, &columns, after_term);
         let raw_is_quoted = prepass_line_is_quoted(line);
         if let Some(fence_len) = in_line_block {
             // The line is KEPT whatever it looks like - that is the whole point.
@@ -1277,7 +1902,7 @@ fn extract_link_defs(source: &str) -> (String, BTreeMap<String, LinkDef>) {
             // this change was only about the line surviving. carve#574 answered
             // it: nothing inside verse is claimed, so a definition-shaped line
             // renders and defines nothing.
-            body.push(line.to_string());
+            body.push(std::borrow::Cow::Borrowed(line));
             // The RAW line - see the note in extract_footnote_defs.
             if exact_colon_fence_len(line) == Some(fence_len) {
                 in_line_block = None;
@@ -1285,7 +1910,7 @@ fn extract_link_defs(source: &str) -> (String, BTreeMap<String, LinkDef>) {
             continue;
         }
         if let Some(open) = in_fence {
-            body.push(line.to_string());
+            body.push(std::borrow::Cow::Borrowed(line));
             // CLOSER: strip a blockquote prefix only when the fence was opened
             // quoted, and NEVER a list marker. A fence closer is a continuation
             // line of pure indentation, so a literal marker line inside a
@@ -1323,9 +1948,10 @@ fn extract_link_defs(source: &str) -> (String, BTreeMap<String, LinkDef>) {
         };
         // Top-level and unindented only - see the note in extract_footnote_defs
         // for why a nested opener is refused rather than guessed at.
-        if let Some(fence_len) = in_comment_fence {
-            // ANY column - see the note in `extract_footnote_defs`.
-            if is_comment_fence_close_any_column(line, fence_len) {
+        if let Some(open) = in_comment_fence {
+            // ANY column, at the opener's quote depth - see the note in
+            // `extract_footnote_defs`.
+            if closes_open_comment_fence(line, open) {
                 in_comment_fence = None;
             }
             // A comment's body is OPAQUE, so a definition-shaped line inside
@@ -1337,15 +1963,26 @@ fn extract_link_defs(source: &str) -> (String, BTreeMap<String, LinkDef>) {
             //
             // carve-js has never registered from inside a comment and carve-php
             // stopped (carve-php#698); this brings the third engine into line.
-            body.push(line.to_string());
+            body.push(std::borrow::Cow::Borrowed(line));
             continue;
-        } else if let Some(open) = detect_comment_fence_line(line) {
-            if comment_closers
-                .get(&open.fence_len)
-                .is_some_and(|close_at| *close_at > line_index)
-            {
-                in_comment_fence = Some(open.fence_len);
-                body.push(line.to_string());
+        } else if let Some((open, scope)) = detect_comment_fence_opener_scoped(line, &columns) {
+            // The same scopes as the footnote prepass above: the fence is gated
+            // by the column it REACHES, and its span is bounded by the container
+            // holding it rather than by the delimiter's own column.
+            if comment_fence_scope_closes(
+                scope,
+                &all_lines,
+                line_index,
+                open.fence_len,
+                &columns,
+                &comment_closers,
+                &mut container_closers,
+            ) {
+                in_comment_fence = Some(OpenCommentFence {
+                    fence_len: open.fence_len,
+                    quote_depth: scope.quote_depth(),
+                });
+                body.push(std::borrow::Cow::Borrowed(line));
                 continue;
             }
         }
@@ -1356,7 +1993,7 @@ fn extract_link_defs(source: &str) -> (String, BTreeMap<String, LinkDef>) {
         {
             if let Some(fence_len) = detect_line_block_open(fence_line) {
                 in_line_block = Some(fence_len);
-                body.push(line.to_string());
+                body.push(std::borrow::Cow::Borrowed(line));
                 continue;
             }
         }
@@ -1393,7 +2030,7 @@ fn extract_link_defs(source: &str) -> (String, BTreeMap<String, LinkDef>) {
             if !follows_open_paragraph || closes_ahead {
                 in_fence = Some(open);
             }
-            body.push(line.to_string());
+            body.push(std::borrow::Cow::Borrowed(line));
             continue;
         }
         // A definition on an item's CONTINUATION line carries no marker, so
@@ -1408,22 +2045,42 @@ fn extract_link_defs(source: &str) -> (String, BTreeMap<String, LinkDef>) {
         // implementations agree it defines nothing there. Zero columns is the
         // top-level case, where `text` / `  [r]: /u` is likewise text
         // everywhere - so this only ever fires inside a list item.
-        let def_line = if marker_is_lazy_text {
-            line
-        } else {
-            at_content_column(
-                stripped.bare,
-                stripped.structural,
-                columns.reached_by(leading_ws(stripped.bare)),
-            )
-        };
-        if let Some((label_part, target_part)) = parse_link_def_line(def_line) {
+        let def_line = at_content_column(
+            stripped.bare,
+            stripped.structural,
+            columns.reached_by(leading_ws(stripped.bare)),
+        );
+        if let Some((label_part, target_part)) = parse_link_def_line(def_line).filter(|_| {
+            // A LIST MARKER on a line the block parser folds into an open
+            // paragraph is lazy paragraph text, and the definition behind it is
+            // part of that text. Cutting it out deletes the author's line and
+            // defines a reference nobody wrote (markup-carve/carve#1425).
+            //
+            // THE PREVIOUS LINE IS NOT THE QUESTION. This guard used to ask
+            // whether that line was blank, which is a different question with a
+            // different answer: a heading, a comment, a definition of any of the
+            // three kinds and a marker line are all non-blank and all leave NO
+            // OPEN PARAGRAPH (grammar PART 0), so the cheap spelling refused a
+            // collection carve-js, carve-php and the executable spec all make -
+            // and the definition came back as visible item text. The footnote
+            // pass answered this for its own kind in carve-rs#1024 and left this
+            // one filed; this is that fix.
+            //
+            // The marker test SCOPES the guard and reads the RAW line, so a
+            // quoted marker (`> - [d]: u`) never reaches it and is collected as
+            // before - the same scope the footnote pass has, deliberately, so
+            // the two kinds answer alike.
+            !(marker_line_may_be_lazy(line)
+                && guard.as_mut().is_some_and(|(options, budget)| {
+                    line_folds_into_an_open_paragraph(&body, line, options, budget)
+                }))
+        }) {
             // A reference definition needs a non-empty destination (carve-js
             // `RE_LINK_DEF` requires `(\S+)` after the colon). An empty target
             // (`[r]:` + only whitespace) is NOT a definition -- the line stays
             // literal text. (corpus 34-reference-link-9)
             if label_part.starts_with('@') || target_part.trim().is_empty() {
-                body.push(line.to_string());
+                body.push(std::borrow::Cow::Borrowed(line));
                 continue;
             }
             let mut def = parse_link_def_target_with_attrs(target_part.trim());
@@ -1432,7 +2089,7 @@ fn extract_link_defs(source: &str) -> (String, BTreeMap<String, LinkDef>) {
             def.line = Some(line_index);
             defs.insert(label_part.to_string(), def);
             if definition_body_boundary {
-                body.push(String::new());
+                body.push(String::new().into());
                 continue;
             }
             // Leave a blank line in place of the (invisible) definition so it
@@ -1464,9 +2121,7 @@ fn extract_link_defs(source: &str) -> (String, BTreeMap<String, LinkDef>) {
                 // lands at column 0 and CLOSES the item it exists to keep
                 // open - the line after it leaves the list entirely.
                 let document_column = replacement.is_empty() && leading_ws(stripped.bare) == 0;
-                if replacement.is_empty() {
-                    replacement.push_str(&stripped.bare[..leading_ws(stripped.bare)]);
-                }
+                replacement.push_str(&stripped.bare[..leading_ws(stripped.bare)]);
                 replacement.push_str(if document_column {
                     DOCUMENT_DEFINITION_PLACEHOLDER
                 } else {
@@ -1480,15 +2135,15 @@ fn extract_link_defs(source: &str) -> (String, BTreeMap<String, LinkDef>) {
                         .saturating_sub(replacement.chars().count()),
                 ),
             );
-            body.push(replacement);
+            body.push(std::borrow::Cow::Owned(replacement));
         } else {
-            body.push(line.to_string());
+            body.push(std::borrow::Cow::Borrowed(line));
             if prepass_opens_paragraph(stripped.bare) {
                 paragraph_open = true;
             }
         }
     }
-    (body.join("\n"), defs)
+    (joined_source(&body), defs)
 }
 
 fn prepass_opens_paragraph(line: &str) -> bool {
@@ -1541,6 +2196,75 @@ fn strip_prepass_blockquote_prefix(line: &str) -> Option<&str> {
     Some(&line[i..])
 }
 
+/// The quote a line opens: how many markers deep, the COLUMN the first of them
+/// starts at, and what is left after them.
+///
+/// Depth rather than a boolean because stripping the markers collapses
+/// `> > %%%` and `> %%%` onto the same run, and they belong to different quotes.
+/// `prepass_line_is_quoted` only ever needed to know THAT a line was quoted; the
+/// comment-fence scope needs to know how deep, so a closer can be matched
+/// against the quote its opener was written in.
+///
+/// A LIST MARKER comes off first, the way `prepass_line_is_quoted` already reads
+/// one and `detect_comment_fence_opener_at_any_column` already walks one: a
+/// quote may open on an item's marker line, so `- > %%%` is quoted at depth 1
+/// and its body continues at `  > `. Reading only the leading markers left that
+/// one spelling of the same fence unrecognized.
+///
+/// The column is what keeps the two prefixes from being confused for each other.
+/// A `> %%%` written back at column 0 is not the closer of a `- > %%%`, because
+/// it has left the item; the depth alone cannot tell them apart, and the column
+/// is what the dedent half of the bound measures against. For a quote at column
+/// 0 nothing can dedent below it, so that half never fires and the blank line is
+/// the whole bound, exactly as it is for the plain spelling.
+fn prepass_quote_scope(line: &str) -> (usize, usize, &str) {
+    let mut rest = line;
+    let mut col = 0usize;
+    loop {
+        let trimmed = trim_ascii_start(rest);
+        col = advance_columns(&rest[..rest.len() - trimmed.len()], col);
+        rest = trimmed;
+        let Some(marker) = detect_list_marker_full(rest) else {
+            break;
+        };
+        let consumed = marker.content.as_ptr() as usize - rest.as_ptr() as usize;
+        if consumed == 0 {
+            break;
+        }
+        col = advance_columns(&rest[..consumed], col);
+        rest = marker.content;
+    }
+    let quote_col = col;
+    let mut depth = 0;
+    while let Some(inner) = strip_prepass_blockquote_prefix(rest) {
+        depth += 1;
+        rest = inner;
+    }
+    (depth, quote_col, rest)
+}
+
+/// `:  ` - the definition-body marker, three columns wide.
+const DEF_BODY_MARKER_WIDTH: usize = 3;
+
+/// The indent of a `:: ` TERM line, which opens a definition list.
+fn detect_prepass_def_term(line: &str) -> Option<usize> {
+    let indent = leading_ws(line);
+    is_definition_list_start(&line[indent.min(line.len())..]).then_some(indent)
+}
+
+/// The indent of a `:  ` BODY line, which opens a definition body.
+///
+/// The separator is the marker's own, so a line that is only the marker opens
+/// nothing: `parse_definition_list` reads `:  ` with `strip_prefix`, and an
+/// empty remainder is the placeholder form rather than a body with content.
+fn detect_prepass_def_body(line: &str) -> Option<usize> {
+    let indent = leading_ws(line);
+    line[indent.min(line.len())..]
+        .strip_prefix(":  ")
+        .filter(|body| !is_blank_line(body))
+        .map(|_| indent)
+}
+
 fn detect_prepass_list_marker(line: &str) -> Option<(usize, usize)> {
     let bytes = line.as_bytes();
     let mut i = 0;
@@ -1553,6 +2277,11 @@ fn detect_prepass_list_marker(line: &str) -> Option<(usize, usize)> {
     }
     match bytes[i] {
         b'-' | b'*' => i += 1,
+        // The bare dot is a decimal ordered marker whose authored width is one
+        // column, exactly like a bullet. Leaving it out of the definition
+        // prepass made definitions at its content column render as literal
+        // item text even though the block parser recognized the list.
+        b'.' => i += 1,
         b'0'..=b'9' => {
             while i < bytes.len() && bytes[i].is_ascii_digit() {
                 i += 1;
@@ -1661,7 +2390,7 @@ fn parse_link_def_line(line: &str) -> Option<(&str, &str)> {
     // tail as junk and ignored it, which nothing in the grammar authorized.
     //
     // The anchor lives HERE, in the shape test, rather than at the two places
-    // that build the node - so block-position handling, the container scan and
+    // that build the node - so paragraph interruption, the container scan and
     // the footnote-body scan all get the same answer from the same code. That
     // is the sweep carve#922 asks for: while the pattern ended in a
     // swallow-everything tail, a caller could test the RAW line and be right by
@@ -1876,15 +2605,60 @@ fn strip_container_prefixes(mut line: &str, after_term: bool) -> StrippedContain
 /// `    > [r]: /u` is indented text, not a quote, and stays uncollected.
 fn strip_container_prefixes_at<'a>(
     line: &'a str,
-    content_col: usize,
+    columns: &ContentColumns,
     after_term: bool,
 ) -> StrippedContainerLine<'a> {
-    if content_col > 0
-        && line.len() > content_col
-        && line.as_bytes()[..content_col].iter().all(|b| *b == b' ')
-        && line.as_bytes()[content_col] == b'>'
-    {
-        let inner = strip_container_prefixes(&line[content_col..], after_term);
+    // ASKED AFTER THE QUOTE MARKERS, because that is where the column it asks
+    // about is measured. `at_content_column` records why: columns are counted
+    // INSIDE the quote, so the item opened by `> - a` has content column 2 and
+    // not 4. Asking about the raw line answered for the wrong depth - the indent
+    // before a `>` is zero on a line that starts with one, so `> - a` /
+    // `>   > [r]: /u` found no column, the inner quote was never stripped, and
+    // the definition inside it stayed paragraph text where the block parser
+    // publishes it (markup-carve/carve-rs#1082).
+    //
+    // The column is still what decides, which is the whole rule: an indented `>`
+    // opens a quote only AT a live item's content column. `> a` / `>   > b` has
+    // no item, so no column matches, the `>` is ordinary text, and this pass
+    // agrees with the block parser about that too.
+    // AND ASKED AGAIN AT EACH DEPTH, because the prefixes alternate. Each hop
+    // consumes one indent-then-quote, and the markers between two hops are what
+    // the workhorse below already walks - so `- > - > x` /
+    // `  >   > [r]: /url` needs the question twice, once per item that holds a
+    // quote. Asking once left the inner one unstripped.
+    let mut cut = 0usize;
+    // WHICH LEVEL the question is asked at, not just how deep the walk has got.
+    // Each hop enters one more container, and the column a `>` must sit at is
+    // that container's, measured in its own coordinates - so the frame the
+    // walk consults advances with it. Asking the innermost frame every time
+    // answered for the wrong depth as soon as a nested quote opened a list
+    // (carve-rs#1096).
+    let mut level = 0usize;
+    loop {
+        let mut inside = &line[cut..];
+        while let Some(rest) = strip_blockquote_prefix(inside) {
+            inside = rest;
+            level += 1;
+        }
+        if let Some(marker) = detect_list_marker_full(inside) {
+            inside = marker.content;
+        }
+        let content_col = columns.reached_by_at(level, leading_ws(inside));
+        if content_col == 0
+            || inside.len() <= content_col
+            || !inside.as_bytes()[..content_col].iter().all(|b| *b == b' ')
+            || inside.as_bytes()[content_col] != b'>'
+        {
+            break;
+        }
+        let next = (inside.as_ptr() as usize - line.as_ptr() as usize) + content_col;
+        if next <= cut {
+            break;
+        }
+        cut = next;
+    }
+    if cut > 0 {
+        let inner = strip_container_prefixes(&line[cut..], after_term);
         let structural_len = inner.bare.as_ptr() as usize - line.as_ptr() as usize;
         return StrippedContainerLine {
             structural: &line[..structural_len],
@@ -2246,7 +3020,10 @@ fn frontmatter_pos(source: &str, block_end: usize) -> Pos {
 /// the same call for `titleSp+`.
 ///
 /// TRAILING whitespace after the token is the line-ending rule rather than this
-/// slot, so it stays tolerated - matching the spec oracle.
+/// slot, so it stays tolerated - matching the spec oracle. THE SAME IS TRUE
+/// WITH NO TOKEN AT ALL: `---<TAB>` is a bare opener whose whole tail is
+/// trailing, because a frontmatter delimiter takes no content on its line and
+/// there is therefore no slot for the terminal to govern (carve#1295).
 pub(crate) fn frontmatter_format_token(after_marker: &str) -> Option<&str> {
     // WHITESPACE IS SPACE OR TAB (PART 7, carve#977), at both of this
     // function's slots.
@@ -2267,21 +3044,36 @@ pub(crate) fn frontmatter_format_token(after_marker: &str) -> Option<&str> {
     let token_start = after_marker
         .find(|c: char| !matches!(c, ' ' | '\t'))
         .unwrap_or(after_marker.len());
+    let kind = trim_ascii_end(&after_marker[token_start..]);
+    // NOTHING AFTER THE MARKER: the run is the LINE ENDING, not this slot.
+    //
+    // POSITION DECIDES (carve#1295). A tab BEFORE content is a separator and
+    // the terminal is `space` alone; a tab with nothing after it is TRAILING,
+    // and PART 2's NO TRAILING WHITESPACE drops it - its run is `whitespace`,
+    // `' ' | '\t'`. A frontmatter delimiter takes no content on its line, so
+    // `---<TAB>` lands on the trailing side and opens the block.
+    //
+    // It was reaching the space-only test below, which refused it - while the
+    // same line still read as a THEMATIC BREAK. One trailing tab disqualified
+    // one construct and not the other, on the same line.
+    //
+    // The test order is what carries this: the emptiness question is asked
+    // BEFORE the terminal question, because the terminal only governs a slot
+    // and there is no slot on a content-less line.
+    if kind.is_empty() {
+        return Some(kind);
+    }
     if after_marker[..token_start].chars().any(|c| c != ' ') {
         return None;
     }
-    let kind = trim_ascii_end(&after_marker[token_start..]);
     // AND EXACTLY ONE SPACE (carve#912). `frontmatter_open = "---", [space],
     // [frontmatter_format]` spells the slot as one; a wider run makes the line
     // no typed opener, and since it is not a thematic break either it is
     // ordinary paragraph text that the metadata lines fold into.
-    //
-    // Only where a token FOLLOWS. With nothing after it the run is the line
-    // ending rather than this slot, and `---<SP><SP>` stays an untyped opener.
-    if !kind.is_empty() && token_start > 1 {
+    if token_start > 1 {
         return None;
     }
-    if !kind.is_empty() && !kind.chars().all(|c| c.is_ascii_alphanumeric()) {
+    if !kind.chars().all(|c| c.is_ascii_alphanumeric()) {
         return None;
     }
     Some(kind)
@@ -2501,6 +3293,11 @@ struct LineBuffer {
     /// nested block a WRONG column, which is worse than the `None` an absent
     /// entry produces.
     col_map: Vec<Option<isize>>,
+    /// Whether the LAST line pushed was a synthetic blank rather than one the
+    /// author wrote. `into_source` needs the difference: a real trailing blank
+    /// is content and must survive the round trip, a synthetic one is
+    /// scaffolding and must not (markup-carve/carve-rs#908).
+    last_is_synthetic: bool,
 }
 
 impl LineBuffer {
@@ -2511,6 +3308,7 @@ impl LineBuffer {
     /// Like `push`, recording how many codepoints were stripped from the front
     /// of the line by the enclosing container.
     fn push_at(&mut self, line: String, source_line: Option<usize>, stripped: Option<isize>) {
+        self.last_is_synthetic = false;
         self.lines.push(line);
         if source_line.is_some() || !self.line_map.is_empty() {
             self.line_map.push(source_line);
@@ -2520,12 +3318,31 @@ impl LineBuffer {
 
     fn push_synthetic_blank(&mut self) {
         self.push(String::new(), None);
+        self.last_is_synthetic = true;
     }
 
     fn into_source(self) -> MappedSource {
+        // TERMINATE only when the buffer ends in a blank the AUTHOR wrote.
+        //
+        // `join` loses a trailing empty line on the round trip back through
+        // `str::lines()`, so a fence that runs to a container's closer came out
+        // a line short. Terminating unconditionally fixed that and broke the
+        // other half: `push_synthetic_blank` inserts blanks so an attached
+        // block parses on its own, and preserving one of those re-parses as a
+        // real blank line that `fmt` then writes out
+        // (tests/comment_body_is_relative_to_its_fence).
+        //
+        // The two are told apart by who pushed the line, which is the only
+        // place the difference is known (markup-carve/carve-rs#908).
+        let ends_in_authored_blank =
+            !self.last_is_synthetic && self.lines.last().is_some_and(|line| line.is_empty());
+        let mut source = self.lines.join("\n");
+        if ends_in_authored_blank {
+            source.push('\n');
+        }
         MappedSource {
             col_map: self.col_map,
-            source: self.lines.join("\n"),
+            source,
             line_map: self.line_map,
         }
     }
@@ -2742,7 +3559,29 @@ fn parse_inline_lines_with_anchor(
     options: &Options<'_>,
     lines: Vec<Option<(usize, isize)>>,
 ) -> Vec<InlineNode> {
-    parse_inline_with_anchor(text, options, InlineAnchor { lines: &lines })
+    parse_inline_with_anchor(text, options, InlineAnchor::lines(&lines))
+}
+
+/// The same, for a text whose segments are NOT separated by newlines.
+///
+/// `breaks` are the byte offsets at which the next entry of `lines` takes over.
+/// A table cell rebuilt across a `+` continuation is the only text shaped this
+/// way: its fragments come from different source lines and are joined by a
+/// manufactured space, so nothing in the text itself marks where one ends.
+fn parse_inline_segments_with_anchor(
+    text: &str,
+    options: &Options<'_>,
+    lines: Vec<Option<(usize, isize)>>,
+    breaks: Vec<usize>,
+) -> Vec<InlineNode> {
+    parse_inline_with_anchor(
+        text,
+        options,
+        InlineAnchor {
+            lines: &lines,
+            breaks: &breaks,
+        },
+    )
 }
 
 /// Build a span for the lines `[start, end)` of `cur`, in the ORIGINAL source.
@@ -2800,35 +3639,45 @@ fn span_of(cur: &LineCursor<'_>, start: usize, end: usize, options: &Options<'_>
 /// Fill the offset fields from the original source, in CODEPOINTS (PART 12
 /// section 4). Runs once per document: the line table is one pass, and the
 /// conversion is the identity for any document without an astral character.
+/// A block's own span, to write through.
+///
+/// EXHAUSTIVE on purpose. A `_ => None` arm here is why an `abbreviation_def`
+/// shipped with a correct line and column and offsets of `0..0` - present, and
+/// selecting nothing. That is the fourth node family to fail exactly that way,
+/// after figure captions, footnote definition bodies and definition terms. A
+/// new variant is now a compile error rather than a silent 0..0.
+fn block_pos_mut(block: &mut BlockNode) -> Option<&mut Pos> {
+    match block {
+        BlockNode::LinkReferenceDefinition(d) => d.pos.as_mut(),
+        BlockNode::Heading(h) => h.pos.as_mut(),
+        BlockNode::Paragraph(p) => p.pos.as_mut(),
+        BlockNode::ThematicBreak(t) => t.pos.as_mut(),
+        BlockNode::CodeBlock(c) => c.pos.as_mut(),
+        BlockNode::RawBlock(r) => r.pos.as_mut(),
+        BlockNode::Comment(c) => c.pos.as_mut(),
+        BlockNode::Div(d) => d.pos.as_mut(),
+        BlockNode::Admonition(a) => a.pos.as_mut(),
+        BlockNode::BlockQuote(b) => b.pos.as_mut(),
+        BlockNode::List(l) => l.pos.as_mut(),
+        BlockNode::Table(t) => t.pos.as_mut(),
+        BlockNode::LineBlock(l) => l.pos.as_mut(),
+        BlockNode::Figure(f) => f.pos.as_mut(),
+        BlockNode::FigureGroup(g) => g.pos.as_mut(),
+        BlockNode::BlockImage(i) => i.pos.as_mut(),
+        BlockNode::DefinitionList(d) => d.pos.as_mut(),
+        BlockNode::AbbreviationDef(a) => a.pos.as_mut(),
+        // The Citations extension builds this one in `after_parse`, which runs
+        // after `fill_offsets`, and derives its `pos` from inline positions
+        // that pass has already converted - so there is nothing there to
+        // convert, and an arm is still required rather than a `_`.
+        BlockNode::CitationDefinition(d) => d.pos.as_mut(),
+        BlockNode::Extension(e) => e.pos.as_mut(),
+    }
+}
+
 fn fill_offsets(blocks: &mut [BlockNode], line_starts: &[usize]) {
     for block in blocks {
-        let pos = match block {
-            BlockNode::LinkReferenceDefinition(d) => d.pos.as_mut(),
-            BlockNode::Heading(h) => h.pos.as_mut(),
-            BlockNode::Paragraph(p) => p.pos.as_mut(),
-            BlockNode::ThematicBreak(t) => t.pos.as_mut(),
-            BlockNode::CodeBlock(c) => c.pos.as_mut(),
-            BlockNode::RawBlock(r) => r.pos.as_mut(),
-            BlockNode::Comment(c) => c.pos.as_mut(),
-            BlockNode::Div(d) => d.pos.as_mut(),
-            BlockNode::Admonition(a) => a.pos.as_mut(),
-            BlockNode::BlockQuote(b) => b.pos.as_mut(),
-            BlockNode::List(l) => l.pos.as_mut(),
-            BlockNode::Table(t) => t.pos.as_mut(),
-            BlockNode::LineBlock(l) => l.pos.as_mut(),
-            BlockNode::Figure(f) => f.pos.as_mut(),
-            BlockNode::BlockImage(i) => i.pos.as_mut(),
-            BlockNode::DefinitionList(d) => d.pos.as_mut(),
-            BlockNode::AbbreviationDef(a) => a.pos.as_mut(),
-            BlockNode::Extension(e) => e.pos.as_mut(),
-            // EXHAUSTIVE on purpose. A `_ => None` arm here is why an
-            // `abbreviation_def` shipped with a correct line and column and
-            // offsets of `0..0` - present, and selecting nothing. That is the
-            // fourth node family to fail exactly that way, after figure
-            // captions, footnote definition bodies and definition terms. A new
-            // variant is now a compile error rather than a silent 0..0.
-        };
-        if let Some(pos) = pos {
+        if let Some(pos) = block_pos_mut(block) {
             apply_offsets(pos, line_starts);
         }
         // Recurse into the containers that hold blocks and inline content.
@@ -2912,7 +3761,7 @@ fn fill_offsets(blocks: &mut [BlockNode], line_starts: &[usize]) {
                 // column but offsets of 0..0 - which reads as present and
                 // selects nothing, the exact shape section 4 forbids.
                 apply_inline_offsets(&mut f.caption, line_starts);
-                match &mut f.target {
+                match &mut *f.target {
                     FigureTarget::BlockQuote(q) => {
                         // The quote's OWN span, which this arm skipped while
                         // filling everything inside it: it kept line and column
@@ -2948,6 +3797,12 @@ fn fill_offsets(blocks: &mut [BlockNode], line_starts: &[usize]) {
                     }
                 }
             }
+            BlockNode::FigureGroup(g) => {
+                if let Some(caption) = &mut g.caption {
+                    apply_inline_offsets(caption, line_starts);
+                }
+                fill_offsets(&mut g.children, line_starts);
+            }
             _ => {}
         }
     }
@@ -2977,6 +3832,7 @@ fn include_comment_indentation(blocks: &mut [BlockNode], source: &str, line_star
                 BlockNode::BlockQuote(n) => walk(&mut n.children, lines, starts),
                 BlockNode::Div(n) => walk(&mut n.children, lines, starts),
                 BlockNode::Admonition(n) => walk(&mut n.children, lines, starts),
+                BlockNode::FigureGroup(n) => walk(&mut n.children, lines, starts),
                 BlockNode::List(n) => {
                     for item in &mut n.items {
                         walk(&mut item.children, lines, starts);
@@ -2991,7 +3847,7 @@ fn include_comment_indentation(blocks: &mut [BlockNode], source: &str, line_star
                     }
                 }
                 BlockNode::Figure(n) => {
-                    if let FigureTarget::BlockQuote(q) = &mut n.target {
+                    if let FigureTarget::BlockQuote(q) = &mut *n.target {
                         walk(&mut q.children, lines, starts);
                     }
                 }
@@ -3001,6 +3857,96 @@ fn include_comment_indentation(blocks: &mut [BlockNode], source: &str, line_star
         }
     }
     walk(blocks, &source_lines, line_starts);
+}
+
+/// Widen a container over the DEFINITION it hosted.
+///
+/// A footnote definition is lifted out of the body before the block parser
+/// runs, and only ONE invisible placeholder is left behind, on the line the
+/// definition opened - padded, but not always to the same width the author
+/// wrote, and never covering the body's continuation lines. So a container
+/// that hosted a definition can end short of the source it consumed:
+/// `- a` / `  [^f]: t` / `    more` reported the list as ending on line 2, and
+/// `- > [^f]: t` ended the item at the placeholder rather than at the end of
+/// the line. carve-js and carve-php reach the definition's end in both, and
+/// PART 12 section 4 is markup-inclusive (markup-carve/carve#913): a
+/// container's extent has to cover the source it consumed.
+///
+/// Only a block whose span ENDS ON the definition's own line is widened. That
+/// placeholder is the last line such a block consumed, so it is precisely the
+/// block that consumed the definition; a block that ended earlier never
+/// reached it, and a block that ended later already covers it. This is why the
+/// list widens in the first example while its item, which ends on line 1, does
+/// not - the same split carve-js reports.
+///
+/// Runs after `fill_offsets`, because a definition's own end is only known
+/// once its body has been placed. Nothing re-derives a span from its children
+/// afterwards, so the widening is not undone.
+fn widen_over_hosted_definitions(blocks: &mut [BlockNode], def_pos: &BTreeMap<String, Pos>) {
+    // Keyed by the line the definition OPENS on, which is the line its
+    // placeholder stands on. Two definitions cannot open on one line.
+    //
+    // A SINGLE-LINE definition is kept too. It looks like it could never
+    // widen anything - the definition ends where its own line ends, and so
+    // does the container - but the placeholder is not always as wide as the
+    // line it replaced, and then the container ends inside its own last line.
+    // Filtering these out left `- > [^f]: t` reporting the item and the quote
+    // as ending at column 8 of an 11-column line.
+    let ends: HashMap<usize, Pos> = def_pos.values().map(|pos| (pos.start_line, *pos)).collect();
+    if ends.is_empty() {
+        return;
+    }
+    fn widen(pos: &mut Pos, ends: &HashMap<usize, Pos>) {
+        let Some(def) = ends.get(&pos.end_line) else {
+            return;
+        };
+        if def.end_offset <= pos.end_offset {
+            return;
+        }
+        pos.end_line = def.end_line;
+        pos.end_column = def.end_column;
+        pos.end_offset = def.end_offset;
+    }
+    fn walk(blocks: &mut [BlockNode], ends: &HashMap<usize, Pos>) {
+        for block in blocks {
+            if let Some(pos) = block_pos_mut(block) {
+                widen(pos, ends);
+            }
+            match block {
+                BlockNode::BlockQuote(n) => walk(&mut n.children, ends),
+                BlockNode::Div(n) => walk(&mut n.children, ends),
+                BlockNode::Admonition(n) => walk(&mut n.children, ends),
+                BlockNode::FigureGroup(n) => walk(&mut n.children, ends),
+                BlockNode::List(n) => {
+                    for item in &mut n.items {
+                        if let Some(pos) = item.pos.as_mut() {
+                            widen(pos, ends);
+                        }
+                        walk(&mut item.children, ends);
+                    }
+                }
+                BlockNode::LineBlock(n) => walk(&mut n.children, ends),
+                BlockNode::DefinitionList(n) => {
+                    for item in &mut n.items {
+                        for def in &mut item.definitions {
+                            if let Some(pos) = def.pos.as_mut() {
+                                widen(pos, ends);
+                            }
+                            walk(&mut def.children, ends);
+                        }
+                    }
+                }
+                BlockNode::Figure(n) => {
+                    if let FigureTarget::BlockQuote(q) = &mut *n.target {
+                        walk(&mut q.children, ends);
+                    }
+                }
+                BlockNode::Extension(n) => walk(&mut n.children, ends),
+                _ => {}
+            }
+        }
+    }
+    walk(blocks, &ends);
 }
 
 /// Turn the line/column pair already on a span into codepoint offsets.
@@ -3123,7 +4069,7 @@ fn owned_inline_pos(node: &InlineNode) -> Option<Pos> {
 /// '\r' - so the entry count matches the normalized line count, and skips a
 /// leading BOM so line 0 starts at the first real character rather than at the
 /// mark (carve#876).
-fn original_line_start_offsets(source: &str) -> Vec<usize> {
+pub(crate) fn original_line_start_offsets(source: &str) -> Vec<usize> {
     let mut chars = source.chars().peekable();
     let mut starts = Vec::new();
     let mut count = 0usize;
@@ -3199,6 +4145,12 @@ fn parse_eof_closed_colon_ladder(
     source: &MappedSource,
     options: &Options<'_>,
 ) -> Option<Vec<BlockNode>> {
+    // This fast path can only match when the document starts with a flush-left
+    // colon-container opener. Avoid allocating a line index and scanning every
+    // line of ordinary documents merely to reject the specialization.
+    if !source.source.starts_with(":::") {
+        return None;
+    }
     let lines: Vec<&str> = source.source.lines().collect();
     if lines.is_empty()
         || lines
@@ -3226,10 +4178,24 @@ fn parse_eof_closed_colon_ladder(
     let available = MAX_NESTING_DEPTH.saturating_sub(current_depth);
     let take = opens.len().min(available);
 
+    // PART 9 §4c along this fast path too: the outermost bare `::: figure`
+    // opener not already inside a group is a composite figure; every bare
+    // opener under it stays a generic container (groups do not nest). Walked
+    // outer-in, seeded from the thread state, so a ladder inside an open
+    // group's body demotes exactly as the ordinary path would.
+    let mut in_group = IN_FIGURE_GROUP.with(Cell::get);
+    let mut opens_a_group: Vec<bool> = Vec::with_capacity(take);
+    for open in opens.iter().take(take) {
+        let bare = is_bare_figure_open(open) && !in_group;
+        opens_a_group.push(bare);
+        in_group = in_group || bare;
+    }
+
     let tail = &lines[take..];
     let mut children = if tail.iter().all(|line| is_blank_line(line)) {
         Vec::new()
     } else {
+        let _guard = in_group.then(FigureGroupGuard::enter);
         if opens.len() > available {
             // PART 9 §25: past the cap an opener "becomes literal paragraph
             // text" - it degrades, it does not vanish. This used to locate the
@@ -3253,7 +4219,18 @@ fn parse_eof_closed_colon_ladder(
         }
     };
 
-    for open in opens.into_iter().take(take).rev() {
+    for (open, opens_group) in opens.into_iter().take(take).zip(opens_a_group).rev() {
+        if opens_group {
+            // An EOF-closed group never wrote its closer, so it has no line
+            // for a caption to hang on (§4c).
+            children = vec![BlockNode::FigureGroup(FigureGroup {
+                attrs: open.attrs,
+                children,
+                caption: None,
+                pos: None,
+            })];
+            continue;
+        }
         children = vec![if let Some(kind) = open.kind {
             BlockNode::Admonition(Admonition {
                 attrs: open.attrs,
@@ -3458,7 +4435,12 @@ fn build_code_closer_last_index(lines: &[&str]) -> HashMap<u8, Vec<usize>> {
             continue;
         }
         let run = bytes.iter().take_while(|&&b| b == fence_char).count();
-        if !bytes[run..].iter().all(|&b| b == b' ') {
+        // The same tail test `is_fence_close` makes, and it has to be: `false`
+        // from this index is FINAL, so a tail this prefilter rejects can never
+        // be re-examined by the exact scan. A trailing tab is dropped
+        // whitespace at a closer (carve#1295), so admitting it here is what
+        // lets the scan below ever see the line.
+        if !bytes[run..].iter().all(|&b| b == b' ' || b == b'\t') {
             continue;
         }
         let by_len = per_char.entry(fence_char).or_default();
@@ -3563,6 +4545,7 @@ fn take_comment_block(cur: &mut LineCursor, options: &Options<'_>) -> CommentBlo
             }
             return CommentBlock::Consumed(Some(Box::new(BlockNode::Comment(Comment {
                 block: true,
+                delimited: false,
                 content: content.join("\n"),
                 pos,
             }))));
@@ -3592,6 +4575,7 @@ fn take_comment_block(cur: &mut LineCursor, options: &Options<'_>) -> CommentBlo
         }
         return CommentBlock::Consumed(Some(Box::new(BlockNode::Comment(Comment {
             block: false,
+            delimited: false,
             content,
             pos,
         }))));
@@ -3600,50 +4584,73 @@ fn take_comment_block(cur: &mut LineCursor, options: &Options<'_>) -> CommentBlo
     CommentBlock::NotAComment
 }
 
+/// The over-cap degrade, in a frame of its OWN.
+///
+/// PART 9 §25 caps nesting at `MAX_NESTING_DEPTH`, and this is what the cap
+/// produces: everything still in the cursor, flattened into one paragraph. It
+/// runs at most once per parse, at the deepest point.
+///
+/// It is a separate `#[inline(never)]` function because inlining it back into
+/// `parse_blocks` costs stack on EVERY level, not only the one that reaches the
+/// cap: LLVM reserves the slots for the `BlockNode` this branch builds in the
+/// recursive hub's frame, so a cold path that runs once was charged 200 times
+/// over. The cap is what bounds depth; it should not be what inflates the cost
+/// of each level (markup-carve/carve-wasm#44).
+#[inline(never)]
+#[cold]
+fn over_cap_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> Vec<BlockNode> {
+    let span_start = cur.pos;
+    let mut rest: Vec<&str> = Vec::new();
+    while let Some(line) = cur.consume() {
+        rest.push(line);
+    }
+    let text = rest.join("\n");
+    // Check line-wise: `is_blank_line` only trims spaces/tabs, so a joined
+    // multi-line all-blank tail (which contains newlines) must be tested
+    // per line, not on the joined string.
+    if rest.iter().all(|line| is_blank_line(line)) {
+        return Vec::new();
+    }
+    // The SECOND over-cap producer, and a real one. The colon-fence
+    // document that named carve-rs#716 never reaches this branch - it
+    // degrades through `parse_capped_colon_body` instead - but a deep quote
+    // ladder and a deep list ladder both arrive here with positions on, and
+    // published nothing either. The lines are contiguous and still in the
+    // cursor, so the span is the ordinary one and the anchors are the
+    // ordinary ones; `rest` holds the lines VERBATIM, so a line's anchor is
+    // its own stripped column.
+    let children = if options.positions {
+        let anchors = rest
+            .iter()
+            .enumerate()
+            .map(|(idx, line)| inline_anchor_for_line(cur, span_start + idx, line))
+            .collect();
+        parse_flattened_inline_with_anchors(&text, options, anchors)
+    } else {
+        parse_flattened_inline(&text, options)
+    };
+    vec![BlockNode::Paragraph(Paragraph {
+        attrs: None,
+        children,
+        pos: span_of(cur, span_start, cur.pos, options),
+        ..Default::default()
+    })]
+}
+
 fn parse_blocks(cur: &mut LineCursor, options: &Options<'_>) -> Vec<BlockNode> {
     // Recursion cap (see MAX_NESTING_DEPTH). Over the cap, flatten everything
     // still in the cursor into one paragraph rather than recursing further,
-    // matching the carve-php degrade behavior.
+    // matching the carve-php degrade behavior. The degrade itself lives in
+    // `over_cap_paragraph`, out of this frame - see its doc comment.
     let Some(_depth) = DepthGuard::enter() else {
-        let span_start = cur.pos;
-        let mut rest: Vec<&str> = Vec::new();
-        while let Some(line) = cur.consume() {
-            rest.push(line);
-        }
-        let text = rest.join("\n");
-        // Check line-wise: `is_blank_line` only trims spaces/tabs, so a joined
-        // multi-line all-blank tail (which contains newlines) must be tested
-        // per line, not on the joined string.
-        if rest.iter().all(|line| is_blank_line(line)) {
-            return Vec::new();
-        }
-        // The SECOND over-cap producer, and a real one. The colon-fence
-        // document that named carve-rs#716 never reaches this branch - it
-        // degrades through `parse_capped_colon_body` instead - but a deep quote
-        // ladder and a deep list ladder both arrive here with positions on, and
-        // published nothing either. The lines are contiguous and still in the
-        // cursor, so the span is the ordinary one and the anchors are the
-        // ordinary ones; `rest` holds the lines VERBATIM, so a line's anchor is
-        // its own stripped column.
-        let children = if options.positions {
-            let anchors = rest
-                .iter()
-                .enumerate()
-                .map(|(idx, line)| inline_anchor_for_line(cur, span_start + idx, line))
-                .collect();
-            parse_flattened_inline_with_anchors(&text, options, anchors)
-        } else {
-            parse_flattened_inline(&text, options)
-        };
-        return vec![BlockNode::Paragraph(Paragraph {
-            attrs: None,
-            children,
-            pos: span_of(cur, span_start, cur.pos, options),
-            ..Default::default()
-        })];
+        return over_cap_paragraph(cur, options);
     };
     let mut out = Vec::new();
     let mut pending_attrs: Option<Attrs> = None;
+    // Where the pending run STARTED, for §15 A4's diagnostic. The FIRST block of
+    // a stacked run, because that is where the author began writing attributes
+    // that reach nothing - the run merges into one set and is reported once.
+    let mut pending_attrs_pos: Option<Pos> = None;
     while !cur.eof() {
         let line = cur.peek().unwrap();
         // A standalone `{attr}` block opener fires only at the container's
@@ -3670,14 +4677,18 @@ fn parse_blocks(cur: &mut LineCursor, options: &Options<'_>) -> Vec<BlockNode> {
             }
         }
         if line_flush {
+            let attrs_start = cur.pos;
             if let Some(attrs) = parse_standalone_attrs_block(cur) {
                 merge_attrs(&mut pending_attrs, attrs);
+                if pending_attrs_pos.is_none() {
+                    pending_attrs_pos = span_of(cur, attrs_start, cur.pos, options);
+                }
                 continue;
             }
         }
         let start_line = cur.pos;
         if let Some(node) = parse_block(cur, options) {
-            let mut node = node;
+            let mut node = *node;
             // §15 A2a: a floating attribute skips what renders NOTHING and
             // attaches to the next VISIBLE block. The other invisible kinds -
             // comments, reference and footnote definitions - never reach here
@@ -3691,6 +4702,7 @@ fn parse_blocks(cur: &mut LineCursor, options: &Options<'_>) -> Vec<BlockNode> {
             if !renders_nothing {
                 if let Some(attrs) = pending_attrs.take() {
                     apply_attrs_to_block(&mut node, attrs);
+                    pending_attrs_pos = None;
                 }
             }
             // Resolve a code fence's opener title to the `title` attribute (after
@@ -3708,6 +4720,16 @@ fn parse_blocks(cur: &mut LineCursor, options: &Options<'_>) -> Vec<BlockNode> {
             }
             out.push(node);
         }
+    }
+    // DROP IF DANGLING, AND SAY SO (§15 A4, markup-carve/carve#1281). The loop
+    // has run out of lines, so there is no next block for this set to float to.
+    // This one site covers both ways of running out, because a container's body
+    // is parsed by its own call: at document level the input ended, and inside a
+    // quote, an item, a `dd` or a footnote body the CONTAINER ended. Nothing is
+    // emitted for the attribute either way - what changes is that the processor
+    // now reports it rather than discarding it silently.
+    if pending_attrs.is_some() {
+        note_unattached_block_attrs(pending_attrs_pos);
     }
     out
 }
@@ -3748,7 +4770,7 @@ fn resolve_code_title(node: &mut BlockNode) {
     match node {
         BlockNode::CodeBlock(cb) => copy_title_to_attr(cb),
         BlockNode::Figure(f) => {
-            if let FigureTarget::CodeBlock(cb) = &mut f.target {
+            if let FigureTarget::CodeBlock(cb) = &mut *f.target {
                 if attrs_have_title(&f.attrs) {
                     cb.title = None;
                 } else {
@@ -3760,13 +4782,13 @@ fn resolve_code_title(node: &mut BlockNode) {
     }
 }
 
-fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<BlockNode> {
+fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<Box<BlockNode>> {
     // Checked FIRST, and through the same helper `parse_blocks` uses, so a
     // comment reached by a `+` continuation is the node the identical line
     // produces at top level (carve-rs#678).
     match take_comment_block(cur, options) {
         CommentBlock::NotAComment => {}
-        CommentBlock::Consumed(node) => return node.map(|node| *node),
+        CommentBlock::Consumed(node) => return node,
     }
     let line = cur.peek()?;
     if let Some(fence_marker) = detect_fence_open(line) {
@@ -3776,27 +4798,28 @@ fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<BlockNode>
         // LISTING: wrap it in a figure like a captioned image/table.
         if let BlockNode::CodeBlock(cb) = block {
             if let Some(caption) = consume_caption(cur, options) {
-                return Some(BlockNode::Figure(Figure {
+                return Some(Box::new(BlockNode::Figure(Figure {
                     attrs: None,
-                    target: FigureTarget::CodeBlock(cb),
+                    target: Box::new(FigureTarget::CodeBlock(cb)),
                     caption,
+                    short_caption: None,
                     // From the opening fence through the end of the caption -
                     // the same extent a captioned image's figure takes.
                     pos: span_of(cur, fence_at, cur.pos, options),
-                }));
+                })));
             }
-            return Some(BlockNode::CodeBlock(cb));
+            return Some(Box::new(BlockNode::CodeBlock(cb)));
         }
-        return Some(block);
+        return Some(Box::new(block));
     }
     if let Some(marker) = thematic_break_marker(line) {
         let span_start = cur.pos;
         cur.consume();
-        return Some(BlockNode::ThematicBreak(ThematicBreak {
+        return Some(Box::new(BlockNode::ThematicBreak(ThematicBreak {
             marker: (marker != '-').then_some(marker),
             pos: span_of(cur, span_start, cur.pos, options),
             ..Default::default()
-        }));
+        })));
     }
     if let Some((level, first_text)) = detect_heading(line) {
         let span_start = cur.pos;
@@ -3825,18 +4848,18 @@ fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<BlockNode>
         } else {
             parse_inline_with_options(inline_text, options)
         };
-        return Some(BlockNode::Heading(Heading {
+        return Some(Box::new(BlockNode::Heading(Heading {
             attrs: None,
             level,
             children,
             pos,
-        }));
+        })));
     }
     if strip_blockquote_prefix(line).is_some() {
-        return Some(parse_blockquote(cur, options));
+        return Some(Box::new(parse_blockquote(cur, options)));
     }
     if is_list_marker(line) {
-        return Some(parse_list(cur, options));
+        return Some(Box::new(parse_list(cur, options)));
     }
     // A table row opens a table only when FLUSH-LEFT (like a heading, quote or
     // `:: ` def-list term). `is_table_start` trims leading whitespace, so an
@@ -3844,10 +4867,10 @@ fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<BlockNode>
     // reference renders a paragraph; a genuine table sits at its container's
     // content column and is already dedented to column 0 here.
     if !line.starts_with([' ', '\t']) && is_table_start(line) {
-        return Some(parse_table(cur, options));
+        return Some(Box::new(parse_table(cur, options)));
     }
     if is_definition_list_start(line) {
-        return Some(parse_definition_list(cur, options));
+        return Some(Box::new(parse_definition_list(cur, options)));
     }
     // A `::: |` line block or `::: \` hard-break block opens ONLY flush-left
     // (at its container's content column), exactly like the div / admonition
@@ -3859,10 +4882,10 @@ fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<BlockNode>
     // the content column here, so a fence sitting AT that column still opens.
     if !line.starts_with([' ', '\t']) {
         if detect_line_block_open(line).is_some() {
-            return Some(parse_line_block(cur, options));
+            return Some(Box::new(parse_line_block(cur, options)));
         }
         if detect_hardbreaks_block_open(line).is_some() {
-            return Some(parse_hardbreaks_block(cur, options));
+            return Some(Box::new(parse_hardbreaks_block(cur, options)));
         }
     }
     // FLUSH-LEFT only: `detect_container_open` trims leading whitespace, so an
@@ -3871,7 +4894,7 @@ fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<BlockNode>
     // the quote/heading/table checks. `line` is already dedented to the content
     // column here, so a `:::` at the content column opens.
     if !line.starts_with([' ', '\t']) && detect_container_open(line).is_some() {
-        return Some(parse_container(cur, options));
+        return Some(Box::new(parse_container(cur, options)));
     }
     if cur.at_document_level {
         if let Some(mut abbr) = detect_abbreviation_def(line) {
@@ -3882,7 +4905,7 @@ fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<BlockNode>
             // which PART 12 §4 allows only for a node that was reassembled and has
             // no honest one - a definition the author wrote on line 1 has one.
             abbr.pos = span_of(cur, abbr_at, abbr_at + 1, options);
-            return Some(BlockNode::AbbreviationDef(abbr));
+            return Some(Box::new(BlockNode::AbbreviationDef(abbr)));
         }
     }
     if let Some(mut img) = detect_block_image(line) {
@@ -3894,33 +4917,34 @@ fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<BlockNode>
             // none at all.
             img.pos = span_of(cur, image_at, image_at + 1, options);
             if let Some(caption) = consume_caption(cur, options) {
-                return Some(BlockNode::Figure(Figure {
+                return Some(Box::new(BlockNode::Figure(Figure {
                     attrs: None,
-                    target: FigureTarget::Image(img),
+                    target: Box::new(FigureTarget::Image(img)),
                     caption,
+                    short_caption: None,
                     // The figure runs from the image to the end of the caption
                     // the cursor just consumed.
                     pos: span_of(cur, image_at, cur.pos, options),
-                }));
+                })));
             }
-            return Some(BlockNode::BlockImage(img));
+            return Some(Box::new(BlockNode::BlockImage(img)));
         }
         // Not standalone: the image folds into a paragraph with the following
         // content (parse_paragraph below); a sole-image paragraph is still
         // promoted to a bare block image afterwards.
     }
     if let Some(matched) = try_extension_block(cur, options) {
-        return Some(matched);
+        return Some(Box::new(matched));
     }
     // A block whose sole content is a display-math span (`$$`…``) followed by a
     // caption is a numbered EQUATION. Diverted before the paragraph fallback so
     // parse_paragraph does not fold the caption line into the math paragraph.
     if trim_ascii_start(line).starts_with("$$`") {
         if let Some(eq) = parse_equation_block(cur, options) {
-            return Some(eq);
+            return Some(Box::new(eq));
         }
     }
-    Some(parse_paragraph(cur, options))
+    Some(Box::new(parse_paragraph(cur, options)))
 }
 
 /// Parse a standalone display-math line, wrapping it in a figure when a caption
@@ -3965,8 +4989,9 @@ fn parse_equation_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<B
     if let Some(caption) = consume_caption(cur, options) {
         return Some(BlockNode::Figure(Figure {
             attrs: None,
-            target,
+            target: Box::new(target),
             caption,
+            short_caption: None,
             // Through the end of the caption, like the listing above.
             pos: span_of(cur, math_at, cur.pos, options),
         }));
@@ -4096,6 +5121,423 @@ fn is_comment_fence_close_any_column(line: &str, fence_len: usize) -> bool {
     is_comment_fence_close(trim_ascii_start(line), fence_len)
 }
 
+/// The opener as the definition PRE-PASSES may read it: past leading
+/// whitespace, and past a list marker on the fence's own line.
+///
+/// PART 9 §24 S1 places a line by the column it REACHES and never by its first
+/// character, and §28 makes a comment fence's body verbatim and invisible
+/// wherever the fence sits. Neither clause is scoped to column 0, and the block
+/// parser already reads both spellings (it consumes `- %%%` through
+/// `marker.content`). The pre-passes read only the strict column-0 form, so a
+/// fence indented to a list item's content column was invisible to them and they
+/// walked into its body and registered from it: `- item` / `  %%%` /
+/// `  [r]: /url` / `  %%%` left the label live in the link table while the
+/// comment rendered nothing, so a later `[r][]` resolved against text the author
+/// had commented out (markup-carve/carve-rs#1047). A footnote definition there
+/// was worse still - it produced a whole endnote section nobody wrote.
+///
+/// A BLOCKQUOTE prefix is deliberately NOT stripped here. `> %%%` /
+/// `> [r]: /url` / `> %%%` registers in carve-js, carve-php and carve-rs alike
+/// and only the executable oracle leaves it literal, so that shape is an open
+/// cross-engine question rather than this engine's defect; widening the strip
+/// would answer it unilaterally.
+/// The widening is to a fence AT a live list item's content column, and no
+/// further. Both of the shapes just outside it are refused, and both refusals
+/// are load-bearing:
+///
+/// - An indented fence with NO live content column is a top-level comment, and a
+///   top-level comment's body may sit BELOW its own fence
+///   (`comment_body_is_relative_to_its_fence`). Its real closer can therefore be
+///   at a column this line-based pass cannot bound, and guessing mispaired the
+///   delimiters of ` %%%` / `x` / `  %%%`: the pass rejected the true pair, took
+///   the second delimiter as an opener, and let a later `%%% tail` close it, so
+///   the definition in between was swallowed.
+/// - A fence BELOW a live content column keeps the item open without being the
+///   item's content (§24 C3). Entering opacity there freezes the stale content
+///   column across the blank line that actually ends the list, so a line the
+///   block parser reads as a top-level paragraph gets stripped to the dead
+///   column and registered.
+///
+/// Returns the fence and the COLUMN its `%` run starts at, which is what bounds
+/// its body - see `container_comment_fence_closes`.
+/// A comment fence opener, and the column it is written at, when that column
+/// reaches a live list item.
+///
+/// WHICH COLUMN THE FENCE REACHES, not which one is innermost. `- - inner`
+/// opens two items on one line and leaves BOTH content columns live, 2 and 4
+/// (carve#655); a fence written at 2 is the outer item's, and asking the
+/// innermost column alone declined it while the outer item was still open
+/// (carve-rs#1054). `reached_by` is the question the definition scan beside this
+/// one already asks, so both halves now measure against the same thing.
+///
+/// The gate that remains is the §24 C3 one: a fence reaching no live column at
+/// all is below the container and is not its comment.
+fn detect_comment_fence_opener_in_container(
+    line: &str,
+    columns: &ContentColumns,
+) -> Option<(CommentFenceOpen, usize)> {
+    let (open, col) = detect_comment_fence_opener_at_any_column(line)?;
+    if col > 0 && columns.reached_by(col) == 0 {
+        return None;
+    }
+    Some((open, col))
+}
+
+/// What bounds the body of a comment fence a definition pre-pass just opened.
+///
+/// The two containers end for different reasons, so they take different
+/// questions. A COLUMN-scoped fence ends where a later line dedents past the
+/// column its container holds. A QUOTE-scoped one ends at a blank line: a
+/// blockquote does not survive one, so `> a` / blank / `> b` is two quotes, and
+/// a run after the blank wears the same marker while belonging to a different
+/// quote. For a quoted scope the blank line is therefore the whole test, where a
+/// column scope keeps the dedent test - there a dedented line really can be a
+/// lazy continuation.
+#[derive(Clone, Copy)]
+enum CommentFenceScope {
+    /// The column the `%` run starts at. Zero is the document level.
+    Column(usize),
+    /// The blockquote markers the `%` run was written behind: how many, and the
+    /// column the first of them starts at.
+    Quoted { depth: usize, col: usize },
+}
+
+impl CommentFenceScope {
+    fn quote_depth(self) -> usize {
+        match self {
+            CommentFenceScope::Quoted { depth, .. } => depth,
+            CommentFenceScope::Column(_) => 0,
+        }
+    }
+}
+
+/// The fence a definition pre-pass opens, together with the scope bounding it.
+///
+/// `detect_comment_fence_opener_in_container` walks past a list marker but not
+/// past a blockquote marker, so `> %%%` was not an opener to either pre-pass at
+/// all - they walked into its body and registered from it. §28 makes a comment
+/// fence's body verbatim wherever the fence sits and §24 C3 states the rule for
+/// both delimiter spellings; neither is scoped by container, so nothing
+/// distinguishes a fence reached through a `>` prefix from one reached through
+/// indentation, and the block parser consumed the quoted one all along. That
+/// left `> %%%` / `> [r]: /url` / `> %%%` with `r` live in the link table while
+/// the comment rendered nothing (markup-carve/carve#1341).
+fn detect_comment_fence_opener_scoped(
+    line: &str,
+    columns: &ContentColumns,
+) -> Option<(CommentFenceOpen, CommentFenceScope)> {
+    let (depth, col, quoted) = prepass_quote_scope(line);
+    if depth > 0 {
+        // Inside the quote the delimiter is read at any column, the same way the
+        // column-scoped opener above reads it - the quote is the container, so
+        // its own indentation does not have to reach anything further.
+        let (open, _) = detect_comment_fence_opener_at_any_column(quoted)?;
+        return Some((open, CommentFenceScope::Quoted { depth, col }));
+    }
+    let (open, col) = detect_comment_fence_opener_in_container(line, columns)?;
+    Some((open, CommentFenceScope::Column(col)))
+}
+
+/// A comment fence a definition pre-pass has entered: its width, and the quote
+/// depth its opener was written at so a closer can be read at the same depth.
+#[derive(Clone, Copy)]
+struct OpenCommentFence {
+    fence_len: usize,
+    quote_depth: usize,
+}
+
+/// Does `line` close `open`, read at the depth `open` was written at?
+///
+/// Depth 0 is `is_comment_fence_close_any_column` unchanged. Deeper, the markers
+/// come off first, which is what `PrepassFenceTracker` in carve-php and the
+/// quoted-code-fence closer in `extract_link_defs` already do: a closer is a
+/// continuation line of the container its opener sits in, so it wears the same
+/// prefix. A `> > %%%` therefore stays quoted comment content rather than
+/// closing a `> %%%`.
+fn closes_open_comment_fence(line: &str, open: OpenCommentFence) -> bool {
+    let mut rest = line;
+    for _ in 0..open.quote_depth {
+        let Some(inner) = strip_prepass_blockquote_prefix(rest) else {
+            return false;
+        };
+        rest = inner;
+    }
+    is_comment_fence_close_any_column(rest, open.fence_len)
+}
+
+/// Does the fence opened at `open_at` close inside the container bounding it?
+///
+/// The document level is the only scope the RAW closer index answers for, and
+/// the only one it can: it reads raw lines, so a `> %%%` matches nothing in it,
+/// and a `%%%` written back at column 0 is not the closer of a fence a container
+/// holds. It was asked FIRST for every scope all the same, as a gate the bounded
+/// scan then had to agree with, and that is what made a quoted fence read as
+/// unterminated to the pre-passes alone. It is also what made the leak
+/// contingent on unrelated text: a stray column-0 `%%%` later in the document
+/// got the same quoted fence past the gate, and it then answered correctly -
+/// which is why the already-pinned spellings passed while the reported one did
+/// not (markup-carve/carve#1341).
+///
+/// A column-scoped query is unchanged by dropping the gate. For depth 0 the
+/// bounded index holds exactly the runs the raw one does, so the gate was
+/// redundant there rather than load-bearing.
+fn comment_fence_scope_closes(
+    scope: CommentFenceScope,
+    lines: &[&str],
+    open_at: usize,
+    fence_len: usize,
+    columns: &ContentColumns,
+    raw_closers: &HashMap<usize, usize>,
+    bounded: &mut Option<ContainerCommentClosers>,
+) -> bool {
+    match scope {
+        CommentFenceScope::Column(0) => raw_closers
+            .get(&fence_len)
+            .is_some_and(|close_at| *close_at > open_at),
+        CommentFenceScope::Column(col) => bounded
+            .get_or_insert_with(|| ContainerCommentClosers::build(lines))
+            .closes_in_column(lines, open_at, columns.reached_by(col), fence_len),
+        CommentFenceScope::Quoted { depth, col } => bounded
+            .get_or_insert_with(|| ContainerCommentClosers::build(lines))
+            .closes_in_quote(lines, open_at, depth, col, fence_len),
+    }
+}
+
+fn detect_comment_fence_opener_at_any_column(line: &str) -> Option<(CommentFenceOpen, usize)> {
+    let mut rest = line;
+    let mut col = 0usize;
+    loop {
+        let trimmed = trim_ascii_start(rest);
+        col = advance_columns(&rest[..rest.len() - trimmed.len()], col);
+        rest = trimmed;
+        let Some(marker) = detect_list_marker_full(rest) else {
+            break;
+        };
+        let consumed = marker.content.as_ptr() as usize - rest.as_ptr() as usize;
+        if consumed == 0 {
+            break;
+        }
+        col = advance_columns(&rest[..consumed], col);
+        rest = marker.content;
+    }
+    detect_comment_fence_line(rest).map(|open| (open, col))
+}
+
+/// `indent_columns`, continued from a column already reached. Tab stops are
+/// measured from the start of the line, so a marker's own width has to be walked
+/// rather than counted in bytes.
+fn advance_columns(prefix: &str, mut col: usize) -> usize {
+    for byte in prefix.bytes() {
+        if byte == b'\t' {
+            col += 4 - (col % 4);
+        } else {
+            col += 1;
+        }
+    }
+    col
+}
+
+// Counts the lines the container-comment dedent walk visits.
+//
+// The whole point of the index below is that this stays proportional to the
+// DOCUMENT rather than to openers times container length, and a count is the
+// only way to state that without a clock - see the note on `quote_prefix_calls`
+// for why this repo counts work instead of timing it. Test-only, so a release
+// build carries nothing.
+#[cfg(test)]
+thread_local! {
+    pub(crate) static CONTAINER_DEDENT_STEPS: std::cell::Cell<u64> =
+        const { std::cell::Cell::new(0) };
+}
+
+/// Does a comment fence opened INSIDE a container close before that container
+/// ends?
+///
+/// `comment_fence_close_index` answers "is there a closer of this length
+/// anywhere later", which is the whole question for a column-0 opener: nothing
+/// bounds its body but the end of input. A fence inside a container is bounded
+/// by the container, and a `%%%` written back at column 0 does not close it -
+/// the block parser has ended the item long before, and reads the indented fence
+/// as an unterminated one-line comment instead. Entering the fence state on that
+/// far closer swallowed everything in between, so an item holding `%%%` and
+/// `hidden`, then a blank, then `[r]: /url`, then a blank and a column-0 `%%%`,
+/// lost a definition that carve-rs and the oracle both register. That is a worse
+/// defect than the one the container-aware opener fixes, which is why the bound
+/// is part of the same change. (carve-js loses that definition today - a
+/// separate divergence, not something to reproduce here.)
+///
+/// The container's extent is approximated the way the rest of this line-based
+/// pre-pass approximates: the first non-blank line that dedents past the fence's
+/// own column ends it, and blank lines are transparent. Only reached for a fence
+/// that is not at column 0, so a column-0 opener costs exactly what it did
+/// before.
+///
+/// INDEXED rather than scanned, for the reason `comment_fence_close_index`
+/// exists: one container can hold many openers, and walking it once per opener
+/// is the quadratic shape this file's perf suite guards. `m` fence widths above
+/// `m * m` filler lines, with every matching closer only past the dedent, made
+/// each opener walk the whole container - O(m^3) work for an O(m^2) document,
+/// measured at 3x on 1.8 MB and widening with size.
+///
+/// Two facts answer the question without the walk. `closer` is the first
+/// comment-fence closer of this exact width after the opener, from an index
+/// built once. `dedent` is the first non-blank line after it whose indent falls
+/// below the fence's column. The fence closes inside its container exactly when
+/// `closer < dedent`: a closer past the dedent is outside the container, and a
+/// dedented line that happens to be a closer is outside it too.
+///
+/// `dedent` is memoized per COLUMN, which is what makes a run of openers at one
+/// column cost a single walk between them rather than one each: once the first
+/// dedent below column `k` after line `p` is known, it is still the answer for
+/// every query point in `p..dedent`. Openers at different columns keep separate
+/// entries, so alternating columns do not evict each other.
+///
+/// A list MARKER inside the body is not a stop, and the block parser now agrees.
+/// It used to end a contained comment at one, so `- item` / `  %%%` / `  - x` /
+/// `  y` / `  %%%` rendered `x` and `y` where the oracle and carve-js render an
+/// empty item. This scan stayed with the clause through that, which made the two
+/// halves disagree: the definition stopped registering while the body still
+/// leaked. carve-rs#1053 fixed the block parser's side - its content-column
+/// marker gate now treats an open comment span as opaque, the way it already
+/// treated a code fence - so both halves answer §28 the same way and the shape
+/// is correct end to end.
+#[derive(Default)]
+struct ContainerCommentClosers {
+    /// Line index of every comment-fence closer, keyed by its exact `%` run AND
+    /// the quote depth it was written at, ascending within each key.
+    by_width: HashMap<(usize, usize), Vec<usize>>,
+    /// column -> (query point the answer was computed from, the answer).
+    dedents: HashMap<usize, (usize, usize)>,
+    /// (query point the answer was computed from, the answer), for the blank
+    /// line that ends a quote. One entry rather than a map because the question
+    /// carries no column.
+    blank: Option<(usize, usize)>,
+}
+
+impl ContainerCommentClosers {
+    fn build(lines: &[&str]) -> Self {
+        let mut by_width: HashMap<(usize, usize), Vec<usize>> = HashMap::new();
+        for (index, line) in lines.iter().enumerate() {
+            // The same reading `comment_fence_close_index` uses, taken once per
+            // quote DEPTH: leading whitespace is not part of the delimiter, a
+            // tail is ignored, and nothing but the blockquote markers comes off.
+            //
+            // Depth is half the key because stripping the markers collapses
+            // `> > %%%` and `> %%%` onto one run, and they close different
+            // fences. A run shallower than the opener is the line that ENDED the
+            // opener's quote; a deeper one is inside a quote of its own, which
+            // the block parser reads as one. Accepting either would suppress a
+            // definition the block parser publishes.
+            //
+            // Depth 0 is exactly the set this index held before depth was
+            // tracked, so every column-scoped query answers as it did.
+            let (depth, _, rest) = prepass_quote_scope(line);
+            let run = trim_ascii_end(trim_ascii_start(rest))
+                .bytes()
+                .take_while(|byte| *byte == b'%')
+                .count();
+            if run >= 3 {
+                by_width.entry((run, depth)).or_default().push(index);
+            }
+        }
+        Self {
+            by_width,
+            dedents: HashMap::new(),
+            blank: None,
+        }
+    }
+
+    fn closes_in_column(
+        &mut self,
+        lines: &[&str],
+        open_at: usize,
+        open_col: usize,
+        fence_len: usize,
+    ) -> bool {
+        let Some(closer) = self.next_closer(open_at, fence_len, 0) else {
+            return false;
+        };
+        closer < self.first_dedent(lines, open_at, open_col)
+    }
+
+    /// The quoted twin of `closes_in_column`. The blank line carries the bound:
+    /// a blockquote does not survive one, so a `> %%%` below a blank opens a
+    /// different quote whose body the block parser never joins to this one.
+    ///
+    /// The dedent joins it only where the quote is itself inside something. A
+    /// quote at column 0 has nothing to dedent below, so the blank is the whole
+    /// test there; a `- > %%%` sits at column 2, and a later `> %%%` back at
+    /// column 0 has left the item, which the depth alone cannot see because both
+    /// runs are one marker deep.
+    fn closes_in_quote(
+        &mut self,
+        lines: &[&str],
+        open_at: usize,
+        depth: usize,
+        quote_col: usize,
+        fence_len: usize,
+    ) -> bool {
+        let Some(closer) = self.next_closer(open_at, fence_len, depth) else {
+            return false;
+        };
+        if closer >= self.first_blank(lines, open_at) {
+            return false;
+        }
+        quote_col == 0 || closer < self.first_dedent(lines, open_at, quote_col)
+    }
+
+    fn next_closer(&self, open_at: usize, fence_len: usize, depth: usize) -> Option<usize> {
+        let positions = self.by_width.get(&(fence_len, depth))?;
+        let next = positions.partition_point(|at| *at <= open_at);
+        positions.get(next).copied()
+    }
+
+    /// Memoized the way `first_dedent` is, and for the same reason: with no
+    /// blank between `from` and the answer, the answer is still the answer for
+    /// every query point in between, so a run of quoted openers costs one walk
+    /// rather than one each.
+    fn first_blank(&mut self, lines: &[&str], open_at: usize) -> usize {
+        if let Some((from, at)) = self.blank {
+            if from <= open_at && open_at < at {
+                return at;
+            }
+        }
+        let mut at = lines.len();
+        for (offset, line) in lines[open_at + 1..].iter().enumerate() {
+            #[cfg(test)]
+            CONTAINER_DEDENT_STEPS.with(|c| c.set(c.get() + 1));
+            if is_blank_line(line) {
+                at = open_at + 1 + offset;
+                break;
+            }
+        }
+        self.blank = Some((open_at, at));
+        at
+    }
+
+    fn first_dedent(&mut self, lines: &[&str], open_at: usize, open_col: usize) -> usize {
+        if let Some(&(from, at)) = self.dedents.get(&open_col) {
+            if from <= open_at && open_at < at {
+                return at;
+            }
+        }
+        let mut at = lines.len();
+        for (offset, line) in lines[open_at + 1..].iter().enumerate() {
+            #[cfg(test)]
+            CONTAINER_DEDENT_STEPS.with(|c| c.set(c.get() + 1));
+            if is_blank_line(line) {
+                continue;
+            }
+            if indent_columns(line) < open_col {
+                at = open_at + 1 + offset;
+                break;
+            }
+        }
+        self.dedents.insert(open_col, (open_at, at));
+        at
+    }
+}
+
 fn detect_comment_fence_line(line: &str) -> Option<CommentFenceOpen> {
     let line = trim_ascii_end(line);
     let fence_len = line.bytes().take_while(|b| *b == b'%').count();
@@ -4161,6 +5603,20 @@ struct FenceOpen {
 }
 
 fn detect_fence_open(line: &str) -> Option<FenceOpen> {
+    // A TRAILING whitespace run is dropped before the separator below is asked
+    // anything (markup-carve/carve#1295, markup-carve/carve-rs#1022's `330-2`).
+    //
+    // Two clauses meet on this line and POSITION decides which governs. A tab
+    // BEFORE content is the marker-to-content separator, which is the `space`
+    // terminal and nothing else, so ```` ```<TAB>php ```` opens no fence - that
+    // refusal is the `== b' '` test below and it stays. A tab at the END of the
+    // line with nothing after it never reaches that slot: it is trailing
+    // whitespace on a content line, PART 2 drops it, and what is left is the
+    // bare opener. Read that way the two clauses never overlap.
+    //
+    // Trailing SPACES already behaved this way, by being eaten further down; a
+    // tab had no such path and left a fence that refused to open.
+    let line = trim_ascii_end(line);
     let bytes = line.as_bytes();
     let mut i = 0;
     if bytes.is_empty() {
@@ -4361,9 +5817,15 @@ fn parse_fence(cur: &mut LineCursor, open: FenceOpen, options: &Options<'_>) -> 
     // the author wrote it, not just its content.
     let pos = span_of(cur, span_start, cur.pos, options);
     if let Some(format) = raw_format {
+        let mut content = content_lines.join("\n");
+        // Joining cannot distinguish zero payload lines from one or more blank
+        // payload lines. The latter still own their newline (corpus 372).
+        if !content_lines.is_empty() && content_lines.iter().all(String::is_empty) {
+            content.push('\n');
+        }
         BlockNode::RawBlock(RawBlock {
             format,
-            content: content_lines.join("\n"),
+            content,
             pos,
         })
     } else {
@@ -4395,6 +5857,18 @@ fn unescape_quoted_header(s: &str) -> String {
     out
 }
 
+/// A CLOSER TAKES NO CONTENT, so its tail is the LINE ENDING and not a slot.
+///
+/// PART 2's NO TRAILING WHITESPACE governs it: the run is `whitespace`,
+/// `' ' | '\t'`, it is dropped, and it is not content. That is the whole reason
+/// a tab is accepted here while the OPENER refuses one - the opener's tab sits
+/// before an info string, where it is a separator and MARKER SEPARATORS AND
+/// PADDING SLOTS spells the terminal `space` alone. Position decides, not the
+/// construct (carve#1295), so the two halves of the fence disagree on purpose.
+///
+/// A tab with content after it is still not a closer: the loop stops at the
+/// first non-whitespace byte and the line then fails the end-of-line test, so
+/// ```` ```<TAB>php ```` closes nothing.
 fn is_fence_close(line: &str, open: FenceOpen) -> bool {
     let bytes = line.as_bytes();
     let mut i = 0;
@@ -4405,7 +5879,7 @@ fn is_fence_close(line: &str, open: FenceOpen) -> bool {
     if i - start < open.fence_len {
         return false;
     }
-    while i < bytes.len() && bytes[i] == b' ' {
+    while i < bytes.len() && (bytes[i] == b' ' || bytes[i] == b'\t') {
         i += 1;
     }
     i == bytes.len()
@@ -4506,8 +5980,13 @@ fn skip_opaque_span_into(inner: &mut LineBuffer, cur: &mut LineCursor<'_>) -> bo
     false
 }
 
-fn collect_colon_container_body(cur: &mut LineCursor<'_>, opener_len: usize) -> LineBuffer {
+/// Returns the collected body and whether the container's own CLOSER was
+/// consumed - `false` means end of input closed it (PART 9 §12). The flag
+/// exists for the figure group, whose caption slot hangs on the closing fence
+/// (§4c): a group closed by end of input has no closer line for a caption.
+fn collect_colon_container_body(cur: &mut LineCursor<'_>, opener_len: usize) -> (LineBuffer, bool) {
     let mut inner = LineBuffer::default();
+    let mut closed = false;
     let mut stack = vec![opener_len];
     while cur.peek().is_some() {
         let top = *stack.last().unwrap();
@@ -4518,6 +5997,7 @@ fn collect_colon_container_body(cur: &mut LineCursor<'_>, opener_len: usize) -> 
         if exact_colon_fence_len(cur.peek().unwrap()) == Some(top) {
             if stack.len() == 1 {
                 cur.consume();
+                closed = true;
                 break;
             }
             push_current_line(&mut inner, cur);
@@ -4564,7 +6044,7 @@ fn collect_colon_container_body(cur: &mut LineCursor<'_>, opener_len: usize) -> 
         push_current_line(&mut inner, cur);
         cur.consume();
     }
-    inner
+    (inner, closed)
 }
 
 fn find_line_block_end(lines: &[&str], start: usize, fence_len: usize) -> usize {
@@ -4718,13 +6198,23 @@ fn indent_columns(line: &str) -> usize {
 }
 
 // Drop leading whitespace up to `cols` columns (tab-stop aware) and return the
-// remainder. By default a tab straddling the boundary is consumed whole, so a
-// block opener (quote, heading) dedents flush to column 0 and parses -- Carve
-// has no indent-sensitive block where the leftover column would change meaning.
-// With keep_residual (used only for sub-list marker lines), the unconsumed
-// columns of a straddling tab are re-emitted as spaces so tab+space-aligned
-// sibling markers keep the same visual column and the recursive parse re-derives
-// the child base from it. For space-only indentation there is never a residual.
+// remainder. With keep_residual, the unconsumed columns of a straddling tab are
+// re-emitted as spaces, so the line keeps the column the tab actually reached.
+// For space-only indentation there is never a residual.
+//
+// THE RESIDUAL MATTERS INSIDE A LIST ITEM, and the note here used to say the
+// opposite: that a straddling tab could be consumed whole because "Carve has no
+// indent-sensitive block where the leftover column would change meaning". Every
+// block opener in an item is indent-sensitive in exactly that way -- at the
+// item's content column an opener parses, one column past it the line is
+// paragraph text -- so dropping the residual let a tab landing PAST the column
+// dedent flush and open a fence, heading, quote or thematic break that the same
+// column written in spaces does not (carve-rs#889). PART 7: a leading tab
+// indents to column 4, and an ordered item's content column is 3.
+//
+// Marker lines still pass it for their own reason: tab+space-aligned sibling
+// markers keep the same visual column and the recursive parse re-derives the
+// child base from it.
 fn slice_columns(line: &str, cols: usize, keep_residual: bool) -> String {
     slice_columns_mapped(line, cols, keep_residual).0
 }
@@ -4785,21 +6275,21 @@ fn slice_columns_mapped(line: &str, cols: usize, keep_residual: bool) -> (String
 /// and its inputs are unchanged; only the moment it runs is.
 ///
 /// PART 9 §12's absorption is part of the same answer, so it is decided here
-/// rather than sampled around this value: `suppressed` is the absorption state
+/// rather than sampled around this value: `inherited_absorption` is the state
 /// the line inherits, and the resolved verdict carries both whether the
 /// paragraph is open and whether THIS line opens an absorption. Reading the
-/// flag on every quoted line - which is what `colon_absorption` did
+/// flag on every quoted line - which is what `suppress_colon_interrupt` did
 /// when it stood outside - is precisely the eager read this defers
 /// (markup-carve/carve-rs#738 landing under markup-carve/carve-rs#731).
 enum ParaOpen<'a> {
     /// Closed, decided without consulting any line.
     Closed,
     /// Open iff `line`'s innermost quoted content is paragraph text, under the
-    /// absorption state `suppressed` it inherits. `answer` caches the verdict,
+    /// absorption state it inherits. `answer` caches the verdict,
     /// so re-reading the same state walks once.
     Deferred {
         line: &'a str,
-        suppressed: bool,
+        inherited_absorption: bool,
         answer: Option<Verdict>,
     },
 }
@@ -4815,18 +6305,38 @@ struct Verdict {
 }
 
 impl<'a> ParaOpen<'a> {
-    fn from_line(line: &'a str, suppressed: bool) -> Self {
+    fn from_line(line: &'a str, inherited_absorption: bool) -> Self {
         ParaOpen::Deferred {
             line,
-            suppressed,
+            inherited_absorption,
             answer: None,
         }
     }
 
-    /// Whether this line opens §12's absorption. Resolves, so it is asked only
-    /// where the absorption state can actually change (see `parse_blockquote`).
-    fn opens_absorption(&mut self) -> bool {
-        self.resolve().opens_absorption
+    /// Whether resolving this line can change the absorption carried by the
+    /// next one. Keeping this cheap guard preserves the deep-quote deferral.
+    fn may_carry_absorption(&self) -> bool {
+        match self {
+            ParaOpen::Closed => false,
+            ParaOpen::Deferred {
+                line,
+                inherited_absorption,
+                ..
+            } => *inherited_absorption || line.contains(":::"),
+        }
+    }
+
+    /// Absorption inherited by the next quoted line.
+    fn absorption(&mut self) -> bool {
+        let inherited = match self {
+            ParaOpen::Closed => return false,
+            ParaOpen::Deferred {
+                inherited_absorption,
+                ..
+            } => *inherited_absorption,
+        };
+        let verdict = self.resolve();
+        verdict.open && (inherited || verdict.opens_absorption)
     }
 
     fn get(&mut self) -> bool {
@@ -4836,7 +6346,7 @@ impl<'a> ParaOpen<'a> {
     fn resolve(&mut self) -> Verdict {
         let ParaOpen::Deferred {
             line,
-            suppressed,
+            inherited_absorption,
             answer,
         } = self
         else {
@@ -4848,7 +6358,7 @@ impl<'a> ParaOpen<'a> {
         if let Some(known) = answer {
             return *known;
         }
-        let suppressed = *suppressed;
+        let suppressed = *inherited_absorption;
         // Look THROUGH any further quote markers before deciding. A lazy line
         // continues the innermost OPEN PARAGRAPH, however many containers it
         // failed to match, so what matters is whether the innermost quoted
@@ -4868,7 +6378,7 @@ impl<'a> ParaOpen<'a> {
         // itself a block-opener (heading, thematic break, table row, `:::` div
         // / line block opener) leaves NO open paragraph -- so a following list
         // marker has nothing to fold into and must end the quote.
-        // `starts_block_boundary_with_rest` is the §10 predicate: a line that
+        // `interrupts_paragraph_with_rest` is the §10 predicate: a line that
         // would interrupt a paragraph is, by definition, not paragraph
         // continuation text.
         //
@@ -4877,10 +6387,10 @@ impl<'a> ParaOpen<'a> {
         // literal paragraph text, so it keeps the paragraph open and lazy
         // continuation stays in the quote (strict column-0 rule,
         // docs/divergence-from-djot.md §11) -- uniform with the opener paths
-        // in parse_block / starts_block_boundary.
+        // in parse_block / interrupts_paragraph.
         //
         // The rest-of-body slice is empty: the only lookahead
-        // `starts_block_boundary_with_rest` consults is a fenced-code closer
+        // `interrupts_paragraph_with_rest` consults is a fenced-code closer
         // probe, and this predicate is reached only from the branch where the
         // line is NOT a fence opener, so the caller never had a slice to give.
         // It passed a `Vec` built under `if detect_fence_open(stripped)`, which
@@ -4897,7 +6407,7 @@ impl<'a> ParaOpen<'a> {
                 || ((innermost.starts_with([' ', '\t'])
                     || detect_container_open(innermost).is_none())
                     && !trim_ascii_start(innermost).starts_with("%%")
-                    && !starts_block_boundary_with_rest(innermost, &[])));
+                    && !interrupts_paragraph_with_rest(innermost, &[])));
         let verdict = Verdict {
             open,
             opens_absorption: open && is_invalid_colon_fence_opener_text(innermost),
@@ -4919,16 +6429,35 @@ fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     // paragraph correctly - but `para_open` was computed from the line's SHAPE
     // alone, so a bare `:::` set it false and the flush-left line under it could
     // not fold. That made the quote disagree with its own body about whether a
-    // paragraph was open (carve-rs#727). Same rule as `colon_absorption`
-    // in `parse_paragraph` and the item lead-paragraph collector, spelled from
-    // the same two helpers rather than a fourth time.
+    // paragraph was open (carve-rs#727). `ParaOpen` owns that state now,
+    // instead of requiring a second boolean whose validity depends on the
+    // enum's current variant.
     //
     // It is a RUNNING state, and only a resolved `para_open` can advance it, so
-    // it is handed to `ParaOpen` and advanced from the resolved verdict rather
+    // it is carried by `ParaOpen` and advanced from the resolved verdict rather
     // than read on every quoted line. Reading it per line is what would put
     // markup-carve/carve-rs#731's cubic walk back.
-    let mut colon_absorption = false;
     let mut in_fence: Option<FenceOpen> = None;
+    // THE QUOTE'S OWN LAST BLOCK IS WHAT S4 ASKS ABOUT, and a continuation row
+    // belongs to the table above it (§5 T6, markup-carve/carve#1348). `ParaOpen`
+    // is handed ONE line and a `+ b |` line reads as prose on its own, so a
+    // quote ending on a continuation row recorded an open paragraph and the
+    // flush-left line below folded in - while the SAME table ending on a
+    // standard row closed the quote. One question answered two ways by a
+    // spelling. This carries the run so the two spellings answer alike.
+    let mut table = TableRun::default();
+    // ONE BLOCK IS ONE BLOCK HOWEVER MANY LINES IT TAKES (§15 A5). A wrapped
+    // attribute block (`{.k` / `#x}`) closes the quoted paragraph exactly as the
+    // single-line `{.k}` does, and the lines after its opener are its own
+    // content rather than paragraph text. `ParaOpen` decides from ONE line, so
+    // the block's extent is tracked here beside the code fence's - the same
+    // shape, for the same reason (markup-carve/carve-rs#1050).
+    let mut attrs_block_rest: usize = 0;
+    // The first line index the block lookahead is still worth running on. A scan
+    // that walked to a blank line, or to the end of the quoted run, without
+    // meeting a line that could CLOSE an attribute block has proved the same for
+    // every line it passed - see `quoted_attrs_block_len`.
+    let mut attrs_scan_floor: usize = 0;
     let mut colon_fences: Vec<usize> = Vec::new();
     while let Some(line) = cur.peek() {
         if let Some(stripped) = strip_blockquote_prefix(line) {
@@ -4949,24 +6478,31 @@ fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 inner.push_at(stripped.to_string(), source_line, stripped_at);
                 continue;
             }
-            if let Some(open) = in_fence {
+            if attrs_block_rest > 0 {
+                // Inside a wrapped attribute block the opener already closed the
+                // paragraph; its remaining lines close nothing further and open
+                // nothing either.
+                attrs_block_rest -= 1;
+                para_open = ParaOpen::Closed;
+                table = TableRun::default();
+            } else if let Some(open) = in_fence {
                 if is_fence_close(stripped, open) {
                     in_fence = None;
                 }
                 para_open = ParaOpen::Closed;
+                table = TableRun::default();
                 // The absorption belongs to ONE paragraph: whatever closed it
                 // -- a blank line, a real opener, a code fence -- ends the
                 // absorption too. Spelled at each site that closes the
                 // paragraph rather than once after the chain, because after the
                 // chain it would have to READ `para_open`, and reading it on
                 // every quoted line is the walk this defers.
-                colon_absorption = false;
             } else if let Some(open) = detect_fence_open(stripped) {
+                table = TableRun::default();
                 if !para_open.get() {
                     // Fence at block start opens (unterminated renders to end).
                     in_fence = Some(open);
                     para_open = ParaOpen::Closed;
-                    colon_absorption = false;
                 } else {
                     // After an open paragraph a fence interrupts only with a
                     // matching closer ahead (§10); else it is inline verbatim.
@@ -4980,7 +6516,6 @@ fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                     if has_closer {
                         in_fence = Some(open);
                         para_open = ParaOpen::Closed;
-                        colon_absorption = false;
                     }
                     // No closer: the fence is inline verbatim and the paragraph
                     // (already resolved OPEN by the test above) stays open, so
@@ -4996,7 +6531,51 @@ fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 // (markup-carve/carve-rs#731). The absorption state the line
                 // inherits goes WITH it, so §12 is decided by the same walk
                 // instead of forcing one of its own.
-                para_open = ParaOpen::from_line(stripped, colon_absorption);
+                let inherited_absorption = if para_open.may_carry_absorption() {
+                    para_open.absorption()
+                } else {
+                    false
+                };
+                // The run is advanced on every ordinary quoted line, so the
+                // answer is about the BLOCK this line lands in rather than
+                // about the line. A continuation row appends to the table above
+                // it and opens no paragraph, exactly as the row it appends to
+                // does; anything else resets the run, which is what keeps a
+                // `+ b |` with no table above it ordinary prose
+                // (markup-carve/carve#1345).
+                if table.observe(stripped) {
+                    para_open = ParaOpen::Closed;
+                    inner.push_at(stripped.to_string(), source_line, stripped_at);
+                    continue;
+                }
+                para_open = ParaOpen::from_line(stripped, inherited_absorption);
+                // A WRAPPED ATTRIBUTE BLOCK CLOSES THE PARAGRAPH TOO, and only
+                // the lines after its opener can tell it apart from prose that
+                // happens to start with a brace. `ParaOpen` is handed ONE line
+                // and passes an empty rest slice to
+                // `interrupts_paragraph_with_rest`, so the single-line `{.k}`
+                // closed the quoted paragraph while `{.k` / `#x}` did not: the
+                // quote went on collecting, the column-0 line folded in, and the
+                // author's attributes landed on it INSIDE the container they
+                // were written to end (markup-carve/carve-rs#1050). §15 A5 makes
+                // one block one block however many lines it takes, so the two
+                // spellings answer alike.
+                if at >= attrs_scan_floor {
+                    match quoted_attrs_block_len(stripped, &cur.lines[cur.pos..]) {
+                        QuotedAttrsBlock::Block(len) => {
+                            para_open = ParaOpen::Closed;
+                            attrs_block_rest = len - 1;
+                        }
+                        // The scan already proved no block can start inside the
+                        // window it walked, so the next lines skip it. That is
+                        // what keeps a run of brace-shaped lines that close
+                        // nothing linear instead of scanned once per line.
+                        QuotedAttrsBlock::NoneWithin(window) => {
+                            attrs_scan_floor = at + window;
+                        }
+                        QuotedAttrsBlock::No => {}
+                    }
+                }
                 // Advancing the absorption flag needs the verdict, and getting
                 // the verdict is the walk. So force it only where the answer
                 // can change the flag. While the flag is OFF, a line carrying
@@ -5018,13 +6597,6 @@ fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 // `Note:`, a `12:30`, an `https://` - therefore stays on the
                 // deferred path, which is what lets markup-carve/carve-rs#738
                 // ride on the deferral instead of undoing it.
-                if colon_absorption || stripped.contains(":::") {
-                    if para_open.get() {
-                        colon_absorption |= para_open.opens_absorption();
-                    } else {
-                        colon_absorption = false;
-                    }
-                }
             }
             if closes_colon {
                 colon_fences.pop();
@@ -5059,7 +6631,30 @@ fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                         || (trim_ascii(next) == "+" && indent_columns(next) == 0)
                 },
             );
-            while cur.pos < end {
+            // ONE BLOCK, AND THE BOUNDARY IS THAT BLOCK'S EXTENT (§17 L3, ruled
+            // in markup-carve/carve#1290). The scan above finds the boundary -
+            // the next blank line, `>` line or further `+` - and the marker
+            // attaches ONE block up to it, not everything up to it. The block
+            // may still be many lines long: a wrapped paragraph, a list, a
+            // nested quote, a fenced block. So the extent is measured by parsing
+            // one block out of it rather than by taking the whole run.
+            //
+            // The list-item form already counted this way - `parse_continuation_
+            // block` calls the single-block parser and advances by what it
+            // consumed - and this branch was the one place where the two
+            // spellings of the same clause disagreed: `> quoted` / `+` / `para`
+            // / `# H` pulled the heading into the quote as well.
+            //
+            // Under a MEASUREMENT PROBE the whole extent is spliced instead. The
+            // probe only wants a line count, and this marker's own division of
+            // its content cannot change how many lines the block above it spans
+            // - measuring here as well would double the work per nesting level.
+            let attach_end = if measuring_attached_block() {
+                end
+            } else {
+                cur.pos + attached_one_block_lines(&cursor_lines[cur.pos..end], options)
+            };
+            while cur.pos < attach_end {
                 let next = cur.lines[cur.pos];
                 // Attached lines are spliced in verbatim, so the container took
                 // nothing beyond whatever an outer one already had.
@@ -5081,6 +6676,7 @@ fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 inner.col_map.extend(attached.col_map);
                 inner.push_synthetic_blank();
                 para_open = ParaOpen::Closed;
+                table = TableRun::default();
             }
             continue;
         }
@@ -5089,7 +6685,7 @@ fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         // A list marker FOLDS into the open quoted paragraph as literal text --
         // the quoted paragraph follows the same rule as a top-level paragraph,
         // where a list marker does not interrupt (it needs a blank line before
-        // it). `starts_block_boundary` is the shared predicate for that decision,
+        // it). `interrupts_paragraph` is the shared predicate for that decision,
         // and it already returns false for bullet/task/ordered markers, so we
         // simply defer to it. A heading is the sole construct a list marker
         // would otherwise end, and headings still interrupt via that predicate.
@@ -5113,11 +6709,9 @@ fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     if let Some(caption) = consume_caption(cur, options) {
         BlockNode::Figure(Figure {
             attrs: None,
-            target: FigureTarget::BlockQuote(quote),
+            target: Box::new(FigureTarget::BlockQuote(quote)),
             caption,
-            // From the quote's first line through the caption the cursor has
-            // just consumed. The image path already did this; a quote wrapped
-            // in a figure went unplaced.
+            short_caption: None,
             pos: span_of(cur, span_start, cur.pos, options),
         })
     } else {
@@ -5477,6 +7071,158 @@ fn has_indexed_comment_closer_after(
 /// `comment_closers` is the caller's lazily built exact-width `%%%` closer
 /// index. It is a parameter rather than a local because REBUILDING it per call
 /// is quadratic on a document full of comment openers.
+/// How many of `slice`'s lines the ONE block a `+` continuation marker attaches
+/// occupies (§17 L3, markup-carve/carve#1290).
+///
+/// `slice` is the marker's EXTENT, already bounded by the caller's blank-line /
+/// sibling / further-`+` scan. Within it the marker takes one block, which is
+/// exactly what the single-block parser consumes - a wrapped paragraph, a list,
+/// a quote and a fenced block are each one block and each many lines.
+///
+/// The block is parsed here only to be MEASURED; the caller splices the lines
+/// into the container's body, where they parse again in their real context.
+/// Measuring by re-parsing rather than by a second line scan keeps one
+/// definition of where a block ends - a scan would be a copy of the block
+/// grammar that could drift from it silently.
+///
+/// A LEADING ATTRIBUTE RUN IS PART OF THE BLOCK IT FLOATS ONTO. Only
+/// `parse_blocks` owns a pending-attribute slot, and this is a `parse_block`
+/// call, so an attribute line left to it reads as a paragraph and the
+/// measurement stops in front of the block the attributes were written for.
+/// `> q` / `+` / `{.x}` / `# h` then attached the attribute line ALONE, dropped
+/// the attributes and left the heading outside the quote - where the list form
+/// attaches an attributed heading. The run is consumed here so the block behind
+/// it is what gets measured, exactly as `parse_continuation_block` does it.
+///
+/// A SELF-DELIMITING BLOCK IS NOT PARSED AT ALL. A fence and a colon container
+/// end at a CLOSER, which is a line-level fact that `attached_block_end` already
+/// reads with these same helpers - so their extent is taken from the lines and
+/// the body is never walked. This is what keeps a deeply nested attachment
+/// affordable: parsing the body would re-walk the whole subtree at every level
+/// above it. Measured on `> q` / `+` / `::: d` nested to the cap: 9.52 s when the
+/// probe parsed the container, 0.2 s when it reads the closer, against 0.22 s
+/// for the same document before this clause was implemented at all.
+///
+/// MEASURING DOES NOT NEST either. The probe parses the attached block and the
+/// caller then parses those same lines again, so an inner `+` under a probe
+/// would be measured twice per level - doubling per level, at 0.02 s / 0.06 s /
+/// 0.26 s / 1.05 s for depths 8 / 10 / 12 / 14 against a flat 0.00 s before. An
+/// inner marker under a probe therefore splices its whole extent instead. That
+/// cannot change the answer here: what this returns is a LINE COUNT, and a
+/// block's line extent is decided by closers, quote prefixes and indentation -
+/// never by how an inner marker divided its own content.
+///
+/// At least one line, always. A parser that consumed nothing would leave the
+/// caller's cursor where it was, and the container loop would see the same line
+/// forever.
+fn attached_one_block_lines(slice: &[&str], options: &Options<'_>) -> usize {
+    if slice.is_empty() {
+        return 0;
+    }
+    // A cache OF ITS OWN, never the caller's. The closer index is keyed by line
+    // number, and `slice` is renumbered from the container's own lines - handing
+    // it an index built over those would read a closer at the wrong place.
+    let mut comment_closers: Option<HashMap<usize, usize>> = None;
+    let _measuring = MeasuringGuard::enter();
+    let mut sub = LineCursor::new_with_cols(slice, None, None);
+    while let Some(line) = sub.peek() {
+        if line.starts_with([' ', '\t']) || !line.starts_with('{') {
+            break;
+        }
+        if parse_standalone_attrs_block(&mut sub).is_none() {
+            break;
+        }
+    }
+    if let Some(end) = self_delimiting_block_end(slice, sub.pos, &mut comment_closers) {
+        return end.clamp(1, slice.len());
+    }
+    parse_block(&mut sub, options);
+    sub.pos.clamp(1, slice.len())
+}
+
+/// One past the last line of the self-delimiting block opening at `slice[start]`,
+/// or `None` when that line opens none.
+///
+/// The five openers and the four helpers are the ones [`attached_block_end`]
+/// skips regions with, reused rather than restated: a fence or colon container
+/// runs to its closer, or to end of input when it has none, and nothing inside
+/// it can shorten that.
+fn self_delimiting_block_end(
+    slice: &[&str],
+    start: usize,
+    comment_closers: &mut Option<HashMap<usize, usize>>,
+) -> Option<usize> {
+    let line = *slice.get(start)?;
+    if let Some(open) = detect_fence_open(line) {
+        let mut i = start + 1;
+        while i < slice.len() {
+            if is_fence_close(slice[i], open) {
+                return Some(i + 1);
+            }
+            i += 1;
+        }
+        return Some(slice.len());
+    }
+    if let Some(open) = detect_comment_fence_line(line) {
+        if has_indexed_comment_closer_after(slice, comment_closers, start + 1, open.fence_len) {
+            if let Some(close) =
+                (start + 1..slice.len()).find(|&j| is_comment_fence_close(slice[j], open.fence_len))
+            {
+                return Some(close + 1);
+            }
+        }
+        // §28: with no closer ahead it is not a fence, it is a `%%` line
+        // comment - one line, and the lines after it are just lines.
+        return Some(start + 1);
+    }
+    if let Some(fence_len) = detect_line_block_open(line) {
+        return Some(find_line_block_end(slice, start, fence_len));
+    }
+    if let Some(fence_len) = detect_hardbreaks_block_open(line) {
+        return Some(find_colon_container_end(slice, start, fence_len));
+    }
+    if let Some(open) = detect_container_open(line) {
+        return Some(find_colon_container_end(slice, start, open.fence_len));
+    }
+    None
+}
+
+thread_local! {
+    // Set while [`attached_one_block_lines`] is measuring, so a `+` marker
+    // reached inside the probe splices its extent rather than running a probe of
+    // its own. See that function for why the count is unaffected and for the
+    // cost this avoids.
+    //
+    // Plain initializer for the same MSRV reason as `NESTING_DEPTH`.
+    #[allow(clippy::missing_const_for_thread_local)]
+    static MEASURING_ATTACHED_BLOCK: Cell<bool> = const { Cell::new(false) };
+}
+
+/// RAII flag for the measurement probe, restoring the previous value on drop
+/// (panic unwind included), the discipline [`DepthGuard`] keeps for the depth
+/// counter.
+struct MeasuringGuard {
+    previous: bool,
+}
+
+impl MeasuringGuard {
+    fn enter() -> MeasuringGuard {
+        MeasuringGuard {
+            previous: MEASURING_ATTACHED_BLOCK.with(|m| m.replace(true)),
+        }
+    }
+}
+
+impl Drop for MeasuringGuard {
+    fn drop(&mut self) {
+        MEASURING_ATTACHED_BLOCK.with(|m| m.set(self.previous));
+    }
+}
+
+fn measuring_attached_block() -> bool {
+    MEASURING_ATTACHED_BLOCK.with(|m| m.get())
+}
+
 fn attached_block_end(
     lines: &[&str],
     start: usize,
@@ -5558,7 +7304,7 @@ fn parse_continuation_block(
             // item rather than nesting it (matches carve-php for `+`-then-
             // marker, e.g. `- a / + / text / + / - b`).
             if nm.indent > base_indent {
-                return parse_block(cur, options);
+                return parse_block(cur, options).map(|node| *node);
             }
             return None;
         }
@@ -5614,16 +7360,93 @@ fn parse_continuation_block(
         cur.line_map.is_some().then_some(line_map.as_slice()),
         cur.col_map.is_some().then_some(col_map.as_slice()),
     );
+    // A BLOCK-ATTRIBUTE LINE IS A BLOCK, AND IT FLOATS TO THE NEXT ONE.
+    // PART 2 lists `block_attributes` among the alternatives of `block`, so
+    // PART 11's `continuation_marker_block = continuation_marker, block` admits
+    // one after the marker, and PART 9 §15 sends it to the block that follows.
+    // `parse_blocks` owns the only pending-attribute slot and this is a
+    // `parse_block` call, so the line arrived here with nothing to read it and
+    // fell through to a paragraph: `- a` / `+` / `{.x}` / `> q` rendered a
+    // literal `{.x}` in the item and left the quote OUTSIDE it, where carve-js
+    // and carve-php put the quote inside carrying the class
+    // (markup-carve/carve-rs#1020, rule in markup-carve/carve#1238).
+    //
+    // AT THE MARKER'S OWN COLUMN, the same guard `parse_blocks` spells as
+    // `line_flush`. These lines are taken VERBATIM (see above), so "flush"
+    // is measured against `base_indent` rather than against column 0 - a `+`
+    // inside a nested list attaches at ITS column. A line one column further in
+    // is ordinary text (strict column-0 rule, docs/divergence-from-djot.md §11).
+    //
+    // Attribute blocks STACK, so this takes the whole leading run and merges
+    // it, the way `parse_blocks` merges consecutive lines into one slot.
+    let mut floating_attrs: Option<Attrs> = None;
+    let mut floating_attrs_pos: Option<Pos> = None;
+    while let Some(line) = sub.peek() {
+        if indent_columns(line) != base_indent || !trim_ascii_start(line).starts_with('{') {
+            break;
+        }
+        let attrs_start = sub.pos;
+        let Some(attrs) = parse_standalone_attrs_block(&mut sub) else {
+            break;
+        };
+        merge_attrs(&mut floating_attrs, attrs);
+        if floating_attrs_pos.is_none() {
+            floating_attrs_pos = span_of(&sub, attrs_start, sub.pos, options);
+        }
+    }
+    // The block starts where the attribute run ended, which is what the source
+    // stamp below has to name: `parse_blocks` likewise takes `start_line` after
+    // its own attribute lines are consumed. Stamping the slice's first line
+    // would point an editor's scroll-sync at the `{…}` line instead.
+    let block_start = sub.pos;
     let mut block = parse_block(&mut sub, options);
+    if let Some(attrs) = floating_attrs {
+        // AN EMPTY PARAGRAPH IS NOT A BLOCK THE AUTHOR WROTE THESE FOR. It is
+        // what a `parse_block` call returns when the extent held no content -
+        // `- a` / `+` / `{.x}` / blank / `> q`, where §17 L3 bounds the
+        // attachment at the blank - and `parse_list` filters it out again, so
+        // attributes applied to it were discarded one step later without
+        // anything noticing. The set reaches nothing; §15 A4 drops it and says
+        // so (markup-carve/carve#1281).
+        //
+        // This does NOT change a byte of HTML or of the AST: the node it used
+        // to attach to never reached the tree. What it changes is that the loss
+        // is now reported, which is the whole of the rule.
+        let reaches_nothing = match block.as_deref() {
+            None => true,
+            Some(BlockNode::Paragraph(p)) => p.children.is_empty(),
+            // AND A BLOCK THAT TAKES NO ATTRIBUTES IS NOT ONE EITHER.
+            // `apply_attrs_to_block` ends in `_ => {}`, so handing it a comment
+            // or an abbreviation definition discards the set exactly as having
+            // no block at all would - and §15 A2a's "float past what renders
+            // nothing" cannot save it here, because a `+` attaches ONE block and
+            // there is no next one to float to. `- a` / `+` / `{.x}` / `%% c`
+            // dropped the attributes with nothing reporting it, while the
+            // document-level twin `{.x}` / blank / `%% c` reported them.
+            Some(BlockNode::Comment(_)) | Some(BlockNode::AbbreviationDef(_)) => true,
+            Some(_) => false,
+        };
+        if reaches_nothing {
+            note_unattached_block_attrs(floating_attrs_pos);
+        } else if let Some(node) = &mut block {
+            // The invisible-block guard is now ABOVE, in `reaches_nothing`.
+            // It was removed from here once, correctly: it could not change a
+            // byte of HTML or of the AST, and a check that cannot fail is the
+            // defect class markup-carve/carve#755 catalogs. §15 A4's diagnostic
+            // is what gives it something to change - the set is still dropped
+            // either way, and now the drop is reported.
+            apply_attrs_to_block(node, attrs);
+        }
+    }
     if options.source_lines {
         if let Some(block) = &mut block {
-            if let Some(line) = line_map.first().copied().flatten() {
+            if let Some(line) = line_map.get(block_start).copied().flatten() {
                 stamp_source_line(block, line);
             }
         }
     }
     cur.pos += sub.pos;
-    block
+    block.map(|node| *node)
 }
 
 /// A list's extent, taken from the items it holds.
@@ -5701,6 +7524,20 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     let mut items: Vec<ListItem> = Vec::new();
     let mut tight = true;
     let mut pending_blank = false;
+    // A block-attribute block that ended a continuation chunk, waiting for the
+    // SUB-LIST it was written in front of. The chunk boundary is what separated
+    // them (see `split_trailing_attrs`), so this carries them across it.
+    //
+    // It survives blank lines, because a blank does not break attachment
+    // anywhere else either - `{.x}` / blank / `- b` at document level attaches.
+    // Everything that opens an item or attaches a block of its own clears it,
+    // so a set of attributes can only ever reach the sub-list that directly
+    // follows it, and one that reaches nothing is dropped exactly as before.
+    let mut pending_attrs: Option<Attrs> = None;
+    // Where that set was written, for §15 A4's diagnostic. This slot holds
+    // attributes LIFTED off a chunk (`split_trailing_attrs`), so the span comes
+    // from the chunk's own maps rather than from the cursor.
+    let mut pending_attrs_pos: Option<Pos> = None;
     let mut blank_run = 0usize;
     // The current item's content column (where its content begins after the
     // marker). Nested content and sub-blocks of the last item dedent by this, so
@@ -5732,6 +7569,11 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         if trim_ascii(line) == "+" && indent_columns(line) == base_indent {
             cur.consume();
             pending_blank = false;
+            // A marker is not the block these were written for either (§15 A4).
+            note_unattached_block_attrs(
+                pending_attrs_pos.take().filter(|_| pending_attrs.is_some()),
+            );
+            pending_attrs = None;
             blank_run = 0;
             if let Some(block) = parse_continuation_block(cur, options, base_indent) {
                 // An EMPTY paragraph is not content and must not become one of
@@ -5813,10 +7655,8 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                     fold_lazy_run_and_resume(
                         cur,
                         &mut nested,
-                        |src| {
-                            nested_ends_with_heading(src, options)
-                                || (!pending_blank && nested_ends_with_open_paragraph(src, options))
-                        },
+                        content_col,
+                        |src, below| collected_body_takes_the_lazy_line(src, below, options),
                         |cur| {
                             collect_item_continuation_block_mapped(
                                 cur,
@@ -5826,7 +7666,51 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                             )
                         },
                     );
-                    let nested_children = parse_mapped_source(&nested, options);
+                    let definition_ended_paragraph = nested
+                        .source
+                        .lines()
+                        .any(|line| trim_ascii(line) == DEFINITION_PLACEHOLDER);
+                    // A `{…}` block that ENDS this chunk was written in front of
+                    // whatever comes next, and what comes next is in the next
+                    // chunk - the collector broke on the sub-list marker. Hold
+                    // it rather than letting the chunk's own pending slot drop
+                    // it (carve-rs#1007). Split BEFORE parsing, so the block it
+                    // was going to attach to inside this chunk is unaffected.
+                    //
+                    // Repeatedly, because attribute blocks STACK: `{.x}` /
+                    // `{#i}` in front of one block merges into a single set
+                    // everywhere else, and lifting only the last one off would
+                    // have made the nested list the one target that keeps just
+                    // the final block. Each split shortens the chunk, so this
+                    // terminates.
+                    let mut split_stack: Vec<(Attrs, Option<Pos>)> = Vec::new();
+                    while let Some(split) = split_trailing_attrs(&mut nested) {
+                        split_stack.push(split);
+                    }
+                    let mut nested_children = parse_mapped_source(&nested, options);
+                    // Attributes held from an EARLIER chunk attach here when
+                    // this one opens with a block, which is the case where a
+                    // blank line sits between the `{…}` and its target. The
+                    // sub-list branch is the other consumer; between them, a set
+                    // of attributes reaches the first block written after it
+                    // whichever chunk that landed in.
+                    if pending_attrs.is_some() {
+                        if let Some(target) = nested_children
+                            .iter_mut()
+                            .find(|block| !matches!(block, BlockNode::Comment(_)))
+                        {
+                            apply_attrs_to_block(target, pending_attrs.take().unwrap());
+                            pending_attrs_pos = None;
+                        }
+                    }
+                    // Back into SOURCE order, so the merge resolves a repeated
+                    // key the way `parse_blocks` resolves it at top level.
+                    for (attrs, pos) in split_stack.into_iter().rev() {
+                        if pending_attrs.is_none() {
+                            pending_attrs_pos = pos;
+                        }
+                        merge_attrs(&mut pending_attrs, attrs);
+                    }
                     // A blank before an indented sub-block loosens only when it
                     // is a genuine second paragraph (#74 compact list blocks).
                     // Skip what renders NOTHING when looking for that
@@ -5873,6 +7757,18 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                     // hard boundary requires consecutive blank source lines.
                     blank_run = 0;
                     last.children.extend(nested_children);
+                    // A collected definition is an I5 block, not the comment
+                    // exception. If the collector stopped on a nonzero line
+                    // below the item's content column, no paragraph remains
+                    // for that line to continue (markup-carve/carve#1376).
+                    if definition_ended_paragraph
+                        && cur.peek().is_some_and(|line| {
+                            let indent = indent_columns(line);
+                            indent > 0 && indent < content_col
+                        })
+                    {
+                        break;
+                    }
                     continue;
                 }
             }
@@ -5912,7 +7808,7 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                     // a second paragraph rather than a continuation of the
                     // first: a comment ends the paragraph above it (§10) while
                     // leaving its container open.
-                    collect_trailing_lazy(cur, &mut nested);
+                    collect_trailing_lazy_through(cur, &mut nested, base_indent);
                     last.children.extend(parse_mapped_source(&nested, options));
                     continue;
                 }
@@ -5960,13 +7856,30 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 fold_lazy_run_and_resume(
                     cur,
                     &mut nested,
-                    |src| {
-                        nested_ends_with_open_paragraph(src, options)
-                            || nested_ends_with_heading(src, options)
-                    },
+                    content_col,
+                    |src, below| collected_body_takes_the_lazy_line(src, below, options),
                     |cur| collect_indented_block_mapped(cur, sub_indent - 1, content_col),
                 );
-                let nested_children = parse_mapped_source(&nested, options);
+                let mut nested_children = parse_mapped_source(&nested, options);
+                // The block-attribute block written in front of this sub-list,
+                // carried across the chunk boundary that separated them
+                // (carve-rs#1007). It lands on the nested LIST, not on the item
+                // and not on the outer list: `apply_attrs_to_block` already has
+                // the arm, and a list is a block like the paragraph, quote and
+                // fence in this position that have always taken them.
+                //
+                // The first non-comment child, matching how the looseness check
+                // below picks the block that counts - a comment renders nothing
+                // and is not what the author wrote the attributes for.
+                if let Some(attrs) = pending_attrs.take() {
+                    pending_attrs_pos = None;
+                    if let Some(target) = nested_children
+                        .iter_mut()
+                        .find(|block| !matches!(block, BlockNode::Comment(_)))
+                    {
+                        apply_attrs_to_block(target, attrs);
+                    }
+                }
                 // A blank line INSIDE the outer item -- swallowed into the nested
                 // source by the collection above -- that directly separates the
                 // sub-list from a following PARAGRAPH still attached to the outer
@@ -5996,6 +7909,15 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             }
             break;
         }
+        // Past the sub-list branch, so this marker opens a SIBLING item. Any
+        // attributes still held were written in front of something that never
+        // came, and a sibling is not that something - drop them here rather
+        // than let them reach a sub-list further down the list, which is not
+        // where the author put them (carve-rs#1007). Reported rather than
+        // silent, like every other way of running out (§15 A4,
+        // markup-carve/carve#1281).
+        note_unattached_block_attrs(pending_attrs_pos.take().filter(|_| pending_attrs.is_some()));
+        pending_attrs = None;
         if marker.ordered != is_ordered || marker.checked.is_some() != is_task {
             break;
         }
@@ -6100,7 +8022,8 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             fold_lazy_run_and_resume(
                 cur,
                 &mut stream,
-                |src| !after_blank && nested_ends_with_open_paragraph(src, options),
+                content_col,
+                |src, below| !after_blank && nested_ends_with_open_paragraph(src, below, options),
                 |cur| collect_indented_block_mapped(cur, base_indent, content_col),
             );
             // A blank line between the item's blocks loosens the list, whatever
@@ -6135,19 +8058,23 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         if parse_standalone_attrs(marker.content).is_some() {
             let mut stream = item_marker_source(cur, marker.content, item_at);
             stream.append(collect_indented_block_mapped(cur, base_indent, content_col));
-            // The attribute line floats onto the item's first following block;
-            // a flush-left line therefore remains item-owned even when it would
-            // interrupt an ordinary open paragraph.
-            if let Some(line) = cur.peek().map(str::to_string) {
-                if !is_blank_line(&line) && indent_columns(&line) == 0 && !is_list_marker(&line) {
-                    stream.push_newline_at(
-                        trim_ascii_start(&line).to_string(),
-                        cur.source_line(cur.pos),
-                        cur.source_col(cur.pos),
-                    );
-                    cur.consume();
-                }
-            }
+            // A FLUSH-LEFT line is not the block this attribute floats onto.
+            //
+            // This used to pull that line INTO the item so the attributes could
+            // reach it - which is the same absorb-a-flush-left-block behavior
+            // PART 1 S4 refuses (markup-carve/carve#1280), and it made the item
+            // swallow a block the author wrote outside it purely because an
+            // attribute line was looking for a target. `- {.k}` / `# H`
+            // published `<li><h1 class="k">` where the heading belongs at
+            // document level, and `- {.k}` / `tail` published a classed
+            // paragraph inside the item.
+            //
+            // An attribute line leaves no open paragraph, so the flush-left
+            // line ends the item and the attribute has nothing left in scope: it
+            // is dropped where it was written rather than travelling out of its
+            // container (§15 A4, markup-carve/carve#1281). The indented
+            // spelling - `- {a=b .c}` / `  # H`, corpus 170 - reaches the item's
+            // content column and is collected above, so it still attaches.
             // A blank line between the item's blocks loosens the list, whatever
             // the marker-line lead happens to be. This branch and the two beside
             // it build their item and `continue` past the loosening test the
@@ -6167,9 +8094,37 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             continue;
         }
         if detect_list_marker_full(marker.content).is_some() {
+            // The marker line can open more than one item (`* * u`). Once a
+            // flush lazy line folds into the innermost paragraph, S4 closes
+            // nothing, so collection must resume against THAT item's content
+            // column. Using the outer `content_col` assigned a following line
+            // between the two columns to the outer item instead (#1424).
+            let nested_content_col = content_col + innermost_marker_content_col(marker.content);
+            let nested_definition_ended_paragraph =
+                trim_ascii(innermost_marker_content(marker.content)) == DEFINITION_PLACEHOLDER;
             let mut stream = item_marker_source(cur, marker.content, item_at);
             let before_block = cur.pos;
-            stream.append(collect_indented_block_mapped(cur, base_indent, content_col));
+            let collection_floor = if nested_definition_ended_paragraph {
+                nested_content_col.saturating_sub(1)
+            } else {
+                base_indent
+            };
+            // Comments are collected at any column by design. A definition-only
+            // innermost item has no paragraph for that exception to preserve,
+            // so do not even enter the collector until the next line reaches
+            // the innermost content column. Otherwise `%%` pulled itself and
+            // the following lazy line into the nested stream (#1424).
+            if !nested_definition_ended_paragraph
+                || cur
+                    .peek()
+                    .is_some_and(|line| indent_columns(line) >= nested_content_col)
+            {
+                stream.append(collect_indented_block_mapped(
+                    cur,
+                    collection_floor,
+                    content_col,
+                ));
+            }
             // A blank line closes the sub-list's last paragraph, so the next
             // flush-left line starts a NEW top-level block instead of folding in
             // (carve-rs#490). The collected source keeps no trace of a trailing
@@ -6188,6 +8143,37 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 if ended_on_blank {
                     break;
                 }
+                if nested_definition_ended_paragraph {
+                    break;
+                }
+                // A flush line comment ends the inner paragraph but not the
+                // innermost item (§24 C3). Consume it into the nested stream,
+                // then resume relative to that item's column just as the plain
+                // lazy path below does. Leaving it for the outer list's comment
+                // exception put the line after it in the outer item (#1424).
+                if cur.peek().is_some_and(is_flush_line_comment) {
+                    let line = cur.peek().unwrap();
+                    stream.push_newline_at(
+                        line.to_string(),
+                        cur.source_line(cur.pos),
+                        cur.source_col(cur.pos),
+                    );
+                    cur.consume();
+                    collect_trailing_lazy_through(
+                        cur,
+                        &mut stream,
+                        nested_content_col.saturating_sub(1),
+                    );
+                    let before_block = cur.pos;
+                    stream.append(collect_indented_block_mapped(
+                        cur,
+                        nested_content_col - 1,
+                        nested_content_col,
+                    ));
+                    ended_on_blank =
+                        cur.pos > before_block && is_blank_line(cur.lines[cur.pos - 1]);
+                    continue;
+                }
                 let has_lazy = if let Some(line) = cur.peek() {
                     let line = line.to_string();
                     !is_blank_line(&line) && indent_columns(&line) == 0 && !is_list_marker(&line)
@@ -6197,19 +8183,27 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 if !has_lazy {
                     break;
                 }
-                if !nested_ends_with_open_paragraph(&stream.source, options) {
+                if !nested_ends_with_open_paragraph(
+                    &stream.source,
+                    last_consumed_line_below_column(cur, nested_content_col),
+                    options,
+                ) {
                     break;
                 }
                 let before = cur.pos;
-                collect_trailing_lazy(cur, &mut stream);
+                collect_trailing_lazy_through(
+                    cur,
+                    &mut stream,
+                    nested_content_col.saturating_sub(1),
+                );
                 if cur.pos == before {
                     break;
                 }
                 let before_block = cur.pos;
                 stream.append(collect_indented_block_mapped(
                     cur,
-                    content_col - 1,
-                    content_col,
+                    nested_content_col - 1,
+                    nested_content_col,
                 ));
                 ended_on_blank = cur.pos > before_block && is_blank_line(cur.lines[cur.pos - 1]);
             }
@@ -6237,6 +8231,47 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 // paragraph inside it, which starts at the text.
                 pos: span_of(cur, item_at, cur.pos, options),
             });
+            if nested_definition_ended_paragraph
+                && cur.peek().is_some_and(|line| {
+                    !is_blank_line(line)
+                        && trim_ascii(line) != "+"
+                        && detect_list_marker_full(line).is_none()
+                        && indent_columns(line) < content_col
+                })
+            {
+                break;
+            }
+            continue;
+        }
+        // A collected definition written on the marker line is the item's
+        // first (invisible) block, not an empty lead paragraph. With no open
+        // paragraph, a following line below the content column cannot lazily
+        // continue the item (§24 C3); only content that reaches the item's own
+        // column still belongs to it. Sending the placeholder through the lead
+        // paragraph path made `- [r]: /u` / ` :` render the colon inside the
+        // item, unlike the executable spec, carve-js and carve-php.
+        if trim_ascii(marker.content) == DEFINITION_PLACEHOLDER {
+            let nested =
+                collect_indented_block_mapped(cur, content_col.saturating_sub(1), content_col);
+            let children = parse_mapped_source(&nested, options)
+                .into_iter()
+                .filter(|block| !matches!(block, BlockNode::Paragraph(p) if p.children.is_empty()))
+                .collect();
+            items.push(ListItem {
+                attrs: item_attrs,
+                checked: marker.checked,
+                children,
+                pos: span_of(cur, item_at, cur.pos, options),
+            });
+            if cur.peek().is_some_and(|line| {
+                let indent = indent_columns(line);
+                !is_blank_line(line)
+                    && trim_ascii(line) != "+"
+                    && detect_list_marker_full(line).is_none()
+                    && indent < content_col
+            }) {
+                break;
+            }
             continue;
         }
         if marker_content_starts_block(marker.content, cur, content_col)
@@ -6248,9 +8283,30 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             // marker-line content rather than a collected line - so the
             // collector's fenced-body guard is seeded from it (corpus 276).
             item_open_fence = detect_fence_open(marker.content);
+            // A COMMENT FENCE OPENED ON THE MARKER LINE TAKES ITS BODY FROM THE
+            // CONTENT COLUMN AND NOWHERE ELSE.
+            //
+            // The code fence beside it gets this from the collector's open-fence
+            // guard (`fence.is_some() && indent < strip_cols`), which is keyed on
+            // a `FenceOpen` and so never sees a `%%%` opener. Left at the
+            // ordinary floor the collector took BELOW-column lines as the item's,
+            // and the recursive parse then read them as the comment's body - so
+            // `- %%%` / ` hidden` / ` %%%` published an empty item and DELETED
+            // `hidden`. A line below the content column reaches no container
+            // (§24 C3): it ends the item and re-parses outside it, exactly as
+            // `- ``` ` / ` x` / ` ``` ` already does.
+            //
+            // Raising the floor to `content_col - 1` says that directly, and it
+            // is the same expression the sub-list and lazy-resume collectors use
+            // for "at or past this column only".
+            let body_floor = if detect_comment_fence_line(marker.content).is_some() {
+                content_col.saturating_sub(1)
+            } else {
+                base_indent
+            };
             stream.append(collect_indented_block_mapped_after_fence(
                 cur,
-                base_indent,
+                body_floor,
                 content_col,
                 &mut item_open_fence,
             ));
@@ -6277,35 +8333,61 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             let swallowed_blank_separator =
                 cur.pos > before_block && is_blank_line(cur.lines[cur.pos - 1]);
             let marker_line_was_the_whole_block = cur.pos == before_block;
-            // A marker-line attribute floats onto the block that follows it.
-            // That following line is ownership, not block-position handling, so
-            // even a line the ordinary lazy gate would call an interrupter must
-            // enter this item.
-            if trim_ascii(marker.content).starts_with('{') {
-                if let Some(line) = cur.peek().map(str::to_string) {
-                    if !is_blank_line(&line) && indent_columns(&line) == 0 && !is_list_marker(&line)
-                    {
-                        stream.push_newline_at(
-                            trim_ascii_start(&line).to_string(),
-                            cur.source_line(cur.pos),
-                            cur.source_col(cur.pos),
-                        );
-                        cur.consume();
-                    }
-                }
-            }
             fold_lazy_run_and_resume(
                 cur,
                 &mut stream,
-                |src| {
-                    !swallowed_blank_separator
-                        && (nested_ends_with_heading(src, options)
-                            || (marker_line_was_the_whole_block && is_table_start(marker.content))
-                            || detect_thematic_break(marker.content)
-                            || parse_footnote_def_line(marker.content).is_some()
-                            || parse_link_def_line(marker.content).is_some()
-                            || marker_content_is_attr_line(marker.content)
-                            || trim_ascii_start(marker.content).starts_with("%%"))
+                content_col,
+                |src, _below| {
+                    if swallowed_blank_separator {
+                        return false;
+                    }
+                    // NO OPEN PARAGRAPH, NO LAZY LINE (PART 1 S4, ruled in
+                    // markup-carve/carve#1280). The marker line's content is the
+                    // item's FIRST BLOCK, so `- # H` writes a heading there
+                    // exactly as `- ` plus an indented `# H` would, and a block
+                    // that leaves no open paragraph leaves none wherever it was
+                    // written. Ask S4's one question of the body and let the
+                    // answer decide, instead of enumerating the kinds that fold.
+                    //
+                    // The enumeration this replaces listed the heading, table,
+                    // thematic break, comment, link reference definition,
+                    // footnote definition and attribute-block spellings as
+                    // FOLDING - eight kinds, none of which holds an open
+                    // paragraph, and every one of which the same engine already
+                    // ended on in a block quote (`> # H` / `tail`). One rule
+                    // stated for one container and not the other.
+                    //
+                    // Only when the marker line IS the whole block. Once the
+                    // item collected lines at its CONTENT COLUMN the same
+                    // question has a different answer under S4, and the clause
+                    // leaves that half deliberately open (corpus
+                    // 75-list-nesting-and-looseness-4 pins the folding answer
+                    // for a nested spelling of it) - so that path keeps the
+                    // enumeration it had.
+                    if marker_line_was_the_whole_block {
+                        return body_ends_with_open_paragraph(src, options);
+                    }
+                    // S4 DOES NOT ASK WHETHER THE OPEN PARAGRAPH IS THE
+                    // CONTAINER'S FIRST BLOCK (markup-carve/carve#1370, a
+                    // clarifying passage on the same clause). The half left open
+                    // above is settled: an item whose first block is a table, a
+                    // fence or a heading and whose next line is prose holds an
+                    // open paragraph exactly as an item that began with prose
+                    // does. The blocks before that paragraph are spent - they
+                    // answered S4 while they were the item's last block and
+                    // stopped answering it when prose reopened one.
+                    //
+                    // Without this the engine rendered `b` AS the item's prose
+                    // and then declined to treat its paragraph as open, which is
+                    // one line answered two ways in a single parse
+                    // (carve-rs#1098).
+                    //
+                    // A direct trailing heading is bounded and supplements
+                    // nothing (carve#1377). If it belongs to a nested
+                    // definition or item, the enclosing paragraph may still
+                    // take the line after that inner container closes.
+                    body_ends_with_open_paragraph(src, options)
+                        || nested_ends_with_heading(src, options)
                 },
                 |cur| collect_indented_block_mapped(cur, base_indent, content_col),
             );
@@ -6512,6 +8594,13 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             }
         }
     }
+    // THE LIST ENDED, so a set still held here was written in front of a block
+    // that never came (§15 A4). This is the list's own slot, separate from the
+    // one `parse_blocks` keeps for a container BODY - attributes reach it only
+    // by being lifted off a chunk, and only this loop can place them.
+    if pending_attrs.is_some() {
+        note_unattached_block_attrs(pending_attrs_pos);
+    }
     widen_items_over_children(&mut items);
     let mut list_pos =
         span_of(cur, span_start, cur.pos, options).or_else(|| span_across_items(&items));
@@ -6578,15 +8667,18 @@ fn marker_content_starts_block(content: &str, cur: &LineCursor<'_>, content_col:
     if detect_fence_open(content).is_some() {
         return true;
     }
-    if let Some(open) = detect_comment_fence_line(content) {
-        return cur.lines[cur.pos..].iter().enumerate().any(|(idx, line)| {
-            let indent = indent_columns(line);
-            if idx > 0 && indent < content_col {
-                return false;
-            }
-            let line = slice_columns(line, content_col.min(indent), false);
-            is_comment_fence_close(&line, open.fence_len)
-        });
+    // A COMMENT fence is an opener on the same terms as the code fence above
+    // it: it OPENS, closer or no closer. This used to scan ahead for a closer
+    // AT THE CONTENT COLUMN and fall through to the lead-paragraph path when it
+    // found none, which made `- %%%` / `c` / `%%%` collect `c` as item text -
+    // the item reaching past its own end for a body written at column 0, which
+    // is the shape PART 1 S4 refuses (markup-carve/carve#1280). Its closer
+    // travels with its opener: the item holds an empty comment and what follows
+    // re-parses at document level, the same derivation `- ``` ` already gets
+    // (§S4 A FENCED BODY IS NOT A PARAGRAPH) and the same output the quote
+    // spelling `> %%%` already produced.
+    if detect_comment_fence_line(content).is_some() {
+        return true;
     }
     // A LINE comment, like the comment FENCE just above it. Left out, `- %% c`
     // routed to the lead-PARAGRAPH path, where the inline scanner consumed the
@@ -6631,7 +8723,7 @@ fn marker_content_starts_block(content: &str, cur: &LineCursor<'_>, content_col:
         if indent_columns(next) > 0 {
             return false;
         }
-        return is_list_marker(next) || starts_block_boundary_with_rest(next, &[]);
+        return is_list_marker(next) || interrupts_paragraph_with_rest(next, &[]);
     }
     if is_table_start(content) {
         return true;
@@ -6741,6 +8833,27 @@ fn marker_content_col(line: &str) -> Option<usize> {
     Some(indent_columns(line) + content_off.saturating_sub(leading_ws(line)))
 }
 
+/// The content column of the deepest marker in a marker-line list run,
+/// relative to the first marker's content.
+fn innermost_marker_content_col(mut line: &str) -> usize {
+    let mut column = 0;
+    while let Some(marker) = detect_list_marker_full(line) {
+        let Some(next) = marker_content_col(line) else {
+            break;
+        };
+        column += next;
+        line = marker.content;
+    }
+    column
+}
+
+fn innermost_marker_content(mut line: &str) -> &str {
+    while let Some(marker) = detect_list_marker_full(line) {
+        line = marker.content;
+    }
+    line
+}
+
 /// Whether `line` (in the dedented sub-list coordinate space) begins a plain
 /// PARAGRAPH rather than a block opener. Any indented line is paragraph text
 /// under the strict column-0 rule; a flush-left line is a paragraph only when it
@@ -6774,6 +8887,19 @@ pub(crate) fn line_starts_paragraph(line: &str) -> bool {
         && !is_table_start(line)
         && !is_definition_list_start(line)
         && detect_list_marker_full(line).is_none()
+        // A flush-left block-attribute line floats forward to the block below
+        // it (§15), which is exactly why `interrupts_paragraph` lets it end an
+        // open paragraph. Missing it here is the same omission read from the
+        // other side: the writer asks this function whether a child's first
+        // line would FOLD into the paragraph above, and answered `{.x}` with
+        // yes. It then wrote the child behind a `+` at the item's MARKER
+        // column, where a following `- b` is a SIBLING item rather than the
+        // nested list the attributes were reaching for, so
+        // `- a` / `  {.x}` / `  - b` came back as two items and a literal
+        // `{.x}` (corpus 322/323). The indented branch above is deliberately
+        // untouched: under the strict column-0 rule an INDENTED attr line is
+        // lazy paragraph text, not a floater.
+        && parse_standalone_attrs(line).is_none()
         && !trim_ascii_start(line).starts_with("%%")
 }
 
@@ -6852,38 +8978,20 @@ fn detect_list_marker_full(line: &str) -> Option<ListMarker<'_>> {
     None
 }
 
-/// After a nested block is collected for a list item, pull any immediately
-/// following column-0 lazy-continuation lines into it (plain text only -- not a
-/// blank line, a list marker, or a block-opener). Appended at column 0 so the
-/// recursive parse folds them into the DEEPEST open item, matching carve-js and
-/// carve-php (`- a` / `  - b` / `lazy` -> `<li>b lazy</li>`).
-/// Whether the collected nested block ends in a heading. Used to decide if
-/// flush-left lazy text following an indented heading-in-item should fold into
-/// the heading (heading continuation) rather than ending the item.
+/// Whether a collected body's deepest trailing block is a heading inside a
+/// nested list. The enclosing item must collect the flush-left line so it can
+/// close that inner item and continue the still-open outer paragraph; the
+/// heading's own collector no longer takes it (carve#1377).
 fn nested_ends_with_heading(nested: &str, options: &Options<'_>) -> bool {
-    block_ends_with_heading(parse_blocks_with_options(nested, options).last())
+    block_ends_with_heading(probe_blocks(nested, options).last())
 }
 
-/// Whether the deepest trailing block is a heading. A heading folds trailing
-/// plain text as continuation regardless of how deeply it is nested, so the
-/// check descends into a trailing list's last item (and block quote), matching
-/// the open-paragraph descent above (carve#326). `- a` / `  - # N` / `lazy`
-/// folds `lazy` into the sub-item's heading, not out to the top level.
 fn block_ends_with_heading(block: Option<&BlockNode>) -> bool {
     match block {
-        Some(BlockNode::Heading(_)) => true,
-        // NB: no block-quote descent. A flush-left line does not continue a
-        // heading INSIDE a quote (it is neither a quote line nor, at column 0, a
-        // heading continuation the quote would re-enter), so folding it in would
-        // attach it as stray item text rather than heading text. That case stays
-        // as it was (the line ends the item); only list and definition-list
-        // nesting fold.
         Some(BlockNode::List(l)) => {
-            block_ends_with_heading(l.items.last().and_then(|it| it.children.last()))
+            let trailing = l.items.last().and_then(|it| it.children.last());
+            matches!(trailing, Some(BlockNode::Heading(_))) || block_ends_with_heading(trailing)
         }
-        // A definition list has no explicit closer: a following flush-left line
-        // folds into its last definition's trailing block, so descend when that
-        // block is a heading (a bare term with no definition is not a heading).
         Some(BlockNode::DefinitionList(dl)) => block_ends_with_heading(
             dl.items
                 .last()
@@ -6894,6 +9002,81 @@ fn block_ends_with_heading(block: Option<&BlockNode>) -> bool {
     }
 }
 
+/// S4's lazy question for a body collected at a list item's CONTENT COLUMN:
+/// does a following flush-left line fold into it?
+///
+/// DEPTH IS NOT A PARAMETER (carve-rs#1025). When the body's last line is a
+/// SUB-ITEM's marker line, the innermost container's last block is that
+/// marker's CONTENT, so S4's question is asked of it directly - the same
+/// question `- # H` / `tail` answers one level up (markup-carve/carve#1280).
+/// Without this the two levels disagree: the sub-item refuses the line on
+/// re-parse while this collector has already claimed it, and the line lands in
+/// the OUTER item, which is a third answer no engine produces.
+///
+/// A heading at the sub-item's CONTENT COLUMN is a bounded block too. It leaves
+/// no paragraph open, so the line ends the inner item (carve#1377).
+fn collected_body_takes_the_lazy_line(
+    src: &str,
+    trailing_below_column: bool,
+    options: &Options<'_>,
+) -> bool {
+    if let Some(content) = trailing_marker_line_content(src) {
+        return body_ends_with_open_paragraph(&content, options);
+    }
+    nested_ends_with_open_paragraph(src, trailing_below_column, options)
+        || nested_ends_with_heading(src, options)
+}
+
+/// Whether the line JUST CONSUMED was written BELOW the container's content
+/// column.
+///
+/// §24 C3's comment exception turns on the column, and the collected body
+/// cannot say what it was: the body is DEDENTED by whatever each line supplied,
+/// up to the content column, so a line at column 1 under a content column of 2
+/// and one at column 2 both arrive flush.
+///
+/// Read from the CURSOR rather than from the collector's `col_map`, which looks
+/// like it carries this and does not: the map is only built when positions are
+/// on, so on the plain `--html` path it is EMPTY and every answer read from it
+/// would be the same one. That is a check that cannot fire, and it is the same
+/// reason the `after_blank` test beside the quote path reads the line just
+/// consumed instead of the collected text.
+fn last_consumed_line_below_column(cur: &LineCursor, content_col: usize) -> bool {
+    if content_col == 0 || cur.pos == 0 {
+        return false;
+    }
+    indent_columns(cur.lines[cur.pos - 1]) < content_col
+}
+
+/// The marker-line CONTENT of a collected body whose last line opens a list
+/// item, if that is what its last line is.
+///
+/// `- a` / `  - # N` collects `a` / `- # N`, and the block a following
+/// flush-left line would have to fold into is the sub-item's - which is the
+/// marker's content, `# N`. A body whose last line is anything else (a line at
+/// the sub-item's content column, a paragraph, a fence) is not this shape.
+fn trailing_marker_line_content(body: &str) -> Option<String> {
+    let last = body.lines().rev().find(|line| !is_blank_line(line))?;
+    let marker = detect_list_marker_full(last)?;
+    Some(marker.content.to_string())
+}
+
+/// PART 1 S4's one question, asked of a container's WHOLE body: does the last
+/// block leave a paragraph open?
+///
+/// [`nested_ends_with_open_paragraph`] answers the same question for a body
+/// collected BESIDE a marker line that is still holding a paragraph of its own,
+/// which is why it looks PAST a trailing run of comments: there the open
+/// paragraph is the marker line's, and an invisible block did not close it.
+/// Here the body is all there is - `- %% c` writes the comment as the item's
+/// first and only block, so there is no earlier paragraph for it to leave open,
+/// and looking past it would find one that was never written
+/// (markup-carve/carve#1280).
+fn body_ends_with_open_paragraph(body: &str, options: &Options<'_>) -> bool {
+    let blocks = parse_blocks_with_options(body, options);
+    block_ends_with_open_paragraph(blocks.last(), colon_fences_left_open(body))
+}
+
 /// Whether the collected nested block ends in an OPEN paragraph -- i.e. its
 /// last block is a paragraph, or a container (block quote / div / admonition)
 /// whose last child recursively ends in a paragraph. CommonMark lazy
@@ -6902,30 +9085,50 @@ fn block_ends_with_heading(block: Option<&BlockNode>) -> bool {
 /// block is a paragraph, the dedented line is the quote's own lazy continuation
 /// and must stay INSIDE the item rather than ending it. A code block or table
 /// has no open paragraph, so it does NOT fold (the dedented line ends the item).
-fn nested_ends_with_open_paragraph(nested: &str, options: &Options<'_>) -> bool {
-    let blocks = parse_blocks_with_options(nested, options);
-    // A comment renders NOTHING, so it closes no paragraph and must not end the
-    // item either (§24 C3, carve#624). `- a` / ` %% c` / `b` folds `b` into the
-    // item, where a VISIBLE block in the comment's place would end it - the
-    // comment is consumed without the lazy frame, which keeps it invisible and
-    // leaves the item open. Look past a trailing run of comments at whatever
-    // they were sitting on.
+fn nested_ends_with_open_paragraph(
+    nested: &str,
+    trailing_below_column: bool,
+    options: &Options<'_>,
+) -> bool {
+    let blocks = probe_blocks(nested, options);
+    // A COMMENT AT THE CONTENT COLUMN IS A BLOCK, AND A BLOCK ENDS THE PARAGRAPH
+    // IT SITS UNDER, whatever it renders (PART 1 S4, markup-carve/carve#1364).
+    // §24 C3 makes the content column the container body's own column 0, so a
+    // line there is read as a block - and a block ends the paragraph above it
+    // whether or not anything reaches the page. This walk used to look PAST a
+    // trailing run of comments at whatever they were sitting on, which is the
+    // reading that made `- a` / `  %% c` / `tail` fold while the `dd` spelling
+    // one construct over did not.
     //
-    // Comments ONLY, unlike the two `renders_nothing` checks elsewhere in this
-    // file, which also count an abbreviation definition. Inside an item there is
-    // no such node to count: a definition written there is not a definition at
-    // all (carve#611), it is the literal text the author typed, so it is visible
-    // and closes nothing to look past. Both engines agree byte for byte -
-    // `- a` / `  *[HTML]: x` / `b` is one item holding all three lines.
+    // The §17 L1a objection does not reach it: whether a line IS a paragraph
+    // (markup-carve/carve#621, #625) and whether it ENDS one are different
+    // questions, and the ATTRIBUTE BLOCK settles it by measurement - it is
+    // invisible, it ends the item, and every implementation already agrees.
+    //
+    // BELOW the content column nothing changes, because a line down there never
+    // reaches this predicate as a block: `- a` / `  %% c` / ` b` keeps `b` in
+    // the item (corpus 358, and 189/192 for the nested spelling).
     let mut end = blocks.len();
-    while end > 0 && matches!(blocks[end - 1], BlockNode::Comment(_)) {
-        end -= 1;
-    }
-    if end == 0 {
-        // Everything collected renders nothing, so the still-open paragraph is
-        // the one on the MARKER line. An empty collection is a different thing
-        // and keeps the old answer.
-        return !blocks.is_empty();
+    if trailing_below_column {
+        // §24 C3's COMMENT EXCEPTION, which the clause above says is unchanged.
+        // A comment written BELOW the content column is not a block of this
+        // container - it reaches the container only through S4's lazy fold - so
+        // it ends nothing and the line under it still folds: `- a` / ` %% c` /
+        // `b` keeps `b` in the item (corpus 183, and 192 for the fence
+        // spelling). The dedented body cannot say which of the two it was, since
+        // a line at column 1 under a content column of 2 and one at column 2
+        // both arrive flush; the caller reads it off the collector's own map.
+        while end > 0 && matches!(blocks[end - 1], BlockNode::Comment(_)) {
+            end -= 1;
+        }
+        if end == 0 {
+            // Everything collected renders nothing, so the still-open paragraph
+            // is the one on the MARKER line. An empty collection is a different
+            // thing and keeps the old answer.
+            return !blocks.is_empty();
+        }
+    } else if end == 0 {
+        return false;
     }
 
     // AN UNTERMINATED DIV IS A CONTAINER LIKE ANY OTHER (carve#939). PART 1 S4
@@ -7061,6 +9264,12 @@ fn block_ends_with_open_paragraph(block: Option<&BlockNode>, colon_open: usize) 
         }
         Some(BlockNode::Admonition(a)) if colon_open > 0 => {
             block_ends_with_open_paragraph(a.children.last(), colon_open - 1)
+        }
+        // A bare `::: figure` fence is a container like the two above; left
+        // unterminated it still holds its open paragraph (§4c defers to §12's
+        // container rules for body and closer discipline).
+        Some(BlockNode::FigureGroup(g)) if colon_open > 0 => {
+            block_ends_with_open_paragraph(g.children.last(), colon_open - 1)
         }
         _ => false,
     }
@@ -7202,7 +9411,7 @@ fn continuation_line_opens_sub_block(line: &str, rest: &[&str]) -> bool {
     if is_list_marker(line) {
         return true;
     }
-    if starts_block_boundary_with_rest(line, rest) {
+    if interrupts_paragraph_with_rest(line, rest) {
         return true;
     }
     false
@@ -7250,14 +9459,17 @@ fn lazy_line_pending(cur: &mut LineCursor) -> bool {
 fn fold_lazy_run_and_resume(
     cur: &mut LineCursor,
     nested: &mut MappedSource,
-    mut open: impl FnMut(&str) -> bool,
+    content_col: usize,
+    mut open: impl FnMut(&str, bool) -> bool,
     mut resume: impl FnMut(&mut LineCursor) -> MappedSource,
 ) {
     loop {
         if !lazy_line_pending(cur) {
             break;
         }
-        if !open(&nested.source) {
+        // The column the run ended at, taken before the fold consumes anything.
+        let below = last_consumed_line_below_column(cur, content_col);
+        if !open(&nested.source, below) {
             break;
         }
         let before = cur.pos;
@@ -7274,20 +9486,36 @@ fn fold_lazy_run_and_resume(
 }
 
 fn collect_trailing_lazy(cur: &mut LineCursor, nested: &mut MappedSource) {
+    collect_trailing_lazy_through(cur, nested, 0);
+}
+
+/// Fold lazy lines down to a container's own base column.
+///
+/// Most callers parse at document column zero and use `collect_trailing_lazy`.
+/// A flush comment can keep an INDENTED list open too, where a line at that
+/// list's base column is still below its content column and therefore lazy.
+fn collect_trailing_lazy_through(
+    cur: &mut LineCursor,
+    nested: &mut MappedSource,
+    base_indent: usize,
+) {
     while let Some(line) = cur.peek() {
-        if is_blank_line(line) || indent_columns(line) > 0 || is_list_marker(line) || {
-            let line_owned = line.to_string();
-            ends_lazy_continuation(cur, &line_owned)
-        } {
+        if is_blank_line(line)
+            || indent_columns(line) > base_indent
+            || is_list_marker(line)
+            || trim_ascii(line) == "+"
+            || {
+                let line_owned = line.to_string();
+                interrupts_lazy_continuation(cur, &line_owned)
+            }
+        {
             break;
         }
-        // The guard above already required column 0, so nothing is taken off
-        // this line beyond whatever an outer container removed. Recording it
-        // keeps `span_of` able to end a lazily continued block correctly.
+        let stripped = leading_ws(line);
         nested.push_newline_at(
             trim_ascii_start(line).to_string(),
             cur.source_line(cur.pos),
-            cur.source_col(cur.pos),
+            cur.source_col(cur.pos).map(|col| col + stripped as isize),
         );
         cur.consume();
     }
@@ -7405,8 +9633,24 @@ fn collect_indented_block_mapped_with(
     let mut colon_open: Vec<usize> = Vec::new();
     let mut comment_fence: Option<(usize, usize)> = None;
     let mut comment_fence_strip: Option<usize> = None;
+    let mut definition_ended_paragraph = false;
     while let Some(line) = cur.peek() {
         if is_blank_line(line) {
+            // INSIDE AN OPEN FENCE A BLANK IS CONTENT. Mirrors the plain
+            // collector: the lookahead below asks whether the ITEM continues,
+            // which is the wrong question while a fence is running. The plain
+            // path was fixed in #911 and this one was not, so `--html` (which
+            // takes the plain path) and `--json`/`fmt` (which take this one)
+            // parsed the same document differently (markup-carve/carve-rs#908).
+            if fence.is_some() {
+                lines.push(String::new());
+                if cur.line_map.is_some() {
+                    line_map.push(cur.source_line(cur.pos));
+                }
+                col_map.push(cur.source_col(cur.pos));
+                cur.consume();
+                continue;
+            }
             // Lazy continuation does not cross a blank line: after a blank, only
             // keep collecting if the next non-blank line is still indented to the
             // block's own level. A shallower line (e.g. a dedent landing below a
@@ -7455,6 +9699,9 @@ fn collect_indented_block_mapped_with(
         if indent <= parent_indent {
             break;
         }
+        if definition_ended_paragraph && indent < strip_cols {
+            break;
+        }
         // A FENCED BODY IS NOT A PARAGRAPH, so nothing below the content column
         // folds while one is open (PART 9 §24, markup-carve/carve#950). §24's
         // STEP algorithm says it twice over: a below-column line supplies none
@@ -7485,10 +9732,29 @@ fn collect_indented_block_mapped_with(
         // from by two characters. Without the guard the marker severed the
         // verbatim body: the fence closed empty, the marker opened a sub-list,
         // and the fence's own closer became an empty code span.
+        //
+        // A COMMENT BODY IS VERBATIM FOR THE SAME REASON (§28, carve-rs#1053).
+        // §28 makes a comment's body opaque exactly as §24 makes a code fence's,
+        // so the marker inside one is comment text and severing the chunk there
+        // is the same defect in a second spelling. Left out, the opener landed
+        // in a chunk of its own and re-parsed as an unterminated fence - which
+        // §28 degrades to a `%%` line comment - the marker opened a sub-list,
+        // and the closer degraded the same way in the next chunk. Both
+        // delimiters vanished and the body rendered: the one outcome a comment
+        // may never have. A heading or a block quote in that position was
+        // already correct, but by omission - they never set `is_marker` - so the
+        // asymmetry was in this gate, not in any opener set.
+        //
+        // `comment_fence` is the state the PRECEDING lines left, because the
+        // tracker below has not run for this line yet, which is what makes it
+        // the right question here: it is set only where a closer really follows
+        // (§28), so an unterminated `%%%` still degrades and a marker under it
+        // still stops the chunk.
         if stop_at_content_column_marker
             && is_marker
             && indent >= strip_cols
             && fence.is_none()
+            && comment_fence.is_none()
             && colon_open.is_empty()
         {
             break;
@@ -7523,7 +9789,21 @@ fn collect_indented_block_mapped_with(
             if is_comment_fence_close_any_column(line, fence_len) {
                 comment_fence = None;
             }
-        } else if let Some(open) = detect_comment_fence_line_any_column(line) {
+        } else if let Some(open) =
+            detect_comment_fence_line_any_column(line).filter(|_| fence.is_none())
+        {
+            // A `%%%` INSIDE A CODE FENCE IS CODE TEXT, so it opens no span
+            // (§24, and the same reading of §28 the marker gate above applies).
+            // `fence` is the state the preceding lines left, so the code fence's
+            // own opener and closer still read as themselves and only body lines
+            // are excluded. Without the filter the span opened on code text and
+            // was still open at the code fence's end, which suppressed the
+            // marker gate for the REAL comment that followed: `- item` / a code
+            // fence holding `%%%` / `  - x` / `  %%%` / `  - z` / `  %%%` put
+            // `z` on the page, where the delimiters around it should have hidden
+            // it. The dedent below reads the same state, so opening it on code
+            // text was already wrong before the gate started asking.
+            //
             // §28: a fence with NO closer ahead is not a fence - it degrades to
             // an ordinary `%%` line comment, and the lines after it are just
             // lines. Opening the span anyway dedented the next one by the span's
@@ -7544,7 +9824,8 @@ fn collect_indented_block_mapped_with(
         if comment_fence.is_none() {
             comment_fence_strip = None;
         }
-        let (sliced, consumed, synthetic) = slice_columns_mapped(line, stripped, is_marker);
+        let (sliced, consumed, synthetic) = slice_columns_mapped(line, stripped, true);
+        definition_ended_paragraph = trim_ascii(&sliced) == DEFINITION_PLACEHOLDER;
         // A COLON LINE INSIDE A CODE OR COMMENT SPAN OPENS AND CLOSES NOTHING:
         // §28 makes both bodies verbatim, which is the same reading that keeps a
         // marker in one from being a marker. Read before the code tracker
@@ -7589,9 +9870,16 @@ fn collect_indented_block_mapped_with(
         );
         cur.consume();
     }
+    // TERMINATE while a fence is still open, so the blank collected above
+    // survives the round trip back through `str::lines()`. Same rule the plain
+    // collector applies (markup-carve/carve-rs#908).
+    let mut source = lines.join("\n");
+    if fence.is_some() && lines.last().is_some_and(|line| line.is_empty()) {
+        source.push('\n');
+    }
     MappedSource {
         col_map,
-        source: lines.join("\n"),
+        source,
         line_map,
     }
 }
@@ -7680,8 +9968,21 @@ fn collect_indented_block_plain_with(
     let mut colon_open: Vec<usize> = Vec::new();
     let mut comment_fence: Option<(usize, usize)> = None;
     let mut comment_fence_strip: Option<usize> = None;
+    let mut definition_ended_paragraph = false;
     while let Some(line) = cur.peek() {
         if is_blank_line(line) {
+            // INSIDE AN OPEN FENCE A BLANK IS CONTENT, not a gap between blocks.
+            // The lookahead below asks whether the ITEM continues, and answers
+            // no when nothing after the blank reaches the content column - which
+            // is right for spacing and wrong for a fence still running, whose
+            // body continues to its closer or to the container's end. A fence
+            // that ended with the item therefore lost its trailing blank before
+            // any join could preserve it (markup-carve/carve-rs#908).
+            if fence.is_some() {
+                lines.push(String::new());
+                cur.consume();
+                continue;
+            }
             {
                 // No block collected yet means the item's content is all on the
                 // MARKER line (`- - a`, `- # H`), so there is no block indent to
@@ -7713,6 +10014,9 @@ fn collect_indented_block_plain_with(
         if indent <= parent_indent {
             break;
         }
+        if definition_ended_paragraph && indent < strip_cols {
+            break;
+        }
         // Same fenced-body guard as the mapped collector above (§24, #950).
         if fence.is_some() && indent < strip_cols {
             break;
@@ -7727,10 +10031,12 @@ fn collect_indented_block_plain_with(
         // from by two characters. Without the guard the marker severed the
         // verbatim body: the fence closed empty, the marker opened a sub-list,
         // and the fence's own closer became an empty code span.
+        // Same comment-body guard as the mapped collector above (§28, #1053).
         if stop_at_content_column_marker
             && is_marker
             && indent >= strip_cols
             && fence.is_none()
+            && comment_fence.is_none()
             && colon_open.is_empty()
         {
             break;
@@ -7749,9 +10055,12 @@ fn collect_indented_block_plain_with(
             if is_comment_fence_close_any_column(line, fence_len) {
                 comment_fence = None;
             }
-        } else if let Some(open) = detect_comment_fence_line_any_column(line) {
+        } else if let Some(open) =
+            detect_comment_fence_line_any_column(line).filter(|_| fence.is_none())
+        {
             // See the mapped collector: a fence with no closer ahead degrades to
-            // a line comment (§28), so it opens no span (carve-rs#586).
+            // a line comment (§28), so it opens no span (carve-rs#586); and a
+            // `%%%` inside a code fence is code text, so it opens none either.
             if cur.has_comment_closer_after(cur.pos + 1, open.fence_len) {
                 comment_fence = Some((open.fence_len, indent));
                 comment_fence_strip = Some(if indent < strip_cols { 0 } else { strip_cols });
@@ -7765,7 +10074,8 @@ fn collect_indented_block_plain_with(
         if comment_fence.is_none() {
             comment_fence_strip = None;
         }
-        let sliced = slice_columns(line, stripped, is_marker);
+        let sliced = slice_columns(line, stripped, true);
+        definition_ended_paragraph = trim_ascii(&sliced) == DEFINITION_PLACEHOLDER;
         // A COLON LINE INSIDE A CODE OR COMMENT SPAN OPENS AND CLOSES NOTHING:
         // §28 makes both bodies verbatim, which is the same reading that keeps a
         // marker in one from being a marker. Read before the code tracker
@@ -7785,7 +10095,15 @@ fn collect_indented_block_plain_with(
         lines.push(sliced);
         cur.consume();
     }
-    lines.join("\n")
+    // TERMINATE while a fence is still open, so the blank the loop above just
+    // collected survives the round trip back through `str::lines()`. Outside a
+    // fence a trailing blank is spacing and the plain join is right
+    // (markup-carve/carve-rs#908).
+    let mut source = lines.join("\n");
+    if fence.is_some() && lines.last().is_some_and(|line| line.is_empty()) {
+        source.push('\n');
+    }
+    source
 }
 
 fn detect_block_image(line: &str) -> Option<Image> {
@@ -7854,7 +10172,7 @@ fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         lines.push(trimmed);
     }
     // A paragraph never carries its OWN trailing attribute block: a standalone
-    // `{...}` line floats forward (handled via starts_block_boundary + the
+    // `{...}` line floats forward (handled via interrupts_paragraph + the
     // pending-attrs loop), and a trailing same-line `{...}` with no abutting
     // host stays literal inline content (§14). Paragraph attributes come only
     // from a preceding block-attribute line (§15), applied by the caller.
@@ -7885,50 +10203,78 @@ fn parse_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     })
 }
 
-/// Whether `line` establishes a structural boundary for a bounded inline block
-/// or container collector. Open paragraphs never call this classifier: §10
-/// already makes every nonblank line paragraph content. Lists and bare images
-/// are excluded because they fold in the bounded contexts that use this helper.
-fn starts_block_boundary(cur: &mut LineCursor<'_>, line: &str) -> bool {
+/// Whether `line`, seen while accumulating a paragraph, ends it and starts a
+/// new block (grammar §10, post-Markdown default).
+///
+/// A VISIBLE block interrupts an open paragraph with no blank line, at the top
+/// level and nested: heading, thematic break, block quote, bullet/task list, a
+/// valid table row, a fenced code block that has a matching closer ahead, and
+/// a valid flush-left colon-fence block. INVISIBLE constructs
+/// (comments, abbreviation definitions) interrupt too. ORDERED lists do NOT
+/// interrupt, `+` is the continuation marker not a bullet, and a bare image
+/// stays inline.
+fn interrupts_paragraph(cur: &mut LineCursor<'_>, line: &str) -> bool {
+    // §10 (post-Markdown default): a VISIBLE block interrupts an open paragraph
+    // with no blank line. Invisible constructs (comments, abbreviation defs)
+    // interrupt too. Ordered lists do NOT interrupt, `+` is the continuation
+    // marker not a bullet, and a bare image stays inline.
     if trim_ascii_start(line).starts_with("%%")
         || (cur.at_document_level && detect_abbreviation_def(line).is_some())
     {
         return true;
     }
     // A standalone block-attribute line floats forward to the next block (or is
-    // dropped when none follows, §15), so it ends a bounded run -- but only
-    // FLUSH-LEFT, like the
+    // dropped when none follows, §15), so it interrupts the paragraph rather
+    // than folding in as literal text -- but only FLUSH-LEFT, like the
     // quote/heading/table checks below. `parse_standalone_attrs` trims leading
-    // whitespace, so without this guard an INDENTED `{...}` line would establish
-    // a boundary where an indented `> q` / `# h` does not; an indented attr line is lazy
+    // whitespace, so without this guard an INDENTED `{...}` line would interrupt
+    // where an indented `> q` / `# h` does not; an indented attr line is lazy
     // paragraph text under the strict column-0 rule (§24 C3), not a floater.
-    if !line.starts_with([' ', '\t']) && parse_standalone_attrs(line).is_some() {
-        return true;
+    //
+    // The WRAPPED spelling (`{.k` / `#x}`) interrupts on the same grounds. Only
+    // the single-line form was tested here, so `{.k` folded into the paragraph
+    // as literal text: the author's braces reached the page and the attributes
+    // reached nothing (markup-carve/carve-rs#1039). The continuation lines come
+    // from the CURSOR, and only when `line` is the line it is parked on - every
+    // other caller passes a line this cursor is not standing at, and guessing a
+    // block's extent from an unrelated position is how a probe reads a closer
+    // that is not there.
+    if !line.starts_with([' ', '\t']) {
+        if parse_standalone_attrs(line).is_some() {
+            return true;
+        }
+        if cur.lines.get(cur.pos).copied() == Some(line)
+            && standalone_attrs_block_len(&cur.lines[cur.pos..]).is_some()
+        {
+            return true;
+        }
     }
-    // List markers fold in bounded inline contexts; the other structural forms
-    // end them.
+    // Symmetric §10: a list marker (bullet OR task OR ordered) does NOT
+    // interrupt a paragraph -- a list needs a blank line before it. Only the
+    // other visible blocks interrupt.
     if detect_heading(line).is_some()
         || detect_thematic_break(line)
         || strip_blockquote_prefix(line).is_some()
-        // A definition-list term `:: ` is a first-class block opener in a
-        // bounded context. `is_definition_list_start` requires a
+        // A definition-list term `:: ` is a first-class block opener (§24 C3):
+        // it interrupts at column 0 and nests at the content column, uniform
+        // with quote/heading/fence/table. `is_definition_list_start` requires a
         // flush-left `:: `, so an indented term folds as lazy text like the rest.
         || is_definition_list_start(line)
-        // A table row is structural only when flush-left, like quote/heading
+        // A table row interrupts only when FLUSH-LEFT, like the quote/heading
         // checks above -- `is_table_start` trims leading whitespace, so without
-        // this guard an INDENTED row (`  |a|`) would establish a boundary where an indented
+        // this guard an INDENTED row (`  |a|`) would interrupt where an indented
         // `> q` / `# h` does not. An indented row below/above a list item's
         // content column is lazy paragraph text (§24 C3), not a nested table.
         || (!line.starts_with([' ', '\t']) && is_table_start(line))
     {
         return true;
     }
-    // Fenced code is structural only with a matching closer ahead. The
+    // Fenced code interrupts only with a matching closer ahead. The
     // opener `line` has been dedented to its container's content column by the
     // caller (a list item's lead paragraph dedents by that column), but the
     // closer probe runs over the RAW remaining lines -- so dedent each by the
     // same amount before the column-exact `is_fence_close`, or a closer that
-    // carries the container indent is missed and the fence never opens.
+    // carries the container indent is missed and the fence never interrupts.
     // For a flush (column-0) opener the strip is 0, so top-level fences are
     // unaffected; a strict opener only matches when `line` is flush, so the
     // strip comes from the raw current line's own indentation.
@@ -7947,8 +10293,9 @@ fn starts_block_boundary(cur: &mut LineCursor<'_>, line: &str) -> bool {
         // opens, a line below the container's content column closes the
         // container: a fenced body is not a paragraph, so nothing folds into it
         // from below (PART 9 §24, markup-carve/carve#950). A closer past that
-        // line is therefore not this fence's closer; with none left, the
-        // delimiter run stays inline content in this bounded context.
+        // line is therefore not this fence's closer, and by §10 I4 a fence with
+        // no closer left does not interrupt - the delimiter run stays paragraph
+        // text.
         //
         // `strip` IS that column here: the caller dedents an item's line by the
         // content column before asking, and `detect_fence_open` refuses a line
@@ -7970,7 +10317,7 @@ fn starts_block_boundary(cur: &mut LineCursor<'_>, line: &str) -> bool {
     false
 }
 
-fn ends_lazy_continuation(cur: &mut LineCursor<'_>, line: &str) -> bool {
+fn interrupts_lazy_continuation(cur: &mut LineCursor<'_>, line: &str) -> bool {
     // A caption line (`^ …`) ends a list/blockquote item's lazy continuation
     // rather than folding in: a caption is a heading/figure terminator, not
     // plain prose the item absorbs. It becomes its own top-level block, matching
@@ -7981,8 +10328,8 @@ fn ends_lazy_continuation(cur: &mut LineCursor<'_>, line: &str) -> bool {
 }
 
 fn is_colon_fence_opener_shape(line: &str) -> bool {
-    // Only a FLUSH-LEFT colon fence establishes a boundary in this bounded
-    // context. An INDENTED colon-shaped line (the detectors trim leading
+    // Only a FLUSH-LEFT colon fence ends lazy continuation (grammar PART 9
+    // §10). An INDENTED colon-shaped line (the detectors trim leading
     // whitespace) is still within the container, so it folds as lazy text
     // instead of escaping the container.
     if line.starts_with(' ') || line.starts_with('\t') {
@@ -7993,8 +10340,8 @@ fn is_colon_fence_opener_shape(line: &str) -> bool {
         || detect_hardbreaks_block_open(line).is_some()
 }
 
-/// Whether a glued colon fence earlier in a bounded run (`:::note`, `:::]`)
-/// keeps this line literal.
+/// Whether a glued colon fence earlier in the paragraph (`:::note`, `:::]`)
+/// keeps THIS line from interrupting it.
 ///
 /// Only a BARE fence (`:::`, nothing after the colons) is held back: it is
 /// closer-shaped, and the paragraph it would close is literal text, so it stays
@@ -8005,25 +10352,42 @@ fn is_suppressed_colon_fence_line(line: &str) -> bool {
     is_colon_fence_opener_shape(line) && exact_colon_fence_len(line).is_some()
 }
 
-fn starts_block_boundary_with_rest(line: &str, rest: &[&str]) -> bool {
+fn interrupts_paragraph_with_rest(line: &str, rest: &[&str]) -> bool {
     if trim_ascii_start(line).starts_with("%%") {
         return true;
     }
-    // Flush-left only (see starts_block_boundary): an indented `{...}` line is
+    // Flush-left only (see interrupts_paragraph): an indented `{...}` line is
     // lazy paragraph text under the strict column-0 rule, not a floating attr.
-    if !line.starts_with([' ', '\t']) && parse_standalone_attrs(line).is_some() {
-        return true;
+    //
+    // The WRAPPED spelling interrupts too, which is what `rest` is for. Only the
+    // single-line form was tested here, so `{.k` opened nothing and folded into
+    // the paragraph as literal text - the author's braces reached the page and
+    // the attributes reached nothing (markup-carve/carve-rs#1039, and the half
+    // of markup-carve/carve#1281's `329-...-6` that the container's end does not
+    // answer on its own).
+    //
+    // The brace test comes FIRST so the common line costs nothing: this
+    // predicate is asked of every blank-separated block, and copying `rest`
+    // for a heading or a paragraph line would make that quadratic.
+    if !line.starts_with([' ', '\t']) && trim_ascii(line).starts_with('{') {
+        let mut block: Vec<&str> = Vec::with_capacity(rest.len() + 1);
+        block.push(line);
+        block.extend_from_slice(rest);
+        if standalone_attrs_block_len(&block).is_some() {
+            return true;
+        }
     }
     if detect_heading(line).is_some()
         || detect_thematic_break(line)
         || strip_blockquote_prefix(line).is_some()
-        // A definition-list term `:: ` is a first-class block opener in a
-        // bounded context. `is_definition_list_start` requires a
+        // A definition-list term `:: ` is a first-class block opener (§24 C3):
+        // it interrupts at column 0 and nests at the content column, uniform
+        // with quote/heading/fence/table. `is_definition_list_start` requires a
         // flush-left `:: `, so an indented term folds as lazy text like the rest.
         || is_definition_list_start(line)
-        // A table row establishes a boundary only when FLUSH-LEFT, like the quote/heading
+        // A table row interrupts only when FLUSH-LEFT, like the quote/heading
         // checks above -- `is_table_start` trims leading whitespace, so without
-        // this guard an INDENTED row (`  |a|`) would establish one where an indented
+        // this guard an INDENTED row (`  |a|`) would interrupt where an indented
         // `> q` / `# h` does not. An indented row below/above a list item's
         // content column is lazy paragraph text (§24 C3), not a nested table.
         || (!line.starts_with([' ', '\t']) && is_table_start(line))
@@ -8035,8 +10399,8 @@ fn starts_block_boundary_with_rest(line: &str, rest: &[&str]) -> bool {
             return true;
         }
     }
-    // A FLUSH-LEFT colon-fence family opener ends a bounded lazy continuation
-    // like any block opener. An INDENTED colon fence (above the
+    // A FLUSH-LEFT colon-fence family opener interrupts blockquote lazy
+    // continuation like any block opener. An INDENTED colon fence (above the
     // quote's content column) is literal paragraph text under the strict
     // column-0 rule, so lazy continuation stays inside the quote.
     if !line.starts_with([' ', '\t'])
@@ -8049,7 +10413,14 @@ fn starts_block_boundary_with_rest(line: &str, rest: &[&str]) -> bool {
     false
 }
 
-/// A flush-left, non-empty `:: ` definition-list term opener.
+/// A `- ` / `* ` bullet, including the attributed form `-{.c} ` (NOT `+`, the
+/// continuation marker; not ordered).
+///
+/// Delegates to `detect_unordered` so an attributed bullet interrupts a
+/// paragraph just like a plain one (and an attributed task already does via
+/// `detect_task`). Leading tabs are skipped as well as spaces: a bullet opens
+/// a list at any indentation (Rule B), so a tab-indented bullet interrupts a
+/// paragraph too.
 fn is_definition_list_start(line: &str) -> bool {
     line.strip_prefix(":: ")
         .is_some_and(|term| !is_blank_line(term))
@@ -8092,7 +10463,15 @@ fn parse_definition_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNo
             }
             let owned = next.to_string();
             term_text.push('\n');
-            term_text.push_str(&owned);
+            // A term's continuation line is a CONTENT LINE, so its trailing
+            // whitespace run does not reach the output - the same rule the
+            // term's FIRST line already follows two statements up, and the one
+            // markup-carve/carve#926 made general (markup-carve/carve#1289).
+            // Stripping here, at the source layer, is what keeps the exception
+            // intact: spaces INSIDE a verbatim run are the construct's content
+            // and end at its closing delimiter, so an all-space `` `  ` `` term
+            // is untouched by a trim that only ever sees the end of a line.
+            term_text.push_str(trim_ascii_end(&owned));
             if let Some(term_anchors) = &mut term_anchors {
                 term_anchors.push(inline_anchor_for_line(cur, cur.pos, &owned));
             }
@@ -8145,7 +10524,9 @@ fn parse_definition_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNo
                 }
                 let owned = following.to_string();
                 text.push('\n');
-                text.push_str(&owned);
+                // Same rule as the first term's continuation above: a CONSECUTIVE
+                // term folds its lines the same way, so it drops the same run.
+                text.push_str(trim_ascii_end(&owned));
                 if let Some(anchors) = &mut anchors {
                     anchors.push(inline_anchor_for_line(cur, cur.pos, &owned));
                 }
@@ -8313,7 +10694,7 @@ fn is_plus_marker(line: &str) -> bool {
 /// list item (PART 9 §17): form A folds an indented block in (a blank line is
 /// tolerated when a later line still continues), form B attaches a lone `+`
 /// pull-left flush-left block with no indentation, and a flush-left line with no
-/// blank before it that does not start an structural block lazily continues
+/// blank before it that does not start an interrupting block lazily continues
 /// the open paragraph (matching list items, block quotes and djot). Returned
 /// lines carry blank separators so the block sub-parse yields multiple paragraphs.
 ///
@@ -8367,11 +10748,133 @@ impl DefinitionBodyFence {
 /// without consulting the shared predicate at all, so an arm added THERE would
 /// move the list's pinned answers as well as this one. Written here, it reaches
 /// the definition body and nothing else.
-fn definition_body_takes_the_fold(source: &str, options: &Options<'_>) -> bool {
-    if nested_ends_with_open_paragraph(source, options) {
+/// Whether `source`'s last non-blank line is a standalone block-attribute line,
+/// written flush at the body's own column.
+///
+/// The source is already dedented to that column, so "flush" is column 0 here -
+/// the strict column-0 rule, which is what keeps an INDENTED `{…}` ordinary
+/// paragraph text.
+/// The body's last line is an INTERRUPTER that leaves no block behind.
+///
+/// A DEFINITION BODY IS A CONTAINER WITH A CONTENT COLUMN (PART 9 §24 C3,
+/// markup-carve/carve#1350), and a construct §10 I5 makes an interrupter ends
+/// the paragraph it sits under wherever that column is. Most interrupters leave
+/// a node the block-level test below can see and need nothing here. These do
+/// not, and the tree records what a body HOLDS rather than what was taken out
+/// of it, so they are read from the SOURCE:
+///
+/// - a BLOCK-ATTRIBUTE line (§15 A1), which is applied to the block it precedes
+///   and is never a block itself;
+/// - a COMMENT (§24 C3), recognized at any column and publishing nothing;
+/// - the PLACEHOLDER a collected link or footnote definition leaves in its
+///   place, which `parse_comment_block` consumes without building a node so a
+///   definition leaves no trace (markup-carve/carve#801).
+///
+/// The last of the three is why one answer closes both spellings the ruling
+/// names: `:  a` / `   [r]: /u` reaches this predicate as `a` over a comment
+/// line, exactly as `:  a` / `   %% c` does, because the prepass has already
+/// swapped the definition out. Reading the definition line HERE as well would
+/// be a second rule for a shape that is already one.
+///
+/// An OPEN verbatim body cannot reach this: a body whose fence is still open is
+/// ended by `DefinitionBodyFence` before the fold is ever asked, so a `%%` line
+/// inside code is not read as a comment here.
+fn body_ends_with_an_unnoded_interrupter(source: &str) -> bool {
+    if body_ends_with_an_attribute_line(source) {
         return true;
     }
-    let blocks = parse_blocks_with_options(source, options);
+    source
+        .lines()
+        .rev()
+        .find(|line| !is_blank_line(line))
+        .is_some_and(|last| trim_ascii_start(last).starts_with("%%"))
+}
+
+fn body_ends_with_an_attribute_line(source: &str) -> bool {
+    let lines: Vec<&str> = source.lines().collect();
+    let Some(end) = lines.iter().rposition(|line| !is_blank_line(line)) else {
+        return false;
+    };
+    // The WRAPPED spelling (`{.k` / `#x}`) counts too. This used to test the
+    // last line alone, so a block that closed on it but OPENED on an earlier one
+    // was invisible here and the body was read as ending in a paragraph
+    // (markup-carve/carve#1281's `329-...-6`, markup-carve/carve-rs#1039).
+    //
+    // The scan walks back only over the current run of non-blank lines, because
+    // an attribute block is refused at a blank line - so the start can never be
+    // further back than that.
+    let mut start = end;
+    loop {
+        if standalone_attrs_block_len(&lines[start..]) == Some(end - start + 1) {
+            return true;
+        }
+        if start == 0 || is_blank_line(lines[start - 1]) {
+            return false;
+        }
+        start -= 1;
+    }
+}
+
+/// `marker_line_is_the_whole_body` is true while nothing has been collected at
+/// the body's own column, so `source` is the `:  ` marker line's content and
+/// nothing else. THAT is the half PART 1 S4 rules on (markup-carve/carve#1280,
+/// carve-rs#1049): the marker line's content is the body's FIRST BLOCK, so
+/// `:  # H` writes a heading there exactly as `:  ` plus an indented `# H`
+/// would, and a block that leaves no open paragraph leaves none wherever it was
+/// written. Ask S4's one question and let the answer decide.
+///
+/// The enumeration below answered it from a LIST of kinds instead, and the list
+/// disagreed with itself: a table, a thematic break and an attribute block ended
+/// the body, while a HEADING and a COMMENT folded - and the LIST spelling of
+/// both of those ends, in this same engine, one clause over. So the same
+/// document got two answers depending on which of the five kinds sat on the
+/// marker.
+///
+/// Once lines ARE collected at the body's content column the clause leaves the
+/// question deliberately open - corpus 75-list-nesting-and-looseness-4 pins the
+/// folding answer for the list spelling of that half - so that path keeps the
+/// enumeration, exactly as the list path does one call site over.
+fn definition_body_takes_the_fold(
+    source: &str,
+    marker_line_is_the_whole_body: bool,
+    options: &Options<'_>,
+) -> bool {
+    // A BLOCK-ATTRIBUTE LINE LEAVES NO NODE, so the block-level test below
+    // cannot see it - and it INTERRUPTS an open paragraph (§15 A1), which is the
+    // one thing that test is asking about. `d` / `{.k}` parses to a single
+    // paragraph, exactly as `d` alone does, so a body ending in an attribute
+    // line reported the paragraph the attribute had already closed, and a
+    // flush-left line folded in: `:: t` / `:  d` / `   {.k}` / `tail` published
+    // `tail` INSIDE the `dd`, wearing a class the author wrote for a block that
+    // never came (markup-carve/carve#1281; the question is S4's, which that
+    // ruling leaves to markup-carve/carve#1280).
+    //
+    // The docblock above already listed "a block-attribute line that left no
+    // block at all" among the things this answers. It did - for a body that is
+    // ONLY the attribute line, where there is no paragraph node either. With
+    // content in front of it there was one, and it answered for that.
+    //
+    // The WRAPPED spelling (`{.k` / `#x}`) is deliberately NOT covered: a
+    // multi-line attribute block interrupts no open paragraph anywhere in this
+    // engine, at document level as much as here, and making it do so is a §10 I5
+    // question rather than this one.
+    if body_ends_with_an_unnoded_interrupter(source) {
+        return false;
+    }
+    // S4's question, asked of the WHOLE body. `body_ends_with_open_paragraph`
+    // is the same predicate the list's marker-line path asks, and it does NOT
+    // look past a trailing run of comments: there the open paragraph would have
+    // to be one written EARLIER on the marker line, and here the comment IS the
+    // marker line, so there is no earlier paragraph for it to leave open
+    // (`:  %% c` / `tail`, matching `- %% c` / `tail`).
+    if if marker_line_is_the_whole_body {
+        body_ends_with_open_paragraph(source, options)
+    } else {
+        nested_ends_with_open_paragraph(source, false, options)
+    } {
+        return true;
+    }
+    let blocks = probe_blocks(source, options);
     let mut end = blocks.len();
     // Past a trailing run of comments, for the reason
     // `nested_ends_with_open_paragraph` gives: a comment renders nothing, so it
@@ -8384,20 +10887,23 @@ fn definition_body_takes_the_fold(source: &str, options: &Options<'_>) -> bool {
     }
     matches!(
         blocks[end - 1],
-        // See above.
-        BlockNode::Heading(_)
-            // AN IMAGE BLOCK IS ONLY A BLOCK UNTIL SOMETHING FOLDS INTO IT.
-            // `image_is_block` makes a bare image line a block ONLY when the
-            // next line does not fold, and a `^ ` caption is an inline
-            // continuation a following line extends. Both are decided by the
-            // line AFTER the body, which is exactly the line this predicate is
-            // being asked about and which the collected source therefore does
-            // not contain yet. Reading the block off a body that stops one line
-            // early turned `:  ![a](i.png)` / `lazy` into a standalone image
-            // plus a top-level paragraph, where the list twin folds - the same
-            // read-the-body-so-far trap the fence guard exists to avoid.
-            | BlockNode::BlockImage(_)
-            | BlockNode::Figure(_)
+        // See above. A HEADING FOLDS ONLY AT THE CONTENT COLUMN, which is the
+        // half carve#1280 leaves open; on the marker line S4 has already
+        // answered above, and the answer is that it does not.
+        BlockNode::Heading(_) if !marker_line_is_the_whole_body
+    ) || matches!(
+        blocks[end - 1],
+        // AN IMAGE BLOCK IS ONLY A BLOCK UNTIL SOMETHING FOLDS INTO IT.
+        // `image_is_block` makes a bare image line a block ONLY when the
+        // next line does not fold, and a `^ ` caption is an inline
+        // continuation a following line extends. Both are decided by the
+        // line AFTER the body, which is exactly the line this predicate is
+        // being asked about and which the collected source therefore does
+        // not contain yet. Reading the block off a body that stops one line
+        // early turned `:  ![a](i.png)` / `lazy` into a standalone image
+        // plus a top-level paragraph, where the list twin folds - the same
+        // read-the-body-so-far trap the fence guard exists to avoid.
+        BlockNode::BlockImage(_) | BlockNode::Figure(_)
     )
 }
 
@@ -8414,6 +10920,25 @@ fn collect_definition_body(
     options: &Options<'_>,
 ) -> MappedSource {
     let mut lines: Vec<String> = Vec::new();
+    // A LAZY LINE THAT FOLDED LEFT A PARAGRAPH OPEN, by construction: it reached
+    // the fold only by being flush-left and not interrupting, which is what
+    // paragraph text is. So the next flush-left line's answer is already known
+    // and does not need asking.
+    //
+    // It has to be known, rather than merely nice to know. `so_far` is rebuilt
+    // from every line collected so far and then PARSED, once per lazy line, so a
+    // paragraph continued lazily under a `:  ` body cost O(n^2) in both the copy
+    // and the parse: 32 KB took 22.9 seconds, growing 4x per doubling. That is
+    // the §25 shape - a document a reader could plausibly write, degrading
+    // superlinearly - and the LIST twin one call site over is linear on the same
+    // input, which is what says it is a defect rather than the price of the
+    // rule.
+    //
+    // Only a lazy fold may set it. Every other way a line joins the body -- a
+    // collected line at the body's own column, a `+` attached block -- can put a
+    // fence, a table or a container at the end of it, so each of those clears it
+    // and the next question is asked in full.
+    let mut folded_a_lazy_line = false;
     let mut line_map: Vec<Option<usize>> = Vec::new();
     // Codepoints taken off the front of each line, kept in lockstep with
     // `lines`. `None` means unknown, and a block starting there gets no
@@ -8446,6 +10971,7 @@ fn collect_definition_body(
                 cur.consume();
             }
             if !attached.lines.is_empty() {
+                folded_a_lazy_line = false;
                 lines.push(String::new());
                 line_map.push(None);
                 col_map.push(None);
@@ -8480,7 +11006,21 @@ fn collect_definition_body(
                 col_map.push(cur.source_col(cur.pos).map(|c| {
                     c + line.chars().count().saturating_sub(sliced.chars().count()) as isize
                 }));
-                fence.track(&sliced);
+                // As in a list item, an unterminated fence at the definition
+                // body's content column stays in its open paragraph (§10 I4).
+                // Tracking one as a real fence would eject the next lazy line
+                // from the `<dd>` (corpus 367). Keep the established behavior
+                // when any compatible closer does occur later, as for lists.
+                let rejected_fence_has_closer = detect_fence_open(&sliced).is_some_and(|open| {
+                    cur.has_code_closer_after(cur.pos + 1, open.fence_char, open.fence_len)
+                });
+                if fence.open.is_some()
+                    || detect_fence_open(&sliced).is_none()
+                    || rejected_fence_has_closer
+                {
+                    fence.track(&sliced);
+                }
+                folded_a_lazy_line = false;
                 lines.push(sliced);
                 line_map.push(cur.source_line(cur.pos));
                 cur.consume();
@@ -8517,12 +11057,24 @@ fn collect_definition_body(
             // block-attribute line left with no block at all are the others,
             // and each of them folded here while the LIST twin closed
             // (carve-rs#790). Same clause, same answer.
-            let mut so_far = String::from(seed);
-            for collected in &lines {
-                so_far.push('\n');
-                so_far.push_str(collected);
+            let mut so_far = String::new();
+            if !folded_a_lazy_line {
+                so_far.push_str(seed);
+                for collected in &lines {
+                    so_far.push('\n');
+                    so_far.push_str(collected);
+                }
             }
-            if !definition_body_takes_the_fold(&so_far, options) {
+            // NOTHING HAS BEEN COLLECTED AT THE BODY'S COLUMN YET, so the body
+            // is the marker line's own content and S4's one question is asked of
+            // it directly (PART 1 S4, ruled uniform in markup-carve/carve#1280).
+            // That is the half `marker_line_was_the_whole_block` answers for a
+            // list item one call site over; a definition body IS such a
+            // container (markup-carve/carve#956) and the container KIND is not a
+            // parameter of the rule (markup-carve/carve#920).
+            if !folded_a_lazy_line
+                && !definition_body_takes_the_fold(&so_far, lines.is_empty(), options)
+            {
                 break;
             }
             // BELOW THE BODY'S COLUMN THE BODY ENDS (markup-carve/carve#932).
@@ -8543,17 +11095,12 @@ fn collect_definition_body(
             if indent > 0 {
                 break;
             }
-            if parse_link_def_line(line).is_some() {
-                break;
-            }
-            if starts_block_boundary(cur, line) {
-                break;
-            }
             // Lazy continuation: a flush-left line with no blank before it that
-            // does not start an structural block folds into the open
+            // does not start an interrupting block folds into the open
             // paragraph (the same rule list items and block quotes use, matching
             // djot). A block opener ends the definition.
             let owned = line.to_string();
+            folded_a_lazy_line = true;
             lines.push(owned);
             line_map.push(cur.source_line(cur.pos));
             col_map.push(cur.source_col(cur.pos));
@@ -8569,6 +11116,7 @@ fn collect_definition_body(
         }
         match cur.lines.get(cur.pos + look).copied() {
             Some(after) if !is_blank_line(after) && indent_columns(after) >= 3 => {
+                folded_a_lazy_line = false;
                 for _ in 0..look {
                     lines.push(String::new());
                     line_map.push(cur.source_line(cur.pos));
@@ -8588,7 +11136,7 @@ fn collect_definition_body(
 }
 
 /// A bare image line is a block image (or figure) ONLY when it stands alone --
-/// the next line is blank / EOF or a `^ ` caption.
+/// the next line is blank / EOF, a `^ ` caption, or a paragraph interrupter.
 /// When the next line FOLDS (plain text, list marker, another bare image), the
 /// image stays inline in a paragraph with that content, per grammar §1722 I3
 /// ("an image is not a block of its own; it stays inline in the paragraph").
@@ -8603,6 +11151,14 @@ fn image_is_block(cur: &mut LineCursor) -> bool {
 }
 
 fn consume_caption(cur: &mut LineCursor, options: &Options<'_>) -> Option<Vec<InlineNode>> {
+    consume_caption_slot(cur, options, true)
+}
+
+fn consume_caption_slot(
+    cur: &mut LineCursor,
+    options: &Options<'_>,
+    caption_context: bool,
+) -> Option<Vec<InlineNode>> {
     let saved = cur.pos;
     // PART 9 §4 (NORMATIVE): `caption_slot = [blank_line], caption` carries at
     // most ONE optional blank line. A caption line adjacent to its host, or
@@ -8632,16 +11188,16 @@ fn consume_caption(cur: &mut LineCursor, options: &Options<'_>) -> Option<Vec<In
     cur.consume();
     // A caption is multi-line inline content, so it folds following lines like a
     // PARAGRAPH (§10), NOT like a heading: a list marker FOLDS in (djot -- a
-    // list needs block position), while a heading / blockquote /
+    // list needs a blank line to interrupt), while a heading / blockquote /
     // table / fenced code / `:::` div / thematic break / `%%%` comment
-    // ends the caption. A blank line or a further `^ ` caption
+    // interrupts and ends the caption. A blank line or a further `^ ` caption
     // line also ends it. Continuation lines join with `\n`.
     while let Some(next) = cur.peek() {
         if is_blank_line(next) || caption_content(next).is_some() {
             break;
         }
         let next_owned = next.to_string();
-        if starts_block_boundary(cur, &next_owned) {
+        if interrupts_paragraph(cur, &next_owned) {
             break;
         }
         joined.push('\n');
@@ -8663,8 +11219,8 @@ fn consume_caption(cur: &mut LineCursor, options: &Options<'_>) -> Option<Vec<In
         .join("\n");
     let text = trim_ascii_end(&joined);
     Some(match anchors {
-        Some(anchors) => parse_caption_inline_with_anchor(text, options, anchors),
-        None => parse_caption_inline_with_options(text, options),
+        Some(anchors) => parse_caption_inline_with_anchor(text, options, anchors, caption_context),
+        None => parse_caption_inline_with_options(text, options, caption_context),
     })
 }
 
@@ -8730,7 +11286,7 @@ fn trim_cell_padding_start(s: &str) -> &str {
 
 fn parse_table(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     let span_start = cur.pos;
-    let mut rows = Vec::new();
+    let mut rows: Vec<TableRow> = Vec::new();
     // GFM-style header separator: a delimiter row directly after the first row
     // turns that row into a header and sets per-column alignment. The colons land
     // on the HEADER cells only, matching what the native `|=<` markers produce.
@@ -8746,39 +11302,12 @@ fn parse_table(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     let mut first_is_delim = false;
     let mut saw_separator = false;
     while let Some(line) = cur.peek() {
-        // Continue on a `|` row or a `+` multi-line-cell continuation.
-        if !is_table_start(line) && !is_table_continuation(line) {
+        // ONLY a `|` row opens an iteration. A `+` continuation is taken by the
+        // row it continues, below, so reaching one here means the row above did
+        // not want it - after a delimiter row, where a continuation has only a
+        // HEADER to attach to and the table ends instead.
+        if !is_table_start(line) {
             break;
-        }
-        if is_table_continuation(line) {
-            if saw_separator && rows.len() == 1 {
-                break;
-            }
-            let cont_at = cur.pos;
-            cur.consume();
-            if let Some(last) = rows.last_mut() {
-                apply_table_continuation(
-                    last,
-                    line,
-                    options,
-                    cur.source_line(cont_at)
-                        .zip(cur.source_col(cont_at))
-                        .filter(|_| options.positions),
-                );
-                // The row now RUNS to this line. It stays one contiguous range
-                // that no sibling row overlaps, so it keeps a position - unlike
-                // the cell the continuation extends, whose content sits in two
-                // column ranges with another column's content between them.
-                if let (Some(pos), Some(end)) = (
-                    last.pos.as_mut(),
-                    span_of(cur, cont_at, cont_at + 1, options),
-                ) {
-                    pos.end_line = end.end_line;
-                    pos.end_column = end.end_column;
-                    pos.end_offset = end.end_offset;
-                }
-            }
-            continue;
         }
         let row_at = cur.pos;
         cur.consume();
@@ -8794,18 +11323,51 @@ fn parse_table(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             apply_column_aligns(&mut rows[0], &column_aligns);
             continue;
         }
+        // THE CONTINUATIONS ARE TAKEN WITH THE ROW, not applied to a finished
+        // one. A `+` row extends a CELL, and the cell is the block an unclosed
+        // inline run reaches the end of (carve#1293), so the cell's content
+        // must be assembled before it is parsed - which means the row parser
+        // has to see every line the row runs to at once.
+        let mut conts: Vec<(&str, Option<(usize, isize)>)> = Vec::new();
+        let mut last_cont_at = None;
+        while let Some(next) = cur.peek() {
+            if !is_table_continuation(next) {
+                break;
+            }
+            let cont_at = cur.pos;
+            cur.consume();
+            conts.push((
+                next,
+                cur.source_line(cont_at)
+                    .zip(cur.source_col(cont_at))
+                    .filter(|_| options.positions),
+            ));
+            last_cont_at = Some(cont_at);
+        }
         let mut row = parse_table_row(
             line,
+            &conts,
             options,
             options
                 .positions
                 .then(|| (cur.source_line(row_at), cur.source_col(row_at)))
                 .and_then(|(l, c)| Some((l?, c?))),
         );
-        // The row is one line here; a `+` continuation extends it below. The
-        // cursor is the only place that knows where this line sits, which is
-        // why `parse_table_row` cannot do it itself.
+        // The cursor is the only place that knows where these lines sit, which
+        // is why `parse_table_row` cannot place the row itself.
         row.pos = span_of(cur, row_at, row_at + 1, options);
+        // The row RUNS to its last continuation. It stays one contiguous range
+        // that no sibling row overlaps, so it keeps a position - unlike the
+        // cell a continuation extends, whose content sits in two column ranges
+        // with another column's content between them.
+        if let (Some(pos), Some(end)) = (
+            row.pos.as_mut(),
+            last_cont_at.and_then(|at| span_of(cur, at, at + 1, options)),
+        ) {
+            pos.end_line = end.end_line;
+            pos.end_column = end.end_column;
+            pos.end_offset = end.end_offset;
+        }
         rows.push(row);
     }
     // The caption FIRST, then the span: a caption is one of the table's
@@ -8823,8 +11385,126 @@ fn parse_table(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         pos: span_of(cur, span_start, cur.pos, options),
         attrs: None,
         caption,
+        short_caption: None,
+        columns: Vec::new(),
         rows,
+        row_groups: None,
     })
+}
+
+/// The table a line-based scan is currently inside, mirrored from the row loop
+/// in [`parse_table`].
+///
+/// PART 5 T6 gives a continuation row `table_cell`s and joins them onto the row
+/// above, so it is as much a part of the table as the row it appends to, and
+/// PART 1 S4 asks what a container's last BLOCK is rather than how its last line
+/// is written. A scan that reads one line at a time cannot answer that without
+/// carrying the run: `+ b |` is a ROW under a table and ORDINARY PROSE under
+/// anything else (markup-carve/carve#1345), and the rule has to give both
+/// answers rather than one of them everywhere.
+///
+/// The row loop is mirrored rather than approximated because the two disagree
+/// in a place that is easy to miss: a continuation directly after the GFM
+/// DELIMITER row is not taken, since the separator `continue`s past the
+/// continuation loop and the table ends there. Answering "row" for it is
+/// markup-carve/carve#1354 in this engine's own code.
+#[derive(Default)]
+struct TableRun {
+    /// Rows consumed so far, the delimiter row excluded exactly as the row loop
+    /// excludes it. `None` when no table is open.
+    rows: Option<usize>,
+    first_is_delim: bool,
+    saw_separator: bool,
+    /// Whether the last line consumed was a row that goes on to take
+    /// continuations. False right after the separator row.
+    takes_continuations: bool,
+    /// How many quote markers the run's own lines sit behind, inside the
+    /// container being read. A run does not survive a change of depth.
+    depth: usize,
+}
+
+impl TableRun {
+    /// Feed the next line of the container's own content, already stripped of
+    /// the container prefix. Answers whether the line is a CONTINUATION ROW of
+    /// the table above it - the one shape whose meaning the line alone does not
+    /// carry.
+    ///
+    /// Indented lines are not rows at all: `is_table_start` trims, so without
+    /// the flush-left guard an indented `  |a|` would open a table where an
+    /// indented `> q` or `# h` opens nothing (PART 9 section 24 C3). The same
+    /// guard is on the continuation, so the two halves of one table cannot be
+    /// read at two different columns.
+    fn observe(&mut self, line: &str) -> bool {
+        // A PIPE IS THE PRE-TEST, and it has to be one. Both `is_table_start`
+        // and `is_table_continuation` require a closing `|`, so a line holding
+        // no pipe at all is neither a row nor a continuation row and no run
+        // survives it - which is answerable from the BYTES, before anything is
+        // stripped.
+        //
+        // Without it the walk below ran on every quoted line at every depth,
+        // which is one strip per marker per line: a depth ladder of ordinary
+        // prose went from 16 strips per unit of work to 79.5, and
+        // `a_depth_ladder_costs_strips_in_proportion_to_its_markers` caught it.
+        // Same shape as §12's absorption pre-test one function over
+        // (markup-carve/carve-rs#738), and conservative in the same direction:
+        // it can only force a walk that was not needed, never skip one that was.
+        //
+        // The reset is unconditional here rather than depth-aware, which costs
+        // nothing: with no run open the depth is re-read from the next line that
+        // opens one.
+        if !line.as_bytes().contains(&b'|') {
+            *self = TableRun::default();
+            return false;
+        }
+        // A QUOTE INSIDE A QUOTE IS ASKED WHAT IT ENDS ON (markup-carve/carve#1355,
+        // corpus 356). The line is read at the depth it sits at: `> > | a |` in
+        // an outer quote arrives here as `> | a |`, which is not a row at this
+        // level and is a row one level in. Stripping to the innermost content is
+        // the same walk `ParaOpen::resolve` makes for the same reason - a lazy
+        // line continues the innermost open paragraph however many containers it
+        // failed to match (markup-carve/carve#506).
+        //
+        // The DEPTH is carried with it, because a run lives inside ONE container.
+        // Without it `> > | a |` over `> + b |` would read as two lines of one
+        // table, where the second is content of the OUTER quote written after the
+        // inner one ended - and a `+ ...|` with no table above it AT ITS OWN
+        // LEVEL is prose (markup-carve/carve#1345).
+        let mut innermost = line;
+        let mut depth = 0usize;
+        while let Some(rest) = strip_blockquote_prefix(innermost) {
+            depth += 1;
+            innermost = rest;
+        }
+        if self.rows.is_some() && depth != self.depth {
+            *self = TableRun::default();
+        }
+        self.depth = depth;
+        let line = innermost;
+        let flush = !line.starts_with([' ', '\t']);
+        if flush && is_table_start(line) {
+            let rows = self.rows.unwrap_or(0);
+            if rows == 0 {
+                self.first_is_delim = is_delim_row(line);
+                self.rows = Some(1);
+                self.takes_continuations = true;
+            } else if rows == 1 && !self.saw_separator && !self.first_is_delim && is_delim_row(line)
+            {
+                self.saw_separator = true;
+                self.takes_continuations = false;
+            } else {
+                self.rows = Some(rows + 1);
+                self.takes_continuations = true;
+            }
+            return false;
+        }
+        if self.takes_continuations && flush && is_table_continuation(line) {
+            return true;
+        }
+        let depth = self.depth;
+        *self = TableRun::default();
+        self.depth = depth;
+        false
+    }
 }
 
 fn is_table_continuation(line: &str) -> bool {
@@ -8858,6 +11538,32 @@ fn is_delim_cell(s: &str) -> bool {
         i += 1;
     }
     i == b.len()
+}
+
+/// Strip a row's CLOSING pipe, unless that pipe is escaped.
+///
+/// An escaped closing pipe is still an escape (markup-carve/carve#1293). The
+/// row closes there either way, because the line ends in a pipe; what the
+/// escape decides is what the CELL holds, which is a literal pipe and not an
+/// orphaned backslash. Leaving the `\|` pair in the content is what says that:
+/// the splitter already reads the escape at every other position and keeps the
+/// pair, so the cell ends up holding one pipe and the row is not split there.
+///
+/// Cutting the pipe off blindly left a trailing `\` behind, which the inline
+/// parser then read as a hard break - `| a b \|` published a `<br>` where the
+/// author wrote a pipe.
+///
+/// A pipe preceded by an EVEN number of backslashes is not escaped: the
+/// backslashes escape each other, so the pipe is the plain closer.
+fn strip_row_closing_pipe(content: &str) -> &str {
+    let Some(stripped) = content.strip_suffix('|') else {
+        return content;
+    };
+    let backslashes = stripped.len() - stripped.trim_end_matches('\\').len();
+    if backslashes % 2 == 1 {
+        return content;
+    }
+    stripped
 }
 
 /// A delimiter row: every cell is a delimiter cell (and there is at least one).
@@ -8911,81 +11617,51 @@ fn apply_column_aligns(row: &mut TableRow, aligns: &[Option<TableAlign>]) {
     }
 }
 
-/// `base` is the continuation line's (source line, columns already stripped by
-/// an enclosing container) - the same pair `parse_table_row` takes, and used the
-/// same way. Without it the text a continuation adds cannot be placed.
-fn apply_table_continuation(
-    row: &mut TableRow,
-    line: &str,
-    options: &Options<'_>,
-    base: Option<(usize, isize)>,
-) {
-    let mut content = trim_ascii(line);
-    if let Some(stripped) = content.strip_prefix('+') {
-        content = stripped;
-    }
-    if let Some(stripped) = content.strip_suffix('|') {
-        content = stripped;
-    }
-    // Where `content` starts inside `line`, in CHARS - see `parse_table_row`,
-    // which does the same arithmetic on the row line.
-    let content_off = base.map(|_| {
-        let bytes = (content.as_ptr() as usize).saturating_sub(line.as_ptr() as usize);
-        line[..bytes].chars().count()
-    });
-    for (idx, cell) in split_table_cells_ranged(content).into_iter().enumerate() {
-        let text = trim_cell_padding(&cell.text); // PART 7: cell padding is U+0020 only.
-        if text.is_empty() {
-            continue;
-        }
-        // Trimming moved the start; count what it took so the anchor lands on
-        // the first character of the text and not on the padding before it.
-        let lead = cell.text.chars().count() - trim_cell_padding_start(&cell.text).chars().count(); // PART 7: cell padding is U+0020 only.
-        let anchor = match (base, content_off) {
-            (Some((line_no, stripped)), Some(off)) => {
-                Some((line_no, stripped + (off + cell.start + lead) as isize))
-            }
-            _ => None,
-        };
-        if let Some(target) = row.cells.get_mut(idx) {
-            // Its value is now reassembled from discontiguous fragments; no
-            // single exact source extent exists for the cell.
-            target.pos = None;
-            if !target.children.is_empty() {
-                // The joiner is MANUFACTURED - the source has a line break
-                // here, not a space - so it carries no position.
-                target.children.push(InlineNode::text(" ".to_string()));
-            }
-            target
-                .children
-                .extend(parse_inline_lines_with_anchor(text, options, vec![anchor]));
-        }
-    }
+/// A cell's content contributed by ONE `+` continuation row, with the anchor
+/// its own source line gives it.
+struct CellFragment {
+    text: String,
+    anchor: Option<(usize, isize)>,
 }
 
 /// `base` is the row line's (source line, columns already stripped by an
 /// enclosing container). Without it a cell cannot be placed: this function is
 /// handed an already-split line and cannot know where it sits.
-fn parse_table_row(line: &str, options: &Options<'_>, base: Option<(usize, isize)>) -> TableRow {
+///
+/// `conts` are the `+` CONTINUATION lines that belong to this row, each with
+/// the same pair for its own line. They are taken here rather than applied
+/// afterwards because a continuation extends a CELL, and the cell is the block
+/// an unclosed inline run reaches the end of (carve#1293) - so the cell's
+/// content has to be assembled BEFORE it is parsed, not parsed twice and
+/// concatenated. Parsing each fragment on its own closed the run at the row's
+/// pipe and opened a fresh one for the continuation, which published an empty
+/// `<code></code>` that no clause in the language produces.
+fn parse_table_row(
+    line: &str,
+    conts: &[(&str, Option<(usize, isize)>)],
+    options: &Options<'_>,
+    base: Option<(usize, isize)>,
+) -> TableRow {
     let mut content = trim_ascii(line);
     let (attrs, body) = split_row_attrs(content);
     content = body;
     if let Some(stripped) = content.strip_prefix('|') {
         content = stripped;
     }
-    if let Some(stripped) = content.strip_suffix('|') {
-        content = stripped;
-    }
+    content = strip_row_closing_pipe(content);
     // Where `content` starts inside `line`, in CHARS: it is a slice of `line`
     // after trimming, the row-attribute split and the outer pipes, so the byte
     // distance between them is exact.
-    let content_off = base.map(|_| {
-        let bytes = (content.as_ptr() as usize).saturating_sub(line.as_ptr() as usize);
-        line[..bytes].chars().count()
-    });
-    let cells = split_table_cells_ranged(content)
+    let content_off = base.map(|_| char_offset_of(line, content));
+    let split = split_table_cells_ranged(content);
+    let mut fragments: Vec<Vec<CellFragment>> =
+        (0..split.cells.len()).map(|_| Vec::new()).collect();
+    collect_continuation_fragments(conts, &split, &mut fragments);
+    let cells = split
+        .cells
         .into_iter()
-        .map(|slice| {
+        .enumerate()
+        .map(|(idx, slice)| {
             // The cell's own start column, which is also the anchor its inline
             // content is parsed against: the cell text is a verbatim slice of
             // the row now that the escaped pipe is preserved, so an offset
@@ -8996,8 +11672,13 @@ fn parse_table_row(line: &str, options: &Options<'_>, base: Option<(usize, isize
                 }
                 _ => None,
             };
-            let mut cell = parse_table_cell(&slice.text, options, cell_anchor);
-            if let (Some((line_no, stripped)), Some(off)) = (base, content_off) {
+            let extra = &fragments[idx];
+            let mut cell = parse_table_cell(&slice.text, options, cell_anchor, extra);
+            if !extra.is_empty() {
+                // Its value is now reassembled from discontiguous fragments; no
+                // single exact source extent exists for the cell.
+                cell.pos = None;
+            } else if let (Some((line_no, stripped)), Some(off)) = (base, content_off) {
                 cell.pos = Some(Pos {
                     start_line: line_no,
                     end_line: line_no,
@@ -9018,6 +11699,73 @@ fn parse_table_row(line: &str, options: &Options<'_>, base: Option<(usize, isize
     }
 }
 
+/// Where `part` starts inside `whole`, in CHARS.
+///
+/// `part` must be a SUB-SLICE of `whole` - it always is at the call sites, which
+/// only ever narrow - so the byte distance between the two pointers is exact and
+/// converts without re-scanning.
+fn char_offset_of(whole: &str, part: &str) -> usize {
+    let bytes = (part.as_ptr() as usize).saturating_sub(whole.as_ptr() as usize);
+    whole[..bytes].chars().count()
+}
+
+/// Cut each continuation line into cells and file every non-empty one under the
+/// column it extends.
+///
+/// The verbatim run a line leaves OPEN is carried into the next one: a `+` row
+/// continues the cell, so a run the row's closing pipe did not close is still
+/// open where the continuation picks that cell up (carve#1293). An EMPTY cell
+/// contributes nothing - not even the joining space - which is what lets a
+/// continuation address one column of a wide row.
+fn collect_continuation_fragments(
+    conts: &[(&str, Option<(usize, isize)>)],
+    row: &RowSplit,
+    fragments: &mut [Vec<CellFragment>],
+) {
+    // The run's WIDTH travels with it, not just the fact that one is open: a
+    // run closes on a run of exactly its own length, on the continuation row as
+    // much as on the row that opened it (carve-rs#1051).
+    let mut open_len = row.open_len;
+    let mut open_run_at = row.open_run_at;
+    for (line, base) in conts {
+        let mut content = trim_ascii(line);
+        if let Some(stripped) = content.strip_prefix('+') {
+            content = stripped;
+        }
+        // The same rule as the row's own closer above: the escape is honored
+        // wherever it appears, and a continuation row's last pipe is not an
+        // exception (markup-carve/carve#1293).
+        content = strip_row_closing_pipe(content);
+        let content_off = base.map(|_| char_offset_of(line, content));
+        let split = split_table_cells_seeded(content, open_len, open_run_at);
+        open_len = split.open_len;
+        open_run_at = split.open_run_at;
+        for (idx, cell) in split.cells.iter().enumerate() {
+            let text = trim_cell_padding(&cell.text); // PART 7: cell padding is U+0020 only.
+            if text.is_empty() {
+                continue;
+            }
+            // Trimming moved the start; count what it took so the anchor lands
+            // on the first character of the text and not on the padding before
+            // it.
+            let lead =
+                cell.text.chars().count() - trim_cell_padding_start(&cell.text).chars().count(); // PART 7: cell padding is U+0020 only.
+            let anchor = match (base, content_off) {
+                (Some((line_no, stripped)), Some(off)) => {
+                    Some((*line_no, stripped + (off + cell.start + lead) as isize))
+                }
+                _ => None,
+            };
+            if let Some(slot) = fragments.get_mut(idx) {
+                slot.push(CellFragment {
+                    text: text.to_string(),
+                    anchor,
+                });
+            }
+        }
+    }
+}
+
 /// A cell as it sits in the row: its resolved text, and the CHAR range of the
 /// source it came from.
 ///
@@ -9031,23 +11779,106 @@ struct CellSlice {
 
 fn split_table_cells(content: &str) -> Vec<String> {
     split_table_cells_ranged(content)
+        .cells
         .into_iter()
         .map(|c| c.text)
         .collect()
 }
 
-fn split_table_cells_ranged(content: &str) -> Vec<CellSlice> {
+/// A row line cut into cells, together with the verbatim run its closing pipe
+/// did NOT close.
+///
+/// The leftover run is what a `+` continuation row is scanned with. A row's
+/// closing pipe closes the row even with a run still open (carve#1284), so the
+/// run survives the row boundary - and by construction it sits in the LAST
+/// cell, since once open it swallows every `|` but the closer.
+struct RowSplit {
+    cells: Vec<CellSlice>,
+    /// The WIDTH of the verbatim run still open at end of line, or `None` when
+    /// none is.
+    ///
+    /// THE WIDTH, not a flag. A run closes on a run of EXACTLY its own length
+    /// (PART 9 §22), which is the rule this scanner already applies WITHIN a
+    /// line - and it used to carry only "a run is open" across the row
+    /// boundary, re-seeding the continuation at one backtick. So a run opened
+    /// with two was closed by a single one on the continuation row, the pipe
+    /// behind it split again, and the segment after it had no column to join:
+    /// content loss, by a different route than the fresh scanner the per-column
+    /// carry replaced (carve-rs#1051).
+    open_len: Option<usize>,
+    /// The cell index that run is open in: the last one.
+    open_run_at: usize,
+}
+
+fn split_table_cells_ranged(content: &str) -> RowSplit {
+    split_table_cells_seeded(content, None, 0)
+}
+
+/// `seed_len` / `open_run_at` seed the scanner with a verbatim run left OPEN by
+/// the row this line CONTINUES (carve#1293), and with the WIDTH that run was
+/// opened at.
+///
+/// A `+` continuation extends the cell, so the block an unclosed run reaches
+/// the end of is that whole cell, continuation included: the pipes it spans on
+/// the continuation row are its content, exactly as they are on the row that
+/// opened it. Scanning a continuation with a fresh scanner cut the line at a
+/// pipe INSIDE the run, and every segment past the first was then dropped for
+/// want of a column to join - content loss rather than a different answer.
+///
+/// THE SEED BELONGS TO ONE COLUMN. The run was open in the row above's LAST
+/// cell, and a continuation joins PER COLUMN, so the columns before it are
+/// scanned normally and the pipe that ends them still separates. Seeding the
+/// whole line instead swallows those separators and pushes the continuation
+/// into the wrong cell.
+///
+/// AND THE SEED CARRIES ITS WIDTH. A run closes on a run of EXACTLY its own
+/// length, which is the rule the scanner below already applies within a line;
+/// re-seeding the continuation at one backtick made the boundary the one place
+/// where the same scanner answered the width question a second way, and a run
+/// of two was then closed by a single one on the continuation row
+/// (carve-rs#1051).
+fn split_table_cells_seeded(
+    content: &str,
+    seed_len: Option<usize>,
+    open_run_at: usize,
+) -> RowSplit {
     let mut cells = Vec::new();
     let mut buf = String::new();
-    let mut code_ticks = 0usize;
+    // The WIDTH of the verbatim run this scanner is inside, or `None` when it
+    // is outside one. A parity toggle stood here and counted single backticks,
+    // so a run of two closed itself the moment it opened and the pipe after it
+    // split the row (markup-carve/carve#1284, corpus `328-...-4`). The tell was
+    // that one backtick and three worked while two did not - the signature of
+    // parity rather than of a delimiter.
+    //
+    // A verbatim run is opened by a RUN of N backticks and closed by a run of
+    // EXACTLY N; a run of any other width inside it is content. That is the
+    // same rule the inline parser already applies, and this scanner only needs
+    // it to know which pipes are separators.
+    //
+    // ACROSS THE ROW BOUNDARY TOO, which is why the seed is a width and not a
+    // flag: the run the continuation picks up was opened at some length on the
+    // row above, and only a run of that same length closes it here.
+    let mut open_len: Option<usize> = if open_run_at == 0 { seed_len } else { None };
     let mut index = 0usize;
     let mut cell_start = 0usize;
     let mut chars = content.chars().peekable();
     while let Some(ch) = chars.next() {
         index += 1;
         if ch == '`' {
-            code_ticks ^= 1;
+            let mut run = 1usize;
             buf.push(ch);
+            while chars.peek() == Some(&'`') {
+                chars.next();
+                index += 1;
+                run += 1;
+                buf.push('`');
+            }
+            match open_len {
+                None => open_len = Some(run),
+                Some(width) if width == run => open_len = None,
+                Some(_) => {}
+            }
             continue;
         }
         if ch == '\\' {
@@ -9072,7 +11903,7 @@ fn split_table_cells_ranged(content: &str) -> Vec<CellSlice> {
             }
             continue;
         }
-        if ch == '|' && code_ticks == 0 {
+        if ch == '|' && open_len.is_none() {
             cells.push(CellSlice {
                 text: std::mem::take(&mut buf),
                 start: cell_start,
@@ -9080,6 +11911,13 @@ fn split_table_cells_ranged(content: &str) -> Vec<CellSlice> {
                 end: index - 1,
             });
             cell_start = index;
+            if cells.len() == open_run_at {
+                // Re-seed at the column the row above left open, AT THE WIDTH
+                // that row opened it. `None` here is not a seed and leaves the
+                // scanner outside a run, which is the same thing it was doing
+                // for every other column.
+                open_len = seed_len;
+            }
             continue;
         }
         buf.push(ch);
@@ -9089,7 +11927,12 @@ fn split_table_cells_ranged(content: &str) -> Vec<CellSlice> {
         start: cell_start,
         end: index,
     });
-    cells
+    let open_run_at = cells.len() - 1;
+    RowSplit {
+        cells,
+        open_len,
+        open_run_at,
+    }
 }
 
 /// Parse a cell's inline content, anchored when the caller knows where the
@@ -9103,52 +11946,67 @@ fn parse_cell_inlines(
     slice: &str,
     options: &Options<'_>,
     anchor: Option<(usize, isize)>,
+    extra: &[CellFragment],
 ) -> Vec<InlineNode> {
-    let Some((line_no, base_col)) = anchor else {
-        return parse_inline_with_options(slice, options);
-    };
-    let bytes = (slice.as_ptr() as usize).saturating_sub(cell.as_ptr() as usize);
-    let off = cell[..bytes].chars().count();
-    parse_inline_lines_with_anchor(
-        slice,
-        options,
-        vec![Some((line_no, base_col + off as isize))],
-    )
+    let base = anchor
+        .map(|(line_no, base_col)| (line_no, base_col + char_offset_of(cell, slice) as isize));
+    parse_cell_content(slice, options, base, extra)
+}
+
+/// The cell's content as ONE inline block, its `+` continuation fragments
+/// included.
+///
+/// THE CELL IS THE BLOCK (carve#1293). An unclosed inline verbatim run runs to
+/// the end of the block it is in, and a `+` continuation extends the cell, so
+/// the run has to be able to close on the continuation - which it cannot do if
+/// each fragment is parsed by itself and the results concatenated. That is what
+/// published `a <code>b</code> c<code></code>`: the run closed at the row's
+/// pipe and a fresh one opened for the continuation, leaving an empty span no
+/// clause in this language produces.
+///
+/// The JOINER is a manufactured space, because the source has a line break here
+/// and the cell does not. It belongs to no source line, so it gets an anchor
+/// segment of its own carrying NO anchor: a node whose span crosses it can then
+/// place neither end and carries no position at all, which is the rule already
+/// in force for a run joined across a gap (PART 12 section 4, absent beats
+/// wrong). A node that lies wholly inside one fragment keeps its own position.
+fn parse_cell_content(
+    slice: &str,
+    options: &Options<'_>,
+    base: Option<(usize, isize)>,
+    extra: &[CellFragment],
+) -> Vec<InlineNode> {
+    if extra.is_empty() {
+        let Some(anchor) = base else {
+            return parse_inline_with_options(slice, options);
+        };
+        return parse_inline_lines_with_anchor(slice, options, vec![Some(anchor)]);
+    }
+    let mut text = String::from(slice);
+    let mut lines = vec![base];
+    let mut breaks = Vec::new();
+    for fragment in extra {
+        if !text.is_empty() {
+            // The joiner is the LAST character of the segment before it, which
+            // is where a newline sits in an ordinary multi-line text. Opening
+            // the next segment on it instead puts the exclusive end of a span
+            // that stops just short of it into the following segment, and every
+            // node at the end of a fragment loses its position.
+            text.push(' ');
+        }
+        breaks.push(text.len());
+        text.push_str(&fragment.text);
+        lines.push(fragment.anchor);
+    }
+    parse_inline_segments_with_anchor(&text, options, lines, breaks)
 }
 
 fn parse_table_cell(
     cell: &str,
     options: &Options<'_>,
     anchor: Option<(usize, isize)>,
+    extra: &[CellFragment],
 ) -> TableCell {
-    // A `{...}` attribute block GLUED to the opening pipe (no leading space)
-    // sets the cell's attributes; the rest, after optional whitespace, is the
-    // content. `read_attrs_at` is quote-aware and validates the whole payload,
-    // so a partially-invalid or empty block reads as None and the `{` stays
-    // content. A space before the brace (`| {.x}`) is also ordinary content.
-    // An attributed cell is never a bare span marker -- its content is literal.
-    if cell.as_bytes().first() == Some(&b'{') {
-        let cell_bytes = cell.as_bytes();
-        let last_close_brace = cell_bytes.iter().rposition(|&b| b == b'}');
-        if let Some((attrs, next)) = read_attrs_at(cell_bytes, 0, last_close_brace) {
-            return TableCell {
-                header: false,
-                span: None,
-                align: None,
-                attrs: Some(attrs),
-                // PART 7: cell padding is U+0020 only.
-                children: parse_cell_inlines(
-                    cell,
-                    trim_cell_padding(&cell[next..]),
-                    options,
-                    anchor,
-                ),
-                // The caller places the cell: it knows where the row line sits.
-                pos: None,
-            };
-        }
-    }
-
     // A leading `=` marks a HEADER cell, but only when GLUED to the `|` (no
     // leading whitespace), per grammar §20. `| =x |` (space before `=`) is a
     // literal `<td>`, matching carve-js / carve-php; check the RAW cell, not
@@ -9163,34 +12021,142 @@ fn parse_table_cell(
     // (carve-rs#459).
     let body = if header { &cell[1..] } else { cell };
     let trimmed = trim_cell_padding(body); // PART 7: cell padding is U+0020 only.
-    let mut text = trimmed;
-    // A whitespace-delimited lone marker is a span cell rather than alignment,
-    // which is the one case a glued marker does not win: `|<|` is a colspan in
-    // every engine. A header cell is already marked by its `=`, so a marker
-    // glued after it is alignment even when it is the whole content (`|=<|`).
+                                           // A whitespace-delimited lone marker is a span cell rather than alignment,
+                                           // which is the one case a glued marker does not win: `|<|` is a colspan in
+                                           // every engine. A header cell is already marked by its `=`, so a marker
+                                           // glued after it is alignment even when it is the whole content (`|=<|`).
     let lone_span = !header && (trimmed == "<" || trimmed == "^");
-    let align = if lone_span {
-        None
+    let mut after_markers = body;
+    let (align, valign) = if lone_span {
+        (None, None)
     } else {
-        match body.as_bytes().first() {
-            Some(&marker @ (b'>' | b'<' | b'~')) => {
-                text = trim_cell_padding(&body[1..]); // PART 7: cell padding is U+0020 only.
-                Some(match marker {
-                    b'>' => TableAlign::Right,
-                    b'<' => TableAlign::Left,
-                    _ => TableAlign::Center,
-                })
+        let run = body
+            .bytes()
+            .take_while(|marker| matches!(marker, b'>' | b'<' | b'~' | b'^' | b'v' | b'?'))
+            .count();
+        let inherited_horizontal = run == 2
+            && body.as_bytes().first() == Some(&b'?')
+            && body
+                .as_bytes()
+                .get(1)
+                .is_some_and(|marker| matches!(marker, b'^' | b'~' | b'v'));
+        let mut saw_horizontal = false;
+        let mut saw_vertical = false;
+        let mut axes_valid = !matches!(body.as_bytes().first(), Some(b'^' | b'v'))
+            && !(body.as_bytes().first() == Some(&b'~')
+                && body
+                    .as_bytes()
+                    .get(1)
+                    .is_some_and(|marker| matches!(marker, b'>' | b'<')));
+        for (index, marker) in body.bytes().take(run).enumerate() {
+            if marker == b'?' {
+                if inherited_horizontal && index == 0 {
+                    continue;
+                }
+                axes_valid = false;
+                break;
+            } else if marker == b'~'
+                && !saw_horizontal
+                && !saw_vertical
+                && body
+                    .as_bytes()
+                    .get(index + 1)
+                    .is_some_and(|next| matches!(next, b'>' | b'<'))
+            {
+                saw_vertical = true;
+            } else if matches!(marker, b'>' | b'<' | b'~') {
+                if !saw_horizontal {
+                    saw_horizontal = true;
+                } else if marker == b'~' && !saw_vertical {
+                    saw_vertical = true;
+                } else {
+                    axes_valid = false;
+                    break;
+                }
+            } else if !saw_vertical {
+                saw_vertical = true;
+            } else {
+                axes_valid = false;
+                break;
             }
-            _ => None,
         }
+        let markers = &body.as_bytes()[..run];
+        let terminated = body
+            .as_bytes()
+            .get(run)
+            .is_some_and(|b| *b == b' ' || *b == b'{');
+        let valid = run > 0 && axes_valid && (saw_horizontal || inherited_horizontal) && terminated;
+        if valid {
+            after_markers = &body[run..];
+        }
+        let horizontal_marker = (valid && !inherited_horizontal)
+            .then(|| {
+                markers.iter().enumerate().find_map(|(index, marker)| {
+                    let vertical_first_middle = *marker == b'~'
+                        && index == 0
+                        && markers
+                            .get(1)
+                            .is_some_and(|next| matches!(next, b'>' | b'<'));
+                    (!vertical_first_middle && matches!(marker, b'>' | b'<' | b'~'))
+                        .then_some(*marker)
+                })
+            })
+            .flatten();
+        let align = horizontal_marker.map(|marker| match marker {
+            b'>' => TableAlign::Right,
+            b'<' => TableAlign::Left,
+            _ => TableAlign::Center,
+        });
+        let valign = if !valid {
+            None
+        } else if markers.contains(&b'^') {
+            Some(TableVerticalAlign::Top)
+        } else if markers.contains(&b'v') {
+            Some(TableVerticalAlign::Bottom)
+        } else if markers.len() == 2 {
+            Some(TableVerticalAlign::Middle)
+        } else {
+            None
+        };
+        (align, valign)
     };
-    // `span_cell` is an ALTERNATIVE to `data_cell` in the grammar, not a suffix
-    // of one, so a cell that already carried an alignment marker cannot also be
-    // a span: whatever follows the marker is content. Without this, `|<<|` read
-    // its first `<` as alignment and its second as a lone colspan marker and
-    // emitted an empty cell (carve-rs#459).
+    // CELL ATTRIBUTES BIND LAST (grammar §20 T10, corpus
+    // 319-cell-attributes-bind-after-the-kind-and-alignment-markers). A `{...}`
+    // block sets the cell's attributes and is GLUED to whatever precedes it: to
+    // the marker run where the cell has one (`|=<{.x} ...`), to the opening `|`
+    // where it has none (`|{.x} ...`). One order, both productions.
+    //
+    // Reading it AHEAD of the markers instead left an attributed HEADER cell
+    // unspellable: the only shape available, `|{#x}=R|`, is ambiguous by
+    // construction and this grammar reads it as a data cell whose content
+    // starts with `=`, so the canonical writer's spelling for `<th id="x">R</th>`
+    // came back as `<td id="x">=R</td>` and the PART 11 round-trip invariant
+    // failed on it. Once `=` has committed the cell to header, everything after
+    // it is unambiguous.
+    //
+    // `read_attrs_at` is quote-aware and validates the whole payload, so a
+    // partially-invalid or empty block reads as None and the `{` stays content.
+    // A space before the brace (`| {.x}`, `|= {.x}`) is also ordinary content.
+    let mut attrs = None;
+    let mut rest = after_markers;
+    if after_markers.as_bytes().first() == Some(&b'{') {
+        let after_bytes = after_markers.as_bytes();
+        let last_close_brace = after_bytes.iter().rposition(|&b| b == b'}');
+        if let Some((read, next)) = read_attrs_at(after_bytes, 0, last_close_brace) {
+            attrs = Some(read);
+            rest = &after_markers[next..];
+        }
+    }
+    let text = trim_cell_padding(rest); // PART 7: cell padding is U+0020 only.
+                                        // `span_cell` is an ALTERNATIVE to `data_cell` in the grammar, not a suffix
+                                        // of one, so a cell that already carried an alignment marker cannot also be
+                                        // a span: whatever follows the marker is content. Without this, `|<<|` read
+                                        // its first `<` as alignment and its second as a lone colspan marker and
+                                        // emitted an empty cell (carve-rs#459). A cell carrying attributes is never
+                                        // a bare span marker either -- its content is literal even if it is just
+                                        // `^` or `<`.
     let span = match text {
-        _ if align.is_some() => None,
+        _ if align.is_some() || attrs.is_some() => None,
         "^" => Some(TableCellSpan::Rowspan),
         "<" => Some(TableCellSpan::Colspan),
         _ => None,
@@ -9199,12 +12165,18 @@ fn parse_table_cell(
         header,
         span,
         align,
-        attrs: None,
+        valign,
+        attrs,
         children: if span.is_some() {
-            Vec::new()
+            // A span cell renders nothing of its own - it widens a neighbour -
+            // so its own content is empty. A continuation still files its
+            // fragments under this column, and they stay in the tree where they
+            // always were.
+            parse_cell_content("", options, None, extra)
         } else {
-            parse_cell_inlines(cell, text, options, anchor)
+            parse_cell_inlines(cell, text, options, anchor, extra)
         },
+        // The caller places the cell: it knows where the row line sits.
         pos: None,
     }
 }
@@ -9404,7 +12376,35 @@ fn parse_container(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     let open = detect_container_open(cur.peek().unwrap()).unwrap();
     let span_start = cur.pos;
     cur.consume();
-    let inner = collect_colon_container_body(cur, open.fence_len);
+    // PART 9 §4c: a BARE `::: figure` opener opens a COMPOSITE FIGURE, unless
+    // it sits inside an open group's body (groups do not nest - the inner one
+    // stays the generic container the Admonition arm below builds). The body
+    // and closer follow the unchanged container rules; what §4c adds is the
+    // caption slot hanging on the CLOSING fence, this kind only.
+    if is_bare_figure_open(&open) && !IN_FIGURE_GROUP.with(Cell::get) {
+        let (children, closed) = {
+            let _guard = FigureGroupGuard::enter();
+            let (inner, closed) = collect_colon_container_body(cur, open.fence_len);
+            (parse_capped_colon_body(inner, options), closed)
+        };
+        // The slot hangs on the closer. A group left open at end of input
+        // closed there without one, so there is no line for a caption to
+        // attach to (§4c).
+        let caption = if closed {
+            consume_caption(cur, options)
+        } else {
+            None
+        };
+        // Through the caption the cursor just consumed, like a figure's span.
+        let pos = span_of(cur, span_start, cur.pos, options);
+        return BlockNode::FigureGroup(FigureGroup {
+            attrs: None,
+            children,
+            caption,
+            pos,
+        });
+    }
+    let (inner, _closed) = collect_colon_container_body(cur, open.fence_len);
     let children = parse_capped_colon_body(inner, options);
     // The span covers the opening fence through the closing one.
     let pos = span_of(cur, span_start, cur.pos, options);
@@ -9582,6 +12582,250 @@ struct Stanza {
     at: Option<Pos>,
     end_cols: Vec<Option<isize>>,
     start_cols: Vec<Option<isize>>,
+    /// The comment-only body lines this stanza had, as `(line index, node)`.
+    /// Their text is already gone from `lines` - see `verse_comment_line`.
+    comments: Vec<(usize, Comment)>,
+}
+
+/// A verse body line that is nothing but a comment (grammar PART 9 §23, IT IS
+/// REMOVED AT THE BLOCK LAYER). Returns the comment's content.
+///
+/// ONLY a line whose FIRST character is `%` qualifies: `comment_line`'s optional
+/// `[whitespace]` prefix has nothing to consume in verse, where a leading run is
+/// CONTENT, so an indented `%%` line is ordinary text. The line is measured
+/// AFTER the fence's own structural indent is stripped, which is the reference
+/// column the rest of the block measures against.
+fn verse_comment_line(stripped: &str) -> Option<String> {
+    let rest = stripped.strip_prefix("%%")?;
+    Some(rest.trim_start().to_string())
+}
+
+/// Put the comment-only lines back, at the content position of the line each
+/// one came from.
+///
+/// The block layer emptied those lines before the stanza reached the inline
+/// parser, which is the whole point of the clause: no inline run can reach a
+/// comment, so an unclosed verbatim run opened on an EARLIER line cannot claim
+/// it (carve#1333). The node is still published, because the author wrote it and
+/// PART 12 has a `comment` node for it.
+///
+/// Line k begins just after the k-th boundary. Where a stanza has no k-th
+/// boundary the comment is dropped: the only way that happens is an UNCLOSED
+/// verbatim run swallowing the rest of the stanza, and inside that run there is
+/// no place for a node - the run's own value carries the emptied line as a
+/// newline, like every other break it swallows.
+///
+/// COUNT A BOUNDARY HOWEVER IT IS SPELLED, AND AT EVERY DEPTH. This walk used to
+/// count top-level `HardBreak` nodes, which is one of the three spellings a
+/// stanza boundary has, and the two it missed each lost a comment:
+///
+/// - An inline container that opens on one body line and closes on a later one
+///   holds the boundaries between them as its OWN children, so a top-level walk
+///   never sees them and a comment whose line ended under a `strong` found
+///   nowhere to sit (markup-carve/carve-rs#1079). The boundary is the same
+///   boundary at either depth, so the node goes back at it at either depth.
+/// - A CLOSED verbatim run spanning a boundary carries that newline in its
+///   value rather than as a node, so counting nodes alone reported a line number
+///   short and every comment after it was placed a line late. `carve fmt` then
+///   wrote it onto the following line, merging the author's comment text into
+///   the next line's text.
+///
+/// The soft-to-hard conversion is a SEPARATE walk over the same slots
+/// (`harden_verse_breaks`), and it always was - it just used to stop at the
+/// stanza's top level. markup-carve/carve#1351 ruled that it does not, so both
+/// walks now reach the same depths. This one is unchanged by that: it asks where
+/// the boundary IS and never what it is called, which is why either answer kept
+/// it.
+///
+/// ONE PASS, building new vectors rather than inserting into the old ones. The
+/// comments arrive in line order, at most one per line, so the walk can consume
+/// them alongside the boundaries - and a stanza of nothing but comment lines is
+/// a document an author can write, where repeated `Vec::insert` would be
+/// quadratic in the block's length.
+/// PART 9 §23: every SOFT line break inside a stanza becomes a HARD break, at
+/// EVERY DEPTH (markup-carve/carve#1351, corpus `348`).
+///
+/// The conversion used to run on the stanza's top-level nodes only, so a closed
+/// inline construct spanning a boundary kept the bare newline: `*a` / `b*`
+/// rendered `a\nb` inside the `strong` while the same two lines without the
+/// emphasis got a `<br>`. This engine broke the clause's own invariant against
+/// itself - `*a\` / `b*` DID emit the `<br>` inside the `strong`, so one line
+/// boundary in one container gave two different answers depending on how it was
+/// spelled.
+///
+/// DRIVEN BY NODE KIND, which is what §23's neighbour A BACKSLASH BREAK IS NOT
+/// ADDITIVE fixes as the test. Both worked exemptions there turn on there being
+/// no node: a backslash consumes its own newline, and a verbatim run carries the
+/// newline as its content, so "there is no boundary left in the tree". An
+/// emphasis run consumes nothing - the boundary is a node beside its text - so
+/// the exemption never reached it, and the difference is in KIND rather than in
+/// depth.
+///
+/// Both exemptions therefore need no code here and get none. A verbatim run has
+/// no children to walk and no break node inside it, so `a `b` / `c` d` keeps its
+/// bare newline (corpus `348-2`); and a `hard_break` is already hard, so a
+/// backslash inside emphasis still produces exactly one `<br>` (corpus `348-4`).
+///
+/// The slots are the ones `splice_verse_comments_into` walks, for the same
+/// reason: a boundary is a child of whatever construct spans it, whichever slot
+/// that construct keeps its inlines in.
+fn harden_verse_breaks(inlines: Vec<InlineNode>) -> Vec<InlineNode> {
+    inlines
+        .into_iter()
+        .map(|node| match node {
+            // The hard break here IS the source's line ending, so it keeps the
+            // soft break's span rather than being rebuilt without one.
+            InlineNode::SoftBreak(b) => InlineNode::HardBreak(b),
+            InlineNode::Emphasis(mut n) => {
+                n.children = harden_verse_breaks(n.children);
+                InlineNode::Emphasis(n)
+            }
+            InlineNode::Link(mut n) => {
+                n.children = harden_verse_breaks(n.children);
+                InlineNode::Link(n)
+            }
+            InlineNode::Span(mut n) => {
+                n.children = harden_verse_breaks(n.children);
+                InlineNode::Span(n)
+            }
+            InlineNode::Extension(mut n) => {
+                n.children = harden_verse_breaks(n.children);
+                InlineNode::Extension(n)
+            }
+            InlineNode::CriticInsert(mut n) => {
+                n.children = harden_verse_breaks(n.children);
+                InlineNode::CriticInsert(n)
+            }
+            InlineNode::CriticDelete(mut n) => {
+                n.children = harden_verse_breaks(n.children);
+                InlineNode::CriticDelete(n)
+            }
+            InlineNode::Footnote(mut n) => {
+                n.inline = n.inline.map(harden_verse_breaks);
+                InlineNode::Footnote(n)
+            }
+            InlineNode::CitationGroup(mut group) => {
+                for item in &mut group.items {
+                    for field in [&mut item.prefix, &mut item.locator, &mut item.suffix]
+                        .into_iter()
+                        .flatten()
+                    {
+                        *field = harden_verse_breaks(std::mem::take(field));
+                    }
+                }
+                InlineNode::CitationGroup(group)
+            }
+            other => other,
+        })
+        .collect()
+}
+
+fn splice_verse_comments(
+    inlines: Vec<InlineNode>,
+    comments: Vec<(usize, Comment)>,
+) -> Vec<InlineNode> {
+    if comments.is_empty() {
+        return inlines;
+    }
+    let mut pending = comments.into_iter().peekable();
+    let mut line = 0usize;
+    let mut out = splice_verse_comments_into(inlines, &mut pending, &mut line);
+    // A COMMENT ON THE STANZA'S LAST LINE has no boundary after it to sit
+    // before, so it goes at the end - the boundary that OPENS its line is still
+    // there, which is what says the line is still there. The walk drains before
+    // each node and so never reaches this one.
+    //
+    // STILL GATED ON THE LINE. Anything left over after that is a comment whose
+    // line has no boundary at all, which is the open verbatim run swallowing the
+    // rest of the stanza: the run carries the emptied line as a newline and
+    // there is no place inside it for a node. Those stay dropped, as they were -
+    // pushing the leftovers unconditionally puts the note back at a position the
+    // author never wrote.
+    while let Some((_, comment)) = pending.next_if(|(at, _)| *at == line) {
+        out.push(InlineNode::Comment(comment));
+    }
+    out
+}
+
+/// One level of `splice_verse_comments`, sharing the caller's line counter so a
+/// boundary counts once wherever in the tree it turns up.
+fn splice_verse_comments_into(
+    inlines: Vec<InlineNode>,
+    pending: &mut std::iter::Peekable<std::vec::IntoIter<(usize, Comment)>>,
+    line: &mut usize,
+) -> Vec<InlineNode> {
+    let mut out = Vec::with_capacity(inlines.len());
+    for mut node in inlines {
+        // The comment sits BEFORE the boundary that ends its line: the line is
+        // empty now, so there is nothing else on it.
+        while let Some((_, comment)) = pending.next_if(|(at, _)| *at == *line) {
+            out.push(InlineNode::Comment(comment));
+        }
+        // Nothing left to place, so nothing left to count for: the rest of this
+        // level is carried through without descending into it.
+        if pending.peek().is_none() {
+            out.push(node);
+            continue;
+        }
+        match &mut node {
+            InlineNode::SoftBreak(_) | InlineNode::HardBreak(_) => *line += 1,
+            // A verbatim run's newlines are boundaries it ATE. §23 says the run
+            // "carries the break, and what it carries is a NEWLINE", so each one
+            // ends a body line exactly as a break node does.
+            InlineNode::Code(n) => *line += n.value.matches('\n').count(),
+            InlineNode::Math(n) => *line += n.content.matches('\n').count(),
+            InlineNode::RawInline(n) => *line += n.content.matches('\n').count(),
+            InlineNode::LiteralInline(n) => *line += n.content.matches('\n').count(),
+            // EVERY SLOT AN INLINE NODE HOLDS INLINES IN, not just `children`.
+            // An inline footnote carries its body in `inline` and a citation
+            // item carries three arrays of its own, so a walk that knew only
+            // `children` missed those containers and the emptied line stayed
+            // pending - `^[a` / `%% secret` / `c]` wrote the line back as an
+            // empty one (markup-carve/carve-js#1184 found the same two slots).
+            InlineNode::Emphasis(n) => {
+                n.children =
+                    splice_verse_comments_into(std::mem::take(&mut n.children), pending, line)
+            }
+            InlineNode::Link(n) => {
+                n.children =
+                    splice_verse_comments_into(std::mem::take(&mut n.children), pending, line)
+            }
+            InlineNode::Span(n) => {
+                n.children =
+                    splice_verse_comments_into(std::mem::take(&mut n.children), pending, line)
+            }
+            InlineNode::Extension(n) => {
+                n.children =
+                    splice_verse_comments_into(std::mem::take(&mut n.children), pending, line)
+            }
+            InlineNode::Footnote(n) => {
+                if let Some(inline) = &mut n.inline {
+                    *inline = splice_verse_comments_into(std::mem::take(inline), pending, line);
+                }
+            }
+            InlineNode::CitationGroup(group) => {
+                for item in &mut group.items {
+                    for field in [&mut item.prefix, &mut item.locator, &mut item.suffix]
+                        .into_iter()
+                        .flatten()
+                    {
+                        *field = splice_verse_comments_into(std::mem::take(field), pending, line);
+                    }
+                }
+            }
+            InlineNode::CriticInsert(n) => {
+                n.children =
+                    splice_verse_comments_into(std::mem::take(&mut n.children), pending, line)
+            }
+            InlineNode::CriticDelete(n) => {
+                n.children =
+                    splice_verse_comments_into(std::mem::take(&mut n.children), pending, line)
+            }
+            _ => {}
+        }
+        out.push(node);
+    }
+    out
 }
 
 /// Give every line-block hard break a span, even where the stanza's TEXT has
@@ -9602,6 +12846,7 @@ fn place_line_block_breaks(
     lines: &LineBuffer,
     end_cols: &[Option<isize>],
     start_cols: &[Option<isize>],
+    emptied: &[usize],
     options: &Options<'_>,
 ) -> Vec<InlineNode> {
     if !options.positions {
@@ -9616,7 +12861,12 @@ fn place_line_block_breaks(
             };
             let k = break_index;
             break_index += 1;
-            if brk.pos.is_some() {
+            // A break ending a line the block layer EMPTIED is recomputed even
+            // when the inline parser gave it one: what that parser measured is
+            // the emptied line, which ends at column 1, and the newline the
+            // author wrote is at the end of the comment they wrote
+            // (grammar PART 9 §23).
+            if brk.pos.is_some() && emptied.binary_search(&k).is_err() {
                 return InlineNode::HardBreak(brk);
             }
             // Start: just past the last character of line k. End: the first
@@ -9659,6 +12909,7 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     let mut stanza_col_map: Vec<Option<isize>> = Vec::new();
     let mut stanza_end_cols: Vec<Option<isize>> = Vec::new();
     let mut stanza_start_cols: Vec<Option<isize>> = Vec::new();
+    let mut stanza_comments: Vec<(usize, Comment)> = Vec::new();
     // Where the open stanza began, and where it ended - the CURSOR's own line
     // indices, which still point at the source. The rewritten verse text cannot
     // give a column back, but the lines a stanza occupies are not in doubt.
@@ -9682,10 +12933,13 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                         lines: std::mem::take(&mut stanza),
                         line_map: std::mem::take(&mut stanza_line_map),
                         col_map: std::mem::take(&mut stanza_col_map),
+                        // Built line by line from the source; nothing synthetic.
+                        last_is_synthetic: false,
                     },
                     at: at.and_then(|start| span_of(cur, start, stanza_end, options)),
                     end_cols,
                     start_cols,
+                    comments: std::mem::take(&mut stanza_comments),
                 });
             }
             continue;
@@ -9693,6 +12947,18 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         stanza_start.get_or_insert(line_at);
         stanza_end = cur.pos;
         let stripped = strip_leading_columns(line, base_indent);
+        // A COMMENT-ONLY BODY LINE IS DECIDED HERE, with the other block-layer
+        // decisions and BEFORE any inline content exists (grammar PART 9 §23, IT
+        // IS REMOVED AT THE BLOCK LAYER). Leaving it to the inline parser let
+        // §21's verbatim exclusion claim the line, so a stray backtick anywhere
+        // above PUBLISHED the comment's own text inside the code span - the one
+        // outcome a comment may never have (carve#1333).
+        //
+        // The line stays: what is removed is its TEXT, so the stanza keeps its
+        // shape and the boundary below it still hardens into the `<br>` the
+        // author wrote. The comment itself is put back after the inline run, by
+        // `splice_verse_comments`.
+        let comment = verse_comment_line(&stripped);
         let expanded = expand_line_block_ws(&stripped);
         // A verse line stays placeable only while the rewrite is a SPACE
         // PROMOTED IN PLACE: one space becomes one placeholder, so every column
@@ -9763,7 +13029,32 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 .map(|stripped_cols| stripped_cols + line.chars().count() as isize),
         );
         stanza_start_cols.push(cur.source_col(line_at));
-        stanza.push(expanded);
+        if let Some(content) = comment {
+            let lead = (line.chars().count() - stripped.chars().count()) as isize;
+            let start = cur.source_col(line_at).map(|col| col + lead);
+            let pos = match (options.positions.then_some(()).and(source_line), start) {
+                (Some(at), Some(start)) => Some(Pos {
+                    start_line: at,
+                    start_column: document_column(start, 0),
+                    end_line: at,
+                    end_column: document_column(start, stripped.chars().count()),
+                    ..Default::default()
+                }),
+                _ => None,
+            };
+            stanza_comments.push((
+                stanza.len(),
+                Comment {
+                    block: false,
+                    delimited: false,
+                    content,
+                    pos,
+                },
+            ));
+            stanza.push(String::new());
+        } else {
+            stanza.push(expanded);
+        }
         stanza_line_map.push(source_line);
     }
     if !stanza.is_empty() {
@@ -9773,10 +13064,13 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 lines: stanza,
                 line_map: stanza_line_map,
                 col_map: stanza_col_map,
+                // Built line by line from the source; nothing synthetic.
+                last_is_synthetic: false,
             },
             at: at.and_then(|start| span_of(cur, start, stanza_end, options)),
             end_cols: stanza_end_cols,
             start_cols: stanza_start_cols,
+            comments: stanza_comments,
         });
     }
 
@@ -9788,6 +13082,7 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                  at,
                  end_cols,
                  start_cols,
+                 comments,
              }| {
                 let source_line = lines.line_map.first().copied().flatten();
                 let anchors: Vec<Option<(usize, isize)>> = lines
@@ -9796,19 +13091,24 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                     .zip(lines.col_map.iter())
                     .map(|(line_no, col)| Some(((*line_no)?, (*col)?)))
                     .collect();
-                let inlines =
-                    parse_inline_lines_with_anchor(&lines.lines.join("\n"), options, anchors)
-                        .into_iter()
-                        .map(|n| match n {
-                            // A hard break here IS the source's line ending, so it
-                            // keeps the soft break's span rather than being rebuilt
-                            // without one.
-                            InlineNode::SoftBreak(b) => InlineNode::HardBreak(b),
-                            other => other,
-                        })
-                        .collect();
-                let inlines =
-                    place_line_block_breaks(inlines, &lines, &end_cols, &start_cols, options);
+                // AT EVERY DEPTH (PART 9 section 23, markup-carve/carve#1351).
+                // See `harden_verse_breaks` for why the test is node kind and
+                // not depth, and why both exemptions need no code.
+                let inlines = harden_verse_breaks(parse_inline_lines_with_anchor(
+                    &lines.lines.join("\n"),
+                    options,
+                    anchors,
+                ));
+                let emptied: Vec<usize> = comments.iter().map(|(line, _)| *line).collect();
+                let inlines = place_line_block_breaks(
+                    inlines,
+                    &lines,
+                    &end_cols,
+                    &start_cols,
+                    &emptied,
+                    options,
+                );
+                let inlines = splice_verse_comments(inlines, comments);
                 let mut node = BlockNode::Paragraph(Paragraph {
                     attrs: None,
                     children: inlines,
@@ -9877,7 +13177,7 @@ fn parse_hardbreaks_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockN
     let fence_len = detect_hardbreaks_block_open(opener).unwrap();
     let span_start = cur.pos;
     cur.consume();
-    let inner = collect_colon_container_body(cur, fence_len);
+    let (inner, _closed) = collect_colon_container_body(cur, fence_len);
     // The span covers the opening fence through the closing one, like any other
     // colon fence.
     let pos = span_of(cur, span_start, cur.pos, options);
@@ -10035,6 +13335,10 @@ fn attr_payload_provably_invalid(bytes: &[u8], brace: usize) -> bool {
                     i += 1;
                 }
             }
+            // `:TAG` / `:` semantic language attribute. The full parser owns
+            // the structural subtag envelope; this fast path only avoids
+            // rejecting the newly claimed token before it gets there.
+            b':' => return false,
             // A bareword: a boolean attribute, or the name in `key=value`.
             _ if is_attr_ident_start(c) => {
                 i += 1;
@@ -10218,7 +13522,15 @@ fn parse_attrs_with(src: &str, space_only: bool) -> Option<Attrs> {
     }
     let mut attrs = Attrs::default();
     for token in attr_tokens(src) {
-        if let Some(id) = token.strip_prefix('#') {
+        if let Some(tag) = token.strip_prefix(':') {
+            if !is_language_tag(tag) {
+                return None;
+            }
+            if !attrs.key_values.contains_key("lang") {
+                attrs.order.push(AttrSlot::Key("lang".to_string()));
+            }
+            attrs.key_values.insert("lang".to_string(), tag.to_string());
+        } else if let Some(id) = token.strip_prefix('#') {
             if !is_identifier(id) {
                 return None;
             }
@@ -10293,6 +13605,15 @@ fn parse_attrs_with(src: &str, space_only: bool) -> Option<Attrs> {
     Some(attrs)
 }
 
+fn is_language_tag(tag: &str) -> bool {
+    tag.is_empty()
+        || tag.split('-').all(|subtag| {
+            !subtag.is_empty()
+                && subtag.len() <= 8
+                && subtag.bytes().all(|byte| byte.is_ascii_alphanumeric())
+        })
+}
+
 fn attr_tokens(src: &str) -> Vec<String> {
     let mut tokens = Vec::new();
     let mut buf = String::new();
@@ -10321,10 +13642,14 @@ fn attr_tokens(src: &str) -> Vec<String> {
             buf.push(ch);
             continue;
         }
-        if (ch == '#' || ch == '.') && (buf.starts_with('#') || buf.starts_with('.')) {
-            tokens.push(std::mem::take(&mut buf));
-            buf.push(ch);
-        } else if ch.is_whitespace() {
+        // NO SPLIT ON A SIGIL. `attribute_list` is
+        // `attribute, {space+, attribute}` (PART 7): a separator is required,
+        // so `{.a.b}`, `{#i.c}` and `{.a#i}` are not attribute blocks and stay
+        // literal. This branch used to break a class or id token at the next
+        // `#` or `.`, manufacturing two attributes where the source has one
+        // malformed one - `.a.b` now stays one token and fails `is_identifier`,
+        // which is what makes the whole block literal.
+        if ch.is_whitespace() {
             if !buf.is_empty() {
                 tokens.push(std::mem::take(&mut buf));
             }
@@ -10372,6 +13697,8 @@ fn parse_standalone_attrs_block(cur: &mut LineCursor) -> Option<Attrs> {
         cur.consume();
         return Some(attrs);
     }
+    // See `standalone_attrs_block_len` for the cursor-free twin of everything
+    // below; the two must keep answering the same way.
     // A COMPLETE single line (already closes with `}`) that parse_standalone_attrs
     // rejected is not a valid attribute block -- do NOT rescue it via the
     // multi-line strip-outer path below, which would parse an interior `}{` as an
@@ -10428,6 +13755,147 @@ fn parse_standalone_attrs_block(cur: &mut LineCursor) -> Option<Attrs> {
     None
 }
 
+/// How many LINES a standalone attribute block occupies when one starts at
+/// `lines[0]`, or `None` when these lines do not spell one.
+///
+/// The cursor-free twin of `parse_standalone_attrs_block`, for the predicates
+/// that must ask "does an attribute block sit here" without a cursor to consume
+/// from. Both follow the same rules: a single complete line, or a run joined
+/// until one closes with `}`, refused at a blank line and refused when a quoted
+/// value is left open across a break (PART 4, markup-carve/carve#888).
+///
+/// FLUSH-LEFT ONLY, like every caller's own guard: an indented `{...}` is lazy
+/// paragraph text under the strict column-0 rule (PART 9 section 24 C3).
+fn standalone_attrs_block_len(lines: &[&str]) -> Option<usize> {
+    let first = *lines.first()?;
+    if first.starts_with([' ', '\t']) {
+        return None;
+    }
+    // AN ATTRIBUTE BLOCK OPENS WITH A BRACE, and refusing everything else here
+    // is what keeps this cheap. `interrupts_paragraph` asks this question of
+    // EVERY continuation line, and without the guard a paragraph whose lines
+    // never end in `}` sends the join loop below over the whole remainder once
+    // per line - quadratic time and allocation on ordinary prose that has no
+    // attributes in it at all.
+    if !trim_ascii(first).starts_with('{') {
+        return None;
+    }
+    if parse_standalone_attrs(first).is_some() {
+        return Some(1);
+    }
+    // Same refusal as the cursor form: a line that already closes and was
+    // rejected is not rescued by the multi-line join.
+    if trim_ascii_end(first).ends_with('}') {
+        return None;
+    }
+    let mut joined = String::new();
+    let mut quote: Option<char> = None;
+    for (count, line) in lines.iter().enumerate() {
+        if is_blank_line(line) {
+            return None;
+        }
+        if !joined.is_empty() {
+            if quote.is_some() {
+                return None;
+            }
+            joined.push(' ');
+        }
+        joined.push_str(trim_ascii(line));
+        quote = open_quote_at_end(trim_ascii(line));
+        if trim_ascii_end(line).ends_with('}') {
+            let inner = trim_ascii(&joined);
+            if inner.starts_with('{')
+                && inner.ends_with('}')
+                && parse_attrs_with(&inner[1..inner.len() - 1], false).is_some()
+            {
+                return Some(count + 1);
+            }
+            return None;
+        }
+    }
+    None
+}
+
+/// What a quoted line says about a standalone attribute block starting on it.
+enum QuotedAttrsBlock {
+    /// One starts here and spans this many QUOTED lines.
+    Block(usize),
+    /// None starts here, and none can start on any of the next `0..n` lines
+    /// either: the scan walked that far without meeting a line that could CLOSE
+    /// one. See [`quoted_attrs_block_len`] for why that generalizes.
+    NoneWithin(usize),
+    /// None starts here. A later line may still open one.
+    No,
+}
+
+/// Whether a standalone attribute block starts on the quoted line `stripped`,
+/// and how many QUOTED lines it takes.
+///
+/// `stripped` is the current line with ONE quote marker taken off, and `rest`
+/// is the raw document from the next line on. Both are walked down to their
+/// INNERMOST quoted content, exactly as [`ParaOpen::resolve`] does: a lazy line
+/// continues the innermost open paragraph, so what an attribute block ends is
+/// the innermost paragraph too, and a block written at depth 2 has to answer
+/// like one written at depth 1 (markup-carve/carve#506).
+///
+/// THE BRACE GUARD COMES FIRST AND IS TESTED ON THE UNWALKED LINE. Every quoted
+/// line reaches this, and the walk costs one strip per remaining quote marker -
+/// which is precisely the per-line cost `ParaOpen` was built to defer
+/// (markup-carve/carve-rs#731). A line with no `{` anywhere on it cannot open an
+/// attribute block at any depth, so a quote ladder pays one `memchr` and stops.
+///
+/// AND THE SCAN REPORTS WHAT IT PROVED, so a run of brace-shaped lines that
+/// close nothing is walked ONCE rather than once per line. A block ends at the
+/// first line with a trailing `}`; if the walk reaches a blank line or the end
+/// of the quoted run without meeting one, no line it passed can open a block
+/// either, and `NoneWithin` hands the caller that window to skip. Without it a
+/// quoted `{a` repeated n times pays an O(n) scan per line - a second quadratic
+/// on top of the one the inner paragraph parse already has on that shape.
+fn quoted_attrs_block_len<'a>(stripped: &'a str, rest: &[&'a str]) -> QuotedAttrsBlock {
+    if !stripped.contains('{') {
+        return QuotedAttrsBlock::No;
+    }
+    fn innermost(mut line: &str) -> &str {
+        while let Some(next) = strip_blockquote_prefix(line) {
+            line = next;
+        }
+        line
+    }
+    let first = innermost(stripped);
+    // The single-line spelling is already answered by
+    // `interrupts_paragraph_with_rest`, which `ParaOpen` consults. Only the
+    // WRAPPED one needs the lookahead, and refusing a complete line here keeps
+    // this from being a second answer to a question that already has one.
+    if trim_ascii_end(first).ends_with('}') {
+        return QuotedAttrsBlock::No;
+    }
+    let mut block: Vec<&str> = vec![first];
+    let mut met_a_closer = false;
+    for line in rest {
+        // The block lives INSIDE the quote: an unprefixed line is the lazy
+        // continuation the caller is deciding about, not part of the block.
+        let Some(next) = strip_blockquote_prefix(line) else {
+            break;
+        };
+        let inner = innermost(next);
+        block.push(inner);
+        if is_blank_line(inner) {
+            break;
+        }
+        if trim_ascii_end(inner).ends_with('}') {
+            met_a_closer = true;
+            break;
+        }
+    }
+    match standalone_attrs_block_len(&block) {
+        Some(len) => QuotedAttrsBlock::Block(len),
+        // A closer was there and the join was still refused - a later line may
+        // open a block that ends on that same closer, so nothing is proved.
+        None if met_a_closer => QuotedAttrsBlock::No,
+        None => QuotedAttrsBlock::NoneWithin(block.len()),
+    }
+}
+
 /// The quote a run leaves OPEN at its end.
 ///
 /// A backslash escapes the next character, so `\"` neither opens a value nor
@@ -10465,6 +13933,140 @@ fn open_quote_at_end(s: &str) -> Option<char> {
         }
     }
     quote
+}
+
+/// Split a TRAILING standalone block-attribute block off a collected chunk,
+/// returning its attributes and shortening the chunk to the lines before it.
+///
+/// WHY A LIST ITEM NEEDS THIS AND NOTHING ELSE DOES. `parse_blocks` owns the
+/// only pending-attribute slot, and it attaches a `{…}` line to the block that
+/// follows it in the SAME stream. Inside a list item that stream is a chunk:
+/// `collect_item_continuation_block_mapped` stops at a marker sitting at the
+/// item's content column, so `parse_list` can own the sub-list and its
+/// looseness bookkeeping. That stop puts the attribute line at the END of one
+/// chunk and the nested list at the start of a different one, each parsed with
+/// its own slot - so the attributes had nothing to attach to and were dropped
+/// where `parse_blocks` returns (markup-carve/carve-rs#1007).
+///
+/// A paragraph, block quote or code fence in that position is not a marker, so
+/// the collector never breaks and both lines land in one chunk, which is why
+/// only a NESTED LIST lost them. Handing the split-off attributes to the
+/// sub-list branch reunites the two halves without teaching `parse_blocks` to
+/// return leftovers, which would thread a new value through every one of its
+/// callers.
+///
+/// The block may span lines (`{#id` / `.foo}`), so the whole trailing run is
+/// validated by `parse_standalone_attrs_block` - the same reader the top-level
+/// path uses - and the split only happens when that reader consumes the run
+/// exactly.
+fn split_trailing_attrs(nested: &mut MappedSource) -> Option<(Attrs, Option<Pos>)> {
+    let lines: Vec<&str> = nested.source.lines().collect();
+    if lines.is_empty() {
+        return None;
+    }
+    // A trailing attribute block ends on the last line, so that line must close
+    // one. Anything else is ordinary content and there is nothing to split.
+    if !trim_ascii_end(lines[lines.len() - 1]).ends_with('}') {
+        return None;
+    }
+    // Walk back to the line that OPENS the run. A blank ends the search: a
+    // block-attribute block is contiguous.
+    let mut start = lines.len() - 1;
+    loop {
+        let line = lines[start];
+        if is_blank_line(line) {
+            return None;
+        }
+        // FLUSH LEFT, the same guard `parse_blocks` puts on this call
+        // (`line_flush`). The chunk is already dedented by the item's content
+        // column, so flush here means AT that column - and a line PAST it is
+        // ordinary text, which is what corpus 87-compact-list-blocks-10 pins:
+        // `- a` / blank / three spaces / `{.c}` is a second paragraph reading
+        // `{.c}`, not an attribute block. Trimming the indent away instead
+        // deleted that paragraph and re-tightened the item.
+        if line.starts_with('{') {
+            break;
+        }
+        if line.starts_with([' ', '\t']) {
+            return None;
+        }
+        if start == 0 {
+            return None;
+        }
+        start -= 1;
+    }
+    let tail: Vec<&str> = lines[start..].to_vec();
+    let mut probe = LineCursor::new_with_cols(&tail, None, None);
+    let attrs = parse_standalone_attrs_block(&mut probe)?;
+    // Only a run the reader consumed WHOLE is the chunk's trailing attribute
+    // block. A partial consume means the lines after it are content, and
+    // splitting there would silently delete them.
+    if !probe.eof() {
+        return None;
+    }
+    // WHERE THE RUN WAS WRITTEN, for §15 A4's diagnostic - taken BEFORE the
+    // maps are truncated below, since after that the split-off lines have no
+    // entries left to read. A set lifted off a chunk and never placed is
+    // dropped when the list ends or when a sibling marker opens
+    // (markup-carve/carve#1281), and the drop is a finding wherever it happens.
+    let pos = mapped_span_of(nested, start, lines.len(), &lines);
+    let line_count = lines.len();
+    let kept: Vec<&str> = lines[..start].to_vec();
+    let source = kept.join("\n");
+    nested.source = source;
+    // Both maps are read by LINE INDEX, and the kept lines keep the indices
+    // they had, so trailing entries are simply never reached - trimming them is
+    // tidiness, not correctness. It is only safe on a map that is index-aligned
+    // with the chunk: `push_newline_at` skips a LEADING run of unmapped lines
+    // rather than storing `None` for them, so a shorter `line_map` is offset
+    // from the lines and cutting it at `start` would drop an entry belonging to
+    // a line being KEPT. Leave such a map alone; its extra entries cost nothing.
+    if nested.col_map.len() == line_count {
+        nested.col_map.truncate(start);
+    }
+    if nested.line_map.len() == line_count {
+        nested.line_map.truncate(start);
+    }
+    Some((attrs, pos))
+}
+
+/// The document span of `lines[start..end]` inside a collected chunk.
+///
+/// [`span_of`] answers this for a [`LineCursor`], which carries the same two
+/// maps under different names; a chunk that has already been split off has no
+/// cursor over it, so the same arithmetic is done here. `None` when the chunk
+/// carries no line map - positions are opt-in, and a span nobody asked for is
+/// not worth inventing.
+fn mapped_span_of(nested: &MappedSource, start: usize, end: usize, lines: &[&str]) -> Option<Pos> {
+    let last = end.saturating_sub(1).max(start);
+    let start_line = *nested.line_map.get(start)?;
+    let start_line = start_line?;
+    let end_line = nested
+        .line_map
+        .get(last)
+        .copied()
+        .flatten()
+        .unwrap_or(start_line);
+    let stripped = nested.col_map.get(start).copied().flatten().unwrap_or(0);
+    let end_stripped = nested
+        .col_map
+        .get(last)
+        .copied()
+        .flatten()
+        .unwrap_or(stripped);
+    let indent = lines
+        .get(start)
+        .map(|l| l.chars().count() - trim_ascii_start(l).chars().count())
+        .unwrap_or(0);
+    let width = lines.get(last).map(|l| l.chars().count()).unwrap_or(0);
+    Some(Pos {
+        start_line,
+        end_line,
+        start_column: (stripped.max(0) as usize) + indent + 1,
+        end_column: (end_stripped.max(0) as usize) + width + 1,
+        start_offset: 0,
+        end_offset: 0,
+    })
 }
 
 fn merge_attrs(target: &mut Option<Attrs>, incoming: Attrs) {
@@ -10522,9 +14124,16 @@ fn stamp_source_line(node: &mut BlockNode, line: usize) {
         BlockNode::LineBlock(n) => Some(&mut n.attrs),
         BlockNode::DefinitionList(n) => Some(&mut n.attrs),
         BlockNode::Figure(n) => Some(&mut n.attrs),
+        BlockNode::FigureGroup(n) => Some(&mut n.attrs),
         BlockNode::Extension(n) => Some(&mut n.attrs),
         BlockNode::BlockImage(n) => Some(&mut n.attrs),
-        BlockNode::AbbreviationDef(_) | BlockNode::RawBlock(_) | BlockNode::Comment(_) => None,
+        // A citation definition's attributes are the metadata block on its own
+        // line, not a preceding block-attribute line - same as the link
+        // reference definition above.
+        BlockNode::AbbreviationDef(_)
+        | BlockNode::CitationDefinition(_)
+        | BlockNode::RawBlock(_)
+        | BlockNode::Comment(_) => None,
     };
     let Some(opt) = slot else {
         return;
@@ -10563,7 +14172,40 @@ fn apply_attrs_to_block(node: &mut BlockNode, attrs: Attrs) {
         BlockNode::CodeBlock(n) => n.attrs = Some(attrs),
         BlockNode::List(n) => n.attrs = Some(attrs),
         BlockNode::BlockQuote(n) => n.attrs = Some(attrs),
-        BlockNode::Table(n) => n.attrs = Some(attrs),
+        BlockNode::Table(n) => {
+            n.columns = table_columns_from_attrs(&attrs);
+            let count = |key: &str| -> Option<usize> {
+                match attrs.key_values.get(key) {
+                    None => Some(0),
+                    Some(value) if value.trim().is_empty() => Some(1),
+                    Some(value) if value.trim().bytes().all(|b| b.is_ascii_digit()) => {
+                        value.trim().parse().ok()
+                    }
+                    Some(_) => None,
+                }
+            };
+            if attrs.key_values.contains_key("header-rows")
+                || attrs.key_values.contains_key("footer-rows")
+            {
+                if let (Some(head_rows), Some(foot_rows)) =
+                    (count("header-rows"), count("footer-rows"))
+                {
+                    if head_rows + foot_rows <= n.rows.len() {
+                        n.row_groups = Some(TableRowGroups {
+                            head_rows,
+                            bodies: vec![TableBodyGroup {
+                                head_rows: 0,
+                                body_rows: n.rows.len() - head_rows - foot_rows,
+                                row_head_columns: Some(0),
+                                attrs: None,
+                            }],
+                            foot_rows,
+                        });
+                    }
+                }
+            }
+            n.attrs = Some(attrs);
+        }
         // A typed colon-fence opener may already carry its own attribute
         // block (`::: note {.x}`); a leading block-attribute line is earlier
         // in source, so its classes come first and the opener's win on
@@ -10573,12 +14215,50 @@ fn apply_attrs_to_block(node: &mut BlockNode, attrs: Attrs) {
         BlockNode::LineBlock(n) => merge_leading_attrs(&mut n.attrs, attrs),
         BlockNode::DefinitionList(n) => n.attrs = Some(attrs),
         BlockNode::Figure(n) => n.attrs = Some(attrs),
+        // The bare opener carries nothing of its own (§4c), so the preceding
+        // block-attribute line is the group's only attribute source.
+        BlockNode::FigureGroup(n) => n.attrs = Some(attrs),
         BlockNode::Extension(n) => n.attrs = Some(attrs),
         // A direct block image (`{#id}\n![…](…)`) carries the leading attrs on
         // the `<img>` itself; the image's own inline attrs win on conflict (§15).
         BlockNode::BlockImage(img) => merge_leading_attrs(&mut img.attrs, attrs),
         _ => {}
     }
+}
+
+fn table_columns_from_attrs(attrs: &Attrs) -> Vec<TableColumn> {
+    let split = |key: &str| {
+        attrs
+            .key_values
+            .get(key)
+            .map(|v| v.split(',').collect::<Vec<_>>())
+            .unwrap_or_default()
+    };
+    let aligns = split("aligns");
+    let valigns = split("valigns");
+    let widths = split("widths");
+    let len = aligns.len().max(valigns.len()).max(widths.len());
+    (0..len)
+        .map(|i| TableColumn {
+            align: aligns.get(i).and_then(|v| match *v {
+                "left" => Some(TableAlign::Left),
+                "right" => Some(TableAlign::Right),
+                "center" => Some(TableAlign::Center),
+                _ => None,
+            }),
+            valign: valigns.get(i).and_then(|v| match *v {
+                "top" => Some(TableVerticalAlign::Top),
+                "middle" => Some(TableVerticalAlign::Middle),
+                "bottom" => Some(TableVerticalAlign::Bottom),
+                _ => None,
+            }),
+            width: widths
+                .get(i)
+                .and_then(|v| v.parse::<f64>().ok())
+                .filter(|v| *v > 0.0 && *v <= 100.0)
+                .map(|v| v / 100.0),
+        })
+        .collect()
 }
 
 fn apply_attrs_to_inline(node: &mut InlineNode, attrs: Attrs) {
@@ -10714,12 +14394,46 @@ struct InlineBounds<'a> {
 
 pub(crate) struct InlineAnchor<'a> {
     lines: &'a [Option<(usize, isize)>],
+    /// Byte offsets in the text at which a new anchor SEGMENT begins without a
+    /// newline being there to mark it.
+    ///
+    /// A newline in the text is the ordinary way one line ends and the next
+    /// begins, and it needs no list. A TABLE CELL rebuilt across a `+`
+    /// continuation has no newline in it - the fragments are joined by a
+    /// manufactured space - and yet each fragment sits on a different source
+    /// line. Without this the whole cell reads as one line and every position
+    /// past the first fragment lands on the row line at a column that holds
+    /// something else.
+    ///
+    /// Each break opens a segment, so `lines` is indexed by segment rather than
+    /// by newline count.
+    ///
+    /// A BREAK IS A GAP, which a newline is not. The source holds characters
+    /// between two segments that the text does not - a closing pipe, a line
+    /// break, a `+` and an opening pipe - so a span reaching across one would
+    /// not select its own text. Any node that crosses a break is therefore left
+    /// unplaced: absent beats wrong (PART 12 section 4). A newline needs no such
+    /// rule because it is IN the text, so a span across it still selects itself.
+    ///
+    /// Offsets are ASCENDING and each one sits IN FRONT OF A CHARACTER, never
+    /// at end of text - a segment with nothing in it would have no position to
+    /// give.
+    breaks: &'a [usize],
+}
+
+impl<'a> InlineAnchor<'a> {
+    fn lines(lines: &'a [Option<(usize, isize)>]) -> Self {
+        Self { lines, breaks: &[] }
+    }
 }
 
 struct InlinePositionMap<'a> {
     lines: &'a [Option<(usize, isize)>],
     byte_line: Vec<usize>,
     byte_column: Vec<usize>,
+    /// Whether the segments are separated by GAPS rather than by newlines -
+    /// see `InlineAnchor::breaks`. A span across a gap carries no position.
+    gapped: bool,
 }
 
 impl<'a> InlinePositionMap<'a> {
@@ -10728,7 +14442,15 @@ impl<'a> InlinePositionMap<'a> {
         let mut byte_column = vec![0usize; text.len() + 1];
         let mut line = 0usize;
         let mut column = 0usize;
+        let mut breaks = anchor.breaks.iter().copied().peekable();
         for (byte, ch) in text.char_indices() {
+            // A break OPENS a segment, so it is applied BEFORE the character it
+            // sits in front of rather than after the one behind it.
+            while breaks.peek() == Some(&byte) {
+                breaks.next();
+                line += 1;
+                column = 0;
+            }
             byte_line[byte] = line;
             byte_column[byte] = column;
             for idx in byte + 1..byte + ch.len_utf8() {
@@ -10748,6 +14470,7 @@ impl<'a> InlinePositionMap<'a> {
             lines: anchor.lines,
             byte_line,
             byte_column,
+            gapped: !anchor.breaks.is_empty(),
         }
     }
 
@@ -10757,6 +14480,9 @@ impl<'a> InlinePositionMap<'a> {
         }
         let start_line_idx = *self.byte_line.get(start)?;
         let end_line_idx = *self.byte_line.get(end)?;
+        if self.gapped && start_line_idx != end_line_idx {
+            return None;
+        }
         for idx in start_line_idx..=end_line_idx {
             self.lines.get(idx).copied().flatten()?;
         }
@@ -10846,8 +14572,12 @@ fn parse_inline_with_anchor(
     parse_inline_context(text, options, false, false, Some(&map), 0)
 }
 
-fn parse_caption_inline_with_options(text: &str, options: &Options<'_>) -> Vec<InlineNode> {
-    parse_inline_context(text, options, true, false, None, 0)
+fn parse_caption_inline_with_options(
+    text: &str,
+    options: &Options<'_>,
+    caption_context: bool,
+) -> Vec<InlineNode> {
+    parse_inline_context(text, options, caption_context, false, None, 0)
 }
 
 /// A caption's inline content, anchored to the source lines it was folded from.
@@ -10859,11 +14589,12 @@ fn parse_caption_inline_with_anchor(
     text: &str,
     options: &Options<'_>,
     lines: Vec<Option<(usize, isize)>>,
+    caption_context: bool,
 ) -> Vec<InlineNode> {
     if !options.positions {
-        return parse_caption_inline_with_options(text, options);
+        return parse_caption_inline_with_options(text, options, caption_context);
     }
-    let map = InlinePositionMap::new(text, InlineAnchor { lines: &lines });
+    let map = InlinePositionMap::new(text, InlineAnchor::lines(&lines));
     parse_inline_context(text, options, true, false, Some(&map), 0)
 }
 
@@ -10926,6 +14657,7 @@ fn parse_inline_context(
     } else {
         None
     };
+    let last_delimited_comment_close = bytes.windows(2).rposition(|w| w == b"%}");
     // For each tracked `X}` pair (`+} -} ~} #}` for critic, plus the forced-
     // emphasis delimiters), record the leading byte's LAST position. Built only
     // when a `}` exists at all, since every such pair ends in `}`.
@@ -10953,14 +14685,33 @@ fn parse_inline_context(
     // the scan is skipped in O(1). Keeps `_a](`×n / `*a](`×n linear. See
     // cached_find_emphasis_close.
     let mut emphasis_no_close: [Option<usize>; EMPHASIS_DELIM_SLOTS] = [None; EMPHASIS_DELIM_SLOTS];
-    let mut out = Vec::new();
-    let mut buf = String::new();
+    let mut out = Vec::with_capacity(4);
+    let mut buf = String::with_capacity(text.len());
     let mut buf_start: Option<usize> = None;
     let mut buf_placeable = true;
     let mut buf_src_delta: isize = 0;
     let mut i = 0;
     while i < bytes.len() {
         let c = bytes[i];
+
+        // With no extension matcher able to claim an arbitrary byte, runs of
+        // ASCII prose cannot open any core inline construct. Append the whole
+        // run at once instead of sending every letter and space through all of
+        // the delimiter, link, typography and footnote dispatch below.
+        if options.extensions.is_empty() && (c.is_ascii_alphanumeric() || c == b' ' || c == b'\t') {
+            let start = i;
+            i += 1;
+            while i < bytes.len()
+                && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b' ' || bytes[i] == b'\t')
+            {
+                i += 1;
+            }
+            if buf_start.is_none() {
+                buf_start = Some(start);
+            }
+            buf.push_str(&text[start..i]);
+            continue;
+        }
 
         // Backslash escapes
         // A backslash at the very end of the content (no following byte) is a
@@ -11029,6 +14780,41 @@ fn parse_inline_context(
             }
         }
 
+        // Explicitly delimited inline comment. The first closer wins; without
+        // one the opener remains ordinary visible text. Backslash escapes have
+        // already been consumed, and code/raw spans consume their whole run.
+        if c == b'{'
+            && bytes.get(i + 1) == Some(&b'%')
+            && last_delimited_comment_close.is_some_and(|close| close >= i + 2)
+        {
+            if let Some(close_rel) = bytes[i + 2..].windows(2).position(|w| w == b"%}") {
+                let close = i + 2 + close_rel;
+                flush_text(
+                    &mut out,
+                    &mut buf,
+                    positions,
+                    base,
+                    &mut buf_start,
+                    &mut buf_placeable,
+                    &mut buf_src_delta,
+                );
+                let raw = String::from_utf8_lossy(&bytes[i + 2..close]);
+                let without_leading = raw.strip_prefix(' ').unwrap_or(&raw);
+                let content = without_leading
+                    .strip_suffix(' ')
+                    .unwrap_or(without_leading)
+                    .to_string();
+                out.push(InlineNode::Comment(Comment {
+                    block: false,
+                    delimited: true,
+                    content,
+                    pos: inline_pos(positions, base + i, base + close + 2),
+                }));
+                i = close + 2;
+                continue;
+            }
+        }
+
         // Trailing line comment: `%%` at start of line or after whitespace runs
         // to end of line and is dropped (`text %% comment`).
         if c == b'%'
@@ -11068,6 +14854,7 @@ fn parse_inline_context(
                 .to_string();
             out.push(InlineNode::Comment(Comment {
                 block: false,
+                delimited: false,
                 content,
                 pos: inline_pos(positions, base + comment_start, base + i),
             }));
@@ -11972,9 +15759,7 @@ fn parse_raw_inline_after_code(
 /// code_span`). A `!` PREFIX on a verbatim code span, mirroring `parse_math`'s
 /// `$` prefix: the maximal backtick run captures the content verbatim, which is
 /// later HTML-escaped and emitted by every renderer with the `<code>` wrapper
-/// dropped. A CLOSED span is required — a `!` before an unclosed run returns
-/// `None`, leaving the `!` literal and the run to become an ordinary (unclosed)
-/// code span, exactly as `$` before an unclosed run behaves.
+/// dropped. Like code and math, an unclosed span reaches the end of its block.
 ///
 /// Returns a bare literal; a trailing `{…}` is the ORDINARY inline attribute
 /// block and is attached by the general attr-merge in the scanner (same path a
@@ -11985,13 +15770,6 @@ fn parse_literal_inline(bytes: &[u8], start: usize) -> Option<(LiteralInline, us
         return None;
     }
     let tick = start + 1;
-    // Require a CLOSED span, like `$`-math in carve-js. `parse_inline_code`
-    // itself accepts an unclosed opener (consuming to the end of the block), so
-    // the closedness is checked explicitly here: a `!` before an unclosed run
-    // stays literal and the run becomes an ordinary (unclosed) code span.
-    if !inline_code_is_closed(bytes, tick) {
-        return None;
-    }
     let (content, code_consumed) = parse_inline_code(bytes, tick)?;
     Some((
         LiteralInline {
@@ -12001,35 +15779,6 @@ fn parse_literal_inline(bytes: &[u8], start: usize) -> Option<(LiteralInline, us
         },
         tick + code_consumed - start,
     ))
-}
-
-/// True iff a verbatim code span opening at `start` (a backtick) has a matching
-/// equal-length closing run — i.e. it is CLOSED rather than an opener that runs
-/// unclosed to the end of the block. Used to gate the inline literal (§27) to
-/// closed spans only, matching the `$`-math prefix.
-fn inline_code_is_closed(bytes: &[u8], start: usize) -> bool {
-    let mut i = start;
-    while i < bytes.len() && bytes[i] == b'`' {
-        i += 1;
-    }
-    let open_len = i - start;
-    if open_len == 0 {
-        return false;
-    }
-    while i < bytes.len() {
-        if bytes[i] != b'`' {
-            i += 1;
-            continue;
-        }
-        let close_start = i;
-        while i < bytes.len() && bytes[i] == b'`' {
-            i += 1;
-        }
-        if i - close_start == open_len {
-            return true;
-        }
-    }
-    false
 }
 
 fn parse_math(bytes: &[u8], start: usize, bounds: &InlineBounds<'_>) -> Option<(Math, usize)> {
@@ -13068,6 +16817,38 @@ fn read_to_first_bracket(bytes: &[u8], start: usize) -> Option<(String, usize)> 
     None
 }
 
+/// The body of the bracketed run `text` opens with, if the run closes inside it.
+///
+/// The canonical writer asks this before deciding whether a `^` it is about to
+/// emit opens an inline note, so the question has to be answered by the READER
+/// rather than by a second scan that promises to agree with it: the close is
+/// bracket-balanced, escape-aware and opaque inside a verbatim span or an
+/// editorial comment, and [`read_bracketed`] is where all of that already lives.
+///
+/// `None` when the run does not close in `text` - which for the writer means the
+/// closer may still arrive from a later node, so it must not drop the escape.
+pub(crate) fn bracketed_run_body(text: &str) -> Option<String> {
+    read_bracketed(text.as_bytes(), 0).map(|(body, _)| body)
+}
+
+/// Does a RAW bracketed run re-read as itself when written between `[` and `]`?
+///
+/// The writer needs this because a raw run - an image's alt text - resolves no
+/// escapes: whatever sits between the brackets IS the value, backslashes and
+/// all. So the writer cannot neutralize a `]` by escaping it. It can only ask
+/// whether the reader's own scan would close where it is about to put the `]`,
+/// and write the run verbatim when it does.
+///
+/// It is the READER's scan rather than a second spelling of it: the same
+/// [`read_bracketed`] the inline pass closes a link's text with, run over the
+/// run wrapped in the brackets it will be written between. Balance,
+/// escape-awareness and opacity inside a verbatim span or an editorial comment
+/// therefore hold by construction.
+pub(crate) fn raw_bracket_run_closes(text: &str) -> bool {
+    let wrapped = format!("[{text}]");
+    read_bracketed(wrapped.as_bytes(), 0).is_some_and(|(_, after)| after == wrapped.len())
+}
+
 fn read_bracketed(bytes: &[u8], start: usize) -> Option<(String, usize)> {
     if bytes.get(start) != Some(&b'[') {
         return None;
@@ -13603,6 +17384,14 @@ fn apply_abbreviations_block(block: &mut BlockNode, index: &AbbreviationIndex<'_
                 apply_abbreviations_block(child, index);
             }
         }
+        BlockNode::FigureGroup(g) => {
+            for child in &mut g.children {
+                apply_abbreviations_block(child, index);
+            }
+            if let Some(caption) = &mut g.caption {
+                apply_abbreviations_inline(caption, index);
+            }
+        }
         // A `:::` div and a block extension were missing, so an abbreviation
         // never expanded inside one -- even with the definition at the top
         // level, where collection was never in doubt. carve-js expands it.
@@ -13630,7 +17419,7 @@ fn apply_abbreviations_block(block: &mut BlockNode, index: &AbbreviationIndex<'_
         }
         BlockNode::Figure(f) => {
             apply_abbreviations_inline(&mut f.caption, index);
-            match &mut f.target {
+            match &mut *f.target {
                 FigureTarget::BlockQuote(b) => {
                     for child in &mut b.children {
                         apply_abbreviations_block(child, index);
@@ -13671,6 +17460,17 @@ fn apply_abbreviations_inline(nodes: &mut Vec<InlineNode>, index: &AbbreviationI
             InlineNode::Extension(mut e) => {
                 apply_abbreviations_inline(&mut e.children, index);
                 out.push(InlineNode::Extension(e));
+            }
+            // PART 9R R3 matches a term in RENDERED TEXT at word boundaries, and
+            // the container the text sits in does not change that. A span fell
+            // to the catch-all arm below and its children were never walked, so
+            // `[HTML]{.x}` and `[HTML]{kbd}` silently dropped the expansion that
+            // `*HTML*` and `[HTML](/u)` got - and PART 9 §10 made the second
+            // spelling a documented feature, so the loss sits inside a construct
+            // the docs teach (carve#1151).
+            InlineNode::Span(mut sp) => {
+                apply_abbreviations_inline(&mut sp.children, index);
+                out.push(InlineNode::Span(sp));
             }
             InlineNode::CitationGroup(mut g) => {
                 for item in &mut g.items {
@@ -14280,6 +18080,14 @@ fn resolve_reference_links_block(
                 resolve_reference_links_block(child, defs, heading_index);
             }
         }
+        BlockNode::FigureGroup(g) => {
+            for child in &mut g.children {
+                resolve_reference_links_block(child, defs, heading_index);
+            }
+            if let Some(caption) = &mut g.caption {
+                resolve_reference_links_inline(caption, defs, heading_index);
+            }
+        }
         BlockNode::Div(d) => {
             for child in &mut d.children {
                 resolve_reference_links_block(child, defs, heading_index);
@@ -14299,7 +18107,7 @@ fn resolve_reference_links_block(
         }
         BlockNode::Figure(f) => {
             resolve_reference_links_inline(&mut f.caption, defs, heading_index);
-            match &mut f.target {
+            match &mut *f.target {
                 FigureTarget::BlockQuote(b) => {
                     for child in &mut b.children {
                         resolve_reference_links_block(child, defs, heading_index);
@@ -14447,6 +18255,17 @@ fn resolve_reference_links_inline(
                             // from the tree either way.
                         }
                     }
+                    // A reference tail FRAMES this link's text; it does not
+                    // seal it. The text is ordinary inline content, so a
+                    // reference written inside it resolves like any other
+                    // (corpus 313, markup-carve/carve#1196) - `[t[x][r2]][r]`
+                    // renders `x` as a link, the same as the inline-destination
+                    // spelling `[t[x][r2]](/u)` already did here.
+                    //
+                    // AFTER this node's own tail, not before: the heading-index
+                    // fallback above derives its lookup key from the children's
+                    // plain text, and that key is the text the AUTHOR wrote.
+                    resolve_reference_links_inline(&mut l.children, defs, heading_index);
                     out.push(node);
                 } else {
                     resolve_reference_links_inline(&mut l.children, defs, heading_index);
@@ -14463,6 +18282,35 @@ fn resolve_reference_links_inline(
             }
             InlineNode::Extension(e) => {
                 resolve_reference_links_inline(&mut e.children, defs, heading_index);
+                out.push(node);
+            }
+            // AN INLINE NOTE'S CONTENT IS ORDINARY INLINE CONTENT
+            // (markup-carve/carve#1203). PART 9 §16 disables FOOTNOTE
+            // recognition inside a note and says nothing about references, so a
+            // reference written there resolves like any other. This walk had no
+            // arm for it, so `^[see [t][r]]` reached the reader as literal text
+            // while `*[t][r]*` one node over resolved.
+            //
+            // The crossref pass a few hundred lines up already descends here,
+            // which is why `^[see </#h>]` worked and this did not: one rule,
+            // two walks, and only one of them complete.
+            InlineNode::Footnote(f) => {
+                if let Some(inline) = &mut f.inline {
+                    resolve_reference_links_inline(inline, defs, heading_index);
+                }
+                out.push(node);
+            }
+            // The same gap, measured rather than assumed: both critic ranges
+            // hold inline children and both left a reference inside them
+            // unresolved. `CriticSubstitute` and `CriticComment` are NOT here
+            // because they hold strings rather than children - there is nothing
+            // to descend into, and an arm for them could not fail.
+            InlineNode::CriticInsert(c) => {
+                resolve_reference_links_inline(&mut c.children, defs, heading_index);
+                out.push(node);
+            }
+            InlineNode::CriticDelete(c) => {
+                resolve_reference_links_inline(&mut c.children, defs, heading_index);
                 out.push(node);
             }
             InlineNode::CitationGroup(g) => {
@@ -14598,148 +18446,170 @@ fn caption_first_line_has_content(children: &[InlineNode]) -> bool {
     false
 }
 
+/// Promote sole-image paragraphs, driven by an EXPLICIT WORKLIST rather than by
+/// recursion.
+///
+/// PART 9 §25 bounds the tree at `MAX_NESTING_DEPTH`, and this pass runs over a
+/// tree the parser has already capped - so its depth was never unbounded. Its
+/// COST was: the frame here is ~1.6 KB (a `BlockNode` is 472 bytes and this pass
+/// moves them by value), so a document at the cap spent ~330 KB of stack in this
+/// one pass, and on a wasm host with a 1 MiB stack that is a third of the budget
+/// for a walk that only descends. A worklist makes the cost O(1) in depth, which
+/// is the shape the cap should have had all along (markup-carve/carve-php#1407
+/// settled the same point for a different walk: a loop, not a frame per level).
+///
+/// Sibling order within a level is unchanged; levels are visited in a different
+/// order than the recursion used, which is sound because each block's promotion
+/// reads and writes only that block.
 fn promote_block_images(blocks: &mut [BlockNode], figures_only: bool) {
-    for block in blocks.iter_mut() {
-        // The sole-image -> block-image promotion is skipped in `figures_only`
-        // mode (the formatter): a paragraph and a bare block image serialize
-        // identically, so the only effect there would be dropping a leading
-        // block-attribute line (`{#id}`) that the paragraph carries but a bare
-        // block image cannot. The formatter keeps it a paragraph so those attrs
-        // survive.
-        //
-        // Only a REAL image (direct or resolved reference) promotes. An
-        // unresolved reference image keeps its `ref_label` and renders as
-        // literal source inside the paragraph; promoting it would drop that
-        // required `<p>` wrapper.
-        let single_image = !figures_only
-            && matches!(
+    let mut worklist: Vec<&mut [BlockNode]> = vec![blocks];
+    while let Some(level) = worklist.pop() {
+        for block in level {
+            // The sole-image -> block-image promotion is skipped in `figures_only`
+            // mode (the formatter): a paragraph and a bare block image serialize
+            // identically, so the only effect there would be dropping a leading
+            // block-attribute line (`{#id}`) that the paragraph carries but a bare
+            // block image cannot. The formatter keeps it a paragraph so those attrs
+            // survive.
+            //
+            // Only a REAL image (direct or resolved reference) promotes. An
+            // unresolved reference image keeps its `ref_label` and renders as
+            // literal source inside the paragraph; promoting it would drop that
+            // required `<p>` wrapper.
+            let single_image = !figures_only
+                && matches!(
+                    block,
+                    BlockNode::Paragraph(p)
+                        if p.children.len() == 1
+                            && matches!(&p.children[0], InlineNode::Image(img) if !is_unresolved_image(img))
+                );
+            if single_image {
+                // Take the children out first so the paragraph borrow ends before
+                // `block` is reassigned. A leading block-attribute line (`{#id}`)
+                // landed on the paragraph; carry it onto the promoted block image
+                // (its own inline attrs win on conflict, §15), matching a direct
+                // block image -- otherwise the id would be lost with the wrapper.
+                let (mut children, para_attrs) = match block {
+                    BlockNode::Paragraph(p) => (std::mem::take(&mut p.children), p.attrs.take()),
+                    _ => unreachable!(),
+                };
+                if let InlineNode::Image(mut img) = children.remove(0) {
+                    if let Some(attrs) = para_attrs {
+                        merge_leading_attrs(&mut img.attrs, attrs);
+                    }
+                    *block = BlockNode::BlockImage(img);
+                }
+                continue;
+            }
+            // A resolved reference image on its own line followed by a `^ ` caption
+            // becomes a Figure, matching a direct-image figure and carve-php. A
+            // reference image arrives here as `Paragraph[Image, SoftBreak,
+            // "^ caption…"]` (the syntactic block-image/caption pass only knows the
+            // inline `![…](…)` form); an unresolved ref keeps `ref_label` and stays
+            // literal. The caption inlines are already parsed
+            // (paragraph interruption already stopped the caption at a block opener,
+            // so a multi-line caption keeps its interior soft breaks); strip the
+            // `^ ` marker from the leading Text.
+            // Strict column-0 (docs/divergence-from-djot.md §11): the image must have
+            // sat at its container's content column. An INDENTED image + caption is
+            // literal paragraph text (a `<p>` with an inline image and a literal
+            // `^ caption` line), matching carve-php / carve-js -- so gate on
+            // `at_content_column`. A flush-left DIRECT image + caption never reaches
+            // here (it became a Figure at parse time); this path serves resolved
+            // REFERENCE images, which likewise promote only when flush-left.
+            let ref_figure = matches!(
                 block,
                 BlockNode::Paragraph(p)
-                    if p.children.len() == 1
+                    if p.at_content_column
+                        && p.children.len() >= 3
                         && matches!(&p.children[0], InlineNode::Image(img) if !is_unresolved_image(img))
+                        && matches!(p.children[1], InlineNode::SoftBreak(_))
+                        && matches!(&p.children[2], InlineNode::Text(t) if caption_marker_len(&t.value).is_some())
+                        && caption_first_line_has_content(&p.children)
             );
-        if single_image {
-            // Take the children out first so the paragraph borrow ends before
-            // `block` is reassigned. A leading block-attribute line (`{#id}`)
-            // landed on the paragraph; carry it onto the promoted block image
-            // (its own inline attrs win on conflict, §15), matching a direct
-            // block image -- otherwise the id would be lost with the wrapper.
-            let (mut children, para_attrs) = match block {
-                BlockNode::Paragraph(p) => (std::mem::take(&mut p.children), p.attrs.take()),
-                _ => unreachable!(),
-            };
-            if let InlineNode::Image(mut img) = children.remove(0) {
-                if let Some(attrs) = para_attrs {
-                    merge_leading_attrs(&mut img.attrs, attrs);
-                }
-                *block = BlockNode::BlockImage(img);
-            }
-            continue;
-        }
-        // A resolved reference image on its own line followed by a `^ ` caption
-        // becomes a Figure, matching a direct-image figure and carve-php. A
-        // reference image arrives here as `Paragraph[Image, SoftBreak,
-        // "^ caption…"]` (the syntactic block-image/caption pass only knows the
-        // inline `![…](…)` form); an unresolved ref keeps `ref_label` and stays
-        // literal. The caption inlines are already parsed
-        // (block-position handling already stopped the caption at a block opener,
-        // so a multi-line caption keeps its interior soft breaks); strip the
-        // `^ ` marker from the leading Text.
-        // Strict column-0 (docs/divergence-from-djot.md §11): the image must have
-        // sat at its container's content column. An INDENTED image + caption is
-        // literal paragraph text (a `<p>` with an inline image and a literal
-        // `^ caption` line), matching carve-php / carve-js -- so gate on
-        // `at_content_column`. A flush-left DIRECT image + caption never reaches
-        // here (it became a Figure at parse time); this path serves resolved
-        // REFERENCE images, which likewise promote only when flush-left.
-        let ref_figure = matches!(
-            block,
-            BlockNode::Paragraph(p)
-                if p.at_content_column
-                    && p.children.len() >= 3
-                    && matches!(&p.children[0], InlineNode::Image(img) if !is_unresolved_image(img))
-                    && matches!(p.children[1], InlineNode::SoftBreak(_))
-                    && matches!(&p.children[2], InlineNode::Text(t) if caption_marker_len(&t.value).is_some())
-                    && caption_first_line_has_content(&p.children)
-        );
-        if ref_figure {
-            // Carry a leading block-attribute line (`{#id}` etc.) from the
-            // paragraph onto the figure, matching a direct-image figure (which
-            // takes the attrs at parse time) and carve-php -- otherwise
-            // `carve fmt` would drop it.
-            // The paragraph's own span IS the figure's: it opened at the
-            // image and ran to the end of the caption, which is exactly the
-            // construct the author wrote. Taken here, before the paragraph is
-            // dismantled, because nothing downstream can reconstruct it -- the
-            // image and the caption inlines are placed, but the figure's own
-            // extent only exists on the node being replaced (carve-rs#737).
-            let (mut children, attrs, para_pos) = match block {
-                BlockNode::Paragraph(p) => (
-                    std::mem::take(&mut p.children),
-                    p.attrs.take(),
-                    p.pos.take(),
-                ),
-                _ => unreachable!(),
-            };
-            let InlineNode::Image(img) = children.remove(0) else {
-                unreachable!()
-            };
-            children.remove(0); // the soft break
-            if let InlineNode::Text(t) = &mut children[0] {
-                let n = caption_marker_len(&t.value).unwrap();
-                let rest = t.value[n..].to_string();
-                if rest.is_empty() {
-                    children.remove(0);
-                } else {
-                    t.value = rest;
-                    // The SPAN moves with the value. Stripping the marker from
-                    // the text and leaving the position covering it left a node
-                    // whose span did not slice back to its own content - span
-                    // 9..14 reading `^ cap` for the value `cap` (carve-rs#620,
-                    // corpus 207). The direct-image path never had this: it
-                    // parses the caption from the text after the marker, so its
-                    // anchor is right to begin with, and only this post-parse
-                    // promotion edits a node the parser already positioned.
-                    //
-                    // The marker is `^` plus spaces, so bytes and codepoints
-                    // advance together and one `n` serves both the offset and
-                    // the column.
-                    if let Some(pos) = &mut t.pos {
-                        pos.start_offset += n;
-                        pos.start_column += n;
+            if ref_figure {
+                // Carry a leading block-attribute line (`{#id}` etc.) from the
+                // paragraph onto the figure, matching a direct-image figure (which
+                // takes the attrs at parse time) and carve-php -- otherwise
+                // `carve fmt` would drop it.
+                // The paragraph's own span IS the figure's: it opened at the
+                // image and ran to the end of the caption, which is exactly the
+                // construct the author wrote. Taken here, before the paragraph is
+                // dismantled, because nothing downstream can reconstruct it -- the
+                // image and the caption inlines are placed, but the figure's own
+                // extent only exists on the node being replaced (carve-rs#737).
+                let (mut children, attrs, para_pos) = match block {
+                    BlockNode::Paragraph(p) => (
+                        std::mem::take(&mut p.children),
+                        p.attrs.take(),
+                        p.pos.take(),
+                    ),
+                    _ => unreachable!(),
+                };
+                let InlineNode::Image(img) = children.remove(0) else {
+                    unreachable!()
+                };
+                children.remove(0); // the soft break
+                if let InlineNode::Text(t) = &mut children[0] {
+                    let n = caption_marker_len(&t.value).unwrap();
+                    let rest = t.value[n..].to_string();
+                    if rest.is_empty() {
+                        children.remove(0);
+                    } else {
+                        t.value = rest;
+                        // The SPAN moves with the value. Stripping the marker from
+                        // the text and leaving the position covering it left a node
+                        // whose span did not slice back to its own content - span
+                        // 9..14 reading `^ cap` for the value `cap` (carve-rs#620,
+                        // corpus 207). The direct-image path never had this: it
+                        // parses the caption from the text after the marker, so its
+                        // anchor is right to begin with, and only this post-parse
+                        // promotion edits a node the parser already positioned.
+                        //
+                        // The marker is `^` plus spaces, so bytes and codepoints
+                        // advance together and one `n` serves both the offset and
+                        // the column.
+                        if let Some(pos) = &mut t.pos {
+                            pos.start_offset += n;
+                            pos.start_column += n;
+                        }
                     }
                 }
+                *block = BlockNode::Figure(Figure {
+                    attrs,
+                    target: Box::new(FigureTarget::Image(img)),
+                    caption: children,
+                    short_caption: None,
+                    // PART 12 §4 exempts a REASSEMBLED node, and this one is not:
+                    // its lines are contiguous and the direct-image path publishes
+                    // exactly this span for the same construct. markup-carve/carve#913
+                    // rules `pos` markup-inclusive with a parent's span containing
+                    // every child's, which the paragraph's span already satisfies.
+                    pos: para_pos,
+                });
+                continue;
             }
-            *block = BlockNode::Figure(Figure {
-                attrs,
-                target: FigureTarget::Image(img),
-                caption: children,
-                // PART 12 §4 exempts a REASSEMBLED node, and this one is not:
-                // its lines are contiguous and the direct-image path publishes
-                // exactly this span for the same construct. markup-carve/carve#913
-                // rules `pos` markup-inclusive with a parent's span containing
-                // every child's, which the paragraph's span already satisfies.
-                pos: para_pos,
-            });
-            continue;
-        }
-        match block {
-            BlockNode::BlockQuote(b) => promote_block_images(&mut b.children, figures_only),
-            BlockNode::Admonition(a) => promote_block_images(&mut a.children, figures_only),
-            BlockNode::Div(d) => promote_block_images(&mut d.children, figures_only),
-            BlockNode::List(l) => {
-                for item in &mut l.items {
-                    promote_block_images(&mut item.children, figures_only);
-                }
-            }
-            BlockNode::DefinitionList(d) => {
-                for item in &mut d.items {
-                    for def in &mut item.definitions {
-                        promote_block_images(def, figures_only);
+            match block {
+                BlockNode::BlockQuote(b) => worklist.push(b.children.as_mut_slice()),
+                BlockNode::Admonition(a) => worklist.push(a.children.as_mut_slice()),
+                // Descend into the group so an image-with-caption paragraph built
+                // from a resolved reference image still becomes a panel (§4c).
+                BlockNode::FigureGroup(g) => worklist.push(g.children.as_mut_slice()),
+                BlockNode::Div(d) => worklist.push(d.children.as_mut_slice()),
+                BlockNode::List(l) => {
+                    for item in &mut l.items {
+                        worklist.push(item.children.as_mut_slice());
                     }
                 }
+                BlockNode::DefinitionList(d) => {
+                    for item in &mut d.items {
+                        for def in &mut item.definitions {
+                            worklist.push(def.as_mut_slice());
+                        }
+                    }
+                }
+                _ => {}
             }
-            _ => {}
         }
     }
 }
@@ -14793,6 +18663,7 @@ fn collect_explicit_ids(blocks: &[BlockNode], out: &mut std::collections::BTreeS
             }
             BlockNode::BlockQuote(b) => collect_explicit_ids(&b.children, out),
             BlockNode::Admonition(a) => collect_explicit_ids(&a.children, out),
+            BlockNode::FigureGroup(g) => collect_explicit_ids(&g.children, out),
             BlockNode::Div(d) => collect_explicit_ids(&d.children, out),
             BlockNode::DefinitionList(d) => {
                 for item in &d.items {
@@ -14897,6 +18768,13 @@ fn collect_heading_titles(
                 explicit_ids,
                 in_blockquote,
             ),
+            BlockNode::FigureGroup(g) => collect_heading_titles(
+                &g.children,
+                scan,
+                lowercase_ids,
+                explicit_ids,
+                in_blockquote,
+            ),
             BlockNode::Div(d) => collect_heading_titles(
                 &d.children,
                 scan,
@@ -14917,7 +18795,7 @@ fn collect_heading_titles(
                     }
                 }
             }
-            BlockNode::Figure(f) => match &f.target {
+            BlockNode::Figure(f) => match &*f.target {
                 FigureTarget::BlockQuote(b) => {
                     collect_heading_titles(&b.children, scan, lowercase_ids, explicit_ids, true)
                 }
@@ -14941,7 +18819,7 @@ fn number_captioned_blocks(
             BlockNode::Table(t) => number_table_caption(t, counts, titles),
             BlockNode::Figure(f) => {
                 number_caption(&mut f.caption, f.attrs.as_ref(), counts, titles);
-                match &mut f.target {
+                match &mut *f.target {
                     FigureTarget::BlockQuote(b) => {
                         number_captioned_blocks(&mut b.children, counts, titles);
                     }
@@ -14949,6 +18827,35 @@ fn number_captioned_blocks(
                     FigureTarget::Image(_)
                     | FigureTarget::CodeBlock(_)
                     | FigureTarget::Paragraph(_) => {}
+                }
+            }
+            BlockNode::FigureGroup(group) => {
+                // THE GROUP IS ONE NUMBERING UNIT (§4c). Its caption draws
+                // first - before anything inside the body, matching the
+                // oracle - and that one draw is also what the panel ids
+                // register under, with a letter by panel order.
+                let drew = group.caption.as_mut().and_then(|caption| {
+                    number_caption(caption, group.attrs.as_ref(), counts, titles)
+                });
+                if let Some((label, number)) = &drew {
+                    register_panel_titles(&group.children, label, *number, titles);
+                }
+                // PANELS ARE NOT SEQUENCE UNITS: a panel's own caption draws
+                // nothing (a `#` there stays literal, §4c), but content
+                // inside a quote panel and every non-panel child numbers
+                // normally.
+                for child in &mut group.children {
+                    match child {
+                        BlockNode::Figure(f) => {
+                            if let FigureTarget::BlockQuote(b) = &mut *f.target {
+                                number_captioned_blocks(&mut b.children, counts, titles);
+                            }
+                        }
+                        BlockNode::Table(_) => {}
+                        other => {
+                            number_captioned_blocks(std::slice::from_mut(other), counts, titles)
+                        }
+                    }
                 }
             }
             BlockNode::List(l) => {
@@ -14981,18 +18888,18 @@ fn number_table_caption(
     }
 }
 
+/// Returns the label and number the caption drew, when it held a `#`
+/// placeholder - the figure group's arm derives its panels' crossref text
+/// from that draw (§4c).
 fn number_caption(
     caption: &mut [InlineNode],
     attrs: Option<&Attrs>,
     counts: &mut BTreeMap<String, usize>,
     titles: &mut BTreeMap<String, String>,
-) {
-    let Some(idx) = caption
+) -> Option<(String, usize)> {
+    let idx = caption
         .iter()
-        .position(|node| matches!(node, InlineNode::CaptionNumber(_)))
-    else {
-        return;
-    };
+        .position(|node| matches!(node, InlineNode::CaptionNumber(_)))?;
     let label = plain_inlines_parse(&caption[..idx])
         .trim_end_matches(char::is_whitespace)
         .to_string();
@@ -15007,6 +18914,47 @@ fn number_caption(
             .entry(id.clone())
             .or_insert_with(|| format!("{label} {number}"));
     }
+    Some((label, number))
+}
+
+/// A panel's crossref letter by its order among the group's panels: a..z,
+/// then aa, ab, ... (PART 9 §4c; the letters exist in crossref text only).
+fn panel_letter(index: usize) -> String {
+    let mut out = Vec::new();
+    let mut n = index + 1;
+    while n > 0 {
+        n -= 1;
+        out.push(b'a' + (n % 26) as u8);
+        n /= 26;
+    }
+    out.reverse();
+    String::from_utf8(out).expect("ascii letters")
+}
+
+/// Register a numbered group's panel ids as "Label N" plus a letter by panel
+/// order (§4c). Panels are the `Figure` and `Table` nodes among the group's
+/// direct children; an unnumbered group's panels stay plain anchors, exactly
+/// as an id on an uncaptioned figure does.
+fn register_panel_titles(
+    children: &[BlockNode],
+    label: &str,
+    number: usize,
+    titles: &mut BTreeMap<String, String>,
+) {
+    let mut panel_index = 0usize;
+    for child in children {
+        let id = match child {
+            BlockNode::Figure(f) => f.attrs.as_ref().and_then(|attrs| attrs.id.clone()),
+            BlockNode::Table(t) => t.attrs.as_ref().and_then(|attrs| attrs.id.clone()),
+            _ => continue,
+        };
+        if let Some(id) = id {
+            titles
+                .entry(id)
+                .or_insert_with(|| format!("{label} {number}{}", panel_letter(panel_index)));
+        }
+        panel_index += 1;
+    }
 }
 
 fn collect_caption_titles(blocks: &[BlockNode], titles: &mut BTreeMap<String, String>) {
@@ -15015,12 +18963,35 @@ fn collect_caption_titles(blocks: &[BlockNode], titles: &mut BTreeMap<String, St
             BlockNode::Table(t) => collect_table_caption_title(t, titles),
             BlockNode::Figure(f) => {
                 collect_caption_title(&f.caption, f.attrs.as_ref(), titles);
-                match &f.target {
+                match &*f.target {
                     FigureTarget::BlockQuote(b) => collect_caption_titles(&b.children, titles),
                     FigureTarget::Table(t) => collect_table_caption_title(t, titles),
                     FigureTarget::Image(_)
                     | FigureTarget::CodeBlock(_)
                     | FigureTarget::Paragraph(_) => {}
+                }
+            }
+            BlockNode::FigureGroup(g) => {
+                // The ingest twin of the group arm in `number_captioned_blocks`:
+                // read the number the group's caption already carries, register
+                // the group id and the panel letters from that one draw, and
+                // skip the panel captions exactly as the numbering pass does.
+                if let Some(caption) = &g.caption {
+                    collect_caption_title(caption, g.attrs.as_ref(), titles);
+                    if let Some((label, number)) = numbered_caption_draw(caption) {
+                        register_panel_titles(&g.children, &label, number, titles);
+                    }
+                }
+                for child in &g.children {
+                    match child {
+                        BlockNode::Figure(f) => {
+                            if let FigureTarget::BlockQuote(b) = &*f.target {
+                                collect_caption_titles(&b.children, titles);
+                            }
+                        }
+                        BlockNode::Table(_) => {}
+                        other => collect_caption_titles(std::slice::from_ref(other), titles),
+                    }
                 }
             }
             BlockNode::List(l) => {
@@ -15041,6 +19012,22 @@ fn collect_caption_titles(blocks: &[BlockNode], titles: &mut BTreeMap<String, St
             _ => {}
         }
     }
+}
+
+/// The label and number an ALREADY-NUMBERED caption carries, read without
+/// assigning anything - the ingest-side twin of `number_caption`'s return.
+fn numbered_caption_draw(caption: &[InlineNode]) -> Option<(String, usize)> {
+    let idx = caption
+        .iter()
+        .position(|node| matches!(node, InlineNode::CaptionNumber(_)))?;
+    let number = match &caption[idx] {
+        InlineNode::CaptionNumber(n) => n.number?,
+        _ => return None,
+    };
+    let label = plain_inlines_parse(&caption[..idx])
+        .trim_end_matches(char::is_whitespace)
+        .to_string();
+    Some((label, number))
 }
 
 fn collect_table_caption_title(table: &Table, titles: &mut BTreeMap<String, String>) {
@@ -15137,6 +19124,14 @@ fn coalesce_block(block: &mut BlockNode) {
                 coalesce_block(child);
             }
         }
+        BlockNode::FigureGroup(g) => {
+            if let Some(caption) = &mut g.caption {
+                coalesce_inlines(caption);
+            }
+            for child in &mut g.children {
+                coalesce_block(child);
+            }
+        }
         BlockNode::Div(d) => {
             for child in &mut d.children {
                 coalesce_block(child);
@@ -15183,7 +19178,7 @@ fn coalesce_block(block: &mut BlockNode) {
         }
         BlockNode::Figure(f) => {
             coalesce_inlines(&mut f.caption);
-            match &mut f.target {
+            match &mut *f.target {
                 FigureTarget::BlockQuote(b) => {
                     for child in &mut b.children {
                         coalesce_block(child);
@@ -15318,13 +19313,14 @@ pub(crate) fn unwrap_nested_anchors(children: &[InlineNode]) -> std::borrow::Cow
     }
 }
 
-/// The ONE spelling of "this link never resolved". Both readers of the rule use
-/// it - the fast path below and the fold itself - because they shadow each
-/// other: with the predicate written twice, flipping EITHER copy alone changes
-/// no output (the fast path short-circuits before the fold is reached, and the
-/// fold is not reached unless the fast path let it through), so a mutation on
-/// either comes back green while the pair is load-bearing.
-fn is_unresolved_reference(link: &Link) -> bool {
+/// The ONE spelling of "this link never resolved". Its readers shadow each
+/// other: the fast path below and the fold itself short-circuit in sequence, so
+/// with the predicate written twice, flipping EITHER copy alone changes no
+/// output and a mutation on either comes back green while the pair is
+/// load-bearing. The footnote numbering pass reads it for the same reason - it
+/// has to reach the same answer `render_link` does about the same node, and two
+/// spellings of that are two things to keep in step (PART 9R R2).
+pub(crate) fn is_unresolved_reference(link: &Link) -> bool {
     link.ref_label.is_some() && link.href.is_empty()
 }
 
@@ -15447,6 +19443,13 @@ fn plain_inlines_parse(nodes: &[InlineNode]) -> String {
             // An inline literal renders as visible prose (§27), so it feeds the
             // parse-time cross-reference slug like a code span does.
             InlineNode::LiteralInline(l) => out.push_str(&l.content),
+            // Math is verbatim text the reader sees, so it feeds the parse-time
+            // slug exactly as a code span does. MEASURED: this arm feeds PART 9R
+            // R1's `by_text` index, and `plain_inlines_typography` is the one the
+            // rendered id derives through. Without this one a heading published
+            // `id="a-x-b"` while `[a $`x` b][]` still resolved to `a-b`, linking
+            // to an anchor no element carried (carve#1283).
+            InlineNode::Math(m) => out.push_str(&m.content),
             InlineNode::Link(l) => out.push_str(&plain_inlines_parse(&l.children)),
             InlineNode::AutoLink(a) => out.push_str(&a.text),
             InlineNode::Image(i) => out.push_str(&i.alt),
@@ -15567,13 +19570,14 @@ fn stamp_heading_ids_in(blocks: &mut [BlockNode], next: &mut impl Iterator<Item 
             BlockNode::BlockQuote(b) => stamp_heading_ids_in(&mut b.children, next),
             BlockNode::Div(d) => stamp_heading_ids_in(&mut d.children, next),
             BlockNode::Admonition(a) => stamp_heading_ids_in(&mut a.children, next),
+            BlockNode::FigureGroup(g) => stamp_heading_ids_in(&mut g.children, next),
             BlockNode::List(l) => {
                 for item in l.items.iter_mut() {
                     stamp_heading_ids_in(&mut item.children, next);
                 }
             }
             BlockNode::Figure(f) => {
-                if let FigureTarget::BlockQuote(b) = &mut f.target {
+                if let FigureTarget::BlockQuote(b) = &mut *f.target {
                     stamp_heading_ids_in(&mut b.children, next);
                 }
             }
@@ -15839,6 +19843,163 @@ fn find_emphasis_close(bytes: &[u8], from: usize, delim: u8) -> Option<usize> {
         j += 1;
     }
     None
+}
+
+#[cfg(test)]
+mod container_comment_dedent_steps {
+    //! COUNTED guard on the container-comment dedent walk
+    //! (markup-carve/carve-rs#1047).
+    //!
+    //! Counted rather than timed, for the reason the module below it records at
+    //! length: a call count is a property of the algorithm and reproduces
+    //! byte-identically across runs and loads, while this repo's timing tests
+    //! had to be serialized against each other to stop them flaking.
+    //!
+    //! The subject is the shape the first version of the fix had. One container
+    //! can hold many comment openers, and answering "does this one close inside
+    //! its container" by walking forward from each meant walking the whole
+    //! container once per opener - O(m^3) work for an O(m^2) document, which is
+    //! exactly the class `comment_fence_close_index` exists to avoid for
+    //! column-0 openers.
+
+    use super::CONTAINER_DEDENT_STEPS;
+
+    /// Dedent-walk steps over one full parse-and-render of `src`, on its own
+    /// thread so the thread-local tally cannot pick up another test's.
+    fn steps_for(src: String) -> u64 {
+        std::thread::Builder::new()
+            .stack_size(16 * 1024 * 1024)
+            .spawn(move || {
+                CONTAINER_DEDENT_STEPS.with(|c| c.set(0));
+                let _ = crate::to_html(&src);
+                CONTAINER_DEDENT_STEPS.with(|c| c.get())
+            })
+            .expect("spawn the counting thread")
+            .join()
+            .expect("the counting thread parses without panicking")
+    }
+
+    /// `m` comment openers of distinct widths at one item's content column,
+    /// above `m * m` filler lines, with every matching closer only past the
+    /// dedent. Every opener therefore passes the document-wide "is there a
+    /// closer of this width later" test and none of them closes inside the
+    /// item, which is the worst case for the container bound.
+    ///
+    /// The work is the line count: a walk that visits the container once has to
+    /// grow with it, and one that visits it per opener cannot stay flat.
+    fn openers_over_one_container(m: usize) -> (String, u64) {
+        let mut out = String::from("- x\n");
+        for i in 0..m {
+            out.push_str("  ");
+            out.push_str(&"%".repeat(3 + i));
+            out.push_str(" o\n");
+        }
+        for _ in 0..m * m {
+            out.push_str("  filler line here\n");
+        }
+        for i in 0..m {
+            out.push_str(&"%".repeat(3 + i));
+            out.push('\n');
+        }
+        out.push_str("\n[r][]\n");
+        let lines = out.lines().count() as u64;
+        (out, lines)
+    }
+
+    /// The walk must cost steps in proportion to the DOCUMENT, not to openers
+    /// times container length.
+    ///
+    /// Three claims, in the shape `quote_prefix_calls` uses:
+    ///
+    /// 1. A zero count is valid in 0.2: once the item paragraph is open, every
+    ///    nonblank opener-shaped line is text and no dedent lookahead is needed.
+    /// 2. A ceiling, wide enough for honest drift: the two definition
+    ///    pre-passes each hold their own memo, so one walk of the container
+    ///    apiece is already two steps per line.
+    /// 3. The shape, which is the load-bearing half. A per-opener walk makes the
+    ///    per-line cost climb with `m` - measured at about 118 steps per line at
+    ///    m=60 against 238 at m=120 - while one walk per column per pre-pass
+    ///    holds it flat at about 2.
+    #[test]
+    fn many_openers_over_one_container_walk_it_once_apiece() {
+        let (small_src, small_lines) = openers_over_one_container(60);
+        let (large_src, large_lines) = openers_over_one_container(120);
+        let small_steps = steps_for(small_src);
+        let large_steps = steps_for(large_src);
+
+        assert!(
+            large_steps <= 8 * large_lines,
+            "{large_steps} steps over {large_lines} lines ({:.1} each): \
+             the container is being re-walked per opener",
+            large_steps as f64 / large_lines as f64,
+        );
+        assert!(
+            large_steps * small_lines * 10 <= small_steps * large_lines * 11,
+            "the per-line dedent cost climbs with size ({:.1} at {small_lines} lines, \
+             {:.1} at {large_lines}): the container is being re-walked per opener",
+            small_steps as f64 / small_lines as f64,
+            large_steps as f64 / large_lines as f64,
+        );
+    }
+
+    /// The same worst case one prefix over: `m` quoted openers of distinct
+    /// widths in ONE quote, above `m * m` quoted filler lines, with every
+    /// matching closer only past the blank that ends the quote.
+    ///
+    /// The quote bound (markup-carve/carve#1341) is a second forward walk, and a
+    /// new walk with no counted guard is a walk nobody would notice going
+    /// quadratic. Every opener passes the "is there a closer of this width and
+    /// depth later" test and none of them closes inside its quote, which is the
+    /// shape that makes a per-opener walk visible.
+    fn quoted_openers_over_one_quote(m: usize) -> (String, u64) {
+        let mut out = String::new();
+        for i in 0..m {
+            out.push_str("> ");
+            out.push_str(&"%".repeat(3 + i));
+            out.push_str(" o\n");
+        }
+        for _ in 0..m * m {
+            out.push_str("> filler line here\n");
+        }
+        out.push('\n');
+        for i in 0..m {
+            out.push_str("> ");
+            out.push_str(&"%".repeat(3 + i));
+            out.push('\n');
+        }
+        out.push_str("\n[r][]\n");
+        let lines = out.lines().count() as u64;
+        (out, lines)
+    }
+
+    /// The three claims `many_openers_over_one_container_walk_it_once_apiece`
+    /// makes, for the blank-line bound: a floor so a dead counter cannot pass,
+    /// a ceiling, and the flat per-line shape that a per-opener walk cannot hold.
+    #[test]
+    fn many_quoted_openers_over_one_quote_walk_it_once_apiece() {
+        let (small_src, small_lines) = quoted_openers_over_one_quote(60);
+        let (large_src, large_lines) = quoted_openers_over_one_quote(120);
+        let small_steps = steps_for(small_src);
+        let large_steps = steps_for(large_src);
+
+        assert!(
+            small_steps > 0 && large_steps > 0,
+            "the blank-walk counter is dead: {small_steps} and {large_steps} steps",
+        );
+        assert!(
+            large_steps <= 8 * large_lines,
+            "{large_steps} steps over {large_lines} lines ({:.1} each): \
+             the quote is being re-walked per opener",
+            large_steps as f64 / large_lines as f64,
+        );
+        assert!(
+            large_steps * small_lines * 10 <= small_steps * large_lines * 11,
+            "the per-line blank-walk cost climbs with size ({:.1} at {small_lines} lines, \
+             {:.1} at {large_lines}): the quote is being re-walked per opener",
+            small_steps as f64 / small_lines as f64,
+            large_steps as f64 / large_lines as f64,
+        );
+    }
 }
 
 #[cfg(test)]
@@ -16129,5 +20290,80 @@ mod footnote_body_floor_unit {
         // spellings, so the constant is pinned on its own.
         assert_eq!(footnote_body_floor("[^a]: x"), 2);
         assert_eq!(footnote_body_floor("    [^a]: x"), 6);
+    }
+}
+
+#[cfg(test)]
+mod promote_block_images_is_iterative {
+    use super::promote_block_images;
+    use crate::ast::{BlockNode, Div};
+
+    /// Nest `depth` divs, innermost first, and return the outer level.
+    fn nested_divs(depth: usize) -> Vec<BlockNode> {
+        let mut children: Vec<BlockNode> = Vec::new();
+        for _ in 0..depth {
+            children = vec![BlockNode::Div(Div {
+                attrs: None,
+                label: None,
+                children,
+                pos: None,
+            })];
+        }
+        children
+    }
+
+    /// Nothing pinned that this pass descends into a BLOCK QUOTE.
+    ///
+    /// Found by mutation while turning the pass into a worklist: drop the
+    /// `BlockNode::BlockQuote` arm and all 155 corpus tests still pass, as do
+    /// `reference_image_fmt`, `unresolved_reference_shape`,
+    /// `caption_inside_a_list_item`, `non_html_parity` and
+    /// `position_spans_match_source`. The behavior does change - the quote
+    /// publishes `<p><img ...></p>` instead of a bare block image - so the
+    /// descent set was live and simply unpinned. Every other arm has a corpus
+    /// document behind it; this one did not.
+    #[test]
+    fn a_resolved_reference_image_promotes_inside_a_block_quote() {
+        let html = crate::to_html("> ![a][i]\n\n[i]: p.png\n");
+        assert!(
+            !html.contains("<p>"),
+            "the sole image in the quote must promote to a block image, got: {html}"
+        );
+        assert!(
+            html.contains("<img src=\"p.png\" alt=\"a\">"),
+            "got: {html}"
+        );
+    }
+
+    /// THE PROOF that the pass costs no native stack per level.
+    ///
+    /// The thread's stack is 256 KiB and the tree is 4000 levels deep. The
+    /// recursive spelling this pass had until markup-carve/carve-wasm#44 spent
+    /// about 1.4 KiB of stack per level, so it needed roughly 5.5 MiB here and
+    /// aborted the process; the worklist spelling needs a constant frame and a
+    /// heap vector. Revert `promote_block_images` to recursion and this test
+    /// takes the whole run down with it, which is what makes it load-bearing.
+    ///
+    /// 4000 levels is far past `MAX_NESTING_DEPTH`, and deliberately so. The
+    /// pass runs only over parser-produced trees, so 200 is the real ceiling
+    /// and 200 recursive levels would still fit a test thread - the depth here
+    /// is chosen so the difference between the two spellings cannot be read as
+    /// measurement noise.
+    ///
+    /// The tree is leaked rather than dropped. Teardown is compiler-generated
+    /// recursive drop glue and would overflow on its own, which would prove
+    /// nothing about this pass.
+    #[test]
+    fn a_four_thousand_level_tree_survives_a_small_stack() {
+        let worker = std::thread::Builder::new()
+            .stack_size(256 * 1024)
+            .spawn(|| {
+                let mut blocks = nested_divs(4000);
+                promote_block_images(&mut blocks, false);
+                promote_block_images(&mut blocks, true);
+                std::mem::forget(blocks);
+            })
+            .expect("spawn");
+        worker.join().expect("the pass must not overflow the stack");
     }
 }

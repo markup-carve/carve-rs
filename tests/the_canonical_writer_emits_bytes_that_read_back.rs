@@ -92,7 +92,7 @@ fn a_header_cell_does_not_hand_its_first_character_to_the_alignment_reader() {
         "the premise: nothing here is aligned - {}",
         html(src)
     );
-    assert_eq!(fmt(src), "|= ~x~|\n| y |\n");
+    assert_eq!(fmt(src), "|= ~x~ |\n| y |\n");
     assert!(round_trips(src), "{}", fmt(src));
 }
 
@@ -113,11 +113,10 @@ fn the_other_two_alignment_sigils_answer_the_same_way() {
 }
 
 #[test]
-fn control_an_ordinary_header_cell_stays_glued() {
+fn control_the_header_marker_stays_glued_to_the_pipe() {
     // The `=` is only a header marker while it is GLUED to the pipe, so the
-    // separator must go AFTER it and never before it, and must not appear at all
-    // when nothing can merge.
-    assert_eq!(fmt("| a |\n|---|\n| y |\n"), "|=a|\n| y |\n");
+    // padding goes AFTER the prefix and never before it (PART 11 §6e).
+    assert_eq!(fmt("| a |\n|---|\n| y |\n"), "|= a |\n| y |\n");
     assert!(round_trips("| a |\n|---|\n| y |\n"));
 }
 
@@ -132,15 +131,15 @@ fn control_a_header_cell_that_already_carries_alignment_stays_glued() {
 }
 
 #[test]
-fn a_cell_that_already_carries_alignment_keeps_its_sigil_content_glued() {
-    // THE `align.is_empty()` CONDITION IS ABOUT THE BYTES, not about the round
-    // trip: with an alignment marker already in the prefix the reader trims the
-    // padding after it, so a separator here would round-trip too. What it would
-    // not do is stay canonical - `|~ ~x~|` carries a space nothing asked for,
-    // and `fmt` writes one form per document. Both spellings are asserted, with
-    // and without the header marker.
-    for src in ["|~~x~|\n| y |\n", "|=~~x~|\n| y |\n"] {
-        assert_eq!(fmt(src), src, "for {src:?}");
+fn a_cell_that_already_carries_alignment_pads_its_sigil_content() {
+    // The prefix has consumed the reader's alignment slot here, so the content
+    // could have been written glued and still round-trip. It is padded anyway:
+    // PART 11 §6e is about every cell, and one form per document is the point.
+    for (src, want) in [
+        ("|~ ~x~|\n| y |\n", "|~ ~x~ |\n| y |\n"),
+        ("|=~ ~x~|\n| y |\n", "|=~ ~x~ |\n| y |\n"),
+    ] {
+        assert_eq!(fmt(src), want, "for {src:?}");
         assert!(round_trips(src), "for {src:?}");
         assert!(html(src).contains("<s>x</s>"), "the premise: {}", html(src));
     }

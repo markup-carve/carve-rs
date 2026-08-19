@@ -255,38 +255,39 @@ fn inline_footnote_quote_state_is_isolated() {
 #[test]
 fn glued_table_cell_attributes() {
     let row1 = |s: &str| carve::to_html(s).lines().nth(1).unwrap_or("").to_string();
-    // glued `{...}` after the pipe sets the cell's attributes; rest is content.
+    // Glued `{...}` after the pipe sets the cell's attributes; rest is content.
+    // PART 10 §T9 also gives every head-row `<th>` its default `scope="col"`.
     assert_eq!(
         row1("|{.x} hi | b |\n|---|---|\n| c | d |"),
-        "  <thead><tr><th class=\"x\">hi</th><th>b</th></tr></thead>"
+        "  <thead><tr><th scope=\"col\" class=\"x\">hi</th><th scope=\"col\">b</th></tr></thead>"
     );
     assert_eq!(
         row1("|{#id .a key=v} hi | b |\n|---|---|\n| c | d |"),
-        "  <thead><tr><th id=\"id\" class=\"a\" key=\"v\">hi</th><th>b</th></tr></thead>"
+        "  <thead><tr><th scope=\"col\" id=\"id\" class=\"a\" key=\"v\">hi</th><th scope=\"col\">b</th></tr></thead>"
     );
     // a SPACE before the brace is ordinary content.
     assert_eq!(
         row1("| {.x} hi | b |\n|---|---|\n| c | d |"),
-        "  <thead><tr><th>{.x} hi</th><th>b</th></tr></thead>"
+        "  <thead><tr><th scope=\"col\">{.x} hi</th><th scope=\"col\">b</th></tr></thead>"
     );
     // an attributed cell is not a bare span marker; partial-invalid stays literal;
     // a quoted brace in a value is handled.
     assert_eq!(
         row1("|{.x} < | b |\n|---|---|\n| c | d |"),
-        "  <thead><tr><th class=\"x\">&lt;</th><th>b</th></tr></thead>"
+        "  <thead><tr><th scope=\"col\" class=\"x\">&lt;</th><th scope=\"col\">b</th></tr></thead>"
     );
     assert_eq!(
         row1("|{.x 1bad} hi | b |\n|---|---|\n| c | d |"),
-        "  <thead><tr><th>{.x 1bad} hi</th><th>b</th></tr></thead>"
+        "  <thead><tr><th scope=\"col\">{.x 1bad} hi</th><th scope=\"col\">b</th></tr></thead>"
     );
     assert_eq!(
         row1("|{key=\"{y}\"} hi | b |\n|---|---|\n| c | d |"),
-        "  <thead><tr><th key=\"{y}\">hi</th><th>b</th></tr></thead>"
+        "  <thead><tr><th scope=\"col\" key=\"{y}\">hi</th><th scope=\"col\">b</th></tr></thead>"
     );
     // an ESCAPED leading brace is literal content, not a cell attribute block.
     assert_eq!(
         row1("|\\{.x} hi | b |\n|---|---|\n| c | d |"),
-        "  <thead><tr><th>{.x} hi</th><th>b</th></tr></thead>"
+        "  <thead><tr><th scope=\"col\">{.x} hi</th><th scope=\"col\">b</th></tr></thead>"
     );
     // a computed rowspan wins over an author copy (body rows).
     let html = carve::to_html("| a | b |\n| c | d |\n|{rowspan=9}e| f |\n| ^ | h |\n");

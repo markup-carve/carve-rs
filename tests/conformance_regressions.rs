@@ -88,6 +88,14 @@ fn all_space_code_span_does_not_strip_or_panic() {
     assert_eq!(html("`  a  `\n"), "<p><code> a </code></p>");
 }
 
+/// Two attributes need a separator between them: `attribute_list` is
+/// `attribute, {space+, attribute}` (PART 7), so an adjacent pair is one
+/// malformed item and the whole block stays literal (PART 9 §14).
+///
+/// This test asserted the opposite until the rule was ruled on. It was added in
+/// #136 as a conformance regression against carve-js, which accepted the pair -
+/// so it pinned an engine agreement rather than the language, and the
+/// executable spec refused these shapes the whole time.
 #[test]
 fn adjacent_span_ids_and_classes_are_all_parsed() {
     assert_eq!(html("[a]{#j}\n"), "<p><span id=\"j\">a</span></p>");
@@ -442,7 +450,7 @@ fn table_inside_list_item() {
             "<ul>\n",
             "  <li>\n",
             "    <table>\n",
-            "      <thead><tr><th>a</th><th>b</th></tr></thead>\n",
+            "      <thead><tr><th scope=\"col\">a</th><th scope=\"col\">b</th></tr></thead>\n",
             "    </table>\n",
             "  </li>\n",
             "</ul>"
@@ -639,7 +647,11 @@ fn inline_extension_name_content_and_class_merge() {
         html(":foo[a]{.cls}\n"),
         "<p><span class=\"ext-foo cls\">a</span></p>"
     );
-    // Id / key-values from the attribute block still render (after the class).
+    // Id / key-values render in SOURCE order, and the structural class merges
+    // at the author's class slot rather than ahead of everything - so an id
+    // written before a class stays before it (PART 10 §1, carve#1164). This
+    // used to assert `class` first, which reordered the author's attributes and
+    // disagreed with carve-js.
     assert_eq!(
         html(":foo[a]{#id .cls}\n"),
         "<p><span class=\"ext-foo cls\" id=\"id\">a</span></p>"

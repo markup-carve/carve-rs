@@ -93,6 +93,8 @@ fn render_ansi_inner(
     SMART_TYPOGRAPHY.with(|cell| cell.set(smart_typography));
     let _abbr_guard = crate::abbr_budget::AbbrBudgetGuard::for_document(doc);
     let mut ctx = AnsiContext {
+        consumed_abbreviations: crate::render_text::consumed_abbreviation_definitions(doc),
+        suppress_automatic_abbreviation: false,
         list_depth: 0,
         block_quote_depth: 0,
         ordered: Vec::new(),
@@ -106,6 +108,12 @@ fn render_ansi_inner(
 }
 
 struct AnsiContext {
+    /// The `(term, expansion)` pairs this render emits an expansion for, so the
+    /// definitions that supplied them can drop their line (PART 11 §10f).
+    consumed_abbreviations: crate::render_text::ConsumedAbbreviations,
+    /// Set while rendering a span that carries an authored `abbr` (carve#1127,
+    /// carve#1176). See the Markdown renderer's field for the reasoning.
+    suppress_automatic_abbreviation: bool,
     list_depth: usize,
     block_quote_depth: usize,
     ordered: Vec<usize>,
@@ -156,7 +164,7 @@ fn render_block(node: &BlockNode, ctx: &mut AnsiContext, depth: usize) -> String
     }
     match node {
         // Renders nothing: a definition line is not prose.
-        BlockNode::LinkReferenceDefinition(_) => String::new(),
+        BlockNode::LinkReferenceDefinition(_) | BlockNode::CitationDefinition(_) => String::new(),
         BlockNode::Heading(heading) => {
             render_heading(heading.level, &render_block_inlines(&heading.children, ctx))
         }
@@ -170,7 +178,14 @@ fn render_block(node: &BlockNode, ctx: &mut AnsiContext, depth: usize) -> String
         }
         BlockNode::CodeBlock(code) => {
             let lang = code.lang.as_deref().map(strip_terminal_controls);
-            render_code_block(&strip_terminal_controls(&code.content), lang.as_deref())
+            let title = code.title.as_deref().map(strip_terminal_controls);
+            let label = code.label.as_deref().map(strip_terminal_controls);
+            render_code_block(
+                &strip_terminal_controls(&code.content),
+                lang.as_deref(),
+                title.as_deref(),
+                label.as_deref(),
+            )
         }
         BlockNode::BlockQuote(quote) => {
             ctx.block_quote_depth += 1;
@@ -216,6 +231,7 @@ fn render_block(node: &BlockNode, ctx: &mut AnsiContext, depth: usize) -> String
             render_definition_list(&list.items, ctx, true, depth + 1)
         }
         BlockNode::Figure(figure) => render_figure(figure, ctx, depth + 1),
+        BlockNode::FigureGroup(group) => render_figure_group(group, ctx, depth + 1),
         // Terminate the block image so the next block is not glued onto it.
         BlockNode::BlockImage(image) => format!("{}\n\n", render_image(image)),
         BlockNode::RawBlock(raw) => format!(
@@ -230,18 +246,30 @@ fn render_block(node: &BlockNode, ctx: &mut AnsiContext, depth: usize) -> String
             )
         ),
         BlockNode::Extension(extension) => render_blocks(&extension.children, ctx, depth + 1),
-        // PART 10 §10a - see the note in render_markdown.
-        BlockNode::AbbreviationDef(def) => format!(
-            "{}\n\n",
-            style(
-                &format!(
-                    "*[{}]: {}",
-                    strip_terminal_controls(&def.abbr),
-                    strip_terminal_controls(&def.expansion)
-                ),
-                DIM
+        // PART 11 §10a keeps the UNUSED definition here - see the note in
+        // render_markdown. §10f then splits the CONSUMED one by target: this
+        // one drops the line, because it already writes `TERM (expansion)` at
+        // every occurrence and the words would otherwise be emitted twice.
+        // Markdown keeps it, and the canonical writer must.
+        BlockNode::AbbreviationDef(def) => {
+            if ctx
+                .consumed_abbreviations
+                .contains(&(def.abbr.clone(), def.expansion.clone()))
+            {
+                return String::new();
+            }
+            format!(
+                "{}\n\n",
+                style(
+                    &format!(
+                        "*[{}]: {}",
+                        strip_terminal_controls(&def.abbr),
+                        strip_terminal_controls(&def.expansion)
+                    ),
+                    DIM
+                )
             )
-        ),
+        }
         BlockNode::Comment(_) => String::new(),
     }
 }
@@ -264,8 +292,26 @@ fn render_heading(level: u8, content: &str) -> String {
     format!("{out}\n\n")
 }
 
-fn render_code_block(content: &str, lang: Option<&str>) -> String {
+fn render_code_block(
+    content: &str,
+    lang: Option<&str>,
+    title: Option<&str>,
+    label: Option<&str>,
+) -> String {
     let mut out = String::new();
+    // PART 11 §10e T1. A fence's title (`"src/app.js"`) and grouping label
+    // (`[Node]`) render the way a fenced div's already do on this target: a BOLD
+    // STANDALONE LINE each, above the block, title before label. Both used to
+    // join the rule line instead, and §10e considered that and rejected it - the
+    // rule line exists only when the fence has a LANGUAGE, so a titled fence
+    // without one would have needed a header invented for it, and a fence
+    // carrying both tokens would have needed a separator invented too. The
+    // language keeps the rule line to itself.
+    for token in [title, label] {
+        if let Some(token) = token.filter(|value| !value.is_empty()) {
+            out.push_str(&format!("{}\n\n", style(token, BOLD)));
+        }
+    }
     if let Some(lang) = lang {
         out.push_str(&format!("{}\n", style(&format!("┌── {lang} "), DIM)));
     }
@@ -488,12 +534,66 @@ fn table_row(cells: &[RenderedCell], widths: &[usize]) -> String {
     format!("{sep}{}{sep}\n", parts.join(&sep))
 }
 
+/// PART 11 §10g T2, same shape as the plain-text target: group caption first
+/// (styled like every caption on this target), then each panel's caption line
+/// over its host's usual degradation, stray content in place, a blank line
+/// between the pieces.
+fn render_figure_group(node: &FigureGroup, ctx: &mut AnsiContext, depth: usize) -> String {
+    if depth > MAX_RENDER_DEPTH {
+        crate::render_depth::record("ansi");
+        return String::new();
+    }
+    let caption_style = ITALIC.to_string() + DIM;
+    let mut parts: Vec<String> = Vec::new();
+    if let Some(caption) = &node.caption {
+        parts.push(style(
+            trim_non_nbsp(&render_block_inlines(caption, ctx)),
+            &caption_style,
+        ));
+    }
+    for child in &node.children {
+        match child {
+            BlockNode::Figure(figure) => {
+                let caption = style(
+                    trim_non_nbsp(&render_block_inlines(&figure.caption, ctx)),
+                    &caption_style,
+                );
+                let target = render_figure_target(figure, ctx, depth);
+                parts.push(format!("{caption}\n{target}"));
+            }
+            other => {
+                let piece = render_block(other, ctx, depth);
+                let piece = piece.trim_end();
+                if !piece.is_empty() {
+                    parts.push(piece.to_string());
+                }
+            }
+        }
+    }
+    if parts.is_empty() {
+        return String::new();
+    }
+    format!("{}\n\n", parts.join("\n\n"))
+}
+
 fn render_figure(node: &Figure, ctx: &mut AnsiContext, depth: usize) -> String {
     if depth > MAX_RENDER_DEPTH {
         crate::render_depth::record("ansi");
         return String::new();
     }
-    let target = match &node.target {
+    let target = render_figure_target(node, ctx, depth);
+    let sep = match &*node.target {
+        FigureTarget::BlockQuote(_) => "\n\n",
+        _ => "\n",
+    };
+    format!("{target}{sep}{}", render_caption(&node.caption, ctx))
+}
+
+/// A figure's TARGET degraded on its own, without the caption - shared by the
+/// plain figure and the figure group, whose panels put the caption FIRST
+/// (§10g T2).
+fn render_figure_target(node: &Figure, ctx: &mut AnsiContext, depth: usize) -> String {
+    match &*node.target {
         FigureTarget::Image(image) => render_image(image),
         FigureTarget::Table(table) => render_table(table, ctx).trim_end().to_string(),
         FigureTarget::BlockQuote(quote) => {
@@ -511,12 +611,7 @@ fn render_figure(node: &Figure, ctx: &mut AnsiContext, depth: usize) -> String {
                 .trim_end()
                 .to_string()
         }
-    };
-    let sep = match &node.target {
-        FigureTarget::BlockQuote(_) => "\n\n",
-        _ => "\n",
-    };
-    format!("{target}{sep}{}", render_caption(&node.caption, ctx))
+    }
 }
 
 fn render_caption(nodes: &[InlineNode], ctx: &mut AnsiContext) -> String {
@@ -535,7 +630,7 @@ fn render_footnote_defs(doc: &Document, ctx: &mut AnsiContext) -> String {
     for (label, blocks) in crate::ast_json::footnote_defs_in_source_order(doc) {
         out.push_str(&format!(
             "{} {}\n",
-            // The marker as written (PART 10 §10a): the caret is the construct.
+            // The marker as written (PART 11 §10a): the caret is the construct.
             style(
                 &format!("[^{}]", strip_terminal_controls(label)),
                 &(FG_CYAN.to_string() + DIM)
@@ -630,7 +725,31 @@ fn render_inline(node: &InlineNode, ctx: &mut AnsiContext, depth: usize) -> Stri
             out
         }
         InlineNode::Image(image) => render_image(image),
-        InlineNode::Span(span) => render_inlines(&span.children, ctx, depth + 1),
+        InlineNode::Span(span) => {
+            // ANSI has no markup to carry a title, so an authored `abbr` renders
+            // as parenthetical text - the same shape this target already uses
+            // for an ordinary expansion, carrying the AUTHORED value.
+            let authored = span
+                .attrs
+                .as_ref()
+                .and_then(|a| a.key_values.get("abbr"))
+                .cloned();
+            let Some(authored) = authored else {
+                return render_inlines(&span.children, ctx, depth + 1);
+            };
+            let previous = ctx.suppress_automatic_abbreviation;
+            ctx.suppress_automatic_abbreviation = true;
+            let inner = render_inlines(&span.children, ctx, depth + 1);
+            ctx.suppress_automatic_abbreviation = previous;
+            if authored.is_empty() || !crate::abbr_budget::try_spend(authored.len()) {
+                return inner;
+            }
+            format!(
+                "{}{}",
+                inner,
+                style(&format!(" ({})", strip_terminal_controls(&authored)), DIM)
+            )
+        }
         InlineNode::Math(math) => style(&strip_terminal_controls(&math.content), FG_BRIGHT_MAGENTA),
         InlineNode::RawInline(_) => String::new(),
         // §27: always emitted (unlike raw passthrough above). It is prose, not
@@ -652,6 +771,11 @@ fn render_inline(node: &InlineNode, ctx: &mut AnsiContext, depth: usize) -> Stri
             // the budget is exhausted, drop the `(EXPANSION)` suffix and emit
             // the plain key only.
             let key = strip_terminal_controls(&abbr.abbr);
+            // Inside a span carrying its own `abbr`, only the visible text
+            // (carve#1127).
+            if ctx.suppress_automatic_abbreviation {
+                return key;
+            }
             if crate::abbr_budget::try_spend(abbr.expansion.len()) {
                 format!(
                     "{}{}",

@@ -22,6 +22,50 @@ taken), but it is imported as `carve` and its CLI binary is `carve`:
 let html = carve::to_html("# Hello /Carve/");
 ```
 
+HTML migration is available through `html_to_ast` and `html_to_carve`. Both
+return the value plus ordered loss diagnostics and accept safe, semantic, and
+trusted-roundtrip policies. The CLI equivalent is:
+
+```sh
+carve migrate --from html --mode safe --report report.json input.html
+```
+
+A `<math>` element is read for the TeX it already carries: a `<semantics>`
+annotation declaring `application/x-tex`, `text/x-tex` or `LaTeX`, else
+`alttext` with the assumption reported. There is no MathML-to-TeX converter
+here by decision (carve#1210 D6), so an element carrying neither is dropped
+with a warning in `safe` and `semantic` and preserved verbatim in
+`roundtrip` - its children are a token stream, and concatenating them reads
+`<mfrac><mn>1</mn><mn>2</mn></mfrac>` as `12` rather than as one half.
+
+`--adapter word` and `--adapter google-docs` add one recognition the `generic`
+default does not risk: footnote-shaped HTML. A word processor writes a note as
+a body anchor and a definition block that link to each other, and none of them
+uses the `doc-noteref` / `doc-endnotes` roles a Carve engine writes, so under
+`generic` a note arrives as a literal link beside an orphaned list. Under those
+two adapters the pair is matched through the fragment each anchor addresses and
+written back as a footnote reference and definition, whatever the ids are
+called - Word's `_ftnref1`/`_ftn1`, Google Docs' `ftnt_ref1`/`ftnt1`,
+LibreOffice's `sdfootnote1anc`/`sdfootnote1sym` and Pandoc's `fnref1`/`fn1` all
+pair by the same rule. Back-links, the marker anchors they sit on, and the rule
+separating the notes from the body are generated navigation and are dropped. A
+reference whose target is missing stays a link, and a definition nothing
+references stays ordinary content rather than becoming a definition that renders
+as nothing. Name the adapter only for input you know came from that editor: on
+arbitrary HTML a mutually linked anchor pair is not proof of a footnote, which
+is why `generic` stays out.
+
+Markdown migration is `markdown_to_ast` and `markdown_to_carve`, or
+`carve migrate --from markdown input.md`. It parses the source to a tree and
+writes it canonically, so the output is the document rather than the author's
+spelling: a setext heading comes back as `#`, an indented code block as a
+fence. There is no mode or report, because nothing is dropped - the
+`--mode`/`--adapter`/`--report` options belong to HTML.
+
+Djot migration is `djot_to_carve`, or `carve migrate --from djot input.dj`. It
+rewrites the delimiters that differ between the two languages, and like
+Markdown it has no mode or report.
+
 ## Status
 
 The crate passes every `.crv` / `.html` pair currently checked into its
@@ -47,6 +91,7 @@ new corpus pairs fail CI until the parser and renderer support them.
 | 16 | inline extensions (`:type[…]`) | passing |
 | 17 | attribute blocks (`{#id .class}`) | passing |
 | 18 | YAML frontmatter | passing |
+| 318-composite-figures | `::: figure` groups: panels, group caption on the closer, `Figure 2a` crossrefs | passing |
 
 ## Library use
 
@@ -67,6 +112,47 @@ Besides HTML, the crate renders the same AST to Markdown, plain text, and
 ANSI-styled text via `carve::to_markdown`, `carve::to_plain_text`, and
 `carve::to_ansi` (each with a matching `render_*` function for a parsed
 `Document`).
+
+### Linting
+
+`carve::lint_carve` reports silent degradations - places where a document parses
+and renders without error, but something the author wrote does not reach the
+output. It returns a `Vec<LintWarning>`, each carrying a stable `rule` id shared
+with carve-js and carve-php, a message, a 1-based line and column, and byte
+offsets into the source you passed.
+
+```rust
+let warnings = carve::lint_carve("`c`{kbd}\n");
+assert_eq!(warnings[0].rule, "semantic-attribute-outside-span");
+```
+
+The compact semantic span attribute rules (spec PART 9 §10):
+
+| rule | fires on |
+| --- | --- |
+| `semantic-attribute-value-ignored` | a value on a reserved name that only selects a wrapper: `[x]{kbd="V"}` renders `<kbd>x</kbd>` and `V` reaches no output |
+| `semantic-attribute-outside-span` | a reserved name anywhere other than an ordinary `[content]{attrs}` span, where it stays a raw attribute: `` `c`{kbd} `` renders `<code kbd="">c</code>` |
+
+The composite-figure rules (spec PART 9 §4c):
+
+| rule | fires on |
+| --- | --- |
+| `figure-group-opener-metadata` | a `::: figure` opener carrying a quoted title or a `[label]`, which stays a generic container - the group has no title or label slot |
+| `figure-group-nested` | a bare `::: figure` opener inside an open group's body, which stays a generic container - groups do not nest |
+| `figure-group-panel-number` | a `#` placeholder in a PANEL caption, which stays literal - panels are not sequence units |
+
+Both are tier-aware. `abbr`, `time` and `kbd` are reserved in core; `samp`,
+`var`, `cite` and `dfn` only become elements once the `SemanticSpan` extension
+is registered, and until then they are ordinary attributes whose value reaches
+the output intact. Pass the same `Options` you render with so the diagnostics
+describe the output you will actually get:
+
+```rust
+let warnings = carve::lint_carve_with_options(source, &options);
+```
+
+`cite` on a block quote is a valid HTML URL attribute and is deliberately not
+reported.
 
 ### Section wrappers
 
@@ -96,6 +182,44 @@ cross-references, implicit `[Heading][]` references and heading numbering all
 resolve against the slug rather than the element carrying it. The endnotes
 `<section role="doc-endnotes">` is a separate construct and is still emitted.
 The option is HTML-only - no other target emits `<section>`.
+
+### ProseMirror / Tiptap
+
+The AST converts to a ProseMirror document and back, so a Tiptap editor and this
+engine can share one stored document:
+
+```rust
+let doc = carve::parse(source);
+let editor = carve::to_prosemirror(&doc);
+let back = carve::from_prosemirror(&editor.json)?;
+```
+
+Node and mark names come from the map carve-grammars publishes, vendored under
+`resources/` with the commit it was copied from, rather than restated here - the
+same arrangement carve-php uses. Every name in the conversion is read from it;
+none is written out, and a test fails if one is.
+
+The editor model is smaller than Carve's AST, so `to_prosemirror` reports what
+it could not carry rather than losing it quietly:
+
+```rust
+let editor = carve::to_prosemirror(&doc);
+if !editor.dropped.is_empty() || !editor.degraded.is_empty() {
+    // `dropped` - the content is gone.
+    // `degraded` - the node type is gone, its text survives: a soft break
+    //   becomes a space, an escape becomes the character it escaped.
+}
+```
+
+An application that stores what the editor returns should assert both are empty
+before saving. Going the other way, a ProseMirror name the map does not know is
+an **error**, not a skip: an editor that grew a node type nobody mapped is
+exactly where a quiet skip destroys the most content.
+
+On the shared corpus, 791 documents report nothing lost and round-trip to
+byte-identical HTML; 215 report what they lost. The spec's
+[format bridges](https://markup-carve.github.io/carve/format-bridges) page has
+the reasoning behind the arrangement.
 
 ## Untrusted input
 
@@ -153,6 +277,19 @@ Runnable version of all of the above, including what a rejection looks like:
 
 ## Extensions
 
+Nine semantic inline names are built in and need no registration: `abbr`,
+`cite`, `dfn`, `kbd`, `samp`, `var`, `time`, `code`, and `mark`.
+`:name[content]{attrs}` remains an ordinary inline-extension AST node and maps
+to the same-named HTML element; unknown names retain the generic
+`<span class="ext-name">` fallback. Plain and ANSI render only the content.
+
+The same registry has compact span-attribute sugar: `[Ctrl]{kbd}` and
+`[HTML]{abbr="HyperText Markup Language"}`. Attributes can combine, for example
+`[CSS]{dfn abbr="Cascading Style Sheets"}`; non-semantic attributes remain on
+one outer span.
+`:cite[…]` is distinct from bibliographic `[@key]` citations, and `:abbr[…]`
+does not declare an automatic abbreviation.
+
 Opt-in extensions implement `CarveExtension` and are passed through `Options`.
 An extension can add inline/block matchers, run `after_parse` and
 `before_render` AST transforms, and override renderers for extension nodes such
@@ -183,6 +320,17 @@ let kbd = Kbd;
 let options = Options::new().with_extension(&kbd);
 let html = carve::to_html_with_options("Press :kbd[Ctrl].", &options);
 assert_eq!(html, "<p>Press <kbd>Ctrl</kbd>.</p>");
+```
+
+Locale-specific quote glyphs are also an opt-in extension:
+
+```rust
+use carve::{Options, SmartQuotes};
+
+let quotes = SmartQuotes::new("de");
+let options = Options::new().with_extension(&quotes);
+let html = carve::to_html_with_options("\"Hallo\"", &options);
+assert_eq!(html, "<p>„Hallo“</p>");
 ```
 
 ### Built-in extensions
@@ -432,7 +580,17 @@ carve --markdown README.crv         # Markdown
 carve --plain README.crv            # plain text
 carve --ansi README.crv             # ANSI-colored terminal text
 echo '# Hello' | carve              # render from stdin
+carve merge base.crv ours.crv theirs.crv # structural three-way merge
 ```
+
+The library exports `merge_ast`, `merge_ast_with_resolver`, `create_ast_patch`,
+and `apply_ast_patch` for the same workflow over typed `Document` values. A
+resolver can select base, ours, theirs, or a JSON-encoded replacement for each
+conflict. `ast_patch_to_json` and `ast_patch_from_json` exchange the same
+`{op,path,value}` wire format as the JS and PHP engines. The merge combines
+independent field edits, insertions, deletions, and moves, while unresolved
+ambiguous edits are returned as JSON-Pointer conflicts. Derived position
+metadata is intentionally regenerated after serialization.
 
 Other options:
 

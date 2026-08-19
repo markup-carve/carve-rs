@@ -152,12 +152,7 @@ fn bare_image_alone_is_block() {
 }
 
 #[test]
-fn bare_image_before_a_heading_stays_in_the_open_paragraph() {
-    assert_eq!(h("![a](/u)\n# H"), "<p><img src=\"/u\" alt=\"a\">\n# H</p>");
-}
-
-#[test]
-fn bare_image_before_a_blank_and_heading_stays_standalone() {
+fn bare_image_before_interrupter_stays_standalone() {
     assert_eq!(
         h("![a](/u)\n\n# H"),
         "<img src=\"/u\" alt=\"a\">\n<section id=\"H\">\n  <h1>H</h1>\n</section>"

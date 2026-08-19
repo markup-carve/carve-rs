@@ -43,7 +43,7 @@ use std::fmt::Write as _;
 /// The factor covers the deepest AST-per-source ratio the parser can produce
 /// (a list or definition list at two levels each, plus the leaf paragraph),
 /// with the same absolute margin on top for the blocks a container subtree adds.
-pub const MAX_RENDER_DEPTH: usize = crate::parse::MAX_NESTING_DEPTH * 3 + 32;
+pub const MAX_RENDER_DEPTH: usize = crate::parse::MAX_NESTING_DEPTH * 2 + 32;
 
 /// Render a tree that did NOT come from the parser, refusing at the ceiling.
 ///
@@ -177,6 +177,19 @@ pub(crate) fn render_blocks_at_with_state(
     render_blocks(nodes, level, options, state)
 }
 
+pub(crate) fn render_blocks_with_state_from_depth(
+    nodes: &[BlockNode],
+    options: &Options<'_>,
+    depth: usize,
+    state: &mut RenderState,
+) -> String {
+    let previous = state.block_depth_bias;
+    state.block_depth_bias = depth;
+    let output = render_blocks(nodes, 0, options, state);
+    state.block_depth_bias = previous;
+    output
+}
+
 fn render_blocks(
     nodes: &[BlockNode],
     level: usize,
@@ -185,22 +198,32 @@ fn render_blocks(
 ) -> String {
     let mut out = String::new();
     let mut first = true;
+    let mut previous_owns_separator = false;
     for block in nodes {
         if matches!(
             block,
             BlockNode::Comment(_)
                 | BlockNode::AbbreviationDef(_)
                 | BlockNode::LinkReferenceDefinition(_)
+                | BlockNode::CitationDefinition(_)
         ) {
             continue;
         }
-        if !first {
+        if !first && !previous_owns_separator {
             out.push('\n');
         }
         render_block(&mut out, block, level, options, state);
+        previous_owns_separator = is_all_blank_html_raw(block);
         first = false;
     }
     out
+}
+
+fn is_all_blank_html_raw(block: &BlockNode) -> bool {
+    matches!(block, BlockNode::RawBlock(raw)
+        if raw.format == "html"
+            && !raw.content.is_empty()
+            && raw.content.chars().all(|c| c == '\n'))
 }
 
 /// Render a container's children, dropping the ones that render to nothing.
@@ -233,6 +256,8 @@ pub(crate) struct RenderState {
     heading_counts: BTreeMap<String, usize>,
     crossref_index: crate::parse::CrossrefIndex,
     link_depth: usize,
+    inline_depth: usize,
+    block_depth_bias: usize,
     /// Mirrors `Options::lowercase_heading_ids` so the `<section id>` derived
     /// here matches the parse-time id index (and the resolved cross-ref hrefs).
     lowercase_heading_ids: bool,
@@ -240,6 +265,7 @@ pub(crate) struct RenderState {
     /// `::: footnotes` nested inside a footnote definition must NOT emit a
     /// placement sentinel (it renders as an ordinary div, matching carve-js).
     rendering_footnotes: bool,
+    suppress_automatic_abbreviation: bool,
 }
 
 fn render_document_blocks(
@@ -250,6 +276,7 @@ fn render_document_blocks(
     let mut out = String::new();
     let mut i = 0;
     let mut first = true;
+    let mut previous_owns_separator = false;
     while i < nodes.len() {
         // Skipped BEFORE the separating newline, or a block that renders to
         // nothing leaves a blank line where it stood. An abbreviation
@@ -261,19 +288,22 @@ fn render_document_blocks(
             BlockNode::Comment(_)
                 | BlockNode::AbbreviationDef(_)
                 | BlockNode::LinkReferenceDefinition(_)
+                | BlockNode::CitationDefinition(_)
         ) {
             i += 1;
             continue;
         }
-        if !first {
+        if !first && !previous_owns_separator {
             out.push('\n');
         }
+        let owns_separator = is_all_blank_html_raw(&nodes[i]);
         if matches!(nodes[i], BlockNode::Heading(_)) && options.sections {
             i = render_section(&mut out, nodes, i, 0, options, state);
         } else {
             render_block(&mut out, &nodes[i], 0, options, state);
             i += 1;
         }
+        previous_owns_separator = owns_separator;
         first = false;
     }
     out
@@ -426,6 +456,30 @@ fn collect_footnotes_block(
                 );
             }
         }
+        BlockNode::FigureGroup(g) => {
+            // Children first: the panels precede the group caption in the
+            // rendered output, so their footnote references number first.
+            for child in &mut g.children {
+                collect_footnotes_block(
+                    assign_ref_ids,
+                    child,
+                    def_labels,
+                    label_indices,
+                    seen,
+                    order,
+                );
+            }
+            if let Some(caption) = &mut g.caption {
+                collect_footnotes_inline(
+                    assign_ref_ids,
+                    caption,
+                    def_labels,
+                    label_indices,
+                    seen,
+                    order,
+                );
+            }
+        }
         BlockNode::LineBlock(lb) => {
             for child in &mut lb.children {
                 collect_footnotes_block(
@@ -485,7 +539,7 @@ fn collect_footnotes_block(
                 seen,
                 order,
             );
-            match &mut f.target {
+            match &mut *f.target {
                 FigureTarget::BlockQuote(b) => {
                     for child in &mut b.children {
                         collect_footnotes_block(
@@ -551,6 +605,12 @@ fn collect_footnotes_block(
     }
 }
 
+/// Walk an inline subtree that the document itself reaches, numbering the notes
+/// in it.
+///
+/// A block is never inside a link, so nothing a block walker hands over is
+/// discarded text; `discarded` is raised only while descending, by the one arm
+/// that can degrade its own children (see [`collect_footnotes_inline_scoped`]).
 fn collect_footnotes_inline(
     assign_ref_ids: bool,
     nodes: &mut [InlineNode],
@@ -559,9 +619,52 @@ fn collect_footnotes_inline(
     seen: &mut BTreeMap<String, usize>,
     order: &mut Vec<FootnoteEntry>,
 ) {
+    collect_footnotes_inline_scoped(
+        assign_ref_ids,
+        nodes,
+        def_labels,
+        label_indices,
+        seen,
+        order,
+        false,
+    );
+}
+
+/// `discarded` says the nodes sit in text the document throws away.
+///
+/// PART 9R R2, `A NOTE INSIDE AN UNRESOLVED REFERENCE IS NOT A REFERENCE`
+/// (markup-carve/carve#1198). R1 degrades an unresolved reference to its
+/// literal SOURCE, so the link text built for it never reaches the reader. The
+/// subtree is still WALKED rather than skipped, because a note in there must
+/// have any stale number cleared the same way a reference whose definition went
+/// away has its own cleared (carve-rs#641).
+#[allow(clippy::too_many_arguments)]
+fn collect_footnotes_inline_scoped(
+    assign_ref_ids: bool,
+    nodes: &mut [InlineNode],
+    def_labels: &HashSet<String>,
+    label_indices: &mut HashMap<String, usize>,
+    seen: &mut BTreeMap<String, usize>,
+    order: &mut Vec<FootnoteEntry>,
+    discarded: bool,
+) {
     for node in nodes {
         match node {
             InlineNode::Footnote(f) => {
+                // The reference degraded to its literal source, so the text
+                // holding this note was discarded: it draws no number, a
+                // definition it was the only use of stays unreferenced and is
+                // dropped, and no endnotes section is written on its account.
+                // Numbering it anyway is what a pipeline does when it resolves
+                // footnotes before it knows the reference failed, and the
+                // numbering says so out loud - the note a reader CAN see then
+                // reads as a repeat of a reference the document does not
+                // contain.
+                if discarded {
+                    f.number = None;
+                    f.ref_id = None;
+                    continue;
+                }
                 if let Some(inline) = &f.inline {
                     let number = order.len() + 1;
                     let ref_id = format!("fnref{number}");
@@ -614,78 +717,92 @@ fn collect_footnotes_inline(
                 }
                 order[idx].backrefs.push(ref_id);
             }
-            InlineNode::Emphasis(e) => collect_footnotes_inline(
+            InlineNode::Emphasis(e) => collect_footnotes_inline_scoped(
                 assign_ref_ids,
                 &mut e.children,
                 def_labels,
                 label_indices,
                 seen,
                 order,
+                discarded,
             ),
-            InlineNode::Link(l) => collect_footnotes_inline(
-                assign_ref_ids,
-                &mut l.children,
-                def_labels,
-                label_indices,
-                seen,
-                order,
-            ),
-            InlineNode::Span(s) => collect_footnotes_inline(
+            // The one arm that can raise `discarded`: a reference this document
+            // never resolved renders its literal source and never writes these
+            // children (see `render_link`).
+            InlineNode::Link(l) => {
+                let discarded = discarded || crate::parse::is_unresolved_reference(l);
+                collect_footnotes_inline_scoped(
+                    assign_ref_ids,
+                    &mut l.children,
+                    def_labels,
+                    label_indices,
+                    seen,
+                    order,
+                    discarded,
+                );
+            }
+            InlineNode::Span(s) => collect_footnotes_inline_scoped(
                 assign_ref_ids,
                 &mut s.children,
                 def_labels,
                 label_indices,
                 seen,
                 order,
+                discarded,
             ),
-            InlineNode::Extension(e) => collect_footnotes_inline(
+            InlineNode::Extension(e) => collect_footnotes_inline_scoped(
                 assign_ref_ids,
                 &mut e.children,
                 def_labels,
                 label_indices,
                 seen,
                 order,
+                discarded,
             ),
             InlineNode::CriticInsert(c) => {
-                collect_footnotes_inline(
+                collect_footnotes_inline_scoped(
                     assign_ref_ids,
                     &mut c.children,
                     def_labels,
                     label_indices,
                     seen,
                     order,
+                    discarded,
                 );
             }
             InlineNode::CriticDelete(c) => {
-                collect_footnotes_inline(
+                collect_footnotes_inline_scoped(
                     assign_ref_ids,
                     &mut c.children,
                     def_labels,
                     label_indices,
                     seen,
                     order,
+                    discarded,
                 );
             }
             InlineNode::CitationGroup(g) => {
                 for item in &mut g.items {
                     if let Some(prefix) = &mut item.prefix {
-                        collect_footnotes_inline(
+                        collect_footnotes_inline_scoped(
                             assign_ref_ids,
                             prefix,
                             def_labels,
                             label_indices,
                             seen,
                             order,
+                            discarded,
                         );
                     }
                     if let Some(locator) = &mut item.locator {
-                        collect_footnotes_inline(
+                        collect_footnotes_inline_scoped(
                             assign_ref_ids,
                             locator,
                             def_labels,
                             label_indices,
                             seen,
                             order,
+                            discarded,
                         );
                     }
                 }
@@ -700,6 +817,7 @@ fn collect_footnotes_inline(
 fn block_source_line(block: &BlockNode) -> Option<&str> {
     let attrs = match block {
         BlockNode::LinkReferenceDefinition(n) => n.attrs.as_ref(),
+        BlockNode::CitationDefinition(n) => n.attrs.as_ref(),
         BlockNode::Heading(n) => n.attrs.as_ref(),
         BlockNode::Paragraph(n) => n.attrs.as_ref(),
         BlockNode::ThematicBreak(n) => n.attrs.as_ref(),
@@ -712,6 +830,7 @@ fn block_source_line(block: &BlockNode) -> Option<&str> {
         BlockNode::LineBlock(n) => n.attrs.as_ref(),
         BlockNode::DefinitionList(n) => n.attrs.as_ref(),
         BlockNode::Figure(n) => n.attrs.as_ref(),
+        BlockNode::FigureGroup(n) => n.attrs.as_ref(),
         BlockNode::Extension(n) => n.attrs.as_ref(),
         BlockNode::BlockImage(n) => n.attrs.as_ref(),
         BlockNode::AbbreviationDef(_) | BlockNode::RawBlock(_) | BlockNode::Comment(_) => None,
@@ -885,6 +1004,7 @@ fn render_section(
             BlockNode::Comment(_)
                 | BlockNode::AbbreviationDef(_)
                 | BlockNode::LinkReferenceDefinition(_)
+                | BlockNode::CitationDefinition(_)
         ) {
             i += 1;
             continue;
@@ -930,7 +1050,7 @@ fn render_block(
     options: &Options<'_>,
     state: &mut RenderState,
 ) {
-    if level > MAX_RENDER_DEPTH {
+    if level.saturating_add(state.block_depth_bias) > MAX_RENDER_DEPTH {
         crate::render_depth::record("html");
         return;
     }
@@ -939,6 +1059,10 @@ fn render_block(
         // link or image that resolves the label (PART 9R R1). carve-js and
         // carve-php emit nothing for it here too.
         BlockNode::LinkReferenceDefinition(_) => {}
+        // PART 12 section 18: the same, for the same reason. The entry's text
+        // renders in the references list the Citations extension builds, not
+        // where the line was written.
+        BlockNode::CitationDefinition(_) => {}
         BlockNode::Heading(h) => render_heading(out, h, level, options, state),
         BlockNode::Paragraph(p) => render_paragraph(out, p, level, options, state),
         BlockNode::CodeBlock(c) => render_code_block(out, c, level),
@@ -950,6 +1074,7 @@ fn render_block(
         BlockNode::LineBlock(lb) => render_line_block(out, lb, level, options, state),
         BlockNode::DefinitionList(d) => render_definition_list(out, d, level, options, state),
         BlockNode::Figure(f) => render_figure(out, f, level, options, state),
+        BlockNode::FigureGroup(g) => render_figure_group(out, g, level, options, state),
         BlockNode::AbbreviationDef(_) => {}
         BlockNode::RawBlock(r) => {
             if r.format == "html" {
@@ -1134,6 +1259,18 @@ pub(crate) fn plain_inlines_typography(
     nodes: &[InlineNode],
     smart: crate::extension::SmartTypographyMode,
 ) -> String {
+    plain_inlines_typography_at(nodes, smart, 0)
+}
+
+fn plain_inlines_typography_at(
+    nodes: &[InlineNode],
+    smart: crate::extension::SmartTypographyMode,
+    depth: usize,
+) -> String {
+    if depth > MAX_RENDER_DEPTH {
+        crate::render_depth::record("html");
+        return String::new();
+    }
     let mut out = String::new();
     let source = smart == crate::extension::SmartTypographyMode::Source;
     for node in nodes {
@@ -1152,12 +1289,18 @@ pub(crate) fn plain_inlines_typography(
                     out.push_str(smart_punctuation_glyph(s));
                 }
             }
-            InlineNode::Emphasis(e) => out.push_str(&plain_inlines_typography(&e.children, smart)),
+            InlineNode::Emphasis(e) => {
+                out.push_str(&plain_inlines_typography_at(&e.children, smart, depth + 1))
+            }
             InlineNode::Code(s) => out.push_str(&s.value),
             // An inline literal renders as visible prose (§27), so it contributes
             // its content to a heading slug -- otherwise `` # !`Cat` `` would
             // slug to the empty fallback and `</#cat>` could never resolve.
             InlineNode::LiteralInline(lit) => out.push_str(&lit.content),
+            // Math is verbatim text the reader sees (carve-js groups its arm
+            // with the inline literal for exactly this reason), so it feeds a
+            // heading id like a code span does. Mirrors `plain_inlines_parse`.
+            InlineNode::Math(m) => out.push_str(&m.content),
             // A `</#id>` cross-reference contributes nothing to a heading id: the
             // id is derived from the heading text as authored, before cross-ref
             // resolution turns the reference into a Link. Skipping it here keeps
@@ -1165,10 +1308,14 @@ pub(crate) fn plain_inlines_typography(
             // build the cross-reference index (so `# A </#a>` keeps id `A`, not
             // `A-A`). Mirrors `plain_inlines_parse`, which never saw the Link.
             InlineNode::Link(l) if l.from_crossref => {}
-            InlineNode::Link(l) => out.push_str(&plain_inlines_typography(&l.children, smart)),
+            InlineNode::Link(l) => {
+                out.push_str(&plain_inlines_typography_at(&l.children, smart, depth + 1))
+            }
             InlineNode::AutoLink(a) => out.push_str(&a.text),
             InlineNode::Image(i) => out.push_str(&i.alt),
-            InlineNode::Extension(e) => out.push_str(&plain_inlines_typography(&e.children, smart)),
+            InlineNode::Extension(e) => {
+                out.push_str(&plain_inlines_typography_at(&e.children, smart, depth + 1))
+            }
             InlineNode::CitationGroup(g) => out.push_str(&g.raw),
             InlineNode::Abbreviation(a) => out.push_str(&a.abbr),
             InlineNode::Mention(m) => {
@@ -1231,7 +1378,14 @@ fn render_code_block(out: &mut String, c: &CodeBlock, level: usize) {
         out.push('"');
     }
     out.push('>');
-    write_escaped_text(out, &c.content);
+    // A code block's content is VERBATIM but not RAW: PART 12 §3 puts the
+    // no-break-space sentinel U+E000 on `code_block.content` alongside
+    // `text.value`, `code.value` and `literal_inline.content`, and a consumer
+    // MUST map it rather than emit it. Only `raw_block.content` is excluded,
+    // because that one is byte-for-byte passthrough. Writing the private-use
+    // character through is not merely untidy - a downstream typesetter draws
+    // the font's `.notdef` box for it, silently.
+    write_escaped_text_nbsp(out, &c.content);
     out.push_str("\n</code></pre>");
 }
 
@@ -1252,7 +1406,12 @@ fn render_list(
     let tag = if l.ordered { "ol" } else { "ul" };
     out.push('<');
     out.push_str(tag);
-    write_attrs(out, &l.attrs);
+    // A STRUCTURAL ATTRIBUTE LEADS (PART 11 section 5.1). `type` and `start` are
+    // fixed by the first item's marker, so they are the element's own shape
+    // rather than something added on top of what the author wrote, and they
+    // precede the authored attributes. This wrote them after, reading the
+    // "generated attribute joins at the end" rule as covering them -- carve-js,
+    // carve-php and reference djot all lead with them (carve#1090).
     if l.ordered {
         if let Some(ol_type) = l.ol_type {
             let value = match ol_type {
@@ -1267,6 +1426,7 @@ fn render_list(
             write!(out, " start=\"{start}\"").unwrap();
         }
     }
+    write_attrs(out, &l.attrs);
     out.push_str(">\n");
     for (i, item) in l.items.iter().enumerate() {
         if i > 0 {
@@ -1368,16 +1528,19 @@ fn render_list_item(
             out.push_str(html);
         }
         Part::Block(html) => {
-            // A task item whose first child is a block still shows its checkbox
-            // (defensive: no current input yields a block-first task item -- an
-            // empty task marker renders `[ ]` as literal text -- but if one ever
-            // did, dropping the marker would silently lose it).
-            if !checkbox.is_empty() {
-                out.push('\n');
-                out.push_str(checkbox);
-            } else {
-                out.push('\n');
-            }
+            // THE CHECKBOX IS A PROPERTY OF THE ITEM, NOT OF ITS FIRST BLOCK.
+            // It is written directly after the `<li>` opener whatever the
+            // marker line goes on to open, and nothing about that block
+            // reaches it. Only the CONTENT moves: it sits beside the checkbox
+            // when the first block renders inline, and on its own indented
+            // line below it when it does not. Deciding the checkbox's
+            // placement from the block that follows it wrote it at column 0,
+            // outside the indentation every other child of an `<li>` gets, for
+            // every non-paragraph lead -- a quote, a heading, a thematic
+            // break, a fence, a `:::` div, a table row (carve#1381,
+            // corpus 363).
+            out.push_str(checkbox);
+            out.push('\n');
             out.push_str(html);
         }
     }
@@ -1445,9 +1608,24 @@ fn render_table(
     options: &Options<'_>,
     state: &mut RenderState,
 ) {
+    let mut resolved = t.clone();
+    if resolved.columns.is_empty() {
+        resolved.columns = columns_from_attrs(resolved.attrs.as_ref());
+    }
+    let t = &resolved;
     indent(out, level);
     out.push_str("<table");
-    write_attrs(out, &t.attrs);
+    let mut table_attrs = t.attrs.clone();
+    if let Some(attrs) = &mut table_attrs {
+        attrs.key_values.retain(|k, _| {
+            !matches!(
+                k.as_str(),
+                "aligns" | "valigns" | "widths" | "header-rows" | "footer-rows"
+            )
+        });
+        attrs.order.retain(|s| !matches!(s, AttrSlot::Key(k) if matches!(k.as_str(), "aligns" | "valigns" | "widths" | "header-rows" | "footer-rows")));
+    }
+    write_attrs(out, &table_attrs);
     out.push('>');
     if let Some(caption) = &t.caption {
         out.push('\n');
@@ -1456,31 +1634,98 @@ fn render_table(
         render_inlines(out, caption, options, state);
         out.push_str("</caption>");
     }
-    // The leading run of rows whose cells are ALL header cells forms <thead>.
-    // A row that merely contains a header cell (a row header) stays in the body.
-    let header_count = t
-        .rows
-        .iter()
-        .take_while(|row| !row.cells.is_empty() && row.cells.iter().all(|cell| cell.header))
-        .count();
-    let has_header = header_count > 0;
-    let body_start = header_count;
+    if t.columns.iter().any(|c| c.width.is_some()) {
+        out.push('\n');
+        indent(out, level + 1);
+        out.push_str("<colgroup>");
+        for column in &t.columns {
+            out.push('\n');
+            indent(out, level + 2);
+            out.push_str("<col");
+            if let Some(width) = column.width {
+                write!(out, " style=\"width: {}%;\"", width * 100.0).unwrap();
+            }
+            out.push('>');
+        }
+        out.push('\n');
+        indent(out, level + 1);
+        out.push_str("</colgroup>");
+    }
     // Computed once over ALL rows: a `^` in a body row extends the cell above
     // it even when that cell is in a header row, so a header cell can carry a
     // rowspan that crosses the thead/tbody boundary (matches carve-js).
     let (rowspan_cols, orphan_carets) = compute_rowspans(t);
+    // The leading run of rows whose cells are ALL header cells forms <thead>.
+    // A row that merely contains a header cell (a row header) stays in the body.
+    //
+    // A continuation that RESOLVES is transparent here, because it renders
+    // nothing: the cell it continues is what occupies the column, and asking
+    // whether the marker itself is a header asks about a cell that is not
+    // there. Counting it dropped the row under a header rowspan out of the
+    // head, so `|=H|=A|` over `| ^ |=B|` moved B into the body (carve-js skips
+    // it the same way).
+    let derived_header_count = t
+        .rows
+        .iter()
+        .enumerate()
+        .take_while(|(r, row)| {
+            let consumed = consumed_rowspan_cols(*r, &rowspan_cols);
+            let resolved = |i: usize, cell: &TableCell| match cell.span {
+                Some(TableCellSpan::Rowspan) => !orphan_carets.contains(&(*r, i)),
+                Some(TableCellSpan::Colspan) => colspan_target(row, i, &consumed).is_some(),
+                None => false,
+            };
+            row.cells
+                .iter()
+                .enumerate()
+                .any(|(i, cell)| !resolved(i, cell))
+                && row
+                    .cells
+                    .iter()
+                    .enumerate()
+                    .all(|(i, cell)| cell.header || resolved(i, cell))
+        })
+        .count();
+    let source_partition = t.attrs.as_ref().is_some_and(|attrs| {
+        attrs.key_values.contains_key("header-rows") || attrs.key_values.contains_key("footer-rows")
+    });
+    let header_count = if source_partition {
+        t.row_groups
+            .as_ref()
+            .map_or(derived_header_count, |groups| groups.head_rows)
+    } else {
+        derived_header_count
+    };
+    let footer_count = if source_partition {
+        t.row_groups.as_ref().map_or(0, |groups| groups.foot_rows)
+    } else {
+        0
+    };
+    let has_header = header_count > 0;
+    let body_start = header_count;
     if has_header {
         out.push('\n');
         indent(out, level + 1);
         out.push_str("<thead>");
         for (row_idx, header) in t.rows[..header_count].iter().enumerate() {
-            render_table_row(out, header, true, options, row_idx, &rowspan_cols, state);
+            render_table_row(
+                out,
+                header,
+                true,
+                options,
+                row_idx,
+                &rowspan_cols,
+                &orphan_carets,
+                state,
+                t,
+            );
         }
         out.push_str("</thead>");
     }
     // A header-only table (e.g. a GFM `| x |` + `|---|` with no body rows) emits
     // no <tbody>, matching carve-php.
-    if body_start < t.rows.len() {
+    let footer_start = t.rows.len() - footer_count;
+    if body_start < footer_start {
         out.push('\n');
         indent(out, level + 1);
         out.push_str("<tbody>");
@@ -1491,7 +1736,13 @@ fn render_table(
             options,
             state,
         };
-        for (row_idx, row) in t.rows.iter().enumerate().skip(body_start) {
+        for (row_idx, row) in t
+            .rows
+            .iter()
+            .enumerate()
+            .take(footer_start)
+            .skip(body_start)
+        {
             out.push('\n');
             indent(out, level + 2);
             render_table_body_row(out, row, row_idx, &mut body_ctx);
@@ -1500,29 +1751,92 @@ fn render_table(
         indent(out, level + 1);
         out.push_str("</tbody>");
     }
+    if footer_start < t.rows.len() {
+        out.push('\n');
+        indent(out, level + 1);
+        out.push_str("<tfoot>");
+        let mut foot_ctx = TableBodyRenderContext {
+            rowspan_cols: &rowspan_cols,
+            orphan_carets: &orphan_carets,
+            table: t,
+            options,
+            state,
+        };
+        for (row_idx, row) in t.rows.iter().enumerate().skip(footer_start) {
+            render_table_body_row(out, row, row_idx, &mut foot_ctx);
+        }
+        out.push_str("</tfoot>");
+    }
     out.push('\n');
     indent(out, level);
     out.push_str("</table>");
 }
 
+fn columns_from_attrs(attrs: Option<&Attrs>) -> Vec<TableColumn> {
+    let values = |key| {
+        attrs
+            .and_then(|a| a.key_values.get(key))
+            .map(|v| v.split(',').collect::<Vec<_>>())
+            .unwrap_or_default()
+    };
+    let aligns = values("aligns");
+    let valigns = values("valigns");
+    let widths = values("widths");
+    let len = aligns.len().max(valigns.len()).max(widths.len());
+    (0..len)
+        .map(|i| TableColumn {
+            align: aligns.get(i).and_then(|v| match *v {
+                "left" => Some(TableAlign::Left),
+                "right" => Some(TableAlign::Right),
+                "center" => Some(TableAlign::Center),
+                _ => None,
+            }),
+            valign: valigns.get(i).and_then(|v| match *v {
+                "top" => Some(TableVerticalAlign::Top),
+                "middle" => Some(TableVerticalAlign::Middle),
+                "bottom" => Some(TableVerticalAlign::Bottom),
+                _ => None,
+            }),
+            width: widths
+                .get(i)
+                .and_then(|v| v.parse::<f64>().ok())
+                .filter(|v| *v > 0.0 && *v <= 100.0)
+                .map(|v| v / 100.0),
+        })
+        .collect()
+}
+
+#[allow(clippy::too_many_arguments)]
 fn render_table_row(
     out: &mut String,
     row: &TableRow,
-    header_row: bool,
+    in_head: bool,
     options: &Options<'_>,
     row_idx: usize,
     rowspan_cols: &BTreeMap<(usize, usize), usize>,
+    orphan_carets: &BTreeSet<(usize, usize)>,
     state: &mut RenderState,
+    table: &Table,
 ) {
     out.push_str("<tr");
     write_attrs(out, &row.attrs);
     out.push('>');
+    // A head row resolves its continuations the same way a body row does. It
+    // used to resolve neither: a `^` rendered an empty `<th>` BESIDE the
+    // `rowspan` its origin already carried, and a `<` rendered an empty `<th>`
+    // instead of widening the cell to its left - so a header cell spanning
+    // columns lost the span and gained a column the table does not have.
+    let consumed_cols = consumed_rowspan_cols(row_idx, rowspan_cols);
+    let colspan_counts = compute_colspans(row, &consumed_cols);
     for (col, cell) in row.cells.iter().enumerate() {
-        let tag = if header_row || cell.header {
-            "th"
-        } else {
-            "td"
-        };
+        if cell.span == Some(TableCellSpan::Rowspan) {
+            if orphan_carets.contains(&(row_idx, col)) {
+                let scope = cell_scope_attr(cell, true, in_head);
+                write!(out, "<th{scope}></th>").unwrap();
+            }
+            continue;
+        }
+        let tag = if in_head || cell.header { "th" } else { "td" };
         let mut extra = String::new();
         let mut emitted: Vec<&str> = Vec::new();
         // A header cell can carry a rowspan that extends down into the body
@@ -1531,15 +1845,28 @@ fn render_table_row(
             extra.push_str(&format!(" rowspan=\"{}\"", span));
             emitted.push("rowspan");
         }
-        let align = render_align_attr(cell.align.or_else(|| row_align(row, col)));
-        if !align.is_empty() {
+        if cell.span == Some(TableCellSpan::Colspan) {
+            if colspan_target(row, col, &consumed_cols).is_none() {
+                let scope = cell_scope_attr(cell, true, in_head);
+                write!(out, "<{tag}{scope}></{tag}>").unwrap();
+            }
+            continue;
+        }
+        let colspan = colspan_counts.get(&col).copied().unwrap_or(1);
+        if colspan > 1 {
+            extra.push_str(&format!(" colspan=\"{}\"", colspan));
+            emitted.push("colspan");
+        }
+        let style = table_cell_style(cell, table, col, row_align(row, col));
+        if !style.is_empty() {
             emitted.push("style");
         }
         out.push('<');
         out.push_str(tag);
+        out.push_str(&cell_scope_attr(cell, tag == "th", in_head));
         out.push_str(&render_cell_author_attrs(&cell.attrs, &emitted));
         out.push_str(&extra);
-        out.push_str(&align);
+        out.push_str(&style);
         out.push('>');
         render_inlines(out, &cell.children, options, state);
         out.push_str("</");
@@ -1574,7 +1901,8 @@ fn render_table_body_row(
             // nothing to extend (no cell above) renders an EMPTY cell (§5).
             if ctx.orphan_carets.contains(&(source_row_idx, cell_index)) {
                 let tag = if cell.header { "th" } else { "td" };
-                write!(out, "<{tag}></{tag}>").unwrap();
+                let scope = cell_scope_attr(cell, cell.header, false);
+                write!(out, "<{tag}{scope}></{tag}>").unwrap();
             }
             continue;
         }
@@ -1590,7 +1918,8 @@ fn render_table_body_row(
             // an EMPTY cell (§5).
             if colspan_target(row, cell_index, &consumed_cols).is_none() {
                 let tag = if cell.header { "th" } else { "td" };
-                write!(out, "<{tag}></{tag}>").unwrap();
+                let scope = cell_scope_attr(cell, cell.header, false);
+                write!(out, "<{tag}{scope}></{tag}>").unwrap();
             }
             continue;
         }
@@ -1599,17 +1928,22 @@ fn render_table_body_row(
             attrs.push_str(&format!(" colspan=\"{}\"", colspan));
             emitted.push("colspan");
         }
-        if let Some(align) = cell
-            .align
-            .or_else(|| table_column_align(ctx.table, cell_index))
-        {
-            attrs.push_str(&align_attr(align));
+        let style = table_cell_style(
+            cell,
+            ctx.table,
+            cell_index,
+            table_column_align(ctx.table, cell_index),
+        );
+        if !style.is_empty() {
+            attrs.push_str(&style);
             emitted.push("style");
         }
         // A `|=` cell in a body row is a row header: <th> inside <tbody>.
         let tag = if cell.header { "th" } else { "td" };
         out.push('<');
         out.push_str(tag);
+        // Below the header run, so a header cell here heads its ROW.
+        out.push_str(&cell_scope_attr(cell, cell.header, false));
         out.push_str(&render_cell_author_attrs(&cell.attrs, &emitted));
         out.push_str(&attrs);
         out.push('>');
@@ -1626,11 +1960,56 @@ fn row_align(row: &TableRow, col: usize) -> Option<TableAlign> {
 }
 
 fn table_column_align(table: &Table, col: usize) -> Option<TableAlign> {
-    table.rows.first()?.cells.get(col)?.align
+    table
+        .rows
+        .first()
+        .and_then(|r| r.cells.get(col))
+        .and_then(|c| c.align)
+        .or_else(|| table.columns.get(col).and_then(|c| c.align))
 }
 
-fn render_align_attr(align: Option<TableAlign>) -> String {
-    align.map(align_attr).unwrap_or_default()
+fn table_cell_style(
+    cell: &TableCell,
+    table: &Table,
+    col: usize,
+    inherited_align: Option<TableAlign>,
+) -> String {
+    let align = cell
+        .align
+        .or(inherited_align)
+        .or_else(|| table.columns.get(col).and_then(|c| c.align));
+    let valign = cell
+        .valign
+        .or_else(|| {
+            table
+                .rows
+                .first()
+                .and_then(|r| r.cells.get(col))
+                .and_then(|c| c.valign)
+        })
+        .or_else(|| table.columns.get(col).and_then(|c| c.valign));
+    if align.is_none() && valign.is_none() {
+        return String::new();
+    }
+    let mut declarations = String::new();
+    if let Some(a) = align {
+        declarations.push_str(match a {
+            TableAlign::Left => "text-align: left;",
+            TableAlign::Right => "text-align: right;",
+            TableAlign::Center => "text-align: center;",
+        });
+    }
+    if align.is_some() && valign.is_some() {
+        declarations.push(' ');
+    }
+    if let Some(v) = valign {
+        declarations.push_str(match v {
+            TableVerticalAlign::Top => "vertical-align: top;",
+            TableVerticalAlign::Middle => "vertical-align: middle;",
+            TableVerticalAlign::Bottom => "vertical-align: bottom;",
+        });
+    }
+    format!(" style=\"{declarations}\"")
 }
 
 /// Render a cell's author attributes, dropping any key that collides (case
@@ -1638,6 +2017,40 @@ fn render_align_attr(align: Option<TableAlign>) -> String {
 /// for the cell (`rowspan` / `colspan` / `style`) -- the computed value is
 /// authoritative. When no such structural attribute is emitted, the author's
 /// value (e.g. a custom `style`) is preserved.
+/// PART 10 SST9: a header cell states what it heads - `col` in the leading
+/// header-row run, `row` below it. The language already distinguishes the two
+/// positions, so this states an association the table has rather than adding a
+/// concept; without it a screen reader guesses from position and guesses wrong
+/// on any table carrying both kinds.
+///
+/// Empty when the author named a `scope` themselves. An authored value REPLACES
+/// the default rather than joining it: emitting both gives
+/// `<th scope="col" scope="colgroup">`, two attributes of one name and invalid
+/// HTML. Suppressing it is also what keeps `colgroup` and `rowgroup` reachable,
+/// since neither has a marker spelling here.
+///
+/// The test is case-INSENSITIVE, the one place this departs from Carve's
+/// case-sensitive attribute names: `{Scope=...}` stays a different Carve
+/// attribute and still reaches the output as `Scope`, but HTML attribute names
+/// are not case-sensitive, so emitting the default beside it is the same
+/// collision by another spelling.
+fn cell_scope_attr(cell: &TableCell, is_header_cell: bool, in_header_run: bool) -> String {
+    if !is_header_cell {
+        return String::new();
+    }
+    if let Some(attrs) = &cell.attrs {
+        if attrs
+            .key_values
+            .keys()
+            .any(|key| key.eq_ignore_ascii_case("scope"))
+        {
+            return String::new();
+        }
+    }
+
+    format!(" scope=\"{}\"", if in_header_run { "col" } else { "row" })
+}
+
 fn render_cell_author_attrs(attrs: &Option<Attrs>, emitted: &[&str]) -> String {
     let Some(a) = attrs else {
         return String::new();
@@ -1653,15 +2066,6 @@ fn render_cell_author_attrs(attrs: &Option<Attrs>, emitted: &[&str]) -> String {
         _ => true,
     });
     render_attrs(&Some(filtered))
-}
-
-fn align_attr(align: TableAlign) -> String {
-    let value = match align {
-        TableAlign::Left => "left",
-        TableAlign::Right => "right",
-        TableAlign::Center => "center",
-    };
-    format!(" style=\"text-align: {value};\"")
 }
 
 fn consumed_rowspan_cols(row_idx: usize, rowspan_cols: &RowspanCols) -> BTreeSet<usize> {
@@ -1924,13 +2328,19 @@ fn render_definition_list(
         for def in &item.definitions {
             out.push('\n');
             indent(out, level + 1);
-            if def.len() == 1 {
-                if let BlockNode::Paragraph(p) = &def[0] {
-                    out.push_str(&format!("<dd{}>", render_attrs(&def.attrs)));
-                    render_inlines(out, &p.children, options, state);
-                    out.push_str("</dd>");
-                    continue;
-                }
+            // THE TIGHT FORM IS CHOSEN FROM WHAT PUBLISHES, not from the node
+            // count (§17 L1a). A trailing comment is a node and reaches no
+            // target, so counting nodes put `:  a` / `   %% c` in the loose
+            // form while the LIST twin, which filters the same set before
+            // deciding, stayed tight. Same clause, same answer - and the
+            // filtered blocks are what render below either way, so the two
+            // branches cannot disagree about which children exist.
+            let mut published = def.iter().filter(|child| !publishes_nothing(child));
+            if let (Some(BlockNode::Paragraph(p)), None) = (published.next(), published.next()) {
+                out.push_str(&format!("<dd{}>", render_attrs(&def.attrs)));
+                render_inlines(out, &p.children, options, state);
+                out.push_str("</dd>");
+                continue;
             }
             let blocks = rendered_children(def, level + 2, options, state);
             out.push_str(&format!("<dd{}>", render_attrs(&def.attrs)));
@@ -1963,8 +2373,37 @@ fn render_figure(
 ) {
     indent(out, level);
     out.push_str(&format!("<figure{}>", render_attrs(&f.attrs)));
+    render_figure_contents(out, f, level, options, state);
+}
+
+/// The class-first attribute string a typed wrapper opens with: the structural
+/// class leads, the author's classes merge after it, then the id and remaining
+/// attributes in source order - the `admonition {kind}` convention, reused by
+/// the figure group and its panels (PART 9 §4c).
+fn class_first_attrs(base: &str, attrs: &Option<Attrs>) -> String {
+    let (class, rest) = match attrs {
+        Some(at) if !at.classes.is_empty() => (
+            dedup_class_str(&format!("{} {}", base, at.classes.join(" "))),
+            render_attrs_after_class(at),
+        ),
+        Some(at) => (base.to_string(), render_attrs_after_class(at)),
+        None => (base.to_string(), String::new()),
+    };
+    format!(" class=\"{}\"{}", escape_attr(&class), rest)
+}
+
+/// Everything of a figure after its opening tag: the target, the caption and
+/// the closing tag. Split out so a PANEL of a figure group renders the same
+/// body under its class-first opener.
+fn render_figure_contents(
+    out: &mut String,
+    f: &Figure,
+    level: usize,
+    options: &Options<'_>,
+    state: &mut RenderState,
+) {
     out.push('\n');
-    match &f.target {
+    match &*f.target {
         FigureTarget::Image(img) => {
             indent(out, level + 1);
             render_image(out, img);
@@ -1991,6 +2430,74 @@ fn render_figure(
     out.push_str("<figcaption>");
     render_inlines(out, &f.caption, options, state);
     out.push_str("</figcaption>");
+    out.push('\n');
+    indent(out, level);
+    out.push_str("</figure>");
+}
+
+/// A composite figure (PART 9 §4c): one `<figure>` carrying the
+/// `carve-figure-group` class first, its children DIRECTLY inside it, and the
+/// group caption - when the closer hosted one - as the trailing
+/// `<figcaption>`. Panels are the `Figure` and `Table` children, in source
+/// order: a `Figure` renders its usual body under a class-first
+/// `carve-figure-panel` opener, a `Table` is wrapped in an explicit panel
+/// `<figure>` (a table does not render as a figure on its own) and keeps its
+/// own `<caption>`. Everything else is preserved in place.
+///
+/// No wrapper element sits between the group and its panels. HTML's figure
+/// content model is one figcaption, first or last, plus flow content - and a
+/// figure is itself flow content, so the panel figures are exactly what the
+/// group element admits and the intermediate div carried nothing a consumer
+/// could not read from the panel class. It is also the shape Pandoc's writers
+/// produce for native subfigures, so one stylesheet serves both.
+fn render_figure_group(
+    out: &mut String,
+    g: &FigureGroup,
+    level: usize,
+    options: &Options<'_>,
+    state: &mut RenderState,
+) {
+    indent(out, level);
+    out.push_str(&format!(
+        "<figure{}>",
+        class_first_attrs("carve-figure-group", &g.attrs)
+    ));
+    for child in &g.children {
+        let mut piece = String::new();
+        match child {
+            BlockNode::Figure(f) => {
+                indent(&mut piece, level + 1);
+                piece.push_str(&format!(
+                    "<figure{}>",
+                    class_first_attrs("carve-figure-panel", &f.attrs)
+                ));
+                render_figure_contents(&mut piece, f, level + 1, options, state);
+            }
+            BlockNode::Table(t) => {
+                indent(&mut piece, level + 1);
+                piece.push_str("<figure class=\"carve-figure-panel\">");
+                piece.push('\n');
+                render_table(&mut piece, t, level + 2, options, state);
+                piece.push('\n');
+                indent(&mut piece, level + 1);
+                piece.push_str("</figure>");
+            }
+            // Preserved in place; a block that renders nothing (a comment, a
+            // definition line) contributes no blank line to the group.
+            other => render_block(&mut piece, other, level + 1, options, state),
+        }
+        if !piece.is_empty() {
+            out.push('\n');
+            out.push_str(&piece);
+        }
+    }
+    if let Some(caption) = &g.caption {
+        out.push('\n');
+        indent(out, level + 1);
+        out.push_str("<figcaption>");
+        render_inlines(out, caption, options, state);
+        out.push_str("</figcaption>");
+    }
     out.push('\n');
     indent(out, level);
     out.push_str("</figure>");
@@ -2103,9 +2610,137 @@ fn render_inlines_stateful(
     options: &Options<'_>,
     state: &mut RenderState,
 ) {
+    if state.inline_depth > MAX_RENDER_DEPTH {
+        crate::render_depth::record("html");
+        return;
+    }
+    state.inline_depth += 1;
     for node in nodes {
         render_inline_after(out, node, options, state);
     }
+    state.inline_depth -= 1;
+}
+
+const SEMANTIC_SPAN_ORDER: [&str; 3] = ["abbr", "time", "kbd"];
+
+/// The full order, including the four names an extension may add (PART 9 §10).
+pub(crate) const EXTENDED_SEMANTIC_SPAN_ORDER: [&str; 7] =
+    ["abbr", "time", "samp", "var", "kbd", "cite", "dfn"];
+
+/// The attribute an authored VALUE on a semantic name reaches the output as.
+///
+/// `None` says the value only selects the wrapper and is dropped - which is
+/// what `lint::lint_carve` reports as `semantic-attribute-value-ignored`. The
+/// lint reads this rather than keeping a list of its own, so a name that starts
+/// or stops carrying its value cannot be right in one place and stale in the
+/// other (markup-carve/carve#1131).
+pub(crate) fn semantic_value_target(name: &str) -> Option<&'static str> {
+    match name {
+        // `dfn` is the SemanticSpan extension's, and maps its value the same
+        // way `abbr` does (docs/extensions.md §11.1). The mapping lives here
+        // rather than in the extension for the same reason the order does: one
+        // implementation, not two that drift.
+        "abbr" | "dfn" => Some("title"),
+        "time" => Some("datetime"),
+        _ => None,
+    }
+}
+
+/// The names this render consumes, in the canonical order: core's three plus
+/// whatever a registered extension claims.
+pub(crate) fn semantic_span_order(options: &Options<'_>) -> Vec<&'static str> {
+    if options
+        .extensions
+        .iter()
+        .all(|ext| ext.semantic_span_names().is_empty())
+    {
+        return SEMANTIC_SPAN_ORDER.to_vec();
+    }
+    EXTENDED_SEMANTIC_SPAN_ORDER
+        .iter()
+        .copied()
+        .filter(|name| {
+            SEMANTIC_SPAN_ORDER.contains(name)
+                || options
+                    .extensions
+                    .iter()
+                    .any(|ext| ext.semantic_span_names().contains(name))
+        })
+        .collect()
+}
+
+/// PART 10 §10 compact semantic attributes on an ordinary authored span.
+fn render_semantic_span(
+    out: &mut String,
+    span: &Span,
+    options: &Options<'_>,
+    state: &mut RenderState,
+) {
+    let Some(attrs) = &span.attrs else {
+        out.push_str("<span>");
+        render_inlines_stateful(out, &span.children, options, state);
+        out.push_str("</span>");
+        return;
+    };
+    let order = semantic_span_order(options);
+    let names: Vec<&str> = order
+        .iter()
+        .copied()
+        .filter(|name| attrs.key_values.contains_key(*name))
+        .collect();
+    if names.is_empty() {
+        out.push_str("<span");
+        write_attrs(out, &span.attrs);
+        out.push('>');
+        render_inlines_stateful(out, &span.children, options, state);
+        out.push_str("</span>");
+        return;
+    }
+
+    let mut html = String::new();
+    let previous_suppression = state.suppress_automatic_abbreviation;
+    if attrs.key_values.contains_key("abbr") {
+        state.suppress_automatic_abbreviation = true;
+    }
+    render_inlines_stateful(&mut html, &span.children, options, state);
+    state.suppress_automatic_abbreviation = previous_suppression;
+    let mut rest = attrs.clone();
+    rest.key_values
+        .retain(|name, _| !order.contains(&name.as_str()));
+    rest.order.retain(|slot| match slot {
+        AttrSlot::Key(name) => !order.contains(&name.as_str()),
+        _ => true,
+    });
+    let outermost = *names.last().expect("semantic names is non-empty");
+    for name in names {
+        let value = &attrs.key_values[name];
+        let mapped = if value.is_empty() {
+            None
+        } else {
+            semantic_value_target(name).map(|key| (key, value.as_str()))
+        };
+
+        let mut own = Attrs::default();
+        if let Some((key, value)) = mapped {
+            // A derived attribute occupies the same slot as an authored one.
+            // The authored value in `rest` therefore wins instead of producing
+            // a duplicate attribute.
+            if name != outermost || !rest.key_values.contains_key(key) {
+                own.key_values.insert(key.to_string(), value.to_string());
+                own.order.push(AttrSlot::Key(key.to_string()));
+            }
+        }
+        if name == outermost {
+            own.id = rest.id.clone();
+            own.classes = rest.classes.clone();
+            for (key, value) in &rest.key_values {
+                own.key_values.insert(key.clone(), value.clone());
+            }
+            own.order.extend(rest.order.iter().cloned());
+        }
+        html = format!("<{name}{}>{html}</{name}>", render_attrs(&Some(own)));
+    }
+    out.push_str(&html);
 }
 
 /// Escape text content (`& < >`) and fold the no-break space U+00A0 into
@@ -2192,11 +2827,7 @@ fn render_inline_after(
         InlineNode::Link(l) => render_link(out, l, options, state),
         InlineNode::Image(img) => render_image(out, img),
         InlineNode::Span(s) => {
-            out.push_str("<span");
-            write_attrs(out, &s.attrs);
-            out.push('>');
-            render_inlines_stateful(out, &s.children, options, state);
-            out.push_str("</span>");
+            render_semantic_span(out, s, options, state);
         }
         InlineNode::Math(m) => {
             let base = if m.display {
@@ -2206,17 +2837,17 @@ fn render_inline_after(
             };
             let open = if m.display { "\\[" } else { "\\(" };
             let close = if m.display { "\\]" } else { "\\)" };
-            // The `math {inline,display}` class is structural and emitted
-            // first; a trailing attribute block merges its classes into it
-            // and contributes id / key-values after (never a second class).
-            let (class, rest) = match &m.attrs {
-                Some(a) if !a.classes.is_empty() => (
-                    dedup_class_str(&format!("{} {}", base, a.classes.join(" "))),
-                    render_attrs_after_class(a),
-                ),
-                Some(a) => (base.to_string(), render_attrs_after_class(a)),
-                None => (base.to_string(), String::new()),
-            };
+            // PART 10 SS1: the `math {inline,display}` class is a mandatory BASE
+            // class, so it is prepended INSIDE the author's class slot and the
+            // slot keeps its first-appearance position. Emitting `class="..."`
+            // unconditionally first put it ahead of an id the author wrote
+            // before any class, which reorders what they wrote.
+            //
+            // carve#1168 fixed exactly this for the generic `ext-NAME` fallback
+            // and left the helper below behind; the math span carries a base
+            // class the same way and was missed, because no corpus case put an
+            // id before a class on it (carve#1164).
+            let attrs = render_attrs_with_base_class(&m.attrs, base);
             // Static mode: when a build-time math renderer is supplied, emit its
             // server-side output (MathML / HTML) inside the math span so the page
             // needs no client KaTeX / MathJax; the renderer output is trusted and
@@ -2227,12 +2858,7 @@ fn render_inline_after(
                 (true, Some(build)) => build(&m.content, m.display),
                 _ => format!("{}{}{}", open, escape_text(&m.content), close),
             };
-            out.push_str(&format!(
-                "<span class=\"{}\"{}>{}</span>",
-                escape_attr(&class),
-                rest,
-                body,
-            ));
+            out.push_str(&format!("<span{}>{}</span>", attrs, body,));
         }
         InlineNode::RawInline(r) => {
             if r.format.trim() == "html" {
@@ -2328,8 +2954,13 @@ fn render_inline_after(
             }
         }
         InlineNode::CaptionNumber(n) => {
-            if let Some(number) = n.number {
-                out.push_str(&number.to_string());
+            match n.number {
+                Some(number) => out.push_str(&number.to_string()),
+                // An unresolved placeholder stays the literal `#` the author
+                // wrote - the visible failure this language prefers to a
+                // silent one (PART 9 §4c names the panel-caption case), and
+                // what the Markdown, plain and terminal targets already emit.
+                None => out.push('#'),
             }
         }
         InlineNode::Mention(m) => {
@@ -2398,6 +3029,10 @@ fn render_inline_after(
         InlineNode::CitationGroup(g) => render_citation_group(out, g, options, state),
         InlineNode::Extension(e) => render_inline_extension(out, e, options, state),
         InlineNode::Abbreviation(a) => {
+            if state.suppress_automatic_abbreviation {
+                write_escaped_text(out, &a.abbr);
+                return;
+            }
             // Bound cumulative expansion bytes: once the budget is exhausted,
             // degrade to plain key text (no `<abbr>`, no title) so a large
             // expansion repeated many times cannot amplify output without limit.
@@ -2497,15 +3132,23 @@ fn render_citation_group(
 
 /// Flatten inline nodes to plain text (for `data-*` attribute values).
 fn flatten_text(nodes: &[InlineNode]) -> String {
+    flatten_text_at(nodes, 0)
+}
+
+fn flatten_text_at(nodes: &[InlineNode], depth: usize) -> String {
+    if depth > MAX_RENDER_DEPTH {
+        crate::render_depth::record("html");
+        return String::new();
+    }
     let mut out = String::new();
     for node in nodes {
         match node {
             InlineNode::Text(t) => out.push_str(&t.value),
             InlineNode::SmartPunctuation(s) => out.push_str(smart_punctuation_glyph(s)),
-            InlineNode::Emphasis(e) => out.push_str(&flatten_text(&e.children)),
-            InlineNode::Link(l) => out.push_str(&flatten_text(&l.children)),
-            InlineNode::Span(s) => out.push_str(&flatten_text(&s.children)),
-            InlineNode::Extension(e) => out.push_str(&flatten_text(&e.children)),
+            InlineNode::Emphasis(e) => out.push_str(&flatten_text_at(&e.children, depth + 1)),
+            InlineNode::Link(l) => out.push_str(&flatten_text_at(&l.children, depth + 1)),
+            InlineNode::Span(s) => out.push_str(&flatten_text_at(&s.children, depth + 1)),
+            InlineNode::Extension(e) => out.push_str(&flatten_text_at(&e.children, depth + 1)),
             _ => {}
         }
     }
@@ -2644,13 +3287,15 @@ fn render_inline_extension(
             return;
         }
     }
-    // Semantic shorthands: `:tag[content]` renders as the matching HTML element
-    // (matches carve-js / carve-php). Any other name falls back to a generic
-    // `<span class="ext-NAME">`.
-    const SEMANTIC_TAGS: [&str; 9] = [
-        "kbd", "dfn", "abbr", "cite", "samp", "var", "code", "mark", "time",
-    ];
-    if SEMANTIC_TAGS.contains(&node.name.as_str()) {
+    // PART 9 §10: the SemanticSpan extension re-registers the seven names as a
+    // SOFT-DEPRECATED spelling. Core registers none, so without the extension
+    // every name falls through to the readable `ext-NAME` span below.
+    if options
+        .extensions
+        .iter()
+        .any(|ext| !ext.semantic_span_names().is_empty())
+        && EXTENDED_SEMANTIC_SPAN_ORDER.contains(&node.name.as_str())
+    {
         out.push_str(&format!("<{}{}>", node.name, render_attrs(&node.attrs)));
         render_inlines_stateful(out, &node.children, options, state);
         out.push_str(&format!("</{}>", node.name));
@@ -2662,15 +3307,10 @@ fn render_inline_extension(
     // contributes id / key-values after. Matches the math-span merge and
     // carve-js / carve-php.
     let base = format!("ext-{}", node.name);
-    let (class, rest) = match &node.attrs {
-        Some(a) if !a.classes.is_empty() => (
-            dedup_class_str(&format!("{} {}", base, a.classes.join(" "))),
-            render_attrs_after_class(a),
-        ),
-        Some(a) => (base, render_attrs_after_class(a)),
-        None => (base, String::new()),
-    };
-    out.push_str(&format!("<span class=\"{}\"{}>", escape_attr(&class), rest));
+    out.push_str(&format!(
+        "<span{}>",
+        render_attrs_with_base_class(&node.attrs, &base)
+    ));
     render_inlines_stateful(out, &node.children, options, state);
     out.push_str("</span>");
 }
@@ -2837,6 +3477,88 @@ pub(crate) fn render_attrs_without_keys(attrs: &Option<Attrs>, blocked: &[&str])
 /// Render an attribute block's id and key-values in source order, omitting
 /// the class slot. Used by a node whose class is structural and merged
 /// separately (the math span: `class="math inline {extra}"`).
+/// Render an attribute block in SOURCE ORDER with a mandatory base class
+/// merged into the author's class slot.
+///
+/// PART 10 SS1 emits authored attributes in the order they were written, and a
+/// structural class belongs in the class slot rather than ahead of everything.
+/// Writing `class="..."` unconditionally first REORDERED the author's
+/// attributes: `:widget[x]{#copy .shortcut}` came back as
+/// `<span class="ext-widget shortcut" id="copy">` where carve-js keeps
+/// `<span id="copy" class="ext-widget shortcut">` (markup-carve/carve#1164).
+///
+/// With no class slot to merge into there is no authored position to respect,
+/// so the base class leads - which is what carve-js does for `{#copy}` and
+/// `{k=v}` alike.
+pub(crate) fn render_attrs_with_base_class(attrs: &Option<Attrs>, base: &str) -> String {
+    let Some(attrs) = attrs else {
+        return format!(" class=\"{}\"", escape_attr(base));
+    };
+    let merged = |classes: &[String]| -> String {
+        let joined = if classes.is_empty() {
+            base.to_string()
+        } else {
+            format!("{} {}", base, classes.join(" "))
+        };
+        format!(" class=\"{}\"", escape_attr(&dedup_class_str(&joined)))
+    };
+    // No recorded order: the slots go in the canonical order, class first.
+    if attrs.order.is_empty() {
+        let mut out = merged(&attrs.classes);
+        if let Some(id) = &attrs.id {
+            write_attr_id(&mut out, id);
+        }
+        for (key, value) in &attrs.key_values {
+            if !is_dangerous_attr_name(key) && is_valid_attr_name(key) {
+                out.push_str(&format!(
+                    " {}=\"{}\"",
+                    escape_attr(key),
+                    escape_attr(&sanitize_attr_value(key, value))
+                ));
+            }
+        }
+
+        return out;
+    }
+
+    let has_class_slot = attrs.order.iter().any(|s| matches!(s, AttrSlot::Class));
+    let mut out = String::new();
+    if !has_class_slot {
+        out.push_str(&merged(&attrs.classes));
+    }
+    let mut class_written = false;
+    for slot in &attrs.order {
+        match slot {
+            AttrSlot::Id => {
+                if let Some(id) = &attrs.id {
+                    write_attr_id(&mut out, id);
+                }
+            }
+            AttrSlot::Class => {
+                // The FIRST class slot carries the merge; a second one would be
+                // a second `class` attribute, which is never valid.
+                if !class_written {
+                    out.push_str(&merged(&attrs.classes));
+                    class_written = true;
+                }
+            }
+            AttrSlot::Key(key) => {
+                if let Some(value) = attrs.key_values.get(key) {
+                    if !is_dangerous_attr_name(key) && is_valid_attr_name(key) {
+                        out.push_str(&format!(
+                            " {}=\"{}\"",
+                            escape_attr(key),
+                            escape_attr(&sanitize_attr_value(key, value))
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
+    out
+}
+
 pub(crate) fn render_attrs_after_class(attrs: &Attrs) -> String {
     let mut out = String::new();
     if attrs.order.is_empty() {

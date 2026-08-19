@@ -14,10 +14,11 @@ pub(crate) const WIRE_FIELDS: &[(&str, &[&str])] = &[
     ("autolink", &["attrs", "href", "pos", "text", "type"]),
     ("block_quote", &["attrs", "children", "pos", "type"]),
     ("caption_number", &["attrs", "n", "pos", "type"]),
+    ("citation_definition", &["attrs", "children", "key", "pos", "type"]),
     ("citation_group", &["attrs", "items", "mode", "pos", "raw", "type"]),
     ("code", &["attrs", "pos", "type", "value"]),
     ("code_block", &["attrs", "content", "header", "label", "lang", "pos", "type"]),
-    ("comment", &["attrs", "block", "content", "pos", "type"]),
+    ("comment", &["attrs", "block", "content", "delimited", "pos", "type"]),
     ("critic_comment", &["attrs", "pos", "text", "type"]),
     ("definition_description", &["attrs", "children", "pos", "type"]),
     ("definition_list", &["attrs", "items", "pos", "type"]),
@@ -27,7 +28,8 @@ pub(crate) const WIRE_FIELDS: &[(&str, &[&str])] = &[
     ("document", &["children", "srcByteLength", "type"]),
     ("emphasis", &["attrs", "children", "pos", "type"]),
     ("escaped_text", &["attrs", "pos", "type", "value"]),
-    ("figure", &["attrs", "caption", "pos", "target", "type"]),
+    ("figure", &["attrs", "caption", "pos", "shortCaption", "target", "type"]),
+    ("figure_group", &["attrs", "caption", "children", "pos", "type"]),
     ("footnote", &["attrs", "children", "label", "pos", "type"]),
     ("footnote_ref", &["attrs", "id", "number", "pos", "type"]),
     ("frontmatter", &["content", "format", "pos", "type"]),
@@ -59,8 +61,8 @@ pub(crate) const WIRE_FIELDS: &[(&str, &[&str])] = &[
     ("substitution", &["attrs", "newText", "oldText", "pos", "type"]),
     ("superscript", &["attrs", "children", "pos", "type"]),
     ("symbol", &["attrs", "name", "pos", "type"]),
-    ("table", &["attrs", "caption", "pos", "rows", "type"]),
-    ("table_cell", &["align", "attrs", "children", "header", "pos", "span", "type"]),
+    ("table", &["attrs", "caption", "columns", "pos", "rowGroups", "rows", "shortCaption", "type"]),
+    ("table_cell", &["align", "attrs", "children", "header", "pos", "span", "type", "valign"]),
     ("table_row", &["attrs", "cells", "pos", "type"]),
     ("tag", &["attrs", "name", "pos", "type"]),
     ("text", &["attrs", "pos", "type", "value"]),
@@ -73,6 +75,7 @@ pub(crate) const WIRE_FIELDS: &[(&str, &[&str])] = &[
 pub(crate) const WIRE_HELPER_FIELDS: &[(&str, &[&str])] = &[
     ("attrs", &["classes", "id", "keyValues", "order"]),
     ("pos", &["endColumn", "endLine", "endOffset", "startColumn", "startLine", "startOffset"]),
+    ("rowGroups", &["bodies", "footRows", "headRows"]),
 ];
 
 /// Properties the schema names for an untyped record in an array,
@@ -80,4 +83,5 @@ pub(crate) const WIRE_HELPER_FIELDS: &[(&str, &[&str])] = &[
 #[rustfmt::skip]
 pub(crate) const WIRE_UNTYPED_ARRAY_FIELDS: &[(&str, &[&str])] = &[
     ("citation_group.items", &["key", "locator", "locatorLabel", "locatorValue", "number", "prefix", "suffix", "suppressAuthor", "useIndex"]),
+    ("table.rowGroups.bodies", &["attrs", "bodyRows", "headRows", "rowHeadColumns"]),
 ];

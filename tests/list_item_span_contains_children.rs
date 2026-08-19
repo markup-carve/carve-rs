@@ -96,35 +96,35 @@ fn an_item_with_only_its_marker_line_is_unchanged() {
     assert_eq!(children.len(), 1);
 }
 
-/// A figure's block-quote target kept line and column and offsets of 0..0: the
-/// walk filled its children and its attribution and skipped the quote itself,
-/// so the quote reported a span that selects nothing and every block inside it
-/// fell outside its own parent (carve#565).
+/// A captioned quote and its target both carry real, nested offsets.
 #[test]
-fn a_figures_quote_target_carries_real_offsets() {
+fn a_captioned_quote_carries_real_offsets() {
     let source = "Intro\n\n> Stay hungry\n^ Steve Jobs\n";
     let doc = document(source);
     let BlockNode::Figure(figure) = &doc.children[1] else {
         panic!("expected a figure second, got {:?}", doc.children[1]);
     };
-    let carve::ast::FigureTarget::BlockQuote(quote) = &figure.target else {
+    let carve::ast::FigureTarget::BlockQuote(quote) = &*figure.target else {
         panic!("expected a block quote target");
     };
-    let pos = quote.pos.expect("the quote carries no position");
+    let pos = figure.pos.expect("the figure carries no position");
 
     assert!(
         pos.end_offset > pos.start_offset,
-        "quote span is empty: [{}, {}]",
+        "figure span is empty: [{}, {}]",
         pos.start_offset,
         pos.end_offset,
     );
-    let figure_pos = figure.pos.expect("the figure carries no position");
-    assert!(
-        pos.start_offset >= figure_pos.start_offset && pos.end_offset <= figure_pos.end_offset,
-        "quote [{}, {}] is outside its figure [{}, {}]",
-        pos.start_offset,
-        pos.end_offset,
-        figure_pos.start_offset,
-        figure_pos.end_offset,
-    );
+    // The figure span runs from the quote through its caption.
+    for child in &quote.children {
+        let child_pos = child_pos(child).expect("a child of the quote carries no position");
+        assert!(
+            child_pos.start_offset >= pos.start_offset && child_pos.end_offset <= pos.end_offset,
+            "child [{}, {}] is outside its quote [{}, {}]",
+            child_pos.start_offset,
+            child_pos.end_offset,
+            pos.start_offset,
+            pos.end_offset,
+        );
+    }
 }

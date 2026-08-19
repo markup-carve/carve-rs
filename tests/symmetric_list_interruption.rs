@@ -1,6 +1,7 @@
-//! List-marker behavior at paragraph and container boundaries (§10).
+//! Symmetric list interruption (grammar PART 9 §10).
 //!
-//! Every list marker requires block position after a paragraph. Without
+//! No list marker interrupts an open paragraph: a bullet (`- `/`* `) and a task
+//! marker need a blank line, exactly like an ordered marker already did. Without
 //! the blank line the marker folds into the open paragraph / heading / quoted
 //! paragraph as lazy continuation. Tight nested lists are unaffected (a marker at
 //! the content column nests; below it, it folds). Rule B: a marker that dedents

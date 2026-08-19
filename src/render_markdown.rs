@@ -139,6 +139,7 @@ fn render_markdown_inner(
     }
 
     let mut ctx = MarkdownContext {
+        suppress_automatic_abbreviation: false,
         heading_ids,
         referenced_heading_ids,
         explicit_ids,
@@ -156,6 +157,13 @@ fn render_markdown_inner(
 }
 
 struct MarkdownContext {
+    /// Set while rendering a span that carries an authored `abbr`.
+    ///
+    /// PART 9 section 10 and carve#1127: the authored value OUTRANKS automatic
+    /// expansion, and a resolved abbreviation inside such a span contributes only
+    /// its visible text. The HTML renderer already carried this flag on its state;
+    /// this target emitted the DEFINITION's text instead (carve#1176).
+    suppress_automatic_abbreviation: bool,
     heading_ids: HashSet<String>,
     referenced_heading_ids: HashSet<String>,
     explicit_ids: HashSet<String>,
@@ -203,7 +211,7 @@ fn render_block(node: &BlockNode, ctx: &mut MarkdownContext, depth: usize) -> St
     }
     match node {
         // Renders nothing, same as carve-js and carve-php on this target.
-        BlockNode::LinkReferenceDefinition(_) => String::new(),
+        BlockNode::LinkReferenceDefinition(_) | BlockNode::CitationDefinition(_) => String::new(),
         BlockNode::Heading(heading) => {
             let id = next_heading_id(heading, &mut ctx.id_counts, &ctx.explicit_ids);
             let text = flatten_heading_text(&render_block_inlines(&heading.children, ctx));
@@ -220,7 +228,7 @@ fn render_block(node: &BlockNode, ctx: &mut MarkdownContext, depth: usize) -> St
             )
         }
         BlockNode::CodeBlock(code) => {
-            let content = strip_controls(&code.content);
+            let content = resolve_nbsp(&strip_controls(&code.content));
             let fence = safe_fence(&content, 3);
             let mut info = code
                 .lang
@@ -268,12 +276,19 @@ fn render_block(node: &BlockNode, ctx: &mut MarkdownContext, depth: usize) -> St
         }
         BlockNode::BlockQuote(quote) => {
             let lines = render_blocks(&quote.children, ctx, depth + 1);
-            let body = trim_block_output(&lines)
+            let body = trim_block_output(&lines).to_string();
+            let quoted = body
                 .split('\n')
-                .map(|line| format!("> {line}"))
+                .map(|line| {
+                    if line.is_empty() {
+                        ">".to_string()
+                    } else {
+                        format!("> {line}")
+                    }
+                })
                 .collect::<Vec<_>>()
                 .join("\n");
-            format!("{body}\n\n")
+            format!("{quoted}\n\n")
         }
         BlockNode::List(list) => render_list(list, ctx, depth + 1),
         BlockNode::ThematicBreak(_) => "---\n\n".to_string(),
@@ -307,6 +322,7 @@ fn render_block(node: &BlockNode, ctx: &mut MarkdownContext, depth: usize) -> St
             render_definition_list(&list.items, ctx, true, depth + 1)
         }
         BlockNode::Figure(figure) => render_figure(figure, ctx, depth + 1),
+        BlockNode::FigureGroup(group) => render_figure_group(group, ctx, depth + 1),
         // A standalone block image is its own block: terminate it so the next
         // block is not glued onto the image (render_image stays newline-free
         // because it is shared with inline image rendering).
@@ -321,7 +337,7 @@ fn render_block(node: &BlockNode, ctx: &mut MarkdownContext, depth: usize) -> St
             }
         }
         BlockNode::Extension(extension) => render_blocks(&extension.children, ctx, depth + 1),
-        // PART 10 §10a: a definition NOTHING references still reaches this
+        // PART 11 §10a: a definition NOTHING references still reaches this
         // target. HTML drops it because it has nowhere to put one; Markdown,
         // plain text and the terminal do not get to drop content the author
         // wrote, and dropping it made the output depend on whether a reference
@@ -460,7 +476,16 @@ fn render_list(node: &List, ctx: &mut MarkdownContext, depth: usize) -> String {
         // itself. Carve's own content-column model is lenient enough to read it
         // back as a list, which is why this was invisible from inside the
         // engine and only pandoc showed it (carve#1069, carve-php#1142).
-        out.push_str(&format!("{prefix}{}\n", lines.next().unwrap_or_default()));
+        // An item whose content was collected away -- a link reference or a
+        // footnote definition is the whole item -- leaves the marker alone on
+        // its line. The marker's own separator is then trailing whitespace,
+        // which is what the continuation pad below already refuses to write.
+        let first = lines.next().unwrap_or_default();
+        if first.is_empty() {
+            out.push_str(&format!("{}\n", prefix.trim_end()));
+        } else {
+            out.push_str(&format!("{prefix}{first}\n"));
+        }
         let continuation = " ".repeat(prefix.len());
         for line in lines {
             // A line with no content takes no pad: PART 11 section 7 emits such
@@ -496,10 +521,16 @@ fn render_definition_list(
             out.push_str(&format!("**{}**\n", render_block_inlines(term, ctx)));
         }
         for definition in &item.definitions {
-            out.push_str(&format!(
-                ": {}\n",
-                trim_block_output(&render_blocks(definition, ctx, depth + 1))
-            ));
+            // Same rule as the list marker above: a definition whose body was
+            // collected away writes the marker bare rather than with the
+            // separator space left dangling at the end of the line.
+            let rendered = render_blocks(definition, ctx, depth + 1);
+            let body = trim_block_output(&rendered);
+            if body.is_empty() {
+                out.push_str(":\n");
+            } else {
+                out.push_str(&format!(": {body}\n"));
+            }
         }
     }
     if trailing_blank {
@@ -574,7 +605,58 @@ fn render_table(node: &Table, ctx: &mut MarkdownContext) -> String {
         out.push_str(&format!("| {sep} |\n"));
     }
     out.push_str(&rows.join("\n"));
-    out.push_str("\n\n");
+    out.push('\n');
+    // PART 11 §10e T2. A caption is authored text, and Markdown has no
+    // table-caption syntax, so it goes under the table as body text rather than
+    // being dropped - the position an image caption and a listing caption
+    // already take on this target.
+    //
+    // THE BLANK LINE IS LOAD-BEARING. Written directly after the last row, the
+    // caption is read by a GFM reader as ANOTHER ROW: `| a |` then
+    // `Fruit prices` yields `<td>a</td>` and `<td>Fruit prices</td>`. The words
+    // survive as a fabricated data cell, which is worse than losing them,
+    // because neither a reader nor a parser can tell it from an authored cell.
+    // §10e states the general form: attachment by adjacency is available only on
+    // a target where adjacency does not change what the adjacent block IS.
+    if let Some(caption) = &node.caption {
+        let text = render_inlines(caption, ctx, 0);
+        let text = text.trim();
+        if !text.is_empty() {
+            out.push('\n');
+            out.push_str(text);
+            out.push('\n');
+        }
+    }
+    out.push('\n');
+    out
+}
+
+/// PART 11 §10g T1: Markdown has no figure grouping, so the group degrades to
+/// its content in order - each panel's host as it already degrades, each panel
+/// caption as an emphasized `*...*` paragraph after its host, preserved stray
+/// content in place, and the group caption LAST as a bold `**...**` paragraph
+/// with its number resolved. Emphasis and bold rather than invented syntax:
+/// the spelling the admonition title already uses for authored text with no
+/// native slot.
+fn render_figure_group(node: &FigureGroup, ctx: &mut MarkdownContext, depth: usize) -> String {
+    if depth > MAX_RENDER_DEPTH {
+        crate::render_depth::record("markdown");
+        return String::new();
+    }
+    let mut out = String::new();
+    for child in &node.children {
+        match child {
+            BlockNode::Figure(figure) => {
+                let target = render_figure_target(figure, ctx, depth);
+                let caption = render_block_inlines(&figure.caption, ctx);
+                out.push_str(&format!("{target}\n\n*{caption}*\n\n"));
+            }
+            other => out.push_str(&render_block(other, ctx, depth)),
+        }
+    }
+    if let Some(caption) = &node.caption {
+        out.push_str(&format!("**{}**\n\n", render_block_inlines(caption, ctx)));
+    }
     out
 }
 
@@ -583,7 +665,36 @@ fn render_figure(node: &Figure, ctx: &mut MarkdownContext, depth: usize) -> Stri
         crate::render_depth::record("markdown");
         return String::new();
     }
-    let target = match &node.target {
+    let target = render_figure_target(node, ctx, depth);
+    // The caption sits on its own line directly under the figure (`\n`) - an
+    // image target used to glue it on (`![a](/u)cap`). A blockquote target keeps
+    // the blank-line separation.
+    //
+    // A TABLE TARGET IS THE SAME RULE AS `render_table`'s CAPTION, and takes the
+    // same blank line for the same reason (PART 11 §10e T2). This is the second
+    // spelling of one rule: a captioned table the parser produces is a `table`
+    // carrying its own caption, but a `figure` over a table arrives through the
+    // AST-ingest path from an engine that models it that way. The separator here
+    // was the empty string, so the caption was written with no line break at all
+    // - `| a |Fruit prices` - fusing the words INTO the last data cell rather
+    // than merely following it.
+    let sep = match &*node.target {
+        FigureTarget::BlockQuote(_) | FigureTarget::Table(_) => "\n\n",
+        _ => "\n",
+    };
+    // End with the block separator so a following block is not glued to the
+    // caption (matching every other block renderer and carve-php).
+    format!(
+        "{target}{sep}{}\n\n",
+        render_block_inlines(&node.caption, ctx)
+    )
+}
+
+/// A figure's TARGET degraded on its own, without the caption - shared by the
+/// plain figure (which glues its caption under it) and the figure group
+/// (whose panel captions take the §10g T1 emphasized-paragraph form instead).
+fn render_figure_target(node: &Figure, ctx: &mut MarkdownContext, depth: usize) -> String {
+    match &*node.target {
         FigureTarget::Image(image) => render_image(image),
         FigureTarget::Table(table) => render_table(table, ctx).trim().to_string(),
         FigureTarget::BlockQuote(quote) => {
@@ -601,21 +712,7 @@ fn render_figure(node: &Figure, ctx: &mut MarkdownContext, depth: usize) -> Stri
                 .trim()
                 .to_string()
         }
-    };
-    // The caption sits on its own line directly under the figure (`\n`) - an
-    // image target used to glue it on (`![a](/u)cap`). A blockquote target keeps
-    // the blank-line separation; a table drops the caption entirely.
-    let sep = match &node.target {
-        FigureTarget::BlockQuote(_) => "\n\n",
-        FigureTarget::Table(_) => "",
-        _ => "\n",
-    };
-    // End with the block separator so a following block is not glued to the
-    // caption (matching every other block renderer and carve-php).
-    format!(
-        "{target}{sep}{}\n\n",
-        render_block_inlines(&node.caption, ctx)
-    )
+    }
 }
 
 fn render_footnote_defs(doc: &Document, ctx: &mut MarkdownContext) -> String {
@@ -652,29 +749,37 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
         return String::new();
     }
     match node {
-        // Reproduce the author's escape. `\-\-` was written precisely so a
-        // downstream processor with smart punctuation on would not read an en
-        // dash; emitting the character bare loses exactly that (carve issue
-        // 350).
+        // Reproduce the author's escape where it protects something ON THIS
+        // TARGET. `\-\-` was written precisely so a downstream processor with
+        // smart punctuation on would not read an en dash; emitting the
+        // character bare loses exactly that (carve issue 350), so the triggers
+        // §8 names are kept whatever their position.
         //
-        // NO SENTINEL HERE, and PART 11 §8a M2 says why: M1b is a rule about a
-        // character that reached this writer inside a TEXT node - one the Carve
-        // grammar did not read as an opener and the author did not mark. This
-        // is the other case. The author said which reading they meant, M2 gives
-        // it back whatever the character, and the line test never sees it. The
-        // underscore used to take the sentinel here and lose its backslash to
-        // the intraword rule, which was M1b deciding a node M1 never governed.
-        InlineNode::EscapedText(text) => format!("\\{}", text.value),
+        // PART 11 §8b narrows the rest, on the finding §8a already states.
+        // M2a: a character this target's readers never read as markup is
+        // emitted BARE, which is Carve's own delimiters. M2b: the hash is read
+        // as markup only where it would open an ATX heading, so it takes a
+        // sentinel and is decided on the line like M1b's candidates.
+        //
+        // Every character Markdown CAN read keeps M2 as written. The bracket
+        // in particular keeps its escape at every position, which is what
+        // leaves §8a's argument about the two link grammars standing: an
+        // author who meant `[a](b)` as text still gets it back.
+        InlineNode::EscapedText(text) => {
+            let mut chars = text.value.chars();
+            match (chars.next(), chars.next()) {
+                (Some(ch), None) if AUTHORED_INERT.contains(&ch) => ch.to_string(),
+                (Some(ch), None) if authored_sentinel(ch).is_some() => {
+                    authored_sentinel(ch).expect("checked above").to_string()
+                }
+                _ => format!("\\{}", text.value),
+            }
+        }
         InlineNode::Text(text) => {
             if is_literal_crossref(&text.value) {
                 strip_controls(&text.value)
             } else {
-                // The generated-NBSP placeholder (escaped space `\ ` / verse
-                // indent) round-trips to a literal non-breaking space in
-                // Markdown, matching the other renderers' source projection.
-                escape_text(
-                    &strip_controls(&text.value).replace(crate::NBSP_PLACEHOLDER, "\u{00a0}"),
-                )
+                escape_text(&resolve_nbsp(&strip_controls(&text.value)))
             }
         }
         // Not escaped: a smart-typography run is either a glyph (nothing to
@@ -724,10 +829,33 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
                 )
             }
         },
-        InlineNode::Code(code) => render_code(&strip_controls(&code.value)),
+        InlineNode::Code(code) => render_code(&resolve_nbsp(&strip_controls(&code.value))),
         InlineNode::Link(link) => render_link(link, ctx, depth + 1),
         InlineNode::Image(image) => render_image(image),
-        InlineNode::Span(span) => render_inlines(&span.children, ctx, depth + 1),
+        InlineNode::Span(span) => {
+            // A span has no Markdown spelling, so its content is rendered bare -
+            // EXCEPT for an authored `abbr`, which outranks the document
+            // definition (carve#1127). This target can carry a title, since it
+            // already emits an `<abbr>` for an ordinary expansion, so it carries
+            // the AUTHORED one (carve#1176).
+            let authored = span
+                .attrs
+                .as_ref()
+                .and_then(|a| a.key_values.get("abbr"))
+                .cloned();
+            let Some(authored) = authored else {
+                return render_inlines(&span.children, ctx, depth + 1);
+            };
+            let previous = ctx.suppress_automatic_abbreviation;
+            ctx.suppress_automatic_abbreviation = true;
+            let inner = render_inlines(&span.children, ctx, depth + 1);
+            ctx.suppress_automatic_abbreviation = previous;
+            if authored.is_empty() || !crate::abbr_budget::try_spend(authored.len()) {
+                return inner;
+            }
+            let title = escape_md_html(&strip_controls(&authored)).replace('"', "&quot;");
+            format!("<abbr title=\"{title}\">{inner}</abbr>")
+        }
         InlineNode::Math(math) => {
             // Escaped, exactly as the HTML target escapes the same content: a
             // consumer decodes the entity back to the character before its math
@@ -751,7 +879,7 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
             // §27: emitted by EVERY renderer, never dropped. It is prose, not
             // code, so no code fence -- the content becomes literal text with
             // Markdown metacharacters escaped so `*not bold*` stays visible.
-            escape_text(&strip_controls(&lit.content))
+            escape_text(&resolve_nbsp(&strip_controls(&lit.content)))
         }
         InlineNode::Symbol(symbol) => format!(":{}:", symbol.name),
         InlineNode::AutoLink(link) => format!(
@@ -767,6 +895,11 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
             // title survives (markdown allows inline HTML), matching carve-php.
             // Dropping it to plain text would lose the expansion.
             let text = escape_md_html(&strip_controls(&abbr.abbr));
+            // Inside a span carrying its own `abbr`, only the visible text
+            // (carve#1127).
+            if ctx.suppress_automatic_abbreviation {
+                return text;
+            }
             // Bound cumulative expansion bytes (memory-amplification DoS): once
             // the budget is exhausted, degrade to plain key text with no title.
             if crate::abbr_budget::try_spend(abbr.expansion.len()) {
@@ -1036,7 +1169,9 @@ fn prepend_label(body: String, label: Option<&str>) -> String {
 
 fn escape_text(text: &str) -> String {
     let mut out = String::new();
-    for ch in text.chars() {
+    // PEEKABLE, because M1e below decides on the NEXT character.
+    let mut chars = text.chars().peekable();
+    while let Some(ch) = chars.next() {
         match ch {
             // Neutralize embedded HTML so Markdown re-rendered to HTML cannot
             // execute it (carve's "HTML is text" guarantee for the Markdown
@@ -1057,12 +1192,27 @@ fn escape_text(text: &str) -> String {
             // tag, so this renderer sees two separate text nodes - answering it
             // here would be one node too early, the mistake section 8a
             // documents for `_`, `#` and `[`.
+            // PART 11 section 8a M1e: a `<` is escaped only where the emitted
+            // line would read it as markup - before an ASCII letter, `/`, `!`
+            // or `?`, the four things that open raw HTML. Everything else is
+            // inert, and so is `>` mid-line; at line start `>` is a block quote
+            // marker M1 already covers.
+            //
+            // A BACKSLASH, not an entity. Both entities were written
+            // unconditionally with no clause behind them (carve#1148), and that
+            // is precisely because an entity is not the operation this section
+            // describes: M2 and M3 protect a character so it survives as
+            // itself, and an entity replaces it instead. Escaping the `<` alone
+            // suffices - a tag that cannot open cannot be closed.
             '<' => {
-                out.push_str("&lt;");
-                continue;
-            }
-            '>' => {
-                out.push_str("&gt;");
+                let opens_markup = matches!(
+                    chars.peek(),
+                    Some(n) if n.is_ascii_alphabetic() || matches!(n, '/' | '!' | '?')
+                );
+                if opens_markup {
+                    out.push('\\');
+                }
+                out.push('<');
                 continue;
             }
             // `_`, `#` and `[` are emitted as SENTINELS rather than as
@@ -1095,7 +1245,40 @@ fn escape_text(text: &str) -> String {
 /// one: `strip_controls` drops the whole range on the way in, and every path to
 /// the output runs through it.
 const SENTINEL_FIRST: char = '\u{E004}';
-const SENTINEL_LAST: char = '\u{E006}';
+const SENTINEL_LAST: char = '\u{E007}';
+
+/// PART 11 §8b M2a: characters this target's readers never read as markup, at
+/// ANY position on the line.
+///
+/// An `escaped_text` node holding one of these is emitted BARE. They are
+/// Carve's own delimiters and Markdown has no reading for them, so the escape
+/// protects nothing and lands inside an identifier.
+///
+/// `~` is NOT here: GFM reads `~x~` as strikethrough. Nor are the
+/// smart-punctuation triggers `"`, `'`, `-` and `.`, which §8b keeps whatever
+/// their position, because a processor with substitution on rewrites the TEXT
+/// rather than reading markup.
+const AUTHORED_INERT: [char; 8] = ['{', '}', '^', ',', '%', ':', '/', '@'];
+
+/// The sentinel for an AUTHORED escape §8b M2b decides on the line.
+///
+/// A second family rather than a wider first one, because the two are decided
+/// by DIFFERENT tests: M1b asks about an adjacent delimiter of the same
+/// character, M2b asks where on the line the character stands.
+fn authored_sentinel(ch: char) -> Option<char> {
+    match ch {
+        '#' => Some('\u{E007}'),
+        _ => None,
+    }
+}
+
+/// The character an authored sentinel stands for, or `None` for anything else.
+fn authored_character(ch: char) -> Option<char> {
+    match ch {
+        '\u{E007}' => Some('#'),
+        _ => None,
+    }
+}
 
 /// The sentinel for a narrowed character (`_`, `#`, `[`).
 fn narrowed_sentinel(ch: char) -> char {
@@ -1134,6 +1317,24 @@ fn strip_controls(input: &str) -> String {
         .filter(|c| !(SENTINEL_FIRST..=SENTINEL_LAST).contains(c))
         .collect();
     strip_control_chars(&sentinels_gone)
+}
+
+/// Resolve the no-break-space sentinel U+E000 to a literal U+00A0, Markdown's
+/// no-break space.
+///
+/// PART 12 §3 puts the sentinel on FOUR fields - `text.value`, `code.value`,
+/// `code_block.content` and `literal_inline.content` - and a consumer MUST map
+/// it on all of them rather than emit it. Only `raw_block.content` is excluded:
+/// that one is byte-for-byte passthrough, so a U+E000 in it is payload and
+/// mapping it would corrupt what the node exists to carry.
+///
+/// Two sources put it there and BOTH have to survive this: an escaped space
+/// (`\ `), which is a single sentinel, and a line block's preserved indentation
+/// (PART 9 §23), which is a RUN of one sentinel per space. Replacing every
+/// occurrence covers both; a fix that only knew about the escaped space would
+/// map the first and leave the rest.
+fn resolve_nbsp(text: &str) -> String {
+    text.replace(crate::NBSP_PLACEHOLDER, "\u{00a0}")
 }
 
 /// Escape `<>&` so embedded raw HTML cannot become live markup downstream.
@@ -1339,30 +1540,204 @@ fn adjacent_to_live_delimiter(line: &[char], i: usize, ch: char) -> bool {
 /// assembled document also contains regions this renderer must reproduce
 /// byte-exact - code spans, code blocks, link destinations, titles, raw HTML -
 /// and a backslash there is content, not an escape. Matching `\_` rewrote those
-/// too (carve-js issue 400). It also keeps M2 out of the question: an
-/// author-escaped character is an `escaped_text` node emitted AS AN ESCAPE, and
-/// it never carries a sentinel, so nothing here can unescape it.
+/// too (carve-js issue 400). It is also what keeps §8b M2b off a backslash the
+/// author wrote inside such a region: the hash decided here reached the output
+/// as a SENTINEL this writer emitted for an `escaped_text` node, and a literal
+/// `\#` in a code span never becomes one.
 fn resolve_narrowed_escapes(text: &str) -> String {
-    if !text.chars().any(|c| narrowed_character(c).is_some()) {
+    let candidate = |c: char| narrowed_character(c).or_else(|| authored_character(c));
+
+    if !text.chars().any(|c| candidate(c).is_some()) {
         return text.to_string();
     }
-    let line: Vec<char> = text
-        .chars()
-        .map(|c| narrowed_character(c).unwrap_or(c))
-        .collect();
+    let line: Vec<char> = text.chars().map(|c| candidate(c).unwrap_or(c)).collect();
     let mut out = String::with_capacity(text.len());
+    // WHERE THE CURRENT LINE'S CONTENT BEGINS, carried rather than re-derived.
+    //
+    // M2b's position test used to answer by scanning BACKWARD from the
+    // candidate to the line's newline, once per candidate - so a line whose
+    // every character is a candidate paid an O(n) scan n times over, which is
+    // the quadratic markup-carve/carve#1331 measured at 33x the pre-§8b writer.
+    // The position is a property of the LINE, not of the candidate, so it is
+    // computed once when a line opens and read in O(1) after that.
+    let mut content_start = content_position(&line, 0);
     for (i, raw) in text.chars().enumerate() {
-        match narrowed_character(raw) {
-            Some(ch) => {
-                if adjacent_to_live_delimiter(&line, i, ch) {
-                    out.push('\\');
-                }
+        if raw == '\n' {
+            content_start = content_position(&line, i + 1);
+            out.push(raw);
+            continue;
+        }
+        // TWO FAMILIES, TWO TESTS. M1b asks whether a delimiter of the same
+        // character stands beside the candidate; M2b asks whether the
+        // candidate stands where an ATX heading could open. Dispatched on
+        // which family the sentinel came from, because the character alone
+        // does not say: a `#` in a text node is M1b's and an author-escaped
+        // one is M2b's.
+        let keep = match (narrowed_character(raw), authored_character(raw)) {
+            (Some(ch), _) => Some((ch, adjacent_to_live_delimiter(&line, i, ch))),
+            (None, Some(ch)) => Some((ch, opens_an_atx_heading(&line, i, content_start))),
+            (None, None) => None,
+        };
+
+        match keep {
+            Some((ch, true)) => {
+                out.push('\\');
                 out.push(ch);
             }
+            Some((ch, false)) => out.push(ch),
             None => out.push(raw),
         }
     }
     out
+}
+
+/// Whether the `#` at `index` would open an ATX heading (PART 11 §8b M2b).
+///
+/// `line` is the assembled output with every candidate resolved to its BARE
+/// character, the same view M1b decides on, indexed by CHARACTER rather than by
+/// byte - a sentinel is one `char` exactly like the character it stands for, so
+/// the index carries across.
+///
+/// Three conditions, all of them CommonMark's: the character stands at the
+/// line's CONTENT POSITION; the run of hashes starting there is one to six
+/// long; and the run is closed by a space, a tab or the end of the line. A tag,
+/// an issue reference and a hex colour fail the third even at a line's start,
+/// which is why the test is spelled on the run rather than on the position
+/// alone.
+///
+/// `content_start` is the line's content position, computed once per line by
+/// [`content_position`] rather than re-derived here. Column 0 is the content
+/// position only of a line no container encloses (markup-carve/carve#1332).
+///
+/// THE RUN IS COUNTED TO SEVEN AND NO FURTHER. The comparison only asks whether
+/// the run EXCEEDS six, and seven is the smallest count that still answers that.
+/// Behaviour is identical either way - a run longer than six is refused on the
+/// count alone, so `line.get(index + run)` is only ever reached when the count is
+/// exact.
+///
+/// IT IS DEFENSIVE RATHER THAN LOAD-BEARING, and the perf rows say so by NOT
+/// separating it: removing the bound leaves them green. The position test above
+/// returns before it for every candidate but the one AT the content position, so
+/// the count already runs at most once per line whatever its bound. It stays
+/// because it costs nothing and because that ordering is the only thing keeping
+/// it cheap - a future edit that tests the run first would reintroduce
+/// markup-carve/carve#1331's other half, and would find the bound already in
+/// place.
+fn opens_an_atx_heading(line: &[char], index: usize, content_start: usize) -> bool {
+    if index != content_start {
+        return false;
+    }
+
+    let run = line[index..]
+        .iter()
+        .take_while(|c| **c == '#')
+        .take(7)
+        .count();
+    if run > 6 {
+        return false;
+    }
+
+    match line.get(index + run) {
+        Some(' ' | '\t' | '\n') | None => true,
+        Some(_) => false,
+    }
+}
+
+/// Where the CONTENT of the line beginning at `line_start` begins, which is
+/// after every container prefix the writer put in front of it (PART 11 §8b,
+/// markup-carve/carve#1332).
+///
+/// Column 0 is the content position only of a line no container encloses.
+/// Measuring from column 0 unconditionally is what made `> \# heading` emit
+/// `> # heading`, which CommonMark reads back as a heading inside the quote -
+/// content corruption on a plain round trip (markup-carve/carve#1330).
+///
+/// The prefixes are the ones this writer EMITS, read back off the line it
+/// emitted: a quote marker, a bullet, a task marker, an ordered marker, a
+/// footnote definition's label, and the indentation any of them pads its
+/// continuation lines with. They nest, so the scan loops rather than matching
+/// once - `> > ` is two quote markers and `- ` inside `- ` is a pad and a
+/// bullet.
+///
+/// A DEFINITION-LIST body and a colon fence are deliberately absent: the
+/// Markdown target flattens both to column 0, so there is no prefix in front of
+/// their content to pass over.
+///
+/// Indentation is consumed whether or not a marker follows it, because a
+/// continuation line's pad IS the container's prefix - a paragraph line inside
+/// an item sits at the item's content column, and a hash there opens a heading
+/// exactly as one at column 0 does outside.
+fn content_position(line: &[char], line_start: usize) -> usize {
+    let mut at = line_start;
+    loop {
+        while line.get(at) == Some(&' ') {
+            at += 1;
+        }
+        match container_prefix_end(line, at) {
+            Some(end) => at = end,
+            None => return at,
+        }
+    }
+}
+
+/// One container prefix at `at`, and where it ends. See [`content_position`].
+fn container_prefix_end(line: &[char], at: usize) -> Option<usize> {
+    let ch = *line.get(at)?;
+
+    // A quote marker takes ONE following space, the separator this writer emits.
+    // A blank quote line is written bare (`>`), so the space is optional.
+    if ch == '>' {
+        return Some(if line.get(at + 1) == Some(&' ') {
+            at + 2
+        } else {
+            at + 1
+        });
+    }
+
+    // A task marker before the plain bullet it starts with, so `- [ ] ` is read
+    // whole rather than as a bullet followed by a bracket.
+    if matches!(ch, '-' | '*' | '+') && line.get(at + 1) == Some(&' ') {
+        if line.get(at + 2) == Some(&'[')
+            && matches!(line.get(at + 3), Some(' ' | 'x' | 'X'))
+            && line.get(at + 4) == Some(&']')
+            && line.get(at + 5) == Some(&' ')
+        {
+            return Some(at + 6);
+        }
+        return Some(at + 2);
+    }
+
+    // An ordered marker: digits, then the authored delimiter, then the
+    // separator. The digit run is bounded the way `protect_paragraph_list_markers`
+    // bounds its own - a number no writer emits is not a marker.
+    if ch.is_ascii_digit() {
+        let mut end = at;
+        while end - at < 9 && line.get(end).is_some_and(char::is_ascii_digit) {
+            end += 1;
+        }
+        if matches!(line.get(end), Some('.' | ')')) && line.get(end + 1) == Some(&' ') {
+            return Some(end + 2);
+        }
+        return None;
+    }
+
+    // A footnote definition's label, which this writer emits as `[^id]: `. An
+    // abbreviation definition (`*[X]: `) is NOT one: its body is not a container
+    // and holds no block content for a hash to open.
+    if ch == '[' && line.get(at + 1) == Some(&'^') {
+        let mut end = at + 2;
+        while !matches!(line.get(end), None | Some('\n') | Some(']')) {
+            end += 1;
+        }
+        if line.get(end) == Some(&']')
+            && line.get(end + 1) == Some(&':')
+            && line.get(end + 2) == Some(&' ')
+        {
+            return Some(end + 3);
+        }
+    }
+
+    None
 }
 
 fn flatten_heading_text(text: &str) -> String {
@@ -1436,6 +1811,11 @@ fn plain_inlines(nodes: &[InlineNode]) -> String {
             // An inline literal renders as visible prose (§27), so it feeds a
             // Markdown heading slug like a code span does.
             InlineNode::LiteralInline(lit) => out.push_str(&lit.content),
+            // Math is verbatim visible text, so it feeds this slug like a code
+            // span does. The THIRD spelling of the derivation carve#1283 moves;
+            // the arm goes in all three at once because a heading id derived
+            // three ways has to be one id.
+            InlineNode::Math(math) => out.push_str(&math.content),
             // A cross-reference contributes NOTHING to the slug, exactly as in
             // `render::plain_inlines`. By this point resolution has turned it
             // into a Link carrying the target heading's text, so counting it
@@ -1524,7 +1904,7 @@ where
             }
             BlockNode::Figure(figure) => {
                 visit(block, Some(&figure.caption));
-                match &figure.target {
+                match &*figure.target {
                     FigureTarget::BlockQuote(quote) => {
                         walk_blocks(&quote.children, depth + 1, visit)
                     }
@@ -1536,6 +1916,12 @@ where
                     }
                     FigureTarget::Image(_) | FigureTarget::CodeBlock(_) => {}
                 }
+            }
+            BlockNode::FigureGroup(group) => {
+                if let Some(caption) = &group.caption {
+                    visit(block, Some(caption));
+                }
+                walk_blocks(&group.children, depth + 1, visit);
             }
             BlockNode::Extension(extension) => walk_blocks(&extension.children, depth + 1, visit),
             _ => {}

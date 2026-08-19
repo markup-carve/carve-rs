@@ -332,7 +332,7 @@ fn a_captioned_image_places_the_figure_and_its_target() {
         "![alt](/i.png)\n^ cap"
     );
 
-    let FigureTarget::Image(image) = &figure.target else {
+    let FigureTarget::Image(image) = &*figure.target else {
         panic!("expected an image target");
     };
     // And the target keeps its own, filled rather than left at 0..0 - a span
@@ -404,8 +404,7 @@ fn a_resolved_reference_link_is_unaffected() {
 }
 
 #[test]
-fn a_quoted_figure_spans_the_quote_and_its_caption() {
-    // The image path placed its figure; a blockquote wrapped in one did not.
+fn a_captioned_quote_figure_spans_the_quote_and_its_caption() {
     let source = "> Stay hungry\n^ Steve Jobs\n";
     let doc = parse_with_positions(source);
     let BlockNode::Figure(figure) = &doc.children[0] else {
@@ -1039,7 +1038,7 @@ fn a_captioned_code_block_places_the_figure_and_the_block() {
         "```python\ndef greet():\n    return 1\n```\n^ Listing #: a greeting"
     );
 
-    let FigureTarget::CodeBlock(code) = &figure.target else {
+    let FigureTarget::CodeBlock(code) = &*figure.target else {
         panic!("its target is the code block");
     };
     let pos = code.pos.expect("the block is placed");

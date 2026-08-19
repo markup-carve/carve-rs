@@ -10,16 +10,17 @@
 
 use carve::ast::{BlockNode, InlineNode};
 
+/// The inline content produced by a `^ ` caption line.
 fn caption_of(source: &str) -> Vec<InlineNode> {
     let options = carve::Options {
         positions: true,
         ..Default::default()
     };
     let doc = carve::parse_with_options(source, &options);
-    let BlockNode::Figure(figure) = &doc.children[0] else {
-        panic!("the fixture did not parse as a figure");
-    };
-    figure.caption.clone()
+    match &doc.children[0] {
+        BlockNode::Figure(figure) => figure.caption.clone(),
+        _ => panic!("the fixture did not parse as a figure"),
+    }
 }
 
 fn text_of(node: &InlineNode) -> Option<(String, Option<carve::ast::Pos>)> {
@@ -39,6 +40,27 @@ fn a_caption_slices_back_to_its_source() {
     let pos = pos.expect("a caption's text must carry a position");
 
     assert_eq!(pos.start_line, 2, "the caption is on the second line");
+    let slice: String = codepoints[pos.start_offset..pos.end_offset]
+        .iter()
+        .collect();
+    assert_eq!(slice, value);
+}
+
+/// The same row on the image host carve-rs#333 was filed about.
+#[test]
+fn a_figure_caption_slices_back_to_its_source_too() {
+    let source = "![a](b.png)\n^ Steve Jobs\n";
+    let codepoints: Vec<char> = source.chars().collect();
+
+    let caption = caption_of(source);
+    let (value, pos) = text_of(&caption[0]).expect("expected a text node");
+    let pos = pos.expect("a caption's text must carry a position");
+
+    assert_eq!(pos.start_line, 2, "the caption is on the second line");
+    assert_ne!(
+        pos.start_offset, pos.end_offset,
+        "the span selects nothing, which reads as present and is not"
+    );
     let slice: String = codepoints[pos.start_offset..pos.end_offset]
         .iter()
         .collect();

@@ -17,19 +17,27 @@
 mod abbr_budget;
 pub mod ast;
 pub mod ast_json;
+pub mod ast_merge;
+pub mod ast_patch;
 mod citations;
+pub mod djot_migrate;
 mod document_ids;
 mod escape;
 mod extension;
 pub mod extensions;
+pub mod html_import;
 mod index_budget;
+pub mod lint;
+pub mod markdown_import;
 mod migrate;
 mod parse;
 pub mod profile;
 pub mod profile_filter;
+pub mod prosemirror;
 mod render;
 mod render_ansi;
 mod render_carve;
+mod render_carve_error;
 mod render_depth;
 mod render_markdown;
 mod render_plain;
@@ -52,32 +60,63 @@ mod wire_fields;
 /// something a consumer can be expected to absorb (carve-rs#404). The writer's
 /// own staging markers moved to U+E010.. to free it.
 pub(crate) const NBSP_PLACEHOLDER: char = '\u{e000}';
+/// The Carve specification version this engine implements.
+///
+/// `carve fmt --stamp` writes it into a document and [`needs_review`] compares
+/// an existing stamp against it, so a stale value tells a reader their document
+/// is current when it is not. It is not kept correct by hand: the test
+/// `the_version_a_build_reports_is_the_one_that_shipped` compares it against the
+/// `Version:` field of the vendored grammar on every run.
+///
+/// The version of the crate itself is `CARGO_PKG_VERSION` - derived from the
+/// manifest, never written out a second time here.
 pub const SPEC_VERSION: &str = "0.2";
 
 pub use ast::*;
-pub use ast_json::{from_json, to_json, AstJsonError};
+pub use ast_json::{from_json, to_json, try_to_json, AstJsonError};
+pub use ast_merge::{
+    merge_ast, merge_ast_with_resolver, MergeConflict, MergeConflictReason, MergeResolution,
+    MergeResult,
+};
+pub use ast_patch::{
+    apply_ast_patch, ast_patch_from_json, ast_patch_to_json, create_ast_patch, AstPatchError,
+    AstPatchOperation,
+};
 pub use citations::{
     parse_locator, CitationMode, Citations, CslDate, CslEntry, CslName, ParsedLocator,
 };
+pub use djot_migrate::djot_to_carve;
 pub use extension::{
     BeforeRenderContext, BlockMatch, CarveExtension, InlineMatch, MatcherContext, Mode, Options,
     RenderContext, SmartTypographyMode, StaticRenderers,
 };
 pub use extensions::{
-    sanitize_svg, Autolink, AutolinkOptions, CodeCallouts, ColorSwatch, ContentMode, CrossrefStyle,
-    Details, ExternalLinks, ExternalLinksOptions, FencedRender, FencedRenderOptions, Glossary,
-    HeadingNumbers, HeadingNumbersOptions, HeadingPermalinks, HeadingPermalinksOptions, ImgFence,
-    Index, ListTable, ListType, MathBlock, MathBlockOptions, Position, SanitizeResult,
-    SanitizeSvgOptions, Spoiler, SwatchPosition, SwatchShape, TabNormalize, TableOfContents,
-    TableOfContentsOptions, TocPlacement, UrlGenerator, Wikilinks, WikilinksOptions,
+    sanitize_svg, Autolink, AutolinkOptions, CodeCallouts, CodeGroup, CodeGroupOptions,
+    ColorSwatch, ContentMode, CrossrefStyle, Details, ExternalLinks, ExternalLinksOptions,
+    FencedRender, FencedRenderOptions, Glossary, HeadingLevelShift, HeadingLevelShiftOptions,
+    HeadingNumbers, HeadingNumbersOptions, HeadingPermalinks, HeadingPermalinksOptions,
+    HeadingReference, HeadingReferenceOptions, ImgFence, Index, ListTable, ListType, MathBlock,
+    MathBlockOptions, Position, QuoteCharacters, SanitizeResult, SanitizeSvgOptions, SmartQuotes,
+    Spoiler, SwatchPosition, SwatchShape, TabNormalize, TableOfContents, TableOfContentsOptions,
+    Tabs, TabsMode, TabsOptions, TocPlacement, UrlGenerator, Wikilinks, WikilinksOptions,
+    SMART_QUOTE_LOCALES,
 };
+pub use html_import::{
+    html_to_ast, html_to_carve, HtmlImportAdapter, HtmlImportDiagnostic, HtmlImportDiagnosticCode,
+    HtmlImportError, HtmlImportMode, HtmlImportOptions, HtmlImportReport, HtmlImportResult,
+    HtmlImportSeverity,
+};
+pub use lint::{lint_carve, lint_carve_with_options, LintWarning};
+pub use markdown_import::{markdown_to_ast, markdown_to_carve};
 pub use migrate::migrate_0_1_to_0_2;
 pub use parse::{parse, parse_with_options};
 pub use profile::{DisallowedAction, LinkPolicy, Profile, ProfileViolation, ProfileViolationError};
 pub use profile_filter::{apply_profile, apply_profile_with_typography, ProfileFilterResult};
+pub use prosemirror::{from_prosemirror, to_prosemirror, ProseMirrorDoc, ProseMirrorError};
 pub use render::{render_html, render_html_with_options, MAX_RENDER_DEPTH};
 pub use render_ansi::{render_ansi, render_ansi_with_options};
 pub use render_carve::render_carve;
+pub use render_carve_error::{RenderCarveError, SourceUnspellable};
 pub use render_depth::RenderDepthError;
 pub use render_markdown::{render_markdown, render_markdown_with_options};
 pub use render_plain::{render_plain_text, render_plain_text_with_options};
@@ -154,9 +193,8 @@ pub fn to_ansi(source: &str) -> String {
 /// profile filtering, heading-id enrichment, or other render-time transforms.
 pub fn to_carve(source: &str) -> String {
     // The SAME text the parser reads. `raw_frontmatter` scans for the block's
-    // closing `---` line and `restore_inline_comments` walks the source lines;
-    // both ran on the RAW string while `parse_for_carve` ran on a normalized
-    // copy. On CRLF input the closer scan (`\n---\n`) missed, so `to_carve`
+    // closing `---` line on the RAW string while `parse_for_carve` ran on a
+    // normalized copy. On CRLF input the closer scan (`\n---\n`) missed, so `to_carve`
     // concluded there was no frontmatter while the parser had already found it
     // - and the document fell through to `render_frontmatter`, which rebuilds
     // the block from the parsed key/value map. That map has no format token, so
@@ -172,87 +210,26 @@ pub fn to_carve(source: &str) -> String {
     }
     let rendered = render_carve(&doc)
         .expect("the parse cap sits below the render ceiling, so a parsed tree never reaches it");
-    let body = restore_inline_comments(source, &rendered);
+    // The writer's own output, unedited. `restore_inline_comments` used to walk
+    // the SOURCE lines here and graft each trailing `%%` back onto the first
+    // formatted line equal to the part before it. It could not repair what it
+    // was written for: `render_carve` emits `InlineNode::Comment` itself, so a
+    // line the writer carried the comment onto already ENDS in the marker and is
+    // therefore not equal to the rendering of the part before it. The graft
+    // landed on some OTHER equal line or matched nothing - inert or harmful,
+    // never corrective - and on `a` over `a %%` inside a line block it wrote the
+    // marker onto both (carve-rs#1076). Only the trailing newline it also
+    // guaranteed is kept.
+    let body = if rendered.ends_with('\n') {
+        rendered
+    } else {
+        format!("{rendered}\n")
+    };
     match frontmatter {
         Some(frontmatter) if body.trim().is_empty() => format!("{frontmatter}\n"),
         Some(frontmatter) => format!("{frontmatter}\n\n{body}"),
         None => body,
     }
-}
-
-fn restore_inline_comments(source: &str, formatted: &str) -> String {
-    let mut lines = formatted.lines().map(str::to_string).collect::<Vec<_>>();
-    // Formatting preserves block order, so match comment-bearing source lines to
-    // formatted lines in order: advance a cursor and consume each match so a
-    // repeated line cannot pull a later comment onto an earlier duplicate.
-    let mut cursor = 0;
-    for source_line in source.lines() {
-        let Some((before, comment)) = split_inline_comment(source_line) else {
-            continue;
-        };
-        if before.trim().is_empty() {
-            continue;
-        }
-        let marker = render_carve(&parse::parse_for_carve(before)).expect(
-            "the parse cap sits below the render ceiling, so a parsed tree never reaches it",
-        );
-        let marker = marker.trim_end();
-        if marker.is_empty() {
-            continue;
-        }
-        if let Some(offset) = lines[cursor..]
-            .iter()
-            .position(|line| line.as_str() == marker)
-        {
-            let idx = cursor + offset;
-            lines[idx].push(' ');
-            lines[idx].push_str(comment);
-            cursor = idx + 1;
-        }
-    }
-    format!("{}\n", lines.join("\n"))
-}
-
-fn split_inline_comment(line: &str) -> Option<(&str, &str)> {
-    let bytes = line.as_bytes();
-    let mut in_code = false;
-    let mut i = 0;
-    while i + 1 < bytes.len() {
-        if bytes[i] == b'`' {
-            in_code = !in_code;
-            i += 1;
-            continue;
-        }
-        if !in_code
-            && bytes[i] == b'%'
-            && bytes[i + 1] == b'%'
-            && (i == 0 || matches!(bytes[i - 1], b' ' | b'\t'))
-        {
-            // A run of three or more `%` opening the line's CONTENT is a
-            // comment-BLOCK fence, not an inline comment - `%%%` on its own
-            // line delimits a block (PART 9 SS28), and only `%%` inside a line
-            // is the trailing-comment marker.
-            //
-            // Treating a fence as an inline comment made this function graft
-            // the fence text onto an unrelated formatted line. Inside a
-            // blockquote `> %%%` split into `>` plus `%%%`, and `>` renders as
-            // the blank quoted line, so the fence was appended THERE - which
-            // unbalanced the real fence and republished the commented-out body
-            // as visible text (carve-rs#432).
-            //
-            // Only the top-level case escaped, and by accident: there the part
-            // before the fence is empty, so the caller's `before.trim()` guard
-            // skipped it.
-            let run = bytes[i..].iter().take_while(|b| **b == b'%').count();
-            let content_starts_here = line[..i].bytes().all(|b| matches!(b, b' ' | b'\t' | b'>'));
-            if run >= 3 && content_starts_here {
-                return None;
-            }
-            return Some((line[..i].trim_end(), &line[i..]));
-        }
-        i += 1;
-    }
-    None
 }
 
 fn raw_frontmatter(source: &str) -> (Option<String>, &str) {

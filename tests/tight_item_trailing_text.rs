@@ -4,6 +4,7 @@
 //! executable-spec oracle. A blank line that separates the block from that
 //! trailing text (blank-after / blank-both) instead loosens the item, so its
 //! leading text and trailing text are each wrapped in `<p>`.
+//! Tables still follow PART 10 §T9: their `<thead>` cells carry `scope="col"`.
 
 // ---- PART 1: trailing text after a closed block in a TIGHT item is bare ----
 

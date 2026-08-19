@@ -65,6 +65,20 @@ fn symbol_map() {
 }
 
 #[test]
+fn list_table_columns_and_foot() {
+    let list_table = carve::ListTable::new();
+    let options = carve::Options::new().with_extension(&list_table);
+    assert_optional_pair("44-list-table-columns-and-foot", options);
+}
+
+#[test]
+fn list_table_local_headers() {
+    let list_table = carve::ListTable::new();
+    let options = carve::Options::new().with_extension(&list_table);
+    assert_optional_pair("45-list-table-local-headers", options);
+}
+
+#[test]
 fn citations_numbered() {
     let citations = carve::Citations::new();
     let options = carve::Options::new().with_extension(&citations);
@@ -177,9 +191,10 @@ fn citations_suppress_per_item() {
 }
 
 #[test]
-#[ignore = "optional Tier-2 feature not supported by carve-rs yet"]
 fn smart_quotes_locale_de() {
-    assert_optional_pair("03-smart-quotes-locale-de", carve::Options::new());
+    let extension = carve::SmartQuotes::new("de");
+    let options = carve::Options::new().with_extension(&extension);
+    assert_optional_pair("03-smart-quotes-locale-de", options);
 }
 
 #[test]

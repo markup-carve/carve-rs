@@ -106,3 +106,20 @@ fn the_stanza_text_stays_unplaced_on_a_tab_line() {
     }
     assert!(texts > 0, "expected some text nodes");
 }
+
+/// The break ending a line the block layer EMPTIED still stands for the newline
+/// the AUTHOR wrote, and that newline is at the end of the comment they wrote -
+/// not at column 1, where the emptied line ends (PART 9 §23, carve#1333).
+#[test]
+fn a_break_after_a_comment_line_ends_where_the_comment_does() {
+    let spans = breaks("::: |\na\n%% secret\nc\n:::\n");
+
+    assert_eq!(spans.len(), 2, "expected two breaks, got {spans:?}");
+    let after = spans[1].expect("break after the comment line placed");
+
+    // `%% secret` is 9 characters, so the newline ending it starts at column 10.
+    assert_eq!(after.start_line, 3);
+    assert_eq!(after.start_column, 10);
+    assert_eq!(after.end_line, 4);
+    assert_eq!(after.end_column, 1);
+}
