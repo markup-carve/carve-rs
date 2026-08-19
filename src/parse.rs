@@ -7872,9 +7872,37 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             continue;
         }
         if detect_list_marker_full(marker.content).is_some() {
+            // The marker line can open more than one item (`* * u`). Once a
+            // flush lazy line folds into the innermost paragraph, S4 closes
+            // nothing, so collection must resume against THAT item's content
+            // column. Using the outer `content_col` assigned a following line
+            // between the two columns to the outer item instead (#1424).
+            let nested_content_col = content_col + innermost_marker_content_col(marker.content);
+            let nested_definition_ended_paragraph =
+                trim_ascii(innermost_marker_content(marker.content)) == DEFINITION_PLACEHOLDER;
             let mut stream = item_marker_source(cur, marker.content, item_at);
             let before_block = cur.pos;
-            stream.append(collect_indented_block_mapped(cur, base_indent, content_col));
+            let collection_floor = if nested_definition_ended_paragraph {
+                nested_content_col.saturating_sub(1)
+            } else {
+                base_indent
+            };
+            // Comments are collected at any column by design. A definition-only
+            // innermost item has no paragraph for that exception to preserve,
+            // so do not even enter the collector until the next line reaches
+            // the innermost content column. Otherwise `%%` pulled itself and
+            // the following lazy line into the nested stream (#1424).
+            if !nested_definition_ended_paragraph
+                || cur
+                    .peek()
+                    .is_some_and(|line| indent_columns(line) >= nested_content_col)
+            {
+                stream.append(collect_indented_block_mapped(
+                    cur,
+                    collection_floor,
+                    content_col,
+                ));
+            }
             // A blank line closes the sub-list's last paragraph, so the next
             // flush-left line starts a NEW top-level block instead of folding in
             // (carve-rs#490). The collected source keeps no trace of a trailing
@@ -7893,6 +7921,37 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 if ended_on_blank {
                     break;
                 }
+                if nested_definition_ended_paragraph {
+                    break;
+                }
+                // A flush line comment ends the inner paragraph but not the
+                // innermost item (§24 C3). Consume it into the nested stream,
+                // then resume relative to that item's column just as the plain
+                // lazy path below does. Leaving it for the outer list's comment
+                // exception put the line after it in the outer item (#1424).
+                if cur.peek().is_some_and(|line| is_flush_line_comment(line)) {
+                    let line = cur.peek().unwrap();
+                    stream.push_newline_at(
+                        line.to_string(),
+                        cur.source_line(cur.pos),
+                        cur.source_col(cur.pos),
+                    );
+                    cur.consume();
+                    collect_trailing_lazy_through(
+                        cur,
+                        &mut stream,
+                        nested_content_col.saturating_sub(1),
+                    );
+                    let before_block = cur.pos;
+                    stream.append(collect_indented_block_mapped(
+                        cur,
+                        nested_content_col - 1,
+                        nested_content_col,
+                    ));
+                    ended_on_blank =
+                        cur.pos > before_block && is_blank_line(cur.lines[cur.pos - 1]);
+                    continue;
+                }
                 let has_lazy = if let Some(line) = cur.peek() {
                     let line = line.to_string();
                     !is_blank_line(&line)
@@ -7907,21 +7966,25 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 }
                 if !nested_ends_with_open_paragraph(
                     &stream.source,
-                    last_consumed_line_below_column(cur, content_col),
+                    last_consumed_line_below_column(cur, nested_content_col),
                     options,
                 ) {
                     break;
                 }
                 let before = cur.pos;
-                collect_trailing_lazy(cur, &mut stream);
+                collect_trailing_lazy_through(
+                    cur,
+                    &mut stream,
+                    nested_content_col.saturating_sub(1),
+                );
                 if cur.pos == before {
                     break;
                 }
                 let before_block = cur.pos;
                 stream.append(collect_indented_block_mapped(
                     cur,
-                    content_col - 1,
-                    content_col,
+                    nested_content_col - 1,
+                    nested_content_col,
                 ));
                 ended_on_blank = cur.pos > before_block && is_blank_line(cur.lines[cur.pos - 1]);
             }
@@ -7949,6 +8012,16 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 // paragraph inside it, which starts at the text.
                 pos: span_of(cur, item_at, cur.pos, options),
             });
+            if nested_definition_ended_paragraph
+                && cur.peek().is_some_and(|line| {
+                    !is_blank_line(line)
+                        && trim_ascii(line) != "+"
+                        && detect_list_marker_full(line).is_none()
+                        && indent_columns(line) < content_col
+                })
+            {
+                break;
+            }
             continue;
         }
         // A collected definition written on the marker line is the item's
@@ -8564,6 +8637,27 @@ fn marker_content_col(line: &str) -> Option<usize> {
     }
     let content_off = (m.content.as_ptr() as usize).saturating_sub(line.as_ptr() as usize);
     Some(indent_columns(line) + content_off.saturating_sub(leading_ws(line)))
+}
+
+/// The content column of the deepest marker in a marker-line list run,
+/// relative to the first marker's content.
+fn innermost_marker_content_col(mut line: &str) -> usize {
+    let mut column = 0;
+    while let Some(marker) = detect_list_marker_full(line) {
+        let Some(next) = marker_content_col(line) else {
+            break;
+        };
+        column += next;
+        line = marker.content;
+    }
+    column
+}
+
+fn innermost_marker_content(mut line: &str) -> &str {
+    while let Some(marker) = detect_list_marker_full(line) {
+        line = marker.content;
+    }
+    line
 }
 
 /// Whether `line` (in the dedented sub-list coordinate space) begins a plain

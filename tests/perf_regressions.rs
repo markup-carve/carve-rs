@@ -1161,6 +1161,24 @@ fn definition_marker_line_s4_is_answered_per_entry() {
     );
 }
 
+fn nested_marker_line_lazy_resume_blocks(n: usize) -> String {
+    let mut source = String::with_capacity(n * 24);
+    for i in 0..n {
+        writeln!(source, "* * u{i:08}\n%\n :\n").unwrap();
+    }
+    source
+}
+
+#[test]
+fn nested_marker_line_lazy_resume_is_answered_per_entry() {
+    assert_near_linear_at(
+        nested_marker_line_lazy_resume_blocks,
+        "nested marker-line lazy resume",
+        10_000,
+        40_000,
+    );
+}
+
 /// A quoted line that OPENS a brace and never closes it sends the wrapped-
 /// attribute-block lookahead over the rest of the quote (carve-rs#1050). The
 /// scan reports the window it proved empty, so a run of such lines is walked
