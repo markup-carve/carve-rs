@@ -7929,7 +7929,7 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 // then resume relative to that item's column just as the plain
                 // lazy path below does. Leaving it for the outer list's comment
                 // exception put the line after it in the outer item (#1424).
-                if cur.peek().is_some_and(|line| is_flush_line_comment(line)) {
+                if cur.peek().is_some_and(is_flush_line_comment) {
                     let line = cur.peek().unwrap();
                     stream.push_newline_at(
                         line.to_string(),
