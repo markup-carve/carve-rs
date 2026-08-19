@@ -468,6 +468,7 @@ const IMPLEMENTED: &[&str] = &[
     "a-terminal-comment-line-still-leaves-an-empty-verse-line",
     "an-unclosed-inline-literal-reaches-the-end-of-its-block",
     "pipe-tables-can-state-head-and-foot-row-counts",
+    "a-resumed-lazy-run-belongs-to-the-innermost-marker-line-item",
 ];
 
 // Spec-main categories tracked by separate implementation work. Keep them
