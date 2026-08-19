@@ -11,6 +11,20 @@ fn raw_block_passes_through_matching_format() {
 }
 
 #[test]
+fn all_blank_raw_payload_lines_are_preserved() {
+    let one = carve::parse("```=html\n\n```\n");
+    let two = carve::parse("```=html\n\n\n```\n");
+    let carve::BlockNode::RawBlock(one) = &one.children[0] else {
+        panic!("expected raw block");
+    };
+    let carve::BlockNode::RawBlock(two) = &two.children[0] else {
+        panic!("expected raw block");
+    };
+    assert_eq!(one.content, "\n");
+    assert_eq!(two.content, "\n\n");
+}
+
+#[test]
 fn raw_block_drops_non_matching_format() {
     assert_eq!(carve::to_html("```=latex\n\\emph{x}\n```"), "");
 }
