@@ -15455,9 +15455,7 @@ fn parse_raw_inline_after_code(
 /// code_span`). A `!` PREFIX on a verbatim code span, mirroring `parse_math`'s
 /// `$` prefix: the maximal backtick run captures the content verbatim, which is
 /// later HTML-escaped and emitted by every renderer with the `<code>` wrapper
-/// dropped. A CLOSED span is required — a `!` before an unclosed run returns
-/// `None`, leaving the `!` literal and the run to become an ordinary (unclosed)
-/// code span, exactly as `$` before an unclosed run behaves.
+/// dropped. Like code and math, an unclosed span reaches the end of its block.
 ///
 /// Returns a bare literal; a trailing `{…}` is the ORDINARY inline attribute
 /// block and is attached by the general attr-merge in the scanner (same path a
@@ -15468,13 +15466,6 @@ fn parse_literal_inline(bytes: &[u8], start: usize) -> Option<(LiteralInline, us
         return None;
     }
     let tick = start + 1;
-    // Require a CLOSED span, like `$`-math in carve-js. `parse_inline_code`
-    // itself accepts an unclosed opener (consuming to the end of the block), so
-    // the closedness is checked explicitly here: a `!` before an unclosed run
-    // stays literal and the run becomes an ordinary (unclosed) code span.
-    if !inline_code_is_closed(bytes, tick) {
-        return None;
-    }
     let (content, code_consumed) = parse_inline_code(bytes, tick)?;
     Some((
         LiteralInline {
@@ -15484,35 +15475,6 @@ fn parse_literal_inline(bytes: &[u8], start: usize) -> Option<(LiteralInline, us
         },
         tick + code_consumed - start,
     ))
-}
-
-/// True iff a verbatim code span opening at `start` (a backtick) has a matching
-/// equal-length closing run — i.e. it is CLOSED rather than an opener that runs
-/// unclosed to the end of the block. Used to gate the inline literal (§27) to
-/// closed spans only, matching the `$`-math prefix.
-fn inline_code_is_closed(bytes: &[u8], start: usize) -> bool {
-    let mut i = start;
-    while i < bytes.len() && bytes[i] == b'`' {
-        i += 1;
-    }
-    let open_len = i - start;
-    if open_len == 0 {
-        return false;
-    }
-    while i < bytes.len() {
-        if bytes[i] != b'`' {
-            i += 1;
-            continue;
-        }
-        let close_start = i;
-        while i < bytes.len() && bytes[i] == b'`' {
-            i += 1;
-        }
-        if i - close_start == open_len {
-            return true;
-        }
-    }
-    false
 }
 
 fn parse_math(bytes: &[u8], start: usize, bounds: &InlineBounds<'_>) -> Option<(Math, usize)> {
