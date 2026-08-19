@@ -67,12 +67,20 @@ pub fn render_html_with_options(
     doc: &Document,
     options: &Options<'_>,
 ) -> Result<String, crate::RenderDepthError> {
+    render_html_owned_with_options(doc.clone(), options)
+}
+
+/// Render a document whose ownership the caller can surrender, avoiding the
+/// defensive clone required by the public borrowed-AST renderer.
+pub(crate) fn render_html_owned_with_options(
+    doc: Document,
+    options: &Options<'_>,
+) -> Result<String, crate::RenderDepthError> {
     let watch = crate::render_depth::RenderDepthWatch::new();
     watch.into_result(render_html_inner(doc, options))
 }
 
-fn render_html_inner(doc: &Document, options: &Options<'_>) -> String {
-    let mut doc = doc.clone();
+fn render_html_inner(mut doc: Document, options: &Options<'_>) -> String {
     let _abbr_guard = AbbrBudgetGuard::for_document(&doc);
     let _index_guard = crate::index_budget::IndexBudgetGuard::new(doc.expansion_budget_len());
     // Document id namespace (extensions contract §2.6): seeded with every
