@@ -342,12 +342,16 @@ enum ParseMode {
 /// still in the string; only the last one has nothing after it to imply it.
 /// `lines()` drops one trailing newline, so terminating changes the
 /// empty-last-line case and nothing else (markup-carve/carve-rs#908).
-fn joined_source(lines: &[String]) -> String {
+fn joined_source<T: AsRef<str>>(lines: &[T]) -> String {
     if lines.is_empty() {
         return String::new();
     }
-    let mut joined = lines.join("\n");
-    joined.push('\n');
+    let capacity = lines.iter().map(|line| line.as_ref().len() + 1).sum();
+    let mut joined = String::with_capacity(capacity);
+    for line in lines {
+        joined.push_str(line.as_ref());
+        joined.push('\n');
+    }
     joined
 }
 
@@ -377,8 +381,25 @@ fn parse_with_options_mode(source: &str, options: &Options<'_>, mode: ParseMode)
         .filter(|b| *b == b'\n')
         .count()
         + 1;
-    let (body, footnote_defs_src, mut footnote_def_pos, note_link_defs) =
-        extract_footnote_defs(body, body_start_line, options.positions, options);
+    let (body, footnote_defs_src, mut footnote_def_pos, note_link_defs) = if body.contains("[^") {
+        extract_footnote_defs(body, body_start_line, options.positions, options)
+    } else {
+        (
+            MappedSource {
+                source: body.to_owned(),
+                line_map: (body_start_line..body_start_line + body.lines().count())
+                    .map(Some)
+                    .collect(),
+                col_map: options
+                    .positions
+                    .then(|| vec![Some(0); body.lines().count()])
+                    .unwrap_or_default(),
+            },
+            BTreeMap::new(),
+            BTreeMap::new(),
+            BTreeMap::new(),
+        )
+    };
     let mut link_def_probe_budget = probe_budget_for(body.source.len());
     let (body_source, mut link_defs) =
         extract_link_defs_guarded(&body.source, options, &mut link_def_probe_budget);
@@ -1643,14 +1664,14 @@ fn marker_line_may_be_lazy(line: &str) -> bool {
 /// stripped downstream of here, so the probe strips them too, and `[a]: /u` is
 /// the line it leaves rather than the paragraph a raw parse would find.
 fn line_folds_into_an_open_paragraph(
-    body: &[String],
+    body: &[impl AsRef<str>],
     line: &str,
     options: &Options<'_>,
     budget: &mut usize,
 ) -> bool {
     let run_start = body
         .iter()
-        .rposition(|written| is_blank_line(written))
+        .rposition(|written| is_blank_line(written.as_ref()))
         .map_or(0, |blank| blank + 1);
     let run = &body[run_start..];
     if run.is_empty() {
@@ -1660,7 +1681,7 @@ fn line_folds_into_an_open_paragraph(
     // candidate line - so the price is the work rather than the question.
     let cost = run
         .iter()
-        .map(|written| written.len().saturating_add(1))
+        .map(|written| written.as_ref().len().saturating_add(1))
         .fold(0usize, |total, len| total.saturating_add(len))
         .saturating_mul(2)
         .saturating_add(line.len());
@@ -1669,7 +1690,13 @@ fn line_folds_into_an_open_paragraph(
     }
     *budget -= cost;
 
-    let before = run.join("\n");
+    let mut before = String::with_capacity(run.iter().map(|line| line.as_ref().len() + 1).sum());
+    for (index, written) in run.iter().enumerate() {
+        if index != 0 {
+            before.push('\n');
+        }
+        before.push_str(written.as_ref());
+    }
     let mut after = String::with_capacity(before.len() + line.len() + 1);
     after.push_str(&before);
     after.push('\n');
@@ -1710,7 +1737,7 @@ fn extract_link_defs_with_guard(
     source: &str,
     mut guard: Option<(&Options<'_>, &mut usize)>,
 ) -> (String, BTreeMap<String, LinkDef>) {
-    let mut body: Vec<String> = Vec::new();
+    let mut body: Vec<std::borrow::Cow<'_, str>> = Vec::new();
     let mut defs = BTreeMap::new();
     let mut in_fence: Option<FenceOpen> = None;
     // A LINE BLOCK's body is inline content (`line_block_line = {whitespace},
@@ -1809,7 +1836,7 @@ fn extract_link_defs_with_guard(
             // this change was only about the line surviving. carve#574 answered
             // it: nothing inside verse is claimed, so a definition-shaped line
             // renders and defines nothing.
-            body.push(line.to_string());
+            body.push(std::borrow::Cow::Borrowed(line));
             // The RAW line - see the note in extract_footnote_defs.
             if exact_colon_fence_len(line) == Some(fence_len) {
                 in_line_block = None;
@@ -1817,7 +1844,7 @@ fn extract_link_defs_with_guard(
             continue;
         }
         if let Some(open) = in_fence {
-            body.push(line.to_string());
+            body.push(std::borrow::Cow::Borrowed(line));
             // CLOSER: strip a blockquote prefix only when the fence was opened
             // quoted, and NEVER a list marker. A fence closer is a continuation
             // line of pure indentation, so a literal marker line inside a
@@ -1870,7 +1897,7 @@ fn extract_link_defs_with_guard(
             //
             // carve-js has never registered from inside a comment and carve-php
             // stopped (carve-php#698); this brings the third engine into line.
-            body.push(line.to_string());
+            body.push(std::borrow::Cow::Borrowed(line));
             continue;
         } else if let Some((open, scope)) = detect_comment_fence_opener_scoped(line, &columns) {
             // The same scopes as the footnote prepass above: the fence is gated
@@ -1889,7 +1916,7 @@ fn extract_link_defs_with_guard(
                     fence_len: open.fence_len,
                     quote_depth: scope.quote_depth(),
                 });
-                body.push(line.to_string());
+                body.push(std::borrow::Cow::Borrowed(line));
                 continue;
             }
         }
@@ -1900,7 +1927,7 @@ fn extract_link_defs_with_guard(
         {
             if let Some(fence_len) = detect_line_block_open(fence_line) {
                 in_line_block = Some(fence_len);
-                body.push(line.to_string());
+                body.push(std::borrow::Cow::Borrowed(line));
                 continue;
             }
         }
@@ -1937,7 +1964,7 @@ fn extract_link_defs_with_guard(
             if !follows_open_paragraph || closes_ahead {
                 in_fence = Some(open);
             }
-            body.push(line.to_string());
+            body.push(std::borrow::Cow::Borrowed(line));
             continue;
         }
         // A definition on an item's CONTINUATION line carries no marker, so
@@ -1987,7 +2014,7 @@ fn extract_link_defs_with_guard(
             // (`[r]:` + only whitespace) is NOT a definition -- the line stays
             // literal text. (corpus 34-reference-link-9)
             if label_part.starts_with('@') || target_part.trim().is_empty() {
-                body.push(line.to_string());
+                body.push(std::borrow::Cow::Borrowed(line));
                 continue;
             }
             let mut def = parse_link_def_target_with_attrs(target_part.trim());
@@ -2038,9 +2065,9 @@ fn extract_link_defs_with_guard(
                         .saturating_sub(replacement.chars().count()),
                 ),
             );
-            body.push(replacement);
+            body.push(std::borrow::Cow::Owned(replacement));
         } else {
-            body.push(line.to_string());
+            body.push(std::borrow::Cow::Borrowed(line));
         }
     }
     (joined_source(&body), defs)
@@ -4019,6 +4046,12 @@ fn parse_eof_closed_colon_ladder(
     source: &MappedSource,
     options: &Options<'_>,
 ) -> Option<Vec<BlockNode>> {
+    // This fast path can only match when the document starts with a flush-left
+    // colon-container opener. Avoid allocating a line index and scanning every
+    // line of ordinary documents merely to reject the specialization.
+    if !source.source.starts_with(":::") {
+        return None;
+    }
     let lines: Vec<&str> = source.source.lines().collect();
     if lines.is_empty()
         || lines
@@ -14596,14 +14629,33 @@ fn parse_inline_context(
     // the scan is skipped in O(1). Keeps `_a](`×n / `*a](`×n linear. See
     // cached_find_emphasis_close.
     let mut emphasis_no_close: [Option<usize>; EMPHASIS_DELIM_SLOTS] = [None; EMPHASIS_DELIM_SLOTS];
-    let mut out = Vec::new();
-    let mut buf = String::new();
+    let mut out = Vec::with_capacity(4);
+    let mut buf = String::with_capacity(text.len());
     let mut buf_start: Option<usize> = None;
     let mut buf_placeable = true;
     let mut buf_src_delta: isize = 0;
     let mut i = 0;
     while i < bytes.len() {
         let c = bytes[i];
+
+        // With no extension matcher able to claim an arbitrary byte, runs of
+        // ASCII prose cannot open any core inline construct. Append the whole
+        // run at once instead of sending every letter and space through all of
+        // the delimiter, link, typography and footnote dispatch below.
+        if options.extensions.is_empty() && (c.is_ascii_alphanumeric() || c == b' ' || c == b'\t') {
+            let start = i;
+            i += 1;
+            while i < bytes.len()
+                && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b' ' || bytes[i] == b'\t')
+            {
+                i += 1;
+            }
+            if buf_start.is_none() {
+                buf_start = Some(start);
+            }
+            buf.push_str(&text[start..i]);
+            continue;
+        }
 
         // Backslash escapes
         // A backslash at the very end of the content (no following byte) is a
