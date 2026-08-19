@@ -47,7 +47,7 @@ const SHAPES: &[(&str, &str, &str)] = &[
     (
         "three levels",
         "* * * [d]: u\n    :\n",
-        "* * * [d]: u\n  :\n",
+        "* * * [d]: u\n    :\n",
     ),
     (
         "following continuation line",
@@ -106,4 +106,50 @@ fn every_definition_still_resolves_after_the_round_trip() {
             "fmt(fmt(x)) != fmt(x) with a use site for {name}"
         );
     }
+}
+
+#[test]
+fn a_three_level_marker_definition_keeps_following_content_in_the_middle_item() {
+    assert_eq!(
+        carve::to_html("* * * [d]: u\n    :\n"),
+        concat!(
+            "<ul>\n",
+            "  <li>\n",
+            "    <ul>\n",
+            "      <li>\n",
+            "        <ul>\n",
+            "          <li></li>\n",
+            "        </ul>\n",
+            "        :\n",
+            "      </li>\n",
+            "    </ul>\n",
+            "  </li>\n",
+            "</ul>",
+        )
+    );
+}
+
+#[test]
+fn a_four_level_marker_definition_keeps_following_content_in_the_parent_item() {
+    assert_eq!(
+        carve::to_html("* * * * [d]: u\n      :\n"),
+        concat!(
+            "<ul>\n",
+            "  <li>\n",
+            "    <ul>\n",
+            "      <li>\n",
+            "        <ul>\n",
+            "          <li>\n",
+            "            <ul>\n",
+            "              <li></li>\n",
+            "            </ul>\n",
+            "            :\n",
+            "          </li>\n",
+            "        </ul>\n",
+            "      </li>\n",
+            "    </ul>\n",
+            "  </li>\n",
+            "</ul>",
+        )
+    );
 }
