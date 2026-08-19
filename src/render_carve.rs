@@ -268,13 +268,23 @@ fn render_carve_once(doc: &Document) -> String {
     conservative
 }
 
-/// The lines every EMPTIED description sits on, anywhere in the tree.
+/// The lines every EMPTIED marker-line container sits on, anywhere in the tree.
 ///
 /// Empty is the only case that matters: a description holding content writes
 /// that content and needs nothing from here. Collecting the set first keeps the
 /// map below empty - and its clones unmade - for every document that has no
 /// such description, which is all but two of the 638 corpus documents.
-fn emptied_description_lines(blocks: &[BlockNode], into: &mut HashSet<usize>) {
+fn emptied_marker_lines(blocks: &[BlockNode], into: &mut HashSet<usize>) {
+    emptied_marker_lines_at(blocks, 0, into);
+}
+
+/// `list_depth` is how many lists enclose `blocks`. It gates the emptied-item
+/// arm below and nothing else: at the TOP level the canonical form of an
+/// emptied item is `- +`, pinned by corpus fixtures 16-reference-link-4 and
+/// 117-footnote-definition-inside-a-container-is-collected-2, and it round-trips
+/// there because nothing follows at a shallower column for the marker to
+/// capture. carve-js and carve-php draw the line in the same place.
+fn emptied_marker_lines_at(blocks: &[BlockNode], list_depth: usize, into: &mut HashSet<usize>) {
     for block in blocks {
         match block {
             BlockNode::DefinitionList(list) => {
@@ -285,16 +295,18 @@ fn emptied_description_lines(blocks: &[BlockNode], into: &mut HashSet<usize>) {
                                 into.insert(pos.start_line);
                             }
                         } else {
-                            emptied_description_lines(&def.children, into);
+                            emptied_marker_lines_at(&def.children, list_depth, into);
                         }
                     }
                 }
             }
-            BlockNode::BlockQuote(quote) => emptied_description_lines(&quote.children, into),
-            BlockNode::Admonition(admonition) => {
-                emptied_description_lines(&admonition.children, into);
+            BlockNode::BlockQuote(quote) => {
+                emptied_marker_lines_at(&quote.children, list_depth, into)
             }
-            BlockNode::Div(div) => emptied_description_lines(&div.children, into),
+            BlockNode::Admonition(admonition) => {
+                emptied_marker_lines_at(&admonition.children, list_depth, into);
+            }
+            BlockNode::Div(div) => emptied_marker_lines_at(&div.children, list_depth, into),
             // The two other walks over this tree (`normalize_escapes_block` and
             // `redundant_heading_ids`) both descend into a figure's block-quote
             // target, so this one does too. No input reaches it today - a `dd`
@@ -303,12 +315,25 @@ fn emptied_description_lines(blocks: &[BlockNode], into: &mut HashSet<usize>) {
             // moment that changes.
             BlockNode::Figure(figure) => {
                 if let FigureTarget::BlockQuote(quote) = &*figure.target {
-                    emptied_description_lines(&quote.children, into);
+                    emptied_marker_lines_at(&quote.children, list_depth, into);
                 }
             }
-            BlockNode::FigureGroup(group) => emptied_description_lines(&group.children, into),
+            BlockNode::FigureGroup(group) => {
+                emptied_marker_lines_at(&group.children, list_depth, into)
+            }
             BlockNode::List(list) => {
                 for item in &list.items {
+                    // A definition can be the only authored content on an
+                    // item's marker line. Collection hoists it to the document,
+                    // leaving an empty item whose own source span still names
+                    // that line. Put the definition back there; spelling the
+                    // item with `+` would attach the following outer content to
+                    // this inner item on the next parse (carve-rs#1144).
+                    if list_depth > 0 && item.children.is_empty() {
+                        if let Some(pos) = &item.pos {
+                            into.insert(pos.start_line);
+                        }
+                    }
                     // A definition the author wrote BETWEEN two of an item's
                     // blocks is the same case one level over: collecting it
                     // empties the line, and here that emptied line is what
@@ -325,11 +350,11 @@ fn emptied_description_lines(blocks: &[BlockNode], into: &mut HashSet<usize>) {
                             into.insert(line);
                         }
                     }
-                    emptied_description_lines(&item.children, into);
+                    emptied_marker_lines_at(&item.children, list_depth + 1, into);
                 }
             }
             BlockNode::Extension(extension) => {
-                emptied_description_lines(&extension.children, into);
+                emptied_marker_lines_at(&extension.children, list_depth, into);
             }
             _ => {}
         }
@@ -342,7 +367,7 @@ fn emptied_description_lines(blocks: &[BlockNode], into: &mut HashSet<usize>) {
 /// inside an item's gap. A definition on either belongs back on it.
 fn definitions_by_description_line(doc: &Document) -> HashMap<usize, DefinitionAtLine> {
     let mut lines = HashSet::new();
-    emptied_description_lines(&doc.children, &mut lines);
+    emptied_marker_lines(&doc.children, &mut lines);
     let mut out = HashMap::new();
     if lines.is_empty() {
         return out;
@@ -945,6 +970,30 @@ fn definition_in_gap(
     Some(written)
 }
 
+/// Write the hoisted definition whose authored source line is `line`.
+///
+/// Rendering happens before the line is claimed because the document-level
+/// definition arm suppresses definitions that have already been written in
+/// place. This is shared by every marker-line container that collection can
+/// empty.
+fn definition_at_line(line: usize, ctx: &mut CarveContext) -> Option<String> {
+    if ctx.written_in_place.contains(&line) {
+        return None;
+    }
+    let definition = ctx.definitions_by_line.get(&line)?.clone();
+    let written = match definition {
+        DefinitionAtLine::Link(def) => render_block(&BlockNode::LinkReferenceDefinition(*def), ctx),
+        DefinitionAtLine::Footnote(label, blocks) => {
+            render_footnote_def_source(&label, &blocks, ctx)
+        }
+    };
+    if written.is_empty() {
+        return None;
+    }
+    ctx.written_in_place.insert(line);
+    Some(written)
+}
+
 /// Sentinel marking a line to be written at the ITEM's marker column.
 ///
 /// The list writer prefixes an item's continuation lines with its content
@@ -1425,10 +1474,21 @@ fn render_list(node: &List, ctx: &mut CarveContext) -> String {
                 format!("{bullet}{item_attrs} ")
             };
         }
-        let mut content = render_item_blocks(&item.children, node.tight, ctx);
+        let (mut content, restored_marker_definition) = if item.children.is_empty() {
+            let restored = item
+                .pos
+                .as_ref()
+                .and_then(|pos| definition_at_line(pos.start_line, ctx));
+            let restored_marker_definition = restored.is_some();
+            (restored.unwrap_or_default(), restored_marker_definition)
+        } else {
+            (render_item_blocks(&item.children, node.tight, ctx), false)
+        };
         let trimmed_content = trim_non_nbsp(&content);
         if trimmed_content.is_empty()
-            || (trimmed_content.starts_with("[^") && trimmed_content.contains(": "))
+            || (!restored_marker_definition
+                && trimmed_content.starts_with("[^")
+                && trimmed_content.contains(": "))
         {
             content = "+".to_string();
         }
@@ -1548,18 +1608,8 @@ fn render_definition_list(items: &[DefinitionItem], ctx: &mut CarveContext) -> S
             // `:`, which re-parses into the term above it.
             if def.children.is_empty() {
                 let line = def.pos.as_ref().map(|pos| pos.start_line);
-                let written = line
-                    .and_then(|line| ctx.definitions_by_line.get(&line).cloned())
-                    .map(|definition| match definition {
-                        DefinitionAtLine::Link(def) => {
-                            render_block(&BlockNode::LinkReferenceDefinition(*def), ctx)
-                        }
-                        DefinitionAtLine::Footnote(label, blocks) => {
-                            render_footnote_def_source(&label, &blocks, ctx)
-                        }
-                    });
-                if let (Some(line), Some(written)) = (line, written) {
-                    ctx.written_in_place.insert(line);
+                let written = line.and_then(|line| definition_at_line(line, ctx));
+                if let Some(written) = written {
                     let mut written_lines = written.split('\n');
                     out.push(format!(":  {}", written_lines.next().unwrap_or_default()));
                     // A footnote body can be multi-line; its continuation lines
