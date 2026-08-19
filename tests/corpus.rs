@@ -462,6 +462,14 @@ const IMPLEMENTED: &[&str] = &[
     // markup-carve/carve#1377: a content-column heading leaves no paragraph
     // open for the following flush-left line.
     "a-heading-at-an-item-s-content-column-leaves-no-paragraph-open",
+    "a-marker-line-link-definition-is-collected-where-no-paragraph-is-open",
+    "a-lazy-marker-line-s-definition-defines-nothing-in-any-container",
+    "a-reference-definition-cannot-take-its-destination-from-the-next-line",
+    "a-resumed-lazy-run-belongs-to-the-innermost-marker-line-item",
+    "a-terminal-comment-in-a-quote-leaves-no-paragraph-open",
+    "a-terminal-comment-line-still-leaves-an-empty-verse-line",
+    "an-unclosed-inline-literal-reaches-the-end-of-its-block",
+    "pipe-tables-can-state-head-and-foot-row-counts",
 ];
 
 // Spec-main categories tracked by separate implementation work. Keep them
