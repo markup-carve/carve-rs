@@ -35,9 +35,9 @@
 //! AND THE HEADING IS THE CONTROL THAT KILLS THE CHEAP SPELLING. A heading is
 //! not blank and leaves no open paragraph, so "the previous line is not blank"
 //! refuses a collection carve-js and carve-php both make. The link-reference
-//! pre-pass in this engine still carries that spelling and answers `# r` /
-//! `- [d]: u` differently from carve-js; that is filed separately rather than
-//! swept in here.
+//! pre-pass carried that spelling until markup-carve/carve#1425, which moved it
+//! onto this same probe; carve-rs#1142 then took the container prefixes off the
+//! marker test, so both passes now answer the quoted spelling too.
 
 fn html(src: &str) -> String {
     carve::to_html(src).trim().to_string()
@@ -341,21 +341,22 @@ fn a_block_only_an_extension_recognises_leaves_no_paragraph() {
     );
 }
 
-/// THE KNOWN REMAINING SHAPE, pinned so it is a decision rather than a
-/// surprise. Inside a quote the defect the ticket describes is still present:
-/// the text is lost and a note nobody defined appears. The marker test reads
-/// the RAW line, which is exactly what keeps
-/// `control_a_quoted_list_marker_still_collects` above green, so nothing here
-/// ever reaches the guard. `line_folds_into_an_open_paragraph` answers this one
-/// correctly if it is ever asked - the quote is just another container in the
-/// run it probes - so widening the scope is a small change, but it needs its
-/// own controls and its own measurement rather than a ride on this one.
+/// THE QUOTE SPELLING, which used to be out of scope and is not any more
+/// (carve-rs#1142). The marker test now strips the container prefixes before it
+/// asks, so `> - [^f]: t` under an open quoted paragraph is lazy text like its
+/// flush-left twin: the definition's text stays on the page and defines nothing.
+/// `line_folds_into_an_open_paragraph` needed no change for it - the run it
+/// probes carries the quote, so the container was never the question.
 #[test]
-fn known_remaining_the_same_shape_inside_a_quote_is_not_reached() {
+fn the_same_shape_inside_a_quote_is_lazy_text_too() {
     let out = html("> r\n> - [^f]: t\n\n[^f] ref\n");
+    assert_eq!(
+        out,
+        "<blockquote><p>r\n- [^f]: t</p></blockquote>\n<p>[^f] ref</p>"
+    );
     assert!(
-        out.contains("doc-endnotes"),
-        "the quote spelling started being guarded - update this row and the guard's docs together: {out}"
+        !out.contains("doc-endnotes"),
+        "a note nobody defined reached the endnotes: {out}"
     );
 }
 
