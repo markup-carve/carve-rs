@@ -170,6 +170,9 @@ fn is_renderable(a: &Admonition) -> bool {
             || cells
                 .iter()
                 .any(|cell| structural_marker(cell.attrs.as_ref(), "header").is_none())
+            || cells
+                .iter()
+                .any(|cell| !valid_cell_alignment(cell.attrs.as_ref()))
         {
             return false;
         }
@@ -210,6 +213,16 @@ fn structural_marker(attrs: Option<&Attrs>, key: &str) -> Option<bool> {
     } else {
         None
     }
+}
+
+fn valid_cell_alignment(attrs: Option<&Attrs>) -> bool {
+    let value = |key| {
+        attrs
+            .and_then(|a| a.key_values.get(key))
+            .map(String::as_str)
+    };
+    matches!(value("align"), None | Some("left" | "right" | "center"))
+        && matches!(value("valign"), None | Some("top" | "middle" | "bottom"))
 }
 
 /// One source cell in the resolved grid (one entry per authored cell). Mirrors
@@ -448,7 +461,19 @@ fn render_row(
         if entry.colspan > 1 {
             attr_html.push_str(&format!(" colspan=\"{}\"", entry.colspan));
         }
-        if let Some((align, valign, _)) = columns.get(col) {
+        if let Some((column_align, column_valign, _)) = columns.get(col) {
+            let align = entry
+                .cell
+                .attrs
+                .as_ref()
+                .and_then(|a| a.key_values.get("align").map(String::as_str))
+                .or(*column_align);
+            let valign = entry
+                .cell
+                .attrs
+                .as_ref()
+                .and_then(|a| a.key_values.get("valign").map(String::as_str))
+                .or(*column_valign);
             let mut style = String::new();
             if let Some(v) = align {
                 style.push_str(&format!("text-align: {v};"));
@@ -821,7 +846,12 @@ fn cell_attrs(attrs: Option<&Attrs>, ctx: &RenderContext<'_>) -> String {
     };
     let is_span = |key: &str| {
         let lower = key.to_ascii_lowercase();
-        lower == "rowspan" || lower == "colspan" || lower == "header" || lower == "header-row"
+        lower == "rowspan"
+            || lower == "colspan"
+            || lower == "header"
+            || lower == "header-row"
+            || lower == "align"
+            || lower == "valign"
     };
 
     if attrs.order.is_empty() {

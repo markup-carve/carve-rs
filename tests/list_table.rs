@@ -7,6 +7,15 @@
 
 use carve::{ListTable, Options};
 
+#[test]
+fn cell_alignment_overrides_column_defaults() {
+    let html = h("{aligns=\"left,right\" valigns=\"top,bottom\"}\n::: list-table\n- -{align=center valign=middle} A\n  - B\n:::");
+    assert!(html.contains("<td style=\"text-align: center; vertical-align: middle;\">A</td>"));
+    assert!(html.contains("<td style=\"text-align: right; vertical-align: bottom;\">B</td>"));
+    assert!(!html.contains(" align="));
+    assert!(!html.contains(" valign="));
+}
+
 /// Render `src` with the list-table extension, trimmed.
 fn h(src: &str) -> String {
     let ext = ListTable::new();

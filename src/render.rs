@@ -1605,10 +1605,13 @@ fn render_table(
     out.push_str("<table");
     let mut table_attrs = t.attrs.clone();
     if let Some(attrs) = &mut table_attrs {
-        attrs
-            .key_values
-            .retain(|k, _| !matches!(k.as_str(), "aligns" | "valigns" | "widths"));
-        attrs.order.retain(|s| !matches!(s, AttrSlot::Key(k) if matches!(k.as_str(), "aligns" | "valigns" | "widths")));
+        attrs.key_values.retain(|k, _| {
+            !matches!(
+                k.as_str(),
+                "aligns" | "valigns" | "widths" | "header-rows" | "footer-rows"
+            )
+        });
+        attrs.order.retain(|s| !matches!(s, AttrSlot::Key(k) if matches!(k.as_str(), "aligns" | "valigns" | "widths" | "header-rows" | "footer-rows")));
     }
     write_attrs(out, &table_attrs);
     out.push('>');
@@ -1649,7 +1652,7 @@ fn render_table(
     // there. Counting it dropped the row under a header rowspan out of the
     // head, so `|=H|=A|` over `| ^ |=B|` moved B into the body (carve-js skips
     // it the same way).
-    let header_count = t
+    let derived_header_count = t
         .rows
         .iter()
         .enumerate()
@@ -1671,6 +1674,21 @@ fn render_table(
                     .all(|(i, cell)| cell.header || resolved(i, cell))
         })
         .count();
+    let source_partition = t.attrs.as_ref().is_some_and(|attrs| {
+        attrs.key_values.contains_key("header-rows") || attrs.key_values.contains_key("footer-rows")
+    });
+    let header_count = if source_partition {
+        t.row_groups
+            .as_ref()
+            .map_or(derived_header_count, |groups| groups.head_rows)
+    } else {
+        derived_header_count
+    };
+    let footer_count = if source_partition {
+        t.row_groups.as_ref().map_or(0, |groups| groups.foot_rows)
+    } else {
+        0
+    };
     let has_header = header_count > 0;
     let body_start = header_count;
     if has_header {
@@ -1694,7 +1712,8 @@ fn render_table(
     }
     // A header-only table (e.g. a GFM `| x |` + `|---|` with no body rows) emits
     // no <tbody>, matching carve-php.
-    if body_start < t.rows.len() {
+    let footer_start = t.rows.len() - footer_count;
+    if body_start < footer_start {
         out.push('\n');
         indent(out, level + 1);
         out.push_str("<tbody>");
@@ -1705,7 +1724,13 @@ fn render_table(
             options,
             state,
         };
-        for (row_idx, row) in t.rows.iter().enumerate().skip(body_start) {
+        for (row_idx, row) in t
+            .rows
+            .iter()
+            .enumerate()
+            .take(footer_start)
+            .skip(body_start)
+        {
             out.push('\n');
             indent(out, level + 2);
             render_table_body_row(out, row, row_idx, &mut body_ctx);
@@ -1713,6 +1738,22 @@ fn render_table(
         out.push('\n');
         indent(out, level + 1);
         out.push_str("</tbody>");
+    }
+    if footer_start < t.rows.len() {
+        out.push('\n');
+        indent(out, level + 1);
+        out.push_str("<tfoot>");
+        let mut foot_ctx = TableBodyRenderContext {
+            rowspan_cols: &rowspan_cols,
+            orphan_carets: &orphan_carets,
+            table: t,
+            options,
+            state,
+        };
+        for (row_idx, row) in t.rows.iter().enumerate().skip(footer_start) {
+            render_table_body_row(out, row, row_idx, &mut foot_ctx);
+        }
+        out.push_str("</tfoot>");
     }
     out.push('\n');
     indent(out, level);
