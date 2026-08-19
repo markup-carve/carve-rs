@@ -9,6 +9,14 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Core parsing avoids per-line copies in definition prepasses.** The link
+  definition scan borrows unchanged lines, documents without footnote syntax
+  skip the footnote-definition scan, and ordinary documents reject the
+  colon-ladder specialization before building its line index. Inline parsing
+  appends ordinary ASCII prose in runs and sizes its reusable buffers from the
+  input. On the shared 49 KiB Tier-1 benchmark the prepass changes alone remove
+  about 3,800 allocations per parse; together the changes improve end-to-end
+  throughput by 11–21% in interleaved local trials.
 - **A vertical table-cell marker requires a horizontal partner.** Lone `^` and
   `v` prefixes remain visible content; paired two-axis runs are unchanged.
 - **`Figure::target` is now `Box<FigureTarget>`** (#1119). Breaking, for callers
