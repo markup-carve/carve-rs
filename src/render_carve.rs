@@ -782,41 +782,6 @@ fn normalize_escapes_figure_target(f: &mut crate::ast::Figure) {
     }
 }
 
-/// Whether two adjacent sibling lists would read back as ONE list.
-///
-/// PART 9 §11 N1's axes: the kind, the plain-vs-task classification, and the
-/// marker character the author chose -- the ordered delimiter and dialect, or
-/// the bullet. Where any of them differs the lists separate on their own and
-/// the writer owes them nothing, which is what carve#286 established.
-fn lists_would_merge(a: &List, b: &List) -> bool {
-    if a.ordered != b.ordered || is_task_list(a) != is_task_list(b) {
-        return false;
-    }
-    if a.ordered {
-        return a.delim.unwrap_or('.') == b.delim.unwrap_or('.') && a.ol_type == b.ol_type;
-    }
-    a.bullet_char.unwrap_or('-') == b.bullet_char.unwrap_or('-')
-}
-
-fn is_task_list(list: &List) -> bool {
-    list.items.iter().any(|item| item.checked.is_some())
-}
-
-/// Every non-blank line of `text`, prefixed with `columns` spaces.
-fn indent_lines(text: &str, columns: usize) -> String {
-    let pad = " ".repeat(columns);
-    text.split('\n')
-        .map(|line| {
-            if line.is_empty() {
-                String::new()
-            } else {
-                format!("{pad}{line}")
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
 fn render_blocks(blocks: &[BlockNode], ctx: &mut CarveContext) -> String {
     if ctx.block_depth >= MAX_RENDER_DEPTH {
         crate::render_depth::record("carve");

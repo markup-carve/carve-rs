@@ -870,13 +870,6 @@ impl ContentColumns {
             .expect("the document frame is never popped")
     }
 
-    fn current_mut(&mut self) -> &mut Vec<usize> {
-        self.frames
-            .last_mut()
-            .expect("the document frame is never popped")
-            .cols
-    }
-
     fn has_open_item(&self) -> bool {
         !self.current().cols.is_empty()
     }
@@ -1871,7 +1864,7 @@ fn extract_link_defs_with_guard(
             && !structural_description
             && !definition_body_boundary
         {
-            body.push(line.to_string());
+            body.push(line.to_string().into());
             continue;
         }
         if structural_blank
@@ -2096,7 +2089,7 @@ fn extract_link_defs_with_guard(
             def.line = Some(line_index);
             defs.insert(label_part.to_string(), def);
             if definition_body_boundary {
-                body.push(String::new());
+                body.push(String::new().into());
                 continue;
             }
             // Leave a blank line in place of the (invisible) definition so it
