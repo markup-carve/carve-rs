@@ -1119,7 +1119,7 @@ fn extract_footnote_defs(
             //
             // Everything past the marker is the block parser's answer, not this
             // pass's guess. See `line_folds_into_an_open_paragraph`.
-            !(detect_list_marker_full(lines[i]).is_some()
+            !(marker_line_may_be_lazy(lines[i])
                 && line_folds_into_an_open_paragraph(&body, lines[i], options, &mut probe_budget))
         }) {
             let def_start_line = first_source_line + i;
@@ -1576,6 +1576,23 @@ fn open_frame(blocks: &[BlockNode]) -> OpenFrame {
     }
 }
 
+/// Is `line` a list marker line the probe may be asked about - THROUGH its
+/// container prefixes?
+///
+/// This is the scope of the lazy guard, and only §10's property makes it a
+/// question at all: a list does not interrupt an open paragraph, so a marker
+/// line can be lazy text where a quote or a heading on the same line could not.
+///
+/// THE PREFIXES COME OFF FIRST (carve-rs#1142). Both passes used to test the RAW
+/// line, so `> - [d]: u` matched no marker, never reached the probe, and was
+/// collected out of the quote's open paragraph - which deleted the author's text
+/// and left a bare `-` on the page. The container was never the question: the
+/// run the probe parses carries the quote, so `>`, `:::` and the document level
+/// get the same answer from the same code.
+fn marker_line_may_be_lazy(line: &str) -> bool {
+    detect_list_marker_full(without_blockquote_prefixes(line)).is_some()
+}
+
 /// Does the BLOCK PARSER fold `line` into a paragraph that was already open?
 ///
 /// This is the question a definition pre-pass has to answer before it may cut a
@@ -1960,7 +1977,7 @@ fn extract_link_defs_with_guard(
             // quoted marker (`> - [d]: u`) never reaches it and is collected as
             // before - the same scope the footnote pass has, deliberately, so
             // the two kinds answer alike.
-            !(detect_list_marker_full(line).is_some()
+            !(marker_line_may_be_lazy(line)
                 && guard.as_mut().is_some_and(|(options, budget)| {
                     line_folds_into_an_open_paragraph(&body, line, options, budget)
                 }))
