@@ -384,16 +384,18 @@ fn parse_with_options_mode(source: &str, options: &Options<'_>, mode: ParseMode)
     let (body, footnote_defs_src, mut footnote_def_pos, note_link_defs) = if body.contains("[^") {
         extract_footnote_defs(body, body_start_line, options.positions, options)
     } else {
+        let body_line_count = body.lines().count();
         (
             MappedSource {
                 source: body.to_owned(),
-                line_map: (body_start_line..body_start_line + body.lines().count())
+                line_map: (body_start_line..body_start_line + body_line_count)
                     .map(Some)
                     .collect(),
-                col_map: options
-                    .positions
-                    .then(|| vec![Some(0); body.lines().count()])
-                    .unwrap_or_default(),
+                col_map: if options.positions {
+                    vec![Some(0); body_line_count]
+                } else {
+                    Vec::new()
+                },
             },
             BTreeMap::new(),
             BTreeMap::new(),
