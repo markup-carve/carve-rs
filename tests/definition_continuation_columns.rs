@@ -36,6 +36,18 @@ fn collected_definitions_close_the_below_content_column_path() {
 }
 
 #[test]
+fn a_definition_on_the_marker_line_closes_the_below_content_column_path() {
+    for head in ["- [r]: /u", "1. [r]: /u", ". [r]: /u"] {
+        for tail in [" :", "%%\n:"] {
+            let html = carve::to_html(&format!("{head}\n{tail}\n"));
+            assert!(html.contains("<li></li>"), "{head:?} {tail:?}: {html}");
+            assert!(html.contains("<p>:</p>"), "{head:?} {tail:?}: {html}");
+            assert!(html.find("<p>:</p>").unwrap() > html.find("</li>").unwrap());
+        }
+    }
+}
+
+#[test]
 fn item_prose_reopens_at_its_column_and_one_short_of_a_footnote_body() {
     for (head, content_column) in HEADS {
         for definition in ["[^f]: t", "[r]: /u"] {

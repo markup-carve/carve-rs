@@ -25,6 +25,14 @@ fn a_column_zero_comment_keeps_the_item_open() {
 }
 
 #[test]
+fn a_flush_comment_keeps_an_indented_item_open_to_its_base_column() {
+    assert_eq!(
+        html(" * u\n%%\n :\n"),
+        "<ul>\n  <li>u\n    :\n  </li>\n</ul>"
+    );
+}
+
+#[test]
 fn a_sibling_marker_after_the_comment_resumes_the_same_list() {
     // The list stays open too, so `- b` is a second ITEM rather than a second
     // list. This is the shape that shows the comment doing no structural work.
