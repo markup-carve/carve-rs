@@ -7594,7 +7594,7 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                     // a second paragraph rather than a continuation of the
                     // first: a comment ends the paragraph above it (§10) while
                     // leaving its container open.
-                    collect_trailing_lazy(cur, &mut nested);
+                    collect_trailing_lazy_through(cur, &mut nested, base_indent);
                     last.children.extend(parse_mapped_source(&nested, options));
                     continue;
                 }
@@ -7949,6 +7949,37 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 // paragraph inside it, which starts at the text.
                 pos: span_of(cur, item_at, cur.pos, options),
             });
+            continue;
+        }
+        // A collected definition written on the marker line is the item's
+        // first (invisible) block, not an empty lead paragraph. With no open
+        // paragraph, a following line below the content column cannot lazily
+        // continue the item (§24 C3); only content that reaches the item's own
+        // column still belongs to it. Sending the placeholder through the lead
+        // paragraph path made `- [r]: /u` / ` :` render the colon inside the
+        // item, unlike the executable spec, carve-js and carve-php.
+        if trim_ascii(marker.content) == DEFINITION_PLACEHOLDER {
+            let nested =
+                collect_indented_block_mapped(cur, content_col.saturating_sub(1), content_col);
+            let children = parse_mapped_source(&nested, options)
+                .into_iter()
+                .filter(|block| !matches!(block, BlockNode::Paragraph(p) if p.children.is_empty()))
+                .collect();
+            items.push(ListItem {
+                attrs: item_attrs,
+                checked: marker.checked,
+                children,
+                pos: span_of(cur, item_at, cur.pos, options),
+            });
+            if cur.peek().is_some_and(|line| {
+                let indent = indent_columns(line);
+                !is_blank_line(line)
+                    && trim_ascii(line) != "+"
+                    && detect_list_marker_full(line).is_none()
+                    && indent < content_col
+            }) {
+                break;
+            }
             continue;
         }
         if marker_content_starts_block(marker.content, cur, content_col)
@@ -9170,9 +9201,22 @@ fn fold_lazy_run_and_resume(
 }
 
 fn collect_trailing_lazy(cur: &mut LineCursor, nested: &mut MappedSource) {
+    collect_trailing_lazy_through(cur, nested, 0);
+}
+
+/// Fold lazy lines down to a container's own base column.
+///
+/// Most callers parse at document column zero and use `collect_trailing_lazy`.
+/// A flush comment can keep an INDENTED list open too, where a line at that
+/// list's base column is still below its content column and therefore lazy.
+fn collect_trailing_lazy_through(
+    cur: &mut LineCursor,
+    nested: &mut MappedSource,
+    base_indent: usize,
+) {
     while let Some(line) = cur.peek() {
         if is_blank_line(line)
-            || indent_columns(line) > 0
+            || indent_columns(line) > base_indent
             || is_list_marker(line)
             || trim_ascii(line) == "+"
             || {
@@ -9182,13 +9226,11 @@ fn collect_trailing_lazy(cur: &mut LineCursor, nested: &mut MappedSource) {
         {
             break;
         }
-        // The guard above already required column 0, so nothing is taken off
-        // this line beyond whatever an outer container removed. Recording it
-        // keeps `span_of` able to end a lazily continued block correctly.
+        let stripped = leading_ws(line);
         nested.push_newline_at(
             trim_ascii_start(line).to_string(),
             cur.source_line(cur.pos),
-            cur.source_col(cur.pos),
+            cur.source_col(cur.pos).map(|col| col + stripped as isize),
         );
         cur.consume();
     }
