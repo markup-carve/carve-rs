@@ -127,7 +127,7 @@ pub use stamp::{needs_review, read_stamp, stamp_carve, Stamp, StampForm};
 /// renderers' ceiling, so the §25 refusal is unreachable from a source string
 /// (see [`RenderDepthError`], which the tree-taking renderers return).
 pub fn to_html(source: &str) -> String {
-    render_html(&parse(source))
+    render::render_html_owned_with_options(parse(source), &Options::default())
         .expect("the parse cap sits below the render ceiling, so a parsed tree never reaches it")
 }
 
