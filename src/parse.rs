@@ -13884,6 +13884,36 @@ fn apply_attrs_to_block(node: &mut BlockNode, attrs: Attrs) {
         BlockNode::BlockQuote(n) => n.attrs = Some(attrs),
         BlockNode::Table(n) => {
             n.columns = table_columns_from_attrs(&attrs);
+            let count = |key: &str| -> Option<usize> {
+                match attrs.key_values.get(key) {
+                    None => Some(0),
+                    Some(value) if value.trim().is_empty() => Some(1),
+                    Some(value) if value.trim().bytes().all(|b| b.is_ascii_digit()) => {
+                        value.trim().parse().ok()
+                    }
+                    Some(_) => None,
+                }
+            };
+            if attrs.key_values.contains_key("header-rows")
+                || attrs.key_values.contains_key("footer-rows")
+            {
+                if let (Some(head_rows), Some(foot_rows)) =
+                    (count("header-rows"), count("footer-rows"))
+                {
+                    if head_rows + foot_rows <= n.rows.len() {
+                        n.row_groups = Some(TableRowGroups {
+                            head_rows,
+                            bodies: vec![TableBodyGroup {
+                                head_rows: 0,
+                                body_rows: n.rows.len() - head_rows - foot_rows,
+                                row_head_columns: Some(0),
+                                attrs: None,
+                            }],
+                            foot_rows,
+                        });
+                    }
+                }
+            }
             n.attrs = Some(attrs);
         }
         // A typed colon-fence opener may already carry its own attribute
