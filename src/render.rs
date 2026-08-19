@@ -198,6 +198,7 @@ fn render_blocks(
 ) -> String {
     let mut out = String::new();
     let mut first = true;
+    let mut previous_owns_separator = false;
     for block in nodes {
         if matches!(
             block,
@@ -208,13 +209,21 @@ fn render_blocks(
         ) {
             continue;
         }
-        if !first {
+        if !first && !previous_owns_separator {
             out.push('\n');
         }
         render_block(&mut out, block, level, options, state);
+        previous_owns_separator = is_all_blank_html_raw(block);
         first = false;
     }
     out
+}
+
+fn is_all_blank_html_raw(block: &BlockNode) -> bool {
+    matches!(block, BlockNode::RawBlock(raw)
+        if raw.format == "html"
+            && !raw.content.is_empty()
+            && raw.content.chars().all(|c| c == '\n'))
 }
 
 /// Render a container's children, dropping the ones that render to nothing.
@@ -267,6 +276,7 @@ fn render_document_blocks(
     let mut out = String::new();
     let mut i = 0;
     let mut first = true;
+    let mut previous_owns_separator = false;
     while i < nodes.len() {
         // Skipped BEFORE the separating newline, or a block that renders to
         // nothing leaves a blank line where it stood. An abbreviation
@@ -283,15 +293,17 @@ fn render_document_blocks(
             i += 1;
             continue;
         }
-        if !first {
+        if !first && !previous_owns_separator {
             out.push('\n');
         }
+        let owns_separator = is_all_blank_html_raw(&nodes[i]);
         if matches!(nodes[i], BlockNode::Heading(_)) && options.sections {
             i = render_section(&mut out, nodes, i, 0, options, state);
         } else {
             render_block(&mut out, &nodes[i], 0, options, state);
             i += 1;
         }
+        previous_owns_separator = owns_separator;
         first = false;
     }
     out

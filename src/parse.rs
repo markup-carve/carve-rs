@@ -5626,9 +5626,15 @@ fn parse_fence(cur: &mut LineCursor, open: FenceOpen, options: &Options<'_>) -> 
     // the author wrote it, not just its content.
     let pos = span_of(cur, span_start, cur.pos, options);
     if let Some(format) = raw_format {
+        let mut content = content_lines.join("\n");
+        // Joining cannot distinguish zero payload lines from one or more blank
+        // payload lines. The latter still own their newline (corpus 372).
+        if !content_lines.is_empty() && content_lines.iter().all(String::is_empty) {
+            content.push('\n');
+        }
         BlockNode::RawBlock(RawBlock {
             format,
-            content: content_lines.join("\n"),
+            content,
             pos,
         })
     } else {

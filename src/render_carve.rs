@@ -1325,10 +1325,17 @@ fn render_block(node: &BlockNode, ctx: &mut CarveContext) -> String {
         BlockNode::BlockImage(image) => render_image(image),
         BlockNode::RawBlock(raw) => {
             let fence = safe_fence(&raw.content, 3);
-            format!(
-                "{fence}={}\n{}\n{fence}",
-                escape_format(&raw.format),
+            let all_blank = !raw.content.is_empty() && raw.content.chars().all(|c| c == '\n');
+            let body = if all_blank {
+                raw.content.clone()
+            } else {
                 protect_verbatim(&raw.content)
+            };
+            let separator = if all_blank { "" } else { "\n" };
+            format!(
+                "{fence}={}\n{}{separator}{fence}",
+                escape_format(&raw.format),
+                body
             )
         }
         BlockNode::AbbreviationDef(abbr) => {

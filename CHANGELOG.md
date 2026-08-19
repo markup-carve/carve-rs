@@ -20,6 +20,9 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **An all-blank raw payload remains distinct from an absent payload.** One
+  blank line between raw fences produces one newline, matching the general
+  payload-preservation rule (markup-carve/carve#1414, corpus 372).
 - **Depth limits now guard every recursive input and output path** (#1119,
   #1120, #1121, #1124). HTML inline rendering and extension re-entry share the
   live render budget, AST JSON encoding has a fallible `try_to_json` entry
