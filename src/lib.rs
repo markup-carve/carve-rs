@@ -128,9 +128,18 @@ pub use stamp::{needs_review, read_stamp, stamp_carve, Stamp, StampForm};
 /// (see [`RenderDepthError`], which the tree-taking renderers return).
 pub fn to_html(source: &str) -> String {
     let options = Options::default();
+    if let Some(html) = parse::try_layout_html(source, &options) {
+        return html;
+    }
     let (doc, crossref_index) = parse::parse_with_render_index(source, &options);
-    render::render_html_owned_with_index(doc, &options, crossref_index)
-        .expect("the parse cap sits below the render ceiling, so a parsed tree never reaches it")
+    render::render_html_owned_with_index(
+        doc,
+        &options,
+        crossref_index,
+        source.contains("[@"),
+        source.contains("[^") || source.contains("^["),
+    )
+    .expect("the parse cap sits below the render ceiling, so a parsed tree never reaches it")
 }
 
 /// Parse a Carve source string and render it as Markdown in one call.
