@@ -30,7 +30,7 @@
 //! ANSI targets the `CodeBlock` is left untouched so those renderers emit it as
 //! its source fence.
 
-use crate::ast::{BlockNode, CodeBlock, Document, RawBlock};
+use crate::ast::{BlockNode, CodeBlock, Document, FigureTarget, RawBlock};
 use crate::escape::{escape_attr, escape_text};
 use crate::extension::{BeforeRenderContext, CarveExtension};
 use crate::render::render_attrs_without_keys;
@@ -185,18 +185,27 @@ fn transform_blocks(blocks: &mut [BlockNode], ext: &ImgFence) {
                     }
                 }
             }
-            // KNOWN LIMITATION (parity gap with carve-js): a captioned fence is
-            // parsed as `Figure { target: FigureTarget::CodeBlock, .. }`. carve-js
-            // renders it as `<figure><img>…<figcaption>`, but carve-rs cannot: a
-            // `before_render` transform can only swap a `CodeBlock` for a
-            // `RawBlock`, and `FigureTarget` has no raw-HTML variant to hold the
-            // sanitized output. So a captioned `img` fence degrades to its escaped
-            // source (safe, never raw) - identical to how `fenced_render` (mermaid,
-            // chart, …) already behaves for captioned fences. Fixing it belongs at
-            // the extension-model level (a `FigureTarget::RawBlock`, or a
-            // figure-renderer extension hook) so every block-transforming extension
-            // benefits, not just this one. Tracked by the ignored parity test in
-            // tests/img_fence.rs.
+            // A composite figure holds its panels as ordinary children.
+            BlockNode::FigureGroup(g) => transform_blocks(&mut g.children, ext),
+            // A CAPTIONED fence is a figure's `target`, which has no raw-HTML
+            // variant to swap the code block for, so the sanitized output goes
+            // beside it (markup-carve/carve-rs#1151). This was the KNOWN
+            // LIMITATION recorded here: a captioned `img` fence used to degrade
+            // to its escaped source, which is safe but is not the document the
+            // author wrote.
+            BlockNode::Figure(f) => match &mut *f.target {
+                FigureTarget::CodeBlock(code) if ext.claims(code.lang.as_deref()) => {
+                    f.rendered_target = Some(Box::new(RawBlock {
+                        format: "html".into(),
+                        content: render_code_block(code, ext),
+                        // Synthesized by an extension: no source span to report
+                        // (PART 12 §4).
+                        pos: None,
+                    }));
+                }
+                FigureTarget::BlockQuote(b) => transform_blocks(&mut b.children, ext),
+                _ => {}
+            },
             _ => {}
         }
     }

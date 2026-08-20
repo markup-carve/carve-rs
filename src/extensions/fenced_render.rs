@@ -22,7 +22,7 @@
 //! dangerous URL / `expression()` values), so a `{onclick=...}` fence cannot
 //! inject.
 
-use crate::ast::{AttrSlot, Attrs, BlockNode, Document, RawBlock};
+use crate::ast::{AttrSlot, Attrs, BlockNode, CodeBlock, Document, FigureTarget, RawBlock};
 use crate::escape::{
     escape_attr, escape_text, is_dangerous_attr_name, is_valid_attr_name, sanitize_attr_value,
 };
@@ -264,6 +264,29 @@ pub(crate) struct StaticState<'r> {
     build: Option<DiagramRendererRef<'r>>,
 }
 
+/// Whether this preset claims the fence, by its info word.
+fn claims(code: &CodeBlock, opts: &FencedRenderOptions) -> bool {
+    code.lang
+        .as_deref()
+        .map(|l| opts.languages.iter().any(|w| w == l))
+        .unwrap_or(false)
+}
+
+/// The HTML for a claimed fence: the live hydration element, or - on the HTML
+/// static path - the build renderer's output, else an escaped source block.
+///
+/// Shared by the two places a claimed fence can stand: a block of its own, and
+/// a captioned figure's target. They produced identical HTML by copy before,
+/// which is how the figure path came to be missing entirely rather than merely
+/// different.
+fn rendered_html(code: &CodeBlock, opts: &FencedRenderOptions, mode: &StaticState<'_>) -> String {
+    if mode.is_static {
+        static_html(code, opts, mode.build)
+    } else {
+        interactive_html(code, opts)
+    }
+}
+
 /// Rewrite every claimed code block in `blocks` into its hydration `raw-block`
 /// (interactive) or its static form (`mode.is_static`): the build renderer's
 /// SSR output when supplied, else an escaped `<pre><code>` source block.
@@ -274,21 +297,10 @@ pub(crate) fn transform_blocks(
 ) {
     for block in blocks.iter_mut() {
         match block {
-            BlockNode::CodeBlock(code)
-                if code
-                    .lang
-                    .as_deref()
-                    .map(|l| opts.languages.iter().any(|w| w == l))
-                    .unwrap_or(false) =>
-            {
-                let html = if mode.is_static {
-                    static_html(code, opts, mode.build)
-                } else {
-                    interactive_html(code, opts)
-                };
+            BlockNode::CodeBlock(code) if claims(code, opts) => {
                 *block = BlockNode::RawBlock(RawBlock {
                     format: "html".into(),
-                    content: html,
+                    content: rendered_html(code, opts, mode),
                     // Synthesized by an extension: no source span to report (PART 12 §4).
                     pos: None,
                 });
@@ -307,6 +319,34 @@ pub(crate) fn transform_blocks(
                     for def in &mut item.definitions {
                         transform_blocks(def, opts, mode);
                     }
+                }
+            }
+            // A composite figure holds its panels as ordinary children, so this
+            // is the recursion every arm above already does.
+            BlockNode::FigureGroup(g) => transform_blocks(&mut g.children, opts, mode),
+            // A CAPTIONED fence is not a block in a list - it is a figure's
+            // `target`, and `FigureTarget` has no raw-HTML variant to swap the
+            // code block for. The rendered HTML goes beside the target instead,
+            // which is the shape `Figure::rendered_target` exists for
+            // (markup-carve/carve-rs#1151). Until this arm, a caption silently
+            // turned a diagram back into a highlighted code block - and a
+            // captioned diagram is what a figure most often IS in a technical
+            // document.
+            BlockNode::Figure(f) => {
+                match &mut *f.target {
+                    FigureTarget::CodeBlock(code) if claims(code, opts) => {
+                        f.rendered_target = Some(Box::new(RawBlock {
+                            format: "html".into(),
+                            content: rendered_html(code, opts, mode),
+                            // Synthesized by an extension: no source span to
+                            // report (PART 12 §4).
+                            pos: None,
+                        }));
+                    }
+                    // A quoted figure holds blocks of its own, so a fence inside
+                    // one is reached the ordinary way.
+                    FigureTarget::BlockQuote(b) => transform_blocks(&mut b.children, opts, mode),
+                    _ => {}
                 }
             }
             _ => {}

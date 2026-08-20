@@ -4722,6 +4722,7 @@ fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<Box<BlockN
                 return Some(Box::new(BlockNode::Figure(Figure {
                     attrs: None,
                     target: Box::new(FigureTarget::CodeBlock(cb)),
+                    rendered_target: None,
                     caption,
                     short_caption: None,
                     // From the opening fence through the end of the caption -
@@ -4841,6 +4842,7 @@ fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<Box<BlockN
                 return Some(Box::new(BlockNode::Figure(Figure {
                     attrs: None,
                     target: Box::new(FigureTarget::Image(img)),
+                    rendered_target: None,
                     caption,
                     short_caption: None,
                     // The figure runs from the image to the end of the caption
@@ -4911,6 +4913,7 @@ fn parse_equation_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<B
         return Some(BlockNode::Figure(Figure {
             attrs: None,
             target: Box::new(target),
+            rendered_target: None,
             caption,
             short_caption: None,
             // Through the end of the caption, like the listing above.
@@ -6615,6 +6618,7 @@ fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         BlockNode::Figure(Figure {
             attrs: None,
             target: Box::new(FigureTarget::BlockQuote(quote)),
+            rendered_target: None,
             caption,
             short_caption: None,
             pos: span_of(cur, span_start, cur.pos, options),
@@ -18671,6 +18675,7 @@ fn promote_block_images(blocks: &mut [BlockNode], figures_only: bool) {
                 *block = BlockNode::Figure(Figure {
                     attrs,
                     target: Box::new(FigureTarget::Image(img)),
+                    rendered_target: None,
                     caption: children,
                     short_caption: None,
                     // PART 12 §4 exempts a REASSEMBLED node, and this one is not:

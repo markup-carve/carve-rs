@@ -1544,6 +1544,7 @@ impl<'a> Importer<'a> {
             return Ok(vec![BlockNode::Figure(Figure {
                 attrs,
                 target: Box::new(target),
+                rendered_target: None,
                 caption,
                 short_caption: None,
                 pos: None,

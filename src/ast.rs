@@ -517,6 +517,24 @@ pub struct Figure {
     /// (markup-carve/carve-wasm#44). One indirection on a node kind that is
     /// rare in real documents buys the cap back.
     pub target: Box<FigureTarget>,
+    /// HTML an extension rendered FOR `target`, replacing it on the HTML path
+    /// only (`None` in every parsed document).
+    ///
+    /// A `before_render` transform claims a fence by swapping the `CodeBlock`
+    /// for a `RawBlock` - and a CAPTIONED fence is not a block in a list, it is
+    /// this node's `target`, which PART 12 pins to five types with no raw-HTML
+    /// spelling among them. Carrying the replacement beside the target rather
+    /// than inside it keeps the wire shape exactly as the schema pins it (the
+    /// encoder does not write this field) while letting `chart`, `mermaid` and
+    /// the other presets reach a captioned diagram, which is the shape a figure
+    /// most often IS in a technical document (markup-carve/carve-rs#1151).
+    ///
+    /// BOXED for the reason `target` is: a `RawBlock` inline here adds its two
+    /// `String`s to every `Figure`, and `Figure` is a `BlockNode` variant, so it
+    /// would set the size of EVERY node and multiply through §25's 200-level
+    /// cap. Unboxed this took `BlockNode` from 272 to 312 bytes, over the guard
+    /// in tests/no_single_variant_sets_the_size_of_every_block_node.rs.
+    pub rendered_target: Option<Box<RawBlock>>,
     pub caption: Vec<InlineNode>,
     /// Structured publishing/navigation label; ordinary renderers ignore it.
     pub short_caption: Option<Vec<InlineNode>>,

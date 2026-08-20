@@ -2423,27 +2423,42 @@ fn render_figure_contents(
     state: &mut RenderState,
 ) {
     out.push('\n');
-    match &*f.target {
-        FigureTarget::Image(img) => {
-            indent(out, level + 1);
-            render_image(out, img);
+    // An extension claimed the captioned block and rendered it - a `chart` or
+    // `mermaid` fence, an `img` fence. The replacement is an ordinary
+    // `RawBlock`, so it takes the ordinary raw-block path and
+    // `allow_raw_html: false` escapes it here exactly as it escapes a claimed
+    // fence that stood on its own (markup-carve/carve-rs#1151).
+    if let Some(raw) = &f.rendered_target {
+        render_block(
+            out,
+            &BlockNode::RawBlock((**raw).clone()),
+            level + 1,
+            options,
+            state,
+        );
+    } else {
+        match &*f.target {
+            FigureTarget::Image(img) => {
+                indent(out, level + 1);
+                render_image(out, img);
+            }
+            FigureTarget::BlockQuote(b) => render_blockquote(out, b, level + 1, options, state),
+            FigureTarget::Table(t) => render_table(out, t, level + 1, options, state),
+            FigureTarget::CodeBlock(cb) => render_block(
+                out,
+                &BlockNode::CodeBlock(cb.clone()),
+                level + 1,
+                options,
+                state,
+            ),
+            FigureTarget::Paragraph(p) => render_block(
+                out,
+                &BlockNode::Paragraph(p.clone()),
+                level + 1,
+                options,
+                state,
+            ),
         }
-        FigureTarget::BlockQuote(b) => render_blockquote(out, b, level + 1, options, state),
-        FigureTarget::Table(t) => render_table(out, t, level + 1, options, state),
-        FigureTarget::CodeBlock(cb) => render_block(
-            out,
-            &BlockNode::CodeBlock(cb.clone()),
-            level + 1,
-            options,
-            state,
-        ),
-        FigureTarget::Paragraph(p) => render_block(
-            out,
-            &BlockNode::Paragraph(p.clone()),
-            level + 1,
-            options,
-            state,
-        ),
     }
     out.push('\n');
     indent(out, level + 1);
