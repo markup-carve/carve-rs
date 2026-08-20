@@ -472,6 +472,9 @@ const IMPLEMENTED: &[&str] = &[
     "an-unterminated-container-does-not-extend-the-item-past-a-blank-line",
     "a-blank-line-before-a-sibling-marker-separates-the-items-whatever-consumed-it",
     "a-task-item-s-checkbox-is-not-decided-by-its-first-block",
+    "an-attribute-line-below-a-list-item-interrupts-it",
+    "an-attributed-cell-keeps-its-attributes-and-its-literal-marker",
+    "an-engine-written-shape-says-what-it-is-called",
     "only-lazy-folding-demotes-a-marker-line-colon-opener",
     // markup-carve/carve#1377: a content-column heading leaves no paragraph
     // open for the following flush-left line.
