@@ -157,3 +157,45 @@ fn where_the_stack_goes() {
         }
     }
 }
+
+/// THE RATCHET, and the only assertion in this file.
+///
+/// Everything above is a measurement, deliberately `#[ignore]`d - which left
+/// the floor itself unguarded. That is the shape carve-wasm#48 hit: a corpus
+/// job flipped from green to red on an UNCHANGED commit and an identical
+/// toolchain, because the margin was thin enough to move on its own and nothing
+/// was watching it. A number nobody asserts is a number that drifts.
+///
+/// The ceilings are the measured floors plus headroom, per profile, because a
+/// debug frame is not a release frame:
+///
+/// | profile | measured floor at the cap | ceiling here |
+/// | --- | --- | --- |
+/// | release | 384KiB | 512KiB |
+/// | debug | 1024KiB | 1536KiB |
+///
+/// They are a RATCHET, not a target: when a change lowers the floor, lower
+/// these with it, and the drop is what the commit is for. Raising one is a
+/// regression and needs saying so out loud.
+///
+/// `parse+drop` is asserted beside `parse` because the AST frees through
+/// compiler-generated recursive drop glue. Today it costs nothing extra - both
+/// floor at the same number - so this pins the day that stops being true, which
+/// is the day the parser gets cheap enough for teardown to become the binding
+/// constraint (markup-carve/carve-rs#1165).
+#[test]
+fn the_floor_at_the_nesting_cap_does_not_regress() {
+    let ceiling = if cfg!(debug_assertions) { 1536 } else { 512 };
+    // CONTROL FIRST. A probe that runs no case reports "fits" for every size,
+    // which is how the first version of this harness measured a 16KiB floor.
+    assert!(
+        !fits("parse", 16),
+        "a 16KiB stack parsed a {CAP}-level document - the probe is not running the case"
+    );
+    for case in ["parse", "parse+drop"] {
+        assert!(
+            fits(case, ceiling),
+            "{case} no longer fits a {ceiling}KiB stack at the {CAP}-level cap;              the parser's descent got more expensive, or the cap moved"
+        );
+    }
+}
