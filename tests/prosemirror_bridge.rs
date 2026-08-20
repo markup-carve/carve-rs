@@ -641,8 +641,17 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // into. PART 11 §1 still holds - re-reading that output gives the same
     // tree - so the loss is SOURCE, which is the category this count tracks and
     // the one the bridge already declares for comments.
-    const STRICT: usize = 1029;
-    const LOSSY: usize = 296;
+    // markup-carve/carve#1259 adds category 390's five documents, and nothing
+    // else: the corpus went from 1325 pairs to 1330 and no existing pair
+    // changed content, because the pairs the clause moves are RESPELLED with
+    // the run's terminating space rather than re-expected.
+    //
+    // Four are strict and one reports, for a cause already declared above:
+    // `390-...-5` is the escape (`|\= a |`), and the bridge degrades
+    // `escaped_text` because escaping is a source-level concern the editor
+    // holds as text. Nothing DROPS, so no new loss cause appears.
+    const STRICT: usize = 1033;
+    const LOSSY: usize = 297;
     assert!(
         covered >= STRICT,
         "strict round trips fell from {STRICT} to {covered}"

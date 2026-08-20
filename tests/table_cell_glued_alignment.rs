@@ -60,12 +60,16 @@ fn a_marker_after_whitespace_is_content_not_alignment() {
 #[test]
 fn valid_glued_markers_align_and_invalid_runs_stay_literal() {
     // A duplicate-axis run is invalid as a whole, so neither marker is
-    // consumed as alignment.
-    let header = carve::to_html("|=<< Note |= B |\n| 1 | 2 |");
+    // consumed as alignment. Written with the space that ends the marker run
+    // (§20 T11) the cell is still a header holding both `<` bytes; glued, the
+    // run is atomic and takes the `=` with it, so the whole cell is content.
+    let header = carve::to_html("|= << Note |= B |\n| 1 | 2 |");
     assert!(
         header.contains(r#"<th scope="col">&lt;&lt; Note</th>"#),
         "got {header}"
     );
+    let glued = carve::to_html("|=<< Note |= B |\n| 1 | 2 |");
+    assert!(glued.contains(r#"<td>=&lt;&lt; Note</td>"#), "got {glued}");
 
     // A glued marker that is the whole content of a HEADER cell is alignment -
     // the `=` already marks the cell, so there is no span to confuse it with.
@@ -82,25 +86,25 @@ fn valid_glued_markers_align_and_invalid_runs_stay_literal() {
 
 #[test]
 fn a_vertical_marker_needs_a_horizontal_partner() {
+    // A rejected run takes the kind marker with it (§20 T11), so these cells
+    // are data cells whose text opens with `=`; only the paired one keeps its
+    // header marker.
     let html = carve::to_html(
         "|=^ Top |=v Bottom |=<^ Paired |=v> Reverse |=~> Middle |\n| a | b | c | d | e |",
     );
-    assert!(html.contains(r#"<th scope="col">^ Top</th>"#), "got {html}");
-    assert!(
-        html.contains(r#"<th scope="col">v Bottom</th>"#),
-        "got {html}"
-    );
+    assert!(html.contains(r#"<td>=^ Top</td>"#), "got {html}");
+    assert!(html.contains(r#"<td>=v Bottom</td>"#), "got {html}");
     assert!(
         html.contains("text-align: left; vertical-align: top;"),
         "got {html}"
     );
+    assert!(html.contains(r#"<td>=v&gt; Reverse</td>"#), "got {html}");
+    assert!(html.contains(r#"<td>=~&gt; Middle</td>"#), "got {html}");
+    // Spaced, the same rejections leave a HEADER cell holding the markers.
+    let spaced = carve::to_html("|= ^ Top |= v Bottom |\n| a | b |");
     assert!(
-        html.contains(r#"<th scope="col">v&gt; Reverse</th>"#),
-        "got {html}"
-    );
-    assert!(
-        html.contains(r#"<th scope="col">~&gt; Middle</th>"#),
-        "got {html}"
+        spaced.contains(r#"<th scope="col">^ Top</th>"#),
+        "got {spaced}"
     );
     assert!(
         carve::to_carve("|=>~ Middle |\n| e |\n").contains("|=>~ Middle |"),

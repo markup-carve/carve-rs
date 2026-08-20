@@ -1751,6 +1751,8 @@ fn render_table(
     } else {
         0
     };
+    // Computed once per table: every row and every cell reads the same answer.
+    let column_defaults = table_column_defaults(t, header_count);
     let has_header = header_count > 0;
     let body_start = header_count;
     // A ROW IS A ROW, IN EVERY SECTION (PART 10 §7, markup-carve/carve#1459).
@@ -1774,7 +1776,7 @@ fn render_table(
                 &rowspan_cols,
                 &orphan_carets,
                 state,
-                t,
+                &column_defaults,
             );
         }
         out.push('\n');
@@ -1791,7 +1793,7 @@ fn render_table(
         let mut body_ctx = TableBodyRenderContext {
             rowspan_cols: &rowspan_cols,
             orphan_carets: &orphan_carets,
-            table: t,
+            defaults: &column_defaults,
             options,
             state,
         };
@@ -1817,7 +1819,7 @@ fn render_table(
         let mut foot_ctx = TableBodyRenderContext {
             rowspan_cols: &rowspan_cols,
             orphan_carets: &orphan_carets,
-            table: t,
+            defaults: &column_defaults,
             options,
             state,
         };
@@ -1879,7 +1881,7 @@ fn render_table_row(
     rowspan_cols: &BTreeMap<(usize, usize), usize>,
     orphan_carets: &BTreeSet<(usize, usize)>,
     state: &mut RenderState,
-    table: &Table,
+    defaults: &ColumnDefaults,
 ) {
     out.push_str("<tr");
     write_attrs(out, &row.attrs);
@@ -1920,7 +1922,7 @@ fn render_table_row(
             extra.push_str(&format!(" colspan=\"{}\"", colspan));
             emitted.push("colspan");
         }
-        let style = table_cell_style(cell, table, col, row_align(row, col));
+        let style = table_cell_style(cell, col, row_align(row, col), defaults);
         if !style.is_empty() {
             emitted.push("style");
         }
@@ -1942,7 +1944,8 @@ fn render_table_row(
 struct TableBodyRenderContext<'a, 'b> {
     rowspan_cols: &'a BTreeMap<(usize, usize), usize>,
     orphan_carets: &'a BTreeSet<(usize, usize)>,
-    table: &'a Table,
+    /// The column defaults declared by the head, computed once per table.
+    defaults: &'a ColumnDefaults,
     options: &'a Options<'a>,
     state: &'b mut RenderState,
 }
@@ -1993,9 +1996,9 @@ fn render_table_body_row(
         }
         let style = table_cell_style(
             cell,
-            ctx.table,
             cell_index,
-            table_column_align(ctx.table, cell_index),
+            table_column_align(ctx.defaults, cell_index),
+            ctx.defaults,
         );
         if !style.is_empty() {
             attrs.push_str(&style);
@@ -2022,35 +2025,69 @@ fn row_align(row: &TableRow, col: usize) -> Option<TableAlign> {
     row.cells.get(col).and_then(|c| c.align)
 }
 
-fn table_column_align(table: &Table, col: usize) -> Option<TableAlign> {
-    table
+/// A column's declared defaults, read off the HEADER SECTION.
+///
+/// Column defaults come from the header rows: with several of them the last row
+/// that declares an axis wins, and omission does not reset it. A HEADERLESS
+/// table has no column default at all - a `|=` cell below the header run is a
+/// ROW header (§5 T9), so it heads its row rather than its column, and its
+/// alignment is its own.
+///
+/// This used to read row 0 unconditionally, which is the same answer whenever
+/// row 0 is a header row and a different one whenever it is not. Nothing could
+/// see the difference until §5 T11 made a rejected marker run demote a row that
+/// used to be all-header: corpus 373 then aligned a BODY cell from a row header
+/// above it, where carve-js and the spec's own oracle align nothing.
+/// ONE SCAN PER TABLE, not one per cell. Asked per cell this walks the whole
+/// header section for every cell in the table, which is quadratic in the header
+/// row count on an all-header table and re-reads the head once per body cell.
+/// The defaults do not depend on the cell, so they are computed once and
+/// carried.
+type ColumnDefaults = Vec<(Option<TableAlign>, Option<TableVerticalAlign>)>;
+
+fn table_column_defaults(table: &Table, header_count: usize) -> ColumnDefaults {
+    let width = table
         .rows
-        .first()
-        .and_then(|r| r.cells.get(col))
-        .and_then(|c| c.align)
-        .or_else(|| table.columns.get(col).and_then(|c| c.align))
+        .iter()
+        .map(|row| row.cells.len())
+        .max()
+        .unwrap_or(0)
+        .max(table.columns.len());
+    let mut defaults: ColumnDefaults = vec![(None, None); width];
+    for row in table.rows.iter().take(header_count) {
+        for (col, cell) in row.cells.iter().enumerate() {
+            let Some(slot) = defaults.get_mut(col) else {
+                continue;
+            };
+            if cell.align.is_some() {
+                slot.0 = cell.align;
+            }
+            if cell.valign.is_some() {
+                slot.1 = cell.valign;
+            }
+        }
+    }
+    for (col, slot) in defaults.iter_mut().enumerate() {
+        let column = table.columns.get(col);
+        slot.0 = slot.0.or_else(|| column.and_then(|c| c.align));
+        slot.1 = slot.1.or_else(|| column.and_then(|c| c.valign));
+    }
+    defaults
+}
+
+fn table_column_align(defaults: &ColumnDefaults, col: usize) -> Option<TableAlign> {
+    defaults.get(col).and_then(|slot| slot.0)
 }
 
 fn table_cell_style(
     cell: &TableCell,
-    table: &Table,
     col: usize,
     inherited_align: Option<TableAlign>,
+    defaults: &ColumnDefaults,
 ) -> String {
-    let align = cell
-        .align
-        .or(inherited_align)
-        .or_else(|| table.columns.get(col).and_then(|c| c.align));
-    let valign = cell
-        .valign
-        .or_else(|| {
-            table
-                .rows
-                .first()
-                .and_then(|r| r.cells.get(col))
-                .and_then(|c| c.valign)
-        })
-        .or_else(|| table.columns.get(col).and_then(|c| c.valign));
+    let slot = defaults.get(col).copied().unwrap_or((None, None));
+    let align = cell.align.or(inherited_align).or(slot.0);
+    let valign = cell.valign.or(slot.1);
     if align.is_none() && valign.is_none() {
         return String::new();
     }

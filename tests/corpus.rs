@@ -413,6 +413,7 @@ const IMPLEMENTED: &[&str] = &[
     // controls, the shapes the reordered slot must NOT change. The other four
     // carry a block after a marker run and needed the engine change.
     "cell-attributes-bind-after-the-kind-and-alignment-markers",
+    "a-table-cell-s-marker-run-ends-at-a-space",
     // Added with the spec bump to carve 395c083 (markup-carve/carve#1229). Both
     // documents already matched, HTML and `.fmt` sidecar alike: the writer
     // stopped emitting the spaced form one release earlier
@@ -1103,6 +1104,10 @@ corpus_test!(
 corpus_test!(
     c_cell_attributes_bind_after_the_kind_and_alignment_markers,
     "cell-attributes-bind-after-the-kind-and-alignment-markers"
+);
+corpus_test!(
+    c_a_table_cell_s_marker_run_ends_at_a_space,
+    "a-table-cell-s-marker-run-ends-at-a-space"
 );
 corpus_test!(
     c_the_canonical_writer_glues_a_code_fence_to_its_info_string,

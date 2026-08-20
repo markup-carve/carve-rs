@@ -130,20 +130,25 @@ fn a_tab_then_a_space_closing_a_data_cell_keeps_the_tab() {
 
 #[test]
 fn a_tab_opening_a_header_cell_is_content() {
-    // corpus 256-6. The `=` is still glued to the pipe, so the cell is a header
-    // cell; only its padding slot changes. The row still promotes to a `<thead>`.
+    // corpus 256-6. A tab is not padding, and under §20 T11 it is not the space
+    // that ends the cell's marker run either - so the `=` has nothing to
+    // terminate it and is content along with the tab. No `<thead>` follows.
     assert_eq!(
         html("|=\th |=\ti |\n| 1 | 2 |\n"),
-        "<table>\n  <thead>\n    <tr><th scope=\"col\">\th</th><th scope=\"col\">\ti</th></tr>\n  </thead>\n  <tbody>\n    <tr><td>1</td><td>2</td></tr>\n  </tbody>\n</table>"
+        "<table>\n  <tbody>\n    <tr><td>=\th</td><td>=\ti</td></tr>\n    <tr><td>1</td><td>2</td></tr>\n  </tbody>\n</table>"
     );
+    // The spaced spelling is the header cell, and keeps the tab as content.
+    assert!(html("|= \th |\n| 1 |\n").contains("<th"));
 }
 
 #[test]
 fn a_tab_then_a_space_opening_a_header_cell_keeps_both() {
-    // corpus 256-7.
+    // corpus 256-7. The tab comes FIRST, so it is the character after the `=`
+    // and the run ends nowhere: both are content, and the space behind the tab
+    // never gets to be padding.
     assert_eq!(
         html("|=\t h |=\t i |\n| 1 | 2 |\n"),
-        "<table>\n  <thead>\n    <tr><th scope=\"col\">\t h</th><th scope=\"col\">\t i</th></tr>\n  </thead>\n  <tbody>\n    <tr><td>1</td><td>2</td></tr>\n  </tbody>\n</table>"
+        "<table>\n  <tbody>\n    <tr><td>=\t h</td><td>=\t i</td></tr>\n    <tr><td>1</td><td>2</td></tr>\n  </tbody>\n</table>"
     );
 }
 
@@ -237,9 +242,13 @@ fn a_tab_after_a_cell_attribute_block_is_content() {
     // Found by mutation: reverting that branch alone left every other assertion
     // in this file green while `|{.c}<TAB>x |` silently lost its tab. The
     // attributes still attach - the narrowing is about the slot after them.
+    // §20 T11 then takes the first cell one step further: the block is part of
+    // the marker run, and a tab does not end a run, so `{.c}` is not a block
+    // either and its braces reach the output. The `{.d}` cell, spaced, is
+    // unchanged - which is what keeps this a test about the SLOT.
     assert_eq!(
         html("|{.c}\tx |{.d} y |\n"),
-        "<table>\n  <tbody>\n    <tr><td class=\"c\">\tx</td><td class=\"d\">y</td></tr>\n  </tbody>\n</table>"
+        "<table>\n  <tbody>\n    <tr><td>{.c}\tx</td><td class=\"d\">y</td></tr>\n  </tbody>\n</table>"
     );
 }
 
@@ -359,9 +368,13 @@ fn control_the_padding_slot_is_still_a_run_of_spaces() {
     // WHICH character is a separator; it does not settle HOW MANY. `{space}` is
     // a run, so two spaces are still padding and `  b  ` is still `b`. A fix
     // that narrowed cardinality along with the terminal set would fail here.
+    // §20 T11 answers a DIFFERENT question in the same document: `|=h` has no
+    // padding at all, so its run is not terminated and the `=` is content. The
+    // cardinality claim is carried by `|=  i |`, whose two spaces are still one
+    // padding slot, and by `|  b  |`.
     assert_eq!(
         html("|=h|=  i |\n|a|  b  |\n"),
-        "<table>\n  <thead>\n    <tr><th scope=\"col\">h</th><th scope=\"col\">i</th></tr>\n  </thead>\n  <tbody>\n    <tr><td>a</td><td>b</td></tr>\n  </tbody>\n</table>"
+        "<table>\n  <tbody>\n    <tr><td>=h</td><th scope=\"row\">i</th></tr>\n    <tr><td>a</td><td>b</td></tr>\n  </tbody>\n</table>"
     );
 }
 

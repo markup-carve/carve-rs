@@ -57,7 +57,7 @@ fn a_character_past_the_block_is_content_not_a_marker() {
     // `|{#x}< content |` is the released spelling this rule reinterprets, and
     // it already rendered this way in every engine and in the oracle - what
     // moved is the other half, a block after a marker.
-    let aligned = carve::to_html("|{#x}< content |");
+    let aligned = carve::to_html("|{#x} < content |");
     assert!(
         aligned.contains(r#"<td id="x">&lt; content</td>"#),
         "got {aligned}"
@@ -67,12 +67,19 @@ fn a_character_past_the_block_is_content_not_a_marker() {
         "the `<` past the block aligned the cell: {aligned}"
     );
 
-    let header = carve::to_html("|{#x}=R|");
+    let header = carve::to_html("|{#x} =R |");
     assert!(header.contains(r#"<td id="x">=R</td>"#), "got {header}");
     assert!(
         !header.contains("<th"),
         "the `=` past the block made a header cell: {header}"
     );
+
+    // Both are written with the space that ENDS the marker run (§20 T11). Glued
+    // to the content the block is not a block at all, so the braces reach the
+    // output and the cell carries nothing.
+    let glued = carve::to_html("|{#x}=R|");
+    assert!(!glued.contains(r#"id="x""#), "got {glued}");
+    assert!(!glued.contains("<th"), "got {glued}");
 }
 
 #[test]
@@ -92,11 +99,20 @@ fn a_space_in_front_of_the_block_still_makes_it_content() {
 
 #[test]
 fn an_invalid_payload_leaves_the_brace_literal() {
-    let html = carve::to_html("|=<{.a=} y |");
+    // An invalid payload is not a block, so it does not end the marker run
+    // either (§20 T11) - written with the run's own space, the markers still
+    // apply and the braces are content.
+    let html = carve::to_html("|=< {.a=} y |");
     assert!(
         html.contains(r#"style="text-align: left;">{.a=} y<"#),
         "got {html}"
     );
+    // Glued, there is nothing to terminate the run and the whole cell is text -
+    // which the inline pass then reads on its own terms, `=<{.a=` being a
+    // highlight. The point here is that no marker survived.
+    let glued = carve::to_html("|=<{.a=} y |");
+    assert!(!glued.contains("text-align"), "got {glued}");
+    assert!(!glued.contains("<th"), "got {glued}");
 }
 
 #[test]
@@ -104,8 +120,11 @@ fn an_attributed_cell_is_never_a_bare_span_marker() {
     // Grammar §20: a cell carrying attributes has literal content even when
     // that content is just `^` or `<`, so the span markers do not apply after
     // the block has been read.
-    let html = carve::to_html("|= A |= B |\n| a |{.x}<|");
+    let html = carve::to_html("|= A |= B |\n| a |{.x} < |");
     assert!(html.contains(r#"<td class="x">&lt;</td>"#), "got {html}");
+    // Glued, the block is not a block (§20 T11) and the braces are content.
+    let glued = carve::to_html("|= A |= B |\n| a |{.x}<|");
+    assert!(glued.contains("<td>{.x}&lt;</td>"), "got {glued}");
 }
 
 #[test]

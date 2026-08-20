@@ -12378,7 +12378,7 @@ fn parse_table_cell(
     // leading whitespace), per grammar §20. `| =x |` (space before `=`) is a
     // literal `<td>`, matching carve-js / carve-php; check the RAW cell, not
     // the trimmed one.
-    let header = cell.starts_with('=');
+    let mut header = cell.starts_with('=');
     // NOT trimmed: the alignment marker is GLUED to the opening `|` (grammar
     // §20, `data_cell` / `header_cell`), so whether whitespace precedes it is
     // the whole distinction. Reading the marker off the TRIMMED cell threw that
@@ -12394,7 +12394,7 @@ fn parse_table_cell(
                                            // glued after it is alignment even when it is the whole content (`|=<|`).
     let lone_span = !header && (trimmed == "<" || trimmed == "^");
     let mut after_markers = body;
-    let (align, valign) = if lone_span {
+    let (mut align, mut valign) = if lone_span {
         (None, None)
     } else {
         let run = body
@@ -12513,6 +12513,26 @@ fn parse_table_cell(
             attrs = Some(read);
             rest = &after_markers[next..];
         }
+    }
+    // A MARKER RUN ENDS AT A SPACE (grammar §20 T11, corpus
+    // 390-a-table-cell-s-marker-run-ends-at-a-space). The kind marker, the
+    // alignment run and the attribute block are ONE run, and a cell carrying
+    // any of them must follow it with one literal space. Without that space
+    // there is no run and every byte of it is content, so `|=hot= |` is the
+    // highlight its author wrote rather than a header cell holding `hot=`.
+    //
+    // The run is ATOMIC, which is why this clears `header` too: a rejected
+    // alignment run takes the `=` with it, instead of leaving the "first marker
+    // wins, the rest is content" reading the clause replaces. The closing pipe
+    // is not a terminator (`|= |` is the empty header cell) and neither is a
+    // tab, which PART 7 gives no padding role inline.
+    let run_len = cell.len() - rest.len();
+    if run_len > 0 && rest.as_bytes().first() != Some(&b' ') {
+        header = false;
+        align = None;
+        valign = None;
+        attrs = None;
+        rest = cell;
     }
     let text = trim_cell_padding(rest); // PART 7: cell padding is U+0020 only.
                                         // `span_cell` is an ALTERNATIVE to `data_cell` in the grammar, not a suffix

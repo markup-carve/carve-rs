@@ -26,8 +26,12 @@ fn right_and_center_come_from_the_header() {
 
 #[test]
 fn an_invalid_doubled_marker_does_not_align_the_column() {
+    // Written with the space that ends the marker run so the row is still a
+    // header row; the doubled marker inside it is content and declares no
+    // alignment. Glued (`|=<< Note |`) §20 T11 makes the whole cell content,
+    // so there is no header row and no delimiter to check.
     assert_eq!(
-        separator_row("|=<< Note |= Plain |\n| a | b |\n"),
+        separator_row("|= << Note |= Plain |\n| a | b |\n"),
         "| --- | --- |"
     );
 }

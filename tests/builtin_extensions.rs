@@ -1283,11 +1283,16 @@ fn toc_placement_no_panic_when_nested_over_budget() {
 
 #[test]
 fn table_header_marker_must_be_glued_to_pipe() {
-    // `|=x|` is a header cell; `| =x |` (space before `=`) is a literal <td>,
-    // per grammar section 20 ("glued to the |"). Matches carve-js / carve-php.
-    assert!(carve::to_html("|=x|\n| c |\n").contains("<th"));
-    assert!(!carve::to_html("| =x |\n| c |\n").contains("<th"));
-    assert!(carve::to_html("| =x |\n| c |\n").contains("<td>=x</td>"));
+    // `|= x |` is a header cell; `| = x |` (space BEFORE the `=`) is a literal
+    // <td>, per grammar section 20 ("glued to the |"). The marker also needs the
+    // space AFTER it that ends the run (section 20 T11), so `|=x|` is a data
+    // cell whose text is `=x` - glued at both ends is not a marker either.
+    // Matches carve-js / carve-php.
+    assert!(carve::to_html("|= x |\n| c |\n").contains("<th"));
+    assert!(!carve::to_html("| = x |\n| c |\n").contains("<th"));
+    assert!(carve::to_html("| = x |\n| c |\n").contains("<td>= x</td>"));
+    assert!(!carve::to_html("|=x|\n| c |\n").contains("<th"));
+    assert!(carve::to_html("|=x|\n| c |\n").contains("<td>=x</td>"));
 }
 
 #[test]
