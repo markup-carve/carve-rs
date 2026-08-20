@@ -7,6 +7,15 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **A row is a row, in every table section** (markup-carve/carve#1459, PART 10
+  §7). `<thead>` and `<tfoot>` now write one row per line, as `<tbody>` always
+  did. Nothing renders differently - whitespace between rows in table context is
+  not rendered - but the emitted HTML is consistent and diffs read cleanly. All
+  three table paths move: the block renderer, the layout fast path and the
+  list-table extension.
+
 ### Added
 
 - **A `labels` render option carries the strings the engine writes itself**

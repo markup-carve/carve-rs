@@ -116,6 +116,6 @@ fn control_an_escaped_pipe_still_does_not_split() {
 fn control_a_header_row_is_unaffected() {
     assert_eq!(
         html("|= h |\n| a `b | c |\n"),
-        "<table>\n  <thead><tr><th scope=\"col\">h</th></tr></thead>\n  <tbody>\n    <tr><td>a <code>b | c</code></td></tr>\n  </tbody>\n</table>"
+        "<table>\n  <thead>\n    <tr><th scope=\"col\">h</th></tr>\n  </thead>\n  <tbody>\n    <tr><td>a <code>b | c</code></td></tr>\n  </tbody>\n</table>"
     );
 }

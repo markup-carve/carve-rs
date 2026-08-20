@@ -52,7 +52,7 @@ fn tight_lead_fence_trailing_text_is_bare() {
 fn tight_table_trailing_text_is_bare() {
     assert_eq!(
         carve::to_html("- item\n  | a | b |\n  | - | - |\n  | 1 | 2 |\n  tail\n"),
-        "<ul>\n  <li>item\n    <table>\n      <thead><tr><th scope=\"col\">a</th><th scope=\"col\">b</th></tr></thead>\n      <tbody>\n        <tr><td>1</td><td>2</td></tr>\n      </tbody>\n    </table>\n    tail\n  </li>\n</ul>"
+        "<ul>\n  <li>item\n    <table>\n      <thead>\n        <tr><th scope=\"col\">a</th><th scope=\"col\">b</th></tr>\n      </thead>\n      <tbody>\n        <tr><td>1</td><td>2</td></tr>\n      </tbody>\n    </table>\n    tail\n  </li>\n</ul>"
     );
 }
 

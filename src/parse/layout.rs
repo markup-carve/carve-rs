@@ -753,7 +753,13 @@ fn render_layout_table(
     layout_indent(out, depth);
     out.push_str("<table>\n");
     layout_indent(out, depth + 1);
-    out.push_str("<thead><tr>");
+    // One row per line, as every section does (PART 10 §7,
+    // markup-carve/carve#1459). This fast path renders the same document as the
+    // ordinary table renderer and must agree with it byte for byte, so the
+    // layout lives in both.
+    out.push_str("<thead>\n");
+    layout_indent(out, depth + 2);
+    out.push_str("<tr>");
     accepted.record(BlockLayout {
         event: LayoutEvent::TableRow,
         consumed: start..start + 2,
@@ -770,7 +776,9 @@ fn render_layout_table(
         render_layout_inline(out, cell, options)?;
         out.push_str("</th>");
     }
-    out.push_str("</tr></thead>");
+    out.push_str("</tr>\n");
+    layout_indent(out, depth + 1);
+    out.push_str("</thead>");
     let mut i = start + 2;
     let mut rows = Vec::new();
     while i < lines.len() && lines[i].trim_start().starts_with('|') {

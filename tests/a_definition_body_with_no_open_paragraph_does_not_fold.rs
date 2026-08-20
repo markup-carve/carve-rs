@@ -83,7 +83,7 @@ fn an_attribute_body_does_not_take_the_fold() {
 fn a_table_body_does_not_take_the_fold() {
     assert_eq!(
         html(":: t\n:  | a |\n   |---|\n   | b |\nlazy\n"),
-        "<dl>\n  <dt>t</dt>\n  <dd>\n    <table>\n      <thead><tr><th scope=\"col\">a</th></tr></thead>\n      <tbody>\n        <tr><td>b</td></tr>\n      </tbody>\n    </table>\n  </dd>\n</dl>\n<p>lazy</p>"
+        "<dl>\n  <dt>t</dt>\n  <dd>\n    <table>\n      <thead>\n        <tr><th scope=\"col\">a</th></tr>\n      </thead>\n      <tbody>\n        <tr><td>b</td></tr>\n      </tbody>\n    </table>\n  </dd>\n</dl>\n<p>lazy</p>"
     );
     assert!(list_twin("- | a |\n  |---|\n  | b |\nlazy\n").ends_with("<p>lazy</p>"));
 }

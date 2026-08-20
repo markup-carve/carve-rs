@@ -1753,11 +1753,18 @@ fn render_table(
     };
     let has_header = header_count > 0;
     let body_start = header_count;
+    // A ROW IS A ROW, IN EVERY SECTION (PART 10 §7, markup-carve/carve#1459).
+    // `thead` and `tfoot` used to put their rows on the section's own line while
+    // `tbody` gave each row a line, and nothing said why one element had two
+    // layouts - which is how two corpus fixtures came to demand different
+    // `tfoot` shapes with no rule to measure either against.
     if has_header {
         out.push('\n');
         indent(out, level + 1);
         out.push_str("<thead>");
         for (row_idx, header) in t.rows[..header_count].iter().enumerate() {
+            out.push('\n');
+            indent(out, level + 2);
             render_table_row(
                 out,
                 header,
@@ -1770,6 +1777,8 @@ fn render_table(
                 t,
             );
         }
+        out.push('\n');
+        indent(out, level + 1);
         out.push_str("</thead>");
     }
     // A header-only table (e.g. a GFM `| x |` + `|---|` with no body rows) emits
@@ -1813,8 +1822,12 @@ fn render_table(
             state,
         };
         for (row_idx, row) in t.rows.iter().enumerate().skip(footer_start) {
+            out.push('\n');
+            indent(out, level + 2);
             render_table_body_row(out, row, row_idx, &mut foot_ctx);
         }
+        out.push('\n');
+        indent(out, level + 1);
         out.push_str("</tfoot>");
     }
     out.push('\n');

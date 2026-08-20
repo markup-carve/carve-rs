@@ -23,7 +23,7 @@ fn id_and_key_value() {
 fn header_row_and_gfm_separator() {
     assert_eq!(
         carve::to_html("| H |{.hd}\n|---|\n| c |{.bd}"),
-        "<table>\n  <thead><tr class=\"hd\"><th scope=\"col\">H</th></tr></thead>\n  <tbody>\n    <tr class=\"bd\"><td>c</td></tr>\n  </tbody>\n</table>"
+        "<table>\n  <thead>\n    <tr class=\"hd\"><th scope=\"col\">H</th></tr>\n  </thead>\n  <tbody>\n    <tr class=\"bd\"><td>c</td></tr>\n  </tbody>\n</table>"
     );
 }
 

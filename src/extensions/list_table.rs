@@ -346,9 +346,12 @@ fn render_table(node: &BlockExtension, ctx: &RenderContext<'_>) -> String {
 
     let head_rows = grid.len().min(header_rows);
 
+    // One row per line, as in every other section (PART 10 §7,
+    // markup-carve/carve#1459).
     if head_rows > 0 {
         let mut thead = String::new();
         for (row_index, grid_row) in grid.iter().take(head_rows).enumerate() {
+            thead.push_str("    ");
             thead.push_str(&render_row(
                 grid_row,
                 row_index,
@@ -360,8 +363,10 @@ fn render_table(node: &BlockExtension, ctx: &RenderContext<'_>) -> String {
                 ctx,
                 &columns,
             ));
+            thead.push('\n');
         }
-        lines.push(format!("  <thead>{thead}</thead>"));
+        let thead = thead.trim_end_matches('\n');
+        lines.push(format!("  <thead>\n{thead}\n  </thead>"));
     }
 
     for (start, end) in body_groups {

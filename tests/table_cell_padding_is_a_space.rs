@@ -134,7 +134,7 @@ fn a_tab_opening_a_header_cell_is_content() {
     // cell; only its padding slot changes. The row still promotes to a `<thead>`.
     assert_eq!(
         html("|=\th |=\ti |\n| 1 | 2 |\n"),
-        "<table>\n  <thead><tr><th scope=\"col\">\th</th><th scope=\"col\">\ti</th></tr></thead>\n  <tbody>\n    <tr><td>1</td><td>2</td></tr>\n  </tbody>\n</table>"
+        "<table>\n  <thead>\n    <tr><th scope=\"col\">\th</th><th scope=\"col\">\ti</th></tr>\n  </thead>\n  <tbody>\n    <tr><td>1</td><td>2</td></tr>\n  </tbody>\n</table>"
     );
 }
 
@@ -143,7 +143,7 @@ fn a_tab_then_a_space_opening_a_header_cell_keeps_both() {
     // corpus 256-7.
     assert_eq!(
         html("|=\t h |=\t i |\n| 1 | 2 |\n"),
-        "<table>\n  <thead><tr><th scope=\"col\">\t h</th><th scope=\"col\">\t i</th></tr></thead>\n  <tbody>\n    <tr><td>1</td><td>2</td></tr>\n  </tbody>\n</table>"
+        "<table>\n  <thead>\n    <tr><th scope=\"col\">\t h</th><th scope=\"col\">\t i</th></tr>\n  </thead>\n  <tbody>\n    <tr><td>1</td><td>2</td></tr>\n  </tbody>\n</table>"
     );
 }
 
@@ -153,7 +153,7 @@ fn a_tab_closing_a_header_cell_is_content() {
     // through the `=` branch rather than the plain one.
     assert_eq!(
         html("|= h\t|= i\t|\n| 1 | 2 |\n"),
-        "<table>\n  <thead><tr><th scope=\"col\">h\t</th><th scope=\"col\">i\t</th></tr></thead>\n  <tbody>\n    <tr><td>1</td><td>2</td></tr>\n  </tbody>\n</table>"
+        "<table>\n  <thead>\n    <tr><th scope=\"col\">h\t</th><th scope=\"col\">i\t</th></tr>\n  </thead>\n  <tbody>\n    <tr><td>1</td><td>2</td></tr>\n  </tbody>\n</table>"
     );
 }
 
@@ -162,7 +162,7 @@ fn a_space_then_a_tab_closing_a_header_cell_is_content() {
     // corpus 256-9.
     assert_eq!(
         html("|= h \t|= i \t|\n| 1 | 2 |\n"),
-        "<table>\n  <thead><tr><th scope=\"col\">h \t</th><th scope=\"col\">i \t</th></tr></thead>\n  <tbody>\n    <tr><td>1</td><td>2</td></tr>\n  </tbody>\n</table>"
+        "<table>\n  <thead>\n    <tr><th scope=\"col\">h \t</th><th scope=\"col\">i \t</th></tr>\n  </thead>\n  <tbody>\n    <tr><td>1</td><td>2</td></tr>\n  </tbody>\n</table>"
     );
 }
 
@@ -173,7 +173,7 @@ fn a_tab_then_a_space_closing_a_header_cell_keeps_the_tab() {
     // else.
     assert_eq!(
         html("|= a\t |= b\t |\n| 1 | 2 |\n"),
-        "<table>\n  <thead><tr><th scope=\"col\">a\t</th><th scope=\"col\">b\t</th></tr></thead>\n  <tbody>\n    <tr><td>1</td><td>2</td></tr>\n  </tbody>\n</table>"
+        "<table>\n  <thead>\n    <tr><th scope=\"col\">a\t</th><th scope=\"col\">b\t</th></tr>\n  </thead>\n  <tbody>\n    <tr><td>1</td><td>2</td></tr>\n  </tbody>\n</table>"
     );
 }
 
@@ -361,7 +361,7 @@ fn control_the_padding_slot_is_still_a_run_of_spaces() {
     // that narrowed cardinality along with the terminal set would fail here.
     assert_eq!(
         html("|=h|=  i |\n|a|  b  |\n"),
-        "<table>\n  <thead><tr><th scope=\"col\">h</th><th scope=\"col\">i</th></tr></thead>\n  <tbody>\n    <tr><td>a</td><td>b</td></tr>\n  </tbody>\n</table>"
+        "<table>\n  <thead>\n    <tr><th scope=\"col\">h</th><th scope=\"col\">i</th></tr>\n  </thead>\n  <tbody>\n    <tr><td>a</td><td>b</td></tr>\n  </tbody>\n</table>"
     );
 }
 
@@ -373,7 +373,7 @@ fn control_a_space_padded_delimiter_row_still_promotes_and_aligns() {
     // colon still reaches both the `<th scope=\"col\">` and the `<td>` below it.
     assert_eq!(
         html("| a | b |\n| --- | ---: |\n| 1 | 2 |\n"),
-        "<table>\n  <thead><tr><th scope=\"col\">a</th><th scope=\"col\" style=\"text-align: right;\">b</th></tr></thead>\n  <tbody>\n    <tr><td>1</td><td style=\"text-align: right;\">2</td></tr>\n  </tbody>\n</table>"
+        "<table>\n  <thead>\n    <tr><th scope=\"col\">a</th><th scope=\"col\" style=\"text-align: right;\">b</th></tr>\n  </thead>\n  <tbody>\n    <tr><td>1</td><td style=\"text-align: right;\">2</td></tr>\n  </tbody>\n</table>"
     );
 }
 
