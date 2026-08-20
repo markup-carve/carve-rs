@@ -280,29 +280,34 @@ fn render_layout_body(
             wrote = true;
             continue;
         }
-        if let Some(text) = line.strip_prefix("> ") {
-            if lines.get(i + 1).is_some_and(|next| !is_blank_line(next)) {
-                return None;
-            }
-            if detect_heading(text).is_some()
-                || detect_fence_open(text).is_some()
-                || detect_container_open(text).is_some()
-                || thematic_break_marker(text).is_some()
-                || is_list_marker(text)
-                || text.starts_with(['>', '|', '{'])
-            {
-                return None;
-            }
+        if line.starts_with("> ") {
             layout_indent(&mut out, depth);
             out.push_str("<blockquote><p>");
-            render_layout_inline(&mut out, text, options)?;
+            let mut end = i;
+            while let Some(text) = lines[end].strip_prefix("> ") {
+                if !is_layout_quote_line(text) {
+                    return None;
+                }
+                if end > i {
+                    out.push('\n');
+                }
+                render_layout_inline(&mut out, text, options)?;
+                end += 1;
+                if end == lines.len() {
+                    break;
+                }
+            }
+            if lines.get(end).is_some_and(|next| !is_blank_line(next)) {
+                // A dedented nonblank line may lazily continue the quote.
+                return None;
+            }
             out.push_str("</p></blockquote>");
             accepted.record(BlockLayout {
                 event: LayoutEvent::BlockQuote,
-                consumed: i..i + 1,
+                consumed: i..end,
                 active_definition: false,
             });
-            i += 1;
+            i = end;
             wrote = true;
             continue;
         }
@@ -347,6 +352,15 @@ fn render_layout_body(
         html: out,
         accepted,
     })
+}
+
+fn is_layout_quote_line(text: &str) -> bool {
+    detect_heading(text).is_none()
+        && detect_fence_open(text).is_none()
+        && detect_container_open(text).is_none()
+        && thematic_break_marker(text).is_none()
+        && !is_list_marker(text)
+        && !text.starts_with(['>', '|', '{'])
 }
 
 fn is_layout_paragraph_line(line: &str) -> bool {
@@ -742,6 +756,7 @@ mod layout_html_tests {
             "[site]: https://example.com \"Example\"\n\n# Links\n\nA [direct](https://example.com/x) and [reference][site].\n",
             "# Lists\n\n- first\n- second\n  - nested *strong*\n  - nested two\n",
             "# Quote\n\n> One quoted /line/.\n",
+            "> A quoted paragraph\n> spanning two lines.\n",
             "# Code\n\n```rs\nfn main() {\n}\n```\n",
             "# Table\n\n| A | B | C |\n| --- | ---: | :---: |\n| x | 1 | *z* |\n| y | 2 | `q` |\n",
             "# One\n\n## Two\n\ntext\n\n## Two\n\ntext\n",
