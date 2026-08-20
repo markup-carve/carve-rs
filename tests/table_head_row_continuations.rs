@@ -12,7 +12,7 @@
 fn a_colspan_in_the_head_widens_the_cell_to_its_left() {
     assert_eq!(
         carve::to_html("| Group | < |\n|---|---|\n| 1 | 2 |"),
-        "<table>\n  <thead><tr><th scope=\"col\" colspan=\"2\">Group</th></tr></thead>\n  <tbody>\n    <tr><td>1</td><td>2</td></tr>\n  </tbody>\n</table>"
+        "<table>\n  <thead>\n    <tr><th scope=\"col\" colspan=\"2\">Group</th></tr>\n  </thead>\n  <tbody>\n    <tr><td>1</td><td>2</td></tr>\n  </tbody>\n</table>"
     );
 }
 
@@ -23,7 +23,7 @@ fn a_colspan_in_the_head_widens_the_cell_to_its_left() {
 fn a_rowspan_inside_the_head_keeps_its_row_in_the_head() {
     assert_eq!(
         carve::to_html("|= H |= A |\n| ^ |= B |\n| 1 | 2 |"),
-        "<table>\n  <thead><tr><th scope=\"col\" rowspan=\"2\">H</th><th scope=\"col\">A</th></tr><tr><th scope=\"col\">B</th></tr></thead>\n  <tbody>\n    <tr><td>1</td><td>2</td></tr>\n  </tbody>\n</table>"
+        "<table>\n  <thead>\n    <tr><th scope=\"col\" rowspan=\"2\">H</th><th scope=\"col\">A</th></tr>\n    <tr><th scope=\"col\">B</th></tr>\n  </thead>\n  <tbody>\n    <tr><td>1</td><td>2</td></tr>\n  </tbody>\n</table>"
     );
 }
 
@@ -35,10 +35,10 @@ fn a_rowspan_inside_the_head_keeps_its_row_in_the_head() {
 fn an_orphan_marker_in_the_head_still_renders_a_cell() {
     assert_eq!(
         carve::to_html("| < | b |\n|---|---|\n| 1 | 2 |"),
-        "<table>\n  <thead><tr><th scope=\"col\"></th><th scope=\"col\">b</th></tr></thead>\n  <tbody>\n    <tr><td>1</td><td>2</td></tr>\n  </tbody>\n</table>"
+        "<table>\n  <thead>\n    <tr><th scope=\"col\"></th><th scope=\"col\">b</th></tr>\n  </thead>\n  <tbody>\n    <tr><td>1</td><td>2</td></tr>\n  </tbody>\n</table>"
     );
     assert_eq!(
         carve::to_html("| ^ | b |\n|---|---|\n| 1 | 2 |"),
-        "<table>\n  <thead><tr><th scope=\"col\"></th><th scope=\"col\">b</th></tr></thead>\n  <tbody>\n    <tr><td>1</td><td>2</td></tr>\n  </tbody>\n</table>"
+        "<table>\n  <thead>\n    <tr><th scope=\"col\"></th><th scope=\"col\">b</th></tr>\n  </thead>\n  <tbody>\n    <tr><td>1</td><td>2</td></tr>\n  </tbody>\n</table>"
     );
 }

@@ -29,7 +29,7 @@ fn blocked_colspan_marker_is_empty_cell() {
         carve::to_html("| A | B | C |\n|---|---|---|\n| x | y | z |\n| ^ | < | d |"),
         concat!(
             "<table>\n",
-            "  <thead><tr><th scope=\"col\">A</th><th scope=\"col\">B</th><th scope=\"col\">C</th></tr></thead>\n",
+            "  <thead>\n    <tr><th scope=\"col\">A</th><th scope=\"col\">B</th><th scope=\"col\">C</th></tr>\n  </thead>\n",
             "  <tbody>\n",
             "    <tr><td rowspan=\"2\">x</td><td>y</td><td>z</td></tr>\n",
             "    <tr><td></td><td>d</td></tr>\n",
@@ -47,7 +47,7 @@ fn colspan_marker_scans_left_past_consumed_rowspan_cell() {
         ),
         concat!(
             "<table>\n",
-            "  <thead><tr><th scope=\"col\">p</th><th scope=\"col\">q</th><th scope=\"col\">r</th><th scope=\"col\">s</th></tr></thead>\n",
+            "  <thead>\n    <tr><th scope=\"col\">p</th><th scope=\"col\">q</th><th scope=\"col\">r</th><th scope=\"col\">s</th></tr>\n  </thead>\n",
             "  <tbody>\n",
             "    <tr><td>a</td><td rowspan=\"2\">b</td><td>c</td><td>d</td></tr>\n",
             "    <tr><td colspan=\"2\">p</td><td>e</td></tr>\n",

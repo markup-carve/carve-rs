@@ -193,7 +193,7 @@ fn the_rule_holds_in_every_container_the_reference_can_sit_in() {
         to_html("| a |\n| --- |\n| [t[^1]][nope] |\n\n[^1]: n\n"),
         [
             "<table>",
-            "  <thead><tr><th scope=\"col\">a</th></tr></thead>",
+            "  <thead>\n    <tr><th scope=\"col\">a</th></tr>\n  </thead>",
             "  <tbody>",
             "    <tr><td>[t[^1]][nope]</td></tr>",
             "  </tbody>",

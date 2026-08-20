@@ -461,7 +461,7 @@ fn table_inside_list_item() {
             "<ul>\n",
             "  <li>\n",
             "    <table>\n",
-            "      <thead><tr><th scope=\"col\">a</th><th scope=\"col\">b</th></tr></thead>\n",
+            "      <thead>\n        <tr><th scope=\"col\">a</th><th scope=\"col\">b</th></tr>\n      </thead>\n",
             "    </table>\n",
             "  </li>\n",
             "</ul>"

@@ -22,14 +22,14 @@ fn html(src: &str) -> String {
 
 // --- table ---------------------------------------------------------------
 
-const TABLE_BODY: &str = "<table>\n  <thead><tr><th scope=\"col\">a</th></tr></thead>\n  <tbody>\n    <tr><td>b</td></tr>\n  </tbody>\n</table>";
+const TABLE_BODY: &str = "<table>\n  <thead>\n    <tr><th scope=\"col\">a</th></tr>\n  </thead>\n  <tbody>\n    <tr><td>b</td></tr>\n  </tbody>\n</table>";
 
 #[test]
 fn one_blank_line_attaches_a_table_caption() {
     // CONTROL. Passed before the fix; no mutation of this defect touches it.
     assert_eq!(
         html("| a |\n|---|\n| b |\n\n^ cap\n"),
-        "<table>\n  <caption>cap</caption>\n  <thead><tr><th scope=\"col\">a</th></tr></thead>\n  <tbody>\n    <tr><td>b</td></tr>\n  </tbody>\n</table>"
+        "<table>\n  <caption>cap</caption>\n  <thead>\n    <tr><th scope=\"col\">a</th></tr>\n  </thead>\n  <tbody>\n    <tr><td>b</td></tr>\n  </tbody>\n</table>"
     );
 }
 
