@@ -556,16 +556,7 @@ fn expected_corpus_size() -> usize {
 /// regression is caught exactly as the corpus would have caught it, and it must
 /// still DIFFER from the pinned golden, so an entry that went stale when the
 /// submodule bumped fails and has to be deleted in the same commit.
-const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[(
-    // The pinned fixture is the pre-ruling reading: the marker attached the
-    // line at the INNER item's column. §17 L3 narrows it to a
-    // DOCUMENT-COLUMN-0 block, so that line is not attached at all and folds
-    // into `b` on its own - which is what the same document without the marker
-    // has always given.
-    "88-list-continuation-marker-5",
-    "carve#1436 narrows the marker to a document-column-0 block",
-    "<ul>\n  <li>a\n    <ul>\n      <li>b\nc</li>\n    </ul>\n  </li>\n</ul>",
-)];
+const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[];
 
 fn check_pair(slug: &str) {
     let slug = &resolve_slug(slug);
