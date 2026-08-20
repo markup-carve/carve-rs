@@ -1402,6 +1402,14 @@ fn render_block(node: &BlockNode, ctx: &mut CarveContext) -> String {
                 format!("{{% {} %}}", comment.content)
             } else if comment.block {
                 render_block_comment(&comment.content)
+            } else if comment.content.is_empty() {
+                // An empty comment writes its marker and nothing else. The
+                // inline arm below has always done this; the block arm formatted
+                // unconditionally and produced `%% `, a trailing space on a
+                // writer-produced line that no clause asks for and that made
+                // this engine disagree with carve-js on the corpus
+                // (markup-carve/carve#1472).
+                "%%".to_string()
             } else {
                 format!("%% {}", comment.content)
             }
