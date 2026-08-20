@@ -12,14 +12,19 @@ use std::process::Command;
 use std::thread;
 
 const CAP: usize = 200;
+const DEPTH: &str = "CARVE_STACK_FLOOR_DEPTH";
 const CASE: &str = "CARVE_STACK_FLOOR_CASE";
 const STACK: &str = "CARVE_STACK_FLOOR_KIB";
 
 fn deep_source() -> String {
+    let depth: usize = std::env::var(DEPTH)
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(CAP);
     format!(
         "{}deep\n{}",
-        ":::: note\n".repeat(CAP),
-        "::::\n".repeat(CAP)
+        ":::: note\n".repeat(depth),
+        "::::\n".repeat(depth)
     )
 }
 
@@ -62,10 +67,11 @@ fn run_one(source: &str, case: &str) -> bool {
     true
 }
 
-fn fits(case: &str, kib: usize) -> bool {
+fn fits_at(case: &str, kib: usize, depth: usize) -> bool {
     let exe = std::env::current_exe().expect("current exe");
     let output = Command::new(exe)
         .env(CASE, case)
+        .env(DEPTH, depth.to_string())
         .env(STACK, kib.to_string())
         .arg("--exact")
         .arg("child")
@@ -79,6 +85,38 @@ fn fits(case: &str, kib: usize) -> bool {
         "the child ran no test: {text}"
     );
     output.status.success()
+}
+
+fn fits(case: &str, kib: usize) -> bool {
+    fits_at(case, kib, CAP)
+}
+
+/// The floor for one case at one nesting depth, in KiB.
+fn floor_at(case: &str, depth: usize) -> Option<usize> {
+    let mut smallest = None;
+    for kib in [
+        8192usize, 4096, 2048, 1536, 1280, 1024, 896, 768, 640, 512, 384, 320, 256, 192, 128, 96,
+        64, 48, 32, 24, 16,
+    ] {
+        if fits_at(case, kib, depth) {
+            smallest = Some(kib);
+        } else {
+            break;
+        }
+    }
+    smallest
+}
+
+/// What one nesting level costs, derived rather than guessed.
+#[test]
+#[ignore = "a measurement, not an assertion"]
+fn what_a_level_costs() {
+    for depth in [25usize, 50, 100, 200] {
+        match floor_at("parse", depth) {
+            Some(kib) => println!("parse at depth {depth:>3}: fits in {kib}KiB"),
+            None => println!("parse at depth {depth:>3}: needs more than 8192KiB"),
+        }
+    }
 }
 
 #[test]

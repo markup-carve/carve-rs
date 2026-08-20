@@ -4208,24 +4208,43 @@ fn parse_mapped_source_at_level(
     at_document_level: bool,
 ) -> Vec<BlockNode> {
     if !options.source_lines && !options.positions {
-        if let Some(blocks) = parse_eof_closed_colon_ladder(source, options) {
-            return blocks;
-        }
-        return parse_blocks_with_options_at_level(&source.source, options, at_document_level);
+        return parse_unpositioned_mapped_source(source, options, at_document_level);
     }
+    parse_positioned_mapped_source(source, options, at_document_level)
+}
+
+#[inline(never)]
+fn parse_unpositioned_mapped_source(
+    source: &MappedSource,
+    options: &Options<'_>,
+    at_document_level: bool,
+) -> Vec<BlockNode> {
+    if let Some(blocks) = parse_eof_closed_colon_ladder(source, options) {
+        return blocks;
+    }
+    parse_blocks_with_options_at_level(&source.source, options, at_document_level)
+}
+
+#[inline(never)]
+fn parse_positioned_mapped_source(
+    source: &MappedSource,
+    options: &Options<'_>,
+    at_document_level: bool,
+) -> Vec<BlockNode> {
     let lines: Vec<&str> = source.source.lines().collect();
     // The mapped source carries the widths its container already stripped, so a
     // nested block's column is measured against the document, not against the
     // rewritten text the parser sees.
-    let mut cursor = LineCursor::new_with_cols(
+    let mut cursor = Box::new(LineCursor::new_with_cols(
         &lines,
         Some(&source.line_map),
         options.positions.then_some(source.col_map.as_slice()),
-    );
+    ));
     cursor.at_document_level = at_document_level;
     parse_blocks(&mut cursor, options)
 }
 
+#[inline(never)]
 fn parse_eof_closed_colon_ladder(
     source: &MappedSource,
     options: &Options<'_>,
@@ -4490,7 +4509,27 @@ fn flattened_paragraphs(
     out
 }
 
+#[inline(never)]
 fn parse_capped_colon_body(inner: LineBuffer, options: &Options<'_>) -> Vec<BlockNode> {
+    if !options.source_lines
+        && !options.positions
+        && NESTING_DEPTH.with(|depth| depth.get() < MAX_NESTING_DEPTH)
+    {
+        return parse_unpositioned_colon_body(inner, options);
+    }
+    parse_positioned_capped_colon_body(inner, options)
+}
+
+#[inline(never)]
+fn parse_unpositioned_colon_body(inner: LineBuffer, options: &Options<'_>) -> Vec<BlockNode> {
+    let source = inner.into_source();
+    let lines: Vec<&str> = source.source.lines().collect();
+    let mut cursor = LineCursor::new_with_cols(&lines, None, None);
+    parse_blocks(&mut cursor, options)
+}
+
+#[inline(never)]
+fn parse_positioned_capped_colon_body(inner: LineBuffer, options: &Options<'_>) -> Vec<BlockNode> {
     let source = inner.into_source();
     if NESTING_DEPTH.with(|d| d.get() < MAX_NESTING_DEPTH) {
         return parse_mapped_source(&source, options);
@@ -4721,6 +4760,33 @@ fn over_cap_paragraph(cur: &mut LineCursor, options: &Options<'_>) -> Vec<BlockN
     })]
 }
 
+#[inline(never)]
+fn append_parsed_block(
+    out: &mut Vec<BlockNode>,
+    node: Box<BlockNode>,
+    pending_attrs: &mut Option<Attrs>,
+    pending_attrs_pos: &mut Option<Pos>,
+    start_line: usize,
+    cur: &LineCursor,
+    options: &Options<'_>,
+) {
+    let mut node = *node;
+    let renders_nothing = matches!(node, BlockNode::AbbreviationDef(_) | BlockNode::Comment(_));
+    if !renders_nothing {
+        if let Some(attrs) = pending_attrs.take() {
+            apply_attrs_to_block(&mut node, attrs);
+            *pending_attrs_pos = None;
+        }
+    }
+    resolve_code_title(&mut node);
+    if options.source_lines {
+        if let Some(line) = cur.source_line(start_line) {
+            stamp_source_line(&mut node, line);
+        }
+    }
+    out.push(node);
+}
+
 fn parse_blocks(cur: &mut LineCursor, options: &Options<'_>) -> Vec<BlockNode> {
     // Recursion cap (see MAX_NESTING_DEPTH). Over the cap, flatten everything
     // still in the cursor into one paragraph rather than recursing further,
@@ -4730,11 +4796,11 @@ fn parse_blocks(cur: &mut LineCursor, options: &Options<'_>) -> Vec<BlockNode> {
         return over_cap_paragraph(cur, options);
     };
     let mut out = Vec::new();
-    let mut pending_attrs: Option<Attrs> = None;
+    let mut pending_attrs: Box<Option<Attrs>> = Box::new(None);
     // Where the pending run STARTED, for §15 A4's diagnostic. The FIRST block of
     // a stacked run, because that is where the author began writing attributes
     // that reach nothing - the run merges into one set and is reported once.
-    let mut pending_attrs_pos: Option<Pos> = None;
+    let mut pending_attrs_pos: Box<Option<Pos>> = Box::new(None);
     while !cur.eof() {
         let line = cur.peek().unwrap();
         // A standalone `{attr}` block opener fires only at the container's
@@ -4765,14 +4831,18 @@ fn parse_blocks(cur: &mut LineCursor, options: &Options<'_>) -> Vec<BlockNode> {
             if let Some(attrs) = parse_standalone_attrs_block(cur) {
                 merge_attrs(&mut pending_attrs, attrs);
                 if pending_attrs_pos.is_none() {
-                    pending_attrs_pos = span_of(cur, attrs_start, cur.pos, options);
+                    *pending_attrs_pos = span_of(cur, attrs_start, cur.pos, options);
                 }
                 continue;
             }
         }
         let start_line = cur.pos;
-        if let Some(node) = parse_block(cur, options) {
-            let mut node = node;
+        let parsed = if !line.starts_with([' ', '\t']) && detect_container_open(line).is_some() {
+            Some(parse_container(cur, options))
+        } else {
+            parse_block(cur, options)
+        };
+        if let Some(node) = parsed {
             // §15 A2a: a floating attribute skips what renders NOTHING and
             // attaches to the next VISIBLE block. The other invisible kinds -
             // comments, reference and footnote definitions - never reach here
@@ -4781,28 +4851,22 @@ fn parse_blocks(cur: &mut LineCursor, options: &Options<'_>) -> Vec<BlockNode> {
             // nowhere to put them, dropped them: `{#i}` / `*[A]: b` / blank /
             // `e` lost the id where carve-js and the spec publish
             // `<p id="i">e</p>` (carve-rs#511 item 2).
-            let renders_nothing =
-                matches!(node, BlockNode::AbbreviationDef(_) | BlockNode::Comment(_));
-            if !renders_nothing {
-                if let Some(attrs) = pending_attrs.take() {
-                    apply_attrs_to_block(&mut node, attrs);
-                    pending_attrs_pos = None;
-                }
-            }
             // Resolve a code fence's opener title to the `title` attribute (after
             // the preceding {title=...} line was applied, so that line wins), so
             // the title lives on the node attrs and survives every consumer: the
             // core renderer, a caption Figure, and a FencedRender extension that
             // rewrites the block (it clones the code block's attrs).
-            resolve_code_title(&mut node);
             // Stamp blocks with their 1-based original source line for editor
             // preview scroll-sync. Synthetic extracted lines carry no map entry.
-            if options.source_lines {
-                if let Some(line) = cur.source_line(start_line) {
-                    stamp_source_line(&mut node, line);
-                }
-            }
-            out.push(node);
+            append_parsed_block(
+                &mut out,
+                node,
+                &mut pending_attrs,
+                &mut pending_attrs_pos,
+                start_line,
+                cur,
+                options,
+            );
         }
     }
     // DROP IF DANGLING, AND SAY SO (§15 A4, markup-carve/carve#1281). The loop
@@ -4813,7 +4877,7 @@ fn parse_blocks(cur: &mut LineCursor, options: &Options<'_>) -> Vec<BlockNode> {
     // emitted for the attribute either way - what changes is that the processor
     // now reports it rather than discarding it silently.
     if pending_attrs.is_some() {
-        note_unattached_block_attrs(pending_attrs_pos);
+        note_unattached_block_attrs(pending_attrs_pos.take());
     }
     out
 }
@@ -4866,59 +4930,95 @@ fn resolve_code_title(node: &mut BlockNode) {
     }
 }
 
-fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<BlockNode> {
+#[inline(never)]
+fn boxed_block(
+    cur: &mut LineCursor,
+    options: &Options<'_>,
+    parser: fn(&mut LineCursor, &Options<'_>) -> BlockNode,
+) -> Box<BlockNode> {
+    Box::new(parser(cur, options))
+}
+
+#[inline(never)]
+fn parse_fenced_block(
+    cur: &mut LineCursor,
+    fence_marker: FenceOpen,
+    options: &Options<'_>,
+) -> Box<BlockNode> {
+    let fence_at = cur.pos;
+    let block = parse_fence(cur, fence_marker, options);
+    if let BlockNode::CodeBlock(cb) = block {
+        if let Some(caption) = consume_caption(cur, options) {
+            return Box::new(BlockNode::Figure(Figure {
+                attrs: None,
+                target: Box::new(FigureTarget::CodeBlock(cb)),
+                rendered_target: None,
+                caption,
+                short_caption: None,
+                pos: span_of(cur, fence_at, cur.pos, options),
+            }));
+        }
+        return Box::new(BlockNode::CodeBlock(cb));
+    }
+    Box::new(block)
+}
+
+#[inline(never)]
+fn parse_heading_block(
+    cur: &mut LineCursor,
+    level: u8,
+    first_text: &str,
+    options: &Options<'_>,
+) -> Box<BlockNode> {
+    let span_start = cur.pos;
+    cur.consume();
+    let joined = first_text.to_string();
+    let anchors = options
+        .positions
+        .then(|| vec![inline_anchor_for_line(cur, span_start, first_text)]);
+    let pos = span_of(cur, span_start, cur.pos, options);
+    let inline_text = trim_ascii_end(&joined);
+    let children = if let Some(anchors) = anchors {
+        parse_inline_lines_with_anchor(inline_text, options, anchors)
+    } else {
+        parse_inline_with_options(inline_text, options)
+    };
+    Box::new(BlockNode::Heading(Heading {
+        attrs: None,
+        level,
+        children,
+        pos,
+    }))
+}
+
+fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<Box<BlockNode>> {
     // Checked FIRST, and through the same helper `parse_blocks` uses, so a
     // comment reached by a `+` continuation is the node the identical line
     // produces at top level (carve-rs#678).
     match take_comment_block(cur, options) {
         CommentBlock::NotAComment => {}
-        CommentBlock::Consumed(node) => return node.map(|node| *node),
+        CommentBlock::Consumed(node) => return node,
     }
     let line = cur.peek()?;
     if let Some(fence_marker) = detect_fence_open(line) {
-        let fence_at = cur.pos;
-        let block = parse_fence(cur, fence_marker, options);
-        // A caption immediately after a fenced code block makes it a numbered
-        // LISTING: wrap it in a figure like a captioned image/table.
-        if let BlockNode::CodeBlock(cb) = block {
-            if let Some(caption) = consume_caption(cur, options) {
-                return Some(BlockNode::Figure(Figure {
-                    attrs: None,
-                    target: Box::new(FigureTarget::CodeBlock(cb)),
-                    rendered_target: None,
-                    caption,
-                    short_caption: None,
-                    // From the opening fence through the end of the caption -
-                    // the same extent a captioned image's figure takes.
-                    pos: span_of(cur, fence_at, cur.pos, options),
-                }));
-            }
-            return Some(BlockNode::CodeBlock(cb));
-        }
-        return Some(block);
+        return Some(parse_fenced_block(cur, fence_marker, options));
     }
     if let Some(marker) = thematic_break_marker(line) {
         let span_start = cur.pos;
         cur.consume();
-        return Some(BlockNode::ThematicBreak(ThematicBreak {
+        return Some(Box::new(BlockNode::ThematicBreak(ThematicBreak {
             marker: (marker != '-').then_some(marker),
             pos: span_of(cur, span_start, cur.pos, options),
             ..Default::default()
-        }));
+        })));
     }
     if let Some((level, first_text)) = detect_heading(line) {
-        let span_start = cur.pos;
-        cur.consume();
         // SINGLE-LINE HEADINGS (NORMATIVE, diverges from Djot): a heading ENDS
         // AT THE NEWLINE. Nothing folds into it -- not a plain line, not a
         // same-count `#` line -- so the following line begins whatever block it
         // begins, exactly as after any other closed block. Lazy continuation
         // therefore means one thing across the language: it continues an open
         // PARAGRAPH, and a heading is not one.
-        let joined = first_text.to_string();
-        let anchors = options
-            .positions
-            .then(|| vec![inline_anchor_for_line(cur, span_start, first_text)]);
         // djot-strict (spec PART 2 headings; matches carve-js #153): a heading
         // line carries NO trailing `{...}` attribute block -- a trailing brace
         // block is ordinary inline content, and the heading id derives from
@@ -4926,25 +5026,13 @@ fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<BlockNode>
         // block-attribute line (the pending-attrs loop, PART 9 §15).
         // §756 (NORMATIVE): strip the line's trailing whitespace (trim_ascii_end
         // -- ASCII whitespace, so a trailing NBSP survives).
-        let pos = span_of(cur, span_start, cur.pos, options);
-        let inline_text = trim_ascii_end(&joined);
-        let children = if let Some(anchors) = anchors {
-            parse_inline_lines_with_anchor(inline_text, options, anchors)
-        } else {
-            parse_inline_with_options(inline_text, options)
-        };
-        return Some(BlockNode::Heading(Heading {
-            attrs: None,
-            level,
-            children,
-            pos,
-        }));
+        return Some(parse_heading_block(cur, level, first_text, options));
     }
     if strip_blockquote_prefix(line).is_some() {
-        return Some(parse_blockquote(cur, options));
+        return Some(boxed_block(cur, options, parse_blockquote));
     }
     if is_list_marker(line) {
-        return Some(parse_list(cur, options));
+        return Some(boxed_block(cur, options, parse_list));
     }
     // A table row opens a table only when FLUSH-LEFT (like a heading, quote or
     // `:: ` def-list term). `is_table_start` trims leading whitespace, so an
@@ -4952,10 +5040,10 @@ fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<BlockNode>
     // reference renders a paragraph; a genuine table sits at its container's
     // content column and is already dedented to column 0 here.
     if !line.starts_with([' ', '\t']) && is_table_start(line) {
-        return Some(parse_table(cur, options));
+        return Some(boxed_block(cur, options, parse_table));
     }
     if is_definition_list_start(line) {
-        return Some(parse_definition_list(cur, options));
+        return Some(boxed_block(cur, options, parse_definition_list));
     }
     // A `::: |` line block or `::: \` hard-break block opens ONLY flush-left
     // (at its container's content column), exactly like the div / admonition
@@ -4967,10 +5055,10 @@ fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<BlockNode>
     // the content column here, so a fence sitting AT that column still opens.
     if !line.starts_with([' ', '\t']) {
         if detect_line_block_open(line).is_some() {
-            return Some(parse_line_block(cur, options));
+            return Some(boxed_block(cur, options, parse_line_block));
         }
         if detect_hardbreaks_block_open(line).is_some() {
-            return Some(parse_hardbreaks_block(cur, options));
+            return Some(boxed_block(cur, options, parse_hardbreaks_block));
         }
     }
     // FLUSH-LEFT only: `detect_container_open` trims leading whitespace, so an
@@ -4990,7 +5078,7 @@ fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<BlockNode>
             // which PART 12 §4 allows only for a node that was reassembled and has
             // no honest one - a definition the author wrote on line 1 has one.
             abbr.pos = span_of(cur, abbr_at, abbr_at + 1, options);
-            return Some(BlockNode::AbbreviationDef(abbr));
+            return Some(Box::new(BlockNode::AbbreviationDef(abbr)));
         }
     }
     if let Some(mut img) = detect_block_image(line) {
@@ -5002,7 +5090,7 @@ fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<BlockNode>
             // none at all.
             img.pos = span_of(cur, image_at, image_at + 1, options);
             if let Some(caption) = consume_caption(cur, options) {
-                return Some(BlockNode::Figure(Figure {
+                return Some(Box::new(BlockNode::Figure(Figure {
                     attrs: None,
                     target: Box::new(FigureTarget::Image(img)),
                     rendered_target: None,
@@ -5011,26 +5099,26 @@ fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<BlockNode>
                     // The figure runs from the image to the end of the caption
                     // the cursor just consumed.
                     pos: span_of(cur, image_at, cur.pos, options),
-                }));
+                })));
             }
-            return Some(BlockNode::BlockImage(img));
+            return Some(Box::new(BlockNode::BlockImage(img)));
         }
         // Not standalone: the image folds into a paragraph with the following
         // content (parse_paragraph below); a sole-image paragraph is still
         // promoted to a bare block image afterwards.
     }
     if let Some(matched) = try_extension_block(cur, options) {
-        return Some(matched);
+        return Some(Box::new(matched));
     }
     // A block whose sole content is a display-math span (`$$`…``) followed by a
     // caption is a numbered EQUATION. Diverted before the paragraph fallback so
     // parse_paragraph does not fold the caption line into the math paragraph.
     if trim_ascii_start(line).starts_with("$$`") {
         if let Some(eq) = parse_equation_block(cur, options) {
-            return Some(eq);
+            return Some(Box::new(eq));
         }
     }
-    Some(parse_paragraph(cur, options))
+    Some(boxed_block(cur, options, parse_paragraph))
 }
 
 /// Parse a standalone display-math line, wrapping it in a figure when a caption
@@ -7376,7 +7464,7 @@ fn parse_continuation_block(
             // item rather than nesting it (matches carve-php for `+`-then-
             // marker, e.g. `- a / + / text / + / - b`).
             if nm.indent > base_indent {
-                return parse_block(cur, options);
+                return parse_block(cur, options).map(|block| *block);
             }
             return None;
         }
@@ -7484,7 +7572,7 @@ fn parse_continuation_block(
         // This does NOT change a byte of HTML or of the AST: the node it used
         // to attach to never reached the tree. What it changes is that the loss
         // is now reported, which is the whole of the rule.
-        let reaches_nothing = match block.as_ref() {
+        let reaches_nothing = match block.as_deref() {
             None => true,
             Some(BlockNode::Paragraph(p)) => p.children.is_empty(),
             // AND A BLOCK THAT TAKES NO ATTRIBUTES IS NOT ONE EITHER.
@@ -7518,7 +7606,7 @@ fn parse_continuation_block(
         }
     }
     cur.pos += sub.pos;
-    block
+    block.map(|block| *block)
 }
 
 /// A list's extent, taken from the items it holds.
@@ -12626,8 +12714,51 @@ fn parse_quoted_metadata(s: &str) -> Option<(String, &str)> {
     None
 }
 
-fn parse_container(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
-    let open = detect_container_open(cur.peek().unwrap()).unwrap();
+#[inline(never)]
+fn boxed_figure_group(
+    children: Vec<BlockNode>,
+    caption: Option<Vec<InlineNode>>,
+    pos: Option<Pos>,
+) -> Box<BlockNode> {
+    Box::new(BlockNode::FigureGroup(FigureGroup {
+        attrs: None,
+        children,
+        caption,
+        pos,
+    }))
+}
+
+#[inline(never)]
+fn boxed_container_node(
+    open: ContainerOpen,
+    children: Vec<BlockNode>,
+    pos: Option<Pos>,
+    title_anchor: Option<(usize, isize)>,
+    options: &Options<'_>,
+) -> Box<BlockNode> {
+    if let Some(kind) = open.kind {
+        Box::new(BlockNode::Admonition(Admonition {
+            attrs: open.attrs,
+            kind,
+            title: open
+                .title
+                .map(|title| parse_inline_lines_with_anchor(&title, options, vec![title_anchor])),
+            label: open.label,
+            children,
+            pos,
+        }))
+    } else {
+        Box::new(BlockNode::Div(Div {
+            attrs: open.attrs,
+            label: open.label,
+            children,
+            pos,
+        }))
+    }
+}
+
+fn parse_container(cur: &mut LineCursor, options: &Options<'_>) -> Box<BlockNode> {
+    let open = Box::new(detect_container_open(cur.peek().unwrap()).unwrap());
     let span_start = cur.pos;
     cur.consume();
     // PART 9 §4c: a BARE `::: figure` opener opens a COMPOSITE FIGURE, unless
@@ -12651,46 +12782,19 @@ fn parse_container(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         };
         // Through the caption the cursor just consumed, like a figure's span.
         let pos = span_of(cur, span_start, cur.pos, options);
-        return BlockNode::FigureGroup(FigureGroup {
-            attrs: None,
-            children,
-            caption,
-            pos,
-        });
+        return boxed_figure_group(children, caption, pos);
     }
     let (inner, _closed) = collect_colon_container_body(cur, open.fence_len);
     let children = parse_capped_colon_body(inner, options);
     // The span covers the opening fence through the closing one.
     let pos = span_of(cur, span_start, cur.pos, options);
-    if let Some(kind) = open.kind {
-        BlockNode::Admonition(Admonition {
-            attrs: open.attrs,
-            kind,
-            // The title is a slice of the opener line, so its inlines can be
-            // placed - but only when the opener told us which column it starts
-            // at. `inline_anchor_for_line` cannot: it works by suffix, and a
-            // title sits in the MIDDLE of its line, between quotes.
-            title: open.title.map(|t| {
-                let anchor = open.title_col.and_then(|col| {
-                    Some((
-                        cur.source_line(span_start)?,
-                        cur.source_col(span_start)? + col as isize,
-                    ))
-                });
-                parse_inline_lines_with_anchor(&t, options, vec![anchor])
-            }),
-            label: open.label,
-            children,
-            pos,
-        })
-    } else {
-        BlockNode::Div(Div {
-            attrs: open.attrs,
-            label: open.label,
-            children,
-            pos,
-        })
-    }
+    let title_anchor = open.title_col.and_then(|col| {
+        Some((
+            cur.source_line(span_start)?,
+            cur.source_col(span_start)? + col as isize,
+        ))
+    });
+    boxed_container_node(*open, children, pos, title_anchor, options)
 }
 
 /// A `::: |` line-block (verse) opener: a colon fence (3+) then a bare pipe and
