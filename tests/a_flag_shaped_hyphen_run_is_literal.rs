@@ -44,17 +44,26 @@ fn every_other_position_still_converts() {
 
 #[test]
 fn the_run_is_consumed_whole() {
-    // Consuming it a hyphen at a time would leave `-->` as a stray `-` plus a
-    // live `->` symbol, and the flag would render a rightwards arrow.
-    assert_eq!(html("x -->\n"), "<p>x --&gt;</p>");
+    // Consuming it a hyphen at a time would leave the tail live for the symbol
+    // table: `x ---foo` would end as a stray `-` plus a converted `--`.
     assert_eq!(html("x ---foo\n"), "<p>x ---foo</p>");
+    assert_eq!(html("x -----bar\n"), "<p>x -----bar</p>");
 }
 
 #[test]
-fn an_html_comment_is_half_repaired() {
-    // A stated limit: the opening run is preceded by `!` rather than whitespace,
-    // so it still converts.
-    assert_eq!(html("<!-- c -->\n"), "<p>&lt;!\u{2013} c --&gt;</p>");
+fn an_arrow_still_claims_its_own_spelling() {
+    // `-->` is the canonical rightwards arrow (markup-carve/carve#1442) and is
+    // taken before the run pass, so the flag guard never sees those two
+    // hyphens. THREE is not `-->`, and there the guard applies.
+    assert_eq!(html("x -->\n"), "<p>x \u{2192}</p>");
+    assert_eq!(html("x --->\n"), "<p>x ---&gt;</p>");
+}
+
+#[test]
+fn an_html_comment_closes_with_an_arrow() {
+    // The opening run is preceded by `!` rather than whitespace, so the flag
+    // guard does not reach it and it converts. The closing `-->` is the arrow.
+    assert_eq!(html("<!-- c -->\n"), "<p>&lt;!\u{2013} c \u{2192}</p>");
 }
 
 #[test]

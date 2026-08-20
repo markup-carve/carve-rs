@@ -15919,6 +15919,13 @@ fn flag_shaped_hyphen_run(text: &str, i: usize) -> Option<usize> {
     if bytes.get(i) != Some(&b'-') || bytes.get(i + 1) != Some(&b'-') {
         return None;
     }
+    // `-->` is the canonical rightwards arrow (markup-carve/carve#1442) and is
+    // taken before any hyphen run, so the guard must not claim it first - a
+    // spaced `x --> y` is flag-SHAPED and is an arrow all the same. Three
+    // hyphens are not `-->`, so `x ---> y` still reaches the guard.
+    if text[i..].starts_with("-->") {
+        return None;
+    }
     let n = bytes[i..].iter().take_while(|&&b| b == b'-').count();
     let after = text[i + n..].chars().next()?;
     if is_flank_space(after) {
