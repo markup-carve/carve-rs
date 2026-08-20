@@ -42,17 +42,23 @@ fn round_trips(src: &str) -> bool {
 
 #[test]
 fn a_promoted_dashed_paragraph_does_not_open_frontmatter() {
-    // The PARAGRAPH `---yaml` is the shape no head-of-document respelling can
-    // reach: the writer may not rewrite a paragraph's text. `fmt` emitted
-    // `---yaml` / `k: v` / blank / `---` / blank / `[a]: /u`, and the next parse
-    // read the whole document as a frontmatter block and rendered NOTHING.
+    // The PARAGRAPH `---yaml` is the shape no BREAK respelling can reach: the
+    // writer may not rewrite a paragraph's text. `fmt` emitted `---yaml` /
+    // `k: v` / blank / `---` / blank / `[a]: /u`, and the next parse read the
+    // whole document as a frontmatter block and rendered NOTHING.
+    //
+    // Since markup-carve/carve#1443 the head is repaired at the head after all:
+    // the run is flag-shaped, so it is literal text rather than an em dash, and
+    // the writer ESCAPES it. That is enough on its own, so the `---` break below
+    // keeps the spelling the author wrote. carve-js and carve-php emit the same
+    // bytes.
     let src = "[a]: /u\n\n---yaml\nk: v\n---\n";
     assert_eq!(
         html(src),
-        "<p>\u{2014}yaml\nk: v</p>\n<hr>",
+        "<p>---yaml\nk: v</p>\n<hr>",
         "the premise: the input has no frontmatter"
     );
-    assert_eq!(fmt(src), "---yaml\nk: v\n\n***\n\n[a]: /u\n");
+    assert_eq!(fmt(src), "\\-\\-\\-yaml\nk: v\n\n---\n\n[a]: /u\n");
     assert!(round_trips(src), "{}", fmt(src));
 }
 
@@ -63,11 +69,9 @@ fn a_footnote_definition_promotes_the_same_paragraph() {
     // stood second exactly as a link definition does.
     let src = "[^a]: n\n\n---toml\nx\n---\n";
     assert!(round_trips(src), "{}", fmt(src));
-    assert!(
-        !fmt(src).contains("\n---\n"),
-        "the closer must move, not the head: {}",
-        fmt(src)
-    );
+    // The HEAD is what moves (it is escaped), so the closer does not have to:
+    // markup-carve/carve#1443 made the promoted run literal text.
+    assert_eq!(fmt(src), "\\-\\-\\-toml\nx\n\n---\n\n[^a]: n\n");
 }
 
 #[test]
@@ -108,11 +112,11 @@ fn an_authored_star_break_at_the_head_needs_no_fallback() {
 
 #[test]
 fn a_star_break_elsewhere_survives_the_fallback() {
-    // THE DEPARTURE IS THE SMALLEST ONE. Only the hyphen spelling can be read as
-    // a fence, so a `___` break in the same document keeps its own marker even
-    // while the hyphen breaks move.
+    // THE DEPARTURE IS THE SMALLEST ONE, and since markup-carve/carve#1443 it is
+    // smaller still: the escaped head saves this document, so NO break moves -
+    // neither the `---` nor the `___` - and every authored marker survives.
     let src = "[a]: /u\n\n---yaml\nk: v\n---\n\n___\n";
-    assert_eq!(fmt(src), "---yaml\nk: v\n\n***\n\n___\n\n[a]: /u\n");
+    assert_eq!(fmt(src), "\\-\\-\\-yaml\nk: v\n\n---\n\n___\n\n[a]: /u\n");
     assert!(round_trips(src), "{}", fmt(src));
 }
 
@@ -159,20 +163,22 @@ fn a_document_with_real_frontmatter_keeps_the_canonical_spelling() {
 
 #[test]
 fn a_closer_that_is_not_a_break_keeps_the_canonical_spelling() {
-    // The residual, ASSERTED rather than hidden. The `---` closer here is inside
-    // a fenced block, so respelling every BREAK cannot remove it: the document
-    // is misread with `***` too. It keeps the canonical spelling rather than
-    // paying a respelling that buys nothing.
+    // What used to be the residual, now CLOSED and asserted as such. The `---`
+    // closer here is inside a fenced block, so respelling every BREAK cannot
+    // remove it - the document was misread with `***` too. Escaping the head
+    // reaches what no break spelling could (markup-carve/carve#1443), so the
+    // document round-trips and no fallback is paid.
     let src = "[a]: /u\n\n---yaml\nk: v\n---\n\n```\n---\n```\n";
     let out = fmt(src);
     assert!(
-        out.starts_with("---yaml"),
-        "the promoted paragraph is still first: {out}"
+        out.starts_with("\\-\\-\\-yaml"),
+        "the promoted paragraph is escaped, not respelled: {out}"
     );
     assert!(
         !out.contains("***"),
         "no fallback is paid when it would not help: {out}"
     );
+    assert!(round_trips(src), "{}", out);
 }
 
 // ---------------------------------------------------------------------------
