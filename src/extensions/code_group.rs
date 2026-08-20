@@ -18,6 +18,8 @@
 //! assert!(html.contains("type=\"radio\""));
 //! ```
 
+use std::cell::Cell;
+
 use crate::ast::{AttrSlot, Attrs, BlockExtension, BlockNode, CodeBlock, Document};
 use crate::extension::{BeforeRenderContext, CarveExtension, RenderContext};
 use crate::render::render_attrs;
@@ -68,9 +70,14 @@ impl Default for CodeGroupOptions {
 ///
 /// In static mode there are no radios: each panel becomes a `<section>` headed
 /// by its label, so a reader offline can still tell the panels apart.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Default)]
 pub struct CodeGroup {
     opts: CodeGroupOptions,
+    /// Per-document counter, reset in `before_render`. `Cell` because the
+    /// render hooks take `&self`; the trait has no `Sync` bound, and an
+    /// extension instance renders one document at a time. Same shape as
+    /// `Tabs::set_counter`, for the same reason.
+    group_counter: Cell<usize>,
 }
 
 impl CodeGroup {
@@ -81,7 +88,10 @@ impl CodeGroup {
 
     /// A code-group extension with caller-chosen class names.
     pub fn with_options(opts: CodeGroupOptions) -> Self {
-        Self { opts }
+        Self {
+            opts,
+            group_counter: Cell::new(0),
+        }
     }
 }
 
@@ -99,6 +109,7 @@ impl CarveExtension for CodeGroup {
     }
 
     fn before_render(&self, mut doc: Document, _ctx: &BeforeRenderContext<'_>) -> Document {
+        self.group_counter.set(0);
         rewrite_blocks(&mut doc.children);
         // Footnote bodies live outside the tree but are still rendered, so a
         // group inside a footnote definition must be rewritten too.
@@ -149,9 +160,19 @@ impl CarveExtension for CodeGroup {
             return Some(html);
         }
 
-        // Generated ids join the document id namespace, so two groups in one
-        // document cannot collide and no counter has to be threaded through.
-        let group_id = ctx.unique_id(&self.opts.id_prefix);
+        // Number the group FIRST, then reserve the numbered string in the
+        // document id namespace. Taking the bare prefix instead made the first
+        // group `codegroup` and left `-2` to arrive as a COLLISION suffix, so
+        // carve-js and carve-php said `codegroup-1` where this said
+        // `codegroup`, and an unrelated `{#codegroup}` elsewhere in the
+        // document shifted every group's name. Tabs has always done it this
+        // way (`tabs.rs`); this is that shape.
+        self.group_counter.set(self.group_counter.get() + 1);
+        let group_id = ctx.unique_id(&format!(
+            "{}-{}",
+            self.opts.id_prefix,
+            self.group_counter.get()
+        ));
         let mut html = format!("{pad}<div{}>\n", render_attrs(&attrs));
 
         for (index, item) in items.iter().enumerate() {
@@ -428,5 +449,31 @@ mod tests {
             ids.iter().any(|id| !id.contains("codegroup\"")),
             "a second group must not reuse the first group's name: {out}"
         );
+    }
+
+    /// The names carve-js and carve-php emit, asserted literally. The test
+    /// above cannot see this defect: it only asks that SOME name differs from
+    /// `codegroup`, which held while the first group was named `codegroup` and
+    /// the second `codegroup-2`.
+    #[test]
+    fn the_first_group_is_numbered_like_the_other_engines() {
+        let out = html(&format!("{TWO_PANELS}\n\n{TWO_PANELS}"));
+        assert!(out.contains("name=\"codegroup-1\""), "{out}");
+        assert!(out.contains("id=\"codegroup-1-tab-1\""), "{out}");
+        assert!(out.contains("for=\"codegroup-1-tab-1\""), "{out}");
+        assert!(out.contains("name=\"codegroup-2\""), "{out}");
+        assert!(
+            !out.contains("name=\"codegroup\""),
+            "the bare prefix is carve-rs-only: {out}"
+        );
+    }
+
+    /// A group's number depends on how many groups precede it, and on nothing
+    /// else. Reserving the bare prefix made an unrelated `{#codegroup}` in the
+    /// document push the FIRST group to `codegroup-2`.
+    #[test]
+    fn an_unrelated_explicit_id_does_not_renumber_the_group() {
+        let out = html(&format!("# H {{#codegroup}}\n\n{TWO_PANELS}"));
+        assert!(out.contains("name=\"codegroup-1\""), "{out}");
     }
 }
