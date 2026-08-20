@@ -138,7 +138,10 @@ pub(crate) fn redundant_heading_ids(doc: &Document) -> std::collections::BTreeSe
     if !had_any {
         return std::collections::BTreeSet::new();
     }
-    let fresh = crate::document_ids::assigned_heading_ids(&stripped, false);
+    let fresh = crate::document_ids::assigned_heading_ids(
+        &stripped,
+        crate::extension::HeadingIdOptions::PLAIN,
+    );
     let mut present = Vec::new();
     collect_heading_ids(&doc.children, &mut present);
     for blocks in doc.footnote_defs.values() {

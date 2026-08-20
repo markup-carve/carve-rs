@@ -12,7 +12,7 @@
 use std::collections::BTreeMap;
 
 use crate::ast::{Attrs, BlockNode, Document, FigureTarget, Heading, InlineNode, Link, Span};
-use crate::extension::{BeforeRenderContext, CarveExtension};
+use crate::extension::{BeforeRenderContext, CarveExtension, HeadingIdOptions};
 use crate::parse::{crossref_label_clone, slugify_parse};
 use crate::render::plain_inlines;
 
@@ -117,7 +117,7 @@ impl CarveExtension for HeadingNumbers {
         // section-number span, and remember number + original title per id.
         let mut state = NumberState {
             min_level: self.opts.min_level,
-            lowercase: _ctx.options().lowercase_heading_ids,
+            id_opts: _ctx.options().heading_id_options(),
             levels: Vec::new(),
             numbers: Vec::new(),
             heading_counts: BTreeMap::new(),
@@ -143,7 +143,7 @@ impl CarveExtension for HeadingNumbers {
 
 struct NumberState {
     min_level: u8,
-    lowercase: bool,
+    id_opts: HeadingIdOptions,
     levels: Vec<u8>,
     numbers: Vec<u32>,
     /// Per-base id dedup counter, mirroring the renderer's `next_heading_id`
@@ -206,7 +206,7 @@ fn number_heading(h: &mut Heading, in_blockquote: bool, state: &mut NumberState)
         .attrs
         .as_ref()
         .and_then(|a| a.id.clone())
-        .unwrap_or_else(|| slugify_parse(&plain_inlines(&h.children), state.lowercase));
+        .unwrap_or_else(|| slugify_parse(&plain_inlines(&h.children), state.id_opts));
     let count = state.heading_counts.entry(base.clone()).or_insert(0);
     *count += 1;
     let id = if *count == 1 {

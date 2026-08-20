@@ -5,7 +5,9 @@
 
 use crate::ast::Pos;
 use crate::ast::*;
-use crate::extension::{BlockMatch, InlineMatch, MatcherContext, Options};
+use crate::extension::{
+    AsciiHeadingIds, BlockMatch, HeadingIdOptions, InlineMatch, MatcherContext, Options,
+};
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, HashMap};
 
@@ -509,7 +511,7 @@ fn parse_with_options_mode_and_index(
     let (mut heading_index, _assigned_heading_ids) = heading_index(
         &doc.children,
         &doc.footnote_defs,
-        options.lowercase_heading_ids,
+        options.heading_id_options(),
         has_crossrefs,
         needs_late_link_resolution,
     );
@@ -545,7 +547,7 @@ fn parse_with_options_mode_and_index(
         // assigns it in its parse for the same reason (carve#750).
         // Keep the document-id seeder authoritative. Unlike the heading index,
         // it reserves explicit ids carried by inline nodes as well as blocks.
-        stamp_generated_heading_ids(&mut doc, options.lowercase_heading_ids);
+        stamp_generated_heading_ids(&mut doc, options.heading_id_options());
         // PART 12 §5: footnote numbering is a resolution result that IS
         // serialized, "because recomputing them requires reimplementing PART 9R".
         // Caption numbers were assigned here and reached the wire; footnote
@@ -607,9 +609,9 @@ fn parse_with_options_mode_and_index(
         // facade traverse and allocate strings that HTML resolves from here.
         heading_index
     } else if matches!(mode, ParseMode::HtmlFacade) {
-        crossref_index_for_document(&doc, options.lowercase_heading_ids)
+        crossref_index_for_document(&doc, options.heading_id_options())
     } else {
-        fill_crossref_hrefs(&mut doc, options.lowercase_heading_ids)
+        fill_crossref_hrefs(&mut doc, options.heading_id_options())
     };
     (doc, crossref_index)
 }
@@ -627,8 +629,8 @@ fn parse_with_options_mode_and_index(
 /// The renderers keep using their index rather than this field. Both come from
 /// the same builder, so they cannot disagree, and the render path stays able to
 /// resolve a tree that arrived without hrefs at all.
-fn fill_crossref_hrefs(doc: &mut Document, lowercase_ids: bool) -> CrossrefIndex {
-    let index = crossref_index_for_document(doc, lowercase_ids);
+fn fill_crossref_hrefs(doc: &mut Document, id_opts: HeadingIdOptions) -> CrossrefIndex {
+    let index = crossref_index_for_document(doc, id_opts);
 
     fn inlines(nodes: &mut [InlineNode], index: &CrossrefIndex) {
         for node in nodes {
@@ -18131,7 +18133,10 @@ pub(crate) fn number_crossref_captions(doc: &mut Document) -> BTreeMap<String, S
     titles
 }
 
-pub(crate) fn crossref_index_for_document(doc: &Document, lowercase_ids: bool) -> CrossrefIndex {
+pub(crate) fn crossref_index_for_document(
+    doc: &Document,
+    id_opts: HeadingIdOptions,
+) -> CrossrefIndex {
     let mut counts = BTreeMap::new();
     let mut titles = BTreeMap::new();
     let mut labels = BTreeMap::new();
@@ -18158,7 +18163,7 @@ pub(crate) fn crossref_index_for_document(doc: &Document, lowercase_ids: bool) -
             collect_crossrefs: true,
             collect_heading_refs: false,
         },
-        lowercase_ids,
+        id_opts,
         &explicit_ids,
         false,
     );
@@ -18175,7 +18180,7 @@ pub(crate) fn crossref_index_for_document(doc: &Document, lowercase_ids: bool) -
                 collect_crossrefs: true,
                 collect_heading_refs: false,
             },
-            lowercase_ids,
+            id_opts,
             &explicit_ids,
             false,
         );
@@ -18184,13 +18189,13 @@ pub(crate) fn crossref_index_for_document(doc: &Document, lowercase_ids: bool) -
     for blocks in doc.footnote_defs.values() {
         collect_caption_titles(blocks, &mut titles);
     }
-    crossref_index(titles, labels)
+    crossref_index(titles, labels, id_opts)
 }
 
 fn heading_index(
     children: &[BlockNode],
     footnote_defs: &BTreeMap<String, Vec<BlockNode>>,
-    lowercase_ids: bool,
+    id_opts: HeadingIdOptions,
     collect_crossrefs: bool,
     collect_heading_refs: bool,
 ) -> (CrossrefIndex, Vec<String>) {
@@ -18217,7 +18222,7 @@ fn heading_index(
             collect_crossrefs,
             collect_heading_refs,
         },
-        lowercase_ids,
+        id_opts,
         &explicit_ids,
         false,
     );
@@ -18234,12 +18239,12 @@ fn heading_index(
                 collect_crossrefs,
                 collect_heading_refs,
             },
-            lowercase_ids,
+            id_opts,
             &explicit_ids,
             false,
         );
     }
-    let mut index = crossref_index(titles, labels);
+    let mut index = crossref_index(titles, labels, id_opts);
     index.quoted = quoted;
     index.by_text = by_text;
     (index, assigned)
@@ -18417,6 +18422,7 @@ fn flatten_nested_crossrefs(nodes: &mut [InlineNode]) {
 fn crossref_index(
     titles: BTreeMap<String, String>,
     labels: BTreeMap<String, CrossrefLabel>,
+    id_opts: HeadingIdOptions,
 ) -> CrossrefIndex {
     // Case-folded index of known ids -> actual (case-preserved) id. First
     // occurrence wins, so a duplicate that only differs in case does not shadow
@@ -18433,6 +18439,7 @@ fn crossref_index(
         folded,
         by_text: BTreeMap::new(),
         quoted: std::collections::BTreeSet::new(),
+        id_opts,
     }
 }
 
@@ -18462,6 +18469,10 @@ pub(crate) struct CrossrefIndex {
     /// `</#id>` crossrefs like any other, and are DECLINED as implicit
     /// `[label][]` reference targets (PART 11 R1).
     quoted: std::collections::BTreeSet<String>,
+    /// The heading-id transforms this index was built with. The slug FALLBACK in
+    /// `resolve_ref` has to spell a target the same way the ids were spelled, or
+    /// an opt-in transform resolves references against ids it did not produce.
+    id_opts: HeadingIdOptions,
 }
 
 impl CrossrefIndex {
@@ -18501,7 +18512,7 @@ impl CrossrefIndex {
         // Fallback: the slug of the label against the id index, which is what
         // this did before the text index existed. It still answers every
         // document whose heading id IS the slug of its text.
-        let (id, title) = self.resolve(&slugify_parse(target, false))?;
+        let (id, title) = self.resolve(&slugify_parse(target, self.id_opts))?;
         if self.quoted.contains(id) {
             return None;
         }
@@ -19232,7 +19243,7 @@ struct HeadingScan<'a> {
 fn collect_heading_titles(
     blocks: &[BlockNode],
     scan: &mut HeadingScan<'_>,
-    lowercase_ids: bool,
+    id_opts: HeadingIdOptions,
     explicit_ids: &std::collections::BTreeSet<String>,
     in_blockquote: bool,
 ) {
@@ -19244,7 +19255,7 @@ fn collect_heading_titles(
                     .attrs
                     .as_ref()
                     .and_then(|attrs| attrs.id.clone())
-                    .unwrap_or_else(|| slugify_parse(&title, lowercase_ids));
+                    .unwrap_or_else(|| slugify_parse(&title, id_opts));
                 // Same numbering the renderer uses, INCLUDING the skip past an
                 // id an explicit `{#id}` already claims. Without it this index
                 // assigned `API-2` to a heading the renderer calls `API-3`, so a
@@ -19295,43 +19306,31 @@ fn collect_heading_titles(
                     collect_heading_titles(
                         &item.children,
                         scan,
-                        lowercase_ids,
+                        id_opts,
                         explicit_ids,
                         in_blockquote,
                     );
                 }
             }
             BlockNode::BlockQuote(b) => {
-                collect_heading_titles(&b.children, scan, lowercase_ids, explicit_ids, true)
+                collect_heading_titles(&b.children, scan, id_opts, explicit_ids, true)
             }
-            BlockNode::Admonition(a) => collect_heading_titles(
-                &a.children,
-                scan,
-                lowercase_ids,
-                explicit_ids,
-                in_blockquote,
-            ),
-            BlockNode::FigureGroup(g) => collect_heading_titles(
-                &g.children,
-                scan,
-                lowercase_ids,
-                explicit_ids,
-                in_blockquote,
-            ),
-            BlockNode::Div(d) => collect_heading_titles(
-                &d.children,
-                scan,
-                lowercase_ids,
-                explicit_ids,
-                in_blockquote,
-            ),
+            BlockNode::Admonition(a) => {
+                collect_heading_titles(&a.children, scan, id_opts, explicit_ids, in_blockquote)
+            }
+            BlockNode::FigureGroup(g) => {
+                collect_heading_titles(&g.children, scan, id_opts, explicit_ids, in_blockquote)
+            }
+            BlockNode::Div(d) => {
+                collect_heading_titles(&d.children, scan, id_opts, explicit_ids, in_blockquote)
+            }
             BlockNode::DefinitionList(d) => {
                 for item in &d.items {
                     for definition in &item.definitions {
                         collect_heading_titles(
                             definition,
                             scan,
-                            lowercase_ids,
+                            id_opts,
                             explicit_ids,
                             in_blockquote,
                         );
@@ -19340,7 +19339,7 @@ fn collect_heading_titles(
             }
             BlockNode::Figure(f) => match &*f.target {
                 FigureTarget::BlockQuote(b) => {
-                    collect_heading_titles(&b.children, scan, lowercase_ids, explicit_ids, true)
+                    collect_heading_titles(&b.children, scan, id_opts, explicit_ids, true)
                 }
                 FigureTarget::Table(_)
                 | FigureTarget::Image(_)
@@ -20080,8 +20079,8 @@ fn is_id_strippable(c: char) -> bool {
 /// slots in a `{#id .class key=value}` block, and a slugged id never appeared in
 /// one. `render_carve` reads that back - an id with no slot, that a fresh parse
 /// would re-derive, is not written into the source it produces.
-fn stamp_generated_heading_ids(doc: &mut Document, lowercase: bool) {
-    let ids = crate::document_ids::assigned_heading_ids(doc, lowercase);
+fn stamp_generated_heading_ids(doc: &mut Document, id_opts: HeadingIdOptions) {
+    let ids = crate::document_ids::assigned_heading_ids(doc, id_opts);
     stamp_generated_heading_ids_from(doc, ids);
 }
 
@@ -20144,7 +20143,7 @@ fn sanitize_id_source(text: &str) -> String {
         .collect()
 }
 
-pub(crate) fn slugify_parse(text: &str, lowercase: bool) -> String {
+pub(crate) fn slugify_parse(text: &str, opts: HeadingIdOptions) -> String {
     // Carve "Automatic Identifiers" (spec #73), kept byte-identical to
     // carve-js / carve-php:
     //   - keep ASCII alphanumerics AND every non-ASCII code point (>= U+0080)
@@ -20159,9 +20158,10 @@ pub(crate) fn slugify_parse(text: &str, lowercase: bool) -> String {
     //   - when `lowercase` is set, fold kept characters per code point
     //     (`char::to_lowercase`). Per-code-point folding avoids context mappings
     //     (Greek final-sigma) so the result is portable and matches the other
-    //     impls regardless of stdlib whole-string casing behavior. carve-rs has
-    //     no ASCII transliterator, so ascii-folding is intentionally not offered
-    //     here -- `lowercase` is the only transform.
+    //     impls regardless of stdlib whole-string casing behavior.
+    //   - when `ascii` is set, transliterate through the shared table
+    //     (`translit_map`) and slug again, dropping the unmapped residue in
+    //     `Strict` and keeping it in `Fold`.
     // Trojan-Source hardening for generated ids (corpus 117), applied BEFORE
     // the slug run so the remaining text slugs as usual:
     //   - NFC normalization, so a precomposed `é` (U+00E9) and a decomposed
@@ -20170,27 +20170,30 @@ pub(crate) fn slugify_parse(text: &str, lowercase: bool) -> String {
     //     and zero-width characters (U+200B/C/D, U+2060, U+FEFF, U+00AD) so none
     //     of these can ever appear inside an `id="..."`.
     // Matches carve-js `sanitizeIdSource` (heading-ids.ts).
+    //
+    // THE ORDER IS THE CONTRACT, and it is carve-js `slugify`'s: slug, then
+    // transliterate and slug again, then lowercase. Lowercasing during the
+    // FIRST run instead - which this function used to do, when there was no
+    // transliteration step to come after it - hands the table a folded code
+    // point, and the table is not closed under case folding.
     let sanitized = sanitize_id_source(text);
     let detyped = de_typography(&sanitized);
-    let mut out = String::new();
-    let mut last_dash = false;
-    for ch in detyped.chars() {
-        if ch.is_ascii_alphanumeric() || ch as u32 >= 0x80 {
-            if lowercase {
-                for lc in ch.to_lowercase() {
-                    out.push(lc);
+    let mut out = slug_run(detyped.chars(), false);
+    match opts.ascii {
+        AsciiHeadingIds::Off => {}
+        mode => {
+            let mut folded = String::with_capacity(out.len());
+            for ch in out.chars() {
+                match crate::translit_map::translit(ch) {
+                    Some(ascii) => folded.push_str(ascii),
+                    None => folded.push(ch),
                 }
-            } else {
-                out.push(ch);
             }
-            last_dash = false;
-        } else if !last_dash && !out.is_empty() {
-            out.push('-');
-            last_dash = true;
+            out = slug_run(folded.chars(), mode == AsciiHeadingIds::Strict);
         }
     }
-    while out.ends_with('-') {
-        out.pop();
+    if opts.lowercase {
+        out = out.chars().flat_map(char::to_lowercase).collect::<String>();
     }
     // A leading Unicode number (\p{N}: Nd/Nl/No) is a valid HTML id but not a
     // bare CSS selector, so prefix 's-'. Empty -> 's'. Matches carve-js/php.
@@ -20202,6 +20205,33 @@ pub(crate) fn slugify_parse(text: &str, lowercase: bool) -> String {
     } else {
         out
     }
+}
+
+/// One slug run: keep what the rule keeps, collapse every other maximal run to
+/// a single `-`, and trim.
+///
+/// `ascii_only` is the STRICT variant: a non-ASCII code point is a separator
+/// rather than a kept character, so residue the transliteration table could not
+/// map becomes a hyphen instead of surviving. Both variants are needed because
+/// the fold runs this twice - once over the source, once over the table's
+/// output - and only the second run may narrow what counts as a character.
+fn slug_run(chars: impl Iterator<Item = char>, ascii_only: bool) -> String {
+    let mut out = String::new();
+    let mut last_dash = false;
+    for ch in chars {
+        let kept = ch.is_ascii_alphanumeric() || (!ascii_only && ch as u32 >= 0x80);
+        if kept {
+            out.push(ch);
+            last_dash = false;
+        } else if !last_dash && !out.is_empty() {
+            out.push('-');
+            last_dash = true;
+        }
+    }
+    while out.ends_with('-') {
+        out.pop();
+    }
+    out
 }
 
 /// Forced intraword emphasis `{X…X}` (spec §22): emits the same node as the bare

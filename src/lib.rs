@@ -43,6 +43,7 @@ mod render_plain;
 mod render_text;
 mod source_layout;
 mod stamp;
+mod translit_map;
 mod unicode_nfc;
 mod wire_fields;
 
@@ -86,8 +87,9 @@ pub use citations::{
 };
 pub use djot_migrate::djot_to_carve;
 pub use extension::{
-    label_default, BeforeRenderContext, BlockMatch, CarveExtension, InlineMatch, MatcherContext,
-    Mode, Options, RenderContext, SmartTypographyMode, StaticRenderers, LABEL_FOOTNOTE_BACKLINK,
+    label_default, AsciiHeadingIds, BeforeRenderContext, BlockMatch, CarveExtension, InlineMatch,
+    MatcherContext, Mode, Options, RenderContext, SmartTypographyMode, StaticRenderers,
+    LABEL_FOOTNOTE_BACKLINK,
 };
 pub use extensions::{
     sanitize_svg, Autolink, AutolinkOptions, CodeCallouts, CodeGroup, CodeGroupOptions,

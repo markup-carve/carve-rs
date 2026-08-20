@@ -47,7 +47,7 @@ pub fn render_ansi_with_options(
     watch.into_result(render_ansi_inner(
         doc,
         options.smart_typography,
-        options.lowercase_heading_ids,
+        options.heading_id_options(),
     ))
 }
 
@@ -81,14 +81,14 @@ pub fn render_ansi(doc: &Document) -> Result<String, crate::RenderDepthError> {
     watch.into_result(render_ansi_inner(
         doc,
         crate::extension::SmartTypographyMode::Glyph,
-        Options::default().lowercase_heading_ids,
+        Options::default().heading_id_options(),
     ))
 }
 
 fn render_ansi_inner(
     doc: &Document,
     smart_typography: crate::extension::SmartTypographyMode,
-    lowercase_heading_ids: bool,
+    id_opts: crate::extension::HeadingIdOptions,
 ) -> String {
     SMART_TYPOGRAPHY.with(|cell| cell.set(smart_typography));
     let _abbr_guard = crate::abbr_budget::AbbrBudgetGuard::for_document(doc);
@@ -99,7 +99,7 @@ fn render_ansi_inner(
         block_quote_depth: 0,
         ordered: Vec::new(),
         defined_footnotes: doc.footnote_defs.keys().cloned().collect(),
-        crossref_index: crate::parse::crossref_index_for_document(doc, lowercase_heading_ids),
+        crossref_index: crate::parse::crossref_index_for_document(doc, id_opts),
         link_depth: 0,
     };
     let out = render_blocks(&doc.children, &mut ctx, 0);

@@ -17,7 +17,7 @@
 use std::collections::BTreeMap;
 
 use crate::ast::{BlockNode, Document, Heading, InlineNode, RawInline};
-use crate::extension::{BeforeRenderContext, CarveExtension};
+use crate::extension::{AsciiHeadingIds, BeforeRenderContext, CarveExtension, HeadingIdOptions};
 
 /// Options for [`HeadingPermalinks`].
 #[derive(Debug, Clone)]
@@ -106,7 +106,14 @@ impl CarveExtension for HeadingPermalinks {
         // href matches the `<section id>` / `<h* id>` the core emits.
         let mut counts: BTreeMap<String, usize> = BTreeMap::new();
         walk_blocks(&mut doc.children, &mut |h| {
-            let id = next_id(h, &mut counts, self.opts.lowercase_ids);
+            let id = next_id(
+                h,
+                &mut counts,
+                HeadingIdOptions {
+                    lowercase: self.opts.lowercase_ids,
+                    ascii: AsciiHeadingIds::Off,
+                },
+            );
             if !self.opts.levels.contains(&h.level) {
                 return;
             }
@@ -203,13 +210,13 @@ fn walk_blocks(blocks: &mut [BlockNode], f: &mut impl FnMut(&mut Heading)) {
 /// this extension computes is byte-identical to the `<section id>` / `<h* id>`
 /// the core emits for the same heading - for every inline node type, including
 /// citations. See the regression tests for the invariant `href == id`.
-fn next_id(h: &Heading, counts: &mut BTreeMap<String, usize>, lowercase: bool) -> String {
+fn next_id(h: &Heading, counts: &mut BTreeMap<String, usize>, id_opts: HeadingIdOptions) -> String {
     let base = h
         .attrs
         .as_ref()
         .and_then(|a| a.id.clone())
         .unwrap_or_else(|| {
-            crate::parse::slugify_parse(&crate::render::plain_inlines(&h.children), lowercase)
+            crate::parse::slugify_parse(&crate::render::plain_inlines(&h.children), id_opts)
         });
     let count = counts.entry(base.clone()).or_insert(0);
     *count += 1;
