@@ -15872,7 +15872,15 @@ fn parse_smart_punctuation_at(
     } else {
         buf.chars().last().unwrap_or_default()
     };
-    if text.as_bytes().get(i) == Some(&b'-') && text.as_bytes().get(i + 1) == Some(&b'-') {
+    // The hyphen-run pass must not claim `-->` or `<-->`: the FIXED TOKENS below
+    // spell the canonical rightwards and bidirectional arrows with a doubled run
+    // (markup-carve/carve#1442), and a run decomposed into dashes here can never
+    // reach them. `--` with no `>` still falls through to the dash allocation.
+    let arrow_run = text[i..].starts_with("-->") || text[i..].starts_with("<-->");
+    if !arrow_run
+        && text.as_bytes().get(i) == Some(&b'-')
+        && text.as_bytes().get(i + 1) == Some(&b'-')
+    {
         let n = text.as_bytes()[i..]
             .iter()
             .take_while(|&&b| b == b'-')
@@ -15897,13 +15905,29 @@ fn parse_smart_punctuation_at(
         return Some((nodes, n));
     }
 
+    // ORDERED LONGEST-FIRST, and the order is the rule (markup-carve/carve#1442):
+    // `<-->` beats `<->` and `<--`, `-->` beats the hyphen-run pass above, `<==`
+    // beats `<=`, `(tm)` beats `(c)`.
+    //
+    // The doubled run is the canonical arrow in both families. `<-` `->` `<->`
+    // still match and are DEPRECATED rather than removed, so a document written
+    // before the rule goes on working. `=>` is GONE: it is ubiquitous in prose
+    // about code (`key => value`, `x => x + 1`, `Some(x) => x`) and every one of
+    // those silently became an arrow in the rendered output only. `<=` keeps ≤
+    // for the mirror-image reason, which is what forces the left double arrow to
+    // grow a character in the first place.
     for (source, kind) in [
+        ("<-->", "left_right_arrow"),
         ("<->", "left_right_arrow"),
+        ("-->", "rightwards_arrow"),
+        ("<--", "leftwards_arrow"),
+        ("<=>", "left_right_double_arrow"),
+        ("==>", "rightwards_double_arrow"),
+        ("<==", "leftwards_double_arrow"),
         ("(tm)", "trademark"),
         ("...", "ellipsis"),
         ("->", "rightwards_arrow"),
         ("<-", "leftwards_arrow"),
-        ("=>", "rightwards_double_arrow"),
         ("<=", "less_than_or_equal"),
         (">=", "greater_than_or_equal"),
         ("!=", "not_equal"),
@@ -19437,12 +19461,16 @@ fn de_typography(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     for ch in text.chars() {
         match ch {
-            '↔' => out.push_str("<->"),
+            '↔' => out.push_str("<-->"),
             '™' => out.push_str("(tm)"),
             '…' => out.push_str("..."),
-            '→' => out.push_str("->"),
-            '←' => out.push_str("<-"),
-            '⇒' => out.push_str("=>"),
+            '→' => out.push_str("-->"),
+            '←' => out.push_str("<--"),
+            // The CANONICAL spellings: `=>` no longer parses as an arrow, so
+            // recovering it would produce ASCII that does not round-trip.
+            '⇒' => out.push_str("==>"),
+            '⇐' => out.push_str("<=="),
+            '⇔' => out.push_str("<=>"),
             '≤' => out.push_str("<="),
             '≥' => out.push_str(">="),
             '≠' => out.push_str("!="),
