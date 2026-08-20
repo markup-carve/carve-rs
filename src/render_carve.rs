@@ -2413,10 +2413,12 @@ fn render_attrs(attrs: &Option<Attrs>) -> String {
             // breaks PART 11 §1 (carve#1137).
             if key == "lang" && is_language_tag(value) {
                 parts.push(format!(":{value}"));
-            } else if value.is_empty() && is_attr_identifier(key) {
+            } else if value.is_empty() && is_boolean_attr_name(key) {
                 // PART 11 §6c: a value-less attribute comes back as the bare
                 // name, which is the production the language has for it. A key
-                // needing escaping has no bare spelling to fall back to.
+                // needing escaping has no bare spelling to fall back to, and
+                // neither does a `_`-first one (carve#1450) -- see
+                // `is_boolean_attr_name`.
                 parts.push(escape_attr_key(key));
             } else {
                 parts.push(format!(
@@ -3500,6 +3502,19 @@ fn escape_attr_name_value(text: &str) -> String {
 /// character this rejects, so `xlink:href` would come back as `xlinkhref` and
 /// the document would claim an attribute the author never wrote
 /// (carve-rs#1060).
+/// Whether a name can be written as a BOOLEAN attribute -- a bare word with no
+/// value. Narrower than [`is_attr_identifier`] by exactly one character: a
+/// leading `_` is legal in an id, a class and a key, and refused here, because
+/// `{_x_}` is a forced underline (markup-carve/carve#1450). PART 11 §6c
+/// shortens a value-less attribute to its bare name and cannot do that for such
+/// a name: `{_u}` is text and `{_x_}` is an underline, either way a document the
+/// writer changed, which §1 forbids.
+pub(crate) fn is_boolean_attr_name(text: &str) -> bool {
+    let mut chars = text.chars();
+    chars.next().is_some_and(|ch| ch.is_ascii_alphabetic())
+        && chars.all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-')
+}
+
 pub(crate) fn is_attr_identifier(text: &str) -> bool {
     let mut chars = text.chars();
     chars

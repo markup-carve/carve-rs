@@ -1230,15 +1230,21 @@ fn an_empty_label_link_comes_back() {
     );
 }
 
-/// The same carrier for an empty span and for the two editorial marks.
+/// The same carrier for an empty span and for an empty link.
 ///
-/// `{++}` and `{--}` did not even report themselves: the outbound side walked
-/// their children, found none, and returned - so the marks were deleted from
-/// the source and the report was empty.
+/// Neither used to report itself: the outbound side walked the children, found
+/// none, and returned - so the mark was deleted from the source and the report
+/// was empty.
+///
+/// THE EDITORIAL PAIR USED TO BE HERE, spelled `{++}` and `{--}`.
+/// markup-carve/carve#1447 made an empty brace pair text, so no SOURCE spells
+/// an empty insertion or deletion any more. The carrier still names both marks
+/// and an editor can still hold one; they became interchange-only shapes, and a
+/// round trip that starts from Carve has nothing to start from.
 #[test]
-fn an_empty_span_and_the_editorial_marks_come_back() {
+fn an_empty_span_and_an_empty_link_come_back() {
     // carve-grammars wire fixture `empty-span-and-editorial-marks`.
-    let source = "a []{.x} b {++} c {--} d\n";
+    let source = "a []{.x} b [](/u) c\n";
     let (before, after) = round_trip(source);
     assert_eq!(after, before);
     assert_eq!(after, source);
@@ -1253,10 +1259,10 @@ fn an_empty_span_and_the_editorial_marks_come_back() {
                 "class": "x", "carveAttrOrder": [".class"]
             }}},
             {"type": "text", "text": " b "},
-            {"type": "carveEmptyMark", "attrs": {"markType": "carveInsert"}},
-            {"type": "text", "text": " c "},
-            {"type": "carveEmptyMark", "attrs": {"markType": "carveDelete"}},
-            {"type": "text", "text": " d"}
+            {"type": "carveEmptyMark", "attrs": {"markType": "link", "markAttrs": {
+                "href": "/u"
+            }}},
+            {"type": "text", "text": " c"}
         ]))
     );
 }
@@ -1283,12 +1289,10 @@ fn two_adjacent_empty_marks_stay_two() {
         assert_eq!(after.matches("[]{.x}").count(), 2, "{after:?}");
     }
 
-    // The critic pair, which reported nothing at all when it was dropped.
-    for (source, construct) in [("a {++}{++} b\n", "{++}"), ("a {--}{--} b\n", "{--}")] {
-        let (before, after) = round_trip(source);
-        assert_eq!(after, before);
-        assert_eq!(after.matches(construct).count(), 2, "{after:?}");
-    }
+    // The critic pair used to be a row here, spelled `{++}{++}` and
+    // `{--}{--}`. markup-carve/carve#1447 made an empty brace pair text, so no
+    // source spells those; the merge guard they exercised is on the wire and is
+    // still reached by the carriers above.
 
     // The empty-label link, whose carrier attributes are the mark's own
     // `href`/`title` rather than an attribute run.
@@ -1321,9 +1325,9 @@ fn an_empty_mark_is_not_absorbed_by_an_equal_neighbour() {
         ("[a]{.x}[]{.x}\n", "{.x}", 2),
         ("[](/u)[a](/u)\n", "](/u)", 2),
         ("[a](/u)[](/u)\n", "](/u)", 2),
-        ("{++}{++a++}\n", "{++", 2),
-        ("{++a++}{++}\n", "{++", 2),
-        ("{--}{--a--}\n", "{--", 2),
+        // The critic rows are gone with markup-carve/carve#1447: an empty brace
+        // pair is text, so `{++}` and `{--}` are no longer empty marks a source
+        // can put next to a non-empty neighbour.
     ] {
         let (before, after) = round_trip(source);
         assert_eq!(after, before, "{source:?}");
