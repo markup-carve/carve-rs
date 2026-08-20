@@ -46,7 +46,7 @@ fn a_body_emptied_by_a_block_attribute_line_carries_the_backlink() {
     // the body holds no blocks.
     assert_eq!(
         endnote(&html("r[^f]\n\n[^f]: {x}\n")),
-        "<li id=\"fn1\">\n      <p><a href=\"#fnref1\" role=\"doc-backlink\">\u{21a9}</a></p>\n    </li>"
+        "<li id=\"fn1\">\n      <p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">\u{21a9}</a></p>\n    </li>"
     );
 }
 
@@ -64,7 +64,7 @@ fn an_ingested_empty_body_carries_the_backlink() {
     let rendered = carve::render_html(&decoded).expect("render");
     assert_eq!(
         endnote(&rendered),
-        "<li id=\"fn1\">\n      <p><a href=\"#fnref1\" role=\"doc-backlink\">\u{21a9}</a></p>\n    </li>"
+        "<li id=\"fn1\">\n      <p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">\u{21a9}</a></p>\n    </li>"
     );
 }
 
@@ -88,7 +88,7 @@ fn a_body_a_profile_emptied_carries_the_backlink() {
     let rendered = carve::render_html(&filtered).expect("render");
     assert_eq!(
         endnote(&rendered),
-        "<li id=\"fn1\">\n      <p><a href=\"#fnref1\" role=\"doc-backlink\">\u{21a9}</a></p>\n    </li>"
+        "<li id=\"fn1\">\n      <p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">\u{21a9}</a></p>\n    </li>"
     );
 }
 
@@ -99,8 +99,8 @@ fn an_empty_body_referenced_twice_carries_both_numbered_backlinks() {
     // back.
     assert_eq!(
         endnote(&html("r[^f] s[^f]\n\n[^f]: {x}\n")),
-        "<li id=\"fn1\">\n      <p><a href=\"#fnref1\" role=\"doc-backlink\">\u{21a9}<sup>1</sup></a> \
-         <a href=\"#fnref1-2\" role=\"doc-backlink\">\u{21a9}<sup>2</sup></a></p>\n    </li>"
+        "<li id=\"fn1\">\n      <p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference 1\">\u{21a9}<sup>1</sup></a> \
+         <a href=\"#fnref1-2\" role=\"doc-backlink\" aria-label=\"Back to reference 2\">\u{21a9}<sup>2</sup></a></p>\n    </li>"
     );
 }
 
@@ -114,7 +114,7 @@ fn an_empty_body_referenced_twice_carries_both_numbered_backlinks() {
 fn control_an_ordinary_body_keeps_the_backlink_inside_its_own_paragraph() {
     assert_eq!(
         endnote(&html("r[^f]\n\n[^f]: t\n")),
-        "<li id=\"fn1\">\n      <p>t<a href=\"#fnref1\" role=\"doc-backlink\">\u{21a9}</a></p>\n    </li>"
+        "<li id=\"fn1\">\n      <p>t<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">\u{21a9}</a></p>\n    </li>"
     );
 }
 
@@ -125,7 +125,7 @@ fn control_a_body_ending_in_a_quote_keeps_its_synthesized_paragraph() {
     assert_eq!(
         endnote(&html("r[^f]\n\n[^f]: > q\n")),
         "<li id=\"fn1\">\n      <blockquote><p>q</p></blockquote>\n      \
-         <p><a href=\"#fnref1\" role=\"doc-backlink\">\u{21a9}</a></p>\n    </li>"
+         <p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">\u{21a9}</a></p>\n    </li>"
     );
 }
 
@@ -136,7 +136,7 @@ fn control_a_body_that_is_only_a_comment_was_already_correct() {
     // all, and carve-js emits the same blank line.
     assert_eq!(
         endnote(&html("r[^f]\n\n[^f]: %% c\n")),
-        "<li id=\"fn1\">\n\n      <p><a href=\"#fnref1\" role=\"doc-backlink\">\u{21a9}</a></p>\n    </li>"
+        "<li id=\"fn1\">\n\n      <p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">\u{21a9}</a></p>\n    </li>"
     );
 }
 

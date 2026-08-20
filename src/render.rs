@@ -895,7 +895,7 @@ fn render_footnotes_section(
             out.push('\n');
             out.push_str("      <p>");
             render_inlines(&mut out, inline, options, state);
-            out.push_str(&render_backlinks(&entry.backrefs));
+            out.push_str(&render_backlinks(&entry.backrefs, options));
             out.push_str("</p>");
         } else if let Some(label) = &entry.label {
             let blocks: &[BlockNode] = doc
@@ -920,7 +920,7 @@ fn render_footnotes_section(
                 out.push('\n');
                 indent(&mut out, 3);
                 out.push_str("<p>");
-                out.push_str(&render_backlinks(&entry.backrefs));
+                out.push_str(&render_backlinks(&entry.backrefs, options));
                 out.push_str("</p>");
             }
             for (block_idx, block) in blocks.iter().enumerate() {
@@ -928,7 +928,7 @@ fn render_footnotes_section(
                 let mut rendered = String::new();
                 render_block(&mut rendered, block, 3, options, state);
                 if block_idx + 1 == blocks.len() {
-                    let backlink = render_backlinks(&entry.backrefs);
+                    let backlink = render_backlinks(&entry.backrefs, options);
                     // The backlink goes INSIDE the body's last paragraph -
                     // but only when that last block IS a paragraph. When it
                     // is anything else the body gets a synthesized paragraph
@@ -967,22 +967,33 @@ fn render_footnotes_section(
     out
 }
 
-fn render_backlinks(backrefs: &[String]) -> String {
+fn render_backlinks(backrefs: &[String], options: &Options<'_>) -> String {
     // A note referenced once gets a plain `↩`; a note referenced N>1 times gets
     // one numbered backlink per reference (`↩<sup>k</sup>`, space-separated) so
     // each return arrow is distinct (matches carve-php + pandoc).
+    //
+    // The accessible name is the label plus WHAT THE LINK VISIBLY SAYS (PART 9
+    // §16, markup-carve/carve#1455): the label alone for a lone `↩`, the label
+    // plus k for the k-th of several. Matching the visible text is WCAG 2.5.3,
+    // and it is why the number is the REFERENCE ORDINAL rather than the note's
+    // - the note number appears nowhere in this link's text.
+    let label = options.label(crate::extension::LABEL_FOOTNOTE_BACKLINK);
     if backrefs.len() <= 1 {
+        let name = crate::escape::escape_attr(label);
         return backrefs
             .iter()
-            .map(|ref_id| format!("<a href=\"#{ref_id}\" role=\"doc-backlink\">↩</a>"))
+            .map(|ref_id| {
+                format!("<a href=\"#{ref_id}\" role=\"doc-backlink\" aria-label=\"{name}\">↩</a>")
+            })
             .collect();
     }
     backrefs
         .iter()
         .enumerate()
         .map(|(k, ref_id)| {
+            let name = crate::escape::escape_attr(&format!("{label} {}", k + 1));
             format!(
-                "<a href=\"#{ref_id}\" role=\"doc-backlink\">↩<sup>{}</sup></a>",
+                "<a href=\"#{ref_id}\" role=\"doc-backlink\" aria-label=\"{name}\">↩<sup>{}</sup></a>",
                 k + 1
             )
         })

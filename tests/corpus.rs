@@ -13,6 +13,19 @@ use std::fs;
 use std::path::PathBuf;
 
 const IMPLEMENTED: &[&str] = &[
+    "a-boolean-attribute-does-not-start-with-an-underscore",
+    "a-braced-hyphen-pair-is-an-en-dash",
+    "a-hyphen-run-opening-a-word-after-whitespace-is-a-flag",
+    "a-lazy-marker-line-s-definition-defines-nothing-in-any-container",
+    "a-marker-line-link-definition-is-collected-where-no-paragraph-is-open",
+    "a-reference-definition-cannot-take-its-destination-from-the-next-line",
+    "a-resumed-lazy-run-belongs-to-the-innermost-marker-line-item",
+    "a-terminal-comment-in-a-quote-leaves-no-paragraph-open",
+    "a-terminal-comment-line-still-leaves-an-empty-verse-line",
+    "an-empty-brace-pair-is-not-a-construct",
+    "an-unclosed-inline-literal-reaches-the-end-of-its-block",
+    "pipe-tables-can-state-head-and-foot-row-counts",
+    "the-doubled-run-is-the-canonical-arrow-in-both-families",
     "a-quote-is-reached-by-its-marker-and-a-column-never-reaches-into-one",
     "table-columns-carry-alignment-vertical-alignment-and-widths",
     "a-table-alignment-run-carries-two-independent-axes",
@@ -467,6 +480,9 @@ const IMPLEMENTED: &[&str] = &[
 // Spec-main categories tracked by separate implementation work. Keep them
 // explicit so a new category still trips the completeness gate below.
 const KNOWN_GAPS: &[&str] = &[
+    // carve#1436: a `+` attaches only a flush-left block; this engine still
+    // folds the indented line. The spec's own drift ledger records the same gap.
+    "a-continuation-marker-attaches-only-a-flush-left-block",
     "a-raw-block-keeps-the-blank-line-at-the-end-of-its-payload-too",
     "an-unterminated-fence-at-a-content-column-opens-no-block-so-the-paragraph-stays-open",
 ];
@@ -540,11 +556,7 @@ fn expected_corpus_size() -> usize {
 /// regression is caught exactly as the corpus would have caught it, and it must
 /// still DIFFER from the pinned golden, so an entry that went stale when the
 /// submodule bumped fails and has to be deleted in the same commit.
-const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[(
-    "20-smart-typography-arrows-and-symbols",
-    "carve#1442 makes the doubled run canonical and removes `=>` as an arrow",
-    "<p>Flow: a → b ← c ↔ d =&gt; e; x ≠ y, p ≤ q, r ≥ s, ±1.\n© 2024, ®, ™. Dates like 1/2/2024 stay literal.</p>",
-)];
+const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[];
 
 fn check_pair(slug: &str) {
     let slug = &resolve_slug(slug);

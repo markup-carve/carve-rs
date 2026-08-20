@@ -86,8 +86,8 @@ pub use citations::{
 };
 pub use djot_migrate::djot_to_carve;
 pub use extension::{
-    BeforeRenderContext, BlockMatch, CarveExtension, InlineMatch, MatcherContext, Mode, Options,
-    RenderContext, SmartTypographyMode, StaticRenderers,
+    label_default, BeforeRenderContext, BlockMatch, CarveExtension, InlineMatch, MatcherContext,
+    Mode, Options, RenderContext, SmartTypographyMode, StaticRenderers, LABEL_FOOTNOTE_BACKLINK,
 };
 pub use extensions::{
     sanitize_svg, Autolink, AutolinkOptions, CodeCallouts, CodeGroup, CodeGroupOptions,

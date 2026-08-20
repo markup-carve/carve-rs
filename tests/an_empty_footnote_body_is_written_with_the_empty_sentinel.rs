@@ -57,7 +57,7 @@ fn the_written_source_still_defines_and_still_resolves() {
     );
     assert_eq!(
         endnote(&html),
-        "<li id=\"fn1\">\n      <p><a href=\"#fnref1\" role=\"doc-backlink\">\u{21a9}</a></p>\n    </li>"
+        "<li id=\"fn1\">\n      <p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">\u{21a9}</a></p>\n    </li>"
     );
 }
 

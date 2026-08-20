@@ -85,7 +85,7 @@ fn note(body: &str) -> String {
     format!(
         "<p>see<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p> \
          <section role=\"doc-endnotes\"> <hr> <ol> <li id=\"fn1\"> <p>n</p> {body} \
-         <p><a href=\"#fnref1\" role=\"doc-backlink\">↩</a></p> </li> </ol> </section>"
+         <p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p> </li> </ol> </section>"
     )
 }
 
