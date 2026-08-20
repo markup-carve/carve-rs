@@ -15306,6 +15306,25 @@ fn parse_inline_context(
             }
         }
 
+        // PART 9 §8 (markup-carve/carve#1443): a hyphen run PRECEDED by
+        // whitespace (or the start of the content) and FOLLOWED by a
+        // non-whitespace character is a long CLI flag, not a dash, and stays
+        // literal. `git log --oneline` rendered an en dash before `oneline` -
+        // silently, and in the rendered output only.
+        //
+        // It joins the text buffer WHOLE, which is two decisions rather than
+        // one: handing back a Text node would split `a --foo` into two text
+        // nodes where the other engines keep one, and consuming the run a byte
+        // at a time would leave `-->` as a stray `-` plus a live `->` symbol.
+        if let Some(run) = flag_shaped_hyphen_run(text, i) {
+            if buf_start.is_none() {
+                buf_start = Some(i);
+            }
+            buf.push_str(&text[i..i + run]);
+            i += run;
+            continue;
+        }
+
         // Smart typography (§8): parsed into AST nodes so renderers can choose
         // glyph output or source-preserving Carve output without rescanning.
         if let Some((nodes, consumed)) = parse_smart_punctuation_at(text, i, &buf, &out) {
@@ -15877,6 +15896,46 @@ fn flush_text(
     *buf_start = None;
     *buf_placeable = true;
     *buf_src_delta = 0;
+}
+
+/// The space class the hyphen-run flanking test reads: PART 7's four whitespace
+/// characters plus the NO-BREAK SPACE, in either of its spellings.
+///
+/// NOT `char::is_whitespace`, which takes a VERTICAL TAB and a FORM FEED. Carve
+/// reads both as CONTENT, so `---<VT>` has to answer the way `---!` answers.
+fn is_flank_space(ch: char) -> bool {
+    matches!(ch, ' ' | '\t' | '\n' | '\r' | '\u{00a0}') || ch == crate::NBSP_PLACEHOLDER
+}
+
+/// The length of the hyphen run at `i` when that run is flag-shaped
+/// (markup-carve/carve#1443), else `None`.
+///
+/// The narrowness is the design: only a run with whitespace BEFORE and a
+/// non-whitespace character AFTER is excluded. `pages 1--10`, `the Mon--Fri
+/// window` and a trailing `text --` are all left-flanked by a word or
+/// right-flanked by a space, and every one of them still converts.
+fn flag_shaped_hyphen_run(text: &str, i: usize) -> Option<usize> {
+    let bytes = text.as_bytes();
+    if bytes.get(i) != Some(&b'-') || bytes.get(i + 1) != Some(&b'-') {
+        return None;
+    }
+    // `-->` is the canonical rightwards arrow (markup-carve/carve#1442) and is
+    // taken before any hyphen run, so the guard must not claim it first - a
+    // spaced `x --> y` is flag-SHAPED and is an arrow all the same. Three
+    // hyphens are not `-->`, so `x ---> y` still reaches the guard.
+    if text[i..].starts_with("-->") {
+        return None;
+    }
+    let n = bytes[i..].iter().take_while(|&&b| b == b'-').count();
+    let after = text[i + n..].chars().next()?;
+    if is_flank_space(after) {
+        return None;
+    }
+    match text[..i].chars().next_back() {
+        None => Some(n),
+        Some(before) if is_flank_space(before) => Some(n),
+        Some(_) => None,
+    }
 }
 
 fn parse_smart_punctuation_at(

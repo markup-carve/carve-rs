@@ -380,10 +380,12 @@ fn smart_typography_tokenizes_overlapping_arrows_and_dashes_left_to_right() {
     // the second token here is an arrow rather than an en dash plus `>`. The
     // left-to-right property this pins is unchanged: `->` is taken first, and
     // what remains is tokenized from where it left off.
-    assert_eq!(html("->-->"), "<p>→→</p>");
-    // Still a dash run: `--->` is three hyphens then `>`, which is not `-->`,
-    // so the run allocation takes all three and the `>` is literal.
-    assert_eq!(html("--->"), "<p>—&gt;</p>");
+    assert_eq!(html("->-->"), "<p>\u{2192}\u{2192}</p>");
+    // `--->` is not `-->`, so no arrow matches where the run starts - and the
+    // run is flag-shaped (nothing before it, a non-whitespace character after
+    // it), so it stays literal (markup-carve/carve#1443). In the row above the
+    // run is preceded by `>`, which is not whitespace.
+    assert_eq!(html("--->"), "<p>---&gt;</p>");
 }
 
 #[test]

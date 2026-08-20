@@ -71,25 +71,22 @@ fn no_trailing_literal_hyphen_at_the_regression_counts() {
 #[test]
 fn arrow_operator_still_wins_at_its_own_position() {
     // `-->` is the CANONICAL rightwards arrow since markup-carve/carve#1442, so
-    // the doubled run is an arrow rather than an en dash plus `>`. Three or more
-    // hyphens are still a run: `--->` is not `-->`, so the allocation takes all
-    // three and the `>` is literal.
-    assert_eq!(carve::to_html("x --> y\n"), "<p>x → y</p>");
-    assert_eq!(carve::to_html("x ---> y\n"), format!("<p>x {EM}&gt; y</p>"));
-    // A long run swallows the trailing hyphen atomically, so `->` never forms:
-    // `------->` is a run of 7 (em en en) followed by a literal `>`.
-    assert_eq!(
-        carve::to_html("x -------> y\n"),
-        format!("<p>x {EM}{EN}{EN}&gt; y</p>")
-    );
-    // `<-->` is now ONE token, the canonical bidirectional arrow
+    // the doubled run is an arrow rather than an en dash plus `>`.
+    assert_eq!(carve::to_html("x --> y\n"), "<p>x \u{2192} y</p>");
+    // THREE OR MORE hyphens are not `-->`, so no arrow matches where the run
+    // starts - and a run spaced on the left with `>` after it is flag-shaped,
+    // so it stays literal (markup-carve/carve#1443). The run is still consumed
+    // atomically either way, so `->` never forms out of its tail.
+    assert_eq!(carve::to_html("x ---> y\n"), "<p>x ---&gt; y</p>");
+    assert_eq!(carve::to_html("x -------> y\n"), "<p>x -------&gt; y</p>");
+    // `<-->` is ONE token, the canonical bidirectional arrow
     // (markup-carve/carve#1442), rather than `<-` followed by `->`.
-    assert_eq!(carve::to_html("x <--> y\n"), "<p>x ↔ y</p>");
+    assert_eq!(carve::to_html("x <--> y\n"), "<p>x \u{2194} y</p>");
     // `<--->` is not `<-->`, so tokenizing runs left to right from where the
     // longest match at each position leaves off: `<-` (deprecated but still an
-    // arrow), then `-->` (canonical). Never a dash run - the run pass defers to
-    // an arrow that starts at its position.
-    assert_eq!(carve::to_html("x <---> y\n"), "<p>x ←→ y</p>");
+    // arrow), then `-->` (canonical). The hyphens never reach the run pass, so
+    // the flag guard never sees them.
+    assert_eq!(carve::to_html("x <---> y\n"), "<p>x \u{2190}\u{2192} y</p>");
 }
 
 #[test]
