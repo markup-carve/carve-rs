@@ -504,7 +504,7 @@ fn parse_with_options_mode_and_index(
         ingest_payload_len: 0,
     };
     let has_crossrefs = source.contains("</#");
-    let (mut heading_index, assigned_heading_ids) = heading_index(
+    let (mut heading_index, _assigned_heading_ids) = heading_index(
         &doc.children,
         &doc.footnote_defs,
         options.lowercase_heading_ids,
@@ -535,11 +535,9 @@ fn parse_with_options_mode_and_index(
         // `from_json(to_json(parse(x))) == parse(x)`: a field added at encode
         // time comes back on decode and the trees no longer match. carve-js
         // assigns it in its parse for the same reason (carve#750).
-        if matches!(mode, ParseMode::HtmlFacade) {
-            stamp_generated_heading_ids_from(&mut doc, assigned_heading_ids);
-        } else {
-            stamp_generated_heading_ids(&mut doc, options.lowercase_heading_ids);
-        }
+        // Keep the document-id seeder authoritative. Unlike the heading index,
+        // it reserves explicit ids carried by inline nodes as well as blocks.
+        stamp_generated_heading_ids(&mut doc, options.lowercase_heading_ids);
         // PART 12 §5: footnote numbering is a resolution result that IS
         // serialized, "because recomputing them requires reimplementing PART 9R".
         // Caption numbers were assigned here and reached the wire; footnote
