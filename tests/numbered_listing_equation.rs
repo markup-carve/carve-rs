@@ -60,7 +60,7 @@ fn equation_caption_wraps_in_figure() {
     let out = carve::to_html(&format!("{EQ}\n^ Equation 1: mass-energy"));
     assert!(out.contains("<figure>"), "{out}");
     assert!(
-        out.contains("<span class=\"math display\">\\[E = mc^2\\]</span>"),
+        out.contains("<span class=\"math display\" role=\"math\">\\[E = mc^2\\]</span>"),
         "{out}"
     );
     assert!(
@@ -74,7 +74,7 @@ fn display_math_without_caption_is_bare_paragraph() {
     let out = carve::to_html(EQ);
     assert!(!out.contains("<figure>"), "{out}");
     assert!(
-        out.contains("<span class=\"math display\">\\[E = mc^2\\]</span>"),
+        out.contains("<span class=\"math display\" role=\"math\">\\[E = mc^2\\]</span>"),
         "{out}"
     );
 }
@@ -114,7 +114,7 @@ fn indented_standalone_equation_is_recognized() {
         "{out}"
     );
     assert!(
-        out.contains("<span class=\"math display\">\\[E = mc^2\\]</span>"),
+        out.contains("<span class=\"math display\" role=\"math\">\\[E = mc^2\\]</span>"),
         "{out}"
     );
 }

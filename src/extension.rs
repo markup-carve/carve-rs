@@ -195,11 +195,21 @@ pub enum SmartTypographyMode {
 
 /// The `labels` key for the endnote backlink's accessible name (PART 9 §16a).
 pub const LABEL_FOOTNOTE_BACKLINK: &str = "footnoteBacklink";
+pub const LABEL_ENDNOTES: &str = "endnotes";
 
 /// The English default for a `labels` key, and the whole set: one string.
 pub fn label_default(key: &str) -> &'static str {
     match key {
         LABEL_FOOTNOTE_BACKLINK => "Back to reference",
+        LABEL_ENDNOTES => "Footnotes",
+        "admonitionNote" => "Note",
+        "admonitionTip" => "Tip",
+        "admonitionWarning" => "Warning",
+        "admonitionDanger" => "Danger",
+        "admonitionInfo" => "Info",
+        "admonitionSuccess" => "Success",
+        "admonitionExample" => "Example",
+        "admonitionQuote" => "Quote",
         _ => "",
     }
 }

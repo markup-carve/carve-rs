@@ -51,7 +51,7 @@ fn unquoted_trailing_text_is_a_paragraph() {
 fn quoted_title_still_renders_with_braces() {
     assert_eq!(
         carve::to_html("::: note \"Use {x}\"\nb\n:::"),
-        "<aside class=\"admonition note\">\n  <p class=\"admonition-title\">Use {x}</p>\n  <p>b</p>\n</aside>"
+        "<aside class=\"admonition note\" aria-labelledby=\"adm-1\">\n  <p class=\"admonition-title\" id=\"adm-1\">Use {x}</p>\n  <p>b</p>\n</aside>"
     );
 }
 
@@ -60,7 +60,7 @@ fn attributes_attach_via_a_preceding_block_attribute_line() {
     // The only way to attribute a div / admonition (strict djot).
     assert_eq!(
         carve::to_html("{#a .lead}\n::: note\nb\n:::"),
-        "<aside class=\"admonition note lead\" id=\"a\">\n  <p>b</p>\n</aside>"
+        "<aside class=\"admonition note lead\" id=\"a\" aria-label=\"Note\">\n  <p>b</p>\n</aside>"
     );
     assert_eq!(
         carve::to_html("{.x #y}\n:::\nb\n:::"),
