@@ -5029,10 +5029,10 @@ fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<Box<BlockN
         return Some(parse_heading_block(cur, level, first_text, options));
     }
     if strip_blockquote_prefix(line).is_some() {
-        return Some(boxed_block(cur, options, parse_blockquote));
+        return Some(parse_blockquote(cur, options));
     }
     if is_list_marker(line) {
-        return Some(boxed_block(cur, options, parse_list));
+        return Some(parse_list(cur, options));
     }
     // A table row opens a table only when FLUSH-LEFT (like a heading, quote or
     // `:: ` def-list term). `is_table_start` trims leading whitespace, so an
@@ -6592,7 +6592,19 @@ impl<'a> ParaOpen<'a> {
     }
 }
 
-fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
+fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> Box<BlockNode> {
+    let (span_start, inner) = collect_blockquote_body(cur, options);
+    let children = parse_mapped_source(&inner.into_source(), options);
+    boxed_blockquote_node(
+        children,
+        span_of(cur, span_start, cur.pos, options),
+        consume_caption(cur, options),
+        span_of(cur, span_start, cur.pos, options),
+    )
+}
+
+#[inline(never)]
+fn collect_blockquote_body(cur: &mut LineCursor, options: &Options<'_>) -> (usize, LineBuffer) {
     let span_start = cur.pos;
     let mut inner = LineBuffer::default();
     let mut para_open = ParaOpen::Closed;
@@ -6858,24 +6870,32 @@ fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         cur.consume();
         inner.push_at(line.to_string(), source_line, source_col);
     }
-    let inner = inner.into_source();
-    let children = parse_mapped_source(&inner, options);
+    (span_start, inner)
+}
+
+#[inline(never)]
+fn boxed_blockquote_node(
+    children: Vec<BlockNode>,
+    quote_pos: Option<Pos>,
+    caption: Option<Vec<InlineNode>>,
+    figure_pos: Option<Pos>,
+) -> Box<BlockNode> {
     let quote = BlockQuote {
-        pos: span_of(cur, span_start, cur.pos, options),
+        pos: quote_pos,
         attrs: None,
         children,
     };
-    if let Some(caption) = consume_caption(cur, options) {
-        BlockNode::Figure(Figure {
+    if let Some(caption) = caption {
+        Box::new(BlockNode::Figure(Figure {
             attrs: None,
             target: Box::new(FigureTarget::BlockQuote(quote)),
             rendered_target: None,
             caption,
             short_caption: None,
-            pos: span_of(cur, span_start, cur.pos, options),
-        })
+            pos: figure_pos,
+        }))
     } else {
-        BlockNode::BlockQuote(quote)
+        Box::new(BlockNode::BlockQuote(quote))
     }
 }
 
@@ -7668,7 +7688,7 @@ fn widen_items_over_children(items: &mut [ListItem]) {
     }
 }
 
-fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
+fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> Box<BlockNode> {
     let span_start = cur.pos;
     let first = cur.peek().unwrap();
     let first_marker = detect_list_marker_full(first).unwrap();
@@ -8825,7 +8845,7 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             pos.start_column = pos.start_column.saturating_sub(base_indent);
         }
     }
-    BlockNode::List(List {
+    boxed_list_node(List {
         // The cursor's own span when it can give one, else the extent of the
         // items themselves. A list inside a `+`-continued blockquote sits on
         // lines whose stripped width is unknown, so `span_of` refuses - but the
@@ -8850,6 +8870,11 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         tight,
         items,
     })
+}
+
+#[inline(never)]
+fn boxed_list_node(list: List) -> Box<BlockNode> {
+    Box::new(BlockNode::List(list))
 }
 
 fn marker_content_starts_block(content: &str, cur: &LineCursor<'_>, content_col: usize) -> bool {
