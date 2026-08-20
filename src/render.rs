@@ -10,7 +10,7 @@ use crate::escape::{
     escape_attr, escape_text, is_dangerous_attr_name, is_valid_attr_name, sanitize_attr_value,
     sanitize_url, write_escaped_attr, write_escaped_text,
 };
-use crate::extension::{Options, RenderContext};
+use crate::extension::{HeadingIdOptions, Options, RenderContext};
 use crate::parse::unwrap_nested_anchors;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fmt::Write as _;
@@ -111,11 +111,11 @@ fn render_html_inner(
     // so extension-generated ids (citation anchors / reference entries) take
     // the next free suffix instead of emitting a duplicate DOM id.
     let _document_ids_guard = needs_document_ids
-        .then(|| crate::document_ids::DocumentIdsGuard::new(&doc, options.lowercase_heading_ids));
+        .then(|| crate::document_ids::DocumentIdsGuard::new(&doc, options.heading_id_options()));
     let mut state = RenderState {
-        lowercase_heading_ids: options.lowercase_heading_ids,
+        heading_id_options: options.heading_id_options(),
         crossref_index: crossref_index.unwrap_or_else(|| {
-            crate::parse::crossref_index_for_document(&doc, options.lowercase_heading_ids)
+            crate::parse::crossref_index_for_document(&doc, options.heading_id_options())
         }),
         ..RenderState::default()
     };
@@ -195,7 +195,7 @@ pub(crate) fn render_blocks_at_with_options(
     level: usize,
 ) -> String {
     let mut state = RenderState {
-        lowercase_heading_ids: options.lowercase_heading_ids,
+        heading_id_options: options.heading_id_options(),
         ..RenderState::default()
     };
     render_blocks(nodes, level, options, &mut state)
@@ -293,9 +293,9 @@ pub(crate) struct RenderState {
     link_depth: usize,
     inline_depth: usize,
     block_depth_bias: usize,
-    /// Mirrors `Options::lowercase_heading_ids` so the `<section id>` derived
+    /// Mirrors the heading-id options so the `<section id>` derived
     /// here matches the parse-time id index (and the resolved cross-ref hrefs).
-    lowercase_heading_ids: bool,
+    heading_id_options: HeadingIdOptions,
     /// True while rendering the endnotes section's footnote bodies. A
     /// `::: footnotes` nested inside a footnote definition must NOT emit a
     /// placement sentinel (it renders as an ordinary div, matching carve-js).
@@ -1262,8 +1262,8 @@ fn render_heading_without_section_id(
 fn next_heading_id(h: &Heading, state: &mut RenderState) -> String {
     let explicit = h.attrs.as_ref().and_then(|attrs| attrs.id.clone());
     let has_explicit = explicit.is_some();
-    let base = explicit
-        .unwrap_or_else(|| slugify(&plain_inlines(&h.children), state.lowercase_heading_ids));
+    let base =
+        explicit.unwrap_or_else(|| slugify(&plain_inlines(&h.children), state.heading_id_options));
     let mut count = state.heading_counts.get(&base).copied().unwrap_or(0);
     let id = loop {
         count += 1;
@@ -1391,10 +1391,10 @@ fn plain_inlines_typography_at(
     out
 }
 
-fn slugify(text: &str, lowercase: bool) -> String {
+fn slugify(text: &str, id_opts: HeadingIdOptions) -> String {
     // Delegate to the single canonical implementation so HTML, Markdown, and
     // the parser's id index never drift apart (or from carve-js / carve-php).
-    crate::parse::slugify_parse(text, lowercase)
+    crate::parse::slugify_parse(text, id_opts)
 }
 
 fn render_paragraph(
@@ -2702,7 +2702,7 @@ fn render_inlines_at_link_depth(
 ) -> String {
     let mut out = String::new();
     let mut state = RenderState {
-        lowercase_heading_ids: options.lowercase_heading_ids,
+        heading_id_options: options.heading_id_options(),
         link_depth,
         ..RenderState::default()
     };

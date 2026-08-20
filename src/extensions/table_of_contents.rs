@@ -15,7 +15,9 @@ use std::cell::RefCell;
 use std::collections::BTreeMap;
 
 use crate::ast::{Attrs, BlockExtension, BlockNode, Document, Heading, InlineNode, RawBlock};
-use crate::extension::{BeforeRenderContext, CarveExtension, RenderContext};
+use crate::extension::{
+    AsciiHeadingIds, BeforeRenderContext, CarveExtension, HeadingIdOptions, RenderContext,
+};
 use crate::render::render_attrs_without_keys;
 
 /// Carrier extension name a `::: toc` block is rewritten to in `before_render`,
@@ -189,7 +191,14 @@ fn collect_entries(
     for block in blocks {
         match block {
             BlockNode::Heading(h) => {
-                let id = next_id(h, counts, opts.lowercase_ids);
+                let id = next_id(
+                    h,
+                    counts,
+                    HeadingIdOptions {
+                        lowercase: opts.lowercase_ids,
+                        ascii: AsciiHeadingIds::Off,
+                    },
+                );
                 if top_level && h.level >= opts.min_level && h.level <= opts.max_level {
                     entries.push(TocEntry {
                         level: h.level,
@@ -226,13 +235,13 @@ fn collect_entries(
 fn collect_all_entries(
     blocks: &[BlockNode],
     counts: &mut BTreeMap<String, usize>,
-    lowercase: bool,
+    id_opts: HeadingIdOptions,
     entries: &mut Vec<TocEntry>,
 ) {
     for block in blocks {
         match block {
             BlockNode::Heading(h) => {
-                let id = next_id(h, counts, lowercase);
+                let id = next_id(h, counts, id_opts);
                 entries.push(TocEntry {
                     level: h.level,
                     label: crate::parse::derive_display_nodes(&h.children, true),
@@ -241,21 +250,17 @@ fn collect_all_entries(
             }
             BlockNode::List(l) => {
                 for item in &l.items {
-                    collect_all_entries(&item.children, counts, lowercase, entries);
+                    collect_all_entries(&item.children, counts, id_opts, entries);
                 }
             }
-            BlockNode::BlockQuote(b) => {
-                collect_all_entries(&b.children, counts, lowercase, entries)
-            }
-            BlockNode::Admonition(a) => {
-                collect_all_entries(&a.children, counts, lowercase, entries)
-            }
-            BlockNode::Div(d) => collect_all_entries(&d.children, counts, lowercase, entries),
-            BlockNode::Extension(e) => collect_all_entries(&e.children, counts, lowercase, entries),
+            BlockNode::BlockQuote(b) => collect_all_entries(&b.children, counts, id_opts, entries),
+            BlockNode::Admonition(a) => collect_all_entries(&a.children, counts, id_opts, entries),
+            BlockNode::Div(d) => collect_all_entries(&d.children, counts, id_opts, entries),
+            BlockNode::Extension(e) => collect_all_entries(&e.children, counts, id_opts, entries),
             BlockNode::DefinitionList(dl) => {
                 for item in &dl.items {
                     for def in &item.definitions {
-                        collect_all_entries(def, counts, lowercase, entries);
+                        collect_all_entries(def, counts, id_opts, entries);
                     }
                 }
             }
@@ -264,13 +269,13 @@ fn collect_all_entries(
     }
 }
 
-fn next_id(h: &Heading, counts: &mut BTreeMap<String, usize>, lowercase: bool) -> String {
+fn next_id(h: &Heading, counts: &mut BTreeMap<String, usize>, id_opts: HeadingIdOptions) -> String {
     let base = h
         .attrs
         .as_ref()
         .and_then(|a| a.id.clone())
         .unwrap_or_else(|| {
-            crate::parse::slugify_parse(&crate::render::plain_inlines(&h.children), lowercase)
+            crate::parse::slugify_parse(&crate::render::plain_inlines(&h.children), id_opts)
         });
     let count = counts.entry(base.clone()).or_insert(0);
     *count += 1;
@@ -432,10 +437,10 @@ impl CarveExtension for TocPlacement {
         // blockquotes, lists, etc. are included - they render with id anchors.
         // The id counter stays aligned with the renderer; footnote definitions
         // live outside `doc.children`, so their (id-less) headings are excluded.
-        let lowercase = ctx.options().lowercase_heading_ids;
+        let id_opts = ctx.options().heading_id_options();
         let mut counts: BTreeMap<String, usize> = BTreeMap::new();
         let mut entries: Vec<TocEntry> = Vec::new();
-        collect_all_entries(&doc.children, &mut counts, lowercase, &mut entries);
+        collect_all_entries(&doc.children, &mut counts, id_opts, &mut entries);
         *self.entries.borrow_mut() = entries;
         *self.budget.borrow_mut() =
             (8usize.saturating_mul(doc.expansion_budget_len())).max(1_000_000);

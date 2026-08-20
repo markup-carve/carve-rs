@@ -127,6 +127,60 @@ impl std::fmt::Debug for StaticRenderers {
 /// author typed.
 ///
 /// Presentation output wants the glyph. Output written for a machine to read
+/// ASCII-folding for auto-generated heading ids (spec PART 9 section 12,
+/// "Automatic Identifiers"): an OPT-IN, orthogonal transform, matching carve-js
+/// `asciiHeadingIds` and carve-php `AsciiHeadingIdsExtension`.
+///
+/// The transliteration table is bounded (Latin, IPA, combining marks, Cyrillic,
+/// punctuation, currency, letterlike) and is the same table the other two
+/// engines carry, which is what makes the ids byte-identical across them. What
+/// it does NOT cover - Greek, CJK, Arabic, emoji - is where the two modes part.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum AsciiHeadingIds {
+    /// No transliteration. A heading keeps its own characters, which is the
+    /// default and what the spec's core rule describes.
+    #[default]
+    Off,
+    /// Best effort: transliterate what the table covers, and KEEP what it does
+    /// not. `Grüße` becomes `Grusse`; a CJK heading keeps its characters, so it
+    /// still has a usable and unique anchor rather than an empty one.
+    Fold,
+    /// Guaranteed ASCII: transliterate as `Fold` does, then drop the residue the
+    /// table could not map, so the id matches `[0-9A-Za-z-]`. `Ωmega` becomes
+    /// `mega` - the price of the guarantee, and the reason it is not the
+    /// default.
+    Strict,
+}
+
+/// The heading-id transforms as one value.
+///
+/// The two flags are orthogonal but are applied in ONE order (transliterate,
+/// then lowercase), and every producer of an id has to apply both or neither.
+/// Passing them as separate booleans is how a call site ends up applying one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct HeadingIdOptions {
+    /// Lowercase the kept characters, per code point.
+    pub lowercase: bool,
+    /// Transliterate to ASCII.
+    pub ascii: AsciiHeadingIds,
+}
+
+impl HeadingIdOptions {
+    /// The case-preserving, non-folding default, spelled for a call site that
+    /// is not reading an `Options` (an id that is not a heading's).
+    pub(crate) const PLAIN: Self = Self {
+        lowercase: false,
+        ascii: AsciiHeadingIds::Off,
+    };
+
+    /// Lowercased with no folding: what the glossary and index-term ids use,
+    /// which are keys rather than heading anchors.
+    pub(crate) const LOWERCASE: Self = Self {
+        lowercase: true,
+        ascii: AsciiHeadingIds::Off,
+    };
+}
+
 /// is usually better off with the characters that were actually typed: the
 /// glyph is a presentation choice the consumer did not ask for and cannot
 /// undo, and a search for the source spelling misses it.
@@ -180,9 +234,12 @@ pub struct Options<'a> {
     /// When `true`, lowercase the kept characters of an auto-generated heading
     /// id per code point (`char::to_lowercase`). Default `false`: heading ids
     /// are CASE-PRESERVING (`# Getting Started` -> `Getting-Started`), matching
-    /// carve-js / carve-php. carve-rs has no ASCII transliterator, so
-    /// ascii-folding is intentionally unsupported here; only `lowercase` is.
+    /// carve-js / carve-php.
     pub lowercase_heading_ids: bool,
+    /// Transliterate an auto-generated heading id to ASCII, for URL and
+    /// CSS-fragment portability. Default [`AsciiHeadingIds::Off`]. Orthogonal to
+    /// `lowercase_heading_ids`: combine them for a lowercase ASCII slug.
+    pub ascii_heading_ids: AsciiHeadingIds,
     /// When `true`, stamp each top-level block element with a `data-source-line`
     /// attribute holding the 1-based source line where the block starts, so an
     /// editor live-preview can sync scroll to the source. Opt-in (default
@@ -255,6 +312,7 @@ impl Default for Options<'_> {
             allow_raw_html: true,
             smart_typography: SmartTypographyMode::Glyph,
             lowercase_heading_ids: false,
+            ascii_heading_ids: AsciiHeadingIds::Off,
             source_lines: false,
             positions: false,
             profile: None,
@@ -342,6 +400,24 @@ impl<'a> Options<'a> {
     pub fn with_lowercase_heading_ids(mut self, lowercase: bool) -> Self {
         self.lowercase_heading_ids = lowercase;
         self
+    }
+
+    /// Opt in to ASCII-folding auto-generated heading ids. See
+    /// [`AsciiHeadingIds`] for what each mode does with a code point the
+    /// transliteration table does not cover.
+    pub fn with_ascii_heading_ids(mut self, ascii: AsciiHeadingIds) -> Self {
+        self.ascii_heading_ids = ascii;
+        self
+    }
+
+    /// The heading-id transforms this `Options` asks for, as the one value the
+    /// slug function takes. Threading the two flags separately is how a call
+    /// site ends up applying one and not the other.
+    pub(crate) fn heading_id_options(&self) -> HeadingIdOptions {
+        HeadingIdOptions {
+            lowercase: self.lowercase_heading_ids,
+            ascii: self.ascii_heading_ids,
+        }
     }
 
     /// Apply a feature-restriction [`Profile`] before rendering.

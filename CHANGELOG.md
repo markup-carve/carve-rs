@@ -7,6 +7,20 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **ASCII-folding for auto-generated heading ids**, opt-in
+  (markup-carve/carve-rs#1159, spec PART 9 §12).
+  `Options::with_ascii_heading_ids` takes `AsciiHeadingIds::Fold` - transliterate
+  what the table covers and keep the rest, so `Grüße` is `Grusse` and a CJK
+  heading keeps a usable anchor - or `AsciiHeadingIds::Strict`, which also drops
+  the residue for an id guaranteed to match `[0-9A-Za-z-]`. Orthogonal to
+  `with_lowercase_heading_ids`, and off by default. The transliteration table is
+  the one carve-js and carve-php already carry, ported rather than authored, so
+  the ids are byte-identical across the three engines; `Strict` is what
+  carve-php's extension does and `Fold` is carve-js's default. Zero dependencies:
+  the table is baked, bounded and auditable.
+
 ### Changed
 
 - **A row is a row, in every table section** (markup-carve/carve#1459, PART 10

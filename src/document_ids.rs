@@ -19,6 +19,7 @@ use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::ast::*;
+use crate::extension::HeadingIdOptions;
 
 #[derive(Default)]
 pub(crate) struct DocumentIdRegistry {
@@ -111,8 +112,8 @@ pub(crate) struct DocumentIdsGuard {
 
 impl DocumentIdsGuard {
     /// Seed a registry from `doc` and install it for the current render.
-    pub(crate) fn new(doc: &Document, lowercase_heading_ids: bool) -> Self {
-        let registry = seed_registry(doc, lowercase_heading_ids);
+    pub(crate) fn new(doc: &Document, id_opts: HeadingIdOptions) -> Self {
+        let registry = seed_registry(doc, id_opts);
         let previous = ACTIVE.with(|cell| cell.borrow_mut().replace(registry));
         DocumentIdsGuard { previous }
     }
@@ -184,12 +185,12 @@ pub(crate) fn ref_id(key: &str) -> String {
 /// The AST encoder publishes these as `attrs.id` where the source wrote none
 /// (PART 12 §5: a generated heading id is a resolution result, because dedup
 /// makes it a function of the whole document rather than of the heading).
-pub(crate) fn assigned_heading_ids(doc: &Document, lowercase_heading_ids: bool) -> Vec<String> {
+pub(crate) fn assigned_heading_ids(doc: &Document, id_opts: HeadingIdOptions) -> Vec<String> {
     let mut seeder = Seeder {
         registry: DocumentIdRegistry::default(),
         heading_counts: BTreeMap::new(),
         citation_index: BTreeMap::new(),
-        lowercase_heading_ids,
+        id_opts,
         assigned: Vec::new(),
         collect_explicit_only: true,
     };
@@ -206,12 +207,12 @@ pub(crate) fn assigned_heading_ids(doc: &Document, lowercase_heading_ids: bool) 
     seeder.assigned
 }
 
-fn seed_registry(doc: &Document, lowercase_heading_ids: bool) -> DocumentIdRegistry {
+fn seed_registry(doc: &Document, id_opts: HeadingIdOptions) -> DocumentIdRegistry {
     let mut seeder = Seeder {
         registry: DocumentIdRegistry::default(),
         heading_counts: BTreeMap::new(),
         citation_index: BTreeMap::new(),
-        lowercase_heading_ids,
+        id_opts,
         assigned: Vec::new(),
         collect_explicit_only: true,
     };
@@ -239,7 +240,7 @@ struct Seeder {
     heading_counts: BTreeMap<String, usize>,
     /// Citation key -> index into `registry.pending_citations`.
     citation_index: BTreeMap<String, usize>,
-    lowercase_heading_ids: bool,
+    id_opts: HeadingIdOptions,
     /// The id assigned to each heading, in document order. Written in pass B
     /// and read by [`assigned_heading_ids`], which is how the AST encoder
     /// publishes a generated id (PART 12 §5, carve#750) without a second
@@ -266,10 +267,7 @@ impl Seeder {
         let explicit = h.attrs.as_ref().and_then(|attrs| attrs.id.clone());
         let has_explicit = explicit.is_some();
         let base = explicit.unwrap_or_else(|| {
-            crate::parse::slugify_parse(
-                &crate::render::plain_inlines(&h.children),
-                self.lowercase_heading_ids,
-            )
+            crate::parse::slugify_parse(&crate::render::plain_inlines(&h.children), self.id_opts)
         });
         let mut count = self.heading_counts.get(&base).copied().unwrap_or(0);
         let id = loop {

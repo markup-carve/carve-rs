@@ -18,6 +18,7 @@ use crate::ast::{
     smart_punctuation_glyph, Attrs, BlockExtension, BlockNode, Document, FigureTarget,
     InlineExtension, InlineNode,
 };
+use crate::extension::HeadingIdOptions;
 use crate::extension::{BeforeRenderContext, CarveExtension, RenderContext, SmartTypographyMode};
 use crate::parse::slugify_parse;
 use crate::render::render_attrs;
@@ -138,7 +139,10 @@ fn term_slug(term: &[InlineNode]) -> String {
     // slug is byte-identical in both smart-typography modes -- the same rule the
     // core applies to heading ids (PART 9 §19: "heading ids are BYTE-IDENTICAL
     // either way"). Only the DISPLAY text below follows the mode.
-    slugify_parse(&inline_text(term, SmartTypographyMode::Glyph), true)
+    slugify_parse(
+        &inline_text(term, SmartTypographyMode::Glyph),
+        HeadingIdOptions::LOWERCASE,
+    )
 }
 
 fn attr(node: &InlineExtension, key: &str) -> String {

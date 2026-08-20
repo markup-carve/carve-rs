@@ -214,7 +214,7 @@ fn render_layout_body(
             {
                 return None;
             }
-            let base = slugify_parse(title, options.lowercase_heading_ids);
+            let base = slugify_parse(title, options.heading_id_options());
             let count = heading_counts.entry(base.clone()).or_insert(0);
             *count += 1;
             let id = if *count == 1 {

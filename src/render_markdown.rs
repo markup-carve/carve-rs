@@ -44,7 +44,7 @@ pub fn render_markdown_with_options(
     watch.into_result(render_markdown_inner(
         doc,
         options.smart_typography,
-        options.lowercase_heading_ids,
+        options.heading_id_options(),
     ))
 }
 
@@ -61,20 +61,20 @@ pub fn render_markdown(doc: &Document) -> Result<String, crate::RenderDepthError
     watch.into_result(render_markdown_inner(
         doc,
         crate::extension::SmartTypographyMode::Glyph,
-        Options::default().lowercase_heading_ids,
+        Options::default().heading_id_options(),
     ))
 }
 
 fn render_markdown_inner(
     doc: &Document,
     smart_typography: crate::extension::SmartTypographyMode,
-    lowercase_heading_ids: bool,
+    id_opts: crate::extension::HeadingIdOptions,
 ) -> String {
     SMART_TYPOGRAPHY.with(|cell| cell.set(smart_typography));
     let _abbr_guard = crate::abbr_budget::AbbrBudgetGuard::for_document(doc);
     let mut heading_ids = HashSet::new();
     let mut referenced_heading_ids = HashSet::new();
-    let crossref_index = crate::parse::crossref_index_for_document(doc, lowercase_heading_ids);
+    let crossref_index = crate::parse::crossref_index_for_document(doc, id_opts);
     // Footnote definition bodies are rendered as block content too, so their
     // headings and crossref links must be part of the heading-id / referenced-id
     // prepass; otherwise a heading referenced only from a footnote loses the
@@ -1846,7 +1846,7 @@ fn slugify(text: &str) -> String {
     // the parser's id index never drift apart (or from carve-js / carve-php).
     // The Markdown renderer has no Options, so it always uses the case-preserving
     // default (lowercase = false), matching the parser's default id index.
-    crate::parse::slugify_parse(text, false)
+    crate::parse::slugify_parse(text, crate::extension::HeadingIdOptions::PLAIN)
 }
 
 fn is_literal_crossref(text: &str) -> bool {

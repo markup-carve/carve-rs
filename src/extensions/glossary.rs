@@ -17,6 +17,7 @@ use crate::ast::{
     smart_punctuation_glyph, Attrs, BlockExtension, BlockNode, Document, InlineExtension,
     InlineNode,
 };
+use crate::extension::HeadingIdOptions;
 use crate::extension::{BeforeRenderContext, CarveExtension, RenderContext};
 use crate::parse::slugify_parse;
 use crate::render::{render_attrs, render_attrs_without_keys};
@@ -91,7 +92,7 @@ impl CarveExtension for Glossary {
 }
 
 fn term_slug(term: &[InlineNode]) -> String {
-    slugify_parse(&inline_text(term), true)
+    slugify_parse(&inline_text(term), HeadingIdOptions::LOWERCASE)
 }
 
 /// Prepend `base` as the leading class of (a clone of) `attrs`.

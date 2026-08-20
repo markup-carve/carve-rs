@@ -80,7 +80,7 @@ pub fn render_plain_text_with_options(
     watch.into_result(render_plain_text_inner(
         doc,
         options.smart_typography,
-        options.lowercase_heading_ids,
+        options.heading_id_options(),
     ))
 }
 
@@ -95,14 +95,14 @@ pub fn render_plain_text(doc: &Document) -> Result<String, crate::RenderDepthErr
     watch.into_result(render_plain_text_inner(
         doc,
         crate::extension::SmartTypographyMode::Glyph,
-        Options::default().lowercase_heading_ids,
+        Options::default().heading_id_options(),
     ))
 }
 
 fn render_plain_text_inner(
     doc: &Document,
     smart_typography: crate::extension::SmartTypographyMode,
-    lowercase_heading_ids: bool,
+    id_opts: crate::extension::HeadingIdOptions,
 ) -> String {
     SMART_TYPOGRAPHY.with(|cell| cell.set(smart_typography));
     LIST_DEPTH.with(|cell| cell.set(0));
@@ -115,7 +115,7 @@ fn render_plain_text_inner(
         *set.borrow_mut() = doc.footnote_defs.keys().cloned().collect();
     });
     CROSSREF_INDEX.with(|index| {
-        *index.borrow_mut() = crate::parse::crossref_index_for_document(doc, lowercase_heading_ids);
+        *index.borrow_mut() = crate::parse::crossref_index_for_document(doc, id_opts);
     });
     CONSUMED_ABBREVIATIONS.with(|set| {
         *set.borrow_mut() = crate::render_text::consumed_abbreviation_definitions(doc);
