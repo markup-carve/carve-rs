@@ -4564,7 +4564,7 @@ enum CommentBlock {
     NotAComment,
     /// A comment line was consumed. `None` is the placeholder a collected
     /// definition leaves behind, which produces no node.
-    Consumed(Option<BlockNode>),
+    Consumed(Option<Box<BlockNode>>),
 }
 
 /// Take a `%%` line comment or a `%%%` comment fence off the cursor.
@@ -4617,12 +4617,12 @@ fn take_comment_block(cur: &mut LineCursor, options: &Options<'_>) -> CommentBlo
             if let Some(pos) = &mut pos {
                 pos.start_column = pos.start_column.saturating_sub(leading_ws(line));
             }
-            return CommentBlock::Consumed(Some(BlockNode::Comment(Comment {
+            return CommentBlock::Consumed(Some(Box::new(BlockNode::Comment(Comment {
                 block: true,
                 delimited: false,
                 content: content.join("\n"),
                 pos,
-            })));
+            }))));
         }
     }
     if trim_ascii_start(line).starts_with("%%") {
@@ -4647,12 +4647,12 @@ fn take_comment_block(cur: &mut LineCursor, options: &Options<'_>) -> CommentBlo
         if let Some(pos) = &mut pos {
             pos.start_column = pos.start_column.saturating_sub(leading_ws(line));
         }
-        return CommentBlock::Consumed(Some(BlockNode::Comment(Comment {
+        return CommentBlock::Consumed(Some(Box::new(BlockNode::Comment(Comment {
             block: false,
             delimited: false,
             content,
             pos,
-        })));
+        }))));
     }
 
     CommentBlock::NotAComment
@@ -4746,7 +4746,7 @@ fn parse_blocks(cur: &mut LineCursor, options: &Options<'_>) -> Vec<BlockNode> {
             CommentBlock::NotAComment => {}
             CommentBlock::Consumed(None) => continue,
             CommentBlock::Consumed(Some(node)) => {
-                out.push(node);
+                out.push(*node);
                 continue;
             }
         }
@@ -4862,7 +4862,7 @@ fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<BlockNode>
     // produces at top level (carve-rs#678).
     match take_comment_block(cur, options) {
         CommentBlock::NotAComment => {}
-        CommentBlock::Consumed(node) => return node,
+        CommentBlock::Consumed(node) => return node.map(|node| *node),
     }
     let line = cur.peek()?;
     if let Some(fence_marker) = detect_fence_open(line) {
