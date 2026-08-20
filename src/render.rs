@@ -77,10 +77,23 @@ pub(crate) fn render_html_owned_with_options(
     options: &Options<'_>,
 ) -> Result<String, crate::RenderDepthError> {
     let watch = crate::render_depth::RenderDepthWatch::new();
-    watch.into_result(render_html_inner(doc, options))
+    watch.into_result(render_html_inner(doc, options, None))
 }
 
-fn render_html_inner(mut doc: Document, options: &Options<'_>) -> String {
+pub(crate) fn render_html_owned_with_index(
+    doc: Document,
+    options: &Options<'_>,
+    crossref_index: crate::parse::CrossrefIndex,
+) -> Result<String, crate::RenderDepthError> {
+    let watch = crate::render_depth::RenderDepthWatch::new();
+    watch.into_result(render_html_inner(doc, options, Some(crossref_index)))
+}
+
+fn render_html_inner(
+    mut doc: Document,
+    options: &Options<'_>,
+    crossref_index: Option<crate::parse::CrossrefIndex>,
+) -> String {
     let _abbr_guard = AbbrBudgetGuard::for_document(&doc);
     let _index_guard = crate::index_budget::IndexBudgetGuard::new(doc.expansion_budget_len());
     // Document id namespace (extensions contract §2.6): seeded with every
@@ -91,10 +104,9 @@ fn render_html_inner(mut doc: Document, options: &Options<'_>) -> String {
         crate::document_ids::DocumentIdsGuard::new(&doc, options.lowercase_heading_ids);
     let mut state = RenderState {
         lowercase_heading_ids: options.lowercase_heading_ids,
-        crossref_index: crate::parse::crossref_index_for_document(
-            &doc,
-            options.lowercase_heading_ids,
-        ),
+        crossref_index: crossref_index.unwrap_or_else(|| {
+            crate::parse::crossref_index_for_document(&doc, options.lowercase_heading_ids)
+        }),
         ..RenderState::default()
     };
     let footnotes = collect_footnotes(&mut doc, true);
