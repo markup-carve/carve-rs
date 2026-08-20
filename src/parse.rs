@@ -15574,9 +15574,17 @@ fn parse_critic_markup(
             // This is that way, and it cost nothing: the string it took was the
             // empty deletion below, which deletes nothing.
             if bytes.get(start..start + 4) == Some(b"{--}") {
+                // The SAME node the bare run produces, carrying the authored
+                // spelling in `value` - so the AST says "an en dash was written
+                // here" rather than holding a glyph in a text run, and `fmt`
+                // writes `{--}` back instead of the literal character. PART 12's
+                // vocabulary already has the kind; the braced form is a second
+                // spelling of it, not a second construct.
                 return Some((
-                    InlineNode::Text(Text {
-                        value: "\u{2013}".to_string(),
+                    InlineNode::SmartPunctuation(SmartPunctuation {
+                        kind: "en_dash".to_string(),
+                        value: "{--}".to_string(),
+                        glyph: None,
                         pos: None,
                     }),
                     4,
