@@ -46,7 +46,23 @@ pub(crate) fn parse_value(input: &str) -> Result<Json, AstJsonError> {
 }
 
 pub(crate) fn value_to_json(value: &Json) -> String {
-    fn write(out: &mut String, value: &Json, depth: usize) {
+    enum Task<'a> {
+        Value(&'a Json, usize),
+        String(&'a str),
+        Char(char),
+    }
+
+    let mut out = String::new();
+    let mut tasks = vec![Task::Value(value, 0)];
+    while let Some(task) = tasks.pop() {
+        let Task::Value(value, depth) = task else {
+            match task {
+                Task::String(value) => write_string(&mut out, value),
+                Task::Char(value) => out.push(value),
+                Task::Value(_, _) => unreachable!(),
+            }
+            continue;
+        };
         assert!(
             depth <= MAX_JSON_DEPTH,
             "JSON value exceeds the encoder's depth budget"
@@ -56,66 +72,37 @@ pub(crate) fn value_to_json(value: &Json) -> String {
             Json::Bool(value) => out.push_str(if *value { "true" } else { "false" }),
             Json::Number(value) => out.push_str(&value.to_string()),
             Json::Float(value) => out.push_str(&value.to_string()),
-            Json::String(value) => write_string(out, value),
+            Json::String(value) => write_string(&mut out, value),
             Json::Array(values) => {
                 out.push('[');
-                for (index, value) in values.iter().enumerate() {
+                tasks.push(Task::Char(']'));
+                for (index, value) in values.iter().enumerate().rev() {
+                    tasks.push(Task::Value(value, depth + 1));
                     if index != 0 {
-                        out.push(',');
+                        tasks.push(Task::Char(','));
                     }
-                    write(out, value, depth + 1);
                 }
-                out.push(']');
             }
             Json::Object(values) => {
                 out.push('{');
-                for (index, (key, value)) in values.iter().enumerate() {
+                tasks.push(Task::Char('}'));
+                for (index, (key, value)) in values.iter().enumerate().rev() {
+                    tasks.push(Task::Value(value, depth + 1));
+                    tasks.push(Task::Char(':'));
+                    tasks.push(Task::String(key));
                     if index != 0 {
-                        out.push(',');
+                        tasks.push(Task::Char(','));
                     }
-                    write_string(out, key);
-                    out.push(':');
-                    write(out, value, depth + 1);
                 }
-                out.push('}');
             }
         }
     }
-    let mut out = String::new();
-    write(&mut out, value, 0);
     out
 }
 
 thread_local! {
     static ENCODE_DEPTH: Cell<usize> = const { Cell::new(0) };
     static ENCODE_REFUSED: Cell<bool> = const { Cell::new(false) };
-}
-
-struct EncodeDepthGuard;
-
-impl EncodeDepthGuard {
-    fn enter() -> Option<Self> {
-        ENCODE_DEPTH.with(|depth| {
-            let current = depth.get();
-            // Every recursive AST node costs at least its object and the
-            // containing `children` array on the wire. Refuse at the cheapest
-            // possible conversion so anything accepted here remains readable
-            // by this module's structural-depth guard.
-            if current >= MAX_JSON_DEPTH / 2 {
-                ENCODE_REFUSED.with(|refused| refused.set(true));
-                None
-            } else {
-                depth.set(current + 1);
-                Some(Self)
-            }
-        })
-    }
-}
-
-impl Drop for EncodeDepthGuard {
-    fn drop(&mut self) {
-        ENCODE_DEPTH.with(|depth| depth.set(depth.get() - 1));
-    }
 }
 
 /// Serialize an AST, refusing a programmatically constructed tree beyond the
@@ -729,10 +716,681 @@ fn write_footnote_def(
     w.finish();
 }
 
+type EncodeFinish<'a> = Box<dyn FnOnce(&mut String, &mut Vec<EncodeTask<'a>>) + 'a>;
+
+enum EncodeTask<'a> {
+    Block(&'a BlockNode, usize),
+    Inline(&'a InlineNode, usize),
+    ListItem(&'a ListItem, usize),
+    TableRow(&'a TableRow, usize),
+    TableCell(&'a TableCell, usize),
+    DefinitionTerm(&'a DefinitionTerm, usize),
+    DefinitionDef(&'a DefinitionDef, usize),
+    FigureTarget(&'a FigureTarget, usize),
+    Citation(&'a Citation, usize),
+    Finish(EncodeFinish<'a>),
+    Char(char),
+}
+
+fn push_array<'a, T>(
+    tasks: &mut Vec<EncodeTask<'a>>,
+    values: &'a [T],
+    mut task: impl FnMut(&'a T) -> EncodeTask<'a>,
+) {
+    tasks.push(EncodeTask::Char(']'));
+    for (index, value) in values.iter().enumerate().rev() {
+        tasks.push(task(value));
+        if index != 0 {
+            tasks.push(EncodeTask::Char(','));
+        }
+    }
+}
+
+fn refuse_encode_depth(depth: usize) -> bool {
+    ENCODE_DEPTH.with(|current| current.set(depth + 1));
+    if depth >= MAX_JSON_DEPTH / 2 {
+        ENCODE_REFUSED.with(|refused| refused.set(true));
+        true
+    } else {
+        false
+    }
+}
+
 fn write_block(out: &mut String, node: &BlockNode) {
-    let Some(_depth) = EncodeDepthGuard::enter() else {
-        return;
+    run_encode_tasks(out, EncodeTask::Block(node, 0));
+}
+
+fn run_encode_tasks<'a>(out: &mut String, first: EncodeTask<'a>) {
+    let mut tasks = vec![first];
+    while let Some(task) = tasks.pop() {
+        match task {
+            EncodeTask::Char(c) => out.push(c),
+            EncodeTask::Finish(f) => f(out, &mut tasks),
+            EncodeTask::Block(node, depth) => {
+                if refuse_encode_depth(depth) {
+                    continue;
+                }
+                encode_block_task(out, &mut tasks, node, depth);
+            }
+            EncodeTask::Inline(node, depth) => {
+                if refuse_encode_depth(depth) {
+                    continue;
+                }
+                encode_inline_task(out, &mut tasks, node, depth);
+            }
+            EncodeTask::ListItem(n, depth) => {
+                let mut w = typed(out, "list_item");
+                w.field("children", |out| out.push('['));
+                tasks.push(EncodeTask::Finish(Box::new(move |out, _| {
+                    let mut w = Writer { out, first: false };
+                    if let Some(checked) = n.checked {
+                        w.field("checked", |out| write_bool(out, checked));
+                    }
+                    write_attrs_field(&mut w, &n.attrs);
+                    write_pos_field(&mut w, &n.pos);
+                    w.finish();
+                })));
+                push_array(&mut tasks, &n.children, |node| {
+                    EncodeTask::Block(node, depth + 1)
+                });
+            }
+            EncodeTask::TableRow(n, depth) => {
+                let mut w = typed(out, "table_row");
+                w.field("cells", |out| out.push('['));
+                tasks.push(EncodeTask::Finish(Box::new(move |out, _| {
+                    let mut w = Writer { out, first: false };
+                    write_attrs_field(&mut w, &n.attrs);
+                    write_pos_field(&mut w, &n.pos);
+                    w.finish();
+                })));
+                push_array(&mut tasks, &n.cells, |cell| {
+                    EncodeTask::TableCell(cell, depth)
+                });
+            }
+            EncodeTask::TableCell(n, depth) => {
+                let mut w = typed(out, "table_cell");
+                w.field("header", |out| write_bool(out, n.header));
+                w.field("children", |out| out.push('['));
+                tasks.push(EncodeTask::Finish(Box::new(move |out, _| {
+                    let mut w = Writer { out, first: false };
+                    if let Some(span) = n.span {
+                        w.field("span", |out| {
+                            write_string(
+                                out,
+                                match span {
+                                    TableCellSpan::Rowspan => "rowspan",
+                                    TableCellSpan::Colspan => "colspan",
+                                },
+                            )
+                        });
+                    }
+                    if let Some(align) = n.align {
+                        w.field("align", |out| write_string(out, align_json(align)));
+                    }
+                    if let Some(valign) = n.valign {
+                        w.field("valign", |out| write_string(out, valign_json(valign)));
+                    }
+                    write_attrs_field(&mut w, &n.attrs);
+                    write_pos_field(&mut w, &n.pos);
+                    w.finish();
+                })));
+                push_array(&mut tasks, &n.children, |node| {
+                    EncodeTask::Inline(node, depth + 1)
+                });
+            }
+            EncodeTask::DefinitionTerm(n, depth) => {
+                let mut w = typed(out, "definition_term");
+                w.field("children", |out| out.push('['));
+                tasks.push(EncodeTask::Finish(Box::new(move |out, _| {
+                    let mut w = Writer { out, first: false };
+                    write_attrs_field(&mut w, &n.attrs);
+                    write_pos_field(&mut w, &n.pos);
+                    w.finish();
+                })));
+                push_array(&mut tasks, &n.children, |node| {
+                    EncodeTask::Inline(node, depth + 1)
+                });
+            }
+            EncodeTask::DefinitionDef(n, depth) => {
+                let mut w = typed(out, "definition_description");
+                w.field("children", |out| out.push('['));
+                tasks.push(EncodeTask::Finish(Box::new(move |out, _| {
+                    let mut w = Writer { out, first: false };
+                    write_attrs_field(&mut w, &n.attrs);
+                    write_pos_field(&mut w, &n.pos);
+                    w.finish();
+                })));
+                push_array(&mut tasks, &n.children, |node| {
+                    EncodeTask::Block(node, depth + 1)
+                });
+            }
+            EncodeTask::FigureTarget(target, depth) => match target {
+                FigureTarget::Image(n) => write_image(out, n),
+                FigureTarget::CodeBlock(n) => write_code_block(out, n),
+                FigureTarget::BlockQuote(n) => encode_block_quote_task(out, &mut tasks, n, depth),
+                FigureTarget::Table(n) => encode_table_task(out, &mut tasks, n, depth),
+                FigureTarget::Paragraph(n) => encode_paragraph_task(out, &mut tasks, n, depth),
+            },
+            EncodeTask::Citation(n, depth) => encode_citation_task(out, &mut tasks, n, depth),
+        }
+    }
+}
+
+fn finish_attrs_pos<'a>(
+    tasks: &mut Vec<EncodeTask<'a>>,
+    attrs: &'a Option<Attrs>,
+    pos: &'a Option<Pos>,
+) {
+    tasks.push(EncodeTask::Finish(Box::new(move |out, _| {
+        let mut w = Writer { out, first: false };
+        write_attrs_field(&mut w, attrs);
+        write_pos_field(&mut w, pos);
+        w.finish();
+    })));
+}
+
+fn encode_paragraph_task<'a>(
+    out: &mut String,
+    tasks: &mut Vec<EncodeTask<'a>>,
+    n: &'a Paragraph,
+    depth: usize,
+) {
+    let mut w = typed(out, "paragraph");
+    w.field("children", |out| out.push('['));
+    finish_attrs_pos(tasks, &n.attrs, &n.pos);
+    push_array(tasks, &n.children, |node| {
+        EncodeTask::Inline(node, depth + 1)
+    });
+}
+
+fn encode_block_quote_task<'a>(
+    out: &mut String,
+    tasks: &mut Vec<EncodeTask<'a>>,
+    n: &'a BlockQuote,
+    depth: usize,
+) {
+    let mut w = typed(out, "block_quote");
+    w.field("children", |out| out.push('['));
+    finish_attrs_pos(tasks, &n.attrs, &n.pos);
+    push_array(tasks, &n.children, |node| {
+        EncodeTask::Block(node, depth + 1)
+    });
+}
+
+fn encode_block_task<'a>(
+    out: &mut String,
+    tasks: &mut Vec<EncodeTask<'a>>,
+    node: &'a BlockNode,
+    depth: usize,
+) {
+    match node {
+        BlockNode::Heading(n) => {
+            let mut w = typed(out, "heading");
+            w.field("level", |out| write_usize(out, n.level as usize));
+            w.field("children", |out| out.push('['));
+            finish_attrs_pos(tasks, &n.attrs, &n.pos);
+            push_array(tasks, &n.children, |node| {
+                EncodeTask::Inline(node, depth + 1)
+            });
+        }
+        BlockNode::Paragraph(n) => encode_paragraph_task(out, tasks, n, depth),
+        BlockNode::List(n) => {
+            let mut w = typed(out, "list");
+            w.field("ordered", |out| write_bool(out, n.ordered));
+            w.field("tight", |out| write_bool(out, n.tight));
+            w.field("items", |out| out.push('['));
+            tasks.push(EncodeTask::Finish(Box::new(move |out, _| {
+                let mut w = Writer { out, first: false };
+                if let Some(start) = n.start {
+                    w.field("start", |out| write_usize(out, start));
+                }
+                if let Some(ol_type) = n.ol_type {
+                    w.field("olType", |out| write_string(out, ol_type_json(ol_type)));
+                }
+                if let Some(delim) = n.delim {
+                    w.field("delim", |out| write_string(out, &delim.to_string()));
+                }
+                if let Some(bullet) = n.bullet_char {
+                    w.field("bulletChar", |out| write_string(out, &bullet.to_string()));
+                }
+                if n.bare_marker {
+                    w.field("bareMarker", |out| out.push_str("true"));
+                }
+                write_attrs_field(&mut w, &n.attrs);
+                write_pos_field(&mut w, &n.pos);
+                w.finish();
+            })));
+            push_array(tasks, &n.items, |item| EncodeTask::ListItem(item, depth));
+        }
+        BlockNode::BlockQuote(n) => encode_block_quote_task(out, tasks, n, depth),
+        BlockNode::Table(n) => encode_table_task(out, tasks, n, depth),
+        BlockNode::Admonition(n) => {
+            let mut w = typed(out, "admonition");
+            w.field("kind", |out| write_string(out, &n.kind));
+            if let Some(title) = &n.title {
+                w.field("title", |out| out.push('['));
+                tasks.push(EncodeTask::Finish(Box::new(move |out, tasks| {
+                    let mut w = Writer { out, first: false };
+                    if let Some(label) = &n.label {
+                        w.field("label", |out| write_string(out, label));
+                    }
+                    w.field("children", |out| out.push('['));
+                    finish_attrs_pos(tasks, &n.attrs, &n.pos);
+                    push_array(tasks, &n.children, |node| {
+                        EncodeTask::Block(node, depth + 1)
+                    });
+                })));
+                push_array(tasks, title, |node| EncodeTask::Inline(node, depth + 1));
+            } else {
+                if let Some(label) = &n.label {
+                    w.field("label", |out| write_string(out, label));
+                }
+                w.field("children", |out| out.push('['));
+                finish_attrs_pos(tasks, &n.attrs, &n.pos);
+                push_array(tasks, &n.children, |node| {
+                    EncodeTask::Block(node, depth + 1)
+                });
+            }
+        }
+        BlockNode::Div(n) => {
+            let mut w = typed(out, "div");
+            w.field("children", |out| out.push('['));
+            tasks.push(EncodeTask::Finish(Box::new(move |out, _| {
+                let mut w = Writer { out, first: false };
+                if let Some(label) = &n.label {
+                    w.field("label", |out| write_string(out, label));
+                }
+                write_attrs_field(&mut w, &n.attrs);
+                write_pos_field(&mut w, &n.pos);
+                w.finish();
+            })));
+            push_array(tasks, &n.children, |node| {
+                EncodeTask::Block(node, depth + 1)
+            });
+        }
+        BlockNode::LineBlock(n) => {
+            let mut w = typed(out, "line_block");
+            w.field("children", |out| out.push('['));
+            finish_attrs_pos(tasks, &n.attrs, &n.pos);
+            push_array(tasks, &n.children, |node| {
+                EncodeTask::Block(node, depth + 1)
+            });
+        }
+        BlockNode::DefinitionList(n) => {
+            let mut w = typed(out, "definition_list");
+            w.field("items", |out| out.push('['));
+            finish_attrs_pos(tasks, &n.attrs, &n.pos);
+            tasks.push(EncodeTask::Char(']'));
+            let mut entries = Vec::new();
+            for item in &n.items {
+                entries.extend(
+                    item.terms
+                        .iter()
+                        .map(|term| EncodeTask::DefinitionTerm(term, depth)),
+                );
+                entries.extend(
+                    item.definitions
+                        .iter()
+                        .map(|def| EncodeTask::DefinitionDef(def, depth)),
+                );
+            }
+            for (index, entry) in entries.into_iter().enumerate().rev() {
+                tasks.push(entry);
+                if index != 0 {
+                    tasks.push(EncodeTask::Char(','));
+                }
+            }
+        }
+        BlockNode::Figure(n) => {
+            let mut w = typed(out, "figure");
+            w.field("target", |_| {});
+            tasks.push(EncodeTask::Finish(Box::new(move |out, tasks| {
+                let mut w = Writer { out, first: false };
+                w.field("caption", |out| out.push('['));
+                tasks.push(EncodeTask::Finish(Box::new(move |out, tasks| {
+                    let mut w = Writer { out, first: false };
+                    if let Some(short) = &n.short_caption {
+                        w.field("shortCaption", |out| out.push('['));
+                        finish_attrs_pos(tasks, &n.attrs, &n.pos);
+                        push_array(tasks, short, |node| EncodeTask::Inline(node, depth + 1));
+                    } else {
+                        write_attrs_field(&mut w, &n.attrs);
+                        write_pos_field(&mut w, &n.pos);
+                        w.finish();
+                    }
+                })));
+                push_array(tasks, &n.caption, |node| {
+                    EncodeTask::Inline(node, depth + 1)
+                });
+            })));
+            tasks.push(EncodeTask::FigureTarget(&n.target, depth));
+        }
+        BlockNode::FigureGroup(n) => {
+            let mut w = typed(out, "figure_group");
+            w.field("children", |out| out.push('['));
+            tasks.push(EncodeTask::Finish(Box::new(move |out, tasks| {
+                let mut w = Writer { out, first: false };
+                if let Some(caption) = &n.caption {
+                    w.field("caption", |out| out.push('['));
+                    finish_attrs_pos(tasks, &n.attrs, &n.pos);
+                    push_array(tasks, caption, |node| EncodeTask::Inline(node, depth + 1));
+                } else {
+                    write_attrs_field(&mut w, &n.attrs);
+                    write_pos_field(&mut w, &n.pos);
+                    w.finish();
+                }
+            })));
+            push_array(tasks, &n.children, |node| {
+                EncodeTask::Block(node, depth + 1)
+            });
+        }
+        BlockNode::CitationDefinition(n) => {
+            let mut w = typed(out, "citation_definition");
+            w.field("key", |out| write_string(out, &n.key));
+            w.field("children", |out| out.push('['));
+            finish_attrs_pos(tasks, &n.attrs, &n.pos);
+            push_array(tasks, &n.children, |node| {
+                EncodeTask::Inline(node, depth + 1)
+            });
+        }
+        BlockNode::Extension(n) => {
+            let mut w = typed(out, "block_extension");
+            w.field("name", |out| write_string(out, &n.name));
+            w.field("children", |out| out.push('['));
+            tasks.push(EncodeTask::Finish(Box::new(move |out, tasks| {
+                let mut w = Writer { out, first: false };
+                if let Some(summary) = &n.summary {
+                    w.field("summary", |out| out.push('['));
+                    tasks.push(EncodeTask::Finish(Box::new(move |out, _| {
+                        let mut w = Writer { out, first: false };
+                        if let Some(label) = &n.label {
+                            w.field("label", |out| write_string(out, label));
+                        }
+                        write_attrs_field(&mut w, &n.attrs);
+                        write_pos_field(&mut w, &n.pos);
+                        w.finish();
+                    })));
+                    push_array(tasks, summary, |node| EncodeTask::Inline(node, depth + 1));
+                } else {
+                    if let Some(label) = &n.label {
+                        w.field("label", |out| write_string(out, label));
+                    }
+                    write_attrs_field(&mut w, &n.attrs);
+                    write_pos_field(&mut w, &n.pos);
+                    w.finish();
+                }
+            })));
+            push_array(tasks, &n.children, |node| {
+                EncodeTask::Block(node, depth + 1)
+            });
+        }
+        _ => write_block_leaf(out, node),
+    }
+}
+
+fn encode_table_task<'a>(
+    out: &mut String,
+    tasks: &mut Vec<EncodeTask<'a>>,
+    n: &'a Table,
+    depth: usize,
+) {
+    let mut w = typed(out, "table");
+    w.field("rows", |out| out.push('['));
+    tasks.push(EncodeTask::Finish(Box::new(move |out, tasks| {
+        let mut w = Writer { out, first: false };
+        let derived;
+        let columns = if n.columns.is_empty() {
+            derived = columns_from_table_attrs(n.attrs.as_ref());
+            &derived
+        } else {
+            &n.columns
+        };
+        if !columns.is_empty() {
+            w.field("columns", |out| {
+                write_array(out, columns, write_table_column)
+            });
+        }
+        if let Some(caption) = &n.caption {
+            w.field("caption", |out| out.push('['));
+            tasks.push(EncodeTask::Finish(Box::new(move |out, tasks| {
+                let mut w = Writer { out, first: false };
+                if let Some(short) = &n.short_caption {
+                    w.field("shortCaption", |out| out.push('['));
+                    tasks.push(EncodeTask::Finish(Box::new(move |out, _| {
+                        let mut w = Writer { out, first: false };
+                        if let Some(groups) = &n.row_groups {
+                            w.field("rowGroups", |out| write_row_groups(out, groups));
+                        }
+                        write_attrs_field(&mut w, &n.attrs);
+                        write_pos_field(&mut w, &n.pos);
+                        w.finish();
+                    })));
+                    push_array(tasks, short, |node| EncodeTask::Inline(node, depth + 1));
+                } else {
+                    if let Some(groups) = &n.row_groups {
+                        w.field("rowGroups", |out| write_row_groups(out, groups));
+                    }
+                    write_attrs_field(&mut w, &n.attrs);
+                    write_pos_field(&mut w, &n.pos);
+                    w.finish();
+                }
+            })));
+            push_array(tasks, caption, |node| EncodeTask::Inline(node, depth + 1));
+        } else if let Some(short) = &n.short_caption {
+            w.field("shortCaption", |out| out.push('['));
+            tasks.push(EncodeTask::Finish(Box::new(move |out, _| {
+                let mut w = Writer { out, first: false };
+                if let Some(groups) = &n.row_groups {
+                    w.field("rowGroups", |out| write_row_groups(out, groups));
+                }
+                write_attrs_field(&mut w, &n.attrs);
+                write_pos_field(&mut w, &n.pos);
+                w.finish();
+            })));
+            push_array(tasks, short, |node| EncodeTask::Inline(node, depth + 1));
+        } else {
+            if let Some(groups) = &n.row_groups {
+                w.field("rowGroups", |out| write_row_groups(out, groups));
+            }
+            write_attrs_field(&mut w, &n.attrs);
+            write_pos_field(&mut w, &n.pos);
+            w.finish();
+        }
+    })));
+    push_array(tasks, &n.rows, |row| EncodeTask::TableRow(row, depth));
+}
+
+fn encode_inline_task<'a>(
+    out: &mut String,
+    tasks: &mut Vec<EncodeTask<'a>>,
+    node: &'a InlineNode,
+    depth: usize,
+) {
+    match node {
+        InlineNode::Emphasis(n) => {
+            let mut w = typed(out, emphasis_type(n.kind));
+            if n.kind == EmphasisKind::BoldItalic {
+                w.field("children", |out| {
+                    out.push('[');
+                    let mut inner = typed(out, "emphasis");
+                    inner.field("children", |out| out.push('['));
+                });
+                let inner_pos = n.pos.as_ref().filter(|_| n.attrs.is_none()).map(|p| Pos {
+                    start_line: p.start_line,
+                    end_line: p.end_line,
+                    start_column: p.start_column + 2,
+                    end_column: p.end_column.saturating_sub(2),
+                    start_offset: p.start_offset + 2,
+                    end_offset: p.end_offset.saturating_sub(2),
+                });
+                tasks.push(EncodeTask::Finish(Box::new(move |out, _| {
+                    let mut inner = Writer { out, first: false };
+                    write_pos_field(&mut inner, &inner_pos);
+                    inner.finish();
+                    out.push(']');
+                    let mut w = Writer { out, first: false };
+                    w.field("boldItalic", |out| write_bool(out, true));
+                    write_attrs_field(&mut w, &n.attrs);
+                    write_pos_field(&mut w, &n.pos);
+                    w.finish();
+                })));
+            } else {
+                w.field("children", |out| out.push('['));
+                finish_attrs_pos(tasks, &n.attrs, &n.pos);
+            }
+            push_array(tasks, &n.children, |node| {
+                EncodeTask::Inline(node, depth + 1)
+            });
+        }
+        InlineNode::Link(n) => {
+            let mut w = typed(out, "link");
+            w.field("href", |out| write_string(out, &n.href));
+            w.field("children", |out| out.push('['));
+            tasks.push(EncodeTask::Finish(Box::new(move |out, _| {
+                let mut w = Writer { out, first: false };
+                if let Some(title) = &n.title {
+                    w.field("title", |out| write_string(out, title));
+                }
+                if let Some(label) = &n.ref_label {
+                    w.field("ref", |out| write_string(out, label));
+                }
+                if let Some(raw) = &n.raw_ref {
+                    w.field("rawRef", |out| write_string(out, raw));
+                }
+                write_attrs_field(&mut w, &n.attrs);
+                write_pos_field(&mut w, &n.pos);
+                w.finish();
+            })));
+            push_array(tasks, &n.children, |node| {
+                EncodeTask::Inline(node, depth + 1)
+            });
+        }
+        InlineNode::Span(n) => {
+            let mut w = typed(out, "span");
+            w.field("children", |out| out.push('['));
+            finish_attrs_pos(tasks, &n.attrs, &n.pos);
+            push_array(tasks, &n.children, |node| {
+                EncodeTask::Inline(node, depth + 1)
+            });
+        }
+        InlineNode::Extension(n) => {
+            let mut w = typed(out, "inline_extension");
+            w.field("name", |out| write_string(out, &n.name));
+            w.field("content", |out| out.push('['));
+            finish_attrs_pos(tasks, &n.attrs, &n.pos);
+            push_array(tasks, &n.children, |node| {
+                EncodeTask::Inline(node, depth + 1)
+            });
+        }
+        InlineNode::Footnote(n) if n.inline.is_some() => {
+            let inline = n.inline.as_ref().unwrap();
+            let mut w = typed(out, "inline_footnote");
+            w.field("inline", |out| out.push('['));
+            tasks.push(EncodeTask::Finish(Box::new(move |out, _| {
+                let mut w = Writer { out, first: false };
+                if let Some(number) = n.number {
+                    w.field("number", |out| write_usize(out, number));
+                }
+                write_attrs_field(&mut w, &n.attrs);
+                write_pos_field(&mut w, &n.pos);
+                w.finish();
+            })));
+            push_array(tasks, inline, |node| EncodeTask::Inline(node, depth + 1));
+        }
+        InlineNode::CriticInsert(n) => {
+            let mut w = typed(out, "insert");
+            w.field("children", |out| out.push('['));
+            finish_attrs_pos(tasks, &n.attrs, &n.pos);
+            push_array(tasks, &n.children, |node| {
+                EncodeTask::Inline(node, depth + 1)
+            });
+        }
+        InlineNode::CriticDelete(n) => {
+            let mut w = typed(out, "delete");
+            w.field("children", |out| out.push('['));
+            finish_attrs_pos(tasks, &n.attrs, &n.pos);
+            push_array(tasks, &n.children, |node| {
+                EncodeTask::Inline(node, depth + 1)
+            });
+        }
+        InlineNode::CitationGroup(n) => {
+            let mut w = typed(out, "citation_group");
+            w.field("items", |out| out.push('['));
+            tasks.push(EncodeTask::Finish(Box::new(move |out, _| {
+                let mut w = Writer { out, first: false };
+                w.field("raw", |out| write_string(out, &n.raw));
+                if n.integral {
+                    w.field("mode", |out| write_string(out, "integral"));
+                }
+                write_pos_field(&mut w, &n.pos);
+                w.finish();
+            })));
+            push_array(tasks, &n.items, |citation| {
+                EncodeTask::Citation(citation, depth)
+            });
+        }
+        _ => write_inline_leaf(out, node),
+    }
+}
+
+fn encode_citation_task<'a>(
+    out: &mut String,
+    tasks: &mut Vec<EncodeTask<'a>>,
+    n: &'a Citation,
+    depth: usize,
+) {
+    let mut w = Writer::new(out);
+    w.field("key", |out| write_string(out, &n.key));
+    encode_citation_inline_fields(out, tasks, n, depth, 0);
+}
+
+fn encode_citation_inline_fields<'a>(
+    out: &mut String,
+    tasks: &mut Vec<EncodeTask<'a>>,
+    n: &'a Citation,
+    depth: usize,
+    stage: usize,
+) {
+    let (name, values) = match stage {
+        0 => ("prefix", n.prefix.as_deref()),
+        1 => ("locator", n.locator.as_deref()),
+        2 => {
+            let mut w = Writer { out, first: false };
+            if let Some(label) = &n.locator_label {
+                w.field("locatorLabel", |out| write_string(out, label));
+            }
+            if let Some(value) = &n.locator_value {
+                w.field("locatorValue", |out| write_string(out, value));
+            }
+            return encode_citation_inline_fields(out, tasks, n, depth, 3);
+        }
+        3 => ("suffix", n.suffix.as_deref()),
+        _ => {
+            let mut w = Writer { out, first: false };
+            w.field("suppressAuthor", |out| write_bool(out, n.suppress_author));
+            if let Some(number) = n.number {
+                w.field("number", |out| write_usize(out, number));
+            }
+            if let Some(index) = n.use_index {
+                w.field("useIndex", |out| write_usize(out, index));
+            }
+            w.finish();
+            return;
+        }
     };
+    if let Some(values) = values {
+        let mut w = Writer { out, first: false };
+        w.field(name, |out| out.push('['));
+        tasks.push(EncodeTask::Finish(Box::new(move |out, tasks| {
+            encode_citation_inline_fields(out, tasks, n, depth, stage + 1);
+        })));
+        push_array(tasks, values, |node| EncodeTask::Inline(node, depth + 1));
+    } else {
+        encode_citation_inline_fields(out, tasks, n, depth, stage + 1);
+    }
+}
+
+fn write_block_leaf(out: &mut String, node: &BlockNode) {
     match node {
         BlockNode::Heading(n) => {
             let mut w = typed(out, "heading");
@@ -1145,9 +1803,10 @@ fn write_figure_target(out: &mut String, target: &FigureTarget) {
 }
 
 fn write_inline(out: &mut String, node: &InlineNode) {
-    let Some(_depth) = EncodeDepthGuard::enter() else {
-        return;
-    };
+    run_encode_tasks(out, EncodeTask::Inline(node, 0));
+}
+
+fn write_inline_leaf(out: &mut String, node: &InlineNode) {
     match node {
         InlineNode::Text(n) => {
             let mut w = typed(out, "text");
