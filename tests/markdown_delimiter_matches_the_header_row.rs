@@ -35,7 +35,8 @@ fn the_delimiter_does_not_widen_to_reach_a_wider_body_row() {
 
 #[test]
 fn the_span_free_shape_is_reached_too() {
-    let out = lines("|=a|\n| x | y |\n");
+    // Written with the space that ends the marker run (§20 T11).
+    let out = lines("|= a |\n| x | y |\n");
     assert_eq!(out[0], "| a |");
     assert_eq!(out[1], "| --- |");
     assert_eq!(out[2], "| x | y |");
@@ -61,7 +62,7 @@ fn the_header_alignment_survives_the_narrowing() {
 fn the_delimiter_always_matches_the_header_it_promotes() {
     for src in [
         "| h |\n|---|\n| |x |\n",
-        "|=a|\n| x | y |\n",
+        "|= a |\n| x | y |\n",
         "| |x |\n|---|\n| y |\n",
         "|= A |= B |\n| 1 | 2 |\n",
         "|=> h |\n| x | y | z |\n",

@@ -15,6 +15,22 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   not rendered - but the emitted HTML is consistent and diffs read cleanly. All
   three table paths move: the block renderer, the layout fast path and the
   list-table extension.
+- **A table cell's marker run ends at a space** (markup-carve/carve#1259, PART 9
+  §5 T11). The kind marker `=`, the alignment run and the attribute block are
+  one run, and a cell carrying any of them must follow it with a space; without
+  one there is no run and every character of it is content. `|=hot= |` is the
+  highlight its author wrote rather than a header cell holding `hot=`, `|=a |`
+  is a data cell, and `|{#x}=R|` is literal text. The run is atomic, so a
+  rejected alignment run takes the `=` with it. A cell with no run is unchanged,
+  and the canonical writer already pads every cell, so a formatted document
+  needs no migration.
+- **A column's alignment defaults come from the header section**, not from row
+  0 (markup-carve/carve#1259, PART 9 §5 T9). A `|=` cell below the header run is
+  a row header - it heads its row, not its column - so it declares no column
+  default. The two readings agreed until the clause above let a rejected marker
+  run demote a row that used to be all-header, at which point a body cell
+  inherited alignment from a row header, where carve-js and the spec's oracle
+  inherit nothing.
 
 ### Added
 
