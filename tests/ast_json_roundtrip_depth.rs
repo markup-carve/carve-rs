@@ -38,6 +38,53 @@ fn on_big_stack<F: FnOnce() + Send + 'static>(f: F) {
         .expect("worker must return, not abort");
 }
 
+fn nested_divs(depth: usize) -> Vec<carve::BlockNode> {
+    let mut children = Vec::new();
+    for _ in 0..depth {
+        children = vec![carve::BlockNode::Div(carve::Div {
+            attrs: None,
+            label: None,
+            children,
+            pos: None,
+        })];
+    }
+    children
+}
+
+#[test]
+fn encoder_walks_the_parser_depth_limit_on_a_small_stack() {
+    let worker = std::thread::Builder::new()
+        .stack_size(256 * 1024)
+        .spawn(|| {
+            let mut doc = carve::parse("");
+            doc.children = nested_divs(200);
+            assert!(carve::try_to_json(&doc).is_ok());
+            std::mem::forget(doc);
+        })
+        .expect("spawn worker");
+    worker.join().expect("encoding must not consume host stack");
+}
+
+#[test]
+fn a_deep_api_tree_round_trips_to_the_same_tree() {
+    on_big_stack(|| {
+        let mut doc = carve::parse("");
+        doc.children = nested_divs(200);
+        let json = carve::try_to_json(&doc).expect("depth-limit tree encodes");
+        let decoded = carve::from_json(&json).expect("the encoder's tree is readable");
+        assert_eq!(decoded.children, doc.children);
+    });
+}
+
+#[test]
+fn one_level_past_the_encoder_budget_is_refused() {
+    // MAX_JSON_DEPTH is 200 * 6 + 16, and AST nodes use half that structural
+    // budget. A 608-node spine is accepted; this is exactly one node beyond it.
+    let mut doc = carve::parse("");
+    doc.children = nested_divs(609);
+    assert!(carve::try_to_json(&doc).is_err());
+}
+
 #[test]
 fn from_json_accepts_what_to_json_produced_at_the_parsers_own_depth_limit() {
     on_big_stack(|| {
