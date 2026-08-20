@@ -1792,6 +1792,7 @@ fn decode_block(value: &Json) -> Result<BlockNode, AstJsonError> {
             target: Box::new(decode_figure_target(required_value(
                 obj, "figure", "target",
             )?)?),
+            rendered_target: None,
             caption: decode_inlines(required_array(obj, "figure", "caption")?)?,
             short_caption: optional_inlines(obj, "shortCaption")?,
             pos: optional_pos(obj, "figure")?,
