@@ -70,9 +70,11 @@ fn no_trailing_literal_hyphen_at_the_regression_counts() {
 
 #[test]
 fn arrow_operator_still_wins_at_its_own_position() {
-    // A single hyphen + `>` is the `->` arrow; a 2+ run is a dash. The operator
-    // table is checked first per position, then the run - matching carve-js.
-    assert_eq!(carve::to_html("x --> y\n"), format!("<p>x {EN}&gt; y</p>"));
+    // `-->` is the CANONICAL rightwards arrow since markup-carve/carve#1442, so
+    // the doubled run is an arrow rather than an en dash plus `>`. Three or more
+    // hyphens are still a run: `--->` is not `-->`, so the allocation takes all
+    // three and the `>` is literal.
+    assert_eq!(carve::to_html("x --> y\n"), "<p>x → y</p>");
     assert_eq!(carve::to_html("x ---> y\n"), format!("<p>x {EM}&gt; y</p>"));
     // A long run swallows the trailing hyphen atomically, so `->` never forms:
     // `------->` is a run of 7 (em en en) followed by a literal `>`.
@@ -80,13 +82,14 @@ fn arrow_operator_still_wins_at_its_own_position() {
         carve::to_html("x -------> y\n"),
         format!("<p>x {EM}{EN}{EN}&gt; y</p>")
     );
-    // `<-->` splits into two arrows (`<-` then `->`), never a dash run.
-    assert_eq!(carve::to_html("x <--> y\n"), "<p>x ←→ y</p>");
-    // `<--->`: `<-` arrow, then a 2-hyphen dash run, then a literal `>`.
-    assert_eq!(
-        carve::to_html("x <---> y\n"),
-        format!("<p>x ←{EN}&gt; y</p>")
-    );
+    // `<-->` is now ONE token, the canonical bidirectional arrow
+    // (markup-carve/carve#1442), rather than `<-` followed by `->`.
+    assert_eq!(carve::to_html("x <--> y\n"), "<p>x ↔ y</p>");
+    // `<--->` is not `<-->`, so tokenizing runs left to right from where the
+    // longest match at each position leaves off: `<-` (deprecated but still an
+    // arrow), then `-->` (canonical). Never a dash run - the run pass defers to
+    // an arrow that starts at its position.
+    assert_eq!(carve::to_html("x <---> y\n"), "<p>x ←→ y</p>");
 }
 
 #[test]

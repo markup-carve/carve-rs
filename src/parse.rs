@@ -276,6 +276,15 @@ pub fn parse_with_options(source: &str, options: &Options<'_>) -> Document {
     parse_with_options_mode(source, options, ParseMode::Html)
 }
 
+pub(crate) fn parse_with_render_index(
+    source: &str,
+    options: &Options<'_>,
+) -> (Document, CrossrefIndex) {
+    // The source-to-HTML facade renders immediately, so preserve the index that
+    // parsing already built instead of walking the completed tree a second time.
+    parse_with_options_mode_and_index(source, options, ParseMode::Html)
+}
+
 /// The fmt parse WITHOUT positions, for comparing two renders' shapes.
 ///
 /// `escaping_is_redundant` asks whether the minimal and conservative forms parse
@@ -369,6 +378,14 @@ pub(crate) fn normalize_source(source: &str) -> std::borrow::Cow<'_, str> {
 }
 
 fn parse_with_options_mode(source: &str, options: &Options<'_>, mode: ParseMode) -> Document {
+    parse_with_options_mode_and_index(source, options, mode).0
+}
+
+fn parse_with_options_mode_and_index(
+    source: &str,
+    options: &Options<'_>,
+    mode: ParseMode,
+) -> (Document, CrossrefIndex) {
     // Kept for the offset table below: normalization rewrites the text the
     // parser sees, and PART 12 §4 positions index the ORIGINAL file.
     let original = source;
@@ -545,8 +562,8 @@ fn parse_with_options_mode(source: &str, options: &Options<'_>, mode: ParseMode)
     coalesce_text_runs(&mut doc);
     // After every extension has had its say, so a heading an extension added is
     // a crossref target like any other.
-    fill_crossref_hrefs(&mut doc, options.lowercase_heading_ids);
-    doc
+    let crossref_index = fill_crossref_hrefs(&mut doc, options.lowercase_heading_ids);
+    (doc, crossref_index)
 }
 
 /// Publish each crossref's resolution BESIDE its authored target
@@ -562,7 +579,7 @@ fn parse_with_options_mode(source: &str, options: &Options<'_>, mode: ParseMode)
 /// The renderers keep using their index rather than this field. Both come from
 /// the same builder, so they cannot disagree, and the render path stays able to
 /// resolve a tree that arrived without hrefs at all.
-fn fill_crossref_hrefs(doc: &mut Document, lowercase_ids: bool) {
+fn fill_crossref_hrefs(doc: &mut Document, lowercase_ids: bool) -> CrossrefIndex {
     let index = crossref_index_for_document(doc, lowercase_ids);
 
     fn inlines(nodes: &mut [InlineNode], index: &CrossrefIndex) {
@@ -638,6 +655,7 @@ fn fill_crossref_hrefs(doc: &mut Document, lowercase_ids: bool) {
             blocks(body, &index);
         }
     }
+    index
 }
 
 fn remap_source(source: String, original: &MappedSource) -> MappedSource {
@@ -15872,7 +15890,15 @@ fn parse_smart_punctuation_at(
     } else {
         buf.chars().last().unwrap_or_default()
     };
-    if text.as_bytes().get(i) == Some(&b'-') && text.as_bytes().get(i + 1) == Some(&b'-') {
+    // The hyphen-run pass must not claim `-->` or `<-->`: the FIXED TOKENS below
+    // spell the canonical rightwards and bidirectional arrows with a doubled run
+    // (markup-carve/carve#1442), and a run decomposed into dashes here can never
+    // reach them. `--` with no `>` still falls through to the dash allocation.
+    let arrow_run = text[i..].starts_with("-->") || text[i..].starts_with("<-->");
+    if !arrow_run
+        && text.as_bytes().get(i) == Some(&b'-')
+        && text.as_bytes().get(i + 1) == Some(&b'-')
+    {
         let n = text.as_bytes()[i..]
             .iter()
             .take_while(|&&b| b == b'-')
@@ -15897,13 +15923,29 @@ fn parse_smart_punctuation_at(
         return Some((nodes, n));
     }
 
+    // ORDERED LONGEST-FIRST, and the order is the rule (markup-carve/carve#1442):
+    // `<-->` beats `<->` and `<--`, `-->` beats the hyphen-run pass above, `<==`
+    // beats `<=`, `(tm)` beats `(c)`.
+    //
+    // The doubled run is the canonical arrow in both families. `<-` `->` `<->`
+    // still match and are DEPRECATED rather than removed, so a document written
+    // before the rule goes on working. `=>` is GONE: it is ubiquitous in prose
+    // about code (`key => value`, `x => x + 1`, `Some(x) => x`) and every one of
+    // those silently became an arrow in the rendered output only. `<=` keeps ≤
+    // for the mirror-image reason, which is what forces the left double arrow to
+    // grow a character in the first place.
     for (source, kind) in [
+        ("<-->", "left_right_arrow"),
         ("<->", "left_right_arrow"),
+        ("-->", "rightwards_arrow"),
+        ("<--", "leftwards_arrow"),
+        ("<=>", "left_right_double_arrow"),
+        ("==>", "rightwards_double_arrow"),
+        ("<==", "leftwards_double_arrow"),
         ("(tm)", "trademark"),
         ("...", "ellipsis"),
         ("->", "rightwards_arrow"),
         ("<-", "leftwards_arrow"),
-        ("=>", "rightwards_double_arrow"),
         ("<=", "less_than_or_equal"),
         (">=", "greater_than_or_equal"),
         ("!=", "not_equal"),
@@ -19437,12 +19479,16 @@ fn de_typography(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     for ch in text.chars() {
         match ch {
-            '↔' => out.push_str("<->"),
+            '↔' => out.push_str("<-->"),
             '™' => out.push_str("(tm)"),
             '…' => out.push_str("..."),
-            '→' => out.push_str("->"),
-            '←' => out.push_str("<-"),
-            '⇒' => out.push_str("=>"),
+            '→' => out.push_str("-->"),
+            '←' => out.push_str("<--"),
+            // The CANONICAL spellings: `=>` no longer parses as an arrow, so
+            // recovering it would produce ASCII that does not round-trip.
+            '⇒' => out.push_str("==>"),
+            '⇐' => out.push_str("<=="),
+            '⇔' => out.push_str("<=>"),
             '≤' => out.push_str("<="),
             '≥' => out.push_str(">="),
             '≠' => out.push_str("!="),

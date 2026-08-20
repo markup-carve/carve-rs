@@ -1,9 +1,18 @@
-//! The two gaps from the implementation audit (carve#130): a `=>` arrow no
-//! longer opens a `=` highlight span, and `::: |` line blocks are implemented.
+//! The two gaps from the implementation audit (carve#130): a `=>` run no longer
+//! opens a `=` highlight span, and `::: |` line blocks are implemented.
 
 #[test]
 fn arrow_does_not_open_a_highlight() {
-    assert_eq!(carve::to_html("a => b; x != y\n"), "<p>a ⇒ b; x ≠ y</p>");
+    // `=>` stopped being an arrow in markup-carve/carve#1442, which makes this
+    // case MORE load-bearing rather than less: the `=` is now exposed to the
+    // emphasis machinery, and without the guard it opens a highlight here and
+    // closes on the `=` of `!=` - carve-js rendered `<mark>&gt; b; x !</mark>`
+    // before the same guard was added there.
+    assert_eq!(
+        carve::to_html("a => b; x != y\n"),
+        "<p>a =&gt; b; x ≠ y</p>"
+    );
+    assert_eq!(carve::to_html("a ==> b; x != y\n"), "<p>a ⇒ b; x ≠ y</p>");
     // a real highlight still works
     assert_eq!(carve::to_html("a =hi= b\n"), "<p>a <mark>hi</mark> b</p>");
 }
