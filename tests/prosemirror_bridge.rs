@@ -630,8 +630,19 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // their head and foot row counts: ProseMirror's table node has no row-group
     // concept, and this bridge now DECLARES that loss rather than returning a
     // differently-shaped table while claiming nothing was dropped.
-    const STRICT: usize = 1030;
-    const LOSSY: usize = 295;
+    // markup-carve/carve#1436 moves ONE document from strict to reported, and
+    // the cause is the ruling rather than the bridge. A continuation marker
+    // that attaches nothing renders nothing - it is consumed exactly as a
+    // comment line is - so `384-...-6` cannot be written back byte for byte:
+    //
+    //     - a / `  - b` / `  +` / `  c`   ->   - a / `  - b` / `    c`
+    //
+    // The marker is gone and `c` is written at the content column it folded
+    // into. PART 11 §1 still holds - re-reading that output gives the same
+    // tree - so the loss is SOURCE, which is the category this count tracks and
+    // the one the bridge already declares for comments.
+    const STRICT: usize = 1029;
+    const LOSSY: usize = 296;
     assert!(
         covered >= STRICT,
         "strict round trips fell from {STRICT} to {covered}"

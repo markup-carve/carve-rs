@@ -9706,7 +9706,15 @@ fn collect_indented_block_mapped_with(
         //     is no container at all.
         if lead_is_continuation && lines.is_empty() {
             if indent == 0 {
+                // THE MAPS MOVE WITH THE LINE. This collector keeps `line_map`
+                // and `col_map` parallel to `lines`, and a push that skips them
+                // desynchronises all three - which does not fail here but panics
+                // later, where a slice of the map is taken by the line range.
                 lines.push(slice_columns(line, 0, true).to_string());
+                if cur.line_map.is_some() {
+                    line_map.push(cur.source_line(cur.pos));
+                }
+                col_map.push(cur.source_col(cur.pos));
                 cur.consume();
                 continue;
             }
