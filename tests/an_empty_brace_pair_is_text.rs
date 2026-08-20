@@ -105,7 +105,26 @@ fn the_braced_pair_is_not_read_inside_a_code_span() {
 }
 
 #[test]
+fn the_braced_pair_is_the_same_node_the_bare_run_produces() {
+    // Not a glyph in a text run: `fmt` preserves `--` and `...` because they
+    // are `smart_punctuation` carrying the authored spelling, and the braced
+    // form is a second spelling of the same kind rather than a second
+    // construct. Written as text it formatted to a literal en dash and the
+    // author's `{--}` was gone.
+    let doc = carve::parse_with_options("a {--} b\n", &carve::Options::new().with_positions(true));
+    let json = carve::ast_json::to_json(&doc);
+    let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+    let node = &value["children"][0]["children"][1];
+    assert_eq!(node["type"], "smart_punctuation");
+    assert_eq!(node["kind"], "en_dash");
+    assert_eq!(node["value"], "{--}");
+    assert_eq!(node["pos"]["startOffset"], 2);
+    assert_eq!(node["pos"]["endOffset"], 6);
+}
+
+#[test]
 fn the_writer_round_trips() {
+    assert_eq!(carve::to_carve("a {--} b\n"), "a {--} b\n");
     for source in ["a {--} b\n", "{--}start\n", "{---} and {-x-}\n"] {
         assert_eq!(html(&carve::to_carve(source)), html(source));
     }
