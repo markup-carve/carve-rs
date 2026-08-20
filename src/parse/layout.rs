@@ -1,4 +1,5 @@
 use super::*;
+use std::ops::Range;
 
 /// A block family accepted by the borrowed layout scanner.
 ///
@@ -16,6 +17,19 @@ enum LayoutEvent {
     LinkDefinition,
 }
 
+/// One accepted block-layout decision.
+///
+/// `consumed` and `active_definition` are intentionally independent. A link
+/// definition consumes a source line and changes later inline resolution,
+/// while an ordinary block only consumes source. Keeping those facts separate
+/// prevents a future widening from treating "seen" as "active".
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct BlockLayout {
+    event: LayoutEvent,
+    consumed: Range<usize>,
+    active_definition: bool,
+}
+
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 struct AcceptanceCounters {
     headings: usize,
@@ -25,11 +39,20 @@ struct AcceptanceCounters {
     list_items: usize,
     table_rows: usize,
     link_definitions: usize,
+    consumed_lines: usize,
+    active_definitions: usize,
 }
 
 impl AcceptanceCounters {
-    fn record(&mut self, event: LayoutEvent) {
-        let counter = match event {
+    fn record(&mut self, layout: BlockLayout) {
+        debug_assert!(layout.consumed.start <= layout.consumed.end);
+        debug_assert_eq!(
+            layout.active_definition,
+            layout.event == LayoutEvent::LinkDefinition
+        );
+        self.consumed_lines += layout.consumed.end - layout.consumed.start;
+        self.active_definitions += usize::from(layout.active_definition);
+        let counter = match layout.event {
             LayoutEvent::Heading => &mut self.headings,
             LayoutEvent::Paragraph => &mut self.paragraphs,
             LayoutEvent::BlockQuote => &mut self.block_quotes,
@@ -78,21 +101,25 @@ fn try_layout(source: &str, options: &Options<'_>) -> Option<LayoutOutput> {
     {
         return None;
     }
-    let defs = layout_link_defs(&lines)?;
-    let definition_count = defs.len();
+    let (defs, definition_lines) = layout_link_defs(&lines)?;
     let (rendered, _, _) =
         with_active_link_defs(defs, || render_layout_body(&lines, source.len(), options));
     let mut output = rendered?;
-    for _ in 0..definition_count {
-        output.accepted.record(LayoutEvent::LinkDefinition);
+    for line in definition_lines {
+        output.accepted.record(BlockLayout {
+            event: LayoutEvent::LinkDefinition,
+            consumed: line..line + 1,
+            active_definition: true,
+        });
     }
     Some(output)
 }
 
-fn layout_link_defs(lines: &[&str]) -> Option<BTreeMap<String, LinkDef>> {
+fn layout_link_defs(lines: &[&str]) -> Option<(BTreeMap<String, LinkDef>, Vec<usize>)> {
     let mut defs = BTreeMap::new();
+    let mut definition_lines = Vec::new();
     let Some(last_candidate) = lines.iter().rposition(|line| line.contains("]:")) else {
-        return Some(defs);
+        return Some((defs, definition_lines));
     };
     let mut fence: Option<FenceOpen> = None;
     for (index, line) in lines[..=last_candidate].iter().copied().enumerate() {
@@ -126,8 +153,9 @@ fn layout_link_defs(lines: &[&str]) -> Option<BTreeMap<String, LinkDef>> {
             return None;
         }
         defs.insert(label.to_string(), def);
+        definition_lines.push(index);
     }
-    Some(defs)
+    Some((defs, definition_lines))
 }
 
 fn render_layout_body(
@@ -198,7 +226,11 @@ fn render_layout_body(
             render_layout_inline(&mut out, title, options)?;
             write!(&mut out, "</h{level}>").ok()?;
             sections.push(section_level);
-            accepted.record(LayoutEvent::Heading);
+            accepted.record(BlockLayout {
+                event: LayoutEvent::Heading,
+                consumed: i..i + 1,
+                active_definition: false,
+            });
             wrote = true;
             i += 1;
             continue;
@@ -234,7 +266,11 @@ fn render_layout_body(
                 out.push('\n');
             }
             out.push_str("</code></pre>");
-            accepted.record(LayoutEvent::CodeFence);
+            accepted.record(BlockLayout {
+                event: LayoutEvent::CodeFence,
+                consumed: i..close + 1,
+                active_definition: false,
+            });
             i = close + 1;
             wrote = true;
             continue;
@@ -261,7 +297,11 @@ fn render_layout_body(
             out.push_str("<blockquote><p>");
             render_layout_inline(&mut out, text, options)?;
             out.push_str("</p></blockquote>");
-            accepted.record(LayoutEvent::BlockQuote);
+            accepted.record(BlockLayout {
+                event: LayoutEvent::BlockQuote,
+                consumed: i..i + 1,
+                active_definition: false,
+            });
             i += 1;
             wrote = true;
             continue;
@@ -285,7 +325,11 @@ fn render_layout_body(
         out.push_str("<p>");
         render_layout_inline(&mut out, line, options)?;
         out.push_str("</p>");
-        accepted.record(LayoutEvent::Paragraph);
+        accepted.record(BlockLayout {
+            event: LayoutEvent::Paragraph,
+            consumed: i..i + 1,
+            active_definition: false,
+        });
         i += 1;
         wrote = true;
     }
@@ -500,7 +544,11 @@ fn render_layout_list(
         out.push('\n');
         layout_indent(out, depth + 1);
         out.push_str("<li>");
-        accepted.record(LayoutEvent::ListItem);
+        accepted.record(BlockLayout {
+            event: LayoutEvent::ListItem,
+            consumed: i..i + 1,
+            active_definition: false,
+        });
         render_layout_inline(out, text, options)?;
         i += 1;
         if i < lines.len() {
@@ -588,7 +636,11 @@ fn render_layout_table(
     out.push_str("<table>\n");
     layout_indent(out, depth + 1);
     out.push_str("<thead><tr>");
-    accepted.record(LayoutEvent::TableRow);
+    accepted.record(BlockLayout {
+        event: LayoutEvent::TableRow,
+        consumed: start..start + 2,
+        active_definition: false,
+    });
     for (cell, alignment) in headers.iter().zip(&alignments) {
         out.push_str("<th scope=\"col\"");
         if let Some(alignment) = alignment {
@@ -617,8 +669,12 @@ fn render_layout_table(
     out.push('\n');
     layout_indent(out, depth + 1);
     out.push_str("<tbody>");
-    for cells in rows {
-        accepted.record(LayoutEvent::TableRow);
+    for (row_index, cells) in rows.into_iter().enumerate() {
+        accepted.record(BlockLayout {
+            event: LayoutEvent::TableRow,
+            consumed: start + 2 + row_index..start + 3 + row_index,
+            active_definition: false,
+        });
         out.push('\n');
         layout_indent(out, depth + 2);
         out.push_str("<tr>");
@@ -709,6 +765,8 @@ mod layout_html_tests {
                 list_items: 2,
                 table_rows: 3,
                 link_definitions: 1,
+                consumed_lines: 13,
+                active_definitions: 1,
             }
         );
         assert_eq!(output.html, authoritative(source));
