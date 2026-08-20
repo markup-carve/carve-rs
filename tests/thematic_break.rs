@@ -77,7 +77,10 @@ fn indented_runs_are_not_breaks() {
 
 #[test]
 fn trailing_content_is_not_a_break() {
-    assert_eq!(carve::to_html("---x"), "<p>—x</p>");
+    // Still a paragraph rather than a break, which is what this pins. The run
+    // itself is now literal too: nothing before it, a non-whitespace character
+    // after it, so it is flag-shaped (markup-carve/carve#1443).
+    assert_eq!(carve::to_html("---x"), "<p>---x</p>");
     assert_eq!(carve::to_html("*** *"), "<p>*** *</p>");
 }
 

@@ -4722,6 +4722,7 @@ fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<Box<BlockN
                 return Some(Box::new(BlockNode::Figure(Figure {
                     attrs: None,
                     target: Box::new(FigureTarget::CodeBlock(cb)),
+                    rendered_target: None,
                     caption,
                     short_caption: None,
                     // From the opening fence through the end of the caption -
@@ -4841,6 +4842,7 @@ fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<Box<BlockN
                 return Some(Box::new(BlockNode::Figure(Figure {
                     attrs: None,
                     target: Box::new(FigureTarget::Image(img)),
+                    rendered_target: None,
                     caption,
                     short_caption: None,
                     // The figure runs from the image to the end of the caption
@@ -4911,6 +4913,7 @@ fn parse_equation_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<B
         return Some(BlockNode::Figure(Figure {
             attrs: None,
             target: Box::new(target),
+            rendered_target: None,
             caption,
             short_caption: None,
             // Through the end of the caption, like the listing above.
@@ -6615,6 +6618,7 @@ fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         BlockNode::Figure(Figure {
             attrs: None,
             target: Box::new(FigureTarget::BlockQuote(quote)),
+            rendered_target: None,
             caption,
             short_caption: None,
             pos: span_of(cur, span_start, cur.pos, options),
@@ -13445,6 +13449,23 @@ fn is_identifier(name: &str) -> bool {
         && chars.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
 }
 
+/// Whether a name can be written as a BOOLEAN attribute -- a bare word with no
+/// value. Narrower than [`is_identifier`] by exactly one character: a leading
+/// `_` is legal in an id, a class and a key, and refused here.
+///
+/// `{_x_}` is BOTH a boolean attribute named `_x_` and a forced underline, and
+/// alone on a line the attribute reading won: the block below came out as
+/// `<p _x_="">`, and with no block below the line rendered NOTHING -- five
+/// characters kept in the source and gone from the output. The bare form gives
+/// the collision up (markup-carve/carve#1450). HTML has no underscore-first
+/// boolean attribute to lose, and every other form ends in something other than
+/// `_}`, so none of them collides.
+fn is_boolean_attr_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    matches!(chars.next(), Some(c) if c.is_ascii_alphabetic())
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+}
+
 fn parse_attrs(src: &str) -> Option<Attrs> {
     parse_attrs_with(src, true)
 }
@@ -13546,7 +13567,7 @@ fn parse_attrs_with(src: &str, space_only: bool) -> Option<Attrs> {
                 }
                 attrs.key_values.insert(key.to_string(), value);
             }
-        } else if is_identifier(&token) {
+        } else if is_boolean_attr_name(&token) {
             if token == "id" {
                 // A bare boolean `id` also feeds the id slot (value ""), last-wins
                 // and single -- `{id id=j}` -> `id="j"`, `{id}` -> `id=""`.
@@ -15306,6 +15327,25 @@ fn parse_inline_context(
             }
         }
 
+        // PART 9 §8 (markup-carve/carve#1443): a hyphen run PRECEDED by
+        // whitespace (or the start of the content) and FOLLOWED by a
+        // non-whitespace character is a long CLI flag, not a dash, and stays
+        // literal. `git log --oneline` rendered an en dash before `oneline` -
+        // silently, and in the rendered output only.
+        //
+        // It joins the text buffer WHOLE, which is two decisions rather than
+        // one: handing back a Text node would split `a --foo` into two text
+        // nodes where the other engines keep one, and consuming the run a byte
+        // at a time would leave `-->` as a stray `-` plus a live `->` symbol.
+        if let Some(run) = flag_shaped_hyphen_run(text, i) {
+            if buf_start.is_none() {
+                buf_start = Some(i);
+            }
+            buf.push_str(&text[i..i + run]);
+            i += run;
+            continue;
+        }
+
         // Smart typography (§8): parsed into AST nodes so renderers can choose
         // glyph output or source-preserving Carve output without rescanning.
         if let Some((nodes, consumed)) = parse_smart_punctuation_at(text, i, &buf, &out) {
@@ -15504,6 +15544,12 @@ fn parse_critic_markup(
                 return None;
             }
             let pair = find_seq(bytes, content_start, b"+}")?;
+            // AN EMPTY BRACE PAIR IS NOT A CONSTRUCT (markup-carve/carve#1447).
+            // `inline_content` is a one-or-more repetition, so an opener that
+            // meets its own closer opened nothing and its characters are text.
+            if pair == content_start {
+                return None;
+            }
             let inner = std::str::from_utf8(&bytes[content_start..pair]).ok()?;
             Some((
                 InlineNode::CriticInsert(CriticInsert {
@@ -15522,10 +15568,37 @@ fn parse_critic_markup(
             ))
         }
         b'-' => {
+            // A BRACED HYPHEN PAIR IS AN EN DASH (markup-carve/carve#1447). The
+            // bare run carries a flanking guard, so `x --verbose y` stays
+            // literal and an author who MEANT a dash there had no way to say so.
+            // This is that way, and it cost nothing: the string it took was the
+            // empty deletion below, which deletes nothing.
+            if bytes.get(start..start + 4) == Some(b"{--}") {
+                // The SAME node the bare run produces, carrying the authored
+                // spelling in `value` - so the AST says "an en dash was written
+                // here" rather than holding a glyph in a text run, and `fmt`
+                // writes `{--}` back instead of the literal character. PART 12's
+                // vocabulary already has the kind; the braced form is a second
+                // spelling of it, not a second construct.
+                return Some((
+                    InlineNode::SmartPunctuation(SmartPunctuation {
+                        kind: "en_dash".to_string(),
+                        value: "{--}".to_string(),
+                        glyph: None,
+                        pos: None,
+                    }),
+                    4,
+                ));
+            }
             if !bounds.has_delim_brace_from(b'-', start) {
                 return None;
             }
             let pair = find_seq(bytes, content_start, b"-}")?;
+            // An empty deletion is not a deletion, same rule as the insertion
+            // above; the one string it spelled is the en dash just handled.
+            if pair == content_start {
+                return None;
+            }
             let inner = std::str::from_utf8(&bytes[content_start..pair]).ok()?;
             Some((
                 InlineNode::CriticDelete(CriticDelete {
@@ -15567,6 +15640,11 @@ fn parse_critic_markup(
                 return None;
             }
             let pair = find_seq(bytes, content_start, b"#}")?;
+            // An empty comment says nothing to anybody, and `comment_content`
+            // requires a character since markup-carve/carve#1447.
+            if pair == content_start {
+                return None;
+            }
             let inner = std::str::from_utf8(&bytes[content_start..pair]).ok()?;
             Some((
                 InlineNode::CriticComment(CriticComment {
@@ -15877,6 +15955,46 @@ fn flush_text(
     *buf_start = None;
     *buf_placeable = true;
     *buf_src_delta = 0;
+}
+
+/// The space class the hyphen-run flanking test reads: PART 7's four whitespace
+/// characters plus the NO-BREAK SPACE, in either of its spellings.
+///
+/// NOT `char::is_whitespace`, which takes a VERTICAL TAB and a FORM FEED. Carve
+/// reads both as CONTENT, so `---<VT>` has to answer the way `---!` answers.
+fn is_flank_space(ch: char) -> bool {
+    matches!(ch, ' ' | '\t' | '\n' | '\r' | '\u{00a0}') || ch == crate::NBSP_PLACEHOLDER
+}
+
+/// The length of the hyphen run at `i` when that run is flag-shaped
+/// (markup-carve/carve#1443), else `None`.
+///
+/// The narrowness is the design: only a run with whitespace BEFORE and a
+/// non-whitespace character AFTER is excluded. `pages 1--10`, `the Mon--Fri
+/// window` and a trailing `text --` are all left-flanked by a word or
+/// right-flanked by a space, and every one of them still converts.
+fn flag_shaped_hyphen_run(text: &str, i: usize) -> Option<usize> {
+    let bytes = text.as_bytes();
+    if bytes.get(i) != Some(&b'-') || bytes.get(i + 1) != Some(&b'-') {
+        return None;
+    }
+    // `-->` is the canonical rightwards arrow (markup-carve/carve#1442) and is
+    // taken before any hyphen run, so the guard must not claim it first - a
+    // spaced `x --> y` is flag-SHAPED and is an arrow all the same. Three
+    // hyphens are not `-->`, so `x ---> y` still reaches the guard.
+    if text[i..].starts_with("-->") {
+        return None;
+    }
+    let n = bytes[i..].iter().take_while(|&&b| b == b'-').count();
+    let after = text[i + n..].chars().next()?;
+    if is_flank_space(after) {
+        return None;
+    }
+    match text[..i].chars().next_back() {
+        None => Some(n),
+        Some(before) if is_flank_space(before) => Some(n),
+        Some(_) => None,
+    }
 }
 
 fn parse_smart_punctuation_at(
@@ -18565,6 +18683,7 @@ fn promote_block_images(blocks: &mut [BlockNode], figures_only: bool) {
                 *block = BlockNode::Figure(Figure {
                     attrs,
                     target: Box::new(FigureTarget::Image(img)),
+                    rendered_target: None,
                     caption: children,
                     short_caption: None,
                     // PART 12 §4 exempts a REASSEMBLED node, and this one is not:

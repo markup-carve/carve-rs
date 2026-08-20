@@ -7,6 +7,13 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **A hyphen run that opens a word after whitespace is a flag, not a dash**
+  (markup-carve/carve#1443, PART 9 §8). `git log --oneline` and
+  `--force-with-lease` keep their hyphens; every other position converts as
+  before, including `pages 1--10` and a trailing `text --`.
+
 ### Changed
 
 - **Core parsing avoids per-line copies in definition prepasses.** The link

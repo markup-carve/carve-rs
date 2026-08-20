@@ -348,18 +348,16 @@ fn markdown_target_keeps_source_fence() {
 }
 
 // ---------------------------------------------------------------------------
-// KNOWN LIMITATION: captioned fences (parity gap with carve-js)
+// Captioned fences (was a parity gap with carve-js)
 // ---------------------------------------------------------------------------
 
-/// A captioned `img` fence parses as `Figure { target: CodeBlock }`. carve-js
-/// renders it as `<figure><img …><figcaption>…`, but carve-rs currently leaves
-/// the source because `FigureTarget` has no raw-HTML variant a `before_render`
-/// transform can inject (same gap as `fenced_render` for mermaid/chart). This
-/// test pins the DESIRED carve-js-parity behavior and is `#[ignore]`d until the
-/// extension model gains figure support - un-ignore it when that lands. See the
-/// KNOWN LIMITATION comment in src/extensions/img_fence.rs.
+/// A captioned `img` fence parses as `Figure { target: CodeBlock }`, which for a
+/// long time left carve-rs rendering the source: a `before_render` transform can
+/// only swap a `CodeBlock` for a `RawBlock`, and `FigureTarget` has no raw-HTML
+/// variant to hold one. `Figure::rendered_target` carries it beside the target
+/// instead (markup-carve/carve-rs#1151), so this now pins parity rather than a
+/// wish.
 #[test]
-#[ignore = "captioned img fences render source, not <figure><img> - parity gap with carve-js, shared with fenced_render; needs FigureTarget raw support"]
 fn captioned_fence_should_render_figure_img() {
     let ext = ImgFence::new();
     let out = html(&format!("{}\n^ A caption", fence("", SB)), &ext);
