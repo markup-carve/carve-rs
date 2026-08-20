@@ -376,7 +376,13 @@ fn tag_after_crossref_opener_with_space_is_a_tag() {
 
 #[test]
 fn smart_typography_tokenizes_overlapping_arrows_and_dashes_left_to_right() {
-    assert_eq!(html("->-->"), "<p>→–&gt;</p>");
+    // `-->` is the canonical rightwards arrow since markup-carve/carve#1442, so
+    // the second token here is an arrow rather than an en dash plus `>`. The
+    // left-to-right property this pins is unchanged: `->` is taken first, and
+    // what remains is tokenized from where it left off.
+    assert_eq!(html("->-->"), "<p>→→</p>");
+    // Still a dash run: `--->` is three hyphens then `>`, which is not `-->`,
+    // so the run allocation takes all three and the `>` is literal.
     assert_eq!(html("--->"), "<p>—&gt;</p>");
 }
 
@@ -756,4 +762,38 @@ fn bold_italic_rejects_empty_and_space_bounded_content() {
     // Genuine bold-italic still produces Strong>Emphasis.
     assert_eq!(html("/*x*/"), "<p><strong><em>x</em></strong></p>");
     assert_eq!(html("x/*y*/z"), "<p>x<strong><em>y</em></strong>z</p>");
+}
+
+// markup-carve/carve#1442: the doubled run is the canonical arrow, in both
+// families. These pin the rule while `smart-typography-arrows-and-symbols` is
+// out of the corpus IMPLEMENTED list - the pinned spec still spells the old
+// set, so the corpus pair cannot check it until the submodule moves.
+#[test]
+fn the_doubled_run_is_the_canonical_arrow_in_both_families() {
+    assert_eq!(html("<-- --> <-->"), "<p>← → ↔</p>");
+    assert_eq!(html("<== ==> <=>"), "<p>⇐ ⇒ ⇔</p>");
+}
+
+#[test]
+fn the_single_hyphen_arrows_are_deprecated_but_still_render() {
+    assert_eq!(html("-> <- <->"), "<p>→ ← ↔</p>");
+}
+
+#[test]
+fn a_fat_arrow_is_code_rather_than_an_arrow() {
+    // Removed rather than deprecated: `key => value`, `x => x + 1` and
+    // `Some(x) => x` are ordinary prose about code, and each silently became ⇒.
+    assert_eq!(html("key => value"), "<p>key =&gt; value</p>");
+    assert_eq!(html("x => x + 1"), "<p>x =&gt; x + 1</p>");
+}
+
+#[test]
+fn a_comparison_keeps_its_glyph_which_is_what_forces_the_doubled_left_arrow() {
+    assert_eq!(html("p <= q, r >= s, x != y"), "<p>p ≤ q, r ≥ s, x ≠ y</p>");
+}
+
+#[test]
+fn a_hyphen_run_with_no_closing_angle_is_still_a_dash() {
+    assert_eq!(html("pages 1--10"), "<p>pages 1–10</p>");
+    assert_eq!(html("a --- b"), "<p>a — b</p>");
 }

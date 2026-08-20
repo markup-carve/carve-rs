@@ -527,6 +527,21 @@ fn expected_corpus_size() -> usize {
     count
 }
 
+/// Pairs this engine renders DIFFERENTLY from the pinned corpus, because it
+/// reached a spec rule the vendored `spec` submodule predates.
+///
+/// Mirrors the same table in carve-js (`test/corpus.test.ts`) and carve-php
+/// (`tests/CarveCorpusTest.php`). Each entry FAILS IN BOTH DIRECTIONS, which is
+/// the whole point: the output must equal what the spec now states, so an engine
+/// regression is caught exactly as the corpus would have caught it, and it must
+/// still DIFFER from the pinned golden, so an entry that went stale when the
+/// submodule bumped fails and has to be deleted in the same commit.
+const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[(
+    "20-smart-typography-arrows-and-symbols",
+    "carve#1442 makes the doubled run canonical and removes `=>` as an arrow",
+    "<p>Flow: a → b ← c ↔ d =&gt; e; x ≠ y, p ≤ q, r ≥ s, ±1.\n© 2024, ®, ™. Dates like 1/2/2024 stay literal.</p>",
+)];
+
 fn check_pair(slug: &str) {
     let slug = &resolve_slug(slug);
     let dir = corpus_dir();
@@ -536,7 +551,34 @@ fn check_pair(slug: &str) {
     let expected =
         fs::read_to_string(&html).unwrap_or_else(|e| panic!("read {}: {e}", html.display()));
     let actual = carve::to_html(&source);
+
+    if let Some((_, reason, ahead)) = AHEAD_OF_PIN.iter().find(|(name, _, _)| name == slug) {
+        pretty_assert_eq(&format!("{slug} ({reason})"), ahead.trim(), actual.trim());
+        assert_ne!(
+            expected.trim(),
+            actual.trim(),
+            "{slug} now matches the pinned corpus: delete its AHEAD_OF_PIN entry",
+        );
+        return;
+    }
+
     pretty_assert_eq(slug, expected.trim(), actual.trim());
+}
+
+#[test]
+fn ahead_of_pin_names_only_cases_the_corpus_has() {
+    // A declaration left behind after an upstream RENAME would match no case,
+    // run no assertion, and read as coverage.
+    let pairs = corpus_pairs();
+    let orphaned: Vec<_> = AHEAD_OF_PIN
+        .iter()
+        .map(|(slug, _, _)| *slug)
+        .filter(|slug| !pairs.iter().any(|p| p == slug))
+        .collect();
+    assert!(
+        orphaned.is_empty(),
+        "AHEAD_OF_PIN names case(s) the corpus does not have: {orphaned:?}",
+    );
 }
 
 fn is_implemented_pair(slug: &str) -> bool {
