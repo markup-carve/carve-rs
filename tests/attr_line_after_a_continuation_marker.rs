@@ -98,13 +98,23 @@ fn the_first_block_form_takes_them() {
 }
 
 #[test]
-fn a_marker_inside_a_nested_list_attaches_at_its_own_column() {
-    // The lines a `+` attaches are taken VERBATIM, so "flush" has to be
-    // measured against the marker's own column rather than against column 0.
-    // A guard hardcoded to column 0 leaves this one broken.
+fn a_marker_inside_a_nested_list_attaches_nothing() {
+    // THIS CASE INVERTED with markup-carve/carve#1436, and the comment it used
+    // to carry - "flush has to be measured against the marker's own column
+    // rather than against column 0" - is the loose reading the clause names and
+    // rejects. §17 L3 says the marker attaches a block beginning at DOCUMENT
+    // COLUMN 0 and nothing else.
+    //
+    // So the `+` at column 2 attaches nothing: no column-0 block follows it.
+    // The attribute line and the quote below are at the OUTER item's content
+    // column, which is where the ordinary column rules put them - after the
+    // nested list, as blocks of the outer item.
+    //
+    // carve-js and carve-php both produce exactly this, independently, since
+    // they took the same ruling.
     assert_eq!(
         carve::to_html("- a\n  - b\n  +\n  {.x}\n  > q\n"),
-        "<ul>\n  <li>a\n    <ul>\n      <li>b\n        <blockquote class=\"x\"><p>q</p></blockquote>\n      </li>\n    </ul>\n  </li>\n</ul>"
+        "<ul>\n  <li>a\n    <ul>\n      <li>b</li>\n    </ul>\n    <blockquote class=\"x\"><p>q</p></blockquote>\n  </li>\n</ul>"
     );
 }
 

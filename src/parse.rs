@@ -7461,6 +7461,11 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     // opener may be the MARKER line, which the collectors never see, or a later
     // CONTINUATION line, after the item's paragraph state has reopened.
     let mut item_open_fence: Option<FenceOpen> = None;
+    // Did the item just built carry a BARE `+` lead - an empty first-block item
+    // waiting for a document-column-0 block (§17 L3, markup-carve/carve#1436)?
+    // Such an item leaves no open paragraph, so a line below its content column
+    // has nothing here to continue and belongs to whatever its own column names.
+    let mut last_item_bare_continuation = false;
     while let Some(line) = cur.peek() {
         if is_blank_line(line) {
             // A blank alone does not loosen the list; it loosens only when the
@@ -7523,6 +7528,13 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                 // stops on the same state and would otherwise return nothing,
                 // leaving the cursor where it is.
                 if item_open_fence.is_some() && indent < content_col {
+                    break;
+                }
+                // See `last_item_bare_continuation`. The marker's own block was
+                // taken at collection time if it was written at column 0; a line
+                // BELOW the item's content column was never the marker's and has
+                // no paragraph of this item to fold into, so the list ends here.
+                if last_item_bare_continuation && indent < content_col {
                     break;
                 }
                 if let Some(last) = items.last_mut() {
@@ -7858,11 +7870,14 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
         let item_source_line = cur.source_line(cur.pos);
         let item_at = cur.pos;
         cur.consume();
+        // Every item answers this for itself; only a bare-`+` lead sets it.
+        last_item_bare_continuation = false;
         let item_attrs = source_line_attrs(marker.attrs.clone(), item_source_line, options);
         // First-block form `- +` (grammar §17): a lone `+` as the marker
         // content means the item's first block is the following flush-left
         // block (no inline paragraph).
         if trim_ascii(marker.content) == "+" {
+            last_item_bare_continuation = true;
             let mut item = ListItem {
                 attrs: item_attrs,
                 checked: marker.checked,
@@ -8008,7 +8023,24 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
             // so do not even enter the collector until the next line reaches
             // the innermost content column. Otherwise `%%` pulled itself and
             // the following lazy line into the nested stream (#1424).
-            if !nested_definition_ended_paragraph
+            // A NESTED LEAD ENDING IN A BARE `+` REACHES FOR COLUMN 0 AND
+            // NOTHING ELSE (§17 L3, markup-carve/carve#1436). `* * +` is the
+            // outer item's content and the continuation marker one level in, so
+            // the block it names is written flush left - a column the ordinary
+            // collector treats as a dedent that ENDS the item, which is why this
+            // engine attached nothing there and left the line a document
+            // paragraph. A line at any OTHER column was never the marker's and
+            // must not be collected as the item's own either.
+            let nested_lead_is_continuation =
+                trim_ascii(innermost_marker_content(marker.content)) == "+";
+            last_item_bare_continuation = nested_lead_is_continuation;
+            if nested_lead_is_continuation {
+                stream.append(collect_indented_block_mapped_after_continuation(
+                    cur,
+                    collection_floor,
+                    content_col,
+                ));
+            } else if !nested_definition_ended_paragraph
                 || cur
                     .peek()
                     .is_some_and(|line| indent_columns(line) >= content_col)
@@ -8078,6 +8110,17 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
                     false
                 };
                 if !has_lazy {
+                    break;
+                }
+                // A BARE `+` LEAD LEAVES NO PARAGRAPH TO CONTINUE (§17 L3,
+                // markup-carve/carve#1436). It is an empty first-block item
+                // until a document-column-0 block is attached to it, and the
+                // collector above has already taken that block if one was
+                // written. Anything reaching here is at some other column, so
+                // there is nothing of this item for it to fold into: `* * +`
+                // over a column-1 line folded it into the OUTER item, which is
+                // below that item's content column and reaches no container.
+                if nested_lead_is_continuation {
                     break;
                 }
                 if !nested_ends_with_open_paragraph(
@@ -9452,7 +9495,7 @@ fn collect_item_continuation_block_mapped(
     content_col: usize,
     open_fence: &mut Option<FenceOpen>,
 ) -> MappedSource {
-    collect_indented_block_mapped_with(cur, parent_indent, content_col, true, open_fence)
+    collect_indented_block_mapped_with(cur, parent_indent, content_col, true, open_fence, false)
 }
 
 /// How far to dedent a collected line, given the container's content column.
@@ -9502,7 +9545,23 @@ fn collect_indented_block_mapped(
     parent_indent: usize,
     strip_cols: usize,
 ) -> MappedSource {
-    collect_indented_block_mapped_with(cur, parent_indent, strip_cols, false, &mut None)
+    collect_indented_block_mapped_with(cur, parent_indent, strip_cols, false, &mut None, false)
+}
+
+/// The same collection for an item whose marker-line content ENDS IN A BARE
+/// `+`, the continuation marker (§17 L3).
+///
+/// The marker names a block at DOCUMENT COLUMN 0 and nothing else
+/// (markup-carve/carve#1436), and this collector is where both halves of that
+/// can be answered: a column-0 line is normally a dedent that ENDS the item, and
+/// here it is the one line the marker reached for; a line at any other column is
+/// normally collected as the item's own, and here it was never the marker's.
+fn collect_indented_block_mapped_after_continuation(
+    cur: &mut LineCursor,
+    parent_indent: usize,
+    strip_cols: usize,
+) -> MappedSource {
+    collect_indented_block_mapped_with(cur, parent_indent, strip_cols, false, &mut None, true)
 }
 
 /// The same collection, told that a fenced code block is ALREADY OPEN because
@@ -9515,7 +9574,7 @@ fn collect_indented_block_mapped_after_fence(
     strip_cols: usize,
     open_fence: &mut Option<FenceOpen>,
 ) -> MappedSource {
-    collect_indented_block_mapped_with(cur, parent_indent, strip_cols, false, open_fence)
+    collect_indented_block_mapped_with(cur, parent_indent, strip_cols, false, open_fence, false)
 }
 
 fn collect_indented_block_mapped_with(
@@ -9524,6 +9583,7 @@ fn collect_indented_block_mapped_with(
     strip_cols: usize,
     stop_at_content_column_marker: bool,
     fence: &mut Option<FenceOpen>,
+    lead_is_continuation: bool,
 ) -> MappedSource {
     if cur.line_map.is_none() {
         return MappedSource {
@@ -9533,6 +9593,7 @@ fn collect_indented_block_mapped_with(
                 strip_cols,
                 stop_at_content_column_marker,
                 fence,
+                lead_is_continuation,
             ),
             line_map: Vec::new(),
             col_map: Vec::new(),
@@ -9621,6 +9682,44 @@ fn collect_indented_block_mapped_with(
             continue;
         }
         let indent = indent_columns(line);
+        // A MARKER THAT CAN NEVER REACH COLUMN 0 ATTACHES NOTHING (§17 L3,
+        // markup-carve/carve#1436). Inside a body this collector is stripping,
+        // document column 0 is unreachable by construction, so a lone `+` at the
+        // content column reaches for a block that cannot be written here. It is
+        // consumed and dropped - "as if the marker line had been a comment" -
+        // rather than handed to the nested parse, where it would end the item
+        // and cost the lazy fold the same document without it still has.
+        if strip_cols > 0 && indent == strip_cols && trim_ascii(line) == "+" {
+            cur.consume();
+            continue;
+        }
+        // §17 L3 (markup-carve/carve#1436). A marker-line lead ending in a bare
+        // `+` reaches for ONE block at column 0 and for nothing else, so while
+        // this item has collected nothing the usual column arithmetic is not the
+        // question being asked:
+        //
+        //   - a COLUMN-0 line is normally a dedent that ends the item. Here it
+        //     is the block the marker named, so it is taken.
+        //   - any OTHER column is normally the item's own content. Here it was
+        //     never the marker's, so it falls through to the rules its own
+        //     column names - which for a column below the item's content column
+        //     is no container at all.
+        if lead_is_continuation && lines.is_empty() {
+            if indent == 0 {
+                // THE MAPS MOVE WITH THE LINE. This collector keeps `line_map`
+                // and `col_map` parallel to `lines`, and a push that skips them
+                // desynchronises all three - which does not fail here but panics
+                // later, where a slice of the map is taken by the line range.
+                lines.push(slice_columns(line, 0, true).to_string());
+                if cur.line_map.is_some() {
+                    line_map.push(cur.source_line(cur.pos));
+                }
+                col_map.push(cur.source_col(cur.pos));
+                cur.consume();
+                continue;
+            }
+            break;
+        }
         if indent <= parent_indent {
             break;
         }
@@ -9874,6 +9973,7 @@ fn collect_indented_block_plain_with(
     strip_cols: usize,
     stop_at_content_column_marker: bool,
     fence: &mut Option<FenceOpen>,
+    lead_is_continuation: bool,
 ) -> String {
     let mut lines = Vec::new();
     let mut block_indent: Option<usize> = None;
@@ -9936,6 +10036,29 @@ fn collect_indented_block_plain_with(
             continue;
         }
         let indent = indent_columns(line);
+        // A MARKER THAT CAN NEVER REACH COLUMN 0 ATTACHES NOTHING (§17 L3,
+        // markup-carve/carve#1436). Inside a body this collector is stripping,
+        // document column 0 is unreachable by construction, so a lone `+` at the
+        // content column reaches for a block that cannot be written here. It is
+        // consumed and dropped - "as if the marker line had been a comment" -
+        // rather than handed to the nested parse, where it would end the item
+        // and cost the lazy fold the same document without it still has.
+        if strip_cols > 0 && indent == strip_cols && trim_ascii(line) == "+" {
+            cur.consume();
+            continue;
+        }
+        // Same §17 L3 rule as the mapped collector above
+        // (markup-carve/carve#1436): while a bare-`+` lead has collected
+        // nothing, a column-0 line is the block the marker named and every
+        // other column was never the marker's.
+        if lead_is_continuation && lines.is_empty() {
+            if indent == 0 {
+                lines.push(slice_columns(line, 0, true).to_string());
+                cur.consume();
+                continue;
+            }
+            break;
+        }
         if indent <= parent_indent {
             break;
         }
