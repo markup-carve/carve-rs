@@ -12,7 +12,8 @@ enum LayoutEvent {
     Paragraph,
     BlockQuote,
     CodeFence,
-    ListItem,
+    UnorderedListItem,
+    OrderedListItem,
     TableRow,
     LinkDefinition,
 }
@@ -36,7 +37,8 @@ struct AcceptanceCounters {
     paragraphs: usize,
     block_quotes: usize,
     code_fences: usize,
-    list_items: usize,
+    unordered_list_items: usize,
+    ordered_list_items: usize,
     table_rows: usize,
     link_definitions: usize,
     consumed_lines: usize,
@@ -57,7 +59,8 @@ impl AcceptanceCounters {
             LayoutEvent::Paragraph => &mut self.paragraphs,
             LayoutEvent::BlockQuote => &mut self.block_quotes,
             LayoutEvent::CodeFence => &mut self.code_fences,
-            LayoutEvent::ListItem => &mut self.list_items,
+            LayoutEvent::UnorderedListItem => &mut self.unordered_list_items,
+            LayoutEvent::OrderedListItem => &mut self.ordered_list_items,
             LayoutEvent::TableRow => &mut self.table_rows,
             LayoutEvent::LinkDefinition => &mut self.link_definitions,
         };
@@ -277,6 +280,11 @@ fn render_layout_body(
         }
         if line.starts_with("- ") {
             i = render_layout_list(lines, i, 0, depth, options, &mut out, &mut accepted)?;
+            wrote = true;
+            continue;
+        }
+        if decimal_list_item(line).is_some() {
+            i = render_layout_ordered_list(lines, i, depth, options, &mut out, &mut accepted)?;
             wrote = true;
             continue;
         }
@@ -574,7 +582,7 @@ fn render_layout_list(
         layout_indent(out, depth + 1);
         out.push_str("<li>");
         accepted.record(BlockLayout {
-            event: LayoutEvent::ListItem,
+            event: LayoutEvent::UnorderedListItem,
             consumed: i..i + 1,
             active_definition: false,
         });
@@ -618,6 +626,72 @@ fn render_layout_list(
     out.push('\n');
     layout_indent(out, depth);
     out.push_str("</ul>");
+    Some(i)
+}
+
+fn decimal_list_item(line: &str) -> Option<(usize, &str)> {
+    let dot = line.find('.')?;
+    let number = line[..dot].parse::<usize>().ok()?;
+    let text = line.get(dot + 1..)?.strip_prefix(' ')?;
+    if number == 0 || text.is_empty() || text.starts_with(' ') {
+        return None;
+    }
+    Some((number, text))
+}
+
+fn render_layout_ordered_list(
+    lines: &[&str],
+    mut i: usize,
+    depth: usize,
+    options: &Options<'_>,
+    out: &mut String,
+    accepted: &mut AcceptanceCounters,
+) -> Option<usize> {
+    let (start, _) = decimal_list_item(lines.get(i)?)?;
+    layout_indent(out, depth);
+    out.push_str("<ol");
+    if start != 1 {
+        use std::fmt::Write as _;
+        write!(out, " start=\"{start}\"").ok()?;
+    }
+    out.push('>');
+
+    let mut expected = start;
+    while i < lines.len() {
+        let Some((number, text)) = decimal_list_item(lines[i]) else {
+            break;
+        };
+        if number != expected
+            || detect_heading(text).is_some()
+            || detect_fence_open(text).is_some()
+            || detect_container_open(text).is_some()
+            || thematic_break_marker(text).is_some()
+            || is_list_marker(text)
+            || text.starts_with(['>', '|', '{'])
+        {
+            return None;
+        }
+        out.push('\n');
+        layout_indent(out, depth + 1);
+        out.push_str("<li>");
+        render_layout_inline(out, text, options)?;
+        out.push_str("</li>");
+        accepted.record(BlockLayout {
+            event: LayoutEvent::OrderedListItem,
+            consumed: i..i + 1,
+            active_definition: false,
+        });
+        expected = expected.checked_add(1)?;
+        i += 1;
+    }
+    if lines.get(i).is_some_and(|line| !is_blank_line(line)) {
+        // Indented, lazy, mixed-dialect, and nested continuations stay on the
+        // authoritative list collector.
+        return None;
+    }
+    out.push('\n');
+    layout_indent(out, depth);
+    out.push_str("</ol>");
     Some(i)
 }
 
@@ -755,6 +829,7 @@ mod layout_html_tests {
             "# Heading\n\nParagraph with *strong*, /emphasis/, and `code`.\n",
             "[site]: https://example.com \"Example\"\n\n# Links\n\nA [direct](https://example.com/x) and [reference][site].\n",
             "# Lists\n\n- first\n- second\n  - nested *strong*\n  - nested two\n",
+            "3. third\n4. fourth\n",
             "# Quote\n\n> One quoted /line/.\n",
             "> A quoted paragraph\n> spanning two lines.\n",
             "# Code\n\n```rs\nfn main() {\n}\n```\n",
@@ -793,7 +868,8 @@ mod layout_html_tests {
                 paragraphs: 1,
                 block_quotes: 1,
                 code_fences: 1,
-                list_items: 2,
+                unordered_list_items: 2,
+                ordered_list_items: 0,
                 table_rows: 3,
                 link_definitions: 1,
                 consumed_lines: 13,
@@ -830,7 +906,7 @@ mod layout_html_tests {
             );
         }
         assert_eq!(
-            accepted, 46,
+            accepted, 49,
             "update the pinned acceptance count only after reviewing the exact-parity widening"
         );
     }
