@@ -13445,6 +13445,23 @@ fn is_identifier(name: &str) -> bool {
         && chars.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
 }
 
+/// Whether a name can be written as a BOOLEAN attribute -- a bare word with no
+/// value. Narrower than [`is_identifier`] by exactly one character: a leading
+/// `_` is legal in an id, a class and a key, and refused here.
+///
+/// `{_x_}` is BOTH a boolean attribute named `_x_` and a forced underline, and
+/// alone on a line the attribute reading won: the block below came out as
+/// `<p _x_="">`, and with no block below the line rendered NOTHING -- five
+/// characters kept in the source and gone from the output. The bare form gives
+/// the collision up (markup-carve/carve#1450). HTML has no underscore-first
+/// boolean attribute to lose, and every other form ends in something other than
+/// `_}`, so none of them collides.
+fn is_boolean_attr_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    matches!(chars.next(), Some(c) if c.is_ascii_alphabetic())
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+}
+
 fn parse_attrs(src: &str) -> Option<Attrs> {
     parse_attrs_with(src, true)
 }
@@ -13546,7 +13563,7 @@ fn parse_attrs_with(src: &str, space_only: bool) -> Option<Attrs> {
                 }
                 attrs.key_values.insert(key.to_string(), value);
             }
-        } else if is_identifier(&token) {
+        } else if is_boolean_attr_name(&token) {
             if token == "id" {
                 // A bare boolean `id` also feeds the id slot (value ""), last-wins
                 // and single -- `{id id=j}` -> `id="j"`, `{id}` -> `id=""`.
@@ -15523,6 +15540,12 @@ fn parse_critic_markup(
                 return None;
             }
             let pair = find_seq(bytes, content_start, b"+}")?;
+            // AN EMPTY BRACE PAIR IS NOT A CONSTRUCT (markup-carve/carve#1447).
+            // `inline_content` is a one-or-more repetition, so an opener that
+            // meets its own closer opened nothing and its characters are text.
+            if pair == content_start {
+                return None;
+            }
             let inner = std::str::from_utf8(&bytes[content_start..pair]).ok()?;
             Some((
                 InlineNode::CriticInsert(CriticInsert {
@@ -15541,10 +15564,29 @@ fn parse_critic_markup(
             ))
         }
         b'-' => {
+            // A BRACED HYPHEN PAIR IS AN EN DASH (markup-carve/carve#1447). The
+            // bare run carries a flanking guard, so `x --verbose y` stays
+            // literal and an author who MEANT a dash there had no way to say so.
+            // This is that way, and it cost nothing: the string it took was the
+            // empty deletion below, which deletes nothing.
+            if bytes.get(start..start + 4) == Some(b"{--}") {
+                return Some((
+                    InlineNode::Text(Text {
+                        value: "\u{2013}".to_string(),
+                        pos: None,
+                    }),
+                    4,
+                ));
+            }
             if !bounds.has_delim_brace_from(b'-', start) {
                 return None;
             }
             let pair = find_seq(bytes, content_start, b"-}")?;
+            // An empty deletion is not a deletion, same rule as the insertion
+            // above; the one string it spelled is the en dash just handled.
+            if pair == content_start {
+                return None;
+            }
             let inner = std::str::from_utf8(&bytes[content_start..pair]).ok()?;
             Some((
                 InlineNode::CriticDelete(CriticDelete {
@@ -15586,6 +15628,11 @@ fn parse_critic_markup(
                 return None;
             }
             let pair = find_seq(bytes, content_start, b"#}")?;
+            // An empty comment says nothing to anybody, and `comment_content`
+            // requires a character since markup-carve/carve#1447.
+            if pair == content_start {
+                return None;
+            }
             let inner = std::str::from_utf8(&bytes[content_start..pair]).ok()?;
             Some((
                 InlineNode::CriticComment(CriticComment {
