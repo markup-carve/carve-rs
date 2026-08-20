@@ -4,7 +4,10 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
+    # Performance work is intentionally split into exact-parity stacks. Run
+    # the same gates while a child targets its `perf/*` parent; waiting for
+    # every parent to merge would leave the widening commits untested.
+    branches: [main, "perf/**"]
 
 env:
   CARGO_TERM_COLOR: always
