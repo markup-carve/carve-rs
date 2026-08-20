@@ -626,12 +626,19 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // boundary documents report already-declared source-layout losses.
     // Both numbers moved with the corpus the spec pin now carries (the bump
     // that brings PART 9 §16's backlink name also brings every ruling landed
-    // since the last one). The new lossy documents are the tables that STATE
-    // their head and foot row counts: ProseMirror's table node has no row-group
-    // concept, and this bridge now DECLARES that loss rather than returning a
-    // differently-shaped table while claiming nothing was dropped.
-    const STRICT: usize = 1030;
-    const LOSSY: usize = 295;
+    // since the last one). The lossy documents added there are the tables that
+    // STATE their head and foot row counts: ProseMirror's table node has no
+    // row-group concept, and this bridge DECLARES that loss rather than
+    // returning a differently-shaped table while claiming nothing was dropped.
+    //
+    // One more moved right after, and it is why these numbers were wrong for a
+    // few hours: carve-rs#1158 made the braced en dash a NODE rather than a
+    // glyph in text, so `387-a-braced-hyphen-pair-is-an-en-dash` now holds a
+    // construct the bridge declares. That landed between the measurement these
+    // constants were taken from and the merge that carried them, so main went
+    // red on a test neither pull request touched.
+    const STRICT: usize = 1029;
+    const LOSSY: usize = 296;
     assert!(
         covered >= STRICT,
         "strict round trips fell from {STRICT} to {covered}"
