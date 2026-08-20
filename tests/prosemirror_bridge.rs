@@ -624,8 +624,14 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // payload preserves its source, and both table alignment cases round-trip
     // without introducing a new loss cause. Category 374's four definition
     // boundary documents report already-declared source-layout losses.
-    const STRICT: usize = 1003;
-    const LOSSY: usize = 280;
+    // Both numbers moved with the corpus the spec pin now carries (the bump
+    // that brings PART 9 §16's backlink name also brings every ruling landed
+    // since the last one). The new lossy documents are the tables that STATE
+    // their head and foot row counts: ProseMirror's table node has no row-group
+    // concept, and this bridge now DECLARES that loss rather than returning a
+    // differently-shaped table while claiming nothing was dropped.
+    const STRICT: usize = 1030;
+    const LOSSY: usize = 295;
     assert!(
         covered >= STRICT,
         "strict round trips fell from {STRICT} to {covered}"

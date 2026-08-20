@@ -139,11 +139,35 @@ pub enum SmartTypographyMode {
     Source,
 }
 
+/// The `labels` key for the endnote backlink's accessible name (PART 9 §16a).
+pub const LABEL_FOOTNOTE_BACKLINK: &str = "footnoteBacklink";
+
+/// The English default for a `labels` key, and the whole set: one string.
+pub fn label_default(key: &str) -> &'static str {
+    match key {
+        LABEL_FOOTNOTE_BACKLINK => "Back to reference",
+        _ => "",
+    }
+}
+
 pub struct Options<'a> {
     pub extensions: Vec<&'a dyn CarveExtension>,
     pub mention_url: Option<String>,
     pub tag_url: Option<String>,
     pub symbols: BTreeMap<String, String>,
+    /// The strings the ENGINE writes rather than the author (PART 9 §16a).
+    ///
+    /// A key left out keeps its English default; [`label_default`] is the whole
+    /// set, one key today. NOT the `symbols` map's twin: a symbol is emitted
+    /// RAW because processor configuration is trusted, a label is TEXT and is
+    /// escaped where it lands, so a host feeding these from a translation
+    /// catalog is not handing the renderer an injection vector.
+    ///
+    /// A caption's label is the author's word (`^ Figure #: …`), and
+    /// extension-written strings stay options on the extension that writes them
+    /// (`HeadingPermalinks`' `aria_label`, ...), so this map stays small on
+    /// purpose.
+    pub labels: BTreeMap<String, String>,
     /// Allow raw HTML passthrough (`` `…`{=html} `` inline and ` ```=html `
     /// block) to emit verbatim. Default `true` (matches the corpus). Set
     /// `false` for UNTRUSTED input: raw-HTML content is then escaped to text
@@ -227,6 +251,7 @@ impl Default for Options<'_> {
             mention_url: None,
             tag_url: None,
             symbols: BTreeMap::new(),
+            labels: BTreeMap::new(),
             allow_raw_html: true,
             smart_typography: SmartTypographyMode::Glyph,
             lowercase_heading_ids: false,
@@ -290,6 +315,25 @@ impl<'a> Options<'a> {
 
     pub fn with_symbol(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
         self.symbols.insert(name.into(), value.into());
+        self
+    }
+
+    /// The engine-written string for `key`, or its English default.
+    pub fn label(&self, key: &str) -> &str {
+        self.labels
+            .get(key)
+            .map(String::as_str)
+            .unwrap_or_else(|| label_default(key))
+    }
+
+    /// Override one of the strings the engine writes itself (PART 9 §16a).
+    ///
+    /// ```
+    /// # use carve::Options;
+    /// let opts = Options::new().with_label("footnoteBacklink", "Zurück zur Fußnote");
+    /// ```
+    pub fn with_label(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
+        self.labels.insert(key.into(), value.into());
         self
     }
 

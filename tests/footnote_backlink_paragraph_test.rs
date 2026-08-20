@@ -24,7 +24,8 @@ fn note_body(source: &str) -> String {
     html[start..end].to_string()
 }
 
-const BACKLINK: &str = "<p><a href=\"#fnref1\" role=\"doc-backlink\">↩</a></p>";
+const BACKLINK: &str =
+    "<p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>";
 
 #[test]
 fn a_body_ending_in_a_fence_gets_its_own_paragraph() {
@@ -82,7 +83,7 @@ fn a_body_ending_in_a_paragraph_still_takes_the_backlink_inside_it() {
     // sits at the end of the body's own last paragraph.
     let body = note_body("[^a]: note\n\n  more\n\nsee[^a]\n");
     assert!(
-        body.contains("more<a href=\"#fnref1\" role=\"doc-backlink\">↩</a></p>"),
+        body.contains("more<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>"),
         "expected the backlink inside the last paragraph, got:\n{body}"
     );
     assert!(
@@ -95,7 +96,7 @@ fn a_body_ending_in_a_paragraph_still_takes_the_backlink_inside_it() {
 fn a_one_line_note_still_takes_the_backlink_inside_its_paragraph() {
     let body = note_body("[^a]: note\n\nsee[^a]\n");
     assert!(
-        body.contains("note<a href=\"#fnref1\" role=\"doc-backlink\">↩</a></p>"),
+        body.contains("note<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>"),
         "expected the backlink inside the note's paragraph, got:\n{body}"
     );
 }

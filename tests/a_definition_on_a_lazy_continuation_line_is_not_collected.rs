@@ -110,7 +110,7 @@ fn control_a_quote_marker_still_collects() {
     // the stripped prefix rather than the RAW line breaks this row.
     assert_eq!(
         html("r\n> [^f]: t\n\n[^f] ref\n"),
-        "<p>r</p>\n<blockquote>\n\n</blockquote>\n<p><a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a> ref</p>\n<section role=\"doc-endnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>t<a href=\"#fnref1\" role=\"doc-backlink\">↩</a></p>\n    </li>\n  </ol>\n</section>"
+        "<p>r</p>\n<blockquote>\n\n</blockquote>\n<p><a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a> ref</p>\n<section role=\"doc-endnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>t<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>"
     );
 }
 
