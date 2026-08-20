@@ -311,26 +311,29 @@ fn render_layout_body(
             wrote = true;
             continue;
         }
-        if thematic_break_marker(line).is_some()
-            || is_list_marker(line)
-            || is_definition_list_start(line)
-            || detect_container_open(line).is_some()
-            || trim_ascii_start(line).starts_with("$$`")
-            || line.starts_with([' ', '#', '*', '+'])
-            || lines.get(i + 1).is_some_and(|next| !is_blank_line(next))
-        {
+        if !is_layout_paragraph_line(line) {
             return None;
         }
         layout_indent(&mut out, depth);
         out.push_str("<p>");
-        render_layout_inline(&mut out, line, options)?;
+        let mut end = i;
+        while end < lines.len() && !is_blank_line(lines[end]) {
+            if !is_layout_paragraph_line(lines[end]) {
+                return None;
+            }
+            if end > i {
+                out.push('\n');
+            }
+            render_layout_inline(&mut out, lines[end], options)?;
+            end += 1;
+        }
         out.push_str("</p>");
         accepted.record(BlockLayout {
             event: LayoutEvent::Paragraph,
-            consumed: i..i + 1,
+            consumed: i..end,
             active_definition: false,
         });
-        i += 1;
+        i = end;
         wrote = true;
     }
     while !sections.is_empty() {
@@ -344,6 +347,18 @@ fn render_layout_body(
         html: out,
         accepted,
     })
+}
+
+fn is_layout_paragraph_line(line: &str) -> bool {
+    thematic_break_marker(line).is_none()
+        && !is_list_marker(line)
+        && !is_definition_list_start(line)
+        && detect_heading(line).is_none()
+        && detect_fence_open(line).is_none()
+        && detect_container_open(line).is_none()
+        && !trim_ascii_start(line).starts_with("$$`")
+        && !line.starts_with([' ', '#', '*', '+', '>', '|', '{'])
+        && parse_link_def_line(line).is_none()
 }
 
 fn layout_indent(out: &mut String, level: usize) {
@@ -722,6 +737,7 @@ mod layout_html_tests {
     fn every_accepted_layout_matches_the_authoritative_pipeline() {
         let cases = [
             "# Heading\n\nPlain text.\n",
+            "A paragraph spanning\nthree plain lines\nwithout an interrupt.\n",
             "# Heading\n\nParagraph with *strong*, /emphasis/, and `code`.\n",
             "[site]: https://example.com \"Example\"\n\n# Links\n\nA [direct](https://example.com/x) and [reference][site].\n",
             "# Lists\n\n- first\n- second\n  - nested *strong*\n  - nested two\n",
@@ -799,7 +815,7 @@ mod layout_html_tests {
             );
         }
         assert_eq!(
-            accepted, 43,
+            accepted, 46,
             "update the pinned acceptance count only after reviewing the exact-parity widening"
         );
     }
@@ -807,7 +823,6 @@ mod layout_html_tests {
     #[test]
     fn stateful_or_ambiguous_shapes_fall_back() {
         for source in [
-            "text\ncontinues\n",
             "# *marked heading*\n",
             "A “smart” quote.\n",
             "[x](java\0script:alert(1))\n",
