@@ -12,6 +12,7 @@ enum LayoutEvent {
     Paragraph,
     BlockQuote,
     CodeFence,
+    ThematicBreak,
     UnorderedListItem,
     OrderedListItem,
     TableRow,
@@ -37,6 +38,7 @@ struct AcceptanceCounters {
     paragraphs: usize,
     block_quotes: usize,
     code_fences: usize,
+    thematic_breaks: usize,
     unordered_list_items: usize,
     ordered_list_items: usize,
     table_rows: usize,
@@ -59,6 +61,7 @@ impl AcceptanceCounters {
             LayoutEvent::Paragraph => &mut self.paragraphs,
             LayoutEvent::BlockQuote => &mut self.block_quotes,
             LayoutEvent::CodeFence => &mut self.code_fences,
+            LayoutEvent::ThematicBreak => &mut self.thematic_breaks,
             LayoutEvent::UnorderedListItem => &mut self.unordered_list_items,
             LayoutEvent::OrderedListItem => &mut self.ordered_list_items,
             LayoutEvent::TableRow => &mut self.table_rows,
@@ -280,6 +283,18 @@ fn render_layout_body(
         }
         if line.starts_with("- ") {
             i = render_layout_list(lines, i, 0, depth, options, &mut out, &mut accepted)?;
+            wrote = true;
+            continue;
+        }
+        if thematic_break_marker(line).is_some() {
+            layout_indent(&mut out, depth);
+            out.push_str("<hr>");
+            accepted.record(BlockLayout {
+                event: LayoutEvent::ThematicBreak,
+                consumed: i..i + 1,
+                active_definition: false,
+            });
+            i += 1;
             wrote = true;
             continue;
         }
@@ -833,6 +848,7 @@ mod layout_html_tests {
             "# Quote\n\n> One quoted /line/.\n",
             "> A quoted paragraph\n> spanning two lines.\n",
             "# Code\n\n```rs\nfn main() {\n}\n```\n",
+            "# Break\n\n***\n",
             "# Table\n\n| A | B | C |\n| --- | ---: | :---: |\n| x | 1 | *z* |\n| y | 2 | `q` |\n",
             "# One\n\n## Two\n\ntext\n\n## Two\n\ntext\n",
         ];
@@ -868,6 +884,7 @@ mod layout_html_tests {
                 paragraphs: 1,
                 block_quotes: 1,
                 code_fences: 1,
+                thematic_breaks: 0,
                 unordered_list_items: 2,
                 ordered_list_items: 0,
                 table_rows: 3,
@@ -906,7 +923,7 @@ mod layout_html_tests {
             );
         }
         assert_eq!(
-            accepted, 49,
+            accepted, 51,
             "update the pinned acceptance count only after reviewing the exact-parity widening"
         );
     }
