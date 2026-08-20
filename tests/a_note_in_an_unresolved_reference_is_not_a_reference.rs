@@ -39,7 +39,7 @@ fn lone_endnote(body: &str) -> String {
         "  <hr>",
         "  <ol>",
         "    <li id=\"fn1\">",
-        &format!("      <p>{body}<a href=\"#fnref1\" role=\"doc-backlink\">↩</a></p>"),
+        &format!("      <p>{body}<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>"),
         "    </li>",
         "  </ol>",
         "</section>",

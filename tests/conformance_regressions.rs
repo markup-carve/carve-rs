@@ -74,7 +74,7 @@ fn blank_separated_indented_footnote_continuation_stays_in_footnote() {
             "  <ol>\n",
             "    <li id=\"fn1\">\n",
             "      <p>a</p>\n",
-            "      <p>b<a href=\"#fnref1\" role=\"doc-backlink\">↩</a></p>\n",
+            "      <p>b<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n",
             "    </li>\n",
             "  </ol>\n",
             "</section>"

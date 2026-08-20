@@ -384,6 +384,15 @@ impl Renderer {
     }
 
     fn table(&mut self, table: &Table) -> Option<Json> {
+        // ProseMirror's table node has no row-group concept, so a table that
+        // STATES its head and foot row counts (PART 9, carve#1344) comes back
+        // as one undifferentiated run of rows. Declaring that is the point:
+        // the round-trip gate trusts "nothing dropped, nothing degraded" to
+        // mean the document survives, and a silent loss here made that claim
+        // false the moment the corpus grew a document with a `<tfoot>`.
+        if table.row_groups.is_some() {
+            self.degrade("table_row_groups");
+        }
         let mut rows = Vec::new();
         for row in &table.rows {
             let cells = row

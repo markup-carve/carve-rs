@@ -7,6 +7,21 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **A `labels` render option carries the strings the engine writes itself**
+  (markup-carve/carve#1456, PART 9 §16a). One key today, `footnoteBacklink`,
+  defaulting to `Back to reference`, set with `Options::with_label`. Values are
+  text and are escaped where they land, unlike the raw `symbols` map.
+
+### Fixed
+
+- **The footnote backlink has an accessible name** (markup-carve/carve#1455,
+  PART 9 §16). `role="doc-backlink"` was right and the name was the `↩` glyph,
+  so a screen reader announced its Unicode name or skipped the link. The name is
+  now the label plus what the link visibly says: `Back to reference` for a lone
+  backlink, `Back to reference 2` for the second of several.
+
 ### Fixed
 
 - **A hyphen run that opens a word after whitespace is a flag, not a dash**
