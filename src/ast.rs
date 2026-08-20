@@ -826,6 +826,8 @@ pub const GLYPHS: &[(&str, &str)] = &[
     ("rightwards_arrow", "→"),
     ("leftwards_arrow", "←"),
     ("rightwards_double_arrow", "⇒"),
+    ("leftwards_double_arrow", "⇐"),
+    ("left_right_double_arrow", "⇔"),
     ("less_than_or_equal", "≤"),
     ("greater_than_or_equal", "≥"),
     ("not_equal", "≠"),
