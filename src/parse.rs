@@ -312,6 +312,8 @@ pub(crate) fn parse_for_carve(source: &str) -> Document {
     )
 }
 
+mod layout;
+pub(crate) use layout::try_layout_html;
 #[derive(Clone, Copy)]
 enum ParseMode {
     Html,
@@ -521,8 +523,14 @@ fn parse_with_options_mode_and_index(
         append_link_reference_definitions(&mut doc, &link_defs, source, options);
     }
     if matches!(mode, ParseMode::Html | ParseMode::HtmlFacade) {
-        apply_abbreviations(&mut doc);
-        let caption_titles = number_crossref_captions(&mut doc);
+        if source.contains("*[") {
+            apply_abbreviations(&mut doc);
+        }
+        let caption_titles = if source.contains('^') {
+            number_crossref_captions(&mut doc)
+        } else {
+            BTreeMap::new()
+        };
         if matches!(mode, ParseMode::HtmlFacade) && options.extensions.is_empty() && has_crossrefs {
             heading_index.extend_titles(caption_titles);
         }
@@ -559,9 +567,11 @@ fn parse_with_options_mode_and_index(
         // A resolved reference image lands as a one-image paragraph (the
         // syntactic block-image check ran before resolution); promote it to a
         // block image like a standalone direct image, matching carve-php.
-        promote_block_images(&mut doc.children, false);
-        for blocks in doc.footnote_defs.values_mut() {
-            promote_block_images(blocks, false);
+        if source.contains("![") {
+            promote_block_images(&mut doc.children, false);
+            for blocks in doc.footnote_defs.values_mut() {
+                promote_block_images(blocks, false);
+            }
         }
     } else {
         // Carve/fmt mode: promote image+caption paragraphs to figures too, so a
@@ -571,9 +581,11 @@ fn parse_with_options_mode_and_index(
         // be escaped to `\^`, which only carve-js's lenient parser reads back as
         // a caption (carve-rs / carve-php read it as literal text, losing the
         // figure). Reference-link resolution already ran above.
-        promote_block_images(&mut doc.children, true);
-        for blocks in doc.footnote_defs.values_mut() {
-            promote_block_images(blocks, true);
+        if source.contains("![") {
+            promote_block_images(&mut doc.children, true);
+            for blocks in doc.footnote_defs.values_mut() {
+                promote_block_images(blocks, true);
+            }
         }
     }
     for ext in &options.extensions {

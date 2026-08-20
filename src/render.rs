@@ -77,22 +77,32 @@ pub(crate) fn render_html_owned_with_options(
     options: &Options<'_>,
 ) -> Result<String, crate::RenderDepthError> {
     let watch = crate::render_depth::RenderDepthWatch::new();
-    watch.into_result(render_html_inner(doc, options, None))
+    watch.into_result(render_html_inner(doc, options, None, true, true))
 }
 
 pub(crate) fn render_html_owned_with_index(
     doc: Document,
     options: &Options<'_>,
     crossref_index: crate::parse::CrossrefIndex,
+    needs_document_ids: bool,
+    needs_footnotes: bool,
 ) -> Result<String, crate::RenderDepthError> {
     let watch = crate::render_depth::RenderDepthWatch::new();
-    watch.into_result(render_html_inner(doc, options, Some(crossref_index)))
+    watch.into_result(render_html_inner(
+        doc,
+        options,
+        Some(crossref_index),
+        needs_document_ids,
+        needs_footnotes,
+    ))
 }
 
 fn render_html_inner(
     mut doc: Document,
     options: &Options<'_>,
     crossref_index: Option<crate::parse::CrossrefIndex>,
+    needs_document_ids: bool,
+    needs_footnotes: bool,
 ) -> String {
     let _abbr_guard = AbbrBudgetGuard::for_document(&doc);
     let _index_guard = crate::index_budget::IndexBudgetGuard::new(doc.expansion_budget_len());
@@ -100,8 +110,8 @@ fn render_html_inner(
     // explicit `{#id}` attribute and every heading id this render will assign,
     // so extension-generated ids (citation anchors / reference entries) take
     // the next free suffix instead of emitting a duplicate DOM id.
-    let _document_ids_guard =
-        crate::document_ids::DocumentIdsGuard::new(&doc, options.lowercase_heading_ids);
+    let _document_ids_guard = needs_document_ids
+        .then(|| crate::document_ids::DocumentIdsGuard::new(&doc, options.lowercase_heading_ids));
     let mut state = RenderState {
         lowercase_heading_ids: options.lowercase_heading_ids,
         crossref_index: crossref_index.unwrap_or_else(|| {
@@ -109,8 +119,13 @@ fn render_html_inner(
         }),
         ..RenderState::default()
     };
-    let footnotes = collect_footnotes(&mut doc, true);
-    let mut html = render_document_blocks(doc.children.as_slice(), options, &mut state);
+    let footnotes = if needs_footnotes {
+        collect_footnotes(&mut doc, true)
+    } else {
+        Vec::new()
+    };
+    let mut html =
+        render_document_blocks(doc.children.as_slice(), options, &mut state, doc.source_len);
     if !footnotes.is_empty() {
         let section = render_footnotes_section(&doc, &footnotes, options, &mut state);
         // `::: footnotes` placement: every footnote is numbered by now, so flush
@@ -292,8 +307,12 @@ fn render_document_blocks(
     nodes: &[BlockNode],
     options: &Options<'_>,
     state: &mut RenderState,
+    source_len: usize,
 ) -> String {
-    let mut out = String::new();
+    // Markup normally expands the source. One up-front reservation avoids the
+    // geometric realloc/copy ladder while keeping pathological expansion
+    // bounded by String's ordinary growth behavior.
+    let mut out = String::with_capacity(source_len.saturating_add(source_len / 2));
     let mut i = 0;
     let mut first = true;
     let mut previous_owns_separator = false;
