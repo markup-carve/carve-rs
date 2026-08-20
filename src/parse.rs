@@ -282,7 +282,7 @@ pub(crate) fn parse_with_render_index(
 ) -> (Document, CrossrefIndex) {
     // The source-to-HTML facade renders immediately, so preserve the index that
     // parsing already built instead of walking the completed tree a second time.
-    parse_with_options_mode_and_index(source, options, ParseMode::Html)
+    parse_with_options_mode_and_index(source, options, ParseMode::HtmlFacade)
 }
 
 /// The fmt parse WITHOUT positions, for comparing two renders' shapes.
@@ -315,6 +315,7 @@ pub(crate) fn parse_for_carve(source: &str) -> Document {
 #[derive(Clone, Copy)]
 enum ParseMode {
     Html,
+    HtmlFacade,
     Carve,
 }
 
@@ -430,11 +431,15 @@ fn parse_with_options_mode_and_index(
         link_defs.entry(label).or_insert(def);
     }
     let body = remap_source(body_source, &body);
-    let mut footnote_defs: BTreeMap<String, Vec<BlockNode>> = footnote_defs_src
-        .into_iter()
-        .map(|(label, source)| (label, parse_mapped_source(&source, options)))
-        .collect();
-    let mut children = parse_mapped_source_at_document_level(&body, options);
+    let ((mut footnote_defs, mut children), link_defs, needs_late_link_resolution) =
+        with_active_link_defs(link_defs, || {
+            let footnote_defs: BTreeMap<String, Vec<BlockNode>> = footnote_defs_src
+                .into_iter()
+                .map(|(label, source)| (label, parse_mapped_source(&source, options)))
+                .collect();
+            let children = parse_mapped_source_at_document_level(&body, options);
+            (footnote_defs, children)
+        });
     if options.positions {
         // Offsets need the original text, which the parser only ever sees as
         // already-stripped lines, so they are derived here in one pass.
@@ -498,16 +503,29 @@ fn parse_with_options_mode_and_index(
         // Measured here, so nothing about the parse path needs a second number.
         ingest_payload_len: 0,
     };
-    let heading_index = heading_index(
+    let has_crossrefs = source.contains("</#");
+    let (mut heading_index, assigned_heading_ids) = heading_index(
         &doc.children,
         &doc.footnote_defs,
         options.lowercase_heading_ids,
+        has_crossrefs,
+        needs_late_link_resolution,
     );
-    resolve_reference_links(&mut doc, &link_defs, &heading_index);
-    append_link_reference_definitions(&mut doc, &link_defs, source, options);
-    if matches!(mode, ParseMode::Html) {
+    if needs_late_link_resolution {
+        resolve_reference_links(&mut doc, &link_defs, &heading_index);
+    }
+    if !matches!(mode, ParseMode::HtmlFacade) {
+        // Definition nodes are part of the published AST and canonical writer,
+        // but render no HTML. The source-to-HTML facade already owns the
+        // resolved definition index and does not materialize invisible nodes.
+        append_link_reference_definitions(&mut doc, &link_defs, source, options);
+    }
+    if matches!(mode, ParseMode::Html | ParseMode::HtmlFacade) {
         apply_abbreviations(&mut doc);
-        number_crossref_captions(&mut doc);
+        let caption_titles = number_crossref_captions(&mut doc);
+        if matches!(mode, ParseMode::HtmlFacade) && options.extensions.is_empty() && has_crossrefs {
+            heading_index.extend_titles(caption_titles);
+        }
         // PART 12 §5 again: a heading's GENERATED id is a resolution result and
         // is serialized. It is not recomputable from the heading - dedup assigns
         // the next free suffix in DOCUMENT ORDER, so `Notes-2` needs every
@@ -517,7 +535,11 @@ fn parse_with_options_mode_and_index(
         // `from_json(to_json(parse(x))) == parse(x)`: a field added at encode
         // time comes back on decode and the trees no longer match. carve-js
         // assigns it in its parse for the same reason (carve#750).
-        stamp_generated_heading_ids(&mut doc, options.lowercase_heading_ids);
+        if matches!(mode, ParseMode::HtmlFacade) {
+            stamp_generated_heading_ids_from(&mut doc, assigned_heading_ids);
+        } else {
+            stamp_generated_heading_ids(&mut doc, options.lowercase_heading_ids);
+        }
         // PART 12 §5: footnote numbering is a resolution result that IS
         // serialized, "because recomputing them requires reimplementing PART 9R".
         // Caption numbers were assigned here and reached the wire; footnote
@@ -533,7 +555,9 @@ fn parse_with_options_mode_and_index(
         // it would add something to the wire no other engine emits. The flag is a
         // parameter rather than a second walk - this tree has 51 inline variants
         // and a hand-written sweep to undo it would silently miss one.
-        let _ = crate::render::collect_footnotes(&mut doc, false);
+        if !matches!(mode, ParseMode::HtmlFacade) {
+            let _ = crate::render::collect_footnotes(&mut doc, false);
+        }
         // A resolved reference image lands as a one-image paragraph (the
         // syntactic block-image check ran before resolution); promote it to a
         // block image like a standalone direct image, matching carve-php.
@@ -559,10 +583,24 @@ fn parse_with_options_mode_and_index(
     }
     // Last, so it also covers runs an extension left behind: §1a is about the
     // tree that gets published, whoever produced it.
-    coalesce_text_runs(&mut doc);
+    if !matches!(mode, ParseMode::HtmlFacade) {
+        // Adjacent text runs are a published-AST invariant. HTML writes their
+        // bytes consecutively either way, so the private facade tree can avoid
+        // a whole-document normalization pass.
+        coalesce_text_runs(&mut doc);
+    }
     // After every extension has had its say, so a heading an extension added is
     // a crossref target like any other.
-    let crossref_index = fill_crossref_hrefs(&mut doc, options.lowercase_heading_ids);
+    let crossref_index = if matches!(mode, ParseMode::HtmlFacade) && options.extensions.is_empty() {
+        // The renderer consumes this exact index. Publishing `href` beside the
+        // authored target matters to AST consumers, but would only make the
+        // facade traverse and allocate strings that HTML resolves from here.
+        heading_index
+    } else if matches!(mode, ParseMode::HtmlFacade) {
+        crossref_index_for_document(&doc, options.lowercase_heading_ids)
+    } else {
+        fill_crossref_hrefs(&mut doc, options.lowercase_heading_ids)
+    };
     (doc, crossref_index)
 }
 
@@ -1487,6 +1525,122 @@ struct LinkDef {
     /// table is `label -> (url, title?, attrs?)`, and R1 transfers these to
     /// every link that resolves the label (carve#604).
     attrs: Option<Attrs>,
+}
+
+struct ActiveLinkDefs {
+    defs: BTreeMap<String, LinkDef>,
+    needs_late_resolution: bool,
+}
+
+thread_local! {
+    /// Definition lookup available while inline nodes are constructed.
+    ///
+    /// A stack keeps nested/re-entrant parses isolated. Moving the map into the
+    /// context avoids cloning it; the completed parse takes it back out.
+    static ACTIVE_LINK_DEFS: RefCell<Vec<ActiveLinkDefs>> = const { RefCell::new(Vec::new()) };
+}
+
+fn with_active_link_defs<T>(
+    defs: BTreeMap<String, LinkDef>,
+    parse: impl FnOnce() -> T,
+) -> (T, BTreeMap<String, LinkDef>, bool) {
+    ACTIVE_LINK_DEFS.with(|active| {
+        active.borrow_mut().push(ActiveLinkDefs {
+            defs,
+            needs_late_resolution: false,
+        });
+    });
+    struct ActiveLinkDefsGuard(bool);
+
+    impl Drop for ActiveLinkDefsGuard {
+        fn drop(&mut self) {
+            if self.0 {
+                ACTIVE_LINK_DEFS.with(|active| {
+                    active.borrow_mut().pop();
+                });
+            }
+        }
+    }
+
+    // Parsing may be called from user extension code. Keep the thread-local
+    // stack balanced even if that code unwinds through us.
+    let mut guard = ActiveLinkDefsGuard(true);
+    let parsed = parse();
+    let active = ACTIVE_LINK_DEFS.with(|active| {
+        active
+            .borrow_mut()
+            .pop()
+            .expect("a definition context was installed for this parse")
+    });
+    guard.0 = false;
+    (parsed, active.defs, active.needs_late_resolution)
+}
+
+fn resolve_active_link(link: &mut Link) {
+    let Some(label) = link.ref_label.take() else {
+        return;
+    };
+    ACTIVE_LINK_DEFS.with(|active| {
+        let mut active = active.borrow_mut();
+        let Some(context) = active.last_mut() else {
+            return;
+        };
+        let Some(def) = context.defs.get(&label) else {
+            // Only a collapsed reference can still resolve through the heading
+            // index, which does not exist until all headings have been parsed.
+            // An unresolved explicit reference is already in its final shape.
+            context.needs_late_resolution |= is_collapsed_reference(link);
+            return;
+        };
+        apply_link_def(link, def);
+    });
+    link.ref_label = Some(label);
+}
+
+fn resolve_active_image(image: &mut Image) {
+    let Some(label) = image.ref_label.take() else {
+        return;
+    };
+    ACTIVE_LINK_DEFS.with(|active| {
+        let mut active = active.borrow_mut();
+        let Some(context) = active.last_mut() else {
+            return;
+        };
+        let Some(def) = context.defs.get(&label) else {
+            // Images have no heading-reference fallback. Leaving `src` empty is
+            // their final unresolved representation, so no late tree walk is
+            // required.
+            return;
+        };
+        apply_image_def(image, def);
+    });
+    image.ref_label = Some(label);
+}
+
+fn apply_link_def(link: &mut Link, def: &LinkDef) {
+    link.href.clone_from(&def.href);
+    link.title.clone_from(&def.title);
+    if let Some(def_attrs) = &def.attrs {
+        let own = link.attrs.take();
+        let mut merged = Some(def_attrs.clone());
+        if let Some(own) = own {
+            merge_attrs(&mut merged, own);
+        }
+        link.attrs = merged;
+    }
+}
+
+fn apply_image_def(image: &mut Image, def: &LinkDef) {
+    image.src.clone_from(&def.href);
+    image.title.clone_from(&def.title);
+    if let Some(def_attrs) = &def.attrs {
+        let own = image.attrs.take();
+        let mut merged = Some(def_attrs.clone());
+        if let Some(own) = own {
+            merge_attrs(&mut merged, own);
+        }
+        image.attrs = merged;
+    }
 }
 
 /// How many BYTES the definition pre-pass may hand to the block parser to
@@ -4409,9 +4563,8 @@ enum CommentBlock {
     /// Not a comment line; the cursor has not moved.
     NotAComment,
     /// A comment line was consumed. `None` is the placeholder a collected
-    /// definition leaves behind, which produces no node. BOXED because a
-    /// `BlockNode` dwarfs the empty variant beside it.
-    Consumed(Option<Box<BlockNode>>),
+    /// definition leaves behind, which produces no node.
+    Consumed(Option<BlockNode>),
 }
 
 /// Take a `%%` line comment or a `%%%` comment fence off the cursor.
@@ -4464,12 +4617,12 @@ fn take_comment_block(cur: &mut LineCursor, options: &Options<'_>) -> CommentBlo
             if let Some(pos) = &mut pos {
                 pos.start_column = pos.start_column.saturating_sub(leading_ws(line));
             }
-            return CommentBlock::Consumed(Some(Box::new(BlockNode::Comment(Comment {
+            return CommentBlock::Consumed(Some(BlockNode::Comment(Comment {
                 block: true,
                 delimited: false,
                 content: content.join("\n"),
                 pos,
-            }))));
+            })));
         }
     }
     if trim_ascii_start(line).starts_with("%%") {
@@ -4494,12 +4647,12 @@ fn take_comment_block(cur: &mut LineCursor, options: &Options<'_>) -> CommentBlo
         if let Some(pos) = &mut pos {
             pos.start_column = pos.start_column.saturating_sub(leading_ws(line));
         }
-        return CommentBlock::Consumed(Some(Box::new(BlockNode::Comment(Comment {
+        return CommentBlock::Consumed(Some(BlockNode::Comment(Comment {
             block: false,
             delimited: false,
             content,
             pos,
-        }))));
+        })));
     }
 
     CommentBlock::NotAComment
@@ -4593,7 +4746,7 @@ fn parse_blocks(cur: &mut LineCursor, options: &Options<'_>) -> Vec<BlockNode> {
             CommentBlock::NotAComment => {}
             CommentBlock::Consumed(None) => continue,
             CommentBlock::Consumed(Some(node)) => {
-                out.push(*node);
+                out.push(node);
                 continue;
             }
         }
@@ -4609,7 +4762,7 @@ fn parse_blocks(cur: &mut LineCursor, options: &Options<'_>) -> Vec<BlockNode> {
         }
         let start_line = cur.pos;
         if let Some(node) = parse_block(cur, options) {
-            let mut node = *node;
+            let mut node = node;
             // §15 A2a: a floating attribute skips what renders NOTHING and
             // attaches to the next VISIBLE block. The other invisible kinds -
             // comments, reference and footnote definitions - never reach here
@@ -4703,7 +4856,7 @@ fn resolve_code_title(node: &mut BlockNode) {
     }
 }
 
-fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<Box<BlockNode>> {
+fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<BlockNode> {
     // Checked FIRST, and through the same helper `parse_blocks` uses, so a
     // comment reached by a `+` continuation is the node the identical line
     // produces at top level (carve-rs#678).
@@ -4719,7 +4872,7 @@ fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<Box<BlockN
         // LISTING: wrap it in a figure like a captioned image/table.
         if let BlockNode::CodeBlock(cb) = block {
             if let Some(caption) = consume_caption(cur, options) {
-                return Some(Box::new(BlockNode::Figure(Figure {
+                return Some(BlockNode::Figure(Figure {
                     attrs: None,
                     target: Box::new(FigureTarget::CodeBlock(cb)),
                     rendered_target: None,
@@ -4728,20 +4881,20 @@ fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<Box<BlockN
                     // From the opening fence through the end of the caption -
                     // the same extent a captioned image's figure takes.
                     pos: span_of(cur, fence_at, cur.pos, options),
-                })));
+                }));
             }
-            return Some(Box::new(BlockNode::CodeBlock(cb)));
+            return Some(BlockNode::CodeBlock(cb));
         }
-        return Some(Box::new(block));
+        return Some(block);
     }
     if let Some(marker) = thematic_break_marker(line) {
         let span_start = cur.pos;
         cur.consume();
-        return Some(Box::new(BlockNode::ThematicBreak(ThematicBreak {
+        return Some(BlockNode::ThematicBreak(ThematicBreak {
             marker: (marker != '-').then_some(marker),
             pos: span_of(cur, span_start, cur.pos, options),
             ..Default::default()
-        })));
+        }));
     }
     if let Some((level, first_text)) = detect_heading(line) {
         let span_start = cur.pos;
@@ -4770,18 +4923,18 @@ fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<Box<BlockN
         } else {
             parse_inline_with_options(inline_text, options)
         };
-        return Some(Box::new(BlockNode::Heading(Heading {
+        return Some(BlockNode::Heading(Heading {
             attrs: None,
             level,
             children,
             pos,
-        })));
+        }));
     }
     if strip_blockquote_prefix(line).is_some() {
-        return Some(Box::new(parse_blockquote(cur, options)));
+        return Some(parse_blockquote(cur, options));
     }
     if is_list_marker(line) {
-        return Some(Box::new(parse_list(cur, options)));
+        return Some(parse_list(cur, options));
     }
     // A table row opens a table only when FLUSH-LEFT (like a heading, quote or
     // `:: ` def-list term). `is_table_start` trims leading whitespace, so an
@@ -4789,10 +4942,10 @@ fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<Box<BlockN
     // reference renders a paragraph; a genuine table sits at its container's
     // content column and is already dedented to column 0 here.
     if !line.starts_with([' ', '\t']) && is_table_start(line) {
-        return Some(Box::new(parse_table(cur, options)));
+        return Some(parse_table(cur, options));
     }
     if is_definition_list_start(line) {
-        return Some(Box::new(parse_definition_list(cur, options)));
+        return Some(parse_definition_list(cur, options));
     }
     // A `::: |` line block or `::: \` hard-break block opens ONLY flush-left
     // (at its container's content column), exactly like the div / admonition
@@ -4804,10 +4957,10 @@ fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<Box<BlockN
     // the content column here, so a fence sitting AT that column still opens.
     if !line.starts_with([' ', '\t']) {
         if detect_line_block_open(line).is_some() {
-            return Some(Box::new(parse_line_block(cur, options)));
+            return Some(parse_line_block(cur, options));
         }
         if detect_hardbreaks_block_open(line).is_some() {
-            return Some(Box::new(parse_hardbreaks_block(cur, options)));
+            return Some(parse_hardbreaks_block(cur, options));
         }
     }
     // FLUSH-LEFT only: `detect_container_open` trims leading whitespace, so an
@@ -4816,7 +4969,7 @@ fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<Box<BlockN
     // the quote/heading/table checks. `line` is already dedented to the content
     // column here, so a `:::` at the content column opens.
     if !line.starts_with([' ', '\t']) && detect_container_open(line).is_some() {
-        return Some(Box::new(parse_container(cur, options)));
+        return Some(parse_container(cur, options));
     }
     if cur.at_document_level {
         if let Some(mut abbr) = detect_abbreviation_def(line) {
@@ -4827,7 +4980,7 @@ fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<Box<BlockN
             // which PART 12 §4 allows only for a node that was reassembled and has
             // no honest one - a definition the author wrote on line 1 has one.
             abbr.pos = span_of(cur, abbr_at, abbr_at + 1, options);
-            return Some(Box::new(BlockNode::AbbreviationDef(abbr)));
+            return Some(BlockNode::AbbreviationDef(abbr));
         }
     }
     if let Some(mut img) = detect_block_image(line) {
@@ -4839,7 +4992,7 @@ fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<Box<BlockN
             // none at all.
             img.pos = span_of(cur, image_at, image_at + 1, options);
             if let Some(caption) = consume_caption(cur, options) {
-                return Some(Box::new(BlockNode::Figure(Figure {
+                return Some(BlockNode::Figure(Figure {
                     attrs: None,
                     target: Box::new(FigureTarget::Image(img)),
                     rendered_target: None,
@@ -4848,26 +5001,26 @@ fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<Box<BlockN
                     // The figure runs from the image to the end of the caption
                     // the cursor just consumed.
                     pos: span_of(cur, image_at, cur.pos, options),
-                })));
+                }));
             }
-            return Some(Box::new(BlockNode::BlockImage(img)));
+            return Some(BlockNode::BlockImage(img));
         }
         // Not standalone: the image folds into a paragraph with the following
         // content (parse_paragraph below); a sole-image paragraph is still
         // promoted to a bare block image afterwards.
     }
     if let Some(matched) = try_extension_block(cur, options) {
-        return Some(Box::new(matched));
+        return Some(matched);
     }
     // A block whose sole content is a display-math span (`$$`…``) followed by a
     // caption is a numbered EQUATION. Diverted before the paragraph fallback so
     // parse_paragraph does not fold the caption line into the math paragraph.
     if trim_ascii_start(line).starts_with("$$`") {
         if let Some(eq) = parse_equation_block(cur, options) {
-            return Some(Box::new(eq));
+            return Some(eq);
         }
     }
-    Some(Box::new(parse_paragraph(cur, options)))
+    Some(parse_paragraph(cur, options))
 }
 
 /// Parse a standalone display-math line, wrapping it in a figure when a caption
@@ -7213,7 +7366,7 @@ fn parse_continuation_block(
             // item rather than nesting it (matches carve-php for `+`-then-
             // marker, e.g. `- a / + / text / + / - b`).
             if nm.indent > base_indent {
-                return parse_block(cur, options).map(|node| *node);
+                return parse_block(cur, options);
             }
             return None;
         }
@@ -7321,7 +7474,7 @@ fn parse_continuation_block(
         // This does NOT change a byte of HTML or of the AST: the node it used
         // to attach to never reached the tree. What it changes is that the loss
         // is now reported, which is the whole of the rule.
-        let reaches_nothing = match block.as_deref() {
+        let reaches_nothing = match block.as_ref() {
             None => true,
             Some(BlockNode::Paragraph(p)) => p.children.is_empty(),
             // AND A BLOCK THAT TAKES NO ATTRIBUTES IS NOT ONE EITHER.
@@ -7355,7 +7508,7 @@ fn parse_continuation_block(
         }
     }
     cur.pos += sub.pos;
-    block.map(|node| *node)
+    block
 }
 
 /// A list's extent, taken from the items it holds.
@@ -15899,32 +16052,31 @@ fn parse_reference_link(
             after = next;
         }
     }
-    Some((
-        Link {
-            attrs,
-            href: String::new(),
-            title: None,
-            children: parse_inline_context(
-                &text,
-                options,
-                false,
-                in_footnote,
-                positions,
-                base + start + 1,
-            ),
-            ref_label: Some(ref_label),
-            // `raw_ref` is the literal source emitted only when the
-            // reference does not resolve; it must include the consumed
-            // attribute block so an unresolved `[t][x]{.c}` stays fully
-            // literal rather than silently dropping the `{.c}`. A resolved
-            // reference ignores `raw_ref` and applies `attrs` instead.
-            raw_ref: Some(std::str::from_utf8(&bytes[start..after]).ok()?.to_string()),
-            from_crossref: false,
-            from_heading_reference: false,
-            pos: None,
-        },
-        after - start,
-    ))
+    let mut link = Link {
+        attrs,
+        href: String::new(),
+        title: None,
+        children: parse_inline_context(
+            &text,
+            options,
+            false,
+            in_footnote,
+            positions,
+            base + start + 1,
+        ),
+        ref_label: Some(ref_label),
+        // `raw_ref` is the literal source emitted only when the
+        // reference does not resolve; it must include the consumed
+        // attribute block so an unresolved `[t][x]{.c}` stays fully
+        // literal rather than silently dropping the `{.c}`. A resolved
+        // reference ignores `raw_ref` and applies `attrs` instead.
+        raw_ref: Some(std::str::from_utf8(&bytes[start..after]).ok()?.to_string()),
+        from_crossref: false,
+        from_heading_reference: false,
+        pos: None,
+    };
+    resolve_active_link(&mut link);
+    Some((link, after - start))
 }
 
 fn flush_text(
@@ -16328,18 +16480,17 @@ fn parse_reference_image(
             after = next;
         }
     }
-    Some((
-        Image {
-            attrs,
-            src: String::new(),
-            alt,
-            title: None,
-            ref_label: Some(ref_label),
-            raw_ref: Some(std::str::from_utf8(&bytes[start..after]).ok()?.to_string()),
-            pos: None,
-        },
-        after - start,
-    ))
+    let mut image = Image {
+        attrs,
+        src: String::new(),
+        alt,
+        title: None,
+        ref_label: Some(ref_label),
+        raw_ref: Some(std::str::from_utf8(&bytes[start..after]).ok()?.to_string()),
+        pos: None,
+    };
+    resolve_active_image(&mut image);
+    Some((image, after - start))
 }
 
 fn parse_inline_link_with_options(
@@ -17688,13 +17839,14 @@ fn is_word_boundary(text: &str, pos: usize) -> bool {
 /// ingested tree may have had a captioned element removed since it was written
 /// (carve#758). Counters are built fresh on every call, so re-running it on an
 /// unedited tree reproduces the same numbering.
-pub(crate) fn number_crossref_captions(doc: &mut Document) {
+pub(crate) fn number_crossref_captions(doc: &mut Document) -> BTreeMap<String, String> {
     let mut caption_counts = BTreeMap::new();
     let mut titles = BTreeMap::new();
     number_captioned_blocks(&mut doc.children, &mut caption_counts, &mut titles);
     for blocks in doc.footnote_defs.values_mut() {
         number_captioned_blocks(blocks, &mut caption_counts, &mut titles);
     }
+    titles
 }
 
 pub(crate) fn crossref_index_for_document(doc: &Document, lowercase_ids: bool) -> CrossrefIndex {
@@ -17720,6 +17872,9 @@ pub(crate) fn crossref_index_for_document(doc: &Document, lowercase_ids: bool) -
             labels: &mut labels,
             quoted: &mut quoted,
             by_text: &mut by_text,
+            assigned: None,
+            collect_crossrefs: true,
+            collect_heading_refs: false,
         },
         lowercase_ids,
         &explicit_ids,
@@ -17734,6 +17889,9 @@ pub(crate) fn crossref_index_for_document(doc: &Document, lowercase_ids: bool) -
                 labels: &mut labels,
                 quoted: &mut quoted,
                 by_text: &mut by_text,
+                assigned: None,
+                collect_crossrefs: true,
+                collect_heading_refs: false,
             },
             lowercase_ids,
             &explicit_ids,
@@ -17751,7 +17909,9 @@ fn heading_index(
     children: &[BlockNode],
     footnote_defs: &BTreeMap<String, Vec<BlockNode>>,
     lowercase_ids: bool,
-) -> CrossrefIndex {
+    collect_crossrefs: bool,
+    collect_heading_refs: bool,
+) -> (CrossrefIndex, Vec<String>) {
     let mut counts = BTreeMap::new();
     let mut titles = BTreeMap::new();
     let mut labels = BTreeMap::new();
@@ -17762,6 +17922,7 @@ fn heading_index(
     }
     let mut quoted = std::collections::BTreeSet::new();
     let mut by_text = BTreeMap::new();
+    let mut assigned = Vec::new();
     collect_heading_titles(
         children,
         &mut HeadingScan {
@@ -17770,6 +17931,9 @@ fn heading_index(
             labels: &mut labels,
             quoted: &mut quoted,
             by_text: &mut by_text,
+            assigned: Some(&mut assigned),
+            collect_crossrefs,
+            collect_heading_refs,
         },
         lowercase_ids,
         &explicit_ids,
@@ -17784,6 +17948,9 @@ fn heading_index(
                 labels: &mut labels,
                 quoted: &mut quoted,
                 by_text: &mut by_text,
+                assigned: Some(&mut assigned),
+                collect_crossrefs,
+                collect_heading_refs,
             },
             lowercase_ids,
             &explicit_ids,
@@ -17793,7 +17960,7 @@ fn heading_index(
     let mut index = crossref_index(titles, labels);
     index.quoted = quoted;
     index.by_text = by_text;
-    index
+    (index, assigned)
 }
 
 /// A cloned crossref label, shared by every reference that resolves to it.
@@ -18016,6 +18183,14 @@ pub(crate) struct CrossrefIndex {
 }
 
 impl CrossrefIndex {
+    fn extend_titles(&mut self, titles: BTreeMap<String, String>) {
+        for (id, title) in titles {
+            self.folded
+                .entry(case_fold(&id))
+                .or_insert_with(|| id.clone());
+            self.titles.entry(id).or_insert(title);
+        }
+    }
     /// Resolve a cross-reference target to its `(actual_id, title)`. Tries an
     /// exact match first, then a case-folded fallback (first-occurrence wins).
     /// Resolve for an IMPLICIT `[label][]` reference, which declines a heading
@@ -18238,13 +18413,12 @@ fn resolve_reference_links_block(
 }
 
 fn resolve_reference_links_inline(
-    nodes: &mut Vec<InlineNode>,
+    nodes: &mut [InlineNode],
     defs: &BTreeMap<String, LinkDef>,
     heading_index: &CrossrefIndex,
 ) {
-    let mut out = Vec::new();
-    for mut node in std::mem::take(nodes) {
-        match &mut node {
+    for node in nodes {
+        match node {
             InlineNode::Link(l) => {
                 if let Some(label) = &l.ref_label {
                     // Every branch below KEEPS the node: an unresolved reference
@@ -18253,7 +18427,12 @@ fn resolve_reference_links_inline(
                     // is what §3a forbids - it discarded the fact that the
                     // author wrote a reference, and it did so only on the HTML
                     // path, so one document had two shapes (carve#486).
-                    if let Some(def) = defs.get(label) {
+                    if !l.href.is_empty() {
+                        // Explicit definitions are resolved while the inline is
+                        // built. A late walk may still be needed for a different
+                        // collapsed heading reference in the same document; do
+                        // not merge this definition's attributes twice there.
+                    } else if let Some(def) = defs.get(label) {
                         // PART 12 §3a, A RESOLVED REFERENCE KEEPS ITS
                         // DESTINATION: `ref` and `raw_ref` stay BESIDE `href`,
                         // the same way §5 has footnote numbering added
@@ -18263,22 +18442,7 @@ fn resolve_reference_links_inline(
                         // (carve#597). Every renderer already asks whether the
                         // DESTINATION is empty, so nothing downstream reads the
                         // label as "unresolved".
-                        l.href = def.href.clone();
-                        // PART 9R R1: the definition's attributes transfer to
-                        // the link, and the link's own override per key. "Per
-                        // key" is §15 A3's merge - the one stacked attribute
-                        // lists already use - so a repeated id or key takes the
-                        // LAST value (the link's) and classes ACCUMULATE across
-                        // the two. Definition first, link second (carve#604).
-                        if let Some(def_attrs) = &def.attrs {
-                            let own = l.attrs.take();
-                            let mut merged = Some(def_attrs.clone());
-                            if let Some(own) = own {
-                                merge_attrs(&mut merged, own);
-                            }
-                            l.attrs = merged;
-                        }
-                        l.title = def.title.clone();
+                        apply_link_def(l, def);
                     } else if is_collapsed_reference(l) {
                         // Implicit heading reference. The LABEL goes in, not a
                         // slug of it: PART 11 R1 keys this index by the heading's
@@ -18371,23 +18535,18 @@ fn resolve_reference_links_inline(
                     // fallback above derives its lookup key from the children's
                     // plain text, and that key is the text the AUTHOR wrote.
                     resolve_reference_links_inline(&mut l.children, defs, heading_index);
-                    out.push(node);
                 } else {
                     resolve_reference_links_inline(&mut l.children, defs, heading_index);
-                    out.push(node);
                 }
             }
             InlineNode::Emphasis(e) => {
                 resolve_reference_links_inline(&mut e.children, defs, heading_index);
-                out.push(node);
             }
             InlineNode::Span(s) => {
                 resolve_reference_links_inline(&mut s.children, defs, heading_index);
-                out.push(node);
             }
             InlineNode::Extension(e) => {
                 resolve_reference_links_inline(&mut e.children, defs, heading_index);
-                out.push(node);
             }
             // AN INLINE NOTE'S CONTENT IS ORDINARY INLINE CONTENT
             // (markup-carve/carve#1203). PART 9 §16 disables FOOTNOTE
@@ -18403,7 +18562,6 @@ fn resolve_reference_links_inline(
                 if let Some(inline) = &mut f.inline {
                     resolve_reference_links_inline(inline, defs, heading_index);
                 }
-                out.push(node);
             }
             // The same gap, measured rather than assumed: both critic ranges
             // hold inline children and both left a reference inside them
@@ -18412,11 +18570,9 @@ fn resolve_reference_links_inline(
             // to descend into, and an arm for them could not fail.
             InlineNode::CriticInsert(c) => {
                 resolve_reference_links_inline(&mut c.children, defs, heading_index);
-                out.push(node);
             }
             InlineNode::CriticDelete(c) => {
                 resolve_reference_links_inline(&mut c.children, defs, heading_index);
-                out.push(node);
             }
             InlineNode::CitationGroup(g) => {
                 for item in &mut g.items {
@@ -18427,14 +18583,14 @@ fn resolve_reference_links_inline(
                         resolve_reference_links_inline(locator, defs, heading_index);
                     }
                 }
-                out.push(node);
             }
             InlineNode::Image(img) => {
                 if let Some(label) = &img.ref_label {
-                    if let Some(def) = defs.get(label) {
+                    if !img.src.is_empty() {
+                        // Already resolved from the active definition context;
+                        // see the equivalent link branch above.
+                    } else if let Some(def) = defs.get(label) {
                         // PART 12 §3a - see the note on the link branch above.
-                        img.src = def.href.clone();
-                        img.title = def.title.clone();
                         // AN IMAGE REFERENCE RESOLVES THE SAME ENTRY -
                         // NORMATIVE. It looks the label up in the same table and
                         // takes the same three fields, so a definition's
@@ -18447,29 +18603,13 @@ fn resolve_reference_links_inline(
                         // Same §15 A3 merge as the link branch above: definition
                         // first, use site second, so a repeated key takes the
                         // LAST value and classes ACCUMULATE in source order.
-                        if let Some(def_attrs) = &def.attrs {
-                            let own = img.attrs.take();
-                            let mut merged = Some(def_attrs.clone());
-                            if let Some(own) = own {
-                                merge_attrs(&mut merged, own);
-                            }
-                            img.attrs = merged;
-                        }
-                        out.push(node);
-                    } else {
-                        // Unresolved image references stay as Image nodes. They
-                        // render from `raw_ref`, preserving the fact that the
-                        // author wrote a reference at all (PART 12 §3a).
-                        out.push(node);
+                        apply_image_def(img, def);
                     }
-                } else {
-                    out.push(node);
                 }
             }
-            _ => out.push(node),
+            _ => {}
         }
     }
-    *nodes = out;
 }
 
 /// Promote a paragraph whose sole child is a direct or resolved image to a
@@ -18799,6 +18939,12 @@ struct HeadingScan<'a> {
     quoted: &'a mut std::collections::BTreeSet<String>,
     /// Normalized heading text -> id, first occurrence wins (PART 11 R1).
     by_text: &'a mut BTreeMap<String, String>,
+    /// Optional document-order ids for callers that also stamp the parsed AST.
+    assigned: Option<&'a mut Vec<String>>,
+    /// Build the title/node maps only when a cross-reference can consume them.
+    collect_crossrefs: bool,
+    /// Build the rendered-heading-text map only for collapsed references.
+    collect_heading_refs: bool,
 }
 
 fn collect_heading_titles(
@@ -18836,9 +18982,12 @@ fn collect_heading_titles(
                     }
                 };
                 scan.counts.insert(base, count);
-                if in_blockquote {
+                if let Some(assigned) = scan.assigned.as_deref_mut() {
+                    assigned.push(id.clone());
+                }
+                if scan.collect_heading_refs && in_blockquote {
                     scan.quoted.insert(id.clone());
-                } else {
+                } else if scan.collect_heading_refs {
                     // First occurrence wins - R1 resolves to "the FIRST heading
                     // with that text". This walk is in document order, so an
                     // `or_insert` is that rule. A scan.quoted heading is not indexed
@@ -18849,9 +18998,15 @@ fn collect_heading_titles(
                         scan.by_text.entry(text_key).or_insert_with(|| id.clone());
                     }
                 }
-                scan.labels
-                    .insert(id.clone(), crossref_label_nodes(&h.children));
-                scan.titles.insert(id, title);
+                if scan.collect_crossrefs {
+                    scan.labels
+                        .insert(id.clone(), crossref_label_nodes(&h.children));
+                    scan.titles.insert(id, title);
+                } else if scan.collect_heading_refs {
+                    // `resolve_ref` returns both the id and its title even
+                    // though implicit references only consume the id today.
+                    scan.titles.insert(id, title);
+                }
             }
             BlockNode::List(l) => {
                 for item in &l.items {
@@ -19342,22 +19497,14 @@ fn coalesce_inlines(nodes: &mut Vec<InlineNode>) {
     if nodes.len() < 2 {
         return;
     }
-    let taken = std::mem::take(nodes);
-    let mut out: Vec<InlineNode> = Vec::with_capacity(taken.len());
-    for node in taken {
-        match node {
-            InlineNode::Text(text) => {
-                if let Some(InlineNode::Text(previous)) = out.last_mut() {
-                    previous.pos = merged_text_pos(previous.pos, text.pos);
-                    previous.value.push_str(&text.value);
-                    continue;
-                }
-                out.push(InlineNode::Text(text));
-            }
-            other => out.push(other),
-        }
-    }
-    *nodes = out;
+    nodes.dedup_by(|current, previous| {
+        let (InlineNode::Text(current), InlineNode::Text(previous)) = (current, previous) else {
+            return false;
+        };
+        previous.pos = merged_text_pos(previous.pos, current.pos);
+        previous.value.push_str(&current.value);
+        true
+    });
 }
 
 /// The span of two merged text runs, or None when it would not be truthful.
@@ -19653,6 +19800,10 @@ fn is_id_strippable(c: char) -> bool {
 /// would re-derive, is not written into the source it produces.
 fn stamp_generated_heading_ids(doc: &mut Document, lowercase: bool) {
     let ids = crate::document_ids::assigned_heading_ids(doc, lowercase);
+    stamp_generated_heading_ids_from(doc, ids);
+}
+
+fn stamp_generated_heading_ids_from(doc: &mut Document, ids: Vec<String>) {
     if ids.is_empty() {
         return;
     }
