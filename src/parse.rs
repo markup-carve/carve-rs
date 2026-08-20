@@ -276,6 +276,15 @@ pub fn parse_with_options(source: &str, options: &Options<'_>) -> Document {
     parse_with_options_mode(source, options, ParseMode::Html)
 }
 
+pub(crate) fn parse_with_render_index(
+    source: &str,
+    options: &Options<'_>,
+) -> (Document, CrossrefIndex) {
+    // The source-to-HTML facade renders immediately, so preserve the index that
+    // parsing already built instead of walking the completed tree a second time.
+    parse_with_options_mode_and_index(source, options, ParseMode::Html)
+}
+
 /// The fmt parse WITHOUT positions, for comparing two renders' shapes.
 ///
 /// `escaping_is_redundant` asks whether the minimal and conservative forms parse
@@ -369,6 +378,14 @@ pub(crate) fn normalize_source(source: &str) -> std::borrow::Cow<'_, str> {
 }
 
 fn parse_with_options_mode(source: &str, options: &Options<'_>, mode: ParseMode) -> Document {
+    parse_with_options_mode_and_index(source, options, mode).0
+}
+
+fn parse_with_options_mode_and_index(
+    source: &str,
+    options: &Options<'_>,
+    mode: ParseMode,
+) -> (Document, CrossrefIndex) {
     // Kept for the offset table below: normalization rewrites the text the
     // parser sees, and PART 12 §4 positions index the ORIGINAL file.
     let original = source;
@@ -545,8 +562,8 @@ fn parse_with_options_mode(source: &str, options: &Options<'_>, mode: ParseMode)
     coalesce_text_runs(&mut doc);
     // After every extension has had its say, so a heading an extension added is
     // a crossref target like any other.
-    fill_crossref_hrefs(&mut doc, options.lowercase_heading_ids);
-    doc
+    let crossref_index = fill_crossref_hrefs(&mut doc, options.lowercase_heading_ids);
+    (doc, crossref_index)
 }
 
 /// Publish each crossref's resolution BESIDE its authored target
@@ -562,7 +579,7 @@ fn parse_with_options_mode(source: &str, options: &Options<'_>, mode: ParseMode)
 /// The renderers keep using their index rather than this field. Both come from
 /// the same builder, so they cannot disagree, and the render path stays able to
 /// resolve a tree that arrived without hrefs at all.
-fn fill_crossref_hrefs(doc: &mut Document, lowercase_ids: bool) {
+fn fill_crossref_hrefs(doc: &mut Document, lowercase_ids: bool) -> CrossrefIndex {
     let index = crossref_index_for_document(doc, lowercase_ids);
 
     fn inlines(nodes: &mut [InlineNode], index: &CrossrefIndex) {
@@ -638,6 +655,7 @@ fn fill_crossref_hrefs(doc: &mut Document, lowercase_ids: bool) {
             blocks(body, &index);
         }
     }
+    index
 }
 
 fn remap_source(source: String, original: &MappedSource) -> MappedSource {
