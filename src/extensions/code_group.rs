@@ -175,13 +175,16 @@ impl CarveExtension for CodeGroup {
         let level = ctx.level();
         let pad = ctx.indent(level);
         let inner_pad = ctx.indent(level + 1);
-        let role = match self.opts.mode {
-            TabsMode::Css => "group",
-            TabsMode::Aria => "tablist",
-        };
-        let attrs = self.wrapper_attrs(node.attrs.as_ref(), role, ctx);
-
         if ctx.is_static() {
+            // A STATIC RENDER TAKES NEITHER MODE (extensions §13.1). There are
+            // no tabs left to list: `renderStatic` flattens the set to one
+            // `<section>` per panel headed by its `[label]`, and the heading IS
+            // the name. So `tablist` here would describe an interaction that
+            // this output does not contain, whatever `mode` the host configured
+            // - the role has to come from what was EMITTED and not from the
+            // option. `group` regardless, which is also what this renderer
+            // emitted before the option existed.
+            let attrs = self.wrapper_attrs(node.attrs.as_ref(), "group", ctx);
             let mut html = format!("{pad}<div{}>\n", render_attrs(&attrs));
             for item in &items {
                 html.push_str(&format!(
@@ -200,6 +203,12 @@ impl CarveExtension for CodeGroup {
 
             return Some(html);
         }
+
+        let role = match self.opts.mode {
+            TabsMode::Css => "group",
+            TabsMode::Aria => "tablist",
+        };
+        let attrs = self.wrapper_attrs(node.attrs.as_ref(), role, ctx);
 
         // Number the group FIRST, then reserve the numbered string in the
         // document id namespace. Taking the bare prefix instead made the first
@@ -609,6 +618,33 @@ mod tests {
             assert!(!opener.contains("role=\"group\""), "{out}");
             assert!(!opener.contains("aria-label="), "{out}");
         }
+    }
+
+    /// A STATIC RENDER TAKES NEITHER MODE (§13.1). `renderStatic` flattens the
+    /// set to one `<section>` per panel headed by its `[label]`, so there are no
+    /// tabs left to list and `role="tablist"` would describe an interaction the
+    /// output does not contain - whatever the host configured.
+    #[test]
+    fn a_static_render_is_a_group_under_either_mode() {
+        let css = static_html(TWO_PANELS);
+        assert!(css.contains("role=\"group\""), "{css}");
+        assert!(!css.contains("role=\"tablist\""), "{css}");
+
+        let ext = CodeGroup::with_options(CodeGroupOptions {
+            mode: TabsMode::Aria,
+            ..CodeGroupOptions::default()
+        });
+        let opts = Options::new().with_extension(&ext).with_mode(Mode::Static);
+        let aria = crate::to_html_with_options(TWO_PANELS, &opts);
+        assert!(
+            !aria.contains("role=\"tablist\""),
+            "the interactive mode leaked into a static render: {aria}"
+        );
+        assert!(aria.contains("role=\"group\""), "{aria}");
+        // And the pair: the same option DOES reach an interactive render, or
+        // the assertion above would pass on a build where the mode did nothing.
+        let interactive = aria_html(TWO_PANELS);
+        assert!(interactive.contains("role=\"tablist\""), "{interactive}");
     }
 
     /// `css` IS THE DEFAULT (§13.1 on top of §2.5): `aria` reveals with
