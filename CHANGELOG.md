@@ -249,6 +249,14 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A math span survives an HTML import** (markup-carve/carve-rs#1208, PART 9
+  §18). `<span class="math inline">\(x\)</span>` - this engine's own output,
+  and what djot.js and pandoc write - and its `math display` twin now read back
+  as `math` nodes instead of generic attributed spans, so the non-HTML writers
+  see math again. Recognition needs the class pair and a matching payload to
+  agree. The block `<div class="math display">` form is left alone pending the
+  ruling in markup-carve/carve#1514.
+
 - **A tab control is `type="button"`, and two marked items select one tab**
   (markup-carve/carve-rs#1212, markup-carve/carve#1504, extensions §13.3 and
   §13.5). An `Aria`-mode control carried no `type`, so a tab set or code group

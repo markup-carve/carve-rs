@@ -465,6 +465,126 @@ impl<'a> Importer<'a> {
         }
         out
     }
+    /// Carve's OWN HTML spelling of math, read back as a `math` node.
+    ///
+    /// `<span class="math inline">\(x\)</span>` and its `math display` twin are
+    /// what this engine's HTML renderer writes for `` $`x` `` / `` $$`x` ``
+    /// (PART 9 §18: `math_inline = '$', code_span`), and what djot.js and
+    /// pandoc write as well - so this is a shape an importer meets rather than
+    /// one engine's private convention.
+    ///
+    /// Without this the element fell through to the generic attributed-span
+    /// writer and an equation came back as `[\\(x\\)]{.math .inline role=math}`,
+    /// with no diagnostic. THAT LOSS IS INVISIBLE TO THE OBVIOUS CHECK:
+    /// re-rendering the broken import produces byte-identical HTML, because a
+    /// span carrying the same classes renders the same tag. What is gone is the
+    /// NODE - and with it every non-HTML target, each of which has a math case
+    /// it can no longer reach. Assert on a re-parse, never on bytes.
+    ///
+    /// TWO INDEPENDENT SIGNALS HAVE TO AGREE - the `math inline` / `math
+    /// display` class PAIR, and a payload delimited to match it. Either alone
+    /// is not evidence: a stylesheet is free to name a class `math`, and
+    /// `\(x\)` in running prose is a pair of escaped parens - §18 spells the
+    /// INPUT form as a `$` prefix on a code span and has no `\(…\)` form at
+    /// all, so the delimiters are an output convention, not syntax. Requiring
+    /// both also lets the class decide which delimiter to expect, so a
+    /// `math display` span holding `\(…\)` is left alone rather than quietly
+    /// re-labeled as display math.
+    ///
+    /// The payload is read off the DIRECT children ([`Self::direct_text`]),
+    /// never through the recursive [`Self::text`]. An element child ends the
+    /// read, which is also the right answer - a delimiter payload is text - and
+    /// it keeps the recognition free of the recursion that [`Self::flat_text`]
+    /// exists to avoid on the `<math>` arm.
+    ///
+    /// The BLOCK form, `<div class="math display">`, is deliberately NOT
+    /// handled: carve-php imports it as the ```` ```math ```` fence and
+    /// carve-js as the core `$$` form, both for good reasons, and
+    /// markup-carve/carve#1514 is the open ruling that picks one. Adding a
+    /// third spelling here would be the thing that ruling exists to prevent.
+    fn carve_math(h: &Handle, attrs: Option<&Attrs>) -> Option<Math> {
+        let attrs = attrs?;
+        if !attrs.classes.iter().any(|c| c == "math") {
+            return None;
+        }
+        let display = attrs.classes.iter().any(|c| c == "display");
+        // Not one element in both states: `math inline display` names no shape
+        // the renderer can write, so it is a span with three classes rather
+        // than an equation. Neither class present is the same non-answer.
+        if display == attrs.classes.iter().any(|c| c == "inline") {
+            return None;
+        }
+        let (open, close) = if display {
+            ("\\[", "\\]")
+        } else {
+            ("\\(", "\\)")
+        };
+        let text = Self::direct_text(h)?;
+        let payload = text
+            .trim()
+            .strip_prefix(open)?
+            .strip_suffix(close)?
+            .to_string();
+        // Carve's math content is a `code_span`, one line by construction, so a
+        // payload folded across source lines has exactly one spelling: the
+        // whitespace run collapsed the way every other imported text run is.
+        // TeX reads a newline as whitespace, so the equation is unchanged; a
+        // `math` node holding a newline would not be writable at all.
+        let content = collapse(&payload).trim().to_string();
+        // `\(\)` carries the delimiters and no equation. There is no empty math.
+        if content.is_empty() {
+            return None;
+        }
+        Some(Math {
+            attrs: Self::math_attrs(attrs, display),
+            display,
+            content,
+            pos: None,
+        })
+    }
+
+    /// The concatenated text of a node's DIRECT children, or `None` as soon as
+    /// one of them is not a text node. Bounded and non-recursive, unlike
+    /// [`Self::text`].
+    fn direct_text(h: &Handle) -> Option<String> {
+        let mut out = String::new();
+        for child in h.children.borrow().iter() {
+            let NodeData::Text { contents } = &child.data else {
+                return None;
+            };
+            out.push_str(&contents.borrow());
+        }
+        Some(out)
+    }
+
+    /// What is left of a math span's attributes once recognition has eaten its
+    /// own - the same bargain `attrs` already strikes for `<math>`'s `xmlns`:
+    /// an attribute the branch READS and the renderer writes back from the node
+    /// is consumed, not kept, or the document would spell it twice.
+    ///
+    /// The FIRST of each class only: `class="math math"` keeps the second as an
+    /// author class, because the renderer writes the base pair once. Everything
+    /// else the author put on the element - `id`, further classes, `data-*` -
+    /// rides along and survives the round trip. A `role` saying anything other
+    /// than `math` is the author's and stays.
+    fn math_attrs(attrs: &Attrs, display: bool) -> Option<Attrs> {
+        let mut out = attrs.clone();
+        if let Some(i) = out.classes.iter().position(|c| c == "math") {
+            out.classes.remove(i);
+        }
+        let base = if display { "display" } else { "inline" };
+        if let Some(i) = out.classes.iter().position(|c| c == base) {
+            out.classes.remove(i);
+        }
+        if out.key_values.get("role").map(String::as_str) == Some("math") {
+            out.key_values.remove("role");
+        }
+        if out.id.is_none() && out.classes.is_empty() && out.key_values.is_empty() {
+            return None;
+        }
+        Some(out)
+    }
+
     /// Charge a subtree the import will not walk against the budget one it
     /// walks would pay, and check its depth on the way.
     ///
@@ -841,6 +961,23 @@ impl<'a> Importer<'a> {
             return Ok(vec![BlockNode::Table(self.table(h, path, depth, attrs)?)]);
         }
         if tag == "div" {
+            // NOT the math block form. `<div class="math display">\[…\]</div>`
+            // is what this engine's `MathBlock` extension writes for a
+            // ```` ```math ```` fence, and it imports here as an ordinary Carve
+            // div holding the delimiters as text - the same loss `carve_math`
+            // fixes for the inline `<span>`.
+            //
+            // It is left that way ON PURPOSE. markup-carve/carve#1514 is the
+            // open ruling on which Carve spelling the block form takes:
+            // markup-carve/carve-php#1546 imports it as the ```` ```math ````
+            // fence, because that fence is what produced the HTML and the round
+            // trip is then exact; markup-carve/carve-js#1295 imports it as the
+            // CORE `$$` form (PART 9 §18 `math_display`), because the fence is
+            // an extension and without it loaded the document degrades to a
+            // `language-math` code block. Both reasons are good, PART 9 §18
+            // says nothing yet, and a third engine picking a third spelling is
+            // precisely what that ruling exists to prevent. The inline form,
+            // where all three engines already agree, lands without it.
             return Ok(vec![BlockNode::Div(Div {
                 attrs,
                 label: None,
@@ -2476,6 +2613,19 @@ impl<'a> Importer<'a> {
         }
         let attrs = self.attrs(h, path);
         let children = self.inlines(&h.children.borrow(), path, depth + 1)?;
+        if tag == "span" {
+            // AFTER the children have been walked, which is what keeps the
+            // budget honest for free: `inlines` has already charged every node
+            // under this element against `max_nodes` and `max_depth`, so which
+            // arm the span takes cannot change what the limits see. The
+            // `<math>` arm above has to call `charge_subtree` by hand for the
+            // same reason - it returns without walking - and a recognition that
+            // read text recursively BEFORE charging would let crafted HTML
+            // reach the stack ahead of the limit meant to stop it.
+            if let Some(math) = Self::carve_math(h, attrs.as_ref()) {
+                return Ok(vec![InlineNode::Math(math)]);
+            }
+        }
         let emphasis = |kind| {
             InlineNode::Emphasis(Emphasis {
                 attrs: attrs.clone(),
