@@ -79,6 +79,16 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Three blank lines are a hard list boundary** (markup-carve/carve#1430, PART
+  9 §11 N1a). A run of three or more before a compatible sibling marker opens a
+  new list instead of loosening the current one, at every level. One and two
+  blank lines are unchanged.
+
+- **The canonical writer separates two adjacent sibling lists with that
+  boundary** instead of indenting the later one by a space. The old offset was
+  what existed before a separator was spelled: it returned a list at a column
+  the author never wrote, and it could not survive a third list.
+
 - **A `css`-mode tab and code-group panel carries its own name**
   (carve-rs#1199, extensions §13.2). Under `css` every radio and label is
   emitted before every panel, so nothing bound a panel to the control revealing

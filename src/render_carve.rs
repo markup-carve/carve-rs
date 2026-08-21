@@ -512,11 +512,11 @@ fn render_with_escapes_once(doc: &Document, escape_mode: EscapeMode) -> String {
     let footnote_defs = crate::ast_json::footnote_defs_in_source_order(doc);
     let mut rendered = Vec::new();
     // The document level joins its own entries rather than going through
-    // `render_blocks`, so the adjacent-sibling-list offset is applied here too.
-    // See the note beside `lists_would_merge`; without it a top-level pair --
-    // which is where authors actually write one -- still merged (carve#1088).
+    // `render_blocks`, so the adjacent-sibling-list separator is written here
+    // too. See the note beside `lists_would_merge`; without it a top-level pair
+    // -- which is where authors actually write one -- still merged (carve#1088).
     let mut previous_list: Option<&List> = None;
-    let mut list_offset = 0usize;
+    let mut separated_from_previous = false;
     for entry in crate::ast_json::ordered_document_entries(doc, &footnote_defs) {
         let text = match entry {
             crate::ast_json::DocEntry::Block(child) => {
@@ -524,29 +524,20 @@ fn render_with_escapes_once(doc: &Document, escape_mode: EscapeMode) -> String {
                 let text = render_block(child, &mut ctx);
                 ctx.after_caption_host = hosts_caption(child);
                 if let BlockNode::List(list) = child {
-                    list_offset = match previous_list {
-                        Some(previous) if lists_would_merge(previous, list) => list_offset + 1,
-                        _ => 0,
-                    };
+                    separated_from_previous =
+                        previous_list.is_some_and(|previous| lists_would_merge(previous, list));
                     previous_list = Some(list);
-                    if list_offset > 0 {
-                        indent_lines(&text, list_offset)
-                    } else {
-                        text
-                    }
-                } else {
-                    if !text.is_empty() {
-                        previous_list = None;
-                        list_offset = 0;
-                    }
-                    text
+                } else if !text.is_empty() {
+                    previous_list = None;
+                    separated_from_previous = false;
                 }
+                text
             }
             crate::ast_json::DocEntry::FootnoteDef(label, blocks, _) => {
                 ctx.after_caption_host = false;
                 // Unless a definition list already wrote it where the author put
                 // it (markup-carve/carve#805).
-                if blocks
+                let text = if blocks
                     .first()
                     .and_then(block_pos)
                     .is_some_and(|pos| ctx.written_in_place.contains(&pos.start_line))
@@ -554,11 +545,26 @@ fn render_with_escapes_once(doc: &Document, escape_mode: EscapeMode) -> String {
                     String::new()
                 } else {
                     render_footnote_def_source(label, blocks, &mut ctx)
+                };
+                // A HOISTED DEFINITION IS A NON-LIST ENTRY and clears the pair
+                // state exactly as a non-list block does. Without this the
+                // boundary owed to the two lists ABOVE it was written in front
+                // of the DEFINITION - the state was still raised when the
+                // definition arrived, and this loop applies it where the entry
+                // is pushed rather than inside the list arm.
+                if !text.is_empty() {
+                    previous_list = None;
+                    separated_from_previous = false;
                 }
+                text
             }
         };
         if !text.is_empty() {
-            rendered.push(text);
+            rendered.push(if separated_from_previous && !rendered.is_empty() {
+                hard_list_boundary(&text)
+            } else {
+                text
+            });
         }
     }
     // THE FALLBACK SPELLING IS DECIDED IN `render_with_escapes`, on the finished
@@ -818,19 +824,20 @@ fn is_task_list(list: &List) -> bool {
     list.items.iter().any(|item| item.checked.is_some())
 }
 
-/// Every non-blank line of `text`, prefixed with `columns` spaces.
-fn indent_lines(text: &str, columns: usize) -> String {
-    let pad = " ".repeat(columns);
-    text.split('\n')
-        .map(|line| {
-            if line.is_empty() {
-                String::new()
-            } else {
-                format!("{pad}{line}")
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
+/// `text` with §11 N1a's boundary in front of it: two extra blank lines, which
+/// join with the ordinary one-blank block separator to make the run of three.
+///
+/// WRITTEN AS THE VERBATIM-BLANK SENTINEL, not as literal newlines.
+/// `collapse_blank_lines` squeezes every run of three or more newlines to two --
+/// correct for a decorative run, which the rule says to normalize away, and
+/// fatal for this one, which the rule says to keep. The squeeze cannot tell them
+/// apart from the text; only the writer knows, so the writer marks them and
+/// `restore_verbatim` turns each marker line back into the blank it stands for.
+fn hard_list_boundary(text: &str) -> String {
+    let blank = verbatim_blank();
+    note_inserted(S_BLANK);
+    note_inserted(S_BLANK);
+    format!("{blank}\n{blank}\n{text}")
 }
 
 fn render_blocks(blocks: &[BlockNode], ctx: &mut CarveContext) -> String {
@@ -848,33 +855,35 @@ fn render_blocks(blocks: &[BlockNode], ctx: &mut CarveContext) -> String {
     // `parse(fmt(x)) == parse(x)` is false for a document the parser reads as
     // two lists (carve#1088). carve#286 spent the marker axis -- emit the marker
     // as authored -- which separates them only while the markers DIFFER; when
-    // both are `1.` at column 0 there is nothing left to preserve and
-    // indentation is the axis remaining.
+    // both are `1.` at column 0 there is nothing left to preserve.
     //
-    // ONE SPACE, CUMULATIVE, RELATIVE TO THE LIST BEFORE IT. One space is the
-    // only offset safe for both kinds: a bullet's content column is 2, so two
-    // spaces already NEST the second list inside the first. And the step is per
-    // list rather than per run -- a flat +1 leaves the second and third at the
-    // same column, where they merge with each other.
+    // THE SEPARATOR IS §11 N1a's HARD BOUNDARY: three blank lines. That is the
+    // language's own way of saying "these are two lists", so the writer says it
+    // instead of encoding the same fact as layout.
+    //
+    // It REPLACES a cumulative one-space offset. That offset existed only
+    // because no separator was spelled, and it cost real correctness: the
+    // second list came back indented by a space the author never wrote, a third
+    // had to step to two, and at two spaces a bullet's content column NESTS the
+    // later list inside the earlier one. Three blank lines separate any number
+    // of sibling lists at the column they were written.
     let mut previous_list: Option<&List> = None;
-    let mut list_offset = 0usize;
+    let mut separated_from_previous = false;
     for block in blocks {
         ctx.paragraph_starts_after_caption_host = ctx.after_caption_host;
         let text = render_block(block, ctx);
         ctx.after_caption_host = hosts_caption(block);
         if let BlockNode::List(list) = block {
-            list_offset = match previous_list {
-                Some(previous) if lists_would_merge(previous, list) => list_offset + 1,
-                _ => 0,
-            };
+            separated_from_previous =
+                previous_list.is_some_and(|previous| lists_would_merge(previous, list));
             previous_list = Some(list);
         } else if !text.is_empty() {
             previous_list = None;
-            list_offset = 0;
+            separated_from_previous = false;
         }
         if !text.is_empty() {
-            rendered.push(if list_offset > 0 {
-                indent_lines(&text, list_offset)
+            rendered.push(if separated_from_previous && !rendered.is_empty() {
+                hard_list_boundary(&text)
             } else {
                 text
             });

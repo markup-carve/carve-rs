@@ -7919,6 +7919,11 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> Box<BlockNode> {
     let mut items: Vec<ListItem> = Vec::new();
     let mut tight = true;
     let mut pending_blank = false;
+    // How many blank lines this loop has consumed since the last line with
+    // content. PART 9 §11 N1a's hard boundary is a run of THREE OR MORE before
+    // a compatible sibling marker, so the count matters and `pending_blank`
+    // alone -- which is a flag -- cannot carry it.
+    let mut blank_run = 0usize;
     // A block-attribute block that ended a continuation chunk, waiting for the
     // SUB-LIST it was written in front of. The chunk boundary is what separated
     // them (see `split_trailing_attrs`), so this carries them across it.
@@ -7959,9 +7964,16 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> Box<BlockNode> {
             // pending_blank) or an indented second paragraph (below). A blank
             // before any other indented block keeps it compact (#74).
             pending_blank = true;
+            blank_run += 1;
             cur.consume();
             continue;
         }
+        // The line has CONTENT, so whatever run preceded it ends here. Taking
+        // it once, at the single point every non-blank line passes through,
+        // is what keeps a run from leaking across the branches below: a run
+        // broken by a comment, an attribute line or a sub-list is not a run of
+        // blank lines, and none of those has to remember to reset it.
+        let blank_run_before = std::mem::take(&mut blank_run);
         // Lone `+` continuation marker (Carve): attaches the next flush-left
         // block to the current item without indentation.
         if trim_ascii(line) == "+" && indent_columns(line) == base_indent {
@@ -8333,6 +8345,22 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> Box<BlockNode> {
             && !items.is_empty()
             && (marker.delim != first_delim || !dialect_compatible(first_dialect, &marker))
         {
+            break;
+        }
+        // PART 9 §11 N1a: a run of THREE OR MORE blank lines before a
+        // compatible sibling marker is a HARD BOUNDARY. The marker opens a new
+        // sibling list rather than joining this one, so leave it unconsumed
+        // for the surrounding block parser.
+        //
+        // One blank line stays the loose separator, and so does two (§17 L1) --
+        // three is the threshold precisely because the runs documents already
+        // hold, changelog spacing and generator output, are runs of two.
+        //
+        // The run closes nothing on its own. It is not an item terminator: a
+        // continuation at the item's content column still continues the item at
+        // any run length, which is why this sits on the SIBLING MARKER path and
+        // nowhere else.
+        if blank_run_before >= 3 {
             break;
         }
         if pending_blank {
