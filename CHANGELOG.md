@@ -7,6 +7,13 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Prebuilt `carve` binaries on every release** (carve#528). macOS on Apple
+  silicon and Intel, Linux on glibc and musl, and Windows, each with a
+  `.sha256` sidecar, plus a Homebrew tap at `markup-carve/carve`. Installing
+  the CLI no longer requires a Rust toolchain.
+
 ### Fixed
 
 - **A run that ate a verse line leaves no comment node** (carve-rs#1193). At the

@@ -604,11 +604,29 @@ See [docs/extensions.md](docs/extensions.md) for the full reference.
 
 The crate ships a `carve` binary that reads Carve source from a file or stdin
 and writes the rendered output to stdout. HTML is the default; pass a format
-flag for Markdown, plain text, or ANSI-colored terminal output:
+flag for Markdown, plain text, or ANSI-colored terminal output.
+
+Prebuilt binaries are attached to every release for macOS (Apple silicon and
+Intel), Linux (glibc and musl) and Windows, so the CLI does not require a Rust
+toolchain:
 
 ```bash
-cargo install --path .
+brew install markup-carve/carve/carve       # macOS and Linux
 
+# or take the archive for your platform straight from the release page and put
+# `carve` on your PATH: https://github.com/markup-carve/carve-rs/releases
+```
+
+Each archive ships a `.sha256` sidecar next to it. From source instead:
+
+```bash
+cargo install carve-lang                    # from crates.io
+cargo install --path .                      # from a checkout
+```
+
+Then:
+
+```bash
 carve README.crv > README.html      # HTML (default, interactive)
 carve --static README.crv           # self-contained HTML (print / PDF / archival)
 carve --markdown README.crv         # Markdown

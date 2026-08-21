@@ -7,6 +7,15 @@ name: Release
 on:
   release:
     types: [published]
+  # Backfill: a release that predates the binaries job can be given its assets
+  # without cutting a new version. Only the `binaries` job honours this - a
+  # dispatch must never re-publish a crate.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag to attach binaries to (e.g. 0.1.3)"
+        required: true
+        type: string
 
 env:
   CARGO_TERM_COLOR: always
@@ -15,6 +24,9 @@ env:
 jobs:
   publish:
     name: Publish to crates.io
+    # A manual dispatch exists to backfill binaries onto an existing release;
+    # it must not re-publish the crate.
+    if: github.event_name == 'release'
     runs-on: ubuntu-latest
     permissions:
       id-token: write # OIDC for crates.io Trusted Publishing
@@ -61,3 +73,237 @@ jobs:
       - run: cargo publish
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN || steps.auth.outputs.token }}
+
+  # ---------------------------------------------------------------------------
+  # Prebuilt CLI binaries.
+  #
+  # `cargo install carve-lang` is the only install path today, which asks
+  # everyone who wants to try the language to adopt a Rust toolchain first.
+  # These assets are what a Homebrew formula, a Scoop manifest, a Dockerfile or
+  # a plain `curl | tar` line can point at.
+  #
+  # Deliberately NOT gated on `publish`: a crates.io hiccup should not also cost
+  # the binaries, and the two have no ordering relationship.
+  binaries:
+    name: ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write # attach assets to the release
+    env:
+      # The workflow sets `-D warnings` for the crates.io publish. Deliberately
+      # not inherited here: CI already fails a PR on a warning, and a lint that
+      # fires on only one target must not be what stops that platform getting a
+      # binary at release time.
+      RUSTFLAGS: ""
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+          - target: aarch64-apple-darwin
+            os: macos-latest
+          - target: x86_64-apple-darwin
+            os: macos-latest
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+    steps:
+      # The tag is the release's for a published release, and the dispatch
+      # input otherwise - so an existing release can be backfilled with assets
+      # without cutting a new version.
+      - name: Resolve the tag
+        id: tag
+        shell: bash
+        run: echo "tag=${{ github.event.release.tag_name || inputs.tag }}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ steps.tag.outputs.tag }}
+          # No submodules: the binary needs `src/` and `resources/`, and
+          # `tests/spec` is 1200+ files this job never reads.
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      # musl needs its own libc toolchain; the GNU and MSVC targets are native.
+      - name: Install the musl toolchain
+        if: endsWith(matrix.target, '-musl')
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+
+      - name: Build
+        shell: bash
+        # The release profile carries `lto = "thin"` and `codegen-units = 1`
+        # from Cargo.toml, so the shipped binary is the optimized one.
+        #
+        # No `--locked`: this is a library crate and does not commit a
+        # Cargo.lock, so the build resolves whatever the registry serves within
+        # the declared ranges. That is the same trade the CI suite already
+        # makes, and changing it is a separate decision from shipping binaries.
+        run: cargo build --release --bin carve --target ${{ matrix.target }}
+
+      # One archive per target, each carrying the licence and the README next to
+      # the binary, so an extracted tarball is self-describing rather than a
+      # bare executable of unknown provenance.
+      - name: Package
+        id: package
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.tag.outputs.tag }}"
+          NAME="carve-${TAG}-${{ matrix.target }}"
+          mkdir -p "dist/${NAME}"
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            cp "target/${{ matrix.target }}/release/carve.exe" "dist/${NAME}/"
+          else
+            cp "target/${{ matrix.target }}/release/carve" "dist/${NAME}/"
+          fi
+          cp README.md LICENSE CHANGELOG.md "dist/${NAME}/"
+          cd dist
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            ASSET="${NAME}.zip"
+            7z a "${ASSET}" "${NAME}" > /dev/null
+          else
+            ASSET="${NAME}.tar.gz"
+            tar -czf "${ASSET}" "${NAME}"
+          fi
+          # Checksums travel with the asset. A tap or a curl-installer needs the
+          # digest, and asking it to re-download and hash the artifact to learn
+          # the digest of that same download proves nothing.
+          if command -v sha256sum > /dev/null; then
+            sha256sum "${ASSET}" > "${ASSET}.sha256"
+          else
+            shasum -a 256 "${ASSET}" > "${ASSET}.sha256"
+          fi
+          echo "asset=dist/${ASSET}" >> "$GITHUB_OUTPUT"
+
+      - name: Attach to the release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "${{ steps.tag.outputs.tag }}" \
+            "${{ steps.package.outputs.asset }}" \
+            "${{ steps.package.outputs.asset }}.sha256" \
+            --repo "${{ github.repository }}" --clobber
+
+  # ---------------------------------------------------------------------------
+  # Homebrew tap.
+  #
+  # The formula is GENERATED from the assets the job above just uploaded, and
+  # the digests are read from the `.sha256` files published beside them rather
+  # than recomputed here - so the formula pins the bytes the release actually
+  # serves.
+  #
+  # Needs a token with write access to markup-carve/homebrew-carve, because
+  # `github.token` is scoped to this repository. Without the secret the job
+  # skips and says so; it never fails a release over a missing tap.
+  homebrew:
+    name: Update the Homebrew tap
+    needs: binaries
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve the tag
+        id: tag
+        run: echo "tag=${{ github.event.release.tag_name || inputs.tag }}" >> "$GITHUB_OUTPUT"
+
+      - name: Is the tap token configured?
+        id: gate
+        env:
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          if [ -z "${TAP_TOKEN}" ]; then
+            echo "::notice::HOMEBREW_TAP_TOKEN is not set; skipping the tap update."
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v6
+        if: steps.gate.outputs.ok == 'true'
+        with:
+          repository: markup-carve/homebrew-carve
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: tap
+
+      - name: Render Formula/carve.rb
+        if: steps.gate.outputs.ok == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.tag.outputs.tag }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          base="https://github.com/${REPO}/releases/download/${TAG}"
+
+          # Read each digest from the release's own .sha256 sidecar. `cut` takes
+          # the hash off the front of the `<sha>  <filename>` line.
+          sums="$(mktemp -d)"
+          gh release download "${TAG}" --repo "${REPO}" \
+            --pattern '*.tar.gz.sha256' --dir "${sums}"
+          digest() {
+            cut -d' ' -f1 "${sums}/carve-${TAG}-$1.tar.gz.sha256"
+          }
+
+          arm_mac="$(digest aarch64-apple-darwin)"
+          x86_mac="$(digest x86_64-apple-darwin)"
+          x86_linux="$(digest x86_64-unknown-linux-gnu)"
+
+          mkdir -p tap/Formula
+          cat > tap/Formula/carve.rb <<RUBY
+          # Generated by markup-carve/carve-rs .github/workflows/release.yml.
+          # Edits here are overwritten on the next release.
+          class Carve < Formula
+            desc "Parser and renderer for the Carve markup language"
+            homepage "https://markup-carve.github.io/carve/"
+            version "${TAG}"
+            license "MIT"
+
+            on_macos do
+              on_arm do
+                url "${base}/carve-${TAG}-aarch64-apple-darwin.tar.gz"
+                sha256 "${arm_mac}"
+              end
+              on_intel do
+                url "${base}/carve-${TAG}-x86_64-apple-darwin.tar.gz"
+                sha256 "${x86_mac}"
+              end
+            end
+
+            on_linux do
+              on_intel do
+                url "${base}/carve-${TAG}-x86_64-unknown-linux-gnu.tar.gz"
+                sha256 "${x86_linux}"
+              end
+            end
+
+            def install
+              bin.install "carve"
+            end
+
+            test do
+              assert_match "<h1", pipe_output("#{bin}/carve", "# Hello\n")
+            end
+          end
+          RUBY
+
+      - name: Commit
+        if: steps.gate.outputs.ok == 'true'
+        working-directory: tap
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- Formula/carve.rb; then
+            echo "::notice::Formula already matches ${{ steps.tag.outputs.tag }}; nothing to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/carve.rb
+          git commit -m "carve ${{ steps.tag.outputs.tag }}"
+          git push
