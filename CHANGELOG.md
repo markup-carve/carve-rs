@@ -62,6 +62,14 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A tab set writes its children flush, like everything around them**
+  (markup-carve/carve-rs#1188). The `css` and `aria` tab renderers indented the
+  `<input>`, `<label>`, `<button>` and panel openers by one level while writing
+  their closers, and the panel body, flush - so the block's own halves
+  disagreed. They now match the pinned corpus pair `28-tabs-panel-title` and
+  carve-js byte for byte. Whitespace only; nothing renders differently. Found
+  by giving that corpus case a runner for the first time.
+
 - **The CLI refuses an over-cap document instead of writing nothing and exiting
   0** (markup-carve/carve-rs#1190). `carve --html --profile comment` on an input
   over the profile's `max_length` produced empty stdout with exit status 0, so a

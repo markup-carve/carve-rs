@@ -194,7 +194,13 @@ impl Tabs {
         ctx: &RenderContext<'_>,
     ) -> String {
         let pad = ctx.indent(ctx.level());
-        let inner_pad = ctx.indent(ctx.level() + 1);
+        // The children carry NO indentation of their own. Each one closes on a
+        // line this function does not pad, and the panel body is written by the
+        // core renderer, which pads nothing either - so indenting only the
+        // openers produced a block whose own halves disagreed. The pinned
+        // corpus pair `28-tabs-panel-title` writes them flush, carve-js writes
+        // them flush, and nothing had ever compared this output before
+        // carve-rs#1188 gave the case a runner.
         let mut html = format!(
             "{pad}<div{}>\n",
             render_attrs(&self.wrapper_attrs(node, None))
@@ -206,14 +212,14 @@ impl Tabs {
                 None => ctx.unique_id(&format!("{set_id}-tab-{}", index + 1)),
             };
             html.push_str(&format!(
-                "{inner_pad}<input type=\"radio\" name=\"{}\" id=\"{}\" class=\"{}\"{}>\n",
+                "<input type=\"radio\" name=\"{}\" id=\"{}\" class=\"{}\"{}>\n",
                 ctx.escape_attr(set_id),
                 ctx.escape_attr(&input_id),
                 ctx.escape_attr(&self.opts.radio_class),
                 if item.selected { " checked" } else { "" },
             ));
             html.push_str(&format!(
-                "{inner_pad}<label for=\"{}\" class=\"{}\">{}</label>\n",
+                "<label for=\"{}\" class=\"{}\">{}</label>\n",
                 ctx.escape_attr(&input_id),
                 ctx.escape_attr(&self.opts.label_class),
                 ctx.escape_html(&item.label),
@@ -222,7 +228,7 @@ impl Tabs {
 
         for item in items {
             html.push_str(&format!(
-                "{inner_pad}<div class=\"{}\">\n{}</div>\n",
+                "<div class=\"{}\">\n{}</div>\n",
                 ctx.escape_attr(&self.opts.tab_class),
                 item.content,
             ));
@@ -241,7 +247,8 @@ impl Tabs {
         ctx: &RenderContext<'_>,
     ) -> String {
         let pad = ctx.indent(ctx.level());
-        let inner_pad = ctx.indent(ctx.level() + 1);
+
+        // Flush children, for the reason `render_css` states.
 
         // Both id pairs are computed ONCE and reused by the two loops below, so
         // a bumped generated id keeps the aria-controls / aria-labelledby
@@ -265,7 +272,7 @@ impl Tabs {
 
         for (item, (tab_id, panel_id)) in items.iter().zip(&pairs) {
             html.push_str(&format!(
-                "{inner_pad}<button role=\"tab\" id=\"{}\" aria-selected=\"{}\" \
+                "<button role=\"tab\" id=\"{}\" aria-selected=\"{}\" \
                  aria-controls=\"{}\" class=\"{}\"{}>{}</button>\n",
                 ctx.escape_attr(tab_id),
                 if item.selected { "true" } else { "false" },
@@ -282,7 +289,7 @@ impl Tabs {
 
         for (item, (tab_id, panel_id)) in items.iter().zip(&pairs) {
             html.push_str(&format!(
-                "{inner_pad}<div role=\"tabpanel\" id=\"{}\" aria-labelledby=\"{}\" \
+                "<div role=\"tabpanel\" id=\"{}\" aria-labelledby=\"{}\" \
                  class=\"{}\"{}>\n{}</div>\n",
                 ctx.escape_attr(panel_id),
                 ctx.escape_attr(tab_id),
