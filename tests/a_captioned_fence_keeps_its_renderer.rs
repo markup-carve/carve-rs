@@ -20,7 +20,7 @@ fn html(src: &str, ext: &dyn carve::CarveExtension) -> String {
 
 const CHART: &str = "``` chart\n{\"type\":\"bar\"}\n```";
 const ELEMENT: &str =
-    "<div class=\"chart\"><script type=\"application/json\">{\"type\":\"bar\"}</script></div>";
+    "<div class=\"chart\" role=\"img\" aria-label=\"chart\"><script type=\"application/json\">{\"type\":\"bar\"}</script></div>";
 
 #[test]
 fn a_captioned_fence_renders_the_element_inside_the_figure() {

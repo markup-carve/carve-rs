@@ -37,7 +37,9 @@ pub(crate) const LIST_CARRIER: &str = "carve-index-list";
 /// let src = "A :index[parser] here.\n\n::: index\n:::";
 /// let html = carve::to_html_with_options(src, &opts);
 /// assert!(html.contains("<span id=\"idx-parser-1\" class=\"index-term\"></span>"));
-/// assert!(html.contains("<a href=\"#idx-parser-1\" class=\"index-backref\">"));
+/// assert!(html.contains(
+/// "<a href=\"#idx-parser-1\" class=\"index-backref\" aria-label=\"Back to parser\">"
+/// ));
 /// ```
 #[derive(Debug, Default)]
 pub struct Index {
@@ -54,12 +56,27 @@ pub struct Index {
     /// FALSE: an index list item is not an anchor - only the backrefs after the
     /// display are - so an authored link in the term survives.
     display: RefCell<BTreeMap<String, Vec<InlineNode>>>,
+    /// Leading words of a back-link's accessible name, overriding the render's
+    /// `labels` map for this instance (markup-carve/carve#1469).
+    ///
+    /// `None` reads `indexBackref` from the map, so ONE map localizes a whole
+    /// document - PART 9 §16a forbids making a host configure the same text
+    /// twice.
+    backref_label: RefCell<Option<String>>,
 }
 
 impl Index {
     /// Create an index extension.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Override the leading words of a back-link's accessible name for this
+    /// instance, ignoring the render's `labels` map.
+    #[must_use]
+    pub fn with_backref_label(self, label: impl Into<String>) -> Self {
+        *self.backref_label.borrow_mut() = Some(label.into());
+        self
     }
 }
 
@@ -125,11 +142,19 @@ impl CarveExtension for Index {
         if node.name != LIST_CARRIER {
             return None;
         }
+        // Precedence: this instance's own option, then the render's `labels`
+        // map, whose default the map itself carries.
+        let backref_label = self
+            .backref_label
+            .borrow()
+            .clone()
+            .unwrap_or_else(|| ctx.label(crate::extension::LABEL_INDEX_BACKREF));
         Some(render_index_list(
             node,
             ctx,
             &self.counts.borrow(),
             &self.display.borrow(),
+            &backref_label,
         ))
     }
 }
@@ -334,6 +359,7 @@ fn render_index_list(
     ctx: &RenderContext<'_>,
     counts: &BTreeMap<String, usize>,
     display: &BTreeMap<String, Vec<InlineNode>>,
+    backref_label: &str,
 ) -> String {
     let level = ctx.level();
     let pad = ctx.indent(level);
@@ -367,11 +393,36 @@ fn render_index_list(
         if !crate::index_budget::try_spend(entry.len()) {
             break;
         }
+        // THE BACK-LINK SAYS WHERE IT GOES (markup-carve/carve#1469). A bare
+        // return arrow is announced as "leftwards arrow with hook", or skipped
+        // - the sentence PART 9 §16 exists to prevent, on the identical
+        // element. §16's rule is MIRRORED rather than reinvented: the name is
+        // the label plus WHAT THE LINK VISIBLY SAYS. One occurrence shows the
+        // bare glyph and is named label + term; the k-th of several shows the
+        // glyph plus `<sup>k</sup>` and takes that k, so a row of otherwise
+        // identical arrows is distinguishable by sight and by ear alike
+        // (WCAG 2.5.3).
+        let term = display
+            .get(slug)
+            .map(|nodes| inline_text(nodes, SmartTypographyMode::Glyph))
+            .unwrap_or_default();
         for m in 1..=n {
+            let name = if n == 1 {
+                format!("{backref_label} {term}")
+            } else {
+                format!("{backref_label} {term} {m}")
+            };
+            let body = if n == 1 {
+                "\u{21a9}".to_string()
+            } else {
+                format!("\u{21a9}<sup>{m}</sup>")
+            };
             let link = format!(
-                "<a href=\"#idx-{}-{}\" class=\"index-backref\">\u{21a9}</a>",
+                "<a href=\"#idx-{}-{}\" class=\"index-backref\" aria-label=\"{}\">{}</a>",
                 ctx.escape_attr(slug),
-                m
+                m,
+                ctx.escape_attr(&name),
+                body
             );
             // Each backlink after the first is separated by a space.
             let cost = if m == 1 { link.len() } else { link.len() + 1 };

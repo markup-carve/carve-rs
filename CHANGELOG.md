@@ -7,6 +7,36 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **The index back-link says where it goes** (markup-carve/carve#1469). A `↩`
+  with no accessible name is announced as "leftwards arrow with hook", or
+  skipped - and an index entry has one per occurrence, so a reader met a row of
+  identical unnamed arrows. The k-th back-link is now named `Back to {term} {k}`
+  and shows `↩<sup>k</sup>`, mirroring PART 9 §16's footnote rule.
+
+### Changed
+
+- **A tab set, a code group and a rendered diagram carry an accessible name**
+  (markup-carve/carve#1468). Each tab was already named by its own `<label>` and
+  the GROUP was anonymous; a diagram fence emitted its source with no role, so a
+  reader heard the markup as prose. `Tabs` and `CodeGroup` write `role="group"`
+  plus a name (`Aria` mode keeps `role="tablist"`), and `FencedRender` writes
+  `role="img"` plus a `label` defaulting to the fence word. An `aria-label`,
+  `aria-labelledby` or `role` the author wrote always wins, matched
+  ASCII-case-insensitively, and the engine's attributes are recorded at the END
+  of the author's attribute order - without that they rendered in map order,
+  which is alphabetical, and the three engines disagreed byte-for-byte on a
+  shape the optional corpus pins.
+
+- **One `labels` map localizes every engine-written string.** `label_default`
+  grows `indexBackref`, `tabsGroup` and `codeGroup`, and the extensions that
+  write those strings read them through the new `RenderContext::label`, so a
+  German document sets `labels` once instead of finding several call sites and
+  silently missing one. An option set on the extension still wins for that
+  instance. PART 9 §16a already required this - "an extension MUST NOT require
+  the host to configure the same text twice".
+
 ### Added
 
 - **ASCII-folding for auto-generated heading ids**, opt-in

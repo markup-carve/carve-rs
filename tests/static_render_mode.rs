@@ -159,7 +159,7 @@ fn mermaid_interactive_is_client_hydration_pre() {
     let ext = FencedRender::mermaid();
     assert_eq!(
         interactive("``` mermaid\ngraph TD; A --> B\n```\n", &[&ext]),
-        "<pre class=\"mermaid\">graph TD; A --> B</pre>"
+        "<pre class=\"mermaid\" role=\"img\" aria-label=\"mermaid\">graph TD; A --> B</pre>"
     );
 }
 
@@ -195,7 +195,7 @@ fn mermaid_static_with_renderer_emits_injected_svg() {
     let html = carve::to_html_with_options("``` mermaid\ngraph TD; A --> B\n```\n", &opts);
     assert_eq!(
         html.trim(),
-        "<div class=\"mermaid\"><svg data-src=\"17\"><!--diagram--></svg></div>"
+        "<div class=\"mermaid\" role=\"img\" aria-label=\"mermaid\"><svg data-src=\"17\"><!--diagram--></svg></div>"
     );
 }
 
@@ -223,7 +223,7 @@ fn chart_static_with_renderer_emits_injected_image() {
     let html = carve::to_html_with_options("``` chart\n{\"type\":\"bar\"}\n```\n", &opts);
     assert_eq!(
         html.trim(),
-        "<div class=\"chart\"><img alt=\"chart\" src=\"chart.png\"></div>"
+        "<div class=\"chart\" role=\"img\" aria-label=\"chart\"><img alt=\"chart\" src=\"chart.png\"></div>"
     );
 }
 
@@ -251,7 +251,7 @@ fn graphviz_static_with_renderer_emits_injected_image() {
     let html = carve::to_html_with_options("``` graphviz\ndigraph { A -> B }\n```\n", &opts);
     assert_eq!(
         html.trim(),
-        "<div class=\"graphviz\"><img alt=\"graphviz\" src=\"graph.svg\"></div>"
+        "<div class=\"graphviz\" role=\"img\" aria-label=\"graphviz\"><img alt=\"graphviz\" src=\"graph.svg\"></div>"
     );
 }
 
@@ -268,7 +268,7 @@ fn graphviz_dot_alias_static_with_renderer_emits_injected_image() {
     let html = carve::to_html_with_options("``` dot\ndigraph { A -> B }\n```\n", &opts);
     assert_eq!(
         html.trim(),
-        "<div class=\"graphviz\"><img alt=\"graphviz\" src=\"graph.svg\"></div>"
+        "<div class=\"graphviz\" role=\"img\" aria-label=\"graphviz\"><img alt=\"graphviz\" src=\"graph.svg\"></div>"
     );
 }
 
@@ -286,12 +286,12 @@ fn plantuml_static_with_renderer_emits_injected_image() {
         carve::to_html_with_options("``` plantuml\n@startuml\nA -> B\n@enduml\n```\n", &opts);
     assert_eq!(
         via_plantuml.trim(),
-        "<div class=\"plantuml\"><img alt=\"plantuml\" src=\"uml.svg\"></div>"
+        "<div class=\"plantuml\" role=\"img\" aria-label=\"plantuml\"><img alt=\"plantuml\" src=\"uml.svg\"></div>"
     );
     let via_puml = carve::to_html_with_options("``` puml\nA -> B\n```\n", &opts);
     assert_eq!(
         via_puml.trim(),
-        "<div class=\"plantuml\"><img alt=\"plantuml\" src=\"uml.svg\"></div>"
+        "<div class=\"plantuml\" role=\"img\" aria-label=\"plantuml\"><img alt=\"plantuml\" src=\"uml.svg\"></div>"
     );
 }
 
@@ -322,7 +322,7 @@ fn custom_fence_word_is_static_capable_via_its_css_class() {
     // wrapped in a `<div class="myuml">` identical to js/php (carve#302).
     assert_eq!(
         html.trim(),
-        "<div class=\"myuml\"><img alt=\"myuml\" src=\"my.svg\"></div>"
+        "<div class=\"myuml\" role=\"img\" aria-label=\"myuml\"><img alt=\"myuml\" src=\"my.svg\"></div>"
     );
 }
 
@@ -524,7 +524,7 @@ fn fenced_render_non_html_output_is_the_source_fence_not_raw_html() {
     // HTML is unaffected (still the hydration element).
     assert_eq!(
         carve::to_html_with_options(src, &opts).trim(),
-        "<pre class=\"mermaid\">graph TD; A-->B</pre>"
+        "<pre class=\"mermaid\" role=\"img\" aria-label=\"mermaid\">graph TD; A-->B</pre>"
     );
 }
 

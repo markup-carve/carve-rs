@@ -353,7 +353,7 @@ fn mermaid_diagram_golden() {
     // carveToHtml("``` mermaid\ngraph TD; A-->B\n```\n", {extensions:[mermaid()]})
     assert_eq!(
         carve::to_html_with_options("``` mermaid\ngraph TD; A-->B\n```\n", &opts),
-        "<pre class=\"mermaid\">graph TD; A-->B</pre>"
+        "<pre class=\"mermaid\" role=\"img\" aria-label=\"mermaid\">graph TD; A-->B</pre>"
     );
 }
 
@@ -366,7 +366,7 @@ fn mermaid_inside_footnote_is_transformed() {
     let out =
         carve::to_html_with_options("see[^a]\n\n[^a]: ``` mermaid\n    graph\n    ```\n", &opts);
     assert!(
-        out.contains("<pre class=\"mermaid\">"),
+        out.contains("<pre class=\"mermaid\" role=\"img\" aria-label=\"mermaid\">"),
         "footnote mermaid not transformed: {out}"
     );
     assert!(
@@ -796,7 +796,7 @@ fn fenced_render_text_mode_escapes_amp_lt_keeps_gt() {
     let opts = Options::new().with_extension(&ext);
     assert_eq!(
         carve::to_html_with_options("``` d2\na -> b & <c\n```\n", &opts),
-        "<pre class=\"d2\">a -> b &amp; &lt;c</pre>"
+        "<pre class=\"d2\" role=\"img\" aria-label=\"d2\">a -> b &amp; &lt;c</pre>"
     );
 }
 
@@ -806,11 +806,11 @@ fn fenced_render_graphviz_claims_dot_and_graphviz() {
     let opts = Options::new().with_extension(&ext);
     assert_eq!(
         carve::to_html_with_options("``` dot\na -> b\n```\n", &opts),
-        "<pre class=\"graphviz\">a -> b</pre>"
+        "<pre class=\"graphviz\" role=\"img\" aria-label=\"graphviz\">a -> b</pre>"
     );
     assert_eq!(
         carve::to_html_with_options("``` graphviz\na -> b\n```\n", &opts),
-        "<pre class=\"graphviz\">a -> b</pre>"
+        "<pre class=\"graphviz\" role=\"img\" aria-label=\"graphviz\">a -> b</pre>"
     );
 }
 
@@ -820,7 +820,7 @@ fn fenced_render_json_mode_wraps_in_script_inside_div() {
     let opts = Options::new().with_extension(&ext);
     assert_eq!(
         carve::to_html_with_options("``` vega-lite\n{\"mark\": \"bar\"}\n```\n", &opts),
-        "<div class=\"vega-lite\"><script type=\"application/json\">{\"mark\": \"bar\"}</script></div>"
+        "<div class=\"vega-lite\" role=\"img\" aria-label=\"vega-lite\"><script type=\"application/json\">{\"mark\": \"bar\"}</script></div>"
     );
 }
 
@@ -830,7 +830,7 @@ fn fenced_render_json_mode_guards_script_close() {
     let opts = Options::new().with_extension(&ext);
     assert_eq!(
         carve::to_html_with_options("``` vega-lite\n{\"x\": \"</script>\"}\n```\n", &opts),
-        "<div class=\"vega-lite\"><script type=\"application/json\">{\"x\": \"<\\/script>\"}</script></div>"
+        "<div class=\"vega-lite\" role=\"img\" aria-label=\"vega-lite\"><script type=\"application/json\">{\"x\": \"<\\/script>\"}</script></div>"
     );
 }
 
@@ -841,7 +841,7 @@ fn fenced_render_strips_event_handler_attributes() {
     // Always-on hardening strips on* while safe attributes survive.
     assert_eq!(
         carve::to_html_with_options("{#c1 .tall onclick=\"x\"}\n``` d2\na\n```\n", &opts),
-        "<pre id=\"c1\" class=\"d2 tall\">a</pre>"
+        "<pre id=\"c1\" class=\"d2 tall\" role=\"img\" aria-label=\"d2\">a</pre>"
     );
 }
 
@@ -866,7 +866,7 @@ fn fenced_render_custom_tag_and_css_class() {
     let opts = Options::new().with_extension(&ext);
     assert_eq!(
         carve::to_html_with_options("``` d2\na -> b\n```\n", &opts),
-        "<div class=\"diagram\">a -> b</div>"
+        "<div class=\"diagram\" role=\"img\" aria-label=\"diagram\">a -> b</div>"
     );
 }
 
@@ -891,19 +891,19 @@ fn fenced_render_presets_register_all_languages() {
     }
     assert_eq!(
         carve::to_html_with_options("``` mermaid\ngraph TD; A-->B\n```\n", &opts),
-        "<pre class=\"mermaid\">graph TD; A-->B</pre>"
+        "<pre class=\"mermaid\" role=\"img\" aria-label=\"mermaid\">graph TD; A-->B</pre>"
     );
     assert!(
         carve::to_html_with_options("``` dot\ndigraph { a -> b }\n```\n", &opts)
-            .contains("<pre class=\"graphviz\">")
+            .contains("<pre class=\"graphviz\" role=\"img\" aria-label=\"graphviz\">")
     );
     assert!(
         carve::to_html_with_options("``` chart\n{\"type\":\"bar\"}\n```\n", &opts)
-            .contains("<div class=\"chart\">")
+            .contains("<div class=\"chart\" role=\"img\" aria-label=\"chart\">")
     );
     assert!(
         carve::to_html_with_options("``` puml\nA -> B\n```\n", &opts)
-            .contains("<pre class=\"plantuml\">")
+            .contains("<pre class=\"plantuml\" role=\"img\" aria-label=\"plantuml\">")
     );
 }
 
@@ -913,11 +913,11 @@ fn fenced_render_plantuml_claims_both_fence_words() {
     let opts = Options::new().with_extension(&ext);
     assert_eq!(
         carve::to_html_with_options("``` plantuml\n@startuml\nA -> B\n@enduml\n```\n", &opts),
-        "<pre class=\"plantuml\">@startuml\nA -> B\n@enduml</pre>"
+        "<pre class=\"plantuml\" role=\"img\" aria-label=\"plantuml\">@startuml\nA -> B\n@enduml</pre>"
     );
     assert_eq!(
         carve::to_html_with_options("``` puml\nA -> B\n```\n", &opts),
-        "<pre class=\"plantuml\">A -> B</pre>"
+        "<pre class=\"plantuml\" role=\"img\" aria-label=\"plantuml\">A -> B</pre>"
     );
 }
 
@@ -933,7 +933,7 @@ fn fenced_render_plantuml_escapes_less_than_but_keeps_greater_than() {
             "``` plantuml\nA <|-- B\nC <<actor>> D\nE --> F\n```\n",
             &opts
         ),
-        "<pre class=\"plantuml\">A &lt;|-- B\nC &lt;&lt;actor>> D\nE --> F</pre>"
+        "<pre class=\"plantuml\" role=\"img\" aria-label=\"plantuml\">A &lt;|-- B\nC &lt;&lt;actor>> D\nE --> F</pre>"
     );
 }
 
