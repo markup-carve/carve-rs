@@ -283,28 +283,48 @@ fn main() -> ExitCode {
     } else {
         // Mention/tag URL templates are an HTML-link concern, so they only affect
         // HTML output. All formats share the same parse + profile pipeline.
-        match format {
-            OutputFormat::Html => carve::to_html_with_options(&source, &options),
+        //
+        // The FALLIBLE entry points, deliberately. Their infallible siblings map
+        // a refusal to `String::new()`, which is the right trade for a library
+        // caller who asked not to handle it and the wrong one here: a command
+        // line tool has an exit status and a stderr, so a refusal has somewhere
+        // to go, and writing nothing while reporting success makes an over-cap
+        // document indistinguishable from one that legitimately rendered to
+        // nothing (carve-rs#1190). The ingest branch above already answers this
+        // input with `eprintln!` + FAILURE; both branches reach it through the
+        // same `RenderError`, so they print the same line.
+        let rendered = match format {
+            OutputFormat::Html => carve::try_to_html_with_options(&source, &options),
             // Positions ON for the three targets that PRINT the footnote
             // definitions: §7 orders them by source position, and the map they
             // come from is a BTreeMap, so without spans they print in label
             // order (carve-rs#686). `--json` below asks for the same thing.
             OutputFormat::Markdown => {
                 options = options.with_positions(true);
-                carve::to_markdown_with_options(&source, &options)
+                carve::try_to_markdown_with_options(&source, &options)
             }
             OutputFormat::Plain => {
                 options = options.with_positions(true);
-                carve::to_plain_text_with_options(&source, &options)
+                carve::try_to_plain_text_with_options(&source, &options)
             }
             OutputFormat::Ansi => {
                 options = options.with_positions(true);
-                carve::to_ansi_with_options(&source, &options)
+                carve::try_to_ansi_with_options(&source, &options)
             }
-            OutputFormat::Carve => carve::to_carve(&source),
+            // `to_carve` takes no options, so no profile reaches this target at
+            // all - there is no violation here to surface. carve-rs#1191.
+            OutputFormat::Carve => Ok(carve::to_carve(&source)),
             OutputFormat::Json => {
                 options = options.with_positions(true);
-                carve::to_json_with_options(&source, &options)
+                carve::try_to_json_with_options(&source, &options)
+            }
+        };
+        match rendered {
+            Ok(output) => output,
+            Err(err) => {
+                let err = RenderError::from(err);
+                eprintln!("carve: {err}");
+                return ExitCode::FAILURE;
             }
         }
     };
