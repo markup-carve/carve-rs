@@ -231,6 +231,15 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **The borrowed layout scanner agrees with the authoritative pipeline on a
+  blank-separated ordered list and an empty fence** (carve-rs#1206). `to_html`
+  tries the scanner first, so the library rendered `1. a` / blank / `2. b` as
+  two `<ol>`s - the second carrying `start="2"` - and dropped an empty fence's
+  payload line, while every other entry point and the CLI rendered both
+  correctly. §11 N1 makes two adjacent items the same list when their markers
+  match, and a blank is not one of those axes; §17 L1 gives it its actual job of
+  deciding tight versus loose.
+
 - **A run that ate a verse line leaves no comment node** (carve-rs#1193). At the
   boundary where the comment is the stanza's last body line AND the run is still
   open, the node was appended after the run that contains it - PART 9 §23's

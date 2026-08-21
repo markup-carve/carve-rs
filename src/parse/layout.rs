@@ -271,6 +271,14 @@ fn render_layout_body(
                 crate::escape::write_escaped_text(&mut out, content);
                 out.push('\n');
             }
+            // AN EMPTY PAYLOAD IS STILL A LINE. The loop above emits one newline
+            // per body line, so with no body lines it emits nothing at all and an
+            // empty fence came back `<pre><code></code></pre>` where the
+            // authoritative pipeline renders `<pre><code>\n</code></pre>` - the
+            // shape corpus 276 pins for an empty code block.
+            if close == i + 1 {
+                out.push('\n');
+            }
             out.push_str("</code></pre>");
             accepted.record(BlockLayout {
                 event: LayoutEvent::CodeFence,
@@ -704,6 +712,31 @@ fn render_layout_ordered_list(
         // authoritative list collector.
         return None;
     }
+    // A BLANK BEFORE THE NEXT SIBLING MARKER LOOSENS THIS LIST, IT DOES NOT END IT
+    // (§11 N1/N2 and §17 L1). Two adjacent items are the same list when they match
+    // on the marker axes, and a blank line is not one of them; it decides tight
+    // versus loose and nothing else. Closing the `<ol>` here rendered `1. a` /
+    // blank / `2. b` - the most common shape a numbered list takes - as two lists,
+    // the second carrying `start="2"`.
+    //
+    // The bullet scanner above already carries this check; the ordered one never
+    // did, which is one rule with two implementations and only one of them
+    // written. Looseness is not expressible in the borrowed layout, so the
+    // document goes to the authoritative pipeline rather than being rendered here.
+    //
+    // Only reached with `lines[i]` blank or past the end - the guard above returns
+    // for every other shape - so scanning forward from `i` skips exactly the blank
+    // run between the two items. The bullet check has to compare indent as well;
+    // this one does not, because `decimal_list_item` parses the number from the
+    // line's first byte, making the ordered scanner column-0 only. An indented
+    // `   1. b` is a nested list, not a sibling, and is not matched here.
+    if lines[i..]
+        .iter()
+        .find(|line| !is_blank_line(line))
+        .is_some_and(|next| decimal_list_item(next).is_some())
+    {
+        return None;
+    }
     out.push('\n');
     layout_indent(out, depth);
     out.push_str("</ol>");
@@ -842,6 +875,158 @@ mod layout_html_tests {
             source.contains("[^") || source.contains("^["),
         )
         .unwrap()
+    }
+
+    #[test]
+    fn every_accepted_layout_matches_across_the_construct_matrix() {
+        // THE GUARD FOR THE CLASS, not for the two defects that prompted it. Every
+        // divergence here has the same shape: the borrowed layout models a
+        // construct the authoritative pipeline models differently, and the corpus
+        // cannot see it, because a corpus check compares documents the layout
+        // ACCEPTS and says nothing about the ones it should have handed back.
+        //
+        // Crossing each construct with every other at each separator width reaches
+        // the shapes no fixture happens to contain. That is how the empty fence and
+        // the blank-separated ordered list were found; the hand-written parity
+        // fixture below had passed throughout.
+        let bodies = [
+            "# H",
+            "text",
+            "text\nmore",
+            "> q",
+            "> q\n> r",
+            "```\nx\n```",
+            "```\n```",
+            "***",
+            "- a",
+            "- a\n- b",
+            "1. a",
+            "1. a\n2. b",
+            "| A |\n| --- |\n| x |",
+            "[s]: https://e.com",
+            "[s]: https://e.com \"T\"",
+            "+",
+        ];
+        let separators = ["\n", "\n\n", "\n\n\n"];
+        let mut documents: Vec<String> = bodies.iter().map(|b| format!("{b}\n")).collect();
+        for a in bodies {
+            for b in bodies {
+                for separator in separators {
+                    documents.push(format!("{a}{separator}{b}\n"));
+                }
+            }
+        }
+        for source in &documents {
+            if let Some(fast) = try_layout_html(source, &Options::default()) {
+                assert_eq!(fast, authoritative(source), "source:\n{source}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_blank_line_between_two_ordered_items_does_not_end_the_list() {
+        // §11 N1 makes two adjacent items the same list when they match on the
+        // marker axes - a blank line is not one of them - and §17 L1 gives the
+        // blank its actual job: deciding tight versus loose. carve-js#1270 is the
+        // same defect one implementation over.
+        //
+        // Compare the two PATHS, not the fast path against a golden: `to_html`
+        // tries the scanner first, `authoritative` is what it falls back to. A
+        // golden-only test would still pass if the authoritative pipeline moved
+        // underneath it, and an `if let Some(fast)` test would assert nothing at
+        // all here, because the whole point of the repair is that these shapes are
+        // now handed back.
+        for source in [
+            "1. a\n\n2. b\n",
+            "1. a\n\n1. b\n",
+            "1. a\n\n\n2. b\n",
+            "- a\n\n- b\n",
+        ] {
+            assert_eq!(
+                crate::to_html(source),
+                authoritative(source),
+                "source:\n{source}"
+            );
+        }
+        // The shape both paths agree on, pinned once so the agreement above cannot
+        // be satisfied by two matching wrongs. The bullet spelling is the reason
+        // this is a defect rather than a judgment call: the same blank between two
+        // BULLET items has always loosened, so ending the ordered list was this
+        // implementation disagreeing with itself, not with a sibling engine.
+        assert_eq!(
+            crate::to_html("1. a\n\n2. b\n"),
+            "<ol>\n  <li><p>a</p></li>\n  <li><p>b</p></li>\n</ol>",
+        );
+        assert_eq!(
+            crate::to_html("- a\n\n- b\n"),
+            "<ul>\n  <li><p>a</p></li>\n  <li><p>b</p></li>\n</ul>",
+        );
+    }
+
+    #[test]
+    fn only_a_sibling_ordered_marker_hands_the_document_back() {
+        // THE NEAR MISS. The repair for the blank-separated list is a bail-out, and
+        // a bail-out that is too wide would "fix" the divergence by giving up the
+        // fast path wholesale - passing every parity check while deleting the
+        // reason the scanner exists. So pin the width, not just the fix: a blank
+        // after an ordered item hands the document back ONLY when a sibling
+        // column-0 ordered marker follows it.
+        //
+        // Each shape below is one the scanner claimed before this change and must
+        // still claim. Measured, not assumed: all five come back `Some` today, so
+        // none of these assertions is vacuously true.
+        for source in [
+            "1. a\n2. b\n",   // no blank at all - tight, stays borrowed
+            "1. a\n\ntext\n", // blank, then a paragraph - the list did end here
+            "1. a\n\n# H\n",  // blank, then a heading - likewise
+            "1. a\n\n\n",     // trailing blanks at end of document - nothing follows
+            "1. a\n\n- b\n",  // a BULLET is a different marker axis (§11 N1), so
+                              // these really are two lists and borrowing is right
+        ] {
+            assert!(
+                try_layout_html(source, &Options::default()).is_some(),
+                "the fast path must still claim this shape:\n{source}"
+            );
+        }
+        // ...and the shape that must NOT be claimed, so the pair brackets the width
+        // of the bail-out from both sides.
+        assert!(try_layout_html("1. a\n\n2. b\n", &Options::default()).is_none());
+    }
+
+    #[test]
+    fn an_empty_fence_payload_still_emits_its_line() {
+        // Corpus 276 pins `<pre><code>\n</code></pre>` for an empty code block.
+        // The body loop emits one newline per line, so with no lines it emitted
+        // none and dropped the payload's only line.
+        //
+        // Path against path, for the same reason as above. Here the scanner DOES
+        // still claim the document, so this also pins that the repair kept it on
+        // the fast path instead of bailing out of it.
+        for source in [
+            "```\n```\n",
+            "```rs\n```\n",
+            "```\n\n```\n",
+            "```\nx\n```\n",
+        ] {
+            assert!(
+                try_layout_html(source, &Options::default()).is_some(),
+                "an empty fence is still borrowed, not handed back:\n{source}"
+            );
+            assert_eq!(
+                crate::to_html(source),
+                authoritative(source),
+                "source:\n{source}"
+            );
+        }
+        assert_eq!(crate::to_html("```\n```\n"), "<pre><code>\n</code></pre>");
+        // The near miss for THIS repair, and the reason the condition is
+        // `close == i + 1` and nothing wider: a fence holding ONE blank body line
+        // already emits that newline through the loop above, and renders
+        // identically to the empty one. The two shapes converge - which is the
+        // point, an empty payload IS one empty line - so the added newline must
+        // fire only when the loop wrote nothing at all. Any wider condition
+        // doubles it here.
+        assert_eq!(crate::to_html("```\n\n```\n"), "<pre><code>\n</code></pre>");
     }
 
     #[test]
