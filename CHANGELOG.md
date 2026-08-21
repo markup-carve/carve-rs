@@ -249,6 +249,15 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A comment an author wrote can no longer impersonate a collected
+  definition's placeholder** (carve-rs#1214). The marker a hoisted definition
+  leaves behind was fixed at `%%` plus U+E005 / U+E006 and matched positionally,
+  so an authored comment carrying either code point lost its node, emptied the
+  list item holding it, and dedented an item's continuation line out of the
+  item. The suffix is picked per document now, the way the canonical writer
+  picks its own; the preferred pair is unchanged, so a document with no
+  private-use character behaves byte for byte as before.
+
 - **The borrowed layout scanner agrees with the authoritative pipeline on a
   blank-separated ordered list and an empty fence** (carve-rs#1206). `to_html`
   tries the scanner first, so the library rendered `1. a` / blank / `2. b` as

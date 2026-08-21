@@ -9,7 +9,7 @@ use crate::extension::{
     AsciiHeadingIds, BlockMatch, HeadingIdOptions, InlineMatch, MatcherContext, Options,
 };
 use std::cell::{Cell, RefCell};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 /// The line a collected definition leaves behind, and the marker that says it
 /// is ours rather than something the author wrote.
@@ -30,15 +30,157 @@ use std::collections::{BTreeMap, HashMap};
 /// parser's `%%` arm, which drops the line instead of building a node; nothing
 /// downstream sees it, and the line is still non-blank for every collection and
 /// tightness decision made before that point. Same device as `VERBATIM_BLANK`
-/// in the writer.
-const DEFINITION_PLACEHOLDER: &str = "%%\u{E005}";
-const DOCUMENT_DEFINITION_PLACEHOLDER: &str = "%%\u{E006}";
+/// in the writer - INCLUDING the part where the character has to be picked
+/// against the document rather than fixed.
+///
+/// So these two code points are PREFERRED, not fixed:
+/// `pick_definition_placeholders` re-picks them for any document that already
+/// contains one.
+///
+/// A FIXED suffix cannot be told apart from one the AUTHOR wrote, and the
+/// parser answers `is_definition_placeholder` positionally, so a line an author
+/// writes as `%%` + U+E005 reaches every branch the collector's own marker
+/// reaches. That is not theoretical here: measured against the same document
+/// with an ordinary comment, an authored `%%`+U+E005 loses the comment node from
+/// the AST, empties the list item holding it (`- +` where the author wrote a
+/// comment), and dedents an item's continuation line out of the item. Same rule
+/// carve#678 settled and markup-carve/carve-js#1289 re-applied to the JS writer;
+/// the canonical writer in this crate already picks its own five per render
+/// (`SENTINEL_DEFAULTS`, markup-carve/carve-rs#607 and #630).
+const PLACEHOLDER_DEFAULTS: [char; 2] = ['\u{E005}', '\u{E006}'];
+
+/// Slot indices into [`PLACEHOLDER_DEFAULTS`] / [`PLACEHOLDERS`].
+const P_DEFINITION: usize = 0;
+const P_DOCUMENT_DEFINITION: usize = 1;
+
+/// The allocatable pool: the BMP private-use area minus its first code point.
+/// U+E000 is the PUBLISHED no-break-space placeholder ([`crate::NBSP_PLACEHOLDER`]),
+/// so it is never allocatable however little of the area a document occupies.
+const PLACEHOLDER_POOL_FIRST: u32 = 0xe001;
+const PLACEHOLDER_POOL_LAST: u32 = 0xf8ff;
+
+thread_local! {
+    /// The suffix code points in force for the parse running on this thread.
+    ///
+    /// A thread-local for the same reason as `NESTING_DEPTH` above: the two
+    /// markers are written by the definition collector and read by a dozen
+    /// block-collection helpers that thread nothing else between them.
+    ///
+    /// Plain initializer for the same MSRV reason as `NESTING_DEPTH`.
+    #[allow(clippy::missing_const_for_thread_local)]
+    static PLACEHOLDERS: Cell<[char; 2]> = Cell::new(PLACEHOLDER_DEFAULTS);
+}
+
+/// Install `chars` for the duration of one parse, restoring the previous pair on
+/// drop (panic unwind included), the discipline [`DepthGuard`] keeps.
+struct PlaceholderGuard([char; 2]);
+
+impl PlaceholderGuard {
+    fn install(chars: [char; 2]) -> PlaceholderGuard {
+        PlaceholderGuard(PLACEHOLDERS.with(|slot| slot.replace(chars)))
+    }
+}
+
+impl Drop for PlaceholderGuard {
+    fn drop(&mut self) {
+        PLACEHOLDERS.with(|slot| slot.set(self.0));
+    }
+}
+
+/// Which private-use code points `source` occupies.
+///
+/// A SET of code points rather than a search over the joined text: the answer is
+/// bounded by the private-use area (at most 6400 entries) however large the
+/// document is, and one pass builds it. Scanning per candidate instead would be
+/// one full pass per rejected pair.
+fn occupied_private_use(source: &str) -> BTreeSet<u32> {
+    source
+        .chars()
+        .map(u32::from)
+        .filter(|code| (PLACEHOLDER_POOL_FIRST..=PLACEHOLDER_POOL_LAST).contains(code))
+        .collect()
+}
+
+/// Two private-use code points `source` does not contain.
+///
+/// The preferred pair is tried first, so the common case - a document with no
+/// private-use character at all - pays one scan that finds nothing and two set
+/// lookups.
+///
+/// When either preferred code point is taken the search walks the pool ONE CODE
+/// POINT AT A TIME. Stepping a pair at a time would step over the free window
+/// between two occupied code points whenever it is not a whole number of pairs
+/// from the base, and report the area full while nearly all of it was free.
+///
+/// The last resort is the preferred pair rather than a refusal: it needs all
+/// 6399 allocatable code points occupied, and a parser that gives up is worse
+/// than one that falls back to the behavior it had before the pair was picked at
+/// all. markup-carve/carve-js#1289 lands in the same place (`pickSentinelRun`
+/// returns the preferred run when the scan runs out).
+fn pick_definition_placeholders(source: &str) -> [char; 2] {
+    let occupied = occupied_private_use(source);
+    let free = |code: u32| !occupied.contains(&code);
+    let pair = |first: u32| {
+        [
+            char::from_u32(first).expect("private-use code point"),
+            char::from_u32(first + 1).expect("private-use code point"),
+        ]
+    };
+
+    let preferred = u32::from(PLACEHOLDER_DEFAULTS[0]);
+    if free(preferred) && free(preferred + 1) {
+        return PLACEHOLDER_DEFAULTS;
+    }
+
+    let mut first = PLACEHOLDER_POOL_FIRST;
+    while first < PLACEHOLDER_POOL_LAST {
+        if free(first) && free(first + 1) {
+            return pair(first);
+        }
+        first += 1;
+    }
+    PLACEHOLDER_DEFAULTS
+}
+
+fn placeholder_char(which: usize) -> char {
+    PLACEHOLDERS.with(|slot| slot.get()[which])
+}
+
+/// The marker a collected definition leaves behind, at its own column.
+fn definition_placeholder() -> String {
+    format!("%%{}", placeholder_char(P_DEFINITION))
+}
+
+/// The same marker for a definition written at the DOCUMENT's column zero.
+fn document_definition_placeholder() -> String {
+    format!("%%{}", placeholder_char(P_DOCUMENT_DEFINITION))
+}
+
+/// Which placeholder `line` is, if it is one.
+///
+/// Compares the suffix CODE POINT rather than building the marker string, so a
+/// per-line test on a collected block allocates nothing.
+fn placeholder_kind(line: &str) -> Option<usize> {
+    let mut suffix = trim_ascii(line).strip_prefix("%%")?.chars();
+    let ch = suffix.next()?;
+    if suffix.next().is_some() {
+        return None;
+    }
+    PLACEHOLDERS.with(|slot| slot.get().iter().position(|current| *current == ch))
+}
 
 fn is_definition_placeholder(line: &str) -> bool {
-    matches!(
-        trim_ascii(line),
-        DEFINITION_PLACEHOLDER | DOCUMENT_DEFINITION_PLACEHOLDER
-    )
+    placeholder_kind(line).is_some()
+}
+
+/// Only the marker a definition left at its container's column - NOT the one a
+/// document-column definition left, which is an I5 interrupter instead.
+fn is_collected_definition_placeholder(line: &str) -> bool {
+    placeholder_kind(line) == Some(P_DEFINITION)
+}
+
+fn is_document_definition_placeholder(line: &str) -> bool {
+    placeholder_kind(line) == Some(P_DOCUMENT_DEFINITION)
 }
 
 /// Maximum block + inline nesting depth. Pathological input (deeply nested
@@ -396,6 +538,12 @@ fn parse_with_options_mode_and_index(
     let original = source;
     let normalized = normalize_source(source);
     let source = normalized.as_ref();
+    // PICK THE DEFINITION PLACEHOLDERS FOR THIS DOCUMENT before anything reads
+    // them. Every entry point funnels through here, and the guard restores the
+    // previous pair on the way out, so a parse nested inside another one - a
+    // throwaway probe, the writer's shape comparison - cannot leave a foreign
+    // pair installed. See `PLACEHOLDER_DEFAULTS`.
+    let _placeholders = PlaceholderGuard::install(pick_definition_placeholders(source));
     let (frontmatter, frontmatter_raw, body) = split_frontmatter(source, options.positions);
     let body_start_line = source
         [..(body.as_ptr() as usize).saturating_sub(source.as_ptr() as usize)]
@@ -1446,7 +1594,7 @@ fn extract_footnote_defs(
             // optional blank line, so replacing a definition with one allowed a
             // caption to attach THROUGH the definition (carve#1028). The marker
             // is invisible but non-blank, preserving the interruption.
-            if !replacement.ends_with("%%") && !replacement.ends_with(DEFINITION_PLACEHOLDER) {
+            if !replacement.ends_with("%%") && !replacement.ends_with(&definition_placeholder()) {
                 // AND IT HAS TO STAND AT THE DEFINITION'S OWN COLUMN. Inside a
                 // container the structural prefix already carries it; at top
                 // level that prefix is empty, so an unindented placeholder
@@ -1454,10 +1602,10 @@ fn extract_footnote_defs(
                 // open - the line after it leaves the list entirely.
                 let document_column = replacement.is_empty() && leading_ws(stripped.bare) == 0;
                 replacement.push_str(&stripped.bare[..leading_ws(stripped.bare)]);
-                replacement.push_str(if document_column {
-                    DOCUMENT_DEFINITION_PLACEHOLDER
+                replacement.push_str(&if document_column {
+                    document_definition_placeholder()
                 } else {
-                    DEFINITION_PLACEHOLDER
+                    definition_placeholder()
                 });
             }
             replacement.push_str(
@@ -2230,7 +2378,7 @@ fn extract_link_defs_with_guard(
             // Top-level needs the marker too: a plain blank is caption_slot's
             // optional blank line, so replacing a definition with one allowed a
             // caption to attach THROUGH the definition (carve#1028).
-            if !replacement.ends_with("%%") && !replacement.ends_with(DEFINITION_PLACEHOLDER) {
+            if !replacement.ends_with("%%") && !replacement.ends_with(&definition_placeholder()) {
                 // AND IT HAS TO STAND AT THE DEFINITION'S OWN COLUMN. Inside a
                 // container the structural prefix already carries it; at top
                 // level that prefix is empty, so an unindented placeholder
@@ -2238,10 +2386,10 @@ fn extract_link_defs_with_guard(
                 // open - the line after it leaves the list entirely.
                 let document_column = replacement.is_empty() && leading_ws(stripped.bare) == 0;
                 replacement.push_str(&stripped.bare[..leading_ws(stripped.bare)]);
-                replacement.push_str(if document_column {
-                    DOCUMENT_DEFINITION_PLACEHOLDER
+                replacement.push_str(&if document_column {
+                    document_definition_placeholder()
                 } else {
-                    DEFINITION_PLACEHOLDER
+                    definition_placeholder()
                 });
             }
             replacement.push_str(
@@ -2439,7 +2587,7 @@ impl StrippedContainerLine<'_> {
     fn replacement(&self) -> String {
         let mut replacement = self.structural.to_string();
         if self.needs_empty_list_content {
-            replacement.push_str(DEFINITION_PLACEHOLDER);
+            replacement.push_str(&definition_placeholder());
         }
         replacement
     }
@@ -8445,7 +8593,7 @@ fn parse_list(
                     let definition_ended_paragraph = nested
                         .source
                         .lines()
-                        .any(|line| trim_ascii(line) == DEFINITION_PLACEHOLDER);
+                        .any(is_collected_definition_placeholder);
                     // A `{…}` block that ENDS this chunk was written in front of
                     // whatever comes next, and what comes next is in the next
                     // chunk - the collector broke on the sub-list marker. Hold
@@ -8566,7 +8714,7 @@ fn parse_list(
                 // placeholder and parses what follows as a sibling. At the
                 // item's content column the indented continuation branch above
                 // already collected it inside the item (corpus 228).
-                if trim_ascii(line) == DOCUMENT_DEFINITION_PLACEHOLDER {
+                if is_document_definition_placeholder(line) {
                     break;
                 }
                 if !items.is_empty() {
@@ -8892,7 +9040,7 @@ fn parse_list(
             // between the two columns to the outer item instead (#1424).
             let nested_content_col = content_col + innermost_marker_content_col(marker.content);
             let nested_definition_ended_paragraph =
-                trim_ascii(innermost_marker_content(marker.content)) == DEFINITION_PLACEHOLDER;
+                is_collected_definition_placeholder(innermost_marker_content(marker.content));
             let mut stream = item_marker_source(cur, marker.content, item_at);
             let before_block = cur.pos;
             let collection_floor = if nested_definition_ended_paragraph {
@@ -9072,7 +9220,7 @@ fn parse_list(
         // column still belongs to it. Sending the placeholder through the lead
         // paragraph path made `- [r]: /u` / ` :` render the colon inside the
         // item, unlike the executable spec, carve-js and carve-php.
-        if trim_ascii(marker.content) == DEFINITION_PLACEHOLDER {
+        if is_collected_definition_placeholder(marker.content) {
             let nested =
                 collect_indented_block_mapped(cur, content_col.saturating_sub(1), content_col);
             let children = item_body(deferred, items.len(), nested, None, true);
@@ -10747,7 +10895,7 @@ fn collect_indented_block_mapped_with(
             comment_fence_strip = None;
         }
         let (sliced, consumed, synthetic) = slice_columns_mapped(line, stripped, true);
-        definition_ended_paragraph = trim_ascii(&sliced) == DEFINITION_PLACEHOLDER;
+        definition_ended_paragraph = is_collected_definition_placeholder(&sliced);
         // A COLON LINE INSIDE A CODE OR COMMENT SPAN OPENS AND CLOSES NOTHING:
         // §28 makes both bodies verbatim, which is the same reading that keeps a
         // marker in one from being a marker. Read before the code tracker
@@ -11021,7 +11169,7 @@ fn collect_indented_block_plain_with(
             comment_fence_strip = None;
         }
         let sliced = slice_columns(line, stripped, true);
-        definition_ended_paragraph = trim_ascii(&sliced) == DEFINITION_PLACEHOLDER;
+        definition_ended_paragraph = is_collected_definition_placeholder(&sliced);
         // A COLON LINE INSIDE A CODE OR COMMENT SPAN OPENS AND CLOSES NOTHING:
         // §28 makes both bodies verbatim, which is the same reading that keeps a
         // marker in one from being a marker. Read before the code tracker
