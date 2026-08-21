@@ -132,24 +132,51 @@ fn the_sentinel_never_reaches_output() {
 }
 
 #[test]
-fn an_authored_line_matching_the_sentinel_is_dropped() {
-    // The collision, pinned rather than hidden. A `%%` line whose entire content
-    // is the sentinel character is indistinguishable from the placeholder, so it
-    // is dropped. Reviewers find this; it is a deliberate trade, not an
-    // oversight.
+fn an_authored_line_matching_the_preferred_sentinel_is_kept() {
+    // THIS TEST USED TO PIN THE COLLISION AS A DELIBERATE TRADE. It asserted
+    // that a `%%` line whose whole content is U+E005 is DROPPED, and argued the
+    // trade was acceptable because "a comment has no rendering to change", so
+    // only fmt output lost a line nobody can see.
     //
-    // What makes it acceptable: the construct is a COMMENT, so the document
-    // renders identically either way and only fmt output loses a line nobody can
-    // see. Compare the two sentinels already in the writer - an authored U+E003
-    // inside a CODE BLOCK is restored as an empty line, which changes the
-    // rendered document (markup-carve/carve#678). This one cannot do that,
-    // because a comment has no rendering to change.
+    // The measurement on markup-carve/carve-rs#1214 says otherwise. Against the
+    // same document with an ordinary comment, an authored `%%`+U+E005:
+    //
+    //   - lost the comment node from the AST (`--json` and `fmt` both);
+    //   - EMPTIED the list item holding it, so `- %%x` came back `- +`;
+    //   - DEDENTED an item's continuation line out of the item, which changes
+    //     the rendered document.
+    //
+    // The last one is a block-structure change of exactly the kind the argument
+    // said could not happen here - and the same reading markup-carve/carve-js#1289
+    // measured on the JS side. So the suffix is picked per document instead
+    // (see `PLACEHOLDER_DEFAULTS` in src/parse.rs), and the author's comment
+    // survives.
     let src = "%%\u{E005}\n\nafter\n";
-    assert_eq!(to_html(src), to_html("\nafter\n"));
-    assert!(!to_carve(src).contains('\u{E005}'));
+    assert_eq!(
+        to_html(src),
+        to_html("%%x\n\nafter\n").replace('x', "\u{E005}")
+    );
+    assert!(
+        to_carve(src).contains('\u{E005}'),
+        "the authored comment was eaten"
+    );
+    assert!(
+        ast(src).contains("Comment"),
+        "the authored comment left no node"
+    );
 
-    // The sentinel is only a placeholder as a WHOLE comment line. Inside
-    // verbatim content, where authored bytes must survive, it is untouched.
+    // The item shape the old reading got wrong: a comment keeps its item
+    // non-empty, so the writer must not spell it `- +`.
+    assert_eq!(to_carve("- %%\u{E005}\n"), "- %% \u{E005}\n");
+
+    // And a definition collected out of the SAME document still works, on a pair
+    // the document does not occupy.
+    let both = "- [ref]: /url\n  %%\u{E005}\n\nSee [it][ref].\n";
+    assert!(to_html(both).contains("href=\"/url\""));
+    assert_eq!(to_html(&to_carve(both)), to_html(both));
+
+    // Inside verbatim content, where authored bytes must survive, the character
+    // was always untouched and still is.
     let code = "```\na\n\u{E005}\nb\n```\n";
     assert_eq!(to_html(&to_carve(code)), to_html(code));
     assert!(to_html(code).contains('\u{E005}'));
