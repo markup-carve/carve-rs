@@ -7,6 +7,15 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **A deeply nested document costs half the host stack to parse**
+  (carve-rs#1186). The two post-parse walks that run on every parse -
+  `collect_explicit_ids` and `collect_heading_titles` - descend a container's
+  children whether or not the document has a heading, so nesting depth cost
+  stack for a walk that visited nothing. Both are worklists now, in document
+  order. A 200-level container ladder parses in 64KiB where it needed 128KiB.
+
 ### Added
 
 - **Prebuilt `carve` binaries on every release** (carve#528). macOS on Apple
