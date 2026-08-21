@@ -42,6 +42,12 @@ pub struct CodeGroupOptions {
     pub radio_class: String,
     /// Prefix for generated ids and radio-group names. Default `codegroup`.
     pub id_prefix: String,
+    /// Accessible name for the code group AS A WHOLE, overriding the render's
+    /// `labels` map for this instance; empty writes no name.
+    ///
+    /// Each tab was already named by its own `<label>`; the GROUP was anonymous
+    /// (markup-carve/carve#1468). `None` reads `codeGroup` from the map.
+    pub group_label: Option<String>,
 }
 
 impl Default for CodeGroupOptions {
@@ -52,6 +58,7 @@ impl Default for CodeGroupOptions {
             label_class: "code-group-label".to_string(),
             radio_class: "code-group-radio".to_string(),
             id_prefix: "codegroup".to_string(),
+            group_label: None,
         }
     }
 }
@@ -138,7 +145,7 @@ impl CarveExtension for CodeGroup {
         let level = ctx.level();
         let pad = ctx.indent(level);
         let inner_pad = ctx.indent(level + 1);
-        let attrs = self.wrapper_attrs(node.attrs.as_ref());
+        let attrs = self.wrapper_attrs(node.attrs.as_ref(), ctx);
 
         if ctx.is_static() {
             let mut html = format!("{pad}<div{}>\n", render_attrs(&attrs));
@@ -211,7 +218,7 @@ impl CodeGroup {
     /// Wrapper attributes: the wrapper class first, then the author's other
     /// classes in order, minus the structural `code-group` that selected this
     /// renderer in the first place.
-    fn wrapper_attrs(&self, source: Option<&Attrs>) -> Option<Attrs> {
+    fn wrapper_attrs(&self, source: Option<&Attrs>, ctx: &RenderContext<'_>) -> Option<Attrs> {
         let mut attrs = source.cloned().unwrap_or_default();
         let mut classes = vec![self.opts.wrapper_class.clone()];
         for class in &attrs.classes {
@@ -220,6 +227,32 @@ impl CodeGroup {
             }
         }
         attrs.classes = classes;
+        // The group carries a ROLE and a NAME (markup-carve/carve#1468). Each
+        // tab was named by its own `<label>` and the group was not; this
+        // extension's own docs used to send you to Tabs for it, which costs the
+        // language labels and the highlighting that are the reason to use it.
+        //
+        // Anything the author wrote WINS, matched ASCII-case-insensitively.
+        let authored = |name: &str| {
+            source.is_some_and(|a| a.key_values.keys().any(|k| k.eq_ignore_ascii_case(name)))
+        };
+        if !authored("role") {
+            attrs
+                .key_values
+                .insert("role".to_string(), "group".to_string());
+            crate::extension::record_attr_order(&mut attrs, "role");
+        }
+        let group_label = self
+            .opts
+            .group_label
+            .clone()
+            .unwrap_or_else(|| ctx.label(crate::extension::LABEL_CODE_GROUP));
+        if !group_label.is_empty() && !authored("aria-label") && !authored("aria-labelledby") {
+            attrs
+                .key_values
+                .insert("aria-label".to_string(), group_label);
+            crate::extension::record_attr_order(&mut attrs, "aria-label");
+        }
 
         Some(attrs)
     }

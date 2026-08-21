@@ -193,13 +193,64 @@ pub enum SmartTypographyMode {
     Source,
 }
 
+/// Record an engine-written attribute at the END of the author's order.
+///
+/// With an EMPTY order the renderer falls back to the canonical slots and then
+/// `key_values` in map order, which is alphabetical - so `aria-label` came out
+/// ahead of `role` and the three engines disagreed byte-for-byte on a shape the
+/// optional corpus pins. Recording the slots makes the order explicit and
+/// APPENDED, so naming a block also never moves an attribute the author placed
+/// (markup-carve/carve#1468).
+pub(crate) fn record_attr_order(attrs: &mut crate::ast::Attrs, key: &str) {
+    use crate::ast::AttrSlot;
+    if attrs.order.is_empty() {
+        // Seed the slots the renderer would otherwise have supplied itself.
+        attrs.order.push(AttrSlot::Class);
+        if attrs.id.is_some() {
+            attrs.order.push(AttrSlot::Id);
+        }
+        let existing: Vec<String> = attrs.key_values.keys().cloned().collect();
+        for k in existing {
+            if !k.eq_ignore_ascii_case(key) {
+                attrs.order.push(AttrSlot::Key(k));
+            }
+        }
+    }
+    if !attrs
+        .order
+        .iter()
+        .any(|s| matches!(s, AttrSlot::Key(k) if k.eq_ignore_ascii_case(key)))
+    {
+        attrs.order.push(AttrSlot::Key(key.to_string()));
+    }
+}
+
 /// The `labels` key for the endnote backlink's accessible name (PART 9 §16a).
 pub const LABEL_FOOTNOTE_BACKLINK: &str = "footnoteBacklink";
 
-/// The English default for a `labels` key, and the whole set: one string.
+/// The `labels` key for the leading words of an index back-link's name.
+pub const LABEL_INDEX_BACKREF: &str = "indexBackref";
+
+/// The `labels` key for a tab set's accessible name.
+pub const LABEL_TABS_GROUP: &str = "tabsGroup";
+
+/// The `labels` key for a code group's accessible name.
+pub const LABEL_CODE_GROUP: &str = "codeGroup";
+
+/// The English default for a `labels` key, and the whole set.
+///
+/// The EXTENSION keys are here rather than only on their extensions so that ONE
+/// `labels` map localizes a whole document. PART 9 §16a's rule is that an
+/// extension MUST NOT require the host to configure the same text twice - and
+/// with a per-option spelling alone, switching a document to German meant
+/// finding several separate call sites and silently missing any one of them. An
+/// option set on the extension still wins for that instance.
 pub fn label_default(key: &str) -> &'static str {
     match key {
         LABEL_FOOTNOTE_BACKLINK => "Back to reference",
+        LABEL_INDEX_BACKREF => "Back to",
+        LABEL_TABS_GROUP => "Tabs",
+        LABEL_CODE_GROUP => "Code examples",
         _ => "",
     }
 }
@@ -693,6 +744,20 @@ impl<'a> RenderContext<'a> {
 
     /// The indentation level of the block node being rendered. Zero on the
     /// inline path.
+    /// The engine-written string for `key`, with the host's `labels` override
+    /// applied, else its English default (PART 9 §16a).
+    ///
+    /// An extension reads its own key from here so ONE `labels` map localizes
+    /// the whole document; an option set on the extension still wins for that
+    /// instance.
+    pub fn label(&self, key: &str) -> String {
+        self.options
+            .labels
+            .get(key)
+            .cloned()
+            .unwrap_or_else(|| label_default(key).to_string())
+    }
+
     pub fn level(&self) -> usize {
         self.level
     }

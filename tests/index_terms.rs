@@ -27,9 +27,9 @@ fn full_golden_matches_carve_js() {
         "<p>A <span id=\"idx-parser-1\" class=\"index-term\"></span> and \
 <span id=\"idx-lexer-1\" class=\"index-term\"></span>, then \
 <span id=\"idx-parser-2\" class=\"index-term\"></span> again.</p>\n\
-<ul class=\"index\">\n  <li>lexer <a href=\"#idx-lexer-1\" class=\"index-backref\">\u{21a9}</a></li>\n  \
-<li>parser <a href=\"#idx-parser-1\" class=\"index-backref\">\u{21a9}</a> \
-<a href=\"#idx-parser-2\" class=\"index-backref\">\u{21a9}</a></li>\n</ul>"
+<ul class=\"index\">\n  <li>lexer <a href=\"#idx-lexer-1\" class=\"index-backref\" aria-label=\"Back to lexer\">\u{21a9}</a></li>\n  \
+<li>parser <a href=\"#idx-parser-1\" class=\"index-backref\" aria-label=\"Back to parser 1\">\u{21a9}<sup>1</sup></a> \
+<a href=\"#idx-parser-2\" class=\"index-backref\" aria-label=\"Back to parser 2\">\u{21a9}<sup>2</sup></a></li>\n</ul>"
     );
 }
 
@@ -110,7 +110,7 @@ fn nested_in_blockquote() {
     let out = h("A :index[parser].\n\n> ::: index\n> :::");
     assert!(out.contains("<ul class=\"index\">"));
     assert!(out.contains(
-        "<li>parser <a href=\"#idx-parser-1\" class=\"index-backref\">\u{21a9}</a></li>"
+        "<li>parser <a href=\"#idx-parser-1\" class=\"index-backref\" aria-label=\"Back to parser\">\u{21a9}</a></li>"
     ));
 }
 
@@ -202,6 +202,6 @@ fn normal_index_renders_fully_under_budget() {
     assert_eq!(out.matches("<ul class=\"index\">").count(), 2);
     assert_eq!(out.matches("class=\"index-backref\"").count(), 4);
     assert!(out.contains(
-        "<li>parser <a href=\"#idx-parser-1\" class=\"index-backref\">\u{21a9}</a></li>"
+        "<li>parser <a href=\"#idx-parser-1\" class=\"index-backref\" aria-label=\"Back to parser\">\u{21a9}</a></li>"
     ));
 }

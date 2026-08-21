@@ -50,6 +50,14 @@ pub struct TabsOptions {
     pub radio_class: String,
     /// Prefix for generated ids. Default `tabset`.
     pub id_prefix: String,
+    /// Accessible name for the tab set AS A WHOLE, overriding the render's
+    /// `labels` map for this instance; empty writes no name.
+    ///
+    /// Each tab was already named by its own `<label>`; the GROUP was anonymous,
+    /// so a reader could hear the parts and never the thing they belong to
+    /// (markup-carve/carve#1468). `None` reads `tabsGroup` from the map, so ONE
+    /// map localizes a whole document (PART 9 §16a).
+    pub group_label: Option<String>,
 }
 
 impl Default for TabsOptions {
@@ -61,6 +69,7 @@ impl Default for TabsOptions {
             label_class: "tabs-label".to_string(),
             radio_class: "tabs-radio".to_string(),
             id_prefix: "tabset".to_string(),
+            group_label: None,
         }
     }
 }
@@ -148,7 +157,7 @@ impl CarveExtension for Tabs {
         if ctx.is_static() {
             let mut html = format!(
                 "{pad}<div{}>\n",
-                render_attrs(&self.wrapper_attrs(node, None))
+                render_attrs(&self.wrapper_attrs(node, None, ctx))
             );
             for item in &items {
                 html.push_str(&format!(
@@ -203,7 +212,7 @@ impl Tabs {
         // carve-rs#1188 gave the case a runner.
         let mut html = format!(
             "{pad}<div{}>\n",
-            render_attrs(&self.wrapper_attrs(node, None))
+            render_attrs(&self.wrapper_attrs(node, None, ctx))
         );
 
         for (index, item) in items.iter().enumerate() {
@@ -267,7 +276,7 @@ impl Tabs {
 
         let mut html = format!(
             "{pad}<div{}>\n",
-            render_attrs(&self.wrapper_attrs(node, Some("tablist"))),
+            render_attrs(&self.wrapper_attrs(node, Some("tablist"), ctx)),
         );
 
         for (item, (tab_id, panel_id)) in items.iter().zip(&pairs) {
@@ -306,7 +315,12 @@ impl Tabs {
 
     /// Wrapper attributes: the wrapper class first, then the author's other
     /// classes, minus the structural `tabs` that selected this renderer.
-    fn wrapper_attrs(&self, node: &BlockExtension, role: Option<&str>) -> Option<Attrs> {
+    fn wrapper_attrs(
+        &self,
+        node: &BlockExtension,
+        role: Option<&str>,
+        ctx: &RenderContext<'_>,
+    ) -> Option<Attrs> {
         let mut attrs = node.attrs.clone().unwrap_or_default();
         let mut classes = vec![self.opts.wrapper_class.clone()];
         for class in &attrs.classes {
@@ -315,10 +329,37 @@ impl Tabs {
             }
         }
         attrs.classes = classes;
-        if let Some(role) = role {
+        // The set carries a ROLE and a NAME (markup-carve/carve#1468). The CSS
+        // mode claims only `group` - it has no tab/panel roles to associate -
+        // and the `aria` mode passes `tablist`. Either way the NAME is the half
+        // that was missing: each tab was named by its own `<label>` and the
+        // thing they belong to was anonymous.
+        //
+        // Anything the author wrote WINS, matched ASCII-case-insensitively
+        // because HTML attribute names are: a second naming attribute beside
+        // theirs leaves the accessible name undefined.
+        let authored = |name: &str| {
+            node.attrs
+                .as_ref()
+                .is_some_and(|a| a.key_values.keys().any(|k| k.eq_ignore_ascii_case(name)))
+        };
+        if !authored("role") {
             attrs
                 .key_values
-                .insert("role".to_string(), role.to_string());
+                .insert("role".to_string(), role.unwrap_or("group").to_string());
+            crate::extension::record_attr_order(&mut attrs, "role");
+        }
+        // Precedence: this instance's own option, then the render's map.
+        let group_label = self
+            .opts
+            .group_label
+            .clone()
+            .unwrap_or_else(|| ctx.label(crate::extension::LABEL_TABS_GROUP));
+        if !group_label.is_empty() && !authored("aria-label") && !authored("aria-labelledby") {
+            attrs
+                .key_values
+                .insert("aria-label".to_string(), group_label);
+            crate::extension::record_attr_order(&mut attrs, "aria-label");
         }
 
         Some(attrs)

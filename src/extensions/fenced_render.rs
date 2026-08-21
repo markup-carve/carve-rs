@@ -52,6 +52,19 @@ pub struct FencedRenderOptions {
     pub wrap_in_figure: bool,
     /// Figure class.
     pub figure_class: String,
+    /// Accessible name for the rendered diagram; empty writes neither attribute.
+    ///
+    /// The body is diagram SOURCE. Before the client library runs - and if it
+    /// never runs, which is the default, since no engine ships one - a reader
+    /// announces the backslashes and arrows as prose; afterwards the injected
+    /// `<svg>` has no name either. `role="img"` plus this name fixes both halves
+    /// (markup-carve/carve#1468).
+    ///
+    /// Defaults to the `css_class` word - the fence's OWN word rather than
+    /// invented English, which is what keeps a preset byte-identical to the
+    /// factory it is a preset of, and means there is nothing here to translate,
+    /// so this stays an option rather than a `labels` key.
+    pub label: String,
 }
 
 impl FencedRenderOptions {
@@ -73,6 +86,7 @@ impl FencedRenderOptions {
             }
         });
         let figure_class = format!("{css_class}-figure");
+        let label = css_class.clone();
         Self {
             languages,
             css_class,
@@ -80,6 +94,7 @@ impl FencedRenderOptions {
             content_mode,
             wrap_in_figure: false,
             figure_class,
+            label,
         }
     }
 }
@@ -92,7 +107,7 @@ impl FencedRenderOptions {
 /// let opts = Options::new().with_extension(&ext);
 /// assert_eq!(
 ///     carve::to_html_with_options("``` d2\na -> b\n```\n", &opts),
-///     "<pre class=\"d2\">a -> b</pre>"
+///     "<pre class=\"d2\" role=\"img\" aria-label=\"d2\">a -> b</pre>"
 /// );
 /// ```
 pub struct FencedRender {
@@ -198,7 +213,10 @@ impl FencedRender {
     ///     opts = opts.with_extension(ext);
     /// }
     /// let html = carve::to_html_with_options("``` mermaid\ngraph TD; A-->B\n```\n", &opts);
-    /// assert_eq!(html, "<pre class=\"mermaid\">graph TD; A-->B</pre>");
+    /// assert_eq!(
+    ///     html,
+    ///     "<pre class=\"mermaid\" role=\"img\" aria-label=\"mermaid\">graph TD; A-->B</pre>"
+    /// );
     /// ```
     pub fn presets() -> Vec<FencedRender> {
         vec![
@@ -354,9 +372,46 @@ pub(crate) fn transform_blocks(
     }
 }
 
+/// The `role="img"` / `aria-label` pair for a claimed fence (carve#1468).
+///
+/// The two are decided INDEPENDENTLY: an author who wrote only an `aria-label`
+/// has supplied the name and still needs the role - suppressing it there would
+/// leave the defect on the one fence whose author cared enough to name it. What
+/// holds is narrower: the role is never written WITHOUT a name, from either
+/// source, because an `img` with no accessible name is skipped entirely, which
+/// is worse than the source being read out. So an empty label on a fence the
+/// author did not name removes both.
+///
+/// APPENDED, never woven into the author's order, so naming a fence cannot move
+/// an `{#id}` the author placed.
+fn apply_naming(attrs: &mut Attrs, opts: &FencedRenderOptions) {
+    let authored = |name: &str| {
+        attrs
+            .key_values
+            .keys()
+            .any(|k| k.eq_ignore_ascii_case(name))
+    };
+    let authored_name = authored("aria-label") || authored("aria-labelledby");
+    let write_name = !opts.label.is_empty() && !authored_name;
+    let write_role = !authored("role") && (authored_name || !opts.label.is_empty());
+    if write_role {
+        attrs
+            .key_values
+            .insert("role".to_string(), "img".to_string());
+        crate::extension::record_attr_order(attrs, "role");
+    }
+    if write_name {
+        attrs
+            .key_values
+            .insert("aria-label".to_string(), opts.label.clone());
+        crate::extension::record_attr_order(attrs, "aria-label");
+    }
+}
+
 /// The interactive client-hydration element (the original behavior).
 fn interactive_html(code: &crate::ast::CodeBlock, opts: &FencedRenderOptions) -> String {
-    let attrs = merged_attrs(code, opts);
+    let mut attrs = merged_attrs(code, opts);
+    apply_naming(&mut attrs, opts);
     let body = match opts.content_mode {
         ContentMode::Text => escape_text_keep_gt(&code.content),
         ContentMode::Json => format!(
@@ -382,7 +437,8 @@ fn static_html(
         // Wrap the renderer's output in a `<div>` carrying the fence's merged
         // attributes (cssClass + author `{#id .class}`), so the class/attrs
         // survive and the wrapper is identical across engines (carve#302).
-        let attrs = merged_attrs(code, opts);
+        let mut attrs = merged_attrs(code, opts);
+        apply_naming(&mut attrs, opts);
         let element = format!(
             "<div{}>{}</div>",
             render_attrs(&attrs),
