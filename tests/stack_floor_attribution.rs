@@ -15,17 +15,61 @@ const CAP: usize = 200;
 const DEPTH: &str = "CARVE_STACK_FLOOR_DEPTH";
 const CASE: &str = "CARVE_STACK_FLOOR_CASE";
 const STACK: &str = "CARVE_STACK_FLOOR_KIB";
+const SHAPE: &str = "CARVE_STACK_FLOOR_SHAPE";
+
+/// The nesting SHAPE the ladder is built from.
+///
+/// One axis this file did not have. Every number in it was measured on a colon
+/// container, and markup-carve/carve-rs#1165 is explicit that the shapes do not
+/// cost the same: at the point it was filed containers needed 768KiB, block
+/// quotes ~768KiB and lists ~1024KiB, and after markup-carve/carve-rs#1177
+/// halved the frames they were 384 / 256 / 768. So a floor asserted on
+/// containers alone says nothing about the shape that was ALWAYS the tallest,
+/// and `parse_list` - the one the ticket parks as a restructure rather than an
+/// extraction - was the shape nothing watched.
+///
+/// THE INLINE AXIS IS NOT HERE, and that is a measurement rather than an
+/// omission. markup-carve/carve-rs#1165 names inline nesting as the second axis,
+/// but a braced-span ladder cannot reach a depth that would matter:
+/// `parse_forced_emphasis` closes on the FIRST `delim}` pair after its opener,
+/// so a repeated `{*` collapses at once, and a ladder cycling all five
+/// delimiters reaches SIX levels and then collapses the same way. Measured at
+/// depths 5, 25 and 200: the parsed inline depth is 6, 7 and 7. A probe over a
+/// shape that does not nest is a probe that measures nothing, which is the
+/// failure this file's control exists to catch, so it is not shipped as one.
+fn ladder(depth: usize) -> String {
+    match std::env::var(SHAPE).unwrap_or_default().as_str() {
+        // A block quote nests on its MARKER RUN, so depth is columns of `> `
+        // on one line rather than a stack of openers.
+        "quote" => format!("{}deep\n", "> ".repeat(depth)),
+        // Two spaces a level, which is what `list_indent_model_a` reads as a
+        // sub-list. `parse_list` owns the item loop and stays on the stack
+        // while the parser descends into an item's content, which is the whole
+        // reason extraction did not move this number.
+        "list" => {
+            let mut out = String::new();
+            for level in 0..depth {
+                out.push_str(&"  ".repeat(level));
+                out.push_str("- x\n");
+            }
+            out
+        }
+        // The default, and every number this file measured before the axis
+        // existed.
+        _ => format!(
+            "{}deep\n{}",
+            ":::: note\n".repeat(depth),
+            "::::\n".repeat(depth)
+        ),
+    }
+}
 
 fn deep_source() -> String {
     let depth: usize = std::env::var(DEPTH)
         .ok()
         .and_then(|value| value.parse().ok())
         .unwrap_or(CAP);
-    format!(
-        "{}deep\n{}",
-        ":::: note\n".repeat(depth),
-        "::::\n".repeat(depth)
-    )
+    ladder(depth)
 }
 
 /// The child half: run one case on a thread of the requested size.
@@ -72,16 +116,31 @@ fn run_one(source: &str, case: &str) -> bool {
             let html = carve::to_html(source);
             assert!(!html.is_empty());
         }
+        // `to_html` over a SOURCE gets the typed layout fast path, which is a
+        // different descent from the one `parse` takes. This case pays for the
+        // ordinary parse and then renders the tree, so the two numbers separate
+        // the fast path from the walk it replaces.
+        "parse+render" => {
+            let doc = carve::parse(source);
+            let html = carve::render_html(&doc).expect("renders");
+            assert!(!html.is_empty());
+            std::mem::forget(doc);
+        }
         other => panic!("unknown case {other}"),
     }
     true
 }
 
 fn fits_at(case: &str, kib: usize, depth: usize) -> bool {
+    fits_shaped(case, kib, depth, "container")
+}
+
+fn fits_shaped(case: &str, kib: usize, depth: usize, shape: &str) -> bool {
     let exe = std::env::current_exe().expect("current exe");
     let output = Command::new(exe)
         .env(CASE, case)
         .env(DEPTH, depth.to_string())
+        .env(SHAPE, shape)
         .env(STACK, kib.to_string())
         .arg("--exact")
         .arg("child")
@@ -139,6 +198,31 @@ fn child() {
     run_case(case, kib.parse().expect("stack size"));
 }
 
+/// What each nesting SHAPE costs, which the container ladder alone cannot say.
+#[test]
+#[ignore = "a measurement, not an assertion"]
+fn where_the_stack_goes_per_shape() {
+    for shape in ["container", "quote", "list"] {
+        for case in ["parse", "to_html", "parse+render"] {
+            let mut smallest = None;
+            for kib in [
+                8192usize, 4096, 2048, 1536, 1280, 1024, 896, 768, 640, 512, 384, 320, 256, 192,
+                128, 96, 64, 48, 32,
+            ] {
+                if fits_shaped(case, kib, CAP, shape) {
+                    smallest = Some(kib);
+                } else {
+                    break;
+                }
+            }
+            match smallest {
+                Some(kib) => println!("{shape:<10} {case:<8} fits in {kib}KiB"),
+                None => println!("{shape:<10} {case:<8} needs more than 8192KiB"),
+            }
+        }
+    }
+}
+
 #[test]
 #[ignore = "a measurement, not an assertion"]
 fn where_the_stack_goes() {
@@ -172,6 +256,88 @@ fn where_the_stack_goes() {
             None => println!("{case:<14} needs more than 8192KiB"),
         }
     }
+}
+
+/// THE SECOND RATCHET: one per nesting SHAPE, because the shapes do not cost
+/// the same and only one of them was ever watched.
+///
+/// Measured at the 200-level cap, in child processes, on this commit:
+///
+/// | shape | `parse` rel | ceiling | `parse` dbg | ceiling |
+/// | --- | --- | --- | --- | --- |
+/// | container | 128KiB | 192KiB | 256KiB | 512KiB |
+/// | quote | 320KiB | 512KiB | 4096KiB | 6144KiB |
+/// | list | 768KiB | 1024KiB | 8192KiB | 12288KiB |
+///
+/// LISTS ARE THE TALLEST BY A FACTOR OF SIX, and until now nothing asserted
+/// them at all: every number in this file was a colon container, which
+/// markup-carve/carve-rs#1185 made cheap. `parse_list` owns the item loop and
+/// stays on the stack while the parser descends into an item's content, so the
+/// three extraction attempts recorded on markup-carve/carve-rs#1165 could not
+/// move it - one of them made the machine pay MORE, because the extracted
+/// branch brought its own frame and both were live on the recursive path. What
+/// remains there is a restructure, and it is parked with its own measurements.
+///
+/// This is the guard that has to exist either way: 768KiB release / 8192KiB
+/// debug is the number that restructure would be judged against, and a number
+/// nobody asserts is a number that drifts - which is exactly the shape
+/// carve-wasm#48 hit on an unchanged commit.
+#[test]
+fn the_floor_for_every_nesting_shape_does_not_regress() {
+    let debug = cfg!(debug_assertions);
+    // CONTROL FIRST, per shape. A probe that runs no case reports "fits" for
+    // every size, which is how the first version of this harness measured a
+    // 16KiB floor.
+    for shape in ["container", "quote", "list"] {
+        assert!(
+            !fits_shaped("parse", 16, CAP, shape),
+            "a 16KiB stack parsed a {CAP}-level {shape} - the probe is not running the case"
+        );
+    }
+    for (shape, release_ceiling, debug_ceiling) in [
+        ("container", 192, 512),
+        ("quote", 512, 6144),
+        ("list", 1024, 12288),
+    ] {
+        let ceiling = if debug {
+            debug_ceiling
+        } else {
+            release_ceiling
+        };
+        assert!(
+            fits_shaped("parse", ceiling, CAP, shape),
+            "a {CAP}-level {shape} no longer fits a {ceiling}KiB stack; that shape's \
+             descent got more expensive, or the cap moved"
+        );
+    }
+}
+
+/// `to_html` OVER A SOURCE DOES NOT DESCEND THE WAY `parse` DOES, and on the
+/// tallest shape that is an EIGHTFOLD difference rather than a detail.
+///
+/// Measured, release, 200-level list: `to_html` fits 96KiB where
+/// `parse` and `parse+render` both need 768KiB. The typed layout fast path
+/// answers that document without `parse_list`, so the walk that sets this
+/// engine's stack floor is reachable through `parse` / `parseJson` and NOT
+/// through `toHtml`. Worth asserting because it decides which entry point a
+/// wasm host has to worry about - carve-wasm#48 crashed on both, and only one
+/// of them is still the expensive one.
+#[test]
+fn the_html_fast_path_is_cheaper_than_the_parse_it_replaces() {
+    let cheap = if cfg!(debug_assertions) { 384 } else { 128 };
+    assert!(
+        fits_shaped("to_html", cheap, CAP, "list"),
+        "to_html over a {CAP}-level list no longer fits {cheap}KiB - the typed layout \
+         fast path stopped answering it, and the floor is now `parse`'s"
+    );
+    // THE PAIR, or the assertion above would also pass on a build where every
+    // path had become cheap - which would be good news, and would still mean
+    // this test had stopped measuring the difference it is named for.
+    assert!(
+        !fits_shaped("parse+render", cheap, CAP, "list"),
+        "parsing a {CAP}-level list now fits {cheap}KiB too, so there is no fast-path \
+         difference left to assert: re-measure and rewrite this test"
+    );
 }
 
 /// THE RATCHET, and the only assertion in this file.
