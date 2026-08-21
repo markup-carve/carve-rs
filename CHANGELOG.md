@@ -23,6 +23,13 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **A colon container's body is parsed from a worklist, not down the stack**
+  (markup-carve/carve-rs#1165). Nesting costs heap instead of host stack, so a
+  document at the 200-level cap parses in 128KiB where it needed 384KiB
+  (release; 1024KiB to 256KiB in debug) and `to_html` needs 256KiB where it
+  needed 384KiB. This matters on wasm, where the host owns the stack and an
+  overflow takes the module rather than the call
+  (markup-carve/carve-wasm#48). No output changes.
 - **A row is a row, in every table section** (markup-carve/carve#1459, PART 10
   §7). `<thead>` and `<tfoot>` now write one row per line, as `<tbody>` always
   did. Nothing renders differently - whitespace between rows in table context is
