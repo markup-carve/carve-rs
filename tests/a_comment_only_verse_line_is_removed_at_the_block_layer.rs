@@ -155,3 +155,64 @@ fn a_trailing_comment_inside_a_run_stays_content() {
         "<div class=\"line-block\">\n  <p>a <code>b\nx %% secret\nc</code></p>\n</div>"
     );
 }
+
+/// BUT IT DOES NOT SURVIVE A RUN THAT ATE ITS LINE (§23), on the boundary the
+/// clause is hardest to see: the comment is the stanza's LAST body line AND the
+/// run is still open when the stanza ends.
+///
+/// Both halves of that are needed. A comment on a last line normally keeps its
+/// node, because the boundary that OPENS its line is still in the tree - which
+/// is what `a_comment_ending_the_stanza_adds_no_second_break` above pins. Here
+/// the run swallowed that boundary as a newline, so "there is no boundary left
+/// in the tree for a `comment` node to sit on and the run's value holds an
+/// EMPTY LINE instead". Appending the node anyway put its span AFTER the run
+/// that contains it, which PART 12 containment refuses, and the writer then
+/// wrote it out as `` ` %%`` (carve-rs#1193).
+///
+/// The canonical form on spec `main` is `` ` `` over `` ` ``: the closing fence
+/// goes out on that emptied last line, so PART 11 §7c has nothing left to spell
+/// there. It is not readable from `tests/spec` at this pin - `380-*.fmt`
+/// arrived after it - so the bytes are stated here.
+#[test]
+fn a_run_that_ate_the_last_line_leaves_no_comment_node() {
+    let source = "::: |\n`\n%%\n:::\n";
+
+    let json = carve::to_json(&carve::parse(source));
+    assert!(
+        !json.contains("\"type\":\"comment\""),
+        "the run swallowed the comment's line, so there is nowhere for the node: {json}"
+    );
+    assert!(
+        json.contains("\"type\":\"code\""),
+        "the emptied line belongs to the run, which must still be there: {json}"
+    );
+
+    assert_eq!(carve::to_carve(source), "::: |\n`\n`\n:::\n");
+    round_trips(source);
+
+    // The render never moved, which is why the bytes and the tree are what this
+    // has to be asserted on.
+    assert_eq!(
+        carve::to_html(source),
+        "<div class=\"line-block\">\n  <p><code>\n</code></p>\n</div>"
+    );
+}
+
+/// THE CONTROL, and it is the reason the test above cannot pass on an engine
+/// that had simply stopped recording verse comments.
+///
+/// An INTERIOR emptied line inside the same open run keeps its `%%` - there the
+/// closing fence is not on it, so §7c's comment line is the one way verse can
+/// spell an empty line without ending the stanza. And a comment on a last line
+/// with NO run open still keeps its node.
+#[test]
+fn an_interior_emptied_line_and_an_unswallowed_last_line_are_unaffected() {
+    assert_eq!(
+        carve::to_carve("::: |\na `b\n%% secret\nc\n:::\n"),
+        "::: |\na `b\n%%\nc`\n:::\n"
+    );
+
+    let unswallowed = "::: |\na\n%% c\n:::\n";
+    assert!(carve::to_json(&carve::parse(unswallowed)).contains("\"type\":\"comment\""),);
+    assert_eq!(carve::to_carve(unswallowed), unswallowed);
+}
