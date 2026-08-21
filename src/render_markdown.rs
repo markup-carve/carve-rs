@@ -65,11 +65,50 @@ pub fn render_markdown(doc: &Document) -> Result<String, crate::RenderDepthError
     ))
 }
 
+/// One render, and a second one if the document turned out to hold a carrier.
+///
+/// The carriers are PICKED per document (see `CARRIER_DEFAULTS`), and what the
+/// pick has to be made against is the author's private-use characters - which
+/// this target only learns by rendering, because the tree it is handed is not
+/// the source. So the first pass renders with the preferred run and COUNTS: how
+/// many carriers it inserted, and how many stood in the assembled document. A
+/// document that holds none of them - every real one - leaves the two counts
+/// equal and returns after one pass, which is the shape `render_carve` already
+/// runs for the canonical writer's own five (`render_carve_unguarded`).
+///
+/// More seen than inserted means the author wrote one. The run is then re-picked
+/// against every private-use code point the assembled document holds - the
+/// author's and this pass's own, a superset, so the new run is free of both -
+/// and the whole render repeats with it. It cannot need a third pass, and
+/// nothing else changes: the retry runs the same code.
 fn render_markdown_inner(
     doc: &Document,
     smart_typography: crate::extension::SmartTypographyMode,
     id_opts: crate::extension::HeadingIdOptions,
 ) -> String {
+    let _carriers = CarrierGuard::install(CARRIER_DEFAULTS);
+    let first = render_markdown_once(doc, smart_typography, id_opts);
+    let inserted = INSERTED.with(std::cell::Cell::get);
+    let seen = SEEN.with(std::cell::Cell::get);
+    if (0..CARRIER_COUNT).all(|slot| seen[slot] <= inserted[slot]) {
+        return first;
+    }
+
+    let picked = OCCUPIED.with(|occupied| {
+        crate::sentinel_run::pick_sentinel_run(&occupied.borrow(), u32::from(CARRIER_DEFAULTS[0]))
+    });
+    CARRIERS.with(|slot| slot.set(picked));
+    render_markdown_once(doc, smart_typography, id_opts)
+}
+
+fn render_markdown_once(
+    doc: &Document,
+    smart_typography: crate::extension::SmartTypographyMode,
+    id_opts: crate::extension::HeadingIdOptions,
+) -> String {
+    INSERTED.with(|counts| counts.set([0; CARRIER_COUNT]));
+    SEEN.with(|counts| counts.set([0; CARRIER_COUNT]));
+    OCCUPIED.with(|occupied| occupied.borrow_mut().clear());
     SMART_TYPOGRAPHY.with(|cell| cell.set(smart_typography));
     let _abbr_guard = crate::abbr_budget::AbbrBudgetGuard::for_document(doc);
     let mut heading_ids = HashSet::new();
@@ -769,8 +808,8 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
             let mut chars = text.value.chars();
             match (chars.next(), chars.next()) {
                 (Some(ch), None) if AUTHORED_INERT.contains(&ch) => ch.to_string(),
-                (Some(ch), None) if authored_sentinel(ch).is_some() => {
-                    authored_sentinel(ch).expect("checked above").to_string()
+                (Some(ch), None) if authored_defers_to_the_line(ch) => {
+                    authored_sentinel().to_string()
                 }
                 _ => format!("\\{}", text.value),
             }
@@ -1238,14 +1277,113 @@ fn escape_text(text: &str) -> String {
     out
 }
 
-/// Sentinels standing in for the escapes PART 11 §8a decides on the LINE.
+/// Carriers standing in for the escapes PART 11 §8a and §8b decide on the LINE,
+/// CHOSEN PER DOCUMENT from code points it does not contain.
 ///
-/// One per narrowed character. U+E000 is the NBSP sentinel and the Carve writer
-/// claims U+E001..U+E003; this extends the scheme. Author content never carries
-/// one: `strip_controls` drops the whole range on the way in, and every path to
-/// the output runs through it.
-const SENTINEL_FIRST: char = '\u{E004}';
-const SENTINEL_LAST: char = '\u{E007}';
+/// Four slots: §8a M1b's three narrowed characters - `_`, `#`, `[` - and §8b
+/// M2b's authored hash, which is a second family because it is decided by a
+/// different test (see `authored_sentinel`).
+///
+/// They used to be the fixed U+E004..U+E007, and author content was kept off
+/// them by DELETING that range on the way in - so an author who wrote one of the
+/// four lost it, on this target and no other, in every context measured
+/// including a fenced code block where the bytes are the whole point
+/// (markup-carve/carve-rs#1216). PART 9 §29 had already settled that question
+/// for the C0 controls: every character that is not one of the four whitespace
+/// characters is CONTENT (PART 7), and a target that silently deletes content is
+/// the lossy party rather than the safe one.
+///
+/// Picking them removes the collision instead of deleting around it, and takes
+/// the strip with it: a code point the document does not contain cannot arrive
+/// in author content, so there is nothing on the way in to drop. Same remedy as
+/// markup-carve/carve#678, which the canonical writer in this crate already runs
+/// (`SENTINEL_DEFAULTS` in `render_carve.rs`) and the parser since
+/// markup-carve/carve-rs#1218; ported from markup-carve/carve-js#1289.
+const CARRIER_DEFAULTS: [char; 4] = ['\u{E004}', '\u{E005}', '\u{E006}', '\u{E007}'];
+const CARRIER_COUNT: usize = CARRIER_DEFAULTS.len();
+
+/// Slot indices into [`CARRIER_DEFAULTS`] / [`CARRIERS`].
+const C_UNDERSCORE: usize = 0;
+const C_HASH: usize = 1;
+const C_BRACKET: usize = 2;
+const C_AUTHORED_HASH: usize = 3;
+
+thread_local! {
+    /// The carriers in force for the render running on this thread.
+    ///
+    /// A thread-local for the same reason as `SMART_TYPOGRAPHY` above: they are
+    /// written by two escape sites and read by the resolve pass, and threading
+    /// them through every signature in the render tree buys nothing.
+    static CARRIERS: std::cell::Cell<[char; CARRIER_COUNT]> =
+        const { std::cell::Cell::new(CARRIER_DEFAULTS) };
+    /// How many of each this render INSERTED.
+    static INSERTED: std::cell::Cell<[usize; CARRIER_COUNT]> =
+        const { std::cell::Cell::new([0; CARRIER_COUNT]) };
+    /// How many of each stood in the assembled document, counted where the
+    /// resolve pass reads it - which is the last moment an authored one is still
+    /// visible, because resolving is what consumes them.
+    static SEEN: std::cell::Cell<[usize; CARRIER_COUNT]> =
+        const { std::cell::Cell::new([0; CARRIER_COUNT]) };
+    /// Every private-use code point the assembled document holds, so a re-pick
+    /// is made against a SET rather than against a second copy of the document.
+    static OCCUPIED: std::cell::RefCell<std::collections::BTreeSet<u32>> =
+        const { std::cell::RefCell::new(std::collections::BTreeSet::new()) };
+}
+
+/// Install `chars` for the duration of one render, restoring the previous run on
+/// drop (panic unwind included).
+struct CarrierGuard([char; CARRIER_COUNT]);
+
+impl CarrierGuard {
+    fn install(chars: [char; CARRIER_COUNT]) -> CarrierGuard {
+        CarrierGuard(CARRIERS.with(|slot| slot.replace(chars)))
+    }
+}
+
+impl Drop for CarrierGuard {
+    fn drop(&mut self) {
+        CARRIERS.with(|slot| slot.set(self.0));
+    }
+}
+
+fn carrier(which: usize) -> char {
+    CARRIERS.with(|slot| slot.get()[which])
+}
+
+/// Record one carrier this render put into the text. The count is what tells an
+/// authored occurrence from one of ours; see `render_markdown_inner`.
+fn note_inserted(which: usize) {
+    INSERTED.with(|counts| {
+        let mut current = counts.get();
+        current[which] += 1;
+        counts.set(current);
+    });
+}
+
+/// Count the carriers standing in the assembled document, and record which
+/// private-use code points it occupies.
+///
+/// One pass over the text the resolve pass is about to read, and the occupancy
+/// answer is a SET bounded by the private-use area - not the document's text
+/// joined, which would be a second full copy of it.
+fn note_assembled(text: &str) {
+    let carriers = CARRIERS.with(std::cell::Cell::get);
+    let mut seen = SEEN.with(std::cell::Cell::get);
+    OCCUPIED.with(|occupied| {
+        let mut occupied = occupied.borrow_mut();
+        for ch in text.chars() {
+            let code = u32::from(ch);
+            if !(crate::sentinel_run::POOL_FIRST..=crate::sentinel_run::POOL_LAST).contains(&code) {
+                continue;
+            }
+            occupied.insert(code);
+            if let Some(slot) = carriers.iter().position(|current| *current == ch) {
+                seen[slot] += 1;
+            }
+        }
+    });
+    SEEN.with(|counts| counts.set(seen));
+}
 
 /// PART 11 §8b M2a: characters this target's readers never read as markup, at
 /// ANY position on the line.
@@ -1260,50 +1398,59 @@ const SENTINEL_LAST: char = '\u{E007}';
 /// rather than reading markup.
 const AUTHORED_INERT: [char; 8] = ['{', '}', '^', ',', '%', ':', '/', '@'];
 
-/// The sentinel for an AUTHORED escape §8b M2b decides on the line.
+/// Whether §8b M2b defers an AUTHORED escape of `ch` to the line.
 ///
 /// A second family rather than a wider first one, because the two are decided
 /// by DIFFERENT tests: M1b asks about an adjacent delimiter of the same
 /// character, M2b asks where on the line the character stands.
-fn authored_sentinel(ch: char) -> Option<char> {
-    match ch {
-        '#' => Some('\u{E007}'),
-        _ => None,
+fn authored_defers_to_the_line(ch: char) -> bool {
+    ch == '#'
+}
+
+/// The carrier for an authored escape §8b M2b defers, counted as inserted.
+fn authored_sentinel() -> char {
+    note_inserted(C_AUTHORED_HASH);
+    carrier(C_AUTHORED_HASH)
+}
+
+/// Which slot `ch` is, if it is a carrier at all.
+///
+/// Takes the run rather than reading the thread-local, because both callers ask
+/// once per character of the assembled document and the run cannot move under
+/// them mid-pass.
+fn carrier_slot(carriers: &[char; CARRIER_COUNT], ch: char) -> Option<usize> {
+    carriers.iter().position(|current| *current == ch)
+}
+
+/// The character a carrier stands for. §8a's three, and §8b M2b's hash.
+fn carried_character(slot: usize) -> char {
+    match slot {
+        C_UNDERSCORE => '_',
+        C_BRACKET => '[',
+        _ => '#',
     }
 }
 
-/// The character an authored sentinel stands for, or `None` for anything else.
-fn authored_character(ch: char) -> Option<char> {
-    match ch {
-        '\u{E007}' => Some('#'),
-        _ => None,
-    }
-}
-
-/// The sentinel for a narrowed character (`_`, `#`, `[`).
+/// The carrier for a narrowed character (`_`, `#`, `[`), counted as inserted.
 fn narrowed_sentinel(ch: char) -> char {
-    match ch {
-        '_' => '\u{E004}',
-        '#' => '\u{E005}',
-        '[' => '\u{E006}',
-        other => other,
-    }
+    let which = match ch {
+        '_' => C_UNDERSCORE,
+        '#' => C_HASH,
+        '[' => C_BRACKET,
+        other => return other,
+    };
+    note_inserted(which);
+    carrier(which)
 }
 
-/// The character a narrowed sentinel stands for, or `None` for anything else.
-fn narrowed_character(ch: char) -> Option<char> {
-    match ch {
-        '\u{E004}' => Some('_'),
-        '\u{E005}' => Some('#'),
-        '\u{E006}' => Some('['),
-        _ => None,
-    }
-}
-
-/// Drop control characters from author content, and the §8a sentinels with them:
-/// author content that carried one would otherwise reach
-/// `resolve_narrowed_escapes` and be read as an escape this renderer emitted.
-/// Every path to the output passes here.
+/// Drop control characters from author content.
+///
+/// THE §8a CARRIERS ARE NOT DROPPED HERE, and that is markup-carve/carve-rs#1216.
+/// They are this renderer's own markers, and deleting the range they occupied was
+/// how author content was kept off them - at the cost of the author's character,
+/// in every context including a fenced code block. They are picked per document
+/// now (see `CARRIER_DEFAULTS`), so no authored character can be one and nothing
+/// has to be deleted to keep it that way.
 ///
 /// THE CONTROL HALF STAYS AS BROAD AS IT WAS. It is `strip_control_chars`, which
 /// is every `Cc` character bar tab and newline, NOT the non-whitespace C0 class:
@@ -1312,11 +1459,7 @@ fn narrowed_character(ch: char) -> Option<char> {
 /// rule exists to stop. Narrowing this guard is a security regression, and the
 /// test suite pins it rather than leaving it to this comment.
 fn strip_controls(input: &str) -> String {
-    let sentinels_gone: String = input
-        .chars()
-        .filter(|c| !(SENTINEL_FIRST..=SENTINEL_LAST).contains(c))
-        .collect();
-    strip_control_chars(&sentinels_gone)
+    strip_control_chars(input)
 }
 
 /// Resolve the no-break-space sentinel U+E000 to a literal U+00A0, Markdown's
@@ -1483,6 +1626,11 @@ fn normalize(text: &str) -> String {
     }
     let collapsed = format!("{}\n", out.trim_matches(|c| c == '\n' || c == ' '));
 
+    // COUNTED HERE and not at the end of the render, because resolving is what
+    // consumes a carrier: by the time the render returns, an authored one has
+    // already been read as an escape and is indistinguishable from never having
+    // been there. Same place `render_carve` counts its own.
+    note_assembled(&collapsed);
     resolve_narrowed_escapes(&collapsed)
 }
 
@@ -1545,7 +1693,11 @@ fn adjacent_to_live_delimiter(line: &[char], i: usize, ch: char) -> bool {
 /// as a SENTINEL this writer emitted for an `escaped_text` node, and a literal
 /// `\#` in a code span never becomes one.
 fn resolve_narrowed_escapes(text: &str) -> String {
-    let candidate = |c: char| narrowed_character(c).or_else(|| authored_character(c));
+    // READ ONCE. The carriers are a property of the render, not of the
+    // character, and this pass asks about every character of the assembled
+    // document - twice before the loop even starts.
+    let carriers = CARRIERS.with(std::cell::Cell::get);
+    let candidate = |c: char| carrier_slot(&carriers, c).map(carried_character);
 
     if !text.chars().any(|c| candidate(c).is_some()) {
         return text.to_string();
@@ -1573,11 +1725,14 @@ fn resolve_narrowed_escapes(text: &str) -> String {
         // which family the sentinel came from, because the character alone
         // does not say: a `#` in a text node is M1b's and an author-escaped
         // one is M2b's.
-        let keep = match (narrowed_character(raw), authored_character(raw)) {
-            (Some(ch), _) => Some((ch, adjacent_to_live_delimiter(&line, i, ch))),
-            (None, Some(ch)) => Some((ch, opens_an_atx_heading(&line, i, content_start))),
-            (None, None) => None,
-        };
+        let keep = carrier_slot(&carriers, raw).map(|slot| {
+            let ch = carried_character(slot);
+            if slot == C_AUTHORED_HASH {
+                (ch, opens_an_atx_heading(&line, i, content_start))
+            } else {
+                (ch, adjacent_to_live_delimiter(&line, i, ch))
+            }
+        });
 
         match keep {
             Some((ch, true)) => {

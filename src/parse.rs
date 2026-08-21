@@ -8,8 +8,9 @@ use crate::ast::*;
 use crate::extension::{
     AsciiHeadingIds, BlockMatch, HeadingIdOptions, InlineMatch, MatcherContext, Options,
 };
+use crate::sentinel_run::{occupied_private_use, pick_sentinel_run};
 use std::cell::{Cell, RefCell};
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, HashMap};
 
 /// The line a collected definition leaves behind, and the marker that says it
 /// is ours rather than something the author wrote.
@@ -53,12 +54,6 @@ const PLACEHOLDER_DEFAULTS: [char; 2] = ['\u{E005}', '\u{E006}'];
 const P_DEFINITION: usize = 0;
 const P_DOCUMENT_DEFINITION: usize = 1;
 
-/// The allocatable pool: the BMP private-use area minus its first code point.
-/// U+E000 is the PUBLISHED no-break-space placeholder ([`crate::NBSP_PLACEHOLDER`]),
-/// so it is never allocatable however little of the area a document occupies.
-const PLACEHOLDER_POOL_FIRST: u32 = 0xe001;
-const PLACEHOLDER_POOL_LAST: u32 = 0xf8ff;
-
 thread_local! {
     /// The suffix code points in force for the parse running on this thread.
     ///
@@ -87,59 +82,18 @@ impl Drop for PlaceholderGuard {
     }
 }
 
-/// Which private-use code points `source` occupies.
-///
-/// A SET of code points rather than a search over the joined text: the answer is
-/// bounded by the private-use area (at most 6400 entries) however large the
-/// document is, and one pass builds it. Scanning per candidate instead would be
-/// one full pass per rejected pair.
-fn occupied_private_use(source: &str) -> BTreeSet<u32> {
-    source
-        .chars()
-        .map(u32::from)
-        .filter(|code| (PLACEHOLDER_POOL_FIRST..=PLACEHOLDER_POOL_LAST).contains(code))
-        .collect()
-}
-
 /// Two private-use code points `source` does not contain.
 ///
-/// The preferred pair is tried first, so the common case - a document with no
-/// private-use character at all - pays one scan that finds nothing and two set
-/// lookups.
-///
-/// When either preferred code point is taken the search walks the pool ONE CODE
-/// POINT AT A TIME. Stepping a pair at a time would step over the free window
-/// between two occupied code points whenever it is not a whole number of pairs
-/// from the base, and report the area full while nearly all of it was free.
-///
-/// The last resort is the preferred pair rather than a refusal: it needs all
-/// 6399 allocatable code points occupied, and a parser that gives up is worse
-/// than one that falls back to the behavior it had before the pair was picked at
-/// all. markup-carve/carve-js#1289 lands in the same place (`pickSentinelRun`
-/// returns the preferred run when the scan runs out).
+/// The allocation itself is [`crate::sentinel_run`], shared with the site that
+/// picks the Markdown target's escape carriers (markup-carve/carve-rs#1216) -
+/// the properties that make it correct are stated there and are easy to lose in
+/// a second copy: scan ONE CODE POINT AT A TIME, and answer from a SET of
+/// occupied code points rather than from the document's text joined.
 fn pick_definition_placeholders(source: &str) -> [char; 2] {
-    let occupied = occupied_private_use(source);
-    let free = |code: u32| !occupied.contains(&code);
-    let pair = |first: u32| {
-        [
-            char::from_u32(first).expect("private-use code point"),
-            char::from_u32(first + 1).expect("private-use code point"),
-        ]
-    };
-
-    let preferred = u32::from(PLACEHOLDER_DEFAULTS[0]);
-    if free(preferred) && free(preferred + 1) {
-        return PLACEHOLDER_DEFAULTS;
-    }
-
-    let mut first = PLACEHOLDER_POOL_FIRST;
-    while first < PLACEHOLDER_POOL_LAST {
-        if free(first) && free(first + 1) {
-            return pair(first);
-        }
-        first += 1;
-    }
-    PLACEHOLDER_DEFAULTS
+    pick_sentinel_run(
+        &occupied_private_use(source),
+        u32::from(PLACEHOLDER_DEFAULTS[0]),
+    )
 }
 
 fn placeholder_char(which: usize) -> char {

@@ -99,16 +99,6 @@ fn a_claimed_code_point_reads_as_an_ordinary_comment_in_every_target() {
             ];
 
             for ((target, want), (_, got)) in expected.iter().zip(actual.iter()) {
-                // The Markdown target has fixed sentinels of its own at
-                // U+E004..U+E007 and DELETES them from author content wherever
-                // they appear - a separate site with a separate mechanism, and
-                // the half of markup-carve/carve-js#1289 that is not ported
-                // here yet (markup-carve/carve-rs#1216). Asserting it would pin
-                // a defect rather than the parser's behavior; delete this skip
-                // when #1216 lands and the row is covered.
-                if *target == "markdown" {
-                    continue;
-                }
                 assert_eq!(
                     want,
                     got,

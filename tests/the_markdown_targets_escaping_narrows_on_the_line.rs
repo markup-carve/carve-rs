@@ -140,16 +140,38 @@ fn an_authored_escape_is_emitted_as_an_escape() {
 /// must not be read back as an escape this renderer emitted. U+E007 is §8b
 /// M2b's, and it takes the same guard as §8a M1b's three: the run widened, so
 /// this case widens with it or it stops covering the last member.
+///
+/// THIS CASE USED TO ASSERT SOMETHING STRONGER AND WRONG - `assert_eq!(out,
+/// "ab")`, the character never reaching the output at all. The argument was
+/// that author content never carries a sentinel because `strip_controls` drops
+/// the whole range on the way in, so asserting the deletion was asserting the
+/// scheme's own contract. The contract held; the way it was kept did not. It
+/// was kept by taking the author's character: measured across paragraph, code
+/// span, code block, heading, link text, table cell and raw HTML, all four were
+/// deleted in all seven contexts, and a fenced code block is verbatim content -
+/// a character disappearing out of one is a content change the format is
+/// supposed to make impossible (markup-carve/carve-rs#1216). PART 9 §29 had
+/// already settled the same question for the C0 controls.
+///
+/// So the assertion is the one the scheme actually needs, and it is now the
+/// stronger of the two: the authored character SURVIVES, and it steers nothing.
 #[test]
-fn author_supplied_sentinel_characters_never_reach_the_output() {
+fn author_supplied_sentinel_characters_never_steer_an_escape() {
     for sentinel in ['\u{E004}', '\u{E005}', '\u{E006}', '\u{E007}'] {
-        let out = md(&format!("a{sentinel}b"));
-        assert!(
-            !out.contains(sentinel),
-            "U+{:04X}: {out:?}",
-            sentinel as u32
-        );
-        assert_eq!(out, "ab");
+        for source in [format!("a{sentinel}b"), format!("{sentinel} x")] {
+            let out = md(&source);
+            assert_eq!(out, source, "U+{:04X} did not survive", sentinel as u32);
+            // What must not come back is a character this renderer INVENTED:
+            // the one the carrier stands for, or the backslash of a decision
+            // the author never wrote.
+            for invented in ['_', '#', '[', '\\'] {
+                assert!(
+                    !out.contains(invented),
+                    "U+{:04X} was read as an escape: {out:?}",
+                    sentinel as u32
+                );
+            }
+        }
     }
 }
 

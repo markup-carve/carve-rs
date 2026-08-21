@@ -41,6 +41,7 @@ mod render_depth;
 mod render_markdown;
 mod render_plain;
 mod render_text;
+mod sentinel_run;
 mod source_layout;
 mod stamp;
 mod translit_map;
