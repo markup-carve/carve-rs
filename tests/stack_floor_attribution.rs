@@ -330,25 +330,39 @@ fn the_floor_for_every_nesting_shape_does_not_regress() {
 /// which is CHEAPER than `to_html` on the same document.
 ///
 /// What the fast path still skips is the way out. `parse+render` walks the tree
-/// with the block renderer and needs 320KiB release / 1536KiB debug where
-/// `to_html` over the source needs 128 / 256, so the pair below still separates
-/// two real walks - it is the RENDERER's recursion it measures now, and that is
-/// where the next round of this work would go.
+/// with the block renderer, so the difference this asserts is the RENDERER's
+/// recursion now, and that is where the next round of this work would go.
+///
+/// IT IS MEASURED AS A COMPARISON, not against a fixed size, because a fixed
+/// size describes the machine that chose it. The earlier spelling asserted that
+/// `parse+render` did NOT fit 384KiB in debug; that held here at 1536KiB and
+/// failed on a GitHub runner, where the same document fit - which said nothing
+/// about the fast path and everything about the runner. Two floors compared
+/// against each other travel.
 #[test]
 fn the_html_fast_path_is_cheaper_than_the_parse_it_replaces() {
-    let cheap = if cfg!(debug_assertions) { 384 } else { 128 };
+    // COARSE ON PURPOSE: every rung is a child process, and the gap being
+    // asserted is a multiple rather than a step.
+    fn floor_for(case: &str) -> Option<usize> {
+        let mut smallest = None;
+        for kib in [4096usize, 2048, 1024, 512, 256, 128, 64, 32] {
+            if fits_shaped(case, kib, CAP, "list") {
+                smallest = Some(kib);
+            } else {
+                break;
+            }
+        }
+        smallest
+    }
+    let fast =
+        floor_for("to_html").expect("to_html over a deep list fits SOME stack at or under 4096KiB");
+    let full = floor_for("parse+render")
+        .expect("parse+render over a deep list fits SOME stack at or under 4096KiB");
     assert!(
-        fits_shaped("to_html", cheap, CAP, "list"),
-        "to_html over a {CAP}-level list no longer fits {cheap}KiB - the typed layout \
-         fast path stopped answering it"
-    );
-    // THE PAIR, or the assertion above would also pass on a build where every
-    // path had become cheap - which would be good news, and would still mean
-    // this test had stopped measuring the difference it is named for.
-    assert!(
-        !fits_shaped("parse+render", cheap, CAP, "list"),
-        "parsing AND rendering a {CAP}-level list now fits {cheap}KiB too, so there is \
-         no fast-path difference left to assert: re-measure and rewrite this test"
+        fast < full,
+        "to_html over a {CAP}-level list floors at {fast}KiB and parsing then rendering \
+         the same document floors at {full}KiB, so there is no fast-path difference left \
+         to assert: re-measure and rewrite this test"
     );
 }
 
