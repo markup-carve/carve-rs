@@ -249,6 +249,16 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **An HTML import no longer bakes a derived accessible name into source**
+  (markup-carve/carve-rs#1209, markup-carve/carve#1500, markup-carve/carve#1511,
+  PART 9 §16a and Extensions §1.5). An attribute whose value equals what the
+  renderer derives for that element is dropped and every other one is kept, so a
+  diagram fence's own class word, a tab set's or code group's default name, a
+  `css`-mode panel's tab label, an index back-link's composite name, and the
+  `role` beside each stop coming back as authored source. A name that DIFFERS -
+  an author's own, or one rendered from a non-default `labels` map - is kept, and
+  nothing is diagnosed. Ported from markup-carve/carve-js#1296.
+
 - **A math span survives an HTML import** (markup-carve/carve-rs#1208, PART 9
   §18). `<span class="math inline">\(x\)</span>` - this engine's own output,
   and what djot.js and pandoc write - and its `math display` twin now read back
