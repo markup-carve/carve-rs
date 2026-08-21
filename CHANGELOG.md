@@ -249,6 +249,16 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A tab control is `type="button"`, and two marked items select one tab**
+  (markup-carve/carve-rs#1212, markup-carve/carve#1504, extensions §13.3 and
+  §13.5). An `Aria`-mode control carried no `type`, so a tab set or code group
+  inside a `<form>` submitted the form instead of switching panels. And several
+  `selected` items each got their own selection - the first mark now wins and
+  later ones are ignored, in both modes and both extensions, with no diagnostic
+  for a document that over-specifies. `Css` mode is unaffected by the first
+  half: its control is an `<input type="radio">`. Ported from
+  markup-carve/carve-php#1550 and markup-carve/carve-js#1287.
+
 - **The Markdown target's escape carriers are picked per document, not fixed**
   (markup-carve/carve-rs#1216, markup-carve/carve-js#1289,
   markup-carve/carve-rs#1218). The target reserved U+E004..U+E007 for the

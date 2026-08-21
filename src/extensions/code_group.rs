@@ -22,7 +22,7 @@ use std::cell::Cell;
 
 use crate::ast::{AttrSlot, Attrs, BlockExtension, BlockNode, CodeBlock, Document};
 use crate::extension::{BeforeRenderContext, CarveExtension, RenderContext};
-use crate::extensions::tabs::TabsMode;
+use crate::extensions::tabs::{apply_single_selection, SingleSelect, TabsMode};
 use crate::render::render_attrs;
 
 /// Sentinel name for the rewritten carrier node. The profile filter still
@@ -92,8 +92,13 @@ impl Default for CodeGroupOptions {
 /// A group is either a `::: code-group` typed div, which parses to an
 /// admonition, or any div carrying the `code-group` class. Each fenced code
 /// block inside becomes one tab; the tab's name is the block's `[label]`, its
-/// language, or `Code N` in that order. A block carrying a `selected`
-/// attribute opens first, and without one the first block does.
+/// language, or `Code N` in that order.
+///
+/// EXACTLY ONE PANEL IS SELECTED (extensions §13.5): the first block the
+/// document marks `selected`, and the first block where it marks none. Marking
+/// several is not an error and is not diagnosed - the later marks are ignored.
+/// The rule is Tabs' rule and runs through Tabs' own step, because §13 binds
+/// both constructs alike.
 ///
 /// A container holding no code block is left to the core div renderer, which
 /// is what carve-js and carve-php do - the class alone is not a reason to
@@ -107,6 +112,9 @@ impl Default for CodeGroupOptions {
 /// (§13.2) - nothing else binds it to the control that reveals it. An `Aria`
 /// panel takes neither: it is bound by `aria-labelledby` already, and a second
 /// accessible name would leave which one applies undefined (§13.3).
+///
+/// The `Aria` control is a `<button type="button">` (§13.3), so a code group
+/// inside a `<form>` switches panels instead of submitting the form.
 #[derive(Debug, Default)]
 pub struct CodeGroup {
     opts: CodeGroupOptions,
@@ -138,6 +146,12 @@ struct GroupItem<'a> {
     language: Option<&'a str>,
     label: String,
     selected: bool,
+}
+
+impl SingleSelect for GroupItem<'_> {
+    fn selected_mut(&mut self) -> &mut bool {
+        &mut self.selected
+    }
 }
 
 impl CarveExtension for CodeGroup {
@@ -369,7 +383,12 @@ impl CodeGroup {
 
         for (item, (tab_id, panel_id)) in items.iter().zip(&pairs) {
             html.push_str(&format!(
-                "{inner_pad}<button role=\"tab\" id=\"{}\" aria-selected=\"{}\" \
+                // `type="button"`, NOT the implicit `submit` (extensions
+                // §13.3). A bare `<button>` is a submit button, so a code group
+                // inside a `<form>` submitted the form instead of switching
+                // panels - the one interaction this mode exists to provide,
+                // traded for the one thing the page never asked for.
+                "{inner_pad}<button type=\"button\" role=\"tab\" id=\"{}\" aria-selected=\"{}\" \
                  aria-controls=\"{}\" class=\"{}\"{}>{}</button>\n",
                 ctx.escape_attr(tab_id),
                 if item.selected { "true" } else { "false" },
@@ -465,11 +484,10 @@ fn collect_items(blocks: &[BlockNode]) -> Vec<GroupItem<'_>> {
         });
     }
 
-    // Something has to be open. Without an authored `selected`, the first tab
-    // is the one a reader sees.
-    if !items.is_empty() && !items.iter().any(|item| item.selected) {
-        items[0].selected = true;
-    }
+    // EXACTLY ONE PANEL IS SELECTED (extensions §13.5): the first one the
+    // document marks, or the first block where it marks none. The SAME step
+    // the Tabs renderer runs, because §13 binds both constructs.
+    apply_single_selection(&mut items);
 
     items
 }
