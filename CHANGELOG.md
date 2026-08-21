@@ -62,6 +62,15 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **The CLI refuses an over-cap document instead of writing nothing and exiting
+  0** (markup-carve/carve-rs#1190). `carve --html --profile comment` on an input
+  over the profile's `max_length` produced empty stdout with exit status 0, so a
+  caller could not tell a refusal from a document that rendered to nothing. It
+  now prints the violation to stderr and exits non-zero, the same as the
+  `--from-json` path already did. Affects `--html`, `--markdown`, `--plain`,
+  `--ansi` and `--json`. The library's infallible `to_*_with_options` wrappers
+  are unchanged.
+
 - **The footnote backlink has an accessible name** (markup-carve/carve#1455,
   PART 9 §16). `role="doc-backlink"` was right and the name was the `↩` glyph,
   so a screen reader announced its Unicode name or skipped the link. The name is
