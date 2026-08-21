@@ -249,6 +249,15 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **The Markdown target's escape carriers are picked per document, not fixed**
+  (markup-carve/carve-rs#1216, markup-carve/carve-js#1289,
+  markup-carve/carve-rs#1218). The target reserved U+E004..U+E007 for the
+  escapes PART 11 §8a and §8b decide on the emitted line, and deleted that range
+  from author content to keep it clear - so an authored one of the four was lost
+  in every context measured, a fenced code block included. The carriers are now
+  chosen from code points the document does not contain, and nothing is deleted;
+  DEL and the C1 controls stay stripped.
+
 - **A comment an author wrote can no longer impersonate a collected
   definition's placeholder** (carve-rs#1214). The marker a hoisted definition
   leaves behind was fixed at `%%` plus U+E005 / U+E006 and matched positionally,
