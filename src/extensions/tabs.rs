@@ -78,8 +78,17 @@ impl Default for TabsOptions {
 ///
 /// A tab's name is its opener `[label]`, then a `label=` attribute, then the
 /// text of its first heading - which is then treated as the name rather than
-/// as content - and finally `Tab N`. A tab carrying `selected` opens first;
-/// without one the first tab does.
+/// as content - and finally `Tab N`.
+///
+/// EXACTLY ONE TAB IS SELECTED (extensions §13.5): the first one the document
+/// marks `selected`, and the first tab where it marks none. Marking several is
+/// not an error and is not diagnosed - the later marks are simply ignored, so
+/// both modes open the same tab.
+///
+/// The `Aria` control is a `<button type="button">` (§13.3). Without the `type`
+/// a `<button>` is a submit button, so a tab set inside a `<form>` submitted
+/// the form instead of switching panels. `Css` is unaffected: its control is an
+/// `<input type="radio">`.
 ///
 /// A container with no `::: tab` child is left to the core div renderer.
 ///
@@ -112,12 +121,63 @@ impl Tabs {
     }
 }
 
+/// One item of a tab-shaped set, seen only as "did the document open me".
+///
+/// It is a trait rather than a field access because the two constructs carry
+/// their items in different structs - `TabItem` here, `GroupItem` in
+/// `code_group.rs` - and only the flag is shared.
+pub(crate) trait SingleSelect {
+    fn selected_mut(&mut self) -> &mut bool;
+}
+
+/// The selection step both tab-shaped extensions share (extensions §13.5).
+///
+/// A tab set is SINGLE-SELECT, so exactly one item is selected: the first one
+/// the document marks `selected`, and the first item where the document marks
+/// none. Later marks are ignored. Both branches are the SAME statement, which
+/// is why they are one - the default is just "no mark won", which is what
+/// `unwrap_or(0)` says.
+///
+/// FIRST-WINS, NOT LAST-WINS. The `Css` mode is a radio group, and a radio
+/// group cannot have two checked members - the browser resolves it to one and
+/// the document's intent is already lost. `Aria` emitting two
+/// `aria-selected="true"` tabs is not more expressive, it is a shape a
+/// single-select `tablist` has no state for: two panels revealed, two normal
+/// tab stops, and nothing able to report which tab the set is on. First-wins is
+/// also what the `Css` default already does with `checked`, so the two modes
+/// agree, which is the whole point of §13 mirroring them. Last-wins would mean
+/// an author scrolling a long tab set and marking the item in front of them
+/// silently unselects one above.
+///
+/// Over-specifying is NOT an error and gets no diagnostic: §13 has no
+/// diagnostic channel, and the document is not wrong, only redundant.
+///
+/// It lives here, beside [`TabsMode`] and imported by `code_group.rs`, rather
+/// than in either renderer, because §13 binds both constructs and a rule copied
+/// into two renderers is a rule that drifts - the exact divergence
+/// markup-carve/carve#1468 wrote the mirroring clause to prevent.
+pub(crate) fn apply_single_selection<T: SingleSelect>(items: &mut [T]) {
+    let winner = items
+        .iter_mut()
+        .position(|item| *item.selected_mut())
+        .unwrap_or(0);
+    for (index, item) in items.iter_mut().enumerate() {
+        *item.selected_mut() = index == winner;
+    }
+}
+
 /// One tab: its name, its rendered body, and its initial state.
 struct TabItem {
     label: String,
     content: String,
     selected: bool,
     id: Option<String>,
+}
+
+impl SingleSelect for TabItem {
+    fn selected_mut(&mut self) -> &mut bool {
+        &mut self.selected
+    }
 }
 
 impl CarveExtension for Tabs {
@@ -300,7 +360,12 @@ impl Tabs {
 
         for (item, (tab_id, panel_id)) in items.iter().zip(&pairs) {
             html.push_str(&format!(
-                "<button role=\"tab\" id=\"{}\" aria-selected=\"{}\" \
+                // `type="button"`, NOT the implicit `submit` (extensions
+                // §13.3). A bare `<button>` is a submit button, so a tab set
+                // inside a `<form>` submitted the form instead of switching
+                // panels - the one interaction this mode exists to provide,
+                // traded for the one thing the page never asked for.
+                "<button type=\"button\" role=\"tab\" id=\"{}\" aria-selected=\"{}\" \
                  aria-controls=\"{}\" class=\"{}\"{}>{}</button>\n",
                 ctx.escape_attr(tab_id),
                 if item.selected { "true" } else { "false" },
@@ -400,11 +465,10 @@ impl Tabs {
             });
         }
 
-        // Something has to be open. Without an authored `selected`, the first
-        // tab is the one a reader sees.
-        if !items.is_empty() && !items.iter().any(|item| item.selected) {
-            items[0].selected = true;
-        }
+        // EXACTLY ONE TAB IS SELECTED (extensions §13.5): the first one the
+        // document marks, or the first tab where it marks none. One statement,
+        // because the default is just "no mark won".
+        apply_single_selection(&mut items);
 
         items
     }

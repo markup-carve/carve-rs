@@ -189,15 +189,26 @@ fn render_feature(feature: &str, source: &str, target: Target) -> Option<String>
     let details = Details::new();
     let spoiler = Spoiler::new();
     let tabs = Tabs::new();
-    // The `aria` mode of the same extension. Extensions §13.5 makes it its own
+    // The `aria` mode of the same extension. Extensions §13.6 makes it its own
     // feature id, because §13.3's rules - the `tabpanel` binding, the `hidden`
-    // reveal, and the ABSENCE of a `role="group"` there - are a different
-    // statement from the `css` panel name that feature `tabs` covers.
+    // reveal, the ABSENCE of a `role="group"` there, and the control's
+    // `type="button"` - are a different statement from the `css` panel name
+    // that feature `tabs` covers.
     //
     // DORMANT AT THIS PIN, said plainly rather than left to look like coverage:
-    // the case that names this feature (`47-tabs-aria-panel-binding`) arrives
-    // with the corpus bump, so this arm runs nothing until the pin moves. It is
-    // here so that bump is a pin change and not a pin change plus a runner.
+    // the cases that name this feature (`47-tabs-aria-panel-binding` and
+    // `48-tabs-aria-single-selection`) arrive with the corpus bump, so this arm
+    // runs nothing until the pin moves. It is here so that bump is a pin change
+    // and not a pin change plus a runner.
+    //
+    // They cannot go in `AHEAD_OF_PIN` above either: that table is walked from
+    // the PINNED manifest and `ahead_of_pin_names_only_cases_the_manifest_states`
+    // refuses a slug the pin does not state, and this pin (45 cases) predates
+    // all of `46`-`49`. Their bytes are inlined in
+    // `tests/a_tab_control_is_a_button_and_one_item_is_selected.rs` instead -
+    // 48 and 49, one document under both modes - and the pin bump that catches
+    // up hands the comparison back to this runner.
+    // `49-tabs-css-single-selection` is feature `tabs`, which already has one.
     let tabs_aria = Tabs::with_options(carve::TabsOptions {
         mode: carve::TabsMode::Aria,
         ..Default::default()
