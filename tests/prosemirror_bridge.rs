@@ -650,7 +650,12 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // `390-...-5` is the escape (`|\= a |`), and the bridge degrades
     // `escaped_text` because escaping is a source-level concern the editor
     // holds as text. Nothing DROPS, so no new loss cause appears.
-    const STRICT: usize = 1033;
+    // The spec bump to carve d164b12 adds eleven documents, and every one of
+    // them round trips STRICTLY: the corpus goes 1330 -> 1341 and the lossy
+    // count does not move. The clause those documents pin is about accessible
+    // NAMES - an `aria-label` on a rendered element - which is a render-side
+    // attribute the bridge never had to carry, so nothing new is dropped.
+    const STRICT: usize = 1044;
     const LOSSY: usize = 297;
     assert!(
         covered >= STRICT,

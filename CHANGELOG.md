@@ -51,6 +51,17 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   carve-php's extension does and `Fold` is carve-js's default. Zero dependencies:
   the table is baked, bounded and auditable.
 
+### Added
+
+- **Rendered elements say what they are called** (markup-carve/carve#1471, PART
+  9 §16a). An admonition carries an accessible name - `aria-label` from its
+  kind, or `aria-labelledby` pointing at its own title when it has one - the
+  endnotes section is labeled, a task checkbox is named by its item text, and
+  rendered math carries `role="math"`. Authored `aria-label` / `aria-labelledby`
+  wins, so a document that already named an element is unchanged. Nine new
+  `labels` keys (`endnotes` and one per admonition kind) localize the defaults,
+  matching carve-js key for key.
+
 ### Changed
 
 - **A colon container's body is parsed from a worklist, not down the stack**

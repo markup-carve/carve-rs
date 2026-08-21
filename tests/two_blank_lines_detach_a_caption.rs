@@ -106,7 +106,7 @@ fn one_blank_line_attaches_an_equation_caption() {
     // CONTROL.
     assert_eq!(
         html("$$`x`\n\n^ cap\n"),
-        "<figure>\n  <p><span class=\"math display\">\\[x\\]</span></p>\n  <figcaption>cap</figcaption>\n</figure>"
+        "<figure>\n  <p><span class=\"math display\" role=\"math\">\\[x\\]</span></p>\n  <figcaption>cap</figcaption>\n</figure>"
     );
 }
 
@@ -114,7 +114,7 @@ fn one_blank_line_attaches_an_equation_caption() {
 fn two_blank_lines_detach_an_equation_caption() {
     assert_eq!(
         html("$$`x`\n\n\n^ cap\n"),
-        "<p><span class=\"math display\">\\[x\\]</span></p>\n<p>^ cap</p>"
+        "<p><span class=\"math display\" role=\"math\">\\[x\\]</span></p>\n<p>^ cap</p>"
     );
 }
 

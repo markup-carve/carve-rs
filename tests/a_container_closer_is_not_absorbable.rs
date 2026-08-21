@@ -39,7 +39,7 @@ fn a_malformed_fence_does_not_absorb_the_containers_closer() {
     // admonition's own closer and stays that way, so `tail` is outside.
     assert_eq!(
         html("::: note\n:::oops\n:::\ntail\n"),
-        "<aside class=\"admonition note\">\n  <p>:::oops</p>\n</aside>\n<p>tail</p>"
+        "<aside class=\"admonition note\" aria-label=\"Note\">\n  <p>:::oops</p>\n</aside>\n<p>tail</p>"
     );
 }
 
@@ -51,7 +51,7 @@ fn the_rule_is_not_width_tagged() {
     // is prose, and it still does not take the closer.
     assert_eq!(
         html("::: note\n::::oops\n:::\ntail\n"),
-        "<aside class=\"admonition note\">\n  <p>::::oops</p>\n</aside>\n<p>tail</p>"
+        "<aside class=\"admonition note\" aria-label=\"Note\">\n  <p>::::oops</p>\n</aside>\n<p>tail</p>"
     );
 }
 
@@ -62,7 +62,7 @@ fn it_holds_one_level_in_inside_a_list_item() {
     // the same walk.
     assert_eq!(
         html("- ::: note\n  :::oops\n  :::\n  tail\n"),
-        "<ul>\n  <li>\n    <aside class=\"admonition note\">\n      <p>:::oops</p>\n    </aside>\n    tail\n  </li>\n</ul>"
+        "<ul>\n  <li>\n    <aside class=\"admonition note\" aria-label=\"Note\">\n      <p>:::oops</p>\n    </aside>\n    tail\n  </li>\n</ul>"
     );
 }
 
@@ -73,7 +73,7 @@ fn it_holds_inside_a_block_quote() {
     // does not change what the admonition's closer is.
     assert_eq!(
         html("> ::: note\n> :::oops\n> :::\n> tail\n"),
-        "<blockquote>\n  <aside class=\"admonition note\">\n    <p>:::oops</p>\n  </aside>\n  <p>tail</p>\n</blockquote>"
+        "<blockquote>\n  <aside class=\"admonition note\" aria-label=\"Note\">\n    <p>:::oops</p>\n  </aside>\n  <p>tail</p>\n</blockquote>"
     );
 }
 
@@ -85,7 +85,7 @@ fn an_inner_containers_closer_is_not_absorbable_either() {
     // A fix that only protected the outermost closer passes every test above.
     assert_eq!(
         html(":::: outer\n::: note\n:::oops\n:::\n::::\ntail\n"),
-        "<div class=\"outer\">\n  <aside class=\"admonition note\">\n    <p>:::oops</p>\n  </aside>\n</div>\n<p>tail</p>"
+        "<div class=\"outer\">\n  <aside class=\"admonition note\" aria-label=\"Note\">\n    <p>:::oops</p>\n  </aside>\n</div>\n<p>tail</p>"
     );
 }
 
@@ -96,7 +96,7 @@ fn the_malformed_line_may_be_the_containers_first_line() {
     // sibling absorption fixtures, so it is not redundant with the base case.
     assert_eq!(
         html("::: note\n:::oops\n:::\n"),
-        "<aside class=\"admonition note\">\n  <p>:::oops</p>\n</aside>"
+        "<aside class=\"admonition note\" aria-label=\"Note\">\n  <p>:::oops</p>\n</aside>"
     );
 }
 
@@ -107,7 +107,7 @@ fn the_malformed_line_may_follow_real_body_text() {
     // arrangement §12 is actually written about.
     assert_eq!(
         html("::: note\nbody\n:::oops\n:::\ntail\n"),
-        "<aside class=\"admonition note\">\n  <p>body\n:::oops</p>\n</aside>\n<p>tail</p>"
+        "<aside class=\"admonition note\" aria-label=\"Note\">\n  <p>body\n:::oops</p>\n</aside>\n<p>tail</p>"
     );
 }
 
@@ -117,7 +117,7 @@ fn two_malformed_fences_still_do_not_take_the_closer() {
     // closer exactly as reachable as one does.
     assert_eq!(
         html("::: note\n:::oops\n:::bad\n:::\ntail\n"),
-        "<aside class=\"admonition note\">\n  <p>:::oops\n:::bad</p>\n</aside>\n<p>tail</p>"
+        "<aside class=\"admonition note\" aria-label=\"Note\">\n  <p>:::oops\n:::bad</p>\n</aside>\n<p>tail</p>"
     );
 }
 
@@ -131,7 +131,7 @@ fn control_a_container_with_no_malformed_fence_is_unchanged() {
     // before this fix too, and must still.
     assert_eq!(
         html("::: note\nbody\n:::\ntail\n"),
-        "<aside class=\"admonition note\">\n  <p>body</p>\n</aside>\n<p>tail</p>"
+        "<aside class=\"admonition note\" aria-label=\"Note\">\n  <p>body</p>\n</aside>\n<p>tail</p>"
     );
 }
 
@@ -154,7 +154,7 @@ fn control_a_blank_line_ends_the_paragraph_as_before() {
     // here because it is the shape a reader checks the fix against.
     assert_eq!(
         html("::: note\n:::oops\n\n:::\ntail\n"),
-        "<aside class=\"admonition note\">\n  <p>:::oops</p>\n</aside>\n<p>tail</p>"
+        "<aside class=\"admonition note\" aria-label=\"Note\">\n  <p>:::oops</p>\n</aside>\n<p>tail</p>"
     );
 }
 
@@ -172,6 +172,6 @@ fn control_absorption_still_works_inside_the_container() {
     // oracle byte-for-byte.
     assert_eq!(
         html("::: note\n:::oops\n::::\n:::\n"),
-        "<aside class=\"admonition note\">\n  <p>:::oops\n::::\n:::</p>\n</aside>"
+        "<aside class=\"admonition note\" aria-label=\"Note\">\n  <p>:::oops\n::::\n:::</p>\n</aside>"
     );
 }

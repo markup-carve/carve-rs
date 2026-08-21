@@ -138,7 +138,7 @@ pub fn to_html(source: &str) -> String {
         doc,
         &options,
         crossref_index,
-        source.contains("[@"),
+        source.contains("[@") || source.contains(":::"),
         source.contains("[^") || source.contains("^["),
     )
     .expect("the parse cap sits below the render ceiling, so a parsed tree never reaches it")

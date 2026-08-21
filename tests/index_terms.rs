@@ -40,7 +40,7 @@ fn nested_index_block_opening_ul_indented_once() {
     // the framework-first-line + self-pad double-indent, matching carve-js.
     let out = h("X :index[A] Y\n\n:::: note\n::: index\n:::\n::::");
     assert!(
-        out.contains("<aside class=\"admonition note\">\n  <ul class=\"index\">\n    <li>A "),
+        out.contains("<aside class=\"admonition note\" aria-label=\"Note\">\n  <ul class=\"index\">\n    <li>A "),
         "{out}"
     );
     assert!(!out.contains("    <ul class=\"index\">"), "{out}");

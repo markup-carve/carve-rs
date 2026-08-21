@@ -36,10 +36,14 @@ fn render(state: char, lead: &str) -> String {
 #[test]
 fn the_checkbox_sits_on_the_li_opener_line_for_every_lead() {
     for state in [' ', 'x'] {
+        // The STATE and the POSITION, and deliberately not the whole tag: a
+        // task item's checkbox also carries an `aria-label` naming the item
+        // (PART 9 section 16a), whose text differs per lead, and this test is
+        // about which LINE the checkbox is written on.
         let expected = if state == 'x' {
-            "<li><input type=\"checkbox\" checked disabled> "
+            "<li><input type=\"checkbox\" checked disabled"
         } else {
-            "<li><input type=\"checkbox\" disabled> "
+            "<li><input type=\"checkbox\" disabled"
         };
         for (name, lead) in LEADS {
             let html = render(state, lead);
@@ -79,7 +83,7 @@ fn only_the_content_moves_between_an_inline_and_a_block_lead() {
     // trailing space the checkbox carries included.
     assert_eq!(
         to_html("- [ ] a\n"),
-        "<ul>\n  <li><input type=\"checkbox\" disabled> a</li>\n</ul>"
+        "<ul>\n  <li><input type=\"checkbox\" disabled aria-label=\"a\"> a</li>\n</ul>"
     );
     assert_eq!(
         to_html("- [ ] > q\n"),

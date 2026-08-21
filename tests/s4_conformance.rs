@@ -125,10 +125,10 @@ fn colon_fence_opener_spacing_and_eof_close() {
     );
     // A typed admonition needs whitespace after the fence, and an opener no
     // longer needs lookahead: it closes cleanly at end of input.
-    assert!(
-        carve::to_html("::: note\nbody no closer").contains("<aside class=\"admonition note\">")
-    );
-    assert!(carve::to_html("::: note\nbody\n:::").contains("<aside class=\"admonition note\">"));
+    assert!(carve::to_html("::: note\nbody no closer")
+        .contains("<aside class=\"admonition note\" aria-label=\"Note\">"));
+    assert!(carve::to_html("::: note\nbody\n:::")
+        .contains("<aside class=\"admonition note\" aria-label=\"Note\">"));
 }
 
 #[test]

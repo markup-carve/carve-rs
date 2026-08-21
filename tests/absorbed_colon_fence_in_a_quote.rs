@@ -48,7 +48,7 @@ fn a_valid_opener_ends_the_quoted_paragraph_instead() {
     // quote's.
     assert_eq!(
         html("> quote\n> ::: note\n> body\ntail\n"),
-        "<blockquote>\n  <p>quote</p>\n  <aside class=\"admonition note\">\n    <p>body\ntail</p>\n  </aside>\n</blockquote>"
+        "<blockquote>\n  <p>quote</p>\n  <aside class=\"admonition note\" aria-label=\"Note\">\n    <p>body\ntail</p>\n  </aside>\n</blockquote>"
     );
 }
 
@@ -121,7 +121,7 @@ fn a_valid_opener_after_the_malformed_one_still_interrupts() {
     // quote's. Matches the oracle.
     assert_eq!(
         html("> quote\n> :::note\n> ::: note\n> body\ntail\n"),
-        "<blockquote>\n  <p>quote\n:::note</p>\n  <aside class=\"admonition note\">\n    <p>body\ntail</p>\n  </aside>\n</blockquote>"
+        "<blockquote>\n  <p>quote\n:::note</p>\n  <aside class=\"admonition note\" aria-label=\"Note\">\n    <p>body\ntail</p>\n  </aside>\n</blockquote>"
     );
 }
 
@@ -142,7 +142,7 @@ fn a_valid_opener_after_the_malformed_one_leaves_nothing_open() {
     // and the two folding engines wrong.
     assert_eq!(
         html("> quote\n> :::note\n> ::: note\ntail\n"),
-        "<blockquote>\n  <p>quote\n:::note</p>\n  <aside class=\"admonition note\">\n\n  </aside>\n</blockquote>\n<p>tail</p>"
+        "<blockquote>\n  <p>quote\n:::note</p>\n  <aside class=\"admonition note\" aria-label=\"Note\">\n\n  </aside>\n</blockquote>\n<p>tail</p>"
     );
 }
 
@@ -155,7 +155,7 @@ fn a_valid_opener_with_no_malformed_one_before_it_is_unchanged() {
     // markup-carve/carve#920 shape A ruled against them.
     assert_eq!(
         html("> quote\n> ::: note\ntail\n"),
-        "<blockquote>\n  <p>quote</p>\n  <aside class=\"admonition note\">\n\n  </aside>\n</blockquote>\n<p>tail</p>"
+        "<blockquote>\n  <p>quote</p>\n  <aside class=\"admonition note\" aria-label=\"Note\">\n\n  </aside>\n</blockquote>\n<p>tail</p>"
     );
 }
 

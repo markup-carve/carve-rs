@@ -300,6 +300,7 @@ pub(crate) struct RenderState {
     /// `::: footnotes` nested inside a footnote definition must NOT emit a
     /// placement sentinel (it renders as an ordinary div, matching carve-js).
     rendering_footnotes: bool,
+    admonition_count: usize,
     suppress_automatic_abbreviation: bool,
 }
 
@@ -888,7 +889,11 @@ fn render_footnotes_section(
     let was_rendering_footnotes = state.rendering_footnotes;
     state.rendering_footnotes = true;
     let mut out = String::new();
-    out.push_str("<section role=\"doc-endnotes\">\n  <hr>\n  <ol>");
+    out.push_str("<section role=\"doc-endnotes\" aria-label=\"");
+    out.push_str(&escape_attr(
+        options.label(crate::extension::LABEL_ENDNOTES),
+    ));
+    out.push_str("\">\n  <hr>\n  <ol>");
     for (idx, entry) in footnotes.iter().enumerate() {
         let num = idx + 1;
         out.push('\n');
@@ -1503,10 +1508,22 @@ fn render_list_item(
     out.push_str("<li");
     write_attrs(out, &item.attrs);
     out.push('>');
+    let task_name = match item.children.first() {
+        Some(BlockNode::Paragraph(p)) => plain_inlines(&p.children)
+            .split_ascii_whitespace()
+            .collect::<Vec<_>>()
+            .join(" "),
+        _ => String::new(),
+    };
+    let name_attr = if task_name.is_empty() {
+        String::new()
+    } else {
+        format!(" aria-label=\"{}\"", escape_attr(&task_name))
+    };
     let checkbox = match item.checked {
-        None => "",
-        Some(false) => "<input type=\"checkbox\" disabled> ",
-        Some(true) => "<input type=\"checkbox\" checked disabled> ",
+        None => String::new(),
+        Some(false) => format!("<input type=\"checkbox\" disabled{name_attr}> "),
+        Some(true) => format!("<input type=\"checkbox\" checked disabled{name_attr}> "),
     };
     if item.children.is_empty() {
         out.push_str("</li>");
@@ -1568,13 +1585,13 @@ fn render_list_item(
         })
         .collect();
     if parts.is_empty() {
-        out.push_str(checkbox);
+        out.push_str(&checkbox);
         out.push_str("</li>");
         return;
     }
     match &parts[0] {
         Part::Inline(html) => {
-            out.push_str(checkbox);
+            out.push_str(&checkbox);
             out.push_str(html);
         }
         Part::Block(html) => {
@@ -1589,7 +1606,7 @@ fn render_list_item(
             // every non-paragraph lead -- a quote, a heading, a thematic
             // break, a fence, a `:::` div, a table row (carve#1381,
             // corpus 363).
-            out.push_str(checkbox);
+            out.push_str(&checkbox);
             out.push('\n');
             out.push_str(html);
         }
@@ -2310,16 +2327,51 @@ fn render_admonition(
         None => (base, String::new()),
     };
     let tag = if canonical { "aside" } else { "div" };
+    let authored_name = a.attrs.as_ref().is_some_and(|attrs| {
+        attrs.key_values.keys().any(|key| {
+            key.eq_ignore_ascii_case("aria-label") || key.eq_ignore_ascii_case("aria-labelledby")
+        })
+    });
+    let mut title_id = None;
+    let accessible_name = if canonical && !authored_name {
+        if a.title.is_some() {
+            state.admonition_count += 1;
+            let id = crate::document_ids::unique_id(&format!("adm-{}", state.admonition_count));
+            let attr = format!(" aria-labelledby=\"{}\"", escape_attr(&id));
+            title_id = Some(id);
+            attr
+        } else {
+            let mut chars = a.kind.chars();
+            let key = format!(
+                "admonition{}{}",
+                chars.next().unwrap_or_default().to_ascii_uppercase(),
+                chars.as_str()
+            );
+            let value = options.label(&key);
+            if value.is_empty() {
+                String::new()
+            } else {
+                format!(" aria-label=\"{}\"", escape_attr(value))
+            }
+        }
+    } else {
+        String::new()
+    };
     out.push_str(&format!(
-        "<{} class=\"{}\"{}>",
+        "<{} class=\"{}\"{}{}>",
         tag,
         escape_attr(&class),
-        rest
+        rest,
+        accessible_name
     ));
     if let Some(title) = &a.title {
         out.push('\n');
         indent(out, level + 1);
-        out.push_str("<p class=\"admonition-title\">");
+        out.push_str("<p class=\"admonition-title\"");
+        if let Some(id) = &title_id {
+            write!(out, " id=\"{}\"", escape_attr(id)).unwrap();
+        }
+        out.push('>');
         render_inlines(out, title, options, state);
         out.push_str("</p>");
     }
@@ -2963,6 +3015,13 @@ fn render_inline_after(
             // class the same way and was missed, because no corpus case put an
             // id before a class on it (carve#1164).
             let attrs = render_attrs_with_base_class(&m.attrs, base);
+            let authored_role = m.attrs.as_ref().is_some_and(|attrs| {
+                attrs
+                    .key_values
+                    .keys()
+                    .any(|key| key.eq_ignore_ascii_case("role"))
+            });
+            let role = if authored_role { "" } else { " role=\"math\"" };
             // Static mode: when a build-time math renderer is supplied, emit its
             // server-side output (MathML / HTML) inside the math span so the page
             // needs no client KaTeX / MathJax; the renderer output is trusted and
@@ -2973,7 +3032,7 @@ fn render_inline_after(
                 (true, Some(build)) => build(&m.content, m.display),
                 _ => format!("{}{}{}", open, escape_text(&m.content), close),
             };
-            out.push_str(&format!("<span{}>{}</span>", attrs, body,));
+            out.push_str(&format!("<span{}{}>{}</span>", attrs, role, body,));
         }
         InlineNode::RawInline(r) => {
             if r.format.trim() == "html" {

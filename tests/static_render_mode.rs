@@ -385,7 +385,7 @@ fn core_inline_math_static_no_renderer_keeps_source() {
     // No extension needed - core math. Static without a renderer == interactive.
     let opts = Options::new().with_mode(Mode::Static);
     let html = carve::to_html_with_options("Euler: $`e^{i\\pi}`.", &opts);
-    assert!(html.contains("<span class=\"math inline\">\\(e^{i\\pi}\\)</span>"));
+    assert!(html.contains("<span class=\"math inline\" role=\"math\">\\(e^{i\\pi}\\)</span>"));
 }
 
 #[test]
@@ -398,7 +398,7 @@ fn core_inline_math_static_with_renderer_emits_mathml() {
             }));
     let html = carve::to_html_with_options("Euler: $`e^{i\\pi}`.", &opts);
     assert!(html.contains(
-        "<span class=\"math inline\"><math data-display=\"false\">e^{i\\pi}</math></span>"
+        "<span class=\"math inline\" role=\"math\"><math data-display=\"false\">e^{i\\pi}</math></span>"
     ));
 }
 
@@ -412,7 +412,7 @@ fn core_display_math_static_with_renderer_passes_display_true() {
             }));
     let html = carve::to_html_with_options("$$`\\frac{a}{b}`", &opts);
     assert!(html.contains(
-        "<span class=\"math display\"><math data-display=\"true\">\\frac{a}{b}</math></span>"
+        "<span class=\"math display\" role=\"math\"><math data-display=\"true\">\\frac{a}{b}</math></span>"
     ));
 }
 

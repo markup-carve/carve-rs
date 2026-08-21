@@ -139,7 +139,7 @@ fn source_lines_stamp_footnote_content() {
     );
 
     assert!(
-        html.contains("<section role=\"doc-endnotes\">"),
+        html.contains("<section role=\"doc-endnotes\" aria-label=\"Footnotes\">"),
         "got: {html}"
     );
     assert!(

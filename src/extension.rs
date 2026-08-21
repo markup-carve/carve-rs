@@ -227,6 +227,7 @@ pub(crate) fn record_attr_order(attrs: &mut crate::ast::Attrs, key: &str) {
 
 /// The `labels` key for the endnote backlink's accessible name (PART 9 §16a).
 pub const LABEL_FOOTNOTE_BACKLINK: &str = "footnoteBacklink";
+pub const LABEL_ENDNOTES: &str = "endnotes";
 
 /// The `labels` key for the leading words of an index back-link's name.
 pub const LABEL_INDEX_BACKREF: &str = "indexBackref";
@@ -248,6 +249,15 @@ pub const LABEL_CODE_GROUP: &str = "codeGroup";
 pub fn label_default(key: &str) -> &'static str {
     match key {
         LABEL_FOOTNOTE_BACKLINK => "Back to reference",
+        LABEL_ENDNOTES => "Footnotes",
+        "admonitionNote" => "Note",
+        "admonitionTip" => "Tip",
+        "admonitionWarning" => "Warning",
+        "admonitionDanger" => "Danger",
+        "admonitionInfo" => "Info",
+        "admonitionSuccess" => "Success",
+        "admonitionExample" => "Example",
+        "admonitionQuote" => "Quote",
         LABEL_INDEX_BACKREF => "Back to",
         LABEL_TABS_GROUP => "Tabs",
         LABEL_CODE_GROUP => "Code examples",

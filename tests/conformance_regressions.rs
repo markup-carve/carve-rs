@@ -69,7 +69,7 @@ fn blank_separated_indented_footnote_continuation_stays_in_footnote() {
         html("x[^1]\n\n[^1]: a\n\n  b"),
         concat!(
             "<p>x<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n",
-            "<section role=\"doc-endnotes\">\n",
+            "<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n",
             "  <hr>\n",
             "  <ol>\n",
             "    <li id=\"fn1\">\n",
@@ -152,7 +152,7 @@ fn marker_line_colon_blocks_nest_inside_list_item() {
         concat!(
             "<ul>\n",
             "  <li>\n",
-            "    <aside class=\"admonition note\">\n",
+            "    <aside class=\"admonition note\" aria-label=\"Note\">\n",
             "      <p>body</p>\n",
             "    </aside>\n",
             "  </li>\n",
@@ -209,7 +209,7 @@ fn flush_left_colon_fence_shape_ends_lazy_continuation() {
     assert_eq!(html("- a\n:::"), "<ul>\n  <li>a</li>\n</ul>\n<div>\n</div>");
     assert_eq!(
         html("- a\n::: note\nno"),
-        "<ul>\n  <li>a</li>\n</ul>\n<aside class=\"admonition note\">\n  <p>no</p>\n</aside>"
+        "<ul>\n  <li>a</li>\n</ul>\n<aside class=\"admonition note\" aria-label=\"Note\">\n  <p>no</p>\n</aside>"
     );
     assert_eq!(
         html("- a\n:::\nb"),
@@ -233,7 +233,7 @@ fn flush_left_colon_fence_shape_ends_lazy_continuation() {
         concat!(
             "<ul>\n",
             "  <li>\n",
-            "    <aside class=\"admonition note\">\n",
+            "    <aside class=\"admonition note\" aria-label=\"Note\">\n",
             "      <p>body</p>\n",
             "    </aside>\n",
             "  </li>\n",
@@ -538,7 +538,7 @@ fn colon_fence_openers_end_blockquote_lazy_continuation() {
         html("> ::: note\noutside\n> :::"),
         concat!(
             "<blockquote>\n",
-            "  <aside class=\"admonition note\">\n",
+            "  <aside class=\"admonition note\" aria-label=\"Note\">\n",
             "\n",
             "  </aside>\n",
             "</blockquote>\n",

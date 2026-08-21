@@ -117,7 +117,7 @@ fn flush_colon_fence_in_quote_ends_lazy_continuation() {
         concat!(
             "<blockquote>\n",
             "  <p>a</p>\n",
-            "  <aside class=\"admonition note\">\n",
+            "  <aside class=\"admonition note\" aria-label=\"Note\">\n",
             "\n",
             "  </aside>\n",
             "</blockquote>\n",

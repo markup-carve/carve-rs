@@ -60,7 +60,7 @@ fn task_child_nests_at_the_bullet_content_column() {
     // content, not marker -- so a child at column 2 nests (matches carve-php).
     assert_eq!(
         carve::to_html("- [ ] a\n  - b"),
-        "<ul>\n  <li><input type=\"checkbox\" disabled> a\n    <ul>\n      <li>b</li>\n    </ul>\n  </li>\n</ul>"
+        "<ul>\n  <li><input type=\"checkbox\" disabled aria-label=\"a\"> a\n    <ul>\n      <li>b</li>\n    </ul>\n  </li>\n</ul>"
     );
 }
 
