@@ -11,9 +11,17 @@ use std::io::Write;
 use std::process::{Command, Output, Stdio};
 
 /// Every output flag whose render path runs the parse + profile pipeline.
-/// `--carve` is absent on purpose: `to_carve` takes no options, so no profile
-/// reaches that target to be violated.
-const PROFILED_FORMATS: &[&str] = &["--html", "--markdown", "--plain", "--ansi", "--json"];
+/// `--carve` joined the list once it gained an options-taking entry point: the
+/// flag used to be accepted and never consulted there, so an over-cap document
+/// was re-serialized in full at exit 0 (carve-rs#1191).
+const PROFILED_FORMATS: &[&str] = &[
+    "--html",
+    "--markdown",
+    "--plain",
+    "--ansi",
+    "--json",
+    "--carve",
+];
 
 /// `Profile::minimal()`'s `max_length`, spelled out so the test states the
 /// number it is about rather than asking the code under test for it.
@@ -27,6 +35,7 @@ const INFALLIBLE_WRAPPERS: &[&str] = &[
     "to_plain_text_with_options",
     "to_ansi_with_options",
     "to_json_with_options",
+    "to_carve_with_options",
 ];
 
 fn run(args: &[&str], input: &str) -> Output {
