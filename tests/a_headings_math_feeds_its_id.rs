@@ -94,12 +94,12 @@ fn control_a_heading_without_math_derives_the_same_id() {
 fn control_the_math_still_renders_as_math() {
     let out = carve::to_html("# a $`x` b\n");
     assert!(
-        out.contains("<span class=\"math inline\">\\(x\\)</span>"),
+        out.contains("<span class=\"math inline\" role=\"math\">\\(x\\)</span>"),
         "{out}"
     );
     let display = carve::to_html("# a $$`x` b\n");
     assert!(
-        display.contains("<span class=\"math display\">\\[x\\]</span>"),
+        display.contains("<span class=\"math display\" role=\"math\">\\[x\\]</span>"),
         "{display}"
     );
 }

@@ -42,7 +42,7 @@ fn leaving_the_div_unterminated_does_not_change_it() {
 fn an_admonition_is_the_same_container() {
     assert_eq!(
         html("- x\n  ::: note\n  a\nd\n  b\n  :::\n"),
-        "<ul>\n  <li>x\n    <aside class=\"admonition note\">\n      <p>a\nd\nb</p>\n    </aside>\n  </li>\n</ul>"
+        "<ul>\n  <li>x\n    <aside class=\"admonition note\" aria-label=\"Note\">\n      <p>a\nd\nb</p>\n    </aside>\n  </li>\n</ul>"
     );
 }
 
@@ -104,7 +104,7 @@ fn control_an_empty_container_still_ends_at_the_flush_left_line() {
     // here has replaced one over-reach with another.
     assert_eq!(
         html("- x\n  ::: note\nd\n  b\n"),
-        "<ul>\n  <li>x\n    <aside class=\"admonition note\">\n\n    </aside>\n  </li>\n</ul>\n<p>d\nb</p>"
+        "<ul>\n  <li>x\n    <aside class=\"admonition note\" aria-label=\"Note\">\n\n    </aside>\n  </li>\n</ul>\n<p>d\nb</p>"
     );
 }
 
@@ -114,7 +114,7 @@ fn control_a_closed_container_leaves_no_open_paragraph_either() {
     // inside the div, so there is nothing left to fold into.
     assert_eq!(
         html("- x\n  ::: note\n  a\n  :::\nd\n  b\n"),
-        "<ul>\n  <li>x\n    <aside class=\"admonition note\">\n      <p>a</p>\n    </aside>\n  </li>\n</ul>\n<p>d\nb</p>"
+        "<ul>\n  <li>x\n    <aside class=\"admonition note\" aria-label=\"Note\">\n      <p>a</p>\n    </aside>\n  </li>\n</ul>\n<p>d\nb</p>"
     );
 }
 
@@ -207,7 +207,7 @@ fn control_a_colon_shaped_line_inside_a_code_fence_opens_nothing() {
 fn control_a_fenced_colon_shape_does_not_reopen_a_closed_admonition() {
     assert_eq!(
         html("- x\n  ```\n  :::\n  ```\n  ::: note\n  a\n  :::\nd\n  b\n"),
-        "<ul>\n  <li>x\n    <pre><code>:::\n</code></pre>\n    <aside class=\"admonition note\">\n      <p>a</p>\n    </aside>\n  </li>\n</ul>\n<p>d\nb</p>"
+        "<ul>\n  <li>x\n    <pre><code>:::\n</code></pre>\n    <aside class=\"admonition note\" aria-label=\"Note\">\n      <p>a</p>\n    </aside>\n  </li>\n</ul>\n<p>d\nb</p>"
     );
 }
 
@@ -225,7 +225,7 @@ fn control_a_colon_shaped_line_inside_a_line_block_opens_nothing() {
     // only thing the rule under test decides.
     assert_eq!(
         html("- x\n  :::: |\n  :::\n  ::::\n  ::: note\n  a\n  :::\nd\n  b\n"),
-        "<ul>\n  <li>x\n    <div class=\"line-block\">\n      <p>:::</p>\n    </div>\n    <aside class=\"admonition note\">\n      <p>a</p>\n    </aside>\n  </li>\n</ul>\n<p>d\nb</p>"
+        "<ul>\n  <li>x\n    <div class=\"line-block\">\n      <p>:::</p>\n    </div>\n    <aside class=\"admonition note\" aria-label=\"Note\">\n      <p>a</p>\n    </aside>\n  </li>\n</ul>\n<p>d\nb</p>"
     );
 }
 

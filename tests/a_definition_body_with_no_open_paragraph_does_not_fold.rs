@@ -51,7 +51,7 @@ fn an_empty_block_quote_body_does_not_take_the_fold() {
 fn a_closed_admonition_body_does_not_take_the_fold() {
     assert_eq!(
         html(":: t\n:  ::: note\n   body\n   :::\nlazy\n"),
-        "<dl>\n  <dt>t</dt>\n  <dd>\n    <aside class=\"admonition note\">\n      <p>body</p>\n    </aside>\n  </dd>\n</dl>\n<p>lazy</p>"
+        "<dl>\n  <dt>t</dt>\n  <dd>\n    <aside class=\"admonition note\" aria-label=\"Note\">\n      <p>body</p>\n    </aside>\n  </dd>\n</dl>\n<p>lazy</p>"
     );
     assert!(list_twin("- ::: note\n  body\n  :::\nlazy\n").ends_with("<p>lazy</p>"));
 }
@@ -213,7 +213,7 @@ fn control_an_unterminated_div_body_still_takes_the_fold() {
     // above and the two must not move together.
     assert_eq!(
         html(":: t\n:  ::: note\n   body\nlazy\n"),
-        "<dl>\n  <dt>t</dt>\n  <dd>\n    <aside class=\"admonition note\">\n      <p>body\nlazy</p>\n    </aside>\n  </dd>\n</dl>"
+        "<dl>\n  <dt>t</dt>\n  <dd>\n    <aside class=\"admonition note\" aria-label=\"Note\">\n      <p>body\nlazy</p>\n    </aside>\n  </dd>\n</dl>"
     );
 }
 

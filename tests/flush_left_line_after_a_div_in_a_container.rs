@@ -22,7 +22,7 @@ fn an_unterminated_div_holding_a_paragraph_takes_the_flush_left_line() {
     assert_eq!(
         squash(&to_html("- item\n  ::: note\n  body\ntail\n")),
         squash(
-            "<ul>\n  <li>item\n    <aside class=\"admonition note\">\n      \
+            "<ul>\n  <li>item\n    <aside class=\"admonition note\" aria-label=\"Note\">\n      \
              <p>body\ntail</p>\n    </aside>\n  </li>\n</ul>"
         )
     );

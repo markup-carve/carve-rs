@@ -20,7 +20,7 @@ fn tight_fence_trailing_text_is_bare() {
 fn tight_div_trailing_text_is_bare() {
     assert_eq!(
         carve::to_html("- item\n  ::: note\n  body\n  :::\n  tail\n"),
-        "<ul>\n  <li>item\n    <aside class=\"admonition note\">\n      <p>body</p>\n    </aside>\n    tail\n  </li>\n</ul>"
+        "<ul>\n  <li>item\n    <aside class=\"admonition note\" aria-label=\"Note\">\n      <p>body</p>\n    </aside>\n    tail\n  </li>\n</ul>"
     );
 }
 

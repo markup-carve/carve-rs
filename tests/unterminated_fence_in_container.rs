@@ -26,7 +26,7 @@ fn unterminated_fence_does_not_swallow_the_div_closer() {
 
     assert_eq!(
         html,
-        "<aside class=\"admonition note\"> <pre><code>x </code></pre> </aside> <p>after</p>"
+        "<aside class=\"admonition note\" aria-label=\"Note\"> <pre><code>x </code></pre> </aside> <p>after</p>"
     );
 }
 
@@ -53,7 +53,7 @@ fn a_closed_fence_is_still_opaque() {
 
     assert_eq!(
         html,
-        "<aside class=\"admonition note\"> <pre><code>::: </code></pre> <p>after</p> </aside>"
+        "<aside class=\"admonition note\" aria-label=\"Note\"> <pre><code>::: </code></pre> <p>after</p> </aside>"
     );
 }
 

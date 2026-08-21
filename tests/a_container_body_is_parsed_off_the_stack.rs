@@ -169,12 +169,12 @@ fn a_container_inside_a_quote_and_inside_an_item_still_resolves() {
     // full, and it is the shape this repo produced before the conversion.
     assert_eq!(
         carve::to_html("> ::: note\n> inside\n> :::\n").trim(),
-        "<blockquote>\n  <aside class=\"admonition note\">\n    <p>inside</p>\n  \
+        "<blockquote>\n  <aside class=\"admonition note\" aria-label=\"Note\">\n    <p>inside</p>\n  \
          </aside>\n</blockquote>"
     );
     assert_eq!(
         carve::to_html("- ::: note\n  inside\n  :::\n").trim(),
-        "<ul>\n  <li>\n    <aside class=\"admonition note\">\n      <p>inside</p>\n    \
+        "<ul>\n  <li>\n    <aside class=\"admonition note\" aria-label=\"Note\">\n      <p>inside</p>\n    \
          </aside>\n  </li>\n</ul>"
     );
 }

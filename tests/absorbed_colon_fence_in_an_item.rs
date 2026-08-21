@@ -38,7 +38,7 @@ fn a_valid_opener_closes_the_item_instead() {
     // open paragraph - so `tail` ends the item.
     assert_eq!(
         html("- item\n  ::: note\n  body\n  :::\ntail\n"),
-        "<ul>\n  <li>item\n    <aside class=\"admonition note\">\n      <p>body</p>\n    </aside>\n  </li>\n</ul>\n<p>tail</p>"
+        "<ul>\n  <li>item\n    <aside class=\"admonition note\" aria-label=\"Note\">\n      <p>body</p>\n    </aside>\n  </li>\n</ul>\n<p>tail</p>"
     );
 }
 
@@ -90,7 +90,7 @@ fn a_valid_opener_after_the_malformed_one_still_interrupts() {
     // below is that block's closer, and a closed block leaves no open paragraph.
     assert_eq!(
         html("- item\n  :::note\n  ::: note\n  body\n  :::\ntail\n"),
-        "<ul>\n  <li>item\n:::note\n    <aside class=\"admonition note\">\n      <p>body</p>\n    </aside>\n  </li>\n</ul>\n<p>tail</p>"
+        "<ul>\n  <li>item\n:::note\n    <aside class=\"admonition note\" aria-label=\"Note\">\n      <p>body</p>\n    </aside>\n  </li>\n</ul>\n<p>tail</p>"
     );
 }
 

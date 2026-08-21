@@ -21,7 +21,7 @@ fn a_comment_block_inside_a_div() {
 fn a_comment_block_inside_an_admonition() {
     assert_eq!(
         html("::: note\n%%%\nx\n%%%\nbody\n:::\n"),
-        "<aside class=\"admonition note\">\n  <p>body</p>\n</aside>"
+        "<aside class=\"admonition note\" aria-label=\"Note\">\n  <p>body</p>\n</aside>"
     );
 }
 

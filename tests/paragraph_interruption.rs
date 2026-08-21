@@ -36,7 +36,7 @@ fn thematic_break_interrupts() {
 fn admonition_interrupts() {
     assert_eq!(
         html("text\n::: note\nb\n:::"),
-        "<p>text</p>\n<aside class=\"admonition note\">\n  <p>b</p>\n</aside>"
+        "<p>text</p>\n<aside class=\"admonition note\" aria-label=\"Note\">\n  <p>b</p>\n</aside>"
     );
 }
 
@@ -130,7 +130,7 @@ fn heading_interrupts_inside_blockquote() {
 fn fence_interrupts_inside_admonition() {
     assert_eq!(
         html("::: note\ntext\n```\ncode\n```\n:::"),
-        "<aside class=\"admonition note\">\n  <p>text</p>\n  <pre><code>code\n</code></pre>\n</aside>"
+        "<aside class=\"admonition note\" aria-label=\"Note\">\n  <p>text</p>\n  <pre><code>code\n</code></pre>\n</aside>"
     );
 }
 

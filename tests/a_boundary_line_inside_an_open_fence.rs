@@ -40,7 +40,8 @@ const COLON: &str = "::: note\na\n\nb\n:::\n";
 const COMMENT: &str = "%%%\na\n\nb\n%%%\n";
 
 const CODE_HTML: &str = "<pre><code>a b </code></pre>";
-const COLON_HTML: &str = "<aside class=\"admonition note\"> <p>a</p> <p>b</p> </aside>";
+const COLON_HTML: &str =
+    "<aside class=\"admonition note\" aria-label=\"Note\"> <p>a</p> <p>b</p> </aside>";
 
 // ------------------------------------------------------------- block quote
 
@@ -84,7 +85,7 @@ fn the_block_quote_collector_keeps_a_definition_line_as_fence_body() {
 fn note(body: &str) -> String {
     format!(
         "<p>see<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p> \
-         <section role=\"doc-endnotes\"> <hr> <ol> <li id=\"fn1\"> <p>n</p> {body} \
+         <section role=\"doc-endnotes\" aria-label=\"Footnotes\"> <hr> <ol> <li id=\"fn1\"> <p>n</p> {body} \
          <p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p> </li> </ol> </section>"
     )
 }
@@ -216,7 +217,7 @@ fn a_further_plus_inside_the_attached_code_fence_is_code_text() {
 fn a_marker_inside_the_attached_colon_fence_is_body_text() {
     assert_eq!(
         flat("- x\n+\n::: note\na\n- m\nb\n:::\n"),
-        "<ul> <li>x <aside class=\"admonition note\"> <p>a - m b</p> </aside> </li> </ul>"
+        "<ul> <li>x <aside class=\"admonition note\" aria-label=\"Note\"> <p>a - m b</p> </aside> </li> </ul>"
     );
 }
 

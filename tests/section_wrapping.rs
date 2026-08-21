@@ -105,7 +105,10 @@ fn keeps_the_dedup_namespace_intact() {
 fn still_emits_the_endnotes_region() {
     let out = flat("# A\n\nText[^n].\n\n[^n]: Note.\n");
     assert!(out.contains("<h1 id=\"A\">A</h1>"), "{out}");
-    assert!(out.contains("<section role=\"doc-endnotes\">"), "{out}");
+    assert!(
+        out.contains("<section role=\"doc-endnotes\" aria-label=\"Footnotes\">"),
+        "{out}"
+    );
     assert!(!out.contains("<section id="), "{out}");
 }
 

@@ -35,7 +35,7 @@ const NOTEREF: &str = r##"<a id="fnref1" href="#fn1" role="doc-noteref"><sup>1</
 /// The endnotes region, byte for byte, holding one note with one backlink.
 fn lone_endnote(body: &str) -> String {
     [
-        "<section role=\"doc-endnotes\">",
+        "<section role=\"doc-endnotes\" aria-label=\"Footnotes\">",
         "  <hr>",
         "  <ol>",
         "    <li id=\"fn1\">",

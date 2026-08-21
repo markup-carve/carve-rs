@@ -12,7 +12,7 @@ fn html(src: &str) -> String {
 }
 
 const CLOSED_NOTE_WITH_CODE: &str = concat!(
-    "<aside class=\"admonition note\">\n",
+    "<aside class=\"admonition note\" aria-label=\"Note\">\n",
     "  <pre><code>:::\n",
     "</code></pre>\n",
     "  <p>body</p>\n",
@@ -41,7 +41,7 @@ fn an_info_string_fence_holding_a_closer_stays_inside_the_container() {
     assert_eq!(
         html("::: note\n```text\n:::\n```\nbody\n:::\nafter\n"),
         concat!(
-            "<aside class=\"admonition note\">\n",
+            "<aside class=\"admonition note\" aria-label=\"Note\">\n",
             "  <pre><code class=\"language-text\">:::\n",
             "</code></pre>\n",
             "  <p>body</p>\n",
@@ -57,7 +57,7 @@ fn a_comment_block_holding_a_closer_stays_inside_the_container() {
     // container ends: `body` inside the aside, `after` outside it.
     let out = html("::: note\n%%%\n:::\n%%%\nbody\n:::\nafter\n");
     assert!(
-        out.starts_with("<aside class=\"admonition note\">"),
+        out.starts_with("<aside class=\"admonition note\" aria-label=\"Note\">"),
         "{out}"
     );
     assert!(out.contains("<p>body</p>\n</aside>"), "{out}");
@@ -72,7 +72,7 @@ fn a_span_opener_inside_a_fence_is_not_a_container_opener() {
     assert_eq!(
         html("::: note\n```text\n::: tip\n```\nbody\n:::\nafter\n"),
         concat!(
-            "<aside class=\"admonition note\">\n",
+            "<aside class=\"admonition note\" aria-label=\"Note\">\n",
             "  <pre><code class=\"language-text\">::: tip\n",
             "</code></pre>\n",
             "  <p>body</p>\n",

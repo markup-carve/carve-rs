@@ -48,7 +48,7 @@ fn a_closed_admonition_leaves_the_quote_with_no_open_paragraph() {
     // never had one of its own, so `tail` has nothing to fold into.
     assert_eq!(
         html("> ::: note\n> body\n> :::\ntail\n"),
-        "<blockquote>\n  <aside class=\"admonition note\">\n    <p>body</p>\n  </aside>\n</blockquote>\n<p>tail</p>"
+        "<blockquote>\n  <aside class=\"admonition note\" aria-label=\"Note\">\n    <p>body</p>\n  </aside>\n</blockquote>\n<p>tail</p>"
     );
 }
 
@@ -63,7 +63,7 @@ fn quoted_prose_after_the_closer_reopens_a_paragraph_and_the_line_folds() {
     // absence of an open paragraph -- passes the test above and fails this one.
     assert_eq!(
         html("> ::: note\n> body\n> :::\n> more\ntail\n"),
-        "<blockquote>\n  <aside class=\"admonition note\">\n    <p>body</p>\n  </aside>\n  <p>more\ntail</p>\n</blockquote>"
+        "<blockquote>\n  <aside class=\"admonition note\" aria-label=\"Note\">\n    <p>body</p>\n  </aside>\n  <p>more\ntail</p>\n</blockquote>"
     );
 }
 
@@ -76,7 +76,7 @@ fn an_empty_closed_fence_answers_the_same_way() {
     // `absorbed_colon_fence_in_a_quote.rs`.
     assert_eq!(
         html("> ::: note\n> :::\ntail\n"),
-        "<blockquote>\n  <aside class=\"admonition note\">\n\n  </aside>\n</blockquote>\n<p>tail</p>"
+        "<blockquote>\n  <aside class=\"admonition note\" aria-label=\"Note\">\n\n  </aside>\n</blockquote>\n<p>tail</p>"
     );
 }
 
@@ -87,7 +87,7 @@ fn it_holds_at_quote_depth_two() {
     // paragraph, so both close.
     assert_eq!(
         html("> > ::: note\n> > body\n> > :::\ntail\n"),
-        "<blockquote>\n  <blockquote>\n    <aside class=\"admonition note\">\n      <p>body</p>\n    </aside>\n  </blockquote>\n</blockquote>\n<p>tail</p>"
+        "<blockquote>\n  <blockquote>\n    <aside class=\"admonition note\" aria-label=\"Note\">\n      <p>body</p>\n    </aside>\n  </blockquote>\n</blockquote>\n<p>tail</p>"
     );
 }
 
@@ -99,7 +99,7 @@ fn the_rule_is_not_width_tagged() {
     // other test in this file.
     assert_eq!(
         html("> :::: note\n> body\n> ::::\ntail\n"),
-        "<blockquote>\n  <aside class=\"admonition note\">\n    <p>body</p>\n  </aside>\n</blockquote>\n<p>tail</p>"
+        "<blockquote>\n  <aside class=\"admonition note\" aria-label=\"Note\">\n    <p>body</p>\n  </aside>\n</blockquote>\n<p>tail</p>"
     );
 }
 
@@ -120,6 +120,6 @@ fn the_top_level_form_is_unchanged() {
     // shapes above to the quote's lazy-continuation gate.
     assert_eq!(
         html("::: note\nbody\n:::\ntail\n"),
-        "<aside class=\"admonition note\">\n  <p>body</p>\n</aside>\n<p>tail</p>"
+        "<aside class=\"admonition note\" aria-label=\"Note\">\n  <p>body</p>\n</aside>\n<p>tail</p>"
     );
 }

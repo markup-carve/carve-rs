@@ -267,7 +267,9 @@ fn keeps_attrs_with_stale_order_list() {
 
 #[test]
 fn leaves_canonical_admonitions_untouched() {
-    assert!(h("::: note\nhi\n:::").contains("<aside class=\"admonition note\">"));
+    assert!(
+        h("::: note\nhi\n:::").contains("<aside class=\"admonition note\" aria-label=\"Note\">")
+    );
 }
 
 #[test]

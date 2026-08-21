@@ -22,7 +22,7 @@ fn the_ladder_fast_path_builds_the_same_group() {
     let html = carve::to_html("::: figure\n:::: note\ntext\n");
     assert_eq!(
         html,
-        "<figure class=\"carve-figure-group\">\n  <aside class=\"admonition note\">\n    <p>text</p>\n  </aside>\n</figure>"
+        "<figure class=\"carve-figure-group\">\n  <aside class=\"admonition note\" aria-label=\"Note\">\n    <p>text</p>\n  </aside>\n</figure>"
     );
 }
 

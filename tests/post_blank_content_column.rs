@@ -194,7 +194,7 @@ fn cc_colon_fence_below_content_column_is_lazy() {
 fn cc_colon_fence_nests_at_content_column() {
     assert_eq!(
         carve::to_html("- one\n  ::: note\n  body\n  :::\n"),
-        "<ul>\n  <li>one\n    <aside class=\"admonition note\">\n      <p>body</p>\n    </aside>\n  </li>\n</ul>"
+        "<ul>\n  <li>one\n    <aside class=\"admonition note\" aria-label=\"Note\">\n      <p>body</p>\n    </aside>\n  </li>\n</ul>"
     );
 }
 
@@ -202,6 +202,6 @@ fn cc_colon_fence_nests_at_content_column() {
 fn cc_colon_fence_interrupts_at_column_zero() {
     assert_eq!(
         carve::to_html("- one\n::: note\nbody\n:::\n"),
-        "<ul>\n  <li>one</li>\n</ul>\n<aside class=\"admonition note\">\n  <p>body</p>\n</aside>"
+        "<ul>\n  <li>one</li>\n</ul>\n<aside class=\"admonition note\" aria-label=\"Note\">\n  <p>body</p>\n</aside>"
     );
 }
