@@ -3243,10 +3243,23 @@ pub(crate) fn parse_blocks_with_options(source: &str, options: &Options<'_>) -> 
     parse_blocks_with_options_at_level(source, options, false)
 }
 
+/// The drained entry point: every container body this parse opens is resolved
+/// before the blocks are handed back, so no caller ever sees a hollow node.
 fn parse_blocks_with_options_at_level(
     source: &str,
     options: &Options<'_>,
     at_document_level: bool,
+) -> Vec<BlockNode> {
+    drained(options, |pending| {
+        parse_blocks_with_options_at_level_into(source, options, at_document_level, pending)
+    })
+}
+
+fn parse_blocks_with_options_at_level_into(
+    source: &str,
+    options: &Options<'_>,
+    at_document_level: bool,
+    pending: &mut Vec<PendingContainer>,
 ) -> Vec<BlockNode> {
     let mut lines: Vec<&str> = source.lines().collect();
     // `lines()` already drops a single trailing newline; nothing more to do.
@@ -3273,7 +3286,7 @@ fn parse_blocks_with_options_at_level(
         options.positions.then_some(col_map.as_slice()),
     );
     cursor.at_document_level = at_document_level;
-    parse_blocks(&mut cursor, options)
+    parse_blocks(&mut cursor, options, pending)
 }
 
 struct LineCursor<'a> {
@@ -4204,15 +4217,27 @@ fn parse_mapped_source_at_document_level(
     parse_mapped_source_at_level(source, options, true)
 }
 
+/// The drained entry point - see [`parse_blocks_with_options_at_level`].
 fn parse_mapped_source_at_level(
     source: &MappedSource,
     options: &Options<'_>,
     at_document_level: bool,
 ) -> Vec<BlockNode> {
+    drained(options, |pending| {
+        parse_mapped_source_at_level_into(source, options, at_document_level, pending)
+    })
+}
+
+fn parse_mapped_source_at_level_into(
+    source: &MappedSource,
+    options: &Options<'_>,
+    at_document_level: bool,
+    pending: &mut Vec<PendingContainer>,
+) -> Vec<BlockNode> {
     if !options.source_lines && !options.positions {
-        return parse_unpositioned_mapped_source(source, options, at_document_level);
+        return parse_unpositioned_mapped_source(source, options, at_document_level, pending);
     }
-    parse_positioned_mapped_source(source, options, at_document_level)
+    parse_positioned_mapped_source(source, options, at_document_level, pending)
 }
 
 #[inline(never)]
@@ -4220,11 +4245,15 @@ fn parse_unpositioned_mapped_source(
     source: &MappedSource,
     options: &Options<'_>,
     at_document_level: bool,
+    pending: &mut Vec<PendingContainer>,
 ) -> Vec<BlockNode> {
+    // The ladder builds its own containers inside-out and hands back finished
+    // nodes, so it contributes nothing to `pending` - and must not, because it
+    // WRAPS the blocks it parsed, which would move any index recorded in them.
     if let Some(blocks) = parse_eof_closed_colon_ladder(source, options) {
         return blocks;
     }
-    parse_blocks_with_options_at_level(&source.source, options, at_document_level)
+    parse_blocks_with_options_at_level_into(&source.source, options, at_document_level, pending)
 }
 
 #[inline(never)]
@@ -4232,6 +4261,7 @@ fn parse_positioned_mapped_source(
     source: &MappedSource,
     options: &Options<'_>,
     at_document_level: bool,
+    pending: &mut Vec<PendingContainer>,
 ) -> Vec<BlockNode> {
     let lines: Vec<&str> = source.source.lines().collect();
     // The mapped source carries the widths its container already stripped, so a
@@ -4243,7 +4273,7 @@ fn parse_positioned_mapped_source(
         options.positions.then_some(source.col_map.as_slice()),
     ));
     cursor.at_document_level = at_document_level;
-    parse_blocks(&mut cursor, options)
+    parse_blocks(&mut cursor, options, pending)
 }
 
 #[inline(never)]
@@ -4511,30 +4541,52 @@ fn flattened_paragraphs(
     out
 }
 
-#[inline(never)]
+/// The drained entry point, for a caller that reads the body's blocks straight
+/// back (`parse_hardbreaks_block` rewrites their soft breaks). The container
+/// worklist calls [`parse_capped_colon_body_into`] instead, which is what keeps
+/// its own descent flat.
 fn parse_capped_colon_body(inner: LineBuffer, options: &Options<'_>) -> Vec<BlockNode> {
+    drained(options, |pending| {
+        parse_capped_colon_body_into(inner, options, pending)
+    })
+}
+
+#[inline(never)]
+fn parse_capped_colon_body_into(
+    inner: LineBuffer,
+    options: &Options<'_>,
+    pending: &mut Vec<PendingContainer>,
+) -> Vec<BlockNode> {
     if !options.source_lines
         && !options.positions
         && NESTING_DEPTH.with(|depth| depth.get() < MAX_NESTING_DEPTH)
     {
-        return parse_unpositioned_colon_body(inner, options);
+        return parse_unpositioned_colon_body(inner, options, pending);
     }
-    parse_positioned_capped_colon_body(inner, options)
+    parse_positioned_capped_colon_body(inner, options, pending)
 }
 
 #[inline(never)]
-fn parse_unpositioned_colon_body(inner: LineBuffer, options: &Options<'_>) -> Vec<BlockNode> {
+fn parse_unpositioned_colon_body(
+    inner: LineBuffer,
+    options: &Options<'_>,
+    pending: &mut Vec<PendingContainer>,
+) -> Vec<BlockNode> {
     let source = inner.into_source();
     let lines: Vec<&str> = source.source.lines().collect();
     let mut cursor = LineCursor::new_with_cols(&lines, None, None);
-    parse_blocks(&mut cursor, options)
+    parse_blocks(&mut cursor, options, pending)
 }
 
 #[inline(never)]
-fn parse_positioned_capped_colon_body(inner: LineBuffer, options: &Options<'_>) -> Vec<BlockNode> {
+fn parse_positioned_capped_colon_body(
+    inner: LineBuffer,
+    options: &Options<'_>,
+    pending: &mut Vec<PendingContainer>,
+) -> Vec<BlockNode> {
     let source = inner.into_source();
     if NESTING_DEPTH.with(|d| d.get() < MAX_NESTING_DEPTH) {
-        return parse_mapped_source(&source, options);
+        return parse_mapped_source_at_level_into(&source, options, false, pending);
     }
 
     let lines: Vec<&str> = source.source.lines().collect();
@@ -4789,7 +4841,154 @@ fn append_parsed_block(
     out.push(node);
 }
 
-fn parse_blocks(cur: &mut LineCursor, options: &Options<'_>) -> Vec<BlockNode> {
+/// A colon container whose body has been COLLECTED but not yet parsed.
+///
+/// `collect_colon_container_body` materializes a body into a [`LineBuffer`]
+/// before anything parses it, so a level never has to suspend a half-finished
+/// parse in order to descend into one. That is what makes the descent a
+/// worklist rather than a recursion: [`parse_blocks`] emits the container node
+/// with EMPTY children, records the body here, and runs to the end of its own
+/// input; [`resolve_pending_containers`] parses the bodies afterwards, on the
+/// heap (markup-carve/carve-rs#1165).
+struct PendingContainer {
+    /// Where the hollow node sits in the level's own output vector. Stable
+    /// because the level loop only ever PUSHES - nothing shifts under it.
+    index: usize,
+    body: ContainerBody,
+}
+
+/// What [`open_container`] hands back with the hollow node: the body's lines
+/// and the parser state its parse has to run under.
+struct ContainerBody {
+    inner: LineBuffer,
+    /// `NESTING_DEPTH` as it stood in the level that opened this container, so
+    /// the body's cap arithmetic is the arithmetic the recursive descent did.
+    depth: usize,
+    /// `IN_FIGURE_GROUP` for the body. The recursive form parsed it inside the
+    /// opener's [`FigureGroupGuard`], so a group's body sees `true` and every
+    /// other body sees whatever its opener saw (PART 9 section 4c: groups do
+    /// not nest).
+    in_group: bool,
+}
+
+/// Restore `NESTING_DEPTH` to an ARBITRARY value on drop, which the RAII
+/// [`DepthGuard`] cannot do: the worklist parses a body whose opening level's
+/// guard has already dropped, so it has to REINSTATE that depth rather than
+/// increment the current one.
+struct DepthScope(usize);
+
+impl DepthScope {
+    fn set(depth: usize) -> DepthScope {
+        DepthScope(NESTING_DEPTH.with(|d| d.replace(depth)))
+    }
+}
+
+impl Drop for DepthScope {
+    fn drop(&mut self) {
+        let previous = self.0;
+        NESTING_DEPTH.with(|d| d.set(previous));
+    }
+}
+
+/// [`FigureGroupGuard`] for a value that is not always `true` - the worklist
+/// reinstates what the opener saw rather than entering a group.
+struct FigureGroupScope(bool);
+
+impl FigureGroupScope {
+    fn set(in_group: bool) -> FigureGroupScope {
+        FigureGroupScope(IN_FIGURE_GROUP.with(|flag| flag.replace(in_group)))
+    }
+}
+
+impl Drop for FigureGroupScope {
+    fn drop(&mut self) {
+        let previous = self.0;
+        IN_FIGURE_GROUP.with(|flag| flag.set(previous));
+    }
+}
+
+/// Fill in the children of a node [`open_container`] emitted hollow.
+fn fill_container_children(node: &mut BlockNode, children: Vec<BlockNode>) {
+    match node {
+        BlockNode::Admonition(n) => n.children = children,
+        BlockNode::Div(n) => n.children = children,
+        BlockNode::FigureGroup(n) => n.children = children,
+        // `open_container` builds nothing else, and the index came from it.
+        _ => debug_assert!(
+            false,
+            "a pending body pointed at something that is not a container"
+        ),
+    }
+}
+
+/// Run `parse` and resolve every container body it left pending, so the blocks
+/// handed back are complete. Every entry point above the level loop goes
+/// through here; only the worklist itself parses a level without draining it.
+fn drained<F>(options: &Options<'_>, parse: F) -> Vec<BlockNode>
+where
+    F: FnOnce(&mut Vec<PendingContainer>) -> Vec<BlockNode>,
+{
+    let mut pending = Vec::new();
+    let mut out = parse(&mut pending);
+    resolve_pending_containers(&mut out, pending, options);
+    out
+}
+
+/// Parse the bodies of the containers a level left hollow, and the bodies THOSE
+/// open, without descending the stack (markup-carve/carve-rs#1165).
+///
+/// The parser's own recursion is what set the stack floor for a deeply nested
+/// document - not the AST-to-JSON encoder converted first
+/// (markup-carve/carve-rs#1164), and not the drop glue. A colon-container level
+/// cost about 1.6KiB across `parse_blocks`, `parse_container` and the two
+/// capped-body helpers, so 200 of them - the engine's own cap - needed 384KiB
+/// natively and 120-150KB through wasm, where the host owns the stack and an
+/// overflow takes the module rather than the call (markup-carve/carve-wasm#48).
+/// Nesting costs HEAP here instead.
+///
+/// Bodies land in an arena of slots and are stitched back in REVERSE discovery
+/// order, which is what makes a single pass enough: a slot is always discovered
+/// AFTER the slot holding its parent, so walking the links backwards fills
+/// every child before the node holding it is moved into place.
+fn resolve_pending_containers(
+    out: &mut Vec<BlockNode>,
+    pending: Vec<PendingContainer>,
+    options: &Options<'_>,
+) {
+    if pending.is_empty() {
+        return;
+    }
+    // Slot 0 is the caller's own output; every other slot is one body.
+    let mut arena: Vec<Vec<BlockNode>> = vec![std::mem::take(out)];
+    let mut links: Vec<(usize, usize, usize)> = Vec::new();
+    let mut work: Vec<(usize, PendingContainer)> =
+        pending.into_iter().map(|body| (0usize, body)).collect();
+    while let Some((slot, container)) = work.pop() {
+        let mut nested = Vec::new();
+        let children = {
+            // The body parses under the state its OPENER stood in, not the
+            // state the worklist happens to be in - see `ContainerBody`.
+            let _depth = DepthScope::set(container.body.depth);
+            let _group = FigureGroupScope::set(container.body.in_group);
+            parse_capped_colon_body_into(container.body.inner, options, &mut nested)
+        };
+        let child_slot = arena.len();
+        arena.push(children);
+        links.push((slot, container.index, child_slot));
+        work.extend(nested.into_iter().map(|body| (child_slot, body)));
+    }
+    for (slot, index, child_slot) in links.into_iter().rev() {
+        let children = std::mem::take(&mut arena[child_slot]);
+        fill_container_children(&mut arena[slot][index], children);
+    }
+    *out = std::mem::take(&mut arena[0]);
+}
+
+fn parse_blocks(
+    cur: &mut LineCursor,
+    options: &Options<'_>,
+    pending: &mut Vec<PendingContainer>,
+) -> Vec<BlockNode> {
     // Recursion cap (see MAX_NESTING_DEPTH). Over the cap, flatten everything
     // still in the cursor into one paragraph rather than recursing further,
     // matching the carve-php degrade behavior. The degrade itself lives in
@@ -4839,8 +5038,13 @@ fn parse_blocks(cur: &mut LineCursor, options: &Options<'_>) -> Vec<BlockNode> {
             }
         }
         let start_line = cur.pos;
+        // The container's body is COLLECTED here and parsed later, on the heap,
+        // so nesting does not descend the stack (see `PendingContainer`).
+        let mut opened = None;
         let parsed = if !line.starts_with([' ', '\t']) && detect_container_open(line).is_some() {
-            Some(parse_container(cur, options))
+            let (node, body) = open_container(cur, options);
+            opened = Some(body);
+            Some(node)
         } else {
             parse_block(cur, options)
         };
@@ -4869,6 +5073,15 @@ fn parse_blocks(cur: &mut LineCursor, options: &Options<'_>) -> Vec<BlockNode> {
                 cur,
                 options,
             );
+            // `append_parsed_block` pushes exactly one node, so the container
+            // just emitted is the last one - and stays there, because this loop
+            // never removes or reorders what it has pushed.
+            if let Some(body) = opened {
+                pending.push(PendingContainer {
+                    index: out.len() - 1,
+                    body,
+                });
+            }
         }
     }
     // DROP IF DANGLING, AND SAY SO (§15 A4, markup-carve/carve#1281). The loop
@@ -12804,21 +13017,42 @@ fn boxed_container_node(
     }
 }
 
+/// A container for the SINGLE-block parser, which returns one node and so has
+/// nowhere to record a pending body.
+///
+/// It still goes through the worklist rather than around it: only this one
+/// opener costs a frame, and the whole nest under it is flat.
 fn parse_container(cur: &mut LineCursor, options: &Options<'_>) -> Box<BlockNode> {
+    let (node, body) = open_container(cur, options);
+    let mut out = vec![*node];
+    resolve_pending_containers(&mut out, vec![PendingContainer { index: 0, body }], options);
+    Box::new(out.pop().expect("the node the worklist just filled in"))
+}
+
+/// Open a colon container and COLLECT its body, without parsing it.
+///
+/// Splitting the two halves is the point. The opener, the extent of the body
+/// and - for a composite figure - the caption hanging on the closing fence are
+/// all decided from the ENCLOSING cursor, and none of them needs the body's
+/// blocks. So the node can be emitted here, hollow, and filled in by the
+/// worklist; the recursive form parsed the body BETWEEN these two halves and
+/// paid a stack frame per nesting level for it
+/// (markup-carve/carve-rs#1165). `collect_colon_container_body` is purely
+/// lexical, so nothing here reads the state the body will parse under - what
+/// that state is gets recorded in the [`ContainerBody`] instead.
+#[inline(never)]
+fn open_container(cur: &mut LineCursor, options: &Options<'_>) -> (Box<BlockNode>, ContainerBody) {
     let open = Box::new(detect_container_open(cur.peek().unwrap()).unwrap());
     let span_start = cur.pos;
     cur.consume();
+    let depth = NESTING_DEPTH.with(Cell::get);
     // PART 9 §4c: a BARE `::: figure` opener opens a COMPOSITE FIGURE, unless
     // it sits inside an open group's body (groups do not nest - the inner one
     // stays the generic container the Admonition arm below builds). The body
     // and closer follow the unchanged container rules; what §4c adds is the
     // caption slot hanging on the CLOSING fence, this kind only.
     if is_bare_figure_open(&open) && !IN_FIGURE_GROUP.with(Cell::get) {
-        let (children, closed) = {
-            let _guard = FigureGroupGuard::enter();
-            let (inner, closed) = collect_colon_container_body(cur, open.fence_len);
-            (parse_capped_colon_body(inner, options), closed)
-        };
+        let (inner, closed) = collect_colon_container_body(cur, open.fence_len);
         // The slot hangs on the closer. A group left open at end of input
         // closed there without one, so there is no line for a caption to
         // attach to (§4c).
@@ -12829,10 +13063,18 @@ fn parse_container(cur: &mut LineCursor, options: &Options<'_>) -> Box<BlockNode
         };
         // Through the caption the cursor just consumed, like a figure's span.
         let pos = span_of(cur, span_start, cur.pos, options);
-        return boxed_figure_group(children, caption, pos);
+        return (
+            boxed_figure_group(Vec::new(), caption, pos),
+            ContainerBody {
+                inner,
+                depth,
+                // The body IS the group's body, which is what the recursive
+                // form said by parsing it inside a `FigureGroupGuard`.
+                in_group: true,
+            },
+        );
     }
     let (inner, _closed) = collect_colon_container_body(cur, open.fence_len);
-    let children = parse_capped_colon_body(inner, options);
     // The span covers the opening fence through the closing one.
     let pos = span_of(cur, span_start, cur.pos, options);
     let title_anchor = open.title_col.and_then(|col| {
@@ -12841,7 +13083,15 @@ fn parse_container(cur: &mut LineCursor, options: &Options<'_>) -> Box<BlockNode
             cur.source_col(span_start)? + col as isize,
         ))
     });
-    boxed_container_node(*open, children, pos, title_anchor, options)
+    let in_group = IN_FIGURE_GROUP.with(Cell::get);
+    (
+        boxed_container_node(*open, Vec::new(), pos, title_anchor, options),
+        ContainerBody {
+            inner,
+            depth,
+            in_group,
+        },
+    )
 }
 
 /// A `::: |` line-block (verse) opener: a colon fence (3+) then a bare pipe and

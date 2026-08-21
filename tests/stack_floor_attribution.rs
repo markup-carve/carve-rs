@@ -52,6 +52,16 @@ fn run_one(source: &str, case: &str) -> bool {
             let doc = carve::parse(source);
             drop(doc);
         }
+        // A SECOND descent, not a variation on the first: positions on takes
+        // the mapped-source chain, which carries the container's line and
+        // column maps and never reaches the unpositioned helpers. Nothing here
+        // measured it, so a floor could move on that side unwatched - which is
+        // the gap this file exists to close.
+        "parse+positions" => {
+            let doc =
+                carve::parse_with_options(source, &carve::Options::default().with_positions(true));
+            std::mem::forget(doc);
+        }
         "parse+to_json" => {
             let doc = carve::parse(source);
             let json = carve::try_to_json(&doc).expect("encodes");
@@ -139,7 +149,13 @@ fn where_the_stack_goes() {
         "a 16KiB stack parsed a 200-level document - the probe is not running the case"
     );
 
-    for case in ["parse", "parse+drop", "parse+to_json", "to_html"] {
+    for case in [
+        "parse",
+        "parse+drop",
+        "parse+positions",
+        "parse+to_json",
+        "to_html",
+    ] {
         let mut smallest = None;
         for kib in [
             8192usize, 4096, 2048, 1536, 1280, 1024, 960, 896, 832, 768, 704, 640, 576, 512, 384,
@@ -167,35 +183,54 @@ fn where_the_stack_goes() {
 /// was watching it. A number nobody asserts is a number that drifts.
 ///
 /// The ceilings are the measured floors plus headroom, per profile, because a
-/// debug frame is not a release frame:
+/// debug frame is not a release frame - and in TWO groups, because parsing and
+/// rendering no longer descend the same amount:
 ///
-/// | profile | measured floor at the cap | ceiling here |
-/// | --- | --- | --- |
-/// | release | 384KiB | 512KiB |
-/// | debug | 1024KiB | 1536KiB |
+/// | case | release floor | ceiling | debug floor | ceiling |
+/// | --- | --- | --- | --- | --- |
+/// | `parse`, `parse+drop` | 128KiB | 192KiB | 256KiB | 512KiB |
+/// | `parse+positions` | 128KiB | 192KiB | 384KiB | 512KiB |
+/// | `to_html` | 256KiB | 384KiB | 512KiB | 768KiB |
 ///
 /// They are a RATCHET, not a target: when a change lowers the floor, lower
 /// these with it, and the drop is what the commit is for. Raising one is a
 /// regression and needs saying so out loud.
 ///
+/// The parse numbers came down from 384KiB release / 1024KiB debug when the
+/// colon-container descent became a worklist (markup-carve/carve-rs#1165): the
+/// nesting the cap admits 200 of now costs heap rather than host stack. What is
+/// left growing with depth is not the parser - it is the ~20 self-recursive
+/// tree walks the parse runs afterwards, and, for `to_html`, the renderer's own
+/// descent, which is why that case now floors ABOVE the parse it renders.
+///
 /// `parse+drop` is asserted beside `parse` because the AST frees through
-/// compiler-generated recursive drop glue. Today it costs nothing extra - both
-/// floor at the same number - so this pins the day that stops being true, which
-/// is the day the parser gets cheap enough for teardown to become the binding
-/// constraint (markup-carve/carve-rs#1165).
+/// compiler-generated recursive drop glue. It STILL costs nothing extra - both
+/// floor at the same number - so the day this pins has not arrived: the drop
+/// glue only becomes the binding constraint once the walks above it are cheaper
+/// than it is.
 #[test]
 fn the_floor_at_the_nesting_cap_does_not_regress() {
-    let ceiling = if cfg!(debug_assertions) { 1536 } else { 512 };
+    let debug = cfg!(debug_assertions);
     // CONTROL FIRST. A probe that runs no case reports "fits" for every size,
     // which is how the first version of this harness measured a 16KiB floor.
     assert!(
         !fits("parse", 16),
         "a 16KiB stack parsed a {CAP}-level document - the probe is not running the case"
     );
-    for case in ["parse", "parse+drop"] {
+    let parse_ceiling = if debug { 512 } else { 192 };
+    for case in ["parse", "parse+drop", "parse+positions"] {
         assert!(
-            fits(case, ceiling),
-            "{case} no longer fits a {ceiling}KiB stack at the {CAP}-level cap;              the parser's descent got more expensive, or the cap moved"
+            fits(case, parse_ceiling),
+            "{case} no longer fits a {parse_ceiling}KiB stack at the {CAP}-level cap; \
+             the parser's descent got more expensive, or the cap moved"
         );
     }
+    // The RENDER walk, which the parse cases cannot see. It is the taller of
+    // the two now, and it is one of the two entry points carve-wasm#48 crashed.
+    let render_ceiling = if debug { 768 } else { 384 };
+    assert!(
+        fits("to_html", render_ceiling),
+        "to_html no longer fits a {render_ceiling}KiB stack at the {CAP}-level cap; \
+         the renderer's descent got more expensive, or the cap moved"
+    );
 }
