@@ -723,13 +723,17 @@ fn render_layout_ordered_list(
     // did, which is one rule with two implementations and only one of them
     // written. Looseness is not expressible in the borrowed layout, so the
     // document goes to the authoritative pipeline rather than being rendered here.
-    if lines
-        .get(i)
-        .is_some_and(|line| is_blank_line(line))
-        && lines[i..]
-            .iter()
-            .find(|line| !is_blank_line(line))
-            .is_some_and(|next| decimal_list_item(next).is_some())
+    //
+    // Only reached with `lines[i]` blank or past the end - the guard above returns
+    // for every other shape - so scanning forward from `i` skips exactly the blank
+    // run between the two items. The bullet check has to compare indent as well;
+    // this one does not, because `decimal_list_item` parses the number from the
+    // line's first byte, making the ordered scanner column-0 only. An indented
+    // `   1. b` is a nested list, not a sibling, and is not matched here.
+    if lines[i..]
+        .iter()
+        .find(|line| !is_blank_line(line))
+        .is_some_and(|next| decimal_list_item(next).is_some())
     {
         return None;
     }
@@ -925,20 +929,68 @@ mod layout_html_tests {
         // marker axes - a blank line is not one of them - and §17 L1 gives the
         // blank its actual job: deciding tight versus loose. carve-js#1270 is the
         // same defect one implementation over.
+        //
+        // Compare the two PATHS, not the fast path against a golden: `to_html`
+        // tries the scanner first, `authoritative` is what it falls back to. A
+        // golden-only test would still pass if the authoritative pipeline moved
+        // underneath it, and an `if let Some(fast)` test would assert nothing at
+        // all here, because the whole point of the repair is that these shapes are
+        // now handed back.
         for source in [
             "1. a\n\n2. b\n",
             "1. a\n\n1. b\n",
             "1. a\n\n\n2. b\n",
             "- a\n\n- b\n",
         ] {
-            if let Some(fast) = try_layout_html(source, &Options::default()) {
-                assert_eq!(fast, authoritative(source), "source:\n{source}");
-            }
+            assert_eq!(
+                crate::to_html(source),
+                authoritative(source),
+                "source:\n{source}"
+            );
         }
+        // The shape both paths agree on, pinned once so the agreement above cannot
+        // be satisfied by two matching wrongs. The bullet spelling is the reason
+        // this is a defect rather than a judgment call: the same blank between two
+        // BULLET items has always loosened, so ending the ordered list was this
+        // implementation disagreeing with itself, not with a sibling engine.
         assert_eq!(
             crate::to_html("1. a\n\n2. b\n"),
             "<ol>\n  <li><p>a</p></li>\n  <li><p>b</p></li>\n</ol>",
         );
+        assert_eq!(
+            crate::to_html("- a\n\n- b\n"),
+            "<ul>\n  <li><p>a</p></li>\n  <li><p>b</p></li>\n</ul>",
+        );
+    }
+
+    #[test]
+    fn only_a_sibling_ordered_marker_hands_the_document_back() {
+        // THE NEAR MISS. The repair for the blank-separated list is a bail-out, and
+        // a bail-out that is too wide would "fix" the divergence by giving up the
+        // fast path wholesale - passing every parity check while deleting the
+        // reason the scanner exists. So pin the width, not just the fix: a blank
+        // after an ordered item hands the document back ONLY when a sibling
+        // column-0 ordered marker follows it.
+        //
+        // Each shape below is one the scanner claimed before this change and must
+        // still claim. Measured, not assumed: all five come back `Some` today, so
+        // none of these assertions is vacuously true.
+        for source in [
+            "1. a\n2. b\n",   // no blank at all - tight, stays borrowed
+            "1. a\n\ntext\n", // blank, then a paragraph - the list did end here
+            "1. a\n\n# H\n",  // blank, then a heading - likewise
+            "1. a\n\n\n",     // trailing blanks at end of document - nothing follows
+            "1. a\n\n- b\n",  // a BULLET is a different marker axis (§11 N1), so
+                              // these really are two lists and borrowing is right
+        ] {
+            assert!(
+                try_layout_html(source, &Options::default()).is_some(),
+                "the fast path must still claim this shape:\n{source}"
+            );
+        }
+        // ...and the shape that must NOT be claimed, so the pair brackets the width
+        // of the bail-out from both sides.
+        assert!(try_layout_html("1. a\n\n2. b\n", &Options::default()).is_none());
     }
 
     #[test]
@@ -946,12 +998,35 @@ mod layout_html_tests {
         // Corpus 276 pins `<pre><code>\n</code></pre>` for an empty code block.
         // The body loop emits one newline per line, so with no lines it emitted
         // none and dropped the payload's only line.
-        for source in ["```\n```\n", "```rs\n```\n"] {
-            if let Some(fast) = try_layout_html(source, &Options::default()) {
-                assert_eq!(fast, authoritative(source), "source:\n{source}");
-            }
+        //
+        // Path against path, for the same reason as above. Here the scanner DOES
+        // still claim the document, so this also pins that the repair kept it on
+        // the fast path instead of bailing out of it.
+        for source in [
+            "```\n```\n",
+            "```rs\n```\n",
+            "```\n\n```\n",
+            "```\nx\n```\n",
+        ] {
+            assert!(
+                try_layout_html(source, &Options::default()).is_some(),
+                "an empty fence is still borrowed, not handed back:\n{source}"
+            );
+            assert_eq!(
+                crate::to_html(source),
+                authoritative(source),
+                "source:\n{source}"
+            );
         }
         assert_eq!(crate::to_html("```\n```\n"), "<pre><code>\n</code></pre>");
+        // The near miss for THIS repair, and the reason the condition is
+        // `close == i + 1` and nothing wider: a fence holding ONE blank body line
+        // already emits that newline through the loop above, and renders
+        // identically to the empty one. The two shapes converge - which is the
+        // point, an empty payload IS one empty line - so the added newline must
+        // fire only when the loop wrote nothing at all. Any wider condition
+        // doubles it here.
+        assert_eq!(crate::to_html("```\n\n```\n"), "<pre><code>\n</code></pre>");
     }
 
     #[test]
