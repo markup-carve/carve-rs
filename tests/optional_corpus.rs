@@ -92,13 +92,14 @@ const DECLARED_UNIMPLEMENTED: &[(&str, &str, Option<&str>)] = &[];
 /// pin has caught up on fails and is deleted in the commit that moves the pin.
 const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[(
     "28-tabs-panel-title",
-    "markup-carve/carve#1468 names the tab set as a whole, so the wrapper gained \
-role=group and a name; the pinned corpus predates it. markup-carve/carve#1477 \
-updates the fixture, and this entry goes in the commit that moves the pin.",
+    "markup-carve/carve#1468 names the tab set as a whole and extensions §13.2 \
+names each css-mode PANEL after its own tab; the pinned corpus predates both. \
+markup-carve/carve#1477 updates the fixture, and this entry goes in the commit \
+that moves the pin.",
     r#"<div class="tabs" role="group" aria-label="Tabs">
 <input type="radio" name="tabset-1" id="tabset-1-tab-1" class="tabs-radio" checked>
 <label for="tabset-1-tab-1" class="tabs-label">First</label>
-<div class="tabs-panel">
+<div class="tabs-panel" role="group" aria-label="First">
 <p class="admonition-title">Inner <strong>Title</strong></p>
 <p>Content one.</p>
 </div>
@@ -188,6 +189,19 @@ fn render_feature(feature: &str, source: &str, target: Target) -> Option<String>
     let details = Details::new();
     let spoiler = Spoiler::new();
     let tabs = Tabs::new();
+    // The `aria` mode of the same extension. Extensions §13.5 makes it its own
+    // feature id, because §13.3's rules - the `tabpanel` binding, the `hidden`
+    // reveal, and the ABSENCE of a `role="group"` there - are a different
+    // statement from the `css` panel name that feature `tabs` covers.
+    //
+    // DORMANT AT THIS PIN, said plainly rather than left to look like coverage:
+    // the case that names this feature (`47-tabs-aria-panel-binding`) arrives
+    // with the corpus bump, so this arm runs nothing until the pin moves. It is
+    // here so that bump is a pin change and not a pin change plus a runner.
+    let tabs_aria = Tabs::with_options(carve::TabsOptions {
+        mode: carve::TabsMode::Aria,
+        ..Default::default()
+    });
     let semantic_span = SemanticSpan;
     let smart_quotes_de = SmartQuotes::new("de");
 
@@ -226,6 +240,7 @@ fn render_feature(feature: &str, source: &str, target: Target) -> Option<String>
         "details" => target.render(source, &Options::new().with_extension(&details)),
         "spoiler" => target.render(source, &Options::new().with_extension(&spoiler)),
         "tabs" => target.render(source, &Options::new().with_extension(&tabs)),
+        "tabs-aria" => target.render(source, &Options::new().with_extension(&tabs_aria)),
         "semantic-span" => target.render(source, &Options::new().with_extension(&semantic_span)),
         "list-table" | "list-table-columns-1344" | "list-table-local-headers-1248" => {
             target.render(source, &Options::new().with_extension(&list_table))

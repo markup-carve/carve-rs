@@ -235,10 +235,29 @@ impl Tabs {
             ));
         }
 
+        // THE PANEL CARRIES ITS TAB'S NAME (extensions §13.2). Under `css`
+        // there are no tab roles, so nothing binds a panel to the control that
+        // reveals it: every radio and label is emitted BEFORE every panel, and
+        // the panel itself was anonymous.
+        //
+        // `role="group"`, not `role="tabpanel"` - the control that reveals this
+        // panel is a `radio`, not a `tab`, and `group` is all the CSS mode can
+        // honestly claim. Not a `<section>` either: one landmark per panel is N
+        // landmarks per tab set. And a bare `aria-labelledby` is not an
+        // alternative - ARIA marks both naming attributes PROHIBITED on role
+        // `generic`, which a plain `<div>` maps to, and the `<label>` elements
+        // carry `for=` rather than `id=` so there is nothing to point one at.
+        //
+        // The name is the tab's own label, DERIVED from the document, so per
+        // §1.5 it takes no `labels` key - an author renames a panel by renaming
+        // its tab. Attribute-escaped, which is a different escape from the
+        // `<label>` element's text above: a `"` in a tab name has to become
+        // `&quot;` here and stays a bare quote there.
         for item in items {
             html.push_str(&format!(
-                "<div class=\"{}\">\n{}</div>\n",
+                "<div class=\"{}\" role=\"group\" aria-label=\"{}\">\n{}</div>\n",
                 ctx.escape_attr(&self.opts.tab_class),
+                ctx.escape_attr(&item.label),
                 item.content,
             ));
         }
@@ -588,6 +607,82 @@ mod tests {
         let ext = Tabs::new();
         let opts = Options::new().with_extension(&ext).with_mode(Mode::Static);
         crate::to_html_with_options(source, &opts)
+    }
+
+    /// A `css`-mode panel takes its own tab's name (extensions §13.2). Under
+    /// `css` every radio and label is emitted before every panel, so nothing
+    /// binds a panel to the control that reveals it and the panel was
+    /// anonymous.
+    #[test]
+    fn a_css_panel_is_named_after_its_own_tab() {
+        let out = html(TWO_TABS);
+        assert!(
+            out.contains("<div class=\"tabs-panel\" role=\"group\" aria-label=\"One\">"),
+            "{out}"
+        );
+        assert!(
+            out.contains("<div class=\"tabs-panel\" role=\"group\" aria-label=\"Two\">"),
+            "{out}"
+        );
+        // `group`, not `tabpanel`: the control that reveals it is a radio.
+        assert!(!out.contains("role=\"tabpanel\""), "{out}");
+    }
+
+    /// THE NAME IS ATTRIBUTE-ESCAPED, which is a different escape from the
+    /// `<label>` element's text: a `"` becomes `&quot;` in the attribute and
+    /// stays a bare quote in the element.
+    #[test]
+    fn a_panel_name_is_escaped_for_an_attribute() {
+        let out = html(
+            ":::: tabs
+::: tab [R&D \"core\" <x>]
+One.
+:::
+::::",
+        );
+        assert!(
+            out.contains("aria-label=\"R&amp;D &quot;core&quot; &lt;x&gt;\""),
+            "{out}"
+        );
+        assert!(
+            out.contains(">R&amp;D \"core\" &lt;x&gt;</label>"),
+            "the label element must keep its bare quotes: {out}"
+        );
+    }
+
+    /// AN `aria` PANEL TAKES NEITHER (extensions §13.3). It is already bound by
+    /// `aria-labelledby`, and naming it too would give one element two
+    /// accessible names and pull it out of the `tablist` relationship that is
+    /// the only reason to be in this mode. The corpus pins the ABSENCE, so this
+    /// does too.
+    #[test]
+    fn an_aria_panel_is_bound_rather_than_named() {
+        let out = aria_html(TWO_TABS);
+        assert!(out.contains("role=\"tabpanel\""), "{out}");
+        assert!(out.contains("aria-labelledby="), "{out}");
+        // The panel, specifically. The WRAPPER still carries its own name.
+        for panel in out.split("<div role=\"tabpanel\"").skip(1) {
+            let opener = panel.split('>').next().unwrap_or_default();
+            assert!(
+                !opener.contains("role=\"group\""),
+                "an aria panel took role=group: {out}"
+            );
+            assert!(
+                !opener.contains("aria-label="),
+                "an aria panel took a second accessible name: {out}"
+            );
+        }
+    }
+
+    /// `css` IS THE DEFAULT, and not for compatibility: `aria` reveals with
+    /// `hidden`, so a page that registers it and ships no script loses every
+    /// panel but the first, while `css` with no stylesheet shows every panel
+    /// (§13.1 on top of §2.5).
+    #[test]
+    fn css_is_the_default_mode() {
+        assert_eq!(TabsOptions::default().mode, TabsMode::Css);
+        assert!(!html(TWO_TABS).contains(" hidden"), "{}", html(TWO_TABS));
+        assert!(aria_html(TWO_TABS).contains(" hidden"));
     }
 
     #[test]

@@ -7,6 +7,25 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **`CodeGroup` grows the `mode` option Tabs already had** (carve-rs#1199).
+  `CodeGroupOptions::mode` takes `TabsMode::Css` (the default) or
+  `TabsMode::Aria`; the `Aria` renderer mirrors the Tabs one with
+  `role="tablist"`, `role="tabpanel"` panels bound by `aria-labelledby`, and
+  `hidden` on every unselected panel. `Css` stays the default because `Aria`
+  needs a client script - extensions §13.1.
+
+### Changed
+
+- **A `css`-mode tab and code-group panel carries its own name**
+  (carve-rs#1199, extensions §13.2). Under `css` every radio and label is
+  emitted before every panel, so nothing bound a panel to the control revealing
+  it and the panel was anonymous. Each one now writes `role="group"` plus an
+  `aria-label` holding its tab's label - attribute-escaped, and with no `labels`
+  key because the string comes from the document. An `aria`-mode panel takes
+  neither: it is bound already (§13.3).
+
 ### Changed
 
 - **A deeply nested document costs half the host stack to parse**
