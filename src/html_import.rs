@@ -2868,12 +2868,29 @@ impl<'a> Importer<'a> {
         let node = match tag.as_str() {
             "em" | "i" => emphasis(EmphasisKind::Italic),
             "strong" | "b" => emphasis(EmphasisKind::Strong),
-            "del" | "s" | "strike" => emphasis(EmphasisKind::Strike),
-            // `<ins>` has a marker of its own, `{+ +}`, which renders back to
-            // `<ins>`. Without this branch it fell through to the unwrapping
-            // path, so an insertion lost its element AND was reported as
+            // `<s>` and `<strike>` genuinely ARE strike - `~x~` is what Carve
+            // spells them with - so they stay here. `<del>` does not: it has an
+            // exact node of its own, one arm down (carve-rs#1223).
+            "s" | "strike" => emphasis(EmphasisKind::Strike),
+            // THE CRITICMARKUP PAIR, each on its own node. `{+ +}` renders back
+            // to `<ins>` and `{- -}` to `<del>`, so neither element loses
+            // anything on the way in or the way out.
+            //
+            // `<ins>` had no branch at all once and fell through to the
+            // unwrapping path, losing its element AND being reported as
             // unsupported markup - twice wrong, since Carve can spell it.
+            // `<del>` had the opposite failure: it sat in the strike arm above,
+            // so it came back as `~x~` and RE-RENDERED AS `<s>`. The element
+            // changed, which makes it the one shape in that neighborhood that
+            // is not HTML-lossless, and the two halves of the same pair
+            // disagreed. carve-js maps `del` to its `delete` node and carve-php
+            // spells it `{- -}`, so this is also what the other two engines do.
             "ins" => InlineNode::CriticInsert(CriticInsert {
+                attrs,
+                children,
+                pos: None,
+            }),
+            "del" => InlineNode::CriticDelete(CriticDelete {
                 attrs,
                 children,
                 pos: None,

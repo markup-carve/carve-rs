@@ -46,13 +46,15 @@ fn an_insertion_keeps_its_element() {
     );
 }
 
-/// CONTROL. `<del>` is untouched by this change. It maps to the strike
-/// emphasis, as it does in carve-js, and this test is here to say that the
-/// `<ins>` branch did not quietly move its twin: which node `<del>` belongs on
-/// is a three-engine question, not one to settle inside a one-line mapping.
+/// The three-engine question this test parked has since been answered:
+/// carve-js maps `del` to its `delete` node and carve-php spells it `{- -}`, so
+/// carve-rs#1223 moved `<del>` onto `CriticDelete` here too. What stays true is
+/// what this test was for - the `<ins>` branch did not move its twin quietly;
+/// the twin moved on its own ruling. `a_deletion_survives_an_html_import` owns
+/// the shape now.
 #[test]
-fn a_deletion_still_maps_the_way_it_did() {
-    assert_eq!(imported("<p>a <del>gone</del> b</p>"), "a ~gone~ b\n");
+fn a_deletion_maps_to_the_node_that_renders_it_back() {
+    assert_eq!(imported("<p>a <del>gone</del> b</p>"), "a {-gone-} b\n");
 }
 
 /// The items are bare text, so the lists import TIGHT (carve#1210,

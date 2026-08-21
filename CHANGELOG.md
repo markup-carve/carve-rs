@@ -249,6 +249,12 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A deletion survives an HTML import** (markup-carve/carve-rs#1223). `<del>`
+  shared the strike arm with `<s>` and `<strike>`, so it imported as a strike
+  emphasis and re-rendered as `<s>`; it now maps to `CriticDelete`, the node
+  `{- -}` already renders back to `<del>`. `<s>` and `<strike>` still import as
+  strike. carve-js and carve-php already read `<del>` this way.
+
 - **An HTML import no longer bakes a derived accessible name into source**
   (markup-carve/carve-rs#1209, markup-carve/carve#1500, markup-carve/carve#1511,
   PART 9 §16a and Extensions §1.5). An attribute whose value equals what the
