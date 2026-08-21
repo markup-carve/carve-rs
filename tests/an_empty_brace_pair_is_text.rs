@@ -129,3 +129,71 @@ fn the_writer_round_trips() {
         assert_eq!(html(&carve::to_carve(source)), html(source));
     }
 }
+
+/// THE WRITER MUST NOT ESCAPE WHAT OPENS NOTHING (PART 11 §2, corpus 388).
+///
+/// The pinned canonical form on spec `main` is the bare spelling. It is not
+/// readable from `tests/spec` at this pin - `388-*.fmt` arrived after it - so
+/// the bytes are stated here, which is where they bite on a regression whatever
+/// the submodule is pointed at.
+#[test]
+fn the_writer_leaves_an_empty_pairs_carets_bare() {
+    let source = "Empty pairs are text: {//} {**} {__} {~~} {^^} {,,} {==} {++} {##}.\n\n\
+                  A pair that holds something is the construct: {/i/} {*b*} {~s~} {+ins+} {# c #}.\n";
+    assert_eq!(
+        carve::to_carve(source),
+        "Empty pairs are text: {//} {**} {__} {~~} {^^} {,,} {==} {++} {##}.\n\n\
+         A pair that holds something is the construct: /i/ *b* ~s~ {+ins+} {# c #}.\n"
+    );
+}
+
+/// The decisive property, asserted rather than described: the two spellings
+/// differ in nothing but escape bytes, which §1's EQUALITY IS MODULO ESCAPING
+/// makes the same document. So PART 11 §4 asks for the bare one - §2 pins the
+/// form, and where §2 and §5 differ, §2 wins.
+///
+/// Asserted on the RENDER, deliberately. The trees are not `==`: this engine
+/// records an escape as an `escaped_text` node, so `{\^\^}` reaches four
+/// children where `{^^}` reaches one. That difference IS the escaping, which is
+/// exactly what the clause says to compare modulo - and the render is where
+/// "the same document" is observable from outside the engine.
+#[test]
+fn the_bare_and_the_escaped_spelling_are_the_same_document() {
+    assert_eq!(html("{^^}\n"), html("{\\^\\^}\n"));
+    assert_eq!(html("{^^}\n"), "<p>{^^}</p>");
+}
+
+/// THE NEAR MISS, and the reason the test above cannot pass by the writer
+/// having simply stopped escaping carets.
+///
+/// `{^x^}` holds something, so it IS a forced superscript - the construct
+/// round-trips as itself. And a caret a re-parse WOULD read is still escaped:
+/// an authored literal `{^x^}`, which reaches the writer as text, keeps every
+/// escape it needs to stay text.
+#[test]
+fn a_pair_that_holds_something_keeps_its_escapes() {
+    assert_eq!(carve::to_carve("a {^x^} b\n"), "a {^x^} b\n");
+    assert_eq!(html(&carve::to_carve("a {^x^} b\n")), html("a {^x^} b\n"));
+
+    let authored_literal = "lit \\{\\^x\\^} b\n";
+    assert_eq!(carve::to_carve(authored_literal), authored_literal);
+    assert_eq!(
+        carve::parse(&carve::to_carve(authored_literal)).children,
+        carve::parse(authored_literal).children
+    );
+}
+
+/// OUT OF SCOPE, PINNED SO A LATER SWEEP CANNOT MOVE IT BY ACCIDENT. §2a's
+/// `}^p` and `[^` over-escapes are open in all three engines and corpus 388
+/// deliberately does not pin them, so this states what the engine does today
+/// rather than what §2 would eventually ask for.
+#[test]
+fn an_authored_mid_prose_caret_escape_is_preserved() {
+    for source in ["a \\^ b\n", "x \\^[a\n"] {
+        assert_eq!(
+            carve::parse(&carve::to_carve(source)).children,
+            carve::parse(source).children,
+            "parse(fmt(x)) != parse(x) for {source:?}"
+        );
+    }
+}

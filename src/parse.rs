@@ -13384,7 +13384,11 @@ fn splice_verse_comments(
     }
     let mut pending = comments.into_iter().peekable();
     let mut line = 0usize;
-    let mut out = splice_verse_comments_into(inlines, &mut pending, &mut line);
+    // Was the boundary that OPENED the line we are on eaten by a verbatim run,
+    // or is it still a node in the tree? See the trailing drain below.
+    let mut opened_inside_a_run = false;
+    let mut out =
+        splice_verse_comments_into(inlines, &mut pending, &mut line, &mut opened_inside_a_run);
     // A COMMENT ON THE STANZA'S LAST LINE has no boundary after it to sit
     // before, so it goes at the end - the boundary that OPENS its line is still
     // there, which is what says the line is still there. The walk drains before
@@ -13396,10 +13400,39 @@ fn splice_verse_comments(
     // there is no place inside it for a node. Those stay dropped, as they were -
     // pushing the leftovers unconditionally puts the note back at a position the
     // author never wrote.
-    while let Some((_, comment)) = pending.next_if(|(at, _)| *at == line) {
-        out.push(InlineNode::Comment(comment));
+    //
+    // AND GATED ON WHAT OPENED THAT LINE, which the counter alone cannot say.
+    // §23: BUT IT DOES NOT SURVIVE A RUN THAT ATE ITS LINE - "there is no
+    // boundary left in the tree for a `comment` node to sit on and the run's
+    // value holds an EMPTY LINE instead". A run reaching the end of the stanza
+    // advances the counter with the newlines it swallowed, so the last of them
+    // lands exactly on the last comment's line and the drain fired on a line
+    // that is INSIDE the run: `::: |` / `` ` `` / `%%` / `:::` came back as
+    // `` ` %%``, appending a node PART 12 containment refuses - after the run
+    // that contains it. The interior drain above needs no such guard, because a
+    // swallowed line is strictly inside the run's newline count and the counter
+    // only moves forward. The writer's answer for that empty line is PART 11
+    // §7c, which `spell_verse_empty_lines` already gives it (carve-rs#1193).
+    if !opened_inside_a_run {
+        while let Some((_, comment)) = pending.next_if(|(at, _)| *at == line) {
+            out.push(InlineNode::Comment(comment));
+        }
     }
     out
+}
+
+/// Move the line counter over the boundaries a verbatim run SWALLOWED, and
+/// record that the line it leaves us on was opened by one of them.
+///
+/// A run with no newline in it crosses no boundary, so it neither moves the
+/// counter nor changes whose boundary opened the current line.
+fn advance_over_run(value: &str, line: &mut usize, opened_inside_a_run: &mut bool) {
+    let eaten = value.matches('\n').count();
+    if eaten == 0 {
+        return;
+    }
+    *line += eaten;
+    *opened_inside_a_run = true;
 }
 
 /// One level of `splice_verse_comments`, sharing the caller's line counter so a
@@ -13408,6 +13441,7 @@ fn splice_verse_comments_into(
     inlines: Vec<InlineNode>,
     pending: &mut std::iter::Peekable<std::vec::IntoIter<(usize, Comment)>>,
     line: &mut usize,
+    opened_inside_a_run: &mut bool,
 ) -> Vec<InlineNode> {
     let mut out = Vec::with_capacity(inlines.len());
     for mut node in inlines {
@@ -13423,14 +13457,21 @@ fn splice_verse_comments_into(
             continue;
         }
         match &mut node {
-            InlineNode::SoftBreak(_) | InlineNode::HardBreak(_) => *line += 1,
+            InlineNode::SoftBreak(_) | InlineNode::HardBreak(_) => {
+                *line += 1;
+                // A break node IS the boundary, so the line it opens has one.
+                *opened_inside_a_run = false;
+            }
             // A verbatim run's newlines are boundaries it ATE. §23 says the run
             // "carries the break, and what it carries is a NEWLINE", so each one
-            // ends a body line exactly as a break node does.
-            InlineNode::Code(n) => *line += n.value.matches('\n').count(),
-            InlineNode::Math(n) => *line += n.content.matches('\n').count(),
-            InlineNode::RawInline(n) => *line += n.content.matches('\n').count(),
-            InlineNode::LiteralInline(n) => *line += n.content.matches('\n').count(),
+            // ends a body line exactly as a break node does - and the line the
+            // LAST of them opens is inside the run, with no boundary node of its
+            // own. Recorded rather than inferred from the count, because a run
+            // that crosses no boundary must not claim the line it merely sits on.
+            InlineNode::Code(n) => advance_over_run(&n.value, line, opened_inside_a_run),
+            InlineNode::Math(n) => advance_over_run(&n.content, line, opened_inside_a_run),
+            InlineNode::RawInline(n) => advance_over_run(&n.content, line, opened_inside_a_run),
+            InlineNode::LiteralInline(n) => advance_over_run(&n.content, line, opened_inside_a_run),
             // EVERY SLOT AN INLINE NODE HOLDS INLINES IN, not just `children`.
             // An inline footnote carries its body in `inline` and a citation
             // item carries three arrays of its own, so a walk that knew only
@@ -13438,24 +13479,45 @@ fn splice_verse_comments_into(
             // pending - `^[a` / `%% secret` / `c]` wrote the line back as an
             // empty one (markup-carve/carve-js#1184 found the same two slots).
             InlineNode::Emphasis(n) => {
-                n.children =
-                    splice_verse_comments_into(std::mem::take(&mut n.children), pending, line)
+                n.children = splice_verse_comments_into(
+                    std::mem::take(&mut n.children),
+                    pending,
+                    line,
+                    opened_inside_a_run,
+                )
             }
             InlineNode::Link(n) => {
-                n.children =
-                    splice_verse_comments_into(std::mem::take(&mut n.children), pending, line)
+                n.children = splice_verse_comments_into(
+                    std::mem::take(&mut n.children),
+                    pending,
+                    line,
+                    opened_inside_a_run,
+                )
             }
             InlineNode::Span(n) => {
-                n.children =
-                    splice_verse_comments_into(std::mem::take(&mut n.children), pending, line)
+                n.children = splice_verse_comments_into(
+                    std::mem::take(&mut n.children),
+                    pending,
+                    line,
+                    opened_inside_a_run,
+                )
             }
             InlineNode::Extension(n) => {
-                n.children =
-                    splice_verse_comments_into(std::mem::take(&mut n.children), pending, line)
+                n.children = splice_verse_comments_into(
+                    std::mem::take(&mut n.children),
+                    pending,
+                    line,
+                    opened_inside_a_run,
+                )
             }
             InlineNode::Footnote(n) => {
                 if let Some(inline) = &mut n.inline {
-                    *inline = splice_verse_comments_into(std::mem::take(inline), pending, line);
+                    *inline = splice_verse_comments_into(
+                        std::mem::take(inline),
+                        pending,
+                        line,
+                        opened_inside_a_run,
+                    );
                 }
             }
             InlineNode::CitationGroup(group) => {
@@ -13464,17 +13526,30 @@ fn splice_verse_comments_into(
                         .into_iter()
                         .flatten()
                     {
-                        *field = splice_verse_comments_into(std::mem::take(field), pending, line);
+                        *field = splice_verse_comments_into(
+                            std::mem::take(field),
+                            pending,
+                            line,
+                            opened_inside_a_run,
+                        );
                     }
                 }
             }
             InlineNode::CriticInsert(n) => {
-                n.children =
-                    splice_verse_comments_into(std::mem::take(&mut n.children), pending, line)
+                n.children = splice_verse_comments_into(
+                    std::mem::take(&mut n.children),
+                    pending,
+                    line,
+                    opened_inside_a_run,
+                )
             }
             InlineNode::CriticDelete(n) => {
-                n.children =
-                    splice_verse_comments_into(std::mem::take(&mut n.children), pending, line)
+                n.children = splice_verse_comments_into(
+                    std::mem::take(&mut n.children),
+                    pending,
+                    line,
+                    opened_inside_a_run,
+                )
             }
             _ => {}
         }

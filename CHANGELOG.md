@@ -9,6 +9,16 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A run that ate a verse line leaves no comment node** (carve-rs#1193). At the
+  boundary where the comment is the stanza's last body line AND the run is still
+  open, the node was appended after the run that contains it - PART 9 §23's
+  "BUT IT DOES NOT SURVIVE A RUN THAT ATE ITS LINE" - and `fmt` wrote it out as
+  `` ` %%``. The render never moved.
+
+- **An empty braced pair keeps its carets bare** (carve-rs#1193). `{^^}` opens
+  no superscript, so PART 11 §2 has nothing to escape and the writer no longer
+  emits `{\^\^}`. `{^x^}` holds something and is untouched.
+
 - **`--profile` reaches the `--carve` output target** (carve-rs#1191). `to_carve`
   carried no `Options`, so neither the `max_length` cap nor the feature filter
   was ever consulted there: an over-cap document was re-serialized in full at

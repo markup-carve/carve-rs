@@ -3210,7 +3210,29 @@ fn escape_text(
         // is that document - so `^<TAB>` re-parses as text either way and PART 11
         // §4 asks for the minimal form when dropping the escape changes nothing.
         let caret_opens_a_caption = ch == '^' && at_line_start && caption_can_open && next == ' ';
+        // AN EMPTY BRACE PAIR IS NOT A CONSTRUCT (carve#1447, corpus 388), so
+        // neither caret of `{^^}` opens anything and PART 11 §2 escapes a
+        // character IF AND ONLY IF omitting the escape would change the
+        // re-parsed AST. Against this engine's own parser `{^^}` and `{\^\^}`
+        // differ in nothing but escape bytes, and §1's EQUALITY IS MODULO
+        // ESCAPING makes them the same document - so §4 asks for the bare form
+        // and §10g's unconditional set does not reach here either, because that
+        // one is about a LEADING caret and neither of these leads.
+        //
+        // `parse_forced_emphasis` is the rule being mirrored: it takes the
+        // first `^}` pair after the opener and returns `None` when that pair
+        // meets the opener with nothing in between. So EMPTINESS is the whole
+        // test, and `{^x^}` - which holds something, and IS a forced
+        // superscript - keeps both of its escapes untouched.
+        //
+        // The neighbouring over-escapes stay open on purpose: §2a's `}^p` and
+        // `[^` are open in all three engines, and corpus 388 deliberately does
+        // not pin them.
+        let empty_braced_super = ch == '^'
+            && ((previous == '{' && text[offset..].starts_with("^^}"))
+                || (next == '}' && text[..offset].ends_with("{^")));
         let caret_opens_inline = ch == '^'
+            && !empty_braced_super
             && (previous == '{'
                 || next == '}'
                 || (next == '['
