@@ -124,6 +124,14 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   instance. PART 9 §16a already required this - "an extension MUST NOT require
   the host to configure the same text twice".
 
+- **A list item's content is parsed from a worklist, not down the stack**
+  (markup-carve/carve-rs#1165). Lists were the tallest nesting shape by a
+  factor of six and the last recursive descent in the parser; at the 200-level
+  cap `parse`, `parse+drop` and `parseJson` on a list ladder now fit 64KiB
+  where they needed 768KiB (release; 8192KiB to 256KiB in debug), and through
+  wasm `parseJson` needs 64KB of host stack where it needed 200KB. No output
+  changes.
+
 - **A colon container's body is parsed from a worklist, not down the stack**
   (markup-carve/carve-rs#1165). Nesting costs heap instead of host stack, so a
   document at the 200-level cap parses in 128KiB where it needed 384KiB

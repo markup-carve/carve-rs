@@ -3259,7 +3259,7 @@ fn parse_blocks_with_options_at_level_into(
     source: &str,
     options: &Options<'_>,
     at_document_level: bool,
-    pending: &mut Vec<PendingContainer>,
+    pending: &mut Vec<PendingBody>,
 ) -> Vec<BlockNode> {
     let mut lines: Vec<&str> = source.lines().collect();
     // `lines()` already drops a single trailing newline; nothing more to do.
@@ -4232,7 +4232,7 @@ fn parse_mapped_source_at_level_into(
     source: &MappedSource,
     options: &Options<'_>,
     at_document_level: bool,
-    pending: &mut Vec<PendingContainer>,
+    pending: &mut Vec<PendingBody>,
 ) -> Vec<BlockNode> {
     if !options.source_lines && !options.positions {
         return parse_unpositioned_mapped_source(source, options, at_document_level, pending);
@@ -4245,7 +4245,7 @@ fn parse_unpositioned_mapped_source(
     source: &MappedSource,
     options: &Options<'_>,
     at_document_level: bool,
-    pending: &mut Vec<PendingContainer>,
+    pending: &mut Vec<PendingBody>,
 ) -> Vec<BlockNode> {
     // The ladder builds its own containers inside-out and hands back finished
     // nodes, so it contributes nothing to `pending` - and must not, because it
@@ -4261,7 +4261,7 @@ fn parse_positioned_mapped_source(
     source: &MappedSource,
     options: &Options<'_>,
     at_document_level: bool,
-    pending: &mut Vec<PendingContainer>,
+    pending: &mut Vec<PendingBody>,
 ) -> Vec<BlockNode> {
     let lines: Vec<&str> = source.source.lines().collect();
     // The mapped source carries the widths its container already stripped, so a
@@ -4555,7 +4555,7 @@ fn parse_capped_colon_body(inner: LineBuffer, options: &Options<'_>) -> Vec<Bloc
 fn parse_capped_colon_body_into(
     inner: LineBuffer,
     options: &Options<'_>,
-    pending: &mut Vec<PendingContainer>,
+    pending: &mut Vec<PendingBody>,
 ) -> Vec<BlockNode> {
     if !options.source_lines
         && !options.positions
@@ -4570,7 +4570,7 @@ fn parse_capped_colon_body_into(
 fn parse_unpositioned_colon_body(
     inner: LineBuffer,
     options: &Options<'_>,
-    pending: &mut Vec<PendingContainer>,
+    pending: &mut Vec<PendingBody>,
 ) -> Vec<BlockNode> {
     let source = inner.into_source();
     let lines: Vec<&str> = source.source.lines().collect();
@@ -4582,7 +4582,7 @@ fn parse_unpositioned_colon_body(
 fn parse_positioned_capped_colon_body(
     inner: LineBuffer,
     options: &Options<'_>,
-    pending: &mut Vec<PendingContainer>,
+    pending: &mut Vec<PendingBody>,
 ) -> Vec<BlockNode> {
     let source = inner.into_source();
     if NESTING_DEPTH.with(|d| d.get() < MAX_NESTING_DEPTH) {
@@ -4848,13 +4848,73 @@ fn append_parsed_block(
 /// parse in order to descend into one. That is what makes the descent a
 /// worklist rather than a recursion: [`parse_blocks`] emits the container node
 /// with EMPTY children, records the body here, and runs to the end of its own
-/// input; [`resolve_pending_containers`] parses the bodies afterwards, on the
+/// input; [`resolve_pending_bodies`] parses the bodies afterwards, on the
 /// heap (markup-carve/carve-rs#1165).
-struct PendingContainer {
+struct PendingBody {
     /// Where the hollow node sits in the level's own output vector. Stable
     /// because the level loop only ever PUSHES - nothing shifts under it.
     index: usize,
-    body: ContainerBody,
+    body: Body,
+}
+
+/// Which hollow node a [`PendingBody`] fills, and with what.
+enum Body {
+    /// A colon container's body. The blocks ARE the node's children.
+    Colon(ContainerBody),
+    /// ONE CHUNK of a list item's content. An item can have several - its own
+    /// body, then a sub-list collected beside it, then another - so a chunk is
+    /// APPENDED to the item rather than assigned to it, and the worklist is
+    /// what puts them back in source order (see [`resolve_pending_bodies`]).
+    Item(ItemBody),
+}
+
+/// A list item's content chunk, collected but not yet parsed.
+///
+/// The same split [`open_container`] makes for a colon body: every collector in
+/// `parse_list` materializes the chunk into a [`MappedSource`] BEFORE anything
+/// parses it, so the item can be built hollow and the parse can happen off the
+/// stack. The recursive form parsed the chunk between those two halves and paid
+/// a `parse_list` frame - 2744 bytes of it - for every nesting level
+/// (markup-carve/carve-rs#1165).
+struct ItemBody {
+    /// Which item of the list at [`PendingBody::index`].
+    item: usize,
+    chunk: Chunk,
+    /// `NESTING_DEPTH` as it stood where the chunk was collected, so the cap
+    /// arithmetic is the arithmetic the recursive descent did.
+    depth: usize,
+    /// `IN_FIGURE_GROUP` for the chunk, for the same reason.
+    in_group: bool,
+    /// A block-attribute set held from an EARLIER chunk, for this one's first
+    /// VISIBLE block. The recursive form applied it to the blocks in hand; the
+    /// worklist applies it the moment they exist, which is the same block.
+    attrs: Option<Attrs>,
+    /// A collected definition written on the marker line is the item's first
+    /// (invisible) block, and the prepass leaves an empty paragraph where its
+    /// line was. The item must not carry it.
+    drop_empty_paragraphs: bool,
+    /// The list took its own span from its ITEMS rather than from the cursor
+    /// (`span_across_items`), so widening the last item moves the list's end
+    /// with it. `parse_list` cannot know which it used until the loop is over,
+    /// so it sets this on its own entries afterwards.
+    widen_list: bool,
+}
+
+/// What a chunk hands the worklist.
+enum Chunk {
+    /// Collected text. Nothing has looked at its blocks, so nothing has to
+    /// exist yet - the ordinary case, and the one that keeps `parse_list` off
+    /// the stack.
+    Source(MappedSource),
+    /// Blocks parsed where the chunk was collected, because the branch that
+    /// built it decides the LIST's tightness from what the chunk opens with and
+    /// cannot go on parsing without knowing. They come back with their own
+    /// containers and lists hollow, so that parse did not descend either: the
+    /// bodies it left are carried here and land in the same worklist.
+    Parsed {
+        blocks: Vec<BlockNode>,
+        carried: Vec<PendingBody>,
+    },
 }
 
 /// What [`open_container`] hands back with the hollow node: the body's lines
@@ -4907,6 +4967,20 @@ impl Drop for FigureGroupScope {
     }
 }
 
+/// One body the worklist has parsed, and where its blocks belong.
+struct ResolvedBody {
+    /// The arena slot holding the node that takes them.
+    slot: usize,
+    /// The node's index within that slot.
+    index: usize,
+    /// `None` for a container - the body IS the node's children - and
+    /// `Some((item, widen_list))` for one chunk of that item, which is appended
+    /// instead. See [`append_item_children`] for the second field.
+    item: Option<(usize, bool)>,
+    /// The slot the blocks themselves landed in.
+    child_slot: usize,
+}
+
 /// Fill in the children of a node [`open_container`] emitted hollow.
 fn fill_container_children(node: &mut BlockNode, children: Vec<BlockNode>) {
     match node {
@@ -4921,16 +4995,236 @@ fn fill_container_children(node: &mut BlockNode, children: Vec<BlockNode>) {
     }
 }
 
-/// Run `parse` and resolve every container body it left pending, so the blocks
-/// handed back are complete. Every entry point above the level loop goes
-/// through here; only the worklist itself parses a level without draining it.
+/// Append one chunk to the item of a list node a level emitted hollow.
+///
+/// APPEND, not assign, and that is what makes the ordering work without a
+/// sequence number: chunks of one item reach [`resolve_pending_bodies`] in
+/// source order, a LIFO worklist pops them in reverse, and the stitching pass
+/// walks the links backwards - so the reversal happens twice and the chunks go
+/// back in the order they were written.
+fn append_item_children(
+    node: &mut BlockNode,
+    item: usize,
+    children: Vec<BlockNode>,
+    widen_list: bool,
+) {
+    let BlockNode::List(list) = node else {
+        debug_assert!(
+            false,
+            "a pending item chunk pointed at something that is not a list"
+        );
+        return;
+    };
+    let last = list.items.len().saturating_sub(1);
+    // `parse_list` recorded the index against the items it had built.
+    let Some(target) = list.items.get_mut(item) else {
+        debug_assert!(false, "a pending chunk pointed past the list's items");
+        return;
+    };
+    target.children.extend(children);
+    // AND WIDEN IT AGAIN, because the blocks it is widened over only exist
+    // now. `parse_list` runs the same pass before it returns, over the lead
+    // paragraph an item is sometimes built with; this repeats it over every
+    // chunk as the chunk lands. Both take the LATEST end among all the
+    // children present, so the last one to run is the one that decides, and it
+    // sees the whole item (carve#565).
+    widen_item_over_children(target);
+    if !widen_list || item != last {
+        return;
+    }
+    let Some(end) = list.items[item].pos else {
+        return;
+    };
+    if let Some(pos) = list.pos.as_mut() {
+        pos.end_line = end.end_line;
+        pos.end_column = end.end_column;
+        pos.end_offset = end.end_offset;
+    }
+}
+
+/// Parse one list-item chunk, under the state the collector stood in.
+fn parse_item_body_into(
+    body: ItemBody,
+    options: &Options<'_>,
+    nested: &mut Vec<PendingBody>,
+) -> Vec<BlockNode> {
+    let ItemBody {
+        chunk,
+        depth,
+        in_group,
+        attrs,
+        drop_empty_paragraphs,
+        ..
+    } = body;
+    let mut children = match chunk {
+        Chunk::Source(source) => {
+            let _depth = DepthScope::set(depth);
+            let _group = FigureGroupScope::set(in_group);
+            parse_mapped_source_at_level_into(&source, options, false, nested)
+        }
+        Chunk::Parsed { blocks, carried } => {
+            nested.extend(carried);
+            blocks
+        }
+    };
+    if drop_empty_paragraphs {
+        drop_empty_item_paragraphs(&mut children, nested);
+    }
+    apply_held_item_attrs(&mut children, attrs);
+    children
+}
+
+/// The empty paragraph a collected definition leaves behind, dropped - and the
+/// chunk's own pending bodies renumbered, because dropping a block shifts every
+/// index recorded after it.
+fn drop_empty_item_paragraphs(children: &mut Vec<BlockNode>, nested: &mut [PendingBody]) {
+    fn is_empty_paragraph(block: &BlockNode) -> bool {
+        matches!(block, BlockNode::Paragraph(p) if p.children.is_empty())
+    }
+    if !children.iter().any(is_empty_paragraph) {
+        return;
+    }
+    let mut moved_to = Vec::with_capacity(children.len());
+    let mut kept = 0usize;
+    for block in children.iter() {
+        moved_to.push(kept);
+        if !is_empty_paragraph(block) {
+            kept += 1;
+        }
+    }
+    children.retain(|block| !is_empty_paragraph(block));
+    for body in nested.iter_mut() {
+        // An empty paragraph holds no body, so the slot a dropped block would
+        // have mapped to is never read.
+        body.index = moved_to[body.index];
+    }
+}
+
+/// A held attribute set reaches the chunk's first VISIBLE block - the same
+/// block the recursive form picked, chosen by node KIND, which a hollow node
+/// still reports correctly.
+fn apply_held_item_attrs(children: &mut [BlockNode], attrs: Option<Attrs>) {
+    let Some(attrs) = attrs else {
+        return;
+    };
+    if let Some(target) = children
+        .iter_mut()
+        .find(|block| !matches!(block, BlockNode::Comment(_)))
+    {
+        apply_attrs_to_block(target, attrs);
+    }
+}
+
+/// Collect one list-item chunk for the worklist, and hand the caller the empty
+/// vector that stands in for the blocks until it runs.
+///
+/// Every `parse_list` site reads the same: build the chunk's source, ask for
+/// its blocks, put them in the item. What changed is that the blocks arrive
+/// later - `parse_list` never descends into one, so a nesting level costs a
+/// heap entry rather than the 2744-byte frame the three extraction attempts on
+/// markup-carve/carve-rs#1165 could not shrink.
+fn item_body(
+    deferred: &mut Vec<ItemBody>,
+    item: usize,
+    source: MappedSource,
+    attrs: Option<Attrs>,
+    drop_empty_paragraphs: bool,
+) -> Vec<BlockNode> {
+    deferred.push(ItemBody {
+        item,
+        chunk: Chunk::Source(source),
+        depth: NESTING_DEPTH.with(Cell::get),
+        in_group: IN_FIGURE_GROUP.with(Cell::get),
+        attrs,
+        drop_empty_paragraphs,
+        widen_list: false,
+    });
+    Vec::new()
+}
+
+/// Parse one chunk of the item the loop is standing on, WITH ITS BLOCKS IN HAND.
+///
+/// Two branches have to read the chunk's blocks before they can carry on
+/// parsing: whether the first visible one is a paragraph decides the list's
+/// tightness, and whether they all render nothing decides whether the blank
+/// line above them survives. Neither can be deferred, because both steer the
+/// parsing that follows.
+///
+/// Neither has to be, either. Every question they ask is a question about a
+/// node's KIND, which a node with hollow children answers exactly, so the chunk
+/// parses through the level-into entry: its own containers and lists go onto
+/// the worklist rather than down the stack, and what comes back is a list of
+/// correctly-typed blocks plus the bodies still waiting on them.
+fn parse_item_chunk(
+    source: &MappedSource,
+    options: &Options<'_>,
+    carried: &mut Vec<PendingBody>,
+) -> Vec<BlockNode> {
+    parse_mapped_source_at_level_into(source, options, false, carried)
+}
+
+/// Put the blocks [`parse_item_chunk`] handed back into the item.
+///
+/// Through the worklist when there is one, so the chunk keeps its place among
+/// the item's other chunks: an item's own body is usually still waiting when a
+/// sub-list or a continuation lands beside it, and appending straight to
+/// `children` here would put this chunk in front of a body written above it.
+fn place_item_chunk(
+    deferred: &mut Vec<ItemBody>,
+    item: usize,
+    blocks: Vec<BlockNode>,
+    carried: Vec<PendingBody>,
+) {
+    deferred.push(ItemBody {
+        item,
+        chunk: Chunk::Parsed { blocks, carried },
+        // Already parsed, so no state has to be reinstated for it.
+        depth: 0,
+        in_group: false,
+        attrs: None,
+        drop_empty_paragraphs: false,
+        widen_list: false,
+    });
+}
+
+/// Resolve a list's own pending chunks right here, for a caller that cannot
+/// hand them upwards.
+///
+/// [`parse_blocks`] knows where the list node lands in its output and rebases
+/// the chunks onto it, which is what keeps the descent flat. The three other
+/// `parse_block` callers - the attached-block probe and the two `+`
+/// continuation paths - hold the node themselves, so their chunks are resolved
+/// against a one-element arena instead. Same worklist, one level of it.
+fn drained_list_bodies(
+    node: Box<BlockNode>,
+    deferred: Vec<ItemBody>,
+    options: &Options<'_>,
+) -> Box<BlockNode> {
+    if deferred.is_empty() {
+        return node;
+    }
+    let mut out = vec![*node];
+    let pending = deferred
+        .into_iter()
+        .map(|body| PendingBody {
+            index: 0,
+            body: Body::Item(body),
+        })
+        .collect();
+    resolve_pending_bodies(&mut out, pending, options);
+    Box::new(out.pop().expect("the node the worklist just filled in"))
+}
+
+/// Run `parse` and resolve every body it left pending, so the blocks handed
+/// back are complete. Every entry point above the level loop goes through here;
+/// only the worklist itself parses a level without draining it.
 fn drained<F>(options: &Options<'_>, parse: F) -> Vec<BlockNode>
 where
-    F: FnOnce(&mut Vec<PendingContainer>) -> Vec<BlockNode>,
+    F: FnOnce(&mut Vec<PendingBody>) -> Vec<BlockNode>,
 {
     let mut pending = Vec::new();
     let mut out = parse(&mut pending);
-    resolve_pending_containers(&mut out, pending, options);
+    resolve_pending_bodies(&mut out, pending, options);
     out
 }
 
@@ -4950,9 +5244,9 @@ where
 /// order, which is what makes a single pass enough: a slot is always discovered
 /// AFTER the slot holding its parent, so walking the links backwards fills
 /// every child before the node holding it is moved into place.
-fn resolve_pending_containers(
+fn resolve_pending_bodies(
     out: &mut Vec<BlockNode>,
-    pending: Vec<PendingContainer>,
+    pending: Vec<PendingBody>,
     options: &Options<'_>,
 ) {
     if pending.is_empty() {
@@ -4960,26 +5254,47 @@ fn resolve_pending_containers(
     }
     // Slot 0 is the caller's own output; every other slot is one body.
     let mut arena: Vec<Vec<BlockNode>> = vec![std::mem::take(out)];
-    let mut links: Vec<(usize, usize, usize)> = Vec::new();
-    let mut work: Vec<(usize, PendingContainer)> =
+    let mut links: Vec<ResolvedBody> = Vec::new();
+    let mut work: Vec<(usize, PendingBody)> =
         pending.into_iter().map(|body| (0usize, body)).collect();
-    while let Some((slot, container)) = work.pop() {
+    while let Some((slot, entry)) = work.pop() {
         let mut nested = Vec::new();
-        let children = {
-            // The body parses under the state its OPENER stood in, not the
-            // state the worklist happens to be in - see `ContainerBody`.
-            let _depth = DepthScope::set(container.body.depth);
-            let _group = FigureGroupScope::set(container.body.in_group);
-            parse_capped_colon_body_into(container.body.inner, options, &mut nested)
+        let (children, item) = match entry.body {
+            Body::Colon(body) => {
+                // The body parses under the state its OPENER stood in, not the
+                // state the worklist happens to be in - see `ContainerBody`.
+                let _depth = DepthScope::set(body.depth);
+                let _group = FigureGroupScope::set(body.in_group);
+                (
+                    parse_capped_colon_body_into(body.inner, options, &mut nested),
+                    None,
+                )
+            }
+            Body::Item(body) => {
+                let target = (body.item, body.widen_list);
+                (
+                    parse_item_body_into(body, options, &mut nested),
+                    Some(target),
+                )
+            }
         };
         let child_slot = arena.len();
         arena.push(children);
-        links.push((slot, container.index, child_slot));
+        links.push(ResolvedBody {
+            slot,
+            index: entry.index,
+            item,
+            child_slot,
+        });
         work.extend(nested.into_iter().map(|body| (child_slot, body)));
     }
-    for (slot, index, child_slot) in links.into_iter().rev() {
-        let children = std::mem::take(&mut arena[child_slot]);
-        fill_container_children(&mut arena[slot][index], children);
+    for link in links.into_iter().rev() {
+        let children = std::mem::take(&mut arena[link.child_slot]);
+        let node = &mut arena[link.slot][link.index];
+        match link.item {
+            None => fill_container_children(node, children),
+            Some((item, widen_list)) => append_item_children(node, item, children, widen_list),
+        }
     }
     *out = std::mem::take(&mut arena[0]);
 }
@@ -4987,7 +5302,7 @@ fn resolve_pending_containers(
 fn parse_blocks(
     cur: &mut LineCursor,
     options: &Options<'_>,
-    pending: &mut Vec<PendingContainer>,
+    pending: &mut Vec<PendingBody>,
 ) -> Vec<BlockNode> {
     // Recursion cap (see MAX_NESTING_DEPTH). Over the cap, flatten everything
     // still in the cursor into one paragraph rather than recursing further,
@@ -5039,14 +5354,18 @@ fn parse_blocks(
         }
         let start_line = cur.pos;
         // The container's body is COLLECTED here and parsed later, on the heap,
-        // so nesting does not descend the stack (see `PendingContainer`).
+        // so nesting does not descend the stack (see `PendingBody`).
         let mut opened = None;
+        // And so are a list's item bodies. `parse_list` collects each chunk but
+        // does not know where its own node will land, so it hands the chunks
+        // back and THIS loop - which does know - rebases them (`ItemBody`).
+        let mut item_bodies = Vec::new();
         let parsed = if !line.starts_with([' ', '\t']) && detect_container_open(line).is_some() {
             let (node, body) = open_container(cur, options);
             opened = Some(body);
             Some(node)
         } else {
-            parse_block(cur, options)
+            parse_block(cur, options, &mut item_bodies)
         };
         if let Some(node) = parsed {
             // §15 A2a: a floating attribute skips what renders NOTHING and
@@ -5076,12 +5395,17 @@ fn parse_blocks(
             // `append_parsed_block` pushes exactly one node, so the container
             // just emitted is the last one - and stays there, because this loop
             // never removes or reorders what it has pushed.
+            let index = out.len() - 1;
             if let Some(body) = opened {
-                pending.push(PendingContainer {
-                    index: out.len() - 1,
-                    body,
+                pending.push(PendingBody {
+                    index,
+                    body: Body::Colon(body),
                 });
             }
+            pending.extend(item_bodies.into_iter().map(|body| PendingBody {
+                index,
+                body: Body::Item(body),
+            }));
         }
     }
     // DROP IF DANGLING, AND SAY SO (§15 A4, markup-carve/carve#1281). The loop
@@ -5206,7 +5530,11 @@ fn parse_heading_block(
     }))
 }
 
-fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<Box<BlockNode>> {
+fn parse_block(
+    cur: &mut LineCursor,
+    options: &Options<'_>,
+    item_bodies: &mut Vec<ItemBody>,
+) -> Option<Box<BlockNode>> {
     // Checked FIRST, and through the same helper `parse_blocks` uses, so a
     // comment reached by a `+` continuation is the node the identical line
     // produces at top level (carve-rs#678).
@@ -5247,7 +5575,7 @@ fn parse_block(cur: &mut LineCursor, options: &Options<'_>) -> Option<Box<BlockN
         return Some(parse_blockquote(cur, options));
     }
     if is_list_marker(line) {
-        return Some(parse_list(cur, options));
+        return Some(parse_list(cur, options, item_bodies));
     }
     // A table row opens a table only when FLUSH-LEFT (like a heading, quote or
     // `:: ` def-list term). `is_table_start` trims leading whitespace, so an
@@ -7531,7 +7859,13 @@ fn attached_one_block_lines(slice: &[&str], options: &Options<'_>) -> usize {
     if let Some(end) = self_delimiting_block_end(slice, sub.pos, &mut comment_closers) {
         return end.clamp(1, slice.len());
     }
-    parse_block(&mut sub, options);
+    // The chunks a list left pending are resolved and thrown away with the
+    // rest of the probe's tree: the probe reads the CURSOR, and a chunk that
+    // never parsed is a parse whose side effects never ran.
+    let mut item_bodies = Vec::new();
+    if let Some(block) = parse_block(&mut sub, options, &mut item_bodies) {
+        drop(drained_list_bodies(block, item_bodies, options));
+    }
     sub.pos.clamp(1, slice.len())
 }
 
@@ -7699,7 +8033,12 @@ fn parse_continuation_block(
             // item rather than nesting it (matches carve-php for `+`-then-
             // marker, e.g. `- a / + / text / + / - b`).
             if nm.indent > base_indent {
-                return parse_block(cur, options).map(|block| *block);
+                // A `+`-attached list holds its own node, so its chunks are
+                // resolved here rather than handed to a level that could
+                // rebase them.
+                let mut item_bodies = Vec::new();
+                return parse_block(cur, options, &mut item_bodies)
+                    .map(|block| *drained_list_bodies(block, item_bodies, options));
             }
             return None;
         }
@@ -7794,7 +8133,9 @@ fn parse_continuation_block(
     // its own attribute lines are consumed. Stamping the slice's first line
     // would point an editor's scroll-sync at the `{…}` line instead.
     let block_start = sub.pos;
-    let mut block = parse_block(&mut sub, options);
+    let mut item_bodies = Vec::new();
+    let mut block = parse_block(&mut sub, options, &mut item_bodies)
+        .map(|block| drained_list_bodies(block, item_bodies, options));
     if let Some(attrs) = floating_attrs {
         // AN EMPTY PARAGRAPH IS NOT A BLOCK THE AUTHOR WROTE THESE FOR. It is
         // what a `parse_block` call returns when the extent held no content -
@@ -7875,35 +8216,50 @@ fn span_across_items(items: &[ListItem]) -> Option<Pos> {
 /// that runs once cannot be half-applied by the next branch someone adds.
 fn widen_items_over_children(items: &mut [ListItem]) {
     for item in items.iter_mut() {
-        let Some(mut pos) = item.pos else { continue };
-        let mut last_owned: Option<Pos> = None;
-        for child in &item.children {
-            let Some(child_pos) = crate::ast_json::block_pos(child) else {
-                continue;
-            };
-            // LINE and COLUMN, not offsets: a span carries the pair at parse
-            // time and `fill_offsets` turns it into offsets afterwards, so
-            // comparing offsets here compares two zeroes and widens nothing.
-            let is_later = match last_owned {
-                None => true,
-                Some(last) => {
-                    (child_pos.end_line, child_pos.end_column) > (last.end_line, last.end_column)
-                }
-            };
-            if is_later {
-                last_owned = Some(*child_pos);
-            }
-        }
-        if let Some(last) = last_owned {
-            pos.end_line = last.end_line;
-            pos.end_column = last.end_column;
-            pos.end_offset = last.end_offset;
-        }
-        item.pos = Some(pos);
+        widen_item_over_children(item);
     }
 }
 
-fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> Box<BlockNode> {
+/// [`widen_items_over_children`] for ONE item, which is the granularity the
+/// worklist fills at: a chunk arrives for a single item, and re-running the
+/// rule over that item is what keeps the span honest without waiting for the
+/// rest of the list.
+fn widen_item_over_children(item: &mut ListItem) {
+    let Some(mut pos) = item.pos else { return };
+    let mut last_owned: Option<Pos> = None;
+    for child in &item.children {
+        let Some(child_pos) = crate::ast_json::block_pos(child) else {
+            continue;
+        };
+        // LINE and COLUMN, not offsets: a span carries the pair at parse
+        // time and `fill_offsets` turns it into offsets afterwards, so
+        // comparing offsets here compares two zeroes and widens nothing.
+        let is_later = match last_owned {
+            None => true,
+            Some(last) => {
+                (child_pos.end_line, child_pos.end_column) > (last.end_line, last.end_column)
+            }
+        };
+        if is_later {
+            last_owned = Some(*child_pos);
+        }
+    }
+    if let Some(last) = last_owned {
+        pos.end_line = last.end_line;
+        pos.end_column = last.end_column;
+        pos.end_offset = last.end_offset;
+    }
+    item.pos = Some(pos);
+}
+
+fn parse_list(
+    cur: &mut LineCursor,
+    options: &Options<'_>,
+    deferred: &mut Vec<ItemBody>,
+) -> Box<BlockNode> {
+    // Where this list's own chunks start in the caller's vector, so the span
+    // rule below can reach back for them once it knows which spelling it used.
+    let deferred_start = deferred.len();
     let span_start = cur.pos;
     let first = cur.peek().unwrap();
     let first_marker = detect_list_marker_full(first).unwrap();
@@ -8000,10 +8356,13 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> Box<BlockNode> {
                     &block,
                     BlockNode::Paragraph(p) if p.children.is_empty()
                 );
-                if let Some(last) = items.last_mut() {
-                    if !is_empty_paragraph {
-                        last.children.push(block);
-                    }
+                if !items.is_empty() && !is_empty_paragraph {
+                    // Through the same channel as every other chunk, so a `+`
+                    // block written under an item whose own body is still on
+                    // the worklist lands AFTER that body rather than in front
+                    // of it.
+                    let last_item = items.len() - 1;
+                    place_item_chunk(deferred, last_item, vec![block], Vec::new());
                 }
             }
             continue;
@@ -8035,7 +8394,8 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> Box<BlockNode> {
                 if last_item_bare_continuation && indent < content_col {
                     break;
                 }
-                if let Some(last) = items.last_mut() {
+                if !items.is_empty() {
+                    let last_item = items.len() - 1;
                     let mut nested = collect_item_continuation_block_mapped(
                         cur,
                         base_indent,
@@ -8103,7 +8463,8 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> Box<BlockNode> {
                     while let Some(split) = split_trailing_attrs(&mut nested) {
                         split_stack.push(split);
                     }
-                    let mut nested_children = parse_mapped_source(&nested, options);
+                    let mut carried = Vec::new();
+                    let mut nested_children = parse_item_chunk(&nested, options, &mut carried);
                     // Attributes held from an EARLIER chunk attach here when
                     // this one opens with a block, which is the case where a
                     // blank line sits between the `{…}` and its target. The
@@ -8168,7 +8529,7 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> Box<BlockNode> {
                     if !renders_nothing {
                         pending_blank = false;
                     }
-                    last.children.extend(nested_children);
+                    place_item_chunk(deferred, last_item, nested_children, carried);
                     // A collected definition is an I5 block, not the comment
                     // exception. If the collector stopped on a nonzero line
                     // below the item's content column, no paragraph remains
@@ -8208,7 +8569,8 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> Box<BlockNode> {
                 if trim_ascii(line) == DOCUMENT_DEFINITION_PLACEHOLDER {
                     break;
                 }
-                if let Some(last) = items.last_mut() {
+                if !items.is_empty() {
+                    let last_item = items.len() - 1;
                     let mut nested = MappedSource::new_line_at(
                         line.to_string(),
                         cur.source_line(cur.pos),
@@ -8221,7 +8583,8 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> Box<BlockNode> {
                     // first: a comment ends the paragraph above it (§10) while
                     // leaving its container open.
                     collect_trailing_lazy_through(cur, &mut nested, base_indent);
-                    last.children.extend(parse_mapped_source(&nested, options));
+                    let children = item_body(deferred, last_item, nested, None, false);
+                    items[last_item].children.extend(children);
                     continue;
                 }
             }
@@ -8249,7 +8612,8 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> Box<BlockNode> {
             if item_open_fence.is_some() && marker.indent < content_col {
                 break;
             }
-            if let Some(last) = items.last_mut() {
+            if !items.is_empty() {
+                let last_item = items.len() - 1;
                 let sub_indent = marker.indent;
                 let mut nested = collect_indented_block_mapped(cur, base_indent, content_col);
                 // A column-0 lazy-continuation line folds into the sub-list's
@@ -8272,26 +8636,13 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> Box<BlockNode> {
                     |src, below| collected_body_takes_the_lazy_line(src, below, options),
                     |cur| collect_indented_block_mapped(cur, sub_indent - 1, content_col),
                 );
-                let mut nested_children = parse_mapped_source(&nested, options);
-                // The block-attribute block written in front of this sub-list,
-                // carried across the chunk boundary that separated them
-                // (carve-rs#1007). It lands on the nested LIST, not on the item
-                // and not on the outer list: `apply_attrs_to_block` already has
-                // the arm, and a list is a block like the paragraph, quote and
-                // fence in this position that have always taken them.
+                // READ FROM THE SOURCE BEFORE THE CHUNK LEAVES: the chunk is
+                // handed to the worklist below, so every test that asks the
+                // collected text a question has to have asked it by then. Both
+                // of these already did - neither ever looked at the parsed
+                // blocks - so nothing about the ruling moves, only the order
+                // the two lines sit in.
                 //
-                // The first non-comment child, matching how the looseness check
-                // below picks the block that counts - a comment renders nothing
-                // and is not what the author wrote the attributes for.
-                if let Some(attrs) = pending_attrs.take() {
-                    pending_attrs_pos = None;
-                    if let Some(target) = nested_children
-                        .iter_mut()
-                        .find(|block| !matches!(block, BlockNode::Comment(_)))
-                    {
-                        apply_attrs_to_block(target, attrs);
-                    }
-                }
                 // A blank line INSIDE the outer item -- swallowed into the nested
                 // source by the collection above -- that directly separates the
                 // sub-list from a following PARAGRAPH still attached to the outer
@@ -8305,6 +8656,23 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> Box<BlockNode> {
                 if sublist_source_loosens_outer_item(&nested.source) {
                     tight = false;
                 }
+                // The block-attribute block written in front of this sub-list,
+                // carried across the chunk boundary that separated them
+                // (carve-rs#1007). It lands on the nested LIST, not on the item
+                // and not on the outer list: `apply_attrs_to_block` already has
+                // the arm, and a list is a block like the paragraph, quote and
+                // fence in this position that have always taken them.
+                //
+                // The first non-comment child, matching how the looseness check
+                // above picks the block that counts - a comment renders nothing
+                // and is not what the author wrote the attributes for. It
+                // travels WITH the chunk now (`ItemBody::attrs`), because the
+                // block it reaches does not exist until the chunk parses.
+                let held = pending_attrs.take();
+                if held.is_some() {
+                    pending_attrs_pos = None;
+                }
+                let nested_children = item_body(deferred, last_item, nested, held, false);
                 // The blank BEFORE this sub-list is consumed by it and must not
                 // survive to loosen a later sibling marker (§17 L2: a blank
                 // before an item's sub-block keeps the item tight). Without
@@ -8315,7 +8683,7 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> Box<BlockNode> {
                 // sub-list still re-raises pending_blank in the blank branch, so
                 // a genuine blank BETWEEN items keeps loosening.
                 pending_blank = false;
-                last.children.extend(nested_children);
+                items[last_item].children.extend(nested_children);
                 continue;
             }
             break;
@@ -8458,7 +8826,7 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> Box<BlockNode> {
             if continuation_source_loosens(&stream.source) {
                 tight = false;
             }
-            let children = parse_mapped_source(&stream, options);
+            let children = item_body(deferred, items.len(), stream, None, false);
             items.push(ListItem {
                 attrs: item_attrs,
                 checked: marker.checked,
@@ -8507,7 +8875,7 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> Box<BlockNode> {
             if continuation_source_loosens(&stream.source) {
                 tight = false;
             }
-            let children = parse_mapped_source(&stream, options);
+            let children = item_body(deferred, items.len(), stream, None, false);
             items.push(ListItem {
                 attrs: item_attrs,
                 checked: marker.checked,
@@ -8674,7 +9042,7 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> Box<BlockNode> {
             if sublist_source_loosens_outer_item(&stream.source) {
                 tight = false;
             }
-            let children = parse_mapped_source(&stream, options);
+            let children = item_body(deferred, items.len(), stream, None, false);
             items.push(ListItem {
                 attrs: item_attrs,
                 checked: marker.checked,
@@ -8707,10 +9075,7 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> Box<BlockNode> {
         if trim_ascii(marker.content) == DEFINITION_PLACEHOLDER {
             let nested =
                 collect_indented_block_mapped(cur, content_col.saturating_sub(1), content_col);
-            let children = parse_mapped_source(&nested, options)
-                .into_iter()
-                .filter(|block| !matches!(block, BlockNode::Paragraph(p) if p.children.is_empty()))
-                .collect();
+            let children = item_body(deferred, items.len(), nested, None, true);
             items.push(ListItem {
                 attrs: item_attrs,
                 checked: marker.checked,
@@ -8853,7 +9218,7 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> Box<BlockNode> {
             if continuation_source_loosens(&stream.source) {
                 tight = false;
             }
-            let children = parse_mapped_source(&stream, options);
+            let children = item_body(deferred, items.len(), stream, None, false);
             items.push(ListItem {
                 attrs: item_attrs,
                 checked: marker.checked,
@@ -9080,9 +9445,23 @@ fn parse_list(cur: &mut LineCursor, options: &Options<'_>) -> Box<BlockNode> {
     if pending_attrs.is_some() {
         note_unattached_block_attrs(pending_attrs_pos);
     }
+    // Over the blocks the items ALREADY hold - a lead paragraph, and anything a
+    // caller that resolved its chunks in place put there. The chunks still on
+    // the worklist widen their item when they land (`append_item_children`).
     widen_items_over_children(&mut items);
-    let mut list_pos =
-        span_of(cur, span_start, cur.pos, options).or_else(|| span_across_items(&items));
+    let cursor_span = span_of(cur, span_start, cur.pos, options);
+    // WHICH SPELLING ANSWERED decides whether the list's own end still moves.
+    // The cursor's span already covers every line the items sit on, so a chunk
+    // landing later cannot push past it; `span_across_items` reads the LAST
+    // item's end, which a chunk landing later does move. The chunks were
+    // pushed before this was known, so they are told now.
+    let from_items = cursor_span.is_none();
+    let mut list_pos = cursor_span.or_else(|| span_across_items(&items));
+    if from_items {
+        for body in &mut deferred[deferred_start..] {
+            body.widen_list = true;
+        }
+    }
     if base_indent > 0 {
         if let Some(pos) = &mut list_pos {
             pos.start_column = pos.start_column.saturating_sub(base_indent);
@@ -13053,7 +13432,14 @@ fn boxed_container_node(
 fn parse_container(cur: &mut LineCursor, options: &Options<'_>) -> Box<BlockNode> {
     let (node, body) = open_container(cur, options);
     let mut out = vec![*node];
-    resolve_pending_containers(&mut out, vec![PendingContainer { index: 0, body }], options);
+    resolve_pending_bodies(
+        &mut out,
+        vec![PendingBody {
+            index: 0,
+            body: Body::Colon(body),
+        }],
+        options,
+    );
     Box::new(out.pop().expect("the node the worklist just filled in"))
 }
 

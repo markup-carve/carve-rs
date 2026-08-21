@@ -24,9 +24,9 @@ const SHAPE: &str = "CARVE_STACK_FLOOR_SHAPE";
 /// cost the same: at the point it was filed containers needed 768KiB, block
 /// quotes ~768KiB and lists ~1024KiB, and after markup-carve/carve-rs#1177
 /// halved the frames they were 384 / 256 / 768. So a floor asserted on
-/// containers alone says nothing about the shape that was ALWAYS the tallest,
-/// and `parse_list` - the one the ticket parks as a restructure rather than an
-/// extraction - was the shape nothing watched.
+/// containers alone says nothing about the shape that was ALWAYS the tallest -
+/// and lists, the shape nothing watched, are exactly where the restructure that
+/// closed markup-carve/carve-rs#1165 had to happen.
 ///
 /// THE INLINE AXIS IS NOT HERE, and that is a measurement rather than an
 /// omission. markup-carve/carve-rs#1165 names inline nesting as the second axis,
@@ -43,9 +43,10 @@ fn ladder(depth: usize) -> String {
         // on one line rather than a stack of openers.
         "quote" => format!("{}deep\n", "> ".repeat(depth)),
         // Two spaces a level, which is what `list_indent_model_a` reads as a
-        // sub-list. `parse_list` owns the item loop and stays on the stack
-        // while the parser descends into an item's content, which is the whole
-        // reason extraction did not move this number.
+        // sub-list. `parse_list` used to own the item loop AND stay on the
+        // stack while the parser descended into an item's content, which is
+        // why extraction could not move this number and a worklist could
+        // (markup-carve/carve-rs#1165).
         "list" => {
             let mut out = String::new();
             for level in 0..depth {
@@ -233,27 +234,34 @@ fn where_the_stack_goes() {
         "a 16KiB stack parsed a 200-level document - the probe is not running the case"
     );
 
-    for case in [
-        "parse",
-        "parse+drop",
-        "parse+positions",
-        "parse+to_json",
-        "to_html",
-    ] {
-        let mut smallest = None;
-        for kib in [
-            8192usize, 4096, 2048, 1536, 1280, 1024, 960, 896, 832, 768, 704, 640, 576, 512, 384,
-            256, 128, 64,
+    // EVERY CASE ON EVERY SHAPE, because the shapes do not cost the same and
+    // this table read the CONTAINER alone. That is the cheapest of the three,
+    // so it could not show a change to the tallest: markup-carve/carve-rs#1165
+    // took the list ladder's `parse` from 768KiB to 64KiB and this table, as it
+    // stood, printed the same five numbers before and after.
+    for shape in ["container", "quote", "list"] {
+        for case in [
+            "parse",
+            "parse+drop",
+            "parse+positions",
+            "parse+to_json",
+            "to_html",
         ] {
-            if fits(case, kib) {
-                smallest = Some(kib);
-            } else {
-                break;
+            let mut smallest = None;
+            for kib in [
+                8192usize, 4096, 2048, 1536, 1280, 1024, 960, 896, 832, 768, 704, 640, 576, 512,
+                384, 256, 128, 64, 32, 16,
+            ] {
+                if fits_shaped(case, kib, CAP, shape) {
+                    smallest = Some(kib);
+                } else {
+                    break;
+                }
             }
-        }
-        match smallest {
-            Some(kib) => println!("{case:<14} fits in {kib}KiB"),
-            None => println!("{case:<14} needs more than 8192KiB"),
+            match smallest {
+                Some(kib) => println!("{shape:<10} {case:<14} fits in {kib}KiB"),
+                None => println!("{shape:<10} {case:<14} needs more than 8192KiB"),
+            }
         }
     }
 }
@@ -266,22 +274,23 @@ fn where_the_stack_goes() {
 /// | shape | `parse` rel | ceiling | `parse` dbg | ceiling |
 /// | --- | --- | --- | --- | --- |
 /// | container | 64KiB | 96KiB | 256KiB | 512KiB |
-/// | quote | 320KiB | 512KiB | 4096KiB | 6144KiB |
-/// | list | 768KiB | 1024KiB | 8192KiB | 12288KiB |
+/// | quote | 384KiB | 512KiB | 4096KiB | 6144KiB |
+/// | list | 64KiB | 96KiB | 256KiB | 512KiB |
 ///
-/// LISTS ARE THE TALLEST BY A FACTOR OF SIX, and until now nothing asserted
-/// them at all: every number in this file was a colon container, which
-/// markup-carve/carve-rs#1185 made cheap. `parse_list` owns the item loop and
-/// stays on the stack while the parser descends into an item's content, so the
-/// three extraction attempts recorded on markup-carve/carve-rs#1165 could not
-/// move it - one of them made the machine pay MORE, because the extracted
-/// branch brought its own frame and both were live on the recursive path. What
-/// remains there is a restructure, and it is parked with its own measurements.
+/// THE LIST NUMBERS ARE WHAT THIS RATCHET WAS BUILT FOR. When it was written
+/// they were 768KiB release and 8192KiB debug - six times the container, and
+/// in debug the whole of a default main-thread stack - because `parse_list`
+/// owned its item loop and stayed on the stack while the parser descended into
+/// an item's content. The three extraction attempts recorded on
+/// markup-carve/carve-rs#1165 could not move that, and one made the machine pay
+/// MORE. The restructure they pointed at is what landed: every item chunk is
+/// collected and parsed from a worklist, and the shape now costs what a colon
+/// container costs.
 ///
-/// This is the guard that has to exist either way: 768KiB release / 8192KiB
-/// debug is the number that restructure would be judged against, and a number
-/// nobody asserts is a number that drifts - which is exactly the shape
-/// carve-wasm#48 hit on an unchanged commit.
+/// The ceilings come DOWN with the floor, which is the whole discipline of a
+/// ratchet - a number nobody asserts is a number that drifts, and that is what
+/// carve-wasm#48 hit on an unchanged commit. Raising one is a regression and
+/// needs saying so out loud.
 #[test]
 fn the_floor_for_every_nesting_shape_does_not_regress() {
     let debug = cfg!(debug_assertions);
@@ -297,7 +306,7 @@ fn the_floor_for_every_nesting_shape_does_not_regress() {
     for (shape, release_ceiling, debug_ceiling) in [
         ("container", 96, 512),
         ("quote", 512, 6144),
-        ("list", 1024, 12288),
+        ("list", 96, 512),
     ] {
         let ceiling = if debug {
             debug_ceiling
@@ -312,31 +321,48 @@ fn the_floor_for_every_nesting_shape_does_not_regress() {
     }
 }
 
-/// `to_html` OVER A SOURCE DOES NOT DESCEND THE WAY `parse` DOES, and on the
-/// tallest shape that is an EIGHTFOLD difference rather than a detail.
+/// WHAT THE FAST PATH SAVES IS THE RENDERER'S DESCENT NOW, not the parser's.
 ///
-/// Measured, release, 200-level list: `to_html` fits 96KiB where
-/// `parse` and `parse+render` both need 768KiB. The typed layout fast path
-/// answers that document without `parse_list`, so the walk that sets this
-/// engine's stack floor is reachable through `parse` / `parseJson` and NOT
-/// through `toHtml`. Worth asserting because it decides which entry point a
-/// wasm host has to worry about - carve-wasm#48 crashed on both, and only one
-/// of them is still the expensive one.
+/// This test was written when `parse` over a 200-level list needed 768KiB and
+/// `to_html` over the same source answered it in 96KiB, because the typed
+/// layout fast path never called `parse_list`. That gap is gone on the parse
+/// side: the item worklist (markup-carve/carve-rs#1165) puts `parse` at 64KiB,
+/// which is CHEAPER than `to_html` on the same document.
+///
+/// What the fast path still skips is the way out. `parse+render` walks the tree
+/// with the block renderer, so the difference this asserts is the RENDERER's
+/// recursion now, and that is where the next round of this work would go.
+///
+/// IT IS MEASURED AS A COMPARISON, not against a fixed size, because a fixed
+/// size describes the machine that chose it. The earlier spelling asserted that
+/// `parse+render` did NOT fit 384KiB in debug; that held here at 1536KiB and
+/// failed on a GitHub runner, where the same document fit - which said nothing
+/// about the fast path and everything about the runner. Two floors compared
+/// against each other travel.
 #[test]
 fn the_html_fast_path_is_cheaper_than_the_parse_it_replaces() {
-    let cheap = if cfg!(debug_assertions) { 384 } else { 128 };
+    // COARSE ON PURPOSE: every rung is a child process, and the gap being
+    // asserted is a multiple rather than a step.
+    fn floor_for(case: &str) -> Option<usize> {
+        let mut smallest = None;
+        for kib in [4096usize, 2048, 1024, 512, 256, 128, 64, 32] {
+            if fits_shaped(case, kib, CAP, "list") {
+                smallest = Some(kib);
+            } else {
+                break;
+            }
+        }
+        smallest
+    }
+    let fast =
+        floor_for("to_html").expect("to_html over a deep list fits SOME stack at or under 4096KiB");
+    let full = floor_for("parse+render")
+        .expect("parse+render over a deep list fits SOME stack at or under 4096KiB");
     assert!(
-        fits_shaped("to_html", cheap, CAP, "list"),
-        "to_html over a {CAP}-level list no longer fits {cheap}KiB - the typed layout \
-         fast path stopped answering it, and the floor is now `parse`'s"
-    );
-    // THE PAIR, or the assertion above would also pass on a build where every
-    // path had become cheap - which would be good news, and would still mean
-    // this test had stopped measuring the difference it is named for.
-    assert!(
-        !fits_shaped("parse+render", cheap, CAP, "list"),
-        "parsing a {CAP}-level list now fits {cheap}KiB too, so there is no fast-path \
-         difference left to assert: re-measure and rewrite this test"
+        fast < full,
+        "to_html over a {CAP}-level list floors at {fast}KiB and parsing then rendering \
+         the same document floors at {full}KiB, so there is no fast-path difference left \
+         to assert: re-measure and rewrite this test"
     );
 }
 
