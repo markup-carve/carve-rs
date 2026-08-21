@@ -92,13 +92,14 @@ const DECLARED_UNIMPLEMENTED: &[(&str, &str, Option<&str>)] = &[];
 /// pin has caught up on fails and is deleted in the commit that moves the pin.
 const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[(
     "28-tabs-panel-title",
-    "markup-carve/carve#1468 names the tab set as a whole, so the wrapper gained \
-role=group and a name; the pinned corpus predates it. markup-carve/carve#1477 \
-updates the fixture, and this entry goes in the commit that moves the pin.",
+    "markup-carve/carve#1468 names the tab set as a whole and extensions §13.2 \
+names each css-mode PANEL after its own tab; the pinned corpus predates both. \
+markup-carve/carve#1477 updates the fixture, and this entry goes in the commit \
+that moves the pin.",
     r#"<div class="tabs" role="group" aria-label="Tabs">
 <input type="radio" name="tabset-1" id="tabset-1-tab-1" class="tabs-radio" checked>
 <label for="tabset-1-tab-1" class="tabs-label">First</label>
-<div class="tabs-panel">
+<div class="tabs-panel" role="group" aria-label="First">
 <p class="admonition-title">Inner <strong>Title</strong></p>
 <p>Content one.</p>
 </div>

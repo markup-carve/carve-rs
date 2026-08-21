@@ -22,6 +22,7 @@ use std::cell::Cell;
 
 use crate::ast::{AttrSlot, Attrs, BlockExtension, BlockNode, CodeBlock, Document};
 use crate::extension::{BeforeRenderContext, CarveExtension, RenderContext};
+use crate::extensions::tabs::TabsMode;
 use crate::render::render_attrs;
 
 /// Sentinel name for the rewritten carrier node. The profile filter still
@@ -32,6 +33,21 @@ pub(crate) const CARRIER: &str = "carve-code-group";
 /// CSS class names and the id prefix the rendered markup uses.
 #[derive(Debug, Clone)]
 pub struct CodeGroupOptions {
+    /// `Css` (default) or `Aria`, the same two-valued option Tabs carries.
+    ///
+    /// THE SAME TYPE, not a copy of it: extensions §13.1 states one `mode`
+    /// option with one vocabulary binding both constructs, and "two constructs
+    /// of the same shape do not get different accessibility ceilings because
+    /// one of them was written second". Two identical enums would be two places
+    /// for that vocabulary to drift.
+    ///
+    /// `Css` is the default and an implementation MUST NOT ship `Aria` as one.
+    /// That is §2.5 rather than compatibility: `Aria` reveals with `hidden`, so
+    /// a page that registers it and ships no script loses every panel but the
+    /// first, while `Css` with no stylesheet at all shows every panel. In Rust
+    /// an unknown value is rejected by the type, which is what §13.1 asks of a
+    /// host that spells the mode as a string.
+    pub mode: TabsMode,
     /// Class on the wrapper. Default `code-group`.
     pub wrapper_class: String,
     /// Class on each code panel. Default `code-group-panel`.
@@ -54,6 +70,7 @@ impl Default for CodeGroupOptions {
     fn default() -> Self {
         Self {
             wrapper_class: "code-group".to_string(),
+            mode: TabsMode::Css,
             panel_class: "code-group-panel".to_string(),
             label_class: "code-group-label".to_string(),
             radio_class: "code-group-radio".to_string(),
@@ -63,7 +80,14 @@ impl Default for CodeGroupOptions {
     }
 }
 
-/// Render `::: code-group` containers as radio-driven tabbed code panels.
+/// Render `::: code-group` containers as tabbed code panels.
+///
+/// Two modes, the same two Tabs carries (extensions §13.1). `Css` is the
+/// default: a radio per panel and a sibling `<label for=…>`, revealed by a
+/// stylesheet, so with no stylesheet at all every panel is visible. `Aria`
+/// emits `role="tablist"` with buttons and `role="tabpanel"` panels and hides
+/// every unselected one, which needs a client script - which is exactly why it
+/// is not the default: §2.5 says content is never dropped, only interaction.
 ///
 /// A group is either a `::: code-group` typed div, which parses to an
 /// admonition, or any div carrying the `code-group` class. Each fenced code
@@ -75,8 +99,14 @@ impl Default for CodeGroupOptions {
 /// is what carve-js and carve-php do - the class alone is not a reason to
 /// build an empty tab strip.
 ///
-/// In static mode there are no radios: each panel becomes a `<section>` headed
-/// by its label, so a reader offline can still tell the panels apart.
+/// In static mode there are no radios and neither mode applies: each panel
+/// becomes a `<section>` headed by its label, so a reader offline can still
+/// tell the panels apart.
+///
+/// A `Css` panel carries `role="group"` and its own label as an `aria-label`
+/// (§13.2) - nothing else binds it to the control that reveals it. An `Aria`
+/// panel takes neither: it is bound by `aria-labelledby` already, and a second
+/// accessible name would leave which one applies undefined (§13.3).
 #[derive(Debug, Default)]
 pub struct CodeGroup {
     opts: CodeGroupOptions,
@@ -145,7 +175,11 @@ impl CarveExtension for CodeGroup {
         let level = ctx.level();
         let pad = ctx.indent(level);
         let inner_pad = ctx.indent(level + 1);
-        let attrs = self.wrapper_attrs(node.attrs.as_ref(), ctx);
+        let role = match self.opts.mode {
+            TabsMode::Css => "group",
+            TabsMode::Aria => "tablist",
+        };
+        let attrs = self.wrapper_attrs(node.attrs.as_ref(), role, ctx);
 
         if ctx.is_static() {
             let mut html = format!("{pad}<div{}>\n", render_attrs(&attrs));
@@ -180,37 +214,10 @@ impl CarveExtension for CodeGroup {
             self.opts.id_prefix,
             self.group_counter.get()
         ));
-        let mut html = format!("{pad}<div{}>\n", render_attrs(&attrs));
-
-        for (index, item) in items.iter().enumerate() {
-            let input_id = ctx.unique_id(&format!("{group_id}-tab-{}", index + 1));
-            html.push_str(&format!(
-                "{inner_pad}<input type=\"radio\" name=\"{}\" id=\"{}\" class=\"{}\"{}>\n",
-                ctx.escape_attr(&group_id),
-                ctx.escape_attr(&input_id),
-                ctx.escape_attr(&self.opts.radio_class),
-                if item.selected { " checked" } else { "" },
-            ));
-            html.push_str(&format!(
-                "{inner_pad}<label for=\"{}\" class=\"{}\">{}</label>\n",
-                ctx.escape_attr(&input_id),
-                ctx.escape_attr(&self.opts.label_class),
-                ctx.escape_html(&item.label),
-            ));
+        match self.opts.mode {
+            TabsMode::Css => Some(self.render_css(&attrs, &items, &group_id, ctx)),
+            TabsMode::Aria => Some(self.render_aria(&attrs, &items, &group_id, ctx)),
         }
-
-        for item in &items {
-            html.push_str(&format!(
-                "{inner_pad}<div class=\"{}\">",
-                ctx.escape_attr(&self.opts.panel_class),
-            ));
-            html.push_str(&self.render_code(item, ctx));
-            html.push_str("</div>\n");
-        }
-
-        html.push_str(&format!("{pad}</div>"));
-
-        Some(html)
     }
 }
 
@@ -218,7 +225,12 @@ impl CodeGroup {
     /// Wrapper attributes: the wrapper class first, then the author's other
     /// classes in order, minus the structural `code-group` that selected this
     /// renderer in the first place.
-    fn wrapper_attrs(&self, source: Option<&Attrs>, ctx: &RenderContext<'_>) -> Option<Attrs> {
+    fn wrapper_attrs(
+        &self,
+        source: Option<&Attrs>,
+        role: &str,
+        ctx: &RenderContext<'_>,
+    ) -> Option<Attrs> {
         let mut attrs = source.cloned().unwrap_or_default();
         let mut classes = vec![self.opts.wrapper_class.clone()];
         for class in &attrs.classes {
@@ -237,9 +249,12 @@ impl CodeGroup {
             source.is_some_and(|a| a.key_values.keys().any(|k| k.eq_ignore_ascii_case(name)))
         };
         if !authored("role") {
+            // `group` in `css` mode, `tablist` in `aria` - the same split
+            // `tabs.rs` makes, for the same reason: the CSS mode has no
+            // tab/panel roles to associate, so `group` is all it can claim.
             attrs
                 .key_values
-                .insert("role".to_string(), "group".to_string());
+                .insert("role".to_string(), role.to_string());
             crate::extension::record_attr_order(&mut attrs, "role");
         }
         let group_label = self
@@ -255,6 +270,127 @@ impl CodeGroup {
         }
 
         Some(attrs)
+    }
+
+    /// `css` mode: a radio per panel plus a sibling `<label for=…>`, revealed
+    /// by a stylesheet. No script, and with no stylesheet at all every panel is
+    /// visible - which is why extensions §13.1 makes this the default.
+    fn render_css(
+        &self,
+        attrs: &Option<Attrs>,
+        items: &[GroupItem<'_>],
+        group_id: &str,
+        ctx: &RenderContext<'_>,
+    ) -> String {
+        let level = ctx.level();
+        let pad = ctx.indent(level);
+        let inner_pad = ctx.indent(level + 1);
+        let mut html = format!("{pad}<div{}>\n", render_attrs(attrs));
+
+        for (index, item) in items.iter().enumerate() {
+            let input_id = ctx.unique_id(&format!("{group_id}-tab-{}", index + 1));
+            html.push_str(&format!(
+                "{inner_pad}<input type=\"radio\" name=\"{}\" id=\"{}\" class=\"{}\"{}>\n",
+                ctx.escape_attr(group_id),
+                ctx.escape_attr(&input_id),
+                ctx.escape_attr(&self.opts.radio_class),
+                if item.selected { " checked" } else { "" },
+            ));
+            html.push_str(&format!(
+                "{inner_pad}<label for=\"{}\" class=\"{}\">{}</label>\n",
+                ctx.escape_attr(&input_id),
+                ctx.escape_attr(&self.opts.label_class),
+                ctx.escape_html(&item.label),
+            ));
+        }
+
+        // THE PANEL CARRIES ITS OWN LABEL (extensions §13.2), keyed on the tab
+        // name where one was written and the language word otherwise - which is
+        // already what `item.label` resolves to. Same reasoning as Tabs:
+        // `role="group"` rather than `tabpanel` because a radio reveals it, no
+        // `<section>` because one landmark per panel is N per group, and no
+        // `labels` key because the string is DERIVED from the document.
+        for item in items {
+            html.push_str(&format!(
+                "{inner_pad}<div class=\"{}\" role=\"group\" aria-label=\"{}\">",
+                ctx.escape_attr(&self.opts.panel_class),
+                ctx.escape_attr(&item.label),
+            ));
+            html.push_str(&self.render_code(item, ctx));
+            html.push_str("</div>\n");
+        }
+
+        html.push_str(&format!("{pad}</div>"));
+
+        html
+    }
+
+    /// `aria` mode: `role="tablist"` with buttons, `role="tabpanel"` panels
+    /// bound by `aria-labelledby`, and `hidden` on every panel but the selected
+    /// one. Needs a client script, which is why it is not the default.
+    ///
+    /// A PANEL HERE TAKES NEITHER `role="group"` NOR A NAME (§13.3): the
+    /// association already exists, and naming it as well would give one element
+    /// two accessible names and pull it out of the `tablist` relationship that
+    /// is the only reason to be in this mode.
+    fn render_aria(
+        &self,
+        attrs: &Option<Attrs>,
+        items: &[GroupItem<'_>],
+        group_id: &str,
+        ctx: &RenderContext<'_>,
+    ) -> String {
+        let level = ctx.level();
+        let pad = ctx.indent(level);
+        let inner_pad = ctx.indent(level + 1);
+
+        // Both ids per panel are computed ONCE and reused by the two loops, so
+        // a bumped generated id keeps the aria-controls / aria-labelledby
+        // wiring pointing at the right element. `tabs.rs` says the same.
+        let pairs: Vec<(String, String)> = (0..items.len())
+            .map(|index| {
+                (
+                    ctx.unique_id(&format!("{group_id}-tab-{}", index + 1)),
+                    ctx.unique_id(&format!("{group_id}-panel-{}", index + 1)),
+                )
+            })
+            .collect();
+
+        let mut html = format!("{pad}<div{}>\n", render_attrs(attrs));
+
+        for (item, (tab_id, panel_id)) in items.iter().zip(&pairs) {
+            html.push_str(&format!(
+                "{inner_pad}<button role=\"tab\" id=\"{}\" aria-selected=\"{}\" \
+                 aria-controls=\"{}\" class=\"{}\"{}>{}</button>\n",
+                ctx.escape_attr(tab_id),
+                if item.selected { "true" } else { "false" },
+                ctx.escape_attr(panel_id),
+                ctx.escape_attr(&self.opts.label_class),
+                if item.selected {
+                    ""
+                } else {
+                    " tabindex=\"-1\""
+                },
+                ctx.escape_html(&item.label),
+            ));
+        }
+
+        for (item, (tab_id, panel_id)) in items.iter().zip(&pairs) {
+            html.push_str(&format!(
+                "{inner_pad}<div role=\"tabpanel\" id=\"{}\" aria-labelledby=\"{}\" \
+                 class=\"{}\"{}>",
+                ctx.escape_attr(panel_id),
+                ctx.escape_attr(tab_id),
+                ctx.escape_attr(&self.opts.panel_class),
+                if item.selected { "" } else { " hidden" },
+            ));
+            html.push_str(&self.render_code(item, ctx));
+            html.push_str("</div>\n");
+        }
+
+        html.push_str(&format!("{pad}</div>"));
+
+        html
     }
 
     fn render_code(&self, item: &GroupItem<'_>, ctx: &RenderContext<'_>) -> String {
@@ -413,7 +549,85 @@ mod tests {
         crate::to_html_with_options(source, &opts)
     }
 
+    fn aria_html(source: &str) -> String {
+        let ext = CodeGroup::with_options(CodeGroupOptions {
+            mode: TabsMode::Aria,
+            ..CodeGroupOptions::default()
+        });
+        let opts = Options::new().with_extension(&ext);
+        crate::to_html_with_options(source, &opts)
+    }
+
     const TWO_PANELS: &str = "::: code-group\n``` js\nlet a = 1\n```\n\n``` php\n$a = 1;\n```\n:::";
+
+    /// A `css` panel takes its own label (extensions §13.2), keyed on the tab
+    /// name where one was written and the LANGUAGE WORD otherwise.
+    #[test]
+    fn a_css_panel_is_named_after_its_own_label() {
+        let out = html(TWO_PANELS);
+        assert!(
+            out.contains("<div class=\"code-group-panel\" role=\"group\" aria-label=\"js\">"),
+            "{out}"
+        );
+        assert!(
+            out.contains("<div class=\"code-group-panel\" role=\"group\" aria-label=\"php\">"),
+            "{out}"
+        );
+
+        // An authored `[label]` wins over the language word, and the panel
+        // follows the tab rather than carrying a name of its own.
+        let labelled = html("::: code-group\n``` js [Node]\nlet a = 1\n```\n:::");
+        assert!(labelled.contains("aria-label=\"Node\">"), "{labelled}");
+        assert!(!labelled.contains("aria-label=\"js\">"), "{labelled}");
+    }
+
+    /// The same escape split Tabs has: `&quot;` in the attribute, a bare quote
+    /// in the `<label>` element.
+    #[test]
+    fn a_panel_name_is_escaped_for_an_attribute() {
+        let out = html("::: code-group\n``` js [R&D \"core\" <x>]\nlet a = 1\n```\n:::");
+        assert!(
+            out.contains("aria-label=\"R&amp;D &quot;core&quot; &lt;x&gt;\""),
+            "{out}"
+        );
+    }
+
+    /// `aria` mode mirrors the Tabs one, and its panel takes NEITHER
+    /// `role="group"` nor a name (§13.3) - it is bound already.
+    #[test]
+    fn aria_mode_binds_its_panels_rather_than_naming_them() {
+        let out = aria_html(TWO_PANELS);
+        assert!(out.contains("role=\"tablist\""), "{out}");
+        assert_eq!(out.matches("role=\"tab\"").count(), 2, "{out}");
+        assert_eq!(out.matches("role=\"tabpanel\"").count(), 2, "{out}");
+        assert!(out.contains("aria-labelledby="), "{out}");
+        // Exactly one panel is hidden: the reveal §13.1 says needs a script.
+        assert_eq!(out.matches(" hidden>").count(), 1, "{out}");
+        assert!(!out.contains("type=\"radio\""), "{out}");
+        for panel in out.split("<div role=\"tabpanel\"").skip(1) {
+            let opener = panel.split('>').next().unwrap_or_default();
+            assert!(!opener.contains("role=\"group\""), "{out}");
+            assert!(!opener.contains("aria-label="), "{out}");
+        }
+    }
+
+    /// `css` IS THE DEFAULT (§13.1 on top of §2.5): `aria` reveals with
+    /// `hidden`, so registering it without a script loses every panel but the
+    /// first, while `css` with no stylesheet shows all of them.
+    #[test]
+    fn css_is_the_default_mode() {
+        assert_eq!(CodeGroupOptions::default().mode, TabsMode::Css);
+        assert!(
+            !html(TWO_PANELS).contains(" hidden"),
+            "{}",
+            html(TWO_PANELS)
+        );
+        assert!(
+            aria_html(TWO_PANELS).contains("hidden"),
+            "{}",
+            aria_html(TWO_PANELS)
+        );
+    }
 
     #[test]
     fn a_typed_div_becomes_a_tab_strip() {
