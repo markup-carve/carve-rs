@@ -2,6 +2,7 @@
 
 use crate::ast::*;
 use crate::escape::is_dangerous_attr_name;
+use crate::extension::{label_default, LABEL_CODE_GROUP, LABEL_INDEX_BACKREF, LABEL_TABS_GROUP};
 use crate::render::{semantic_value_target, EXTENDED_SEMANTIC_SPAN_ORDER};
 use crate::render_carve::is_attr_identifier;
 use crate::{render_carve, RenderCarveError};
@@ -748,12 +749,242 @@ impl<'a> Importer<'a> {
                 }
             }
         }
+        Self::drop_derived(handle, &mut out);
         if out == Attrs::default() {
             None
         } else {
             Some(out)
         }
     }
+
+    /// Remove the attributes whose value EQUALS what the renderer derives for
+    /// this element (PART 9 §16a, markup-carve/carve#1500, reconciled with
+    /// Extensions §1.5 in markup-carve/carve#1511).
+    ///
+    /// THE RULE IS VALUE-MATCHED, NOT NAME-MATCHED. Nothing in the HTML says
+    /// who wrote an attribute, so provenance cannot be the test and is not one.
+    /// Where the value equals the generated one the output is identical
+    /// whichever side wrote it, so the drop is a no-op for what a reader hears;
+    /// where it differs the attribute is KEPT, always. That second half is what
+    /// a blanket `aria-label` drop cost before (carve-rs#1060), and this rule
+    /// does not spend it again.
+    ///
+    /// WHAT IT BUYS is the only thing keeping a `labels` map alive across an
+    /// import. A kept `aria-label="Tabs"` is indistinguishable from an authored
+    /// one, and PART 9 §12's author-wins precedence then makes the imported
+    /// copy WIN on every later render: the same source re-rendered with
+    /// `tabsGroup` set to `Registerkarten` still says `Tabs`. The document has
+    /// been permanently unlocalized while no byte of today's output moved -
+    /// which is also why a round trip cannot detect this and the test asserts
+    /// ABSENCE instead.
+    ///
+    /// NOTHING IS DIAGNOSED. The renderer writes the value back, so this is not
+    /// a lossy decision and emits no `attribute-dropped` - the same reason the
+    /// `<figure>` and `<blockquote cite>` imports report nothing. A drop of the
+    /// OTHER kind, where the value could not be represented, is diagnosed above
+    /// as it always was.
+    ///
+    /// WHAT "WRITES IT BACK" MEANS HERE, measured rather than assumed. In this
+    /// engine none of these constructs survives an import AS a construct yet -
+    /// a fence comes back with no language, a tab set as bare divs
+    /// (markup-carve/carve-php#1543) - so today's re-render names none of them
+    /// again. Kept, the pair rides a plain `<pre><code>` and announces literal
+    /// source as an image called `mermaid`, or gives a `<div class="tabs">` with
+    /// no tabs in it a landmark named `Tabs`. The element is no longer the thing
+    /// the name describes, so keeping it preserves a FALSE name rather than an
+    /// accessible one. When the construct survives, the renderer names it again
+    /// and the drop becomes the exact no-op §16a describes. Whether it does is
+    /// also not decidable from here: it depends on which extensions the NEXT
+    /// render registers, the same blind spot §16a already states and accepts.
+    ///
+    /// IT CATCHES THE DEFAULT ONLY, which §16a states as an accepted limit:
+    /// HTML rendered with a German map carries a value no default equals, so it
+    /// is kept and laundered. An importer cannot know the render's
+    /// configuration and a non-default value is indistinguishable from an
+    /// authored one, so failing SAFE - keep - is the side to err on.
+    fn drop_derived(handle: &Handle, out: &mut Attrs) {
+        let Some(derived) = Self::derived_attributes(handle, &out.classes) else {
+            return;
+        };
+        for (name, values) in derived {
+            // The importer stores an attribute under the name html5ever hands
+            // it, and a Carve author may have written `ARIA-LABEL`; the
+            // renderer's own author-wins check is ASCII-case-insensitive, so
+            // the match here is too.
+            let Some(key) = out
+                .key_values
+                .keys()
+                .find(|held| held.eq_ignore_ascii_case(name))
+                .cloned()
+            else {
+                continue;
+            };
+            if values.iter().any(|value| out.key_values[&key] == *value) {
+                out.key_values.remove(&key);
+            }
+        }
+    }
+
+    /// What the renderer derives for this element, as an attribute name and the
+    /// values it can produce there. A name absent here is one the renderer
+    /// never writes for this element, so it is the author's and is kept
+    /// untouched.
+    ///
+    /// The classes are the ones the renderers write at their DEFAULT options:
+    /// an importer cannot see a host's `wrapper_class`, the same blind spot the
+    /// default-only label match already accepts.
+    ///
+    /// A TITLE PARAGRAPH'S COUNTER ID IS NOT HERE, and carve-js#1296 has it.
+    /// That family needs the `<p class="admonition-title" id="adm-N">` to
+    /// survive with its attributes, and in this engine it does not: `<aside>`
+    /// is not a block tag, so a canonical admonition is unwrapped and its title
+    /// paragraph flattened into the surrounding inline run. The id is gone
+    /// before any drop could reach it, so a rule for it here would be a check
+    /// that cannot fire. The unwrap is markup-carve/carve-php#1543; when it
+    /// lands, the family lands with it.
+    fn derived_attributes(
+        handle: &Handle,
+        classes: &[String],
+    ) -> Option<Vec<(&'static str, Vec<String>)>> {
+        let tag = Self::tag(handle)?;
+        let has = |name: &str| classes.iter().any(|class| class == name);
+
+        // A DIAGRAM FENCE names itself after its own class word, which is why
+        // Extensions §1.5 gives it no `labels` key - there is no fixed English
+        // string to translate, so the derived value is readable off the
+        // element. The role travels with the name and is derived whichever side
+        // wrote the name, so it goes even where an authored name stays.
+        //
+        // `<pre>` ONLY, though the json-mode fences wrap in a `<div>`. That
+        // mode puts the payload in a `<script>` the importer drops, so such a
+        // div never comes back as a fence for a renderer to name again - the
+        // drop would be a pure loss there, and a classed `<div role="img">` is
+        // far likelier to be some other producer's than a `<pre>` is.
+        if tag == "pre" && Self::attr(handle, "role").as_deref() == Some("img") {
+            let word = classes.first()?;
+            return Some(vec![
+                ("role", vec!["img".to_string()]),
+                ("aria-label", vec![word.clone()]),
+            ]);
+        }
+
+        // A TAB SET / CODE GROUP takes its name from a `labels` key, so unlike
+        // the fence an author may genuinely have written the same words. Only
+        // the documented English default is dropped; anything else is kept.
+        // Both roles the tab set derives go - `group` in the `css` mode and
+        // `tablist` in the `aria` one - because the element derives each.
+        if tag == "div" && has("tabs") {
+            return Some(vec![
+                ("role", vec!["group".to_string(), "tablist".to_string()]),
+                (
+                    "aria-label",
+                    vec![label_default(LABEL_TABS_GROUP).to_string()],
+                ),
+            ]);
+        }
+        if tag == "div" && has("code-group") {
+            return Some(vec![
+                ("role", vec!["group".to_string()]),
+                (
+                    "aria-label",
+                    vec![label_default(LABEL_CODE_GROUP).to_string()],
+                ),
+            ]);
+        }
+
+        // A `css`-MODE PANEL is named by its own tab's `[label]` - a string the
+        // author already wrote once, in the document, which is why §16a keeps
+        // it out of the map. The importer reads that same string off the
+        // control beside the panel rather than inventing it.
+        if tag == "div" && (has("tabs-panel") || has("code-group-panel")) {
+            let label_class = if has("tabs-panel") {
+                "tabs-label"
+            } else {
+                "code-group-label"
+            };
+            let mut derived = vec![("role", vec!["group".to_string()])];
+            if let Some(name) = Self::preceding_label_text(handle, label_class) {
+                derived.push(("aria-label", vec![name]));
+            }
+            return Some(derived);
+        }
+
+        // AN INDEX BACK-LINK is named `{indexBackref} {term}`, or with the
+        // occurrence ordinal appended for the kth of several. Both halves are
+        // on the page - the term is the entry's own text, the ordinal is the
+        // link's position among its siblings - so the whole value is
+        // reconstructable and the match stays exact.
+        if tag == "a" && has("index-backref") {
+            return Self::index_backref_names(handle).map(|names| vec![("aria-label", names)]);
+        }
+
+        None
+    }
+
+    /// The text of the tab control that names the panel `handle`: the nearest
+    /// preceding ELEMENT sibling, when it is the one carrying `label_class`.
+    /// Nearest-and-only, because a panel with no control before it - a fragment
+    /// cut mid-set - derives no name, and guessing one there would drop a label
+    /// nothing writes back.
+    ///
+    /// Read with [`Self::flat_text`], the explicit-stack walk, and not with the
+    /// recursive `text`: this runs off `attrs`, before the depth counter has
+    /// charged the subtree, and the importer's depth limit is a COUNTER a
+    /// caller may raise past what the native stack holds.
+    fn preceding_label_text(handle: &Handle, label_class: &str) -> Option<String> {
+        let parent = parent_handle(handle)?;
+        let siblings = parent.children.borrow();
+        let at = siblings.iter().position(|node| Rc::ptr_eq(node, handle))?;
+        for previous in siblings[..at].iter().rev() {
+            if Self::tag(previous).is_none() {
+                continue;
+            }
+            return has_class(previous, label_class).then(|| Self::flat_text(previous));
+        }
+        None
+    }
+
+    /// The names the index extension can derive for one back-link: the label
+    /// plus the entry's term, and the same with this link's occurrence ordinal.
+    /// Both spellings are accepted for a lone link because the extension's byte
+    /// budget can truncate a numbered run down to one, leaving `… 1` on the
+    /// survivor.
+    fn index_backref_names(handle: &Handle) -> Option<Vec<String>> {
+        let parent = parent_handle(handle)?;
+        let siblings = parent.children.borrow();
+        let is_backref = |node: &Handle| {
+            Self::tag(node).as_deref() == Some("a") && has_class(node, "index-backref")
+        };
+        let mut ordinal = 0;
+        let mut seen = 0;
+        for node in siblings.iter() {
+            if !is_backref(node) {
+                continue;
+            }
+            seen += 1;
+            if Rc::ptr_eq(node, handle) {
+                ordinal = seen;
+            }
+        }
+        if ordinal == 0 {
+            return None;
+        }
+        let term: String = siblings
+            .iter()
+            .filter(|node| !is_backref(node))
+            .map(Self::flat_text)
+            .collect();
+        let term = term.trim();
+        if term.is_empty() {
+            return None;
+        }
+        let label = label_default(LABEL_INDEX_BACKREF);
+        Some(vec![
+            format!("{label} {term}"),
+            format!("{label} {term} {ordinal}"),
+        ])
+    }
+
     /// The NAMES of the attributes `attrs` kept, for a report that says which
     /// ones were lost rather than that some were.
     fn attr_names(attrs: &Attrs) -> Vec<String> {
@@ -2824,7 +3055,7 @@ impl<'a> Importer<'a> {
                     .insert(node_key(&site), (site.clone(), label.clone()));
             }
 
-            if let Some(container) = footnote_parent(&definition.block) {
+            if let Some(container) = parent_handle(&definition.block) {
                 if seen.insert(node_key(&container)) {
                     containers.push(container);
                 }
@@ -2988,14 +3219,14 @@ fn resolve_footnote_definition_block(target: &Handle, used: &HashSet<String>) ->
         .map(|tag| FOOTNOTE_DEFINITION_BLOCKS.contains(&tag.as_str()))
         .unwrap_or(false)
     {
-        let parent = footnote_parent(&block)?;
+        let parent = parent_handle(&block)?;
         if !matches!(parent.data, NodeData::Element { .. }) {
             return None;
         }
         block = parent;
     }
 
-    if let Some(parent) = footnote_parent(&block) {
+    if let Some(parent) = parent_handle(&block) {
         let wraps = Importer::tag(&parent)
             .map(|tag| FOOTNOTE_WRAPPER_BLOCKS.contains(&tag.as_str()))
             .unwrap_or(false);
@@ -3156,12 +3387,12 @@ fn group_footnote_definitions(
 
     let mut containers: HashSet<usize> = HashSet::new();
     for group in &groups {
-        let mut ancestor = footnote_parent(&group.block);
+        let mut ancestor = parent_handle(&group.block);
         while let Some(node) = ancestor {
             if index_of.contains_key(&node_key(&node)) {
                 containers.insert(node_key(&node));
             }
-            ancestor = footnote_parent(&node);
+            ancestor = parent_handle(&node);
         }
     }
 
@@ -3277,11 +3508,19 @@ fn node_key(handle: &Handle) -> usize {
     Rc::as_ptr(handle) as usize
 }
 
+/// Whether an element carries `wanted` among its space-separated classes.
+fn has_class(node: &Handle, wanted: &str) -> bool {
+    Importer::attr(node, "class")
+        .unwrap_or_default()
+        .split_whitespace()
+        .any(|class| class == wanted)
+}
+
 /// The node's parent, restored into the cell it was read out of.
 ///
 /// `Cell` has no borrow, so the only way to look at a `Weak` inside one is to
 /// take it and put it back.
-fn footnote_parent(node: &Handle) -> Option<Handle> {
+fn parent_handle(node: &Handle) -> Option<Handle> {
     let weak = node.parent.take();
     let parent = weak.as_ref().and_then(|parent| parent.upgrade());
     node.parent.set(weak);
@@ -3289,18 +3528,18 @@ fn footnote_parent(node: &Handle) -> Option<Handle> {
 }
 
 fn footnote_contains(ancestor: &Handle, node: &Handle) -> bool {
-    let mut current = footnote_parent(node);
+    let mut current = parent_handle(node);
     while let Some(handle) = current {
         if Rc::ptr_eq(&handle, ancestor) {
             return true;
         }
-        current = footnote_parent(&handle);
+        current = parent_handle(&handle);
     }
     false
 }
 
 fn footnote_detach(node: &Handle) {
-    let Some(parent) = footnote_parent(node) else {
+    let Some(parent) = parent_handle(node) else {
         return;
     };
     let mut children = parent.children.borrow_mut();
@@ -3312,7 +3551,7 @@ fn footnote_detach(node: &Handle) {
 }
 
 fn footnote_previous_sibling(node: &Handle) -> Option<Handle> {
-    let parent = footnote_parent(node)?;
+    let parent = parent_handle(node)?;
     let children = parent.children.borrow();
     let index = children.iter().position(|child| Rc::ptr_eq(child, node))?;
     if index == 0 {
@@ -3351,7 +3590,7 @@ fn remove_footnote_separator(first: &Handle) {
             }
         }
 
-        let Some(parent) = footnote_parent(&node) else {
+        let Some(parent) = parent_handle(&node) else {
             return;
         };
         match Importer::tag(&parent).as_deref() {
@@ -3400,7 +3639,7 @@ fn strip_footnote_backlinks(block: &Handle, identities: &[String], fragments: &[
             continue;
         }
 
-        let parent = footnote_parent(&anchor);
+        let parent = parent_handle(&anchor);
         footnote_detach(&anchor);
         let Some(parent) = parent else { continue };
         if !matches!(
@@ -3432,7 +3671,7 @@ fn strip_footnote_backlinks(block: &Handle, identities: &[String], fragments: &[
 /// anything else - an element or non-blank text - keeps its content, and the
 /// reference binds inside it.
 fn footnote_reference_site(reference: &Handle) -> Handle {
-    let Some(parent) = footnote_parent(reference) else {
+    let Some(parent) = parent_handle(reference) else {
         return reference.clone();
     };
     if Importer::tag(&parent).as_deref() != Some("sup") {
@@ -3473,7 +3712,7 @@ fn prune_empty_footnote_container(node: &Handle) {
         if holds_content {
             return;
         }
-        let parent = footnote_parent(&handle);
+        let parent = parent_handle(&handle);
         footnote_detach(&handle);
         current = parent;
     }
