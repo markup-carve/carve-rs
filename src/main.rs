@@ -311,9 +311,12 @@ fn main() -> ExitCode {
                 options = options.with_positions(true);
                 carve::try_to_ansi_with_options(&source, &options)
             }
-            // `to_carve` takes no options, so no profile reaches this target at
-            // all - there is no violation here to surface. carve-rs#1191.
-            OutputFormat::Carve => Ok(carve::to_carve(&source)),
+            // The options-taking sibling. `to_carve` carries no `Options`, so
+            // the profile was never even asked about on this target: an
+            // over-cap document was re-serialized in full at exit 0, and a raw
+            // HTML block a `minimal` profile removes from every other output
+            // came straight back out (carve-rs#1191).
+            OutputFormat::Carve => carve::try_to_carve_with_options(&source, &options),
             OutputFormat::Json => {
                 options = options.with_positions(true);
                 carve::try_to_json_with_options(&source, &options)

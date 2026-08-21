@@ -201,8 +201,54 @@ pub fn to_ansi(source: &str) -> String {
 /// Parse a Carve source string and render canonical Carve source in one call.
 ///
 /// This formatter is intentionally parse-only: it does not run extension hooks,
-/// profile filtering, heading-id enrichment, or other render-time transforms.
+/// heading-id enrichment, or other render-time transforms. It also carries no
+/// [`Options`], so no profile reaches it; callers that need the profile honored
+/// on this target use [`try_to_carve_with_options`].
 pub fn to_carve(source: &str) -> String {
+    try_to_carve_with_options(source, &Options::default())
+        .expect("a default `Options` carries no profile, so no violation can be raised")
+}
+
+/// Parse, apply the feature-restriction profile, and render canonical Carve
+/// source. Enforces the profile's `max_length` on the source bytes before the
+/// parser walks them, exactly as [`try_to_html_with_options`] does, and returns
+/// a [`ProfileViolationError`] when the cap is exceeded or the profile's action
+/// is [`DisallowedAction::Error`] and a disallowed node is found.
+///
+/// The profile is honored here for the same reason it is honored on every other
+/// target: `--carve` parses and re-serializes a whole document, so a host that
+/// normalizes UNTRUSTED markup through it needs the cap that bounds that work,
+/// and it must not get back the raw HTML block a `minimal` profile removes from
+/// every other output. The ingest path already reached that answer -
+/// `prepare_document_for_render` filters before `render_carve` on `--from-json`,
+/// so leaving the parse path unfiltered made one target answer the same flags
+/// two different ways depending on how the document arrived (carve-rs#1191).
+///
+/// Like [`to_carve`] this stays parse-only in every other respect: no extension
+/// hooks, no heading-id enrichment.
+pub fn try_to_carve_with_options(
+    source: &str,
+    options: &Options<'_>,
+) -> Result<String, ProfileViolationError> {
+    // BEFORE the parse. `max_length` bounds untrusted input, so it has to be
+    // answered ahead of anything that walks that input - refusing after the
+    // parse means the work the cap exists to prevent has already been done.
+    // Same position, same message shape as `prepare_doc`.
+    if let Some(profile) = &options.profile {
+        let max_length = profile.max_length();
+        if max_length > 0 && source.len() > max_length {
+            return Err(ProfileViolationError {
+                violations: vec![ProfileViolation {
+                    node_type: "document".to_string(),
+                    reason: "max_length_exceeded".to_string(),
+                    reason_description: Some(format!(
+                        "Input exceeds the profile's maximum length of {max_length} bytes ({} given).",
+                        source.len()
+                    )),
+                }],
+            });
+        }
+    }
     // The SAME text the parser reads. `raw_frontmatter` scans for the block's
     // closing `---` line on the RAW string while `parse_for_carve` ran on a
     // normalized copy. On CRLF input the closer scan (`\n---\n`) missed, so `to_carve`
@@ -214,10 +260,22 @@ pub fn to_carve(source: &str) -> String {
     // BOM reached the same fall-through (carve-rs#732).
     let normalized = parse::normalize_source(source);
     let source = normalized.as_ref();
-    let (frontmatter, _) = raw_frontmatter(source);
+    let (mut frontmatter, _) = raw_frontmatter(source);
     let mut doc = parse::parse_for_carve(source);
     if frontmatter.is_some() {
         doc.frontmatter.clear();
+    }
+    if let Some(profile) = &options.profile {
+        let base_host = options.profile_base_host.as_deref();
+        doc = apply_profile_with_typography(doc, profile, base_host, options.smart_typography)?.doc;
+        // The raw block is held HERE, in a local, not in the tree - the writer
+        // reproduces the bytes the author wrote rather than rebuilding them
+        // from the parsed map. So the filter's own frontmatter strip cannot
+        // reach it, and a denied block would come back out verbatim with every
+        // `title:` / `author:` value the strip exists to remove.
+        if frontmatter.is_some() && !profile.is_type_allowed_on("frontmatter", true) {
+            frontmatter = None;
+        }
     }
     let rendered = render_carve(&doc)
         .expect("the parse cap sits below the render ceiling, so a parsed tree never reaches it");
@@ -236,11 +294,11 @@ pub fn to_carve(source: &str) -> String {
     } else {
         format!("{rendered}\n")
     };
-    match frontmatter {
+    Ok(match frontmatter {
         Some(frontmatter) if body.trim().is_empty() => format!("{frontmatter}\n"),
         Some(frontmatter) => format!("{frontmatter}\n\n{body}"),
         None => body,
-    }
+    })
 }
 
 fn raw_frontmatter(source: &str) -> (Option<String>, &str) {
@@ -511,4 +569,10 @@ pub fn to_plain_text_with_options(source: &str, options: &Options<'_>) -> String
 /// Infallible ANSI entry point. See [`to_html_with_options`].
 pub fn to_ansi_with_options(source: &str, options: &Options<'_>) -> String {
     try_to_ansi_with_options(source, options).unwrap_or_default()
+}
+
+/// Infallible Carve-writer entry point. See [`to_html_with_options`] for the
+/// error-action fallback behavior.
+pub fn to_carve_with_options(source: &str, options: &Options<'_>) -> String {
+    try_to_carve_with_options(source, options).unwrap_or_default()
 }

@@ -9,6 +9,15 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`--profile` reaches the `--carve` output target** (carve-rs#1191). `to_carve`
+  carried no `Options`, so neither the `max_length` cap nor the feature filter
+  was ever consulted there: an over-cap document was re-serialized in full at
+  exit 0, and a raw HTML block a `minimal` profile removes from every other
+  output came straight back out. The CLI now calls the new
+  `try_to_carve_with_options`, which refuses over the cap with the same
+  `max_length_exceeded` line the other targets print and filters the tree the
+  way `--from-json --carve` already did. `to_carve` is unchanged.
+
 - **The index back-link says where it goes** (markup-carve/carve#1469). A `↩`
   with no accessible name is announced as "leftwards arrow with hook", or
   skipped - and an index entry has one per occurrence, so a reader met a row of
