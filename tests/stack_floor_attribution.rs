@@ -265,7 +265,7 @@ fn where_the_stack_goes() {
 ///
 /// | shape | `parse` rel | ceiling | `parse` dbg | ceiling |
 /// | --- | --- | --- | --- | --- |
-/// | container | 128KiB | 192KiB | 256KiB | 512KiB |
+/// | container | 64KiB | 96KiB | 256KiB | 512KiB |
 /// | quote | 320KiB | 512KiB | 4096KiB | 6144KiB |
 /// | list | 768KiB | 1024KiB | 8192KiB | 12288KiB |
 ///
@@ -295,7 +295,7 @@ fn the_floor_for_every_nesting_shape_does_not_regress() {
         );
     }
     for (shape, release_ceiling, debug_ceiling) in [
-        ("container", 192, 512),
+        ("container", 96, 512),
         ("quote", 512, 6144),
         ("list", 1024, 12288),
     ] {
@@ -354,9 +354,9 @@ fn the_html_fast_path_is_cheaper_than_the_parse_it_replaces() {
 ///
 /// | case | release floor | ceiling | debug floor | ceiling |
 /// | --- | --- | --- | --- | --- |
-/// | `parse`, `parse+drop` | 128KiB | 192KiB | 256KiB | 512KiB |
+/// | `parse`, `parse+drop`, `parse+to_json` | 64KiB | 96KiB | 256KiB | 512KiB |
 /// | `parse+positions` | 128KiB | 192KiB | 384KiB | 512KiB |
-/// | `to_html` | 256KiB | 384KiB | 512KiB | 768KiB |
+/// | `to_html` | 256KiB | 384KiB | 640KiB | 768KiB |
 ///
 /// They are a RATCHET, not a target: when a change lowers the floor, lower
 /// these with it, and the drop is what the commit is for. Raising one is a
@@ -364,10 +364,16 @@ fn the_html_fast_path_is_cheaper_than_the_parse_it_replaces() {
 ///
 /// The parse numbers came down from 384KiB release / 1024KiB debug when the
 /// colon-container descent became a worklist (markup-carve/carve-rs#1165): the
-/// nesting the cap admits 200 of now costs heap rather than host stack. What is
-/// left growing with depth is not the parser - it is the ~20 self-recursive
-/// tree walks the parse runs afterwards, and, for `to_html`, the renderer's own
-/// descent, which is why that case now floors ABOVE the parse it renders.
+/// nesting the cap admits 200 of now costs heap rather than host stack. They
+/// HALVED again, 128KiB to 64KiB release, when the two post-parse walks that run
+/// on EVERY parse - `collect_explicit_ids` and `collect_heading_titles` - became
+/// worklists too (markup-carve/carve-rs#1186). That drop IS the attribution:
+/// those two owned half of what a level still cost, on a ladder with no heading
+/// and no caption in it, which they walked all 200 levels of anyway.
+///
+/// What is left growing with depth is the positions chain (`fill_offsets`,
+/// `apply_inline_offsets`) and, for `to_html`, the renderer's own descent -
+/// which is why that case still floors ABOVE the parse it renders.
 ///
 /// `parse+drop` is asserted beside `parse` because the AST frees through
 /// compiler-generated recursive drop glue. It STILL costs nothing extra - both
@@ -383,14 +389,28 @@ fn the_floor_at_the_nesting_cap_does_not_regress() {
         !fits("parse", 16),
         "a 16KiB stack parsed a {CAP}-level document - the probe is not running the case"
     );
-    let parse_ceiling = if debug { 512 } else { 192 };
-    for case in ["parse", "parse+drop", "parse+positions"] {
+    // TWO GROUPS ON THE PARSE SIDE NOW, because the positions chain is a
+    // SECOND descent and it did not come down with the first
+    // (carve-rs#1186). `fill_offsets` and `apply_inline_offsets` still walk a
+    // container's children, and `fill_offsets` reads an item's children AFTER
+    // recursing into them, so it wants the put-something-back worklist shape
+    // rather than the plain one - it is named as remaining work, not converted
+    // here. Keeping it under the same ceiling as `parse` would have hidden the
+    // halving below.
+    let parse_ceiling = if debug { 512 } else { 96 };
+    for case in ["parse", "parse+drop", "parse+to_json"] {
         assert!(
             fits(case, parse_ceiling),
             "{case} no longer fits a {parse_ceiling}KiB stack at the {CAP}-level cap; \
              the parser's descent got more expensive, or the cap moved"
         );
     }
+    let positions_ceiling = if debug { 512 } else { 192 };
+    assert!(
+        fits("parse+positions", positions_ceiling),
+        "parse+positions no longer fits a {positions_ceiling}KiB stack at the {CAP}-level \
+         cap; the positions chain's descent got more expensive, or the cap moved"
+    );
     // The RENDER walk, which the parse cases cannot see. It is the taller of
     // the two now, and it is one of the two entry points carve-wasm#48 crashed.
     let render_ceiling = if debug { 768 } else { 384 };

@@ -19507,8 +19507,27 @@ fn is_collapsed_reference(link: &Link) -> bool {
 /// explicit one already claims, and deciding that needs the whole document
 /// first, since the explicit id may appear after the heading that would
 /// collide with it (#335).
+/// A WORKLIST, not a descent (carve-rs#1186). This pass runs on EVERY parse and
+/// walks a container's children whether or not the document has a heading, so
+/// nesting depth cost host stack for a walk that visits nothing.
+///
+/// ORDER IS PRESERVED, which is what stops a worklist from being a rewrite of
+/// the rule as well as of the shape: the remainder of the current level is
+/// pushed BEFORE this block's children, so the children pop first and the visit
+/// stays pre-order document order. Sibling child slices are pushed in reverse
+/// for the same reason. `collect_explicit_ids` fills a set and would survive a
+/// reordering; `collect_heading_titles` below shares this shape and would NOT -
+/// its numbering and its "first occurrence wins" both read document order - so
+/// the two use the same spelling rather than one relying on being order-blind.
 fn collect_explicit_ids(blocks: &[BlockNode], out: &mut std::collections::BTreeSet<String>) {
-    for block in blocks {
+    let mut worklist: Vec<&[BlockNode]> = vec![blocks];
+    while let Some(level) = worklist.pop() {
+        let Some((block, rest)) = level.split_first() else {
+            continue;
+        };
+        if !rest.is_empty() {
+            worklist.push(rest);
+        }
         match block {
             BlockNode::Heading(h) => {
                 if let Some(id) = h.attrs.as_ref().and_then(|a| a.id.as_ref()) {
@@ -19521,18 +19540,18 @@ fn collect_explicit_ids(blocks: &[BlockNode], out: &mut std::collections::BTreeS
                 }
             }
             BlockNode::List(l) => {
-                for item in &l.items {
-                    collect_explicit_ids(&item.children, out);
+                for item in l.items.iter().rev() {
+                    worklist.push(&item.children);
                 }
             }
-            BlockNode::BlockQuote(b) => collect_explicit_ids(&b.children, out),
-            BlockNode::Admonition(a) => collect_explicit_ids(&a.children, out),
-            BlockNode::FigureGroup(g) => collect_explicit_ids(&g.children, out),
-            BlockNode::Div(d) => collect_explicit_ids(&d.children, out),
+            BlockNode::BlockQuote(b) => worklist.push(&b.children),
+            BlockNode::Admonition(a) => worklist.push(&a.children),
+            BlockNode::FigureGroup(g) => worklist.push(&g.children),
+            BlockNode::Div(d) => worklist.push(&d.children),
             BlockNode::DefinitionList(d) => {
-                for item in &d.items {
-                    for definition in &item.definitions {
-                        collect_explicit_ids(definition, out);
+                for item in d.items.iter().rev() {
+                    for definition in item.definitions.iter().rev() {
+                        worklist.push(definition);
                     }
                 }
             }
@@ -19565,6 +19584,16 @@ struct HeadingScan<'a> {
     collect_heading_refs: bool,
 }
 
+/// A WORKLIST, for the same reason and with the same order discipline as
+/// `collect_explicit_ids` above (carve-rs#1186). This one carries the
+/// `in_blockquote` flag on each queued level, because a block quote changes it
+/// for its subtree and nothing else does.
+///
+/// DOCUMENT ORDER IS LOAD-BEARING HERE, not incidental: `scan.counts` numbers a
+/// duplicate heading id by how many it has already seen, and `scan.by_text`
+/// resolves PART 11 R1's "the FIRST heading with that text" with an
+/// `or_insert`. A LIFO pop that reversed siblings would renumber every
+/// duplicate and hand R1 the last occurrence instead of the first.
 fn collect_heading_titles(
     blocks: &[BlockNode],
     scan: &mut HeadingScan<'_>,
@@ -19572,106 +19601,93 @@ fn collect_heading_titles(
     explicit_ids: &std::collections::BTreeSet<String>,
     in_blockquote: bool,
 ) {
-    for block in blocks {
-        match block {
-            BlockNode::Heading(h) => {
-                let title = plain_inlines_parse(&h.children);
-                let base = h
-                    .attrs
-                    .as_ref()
-                    .and_then(|attrs| attrs.id.clone())
-                    .unwrap_or_else(|| slugify_parse(&title, id_opts));
-                // Same numbering the renderer uses, INCLUDING the skip past an
-                // id an explicit `{#id}` already claims. Without it this index
-                // assigned `API-2` to a heading the renderer calls `API-3`, so a
-                // cross-reference resolved to the wrong heading - or, once the
-                // renderer was fixed, to none at all (#335).
-                let has_explicit = h.attrs.as_ref().is_some_and(|a| a.id.is_some());
-                let mut count = scan.counts.get(&base).copied().unwrap_or(0);
-                let id = loop {
-                    count += 1;
-                    let candidate = if count == 1 {
-                        base.clone()
-                    } else {
-                        format!("{base}-{count}")
+    let mut worklist: Vec<(&[BlockNode], bool)> = vec![(blocks, in_blockquote)];
+    while let Some((level, in_blockquote)) = worklist.pop() {
+        let Some((block, rest)) = level.split_first() else {
+            continue;
+        };
+        if !rest.is_empty() {
+            worklist.push((rest, in_blockquote));
+        }
+        {
+            match block {
+                BlockNode::Heading(h) => {
+                    let title = plain_inlines_parse(&h.children);
+                    let base = h
+                        .attrs
+                        .as_ref()
+                        .and_then(|attrs| attrs.id.clone())
+                        .unwrap_or_else(|| slugify_parse(&title, id_opts));
+                    // Same numbering the renderer uses, INCLUDING the skip past an
+                    // id an explicit `{#id}` already claims. Without it this index
+                    // assigned `API-2` to a heading the renderer calls `API-3`, so a
+                    // cross-reference resolved to the wrong heading - or, once the
+                    // renderer was fixed, to none at all (#335).
+                    let has_explicit = h.attrs.as_ref().is_some_and(|a| a.id.is_some());
+                    let mut count = scan.counts.get(&base).copied().unwrap_or(0);
+                    let id = loop {
+                        count += 1;
+                        let candidate = if count == 1 {
+                            base.clone()
+                        } else {
+                            format!("{base}-{count}")
+                        };
+                        if has_explicit || !explicit_ids.contains(&candidate) {
+                            break candidate;
+                        }
                     };
-                    if has_explicit || !explicit_ids.contains(&candidate) {
-                        break candidate;
+                    scan.counts.insert(base, count);
+                    if let Some(assigned) = scan.assigned.as_deref_mut() {
+                        assigned.push(id.clone());
                     }
-                };
-                scan.counts.insert(base, count);
-                if let Some(assigned) = scan.assigned.as_deref_mut() {
-                    assigned.push(id.clone());
-                }
-                if scan.collect_heading_refs && in_blockquote {
-                    scan.quoted.insert(id.clone());
-                } else if scan.collect_heading_refs {
-                    // First occurrence wins - R1 resolves to "the FIRST heading
-                    // with that text". This walk is in document order, so an
-                    // `or_insert` is that rule. A scan.quoted heading is not indexed
-                    // at all, so a later unquoted one with the same text still
-                    // wins rather than being shadowed by a declined entry.
-                    let text_key = normalize_heading_label(&title);
-                    if !text_key.is_empty() {
-                        scan.by_text.entry(text_key).or_insert_with(|| id.clone());
+                    if scan.collect_heading_refs && in_blockquote {
+                        scan.quoted.insert(id.clone());
+                    } else if scan.collect_heading_refs {
+                        // First occurrence wins - R1 resolves to "the FIRST heading
+                        // with that text". This walk is in document order, so an
+                        // `or_insert` is that rule. A scan.quoted heading is not indexed
+                        // at all, so a later unquoted one with the same text still
+                        // wins rather than being shadowed by a declined entry.
+                        let text_key = normalize_heading_label(&title);
+                        if !text_key.is_empty() {
+                            scan.by_text.entry(text_key).or_insert_with(|| id.clone());
+                        }
                     }
-                }
-                if scan.collect_crossrefs {
-                    scan.labels
-                        .insert(id.clone(), crossref_label_nodes(&h.children));
-                    scan.titles.insert(id, title);
-                } else if scan.collect_heading_refs {
-                    // `resolve_ref` returns both the id and its title even
-                    // though implicit references only consume the id today.
-                    scan.titles.insert(id, title);
-                }
-            }
-            BlockNode::List(l) => {
-                for item in &l.items {
-                    collect_heading_titles(
-                        &item.children,
-                        scan,
-                        id_opts,
-                        explicit_ids,
-                        in_blockquote,
-                    );
-                }
-            }
-            BlockNode::BlockQuote(b) => {
-                collect_heading_titles(&b.children, scan, id_opts, explicit_ids, true)
-            }
-            BlockNode::Admonition(a) => {
-                collect_heading_titles(&a.children, scan, id_opts, explicit_ids, in_blockquote)
-            }
-            BlockNode::FigureGroup(g) => {
-                collect_heading_titles(&g.children, scan, id_opts, explicit_ids, in_blockquote)
-            }
-            BlockNode::Div(d) => {
-                collect_heading_titles(&d.children, scan, id_opts, explicit_ids, in_blockquote)
-            }
-            BlockNode::DefinitionList(d) => {
-                for item in &d.items {
-                    for definition in &item.definitions {
-                        collect_heading_titles(
-                            definition,
-                            scan,
-                            id_opts,
-                            explicit_ids,
-                            in_blockquote,
-                        );
+                    if scan.collect_crossrefs {
+                        scan.labels
+                            .insert(id.clone(), crossref_label_nodes(&h.children));
+                        scan.titles.insert(id, title);
+                    } else if scan.collect_heading_refs {
+                        // `resolve_ref` returns both the id and its title even
+                        // though implicit references only consume the id today.
+                        scan.titles.insert(id, title);
                     }
                 }
-            }
-            BlockNode::Figure(f) => match &*f.target {
-                FigureTarget::BlockQuote(b) => {
-                    collect_heading_titles(&b.children, scan, id_opts, explicit_ids, true)
+                BlockNode::List(l) => {
+                    for item in l.items.iter().rev() {
+                        worklist.push((&item.children, in_blockquote));
+                    }
                 }
-                FigureTarget::Table(_)
-                | FigureTarget::Image(_)
-                | FigureTarget::CodeBlock(_)
-                | FigureTarget::Paragraph(_) => {}
-            },
-            _ => {}
+                BlockNode::BlockQuote(b) => worklist.push((&b.children, true)),
+                BlockNode::Admonition(a) => worklist.push((&a.children, in_blockquote)),
+                BlockNode::FigureGroup(g) => worklist.push((&g.children, in_blockquote)),
+                BlockNode::Div(d) => worklist.push((&d.children, in_blockquote)),
+                BlockNode::DefinitionList(d) => {
+                    for item in d.items.iter().rev() {
+                        for definition in item.definitions.iter().rev() {
+                            worklist.push((definition, in_blockquote));
+                        }
+                    }
+                }
+                BlockNode::Figure(f) => match &*f.target {
+                    FigureTarget::BlockQuote(b) => worklist.push((&b.children, true)),
+                    FigureTarget::Table(_)
+                    | FigureTarget::Image(_)
+                    | FigureTarget::CodeBlock(_)
+                    | FigureTarget::Paragraph(_) => {}
+                },
+                _ => {}
+            }
         }
     }
 }
