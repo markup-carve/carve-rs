@@ -16,6 +16,67 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `hidden` on every unselected panel. `Css` stays the default because `Aria`
   needs a client script - extensions §13.1.
 
+- **Prebuilt `carve` binaries on every release** (carve#528). macOS on Apple
+  silicon and Intel, Linux on glibc and musl, and Windows, each with a
+  `.sha256` sidecar, plus a Homebrew tap at `markup-carve/carve`. Installing
+  the CLI no longer requires a Rust toolchain.
+
+- **ASCII-folding for auto-generated heading ids**, opt-in
+  (markup-carve/carve-rs#1159, spec PART 9 §12).
+  `Options::with_ascii_heading_ids` takes `AsciiHeadingIds::Fold` - transliterate
+  what the table covers and keep the rest, so `Grüße` is `Grusse` and a CJK
+  heading keeps a usable anchor - or `AsciiHeadingIds::Strict`, which also drops
+  the residue for an id guaranteed to match `[0-9A-Za-z-]`. Orthogonal to
+  `with_lowercase_heading_ids`, and off by default. The transliteration table is
+  the one carve-js and carve-php already carry, ported rather than authored, so
+  the ids are byte-identical across the three engines; `Strict` is what
+  carve-php's extension does and `Fold` is carve-js's default. Zero dependencies:
+  the table is baked, bounded and auditable.
+
+- **Rendered elements say what they are called** (markup-carve/carve#1471, PART
+  9 §16a). An admonition carries an accessible name - `aria-label` from its
+  kind, or `aria-labelledby` pointing at its own title when it has one - the
+  endnotes section is labeled, a task checkbox is named by its item text, and
+  rendered math carries `role="math"`. Authored `aria-label` / `aria-labelledby`
+  wins, so a document that already named an element is unchanged. Nine new
+  `labels` keys (`endnotes` and one per admonition kind) localize the defaults,
+  matching carve-js key for key.
+
+- **A `labels` render option carries the strings the engine writes itself**
+  (markup-carve/carve#1456, PART 9 §16a). One key today, `footnoteBacklink`,
+  defaulting to `Back to reference`, set with `Options::with_label`. Values are
+  text and are escaped where they land, unlike the raw `symbols` map.
+
+- **Table column metadata: `Table::columns` and `TableCell::valign`**
+  (markup-carve/carve#1391, carve-rs#1107). Positional `aligns` / `valigns` /
+  `widths` on the table's attribute run, two-axis cell marker runs, `<colgroup>`
+  widths, and four table-column lint diagnostics. ListTable grows footer groups,
+  column styles and row-group span boundaries; the ProseMirror bridge carries
+  vertical alignment both ways.
+
+- **Explicit head and foot ranges on a pipe table:
+  `{header-rows=N footer-rows=N}`** (carve-rs#1135). Head rows promote their
+  cells to column headers and native `|=` cells still work; a ListTable cell's
+  `{align=… valign=…}` overrides the positional column default per field.
+  A consumed semantic attribute does not reach the HTML.
+
+- **ListTable reads a row-local `header-row` and a cell-local `header`**
+  (markup-carve/carve#1248, carve-rs#1130). Each header group renders its own
+  `<tbody>` and a rowspan is clamped at the group boundary.
+
+- **The `?` marker takes a cell's horizontal alignment from its column**
+  (markup-carve/carve#1408, carve-rs#1126, carve-rs#1129). `?^`, `?~` and `?v`
+  leave the horizontal axis to resolve from the column and supply only the
+  vertical one, and the marker run's axis order is explicit, so a two-axis run
+  reads the same way wherever it is written.
+
+- **`RenderCarveError`, carrying `Depth` and the new `SourceUnspellable`**
+  (carve-rs#1112). Breaking for a caller that matches on `render_carve`'s error,
+  which used to be a depth refusal only. An empty `RawInline` has no Carve
+  source spelling, so it is refused rather than written as `` `{=html}` `` -
+  which reads back as a different node. The parser cannot produce one; parsed
+  documents and every other render target are unchanged.
+
 ### Changed
 
 - **A `css`-mode tab and code-group panel carries its own name**
@@ -26,8 +87,6 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   key because the string comes from the document. An `aria`-mode panel takes
   neither: it is bound already (§13.3).
 
-### Changed
-
 - **A deeply nested document costs half the host stack to parse**
   (carve-rs#1186). The two post-parse walks that run on every parse -
   `collect_explicit_ids` and `collect_heading_titles` - descend a container's
@@ -35,12 +94,140 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   stack for a walk that visited nothing. Both are worklists now, in document
   order. A 200-level container ladder parses in 64KiB where it needed 128KiB.
 
-### Added
+- **A tab set, a code group and a rendered diagram carry an accessible name**
+  (markup-carve/carve#1468). Each tab was already named by its own `<label>` and
+  the GROUP was anonymous; a diagram fence emitted its source with no role, so a
+  reader heard the markup as prose. `Tabs` and `CodeGroup` write `role="group"`
+  plus a name (`Aria` mode keeps `role="tablist"`), and `FencedRender` writes
+  `role="img"` plus a `label` defaulting to the fence word. An `aria-label`,
+  `aria-labelledby` or `role` the author wrote always wins, matched
+  ASCII-case-insensitively, and the engine's attributes are recorded at the END
+  of the author's attribute order - without that they rendered in map order,
+  which is alphabetical, and the three engines disagreed byte-for-byte on a
+  shape the optional corpus pins.
 
-- **Prebuilt `carve` binaries on every release** (carve#528). macOS on Apple
-  silicon and Intel, Linux on glibc and musl, and Windows, each with a
-  `.sha256` sidecar, plus a Homebrew tap at `markup-carve/carve`. Installing
-  the CLI no longer requires a Rust toolchain.
+- **One `labels` map localizes every engine-written string.** `label_default`
+  grows `indexBackref`, `tabsGroup` and `codeGroup`, and the extensions that
+  write those strings read them through the new `RenderContext::label`, so a
+  German document sets `labels` once instead of finding several call sites and
+  silently missing one. An option set on the extension still wins for that
+  instance. PART 9 §16a already required this - "an extension MUST NOT require
+  the host to configure the same text twice".
+
+- **A colon container's body is parsed from a worklist, not down the stack**
+  (markup-carve/carve-rs#1165). Nesting costs heap instead of host stack, so a
+  document at the 200-level cap parses in 128KiB where it needed 384KiB
+  (release; 1024KiB to 256KiB in debug) and `to_html` needs 256KiB where it
+  needed 384KiB. This matters on wasm, where the host owns the stack and an
+  overflow takes the module rather than the call
+  (markup-carve/carve-wasm#48). No output changes.
+
+- **A row is a row, in every table section** (markup-carve/carve#1459, PART 10
+  §7). `<thead>` and `<tfoot>` now write one row per line, as `<tbody>` always
+  did. Nothing renders differently - whitespace between rows in table context is
+  not rendered - but the emitted HTML is consistent and diffs read cleanly. All
+  three table paths move: the block renderer, the layout fast path and the
+  list-table extension.
+
+- **A table cell's marker run ends at a space** (markup-carve/carve#1259, PART 9
+  §5 T11). The kind marker `=`, the alignment run and the attribute block are
+  one run, and a cell carrying any of them must follow it with a space; without
+  one there is no run and every character of it is content. `|=hot= |` is the
+  highlight its author wrote rather than a header cell holding `hot=`, `|=a |`
+  is a data cell, and `|{#x}=R|` is literal text. The run is atomic, so a
+  rejected alignment run takes the `=` with it. A cell with no run is unchanged,
+  and the canonical writer already pads every cell, so a formatted document
+  needs no migration.
+
+- **A column's alignment defaults come from the header section**, not from row
+  0 (markup-carve/carve#1259, PART 9 §5 T9). A `|=` cell below the header run is
+  a row header - it heads its row, not its column - so it declares no column
+  default. The two readings agreed until the clause above let a rejected marker
+  run demote a row that used to be all-header, at which point a body cell
+  inherited alignment from a row header, where carve-js and the spec's oracle
+  inherit nothing.
+
+- **Core parsing avoids per-line copies in definition prepasses.** The link
+  definition scan borrows unchanged lines, documents without footnote syntax
+  skip the footnote-definition scan, and ordinary documents reject the
+  colon-ladder specialization before building its line index. Inline parsing
+  appends ordinary ASCII prose in runs and sizes its reusable buffers from the
+  input. On the shared 49 KiB Tier-1 benchmark the prepass changes alone remove
+  about 3,800 allocations per parse; together the changes improve end-to-end
+  throughput by 11–21% in interleaved local trials.
+
+- **A vertical table-cell marker requires a horizontal partner.** Lone `^` and
+  `v` prefixes remain visible content; paired two-axis runs are unchanged.
+
+- **`Figure::target` is now `Box<FigureTarget>`** (#1119). Breaking, for callers
+  that construct or match a figure through the public AST. `Figure` embedded a
+  whole `Table` or `CodeBlock`, which set `BlockNode` at 472 bytes against 264
+  for the next largest variant; it is 272 bytes now. Every recursive walk moves
+  those by value, so a nesting level costs less in stack across parse, clone,
+  drop, render and serialize (markup-carve/carve-wasm#44).
+
+- **The doubled run is the canonical arrow, and `=>` is no longer one**
+  (markup-carve/carve#1442, carve-rs#1155). `<--` `-->` `<-->` and `<==` `==>`
+  `<=>` are canonical; `<-` `->` `<->` still render and are deprecated rather
+  than removed. Breaking: `=>` converts to nothing now, because `key => value`
+  and `Some(x) => x` are ordinary prose about code and silently became an arrow
+  in the rendered output only. `<=` keeps its glyph, which is what forces the
+  left double arrow to grow a character. The hyphen-run pass defers to an arrow
+  at its position, so `-->` is no longer an en dash followed by `>`.
+
+- **An empty brace pair is text, and a braced hyphen pair is an en dash**
+  (markup-carve/carve#1447, markup-carve/carve#1450, carve-rs#1156). `{//}`
+  `{**}` `{__}` `{~~}` `{^^}` `{,,}` `{==}` `{++}` `{##}` render literally; the
+  insertion and comment families take a one-or-more content slot the way the
+  deletion always did. A fully empty substitution is untouched.
+
+- **A continuation marker attaches only a flush-left block**
+  (markup-carve/carve#1436, carve-rs#1163, PART 9 §17 L3). The marker reaches a
+  block beginning at document column 0 and nothing else; a line at any other
+  column falls through to the ordinary column rules. This engine attached a line
+  at any indentation and dropped the column-0 line the marker reaches for.
+
+- **A generated heading id stays out of ProseMirror's authored `id` slot**
+  (carve-rs#1110). `to_prosemirror` omits an id a fresh parse would regenerate,
+  so the round trip no longer writes it back as an attribute line the author
+  never typed. An explicit id, and an ingested id that cannot be regenerated,
+  are preserved.
+
+- **A typed layout fast path renders a common document without building the
+  block AST** (carve-rs#1175). On the 49 KiB Tier-1 comparison corpus, render
+  time drops from 7.87 ms to 0.79 ms and throughput rises from 5.97 MB/s to
+  59.19 MB/s. The path scans a proven stateless core subset and falls back for
+  the whole document, before any output is published, wherever a boundary is
+  ambiguous. No output changes.
+
+- **A nesting level costs half the parser's stack** (carve-rs#1165,
+  carve-rs#1177). The cost was frame size, not recursion count: large match arms
+  and node construction move out of the shared `parse_blocks` / `parse_block` /
+  `parse_container` frame, so a level pays only for the arm it takes. A document
+  at the 200-level cap parses in 384KiB where it needed 768KiB. This is what
+  makes a small-stack host - a wasm module's 1 MiB - stop flipping between runs
+  (markup-carve/carve-wasm#48).
+
+- **The AST JSON encoder walks a worklist, not the host stack**
+  (carve-rs#1160, carve-rs#1164). Blocks, inlines and values each become an
+  explicit heap worklist, so `to_json` no longer performs the deepest recursion
+  in the crate on the deepest document the parser accepts. Byte-identical across
+  all 1283 pinned corpus documents, and the depth budget is unchanged:
+  `try_to_json` still refuses past it and `to_json` still panics.
+
+- **The default `to_html` pipeline skips what only the AST needs**
+  (carve-rs#1161). Explicit reference links and images resolve while the inline
+  nodes are built, references and adjacent text coalesce in place, and the HTML
+  facade omits invisible link-definition nodes, duplicate footnote numbering and
+  AST-only cross-reference stamping. No syntax is bypassed; the public parse,
+  JSON, Markdown, plain, ANSI and `fmt` paths keep their AST invariants.
+
+- **`to_html` no longer clones the document it just parsed** (carve-rs#1150),
+  and it carries the cross-reference index the parser already built into
+  rendering instead of rebuilding it from the tree (carve-rs#1152). About 17%
+  more end-to-end throughput on the 49 KiB comparison corpus. The public
+  borrowed-AST renderers keep their defensive clone and their rebuild, because a
+  caller can hand them any tree.
 
 ### Fixed
 
@@ -69,94 +256,6 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   identical unnamed arrows. The k-th back-link is now named `Back to {term} {k}`
   and shows `↩<sup>k</sup>`, mirroring PART 9 §16's footnote rule.
 
-### Changed
-
-- **A tab set, a code group and a rendered diagram carry an accessible name**
-  (markup-carve/carve#1468). Each tab was already named by its own `<label>` and
-  the GROUP was anonymous; a diagram fence emitted its source with no role, so a
-  reader heard the markup as prose. `Tabs` and `CodeGroup` write `role="group"`
-  plus a name (`Aria` mode keeps `role="tablist"`), and `FencedRender` writes
-  `role="img"` plus a `label` defaulting to the fence word. An `aria-label`,
-  `aria-labelledby` or `role` the author wrote always wins, matched
-  ASCII-case-insensitively, and the engine's attributes are recorded at the END
-  of the author's attribute order - without that they rendered in map order,
-  which is alphabetical, and the three engines disagreed byte-for-byte on a
-  shape the optional corpus pins.
-
-- **One `labels` map localizes every engine-written string.** `label_default`
-  grows `indexBackref`, `tabsGroup` and `codeGroup`, and the extensions that
-  write those strings read them through the new `RenderContext::label`, so a
-  German document sets `labels` once instead of finding several call sites and
-  silently missing one. An option set on the extension still wins for that
-  instance. PART 9 §16a already required this - "an extension MUST NOT require
-  the host to configure the same text twice".
-
-### Added
-
-- **ASCII-folding for auto-generated heading ids**, opt-in
-  (markup-carve/carve-rs#1159, spec PART 9 §12).
-  `Options::with_ascii_heading_ids` takes `AsciiHeadingIds::Fold` - transliterate
-  what the table covers and keep the rest, so `Grüße` is `Grusse` and a CJK
-  heading keeps a usable anchor - or `AsciiHeadingIds::Strict`, which also drops
-  the residue for an id guaranteed to match `[0-9A-Za-z-]`. Orthogonal to
-  `with_lowercase_heading_ids`, and off by default. The transliteration table is
-  the one carve-js and carve-php already carry, ported rather than authored, so
-  the ids are byte-identical across the three engines; `Strict` is what
-  carve-php's extension does and `Fold` is carve-js's default. Zero dependencies:
-  the table is baked, bounded and auditable.
-
-### Added
-
-- **Rendered elements say what they are called** (markup-carve/carve#1471, PART
-  9 §16a). An admonition carries an accessible name - `aria-label` from its
-  kind, or `aria-labelledby` pointing at its own title when it has one - the
-  endnotes section is labeled, a task checkbox is named by its item text, and
-  rendered math carries `role="math"`. Authored `aria-label` / `aria-labelledby`
-  wins, so a document that already named an element is unchanged. Nine new
-  `labels` keys (`endnotes` and one per admonition kind) localize the defaults,
-  matching carve-js key for key.
-
-### Changed
-
-- **A colon container's body is parsed from a worklist, not down the stack**
-  (markup-carve/carve-rs#1165). Nesting costs heap instead of host stack, so a
-  document at the 200-level cap parses in 128KiB where it needed 384KiB
-  (release; 1024KiB to 256KiB in debug) and `to_html` needs 256KiB where it
-  needed 384KiB. This matters on wasm, where the host owns the stack and an
-  overflow takes the module rather than the call
-  (markup-carve/carve-wasm#48). No output changes.
-- **A row is a row, in every table section** (markup-carve/carve#1459, PART 10
-  §7). `<thead>` and `<tfoot>` now write one row per line, as `<tbody>` always
-  did. Nothing renders differently - whitespace between rows in table context is
-  not rendered - but the emitted HTML is consistent and diffs read cleanly. All
-  three table paths move: the block renderer, the layout fast path and the
-  list-table extension.
-- **A table cell's marker run ends at a space** (markup-carve/carve#1259, PART 9
-  §5 T11). The kind marker `=`, the alignment run and the attribute block are
-  one run, and a cell carrying any of them must follow it with a space; without
-  one there is no run and every character of it is content. `|=hot= |` is the
-  highlight its author wrote rather than a header cell holding `hot=`, `|=a |`
-  is a data cell, and `|{#x}=R|` is literal text. The run is atomic, so a
-  rejected alignment run takes the `=` with it. A cell with no run is unchanged,
-  and the canonical writer already pads every cell, so a formatted document
-  needs no migration.
-- **A column's alignment defaults come from the header section**, not from row
-  0 (markup-carve/carve#1259, PART 9 §5 T9). A `|=` cell below the header run is
-  a row header - it heads its row, not its column - so it declares no column
-  default. The two readings agreed until the clause above let a rejected marker
-  run demote a row that used to be all-header, at which point a body cell
-  inherited alignment from a row header, where carve-js and the spec's oracle
-  inherit nothing.
-
-### Added
-
-- **A `labels` render option carries the strings the engine writes itself**
-  (markup-carve/carve#1456, PART 9 §16a). One key today, `footnoteBacklink`,
-  defaulting to `Back to reference`, set with `Options::with_label`. Values are
-  text and are escaped where they land, unlike the raw `symbols` map.
-
-### Fixed
-
 - **A tab set writes its children flush, like everything around them**
   (markup-carve/carve-rs#1188). The `css` and `aria` tab renderers indented the
   `<input>`, `<label>`, `<button>` and panel openers by one level while writing
@@ -180,69 +279,124 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   now the label plus what the link visibly says: `Back to reference` for a lone
   backlink, `Back to reference 2` for the second of several.
 
-### Fixed
-
 - **A hyphen run that opens a word after whitespace is a flag, not a dash**
   (markup-carve/carve#1443, PART 9 §8). `git log --oneline` and
   `--force-with-lease` keep their hyphens; every other position converts as
   before, including `pages 1--10` and a trailing `text --`.
 
-### Changed
-
-- **Core parsing avoids per-line copies in definition prepasses.** The link
-  definition scan borrows unchanged lines, documents without footnote syntax
-  skip the footnote-definition scan, and ordinary documents reject the
-  colon-ladder specialization before building its line index. Inline parsing
-  appends ordinary ASCII prose in runs and sizes its reusable buffers from the
-  input. On the shared 49 KiB Tier-1 benchmark the prepass changes alone remove
-  about 3,800 allocations per parse; together the changes improve end-to-end
-  throughput by 11–21% in interleaved local trials.
-- **A vertical table-cell marker requires a horizontal partner.** Lone `^` and
-  `v` prefixes remain visible content; paired two-axis runs are unchanged.
-- **`Figure::target` is now `Box<FigureTarget>`** (#1119). Breaking, for callers
-  that construct or match a figure through the public AST. `Figure` embedded a
-  whole `Table` or `CodeBlock`, which set `BlockNode` at 472 bytes against 264
-  for the next largest variant; it is 272 bytes now. Every recursive walk moves
-  those by value, so a nesting level costs less in stack across parse, clone,
-  drop, render and serialize (markup-carve/carve-wasm#44).
-
-### Fixed
-
 - **An all-blank raw payload remains distinct from an absent payload.** One
   blank line between raw fences produces one newline, matching the general
   payload-preservation rule (markup-carve/carve#1414, corpus 372).
+
 - **Depth limits now guard every recursive input and output path** (#1119,
   #1120, #1121, #1124). HTML inline rendering and extension re-entry share the
   live render budget, AST JSON encoding has a fallible `try_to_json` entry
   point used by merge and patch, and the render ceiling is reachable by a
   valid wire document while remaining above every parser-produced tree.
+
 - **The block parser returns its large node through a box** (#1119), removing a
   `BlockNode`-sized return slot from each recursive parser frame.
+
 - **Definitions collected at a list item's content column close its paragraph**
   (markup-carve/carve#1376). A following line below that column no longer uses
   the comment-only continuation path; bare-dot items use the bullet column.
+
 - **Parsing a document at the nesting cap costs far less native stack**
   (markup-carve/carve-wasm#44). `promote_block_images` is a worklist instead of
   a recursion, and the over-cap degrade moved out of `parse_blocks`' frame.
   Measured on corpus document 182, parsing dropped from 347 KiB of stack to
   103 KiB, which is what a host with a small stack - a wasm module's 1 MiB, for
   instance - had been running out of. No output changed.
+
 - **A structural link title and an authored `title` attribute both survive the
   ProseMirror bridge** (#1115). Links, images and reference definitions now put
   the quoted structural title in `carveLinkTitle`, leaving `title` and
   `carveAttrOrder` to carry `{title=...}` without either value winning the same
   field. Older payloads using the overloaded `title` field remain readable.
+
 - **A structural title and an authored `title` attribute no longer swap places
   across the ProseMirror round trip** (#1105, follows #1110). The two spellings
   share one wire field, and `carveAttrOrder` - the record of which one the
   author typed - was written untruthfully and never read, so `[a]: /u "T"` came
   back as `[a]: /u "T" {title=T}` and `[z](safe.html){title="T"}` as
   `[z](safe.html "T")`. Links, images and reference definitions all.
+
 - **The Carve writer does not turn a generated heading id into source inside a
   footnote definition** (#1105). The redundancy test walked the document body
   only, so `[^a]: # h` was written back as `[^a]: {#h}` over an indented `# h`,
   an attribute line the author never wrote.
 
+- **A heading at a list item's content column leaves no paragraph open**
+  (markup-carve/carve#1377, markup-carve/carve#1392, carve-rs#1113). A direct
+  content-column heading no longer holds the lazy fold open, while an enclosing
+  item still collects the line after an inner item closes.
+
+- **A duplicate-axis cell marker run is one invalid run** (carve-rs#1117).
+  `<<` falls back visibly instead of consuming the first `<`.
+
+- **A fence with no closer stays in the open paragraph** (carve-rs#1134). A
+  closer-less fence run no longer latches the layout fence tracker, in
+  containers, list items and definition bodies alike. A compatible closer
+  occurring later behaves as before.
+
+- **An unclosed inline literal parses through the end of its block**
+  (markup-carve/carve#1418, carve-rs#1138). `!` plus a code span is one node
+  whether or not the backtick run closes, so an unclosed literal renders as bare
+  escaped literal content rather than a visible bang beside a code element.
+
+- **A definition written on a list marker line is the item's first invisible
+  block** (markup-carve/carve#1422, markup-carve/carve#1425, carve-rs#1139,
+  carve-rs#1141). It leaves no paragraph open, so a following line below the
+  content column ends the item. The link-definition prepass asks the block
+  parser rather than testing whether the previous line was blank - a heading, a
+  comment, a table row, a term and a marker line are all non-blank and all leave
+  no paragraph open.
+
+- **A comment-preserved lazy run folds through the list's own base column**
+  (carve-rs#1139, carve-rs#1140). A flush comment after visible prose keeps an
+  indented item's paragraph open, and lazy continuation resumes against the
+  innermost marker-line item's content column instead of hard-coded document
+  column 0.
+
+- **A quoted marker line keeps its definition's text** (carve-rs#1142,
+  carve-rs#1143). Both definition prepasses ran their lazy guard's marker test
+  over the raw line, so `> - [d]: u` matched no marker and was collected out of
+  the quote's open paragraph: the author's text was deleted and the label still
+  defined a reference. The prefixes come off before the test now, in both
+  passes.
+
+- **A definition hoisted off an item's only line is written back into that
+  item** (carve-rs#1144, carve-rs#1145). The writer spelled the emptied item
+  with the continuation marker, and re-reading that moved the outer item's line
+  into the empty inner one, so neither `fmt` property held and the HTML changed.
+
+- **A definition-emptied marker line keeps its own container level**
+  (carve-rs#1147, carve-rs#1148). Three or more levels deep, the following line
+  landed in the outermost item whatever column it sat at; it now belongs to the
+  item its column names.
+
+- **A caption no longer disables a diagram fence's preset** (carve-rs#1151,
+  carve-rs#1157). A caption on a `chart`, `mermaid` or `img` fence silently
+  turned the drawing back into a highlighted code block - the shape most likely
+  to carry a caption was the one that lost its renderer. A captioned fence is a
+  figure's target, and PART 12 pins five target types with no raw-HTML spelling
+  among them, so the rendered result now rides the new `Figure::rendered_target`.
+
+- **`fmt` preserves a braced en dash** (carve-rs#1158). `{--}` produced a text
+  node holding the resolved glyph, so formatting a document replaced the four
+  characters its author wrote. It is a `smart_punctuation` node carrying the
+  authored spelling, as `--` and `...` already were.
+
+- **The first code group in a document is named `codegroup-1`**
+  (carve-rs#1178), matching carve-js and carve-php. It took the bare id prefix
+  and the second group's `-2` was a collision suffix rather than a count, so an
+  unrelated `{#codegroup}` anywhere in the document renamed every group.
+
+- **An empty comment writes its marker and nothing else**
+  (markup-carve/carve#1472, carve-rs#1184). The block arm of the writer appended
+  its content unconditionally, so a comment with no content came back as `%%`
+  plus a trailing space that no clause asks for. The inline arm always guarded
+  it.
 ## [0.1.3] - 2026-08-18
 
 ### Security
