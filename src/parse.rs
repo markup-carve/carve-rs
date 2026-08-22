@@ -601,6 +601,15 @@ fn parse_with_options_mode_and_index(
         // replaced `widen_over_hosted_definitions` (carve#1522, carve#1524).
         let source_lines: Vec<&str> = original.lines().collect();
         narrow_to_last_placed_child(&mut children, &source_lines);
+        // A FOOTNOTE BODY IS A SEPARATE BLOCK LIST, walked separately by every
+        // pass above for the same reason: it is not under `children`. Reaching
+        // only `children` left a list inside a note body still ending after the
+        // terminator of its last item, on one corpus document out of 1352 - the
+        // shape this whole rule is about, in the one place a pass is easiest to
+        // forget to apply.
+        for blocks in footnote_defs.values_mut() {
+            narrow_to_last_placed_child(blocks, &source_lines);
+        }
     }
     let mut doc = Document {
         frontmatter,

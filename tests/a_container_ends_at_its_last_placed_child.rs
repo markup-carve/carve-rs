@@ -109,6 +109,20 @@ fn a_container_a_collected_definition_emptied_spans_its_own_markup() {
 }
 
 #[test]
+fn a_list_inside_a_footnote_body_stops_at_its_last_item_too() {
+    // A FOOTNOTE BODY IS A SEPARATE BLOCK LIST. It is not under the document's
+    // `children`, so every pass in the pipeline walks it separately - and the
+    // first version of this rule reached only `children`, which left exactly
+    // this shape ending after the terminator of its last item on one corpus
+    // document out of 1352 (`206-a-nested-list-in-a-footnote-body-stays-
+    // nested`). The spec repository's own checker is what found it.
+    let source = "- a\n  [^f]: t\n\n    - x\n      - y\n\nz[^f]\n";
+
+    assert_eq!(nth(source, "list", 1), (19, 32));
+    assert_eq!(nth(source, "list", 2), (29, 32));
+}
+
+#[test]
 fn a_container_with_children_is_unchanged() {
     // The rule has to be the reason the spans moved, not the documents.
     assert_eq!(nth("- a\n- b", "list", 0), (0, 7));
