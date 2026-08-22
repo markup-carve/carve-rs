@@ -21,29 +21,37 @@
 //! same count is taken on the SOURCE and subtracted, so an escape the author
 //! wrote and the writer merely carried through is not charged to the writer.
 //!
-//! THE READING, at spec `d164b12`: 72 invented escapes across 28 of 1341
-//! documents - the same 28 slugs with the same 28 counts, character for
-//! character, that markup-carve/carve-php#1549 and markup-carve/carve-js#1286
-//! measured. THREE independently written writers landing on the same 72 is the
-//! finding: the debt is not any one engine's escape table, it is the shape all
-//! three writers chose. markup-carve/carve#1507 asks for the ruling.
+//! THE READING WHEN THIS WAS SEEDED, at spec `d164b12`: 72 invented escapes
+//! across 28 of 1341 documents - the same 28 slugs with the same 28 counts,
+//! character for character, that markup-carve/carve-php#1549 and
+//! markup-carve/carve-js#1286 measured. THREE independently written writers
+//! landing on the same 72 is what markup-carve/carve#1507 asked for a ruling on:
+//! the debt was not any one engine's escape table, it was the shape all three
+//! writers chose.
+//!
+//! THE READING NOW: 57 across 24, after PART 11 SECTION 2b bounded an escalation
+//! to the smallest unit that fails (markup-carve/carve#1516). The three engines
+//! still agree character for character. What did NOT retire is the two causes
+//! named on the ratchet below, and neither of them is the document scope.
 
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
 
-/// The two causes measured HERE, one of which every ratchet entry must name.
+/// The three causes measured HERE, one of which every ratchet entry must name.
 ///
 /// They were classified against this engine rather than inherited: the
 /// escalation branch in `render_carve_once` was instrumented to report, per
 /// document, whether the minimal and conservative passes agreed and which form
-/// it returned. 26 of the 28 documents (67 escapes) came back `conservative` -
-/// the escalation - and 2 of them (5 escapes) came back with the two passes
-/// AGREEING, so the escape is inside the minimal class and no escalation is
-/// involved. That is the same split carve-js measured on its own writer. An
-/// entry belonging to neither cause is a cause nobody has looked at yet, which
-/// is a finding rather than a resident.
-const IDLE_ESCAPE_CAUSES: &[&str] = &["escalation: ", "minimal class: "];
+/// it returned. An entry belonging to none of them is a cause nobody has looked
+/// at yet, which is a finding rather than a resident.
+///
+/// `escalation: ` was the fourth, and it is gone: PART 11 SECTION 2b narrowed
+/// the fallback from the document to the failing unit, and every document that
+/// carried an escape only because a DIFFERENT block needed one now writes it
+/// bare. What the narrowing did NOT retire is split between the two causes that
+/// replaced it, because the two are fixed by different work.
+const IDLE_ESCAPE_CAUSES: &[&str] = &["unit scope: ", "opener run: ", "minimal class: "];
 
 /// THE DEBT, NOT A BLESSING: documents where the writer emits an escape the
 /// re-parse does not need, with the exact count of invented escapes.
@@ -58,6 +66,31 @@ const IDLE_ESCAPE_CAUSES: &[&str] = &["escalation: ", "minimal class: "];
 /// because an entry nobody can explain is the next thing to investigate. An
 /// empty reason, a zero count, or a slug the corpus does not have all fail
 /// below.
+///
+/// Seeded at 28 documents and 72 invented escapes, and re-measured at 24 and 57
+/// when PART 11 SECTION 2b narrowed the escalation. carve-js and carve-php
+/// measure the same 24 documents with the same 24 counts, character for
+/// character.
+///
+/// UNIT SCOPE, the 20-document cause: PART 11 SECTION 4's two-render strategy
+/// has one knob per unit - minimal or conservative - so a unit that fails is
+/// written conservatively IN FULL, and every other candidate character in the
+/// same run is escaped with the one that needed it. SECTION 2b bounds how far
+/// that reaches (the run, or the block holding it, never the document) and this
+/// is what is left inside the bound. Retiring it needs SECTION 2's own
+/// per-OPENER-OCCURRENCE test, which is a different mechanism rather than a
+/// narrower scope.
+///
+/// OPENER RUN, two documents: SECTION 2's THE UNIT IS THE OPENER requires the
+/// WHOLE opener run escaped, and PART 11 SECTION 2b names the indented heading
+/// as its own worked example. The sweep below removes ONE backslash at a time,
+/// so it reads the second one as idle: with the first still there no heading
+/// forms either way. These two entries are a floor this measurement cannot go
+/// below while SECTION 2 says what it says, and they are here to be seen rather
+/// than to be fixed.
+///
+/// MINIMAL CLASS, the other two: both passes agree, so nothing escalated, and
+/// the escape is still idle.
 ///
 /// ESCALATION, the 26-document cause: `render_carve_once` renders the whole
 /// tree twice, once minimal and once conservative, and takes the conservative
@@ -81,132 +114,112 @@ const IDLE_ESCAPE_RATCHET: &[(&str, usize, &str)] = &[
     (
         "87-compact-list-blocks-10",
         3,
-        "escalation: one needed escape puts the whole document in the conservative class, which then escapes `.`, `{`, `}`",
+        "unit scope: the failing run is written conservatively in full, which escapes `.`, `{`, `}` where any one of them alone stops the attribute line",
     ),
     (
         "103-heading-marker-column-zero-2",
         2,
-        "escalation: one needed escape puts the whole document in the conservative class, which then escapes `#` x2",
+        "opener run: the heading opener `##` is escaped in full, and removing either backslash alone still leaves a paragraph",
     ),
     (
         "129-emphasis-opener-slash-adjacency-3",
         2,
-        "escalation: one needed escape puts the whole document in the conservative class, which then escapes `_` x2",
+        "unit scope: the failing run is written conservatively in full, which escapes `_` x2 where the opener alone would do",
     ),
     (
         "132-thematic-break-requires-contiguous-markers-3",
         3,
-        "escalation: one needed escape puts the whole document in the conservative class, which then escapes `*` x3",
-    ),
-    (
-        "145-definition-list-as-a-first-class-block-opener-3",
-        1,
-        "escalation: one needed escape puts the whole document in the conservative class, which then escapes `:`",
+        "opener run: the break opener `***` is escaped in full, and removing any one backslash alone still leaves a paragraph",
     ),
     (
         "146-table-as-a-block-opener-in-a-list-item-2",
         3,
-        "escalation: one needed escape puts the whole document in the conservative class, which then escapes `=`, `|` x2",
+        "unit scope: the failing run is written conservatively in full, which escapes `=`, `|` x2 beyond the opener",
     ),
     (
         "151-indented-ordered-marker-content-column-includes-the-marker-indent",
         1,
-        "escalation: one needed escape puts the whole document in the conservative class, which then escapes `|`",
+        "unit scope: the failing run is written conservatively in full, which escapes the closing `|` beyond the opener",
     ),
     (
         "157-indented-attribute-line-stays-literal",
-        4,
-        "escalation: one needed escape puts the whole document in the conservative class, which then escapes `.` x2, `{`, `}`",
+        3,
+        "unit scope: the failing run is written conservatively in full, which escapes `.`, `{`, `}` where any one of them alone stops the attribute line",
     ),
     (
         "157-indented-attribute-line-stays-literal-2",
-        5,
-        "escalation: one needed escape puts the whole document in the conservative class, which then escapes `-` x2, `.`, `{`, `}`",
+        3,
+        "unit scope: the failing run is written conservatively in full, which escapes `.`, `{`, `}` where any one of them alone stops the attribute line",
     ),
     (
         "158-indented-image-and-caption-stay-literal-2",
         3,
-        "escalation: one needed escape puts the whole document in the conservative class, which then escapes `.`, `{`, `}`",
+        "unit scope: the failing run is written conservatively in full, which escapes `.`, `{`, `}` where any one of them alone stops the attribute line",
     ),
     (
         "159-indented-reference-and-footnote-definitions-stay-literal",
-        3,
-        "escalation: one needed escape puts the whole document in the conservative class, which then escapes `.`, `/`, `]`",
+        2,
+        "unit scope: the failing run is written conservatively in full, which escapes `/`, `]` beyond the opener",
     ),
     (
         "159-indented-reference-and-footnote-definitions-stay-literal-2",
-        2,
-        "escalation: one needed escape puts the whole document in the conservative class, which then escapes `.` x2",
-    ),
-    (
-        "160-indented-colon-fence-blocks-stay-literal",
         1,
-        "escalation: one needed escape puts the whole document in the conservative class, which then escapes `.`",
+        "unit scope: the failing run is written conservatively in full, which escapes a `.` beyond the opener",
     ),
     (
         "160-indented-colon-fence-blocks-stay-literal-2",
-        3,
-        "escalation: one needed escape puts the whole document in the conservative class, which then escapes `.`, `:`, `|`",
-    ),
-    (
-        "160-indented-colon-fence-blocks-stay-literal-3",
-        1,
-        "escalation: one needed escape puts the whole document in the conservative class, which then escapes `.`",
+        2,
+        "unit scope: the failing run is written conservatively in full, which escapes `:`, `|` beyond the opener",
     ),
     (
         "195-a-definition-inside-a-container-is-collected-at-that-container-s-content-column-3",
-        4,
-        "escalation: one needed escape puts the whole document in the conservative class, which then escapes `.`, `/`, `[`, `]`",
+        3,
+        "unit scope: the failing run is written conservatively in full, which escapes `/`, `[`, `]` where any one of them alone stops the definition",
     ),
     (
         "218-a-footnote-body-s-own-column-is-two-and-a-third-column-is-its-text",
         4,
-        "escalation: one needed escape puts the whole document in the conservative class, which then escapes `-`, `|` x3",
+        "unit scope: the failing run is written conservatively in full, which escapes `-`, `|` x3 beyond the openers",
     ),
     (
         "219-a-definition-below-a-footnote-body-s-column-is-the-document-s-own-text",
         2,
-        "escalation: one needed escape puts the whole document in the conservative class, which then escapes `/`, `]`",
+        "unit scope: the failing run is written conservatively in full, which escapes `/`, `]` beyond the opener",
     ),
     (
         "220-a-definition-past-a-footnote-body-s-column-is-the-body-s-own-text",
         2,
-        "escalation: one needed escape puts the whole document in the conservative class, which then escapes `/`, `]`",
+        "unit scope: the failing run is written conservatively in full, which escapes `/`, `]` beyond the opener",
     ),
     (
         "287-a-column-zero-definition-ends-an-open-list-item-3",
         2,
-        "escalation: one needed escape puts the whole document in the conservative class, which then escapes `/`, `]`",
+        "unit scope: the failing run is written conservatively in full, which escapes `/`, `]` beyond the opener",
     ),
     (
         "322-an-attribute-block-reaches-the-nested-list-it-precedes-9",
         3,
-        "escalation: one needed escape puts the whole document in the conservative class, which then escapes `.`, `{`, `}`",
+        "unit scope: the failing run is written conservatively in full, which escapes `.`, `{`, `}` where any one of them alone stops the attribute line",
     ),
     (
         "350-a-definition-at-a-container-s-content-column-3",
         2,
-        "escalation: one needed escape puts the whole document in the conservative class, which then escapes `/`, `]`",
+        "unit scope: the failing run is written conservatively in full, which escapes `/`, `]` beyond the opener",
     ),
     (
         "369-a-quote-is-reached-by-its-marker-and-a-column-never-reaches-into-one",
-        3,
-        "escalation: one needed escape puts the whole document in the conservative class, which then escapes `.`, `/`, `]`",
+        2,
+        "unit scope: the failing run is written conservatively in full, which escapes `/`, `]` beyond the opener",
     ),
     (
         "369-a-quote-is-reached-by-its-marker-and-a-column-never-reaches-into-one-2",
-        3,
-        "escalation: one needed escape puts the whole document in the conservative class, which then escapes `.`, `/`, `]`",
+        2,
+        "unit scope: the failing run is written conservatively in full, which escapes `/`, `]` beyond the opener",
     ),
     (
         "369-a-quote-is-reached-by-its-marker-and-a-column-never-reaches-into-one-3",
-        3,
-        "escalation: one needed escape puts the whole document in the conservative class, which then escapes `.`, `/`, `]`",
-    ),
-    (
-        "379-a-reference-definition-cannot-take-its-destination-from-the-next-line",
         2,
-        "escalation: one needed escape puts the whole document in the conservative class, which then escapes `[`, `]`",
+        "unit scope: the failing run is written conservatively in full, which escapes `/`, `]` beyond the opener",
     ),
     (
         "390-a-table-cell-s-marker-run-ends-at-a-space-5",
@@ -216,8 +229,8 @@ const IDLE_ESCAPE_RATCHET: &[(&str, usize, &str)] = &[
 ];
 
 /// The reading this commit measured, pinned where a reader can find it.
-const MEASURED_ESCAPES: usize = 72;
-const MEASURED_DOCUMENTS: usize = 28;
+const MEASURED_ESCAPES: usize = 57;
+const MEASURED_DOCUMENTS: usize = 24;
 
 fn corpus_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus")
