@@ -402,16 +402,66 @@ for display math. Renderer output is trusted and emitted verbatim.
 
 ### Per-extension static output
 
-carve-rs ships Details, Spoiler, FencedRender (mermaid / chart presets) and
-MathBlock. It has no Tabs / CodeGroup extension - those exist in carve-js and
-carve-php only - so the labeled-section flattening for tab groups is provided by
-the **core caption floor**: an unconsumed grouping `[label]` renders as a
-`<p class="div-label">` caption in every target (the floor that also covers a
-bare labeled `:::` div).
+carve-rs ships **24 extension modules under 32 registry keys**. The list is not
+maintained by hand here - it is `carve::extensions::registry::keys()`, and
+`tests/the_extension_list_in_the_docs_is_the_registry.rs` fails if this block
+and the registry disagree:
+
+<!-- registry-keys: derived from carve::extensions::registry::keys() -->
+
+```
+autolink, citations, code-callouts, code-group, color-swatch, details,
+external-links, fenced-render, fenced-render-abc, fenced-render-chart,
+fenced-render-d2, fenced-render-graphviz, fenced-render-plantuml,
+fenced-render-vega-lite, fenced-render-wavedrom, glossary, heading-level-shift,
+heading-numbers, heading-permalinks, heading-reference, img-fence, index,
+list-table, math-block, semantic-span, smart-quotes, spoiler, tab-normalize,
+table-of-contents, tabs, toc, wikilinks
+```
+
+Six of them render differently under `Mode::Static` - the six that ask the
+render context for the mode (`RenderContext::is_static`): **Details, Spoiler,
+Tabs, CodeGroup, FencedRender and MathBlock**. Every other extension in the list
+renders identically in both modes, which is resolution step 2 below.
+
+**Tabs and CodeGroup are two of the six, and each flattens its own group.** This
+paragraph used to say carve-rs had no Tabs or CodeGroup extension, and used that
+to explain the flattening as the work of the core caption floor. Both halves
+were false: `src/extensions/tabs.rs` and `src/extensions/code_group.rs` have
+been on `main` since #906, each carries a static arm of its own, and a
+REGISTERED Tabs or CodeGroup therefore never reaches the floor. What the floor
+covers is a grouping `[label]` no registered extension consumed - resolution
+step 3, not a stand-in for a missing extension. Measured on one document, with
+the extension registered and without it:
+
+`:::: tabs` with `Tabs` registered, `Mode::Static`:
+
+```html
+<div class="tabs" role="group" aria-label="Tabs">
+  <section class="tabs-panel">
+  <h3 class="tabs-label">Rust</h3>
+<p>rust body</p>
+  </section>
+</div>
+```
+
+the same document with no extension registered, `Mode::Static` - the core
+caption floor:
+
+```html
+<div class="tabs">
+  <div class="tab">
+    <p class="div-label">Rust</p>
+    <p>rust body</p>
+  </div>
+</div>
+```
 
 | Extension | Interactive HTML | Static HTML |
 | --- | --- | --- |
-| Details (`::: details`) | `<details><summary>T</summary>…</details>` | `<section class="details"><h3 class="details-title">T</h3>…</section>` (a `[label]` follows the title as a `<p class="div-label">`) |
+| Details (`::: details`) | `<details><summary>T</summary>…</details>` | `<details open><summary>T</summary>…</details>` - the disclosure is KEPT and forced open, not flattened to a `<section>`. A `[label]` is ignored, which is what the spec's title-vs-label table says for details: it has no group to name |
+| Tabs (`:::: tabs`) | `<div class="tabs" role="group">` holding an `<input type="radio" class="tabs-radio">` and `<label class="tabs-label">` per tab, then a `<div class="tabs-panel" role="group" aria-label="…">` per panel (`TabsMode::Css`); `role="tablist"` with `<button type="button">` under `TabsMode::Aria` | `<section class="tabs-panel"><h3 class="tabs-label">…</h3>…</section>` per panel, no radios and neither mode - there is no interaction left to describe |
+| CodeGroup (`:::: code-group`) | the same shape with `code-group`, `code-group-radio`, `code-group-label` and `code-group-panel` | `<section class="code-group-panel"><h3 class="code-group-label">…</h3><pre><code>…</code></pre></section>` per panel |
 | Spoiler inline (`:spoiler[x]`) | `<span class="spoiler">x</span>` | `<span class="spoiler spoiler-revealed">x</span>` |
 | Spoiler block (`::: spoiler`) | `<details class="spoiler"><summary>T</summary>…</details>` | `<section class="spoiler spoiler-revealed"><h3 class="spoiler-title">T</h3>…</section>` |
 | FencedRender mermaid | `<pre class="mermaid">…</pre>` (client-hydration) | `renderers.mermaid` output, else `<pre class="mermaid"><code class="language-mermaid">…\n</code></pre>` (source, fence attrs preserved) |
@@ -423,13 +473,16 @@ bare labeled `:::` div).
 In static HTML the resolution order per node is: the extension's static path if
 defined; else its ordinary renderer (correct for already-static extensions like
 ListTable, which need no static path); else the core caption floor for any
-unconsumed grouping `[label]`. No authored token is ever dropped.
+unconsumed grouping `[label]`. No authored token is dropped that some other
+mode would have kept - static output is never lossier than interactive output
+for the same registration.
 
-> Note on cross-impl parity: this branch follows the carve-js shapes
-> (`<section class="details">`, `spoiler-revealed`). carve-php degrades Details
-> / Spoiler natively (it keeps the `<details>`/`<summary>` disclosure in static
-> mode rather than flattening to a `<section>`); the two will be reconciled when
-> the spec PR lands.
+> Note on cross-impl parity: the Spoiler shapes follow carve-js
+> (`spoiler-revealed`). Details does NOT: carve-rs keeps the
+> `<details>`/`<summary>` disclosure and forces `open`, which is what carve-php
+> does, and it has done so since the static-mode PR (#143) - the sentence that
+> used to claim a `<section class="details">` here was never true of this
+> engine.
 
 ## CodeCallouts
 
