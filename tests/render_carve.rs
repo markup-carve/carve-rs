@@ -575,18 +575,34 @@ fn a_literal_marker_escapes_only_the_character_that_opens_it() {
     // anything. This engine escaped the whole class - `\:\:\:` for a literal
     // `:::` - which is what carve-rs#566 is about; carve-js and carve-php both
     // write one escape.
+    //
+    // THREE OF THESE EXPECTATIONS CARRIED AN EXTRA ESCAPE UNTIL PART 11 §2b,
+    // and every one of them was in a DIFFERENT BLOCK from the one that needed
+    // an escape. §4's vote used to take the conservative form for the whole
+    // document, so `A box.` came back `A box\.`, `:  def` came back `\:  def`
+    // and `Read [intro][x].` came back `Read [intro][x]\.` - none of which
+    // changes what those blocks re-parse to. §2b bounds the fallback to the
+    // unit that fails, so each of those three is written bare now while the
+    // marker that does open something keeps its escape. That is the same
+    // reading this test already applied WITHIN a run - one escape, not the
+    // whole class - applied across blocks as well.
+    //
+    // The escapes that remain are the load-bearing ones, and they are what this
+    // test is for: they must not move. carve-js and carve-php write these three
+    // documents identically (markup-carve/carve-js#1307,
+    // markup-carve/carve-php#1560).
     assert_eq!(
         carve::to_carve(" :::\n A box.\n :::\n"),
-        "\\:::\nA box\\.\n\\:::\n"
+        "\\:::\nA box.\n\\:::\n"
     );
     assert_eq!(
         carve::to_carve("- one\n :: term\n :  def\n"),
-        "- one\n  \\:: term\n  \\:  def\n"
+        "- one\n  \\:: term\n  :  def\n"
     );
     // A colon that is not at a line start opens nothing, escaped or not - here
     // the `[` escape is what keeps the definition from forming.
     assert_eq!(
         carve::to_carve(" Read [intro][x].\n\n [x]: /intro \"T\"\n"),
-        "Read [intro][x]\\.\n\n\\[x\\]: \\/intro \"T\"\n"
+        "Read [intro][x].\n\n\\[x\\]: \\/intro \"T\"\n"
     );
 }

@@ -41,6 +41,16 @@ struct CarveContext {
     after_caption_host: bool,
     paragraph_starts_after_caption_host: bool,
     escape_mode: EscapeMode,
+    /// The unit the character being written now belongs to (PART 11 §2b).
+    ///
+    /// A per-PASS ordinal rather than a node address: `render_block` and
+    /// `render_inline` hand out the next one on entry and restore the previous
+    /// on the way out, so a run of prose is charged to its text node and the
+    /// strings a block writes itself are charged to the block. Two of the block
+    /// arms render a node built on the spot, whose ADDRESS is a stack temporary
+    /// that a later pass need not reuse; an ordinal is the same in every pass
+    /// because the walk is the same in every pass.
+    escape_unit: usize,
     /// Definitions written on a description line, keyed by that line.
     definitions_by_line: HashMap<usize, DefinitionAtLine>,
     /// The lines a description has already written back.
@@ -268,7 +278,136 @@ fn render_carve_once(doc: &Document) -> String {
     if minimal == conservative || escaping_is_redundant(&minimal, &conservative) {
         return minimal;
     }
-    conservative
+    // The minimal form of the WHOLE document does not hold, which used to end
+    // the decision here with the conservative form of the whole document. PART
+    // 11 §2b says how far that fallback actually reaches: the smallest unit
+    // whose minimal form fails, and §2's own test everywhere else.
+    narrow_escalation(doc, conservative)
+}
+
+/// The conservative form of the units that need it, and the minimal form of
+/// every other unit (PART 11 §2b).
+///
+/// WHY THIS IS A SEARCH AND NOT A LOOKUP. The comparison stays document-scoped
+/// -- §4's argument holds, a unit re-parsed alone has lost the document's link
+/// reference and footnote definitions -- so what a failure reports is THAT the
+/// document changed, never WHERE. The unit is found by trying: start from the
+/// conservative form, which is known to hold, and hand each unit back its
+/// minimal form only while the whole document still re-parses to the same tree.
+/// Every state this walks through is verified, and the one returned is the last
+/// that passed.
+///
+/// HALVED RATHER THAN SWEPT, because a document is mostly units that need
+/// nothing. A group is offered its minimal form all at once and only split when
+/// that fails, so a document with one failing unit costs about log(n) renders
+/// instead of n.
+///
+/// THE FIRST RENDER IS A CONTROL. With every unit escalated this must reproduce
+/// the conservative form byte for byte; if it does not, the selection is
+/// deciding something other than the escape mode -- a unit the walk did not
+/// reach, for instance -- and the document-scoped form is returned rather than
+/// a narrowing built on a state that is not what it claims.
+fn narrow_escalation(doc: &Document, conservative: String) -> String {
+    // `None` answers "cannot tell", exactly as it does for the minimal form:
+    // with no tree to hold the narrowing against, there is nothing to narrow
+    // toward.
+    let Some(conservative_tree) = comparable_tree(&conservative) else {
+        return conservative;
+    };
+    // How many units the document has is a property of the WALK, so it is
+    // counted by walking: the pass below is the same conservative render, and
+    // its agreeing with `conservative` is the first half of the control.
+    let discovered = render_with_escapes(doc, EscapeMode::Conservative);
+    let total = UNIT_COUNTER.with(|c| c.get());
+    if discovered != conservative || total == 0 {
+        return conservative;
+    }
+
+    let units: Vec<usize> = (1..=total).collect();
+    ESCALATED_UNITS.with(|cell| *cell.borrow_mut() = Some(units.iter().copied().collect()));
+    let control = render_with_escapes(doc, EscapeMode::Conservative);
+    if control != conservative {
+        ESCALATED_UNITS.with(|cell| *cell.borrow_mut() = None);
+        return conservative;
+    }
+    let mut best = control;
+    // Eight times the depth of the halving, which is what narrowing four
+    // independent failing units costs. See `budget` on `relax_units`.
+    let mut budget = 8 * (usize::BITS - total.leading_zeros()) as usize + 8;
+    relax_units(doc, &units, &conservative_tree, &mut best, &mut budget);
+    ESCALATED_UNITS.with(|cell| *cell.borrow_mut() = None);
+    best
+}
+
+/// Hand `units` their minimal form where the document still holds, halving the
+/// group on failure.
+///
+/// `best` carries the render of the CURRENT escalation set, so the caller always
+/// holds bytes that were verified: an accepted relaxation replaces it, a
+/// rejected one restores the set it was measured against.
+///
+/// `budget` BOUNDS THE SEARCH, because its cost is proportional to how many
+/// units FAIL. A group holding no failing unit is relaxed in one render, so a
+/// document with a handful of them costs about log(n) renders -- but one where
+/// nearly every unit fails drives the recursion to its leaves and pays a render
+/// and a parse per unit, which is quadratic in the document.
+///
+/// Such a document gains almost nothing from narrowing: it IS the conservative
+/// form, arrived at because every block needed it. So the search stops when the
+/// budget runs out and returns the state it has reached, which is verified like
+/// every other -- the escalation is wider than §2b's minimum there, never
+/// narrower, and no document's output can be wrong for it.
+///
+/// MEASURED before it was chosen: over the 1341 pinned corpus documents 50 reach
+/// the search at all, the most expensive spends 22 renders on 209 units, and the
+/// budget gives that document 72.
+fn relax_units(
+    doc: &Document,
+    units: &[usize],
+    conservative_tree: &Document,
+    best: &mut String,
+    budget: &mut usize,
+) {
+    if units.is_empty() || *budget == 0 {
+        return;
+    }
+    *budget -= 1;
+    set_escalated(units, false);
+    let candidate = render_with_escapes(doc, EscapeMode::Conservative);
+    if comparable_tree(&candidate).as_ref() == Some(conservative_tree) {
+        *best = candidate;
+        return;
+    }
+    set_escalated(units, true);
+    if units.len() == 1 {
+        return;
+    }
+    let half = units.len() / 2;
+    relax_units(doc, &units[..half], conservative_tree, best, budget);
+    relax_units(doc, &units[half..], conservative_tree, best, budget);
+}
+
+fn set_escalated(units: &[usize], escalated: bool) {
+    ESCALATED_UNITS.with(|cell| {
+        if let Some(set) = cell.borrow_mut().as_mut() {
+            for unit in units {
+                if escalated {
+                    set.insert(*unit);
+                } else {
+                    set.remove(unit);
+                }
+            }
+        }
+    });
+}
+
+/// The comparable tree of `source`, or `None` when it does not parse.
+///
+/// The same normalization `escaping_is_redundant` compares through, so the
+/// narrowing cannot answer differently from the decision that sent it here.
+fn comparable_tree(source: &str) -> Option<Document> {
+    std::panic::catch_unwind(|| comparable_document(crate::parse::parse_for_carve_shape(source)))
+        .ok()
 }
 
 /// The lines every EMPTIED marker-line container sits on, anywhere in the tree.
@@ -480,6 +619,10 @@ fn render_with_escapes(doc: &Document, escape_mode: EscapeMode) -> String {
 }
 
 fn render_with_escapes_once(doc: &Document, escape_mode: EscapeMode) -> String {
+    // PER PASS, like `written_in_place` above and for the same reason: the unit
+    // ordinals name positions in THIS walk, and a counter carried across passes
+    // would name a different node in each of them.
+    UNIT_COUNTER.with(|c| c.set(0));
     let mut ctx = CarveContext {
         block_depth: 0,
         inline_depth: 0,
@@ -491,6 +634,7 @@ fn render_with_escapes_once(doc: &Document, escape_mode: EscapeMode) -> String {
         after_caption_host: false,
         paragraph_starts_after_caption_host: false,
         escape_mode,
+        escape_unit: 0,
         definitions_by_line: definitions_by_description_line(doc),
         written_in_place: HashSet::new(),
     };
@@ -1153,7 +1297,19 @@ fn render_item_blocks(blocks: &[BlockNode], tight: bool, ctx: &mut CarveContext)
     out
 }
 
+/// Render one block, charging what it writes to a unit of its own.
+///
+/// PART 11 §2b bounds an escalation to the smallest unit that fails, so the
+/// escape pass has to know which unit each escaped character belongs to.
 fn render_block(node: &BlockNode, ctx: &mut CarveContext) -> String {
+    let previous = ctx.escape_unit;
+    ctx.escape_unit = next_escape_unit();
+    let out = render_block_body(node, ctx);
+    ctx.escape_unit = previous;
+    out
+}
+
+fn render_block_body(node: &BlockNode, ctx: &mut CarveContext) -> String {
     match node {
         // PART 12 section 18: renders nothing where it sits, on this target as
         // on every other. The Carve writer parses without the Citations
@@ -1910,10 +2066,15 @@ fn render_inlines_with_caption(
             .get(idx + 1)
             .and_then(first_boundary)
             .unwrap_or_default();
+        // The NEXT unit's mode, because this decision is about the escape the
+        // node below is going to write and `render_inline` has not claimed its
+        // ordinal yet. Taking `ctx.escape_mode` here would hold every node's
+        // `^[` to the conservative answer while §2b had narrowed the rest of
+        // the document.
         let opens_a_note = next_node_opens_a_note(
             nodes.get(idx + 1),
             ctx.note_content_depth > 0,
-            ctx.escape_mode,
+            ctx.next_unit_escape_mode(),
         );
         let opens_verbatim = next_node_opens_a_verbatim_span(nodes.get(idx + 1));
         let rendered = render_inline(
@@ -2006,7 +2167,34 @@ fn inline_hosts_caption(node: &InlineNode) -> bool {
     }
 }
 
+/// Render one inline node, charging what it writes to a unit of its own (see
+/// [`render_block`]).
 fn render_inline(
+    node: &InlineNode,
+    ctx: &mut CarveContext,
+    prev_char: char,
+    next_char: char,
+    caption_can_open: bool,
+    next_opens_a_note: bool,
+    next_opens_a_verbatim_span: bool,
+) -> String {
+    let previous = ctx.escape_unit;
+    ctx.escape_unit = next_escape_unit();
+    let out = render_inline_body(
+        node,
+        ctx,
+        prev_char,
+        next_char,
+        caption_can_open,
+        next_opens_a_note,
+        next_opens_a_verbatim_span,
+    );
+    ctx.escape_unit = previous;
+    out
+}
+
+#[allow(clippy::too_many_arguments)]
+fn render_inline_body(
     node: &InlineNode,
     ctx: &mut CarveContext,
     prev_char: char,
@@ -2033,7 +2221,7 @@ fn render_inline(
         InlineNode::Comment(c) => format!("%% {}", c.content),
         InlineNode::Text(text) => escape_text(
             &resolve_nbsp_placeholder(&text.value, ctx.line_block_depth > 0),
-            ctx.escape_mode,
+            ctx.escape_mode_here(),
             // Does this node's first character sit at the start of a block
             // line? Only there can a `^` be read back as a caption marker.
             (prev_char == '\0' || prev_char == '\n') && ctx.table_cell_depth == 0,
@@ -2143,7 +2331,7 @@ fn render_inline(
         // bare - bytes that re-parse as an inline note.
         InlineNode::Abbreviation(abbr) => escape_text(
             &abbr.abbr,
-            ctx.escape_mode,
+            ctx.escape_mode_here(),
             false,
             false,
             prev_char,
@@ -2613,6 +2801,52 @@ thread_local! {
     /// The pre-restore text, kept so a replacement can be chosen against what
     /// the document actually holds.
     static STAGED: std::cell::RefCell<String> = const { std::cell::RefCell::new(String::new()) };
+    /// How many escape units the CURRENT pass has handed out (PART 11 §2b).
+    static UNIT_COUNTER: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    /// The units written in the conservative form, when the writer is deciding
+    /// unit by unit rather than document by document.
+    ///
+    /// `None` means the whole pass follows `ctx.escape_mode`, which is what the
+    /// two exploratory renders in `render_carve_once` do. `Some` is §2b's pass:
+    /// a unit in the set is escaped in full, every other unit is emitted by §2's
+    /// own test, and for a character nothing needs that means bare.
+    static ESCALATED_UNITS: std::cell::RefCell<Option<HashSet<usize>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Claim the next unit ordinal for the node about to render.
+fn next_escape_unit() -> usize {
+    UNIT_COUNTER.with(|c| {
+        let next = c.get() + 1;
+        c.set(next);
+        next
+    })
+}
+
+impl CarveContext {
+    /// Which form a character written by `unit` takes (PART 11 §2b).
+    fn escape_mode_for(&self, unit: usize) -> EscapeMode {
+        ESCALATED_UNITS.with(|cell| match cell.borrow().as_ref() {
+            None => self.escape_mode,
+            Some(escalated) => {
+                if escalated.contains(&unit) {
+                    EscapeMode::Conservative
+                } else {
+                    EscapeMode::Minimal
+                }
+            }
+        })
+    }
+
+    /// Which form the character being written now takes.
+    fn escape_mode_here(&self) -> EscapeMode {
+        self.escape_mode_for(self.escape_unit)
+    }
+
+    /// The mode of the node that is about to claim the next ordinal.
+    fn next_unit_escape_mode(&self) -> EscapeMode {
+        self.escape_mode_for(UNIT_COUNTER.with(|c| c.get()) + 1)
+    }
 }
 
 fn sentinel(which: usize) -> char {

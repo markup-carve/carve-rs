@@ -263,6 +263,13 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   holding one math node - and never the ``` math ``` extension fence, which
   without that extension loaded renders as a `language-math` code block.
 
+- **An escape escalation reaches the block that failed, not the document**
+  (#1227, markup-carve/carve#1516, PART 11 §2b). The writer took the
+  conservative form for the whole document as soon as its minimal form did not
+  re-parse, so one needed escape dragged every other candidate along; the
+  fallback now reaches the smallest unit that fails - the inline run, or the
+  block containing it - and every other candidate is written bare.
+
 - **The list writer's marker-column tag is picked per document, not fixed**
   (markup-carve/carve-rs#1226, markup-carve/carve-js#1289). It was the fixed
   `U+E005`, so a continuation line the author opened with that character was
