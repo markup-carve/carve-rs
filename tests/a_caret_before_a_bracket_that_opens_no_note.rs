@@ -123,12 +123,26 @@ fn a_caret_that_would_open_a_note_keeps_its_escape() {
     );
     // The `]` arrives past a node the writer has not rendered yet, so this one
     // is not decided here at all: the minimal form opens a note, the two passes
-    // disagree, and PART 11 §4's vote takes the conservative form.
+    // disagree, and PART 11 §4's vote picks between them.
+    //
+    // THIS ASSERTION READ `x \^\[a *b* \]` UNTIL PART 11 §2b, and the reason
+    // it did is the reason §2b exists. §4's vote took the conservative form for
+    // the WHOLE DOCUMENT, so every candidate in every run was escaped once one
+    // of them had to be. §2b bounds the fallback to the smallest unit that
+    // fails, and here that is the LAST run: neutralizing the `]` is enough to
+    // stop the note forming, so the first run keeps its `^` and `[` bare. One
+    // escape where there were three, and the written form still re-parses to
+    // this tree, which is what the vote actually asks.
+    //
+    // The caret decision itself is untouched - it is still "not decided here",
+    // and it is still the vote that settles it. What changed is how far the
+    // vote's answer reaches. carve-js and carve-php write the same bytes for
+    // this tree (markup-carve/carve-js#1307, markup-carve/carve-php#1560).
     assert_eq!(
         ingested(
             r#"{"type":"text","value":"x ^[a "},{"type":"strong","children":[{"type":"text","value":"b"}]},{"type":"text","value":" ]"}"#
         ),
-        "x \\^\\[a *b* \\]\n"
+        "x ^[a *b* \\]\n"
     );
 }
 
