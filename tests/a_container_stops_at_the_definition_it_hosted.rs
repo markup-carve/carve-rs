@@ -1,20 +1,25 @@
-//! A container's extent reaches the DEFINITION it hosted.
+//! A container's extent STOPS at the definition it hosted.
 //!
-//! A footnote or link reference definition is lifted out of the body before the
-//! block parser runs, and an invisible placeholder is left on the line it
-//! opened so the container still sees a non-blank line there. Two things about
-//! that placeholder left a container ending a line early, where carve-js and
-//! carve-php agree with each other (carve-rs#1106):
+//! THE DIRECTION OF THIS FILE REVERSED, and that is the subject rather than an
+//! accident. A footnote or link reference definition is lifted out of the body
+//! before the block parser runs, and an invisible placeholder is left on the
+//! line it opened so the container still sees a non-blank line there. This
+//! engine then widened every container ending on that line out to cover the
+//! definition, so all three engines agreed that `- a` followed by a collected
+//! definition produced a list running past its own item (carve-rs#1106).
 //!
-//! * behind an ALTERNATING container prefix - a quote marker carrying a list
-//!   that is reached by plain indentation - the placeholder was put at the
-//!   prefix's column instead of the definition's own, so every list deeper than
-//!   the prefix closed on the line before;
-//! * a MULTI-LINE definition leaves one placeholder for a body of several
-//!   lines, so the container's cursor-derived span ended on the opening line.
+//! markup-carve/carve#1522 ruled the other way. PART 12 section 7 hoists the
+//! definition to the DOCUMENT, so it is the list's sibling, not its child - and
+//! two siblings covering the same offsets is exactly what section 4's
+//! sibling-overlap prohibition exists to prevent. A container ends at its last
+//! placed child, and the definition is not one.
 //!
-//! PART 12 section 4 is markup-inclusive (markup-carve/carve#913): a
-//! container's extent has to cover the source it consumed.
+//! What the widening was FOR is unaffected and still asserted below: the
+//! placeholder keeps the removed definition from leaving a blank line that
+//! loosens the item, and the duplicate-label bookkeeping still has to leave the
+//! accepted definition's own span where it was. Those tests did not move. Every
+//! assertion that reversed is an extent, and each carries the value it used to
+//! have.
 
 use serde_json::Value;
 
@@ -85,27 +90,30 @@ fn end(pos: &Value) -> (u64, u64, u64) {
 // ---- a multi-line definition body -------------------------------------------
 
 /// Corpus 357-...-4. The definition sits at the item's content column with no
-/// marker in front of it, and its body runs one line further.
+/// marker in front of it, and its body runs one line further - and the list
+/// stops before all of it. This read `(3, 9, 22)`, the end of the definition's
+/// body, which is source the list has no child for (carve#1522).
 #[test]
-fn a_list_reaches_the_end_of_the_body_of_the_definition_it_hosted() {
+fn a_list_stops_before_the_body_of_the_definition_it_hosted() {
     let source = "- a\n  [^f]: t\n    more\ntail\n\nx[^f]\n";
 
-    assert_eq!(end(&node_at(source, "list", 1)), (3, 9, 22));
+    assert_eq!(end(&node_at(source, "list", 1)), (1, 4, 3));
 }
 
-/// Corpus 359. A single blank line inside the note body keeps it open, so the
-/// list still reaches the body's last line.
+/// Corpus 359. A single blank line inside the note body keeps the note open,
+/// and it makes no difference to the list: whatever the definition's body does,
+/// the list ends at its own last item. This read `(4, 9, 23)`.
 #[test]
-fn a_blank_line_inside_the_hosted_body_does_not_stop_the_list_early() {
+fn a_blank_line_inside_the_hosted_body_makes_no_difference_to_the_list() {
     let source = "- a\n  [^f]: t\n\n    more\ntail\n\nx[^f]\n";
 
-    assert_eq!(end(&node_at(source, "list", 1)), (4, 9, 23));
+    assert_eq!(end(&node_at(source, "list", 1)), (1, 4, 3));
 }
 
-/// INTENDED SURVIVOR. Only the block that ENDS ON the definition's line is
-/// widened, and the item ends on line 1 - its content is `a` and nothing else.
-/// carve-js reports the same split, so widening the item too would trade one
-/// divergence for another.
+/// UNCHANGED BY THE REVERSAL, and the reason it is worth keeping: the item
+/// always ended on line 1, because its content is `a` and nothing else. What
+/// moved is the LIST, which now agrees with it - the two assertions used to
+/// disagree by two lines and the disagreement was the defect.
 #[test]
 fn the_item_that_ended_before_the_definition_is_left_where_it_was() {
     let source = "- a\n  [^f]: t\n    more\ntail\n\nx[^f]\n";
@@ -113,13 +121,13 @@ fn the_item_that_ended_before_the_definition_is_left_where_it_was() {
     assert_eq!(end(&node_at(source, "list_item", 1)), (1, 4, 3));
 }
 
-/// INTENDED SURVIVOR. A single-line definition has nothing past its own line,
-/// so nothing widens: the list still ends on the line the definition opened.
+/// A single-line definition is the same answer: the list ends at its item, not
+/// on the line the definition opened. This read `(2, 10, 13)`.
 #[test]
-fn a_single_line_definition_does_not_widen_the_container_that_hosted_it() {
+fn a_single_line_definition_does_not_extend_the_container_that_hosted_it() {
     let source = "- a\n  [^f]: t\ntail\n\nx[^f]\n";
 
-    assert_eq!(end(&node_at(source, "list", 1)), (2, 10, 13));
+    assert_eq!(end(&node_at(source, "list", 1)), (1, 4, 3));
 }
 
 // ---- an alternating container prefix ----------------------------------------
@@ -128,34 +136,38 @@ fn a_single_line_definition_does_not_widen_the_container_that_hosted_it() {
 /// two lists under it are reached by indentation, and the definition stands at
 /// the innermost content column.
 #[test]
-fn a_footnote_definition_behind_an_alternating_prefix_is_inside_the_inner_list() {
+fn a_footnote_definition_behind_an_alternating_prefix_is_outside_the_inner_list() {
     let source = "- > - - x\n  >     [^f]: note\n\nSee [^f].\n";
 
-    assert_eq!(end(&node_at(source, "list", 7)), (2, 19, 28));
-    assert_eq!(end(&node_at(source, "list_item", 5)), (2, 19, 28));
+    // Both read `(2, 19, 28)` - the end of the definition line - while the
+    // innermost item's content is `x` on line 1.
+    assert_eq!(end(&node_at(source, "list", 7)), (1, 10, 9));
+    assert_eq!(end(&node_at(source, "list_item", 5)), (1, 10, 9));
 }
 
 /// Corpus 360-...-4. The same shape for a LINK reference definition, which is
 /// lifted out by the other prepass - both carried the same placeholder bug.
 #[test]
-fn a_link_definition_behind_an_alternating_prefix_is_inside_the_inner_list() {
+fn a_link_definition_behind_an_alternating_prefix_is_outside_the_inner_list() {
     let source = "> - - x\n>     [r]: /url\n\nSee [r][].\n";
 
-    assert_eq!(end(&node_at(source, "list", 5)), (2, 16, 23));
-    assert_eq!(end(&node_at(source, "list_item", 3)), (2, 16, 23));
+    // Both read `(2, 16, 23)`.
+    assert_eq!(end(&node_at(source, "list", 5)), (1, 8, 7));
+    assert_eq!(end(&node_at(source, "list_item", 3)), (1, 8, 7));
 }
 
-/// A SINGLE-LINE definition can leave a container short too. The placeholder
-/// is not always as wide as the line it replaced, so the block that consumed
-/// that line ended inside it: the item and the quote here stopped at column 8
-/// of an 11-column line. Found by a mutation that removed the "multi-line
-/// definitions only" filter and turned out to fix this rather than break it.
+/// AND THE EMPTIED CONTAINER, which the ruling reached separately. The quote's
+/// only content was the definition, so once the definition is not its child the
+/// quote has NO placed child at all - and "ends at its last placed child" is
+/// silent there. It spans the markup that opened it, `> `, and stops; the item
+/// around it then ends where the quote does. Both read `(1, 12, 11)`, the end
+/// of the line the definition was written on (markup-carve/carve-rs#1233).
 #[test]
-fn a_single_line_definition_still_reaches_the_end_of_the_line_it_was_written_on() {
+fn a_container_the_definition_emptied_spans_its_own_markup() {
     let source = "- > [^f]: t\n\nSee [^f].\n";
 
-    assert_eq!(end(&node_at(source, "list_item", 1)), (1, 12, 11));
-    assert_eq!(end(&node_at(source, "block_quote", 3)), (1, 12, 11));
+    assert_eq!(end(&node_at(source, "block_quote", 3)), (1, 5, 4));
+    assert_eq!(end(&node_at(source, "list_item", 1)), (1, 5, 4));
 }
 
 // ---- a duplicate must not move the definition that was accepted ------------
@@ -166,14 +178,17 @@ fn a_single_line_definition_still_reaches_the_end_of_the_line_it_was_written_on(
 /// A definition followed by a blank line has its end pushed to the following
 /// line, and that was applied by label rather than by definition - so the
 /// duplicate on line 5 wrote line 6 onto the span of the definition on line 2.
-/// Nothing read that span until the widening above, which then reported the
-/// list as running to line 6 and swallowing `tail` and the duplicate with it.
+///
+/// THE FOOTNOTE HALF IS THE ONE THAT MATTERS and it did not move. The list half
+/// read `(2, 10, 13)` because the list was widened onto the definition's line;
+/// it now ends at its own item, which means the list no longer reports the bug
+/// at all and the footnote's own span is what has to catch it.
 #[test]
 fn a_duplicate_definition_does_not_move_the_one_that_was_accepted() {
     let source = "- a\n  [^f]: t\ntail\n\n[^f]: dup\n\nx[^f]\n";
 
     assert_eq!(end(&node_at(source, "footnote", 3)), (2, 10, 13));
-    assert_eq!(end(&node_at(source, "list", 1)), (2, 10, 13));
+    assert_eq!(end(&node_at(source, "list", 1)), (1, 4, 3));
 }
 
 // ---- what the placeholder is there for --------------------------------------

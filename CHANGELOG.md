@@ -79,6 +79,13 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **A container's span ends at its last placed child**
+  (markup-carve/carve#1522, markup-carve/carve#1524, PART 12 §4). A `list`,
+  `list_item` or `block_quote` no longer reaches over a definition hoisted out
+  of it, an unattached attribute block, or the blank run that follows it. A
+  container a collected definition emptied spans the markup that opened it.
+  Published `pos` values move on those documents.
+
 - **Three blank lines are a hard list boundary** (markup-carve/carve#1430, PART
   9 §11 N1a). A run of three or more before a compatible sibling marker opens a
   new list instead of loosening the current one, at every level. One and two
