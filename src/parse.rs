@@ -4235,7 +4235,6 @@ fn emptied_container_markup(line: &str, start_column: usize, quote: bool) -> usi
     i
 }
 
-
 /// Turn the line/column pair already on a span into codepoint offsets.
 fn apply_offsets(pos: &mut Pos, line_starts: &[usize]) {
     if let Some(start) = line_starts.get(pos.start_line.saturating_sub(1)) {
