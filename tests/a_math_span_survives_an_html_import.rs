@@ -22,10 +22,14 @@
 //! escaped paren in prose can turn text into an equation on its own. The
 //! controls at the bottom hold on BOTH sides of the fix.
 //!
-//! The BLOCK form, `<div class="math display">`, is deliberately absent:
-//! markup-carve/carve#1514 is the open ruling on which Carve spelling it takes,
-//! and `unimplemented_block_form_is_left_for_the_open_ruling` records what this
-//! engine does meanwhile so the ruling has a measurement rather than a guess.
+//! The BLOCK form, `<div class="math display">`, was deliberately absent while
+//! markup-carve/carve#1514 was open on which Carve spelling it takes, and this
+//! file recorded the gap as a measurement rather than a guess.
+//! markup-carve/carve#1518 ruled it: the CORE `$$` form, never the
+//! ```` ```math ```` extension fence, because an importer must not emit a
+//! construct whose meaning depends on the consumer's configuration.
+//! `the_block_form_imports_as_the_core_display_math` is the rewritten
+//! placeholder, and it carries the argument the fence lost.
 
 use carve::*;
 
@@ -361,32 +365,196 @@ fn the_mathml_path_writes_no_trailing_delimiter() {
     );
 }
 
-/// THE BLOCK FORM IS DELIBERATELY NOT IMPLEMENTED, and this records what the
-/// engine does meanwhile.
+/// THE BLOCK FORM TAKES THE CORE `$$` SPELLING, NEVER THE EXTENSION FENCE.
 ///
-/// `<div class="math display">\[…\]</div>` is lost the same way the inline span
-/// was, but markup-carve/carve#1514 is the OPEN ruling on which Carve spelling
-/// it should take: markup-carve/carve-php#1546 imports it as the ` ```math `
-/// fence (an exact round trip of the extension that wrote the HTML),
-/// markup-carve/carve-js#1295 as the core `$$` form (PART 9 §18 `math_display`,
-/// which needs no extension loaded). Both reasons are good and the spec says
-/// nothing yet, so a third engine picking a third spelling is what that ruling
-/// exists to prevent.
+/// THIS TEST WAS `unimplemented_block_form_is_left_for_the_open_ruling`, and it
+/// asserted that `<div class="math display">\[…\]</div>` came back as a Carve
+/// div holding the delimiters as text - the same loss the inline span had. That
+/// was deliberate: markup-carve/carve-php#1546 imported the div as the
+/// ` ```math ` fence, because that fence is what wrote the HTML and the round
+/// trip is then exact, and markup-carve/carve-js#1295 imported it as the core
+/// `$$` form, because the fence is an extension. Both reasons were good, PART 9
+/// §18 said nothing, and a third engine picking a third spelling was what the
+/// ruling existed to prevent - so this engine measured its gap instead of
+/// guessing.
 ///
-/// When #1514 lands, this test is the one to rewrite - not delete.
+/// markup-carve/carve#1518 ruled it (from markup-carve/carve#1514): the CORE
+/// form. The fence lost because it is an EXTENSION - with it not loaded the
+/// same imported document is a `language-math` code block rather than an
+/// equation, so the file would be mathematics for one consumer and code for
+/// another. `math_display` is core and needs nothing loaded. The round-trip
+/// argument is real and is not the job: an importer produces a document that
+/// MEANS what the HTML meant, and it cannot know an extension generated the
+/// HTML at all. Emitting the fence only when the extension is registered was
+/// rejected on purpose - it makes two runs of the same tool over the same input
+/// produce different documents.
 #[test]
-fn unimplemented_block_form_is_left_for_the_open_ruling() {
+fn the_block_form_imports_as_the_core_display_math() {
     let html = r#"<div class="math display">\[x^2\]</div>"#;
     assert_eq!(
         kinds(&imported(html).value),
-        vec!["div", "paragraph", "text"],
-        "still a Carve div holding the delimiters as text, pending carve#1514"
+        vec!["paragraph", "math[display]:x^2"],
+        "a paragraph holding one display math node, not a div and not a code block"
     );
-    // The INLINE half of the same shape, where all three engines already agree,
-    // is unaffected by the block form's being open.
+    assert_eq!(written(html), "$$`x^2`\n");
+    // Never the fence, which is the half of the ruling a tree check cannot see:
+    // a `code_block` would also be one block, and `kinds` would call it that,
+    // but the SOURCE is where the extension dependency lives.
+    assert!(!written(html).contains("```"));
+    // And the written source re-reads as the node it came from, which is the
+    // equality that makes the spelling a document rather than a string.
+    assert_eq!(kinds(&parse(&written(html))), kinds(&imported(html).value));
+
+    // The INLINE half of the same shape, where all three engines already
+    // agreed, is unchanged by the block form landing.
     let span = r#"<p><span class="math display" role="math">\[x^2\]</span></p>"#;
     assert_eq!(
         kinds(&imported(span).value),
         vec!["paragraph", "math[display]:x^2"]
     );
+}
+
+/// The CLASS decides the mode, not the position the element was found in. A div
+/// spelled `math inline` writes the inline form; under a ` ```math ` fence it
+/// could only ever have been display, because that fence has no other mode.
+#[test]
+fn a_block_element_spelled_inline_writes_the_inline_form() {
+    let html = r#"<div class="math inline">\(x^2\)</div>"#;
+    assert_eq!(
+        kinds(&imported(html).value),
+        vec!["paragraph", "math[inline]:x^2"]
+    );
+    assert_eq!(written(html), "$`x^2`\n");
+}
+
+/// The author's own attributes ride the math NODE, and the two classes that
+/// SPELL the math are consumed by the spelling - exactly as on the span.
+#[test]
+fn the_block_form_keeps_the_authors_attributes() {
+    let html = r#"<div id="eq" class="math display big" data-k="v">\[x\]</div>"#;
+    assert_eq!(written(html), "$$`x`{#eq .big data-k=v}\n");
+    assert_eq!(
+        kinds(&parse(&written(html))),
+        vec!["paragraph", "math[display]:x"]
+    );
+}
+
+/// THE SHARED IMPORT CONTRACT'S MATH DOCUMENT, byte for byte:
+/// `tests/html-import/math-block-and-mathml` in the spec repo carries the div,
+/// a block `<math>` and an inline `<math>` in one input, because a stray `$$`
+/// has no render difference to find and only the bytes can see it.
+#[test]
+fn the_shared_import_contracts_math_document() {
+    let html = r#"<div class="math display">\[E = mc^2\]</div>"#.to_string()
+        + r#"<math display="block" alttext="a - b"></math>"#
+        + r#"<p>x <math alttext="c + d"></math> y</p>"#;
+    assert_eq!(
+        written(&html),
+        "$$`E = mc^2`\n\n$$`a - b`\n\nx $`c + d` y\n"
+    );
+}
+
+/// The converter corpus case the ruling pins, `33-html-block-math-imports-as-
+/// the-core-form`, which compares the RENDER of the produced Carve - the only
+/// place the two spellings of the div differ at all. Under the fence this
+/// rendered `<pre><code class="language-math">`.
+#[test]
+fn the_block_form_renders_back_as_an_equation_with_no_extension_loaded() {
+    let written = written(r#"<div class="math display">\[E = mc^2\]</div>"#);
+    assert_eq!(
+        render_html(&parse(&written)).expect("render").trim(),
+        r#"<p><span class="math display" role="math">\[E = mc^2\]</span></p>"#
+    );
+}
+
+/// CONTROLS ON THE BLOCK FORM - the same two signals, and they hold on BOTH
+/// sides of the fix. A div carrying only the class, or only the delimiters, or
+/// a payload its class disagrees with, or no payload at all, is a div.
+#[test]
+fn control_a_block_element_needs_both_signals_too() {
+    for html in [
+        r#"<div class="math display">x^2</div>"#,
+        r#"<div class="display">\[x^2\]</div>"#,
+        r#"<div class="math">\[x^2\]</div>"#,
+        r#"<div class="math display">\(x^2\)</div>"#,
+        r#"<div class="math inline display">\[x^2\]</div>"#,
+        r#"<div class="math display">\[\]</div>"#,
+        r#"<div class="math display">\[<b>x</b>\]</div>"#,
+    ] {
+        assert!(!has_math(html), "two signals must agree: {html}");
+        assert!(
+            !written(html).contains("$`"),
+            "and nothing writes math: {html}"
+        );
+    }
+}
+
+/// WHICH ARM A DIV TAKES MUST NOT CHANGE WHAT THE LIMITS SEE. The block arm
+/// returns WITHOUT walking its children, so unlike the span - which is
+/// recognized after `inlines` has already charged the subtree - it has to call
+/// `charge_subtree` by hand. A recognition that read text recursively before
+/// charging would let crafted HTML reach the stack ahead of the limit meant to
+/// stop it; the payload read is `direct_text`, which is bounded and stops at
+/// the first element child.
+///
+/// Asserted as an EQUALITY between two structurally identical divs rather than
+/// against a number, the way the span's budget test is - and on BOTH limits,
+/// because the arm skips a traversal and a skipped traversal is exactly where a
+/// depth could go uncounted. Nested rows too: at the top level the two limits
+/// can agree by accident.
+#[test]
+fn the_block_recognition_costs_the_same_budget_as_the_div_it_replaces() {
+    let nodes = |html: &str| {
+        (1..64)
+            .find(|n| {
+                html_to_ast(
+                    html,
+                    &HtmlImportOptions {
+                        max_nodes: *n,
+                        ..HtmlImportOptions::default()
+                    },
+                )
+                .is_ok()
+            })
+            .expect("some node budget admits it")
+    };
+    let depth = |html: &str| {
+        (1..64)
+            .find(|n| {
+                html_to_ast(
+                    html,
+                    &HtmlImportOptions {
+                        max_depth: *n,
+                        ..HtmlImportOptions::default()
+                    },
+                )
+                .is_ok()
+            })
+            .expect("some depth admits it")
+    };
+    for (math, twin) in [
+        (
+            r#"<div class="math display">\[x\]</div>"#,
+            r#"<div class="mass display">\[x\]</div>"#,
+        ),
+        (
+            r#"<blockquote><div class="math display">\[x\]</div></blockquote>"#,
+            r#"<blockquote><div class="mass display">\[x\]</div></blockquote>"#,
+        ),
+        (
+            r#"<div><div class="math display">\[x\]</div></div>"#,
+            r#"<div><div class="mass display">\[x\]</div></div>"#,
+        ),
+    ] {
+        assert_eq!(
+            nodes(math),
+            nodes(twin),
+            "recognizing a div as math must not make it cheaper or dearer: {math}"
+        );
+        assert_eq!(
+            depth(math),
+            depth(twin),
+            "nor must it change the depth the limit sees: {math}"
+        );
+    }
 }

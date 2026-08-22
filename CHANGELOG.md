@@ -249,6 +249,13 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **An HTML import reads `<div class="math display">` as block math**
+  (markup-carve/carve-rs#1229, markup-carve/carve#1518,
+  markup-carve/carve#1514, PART 9 §18). It came back as a Carve div holding the
+  delimiters as text; it is now the core `$$` display form - a paragraph
+  holding one math node - and never the ``` math ``` extension fence, which
+  without that extension loaded renders as a `language-math` code block.
+
 - **The list writer's marker-column tag is picked per document, not fixed**
   (markup-carve/carve-rs#1226, markup-carve/carve-js#1289). It was the fixed
   `U+E005`, so a continuation line the author opened with that character was
