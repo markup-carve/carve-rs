@@ -238,14 +238,14 @@ fn render_carve_unguarded(doc: &Document) -> String {
     let current = SENTINELS.with(|s| s.get());
     let inserted = INSERTED.with(|c| c.get());
     let seen = SEEN.with(|c| c.get());
-    if (0..5).all(|i| seen[i] <= inserted[i]) {
+    if (0..SENTINEL_COUNT).all(|i| seen[i] <= inserted[i]) {
         return first;
     }
     // Choose against the STAGED text: `first` has been through restore, so an
     // authored occurrence is no longer visible in it.
     let staged = STAGED.with(|c| c.borrow().clone());
     let mut next = current;
-    for i in 0..5 {
+    for i in 0..SENTINEL_COUNT {
         if seen[i] > inserted[i] {
             next[i] = free_sentinel(&staged, &next);
         }
@@ -260,8 +260,8 @@ fn render_carve_unguarded(doc: &Document) -> String {
 fn render_carve_once(doc: &Document) -> String {
     let redundant = redundant_heading_ids(doc);
     REDUNDANT_IDS.with(|cell| *cell.borrow_mut() = redundant);
-    INSERTED.with(|c| c.set([0; 5]));
-    SEEN.with(|c| c.set([0; 5]));
+    INSERTED.with(|c| c.set([0; SENTINEL_COUNT]));
+    SEEN.with(|c| c.set([0; SENTINEL_COUNT]));
     STAGED.with(|c| c.borrow_mut().clear());
     let minimal = render_with_escapes(doc, EscapeMode::Minimal);
     let conservative = render_with_escapes(doc, EscapeMode::Conservative);
@@ -1013,11 +1013,25 @@ fn definition_at_line(line: usize, ctx: &mut CarveContext) -> Option<String> {
 /// things that must NOT get that prefix (§17 L3), and they are produced deep
 /// inside the item body where the prefix is not yet known - so they are tagged
 /// here and the prefix loop honours the tag.
-const MARKER_COLUMN: char = '\u{e005}';
+///
+/// It is a PICKED sentinel (`SENTINEL_DEFAULTS`), not a fixed code point. The
+/// tag is undone BY POSITION - a line that starts with it - so a continuation
+/// line the AUTHOR opened with the same character answered that test, and the
+/// writer ate the character AND wrote the line at the marker column, moving the
+/// block out of the item (markup-carve/carve-rs#1226). carve-js reached the
+/// same place, and moved the same marker into its own picked run, in
+/// markup-carve/carve-js#1289.
+fn marker_column() -> char {
+    sentinel(S_MARKER_COLUMN)
+}
 
 fn at_marker_column(text: &str) -> String {
+    let marker = marker_column();
     text.split('\n')
-        .map(|line| format!("{MARKER_COLUMN}{line}"))
+        .map(|line| {
+            note_inserted(S_MARKER_COLUMN);
+            format!("{marker}{line}")
+        })
         .collect::<Vec<_>>()
         .join("\n")
 }
@@ -1513,6 +1527,13 @@ fn render_list(node: &List, ctx: &mut CarveContext) -> String {
             content = "+".to_string();
         }
         let content = trim_non_nbsp(&content).to_string();
+        // COUNT THE MARKER-COLUMN TAGS STANDING IN THE ASSEMBLED ITEM, here and
+        // not at restore time: this loop is what consumes them, so this is the
+        // last moment an authored one is still visible. Counted over the whole
+        // item rather than only over the lines the loop strips - a tag the item
+        // dropped would otherwise hide an authored occurrence behind a matching
+        // insertion count, and answering from the item's own text cannot.
+        note_seen(S_MARKER_COLUMN, content.matches(marker_column()).count());
         let mut lines = if content.is_empty() {
             vec!["".to_string()]
         } else {
@@ -1539,7 +1560,7 @@ fn render_list(node: &List, ctx: &mut CarveContext) -> String {
                 // it keeps protecting the line it stands for.
                 out.push_str(&line);
                 out.push('\n');
-            } else if let Some(rest) = line.strip_prefix(MARKER_COLUMN) {
+            } else if let Some(rest) = line.strip_prefix(marker_column()) {
                 // The continuation marker and its attached block sit at the
                 // ITEM's marker column, not its content column (§17 L3).
                 out.push_str(&format!("{rest}\n"));
@@ -2513,10 +2534,11 @@ fn align_marker(align: Option<TableAlign>) -> &'static str {
 
 /// The staging characters an AUTHORED occurrence can be mistaken for.
 ///
-/// Five, in two groups, and both groups have the same failure:
+/// Six, in two groups, and both groups have the same failure:
 ///
 ///   VERBATIM_BLANK  a line that was blank inside verbatim content
 ///   THEMATIC_GUARD  prefixes a line that would re-parse as a thematic break
+///   MARKER_COLUMN   prefixes a line owed the item's marker column (§17 L3)
 ///   ESCAPED_SPACE   stands in for `\ ` until normalize expands it
 ///   STAGED_SPACE    a space that must survive escaping
 ///   STAGED_TAB      a tab that must survive escaping
@@ -2535,39 +2557,59 @@ fn align_marker(align: Option<TableAlign>) -> &'static str {
 /// writer marker sharing it would be indistinguishable from document content.
 /// They used to sit at U+E001 and U+E002 (carve-rs#404).
 ///
-/// The first two are undone BY POSITION - a line that is nothing but the
-/// marker, and a line prefix. The last three are undone by a GLOBAL replace,
-/// because each has more than one insertion site. Either way a character the
-/// author wrote is indistinguishable from one the writer inserted, and restore
-/// ate it: carve-rs#607 for the positional pair, carve-rs#630 for the rest.
+/// The first three are undone BY POSITION - a line that is nothing but the
+/// marker, and two line prefixes. The last three are undone by a GLOBAL
+/// replace, because each has more than one insertion site. Either way a
+/// character the author wrote is indistinguishable from one the writer
+/// inserted, and restore ate it: carve-rs#607 for the first positional pair,
+/// carve-rs#630 for the global three, carve-rs#1226 for the marker column,
+/// which was the one site left out of this scheme.
 ///
-/// Narrowing the positional pair to its exact sites (carve-rs#613) fixed every
+/// Narrowing the positional group to its exact sites (carve-rs#613) fixed every
 /// INLINE placement and could not fix the line-alone one, because that
 /// ambiguity IS positional. The global three have no narrowing available at
 /// all. So the CHARACTER moves instead: the writer counts what it inserts, and
 /// if the document holds more than that, the extra ones are the author's and
 /// the render repeats with characters the document does not contain. carve-js
-/// reached the same place from the other side in markup-carve/carve-js#666.
+/// reached the same place from the other side in markup-carve/carve-js#666, and
+/// moved its own marker-column tag in markup-carve/carve-js#1289.
+///
+/// OCCUPANCY IS ANSWERED BY COUNTING, NOT BY WALKING THE TREE. The writer is
+/// handed an AST, not the source, so "which private-use code points does the
+/// document hold" would mean a hand-written walk over every node type - and a
+/// field missed there would not delete a character, it would INVENT one, which
+/// is the worse direction to fail in. Counting inserted against seen asks the
+/// assembled document instead, and the assembled document is what the sentinels
+/// actually live in. carve-rs#1219 made the same call for the Markdown target.
 ///
 /// A document with no private-use character - every real one - takes the first
-/// render and pays five integer compares.
-const SENTINEL_DEFAULTS: [char; 5] = ['\u{e003}', '\u{e004}', '\u{e010}', '\u{e011}', '\u{e012}'];
+/// render and pays six integer compares.
+const SENTINEL_DEFAULTS: [char; SENTINEL_COUNT] = [
+    '\u{e003}', '\u{e004}', '\u{e005}', '\u{e010}', '\u{e011}', '\u{e012}',
+];
+
+const SENTINEL_COUNT: usize = 6;
 
 const S_BLANK: usize = 0;
 const S_GUARD: usize = 1;
-const S_ESCAPED_SPACE: usize = 2;
-const S_STAGED_SPACE: usize = 3;
-const S_STAGED_TAB: usize = 4;
+const S_MARKER_COLUMN: usize = 2;
+const S_ESCAPED_SPACE: usize = 3;
+const S_STAGED_SPACE: usize = 4;
+const S_STAGED_TAB: usize = 5;
 
 thread_local! {
-    static SENTINELS: std::cell::Cell<[char; 5]> = const { std::cell::Cell::new(SENTINEL_DEFAULTS) };
+    static SENTINELS: std::cell::Cell<[char; SENTINEL_COUNT]> =
+        const { std::cell::Cell::new(SENTINEL_DEFAULTS) };
     /// How many of each the writer inserted during the current render.
-    static INSERTED: std::cell::Cell<[usize; 5]> = const { std::cell::Cell::new([0; 5]) };
-    /// How many of each were actually PRESENT just before restore ran. Counted
-    /// there and not at the end, because restore is what consumes them: by the
-    /// time the render returns, an authored one has already been eaten and is
+    static INSERTED: std::cell::Cell<[usize; SENTINEL_COUNT]> =
+        const { std::cell::Cell::new([0; SENTINEL_COUNT]) };
+    /// How many of each were actually PRESENT just before the pass that
+    /// CONSUMES them ran - restore for five of them, the list writer's own line
+    /// loop for the marker column. Counted there and not at the end, because by
+    /// the time the render returns an authored one has already been eaten and is
     /// indistinguishable from never having been there.
-    static SEEN: std::cell::Cell<[usize; 5]> = const { std::cell::Cell::new([0; 5]) };
+    static SEEN: std::cell::Cell<[usize; SENTINEL_COUNT]> =
+        const { std::cell::Cell::new([0; SENTINEL_COUNT]) };
     /// The pre-restore text, kept so a replacement can be chosen against what
     /// the document actually holds.
     static STAGED: std::cell::RefCell<String> = const { std::cell::RefCell::new(String::new()) };
@@ -2581,6 +2623,19 @@ fn note_inserted(which: usize) {
     INSERTED.with(|c| {
         let mut n = c.get();
         n[which] += 1;
+        c.set(n);
+    });
+}
+
+/// Record sentinels standing in the assembled document, at the site that is
+/// about to consume them.
+fn note_seen(which: usize, count: usize) {
+    if count == 0 {
+        return;
+    }
+    SEEN.with(|c| {
+        let mut n = c.get();
+        n[which] += count;
         c.set(n);
     });
 }
@@ -2605,7 +2660,7 @@ fn staged_tab() -> char {
     sentinel(S_STAGED_TAB)
 }
 
-fn free_sentinel(text: &str, taken: &[char; 5]) -> char {
+fn free_sentinel(text: &str, taken: &[char; SENTINEL_COUNT]) -> char {
     ('\u{e020}'..='\u{f8ff}')
         .find(|c| !taken.contains(c) && !text.contains(*c))
         .unwrap_or('\u{f8ff}')
@@ -2736,10 +2791,12 @@ fn normalize(text: &str) -> String {
     STAGED.with(|c| c.borrow_mut().push_str(&staged));
     SEEN.with(|c| {
         let mut n = c.get();
-        for i in 0..5 {
-            // The escaped-space marker was counted at the top of `normalize`,
-            // before the replace that consumes it.
-            if i != S_ESCAPED_SPACE {
+        for i in 0..SENTINEL_COUNT {
+            // Two are counted elsewhere, both because this text is past the
+            // point that consumes them: the escaped-space marker at the top of
+            // `normalize`, before the replace that resolves it, and the
+            // marker-column tag in the list writer's line loop, which strips it.
+            if i != S_ESCAPED_SPACE && i != S_MARKER_COLUMN {
                 n[i] += staged.matches(current[i]).count();
             }
         }

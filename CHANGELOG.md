@@ -249,6 +249,12 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **The list writer's marker-column tag is picked per document, not fixed**
+  (markup-carve/carve-rs#1226, markup-carve/carve-js#1289). It was the fixed
+  `U+E005`, so a continuation line the author opened with that character was
+  read as the writer's own tag: the character was eaten and the line written at
+  the item's marker column, moving the block out of the item.
+
 - **A deletion survives an HTML import** (markup-carve/carve-rs#1223). `<del>`
   shared the strike arm with `<s>` and `<strike>`, so it imported as a strike
   emphasis and re-rendered as `<s>`; it now maps to `CriticDelete`, the node
