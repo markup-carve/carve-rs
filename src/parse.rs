@@ -597,7 +597,19 @@ fn parse_with_options_mode_and_index(
                 }
             }
         }
-        widen_over_hosted_definitions(&mut children, &footnote_def_pos);
+        // A CONTAINER ENDS AT ITS LAST PLACED CHILD, which is the rule that
+        // replaced `widen_over_hosted_definitions` (carve#1522, carve#1524).
+        let source_lines: Vec<&str> = original.lines().collect();
+        narrow_to_last_placed_child(&mut children, &source_lines);
+        // A FOOTNOTE BODY IS A SEPARATE BLOCK LIST, walked separately by every
+        // pass above for the same reason: it is not under `children`. Reaching
+        // only `children` left a list inside a note body still ending after the
+        // terminator of its last item, on one corpus document out of 1352 - the
+        // shape this whole rule is about, in the one place a pass is easiest to
+        // forget to apply.
+        for blocks in footnote_defs.values_mut() {
+            narrow_to_last_placed_child(blocks, &source_lines);
+        }
     }
     let mut doc = Document {
         frontmatter,
@@ -4084,71 +4096,152 @@ fn include_comment_indentation(blocks: &mut [BlockNode], source: &str, line_star
 /// Runs after `fill_offsets`, because a definition's own end is only known
 /// once its body has been placed. Nothing re-derives a span from its children
 /// afterwards, so the widening is not undone.
-fn widen_over_hosted_definitions(blocks: &mut [BlockNode], def_pos: &BTreeMap<String, Pos>) {
-    // Keyed by the line the definition OPENS on, which is the line its
-    // placeholder stands on. Two definitions cannot open on one line.
-    //
-    // A SINGLE-LINE definition is kept too. It looks like it could never
-    // widen anything - the definition ends where its own line ends, and so
-    // does the container - but the placeholder is not always as wide as the
-    // line it replaced, and then the container ends inside its own last line.
-    // Filtering these out left `- > [^f]: t` reporting the item and the quote
-    // as ending at column 8 of an 11-column line.
-    let ends: HashMap<usize, Pos> = def_pos.values().map(|pos| (pos.start_line, *pos)).collect();
-    if ends.is_empty() {
+/// A CONTAINER ENDS AT ITS LAST PLACED CHILD (PART 12 §4,
+/// markup-carve/carve#1522 and markup-carve/carve#1524).
+///
+/// A list, an item and a block quote have no closer, so their extent came from
+/// the lines they CONSUMED - and a container consumes lines whose content ends
+/// up somewhere else. A definition written at an item's content column is
+/// collected and hoisted to the document, so it becomes the list's SIBLING and
+/// the two spans overlapped; an attribute block that attaches to nothing yields
+/// no child at all, which §4 excludes by name. Everything else ends at a fence
+/// closer, a trailing pipe or a delimiter run and is left alone.
+///
+/// This REPLACES `widen_over_hosted_definitions`, which pushed a container's end
+/// out to cover exactly the definition this rule says it must stop before. That
+/// was the settled convention in all three engines until carve#1522 ruled the
+/// other way, so the direction reversing is the point rather than a regression.
+///
+/// Runs after `fill_offsets`, so a child's end offset is real and can be copied
+/// whole. Bottom-up: an item is narrowed before the list that reads it.
+fn narrow_to_last_placed_child(blocks: &mut [BlockNode], lines: &[&str]) {
+    for block in blocks.iter_mut() {
+        match block {
+            BlockNode::BlockQuote(n) => narrow_to_last_placed_child(&mut n.children, lines),
+            BlockNode::Div(n) => narrow_to_last_placed_child(&mut n.children, lines),
+            BlockNode::Admonition(n) => narrow_to_last_placed_child(&mut n.children, lines),
+            BlockNode::FigureGroup(n) => narrow_to_last_placed_child(&mut n.children, lines),
+            BlockNode::LineBlock(n) => narrow_to_last_placed_child(&mut n.children, lines),
+            BlockNode::Extension(n) => narrow_to_last_placed_child(&mut n.children, lines),
+            BlockNode::Figure(n) => {
+                if let FigureTarget::BlockQuote(q) = &mut *n.target {
+                    narrow_to_last_placed_child(&mut q.children, lines);
+                    let last = q
+                        .children
+                        .iter()
+                        .rev()
+                        .find_map(crate::ast_json::block_pos)
+                        .copied();
+                    if let Some(pos) = q.pos.as_mut() {
+                        narrow_container_end(pos, last, lines, true);
+                    }
+                }
+            }
+            BlockNode::DefinitionList(n) => {
+                for item in &mut n.items {
+                    for def in &mut item.definitions {
+                        narrow_to_last_placed_child(&mut def.children, lines);
+                    }
+                }
+            }
+            BlockNode::List(n) => {
+                for item in &mut n.items {
+                    narrow_to_last_placed_child(&mut item.children, lines);
+                    let last = item
+                        .children
+                        .iter()
+                        .rev()
+                        .find_map(crate::ast_json::block_pos)
+                        .copied();
+                    if let Some(pos) = item.pos.as_mut() {
+                        narrow_container_end(pos, last, lines, false);
+                    }
+                }
+            }
+            _ => {}
+        }
+        match block {
+            BlockNode::BlockQuote(n) => {
+                let last = n
+                    .children
+                    .iter()
+                    .rev()
+                    .find_map(crate::ast_json::block_pos)
+                    .copied();
+                if let Some(pos) = n.pos.as_mut() {
+                    narrow_container_end(pos, last, lines, true);
+                }
+            }
+            BlockNode::List(n) => {
+                let last = n.items.iter().rev().find_map(|item| item.pos);
+                if let Some(pos) = n.pos.as_mut() {
+                    narrow_container_end(pos, last, lines, false);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+/// One container's end: its last placed child's, or its own markup where it has
+/// no placed child at all.
+///
+/// The second half is the addendum to the ruling. "Ends at its last placed
+/// child" is silent when there is none, and a definition written as an item's
+/// only content is collected out of it and leaves nothing behind. Zero width was
+/// rejected - it discards the marker the author typed, and is a shape every
+/// consumer has to special-case.
+fn narrow_container_end(pos: &mut Pos, last: Option<Pos>, lines: &[&str], quote: bool) {
+    if let Some(last) = last {
+        pos.end_line = last.end_line;
+        pos.end_column = last.end_column;
+        pos.end_offset = last.end_offset;
         return;
     }
-    fn widen(pos: &mut Pos, ends: &HashMap<usize, Pos>) {
-        let Some(def) = ends.get(&pos.end_line) else {
-            return;
-        };
-        if def.end_offset <= pos.end_offset {
-            return;
-        }
-        pos.end_line = def.end_line;
-        pos.end_column = def.end_column;
-        pos.end_offset = def.end_offset;
+    let Some(line) = lines.get(pos.start_line.saturating_sub(1)) else {
+        return;
+    };
+    let width = emptied_container_markup(line, pos.start_column, quote);
+    if width == 0 {
+        return;
     }
-    fn walk(blocks: &mut [BlockNode], ends: &HashMap<usize, Pos>) {
-        for block in blocks {
-            if let Some(pos) = block_pos_mut(block) {
-                widen(pos, ends);
-            }
-            match block {
-                BlockNode::BlockQuote(n) => walk(&mut n.children, ends),
-                BlockNode::Div(n) => walk(&mut n.children, ends),
-                BlockNode::Admonition(n) => walk(&mut n.children, ends),
-                BlockNode::FigureGroup(n) => walk(&mut n.children, ends),
-                BlockNode::List(n) => {
-                    for item in &mut n.items {
-                        if let Some(pos) = item.pos.as_mut() {
-                            widen(pos, ends);
-                        }
-                        walk(&mut item.children, ends);
-                    }
-                }
-                BlockNode::LineBlock(n) => walk(&mut n.children, ends),
-                BlockNode::DefinitionList(n) => {
-                    for item in &mut n.items {
-                        for def in &mut item.definitions {
-                            if let Some(pos) = def.pos.as_mut() {
-                                widen(pos, ends);
-                            }
-                            walk(&mut def.children, ends);
-                        }
-                    }
-                }
-                BlockNode::Figure(n) => {
-                    if let FigureTarget::BlockQuote(q) = &mut *n.target {
-                        walk(&mut q.children, ends);
-                    }
-                }
-                BlockNode::Extension(n) => walk(&mut n.children, ends),
-                _ => {}
-            }
+    pos.end_line = pos.start_line;
+    pos.end_column = pos.start_column + width;
+    pos.end_offset = pos.start_offset + width;
+}
+
+/// The width in CODEPOINTS of the markup that opened an emptied container, read
+/// from its own start column, or 0 where the line does not spell one - in which
+/// case the span is left as it was rather than guessed at.
+fn emptied_container_markup(line: &str, start_column: usize, quote: bool) -> usize {
+    let tail: Vec<char> = line.chars().skip(start_column.saturating_sub(1)).collect();
+    let mut i = 0;
+    while i < tail.len() && (tail[i] == ' ' || tail[i] == '\t') {
+        i += 1;
+    }
+    if quote {
+        if i < tail.len() && tail[i] == '>' {
+            i += 1;
+        } else {
+            return 0;
+        }
+    } else if i < tail.len() && matches!(tail[i], '-' | '+' | '*' | '.') {
+        i += 1;
+    } else {
+        let mut j = i;
+        while j < tail.len() && tail[j].is_ascii_alphanumeric() {
+            j += 1;
+        }
+        if j > i && j < tail.len() && (tail[j] == '.' || tail[j] == ')') {
+            i = j + 1;
+        } else {
+            return 0;
         }
     }
-    walk(blocks, &ends);
+    while i < tail.len() && (tail[i] == ' ' || tail[i] == '\t') {
+        i += 1;
+    }
+    i
 }
 
 /// Turn the line/column pair already on a span into codepoint offsets.
