@@ -498,11 +498,12 @@ impl<'a> Importer<'a> {
     /// it keeps the recognition free of the recursion that [`Self::flat_text`]
     /// exists to avoid on the `<math>` arm.
     ///
-    /// The BLOCK form, `<div class="math display">`, is deliberately NOT
-    /// handled: carve-php imports it as the ```` ```math ```` fence and
-    /// carve-js as the core `$$` form, both for good reasons, and
-    /// markup-carve/carve#1514 is the open ruling that picks one. Adding a
-    /// third spelling here would be the thing that ruling exists to prevent.
+    /// The BLOCK form, `<div class="math display">`, comes through here too,
+    /// from the `div` arm of [`Self::block`], and it takes the CORE display
+    /// spelling rather than the ```` ```math ```` extension fence
+    /// (PART 9 §18, ruled at markup-carve/carve#1514). The class decides the
+    /// mode either way, so a div spelled `math inline` writes the inline form
+    /// rather than being promoted by the position it was found in.
     fn carve_math(h: &Handle, attrs: Option<&Attrs>) -> Option<Math> {
         let attrs = attrs?;
         if !attrs.classes.iter().any(|c| c == "math") {
@@ -1192,23 +1193,51 @@ impl<'a> Importer<'a> {
             return Ok(vec![BlockNode::Table(self.table(h, path, depth, attrs)?)]);
         }
         if tag == "div" {
-            // NOT the math block form. `<div class="math display">\[…\]</div>`
-            // is what this engine's `MathBlock` extension writes for a
-            // ```` ```math ```` fence, and it imports here as an ordinary Carve
-            // div holding the delimiters as text - the same loss `carve_math`
-            // fixes for the inline `<span>`.
+            // THE MATH BLOCK FORM. `<div class="math display">\[…\]</div>` is
+            // what pandoc and this engine's `MathBlock` extension both write,
+            // and it used to import as an ordinary Carve div holding the
+            // delimiters as text - the same loss `carve_math` fixes for the
+            // inline `<span>`.
             //
-            // It is left that way ON PURPOSE. markup-carve/carve#1514 is the
-            // open ruling on which Carve spelling the block form takes:
-            // markup-carve/carve-php#1546 imports it as the ```` ```math ````
-            // fence, because that fence is what produced the HTML and the round
-            // trip is then exact; markup-carve/carve-js#1295 imports it as the
-            // CORE `$$` form (PART 9 §18 `math_display`), because the fence is
-            // an extension and without it loaded the document degrades to a
-            // `language-math` code block. Both reasons are good, PART 9 §18
-            // says nothing yet, and a third engine picking a third spelling is
-            // precisely what that ruling exists to prevent. The inline form,
-            // where all three engines already agree, lands without it.
+            // It comes back as the CORE display form: a paragraph holding one
+            // display math node, written `$$` in front of a verbatim span
+            // (PART 9 §18, ruled at markup-carve/carve#1514).
+            //
+            // The block form was left UNIMPLEMENTED here until that ruling,
+            // because carve-php took the ```` ```math ```` fence - the fence
+            // produced the HTML, so the round trip is exact - and carve-js took
+            // the core form. The fence lost: it is an EXTENSION, so wherever
+            // that extension is not loaded the same imported document is a
+            // `language-math` code block instead of an equation, and an
+            // importer must not emit a construct whose meaning depends on the
+            // consumer's configuration. `math_display` is core and needs
+            // nothing loaded. The round trip is real and is not the job: an
+            // importer produces a document that MEANS what the HTML meant, and
+            // it cannot know an extension generated the HTML at all.
+            if let Some(math) = Self::carve_math(h, attrs.as_ref()) {
+                // Charged because this arm returns without walking the children
+                // `blocks` would have counted one by one - the same reason the
+                // `<math>` arm charges by hand. Which arm an element takes must
+                // not change what `max_nodes` and `max_depth` see. Only a div
+                // whose classes already carry the pair reaches here, and
+                // `carve_math` tests them before it reads any text, so a plain
+                // div pays for nothing.
+                //
+                // At `depth + 1`, which is where the skipped traversal would
+                // have started: the ordinary arm below hands the children to
+                // `blocks` at `depth + 1`. Charging from `depth` undercounts by
+                // one, and a math div then imported at a `max_depth` its own
+                // twin was rejected at - measured, not assumed, by the depth
+                // half of `the_block_recognition_costs_the_same_budget_as_the_
+                // div_it_replaces`.
+                self.charge_subtree(h, depth + 1)?;
+                return Ok(vec![BlockNode::Paragraph(Paragraph {
+                    attrs: None,
+                    children: vec![InlineNode::Math(math)],
+                    at_content_column: true,
+                    pos: None,
+                })]);
+            }
             return Ok(vec![BlockNode::Div(Div {
                 attrs,
                 label: None,
