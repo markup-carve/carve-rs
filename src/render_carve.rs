@@ -984,6 +984,91 @@ fn hard_list_boundary(text: &str) -> String {
     format!("{blank}\n{blank}\n{text}")
 }
 
+/// `text` with the same boundary in front of it, for a TIGHT ITEM's join.
+///
+/// THREE MARKER LINES, NOT TWO. `render_blocks` joins its parts with `\n\n`, so
+/// the ordinary block separator already contributes one of §11 N1a's three blank
+/// lines and the boundary supplies the other two. A tight item joins its
+/// children with a SINGLE newline - a blank there would loosen the item on
+/// re-parse - so nothing is contributed and all three are the boundary's.
+///
+/// §10i fixes the length at three whatever run the author wrote: the markers are
+/// not newlines, so `collapse_blank_lines` squeezes a decorative run past them
+/// and leaves this one alone.
+fn hard_list_boundary_in_a_tight_item(text: &str) -> String {
+    let blank = verbatim_blank();
+    note_inserted(S_BLANK);
+    note_inserted(S_BLANK);
+    note_inserted(S_BLANK);
+    format!("{blank}\n{blank}\n{blank}\n{text}")
+}
+
+/// Whether this block leaves a PARAGRAPH OPEN on its last line, so a line
+/// written below it at the same column is read as its continuation rather than
+/// as a block of its own.
+///
+/// The other half of the `folds_into_the_paragraph_above` question: not "does
+/// this block fold INTO an open paragraph" but "does it leave one open BELOW
+/// it". The first three members are the same three, for the same reason - their
+/// canonical source IS a bare inline run on its own line. A definition list
+/// joins them because its last description ends in one too.
+///
+/// EACH MEMBER IS LOAD-BEARING, not carried along for symmetry: in an item
+/// holding a sub-list, a table, one of these four blocks and a second sub-list,
+/// that second sub-list is lost without the blank line. A heading, fence, table,
+/// break, div, admonition and a sub-list with a different marker close at their
+/// last line and owe the block under them nothing.
+fn leaves_a_paragraph_open(block: &BlockNode) -> bool {
+    matches!(
+        block,
+        BlockNode::Paragraph(_)
+            | BlockNode::BlockImage(_)
+            | BlockNode::Figure(_)
+            | BlockNode::DefinitionList(_)
+    )
+}
+
+/// Whether a sub-list written at the item's content column needs a blank line
+/// above it to open at all.
+///
+/// THE MARKER COLUMN. A block attached by §17 L3's marker sits at column 0, and
+/// a sub-list at the item's content column below it is INDENTED under an open
+/// paragraph - lazy continuation, so the list never opens and its markers come
+/// back as text.
+///
+/// A BLOCKQUOTE. It takes any non-blank line below it as lazy continuation,
+/// bullet line included, so an item holding a quote and then a bullet at the
+/// content column came back as a quote whose paragraph carries the bullet line
+/// as its own text. That shape holds no §11 N1a boundary at all: it failed on
+/// its own account before markup-carve/carve#1501, and the same rule settles it.
+///
+/// A PARAGRAPH BELOW A SUB-LIST THAT ALREADY OPENED. Once a sub-list has opened
+/// at the item's content column, a bullet written at that column below a
+/// paragraph joins THAT list instead of opening under the paragraph - so the
+/// paragraph keeps the line and the list keeps the marker. Without an earlier
+/// sub-list the same two lines open a list, which is why this is conditional
+/// rather than a blanket blank line after every paragraph: writing one there
+/// would re-spell every nested list in the corpus.
+///
+/// A BLANK LINE IS SAFE HERE. It loosens an item only before a PARAGRAPH; before
+/// a sub-list the item stays tight, which is why an item whose sub-list follows
+/// a blank line and one whose sub-list follows the marker line directly are the
+/// same document.
+fn needs_a_blank_line_above(
+    previous: Option<&BlockNode>,
+    previous_at_marker_column: bool,
+    a_sub_list_already_opened: bool,
+) -> bool {
+    if previous_at_marker_column {
+        return true;
+    }
+    match previous {
+        None => false,
+        Some(BlockNode::BlockQuote(_)) => true,
+        Some(block) => a_sub_list_already_opened && leaves_a_paragraph_open(block),
+    }
+}
+
 fn render_blocks(blocks: &[BlockNode], ctx: &mut CarveContext) -> String {
     if ctx.block_depth >= MAX_RENDER_DEPTH {
         crate::render_depth::record("carve");
@@ -1208,6 +1293,10 @@ fn render_item_blocks(blocks: &[BlockNode], tight: bool, ctx: &mut CarveContext)
     let mut out = String::new();
     let mut prev: Option<&BlockNode> = None;
     let mut prev_at_marker_column = false;
+    // Whether a sub-list has already opened at this item's content column - the
+    // condition under which a later bullet written there joins it instead of
+    // opening below the paragraph above it. See `needs_a_blank_line_above`.
+    let mut a_sub_list_already_opened = false;
     for (index, block) in blocks.iter().enumerate() {
         let next = blocks.get(index + 1);
         let rendered = render_block(block, ctx);
@@ -1276,6 +1365,54 @@ fn render_item_blocks(blocks: &[BlockNode], tight: bool, ctx: &mut CarveContext)
         // is about where the child sits relative to the block before it, which
         // no property of the child alone can decide.
         let continues_a_run_at_the_marker_column = prev.is_some() && prev_at_marker_column;
+        // A LIST CHILD NEVER GOES TO THE MARKER COLUMN. The marker column is
+        // column 0, which is where the list this item belongs to writes ITS
+        // markers - so a sub-list put there is not attached to the item, it is
+        // dissolved into the list around it, and the `+` above it is read as the
+        // sibling item's own text. The ticket document came back as one flat
+        // list of three items with both sub-lists and the boundary between them
+        // gone (markup-carve/carve#1501). §17 L3's marker cannot help here: it
+        // attaches a block that could not open at column 0 on its own, and a
+        // list opens there in preference to being attached.
+        //
+        // So a sub-list is written at the item's CONTENT column, and what it
+        // needs there is the right separator above it. Three shapes, one
+        // question each - what would eat this list if nothing separated it:
+        //
+        //   - THE LIST ABOVE IT WOULD SWALLOW IT. Two sibling sub-lists whose
+        //     markers match are one list when written adjacent, which is the
+        //     whole of §11 N1's merge rule; N1a's boundary is the language's way
+        //     of saying they are two, and §10i fixes its length at three blank
+        //     lines.
+        //   - THE BLOCK ABOVE IT SITS AT COLUMN 0, or is a BLOCKQUOTE. Either
+        //     way a line at the item's content column is INDENTED under it and
+        //     reads as its lazy continuation, so the list never opens. One blank
+        //     line closes the block above without loosening the item - a blank
+        //     line before a sub-list does not make a list loose, only a blank
+        //     line before a paragraph does.
+        //   - NOTHING ABOVE IT REACHES DOWN. Every other block kind was swept:
+        //     heading, fence, table, break, div, admonition, and a sub-list with
+        //     a different marker all close at their last line, and the list
+        //     opens on the next one with no separator at all.
+        if matches!(block, BlockNode::List(_)) {
+            if !separated && prev.is_some_and(|previous| adjacent_blocks_merge(previous, block)) {
+                out.push_str(&hard_list_boundary_in_a_tight_item(&rendered));
+            } else if !separated
+                && needs_a_blank_line_above(prev, prev_at_marker_column, a_sub_list_already_opened)
+            {
+                out.push('\n');
+                out.push_str(&rendered);
+            } else {
+                out.push_str(&rendered);
+            }
+            // Back at the content column, so a child below this one is read
+            // against the list rather than against whatever stood at column 0
+            // above it.
+            prev = Some(block);
+            prev_at_marker_column = false;
+            a_sub_list_already_opened = true;
+            continue;
+        }
         if !separated
             && (continues_a_run_at_the_marker_column
                 || next.is_some_and(|next_block| adjacent_blocks_merge(block, next_block))
@@ -3171,11 +3308,16 @@ fn restore_verbatim(text: &str) -> String {
                 // description came out indented (carve#1040).
                 //
                 // The block-quote prefix is not layout and stays: an EMPTY line
-                // would close the quote, taking the open fence with it.
-                if prefix.chars().all(|c| c == ' ' || c == '\t') {
-                    return String::new();
-                }
-                return prefix.to_string();
+                // would close the quote, taking the open fence with it. What
+                // goes with the marker is the prefix's TRAILING whitespace, and
+                // that is how the host itself spells a blank line: a quote
+                // writes `>`, not `> `. Keeping the space wrote a line with a
+                // trailing run - the same tooling hazard §7 names, and a
+                // divergence from carve-js and carve-php, which both spell the
+                // boundary inside a nested quote `> >`. A purely whitespace
+                // prefix trims away to nothing, which is §7's structural-indent
+                // rule and needs no branch of its own.
+                return prefix.trim_end_matches([' ', '\t']).to_string();
             }
             let line = match line.strip_prefix(thematic_guard()) {
                 Some(rest) => format!(" {rest}"),

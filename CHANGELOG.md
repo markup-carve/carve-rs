@@ -256,6 +256,13 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **The canonical writer spells two sibling sub-lists inside a list item**
+  (markup-carve/carve-rs#1228, markup-carve/carve#1501, PART 9 §11 N1a and
+  §10i). A tight item wrote its sub-lists behind the `+` marker at column 0,
+  where a compatible marker dissolves them into the list around the item; they
+  are written at the item's content column now, separated by the boundary. The
+  same repair covers a sub-list below a blockquote in a tight item, and the
+  boundary inside a nested quote no longer carries a trailing space.
 - **An HTML import reads `<div class="math display">` as block math**
   (markup-carve/carve-rs#1229, markup-carve/carve#1518,
   markup-carve/carve#1514, PART 9 §18). It came back as a Carve div holding the
