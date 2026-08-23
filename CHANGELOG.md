@@ -338,6 +338,10 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   "BUT IT DOES NOT SURVIVE A RUN THAT ATE ITS LINE" - and `fmt` wrote it out as
   `` ` %%``. The render never moved.
 
+- **An empty braced pair keeps its carets bare** (carve-rs#1193). `{^^}` opens
+  no superscript, so PART 11 §2 has nothing to escape and the writer no longer
+  emits `{\^\^}`. `{^x^}` holds something and is untouched.
+
 - **`--profile` reaches the `--carve` output target** (carve-rs#1191). `to_carve`
   carried no `Options`, so neither the `max_length` cap nor the feature filter
   was ever consulted there: an over-cap document was re-serialized in full at
@@ -466,11 +470,6 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   item** (carve-rs#1144, carve-rs#1145). The writer spelled the emptied item
   with the continuation marker, and re-reading that moved the outer item's line
   into the empty inner one, so neither `fmt` property held and the HTML changed.
-
-- **A definition-emptied marker line keeps its own container level**
-  (carve-rs#1147, carve-rs#1148). Three or more levels deep, the following line
-  landed in the outermost item whatever column it sat at; it now belongs to the
-  item its column names.
 
 - **A caption no longer disables a diagram fence's preset** (carve-rs#1151,
   carve-rs#1157). A caption on a `chart`, `mermaid` or `img` fence silently
