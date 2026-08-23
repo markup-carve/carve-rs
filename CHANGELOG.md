@@ -304,6 +304,20 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`carve migrate` exits 2 for a usage error instead of 1** (#1276). Exit 1 on
+  this subcommand already means something else: `--check-loss` uses it for a run
+  that converted the document and found content dropped. With usage errors on 1
+  as well, a gate written as
+  `carve migrate --check-loss in.html > out.crv || echo dropped` reported
+  dropped content when the real problem was a typo in a flag name, and nothing
+  said the conversion had never run. A bad flag, a missing or unknown `--from`,
+  an unknown `--mode`/`--adapter`, too many inputs, an unreadable file and an
+  unwritable report are now 2; exit 1 is left to `--check-loss` alone. carve-js
+  and carve-php already exit 2 for every one of these, and `carve lint` and
+  `carve merge` in this same binary already drew the line in the same place. The
+  render path's `carve --bogusflag` is a separate three-way divergence and is
+  unchanged.
+
 - **The writer freezes the symbol sigil and a cell's rowspan marker**
   (markup-carve/carve#1609, PART 11 §2 and §6f). `a :rocket: b` came back with a
   bare `:` and re-parsed as a `symbol` node, rendering a glyph under a configured

@@ -349,6 +349,25 @@ fn main() -> ExitCode {
     ExitCode::SUCCESS
 }
 
+/// `carve migrate`, whose exit codes separate "the conversion never ran" from
+/// "the conversion ran and lost something".
+///
+/// EXIT 1 MEANS EXACTLY ONE THING HERE: `--check-loss` found loss. Every other
+/// non-zero exit is 2 - a bad flag, a missing `--from`, an unreadable input, a
+/// report that could not be written. They all used to be 1 as well, so
+///
+/// ```text
+/// carve migrate --from html --check-loss in.html > out.crv || echo "content was dropped"
+/// ```
+///
+/// printed "content was dropped" when the real problem was a typo in a flag
+/// name, and the operator had no signal that the conversion never ran at all.
+/// carve-js and carve-php both exit 2 for these, and all three already agree on
+/// 1 for loss, so only the usage half was out of step (#1276).
+///
+/// `run_lint` and `run_merge` in this file already draw the line in the same
+/// place, and the comment above `run_lint` records why: `carve lint --bogus`
+/// exiting 1 "a CI gate reads as 'found problems' rather than 'could not run'".
 fn run_migrate(args: &[String]) -> ExitCode {
     let mut mode = carve::HtmlImportMode::Safe;
     let mut adapter = carve::HtmlImportAdapter::Generic;
@@ -372,12 +391,12 @@ fn run_migrate(args: &[String]) -> ExitCode {
                         Some(mode) => mode,
                         None => {
                             eprintln!("carve migrate: unknown mode {value}");
-                            return ExitCode::FAILURE;
+                            return ExitCode::from(2);
                         }
                     },
                     None => {
                         eprintln!("carve migrate: --mode requires a value");
-                        return ExitCode::FAILURE;
+                        return ExitCode::from(2);
                     }
                 };
             }
@@ -388,12 +407,12 @@ fn run_migrate(args: &[String]) -> ExitCode {
                         Some(adapter) => adapter,
                         None => {
                             eprintln!("carve migrate: unknown adapter {value}");
-                            return ExitCode::FAILURE;
+                            return ExitCode::from(2);
                         }
                     },
                     None => {
                         eprintln!("carve migrate: --adapter requires a value");
-                        return ExitCode::FAILURE;
+                        return ExitCode::from(2);
                     }
                 };
             }
@@ -405,12 +424,12 @@ fn run_migrate(args: &[String]) -> ExitCode {
             "-" => input = Some("-"),
             value if value.starts_with('-') => {
                 eprintln!("carve migrate: unknown option {value}");
-                return ExitCode::FAILURE;
+                return ExitCode::from(2);
             }
             value => {
                 if input.is_some() {
                     eprintln!("carve migrate: takes at most one input file");
-                    return ExitCode::FAILURE;
+                    return ExitCode::from(2);
                 }
                 input = Some(value);
             }
@@ -423,18 +442,18 @@ fn run_migrate(args: &[String]) -> ExitCode {
         }
         Some(other) => {
             eprintln!("carve migrate: unknown source format {other}");
-            return ExitCode::FAILURE;
+            return ExitCode::from(2);
         }
         None => {
             eprintln!("carve migrate: --from html, markdown or djot is required");
-            return ExitCode::FAILURE;
+            return ExitCode::from(2);
         }
     };
     let source = match input {
         None | Some("-") => {
             let mut s = String::new();
             if io::stdin().read_to_string(&mut s).is_err() {
-                return ExitCode::FAILURE;
+                return ExitCode::from(2);
             }
             s
         }
@@ -442,7 +461,7 @@ fn run_migrate(args: &[String]) -> ExitCode {
             Ok(s) => s,
             Err(e) => {
                 eprintln!("carve migrate: cannot read {path}: {e}");
-                return ExitCode::FAILURE;
+                return ExitCode::from(2);
             }
         },
     };
@@ -470,7 +489,7 @@ fn run_migrate(args: &[String]) -> ExitCode {
         Ok(r) => r,
         Err(e) => {
             eprintln!("carve migrate: {e:?}");
-            return ExitCode::FAILURE;
+            return ExitCode::from(2);
         }
     };
     print!("{}", result.value);
@@ -480,7 +499,7 @@ fn run_migrate(args: &[String]) -> ExitCode {
             eprintln!("{report}");
         } else if let Err(e) = std::fs::write(path, format!("{report}\n")) {
             eprintln!("carve migrate: cannot write report {path}: {e}");
-            return ExitCode::FAILURE;
+            return ExitCode::from(2);
         }
     }
     if check_loss && !result.report.diagnostics.is_empty() {
@@ -951,7 +970,9 @@ fn print_usage() {
          carve migrate --from FORMAT [options] [file]\n                              \
          convert html, markdown (md) or djot to Carve.\n                              \
          --mode/--adapter/--report/--check-loss are html's\n                              \
-         alone: it is the only importer that drops anything\n  \
+         alone: it is the only importer that drops anything\n                              \
+         (exit 1 only when --check-loss finds loss, 2 on a\n                              \
+         usage error or an unreadable file)\n  \
          carve -h                    show this help\n\n\
          Output format (default --html; last one wins):\n  \
          --html                      HTML\n  \
