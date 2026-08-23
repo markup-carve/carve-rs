@@ -142,7 +142,12 @@ fn a_tab_set_drops_the_group_name_at_its_documented_default() {
     );
 
     let source = import(&out);
-    assert!(source.contains("{.tabs}"), "{source}");
+    // WAS `{.tabs}` on a generic div, until carve-rs#1240 made the import
+    // rebuild the container the renderer wrote. The subject has not moved - the
+    // tab set's own class must survive the name drop, or the renderer has
+    // nothing to write the pair back FROM - only the slot it survives in: the
+    // structural class is now the fence word rather than a class beside `:::`.
+    assert!(source.contains("::: tabs"), "{source}");
     assert!(!source.contains("aria-label=Tabs"), "{source}");
     assert!(!source.contains("role=group"), "{source}");
 }
@@ -201,7 +206,9 @@ fn a_code_group_drops_the_group_name_at_its_documented_default() {
     );
 
     let source = import(&out);
-    assert!(source.contains("{.code-group}"), "{source}");
+    // WAS `{.code-group}`, for the reason recorded on the tab set above
+    // (carve-rs#1240).
+    assert!(source.contains("::: code-group"), "{source}");
     assert!(!source.contains("aria-label=\"Code examples\""), "{source}");
 }
 
@@ -244,7 +251,9 @@ fn a_css_mode_panel_drops_the_name_it_takes_from_its_own_tab_label() {
     );
 
     let source = import(&out);
-    assert!(source.contains("{.tabs-panel}"), "{source}");
+    // WAS `{.tabs-panel}`, for the reason recorded on the tab set above
+    // (carve-rs#1240).
+    assert!(source.contains("::: tabs-panel"), "{source}");
     assert!(!source.contains("aria-label=First"), "{source}");
 }
 
@@ -326,16 +335,17 @@ fn an_index_back_link_keeps_a_name_the_author_wrote() {
     assert!(source.contains("aria-label=\"Zum Gerät\""), "{source}");
 }
 
-// A TITLE PARAGRAPH'S COUNTER ID IS NOT A FAMILY HERE, AND THE MEASUREMENT SAYS
-// WHY. carve-js drops `id="adm-N"` off a `<p class="admonition-title">` whose
-// parent `<aside>` names it back. This engine never gets that far: `<aside>` is
-// not a block tag here, so a canonical admonition is UNWRAPPED and its title
-// paragraph flattened into the surrounding inline run - the id is gone before
-// any drop could reach it. That unwrap is markup-carve/carve-php#1543, and when
-// it lands the family lands with it. Pinned so the day the aside survives, this
-// test says what has to follow it.
+// A TITLE PARAGRAPH'S COUNTER ID IS A FAMILY HERE NOW. The note that stood here
+// said it was not, and said why: `<aside>` was not a block tag, so a canonical
+// admonition was UNWRAPPED and its title paragraph flattened into the
+// surrounding inline run, and the id was gone before any drop could reach it -
+// a rule for it would have been a check that could not fire. It also said the
+// family lands the day the aside survives. carve-rs#1240 is that day, so the
+// assertions below are the ones it promised: the counter id is dropped because
+// it is DERIVED, and the paragraph is lifted into the container it names rather
+// than flattened past.
 #[test]
-fn an_admonition_title_id_never_reaches_source_because_the_aside_is_unwrapped() {
+fn an_admonition_title_id_is_dropped_and_its_paragraph_becomes_the_title() {
     let out = carve::to_html("::: note \"A\"\nx\n:::\n");
     assert!(
         out.contains("<p class=\"admonition-title\" id=\"adm-1\">A</p>"),
@@ -345,6 +355,28 @@ fn an_admonition_title_id_never_reaches_source_because_the_aside_is_unwrapped() 
     let source = import(&out);
     assert!(!source.contains("adm-1"), "{source}");
     assert!(!source.contains("admonition-title"), "{source}");
+    // The half the unwrap could never reach: the title is spelled where a title
+    // is spelled, and the whole document round-trips to its own source.
+    assert_eq!(source, "::: note \"A\"\nx\n:::\n");
+}
+
+/// The `aria-labelledby` goes with the element it names. A lifted title is no
+/// longer an element with an id, so a reference left standing would name
+/// nothing - the dangling shape markup-carve/carve-php#1542 records.
+#[test]
+fn a_lifted_title_takes_the_reference_that_named_it() {
+    let source = import(&carve::to_html("::: note \"A\"\nx\n:::\n"));
+    assert!(!source.contains("aria-labelledby"), "{source}");
+}
+
+/// A title id the counter did NOT derive cannot ride along either - a title slot
+/// has no attribute slot - so it is reported rather than swallowed.
+#[test]
+fn a_title_id_the_counter_did_not_derive_is_reported() {
+    let html = "<aside class=\"admonition note\" aria-labelledby=\"adm-7\">\
+                <p class=\"admonition-title\" id=\"adm-7\">A</p><p>x</p></aside>";
+    assert_eq!(import(html), "::: note \"A\"\nx\n:::\n");
+    assert_eq!(diagnostics(html), vec!["attribute-dropped".to_string()]);
 }
 
 /// A counter-shaped id on a title the counter never counted stays, and stays for

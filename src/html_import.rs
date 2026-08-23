@@ -3,6 +3,7 @@
 use crate::ast::*;
 use crate::escape::is_dangerous_attr_name;
 use crate::extension::{label_default, LABEL_CODE_GROUP, LABEL_INDEX_BACKREF, LABEL_TABS_GROUP};
+use crate::profile::ADMONITION_TIER1_KINDS;
 use crate::render::{semantic_value_target, EXTENDED_SEMANTIC_SPAN_ORDER};
 use crate::render_carve::is_attr_identifier;
 use crate::{render_carve, RenderCarveError};
@@ -306,6 +307,13 @@ impl<'a> Importer<'a> {
                 | "div"
                 | "section"
                 | "article"
+                // A RENDERED CALLOUT IS AN `<aside>`, so the tag has to reach
+                // `block` for `container_from` to rebuild it - flattened into an
+                // inline run it was never offered (carve-rs#1240). It is a block
+                // element in HTML and carve-js has always listed it here; the
+                // omission also meant a bare `<aside>`'s own children were
+                // unwrapped as inlines rather than kept as the blocks they are.
+                | "aside"
                 | "main"
                 | "nav"
                 | "header"
@@ -808,6 +816,17 @@ impl<'a> Importer<'a> {
             return;
         };
         for (name, values) in derived {
+            // `id` HAS ITS OWN SLOT, and reading only `key_values` meant a
+            // derived value there could never be found: the id of a titled
+            // admonition's own title paragraph is the renderer's counter, and a
+            // rule for it was a check that could not fire (carve-rs#1240).
+            if name == "id" {
+                if out.id.as_ref().is_some_and(|id| values.contains(id)) {
+                    out.id = None;
+                    out.order.retain(|slot| *slot != AttrSlot::Id);
+                }
+                continue;
+            }
             // The importer stores an attribute under the name html5ever hands
             // it, and a Carve author may have written `ARIA-LABEL`; the
             // renderer's own author-wins check is ASCII-case-insensitive, so
@@ -835,14 +854,12 @@ impl<'a> Importer<'a> {
     /// an importer cannot see a host's `wrapper_class`, the same blind spot the
     /// default-only label match already accepts.
     ///
-    /// A TITLE PARAGRAPH'S COUNTER ID IS NOT HERE, and carve-js#1296 has it.
-    /// That family needs the `<p class="admonition-title" id="adm-N">` to
-    /// survive with its attributes, and in this engine it does not: `<aside>`
-    /// is not a block tag, so a canonical admonition is unwrapped and its title
-    /// paragraph flattened into the surrounding inline run. The id is gone
-    /// before any drop could reach it, so a rule for it here would be a check
-    /// that cannot fire. The unwrap is markup-carve/carve-php#1543; when it
-    /// lands, the family lands with it.
+    /// A TITLE PARAGRAPH'S COUNTER ID IS HERE NOW. It was not, and the reason
+    /// was that the check could not fire: `<aside>` was not a block tag, so a
+    /// canonical admonition was unwrapped and its title paragraph flattened
+    /// into the surrounding inline run, and the id was gone before any drop
+    /// could reach it. carve-rs#1240 made the aside survive, so the family
+    /// lands with it - as the note that stood here said it would.
     fn derived_attributes(
         handle: &Handle,
         classes: &[String],
@@ -917,6 +934,61 @@ impl<'a> Importer<'a> {
         // reconstructable and the match stays exact.
         if tag == "a" && has("index-backref") {
             return Self::index_backref_names(handle).map(|names| vec![("aria-label", names)]);
+        }
+
+        // A TITLED ADMONITION's title paragraph carries the renderer's own
+        // document-order counter, and the `<aside>`'s `aria-labelledby` points
+        // at it. Baked into source the id is authored, so the next render's
+        // counter collides with it. The Nth such paragraph derives exactly
+        // `adm-N`, so this stays an equality match rather than a guess at the
+        // shape (carve-js#1296's family, reachable here since carve-rs#1240 made
+        // the aside survive the import).
+        if tag == "p" && has("admonition-title") && is_counted_admonition_title(handle) {
+            return admonition_title_id(handle).map(|id| vec![("id", vec![id])]);
+        }
+
+        // THE REFERENCE GOES WITH THE ELEMENT IT NAMES. What makes this derived
+        // is not where the id came from but that the paragraph is CONSUMED: it
+        // becomes the container's title, so an `aria-labelledby` still pointing
+        // at it names nothing. The renderer writes a fresh one on the next
+        // render, so keeping this could only preserve a dangling name - the
+        // defect markup-carve/carve-php#1542 records.
+        if tag == "aside" && has("admonition") {
+            let mut derived: Vec<(&'static str, Vec<String>)> = Vec::new();
+            // AN UNTITLED CALLOUT IS NAMED BY ITS TYPE WORD, through the
+            // `labels` key for that kind - the shape §16a's own example uses.
+            // Unreachable until carve-rs#1240, because the `<aside>` was
+            // unwrapped and there was no element left to read a name off; a
+            // `::: note` therefore came back carrying `{aria-label=Note}` and
+            // was permanently unlocalizable, the exact cost the clause prevents.
+            if let Some(kind) = classes.iter().find(|c| {
+                c.as_str() != "admonition" && ADMONITION_TIER1_KINDS.contains(&c.as_str())
+            }) {
+                let mut key = String::from("admonition");
+                let mut chars = kind.chars();
+                if let Some(first) = chars.next() {
+                    key.extend(first.to_uppercase());
+                    key.push_str(chars.as_str());
+                }
+                let default = label_default(&key);
+                if !default.is_empty() {
+                    derived.push(("aria-label", vec![default.to_string()]));
+                }
+            }
+            // A TITLED one points at its title paragraph instead, and the
+            // renderer writes one form or the other rather than both.
+            let title = handle
+                .children
+                .borrow()
+                .iter()
+                .find(|child| is_counted_admonition_title(child))
+                .cloned();
+            if let Some(id) = title.and_then(|node| Self::attr(&node, "id")) {
+                derived.push(("aria-labelledby", vec![id]));
+            }
+            if !derived.is_empty() {
+                return Some(derived);
+            }
         }
 
         None
@@ -1282,6 +1354,21 @@ impl<'a> Importer<'a> {
                     pos: None,
                 })]);
             }
+            if let Some(kind) = Self::container_from(&tag, &attrs) {
+                let attrs = Self::without_structural_class(attrs, &kind);
+                // A Tier-2 container carries a title the same way a callout
+                // does, and renders it with no generated id - so the lift has to
+                // reach this arm as well, not only the `<aside>` one below.
+                let (title, body, body_paths) = self.admonition_title(&children, path, depth)?;
+                return Ok(vec![BlockNode::Admonition(Admonition {
+                    attrs,
+                    kind,
+                    title,
+                    label: None,
+                    children: self.blocks_at(&body, Some(&body_paths), path, depth + 1)?,
+                    pos: None,
+                })]);
+            }
             return Ok(vec![BlockNode::Div(Div {
                 attrs,
                 label: None,
@@ -1384,6 +1471,24 @@ impl<'a> Importer<'a> {
             }
             return Ok(blocks);
         }
+        // A RENDERED CALLOUT, before the unwrap claims it. `<aside>` reaches
+        // here rather than the `<div>` arm above, and unwrapping it dropped the
+        // `Admonition` node outright - the construct did not degrade, it left.
+        if let Some(kind) = Self::container_from(&tag, &attrs) {
+            let attrs = Self::without_structural_class(
+                Self::without_structural_class(attrs, "admonition"),
+                &kind,
+            );
+            let (title, body, body_paths) = self.admonition_title(&children, path, depth)?;
+            return Ok(vec![BlockNode::Admonition(Admonition {
+                attrs,
+                kind,
+                title,
+                label: None,
+                children: self.blocks_at(&body, Some(&body_paths), path, depth + 1)?,
+                pos: None,
+            })]);
+        }
         if self.opts.mode == HtmlImportMode::Roundtrip {
             self.diag(
                 HtmlImportDiagnosticCode::RawPreserved,
@@ -1429,6 +1534,73 @@ impl<'a> Importer<'a> {
     /// details extension renders it straight back to `<details>/<summary>`, so
     /// the round trip closes. A generic `<div class="details">` would not: it
     /// renders the summary as ordinary body text.
+    /// A rebuilt callout's TITLE, lifted out of its body.
+    ///
+    /// `::: note "A"` renders the title as a `<p class="admonition-title">`
+    /// inside the aside, so the rebuild has to take it back out: left in the
+    /// body it is written back as an ordinary paragraph carrying the renderer's
+    /// own class, which renders a SECOND title element on the next pass and
+    /// makes the callout's opening line ordinary prose.
+    ///
+    /// A TITLE HOLDS INLINE CONTENT AND HAS NO ATTRIBUTE SLOT, so what the
+    /// paragraph carried cannot come with it. It is REPORTED rather than
+    /// dropped in silence, and reported rather than tucked into a span the way
+    /// `<summary>` carries its own: carve-php and carve-js both answer this
+    /// construct with a diagnostic, and a construct the three engines are being
+    /// converged on is the wrong place to keep a fourth answer. The structural
+    /// `admonition-title` class is consumed rather than reported - the renderer
+    /// writes it back from the title, exactly as it writes the container's own
+    /// `admonition` class back from the kind.
+    ///
+    /// Returns the title, and the body with the paths its children ARRIVED
+    /// under: filtering the title out and renumbering pulls every sibling after
+    /// it one step forward, which is the defect carve#1554 fixed for
+    /// `<summary>` (PART 12 §16).
+    #[allow(clippy::type_complexity)]
+    fn admonition_title(
+        &mut self,
+        children: &[Handle],
+        path: &str,
+        depth: usize,
+    ) -> Result<(Option<Vec<InlineNode>>, Vec<Handle>, Vec<String>), HtmlImportError> {
+        let at = children.iter().position(is_admonition_title);
+        let mut title = None;
+        if let Some(i) = at {
+            let title_path = Self::child_path(path, &children[i], i);
+            // The element itself, not only its children: an empty title is a
+            // DOM node the caller's `max_nodes` is counting, and reading past it
+            // let a document process more nodes than the limit allows.
+            self.enter(depth + 1)?;
+            let mut own = self.attrs(&children[i], &title_path);
+            if let Some(attrs) = own.as_mut() {
+                attrs.classes.retain(|class| class != "admonition-title");
+                attrs.order.retain(|slot| *slot != AttrSlot::Class);
+            }
+            if let Some(attrs) =
+                own.filter(|a| a.id.is_some() || !a.classes.is_empty() || !a.key_values.is_empty())
+            {
+                let names = Self::attr_names(&attrs).join(", ");
+                self.diag(
+                    HtmlImportDiagnosticCode::AttributeDropped,
+                    format!("Dropped {names} on <p>: an admonition title has no attribute slot"),
+                    HtmlImportSeverity::Warning,
+                    &title_path,
+                );
+            }
+            title = Some(self.inlines(&children[i].children.borrow(), &title_path, depth + 2)?);
+        }
+        let mut body = Vec::new();
+        let mut body_paths = Vec::new();
+        for (i, child) in children.iter().enumerate() {
+            if Some(i) == at {
+                continue;
+            }
+            body_paths.push(Self::child_path(path, child, i));
+            body.push(child.clone());
+        }
+        Ok((title, body, body_paths))
+    }
+
     fn details(
         &mut self,
         h: &Handle,
@@ -1734,6 +1906,56 @@ impl<'a> Importer<'a> {
             .split_whitespace()
             .next()
             .map(str::to_string)
+    }
+
+    /// The container an `<aside>` or `<div>` was RENDERED FROM, rebuilt.
+    ///
+    /// This is `render_admonition` read backwards, and it is written as that
+    /// inverse rather than as a list of names on purpose. The renderer sends an
+    /// `Admonition` to exactly two shapes: a kind in `ADMONITION_TIER1_KINDS`
+    /// becomes `<aside class="admonition {kind}">`, and every other kind - a tab
+    /// set, a code group, a panel, a Tier-2 container an extension invented -
+    /// becomes `<div class="{kind}">`, with the node's own extra classes
+    /// appended after the structural one. Inverting the mapping therefore covers
+    /// the containers nobody has thought of yet; naming `tabs` and `code-group`
+    /// would have covered two and gone on losing the rest (carve-rs#1240).
+    ///
+    /// WHAT IT COSTS TO UNWRAP INSTEAD is a node, not bytes, which is why an
+    /// HTML-to-HTML check never found it: an unwrapped `<aside>` re-renders as
+    /// the same `<p>` it went in as, and a `<div class="tabs">` kept as a `Div`
+    /// carrying a `.tabs` class re-renders byte-identically too. Only the AST
+    /// moved - `Admonition` became `Div`, or vanished - and the document stopped
+    /// being a callout while looking exactly like one (carve-js#1295).
+    ///
+    /// THE STRUCTURAL CLASS IS CONSUMED into the fence word rather than kept
+    /// beside it, because the renderer writes it back from the kind: keeping it
+    /// would emit `class="tabs tabs"` on the next render, and the derived-name
+    /// rule already reads the same class to recognize the naming attributes
+    /// these elements carry.
+    fn container_from(tag: &str, attrs: &Option<Attrs>) -> Option<String> {
+        let classes = attrs.as_ref().map(|a| a.classes.as_slice()).unwrap_or(&[]);
+        let kind = match tag {
+            // The class PAIR is what marks a rendered callout. A bare `<aside>`
+            // is somebody else's sidebar and keeps the unwrap it has always had.
+            "aside" => {
+                if !classes.iter().any(|c| c == "admonition") {
+                    return None;
+                }
+                classes
+                    .iter()
+                    .find(|c| {
+                        c.as_str() != "admonition" && ADMONITION_TIER1_KINDS.contains(&c.as_str())
+                    })
+                    .cloned()?
+            }
+            "div" => classes.first().cloned()?,
+            _ => return None,
+        };
+        // The writer's own rule, not a copy of it: a class a fence opener cannot
+        // spell (`2col`, `my.class`) would be written after the colons and read
+        // back as a paragraph, so such an element keeps the generic `Div` node
+        // where the class survives as a class.
+        crate::render_carve::is_container_kind(&kind).then_some(kind)
     }
 
     /// Drop a structural class the renderer injected; what remains is what the
@@ -3657,6 +3879,79 @@ fn has_class(node: &Handle, wanted: &str) -> bool {
         .unwrap_or_default()
         .split_whitespace()
         .any(|class| class == wanted)
+}
+
+/// Whether this `<p class="admonition-title">` is one the renderer's own
+/// counter counted.
+///
+/// WHICH PARAGRAPHS THE COUNTER COUNTS is the renderer's condition, not the
+/// class alone. It increments for a CANONICAL admonition with a title and no
+/// authored name, and that is exactly when it emits the id and points the
+/// `<aside>`'s `aria-labelledby` at it - so a paragraph qualifies when its
+/// parent aside names it back. Counting every `admonition-title` instead would
+/// desync on the two shapes that carry the class and no counter: a
+/// non-canonical `::: custom "T"` (a `<div>`, title with no id) and a canonical
+/// one the author named (`aria-label` wins, title with no id).
+/// Whether this is the paragraph a container's TITLE renders as.
+///
+/// The class alone, because the class alone is what the renderer always writes.
+/// The generated `id` beside it is conditional - `render_admonition` emits one
+/// only for a Tier-1 kind with no authored name - so a `::: sidebar "A"` (a
+/// `<div>`, no id) and a `::: note "A"` carrying an authored `aria-label` (no id
+/// either) both render a bare `<p class="admonition-title">`. Reading the id as
+/// the marker left the title of both in the body, where it was written back as
+/// an ordinary paragraph carrying the renderer's class.
+///
+/// [`is_counted_admonition_title`] is the NARROWER question and stays narrow: it
+/// asks whether the renderer's counter produced this id, which is a question
+/// about dropping a derived value, not about what the paragraph IS.
+fn is_admonition_title(node: &Handle) -> bool {
+    Importer::tag(node).as_deref() == Some("p") && has_class(node, "admonition-title")
+}
+
+fn is_counted_admonition_title(node: &Handle) -> bool {
+    if !is_admonition_title(node) {
+        return false;
+    }
+    let Some(id) = Importer::attr(node, "id") else {
+        return false;
+    };
+    let Some(parent) = parent_handle(node) else {
+        return false;
+    };
+    Importer::tag(&parent).as_deref() == Some("aside")
+        && has_class(&parent, "admonition")
+        && Importer::attr(&parent, "aria-labelledby").as_deref() == Some(id.as_str())
+}
+
+/// The id the renderer derives for this title paragraph - `adm-1`, `adm-2`, …
+/// in document order, which is the order the renderer's own counter runs in.
+///
+/// Counted from the document root rather than upward from the node, so the
+/// ordinal is the renderer's and not this subtree's. The walk is ITERATIVE: the
+/// importer's depth limit is a counter a caller may raise past what the stack
+/// holds, and a recursive prewalk would overflow before the counter spoke.
+fn admonition_title_id(node: &Handle) -> Option<String> {
+    let mut root = node.clone();
+    while let Some(parent) = parent_handle(&root) {
+        root = parent;
+    }
+    let mut count = 0usize;
+    let mut stack = vec![root];
+    while let Some(current) = stack.pop() {
+        if is_counted_admonition_title(&current) {
+            count += 1;
+            if Rc::ptr_eq(&current, node) {
+                return Some(format!("adm-{count}"));
+            }
+        }
+        // Reversed, so the children are visited left to right once popped -
+        // the order the renderer emitted them in.
+        for child in current.children.borrow().iter().rev() {
+            stack.push(child.clone());
+        }
+    }
+    None
 }
 
 /// The node's parent, restored into the cell it was read out of.
