@@ -2198,6 +2198,10 @@ impl<'a> Importer<'a> {
         before.push(BlockNode::DefinitionList(DefinitionList {
             attrs,
             items,
+            // The importer reads the `<dd>` wrappers it was given, and a
+            // description that already holds a block says its own looseness -
+            // so nothing here is the SPELLED fact §17 L7's field records.
+            loose: false,
             pos: None,
         }));
         Ok(before)

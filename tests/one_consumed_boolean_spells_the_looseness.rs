@@ -168,13 +168,75 @@ fn the_writer_does_not_spell_the_looseness_yet() {
 }
 
 #[test]
-fn a_definition_list_does_not_take_the_key_yet() {
-    // NOT the clause's answer, and asserted so the gap is visible rather than
-    // silent: §17 L7 applies to a `<dl>` too. It is blocked on the `tests/spec`
-    // pin reaching PART 12 §8's `definition_list.loose` field - see this file's
-    // header. When the pin advances this test is what goes red.
+fn the_key_loosens_a_definition_list_and_does_not_reach_the_html() {
+    // §17 L7 on the OTHER container that has the axis. The wrapper is what
+    // moves; the key is consumed and never becomes an attribute.
     let html = to_html("{loose}\n:: Term\n:  Definition.\n");
 
-    assert!(html.contains("<dl loose=\"\">"), "{html}");
-    assert!(html.contains("<dd>Definition.</dd>"), "{html}");
+    assert_eq!(
+        html,
+        "<dl>\n  <dt>Term</dt>\n  <dd><p>Definition.</p></dd>\n</dl>"
+    );
+}
+
+#[test]
+fn the_definition_list_key_does_not_reach_the_html() {
+    assert!(!to_html("{loose}\n:: Term\n:  Definition.\n").contains("loose"));
+}
+
+#[test]
+fn a_definition_lists_looseness_is_published_only_when_spelled() {
+    // PART 12 §8 types the field `const: true`, so it is written only when the
+    // key said so. A `<dl>` that derives its own wrappers publishes nothing,
+    // because that fact is re-derivable from the description's block count.
+    assert!(carve::to_json(&carve::parse("{loose}\n:: T\n:  d\n")).contains("\"loose\":true"));
+    assert!(!carve::to_json(&carve::parse(":: T\n:  d\n")).contains("loose"));
+    assert!(!carve::to_json(&carve::parse(":: T\n:  d\n\n   second\n")).contains("loose"));
+}
+
+#[test]
+fn the_definition_lists_looseness_survives_an_ast_round_trip() {
+    // The half the LIST arm gets for free from `tight`: without a field of its
+    // own the wrapper was underivable, so an ingested tree rendered a shape the
+    // document it came from did not have.
+    let doc = carve::parse("{loose}\n:: T\n:  d\n");
+    let back = carve::from_json(&carve::to_json(&doc)).expect("ingest");
+
+    assert_eq!(
+        carve::render_html(&back).expect("render"),
+        carve::render_html(&doc).expect("render")
+    );
+}
+
+#[test]
+fn a_definition_list_key_line_carrying_only_the_key_leaves_no_attributes_behind() {
+    assert!(!carve::to_json(&carve::parse("{loose}\n:: T\n:  d\n")).contains("\"attrs\""));
+}
+
+#[test]
+fn only_the_definition_list_key_is_consumed() {
+    let html = to_html("{loose .note}\n:: T\n:  d\n");
+
+    assert!(html.starts_with("<dl class=\"note\">"), "{html}");
+    assert!(!html.contains("loose"), "{html}");
+    assert!(html.contains("<dd><p>d</p></dd>"), "{html}");
+}
+
+#[test]
+fn a_valued_loose_is_not_the_definition_list_key_either() {
+    let html = to_html("{loose=x}\n:: T\n:  d\n");
+
+    assert!(html.contains("<dl loose=\"x\">"), "{html}");
+    assert!(html.contains("<dd>d</dd>"), "the list was loosened anyway: {html}");
+}
+
+#[test]
+fn a_redundant_definition_list_key_is_a_legal_no_op_in_the_render() {
+    // A description that already holds two blocks takes the wrapper either way,
+    // so the key changes nothing an HTML reader can see. It still changes the
+    // TREE, which is what the writer arm below is about.
+    assert_eq!(
+        to_html("{loose}\n:: T\n:  a\n\n   b\n"),
+        to_html(":: T\n:  a\n\n   b\n")
+    );
 }

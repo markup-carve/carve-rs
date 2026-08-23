@@ -501,6 +501,21 @@ impl<'a> IntoIterator for &'a mut DefinitionDef {
 pub struct DefinitionList {
     pub attrs: Option<Attrs>,
     pub items: Vec<DefinitionItem>,
+    /// PART 9 §17 L7: the looseness was SPELLED, with the consumed `loose`
+    /// boolean on the preceding block-attribute line, so every description
+    /// renders its children as BLOCKS rather than as an inline run.
+    ///
+    /// It reaches the one shape a blank line cannot say. A blank line between
+    /// two ENTRIES does not loosen a `<dl>` at all - only a second block inside
+    /// the description wraps it - so `<dd><p>x</p></dd>` is unspellable at every
+    /// entry count.
+    ///
+    /// UNLIKE `List::tight` THIS FIELD IS NOT TOTAL, and PART 12 §8 publishes it
+    /// only when true for that reason: absent means each description derives its
+    /// own wrapper from its block count, which is what every other definition
+    /// list does. Only the spelled fact is underivable, so only it is published
+    /// (markup-carve/carve#1624).
+    pub loose: bool,
     /// Span in the original source, when the parser could determine it.
     pub pos: Option<Pos>,
 }

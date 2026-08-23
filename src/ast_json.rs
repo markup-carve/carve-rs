@@ -1030,6 +1030,23 @@ fn encode_block_task<'a>(
             let mut w = typed(out, "definition_list");
             w.field("items", |out| out.push('['));
             finish_attrs_pos(tasks, &n.attrs, &n.pos);
+            if n.loose {
+                // PART 12 §8 publishes the field only when true, the same way
+                // `list.bareMarker` rides the wire: absent is the derived
+                // wrapper every other definition list gets, and only the SPELLED
+                // fact is underivable from the tree.
+                //
+                // AS A DEFERRED TASK, not a `w.field` here: `items` is still an
+                // OPEN array at this point - its entries are the tasks pushed
+                // below - so anything written now lands INSIDE it. The task
+                // stack pops in reverse, so pushing between `finish_attrs_pos`
+                // and the `]` puts the field after the array closes and before
+                // `attrs`/`pos`, which is the schema's own order.
+                tasks.push(EncodeTask::Finish(Box::new(|out, _| {
+                    let mut w = Writer { out, first: false };
+                    w.field("loose", |out| out.push_str("true"));
+                })));
+            }
             tasks.push(EncodeTask::Char(']'));
             let mut entries = Vec::new();
             for item in &n.items {
@@ -1482,6 +1499,9 @@ fn write_block_leaf(out: &mut String, node: &BlockNode) {
         BlockNode::DefinitionList(n) => {
             let mut w = typed(out, "definition_list");
             w.field("items", |out| write_definition_entries(out, &n.items));
+            if n.loose {
+                w.field("loose", |out| out.push_str("true"));
+            }
             write_attrs_field(&mut w, &n.attrs);
             write_pos_field(&mut w, &n.pos);
             w.finish();
@@ -2459,6 +2479,10 @@ fn decode_block(value: &Json) -> Result<BlockNode, AstJsonError> {
         "definition_list" => Ok(BlockNode::DefinitionList(DefinitionList {
             attrs: optional_attrs(obj)?,
             items: decode_definition_entries(required_array(obj, "definition_list", "items")?)?,
+            // PART 12 §8 types this `const: true`, so `false` is spelled by
+            // ABSENCE and an explicit `false` is not the default arriving the
+            // long way - it is a value the schema does not name.
+            loose: optional_bool(obj, "loose")?.unwrap_or(false),
             pos: optional_pos(obj, "definition_list")?,
         })),
         "figure" => Ok(BlockNode::Figure(Figure {

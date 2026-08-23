@@ -12213,6 +12213,9 @@ fn parse_definition_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNo
     }
     BlockNode::DefinitionList(DefinitionList {
         attrs: None,
+        // §17 L7's key is CONSUMED off the preceding attribute line, which this
+        // constructor never sees - `apply_attrs_to_block` sets the flag.
+        loose: false,
         // The cursor has rolled back past the trailing blanks it looked through
         // for another item, so it points one line past the last definition -
         // the span stops at the content, not at the gap after it.
@@ -16127,7 +16130,25 @@ fn apply_attrs_to_block(node: &mut BlockNode, attrs: Attrs) {
         BlockNode::Admonition(n) => merge_leading_attrs(&mut n.attrs, attrs),
         BlockNode::Div(n) => merge_leading_attrs(&mut n.attrs, attrs),
         BlockNode::LineBlock(n) => merge_leading_attrs(&mut n.attrs, attrs),
-        BlockNode::DefinitionList(n) => n.attrs = Some(attrs),
+        BlockNode::DefinitionList(n) => {
+            // §17 L7. The axis is NOT total here: a `<dl>` derives a loose
+            // description from its block count and has no blank-line spelling
+            // for a one-block one at any entry count, so the spelled fact needs
+            // a field of its own rather than landing in one that already states
+            // it. Redundant use stays a legal no-op - a description already
+            // holding two blocks renders the same either way.
+            if consume_loose(&mut attrs) {
+                n.loose = true;
+                // The same emptied-set rule the list arm applies: a line that
+                // carried only the key leaves no attributes behind, so `fmt`
+                // round-trips to its own parse.
+                if attrs_are_empty(&attrs) {
+                    n.attrs = None;
+                    return;
+                }
+            }
+            n.attrs = Some(attrs);
+        }
         BlockNode::Figure(n) => n.attrs = Some(attrs),
         // The bare opener carries nothing of its own (§4c), so the preceding
         // block-attribute line is the group's only attribute source.
