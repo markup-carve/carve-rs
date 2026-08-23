@@ -258,6 +258,12 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A marker at an item's content column opens a sublist, first in the item or
+  not** (markup-carve/carve#1517, PART 9 §24 C3). Only the item's first marker
+  did; a later one folded into the paragraph above it, so the answer depended on
+  a sub-list the document had already closed. A marker on a block quote's lazy
+  continuation is still text.
+
 - **A container starts at its opening markup even where its first child is
   unplaced** (markup-carve/carve-rs#1247, PART 12 §4). A `paragraph` used to
   start at the first child that carried a position, so a line block stanza whose
