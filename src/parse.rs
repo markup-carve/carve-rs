@@ -8828,7 +8828,7 @@ fn parse_list(
                     // loosens the item when a plain paragraph follows the blank
                     // (§17 L1). The outer `pending_blank` only sees a blank BEFORE
                     // this chunk, so this covers the blank-after / blank-both case.
-                    if continuation_source_loosens(&nested.source, false) {
+                    if continuation_source_loosens(&nested.source, false, pending_blank) {
                         tight = false;
                     }
                     // An INVISIBLE continuation is not the item's second block
@@ -9164,7 +9164,7 @@ fn parse_list(
             // normal path runs, so `- {a=b}` / `x` / blank / `Body.` stayed tight
             // where `- x` / blank / `Body.` went loose - on the same blank line
             // (carve-rs#476).
-            if continuation_source_loosens(&stream.source, true) {
+            if continuation_source_loosens(&stream.source, true, false) {
                 tight = false;
             }
             let children = item_body(deferred, items.len(), stream, None, false);
@@ -9213,7 +9213,7 @@ fn parse_list(
             // normal path runs, so `- {a=b}` / `x` / blank / `Body.` stayed tight
             // where `- x` / blank / `Body.` went loose - on the same blank line
             // (carve-rs#476).
-            if continuation_source_loosens(&stream.source, true) {
+            if continuation_source_loosens(&stream.source, true, false) {
                 tight = false;
             }
             let children = item_body(deferred, items.len(), stream, None, false);
@@ -9556,7 +9556,7 @@ fn parse_list(
             // same rule the plain-continuation branch applies -- e.g. a
             // marker-line fence with blank-separated trailing text
             // (`- ```\n  c\n  ```\n\n  tail`).
-            if continuation_source_loosens(&stream.source, true) {
+            if continuation_source_loosens(&stream.source, true, false) {
                 tight = false;
             }
             let children = item_body(deferred, items.len(), stream, None, false);
@@ -10515,7 +10515,11 @@ fn closed_colon_span_end(
     None
 }
 
-fn continuation_source_loosens(source: &str, source_is_the_item_body: bool) -> bool {
+fn continuation_source_loosens(
+    source: &str,
+    source_is_the_item_body: bool,
+    blank_line_above: bool,
+) -> bool {
     let lines: Vec<&str> = source.split('\n').collect();
     // A blank line INSIDE AN OPEN FENCE is that block's own content, not an
     // interior block separator, so it must not loosen the item (carve-php#404
@@ -10584,6 +10588,47 @@ fn continuation_source_loosens(source: &str, source_is_the_item_body: bool) -> b
     let is_the_whole_item_body = |start: usize, end: usize| {
         source_is_the_item_body && start == 0 && last_content.is_some_and(|last| end > last)
     };
+    // A BLANK LINE ABOVE THE CHUNK MAKES THE CONTAINER BELOW IT TRANSPARENT, so
+    // its interior blank is reached like any other and can loosen the item.
+    //
+    // `blank_line_above` has to be TOLD, not read off `lines`: the leading blank
+    // is not part of the collected chunk, so
+    //
+    //     - x
+    //
+    //       ::: d
+    //       a
+    //
+    //       b
+    //       :::
+    //
+    // and the same document with no blank under `- x` arrive here with the
+    // IDENTICAL five lines. That is the bound the note above records for corpus
+    // 279-10, and it is why only the caller can separate them.
+    //
+    // THE SKIP IS FOR AN ATTACHED CONTAINER. With nothing between it and the
+    // block above, a container is one of the item's blocks and its body is its
+    // own content rather than a separator between the item's blocks
+    // (markup-carve/carve#985). A blank line above it is a different document:
+    // that is the separator that loosens an item before a plain block, and §17
+    // cannot read the same blank one way there and another way here.
+    //
+    // THIS CRATE ALREADY CONTRADICTED ITSELF ON IT, which is the half that needs
+    // no ruling at all. Drop the `  :::` closer from the document above and it
+    // read LOOSE - an unterminated opener has no span to skip - while with the
+    // closer written it read TIGHT. markup-carve/carve#1602 settled that an
+    // explicit closer is a SPELLING change and tightness may not move across it,
+    // and the canonical writer SUPPLIES the missing closer, so the two are `x`
+    // and `fmt(x)` and PART 11 §1 requires them to parse alike. That fix bounded
+    // itself to an item whose whole body IS the container; the attached
+    // configuration kept the defect until markup-carve/carve#1622 measured it.
+    // Ruled loose there, which is the reading the unclosed spelling already gave
+    // and the one carve-php gives both.
+    //
+    // WHAT DOES NOT MOVE. With no blank above it the container stays attached
+    // and the item stays tight (corpus 279-10, markup-carve/carve-js#1376), and
+    // a container holding no interior blank stays tight either way, because it
+    // has no second block inside for the separator to reach.
     let mut fence: Option<FenceOpen> = None;
     let mut comment_closers: Option<HashMap<usize, usize>> = None;
     let mut i = 0;
@@ -10620,7 +10665,7 @@ fn continuation_source_loosens(source: &str, source_is_the_item_body: bool) -> b
         }
         if let Some(fence_len) = detect_line_block_open(lines[i]) {
             if let Some(end) = closed_colon_span_end(&lines, i, fence_len, true) {
-                if !is_the_whole_item_body(i, end) {
+                if !is_the_whole_item_body(i, end) && !blank_line_above {
                     i = end;
                     continue;
                 }
@@ -10628,7 +10673,7 @@ fn continuation_source_loosens(source: &str, source_is_the_item_body: bool) -> b
         }
         if let Some(fence_len) = detect_hardbreaks_block_open(lines[i]) {
             if let Some(end) = closed_colon_span_end(&lines, i, fence_len, false) {
-                if !is_the_whole_item_body(i, end) {
+                if !is_the_whole_item_body(i, end) && !blank_line_above {
                     i = end;
                     continue;
                 }
@@ -10636,7 +10681,7 @@ fn continuation_source_loosens(source: &str, source_is_the_item_body: bool) -> b
         }
         if let Some(open) = detect_container_open(lines[i]) {
             if let Some(end) = closed_colon_span_end(&lines, i, open.fence_len, false) {
-                if !is_the_whole_item_body(i, end) {
+                if !is_the_whole_item_body(i, end) && !blank_line_above {
                     i = end;
                     continue;
                 }
