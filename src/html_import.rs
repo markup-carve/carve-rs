@@ -1324,9 +1324,30 @@ impl<'a> Importer<'a> {
             })]);
         }
         if tag == "p" {
+            let inlines = self.inlines(&children, path, depth + 1)?;
+            // PART 11 §7: a block element holding nothing but LAYOUT builds no
+            // node, and the drop is REPORTED because it is a real loss - an
+            // element the input had contributes nothing. Keeping owes no report,
+            // since a kept character survives the write intact.
+            //
+            // WHY THE PARAGRAPH AND NOT EVERY BLOCK. §7's argument is that the
+            // node left behind is UNSPELLABLE, so the two import exits disagree
+            // about it. A heading spells its own marker and a list item its own
+            // bullet, so neither is that shape; the paragraph is, and it is the
+            // shape all three of §7's rows are written over.
+            if is_layout_only(&inlines) {
+                self.diag(
+                    HtmlImportDiagnosticCode::ElementDropped,
+                    format!("Dropped whitespace-only <{tag}> holding no content character"),
+                    HtmlImportSeverity::Warning,
+                    path,
+                    h,
+                );
+                return Ok(Vec::new());
+            }
             return Ok(vec![BlockNode::Paragraph(Paragraph {
                 attrs,
-                children: self.inlines(&children, path, depth + 1)?,
+                children: inlines,
                 at_content_column: true,
                 pos: None,
             })]);
@@ -4677,8 +4698,36 @@ fn is_semantic_span_tag(tag: &str) -> bool {
     EXTENDED_SEMANTIC_SPAN_ORDER.contains(&tag)
 }
 
+/// The characters PART 11 §7 calls LAYOUT, and nothing else.
+///
+/// §7 draws the content-versus-layout line at PART 2's two-character
+/// `whitespace` terminal (`whitespace = \' \' | \'\\t\'`, grammar.ebnf:4183),
+/// "together with the line terminators an HTML parser folds into them". EVERY
+/// other character is content, so NO-BREAK SPACE (U+00A0), NARROW NO-BREAK
+/// SPACE (U+202F) and IDEOGRAPHIC SPACE (U+3000) are kept exactly as any letter
+/// is - a lone content-space line parses back as a PARAGRAPH where a lone ASCII
+/// space line is a BLANK LINE, which is the whole of why the two differ.
+///
+/// NOT `char::is_whitespace`, which is Unicode `White_Space` and holds all
+/// three of those. Collapsing through it normalized a content space to an ASCII
+/// one, which §7 forbids outright: it keeps a node while discarding the single
+/// property that separates U+00A0 from a space, and the paragraph it leaves is
+/// unspellable, so it vanishes when the writer runs and the two import exits
+/// then disagree about a document the importer built itself
+/// (markup-carve/carve-rs#1299, markup-carve/carve#1628).
+///
+/// The line terminators are here because an HTML parser folds them into the
+/// same run: `<p>a\nb</p>` is one space between two words, not a break.
+fn is_layout_space(ch: char) -> bool {
+    matches!(ch, ' ' | '\t' | '\n' | '\r' | '\u{000c}')
+}
+
 fn collapse(s: &str) -> String {
-    let value = s.split_whitespace().collect::<Vec<_>>().join(" ");
+    let value = s
+        .split(is_layout_space)
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ");
     if value.is_empty() {
         return if s.is_empty() {
             String::new()
@@ -4688,18 +4737,37 @@ fn collapse(s: &str) -> String {
     }
     format!(
         "{}{}{}",
-        if s.chars().next().is_some_and(char::is_whitespace) {
+        if s.starts_with(is_layout_space) {
             " "
         } else {
             ""
         },
         value,
-        if s.chars().last().is_some_and(char::is_whitespace) {
+        if s.ends_with(is_layout_space) {
             " "
         } else {
             ""
         }
     )
+}
+
+/// Whether an inline run holds text and nothing in it is content.
+///
+/// PART 11 §7's second row: a block element whose every character is LAYOUT
+/// builds no node at all. Asked of the produced run rather than of the source
+/// text, so `collapse` above has already decided which characters survived -
+/// one reading of the line, not two.
+///
+/// An EMPTY run is not this shape. `<p></p>` holds no character to classify,
+/// nothing was dropped, and PART 11 §10j names the empty paragraph as the
+/// sibling shape whose treatment already keeps §1 - so it is left exactly as it
+/// was.
+fn is_layout_only(nodes: &[InlineNode]) -> bool {
+    !nodes.is_empty()
+        && nodes.iter().all(|n| match n {
+            InlineNode::Text(t) => !t.value.is_empty() && t.value.chars().all(is_layout_space),
+            _ => false,
+        })
 }
 
 /// The edge whitespace of a SYNTHESIZED paragraph, removed.

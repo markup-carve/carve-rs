@@ -128,17 +128,18 @@ fn the_boundary_inside_a_tight_item_survives_a_whitespace_only_child() {
 }
 
 /// The ticket's own repro, through the importer that found it. Every
-/// whitespace-only spelling of the separator `<p>`, including the `&nbsp;` one
-/// the importer normalizes to a plain space.
+/// LAYOUT-only spelling of the separator `<p>`.
+///
+/// `<p>&nbsp;</p>` USED TO BE IN THIS LIST, on the strength of the importer
+/// normalizing the character to a plain space. PART 11 §7 has since forbidden
+/// that normalization outright, so the row moved to
+/// `a_content_space_separator_is_content_and_writes_no_boundary` below and
+/// asserts the opposite - which is the same rule, not an exception to it: a
+/// block that SPELLS something separates the two lists, and a NO-BREAK space is
+/// something (markup-carve/carve-rs#1299, markup-carve/carve#1628).
 #[test]
 fn an_html_import_keeps_the_boundary_across_a_whitespace_only_paragraph() {
-    for separator in [
-        "<p> </p>",
-        "<p>\n</p>",
-        "<p>&nbsp;</p>",
-        "<p>\t</p>",
-        "<p></p>",
-    ] {
+    for separator in ["<p> </p>", "<p>\n</p>", "<p>\t</p>", "<p></p>"] {
         let html = format!("<ul><li>a</li></ul>{separator}<ul><li>b</li></ul>");
         let written = carve::html_to_carve(&html, &carve::HtmlImportOptions::default())
             .unwrap()
@@ -151,6 +152,38 @@ fn an_html_import_keeps_the_boundary_across_a_whitespace_only_paragraph() {
             top_kinds(&carve::parse(&written)),
             "list,list",
             "separator {separator:?} merged the two lists on re-parse"
+        );
+    }
+}
+
+/// The other side of the same rule, and the row this file used to get wrong.
+///
+/// PART 11 §7 keeps a NO-BREAK space as itself on an import, so the paragraph
+/// between the two lists is no longer empty of characters: it spells a line of
+/// its own, the lists are NOT adjacent, and §10j's boundary must not appear.
+/// U+202F and U+3000 are the same class and behave the same way - what decides
+/// it is PART 2's two-character `whitespace` terminal and nothing else.
+#[test]
+fn a_content_space_separator_is_content_and_writes_no_boundary() {
+    for (separator, kept) in [
+        ("<p>&nbsp;</p>", '\u{a0}'),
+        ("<p>&#8239;</p>", '\u{202f}'),
+        ("<p>&#12288;</p>", '\u{3000}'),
+    ] {
+        let html = format!("<ul><li>a</li></ul>{separator}<ul><li>b</li></ul>");
+        let written = carve::html_to_carve(&html, &carve::HtmlImportOptions::default())
+            .unwrap()
+            .value;
+
+        assert_eq!(
+            written,
+            format!("- a\n\n{kept}\n\n- b\n"),
+            "separator {separator:?} did not survive as content"
+        );
+        assert_eq!(
+            top_kinds(&carve::parse(&written)),
+            "list,paragraph,list",
+            "separator {separator:?} did not read back as a paragraph"
         );
     }
 }
