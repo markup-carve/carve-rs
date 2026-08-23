@@ -298,6 +298,12 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   document whose author took `adm-1` renders `adm-1-2` and the drop was missed,
   reporting a loss that does not happen. The allocation is modelled now, so the
   match stays an equality match on the value the renderer would write.
+- **A line block's hard break ends at the boundary, not over the comment line it
+  ends** (#1246, PART 12 §4). Where the line a break ends is a comment-only line
+  the block layer removes, and the break sits inside an inline container, its
+  span covered the whole comment line and overlapped the `comment` node holding
+  those bytes. Published break positions change on that shape, to what carve-js
+  and carve-php already publish.
 
 - **A container ends at the markup that closes it even where its last child is
   unplaced** (markup-carve/carve#1551, PART 12 §4). A `paragraph` ended at the

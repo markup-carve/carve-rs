@@ -14335,6 +14335,32 @@ fn splice_verse_comments_into(
 ///
 /// Only breaks still MISSING a span are filled: where the anchors placed one it
 /// is already the same fact, computed the same way.
+///
+/// AT EVERY DEPTH, AND COUNTING A BOUNDARY HOWEVER IT IS SPELLED
+/// (carve-rs#1246). This walk used to visit the stanza's top-level nodes and
+/// count break NODES, which is the same pair of mistakes `harden_verse_breaks`
+/// and `splice_verse_comments_into` each had to give up:
+///
+/// - An inline container that opens on one body line and closes on a later one
+///   holds the boundaries between them as its OWN children, so a top-level walk
+///   never sees them. The break ending an emptied comment line under a `strong`
+///   therefore kept the span the inline parser gave it, measured from the
+///   EMPTIED text - which is zero-length there, so the span started at that
+///   line's FIRST column and ran to the next line's, covering the whole comment
+///   line and overlapping the `comment` node published at exactly those bytes.
+///   PART 12 §4 ends a span "immediately after the last source codepoint the
+///   construct owns", and what a break owns is the boundary, not the line the
+///   block layer emptied to get there.
+/// - A verbatim run spanning a boundary carries that newline in its VALUE
+///   rather than as a node, so counting nodes alone named a line short and every
+///   break after it was measured against the wrong one.
+///
+/// So it walks the slots `splice_verse_comments_into` walks and tracks the LINE
+/// the way that function does, which is what makes the two agree by
+/// construction rather than by coincidence. THE START IS THE SOURCE LINE'S END:
+/// `end_cols` is measured on the source line before `expand_line_block_ws`
+/// touches it, which is why the geometry was right all along and only the walk
+/// that read it was not.
 fn place_line_block_breaks(
     inlines: Vec<InlineNode>,
     lines: &LineBuffer,
@@ -14346,46 +14372,165 @@ fn place_line_block_breaks(
     if !options.positions {
         return inlines;
     }
-    let mut break_index = 0usize;
-    inlines
-        .into_iter()
-        .map(|node| {
-            let InlineNode::HardBreak(brk) = node else {
-                return node;
-            };
-            let k = break_index;
-            break_index += 1;
-            // A break ending a line the block layer EMPTIED is recomputed even
-            // when the inline parser gave it one: what that parser measured is
-            // the emptied line, which ends at column 1, and the newline the
-            // author wrote is at the end of the comment they wrote
-            // (grammar PART 9 §23).
-            if brk.pos.is_some() && emptied.binary_search(&k).is_err() {
-                return InlineNode::HardBreak(brk);
+    let mut line = 0usize;
+    place_line_block_breaks_into(inlines, lines, end_cols, start_cols, emptied, &mut line)
+}
+
+/// One level of [`place_line_block_breaks`], sharing the caller's line counter
+/// so a boundary counts once wherever in the tree it turns up.
+fn place_line_block_breaks_into(
+    inlines: Vec<InlineNode>,
+    lines: &LineBuffer,
+    end_cols: &[Option<isize>],
+    start_cols: &[Option<isize>],
+    emptied: &[usize],
+    line: &mut usize,
+) -> Vec<InlineNode> {
+    let mut out = Vec::with_capacity(inlines.len());
+    for mut node in inlines {
+        match &mut node {
+            // A `SoftBreak` reaching here is one `harden_verse_breaks` did not
+            // convert, so it gets no span - but it IS a boundary and has to move
+            // the counter, exactly as it does in the comment walk.
+            InlineNode::SoftBreak(_) => *line += 1,
+            InlineNode::HardBreak(brk) => {
+                let k = *line;
+                *line += 1;
+                // A break ending a line the block layer EMPTIED is recomputed
+                // even when the inline parser gave it one: what that parser
+                // measured is the emptied line, which ends at column 1, and the
+                // newline the author wrote is at the end of the comment they
+                // wrote (grammar PART 9 §23).
+                if brk.pos.is_none() || emptied.binary_search(&k).is_ok() {
+                    // Start: just past the last character of line k. End: the
+                    // first column of line k+1, which is where the next line's
+                    // content begins. Both are 1-based, matching every other
+                    // span.
+                    let pos = match (
+                        lines.line_map.get(k).copied().flatten(),
+                        end_cols.get(k).copied().flatten(),
+                        lines.line_map.get(k + 1).copied().flatten(),
+                        start_cols.get(k + 1).copied().flatten(),
+                    ) {
+                        (Some(start_line), Some(end_col), Some(end_line), Some(next_col)) => {
+                            Some(Pos {
+                                start_line,
+                                start_column: document_column(end_col, 0),
+                                end_line,
+                                end_column: document_column(next_col, 0),
+                                ..Default::default()
+                            })
+                        }
+                        _ => None,
+                    };
+                    if pos.is_some() {
+                        brk.pos = pos;
+                    }
+                }
             }
-            // Start: just past the last character of line k. End: the first
-            // column of line k+1, which is where the next line's content
-            // begins. Both are 1-based, matching every other span.
-            let pos = match (
-                lines.line_map.get(k).copied().flatten(),
-                end_cols.get(k).copied().flatten(),
-                lines.line_map.get(k + 1).copied().flatten(),
-                start_cols.get(k + 1).copied().flatten(),
-            ) {
-                (Some(start_line), Some(end_col), Some(end_line), Some(next_col)) => Some(Pos {
-                    start_line,
-                    start_column: document_column(end_col, 0),
-                    end_line,
-                    end_column: document_column(next_col, 0),
-                    ..Default::default()
-                }),
-                _ => None,
-            };
-            InlineNode::HardBreak(Break {
-                pos: pos.or(brk.pos),
-            })
-        })
-        .collect()
+            // A verbatim run's newlines are boundaries it ATE, carried in the
+            // value rather than as nodes, so they move the counter here for the
+            // same reason they do in `splice_verse_comments_into`.
+            InlineNode::Code(n) => *line += n.value.matches('\n').count(),
+            InlineNode::Math(n) => *line += n.content.matches('\n').count(),
+            InlineNode::RawInline(n) => *line += n.content.matches('\n').count(),
+            InlineNode::LiteralInline(n) => *line += n.content.matches('\n').count(),
+            // EVERY SLOT AN INLINE NODE HOLDS INLINES IN, the same list
+            // `splice_verse_comments_into` and `harden_verse_breaks` walk.
+            InlineNode::Emphasis(n) => {
+                n.children = place_line_block_breaks_into(
+                    std::mem::take(&mut n.children),
+                    lines,
+                    end_cols,
+                    start_cols,
+                    emptied,
+                    line,
+                )
+            }
+            InlineNode::Link(n) => {
+                n.children = place_line_block_breaks_into(
+                    std::mem::take(&mut n.children),
+                    lines,
+                    end_cols,
+                    start_cols,
+                    emptied,
+                    line,
+                )
+            }
+            InlineNode::Span(n) => {
+                n.children = place_line_block_breaks_into(
+                    std::mem::take(&mut n.children),
+                    lines,
+                    end_cols,
+                    start_cols,
+                    emptied,
+                    line,
+                )
+            }
+            InlineNode::Extension(n) => {
+                n.children = place_line_block_breaks_into(
+                    std::mem::take(&mut n.children),
+                    lines,
+                    end_cols,
+                    start_cols,
+                    emptied,
+                    line,
+                )
+            }
+            InlineNode::CriticInsert(n) => {
+                n.children = place_line_block_breaks_into(
+                    std::mem::take(&mut n.children),
+                    lines,
+                    end_cols,
+                    start_cols,
+                    emptied,
+                    line,
+                )
+            }
+            InlineNode::CriticDelete(n) => {
+                n.children = place_line_block_breaks_into(
+                    std::mem::take(&mut n.children),
+                    lines,
+                    end_cols,
+                    start_cols,
+                    emptied,
+                    line,
+                )
+            }
+            InlineNode::Footnote(n) => {
+                if let Some(inline) = &mut n.inline {
+                    *inline = place_line_block_breaks_into(
+                        std::mem::take(inline),
+                        lines,
+                        end_cols,
+                        start_cols,
+                        emptied,
+                        line,
+                    );
+                }
+            }
+            InlineNode::CitationGroup(group) => {
+                for item in &mut group.items {
+                    for field in [&mut item.prefix, &mut item.locator, &mut item.suffix]
+                        .into_iter()
+                        .flatten()
+                    {
+                        *field = place_line_block_breaks_into(
+                            std::mem::take(field),
+                            lines,
+                            end_cols,
+                            start_cols,
+                            emptied,
+                            line,
+                        );
+                    }
+                }
+            }
+            _ => {}
+        }
+        out.push(node);
+    }
+    out
 }
 
 fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
