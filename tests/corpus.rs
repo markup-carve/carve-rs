@@ -500,17 +500,42 @@ const IMPLEMENTED: &[&str] = &[
     // because a category absent from this list is not compared at all.
     "a-container-starts-at-its-opening-markup-even-where-its-first-child-is-unplaced",
     "a-marker-at-an-item-content-column-opens-a-sublist-first-in-the-item-or-not",
-];
-
-// Spec-main categories tracked by separate implementation work. Keep them
-// explicit so a new category still trips the completeness gate below.
-const KNOWN_GAPS: &[&str] = &[
-    // carve#1436: a `+` attaches only a flush-left block; this engine still
-    // folds the indented line. The spec's own drift ledger records the same gap.
+    // Corpus 402-406, which this pin bump brings with it. Every document in
+    // each category was rendered through this engine and matched its committed
+    // HTML byte for byte before being listed here; none needed engine work.
+    // markup-carve/carve#1564: a container ends at the markup that closes it,
+    // even where its last child is unplaced.
+    "a-container-ends-at-the-markup-that-closes-it-even-where-its-last-child-is-unplaced",
+    // markup-carve/carve#1570: the writer escapes per opener OCCURRENCE, not
+    // per unit. Narrows category 396, which stays listed above and keeps its
+    // own pinned canonical form.
+    "an-idle-escape-does-not-spread-from-the-occurrence-that-needed-one",
+    // markup-carve/carve#1583: a caption's marker separator is a run of
+    // SPACES, so a tab after it is content and a marker with only a separator
+    // captions nothing; a quoted figure indents like any other nested block.
+    "a-caption-s-marker-separator-is-a-run-and-none-of-it-is-content",
+    "a-quote-holding-a-captioned-block-indents-it-like-any-other-nested-block",
+    // markup-carve/carve#1587: the same rule for a heading's marker separator.
+    "a-heading-s-marker-separator-is-a-run-and-none-of-it-is-content",
+    // Measured stale while adding the five above: each of these three renders
+    // every one of its documents byte-identically at this pin AND at the pin
+    // this bump replaced, so none of them was ever a gap this submodule move
+    // created. They sat in KNOWN_GAPS because nothing asserted that a declared
+    // gap still fails; `a_known_gap_still_fails` below now does.
     "a-continuation-marker-attaches-only-a-flush-left-block",
     "a-raw-block-keeps-the-blank-line-at-the-end-of-its-payload-too",
     "an-unterminated-fence-at-a-content-column-opens-no-block-so-the-paragraph-stays-open",
 ];
+
+// Spec-main categories tracked by separate implementation work. Keep them
+// explicit so a new category still trips the completeness gate below.
+//
+// Empty, and an entry earns its place only by FAILING: `a_known_gap_still_fails`
+// renders every document in a declared gap and refuses a category that already
+// matches. The three entries this list used to hold had all been conformant
+// since before the pin they were written against, and nothing noticed, because
+// a gap was only ever read as "skip this".
+const KNOWN_GAPS: &[&str] = &[];
 
 fn corpus_dir() -> PathBuf {
     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -619,6 +644,57 @@ fn ahead_of_pin_names_only_cases_the_corpus_has() {
     assert!(
         orphaned.is_empty(),
         "AHEAD_OF_PIN names case(s) the corpus does not have: {orphaned:?}",
+    );
+}
+
+#[test]
+fn no_case_is_both_deferred_and_ahead_of_pin() {
+    // THE PRECEDENCE TRAP. `check_pair` reads AHEAD_OF_PIN and returns, but it
+    // only ever runs for a pair `is_implemented_pair` accepts - so an entry
+    // whose category sits in KNOWN_GAPS instead of IMPLEMENTED is never
+    // reached, and NEITHER of its two assertions ever executes, in either
+    // direction. It reads as coverage of a rule this engine has moved past
+    // while asserting nothing at all. carve-php had exactly one entry in that
+    // state (markup-carve/carve-php#1583's sweep found it), which is what this
+    // refuses.
+    let mut unreachable = Vec::new();
+    for (slug, _, _) in AHEAD_OF_PIN {
+        let category = base_category(slug);
+        if KNOWN_GAPS.contains(&category) {
+            unreachable.push(format!("{slug} (category deferred in KNOWN_GAPS)"));
+        } else if !IMPLEMENTED.contains(&category) {
+            unreachable.push(format!("{slug} (category absent from IMPLEMENTED)"));
+        }
+    }
+    assert!(
+        unreachable.is_empty(),
+        "AHEAD_OF_PIN entr(ies) that `check_pair` never reaches: {unreachable:?}",
+    );
+}
+
+#[test]
+fn a_known_gap_still_fails() {
+    // A gap that quietly started passing is worse than no gap: the category is
+    // conformant, unlisted in IMPLEMENTED, and therefore compared against
+    // nothing at all. Mirrors what AHEAD_OF_PIN asserts in its own direction.
+    let mut stale = Vec::new();
+    for slug in corpus_pairs() {
+        let category = base_category(&slug);
+        if !KNOWN_GAPS.contains(&category) {
+            continue;
+        }
+        let dir = corpus_dir();
+        let source = fs::read_to_string(dir.join(format!("{slug}.crv")))
+            .unwrap_or_else(|e| panic!("read {slug}.crv: {e}"));
+        let expected = fs::read_to_string(dir.join(format!("{slug}.html")))
+            .unwrap_or_else(|e| panic!("read {slug}.html: {e}"));
+        if expected.trim() == carve::to_html(&source).trim() {
+            stale.push(slug);
+        }
+    }
+    assert!(
+        stale.is_empty(),
+        "KNOWN_GAPS document(s) already match: move the category to IMPLEMENTED: {stale:?}",
     );
 }
 

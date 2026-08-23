@@ -60,3 +60,31 @@ fn a_literal_backslash_before_the_break_survives_the_collapse() {
         "<section id=\"a-b\">\n  <h1>a\\ b</h1>\n</section>"
     );
 }
+
+#[test]
+fn a_leading_tab_is_content_and_survives_fmt() {
+    // A heading's marker separator is a run of SPACES and none of it is content
+    // (markup-carve/carve#1587), so the tab here is the title's first
+    // character. The writer trimmed it alongside the separator's spaces and
+    // wrote `## x`, which re-parses to a DIFFERENT title - the PART 11 §1
+    // invariant `to_html(fmt(x)) == to_html(x)` fails on it, and corpus 406's
+    // third pair is exactly this document.
+    let source = "## \tx\n";
+    let out = carve::to_carve(source);
+    assert_eq!(out, "## \tx\n");
+    assert_eq!(carve::to_html(&out), carve::to_html(source));
+    assert_eq!(
+        carve::to_html(source),
+        "<section id=\"x\">\n  <h2>\tx</h2>\n</section>"
+    );
+}
+
+#[test]
+fn the_separators_own_spaces_are_still_dropped() {
+    // The control the fix must not break: a leading SPACE is separator, never
+    // content, because the run absorbs it and the writer re-emits exactly one.
+    let source = "##  h\n";
+    let out = carve::to_carve(source);
+    assert_eq!(out, "## h\n");
+    assert_eq!(carve::to_html(&out), carve::to_html(source));
+}

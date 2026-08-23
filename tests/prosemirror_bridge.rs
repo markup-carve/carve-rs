@@ -674,8 +674,17 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // `soft_break`, whitespace in the ProseMirror model, the same cause
     // `364-...-2` carries. Nothing DROPS and no new loss cause appears; the
     // counts move because the corpus grew.
-    const STRICT: usize = 1063;
-    const LOSSY: usize = 299;
+    // The bump to carve d0b6c92 adds EIGHT documents, categories 402-406.
+    // Six round trip STRICTLY. The two that report are
+    // `403-an-idle-escape-...` and `404-a-caption-s-marker-separator-...-2`,
+    // and each reports `soft_break` alone - whitespace in the ProseMirror
+    // model, the cause `364-...-2` and `401-...-3` already carry. Both are
+    // documents whose last paragraph spans two source lines, so they hold a
+    // soft break by construction. Measured at both pins: `dropped` is EMPTY on
+    // both, no document left the lossy set, and no new loss cause appears. The
+    // counts move because the corpus grew.
+    const STRICT: usize = 1069;
+    const LOSSY: usize = 301;
     assert!(
         covered >= STRICT,
         "strict round trips fell from {STRICT} to {covered}"

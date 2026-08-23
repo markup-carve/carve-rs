@@ -304,6 +304,23 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`fmt` keeps a heading's leading tab** (markup-carve/carve#1587, PART 11 §1).
+  A heading's marker separator is a run of SPACES and none of it is content, so
+  `## \tx` is an h2 whose title opens with the tab. The writer trimmed it along
+  with the separator's spaces and emitted `## x`, which re-parses to a different
+  title and breaks `to_html(fmt(x)) == to_html(x)`. Leading spaces are still
+  dropped, because the separator run absorbs them. carve-js fixed the same
+  defect as markup-carve/carve-js#1359 and carve-php in its own bump, so this
+  was one rule spelled wrong in three engines.
+
+- **An HTML import reports nothing for a derived endnotes section**
+  (markup-carve/carve#1580, PART 9 §16a). PART 9 §16 writes
+  `<section role="doc-endnotes">` around the notes and no Carve construct spells
+  a `<section>`, so unwrapping one removes nothing an author wrote. The importer
+  reported it as `element-unwrapped` plus an `attribute-dropped` for each of the
+  role and the derived accessible name. Only the derived values go quiet: an
+  authored `class`, or an `aria-label` no default matches, is still reported.
+
 - **An import report is ordered by the losing element's document position**
   (markup-carve/carve#1586). The list came out in the order this importer's walk
   constructed the rows in, so a table losing something on both its `<caption>`

@@ -660,3 +660,71 @@ fn a_table_keeps_its_own_caption_on_import() {
         result.report.diagnostics
     );
 }
+
+/// PART 9 §16a: the endnotes `<section>` is a DERIVED WRAPPER, so unwrapping it
+/// reports nothing - but only what the property actually reaches goes quiet.
+///
+/// The suppression has to be per-value, not per-element. Silencing the element
+/// row and the attribute rows together would take the author's own attributes
+/// down with the renderer's, which is the failure the clause names outright.
+mod a_derived_endnotes_section {
+    use super::*;
+
+    const NOTES: &str = "<hr><ol><li><p>Note text.</p></li></ol>";
+
+    fn codes(html: &str) -> Vec<HtmlImportDiagnosticCode> {
+        html_to_ast(html, &HtmlImportOptions::default())
+            .unwrap()
+            .report
+            .diagnostics
+            .iter()
+            .map(|d| d.code)
+            .collect()
+    }
+
+    #[test]
+    fn a_wholly_derived_one_reports_nothing() {
+        let html =
+            format!("<section role=\"doc-endnotes\" aria-label=\"Footnotes\">{NOTES}</section>");
+        assert_eq!(codes(&html), Vec::new());
+    }
+
+    #[test]
+    fn an_authored_class_on_it_is_still_reported() {
+        let html = format!(
+            "<section role=\"doc-endnotes\" aria-label=\"Footnotes\" class=\"mine\">{NOTES}</section>"
+        );
+        assert_eq!(
+            codes(&html),
+            vec![HtmlImportDiagnosticCode::AttributeDropped]
+        );
+    }
+
+    #[test]
+    fn a_name_no_default_matches_is_still_reported() {
+        // Rendered with a German labels map, so the value is not one this
+        // importer can rebuild: it is indistinguishable from an authored name
+        // and is reported rather than silently dropped.
+        let html =
+            format!("<section role=\"doc-endnotes\" aria-label=\"Fussnoten\">{NOTES}</section>");
+        assert_eq!(
+            codes(&html),
+            vec![HtmlImportDiagnosticCode::AttributeDropped]
+        );
+    }
+
+    #[test]
+    fn a_section_that_is_not_the_endnotes_one_still_reports_its_unwrap() {
+        // The control: without it, the suppression could be reading "section"
+        // alone and nothing here would notice.
+        let html = "<section role=\"region\" aria-label=\"X\"><p>N.</p></section>";
+        assert_eq!(
+            codes(html),
+            vec![
+                HtmlImportDiagnosticCode::ElementUnwrapped,
+                HtmlImportDiagnosticCode::AttributeDropped,
+                HtmlImportDiagnosticCode::AttributeDropped,
+            ]
+        );
+    }
+}
