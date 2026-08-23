@@ -1384,19 +1384,50 @@ fn extract_footnote_defs(
                     }
                     if is_blank_line(line) {
                         // A footnote body extends to following lines indented by
-                        // >= 2 spaces (grammar PART 9 §16); single blank lines
-                        // are allowed between chunks. A `+` continuation marker
-                        // also keeps the body open (PART 9 §17).
-                        if i + 1 < lines.len()
-                            && (indent_columns(lines[i + 1]) >= body_indent
-                                || is_plus_marker(lines[i + 1]))
+                        // >= 2 spaces (grammar PART 9 §16); blank lines are
+                        // allowed between chunks. A `+` continuation marker also
+                        // keeps the body open (PART 9 §17).
+                        //
+                        // THE WHOLE BLANK RUN, not the next line. Reading only
+                        // `lines[i + 1]` ended the definition at the SECOND
+                        // blank, because the line after the first blank was
+                        // itself blank and so neither indented nor a marker. An
+                        // indented continuation after two blank lines was
+                        // ejected to a top-level paragraph, and not where it was
+                        // written either - it landed ahead of the endnotes
+                        // section, so the content moved backward past unrelated
+                        // blocks (markup-carve/carve#1620).
+                        //
+                        // A blank run does not end an indented block anywhere
+                        // else in Carve - a list item, a quote and a container
+                        // all keep an indented continuation across one - and
+                        // nothing in §16 says a footnote definition differs.
+                        // Ruled in carve#1620: the continuation stays in the
+                        // note. carve-js already read it that way at every count.
+                        //
+                        // THIS IS NOT §11 N1a. That fires at three or more blank
+                        // lines and only before a LIST MARKER; this fired at two
+                        // and for a plain paragraph as readily as a list, so the
+                        // boundary settled in carve#1430 is untouched. The run is
+                        // pushed through intact rather than collapsed, so a
+                        // genuine N1a boundary written INSIDE a note still
+                        // reaches the parser as the author wrote it.
+                        let mut after_run = i + 1;
+                        while after_run < lines.len() && is_blank_line(lines[after_run]) {
+                            after_run += 1;
+                        }
+                        if after_run < lines.len()
+                            && (indent_columns(lines[after_run]) >= body_indent
+                                || is_plus_marker(lines[after_run]))
                         {
-                            def_lines.push(String::new());
-                            def_line_map.push(Some(first_source_line + i));
-                            if positions {
-                                def_col_map.push(stripped_col(Some(0), lines[i], ""));
+                            while i < after_run {
+                                def_lines.push(String::new());
+                                def_line_map.push(Some(first_source_line + i));
+                                if positions {
+                                    def_col_map.push(stripped_col(Some(0), lines[i], ""));
+                                }
+                                i += 1;
                             }
-                            i += 1;
                             continue;
                         }
                         break;
