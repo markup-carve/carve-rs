@@ -571,3 +571,34 @@ fn an_authored_name_survives_with_the_map_supplied() {
     );
     assert!(back.contains("aria-label=\"My tab set\""), "{back}");
 }
+
+/// THE OVERRIDDEN KEY SHADOWS ITS DEFAULT, and that is the intended reading
+/// rather than an accident of the lookup.
+///
+/// A host supplying `tabsGroup = "Registerkarten"` is stating what its renderer
+/// writes. `Tabs` is then a string that renderer never generates, so the
+/// importer cannot treat it as a generated name - it may well be one the author
+/// wrote - and it is kept. The same HTML imported with NO map is matched against
+/// the defaults and the name is dropped.
+///
+/// So the map NARROWS what counts as generated for the keys it names. It layers
+/// for every other key (see the partial-map case above), not for the one it
+/// overrides.
+#[test]
+fn a_mapped_key_no_longer_matches_the_default_it_replaces() {
+    let tabs = carve::extensions::Tabs::new();
+    let mut o = carve::Options::new();
+    o.extensions.push(&tabs);
+    let rendered_in_english =
+        carve::to_html_with_options(":::: tabs\n\n::: tab [One]\na\n:::\n\n::::\n", &o);
+    assert!(
+        rendered_in_english.contains("aria-label=\"Tabs\""),
+        "{rendered_in_english}"
+    );
+
+    let with_german_map = import_with_labels(&rendered_in_english, german());
+    assert!(with_german_map.contains("aria-label"), "{with_german_map}");
+
+    let with_no_map = import_with_labels(&rendered_in_english, Default::default());
+    assert!(!with_no_map.contains("aria-label"), "{with_no_map}");
+}
