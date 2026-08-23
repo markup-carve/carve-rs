@@ -9,6 +9,16 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **An HTML import can take the `labels` map the HTML was rendered with**
+  (markup-carve/carve#1500). The derived-name drop matches the English defaults,
+  which catches a document rendered in English and nothing else: one rendered
+  with `tabsGroup = "Registerkarten"` carried a value no default equals, so its
+  generated name was kept and baked into the imported source - and a translated
+  document is exactly the one §16a's map exists to serve.
+  `HtmlImportOptions::labels` closes that; the map layers over the defaults, and
+  leaving it empty changes nothing. The new field is an API change for any caller
+  constructing the struct without `..Default::default()`.
+
 - **`carve lint` on the command line.** The linter existed only as a library
   API (`carve::lint_carve`), so nothing outside Rust could reach it - including
   carve-go, which drives this binary over WASI and therefore could expose every

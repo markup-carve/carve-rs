@@ -484,3 +484,90 @@ fn a_matched_element_costs_the_same_budget_as_one_the_rule_does_not_match() {
         smallest_budget(unmatched, |o, n| o.max_depth = n),
     );
 }
+
+// markup-carve/carve#1500 step 2. The default match catches a document rendered
+// in ENGLISH and nothing else - one rendered with a `labels` map carries a value
+// no default equals, so its generated name was kept and baked into the imported
+// source. A translated document is exactly the one §16a's map exists to serve.
+//
+// The host that rendered the HTML knows the map it used, so passing the same one
+// closes it. Omitting it changes nothing, which is asserted rather than assumed.
+
+fn german() -> std::collections::BTreeMap<String, String> {
+    let mut m = std::collections::BTreeMap::new();
+    m.insert("tabsGroup".to_string(), "Registerkarten".to_string());
+    m
+}
+
+fn german_tabs_html() -> String {
+    let tabs = carve::extensions::Tabs::new();
+    let mut o = carve::Options::new();
+    o.extensions.push(&tabs);
+    o.labels
+        .insert("tabsGroup".to_string(), "Registerkarten".to_string());
+
+    carve::to_html_with_options(":::: tabs\n\n::: tab [Eins]\na\n:::\n\n::::\n", &o)
+}
+
+fn import_with_labels(html: &str, labels: std::collections::BTreeMap<String, String>) -> String {
+    let opts = carve::html_import::HtmlImportOptions {
+        labels,
+        ..Default::default()
+    };
+
+    carve::html_import::html_to_carve(html, &opts)
+        .unwrap()
+        .value
+}
+
+#[test]
+fn a_translated_name_is_dropped_when_the_map_is_supplied() {
+    let html = german_tabs_html();
+    assert!(html.contains("aria-label=\"Registerkarten\""), "{html}");
+
+    let back = import_with_labels(&html, german());
+    assert!(!back.contains("aria-label"), "{back}");
+}
+
+/// The residue this closes, pinned so the difference stays visible: with no map
+/// the importer cannot tell the translated name from an authored one.
+#[test]
+fn without_the_map_the_translated_name_is_still_kept() {
+    let back = import_with_labels(&german_tabs_html(), Default::default());
+    assert!(back.contains("aria-label=Registerkarten"), "{back}");
+}
+
+#[test]
+fn the_english_default_is_still_dropped_with_no_map() {
+    let tabs = carve::extensions::Tabs::new();
+    let mut o = carve::Options::new();
+    o.extensions.push(&tabs);
+    let html = carve::to_html_with_options(":::: tabs\n\n::: tab [One]\na\n:::\n\n::::\n", &o);
+
+    let back = import_with_labels(&html, Default::default());
+    assert!(!back.contains("aria-label"), "{back}");
+}
+
+/// The host's map is LAYERED over the defaults, so naming one key leaves every
+/// other construct matched as before.
+#[test]
+fn a_partial_map_still_matches_the_defaults_for_every_other_key() {
+    let group = carve::extensions::CodeGroup::new();
+    let mut o = carve::Options::new();
+    o.extensions.push(&group);
+    let html = carve::to_html_with_options("::: code-group\n\n``` php [PHP]\n1;\n```\n\n:::\n", &o);
+
+    let back = import_with_labels(&html, german());
+    assert!(!back.contains("aria-label"), "{back}");
+}
+
+/// An authored name survives either way - its value differs from the derived one
+/// whether or not a map is supplied (carve-rs#1060).
+#[test]
+fn an_authored_name_survives_with_the_map_supplied() {
+    let back = import_with_labels(
+        "<div class=\"tabs\" aria-label=\"My tab set\"><p>x</p></div>",
+        german(),
+    );
+    assert!(back.contains("aria-label=\"My tab set\""), "{back}");
+}

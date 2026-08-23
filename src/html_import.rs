@@ -122,6 +122,19 @@ pub struct HtmlImportOptions {
     pub max_depth: usize,
     pub max_nodes: usize,
     pub max_diagnostics: usize,
+    /// The `labels` map the HTML was RENDERED with (PART 9 §16a).
+    ///
+    /// The derived-name drop matches the English defaults, which catches a
+    /// document rendered in English and nothing else: one rendered with
+    /// `tabsGroup = "Registerkarten"` carries a value no default equals, so its
+    /// generated name is kept and baked into the imported source - and a
+    /// translated document is exactly the one the map exists to serve
+    /// (markup-carve/carve#1500 step 2).
+    ///
+    /// The host that rendered the HTML knows the map it used; passing the same
+    /// one here closes that. Layered OVER the defaults, so naming one key
+    /// leaves every other construct matched as before. Empty changes nothing.
+    pub labels: BTreeMap<String, String>,
 }
 
 impl Default for HtmlImportOptions {
@@ -132,6 +145,7 @@ impl Default for HtmlImportOptions {
             max_depth: 128,
             max_nodes: 1_000_000,
             max_diagnostics: 1_000,
+            labels: BTreeMap::new(),
         }
     }
 }
@@ -248,6 +262,16 @@ struct FootnoteGroup {
 }
 
 impl<'a> Importer<'a> {
+    /// The engine-written string for `key` as the RENDER used it: the host's
+    /// map first, then the English default.
+    fn label(&self, key: &str) -> String {
+        self.opts
+            .labels
+            .get(key)
+            .cloned()
+            .unwrap_or_else(|| label_default(key).to_string())
+    }
+
     fn enter(&mut self, depth: usize) -> Result<(), HtmlImportError> {
         if depth > self.opts.max_depth {
             return Err(HtmlImportError::DepthLimit);
@@ -758,7 +782,7 @@ impl<'a> Importer<'a> {
                 }
             }
         }
-        Self::drop_derived(handle, &mut out);
+        self.drop_derived(handle, &mut out);
         if out == Attrs::default() {
             None
         } else {
@@ -811,8 +835,8 @@ impl<'a> Importer<'a> {
     /// is kept and laundered. An importer cannot know the render's
     /// configuration and a non-default value is indistinguishable from an
     /// authored one, so failing SAFE - keep - is the side to err on.
-    fn drop_derived(handle: &Handle, out: &mut Attrs) {
-        let Some(derived) = Self::derived_attributes(handle, &out.classes) else {
+    fn drop_derived(&self, handle: &Handle, out: &mut Attrs) {
+        let Some(derived) = self.derived_attributes(handle, &out.classes) else {
             return;
         };
         for (name, values) in derived {
@@ -861,6 +885,7 @@ impl<'a> Importer<'a> {
     /// could reach it. carve-rs#1240 made the aside survive, so the family
     /// lands with it - as the note that stood here said it would.
     fn derived_attributes(
+        &self,
         handle: &Handle,
         classes: &[String],
     ) -> Option<Vec<(&'static str, Vec<String>)>> {
@@ -894,19 +919,13 @@ impl<'a> Importer<'a> {
         if tag == "div" && has("tabs") {
             return Some(vec![
                 ("role", vec!["group".to_string(), "tablist".to_string()]),
-                (
-                    "aria-label",
-                    vec![label_default(LABEL_TABS_GROUP).to_string()],
-                ),
+                ("aria-label", vec![self.label(LABEL_TABS_GROUP)]),
             ]);
         }
         if tag == "div" && has("code-group") {
             return Some(vec![
                 ("role", vec!["group".to_string()]),
-                (
-                    "aria-label",
-                    vec![label_default(LABEL_CODE_GROUP).to_string()],
-                ),
+                ("aria-label", vec![self.label(LABEL_CODE_GROUP)]),
             ]);
         }
 
@@ -933,7 +952,9 @@ impl<'a> Importer<'a> {
         // link's position among its siblings - so the whole value is
         // reconstructable and the match stays exact.
         if tag == "a" && has("index-backref") {
-            return Self::index_backref_names(handle).map(|names| vec![("aria-label", names)]);
+            return self
+                .index_backref_names(handle)
+                .map(|names| vec![("aria-label", names)]);
         }
 
         // A TITLED ADMONITION's title paragraph carries the renderer's own
@@ -1022,7 +1043,7 @@ impl<'a> Importer<'a> {
     /// Both spellings are accepted for a lone link because the extension's byte
     /// budget can truncate a numbered run down to one, leaving `… 1` on the
     /// survivor.
-    fn index_backref_names(handle: &Handle) -> Option<Vec<String>> {
+    fn index_backref_names(&self, handle: &Handle) -> Option<Vec<String>> {
         let parent = parent_handle(handle)?;
         let siblings = parent.children.borrow();
         let is_backref = |node: &Handle| {
@@ -1051,7 +1072,7 @@ impl<'a> Importer<'a> {
         if term.is_empty() {
             return None;
         }
-        let label = label_default(LABEL_INDEX_BACKREF);
+        let label = self.label(LABEL_INDEX_BACKREF);
         Some(vec![
             format!("{label} {term}"),
             format!("{label} {term} {ordinal}"),
