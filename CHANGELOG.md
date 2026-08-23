@@ -314,6 +314,14 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   placeholder (#1214) and the Markdown target's escape carriers (#1216) already
   are. Ordering, nesting and every rendered id are unchanged.
 
+- **An attribute-less `<div>` unwraps to its content on an HTML import**
+  (markup-carve/carve#1578). The importer wrote a `:::` fence for every `<div>`
+  it met, so `<div>z</div>` came back as three lines where one says the same
+  thing, while carve-js and carve-php both unwrapped it. A bare `<div>` carries
+  no meaning of its own, so the fence is no longer written. The boundary is the
+  attribute rather than the tag: a `<div>` carrying anything the language can
+  hold still writes the container, so `<div id="x">z</div>` is unchanged.
+
 - **A non-`li` child of a list keeps its content and is reported** (#1261). The
   HTML importer filtered a `<ul>` or `<ol>` down to its `<li>` children and
   walked only those, so `<ul><div id="stray">z</div><li>a</li></ul>` imported as

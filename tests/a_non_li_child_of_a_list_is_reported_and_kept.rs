@@ -130,13 +130,21 @@ fn a_script_inside_a_list_is_dropped_and_not_reported_as_kept() {
 
 /// The list itself is unchanged by the rescue: an `<ol start>` still starts
 /// where it said, and the stray sits ahead of it.
+///
+/// The stray carries an ID, and that is the point rather than decoration: the
+/// div is here to be a stray CHILD, so it has to be one the div arm writes as a
+/// container. An attribute-less one unwraps to its content
+/// (markup-carve/carve#1578), which would leave this case asserting the div
+/// arm's answer while claiming to be about the list's. The twin test in
+/// carve-js has always spelled it this way; this port dropped the id, so it
+/// pinned the div arm by accident.
 #[test]
 fn the_lists_own_semantics_survive_a_stray_child() {
-    let (src, _) = imported("<ol start=\"3\"><div>z</div><li>a</li></ol>");
-    assert_eq!(src, ":::\nz\n:::\n\n3. a\n");
+    let (src, _) = imported("<ol start=\"3\"><div id=\"s\">z</div><li>a</li></ol>");
+    assert_eq!(src, "{#s}\n:::\nz\n:::\n\n3. a\n");
     assert_eq!(
         reparsed(&src),
-        "<div>\n  <p>z</p>\n</div>\n<ol start=\"3\">\n  <li>a</li>\n</ol>"
+        "<div id=\"s\">\n  <p>z</p>\n</div>\n<ol start=\"3\">\n  <li>a</li>\n</ol>"
     );
 }
 
