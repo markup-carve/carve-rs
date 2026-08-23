@@ -91,8 +91,38 @@ jobs:
       # everything else first, then the timing suite by itself, single-threaded.
       # Splitting the run costs one extra process launch and keeps the whole
       # point of nextest for the other ~3900 tests.
-      - run: cargo nextest run -E 'not binary(perf_regressions)'
-      - run: cargo nextest run -E 'binary(perf_regressions)' --test-threads 1
+      #
+      # `--no-fail-fast` ON BOTH, because nextest's default is fail-fast and a
+      # suite that stops at the first failure cannot say how big a breakage is.
+      # Measured on a red main (carve-rs#1285): the run died at test 13 of 4500
+      # and reported nothing about the other 4487, while the same commit with
+      # `--no-fail-fast` gave `4500 run, 4497 passed, 3 failed` - two failures
+      # CI had never shown anyone, one of which nothing was tracking at all.
+      #
+      # Two costs, and only the second is about wall clock. While main is red
+      # CI VERIFIES NOTHING FOR ANYONE: every pull request reports the same
+      # first failure, so a contributor cannot tell whether their own change is
+      # sound. And "one test failed" and "three tests failed" look identical, so
+      # the size of a breakage is invisible until someone runs the suite by hand
+      # - which is worst exactly at a corpus bump, when several things move at
+      # once.
+      #
+      # UNCONDITIONAL RATHER THAN PER-EVENT. Fail-fast on pull requests and
+      # `--no-fail-fast` on main would keep a red main honest and cost nothing on
+      # a green PR, but it does not answer the first cost above, which is a
+      # PULL-REQUEST problem: the contributor who cannot read their own result is
+      # on a PR, and that is the case the split leaves broken. It also makes the
+      # command differ between the run that gates a merge and the run that
+      # reports main, so a failure could be reported differently depending on
+      # where it appeared. Every other engine in the org already reports its full
+      # failure set - carve-js (vitest), carve-php (paratest), carve-go
+      # (`go test ./...`), carve-rb (minitest) and carve-py (pytest) all run the
+      # whole suite - so this was the outlier rather than the house style.
+      #
+      # The price is wall clock on a RED suite only; a green suite runs exactly
+      # as long as it did, because there is no first failure to stop at.
+      - run: cargo nextest run -E 'not binary(perf_regressions)' --no-fail-fast
+      - run: cargo nextest run -E 'binary(perf_regressions)' --test-threads 1 --no-fail-fast
       # NEXTEST DOES NOT RUN DOCTESTS, by design - they need a compiler
       # invocation per test rather than a binary to schedule. This crate has
       # doctests (`src/extensions/*` carry worked examples), so dropping this
