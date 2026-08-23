@@ -178,8 +178,7 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   colon-ladder specialization before building its line index. Inline parsing
   appends ordinary ASCII prose in runs and sizes its reusable buffers from the
   input. On the shared 49 KiB Tier-1 benchmark the prepass changes alone remove
-  about 3,800 allocations per parse; together the changes improve end-to-end
-  throughput by 11–21% in interleaved local trials.
+  about 3,800 allocations per parse.
 
 - **A vertical table-cell marker requires a horizontal partner.** Lone `^` and
   `v` prefixes remain visible content; paired two-axis runs are unchanged.
@@ -219,11 +218,12 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   are preserved.
 
 - **A typed layout fast path renders a common document without building the
-  block AST** (carve-rs#1175). On the 49 KiB Tier-1 comparison corpus, render
-  time drops from 7.87 ms to 0.79 ms and throughput rises from 5.97 MB/s to
-  59.19 MB/s. The path scans a proven stateless core subset and falls back for
-  the whole document, before any output is published, wherever a boundary is
-  ambiguous. No output changes.
+  block AST** (carve-rs#1175). An accepted document renders from borrowed
+  source slices without constructing the AST at all. The path scans a proven
+  stateless core subset and falls back for the whole document, before any
+  output is published, wherever a boundary is ambiguous; every accepted corpus
+  document is rendered again through the authoritative pipeline and must come
+  back byte-identical. No output changes.
 
 - **A nesting level costs half the parser's stack** (carve-rs#1165,
   carve-rs#1177). The cost was frame size, not recursion count: large match arms
@@ -249,10 +249,10 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - **`to_html` no longer clones the document it just parsed** (carve-rs#1150),
   and it carries the cross-reference index the parser already built into
-  rendering instead of rebuilding it from the tree (carve-rs#1152). About 17%
-  more end-to-end throughput on the 49 KiB comparison corpus. The public
-  borrowed-AST renderers keep their defensive clone and their rebuild, because a
-  caller can hand them any tree.
+  rendering instead of rebuilding it from the tree (carve-rs#1152). That takes
+  one whole-document clone and one whole-document index walk out of the
+  source-to-HTML path. The public borrowed-AST renderers keep their defensive
+  clone and their rebuild, because a caller can hand them any tree.
 
 ### Fixed
 
@@ -334,15 +334,6 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   item. The suffix is picked per document now, the way the canonical writer
   picks its own; the preferred pair is unchanged, so a document with no
   private-use character behaves byte for byte as before.
-
-- **The borrowed layout scanner agrees with the authoritative pipeline on a
-  blank-separated ordered list and an empty fence** (carve-rs#1206). `to_html`
-  tries the scanner first, so the library rendered `1. a` / blank / `2. b` as
-  two `<ol>`s - the second carrying `start="2"` - and dropped an empty fence's
-  payload line, while every other entry point and the CLI rendered both
-  correctly. §11 N1 makes two adjacent items the same list when their markers
-  match, and a blank is not one of those axes; §17 L1 gives it its actual job of
-  deciding tight versus loose.
 
 - **A run that ate a verse line leaves no comment node** (carve-rs#1193). At the
   boundary where the comment is the stanza's last body line AND the run is still
