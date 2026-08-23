@@ -284,5 +284,9 @@ fn neither_option_only_name_is_in_the_labels_vocabulary() {
 fn the_table_of_contents_writes_no_summary_to_configure() {
     let out = html("::: toc\n:::\n\n# One\n\nbody\n", &TableOfContents::new());
     assert!(out.contains("<nav class=\"toc\">"), "{out}");
-    assert!(!out.contains("<summary>"), "{out}");
+    // The open TAG, not the exact `<summary>` string: a ported disclosure that
+    // put a class on the element would slip past the closed form and leave the
+    // tripwire green while the string it guards had arrived.
+    assert!(!out.contains("<details"), "{out}");
+    assert!(!out.contains("<summary"), "{out}");
 }
