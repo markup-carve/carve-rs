@@ -3962,6 +3962,10 @@ fn is_admonition_title(node: &Handle) -> bool {
     Importer::tag(node).as_deref() == Some("p") && has_class(node, "admonition-title")
 }
 
+/// The base every derived admonition title id starts with, and therefore the
+/// only prefix an id has to carry to be able to collide with one.
+const ADMONITION_ID_PREFIX: &str = "adm-";
+
 fn is_counted_admonition_title(node: &Handle) -> bool {
     if !is_admonition_title(node) {
         return false;
@@ -3978,25 +3982,56 @@ fn is_counted_admonition_title(node: &Handle) -> bool {
 }
 
 /// The id the renderer derives for this title paragraph - `adm-1`, `adm-2`, …
-/// in document order, which is the order the renderer's own counter runs in.
+/// in document order, which is the order the renderer's own counter runs in,
+/// PUT THROUGH THE ID NAMESPACE the renderer allocates in.
 ///
 /// Counted from the document root rather than upward from the node, so the
 /// ordinal is the renderer's and not this subtree's. The walk is ITERATIVE: the
 /// importer's depth limit is a counter a caller may raise past what the stack
 /// holds, and a recursive prewalk would overflow before the counter spoke.
+///
+/// THE COUNTER IS NOT THE ID (carve-rs#1258). `render_admonition` does not write
+/// `adm-{N}`; it writes `document_ids::unique_id("adm-{N}")`, and that registry
+/// is seeded with every id the document already carries, so a name the author
+/// took first pushes the generated one to the next free numeric suffix. Against
+/// a document whose author wrote `{#adm-1}`, the renderer emits `adm-1-2` and
+/// predicting the bare counter looked for `adm-1`, missed, and reported a drop
+/// that had not happened - the mirror of markup-carve/carve-php#1579, which was
+/// accepted for removing three rows of exactly that kind.
+///
+/// So the allocation is modelled rather than the counter, and the match stays an
+/// EQUALITY match on the value the renderer would actually write. Matching the
+/// SHAPE `adm-N` instead is the guess this rule deliberately does not make, and
+/// `a_counter_shaped_id_on_a_title_no_counter_counted_is_kept` pins that.
 fn admonition_title_id(node: &Handle) -> Option<String> {
     let mut root = node.clone();
     while let Some(parent) = parent_handle(&root) {
         root = parent;
     }
-    let mut count = 0usize;
+    // PASS A: the namespace the renderer's registry holds when the first
+    // admonition renders - every explicit `{#id}` and every heading id, which
+    // in rendered HTML are simply the `id` attributes on the page. The counted
+    // title paragraphs are SKIPPED: their ids are the ones being predicted, and
+    // seeding the registry with them would make every prediction collide with
+    // the value it is trying to reproduce.
+    let mut used: BTreeMap<String, usize> = BTreeMap::new();
+    let mut titles: Vec<Handle> = Vec::new();
     let mut stack = vec![root];
     while let Some(current) = stack.pop() {
         if is_counted_admonition_title(&current) {
-            count += 1;
-            if Rc::ptr_eq(&current, node) {
-                return Some(format!("adm-{count}"));
-            }
+            titles.push(current.clone());
+        } else if let Some(id) =
+            Importer::attr(&current, "id").filter(|id| id.starts_with(ADMONITION_ID_PREFIX))
+        {
+            // ONLY THE IDS THAT CAN COLLIDE. Every name the allocation below
+            // looks up starts with `adm-`, so filtering to that prefix is
+            // EXACT rather than a heuristic - and it keeps the map the size of
+            // the colliding names instead of the size of the document, which
+            // matters because this walk already runs once per title.
+            //
+            // First reservation wins, exactly as `DocumentIdRegistry::reserve`
+            // has it; a repeat is a no-op rather than a second claim.
+            used.entry(id).or_insert(1);
         }
         // Reversed, so the children are visited left to right once popped -
         // the order the renderer emitted them in.
@@ -4004,7 +4039,43 @@ fn admonition_title_id(node: &Handle) -> Option<String> {
             stack.push(child.clone());
         }
     }
+    // PASS B: allocate in document order, so a title's id depends on what the
+    // titles before it took as well as on what the author took.
+    for (index, title) in titles.iter().enumerate() {
+        let allocated =
+            allocate_document_id(&mut used, &format!("{ADMONITION_ID_PREFIX}{}", index + 1));
+        if Rc::ptr_eq(title, node) {
+            return Some(allocated);
+        }
+    }
     None
+}
+
+/// `DocumentIdRegistry::unique_id`, replayed over an id set read off the HTML.
+///
+/// A second copy of nine lines, and deliberately not a call into the renderer's
+/// registry: that one is a thread-local installed for the duration of one HTML
+/// RENDER, seeded from a `Document` this side does not have. What the importer
+/// has is the rendered page, where the same namespace is spelled as `id`
+/// attributes. The rule it replays is `base`, then `base-2`, `base-3`, … past
+/// anything already taken, remembering the per-base counter so repeated calls
+/// continue rather than restart.
+fn allocate_document_id(used: &mut BTreeMap<String, usize>, base: &str) -> String {
+    let Some(&count) = used.get(base) else {
+        used.insert(base.to_owned(), 1);
+        return base.to_owned();
+    };
+    let mut n = count;
+    let candidate = loop {
+        n += 1;
+        let candidate = format!("{base}-{n}");
+        if !used.contains_key(&candidate) {
+            break candidate;
+        }
+    };
+    used.insert(base.to_owned(), n);
+    used.insert(candidate.clone(), 1);
+    candidate
 }
 
 /// The node's parent, restored into the cell it was read out of.

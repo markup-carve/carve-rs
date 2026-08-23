@@ -292,6 +292,13 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A derived admonition title id is recognized when the id namespace collides**
+  (#1258, PART 9 §16a). The importer predicted the renderer's counter, `adm-N`,
+  where the renderer writes what its id registry ALLOCATES for that name - so a
+  document whose author took `adm-1` renders `adm-1-2` and the drop was missed,
+  reporting a loss that does not happen. The allocation is modelled now, so the
+  match stays an equality match on the value the renderer would write.
+
 - **A container ends at the markup that closes it even where its last child is
   unplaced** (markup-carve/carve#1551, PART 12 §4). A `paragraph` ended at the
   last child that carried a position, so a line block stanza whose LAST line
