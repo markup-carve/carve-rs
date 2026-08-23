@@ -1246,11 +1246,88 @@ impl<'a> Importer<'a> {
         }
         if tag == "ul" || tag == "ol" {
             let ordered = tag == "ol";
-            let list_items: Vec<Handle> = children
-                .iter()
-                .filter(|n| Self::tag(n).as_deref() == Some("li"))
-                .cloned()
-                .collect();
+            // A NON-`li` CHILD IS NOT DISCARDED, and it is not discarded in
+            // silence either (carve-rs#1261). Filtering the children down to
+            // `<li>` and walking only those took the WHOLE of anything else the
+            // list carried - `<ul><div id="stray">z</div><li>a</li></ul>` came
+            // back as one item and an empty report, so the text `z` left the
+            // document with nothing anywhere saying it had.
+            //
+            // HTML5 does not allow the shape. A sliced-up editor export
+            // produces it anyway, and that is the input an importer exists for.
+            //
+            // The content is emitted as blocks AHEAD OF THE LIST, which is the
+            // call `<dd>`-with-no-`<dt>` already made in `definition_list`: it
+            // keeps every word and stays valid Carve, where a list holding a
+            // non-item has no Carve spelling at all. The stray child goes
+            // through the ORDINARY block walk rather than being unwrapped by
+            // hand, so it keeps its own element and attributes too - a
+            // `<div id="stray">` comes back as a Carve div still carrying the
+            // id. Unwrapping it, the way the `<dd>` has to, would drop the id
+            // for no reason: a `<dd>` has no standalone spelling and a div has
+            // one, so the loss the `<dd>` is forced into is not forced here.
+            //
+            // `element-unwrapped` is the code: a structural note about the
+            // INPUT that loses no meaning, which is what the vocabulary says
+            // that code is for. No engine spells "moved", and inventing a code
+            // for it is a three-engine decision rather than this defect's.
+            //
+            // Delegating to `blocks_at` also settles the kinds that are not
+            // elements at all: a margin between pretty-printed items is blank
+            // text and produces nothing, a `<script>` is dropped with the
+            // `element-dropped` every other site gives it, and bare text
+            // directly inside the list is wrapped in the paragraph it needs.
+            // The paths are the child's OWN indices among the list's children,
+            // so the report points where the node sits and not where it sits in
+            // the filtered array (PART 12 §16).
+            let mut list_items: Vec<Handle> = Vec::new();
+            let mut stray: Vec<Handle> = Vec::new();
+            let mut stray_paths: Vec<String> = Vec::new();
+            for (i, child) in children.iter().enumerate() {
+                if Self::tag(child).as_deref() == Some("li") {
+                    list_items.push(child.clone());
+                    continue;
+                }
+                let p = Self::child_path(path, child, i);
+                if let Some(stray_tag) = Self::tag(child) {
+                    // An ACTIVE element is not kept and must not be reported as
+                    // if it were: the ordinary walk drops it with the
+                    // `element-dropped` every other site gives it, and a
+                    // position note beside that would tell the reader the
+                    // content survived ahead of the list when it did not.
+                    if !matches!(
+                        stray_tag.as_str(),
+                        "script" | "style" | "template" | "noscript"
+                    ) {
+                        self.diag(
+                            HtmlImportDiagnosticCode::ElementUnwrapped,
+                            format!(
+                                "A <{stray_tag}> inside <{tag}> kept its content but not its place among the items: it is emitted as blocks ahead of the list"
+                            ),
+                            HtmlImportSeverity::Warning,
+                            &p,
+                        );
+                    }
+                } else if !matches!(&child.data, NodeData::Comment { .. })
+                    && !Self::text(child).trim().is_empty()
+                {
+                    self.diag(
+                        HtmlImportDiagnosticCode::ElementUnwrapped,
+                        format!(
+                            "Text directly inside <{tag}> kept its content but not its place among the items: it is emitted as a paragraph ahead of the list"
+                        ),
+                        HtmlImportSeverity::Warning,
+                        &p,
+                    );
+                }
+                stray.push(child.clone());
+                stray_paths.push(p);
+            }
+            let mut before = if stray.is_empty() {
+                Vec::new()
+            } else {
+                self.blocks_at(&stray, Some(&stray_paths), path, depth + 1)?
+            };
             let mut items = Vec::new();
             for (i, li) in list_items.iter().enumerate() {
                 let p = format!("{path}/li[{}]", i + 1);
@@ -1305,7 +1382,7 @@ impl<'a> Importer<'a> {
             } else {
                 None
             };
-            return Ok(vec![BlockNode::List(List {
+            before.push(BlockNode::List(List {
                 attrs,
                 ordered,
                 start,
@@ -1316,7 +1393,8 @@ impl<'a> Importer<'a> {
                 tight,
                 items,
                 pos: None,
-            })]);
+            }));
+            return Ok(before);
         }
         if tag == "details" {
             return Ok(vec![BlockNode::Admonition(
