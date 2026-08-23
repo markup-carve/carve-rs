@@ -2,7 +2,9 @@
 
 use crate::ast::*;
 use crate::escape::is_dangerous_attr_name;
-use crate::extension::{label_default, LABEL_CODE_GROUP, LABEL_INDEX_BACKREF, LABEL_TABS_GROUP};
+use crate::extension::{
+    label_default, LABEL_CODE_GROUP, LABEL_ENDNOTES, LABEL_INDEX_BACKREF, LABEL_TABS_GROUP,
+};
 use crate::profile::ADMONITION_TIER1_KINDS;
 use crate::render::{semantic_value_target, EXTENDED_SEMANTIC_SPAN_ORDER};
 use crate::render_carve::is_attr_identifier;
@@ -881,6 +883,18 @@ impl<'a> Importer<'a> {
         }
     }
 
+    /// Whether unwrapping this element removes anything an author wrote.
+    ///
+    /// The wrapper half of PART 9 §16a's reconstructability test: a `<section
+    /// role="doc-endnotes">` is one the renderer writes and no Carve construct
+    /// spells, so its removal is not a structural loss to report. It is the
+    /// ELEMENT question; `derived_attributes` answers the ATTRIBUTE one, and a
+    /// wrapper can be derived while an attribute on it is the author's - which
+    /// is why the two are asked separately at the unwrap site.
+    fn is_derived_wrapper(&self, handle: &Handle, tag: &str) -> bool {
+        tag == "section" && Self::attr(handle, "role").as_deref() == Some("doc-endnotes")
+    }
+
     /// Remove the attributes whose value EQUALS what the renderer derives for
     /// this element (PART 9 §16a, markup-carve/carve#1500, reconciled with
     /// Extensions §1.5 in markup-carve/carve#1511).
@@ -999,6 +1013,20 @@ impl<'a> Importer<'a> {
             return Some(vec![
                 ("role", vec!["img".to_string()]),
                 ("aria-label", vec![word.clone()]),
+            ]);
+        }
+
+        // AN ENDNOTES SECTION IS A DERIVED WRAPPER, and both attributes on it
+        // are derived with it. PART 9 §16 writes the section around the notes
+        // whenever the document has any, and §16a's test is
+        // RECONSTRUCTABILITY: the role is fixed and the accessible name is the
+        // documented default of the `endnotes` labels key, so both are
+        // rebuildable from the element being read. A name no default matches is
+        // the author's and is kept, exactly as for the tab set below.
+        if self.is_derived_wrapper(handle, &tag) {
+            return Some(vec![
+                ("role", vec!["doc-endnotes".to_string()]),
+                ("aria-label", vec![self.label(LABEL_ENDNOTES)]),
             ]);
         }
 
@@ -1725,13 +1753,32 @@ impl<'a> Importer<'a> {
                 pos: None,
             })]);
         }
-        self.diag(
-            HtmlImportDiagnosticCode::ElementUnwrapped,
-            format!("Unwrapped unsupported <{tag}> element"),
-            HtmlImportSeverity::Info,
-            path,
-            h,
-        );
+        // A DERIVED WRAPPER IS NOT A LOSS. Unwrapping the endnotes `<section>`
+        // removes nothing an author wrote - no Carve construct spells a
+        // `<section>`, and PART 9 §16 is what put this one here - so PART 9
+        // §16a reports it neither as `element-unwrapped` nor as an
+        // `attribute-dropped` naming the role or the derived name.
+        //
+        // Only the ELEMENT row goes. The attribute rows below still run, so an
+        // authored `class`, or an `aria-label` no default matches, is reported
+        // the way it would be on any other unwrap: the two suppressions
+        // together would silence the author's own attributes with the
+        // renderer's, which is the failure the clause calls out by name.
+        //
+        // The import's OUTCOME does not enter into it. This is the
+        // reference-less form, which degrades to the `<hr>` and `<ol>` it is
+        // built from and gets no section written back; a referenced one is
+        // consumed into footnote definitions instead. Derivation is a property
+        // of the element being READ, so both answer the same.
+        if !self.is_derived_wrapper(h, &tag) {
+            self.diag(
+                HtmlImportDiagnosticCode::ElementUnwrapped,
+                format!("Unwrapped unsupported <{tag}> element"),
+                HtmlImportSeverity::Info,
+                path,
+                h,
+            );
+        }
         // AN UNWRAPPED ELEMENT TAKES ITS ATTRIBUTES WITH IT. `<section
         // role="region">`, `<article>`, `<aside>`, `<main>`, `<nav>` and
         // `<form>` all land here and keep only their children. The keep list

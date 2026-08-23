@@ -1675,7 +1675,7 @@ fn render_block_body(node: &BlockNode, ctx: &mut CarveContext) -> String {
             // single space here rather than corrupting the document it is
             // written back to. Matches carve-js.
             let rendered = render_inlines(&heading.children, ctx);
-            let text = collapse_breaks(trim_non_nbsp(&rendered));
+            let text = collapse_breaks(trim_heading_edges(&rendered));
             let body = format!("{} {}", "#".repeat(heading.level as usize), text);
             // A generated id a fresh parse would re-derive is not the author's
             // source (carve-js#741); one it would not - an edited ingested tree -
@@ -3704,7 +3704,23 @@ fn collapse_breaks(text: &str) -> String {
             chars.next();
         }
     }
-    trim_non_nbsp(&out).to_string()
+    trim_heading_edges(&out).to_string()
+}
+
+/// The whitespace a heading cannot hold at its edges.
+///
+/// A heading's marker separator is a run of SPACES and none of it is content
+/// (markup-carve/carve#1587), so a leading TAB is content the source can hold:
+/// `## \tx` is an h2 whose text opens with the tab. A separator that STARTS
+/// with a tab opens no heading at all, which is why leading spaces still go -
+/// the separator run absorbs them and the writer re-emits exactly one. Trimming
+/// the tab alongside them wrote `## x` and lost it on the re-parse.
+///
+/// The trailing run goes whole: any parse drops it, and stripping the newline
+/// here is what leaves a hard break's backslash standing for `collapse_breaks`
+/// to keep.
+fn trim_heading_edges(text: &str) -> &str {
+    trim_end_non_nbsp(text.trim_start_matches([' ', '\n', '\r']))
 }
 
 /// What an escape decision needs that one text node cannot say.

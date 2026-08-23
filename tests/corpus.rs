@@ -648,6 +648,31 @@ fn ahead_of_pin_names_only_cases_the_corpus_has() {
 }
 
 #[test]
+fn no_case_is_both_deferred_and_ahead_of_pin() {
+    // THE PRECEDENCE TRAP. `check_pair` reads AHEAD_OF_PIN and returns, but it
+    // only ever runs for a pair `is_implemented_pair` accepts - so an entry
+    // whose category sits in KNOWN_GAPS instead of IMPLEMENTED is never
+    // reached, and NEITHER of its two assertions ever executes, in either
+    // direction. It reads as coverage of a rule this engine has moved past
+    // while asserting nothing at all. carve-php had exactly one entry in that
+    // state (markup-carve/carve-php#1583's sweep found it), which is what this
+    // refuses.
+    let mut unreachable = Vec::new();
+    for (slug, _, _) in AHEAD_OF_PIN {
+        let category = base_category(slug);
+        if KNOWN_GAPS.contains(&category) {
+            unreachable.push(format!("{slug} (category deferred in KNOWN_GAPS)"));
+        } else if !IMPLEMENTED.contains(&category) {
+            unreachable.push(format!("{slug} (category absent from IMPLEMENTED)"));
+        }
+    }
+    assert!(
+        unreachable.is_empty(),
+        "AHEAD_OF_PIN entr(ies) that `check_pair` never reaches: {unreachable:?}",
+    );
+}
+
+#[test]
 fn a_known_gap_still_fails() {
     // A gap that quietly started passing is worse than no gap: the category is
     // conformant, unlisted in IMPLEMENTED, and therefore compared against
