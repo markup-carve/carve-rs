@@ -126,6 +126,35 @@ let warnings = carve::lint_carve("`c`{kbd}\n");
 assert_eq!(warnings[0].rule, "semantic-attribute-outside-span");
 ```
 
+The same check from the command line, which is what a CI gate wants:
+
+```bash
+carve lint docs/*.crv
+```
+
+```
+docs/guide.crv:3:1 unattached-block-attribute — This block attribute reaches no block: ...
+```
+
+Exit codes are the interface, and the three-way split is deliberate: **0**
+clean, **1** findings, **2** a file could not be read. Collapsing 2 into 1 would
+report an unreadable path as a lint failure; collapsing it into 0 would pass a
+build whose documents were never opened. A bad path is reported and skipped, so
+one missing file in a glob still lets every other document be checked.
+
+Reads stdin with no path, or with `-`, and reports under `<stdin>`.
+`--extensions` is the only option it takes, because it is the only render option
+the linter reads - every other flag is REFUSED with exit 2 rather than accepted
+and ignored, so `carve lint --static` cannot exit 0 having linted with a flag
+the caller believed was doing something.
+
+The line format and the exit codes match carve-js's `carve lint` exactly, so a
+script that parses one CLI parses the other. The `rule` id is shared across
+engines by contract; the message PROSE is not - the same trigger reports the
+same id everywhere, worded for each engine. The rule SETS also differ today:
+`unattached-block-attribute` exists here and not in carve-js, and several of
+carve-js's rules have no counterpart here.
+
 The compact semantic span attribute rules (spec PART 9 §10):
 
 | rule | fires on |

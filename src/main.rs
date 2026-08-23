@@ -37,6 +37,13 @@ fn main() -> ExitCode {
     if raw_args.first().map(String::as_str) == Some("migrate") {
         return run_migrate(&raw_args[1..]);
     }
+    // Parsed here, not in the render loop below, so `lint` cannot inherit the
+    // render flag surface. Sharing that loop meant `carve lint --static` was
+    // accepted and silently ignored, and `carve lint --bogus` exited 1 - which
+    // a CI gate reads as "found problems" rather than "could not run".
+    if raw_args.first().map(String::as_str) == Some("lint") {
+        return run_lint(&raw_args[1..]);
+    }
     // Bundled interactive extensions, owned here so they outlive `options`
     // (which borrows them). Registered only when `--extensions` is passed, so
     // the default CLI behavior is unchanged. They are degradation-safe: in
@@ -712,6 +719,139 @@ fn render_document(
     })
 }
 
+/// Report constructs that parse and render, but not the way the author meant.
+///
+/// The defect class here is the silent one: the document parses, the renderer
+/// emits something, and what the author wrote never reaches the page. An
+/// unattached block attribute is the clearest case - `{#id .cls}` above a blank
+/// line attaches to nothing, so the id and the class vanish and nothing says so.
+///
+/// The output line and the exit codes match carve-js's `carve lint` exactly,
+/// because the two are used interchangeably as a CI gate and a script that
+/// parses one must parse the other:
+///
+/// ```text
+/// path.crv:3:1 unattached-block-attribute — This block attribute reaches no block: ...
+/// ```
+///
+/// Exit codes, and the three-way split is the point: **0** clean, **1** findings,
+/// **2** could not run. A gate that collapsed 2 into 1 would report an unreadable
+/// file as a lint failure, and one that collapsed it into 0 would pass a build
+/// whose documents were never read.
+fn run_lint(args: &[String]) -> ExitCode {
+    let mut paths: Vec<&str> = Vec::new();
+    let mut enable_extensions = false;
+    for arg in args {
+        match arg.as_str() {
+            "--extensions" => enable_extensions = true,
+            "-h" | "--help" => {
+                println!(
+                    "carve lint - report constructs that parse but do not reach the page\n\n\
+                     Usage:\n  \
+                     carve lint [--extensions] [files]\n\n\
+                     Reads stdin when no file is given, or when the file is `-`.\n\n\
+                     Options:\n  \
+                     --extensions   enable the bundled extensions (the only render\n                 \
+                     option the linter reads)\n\n\
+                     Exit codes:\n  \
+                     0   no findings\n  \
+                     1   findings reported\n  \
+                     2   a file could not be read, or an option was not understood"
+                );
+                return ExitCode::SUCCESS;
+            }
+            // Every other flag is REFUSED rather than ignored. The render loop
+            // would have accepted `--static` or `--profile` here and quietly
+            // dropped them, which reads as a clean lint of the wrong thing.
+            other if other.starts_with('-') && other != "-" => {
+                eprintln!(
+                    "carve lint: unknown option: {other} (only --extensions applies to lint)"
+                );
+                return ExitCode::from(2);
+            }
+            path => paths.push(path),
+        }
+    }
+    run_lint_paths(&paths, enable_extensions)
+}
+
+fn run_lint_paths(paths: &[&str], enable_extensions: bool) -> ExitCode {
+    // Only `options.extensions` is read by the linter - `lint_carve_with_options`
+    // documents that - so nothing else from the render path is plumbed through
+    // here. Owned locally so they outlive the borrow in `options`.
+    let details = carve::Details::new();
+    let spoiler = carve::Spoiler::new();
+    let code_callouts = carve::CodeCallouts::new();
+    let color_swatch = carve::ColorSwatch::new();
+    let fenced_presets = carve::FencedRender::presets();
+    let math_block = carve::MathBlock::new();
+    let mut options = carve::Options::new();
+    if enable_extensions {
+        options = options
+            .with_extension(&details)
+            .with_extension(&spoiler)
+            .with_extension(&code_callouts)
+            .with_extension(&color_swatch)
+            .with_extension(&math_block);
+        for preset in &fenced_presets {
+            options = options.with_extension(preset);
+        }
+    }
+
+    let mut findings = 0usize;
+    let mut unreadable = false;
+
+    let mut lint_source = |source: &str, label: &str| {
+        for warning in carve::lint_carve_with_options(source, &options) {
+            println!(
+                "{label}:{}:{} {} — {}",
+                warning.line, warning.column, warning.rule, warning.message
+            );
+            findings += 1;
+        }
+    };
+
+    if paths.is_empty() || paths == ["-"] {
+        let mut buf = String::new();
+        if let Err(err) = io::stdin().read_to_string(&mut buf) {
+            eprintln!("carve lint: cannot read stdin: {err}");
+            return ExitCode::from(2);
+        }
+        lint_source(&buf, "<stdin>");
+    } else {
+        for path in paths {
+            if *path == "-" {
+                let mut buf = String::new();
+                if let Err(err) = io::stdin().read_to_string(&mut buf) {
+                    eprintln!("carve lint: cannot read stdin: {err}");
+                    unreadable = true;
+                    continue;
+                }
+                lint_source(&buf, "<stdin>");
+                continue;
+            }
+            match std::fs::read_to_string(path) {
+                Ok(source) => lint_source(&source, path),
+                Err(err) => {
+                    // Reported and skipped rather than fatal, so one bad path in
+                    // a glob still lets every other document be checked - the
+                    // whole point of running this over a tree.
+                    eprintln!("carve lint: cannot read {path}: {err}");
+                    unreadable = true;
+                }
+            }
+        }
+    }
+
+    if unreadable {
+        return ExitCode::from(2);
+    }
+    if findings > 0 {
+        return ExitCode::from(1);
+    }
+    ExitCode::SUCCESS
+}
+
 fn run_fmt(
     paths: &[String],
     write: bool,
@@ -804,6 +944,8 @@ fn print_usage() {
          Usage:\n  \
          carve [options] [file]      render file (or stdin when omitted or `-`)\n  \
          carve fmt [options] [files] format Carve source to stdout\n  \
+         carve lint [files]          report constructs that render wrong\n                              \
+         (exit 1 on findings, 2 if a file cannot be read)\n  \
          carve merge [--json] BASE OURS THEIRS\n  \
                                      merge independent structural edits\n  \
          carve migrate --from FORMAT [options] [file]\n                              \
