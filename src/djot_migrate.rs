@@ -735,7 +735,10 @@ fn normalize_plus_bullets(source: &str) -> String {
 /// Naming it here, hardwired, is what made this rule the org's fourth spelling
 /// and the only one measurable end to end through a converter and no other way
 /// (markup-carve/carve-rs#995). The profiles below are the ones the shared
-/// escaper corpus defines (`tests/corpus-escape/README.md`).
+/// escaper corpus defines (`tests/spec/tests/corpus-escape`), NOT a table of
+/// this engine's live policy for three source languages: only `DJOT` has a
+/// production caller, and the other two are `#[cfg(test)]` so the compiler says
+/// that rather than a comment (markup-carve/carve-rs#1289).
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct HandledDelimiters<'a> {
     /// Braced runs (`{X…X}`) the caller's language spells too.
@@ -754,14 +757,45 @@ impl HandledDelimiters<'_> {
     };
 
     /// A language that owns none of these delimiters: HTML and BBCode text.
-    #[cfg_attr(not(test), allow(dead_code))]
+    ///
+    /// NO PRODUCTION PATH PASSES THIS, and `#[cfg(test)]` is what says so - the
+    /// compiler refuses a caller outside the test build rather than a comment
+    /// asking a reader to believe it. See `MARKDOWN` for the whole reasoning.
+    #[cfg(test)]
     pub(crate) const PLAIN: HandledDelimiters<'static> = HandledDelimiters {
         braced: "",
         bare: "",
     };
 
-    /// Markdown.
-    #[cfg_attr(not(test), allow(dead_code))]
+    /// Markdown: the `markdown` profile of the shared escaper corpus.
+    ///
+    /// NO PRODUCTION PATH PASSES THIS EITHER. `escape_plain_carve_syntax` has
+    /// exactly one non-test caller, `djot_to_carve`, and it passes `DJOT`.
+    /// `markdown_to_carve` never reaches the escaper at all: it builds a
+    /// `Document` and hands it to the canonical writer, which escapes by
+    /// construction, so PART 11 §2 is already satisfied on that path without a
+    /// delimiter table. The HTML and BBCode importers are AST-first the same
+    /// way.
+    ///
+    /// SO WHY IS IT HERE. It is this engine's declaration of a profile the
+    /// SHARED escaper corpus defines (`tests/spec/tests/corpus-escape`), and it
+    /// is measured: `the_handled_sets_match_the_corpus_profiles` pins these two
+    /// strings against the corpus's own, and `every_case_matches_under_every_
+    /// profile` runs every case through them. Widening this set to `DJOT`'s
+    /// fails `braced-unclosed`, `braced-nested-pairs` and
+    /// `two-braced-runs-on-one-line` under `[markdown]`, so it is a live
+    /// assertion rather than an unused constant - deleting it would drop this
+    /// engine out of a cross-engine fixture, not tidy a dead entry
+    /// (markup-carve/carve-rs#1289).
+    ///
+    /// WHAT `#[cfg(test)]` BUYS. Without it the three sit side by side and read
+    /// as this engine's live policy for three source languages, which is what
+    /// invites someone comparing engines to "fix" the table into agreement with
+    /// carve-js and carve-php - where it IS live policy, and where two entries
+    /// are missing (markup-carve/carve-js#1382, markup-carve/carve-php#1624).
+    /// Wiring a future text-level Markdown converter means lifting this out of
+    /// the test build deliberately, which is the point.
+    #[cfg(test)]
     pub(crate) const MARKDOWN: HandledDelimiters<'static> = HandledDelimiters {
         braced: "*_",
         bare: "*_~",
