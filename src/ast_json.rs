@@ -941,7 +941,17 @@ fn encode_block_task<'a>(
             w.field("items", |out| out.push('['));
             tasks.push(EncodeTask::Finish(Box::new(move |out, _| {
                 let mut w = Writer { out, first: false };
-                if let Some(start) = n.start {
+                // PART 12 §22: 1 IS THE VALUE THE SCHEMA CALLS ABSENT, so an
+                // ingested tree that spells it out is normalized rather than
+                // re-emitted. `resources/ast-schema.json` documents the field as
+                // "First number of an ordered list, WHEN IT IS NOT 1", which is
+                // a statement about a conformant tree, and the encoder is what
+                // honors it. A parse never reaches here with 1, so the only
+                // source is a hand-built payload, a patch tool or an editor.
+                // §6's round trip is scoped to `parse(x)` and gives no cover to
+                // preserving it. NOT "drop `start` always": 0 and 2 ride through
+                // unchanged, and dropping those breaks the field instead.
+                if let Some(start) = n.start.filter(|start| *start != 1) {
                     w.field("start", |out| write_usize(out, start));
                 }
                 if let Some(ol_type) = n.ol_type {
@@ -1407,7 +1417,12 @@ fn write_block_leaf(out: &mut String, node: &BlockNode) {
             w.field("ordered", |out| write_bool(out, n.ordered));
             w.field("tight", |out| write_bool(out, n.tight));
             w.field("items", |out| write_array(out, &n.items, write_list_item));
-            if let Some(start) = n.start {
+            // Same normalization as the task encoder above (PART 12 §22). Kept
+            // in step deliberately: this arm is only reachable if `List` ever
+            // stops being matched in `encode_block_task`, and a spelling of one
+            // rule that drifts from the other is how three engines diverged
+            // here in the first place.
+            if let Some(start) = n.start.filter(|start| *start != 1) {
                 w.field("start", |out| write_usize(out, start));
             }
             if let Some(ol_type) = n.ol_type {
