@@ -4,7 +4,7 @@
 
 use carve::extensions::{
     CodeGroup, FencedRender, FencedRenderOptions, HeadingPermalinks, HeadingPermalinksOptions,
-    Index, TableOfContents, Tabs, TabsMode,
+    Index, TableOfContents, TableOfContentsOptions, Tabs, TabsMode, TocPlacement,
 };
 use carve::label_default;
 use carve::Options;
@@ -274,7 +274,7 @@ fn neither_option_only_name_is_in_the_labels_vocabulary() {
 ///
 /// carve-js and carve-php wrap the table of contents in a `<details>` whose
 /// `<summary>` carries the string; this engine has no `collapsible` option and
-/// writes a bare `<nav class="toc">`, so there is no string here to configure
+/// writes the nav unwrapped, so there is no string here to configure
 /// either way. That satisfies the rule vacuously, which is a weaker thing than
 /// the permalink above satisfies it. When the disclosure is ported, this
 /// assertion goes red - and whoever ports it has to come back here and give
@@ -283,10 +283,239 @@ fn neither_option_only_name_is_in_the_labels_vocabulary() {
 #[test]
 fn the_table_of_contents_writes_no_summary_to_configure() {
     let out = html("::: toc\n:::\n\n# One\n\nbody\n", &TableOfContents::new());
-    assert!(out.contains("<nav class=\"toc\">"), "{out}");
+    // A nav WAS rendered - the control on the two assertions below, which a
+    // render producing nothing at all would satisfy vacuously. On the open TAG
+    // rather than `<nav class="toc">`, because `css_class` is an option and the
+    // nav now carries a name after it.
+    assert!(out.contains("<nav "), "{out}");
     // The open TAG, not the exact `<summary>` string: a ported disclosure that
     // put a class on the element would slip past the closed form and leave the
     // tripwire green while the string it guards had arrived.
     assert!(!out.contains("<details"), "{out}");
     assert!(!out.contains("<summary"), "{out}");
+}
+
+// THE TABLE-OF-CONTENTS NAV SAYS WHAT IT IS CALLED (Extensions §8b.1, ruled in
+// markup-carve/carve#1547 closing markup-carve/carve#1509).
+//
+// `<nav>` is a navigation landmark unconditionally - unlike `<section>`, which
+// maps to `generic` until it is named - so an unnamed one is an entry in a
+// reader's landmark list reading only "navigation". A page holds more than one
+// the moment both TOC extensions are registered, a document writes `::: toc`
+// twice, or a site template contributes its own, and unnamed they are
+// indistinguishable. That is the defect; a single anonymous nav is only how it
+// starts.
+//
+// AUTHORED, so it gets a `labels` key rather than an extension option: the
+// directive's content is empty and nothing on the page names the nav, so there
+// is no string to derive from; `Table of contents` is ordinary English rather
+// than the class word `toc` an abbreviation-expanding reader would hear spelled
+// out; and no configuration put an `aria-label` on this nav before, so §1.5's
+// "unless the extension already exposes it as an option" does not fire.
+
+const HEADINGS: &str = "# One\n\n## Two\n\nbody\n";
+const PLACED: &str = "::: toc\n:::\n\n# One\n\n## Two\n\nbody\n";
+
+/// The `aria-label` on the element the extension emitted, whatever it says.
+///
+/// NOT a substring search for `<nav class="toc" aria-label="..."`:
+/// `TableOfContentsOptions::css_class` is configurable, so a probe keyed on the
+/// class passes for the wrong reason the moment a host sets it - and every
+/// other named element in this file writes the same attribute, so the attribute
+/// alone does not identify what was measured either. This reads the open tag of
+/// the element under test and takes the name off it.
+fn name_on(open_tag_of: &str, html: &str) -> Option<String> {
+    let start = html.find(open_tag_of)?;
+    let tag = &html[start..start + html[start..].find('>')?];
+    let rest = tag.split_once(" aria-label=\"")?.1;
+    rest.split_once('"').map(|(value, _)| value.to_string())
+}
+
+fn nav_name(html: &str) -> Option<String> {
+    name_on("<nav", html)
+}
+
+/// THE THREE-ASSERTION STANDARD (markup-carve/carve#1511): the documented
+/// default reaches the output, the map entry CHANGES it, and a row for a key
+/// that already worked before this ruling is driven through the same harness -
+/// without which a probe finding nothing in either render satisfies the first
+/// two vacuously.
+fn label_backed(row: &str, labels: &[(&str, &str)]) -> Option<String> {
+    let mut o = Options::new();
+    for (k, v) in labels {
+        o.labels.insert((*k).to_string(), (*v).to_string());
+    }
+    match row {
+        "tabs" => {
+            let ext = Tabs::new();
+            o.extensions.push(&ext);
+            let out =
+                carve::to_html_with_options(":::: tabs\n\n::: tab [One]\na\n:::\n\n::::\n", &o);
+            name_on("<div class=\"tabs\"", &out)
+        }
+        "injected" => {
+            let ext = TableOfContents::new();
+            o.extensions.push(&ext);
+            nav_name(&carve::to_html_with_options(HEADINGS, &o))
+        }
+        _ => {
+            let ext = TocPlacement::new();
+            o.extensions.push(&ext);
+            nav_name(&carve::to_html_with_options(PLACED, &o))
+        }
+    }
+}
+
+const LABEL_ROWS: [(&str, &str, &str); 3] = [
+    ("placement", "tocNav", "Table of contents"),
+    ("injected", "tocNav", "Table of contents"),
+    // The control: a key that already worked, through the same harness.
+    ("tabs", "tabsGroup", "Tabs"),
+];
+
+/// Assertion one. Without it the assertion below could hold on a render where
+/// the probe finds nothing at all.
+#[test]
+fn each_label_backed_name_renders_its_documented_english_default() {
+    for (row, _, default) in LABEL_ROWS {
+        assert_eq!(label_backed(row, &[]).as_deref(), Some(default), "{row}");
+    }
+}
+
+/// Assertion two: the map entry CHANGES it, which is what having a key means
+/// observationally - and what a hard-coded English string cannot do.
+#[test]
+fn each_label_backed_name_is_read_from_the_labels_map() {
+    for (row, key, _) in LABEL_ROWS {
+        let sentinel = format!("Sentinel-{key}");
+        assert_eq!(
+            label_backed(row, &[(key, &sentinel)]).as_deref(),
+            Some(sentinel.as_str()),
+            "{row}"
+        );
+    }
+}
+
+#[test]
+fn the_key_is_declared_with_its_documented_default() {
+    assert_eq!(label_default("tocNav"), "Table of contents");
+}
+
+/// §8b.3 makes the nav fragment the cross-impl contract, and a name chosen
+/// per-extension is the one change that would break byte-identity between the
+/// two extensions that write it.
+#[test]
+fn both_extensions_write_the_same_nav_byte_for_byte() {
+    for labels in [None, Some("Inhaltsverzeichnis")] {
+        let nav_of = |src: &str, ext: &dyn carve::CarveExtension| -> String {
+            let mut o = Options::new();
+            o.extensions.push(ext);
+            if let Some(value) = labels {
+                o.labels.insert("tocNav".to_string(), value.to_string());
+            }
+            let out = carve::to_html_with_options(src, &o);
+            let start = out.find("<nav").expect("a nav");
+            let end = out.find("</nav>").expect("a nav close") + 6;
+            out[start..end].to_string()
+        };
+        assert_eq!(
+            nav_of(PLACED, &TocPlacement::new()),
+            nav_of(HEADINGS, &TableOfContents::new()),
+        );
+    }
+}
+
+/// A name the AUTHOR wrote outranks the label and nothing is added beside it -
+/// §1.5's existing precedence, since §8b.1 already carries the attribute line
+/// onto the nav. The match is on the attribute NAME, ASCII-case-insensitively
+/// (§16a, the shapes carve#1468 closed), and this engine echoes the author's own
+/// spelling back, so a case-sensitive test would write a second name next to
+/// theirs.
+#[test]
+fn an_authored_nav_name_wins_under_any_ascii_casing() {
+    for spelling in ["aria-label", "ARIA-LABEL", "Aria-Label"] {
+        let src = format!("{{{spelling}=\"Chapters\"}}\n{PLACED}");
+        let out = html(&src, &TocPlacement::new());
+        assert!(out.contains(&format!("{spelling}=\"Chapters\"")), "{out}");
+        assert!(!out.contains("Table of contents"), "{out}");
+        assert_eq!(
+            out.to_ascii_lowercase().matches("aria-label=").count(),
+            1,
+            "{out}"
+        );
+    }
+}
+
+#[test]
+fn an_empty_entry_suppresses_the_nav_name_entirely() {
+    let out = html_with_labels(PLACED, &TocPlacement::new(), "tocNav", "");
+    assert!(out.contains("<nav class=\"toc\">"), "{out}");
+    assert_eq!(nav_name(&out), None, "{out}");
+}
+
+#[test]
+fn the_nav_name_is_escaped_where_it_lands() {
+    let out = html_with_labels(
+        PLACED,
+        &TocPlacement::new(),
+        "tocNav",
+        "A \"quoted\" & <angled>",
+    );
+    assert_eq!(
+        nav_name(&out).as_deref(),
+        Some("A &quot;quoted&quot; &amp; &lt;angled&gt;"),
+        "{out}"
+    );
+}
+
+/// THE CLASS IS AN OPTION, so the name has to be found without it. A test
+/// grepping for `<nav class="toc" aria-label=` would pass here for the wrong
+/// reason (markup-carve/carve-rs#1249).
+#[test]
+fn the_name_is_on_the_nav_whatever_its_class_is_called() {
+    let opts = TableOfContentsOptions {
+        css_class: "contents".into(),
+        ..Default::default()
+    };
+    let out = html(HEADINGS, &TableOfContents::with_options(opts));
+    assert!(!out.contains("class=\"toc\""), "{out}");
+    assert_eq!(
+        nav_name(&out).as_deref(),
+        Some("Table of contents"),
+        "{out}"
+    );
+}
+
+/// THE DEGRADED NAV IS STILL A LANDMARK. `::: toc` renders an EMPTY `<nav>`
+/// when no heading falls in its window, and again once the cumulative byte
+/// budget that bounds K blocks by N headings is exhausted. The budget bounds
+/// the ENTRY LIST, not the element's identity - and the empty nav is exactly
+/// where an unnamed landmark is least distinguishable, because there is no link
+/// text to read instead.
+#[test]
+fn an_empty_nav_is_named_too() {
+    let out = html("::: toc\n:::\n\nplain paragraph\n", &TocPlacement::new());
+    assert!(
+        out.contains("<nav class=\"toc\" aria-label=\"Table of contents\"></nav>"),
+        "{out}"
+    );
+}
+
+#[test]
+fn a_nav_the_byte_budget_degraded_keeps_its_name() {
+    let mut src = "::: toc\n:::\n\n".repeat(5000);
+    for i in 0..50 {
+        src.push_str(&format!("# Heading number {i} with length\n\n"));
+    }
+    let out = html(&src, &TocPlacement::new());
+    let degraded = out.matches("></nav>").count();
+    // The budget IS reached - without this the assertion below passes on a
+    // render where nothing degraded at all.
+    assert!(degraded > 0, "nothing degraded");
+    assert_eq!(
+        out.matches("<nav class=\"toc\" aria-label=\"Table of contents\"></nav>")
+            .count(),
+        degraded,
+        "a degraded nav lost its name"
+    );
 }
