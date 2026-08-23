@@ -600,9 +600,12 @@ fn a_literal_marker_escapes_only_the_character_that_opens_it() {
         "- one\n  \\:: term\n  :  def\n"
     );
     // A colon that is not at a line start opens nothing, escaped or not - here
-    // the `[` escape is what keeps the definition from forming.
+    // the `[` escape is what keeps the definition from forming, and it is the
+    // ONLY one: PART 11 §2 decides per opener occurrence, a definition opens on
+    // its `[`, and the closing bracket and the slash after it open nothing on
+    // their own (markup-carve/carve#1533).
     assert_eq!(
         carve::to_carve(" Read [intro][x].\n\n [x]: /intro \"T\"\n"),
-        "Read [intro][x].\n\n\\[x\\]: \\/intro \"T\"\n"
+        "Read [intro][x].\n\n\\[x]: /intro \"T\"\n"
     );
 }

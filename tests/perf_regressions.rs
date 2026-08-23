@@ -409,6 +409,71 @@ fn measure_conversion_scaling_at(
 /// through scheduler noise. Run against a release build (`cargo test --release`);
 /// a debug build is ~10-20x slower and may exceed the absolute bound without any
 /// regression, though the per-byte ratio itself is build-invariant.
+/// PART 11 SECTION 2b's narrowing is a SEARCH, and a search over the document is
+/// where the WRITER can go quadratic.
+///
+/// THE WRITER HAD NO SCALING ROW AT ALL. Every guard in this file measures a
+/// parse; not one of them runs the canonical Carve writer, whose escape
+/// decision renders and re-parses the WHOLE document once per step of a search.
+/// carve-js#1312 found the unit search quadratic in failing units on ordinary
+/// input, and this engine carried the same search with nothing watching it.
+///
+/// TWO SHAPES, AND THEY FIND TWO DIFFERENT LEAVES. `narrow_escalation` offers a
+/// group of UNITS its minimal form all at once and halves the group when that
+/// fails, so its cost is proportional to how many units FAIL - a file of
+/// indented `## H` paragraphs is every block failing. `narrow_occurrences` runs
+/// the same search one level finer, over the candidate sites inside the units
+/// that stayed escalated (markup-carve/carve#1533), and the shape that finds
+/// ITS leaves is a document where a load-bearing occurrence sits beside an idle
+/// one on every line: a paragraph of indented table rows, where the leading `|`
+/// opens a row and the trailing one opens nothing. Both are ordinary input
+/// rather than adversarial ones.
+///
+/// MEASURED BOTH WAYS on the table-row shape at 50/100/200/400 rows. With the
+/// budget: 65 / 73 / 81 / 89 renders. Without it: 200 / 400 / 800 / 1600, a
+/// render of the whole document per occurrence. The budgets in `relax_units`
+/// and `narrow_occurrences` are what make this the linear shape these guards
+/// assert - AND MEASURED AS THESE GUARDS READ IT, with the occurrence budget
+/// removed the rows report 3.49x and 3.48x per byte against the 2.0 threshold,
+/// and both are green with it.
+///
+/// THE SIZES ARE TINY BESIDE THIS FILE'S OTHERS, because a unit here is a whole
+/// BLOCK and every step of either search renders and re-parses the entire
+/// document. 400 blocks is already most of a second in a debug build; the
+/// per-byte RATIO is what discriminates and it is build-invariant.
+///
+/// THE OUTPUT IS WIDER WHERE A BUDGET BINDS, NEVER NARROWER. A document that
+/// spends one keeps escapes SECTION 2 would have retired, and every state
+/// either search returns has been verified against the conservative form's own
+/// re-parse. On the corpus neither budget binds.
+#[test]
+fn a_document_where_every_block_escalates_is_written_in_near_linear_time() {
+    // NO `perf_guard()` HERE. `measure_conversion_scaling_at` takes the same
+    // lock, and a std Mutex is not reentrant - taking it twice on one thread
+    // deadlocks rather than failing, so the test hangs instead of reporting.
+    assert_writer_near_linear("  ## H\n\n", "blocks that all escalate");
+}
+
+#[test]
+fn a_document_where_every_line_holds_a_failing_and_an_idle_candidate_is_written_in_near_linear_time(
+) {
+    assert_writer_near_linear(" | a |\n", "lines that all escalate one occurrence");
+}
+
+/// The canonical writer over a repeated fragment, by this file's own estimator.
+///
+/// The timed closure is the WRITER and not `to_html`: parsing is linear here
+/// and costs about as much, so timing both together halves the signal.
+fn assert_writer_near_linear(fragment: &str, label: &str) {
+    assert_conversion_near_linear_at(
+        |source| drop(carve::to_carve(source)),
+        |n| fragment.repeat(n),
+        label,
+        100,
+        400,
+    );
+}
+
 fn assert_near_linear(build: impl Fn(usize) -> String, label: &str) {
     assert_near_linear_at(build, label, SCALE_SMALL_N, SCALE_LARGE_N);
 }

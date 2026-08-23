@@ -150,10 +150,15 @@ fn a_caret_that_would_open_a_note_keeps_its_escape() {
 fn an_ingested_bracket_run_is_neutralized_without_the_caret() {
     // An empty body cannot open a note whatever follows the brackets - the
     // reader requires a non-blank body before it looks at a tail at all - so the
-    // caret is not the character that has to move here. The RUN is, and every
-    // character in it is a PART 11 §5 candidate, which is the vote's own job:
-    // the minimal form re-parses as a link (or a span), the two passes disagree,
-    // and the conservative form goes out.
+    // caret is not the character that has to move here. The OPENING BRACKET is,
+    // and it is a PART 11 §5 candidate, which is the vote's own job: the
+    // minimal form re-parses as a link (or a span), the two passes disagree,
+    // and the conservative form goes out for the run that failed.
+    //
+    // ONE BRACKET, not the whole run. §2 decides per opener occurrence
+    // (markup-carve/carve#1533), and a link opens on its `[`: suppress that one
+    // and the rest is ordinary text. The unit-scoped form escaped every
+    // candidate in the run, and all but the first backslash were idle.
     //
     // Written on the ingest path because that is the only way a text node can
     // hold this spelling: parsed from source, the `[](/u)` is already a link
@@ -161,11 +166,11 @@ fn an_ingested_bracket_run_is_neutralized_without_the_caret() {
     for (inline, expected) in [
         (
             r#"{"type":"text","value":"x ^[](/u) y"}"#,
-            "x ^\\[\\]\\(\\/u\\) y\n",
+            "x ^\\[](/u) y\n",
         ),
         (
             r#"{"type":"text","value":"x ^[]{.c} y"}"#,
-            "x ^\\[\\]\\{\\.c\\} y\n",
+            "x ^\\[]{.c} y\n",
         ),
         (r#"{"type":"text","value":"x ^[] y"}"#, "x ^[] y\n"),
     ] {

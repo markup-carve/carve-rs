@@ -385,8 +385,135 @@ fn narrow_escalation(
     // independent failing units costs. See `budget` on `relax_units`.
     let mut budget = 8 * (usize::BITS - units.len().leading_zeros()) as usize + 8;
     relax_units(doc, &units, &conservative_tree, &mut best, &mut budget);
+    // PART 11 §2 TAKES THE DECISION PER OPENER OCCURRENCE, and a unit is still
+    // ONE KNOB: a unit that fails is written conservatively IN FULL, so every
+    // candidate character beside the one that needed it is escaped for nothing
+    // -- `\{\.note\}` where §2 wants `\{.note}`. §2b bounds how far the fallback
+    // reaches; this is what is left inside the bound (markup-carve/carve#1533).
+    narrow_occurrences(doc, &conservative_tree, &mut best);
     ESCALATED_UNITS.with(|cell| *cell.borrow_mut() = None);
     best
+}
+
+/// The candidate escapes an escalated unit can still hand back, one occurrence
+/// at a time (PART 11 §2).
+///
+/// SAME SEARCH, ONE LEVEL FINER. The comparison is still document-scoped, so a
+/// failure still reports THAT the document changed and never WHERE; the
+/// occurrence is found by trying, and every state kept is one that re-parsed to
+/// the tree the conservative form parses to.
+///
+/// THE OCCURRENCES ARE LOGGED, NOT PREDICTED. A candidate site is whatever the
+/// writer's own escape arms visit, so they are collected by rendering once with
+/// the log switched on rather than by a second enumeration here that could
+/// drift from the one that emits.
+///
+/// THE FIRST RENDER IS A CONTROL, as it is one level up. With nothing relaxed
+/// it must reproduce the state the unit search settled on byte for byte; if
+/// logging changed what was written, the unit-scoped answer stands rather than
+/// a narrowing built on a pass that is not the pass being measured.
+///
+/// BOUNDED THE SAME WAY AND FOR THE SAME REASON. A group holding no failing
+/// occurrence is relaxed in one render, so a document with a handful of them
+/// costs about log(n) renders -- but a document where every occurrence is load
+/// bearing drives the halving to its leaves and pays a render and a parse per
+/// occurrence, which is a render of the whole document per escaped character. A
+/// paragraph of indented table rows is exactly that, and it is ordinary input
+/// rather than an adversarial one. The OUTPUT is unchanged where the budget
+/// binds: those occurrences are the opener runs §2 requires escaped in full.
+fn narrow_occurrences(doc: &Document, conservative_tree: &Document, best: &mut String) {
+    let unit_scoped = best.clone();
+    RELAXED_OCCURRENCES.with(|cell| *cell.borrow_mut() = Some(HashSet::new()));
+    OCCURRENCE_LOG.with(|cell| *cell.borrow_mut() = Some(Vec::new()));
+    let control = render_with_escapes(doc, EscapeMode::Conservative);
+    let occurrences = OCCURRENCE_LOG
+        .with(|cell| cell.borrow_mut().take())
+        .unwrap_or_default();
+    if control != unit_scoped || occurrences.is_empty() {
+        RELAXED_OCCURRENCES.with(|cell| *cell.borrow_mut() = None);
+        return;
+    }
+
+    // OFFERED FROM THE END OF THE DOCUMENT BACKWARDS, which is what makes the
+    // escape that survives the OPENER's. §2 asks whether omitting the escapes
+    // on an occurrence would let the construct FORM, and a construct forms at
+    // its opener -- so with the opener still escaped every later candidate on
+    // the same line is free, while relaxing the opener first leaves the escape
+    // on a closer that was never load bearing (`{.note \}` where §2 wants
+    // `\{.note}`). Both spellings re-parse to the same tree, so only the order
+    // separates them.
+    let order: Vec<Occurrence> = occurrences.into_iter().rev().collect();
+    let mut budget = 8 * (usize::BITS - order.len().leading_zeros()) as usize + 8;
+    relax_occurrences(doc, &order, conservative_tree, best, &mut budget);
+    // AND THEN ONE SWEEP OF WHAT IS LEFT, because the halving is not a FIXPOINT.
+    // Relaxing occurrences is not monotone: an occurrence rejected while a
+    // neighbour was still escaped can be free once that neighbour is relaxed,
+    // and the halving never revisits a group it has descended past. Corpus 160
+    // is the case -- the closing `:::` line cannot go bare while the OPENING one
+    // is escaped, because then it is the only fence marker on the page, and it
+    // can once the opener is bare. The sweep spends the same budget, so where
+    // the budget is already gone it costs nothing, which is the pathological
+    // document.
+    for key in &order {
+        if budget == 0 {
+            break;
+        }
+        if RELAXED_OCCURRENCES
+            .with(|cell| cell.borrow().as_ref().is_some_and(|set| set.contains(key)))
+        {
+            continue;
+        }
+        relax_occurrences(
+            doc,
+            std::slice::from_ref(key),
+            conservative_tree,
+            best,
+            &mut budget,
+        );
+    }
+    RELAXED_OCCURRENCES.with(|cell| *cell.borrow_mut() = None);
+}
+
+/// Hand `group` its bare form where the document still holds, halving the group
+/// on failure.
+fn relax_occurrences(
+    doc: &Document,
+    group: &[Occurrence],
+    conservative_tree: &Document,
+    best: &mut String,
+    budget: &mut usize,
+) {
+    if group.is_empty() || *budget == 0 {
+        return;
+    }
+    *budget -= 1;
+    set_relaxed(group, true);
+    let candidate = render_with_escapes(doc, EscapeMode::Conservative);
+    if comparable_tree(&candidate).as_ref() == Some(conservative_tree) {
+        *best = candidate;
+        return;
+    }
+    set_relaxed(group, false);
+    if group.len() == 1 {
+        return;
+    }
+    let half = group.len() / 2;
+    relax_occurrences(doc, &group[..half], conservative_tree, best, budget);
+    relax_occurrences(doc, &group[half..], conservative_tree, best, budget);
+}
+
+fn set_relaxed(group: &[Occurrence], relaxed: bool) {
+    RELAXED_OCCURRENCES.with(|cell| {
+        if let Some(set) = cell.borrow_mut().as_mut() {
+            for key in group {
+                if relaxed {
+                    set.insert(*key);
+                } else {
+                    set.remove(key);
+                }
+            }
+        }
+    });
 }
 
 /// Hand `units` their minimal form where the document still holds, halving the
@@ -673,6 +800,15 @@ fn render_with_escapes_once(doc: &Document, escape_mode: EscapeMode) -> String {
     // ordinals name positions in THIS walk, and a counter carried across passes
     // would name a different node in each of them.
     UNIT_COUNTER.with(|c| c.set(0));
+    // PER PASS for the same reason: `render_with_escapes` can render twice for
+    // the frontmatter fallback, and a counter carried across the two would
+    // number the second pass's runs on from the end of the first.
+    ESCAPE_CALL_INDEXES.with(|cell| cell.borrow_mut().clear());
+    OCCURRENCE_LOG.with(|cell| {
+        if let Some(log) = cell.borrow_mut().as_mut() {
+            log.clear();
+        }
+    });
     let mut ctx = CarveContext {
         block_depth: 0,
         inline_depth: 0,
@@ -2409,6 +2545,7 @@ fn render_inline_body(
         InlineNode::Text(text) => escape_text(
             &resolve_nbsp_placeholder(&text.value, ctx.line_block_depth > 0),
             ctx.escape_mode_here(),
+            ctx.escape_unit,
             // Does this node's first character sit at the start of a block
             // line? Only there can a `^` be read back as a caption marker.
             (prev_char == '\0' || prev_char == '\n') && ctx.table_cell_depth == 0,
@@ -2519,6 +2656,7 @@ fn render_inline_body(
         InlineNode::Abbreviation(abbr) => escape_text(
             &abbr.abbr,
             ctx.escape_mode_here(),
+            ctx.escape_unit,
             false,
             false,
             prev_char,
@@ -3007,6 +3145,72 @@ thread_local! {
     /// bookkeeping.
     static ASKED_UNITS: std::cell::RefCell<Option<HashSet<usize>>> =
         const { std::cell::RefCell::new(None) };
+    /// The occurrences handed back their bare form by the search (PART 11 §2).
+    ///
+    /// `None` means every candidate in an escalated unit is escaped, which is
+    /// §2b's per-unit knob and the control the occurrence search is verified
+    /// against.
+    static RELAXED_OCCURRENCES: std::cell::RefCell<Option<HashSet<Occurrence>>> =
+        const { std::cell::RefCell::new(None) };
+    /// Where a pass records the occurrences it visited, in emission order.
+    static OCCURRENCE_LOG: std::cell::RefCell<Option<Vec<Occurrence>>> =
+        const { std::cell::RefCell::new(None) };
+    /// How many escaped runs each unit has written in this pass.
+    static ESCAPE_CALL_INDEXES: std::cell::RefCell<HashMap<usize, usize>> =
+        std::cell::RefCell::new(HashMap::new());
+    /// The decision the last candidate site took, so a RUN can inherit it.
+    static LAST_OCCURRENCE_RELAXED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// One candidate site the escape search can offer back.
+///
+/// THE UNIT, THE RUN AND THE OFFSET, all three. The offset alone is not a key:
+/// a unit is the node whose arm wrote the character, and a BLOCK's arm can
+/// write several runs -- a table row's cells, a fence title beside its info
+/// string -- each with its own offsets starting at zero. The whole triple
+/// survives a re-render because relaxing an occurrence changes which characters
+/// are emitted and never which arms run, so a unit writes the same runs in the
+/// same order with the same offsets on every render.
+type Occurrence = (usize, usize, usize);
+
+/// The index of the run about to be escaped, within `unit`.
+fn next_escape_call_index(unit: usize) -> usize {
+    ESCAPE_CALL_INDEXES.with(|cell| {
+        let mut map = cell.borrow_mut();
+        let index = map.entry(unit).or_insert(0);
+        let current = *index;
+        *index += 1;
+        current
+    })
+}
+
+/// Whether the search has handed the candidate at `key` back its bare form.
+///
+/// CALLED AT EVERY OFFERED SITE, relaxed or not, because the log is what the
+/// search walks: a site the pass never reported is a site the search can never
+/// offer, and the escape stays for a reason nobody wrote down.
+///
+/// THE OCCURRENCE IS THE RUN, WHICH IS §2's OWN UNIT. "THE UNIT IS THE OPENER,
+/// NOT THE CHARACTER" -- where a construct opens on a run of characters the
+/// whole run is escaped, so `\#\# H` and never `\## H`. A search that offered
+/// the two hashes separately relaxes the second one, because with the first
+/// still escaped no heading forms either way, and emits precisely the
+/// half-escaped run §2 calls "a shape that happens to work rather than one that
+/// says what it means". So a candidate repeating the character before it
+/// inherits that character's decision instead of taking one.
+fn occurrence_is_relaxed(key: Occurrence, continues_run: bool) -> bool {
+    if continues_run {
+        return LAST_OCCURRENCE_RELAXED.with(std::cell::Cell::get);
+    }
+    OCCURRENCE_LOG.with(|cell| {
+        if let Some(log) = cell.borrow_mut().as_mut() {
+            log.push(key);
+        }
+    });
+    let relaxed = RELAXED_OCCURRENCES
+        .with(|cell| cell.borrow().as_ref().is_some_and(|set| set.contains(&key)));
+    LAST_OCCURRENCE_RELAXED.with(|cell| cell.set(relaxed));
+    relaxed
 }
 
 /// Claim the next unit ordinal for the node about to render.
@@ -3625,9 +3829,11 @@ fn next_node_opens_a_note(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn escape_text(
     text: &str,
     mode: EscapeMode,
+    unit: usize,
     opens_block_line: bool,
     caption_can_open: bool,
     previous_boundary: char,
@@ -3665,6 +3871,10 @@ fn escape_text(
         })
         .flatten();
     let mut out = String::new();
+    // PART 11 §2's decision is taken per OPENER OCCURRENCE, so every candidate
+    // site in this run gets an index the search can address it by
+    // (markup-carve/carve#1533).
+    let call = next_escape_call_index(unit);
     // A `^` is only dangerous where a caption marker could be read: at the
     // start of a line. Anywhere else it is literal text - superscript is
     // braced-only (`{^x^}`), so `10^6^` carries no markup - and forcing the
@@ -3788,7 +3998,16 @@ fn escape_text(
                 | ':'
                 | ';'
         );
-        if unconditional || (mode == EscapeMode::Conservative && candidate && !colon_cannot_open) {
+        // In a unit the search has escalated, each candidate site is offered
+        // back on its own, so the one occurrence that needed the escape no
+        // longer drags the rest of the unit with it (PART 11 §2). A character
+        // whose own guard already decided it -- the caret, a sigil binding to a
+        // verbatim run, the unconditional set -- is not a candidate and is
+        // never offered.
+        let offered = mode == EscapeMode::Conservative && candidate && !unconditional;
+        let relaxed =
+            offered && occurrence_is_relaxed((unit, call, offset), offset > 0 && previous == ch);
+        if unconditional || (offered && !relaxed && !colon_cannot_open) {
             out.push('\\');
         }
         out.push(ch);

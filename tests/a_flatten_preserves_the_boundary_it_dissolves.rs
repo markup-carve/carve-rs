@@ -112,14 +112,19 @@ fn one_flattened_block_takes_no_separator() {
 /// beside it is answered by §2 read through §1a - the writer reads its own
 /// output and escapes what would otherwise change the document. This clause
 /// supplies the space and nothing else, so both are visible here at once.
+///
+/// ONE ASTERISK, not both. Strong needs an opener AND a closer, so suppressing
+/// the opener is the whole of it and the second asterisk opens nothing on its
+/// own - PART 11 §2 per opener occurrence (markup-carve/carve#1533). The
+/// unit-scoped form escaped both, and the second backslash was idle.
 #[test]
 fn the_escaping_half_is_unchanged_and_the_space_is_added_beside_it() {
     let src = migrated(&caption("<p>a *b</p><p>c* d</p>"));
     assert!(
         src.contains(r"\*"),
-        "the asterisks stopped being escaped: {src}"
+        "the opening asterisk stopped being escaped: {src}"
     );
-    assert!(src.contains("^ a \\*b c\\* d"), "{src}");
+    assert!(src.contains("^ a \\*b c* d"), "{src}");
 }
 
 /// AN INLINE SIBLING IS NOT A BLOCK, so no separator is owed beside one. This is

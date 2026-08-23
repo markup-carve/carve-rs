@@ -79,6 +79,13 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **The writer escapes per opener occurrence, not per unit**
+  (markup-carve/carve#1533, PART 11 §2). A unit that needs the conservative form
+  no longer escapes every candidate in it beside the one that needed it:
+  `\{.note}` where the unit-scoped form wrote `\{\.note\}`. An opener RUN is
+  still escaped whole (`\#\# H`). Canonical writer output changes on 20 corpus
+  documents; the idle-escape ratchet drops from 25 entries to 5.
+
 - **A container's span ends at its last placed child**
   (markup-carve/carve#1522, markup-carve/carve#1524, PART 12 §4). A `list`,
   `list_item` or `block_quote` no longer reaches over a definition hoisted out

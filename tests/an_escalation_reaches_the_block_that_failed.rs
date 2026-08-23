@@ -61,11 +61,17 @@ fn the_escalation_does_not_spread_from_the_block_that_needed_it() {
 /// escalates. The run after the code span is in the SAME paragraph and needs
 /// nothing, so a fallback that stopped at the block would escape its parentheses
 /// too.
+///
+/// WITHIN the run the escape is the OPENER's alone (section 2, per opener
+/// occurrence): emphasis needs both delimiters, so the opening `_` escaped is
+/// already the whole suppression and the closing one opens nothing on its own.
+/// The unit-scoped form wrote `\\_b\\_` and the second backslash was idle
+/// (markup-carve/carve#1533).
 #[test]
 fn the_inline_run_is_reached_before_the_block_containing_it() {
     assert_eq!(
         written("/a/_b_ `x` plain (d)\n"),
-        "{/a/}\\_b\\_ `x` plain (d)\n"
+        "{/a/}\\_b_ `x` plain (d)\n"
     );
 }
 
@@ -73,11 +79,15 @@ fn the_inline_run_is_reached_before_the_block_containing_it() {
 /// the LINE the run begins rather than of the run: both lines of this one
 /// paragraph carry one, so both are written conservatively while the paragraph
 /// beside them keeps its bare candidates.
+///
+/// A ROW OPENS ON ITS LEADING PIPE, so that is the occurrence escaped and the
+/// closing pipe stays bare - the block is what escalates, and section 2 still
+/// decides each occurrence inside it (markup-carve/carve#1533).
 #[test]
 fn the_unit_widens_to_the_block_when_escaping_the_run_is_not_enough() {
     assert_eq!(
         written(" | a |\n | b |\n\nsee (c) 50% now\n"),
-        "\\| a \\|\n\\| b \\|\n\nsee (c) 50% now\n"
+        "\\| a |\n\\| b |\n\nsee (c) 50% now\n"
     );
 }
 

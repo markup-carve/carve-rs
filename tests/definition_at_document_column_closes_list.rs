@@ -27,10 +27,14 @@ fn a_definition_at_the_item_content_column_stays_inside() {
     assert_eq!(carve::to_carve(&fmt(source)), source);
 }
 
+/// ONE BACKSLASH, on the OPENER. PART 11 section 2 decides per opener
+/// occurrence (markup-carve/carve#1533), and a definition opens on its `[`:
+/// suppress that one and the rest of the line is ordinary text. The
+/// unit-scoped form wrote `\\[r\\]: \\/u` and the last two backslashes were idle.
 #[test]
 fn a_nonzero_definition_below_the_content_column_is_literal_text() {
     let source = "1. x\n [r]: /u\n[t][r]\n";
-    let expected = "1. x\n   \\[r\\]: \\/u\n   [t][r]\n";
+    let expected = "1. x\n   \\[r]: /u\n   [t][r]\n";
     let out = fmt(source);
 
     assert_eq!(out, expected);

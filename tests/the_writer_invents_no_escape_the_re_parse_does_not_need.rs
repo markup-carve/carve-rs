@@ -38,7 +38,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
 
-/// The three causes measured HERE, one of which every ratchet entry must name.
+/// The two causes measured HERE, one of which every ratchet entry must name.
 ///
 /// They were classified against this engine rather than inherited: the
 /// escalation branch in `render_carve_once` was instrumented to report, per
@@ -46,12 +46,12 @@ use std::path::PathBuf;
 /// it returned. An entry belonging to none of them is a cause nobody has looked
 /// at yet, which is a finding rather than a resident.
 ///
-/// `escalation: ` was the fourth, and it is gone: PART 11 SECTION 2b narrowed
-/// the fallback from the document to the failing unit, and every document that
-/// carried an escape only because a DIFFERENT block needed one now writes it
-/// bare. What the narrowing did NOT retire is split between the two causes that
-/// replaced it, because the two are fixed by different work.
-const IDLE_ESCAPE_CAUSES: &[&str] = &["unit scope: ", "opener run: ", "minimal class: "];
+/// TWO HAVE BEEN RETIRED BY WORK. `escalation: ` went when PART 11 SECTION 2b
+/// narrowed the fallback from the document to the failing unit, and
+/// `unit scope: ` went when SECTION 2's test was taken per opener occurrence
+/// inside that unit (markup-carve/carve#1533). What is left is the two causes
+/// that are not scope questions at all.
+const IDLE_ESCAPE_CAUSES: &[&str] = &["opener run: ", "minimal class: "];
 
 /// THE DEBT, NOT A BLESSING: documents where the writer emits an escape the
 /// re-parse does not need, with the exact count of invented escapes.
@@ -63,43 +63,25 @@ const IDLE_ESCAPE_CAUSES: &[&str] = &["unit scope: ", "opener run: ", "minimal c
 /// the whole difference between this and an allowlist.
 ///
 /// Every entry carries a reason naming the characters escaped for nothing,
-/// because an entry nobody can explain is the next thing to investigate. An
-/// empty reason, a zero count, or a slug the corpus does not have all fail
-/// below.
+/// because an entry nobody can explain is the next thing to investigate.
 ///
-/// Seeded at 28 documents and 72 invented escapes, and re-measured at 24 and 57
-/// when PART 11 SECTION 2b narrowed the escalation. carve-js and carve-php
-/// measure the same 24 documents with the same 24 counts, character for
-/// character.
+/// `unit scope` WAS THE 20-DOCUMENT CAUSE AND IS GONE
+/// (markup-carve/carve#1533). PART 11 SECTION 4's strategy had one knob per
+/// unit, so a unit that failed was written conservatively IN FULL and every
+/// candidate in it was escaped beside the one that needed it. SECTION 2 takes
+/// the decision per OPENER OCCURRENCE, and the writer now runs the same halving
+/// search one level finer: 20 documents and 47 escapes retired, `\\{.note}`
+/// where the unit-scoped form wrote `\\{\\.note\\}`.
 ///
-/// UNIT SCOPE, the 20-document cause: PART 11 SECTION 4's two-render strategy
-/// has one knob per unit - minimal or conservative - so a unit that fails is
-/// written conservatively IN FULL, and every other candidate character in the
-/// same run is escaped with the one that needed it. SECTION 2b bounds how far
-/// that reaches (the run, or the block holding it, never the document) and this
-/// is what is left inside the bound. Retiring it needs SECTION 2's own
-/// per-OPENER-OCCURRENCE test, which is a different mechanism rather than a
-/// narrower scope.
-///
-/// OPENER RUN, three documents since the pin moved past markup-carve/carve#1516:
-/// SECTION 2's THE UNIT IS THE OPENER requires the
-/// WHOLE opener run escaped, and PART 11 SECTION 2b names the indented heading
-/// as its own worked example. The sweep below removes ONE backslash at a time,
-/// so it reads the second one as idle: with the first still there no heading
-/// forms either way. These entries are a floor this measurement cannot go
-/// below while SECTION 2 says what it says, and they are here to be seen rather
-/// than to be fixed.
-///
-/// MINIMAL CLASS, the other two: both passes agree, so nothing escalated, and
-/// the escape is still idle.
-///
-/// ESCALATION, the 26-document cause: `render_carve_once` renders the whole
-/// tree twice, once minimal and once conservative, and takes the conservative
-/// form for the WHOLE DOCUMENT as soon as the minimal one does not re-parse to
-/// the same tree. So one character that genuinely needs its escape drags every
-/// other escape candidate in the document along with it, and each of those is
-/// an escape §2 says should not be there. Deciding narrower than a whole
-/// document is what would retire this class.
+/// OPENER RUN, three documents: SECTION 2's THE UNIT IS THE OPENER requires the
+/// WHOLE opener run escaped - `\\#\\# H` and not `\\## H`, `\\*\\*\\*` and not
+/// `\\***`. The sweep below removes ONE backslash at a time, so it reads the
+/// second `\\#` as idle: with the first still there no heading forms either way.
+/// These entries are a floor this measurement cannot go below while SECTION 2
+/// says what it says, and they are here to be seen rather than to be fixed. The
+/// occurrence search is why they are a floor rather than an accident: it offers
+/// a RUN back whole, so the half-escaped run SECTION 2 forbids is not a state
+/// it can reach.
 ///
 /// MINIMAL CLASS, the other two: both passes agree, so nothing escalated, and
 /// the escape is still idle - once because a lone authored backslash before a
@@ -113,114 +95,14 @@ const IDLE_ESCAPE_RATCHET: &[(&str, usize, &str)] = &[
         "minimal class: a lone authored backslash before a non-escapable character is written back doubled, and bare it re-parses the same - `\\` x2, `a`, `«`",
     ),
     (
-        "87-compact-list-blocks-10",
-        3,
-        "unit scope: the failing run is written conservatively in full, which escapes `.`, `{`, `}` where any one of them alone stops the attribute line",
-    ),
-    (
         "103-heading-marker-column-zero-2",
         2,
         "opener run: the heading opener `##` is escaped in full, and removing either backslash alone still leaves a paragraph",
     ),
     (
-        "129-emphasis-opener-slash-adjacency-3",
-        2,
-        "unit scope: the failing run is written conservatively in full, which escapes `_` x2 where the opener alone would do",
-    ),
-    (
         "132-thematic-break-requires-contiguous-markers-3",
         3,
         "opener run: the break opener `***` is escaped in full, and removing any one backslash alone still leaves a paragraph",
-    ),
-    (
-        "146-table-as-a-block-opener-in-a-list-item-2",
-        3,
-        "unit scope: the failing run is written conservatively in full, which escapes `=`, `|` x2 beyond the opener",
-    ),
-    (
-        "151-indented-ordered-marker-content-column-includes-the-marker-indent",
-        1,
-        "unit scope: the failing run is written conservatively in full, which escapes the closing `|` beyond the opener",
-    ),
-    (
-        "157-indented-attribute-line-stays-literal",
-        3,
-        "unit scope: the failing run is written conservatively in full, which escapes `.`, `{`, `}` where any one of them alone stops the attribute line",
-    ),
-    (
-        "157-indented-attribute-line-stays-literal-2",
-        3,
-        "unit scope: the failing run is written conservatively in full, which escapes `.`, `{`, `}` where any one of them alone stops the attribute line",
-    ),
-    (
-        "158-indented-image-and-caption-stay-literal-2",
-        3,
-        "unit scope: the failing run is written conservatively in full, which escapes `.`, `{`, `}` where any one of them alone stops the attribute line",
-    ),
-    (
-        "159-indented-reference-and-footnote-definitions-stay-literal",
-        2,
-        "unit scope: the failing run is written conservatively in full, which escapes `/`, `]` beyond the opener",
-    ),
-    (
-        "159-indented-reference-and-footnote-definitions-stay-literal-2",
-        1,
-        "unit scope: the failing run is written conservatively in full, which escapes a `.` beyond the opener",
-    ),
-    (
-        "160-indented-colon-fence-blocks-stay-literal-2",
-        2,
-        "unit scope: the failing run is written conservatively in full, which escapes `:`, `|` beyond the opener",
-    ),
-    (
-        "195-a-definition-inside-a-container-is-collected-at-that-container-s-content-column-3",
-        3,
-        "unit scope: the failing run is written conservatively in full, which escapes `/`, `[`, `]` where any one of them alone stops the definition",
-    ),
-    (
-        "218-a-footnote-body-s-own-column-is-two-and-a-third-column-is-its-text",
-        4,
-        "unit scope: the failing run is written conservatively in full, which escapes `-`, `|` x3 beyond the openers",
-    ),
-    (
-        "219-a-definition-below-a-footnote-body-s-column-is-the-document-s-own-text",
-        2,
-        "unit scope: the failing run is written conservatively in full, which escapes `/`, `]` beyond the opener",
-    ),
-    (
-        "220-a-definition-past-a-footnote-body-s-column-is-the-body-s-own-text",
-        2,
-        "unit scope: the failing run is written conservatively in full, which escapes `/`, `]` beyond the opener",
-    ),
-    (
-        "287-a-column-zero-definition-ends-an-open-list-item-3",
-        2,
-        "unit scope: the failing run is written conservatively in full, which escapes `/`, `]` beyond the opener",
-    ),
-    (
-        "322-an-attribute-block-reaches-the-nested-list-it-precedes-9",
-        3,
-        "unit scope: the failing run is written conservatively in full, which escapes `.`, `{`, `}` where any one of them alone stops the attribute line",
-    ),
-    (
-        "350-a-definition-at-a-container-s-content-column-3",
-        2,
-        "unit scope: the failing run is written conservatively in full, which escapes `/`, `]` beyond the opener",
-    ),
-    (
-        "369-a-quote-is-reached-by-its-marker-and-a-column-never-reaches-into-one",
-        2,
-        "unit scope: the failing run is written conservatively in full, which escapes `/`, `]` beyond the opener",
-    ),
-    (
-        "369-a-quote-is-reached-by-its-marker-and-a-column-never-reaches-into-one-2",
-        2,
-        "unit scope: the failing run is written conservatively in full, which escapes `/`, `]` beyond the opener",
-    ),
-    (
-        "369-a-quote-is-reached-by-its-marker-and-a-column-never-reaches-into-one-3",
-        2,
-        "unit scope: the failing run is written conservatively in full, which escapes `/`, `]` beyond the opener",
     ),
     (
         "390-a-table-cell-s-marker-run-ends-at-a-space-5",
@@ -236,16 +118,20 @@ const IDLE_ESCAPE_RATCHET: &[(&str, usize, &str)] = &[
 
 /// The reading this commit measured, pinned where a reader can find it.
 ///
-/// IT MOVED WITH THE CORPUS, NOT WITH THE WRITER (markup-carve/carve#1516). The
-/// document that ruling ADDED - `396-an-idle-escape-does-not-spread-from-the-
-/// block-that-needed-one`, `  ## H` plus a second paragraph - is a THIRD
-/// opener-run case, so this engine reads 25 / 59 where PART 11 SECTION 2b's
-/// prose still says 2 opener-run documents and 24 / 57 overall. Nothing
-/// regressed: the writer emits the spec's own `.fmt` golden for 396 byte for
-/// byte, and carve-js and carve-php measure the same 2 on it. The SECTION 2b
-/// count was taken on a pin that predated its own corpus case.
-const MEASURED_ESCAPES: usize = 59;
-const MEASURED_DOCUMENTS: usize = 25;
+/// IT MOVED WITH THE CORPUS ONCE AND WITH THE WRITER ONCE. The document
+/// markup-carve/carve#1516 ADDED - `396-an-idle-escape-does-not-spread-from-
+/// the-block-that-needed-one`, `  ## H` plus a second paragraph - is a THIRD
+/// opener-run case, so the reading went to 25 / 59 where PART 11 SECTION 2b's
+/// prose still says 2 opener-run documents and 24 / 57 overall; nothing
+/// regressed there, the SECTION 2b count was simply taken on a pin that
+/// predated its own corpus case. SECTION 2's per-OPENER-OCCURRENCE test then
+/// retired the 47 that were one unit written conservatively in full
+/// (markup-carve/carve#1533), and what is left is 12 across 5.
+///
+/// carve-js and carve-php measure the same 5 with the same counts, and the
+/// three writers agree byte for byte on all 1358 corpus documents.
+const MEASURED_ESCAPES: usize = 12;
+const MEASURED_DOCUMENTS: usize = 5;
 
 fn corpus_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus")
