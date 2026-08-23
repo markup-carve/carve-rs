@@ -180,9 +180,6 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   input. On the shared 49 KiB Tier-1 benchmark the prepass changes alone remove
   about 3,800 allocations per parse.
 
-- **A vertical table-cell marker requires a horizontal partner.** Lone `^` and
-  `v` prefixes remain visible content; paired two-axis runs are unchanged.
-
 - **`Figure::target` is now `Box<FigureTarget>`** (#1119). Breaking, for callers
   that construct or match a figure through the public AST. `Figure` embedded a
   whole `Table` or `CodeBlock`, which set `BlockNode` at 472 bytes against 264
@@ -341,10 +338,6 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   "BUT IT DOES NOT SURVIVE A RUN THAT ATE ITS LINE" - and `fmt` wrote it out as
   `` ` %%``. The render never moved.
 
-- **An empty braced pair keeps its carets bare** (carve-rs#1193). `{^^}` opens
-  no superscript, so PART 11 §2 has nothing to escape and the writer no longer
-  emits `{\^\^}`. `{^x^}` holds something and is untouched.
-
 - **`--profile` reaches the `--carve` output target** (carve-rs#1191). `to_carve`
   carried no `Options`, so neither the `max_length` cap nor the feature filter
   was ever consulted there: an over-cap document was re-serialized in full at
@@ -485,11 +478,6 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   to carry a caption was the one that lost its renderer. A captioned fence is a
   figure's target, and PART 12 pins five target types with no raw-HTML spelling
   among them, so the rendered result now rides the new `Figure::rendered_target`.
-
-- **`fmt` preserves a braced en dash** (carve-rs#1158). `{--}` produced a text
-  node holding the resolved glyph, so formatting a document replaced the four
-  characters its author wrote. It is a `smart_punctuation` node carrying the
-  authored spelling, as `--` and `...` already were.
 
 - **The first code group in a document is named `codegroup-1`**
   (carve-rs#1178), matching carve-js and carve-php. It took the bare id prefix
