@@ -701,13 +701,13 @@ fn write_footnote_def(
         .or_else(|| first_block_pos(children).copied())
     {
         Some(mut pos) => {
-            if let Some(last) = children.iter().rev().find_map(block_pos) {
-                if last.end_offset > pos.end_offset {
-                    pos.end_offset = last.end_offset;
-                    pos.end_line = last.end_line;
-                    pos.end_column = last.end_column;
-                }
-            }
+            // THE SAME FUNCTION the parser ends every other closerless
+            // container with, rather than a second spelling of it beside it.
+            // This one was a widen and the parser's was a widen, so both agreed
+            // and both were half the rule; an ingested definition (§6) reaches
+            // only this one, so a copy of it has to end where the parse did.
+            let last = children.iter().rev().find_map(block_pos).copied();
+            crate::parse::end_at_last_placed_child(&mut pos, last);
             Some(pos)
         }
         None => None,

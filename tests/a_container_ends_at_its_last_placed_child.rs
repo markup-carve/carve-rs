@@ -13,6 +13,14 @@
 //! Nothing caught either, because all three engines did the same thing and the
 //! spec repository's span panel compares the engines against EACH OTHER
 //! (markup-carve/carve#1522, markup-carve/carve#1524).
+//!
+//! THE SAME RULE, THREE MORE TYPES. A footnote definition, a heading and a
+//! definition term have no closer either, and nobody had spelled the rule for
+//! them - so each ended ONE codepoint past its last child, taking in whichever
+//! of the two things the lines it consumed carried past its content: the line
+//! terminator that ended it, or a trailing whitespace run PART 2 drops before
+//! the inline content is even parsed. Thirty corpus documents, one bound
+//! (markup-carve/carve-rs#1303, markup-carve/carve#1605).
 
 use serde_json::Value;
 
@@ -129,4 +137,49 @@ fn a_container_with_children_is_unchanged() {
     assert_eq!(nth("> a\n> b", "block_quote", 0), (0, 7));
     // And a container that DOES have a closer still ends at it.
     assert_eq!(nth("::: n\na\n:::\n", "admonition", 0), (0, 11));
+}
+
+#[test]
+fn a_footnote_definition_stops_before_the_terminator_that_ended_it() {
+    // Its extent came from the LINES it consumed, which reach the start of the
+    // line after the body - so it ended at column 1 of the following line,
+    // which section 4 excludes by name. 27 of the 30 corpus documents.
+    let source = "x[^n]\n\n[^n]: b\n\ntail\n";
+
+    // The body's only paragraph ends at 14; the definition used to end at 15.
+    // It is paragraph #2: a footnote body is serialized after the document's
+    // own blocks, so `tail` is #1.
+    assert_eq!(nth(source, "paragraph", 2), (13, 14));
+    assert_eq!(nth(source, "footnote", 0), (7, 14));
+}
+
+#[test]
+fn a_heading_stops_before_the_trailing_run_its_content_drops() {
+    // The span was the line at its FULL width while the children were parsed
+    // from the same line trimmed, so the two trailing spaces sat inside the
+    // heading and inside no child of it. It used to end at 5.
+    let source = "# h  \n";
+
+    assert_eq!(nth(source, "text", 0), (2, 3));
+    assert_eq!(nth(source, "heading", 0), (0, 3));
+}
+
+#[test]
+fn a_definition_term_stops_at_its_last_placed_child() {
+    // A folded term line ending in a space, where the term's own `code` child
+    // already stops in the right place. It used to end at 8.
+    let source = ":: `a\nb \n:  d\n";
+
+    assert_eq!(nth(source, "code", 0), (3, 7));
+    assert_eq!(nth(source, "definition_term", 0), (0, 7));
+}
+
+#[test]
+fn the_three_are_unchanged_where_the_lines_carry_nothing_extra() {
+    // The rule has to be the reason those spans moved, not the documents. A
+    // heading and a term written without a trailing run, and a footnote whose
+    // body is more than one block, all end where they always did.
+    assert_eq!(nth("# h\n", "heading", 0), (0, 3));
+    assert_eq!(nth(":: t\n:  d\n", "definition_term", 0), (0, 4));
+    assert_eq!(nth("a[^f]\n\n[^f]: one\n+\ntwo\n", "footnote", 0), (7, 22));
 }
