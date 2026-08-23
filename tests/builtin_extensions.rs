@@ -1031,7 +1031,7 @@ fn toc_top_nested_golden() {
     // carveToHtml("# Intro\n\nText.\n\n## Details\n\nMore.\n", {extensions:[tableOfContents()]})
     assert_eq!(
         carve::to_html_with_options("# Intro\n\nText.\n\n## Details\n\nMore.\n", &opts),
-        "<nav class=\"toc\">\n<ul>\n<li><a href=\"#intro\">Intro</a>\n<ul>\n<li><a href=\"#details\">Details</a></li>\n</ul>\n</li>\n</ul>\n</nav>\n<section id=\"intro\">\n  <h1>Intro</h1>\n  <p>Text.</p>\n  <section id=\"details\">\n    <h2>Details</h2>\n    <p>More.</p>\n  </section>\n</section>"
+        "<nav class=\"toc\" aria-label=\"Table of contents\">\n<ul>\n<li><a href=\"#intro\">Intro</a>\n<ul>\n<li><a href=\"#details\">Details</a></li>\n</ul>\n</li>\n</ul>\n</nav>\n<section id=\"intro\">\n  <h1>Intro</h1>\n  <p>Text.</p>\n  <section id=\"details\">\n    <h2>Details</h2>\n    <p>More.</p>\n  </section>\n</section>"
     );
 }
 
@@ -1055,11 +1055,11 @@ fn toc_bottom_ol_golden() {
     // assertion encodes the carve-rs output (nav contents match js exactly).
     let html = carve::to_html_with_options("# Alpha\n\n## Beta\n", &opts);
     assert!(html.contains(
-        "<nav class=\"toc\">\n<ol>\n<li><a href=\"#alpha\">Alpha</a>\n<ol>\n<li><a href=\"#beta\">Beta</a></li>\n</ol>\n</li>\n</ol>\n</nav>"
+        "<nav class=\"toc\" aria-label=\"Table of contents\">\n<ol>\n<li><a href=\"#alpha\">Alpha</a>\n<ol>\n<li><a href=\"#beta\">Beta</a></li>\n</ol>\n</li>\n</ol>\n</nav>"
     ));
     assert_eq!(
         html,
-        "<section id=\"alpha\">\n  <h1>Alpha</h1>\n  <section id=\"beta\">\n    <h2>Beta</h2>\n    <nav class=\"toc\">\n<ol>\n<li><a href=\"#alpha\">Alpha</a>\n<ol>\n<li><a href=\"#beta\">Beta</a></li>\n</ol>\n</li>\n</ol>\n</nav>\n  </section>\n</section>"
+        "<section id=\"alpha\">\n  <h1>Alpha</h1>\n  <section id=\"beta\">\n    <h2>Beta</h2>\n    <nav class=\"toc\" aria-label=\"Table of contents\">\n<ol>\n<li><a href=\"#alpha\">Alpha</a>\n<ol>\n<li><a href=\"#beta\">Beta</a></li>\n</ol>\n</li>\n</ol>\n</nav>\n  </section>\n</section>"
     );
 }
 
@@ -1102,7 +1102,7 @@ fn toc_placement_renders_nested_nav_in_place() {
         &opts,
     );
     assert!(html.contains(
-        "<nav class=\"toc\">\n<ul>\n<li><a href=\"#Intro\">Intro</a>\n<ul>\n\
+        "<nav class=\"toc\" aria-label=\"Table of contents\">\n<ul>\n<li><a href=\"#Intro\">Intro</a>\n<ul>\n\
 <li><a href=\"#Setup\">Setup</a>\n<ul>\n<li><a href=\"#Details\">Details</a></li>\n</ul>\n</li>\n\
 <li><a href=\"#Usage\">Usage</a></li>\n</ul>\n</li>\n</ul>\n</nav>"
     ));
@@ -1143,7 +1143,10 @@ fn toc_placement_carries_author_attrs_and_strips_window_keys() {
     let opts = Options::new().with_extension(&ext);
     let html =
         carve::to_html_with_options("# A\n\n{#nav .side depth=1}\n::: toc\n:::\n\n## B\n", &opts);
-    assert!(html.contains("<nav id=\"nav\" class=\"toc side\">"));
+    assert!(
+        html.contains("<nav id=\"nav\" class=\"toc side\" aria-label=\"Table of contents\">"),
+        "{html}"
+    );
     assert!(!html.contains("depth="));
 }
 
@@ -1152,7 +1155,7 @@ fn toc_placement_empty_window_renders_empty_nav() {
     let ext = TocPlacement::new();
     let opts = Options::new().with_extension(&ext);
     let html = carve::to_html_with_options("::: toc\n:::\n\nplain\n", &opts);
-    assert!(html.contains("<nav class=\"toc\"></nav>"));
+    assert!(html.contains("<nav class=\"toc\" aria-label=\"Table of contents\"></nav>"));
 }
 
 #[test]

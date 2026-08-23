@@ -9,6 +9,12 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **The table-of-contents nav carries an accessible name**
+  (markup-carve/carve#1547, ruling markup-carve/carve#1509, carve-rs#1249).
+  `TableOfContents` and `TocPlacement` write `aria-label` on the `<nav>` from a
+  new `labels` key `tocNav`, default `Table of contents`; an authored
+  `aria-label` still wins, and an empty entry emits no name.
+
 - **`CodeGroup` grows the `mode` option Tabs already had** (carve-rs#1199).
   `CodeGroupOptions::mode` takes `TabsMode::Css` (the default) or
   `TabsMode::Aria`; the `Aria` renderer mirrors the Tabs one with

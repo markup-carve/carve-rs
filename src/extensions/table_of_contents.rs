@@ -15,8 +15,10 @@ use std::cell::RefCell;
 use std::collections::BTreeMap;
 
 use crate::ast::{Attrs, BlockExtension, BlockNode, Document, Heading, InlineNode, RawBlock};
+use crate::escape::escape_attr;
 use crate::extension::{
     AsciiHeadingIds, BeforeRenderContext, CarveExtension, HeadingIdOptions, RenderContext,
+    LABEL_TOC_NAV,
 };
 use crate::render::render_attrs_without_keys;
 
@@ -107,7 +109,7 @@ struct TocEntry {
 ///     .with_extension(&ext)
 ///     .with_lowercase_heading_ids(true);
 /// let html = carve::to_html_with_options("# Intro\n\n## Details", &options);
-/// assert!(html.starts_with("<nav class=\"toc\">"));
+/// assert!(html.starts_with("<nav class=\"toc\" aria-label=\"Table of contents\">"));
 /// ```
 pub struct TableOfContents {
     opts: TableOfContentsOptions,
@@ -157,9 +159,17 @@ impl CarveExtension for TableOfContents {
             return doc;
         }
 
+        // `<nav>` is a navigation landmark unconditionally, so an unnamed one is
+        // an entry in a reader's landmark list reading only "navigation" - and a
+        // page holds more than one the moment `TocPlacement` is registered
+        // beside this extension, or a site template contributes its own
+        // (Extensions §8b.1, markup-carve/carve#1509). Named from the SAME
+        // `labels` key `TocPlacement` reads, so the nav fragment §8b.3 makes the
+        // cross-impl contract stays byte-identical between the two.
         let html = format!(
-            "<nav class=\"{}\">\n{}</nav>",
+            "<nav class=\"{}\"{}>\n{}</nav>",
             escape_html(&self.opts.css_class),
+            nav_label_attr(ctx.options().label(LABEL_TOC_NAV)),
             build_list(&entries, self.opts.list_type, &|nodes| {
                 crate::render::render_inlines_inside_anchor(nodes, ctx.options())
             }),
@@ -381,7 +391,7 @@ fn escape_html(s: &str) -> String {
 
 /// In-document table-of-contents placement directive (Tier-3). Unlike
 /// [`TableOfContents`] (which injects one TOC at the document top or bottom),
-/// this renders a `<nav class="toc">` exactly where the author writes a
+/// this renders a named `<nav class="toc">` exactly where the author writes a
 /// `::: toc` block. Off by default.
 ///
 /// The level window is set with attributes on the line *before* the opener
@@ -511,7 +521,7 @@ fn render_toc_nav(
 ) -> String {
     let (min, max) = toc_window(&node.attrs);
     let attrs = render_attrs_without_keys(
-        &Some(with_base_class(&node.attrs, "toc")),
+        &Some(named_nav_attrs(&node.attrs, &ctx.label(LABEL_TOC_NAV))),
         &["depth", "from", "to"],
     );
     let empty_nav = format!("<nav{attrs}></nav>");
@@ -592,6 +602,38 @@ fn toc_window(attrs: &Option<Attrs>) -> (u8, u8) {
     } else {
         (1, level(get("depth"), 6))
     }
+}
+
+/// The ` aria-label="..."` run for a nav this extension builds from scratch, or
+/// nothing when the host set the key to the empty string to suppress the name.
+fn nav_label_attr(label: &str) -> String {
+    if label.is_empty() {
+        String::new()
+    } else {
+        format!(" aria-label=\"{}\"", escape_attr(label))
+    }
+}
+
+/// The `::: toc` nav's attributes: the `toc` base class, the author's own
+/// `{#id .class}`, and the landmark's accessible name APPENDED after whatever
+/// the author wrote.
+///
+/// A name the AUTHOR wrote outranks the label and nothing is added beside it -
+/// Extensions §1.5's existing precedence, since §8b.1 already carries the
+/// attribute line onto the nav. The match is on the attribute NAME,
+/// ASCII-case-insensitively as §16a rules for the shapes carve#1468 closed,
+/// because this engine echoes an authored `ARIA-LABEL` back in the author's own
+/// spelling and a case-sensitive test would write a second name beside theirs.
+fn named_nav_attrs(attrs: &Option<Attrs>, label: &str) -> Attrs {
+    let mut a = with_base_class(attrs, "toc");
+    let authored = |name: &str| a.key_values.keys().any(|k| k.eq_ignore_ascii_case(name));
+    if label.is_empty() || authored("aria-label") || authored("aria-labelledby") {
+        return a;
+    }
+    a.key_values
+        .insert("aria-label".to_string(), label.to_string());
+    crate::extension::record_attr_order(&mut a, "aria-label");
+    a
 }
 
 /// Prepend `base` as the leading class of (a clone of) `attrs`.

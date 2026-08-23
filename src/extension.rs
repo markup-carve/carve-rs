@@ -238,6 +238,14 @@ pub const LABEL_TABS_GROUP: &str = "tabsGroup";
 /// The `labels` key for a code group's accessible name.
 pub const LABEL_CODE_GROUP: &str = "codeGroup";
 
+/// The `labels` key for the table-of-contents nav's accessible name.
+///
+/// `<nav>` is a navigation landmark unconditionally - unlike `<section>`, which
+/// maps to `generic` until it is named - so an unnamed one is an entry in a
+/// reader's landmark list reading only "navigation", and a page can hold more
+/// than one (Extensions §8b.1, markup-carve/carve#1509).
+pub const LABEL_TOC_NAV: &str = "tocNav";
+
 /// The English default for a `labels` key, and the whole set.
 ///
 /// The EXTENSION keys are here rather than only on their extensions so that ONE
@@ -261,6 +269,7 @@ pub fn label_default(key: &str) -> &'static str {
         LABEL_INDEX_BACKREF => "Back to",
         LABEL_TABS_GROUP => "Tabs",
         LABEL_CODE_GROUP => "Code examples",
+        LABEL_TOC_NAV => "Table of contents",
         _ => "",
     }
 }
