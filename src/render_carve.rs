@@ -275,14 +275,21 @@ fn render_carve_once(doc: &Document) -> String {
     STAGED.with(|c| c.borrow_mut().clear());
     let minimal = render_with_escapes(doc, EscapeMode::Minimal);
     let conservative = render_with_escapes(doc, EscapeMode::Conservative);
-    if minimal == conservative || escaping_is_redundant(&minimal, &conservative) {
+    if minimal == conservative {
+        return minimal;
+    }
+    // ONE parse of the conservative form, shared by the redundancy check and the
+    // narrowing below. Parsing it in each made every narrowed document pay a
+    // second full parse of its own output for an answer it already had.
+    let conservative_tree = comparable_tree(&conservative);
+    if escaping_is_redundant(&minimal, conservative_tree.as_ref()) {
         return minimal;
     }
     // The minimal form of the WHOLE document does not hold, which used to end
     // the decision here with the conservative form of the whole document. PART
     // 11 §2b says how far that fallback actually reaches: the smallest unit
     // whose minimal form fails, and §2's own test everywhere else.
-    narrow_escalation(doc, conservative)
+    narrow_escalation(doc, conservative, conservative_tree)
 }
 
 /// The conservative form of the units that need it, and the minimal form of
@@ -307,11 +314,15 @@ fn render_carve_once(doc: &Document) -> String {
 /// deciding something other than the escape mode -- a unit the walk did not
 /// reach, for instance -- and the document-scoped form is returned rather than
 /// a narrowing built on a state that is not what it claims.
-fn narrow_escalation(doc: &Document, conservative: String) -> String {
+fn narrow_escalation(
+    doc: &Document,
+    conservative: String,
+    conservative_tree: Option<Document>,
+) -> String {
     // `None` answers "cannot tell", exactly as it does for the minimal form:
     // with no tree to hold the narrowing against, there is nothing to narrow
     // toward.
-    let Some(conservative_tree) = comparable_tree(&conservative) else {
+    let Some(conservative_tree) = conservative_tree else {
         return conservative;
     };
     // How many units the document has is a property of the WALK, so it is
@@ -323,17 +334,56 @@ fn narrow_escalation(doc: &Document, conservative: String) -> String {
         return conservative;
     }
 
-    let units: Vec<usize> = (1..=total).collect();
-    ESCALATED_UNITS.with(|cell| *cell.borrow_mut() = Some(units.iter().copied().collect()));
+    let all: Vec<usize> = (1..=total).collect();
+    ESCALATED_UNITS.with(|cell| *cell.borrow_mut() = Some(all.iter().copied().collect()));
+    // THE CONTROL RENDER LOGS WHICH UNITS THE WRITER ACTUALLY ASKS ABOUT, so the
+    // search below can skip the ones it cannot move. The walk that hands out
+    // ordinals reaches every node that COULD carry an escaped character; the
+    // units that DO are whatever the writer's own escape arms charge a character
+    // to, and only those read `ESCALATED_UNITS`. A unit the writer never asks
+    // about renders the same bytes in or out of the set, so offering it its
+    // minimal form is a render and a parse spent to learn nothing.
+    //
+    // The gap is not small on nested documents. On the deepest corpus document
+    // -- 203 nested colon fences, whose overflow past the nesting cap is the
+    // text the writer must keep from re-opening a div -- the walk hands out 208
+    // ordinals and the writer asks about SEVEN. The other 201 were halved over
+    // at a render and a parse each, and that document's own output is 21x its
+    // source (a colon fence widens by one per level, PART 9 §12), so each of
+    // those cost about what parsing 42 KB costs.
+    //
+    // Seven where carve-js and carve-php ask about four, because
+    // `next_unit_escape_mode` charges the ordinal a node has not claimed yet.
+    // A superset, and the safe direction: a unit logged that never writes is a
+    // group the search relaxes in one render, where a unit MISSED would be one
+    // it can no longer offer its minimal form.
+    //
+    // Logging it rather than predicting it is the same choice the ordinal walk
+    // makes and for the same reason: the set is whatever the arms visit, so an
+    // arm that grows a new escape cannot fall out of the search. And a unit
+    // wrongly left out cannot produce wrong output -- every state the search
+    // returns is re-parsed against `conservative_tree` below, exactly as before.
+    ASKED_UNITS.with(|cell| *cell.borrow_mut() = Some(HashSet::new()));
     let control = render_with_escapes(doc, EscapeMode::Conservative);
+    let asked = ASKED_UNITS
+        .with(|cell| cell.borrow_mut().take())
+        .unwrap_or_default();
     if control != conservative {
         ESCALATED_UNITS.with(|cell| *cell.borrow_mut() = None);
         return conservative;
     }
+    let units: Vec<usize> = all
+        .into_iter()
+        .filter(|unit| asked.contains(unit))
+        .collect();
     let mut best = control;
+    // No guard for an EMPTY `units`: `relax_units` returns on an empty group,
+    // and a check here would be one no corpus document can reach -- the control
+    // render asks about a unit for every byte the two forms differ in, and they
+    // differ or this is not running.
     // Eight times the depth of the halving, which is what narrowing four
     // independent failing units costs. See `budget` on `relax_units`.
-    let mut budget = 8 * (usize::BITS - total.leading_zeros()) as usize + 8;
+    let mut budget = 8 * (usize::BITS - units.len().leading_zeros()) as usize + 8;
     relax_units(doc, &units, &conservative_tree, &mut best, &mut budget);
     ESCALATED_UNITS.with(|cell| *cell.borrow_mut() = None);
     best
@@ -358,9 +408,9 @@ fn narrow_escalation(doc: &Document, conservative: String) -> String {
 /// every other -- the escalation is wider than §2b's minimum there, never
 /// narrower, and no document's output can be wrong for it.
 ///
-/// MEASURED before it was chosen: over the 1341 pinned corpus documents 50 reach
-/// the search at all, the most expensive spends 22 renders on 209 units, and the
-/// budget gives that document 72.
+/// MEASURED over the 1358 pinned corpus documents: 51 reach the search at all,
+/// and once the control render has narrowed the candidates to the units the
+/// writer asks about, the widest holds eight and none holds more.
 fn relax_units(
     doc: &Document,
     units: &[usize],
@@ -725,14 +775,14 @@ fn render_with_escapes_once(doc: &Document, escape_mode: EscapeMode) -> String {
     normalize(&parts.join("\n\n"))
 }
 
-fn escaping_is_redundant(minimal: &str, conservative: &str) -> bool {
-    let parsed = std::panic::catch_unwind(|| {
-        (
-            comparable_document(crate::parse::parse_for_carve_shape(minimal)),
-            comparable_document(crate::parse::parse_for_carve_shape(conservative)),
-        )
-    });
-    parsed.is_ok_and(|(minimal_doc, conservative_doc)| minimal_doc == conservative_doc)
+/// `conservative_tree` is the caller's single parse of the conservative form;
+/// `None` means it did not parse, which answers the question conservatively -
+/// as does a minimal form that will not parse either.
+fn escaping_is_redundant(minimal: &str, conservative_tree: Option<&Document>) -> bool {
+    let Some(conservative_tree) = conservative_tree else {
+        return false;
+    };
+    comparable_tree(minimal).is_some_and(|minimal_tree| &minimal_tree == conservative_tree)
 }
 
 fn comparable_document(mut doc: Document) -> Document {
@@ -2949,6 +2999,14 @@ thread_local! {
     /// own test, and for a character nothing needs that means bare.
     static ESCALATED_UNITS: std::cell::RefCell<Option<HashSet<usize>>> =
         const { std::cell::RefCell::new(None) };
+    /// Where the writer records the unit a character it is escaping belongs to.
+    ///
+    /// `Some` only for `narrow_escalation`'s control render, which uses it to
+    /// learn which units the escape arms actually ask about -- see the comment
+    /// there. `None` everywhere else, so no other render pays for the
+    /// bookkeeping.
+    static ASKED_UNITS: std::cell::RefCell<Option<HashSet<usize>>> =
+        const { std::cell::RefCell::new(None) };
 }
 
 /// Claim the next unit ordinal for the node about to render.
@@ -2963,6 +3021,11 @@ fn next_escape_unit() -> usize {
 impl CarveContext {
     /// Which form a character written by `unit` takes (PART 11 §2b).
     fn escape_mode_for(&self, unit: usize) -> EscapeMode {
+        ASKED_UNITS.with(|cell| {
+            if let Some(asked) = cell.borrow_mut().as_mut() {
+                asked.insert(unit);
+            }
+        });
         ESCALATED_UNITS.with(|cell| match cell.borrow().as_ref() {
             None => self.escape_mode,
             Some(escalated) => {
