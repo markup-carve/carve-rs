@@ -493,6 +493,13 @@ const IMPLEMENTED: &[&str] = &[
     // markup-carve/carve#1525: a null byte is replaced before the document is
     // read.
     "a-null-byte-is-replaced-before-the-document-is-read",
+    // Corpus 400 and 401, which the pin bump for markup-carve/carve#1554
+    // brings with it. No engine work in either: #1252 landed the container's
+    // opening markup here and #1251 the marker at an item's content column, and
+    // both categories reproduce on this build. Named rather than left out,
+    // because a category absent from this list is not compared at all.
+    "a-container-starts-at-its-opening-markup-even-where-its-first-child-is-unplaced",
+    "a-marker-at-an-item-content-column-opens-a-sublist-first-in-the-item-or-not",
 ];
 
 // Spec-main categories tracked by separate implementation work. Keep them

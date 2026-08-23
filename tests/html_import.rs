@@ -230,6 +230,85 @@ mod diagnostic_path {
         assert!(paths("<html><body onclick=\"x()\"><p>t</p></body></html>").is_empty());
         assert!(paths("<html onclick=\"x()\"><body><p>t</p></body></html>").is_empty());
     }
+
+    /// THE TWO RULES ARE ONE RULE (markup-carve/carve#1554). A wrapper the
+    /// importer added prints no step, and an index counts among the children of
+    /// the parent the step it prints SITS UNDER - so a bare inline run wrapped
+    /// in a synthesized paragraph is numbered among the BODY children, never
+    /// among the nodes of the wrapper.
+    ///
+    /// This engine applied the first rule and not the second, which made the
+    /// index name a parent no step spells. It was invisible for as long as the
+    /// shared `math-block-and-mathml` fixture encoded the same mistake: this
+    /// engine and carve-js agreed with it and carve-php, which followed the
+    /// clause, was the only one red. The tell was one diagnostic later in the
+    /// SAME document - `/p[3]/math[2]` counts the two siblings `/math[1]` did
+    /// not.
+    ///
+    /// Not a math rule, which is why `<kbd>` leads.
+    #[test]
+    fn a_wrapped_inline_run_is_numbered_where_its_step_is_printed() {
+        assert_eq!(
+            paths("<p>z</p><kbd onclick=\"x()\">K</kbd>"),
+            vec!["/kbd[2]"],
+            "the kbd is the second BODY child, not the first child of the paragraph around it"
+        );
+        assert_eq!(
+            paths("<hr><math alttext=\"a\"></math>"),
+            vec!["/math[2]"],
+            "a block sibling that wraps nothing still takes its index"
+        );
+        assert_eq!(
+            paths("<p>z</p><p>y</p><math alttext=\"a\"></math>"),
+            vec!["/math[3]"]
+        );
+        assert_eq!(
+            paths("<p>z</p>lead text<math alttext=\"a\"></math>"),
+            vec!["/math[3]"],
+            "the run's own leading text node is a child of the body and counts"
+        );
+        assert_eq!(
+            paths("<div><p>z</p><kbd onclick=\"x()\">K</kbd></div>"),
+            vec!["/div[1]/kbd[2]"]
+        );
+        assert_eq!(
+            paths("<blockquote><p>z</p><kbd onclick=\"x()\">K</kbd></blockquote>"),
+            vec!["/blockquote[1]/kbd[2]"]
+        );
+    }
+
+    /// The same rule, at the four sites that lift a child OUT of the list they
+    /// walk. Rebuilding an index from what is left renumbers every sibling past
+    /// the hole, and a step spelled without an index at all - `figcaption`, as
+    /// this engine wrote it - says nothing about which one it was.
+    #[test]
+    fn a_lifted_child_does_not_renumber_the_siblings_it_leaves() {
+        assert_eq!(
+            paths("<figure><figcaption>c</figcaption><img src=\"i.png\" onclick=\"x()\"></figure>"),
+            vec!["/figure[1]/img[2]"],
+            "the caption comes out of the child list; the image does not move"
+        );
+        assert_eq!(
+            paths("<figure>\n<img src=\"i.png\">\n<figcaption>c <kbd onclick=\"x()\">K</kbd></figcaption>\n</figure>"),
+            vec!["/figure[1]/figcaption[4]/kbd[2]"],
+            "a pretty-printed figure puts its caption fourth, and the step says so"
+        );
+        assert_eq!(
+            paths("<details><summary>s</summary><p onclick=\"x()\">b</p></details>"),
+            vec!["/details[1]/p[2]"],
+            "the summary is lifted out of the body, not out of the numbering"
+        );
+        assert_eq!(
+            paths("<dl>\n<dt>t</dt>\n<dd onclick=\"x()\">d</dd>\n</dl>"),
+            vec!["/dl[1]/dd[4]"],
+            "the walk collects only dt and dd; the index still counts every child"
+        );
+        assert_eq!(
+            paths("<dl><div><dt>t</dt><dd onclick=\"x()\">d</dd></div></dl>"),
+            vec!["/dl[1]/div[1]/dd[2]"],
+            "the group wrapper is the author's element and keeps its step"
+        );
+    }
 }
 
 /// A footer inside a quote is ordinary quoted block content.

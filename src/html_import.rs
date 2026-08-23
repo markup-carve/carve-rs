@@ -998,20 +998,63 @@ impl<'a> Importer<'a> {
             .collect()
     }
 
+    /// The step a child of `parent` gets: its element name, or the synthetic
+    /// `text()` for a node with none, indexed by its position among ALL of the
+    /// parent's child nodes - text nodes included (PART 12 §16).
+    ///
+    /// Every caller that lifts a child out of the list it walks needs this,
+    /// because the index a diagnostic prints belongs to the DOCUMENT and not to
+    /// whatever vector the importer happened to build (markup-carve/carve#1554).
+    fn child_path(parent: &str, child: &Handle, index: usize) -> String {
+        let tag = Self::tag(child).unwrap_or_else(|| "text()".into());
+        format!("{parent}/{tag}[{}]", index + 1)
+    }
+
     fn blocks(
         &mut self,
         handles: &[Handle],
         parent: &str,
         depth: usize,
     ) -> Result<Vec<BlockNode>, HtmlImportError> {
+        self.blocks_at(handles, None, parent, depth)
+    }
+
+    /// The block walk, with an optional path per handle.
+    ///
+    /// `paths` is index-parallel to `handles` and says where each node SITS in
+    /// the document, which is not always where it sits in `handles`: a caller
+    /// that lifted a `<summary>` or a `<figcaption>` out of the child list hands
+    /// the rest of it here, and rebuilding an index from the filtered array
+    /// renumbered every sibling after the hole (PART 12 §16,
+    /// markup-carve/carve#1554).
+    fn blocks_at(
+        &mut self,
+        handles: &[Handle],
+        paths: Option<&[String]>,
+        parent: &str,
+        depth: usize,
+    ) -> Result<Vec<BlockNode>, HtmlImportError> {
         let mut out = Vec::new();
         let mut inline = Vec::new();
+        // THE PARAGRAPH THIS SYNTHESIZES IS NOT A STEP, so it is not an index
+        // basis either. A bare inline run is wrapped here, the wrapper prints no
+        // path step - and numbering the run inside the wrapper anyway reported
+        // `<p>z</p><kbd onclick="x()">K</kbd>` at `/kbd[1]`, where the `<kbd>` is
+        // the SECOND body child. The buffer therefore carries the path each node
+        // already has among its siblings, which is the level the step is printed
+        // at (PART 12 §16, markup-carve/carve#1554).
+        let mut inline_paths: Vec<String> = Vec::new();
         for (i, handle) in handles.iter().enumerate() {
             let tag = Self::tag(handle);
             let is_block = tag.as_deref().map(Self::is_block_tag).unwrap_or(false);
+            let path = match paths {
+                Some(given) => given[i].clone(),
+                None => Self::child_path(parent, handle, i),
+            };
             if is_block {
                 if !inline.is_empty() {
-                    let children = self.inlines(&inline, parent, depth + 1)?;
+                    let children =
+                        self.inlines_at(&inline, Some(&inline_paths), parent, depth + 1)?;
                     if visible(&children) {
                         out.push(BlockNode::Paragraph(Paragraph {
                             attrs: None,
@@ -1021,15 +1064,16 @@ impl<'a> Importer<'a> {
                         }));
                     }
                     inline.clear();
+                    inline_paths.clear();
                 }
-                let path = format!("{parent}/{}[{}]", tag.unwrap(), i + 1);
                 out.extend(self.block(handle, &path, depth + 1)?);
             } else {
                 inline.push(handle.clone());
+                inline_paths.push(path);
             }
         }
         if !inline.is_empty() {
-            let children = self.inlines(&inline, parent, depth + 1)?;
+            let children = self.inlines_at(&inline, Some(&inline_paths), parent, depth + 1)?;
             if visible(&children) {
                 out.push(BlockNode::Paragraph(Paragraph {
                     attrs: None,
@@ -1423,18 +1467,26 @@ impl<'a> Importer<'a> {
             }
             None => None,
         };
-        let body: Vec<Handle> = children
-            .iter()
-            .enumerate()
-            .filter(|(i, _)| Some(*i) != summary)
-            .map(|(_, c)| c.clone())
-            .collect();
+        // The summary comes OUT of the list, and nothing else moves: rebuilding
+        // an index from the filtered vector pulled every sibling after it one
+        // step forward, so `<details><summary>s</summary><p onclick>` reported
+        // `/details[1]/p[1]` for the second child (PART 12 §16,
+        // markup-carve/carve#1554).
+        let mut body: Vec<Handle> = Vec::new();
+        let mut body_paths: Vec<String> = Vec::new();
+        for (i, child) in children.iter().enumerate() {
+            if Some(i) == summary {
+                continue;
+            }
+            body_paths.push(Self::child_path(path, child, i));
+            body.push(child.clone());
+        }
         Ok(Admonition {
             attrs,
             kind: "details".into(),
             title,
             label: None,
-            children: self.blocks(&body, path, depth + 1)?,
+            children: self.blocks_at(&body, Some(&body_paths), path, depth + 1)?,
             pos: None,
         })
     }
@@ -1551,14 +1603,24 @@ impl<'a> Importer<'a> {
         // wrapper is not a node in the result, but it is a level of nesting and
         // of recursion, and a limit a wrapper chain can step around is not a
         // limit.
-        let mut entries: Vec<(String, Handle, usize)> = Vec::new();
+        // EACH ENTRY CARRIES ITS OWN PATH, not its position in this vector. The
+        // walk collects only `<dt>` and `<dd>`, so a numbering rebuilt from the
+        // collection counted among the entries rather than among the `<dl>`'s
+        // children: a pretty-printed list reported its second description at
+        // `/dl[1]/dd[2]` where the whitespace text nodes make it the fourth
+        // child, and an entry reached through a `<div>` group wrapper lost the
+        // wrapper's step entirely (PART 12 §16, markup-carve/carve#1554).
+        let mut entries: Vec<(String, Handle, usize, String)> = Vec::new();
         for (i, child) in h.children.borrow().iter().enumerate() {
             let Some(tag) = Self::tag(child) else {
                 continue;
             };
             self.enter(depth + 1)?;
             match tag.as_str() {
-                "dt" | "dd" => entries.push((tag, child.clone(), depth + 1)),
+                "dt" | "dd" => {
+                    let p = Self::child_path(path, child, i);
+                    entries.push((tag, child.clone(), depth + 1, p));
+                }
                 "div" => {
                     let p = format!("{path}/div[{}]", i + 1);
                     // The wrapper groups rows for styling and carries nothing
@@ -1580,7 +1642,8 @@ impl<'a> Importer<'a> {
                         };
                         self.enter(depth + 2)?;
                         if inner == "dt" || inner == "dd" {
-                            entries.push((inner, wrapped.clone(), depth + 2));
+                            let inner_path = Self::child_path(&p, wrapped, j);
+                            entries.push((inner, wrapped.clone(), depth + 2, inner_path));
                         } else {
                             // One level unwraps, which is the only level HTML5
                             // allows, so a `div` inside the wrapper is not a
@@ -1599,8 +1662,8 @@ impl<'a> Importer<'a> {
         let mut items: Vec<DefinitionItem> = Vec::new();
         let mut terms: Vec<DefinitionTerm> = Vec::new();
         let mut definitions: Vec<DefinitionDef> = Vec::new();
-        for (i, (tag, node, node_depth)) in entries.iter().enumerate() {
-            let p = format!("{path}/{tag}[{}]", i + 1);
+        for (tag, node, node_depth, entry_path) in entries.iter() {
+            let p = entry_path.clone();
             if tag == "dt" {
                 if !definitions.is_empty() {
                     items.push(DefinitionItem {
@@ -1783,16 +1846,21 @@ impl<'a> Importer<'a> {
             let p = format!("{path}/figcaption[{}]", i + 1);
             caption = Some(self.caption_inlines(&nodes[i], &p, depth + 1)?);
         }
-        let body = nodes
-            .iter()
-            .enumerate()
-            .filter(|(i, _)| Some(*i) != caption_at)
-            .map(|(_, c)| c.clone())
-            .collect::<Vec<_>>();
+        let mut body: Vec<Handle> = Vec::new();
+        let mut body_paths: Vec<String> = Vec::new();
+        for (i, child) in nodes.iter().enumerate() {
+            if Some(i) == caption_at {
+                continue;
+            }
+            // Lifting the caption out is not a renumbering of everything after
+            // it (markup-carve/carve#1554).
+            body_paths.push(Self::child_path(path, child, i));
+            body.push(child.clone());
+        }
         // The children list is read out before the walk, so nothing below runs
         // while this node's `RefCell` is still borrowed.
         drop(nodes);
-        let children = self.blocks(&body, path, depth + 1)?;
+        let children = self.blocks_at(&body, Some(&body_paths), path, depth + 1)?;
         Ok(vec![BlockNode::FigureGroup(FigureGroup {
             attrs,
             children,
@@ -1827,8 +1895,13 @@ impl<'a> Importer<'a> {
             attrs
         };
         let mut caption = None;
-        let mut host = Vec::new();
-        for child in h.children.borrow().iter() {
+        // EACH HOST CHILD KEEPS ITS OWN POSITION. The caption is lifted out of
+        // the child list here, and every margin the branches below drop leaves
+        // another hole in it, so an index rebuilt from this vector names a
+        // different node than the one the diagnostic is about (PART 12 §16,
+        // markup-carve/carve#1554).
+        let mut host: Vec<(usize, Handle)> = Vec::new();
+        for (index, child) in h.children.borrow().iter().enumerate() {
             if Self::tag(child).as_deref() == Some("figcaption") {
                 // The first NON-BLANK one captions. HTML allows at most one, so
                 // a second is somebody's malformed markup - but overwriting the
@@ -1843,7 +1916,10 @@ impl<'a> Importer<'a> {
                 // keeps a visible string in the role its author gave it instead
                 // of demoting it to content. No text is lost either way.
                 if caption.is_none() {
-                    let p = format!("{path}/figcaption");
+                    // Wherever the author put it - a literal step with no index
+                    // at all said nothing about which `<figcaption>` this was,
+                    // and no other step in a path is spelled that way.
+                    let p = format!("{path}/figcaption[{}]", index + 1);
                     let inlines = self.caption_inlines(child, &p, depth + 1)?;
                     // An EMPTY caption is not a caption. Kept as one it wrote a
                     // bare `^` line, which re-parses as a literal caret in a
@@ -1859,7 +1935,7 @@ impl<'a> Importer<'a> {
                     continue;
                 }
             }
-            host.push(child.clone());
+            host.push((index, child.clone()));
         }
         // Pretty-printed margins between the wrapper and its host. Kept, they
         // lead the rebuilt image paragraph with a space, and the writer's
@@ -1876,7 +1952,7 @@ impl<'a> Importer<'a> {
             _ => false,
         };
         if own_output {
-            host.retain(|c| !is_blank_text(c));
+            host.retain(|(_, c)| !is_blank_text(c));
         } else {
             // A COMMENT is invisible, so a margin does not stop being a margin
             // for sitting on the far side of one. Trimming only text left
@@ -1886,6 +1962,7 @@ impl<'a> Importer<'a> {
             // it had not been (carve#1286).
             let is_margin =
                 |n: &Handle| is_blank_text(n) || matches!(&n.data, NodeData::Comment { .. });
+            let is_margin = |c: &(usize, Handle)| is_margin(&c.1);
             // Found once and drained once. Removing from the front one node at
             // a time shifts the rest on every step, which is quadratic in the
             // number of leading margins - and margins are attacker-controlled
@@ -1905,7 +1982,12 @@ impl<'a> Importer<'a> {
                 self.enter(depth + 1)?;
             }
         }
-        let mut blocks = self.blocks(&host, path, depth + 1)?;
+        let host_paths: Vec<String> = host
+            .iter()
+            .map(|(index, child)| Self::child_path(path, child, *index))
+            .collect();
+        let host: Vec<Handle> = host.into_iter().map(|(_, child)| child).collect();
+        let mut blocks = self.blocks_at(&host, Some(&host_paths), path, depth + 1)?;
         let Some(caption) = caption else {
             return Ok(blocks);
         };
@@ -2661,6 +2743,18 @@ impl<'a> Importer<'a> {
         parent: &str,
         depth: usize,
     ) -> Result<Vec<InlineNode>, HtmlImportError> {
+        self.inlines_at(handles, None, parent, depth)
+    }
+
+    /// The inline walk, with the same index-parallel path override
+    /// [`Self::blocks_at`] takes, and for the same reason.
+    fn inlines_at(
+        &mut self,
+        handles: &[Handle],
+        paths: Option<&[String]>,
+        parent: &str,
+        depth: usize,
+    ) -> Result<Vec<InlineNode>, HtmlImportError> {
         let mut out = Vec::new();
         // A FLATTEN PRESERVES THE BOUNDARY IT DISSOLVES (PART 11 §1b,
         // markup-carve/carve#1325). A slot that takes INLINE content only - a
@@ -2703,7 +2797,10 @@ impl<'a> Importer<'a> {
         let mut boundary_pending = false;
         for (i, h) in handles.iter().enumerate() {
             let tag = Self::tag(h).unwrap_or_else(|| "text()".into());
-            let path = format!("{parent}/{tag}[{}]", i + 1);
+            let path = match paths {
+                Some(given) => given[i].clone(),
+                None => format!("{parent}/{tag}[{}]", i + 1),
+            };
             // `tag` is already the element's name, or the synthetic `text()` for a
             // node that has none - and that is not a block tag, so this needs no
             // second call to build the same String again.

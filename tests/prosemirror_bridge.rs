@@ -667,8 +667,15 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // cause `390-...-5` carries - and `soft_break`, whitespace in the
     // ProseMirror model, the cause `364-...-2` carries. Nothing DROPS and no
     // new loss cause appears; the counts move because the corpus grew.
-    const STRICT: usize = 1060;
-    const LOSSY: usize = 298;
+    // The bump to carve 7cb4769 (markup-carve/carve#1554) adds FOUR documents:
+    // 400 from the container's opening markup (carve#1247) and 401's three from
+    // the marker at an item's content column (carve#1517). Three round trip
+    // STRICTLY. `401-...-3` reports, and for a cause ALREADY DECLARED above -
+    // `soft_break`, whitespace in the ProseMirror model, the same cause
+    // `364-...-2` carries. Nothing DROPS and no new loss cause appears; the
+    // counts move because the corpus grew.
+    const STRICT: usize = 1063;
+    const LOSSY: usize = 299;
     assert!(
         covered >= STRICT,
         "strict round trips fell from {STRICT} to {covered}"
