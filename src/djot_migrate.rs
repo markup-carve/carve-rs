@@ -32,6 +32,10 @@ pub fn djot_to_carve(djot: &str) -> String {
     // `-` are one byte each, so every offset the mask and the rules below
     // compute stays valid. Doing it afterwards would mean re-masking.
     let source = normalize_plus_bullets(&source);
+    // Layout, not a delimiter, and it runs before the escape pass because it
+    // works on whole lines: a blank-line run Djot reads as nothing is a list
+    // boundary in Carve.
+    let source = collapse_false_list_boundaries(&source);
     // Escaping inserts backslashes, so the mask the delimiter rules scan is
     // taken AFTER it rather than before.
     let source = escape_plain_carve_syntax(&source, HandledDelimiters::DJOT);
@@ -491,6 +495,119 @@ fn find_backtick_close(bytes: &[u8], from: usize, run: usize) -> Option<usize> {
     None
 }
 
+/// Collapse a blank-line run that Carve alone would read as a list boundary.
+///
+/// Djot reads ANY run of blank lines between two compatible sibling markers as
+/// one list. Carve reads a run of THREE OR MORE as a hard boundary (PART 9 §17
+/// N1a) and opens a second list after it. So passing the author's run through
+/// splits a list the source never split, and it does it silently: the halves
+/// render as `</ul><ul>`, which shows nothing at all for a bullet list, and on
+/// an ordered list restarts the numbering.
+///
+/// A run of three or more blank lines before a list-marker line therefore
+/// collapses to ONE blank line, which is how Carve spells what the Djot source
+/// said - one loose list. Other runs are left alone: between two paragraphs the
+/// count means nothing in either language, and rewriting it would edit layout
+/// the author chose for no gain.
+///
+/// The run must also FOLLOW a list, so the rewrite fires only where the two
+/// languages disagree. Blank lines inside a fenced block are that block's
+/// content and are skipped.
+fn collapse_false_list_boundaries(source: &str) -> String {
+    let lines: Vec<&str> = source.split('\n').collect();
+    let fenced = fenced_lines(&lines);
+
+    let mut out: Vec<&str> = Vec::with_capacity(lines.len());
+    let mut i = 0;
+    while i < lines.len() {
+        let run_start = i;
+        while i < lines.len() && !fenced[i] && lines[i].trim().is_empty() {
+            i += 1;
+        }
+        let run = i - run_start;
+        let above = out.iter().rev().find(|line| !line.trim().is_empty());
+        if run >= 3
+            && i < lines.len()
+            && opens_a_list_item(lines[i])
+            && above.is_some_and(|line| continues_a_list(line))
+        {
+            out.push("");
+            continue;
+        }
+        if run > 0 {
+            out.extend_from_slice(&lines[run_start..i]);
+            continue;
+        }
+        out.push(lines[i]);
+        i += 1;
+    }
+
+    out.join("\n")
+}
+
+/// Which lines sit inside a fenced block, whose blank lines are content.
+fn fenced_lines(lines: &[&str]) -> Vec<bool> {
+    let mut inside: Vec<bool> = Vec::with_capacity(lines.len());
+    let mut open: Option<(char, usize)> = None;
+    for line in lines {
+        let trimmed = line.trim_start();
+        let first = trimmed.chars().next();
+        let run = match first {
+            Some(c @ ('`' | '~')) => trimmed.chars().take_while(|x| *x == c).count(),
+            _ => 0,
+        };
+        match open {
+            Some((fence_char, open_run)) => {
+                inside.push(true);
+                if run >= open_run && first == Some(fence_char) {
+                    open = None;
+                }
+            }
+            None => {
+                if run >= 3 {
+                    open = Some((first.expect("a run implies a character"), run));
+                    inside.push(true);
+                } else {
+                    inside.push(false);
+                }
+            }
+        }
+    }
+
+    inside
+}
+
+/// Whether a line is a list-item marker line: a bullet or an ordered marker
+/// followed by content. A marker with nothing after it is not an item.
+fn opens_a_list_item(line: &str) -> bool {
+    let trimmed = line.trim_start();
+    let mut chars = trimmed.chars();
+    match chars.next() {
+        Some('-' | '*' | '+') => {
+            matches!(chars.next(), Some(' ' | '\t')) && !chars.as_str().trim().is_empty()
+        }
+        Some(c) if c.is_ascii_alphanumeric() => {
+            let head: String = trimmed
+                .chars()
+                .take_while(|x| x.is_ascii_alphanumeric())
+                .collect();
+            let rest = &trimmed[head.len()..];
+            let mut rest = rest.chars();
+            matches!(rest.next(), Some('.' | ')'))
+                && matches!(rest.next(), Some(' ' | '\t'))
+                && !rest.as_str().trim().is_empty()
+        }
+        _ => false,
+    }
+}
+
+/// Whether a list is open above the run: the nearest non-blank line is either a
+/// marker line or an item's indented content. Djot has no indented code blocks,
+/// so an indented line under a list is that list's content and nothing else.
+fn continues_a_list(line: &str) -> bool {
+    opens_a_list_item(line) || line.starts_with(' ') || line.starts_with('\t')
+}
+
 /// Rewrite a Djot `+` bullet marker to `-`.
 ///
 /// Djot allows `-`, `*` and `+` as bullets. Carve has no `+` bullet: `+` is the
@@ -878,6 +995,74 @@ mod tests {
     #[test]
     fn highlight_is_already_the_same_form() {
         assert_eq!(djot_to_carve("{=marked=}"), "{=marked=}");
+    }
+
+    /// Djot reads any blank run between two markers as one list; Carve reads
+    /// three or more as a hard boundary. Passing the run through therefore
+    /// split a list the source never split.
+    #[test]
+    fn a_blank_run_before_a_sibling_marker_does_not_split_the_list() {
+        assert_eq!(
+            djot_to_carve("- apples\n\n\n\n\n- oranges\n"),
+            "- apples\n\n- oranges\n"
+        );
+    }
+
+    /// The boundary is not a top-level rule, so neither is the collapse.
+    #[test]
+    fn the_run_collapses_inside_an_item_too() {
+        assert_eq!(
+            djot_to_carve("- outer\n  - inner\n\n\n\n\n  - inner2\n"),
+            "- outer\n  - inner\n\n  - inner2\n"
+        );
+    }
+
+    /// Two blank lines are the loose separator in both languages, so there is
+    /// nothing to correct.
+    #[test]
+    fn a_shorter_run_is_left_alone() {
+        assert_eq!(
+            djot_to_carve("- apples\n\n\n- oranges\n"),
+            "- apples\n\n\n- oranges\n"
+        );
+    }
+
+    /// Djot's own way of writing two lists is a different marker, and it means
+    /// the same in Carve. Nothing about it is a false boundary.
+    #[test]
+    fn a_marker_change_still_separates_two_lists() {
+        assert_eq!(
+            djot_to_carve("- apples\n\n* oranges\n"),
+            "- apples\n\n* oranges\n"
+        );
+    }
+
+    /// The rewrite fires only where the two languages disagree, which needs a
+    /// list open above the run. After a paragraph the run says nothing in
+    /// either language and the author's layout is left as written.
+    #[test]
+    fn a_run_that_follows_no_list_keeps_its_lines() {
+        assert_eq!(
+            djot_to_carve("paragraph\n\n\n\n\n- apples\n"),
+            "paragraph\n\n\n\n\n- apples\n"
+        );
+    }
+
+    /// A run followed by an item's own indented content continues that item at
+    /// any length -- N1a closes nothing -- so both languages already agree.
+    #[test]
+    fn a_run_before_an_items_content_keeps_its_lines() {
+        assert_eq!(
+            djot_to_carve("- apples\n\n\n\n\n  still apples\n"),
+            "- apples\n\n\n\n\n  still apples\n"
+        );
+    }
+
+    /// Blank lines inside a fenced block are that block's content.
+    #[test]
+    fn a_run_inside_a_fence_is_content() {
+        let source = "```\ncode\n\n\n\n- not a marker\n```\n";
+        assert_eq!(djot_to_carve(source), source);
     }
 
     /// An intraword `_x_` CONVERTS, to the braced form. Djot emphasizes it, and
