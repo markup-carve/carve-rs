@@ -4178,6 +4178,33 @@ fn narrow_to_last_placed_child(blocks: &mut [BlockNode], lines: &[&str]) {
                     narrow_container_end(pos, last, lines, false);
                 }
             }
+            // A DEFINITION LIST ENDS AT ITS LAST PLACED CHILD TOO
+            // (markup-carve/carve#1530). It was the one container that answered
+            // otherwise: a floating attribute is scoped to the container that
+            // holds it, so the attribute line is one the list consumed - and
+            // consuming it was read as owning it, which ran the extent past the
+            // last description. Scope decides which blocks an attribute may
+            // reach; extent decides which source a node claims, and §4 excludes
+            // an unattached attribute block by name.
+            //
+            // ITS CHILDREN ARE NOT ITS `items`. An item is a grouping this
+            // engine keeps in memory and does not publish; the children §4 means
+            // are the `definition_term` and `definition_description` nodes on the
+            // wire, in that order within an item. So the last placed child is the
+            // last placed description, or the last placed term where an item has
+            // no description at all.
+            BlockNode::DefinitionList(n) => {
+                let last = n.items.iter().rev().find_map(|item| {
+                    item.definitions
+                        .iter()
+                        .rev()
+                        .find_map(|def| def.pos)
+                        .or_else(|| item.terms.iter().rev().find_map(|term| term.pos))
+                });
+                if let Some(pos) = n.pos.as_mut() {
+                    narrow_container_end(pos, last, lines, false);
+                }
+            }
             _ => {}
         }
     }
