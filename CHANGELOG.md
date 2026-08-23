@@ -304,6 +304,14 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A table `<caption>` is numbered among the table's child nodes**
+  (markup-carve/carve#1560, PART 12 §16). The step was a literal `caption[1]`
+  that never consulted a position, which is the rank among the captions - a
+  basis the clause's MUST NOT forbids for every kind outside its three
+  exemptions. It agreed with the child index only for a table written on one
+  line, so `<table>` on its own line reported `caption[1]` for a caption that is
+  the second child. carve-php already printed the child index.
+
 - **The `::: footnotes` placement marker is picked per document, not fixed**
   (#1245). The HTML renderer located the placement block by the fixed in-band
   string NUL + `carve:footnotes-placement` + NUL. No source and no AST-JSON

@@ -2661,7 +2661,7 @@ impl<'a> Importer<'a> {
         // on it was stripped with nothing said - the failure mode the report
         // exists to prevent, and the one both other engines already reported.
         // `caption_inlines` is where the answer already lived.
-        let caption_node: Option<Handle> = captions.first().map(|(_, c)| c.clone());
+        let caption_node: Option<(usize, Handle)> = captions.first().map(|(i, c)| (*i, c.clone()));
         let mut trs = Vec::new();
         let mut section_tags: Vec<String> = Vec::new();
         let mut section_nodes: Vec<(Handle, String)> = Vec::new();
@@ -2880,10 +2880,27 @@ impl<'a> Importer<'a> {
         // `depth` rather than `depth + 1`: the caption's INLINES stay at the
         // depth the cells are read at, and the element itself takes the level
         // and the node charge it always should have had.
+        // THE CAPTION IS NUMBERED WHERE THE AUTHOR PUT IT (PART 12 §16,
+        // markup-carve/carve#1560). A step counts among ALL of the parent's
+        // child nodes, and the clause's three exemptions - an item among the
+        // items, a row among the rows, a cell among the cells of its row - are
+        // the whole of it, because the importer reads those parents through a
+        // shape of its own. A table has at most one caption, so there is
+        // nothing to renumber and no exemption to claim.
+        //
+        // The literal `caption[1]` this replaces never consulted a position at
+        // all, and what it printed was the caption's rank among the captions -
+        // the one basis the clause forbids, and the reading a reader also gets
+        // from resolving the path as XPath. It agreed with the child index only
+        // for a table written with no whitespace: `<table>` on its own line
+        // puts a text node first, so the caption is the SECOND child and
+        // `caption[1]` named a node the reader does not have. The
+        // second-caption row above already counted this way, so one element
+        // spoke under two bases.
         let caption = match caption_node {
-            Some(node) => Some(self.caption_inlines(
+            Some((index, node)) => Some(self.caption_inlines(
                 &node,
-                &format!("{path}/caption[1]"),
+                &format!("{path}/caption[{}]", index + 1),
                 depth,
                 "caption",
             )?),
