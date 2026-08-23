@@ -3365,7 +3365,7 @@ fn parse_blocks_with_options_at_level(
     at_document_level: bool,
 ) -> Vec<BlockNode> {
     drained(options, |pending| {
-        parse_blocks_with_options_at_level_into(source, options, at_document_level, pending)
+        parse_blocks_with_options_at_level_into(source, options, at_document_level, false, pending)
     })
 }
 
@@ -3373,6 +3373,7 @@ fn parse_blocks_with_options_at_level_into(
     source: &str,
     options: &Options<'_>,
     at_document_level: bool,
+    in_item_body: bool,
     pending: &mut Vec<PendingBody>,
 ) -> Vec<BlockNode> {
     let mut lines: Vec<&str> = source.lines().collect();
@@ -3400,6 +3401,7 @@ fn parse_blocks_with_options_at_level_into(
         options.positions.then_some(col_map.as_slice()),
     );
     cursor.at_document_level = at_document_level;
+    cursor.in_item_body = in_item_body;
     parse_blocks(&mut cursor, options, pending)
 }
 
@@ -3413,6 +3415,28 @@ struct LineCursor<'a> {
     col_map: Option<&'a [Option<isize>]>,
     pos: usize,
     at_document_level: bool,
+    /// True for the cursor reading a LIST ITEM's own body, and that body only.
+    ///
+    /// PART 9 §24 C3: "AT content_column: dedented to the body's column 0, a
+    /// block opener nests and a list marker opens a sublist", holding "whether
+    /// or not a blank line precedes the child". §10 I2 defers to it by name -
+    /// "TIGHT NESTED LISTS UNAFFECTED ... that is §24 C3 (content column), not
+    /// this relation" - so an item body is the one context where a marker
+    /// interrupts an open paragraph, and the clause calls that an intentional
+    /// divergence from djot.
+    ///
+    /// It answered for the FIRST marker in an item only. The collector hands the
+    /// sub-list to the list parser and the rest of the body back as a further
+    /// chunk, so the first marker met no open paragraph while every later one
+    /// met §10 I2 with one open and folded - and two documents differing only by
+    /// a sub-list that had already closed disagreed about their shared last line
+    /// (markup-carve/carve#1517).
+    ///
+    /// PASSED, NOT INHERITED. Only the two item-body entry points set it, so a
+    /// quote, a div or a definition body inside the item reads with it clear and
+    /// asks the ordinary §10 I2 question - `- > q` / `  - s` is still one quoted
+    /// paragraph (carve-js#1200).
+    in_item_body: bool,
     comment_closer_last_index: Option<HashMap<usize, usize>>,
     code_closer_last_index: Option<HashMap<u8, Vec<usize>>>,
 }
@@ -3429,6 +3453,7 @@ impl<'a> LineCursor<'a> {
             col_map,
             pos: 0,
             at_document_level: false,
+            in_item_body: false,
             comment_closer_last_index: None,
             code_closer_last_index: None,
         }
@@ -4470,7 +4495,7 @@ fn parse_mapped_source_at_level(
     at_document_level: bool,
 ) -> Vec<BlockNode> {
     drained(options, |pending| {
-        parse_mapped_source_at_level_into(source, options, at_document_level, pending)
+        parse_mapped_source_at_level_into(source, options, at_document_level, false, pending)
     })
 }
 
@@ -4478,12 +4503,19 @@ fn parse_mapped_source_at_level_into(
     source: &MappedSource,
     options: &Options<'_>,
     at_document_level: bool,
+    in_item_body: bool,
     pending: &mut Vec<PendingBody>,
 ) -> Vec<BlockNode> {
     if !options.source_lines && !options.positions {
-        return parse_unpositioned_mapped_source(source, options, at_document_level, pending);
+        return parse_unpositioned_mapped_source(
+            source,
+            options,
+            at_document_level,
+            in_item_body,
+            pending,
+        );
     }
-    parse_positioned_mapped_source(source, options, at_document_level, pending)
+    parse_positioned_mapped_source(source, options, at_document_level, in_item_body, pending)
 }
 
 #[inline(never)]
@@ -4491,6 +4523,7 @@ fn parse_unpositioned_mapped_source(
     source: &MappedSource,
     options: &Options<'_>,
     at_document_level: bool,
+    in_item_body: bool,
     pending: &mut Vec<PendingBody>,
 ) -> Vec<BlockNode> {
     // The ladder builds its own containers inside-out and hands back finished
@@ -4499,7 +4532,13 @@ fn parse_unpositioned_mapped_source(
     if let Some(blocks) = parse_eof_closed_colon_ladder(source, options) {
         return blocks;
     }
-    parse_blocks_with_options_at_level_into(&source.source, options, at_document_level, pending)
+    parse_blocks_with_options_at_level_into(
+        &source.source,
+        options,
+        at_document_level,
+        in_item_body,
+        pending,
+    )
 }
 
 #[inline(never)]
@@ -4507,6 +4546,7 @@ fn parse_positioned_mapped_source(
     source: &MappedSource,
     options: &Options<'_>,
     at_document_level: bool,
+    in_item_body: bool,
     pending: &mut Vec<PendingBody>,
 ) -> Vec<BlockNode> {
     let lines: Vec<&str> = source.source.lines().collect();
@@ -4519,6 +4559,7 @@ fn parse_positioned_mapped_source(
         options.positions.then_some(source.col_map.as_slice()),
     ));
     cursor.at_document_level = at_document_level;
+    cursor.in_item_body = in_item_body;
     parse_blocks(&mut cursor, options, pending)
 }
 
@@ -4832,7 +4873,7 @@ fn parse_positioned_capped_colon_body(
 ) -> Vec<BlockNode> {
     let source = inner.into_source();
     if NESTING_DEPTH.with(|d| d.get() < MAX_NESTING_DEPTH) {
-        return parse_mapped_source_at_level_into(&source, options, false, pending);
+        return parse_mapped_source_at_level_into(&source, options, false, false, pending);
     }
 
     let lines: Vec<&str> = source.source.lines().collect();
@@ -5306,7 +5347,7 @@ fn parse_item_body_into(
         Chunk::Source(source) => {
             let _depth = DepthScope::set(depth);
             let _group = FigureGroupScope::set(in_group);
-            parse_mapped_source_at_level_into(&source, options, false, nested)
+            parse_mapped_source_at_level_into(&source, options, false, true, nested)
         }
         Chunk::Parsed { blocks, carried } => {
             nested.extend(carried);
@@ -5406,7 +5447,7 @@ fn parse_item_chunk(
     options: &Options<'_>,
     carried: &mut Vec<PendingBody>,
 ) -> Vec<BlockNode> {
-    parse_mapped_source_at_level_into(source, options, false, carried)
+    parse_mapped_source_at_level_into(source, options, false, true, carried)
 }
 
 /// Put the blocks [`parse_item_chunk`] handed back into the item.
@@ -11452,6 +11493,20 @@ fn interrupts_paragraph(cur: &mut LineCursor<'_>, line: &str) -> bool {
             return true;
         }
     }
+    // A MARKER AT A LIST ITEM'S CONTENT COLUMN OPENS A SUBLIST, first in the
+    // item or not (§24 C3, markup-carve/carve#1517). These lines are the item's
+    // body, so their column 0 IS the content column: "AT content_column ... a
+    // list marker opens a sublist", "whether or not a blank line precedes the
+    // child". §10 I2 defers to it by name rather than competing with it.
+    //
+    // COLUMN 0 EXACTLY, and the leading-whitespace guard is what says so: §24
+    // C3's other band is explicit that BELOW the content column "a list marker
+    // folds as lazy item text", and the collector forwards such a line with its
+    // residual indent intact. `is_list_marker` trims, so without the guard the
+    // two bands would answer the same.
+    if cur.in_item_body && !line.starts_with([' ', '\t']) && is_list_marker(line) {
+        return true;
+    }
     // Symmetric §10: a list marker (bullet OR task OR ordered) does NOT
     // interrupt a paragraph -- a list needs a blank line before it. Only the
     // other visible blocks interrupt.
@@ -11526,9 +11581,25 @@ fn interrupts_lazy_continuation(cur: &mut LineCursor<'_>, line: &str) -> bool {
     // plain prose the item absorbs. It becomes its own top-level block, matching
     // carve-js / carve-php (carve#326). Top-level caption-to-figure attachment
     // runs in the block parser, not this lazy-continuation path.
-    interrupts_paragraph(cur, line)
-        || is_colon_fence_opener_shape(line)
-        || caption_content(line).is_some()
+    //
+    // THE §24 C3 SUBLIST ARM IS WAIVED HERE, and the quote's own comment at the
+    // call site states why: a marker on a block quote's lazy continuation is
+    // TEXT. carve-js#1200 ruled that the quote's OPEN paragraph claims the line
+    // before the item's content column does - `- > q` / `  - s` is one quoted
+    // paragraph, and this engine and the executable spec are the two that always
+    // read it that way. §24 C3 decides a child of the ITEM, not a line the quote
+    // is still holding.
+    //
+    // It does not hand the quote every marker: the caller tests `para_open`
+    // first, so a quote that ended on a heading, a table or a blank line breaks
+    // there instead and the marker reaches the item body, where §24 C3 opens the
+    // sublist. `collect_trailing_lazy_through`, the other caller, tests
+    // `is_list_marker` on its own line before it ever gets here.
+    let saved = cur.in_item_body;
+    cur.in_item_body = false;
+    let interrupts = interrupts_paragraph(cur, line);
+    cur.in_item_body = saved;
+    interrupts || is_colon_fence_opener_shape(line) || caption_content(line).is_some()
 }
 
 fn interrupts_paragraph_as_container(cur: &mut LineCursor<'_>, line: &str) -> bool {
