@@ -299,18 +299,58 @@ fn a_blank_inside_an_indented_colon_fence_does_not_loosen_the_item() {
     );
 }
 
-/// AN UNTERMINATED OPENER MUST NOT LATCH THE LOOSENESS PASS. `:::` with no
-/// closer opens nothing, so the blank below it is still an interior separator
-/// and the item is LOOSE. The extent helpers answer end-of-input for an
-/// unterminated opener, which is right for an extent scan and would make this
-/// pass skip the whole remainder - suppressing every later loosening, including
-/// a blank inside a genuinely CLOSED fence further down. Found by a mutation
-/// that removed the closer proof and stayed green.
+/// AN UNTERMINATED OPENER RUNS TO THE END OF THE ITEM, and its interior blank
+/// is its own content - so the item is TIGHT, exactly as it is with the closer
+/// written two tests above. This asserted LOOSE until markup-carve/carve#1632
+/// ruled that an explicit closer is a spelling change tightness may not move
+/// across, and pinned this document as corpus
+/// `362-an-unterminated-container-does-not-extend-the-item-past-a-blank-line-5`
+/// (markup-carve/carve-rs#1307).
 #[test]
-fn an_unterminated_colon_fence_does_not_latch_the_looseness_pass() {
+fn an_unterminated_colon_fence_reaches_to_the_end_of_the_item() {
     assert_eq!(
         flat("- x\n  :::\n  a\n\n  b\n"),
-        "<ul> <li><p>x</p> <div> <p>a</p> <p>b</p> </div> </li> </ul>"
+        "<ul> <li>x <div> <p>a</p> <p>b</p> </div> </li> </ul>"
+    );
+    // And the closer is a spelling: the same document with `  :::` appended
+    // reads the same way.
+    assert_eq!(
+        flat("- x\n  :::\n  a\n\n  b\n  :::\n"),
+        flat("- x\n  :::\n  a\n\n  b\n")
+    );
+}
+
+/// THE LATCH GUARD THE TEST ABOVE USED TO CARRY, kept and made to discriminate.
+///
+/// Skipping an opener's span must not suppress a LATER loosening. The worry was
+/// that answering end-of-input for an unterminated opener would swallow the rest
+/// of the item, including a blank after a genuinely CLOSED span further down.
+///
+/// It cannot: once an opener has no closer, everything below it IS its content,
+/// so there is no later item-level blank to miss. What has to keep working is
+/// the CLOSED case, where the span ends and item-level content resumes - and it
+/// is checked for all three fence kinds, because the skip is spelled once per
+/// kind. Each of these is loose, and each would go tight if the skip ran on to
+/// the end of the item instead of stopping at the closer.
+#[test]
+fn a_closed_span_does_not_suppress_the_loosening_after_it() {
+    // EVERY ROW IS EVALUATED. Asserting inside the loop stops the test at the
+    // first failing row, so the rows below it would not be measured at all - and
+    // "the test went red" would only ever prove something about the first one.
+    let mut suppressed = Vec::new();
+    for source in [
+        "- x\n  ::: a\n  b\n  :::\n\n  c\n",
+        "- x\n  %%%\n  b\n  %%%\n\n  c\n",
+        "- x\n  ```\n  b\n  ```\n\n  c\n",
+    ] {
+        if !flat(source).contains("<li><p>x</p>") {
+            suppressed.push(format!("{source:?} -> {}", flat(source)));
+        }
+    }
+    assert!(
+        suppressed.is_empty(),
+        "a closed span suppressed the loosening after it:\n{}",
+        suppressed.join("\n")
     );
 }
 

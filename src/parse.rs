@@ -8919,7 +8919,7 @@ fn parse_list(
                     // loosens the item when a plain paragraph follows the blank
                     // (§17 L1). The outer `pending_blank` only sees a blank BEFORE
                     // this chunk, so this covers the blank-after / blank-both case.
-                    if continuation_source_loosens(&nested.source, false, pending_blank) {
+                    if continuation_source_loosens(&nested.source, false) {
                         tight = false;
                     }
                     // An INVISIBLE continuation is not the item's second block
@@ -9255,7 +9255,7 @@ fn parse_list(
             // normal path runs, so `- {a=b}` / `x` / blank / `Body.` stayed tight
             // where `- x` / blank / `Body.` went loose - on the same blank line
             // (carve-rs#476).
-            if continuation_source_loosens(&stream.source, true, false) {
+            if continuation_source_loosens(&stream.source, true) {
                 tight = false;
             }
             let children = item_body(deferred, items.len(), stream, None, false);
@@ -9304,7 +9304,7 @@ fn parse_list(
             // normal path runs, so `- {a=b}` / `x` / blank / `Body.` stayed tight
             // where `- x` / blank / `Body.` went loose - on the same blank line
             // (carve-rs#476).
-            if continuation_source_loosens(&stream.source, true, false) {
+            if continuation_source_loosens(&stream.source, true) {
                 tight = false;
             }
             let children = item_body(deferred, items.len(), stream, None, false);
@@ -9647,7 +9647,7 @@ fn parse_list(
             // same rule the plain-continuation branch applies -- e.g. a
             // marker-line fence with blank-separated trailing text
             // (`- ```\n  c\n  ```\n\n  tail`).
-            if continuation_source_loosens(&stream.source, true, false) {
+            if continuation_source_loosens(&stream.source, true) {
                 tight = false;
             }
             let children = item_body(deferred, items.len(), stream, None, false);
@@ -10606,11 +10606,7 @@ fn closed_colon_span_end(
     None
 }
 
-fn continuation_source_loosens(
-    source: &str,
-    source_is_the_item_body: bool,
-    blank_line_above: bool,
-) -> bool {
+fn continuation_source_loosens(source: &str, source_is_the_item_body: bool) -> bool {
     let lines: Vec<&str> = source.split('\n').collect();
     // A blank line INSIDE AN OPEN FENCE is that block's own content, not an
     // interior block separator, so it must not loosen the item (carve-php#404
@@ -10755,27 +10751,25 @@ fn continuation_source_loosens(
             }
         }
         if let Some(fence_len) = detect_line_block_open(lines[i]) {
-            if let Some(end) = closed_colon_span_end(&lines, i, fence_len, true) {
-                if !is_the_whole_item_body(i, end) && !blank_line_above {
-                    i = end;
-                    continue;
-                }
+            let end = closed_colon_span_end(&lines, i, fence_len, true).unwrap_or(lines.len());
+            if !is_the_whole_item_body(i, end) {
+                i = end;
+                continue;
             }
         }
         if let Some(fence_len) = detect_hardbreaks_block_open(lines[i]) {
-            if let Some(end) = closed_colon_span_end(&lines, i, fence_len, false) {
-                if !is_the_whole_item_body(i, end) && !blank_line_above {
-                    i = end;
-                    continue;
-                }
+            let end = closed_colon_span_end(&lines, i, fence_len, false).unwrap_or(lines.len());
+            if !is_the_whole_item_body(i, end) {
+                i = end;
+                continue;
             }
         }
         if let Some(open) = detect_container_open(lines[i]) {
-            if let Some(end) = closed_colon_span_end(&lines, i, open.fence_len, false) {
-                if !is_the_whole_item_body(i, end) && !blank_line_above {
-                    i = end;
-                    continue;
-                }
+            let end =
+                closed_colon_span_end(&lines, i, open.fence_len, false).unwrap_or(lines.len());
+            if !is_the_whole_item_body(i, end) {
+                i = end;
+                continue;
             }
         }
         // Start at 1: a leading blank is not an interior separator between blocks.
