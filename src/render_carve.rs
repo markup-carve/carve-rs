@@ -857,7 +857,7 @@ fn render_with_escapes_once(doc: &Document, escape_mode: EscapeMode) -> String {
                     separated_from_previous =
                         previous_list.is_some_and(|previous| lists_would_merge(previous, list));
                     previous_list = Some(list);
-                } else if !text.is_empty() {
+                } else if !writes_nothing(&text) {
                     previous_list = None;
                     separated_from_previous = false;
                 }
@@ -882,14 +882,14 @@ fn render_with_escapes_once(doc: &Document, escape_mode: EscapeMode) -> String {
                 // of the DEFINITION - the state was still raised when the
                 // definition arrived, and this loop applies it where the entry
                 // is pushed rather than inside the list arm.
-                if !text.is_empty() {
+                if !writes_nothing(&text) {
                     previous_list = None;
                     separated_from_previous = false;
                 }
                 text
             }
         };
-        if !text.is_empty() {
+        if !writes_nothing(&text) {
             rendered.push(if separated_from_previous && !rendered.is_empty() {
                 hard_list_boundary(&text)
             } else {
@@ -1255,6 +1255,31 @@ fn needs_a_blank_line_above(
     }
 }
 
+/// Whether a block's rendered text puts NOTHING into the written source.
+///
+/// The empty string is the obvious member. A run of spaces, tabs and newlines
+/// is the one that ambushed both callers: the writer trims every line's trailing
+/// run and then collapses the blank run around it, so such a block reaches the
+/// output as nothing at all - but `is_empty` called it content, and the two
+/// callers below decide against that answer what stands BETWEEN two lists.
+///
+/// The cost was §11 N1a's hard boundary. Two lists with a whitespace-only
+/// paragraph between them are two lists, and both callers concluded the
+/// paragraph separated them, so neither wrote the boundary; the paragraph then
+/// trimmed away and the lists merged on re-parse. An EMPTY paragraph in the same
+/// position was handled correctly all along, which is the tell that this is one
+/// predicate's defect rather than a question about what a blank paragraph means
+/// (markup-carve/carve-rs#1290).
+///
+/// U+00A0 IS CONTENT and is deliberately not swept: `trim_non_nbsp` is the
+/// writer's own trimming and preserves it, a lone U+00A0 line parses back as a
+/// paragraph, so a block holding one really does put something in the source.
+/// Sharing the helper with the trimming is what keeps the two answers equal - a
+/// hand-written character set here would drift from it silently.
+fn writes_nothing(text: &str) -> bool {
+    trim_non_nbsp(text).is_empty()
+}
+
 fn render_blocks(blocks: &[BlockNode], ctx: &mut CarveContext) -> String {
     if ctx.block_depth >= MAX_RENDER_DEPTH {
         crate::render_depth::record("carve");
@@ -1292,11 +1317,11 @@ fn render_blocks(blocks: &[BlockNode], ctx: &mut CarveContext) -> String {
             separated_from_previous =
                 previous_list.is_some_and(|previous| lists_would_merge(previous, list));
             previous_list = Some(list);
-        } else if !text.is_empty() {
+        } else if !writes_nothing(&text) {
             previous_list = None;
             separated_from_previous = false;
         }
-        if !text.is_empty() {
+        if !writes_nothing(&text) {
             rendered.push(if separated_from_previous && !rendered.is_empty() {
                 hard_list_boundary(&text)
             } else {
@@ -1486,7 +1511,7 @@ fn render_item_blocks(blocks: &[BlockNode], tight: bool, ctx: &mut CarveContext)
     for (index, block) in blocks.iter().enumerate() {
         let next = blocks.get(index + 1);
         let rendered = render_block(block, ctx);
-        if rendered.is_empty() {
+        if writes_nothing(&rendered) {
             continue;
         }
         let mut separated = false;
