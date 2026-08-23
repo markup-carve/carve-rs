@@ -3953,14 +3953,47 @@ fn fill_offsets(blocks: &mut [BlockNode], line_starts: &[usize]) {
                         !matches!(node, InlineNode::SoftBreak(_) | InlineNode::HardBreak(_))
                     })
                     .and_then(owned_inline_pos);
-                let last = p.children.iter().rev().find_map(owned_inline_pos);
-                if let (Some(pos), Some(first), Some(last)) = (&mut p.pos, first, last) {
-                    pos.start_line = first.start_line;
-                    pos.start_column = first.start_column;
-                    pos.start_offset = first.start_offset;
-                    pos.end_line = last.end_line;
-                    pos.end_column = last.end_column;
-                    pos.end_offset = last.end_offset;
+                // AND THE LAST CHILD, NOT THE LAST PLACED ONE
+                // (markup-carve/carve#1551). The mirror of the paragraph above,
+                // ruled the same way: a container ends at the markup that
+                // CLOSES it, and an unplaced child says nothing about where the
+                // author closed the construct. Skipping BACK past an unplaced
+                // last child to the last placed one ended a stanza's paragraph
+                // at the line terminator above its own last line - `::: |` then
+                // `%%` then a tab-bearing verse line published a paragraph
+                // ending at 9 where carve-js and carve-php publish 12 - so the
+                // tab-bearing line was outside the paragraph that holds it,
+                // which is the start-side defect of
+                // markup-carve/carve-rs#1247 read backwards.
+                //
+                // `None` here leaves the extent the BLOCK LAYER recorded, which
+                // is line geometry and knows where the stanza's last line ends
+                // even where the text on it cannot be placed. That is the same
+                // mechanism the first-child half relies on: the two ends are
+                // taken from the children only when the children can supply
+                // both, and otherwise the lines the construct was written on
+                // are the honest answer.
+                let last = p.children.last().and_then(owned_inline_pos);
+                // THE TWO ENDS ARE TAKEN SEPARATELY, because they are two
+                // rules. Requiring BOTH before touching either meant an
+                // unplaced last child also gave up the start the first child
+                // supplies, and in a footnote body - where the block layer's
+                // extent and the inline offsets do not agree, a question still
+                // open across the engines - that put the stanza's first `text`
+                // OUTSIDE its own paragraph. Which is the containment defect
+                // this pair of rules exists to prevent, arrived at from the
+                // third side.
+                if let Some(pos) = &mut p.pos {
+                    if let Some(first) = first {
+                        pos.start_line = first.start_line;
+                        pos.start_column = first.start_column;
+                        pos.start_offset = first.start_offset;
+                    }
+                    if let Some(last) = last {
+                        pos.end_line = last.end_line;
+                        pos.end_column = last.end_column;
+                        pos.end_offset = last.end_offset;
+                    }
                 }
             }
             BlockNode::BlockQuote(b) => {
