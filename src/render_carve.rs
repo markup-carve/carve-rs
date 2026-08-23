@@ -2550,6 +2550,7 @@ fn render_inline_body(
             // line? Only there can a `^` be read back as a caption marker.
             (prev_char == '\0' || prev_char == '\n') && ctx.table_cell_depth == 0,
             caption_can_open && ctx.table_cell_depth == 0,
+            ctx.table_cell_depth > 0,
             prev_char,
             next_char,
             NeighbourEscape {
@@ -2659,6 +2660,7 @@ fn render_inline_body(
             ctx.escape_unit,
             false,
             false,
+            ctx.table_cell_depth > 0,
             prev_char,
             next_char,
             NeighbourEscape {
@@ -3852,6 +3854,7 @@ fn escape_text(
     unit: usize,
     opens_block_line: bool,
     caption_can_open: bool,
+    in_table_cell: bool,
     previous_boundary: char,
     next_boundary: char,
     note: NeighbourEscape,
@@ -3982,38 +3985,68 @@ fn escape_text(
         //
         // Same shape as the caret above: ask what the character could open
         // HERE, rather than escaping the class it belongs to.
-        let colon_cannot_open = ch == ':' && !at_line_start;
+        //
+        // A MID-LINE COLON IS NOT INERT, though: `:rocket:` is a symbol
+        // shortcode, an inline construct that opens anywhere, and under a
+        // configured symbol map it renders a GLYPH where the document held
+        // text. `:` was already in §5's candidate set and this guard was
+        // withholding it from the search on every line but the first
+        // (markup-carve/carve#1609). Asking `symbol_opens_at` rather than
+        // widening the guard keeps the writer's question the parser's own.
+        let colon_cannot_open =
+            ch == ':' && !at_line_start && !symbol_opens_at(text, offset, previous);
         at_line_start = ch == '\n';
         let opens_a_verbatim_construct = verbatim_sigil_at.is_some_and(|start| offset >= start);
         let unconditional = matches!(ch, '\\' | '`' | '"' | '\'')
             || caret_opens_a_caption
             || caret_opens_inline
             || opens_a_verbatim_construct;
-        let candidate = matches!(
-            ch,
-            '*' | '_'
-                | '{'
-                | '}'
-                | '['
-                | ']'
-                | '('
-                | ')'
-                | '#'
-                | '+'
-                | '-'
-                | '.'
-                | '!'
-                | '~'
-                | '/'
-                | '<'
-                | '>'
-                | '@'
-                | '%'
-                | '|'
-                | '='
-                | ':'
-                | ';'
-        );
+        // A CELL PAYLOAD IS WHERE A CARET IS MARKUP AGAIN. `span_cell` is
+        // `rowspan_marker | colspan_marker`, one production over two markers,
+        // and only the `<` half was ever reachable here - `<` is in the
+        // candidate set below and `^` was not - so a cell holding a caret was
+        // written bare, re-read as a rowspan marker, and the cell was DELETED
+        // while the cell above it grew a `rowspan="2"` (markup-carve/carve#1609).
+        //
+        // PART 11 §6f is why the cell's own padding does not already cover it:
+        // `rowspan_marker = {space}, '^', {space}` is written WITH the padding
+        // inside it, so the space `pad_cell` puts either side of the content
+        // puts nothing out of the marker's reach.
+        //
+        // OFFERED, NOT FORCED, and that is the whole point of putting it here
+        // rather than in a payload test of its own. Whether a caret in a cell
+        // is a marker depends on what else the cell holds - `| ^ |` is a span
+        // and `| a ^ b |` is text - and §2's search already answers that
+        // question by re-parsing, the same way it answers it for `<`. A
+        // predicate spelled here instead would be a second reading of
+        // `span_cell` that could drift from the parser's.
+        let caret_is_a_span_marker = ch == '^' && in_table_cell;
+        let candidate = caret_is_a_span_marker
+            || matches!(
+                ch,
+                '*' | '_'
+                    | '{'
+                    | '}'
+                    | '['
+                    | ']'
+                    | '('
+                    | ')'
+                    | '#'
+                    | '+'
+                    | '-'
+                    | '.'
+                    | '!'
+                    | '~'
+                    | '/'
+                    | '<'
+                    | '>'
+                    | '@'
+                    | '%'
+                    | '|'
+                    | '='
+                    | ':'
+                    | ';'
+            );
         // In a unit the search has escalated, each candidate site is offered
         // back on its own, so the one occurrence that needed the escape no
         // longer drags the rest of the unit with it (PART 11 §2). A character
@@ -4030,6 +4063,49 @@ fn escape_text(
         previous = ch;
     }
     out
+}
+
+/// Whether the `:` at `offset` opens a symbol shortcode.
+///
+/// MIRRORS [`crate::parse::parse_symbol`] and is deliberately not a second
+/// reading of the same production: the opener's preceding-character test, the
+/// first name character's narrower class (`_` is excluded so `:_x_:` cannot
+/// steal from underline) and the closing colon are the parser's, so a writer
+/// that escapes here and a parser that opens there cannot drift apart.
+///
+/// `previous` is the character before the run, which is what carries the
+/// preceding-character test across a node boundary - the text node this is
+/// called on may begin mid-line.
+fn symbol_opens_at(text: &str, offset: usize, previous: char) -> bool {
+    let bytes = text.as_bytes();
+    if bytes.get(offset) != Some(&b':') {
+        return false;
+    }
+    let prev = if offset == 0 {
+        previous
+    } else {
+        // A multi-byte character before the colon is not ASCII alphanumeric and
+        // is not `_`, so the boundary answer is the same either way.
+        text[..offset].chars().next_back().unwrap_or(previous)
+    };
+    if prev.is_ascii_alphanumeric() || prev == '_' {
+        return false;
+    }
+    let Some(&first) = bytes.get(offset + 1) else {
+        return false;
+    };
+    if !first.is_ascii_alphanumeric() && first != b'+' && first != b'-' {
+        return false;
+    }
+    let mut len = 1;
+    while let Some(&b) = bytes.get(offset + 1 + len) {
+        if b.is_ascii_alphanumeric() || b == b'_' || b == b'+' || b == b'-' {
+            len += 1;
+        } else {
+            break;
+        }
+    }
+    bytes.get(offset + 1 + len) == Some(&b':')
 }
 
 fn escape_plain_line(text: &str) -> String {

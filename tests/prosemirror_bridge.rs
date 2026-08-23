@@ -683,7 +683,13 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // soft break by construction. Measured at both pins: `dropped` is EMPTY on
     // both, no document left the lossy set, and no new loss cause appears. The
     // counts move because the corpus grew.
-    const STRICT: usize = 1069;
+    // The bump to carve 3fdfd6e adds ONE document,
+    // `362-an-unterminated-container-does-not-extend-the-item-past-a-blank-line-4`
+    // (markup-carve/carve#1610). It round trips STRICTLY, so the lossy side does
+    // not move at all: `lossy` measured 301 at both pins, `dropped` is EMPTY,
+    // no document left the lossy set and no new loss cause appears. The count
+    // moves because the corpus grew.
+    const STRICT: usize = 1070;
     const LOSSY: usize = 301;
     assert!(
         covered >= STRICT,
