@@ -304,6 +304,20 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **The canonical writer's own output parses back to the same tree** (#1277,
+  PART 11 §1). §1a makes `parse(fmt(x)) == parse(x)` the requirement and calls
+  the HTML form "strictly weaker", and this engine asserted only the weaker one:
+  8 of the 1370 corpus documents parsed differently before and after `fmt` while
+  rendering byte-identical HTML, so every gate was green on all eight. Two
+  readings moved. `- +`, the writer's own spelling for an item emptied by a
+  collected definition, built an item holding an EMPTY PARAGRAPH where carve-js
+  and carve-php build no child at all - the standalone `+` line already filtered
+  it and the marker-line spelling did not (seven documents). And an item whose
+  whole body is a colon container read LOOSE unterminated and TIGHT once the
+  writer supplied the closer; per markup-carve/carve#1602 an explicit closer is
+  a spelling change, so both now read loose, matching carve-php. No corpus
+  document's own HTML, AST or formatted output changes.
+
 - **`carve migrate` exits 2 for a usage error instead of 1** (#1276). Exit 1 on
   this subcommand already means something else: `--check-loss` uses it for a run
   that converted the document and found content dropped. With usage errors on 1

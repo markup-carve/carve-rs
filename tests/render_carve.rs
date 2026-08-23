@@ -46,29 +46,159 @@ fn corpus_formatter_semantic_idempotent_and_reparseable() {
         .expect("the sweep finishes");
 }
 
+/// The canonical published tree of a document, as a comparable string.
+///
+/// PART 11 §1's comparison, and the three things it forgives are the three that
+/// are not facts about the document:
+///
+///  - `pos` and `srcByteLength`, which describe WHERE the source said it.
+///  - escaping. §1 and §2 contradict each other otherwise: §2 writes an escape
+///    if and only if omitting it would change the re-parse, so a document whose
+///    canonical form needs one necessarily gains an `escaped_text` node its
+///    source did not have. An escape that changes the DOCUMENT still fails,
+///    because it changes the text value the run carries.
+///  - run segmentation. Where an escape lands splits a text run in two, and how
+///    a run is split is not a fact about the document either.
+///
+/// Nothing else is forgiven: a node appearing or vanishing, a construct
+/// becoming a different construct, an attribute or a text value moving all
+/// fail. That is the point - §2a's family is exactly the family that renders
+/// alike and parses differently.
+///
+/// `attrs` IS NOT DESCENDED INTO. It holds named slots rather than nodes, and
+/// an author controls its keys: a `keyValues` entry can be spelled `type`,
+/// `pos` or `srcByteLength`, so walking it would rename or delete an ATTRIBUTE.
+/// Attributes are content and compare verbatim. carve-php's
+/// `CarveFmtCorpusTest::canonical()` states the same rule for the same reason.
+fn canonical_tree(source: &str) -> String {
+    fn canonical(value: &serde_json::Value) -> serde_json::Value {
+        match value {
+            serde_json::Value::Array(items) => {
+                let mut out: Vec<serde_json::Value> = Vec::with_capacity(items.len());
+                for item in items {
+                    let item = canonical(item);
+                    if let Some(merged) = out.last_mut().and_then(|last| merge_text(last, &item)) {
+                        *out.last_mut().expect("checked above") = merged;
+                        continue;
+                    }
+                    out.push(item);
+                }
+                serde_json::Value::Array(out)
+            }
+            serde_json::Value::Object(fields) => {
+                // serde_json's Map is a BTreeMap here (the crate is taken
+                // without `preserve_order`), so key order is already the sorted
+                // order §1's comparison asks for.
+                let mut out = serde_json::Map::new();
+                for (key, child) in fields {
+                    if key == "pos" || key == "srcByteLength" {
+                        continue;
+                    }
+                    if key == "type" && child.as_str() == Some("escaped_text") {
+                        out.insert(key.clone(), serde_json::Value::String("text".to_string()));
+                        continue;
+                    }
+                    if key == "attrs" {
+                        out.insert(key.clone(), child.clone());
+                        continue;
+                    }
+                    out.insert(key.clone(), canonical(child));
+                }
+                serde_json::Value::Object(out)
+            }
+            other => other.clone(),
+        }
+    }
+
+    /// Two adjacent bare text runs joined into one, or `None` when they are not
+    /// two adjacent bare text runs. A run carrying anything beyond `type` and
+    /// `value` is left alone: whatever else it holds would be silently dropped
+    /// by the join.
+    fn merge_text(last: &serde_json::Value, next: &serde_json::Value) -> Option<serde_json::Value> {
+        let (last, next) = (last.as_object()?, next.as_object()?);
+        for run in [&last, &next] {
+            if run.len() != 2 || !run.contains_key("type") || !run.contains_key("value") {
+                return None;
+            }
+            if run.get("type")?.as_str()? != "text" {
+                return None;
+            }
+        }
+        let joined = format!(
+            "{}{}",
+            last.get("value")?.as_str()?,
+            next.get("value")?.as_str()?
+        );
+        let mut out = serde_json::Map::new();
+        out.insert(
+            "type".to_string(),
+            serde_json::Value::String("text".to_string()),
+        );
+        out.insert("value".to_string(), serde_json::Value::String(joined));
+        Some(serde_json::Value::Object(out))
+    }
+
+    let json = carve::to_json(&carve::parse(source));
+    // The corpus holds a document nested to the parser's cap (200 containers),
+    // which is past serde_json's default 128-level recursion limit - so the
+    // reader that has to accept this crate's own output cannot be the default
+    // one. The sweep already runs on a 32 MiB stack for the same document.
+    let mut reader = serde_json::Deserializer::from_str(&json);
+    reader.disable_recursion_limit();
+    // Through the stream reader rather than `Value::deserialize`, which would
+    // need `serde` itself in scope - serde_json is the only JSON dev-dependency
+    // this crate carries, and one document is no reason to add another.
+    let encoded = reader
+        .into_iter::<serde_json::Value>()
+        .next()
+        .expect("the encoder emits one document")
+        .expect("this crate's own AST encoder emits JSON");
+    canonical(&encoded).to_string()
+}
+
 fn corpus_formatter_semantic_idempotent_and_reparseable_inner() {
     for (slug, source) in corpus_sources() {
         let formatted = carve::to_carve(&source);
-        if !formatted.contains("\n\n    -")
-            && !formatted.contains("\n\n     -")
-            && !formatted.contains("\n\n     1.")
-            && slug != "103-marker-line-nested-lists-2"
-            && slug != "115-footnote-definition-inside-a-container-is-collected-2"
-        {
-            assert_eq!(
-                carve::to_html(&formatted),
-                carve::to_html(&source),
-                "formatted corpus source changed HTML semantics for {slug}"
-            );
-        }
-        if slug != "103-marker-line-nested-lists-2" {
-            assert_eq!(
-                carve::to_carve(&formatted),
-                formatted,
-                "formatted corpus source is not idempotent for {slug}"
-            );
-        }
-        let _ = carve::parse(&formatted);
+        // UNCONDITIONALLY, over every document. This assertion used to be
+        // skipped whenever the formatted output CONTAINED one of three literal
+        // indent patterns, plus two named slugs. All five were dead - the
+        // patterns matched 0 of the 1370 documents and neither slug named one -
+        // and the content-shaped three were the worse half: they are matched
+        // against output nobody has seen yet, so the first document whose
+        // formatted form happened to hold an indented bullet after a blank line
+        // would have dropped out of the sweep with nothing reporting it
+        // (markup-carve/carve-rs#1278).
+        assert_eq!(
+            carve::to_html(&formatted),
+            carve::to_html(&source),
+            "formatted corpus source changed HTML semantics for {slug}"
+        );
+        assert_eq!(
+            carve::to_carve(&formatted),
+            formatted,
+            "formatted corpus source is not idempotent for {slug}"
+        );
+        // PART 11 §1'S OWN INVARIANT, WHICH NEITHER OF THE ABOVE CAN SEE.
+        // §1a says it outright: `to_html(fmt(x)) == to_html(x)` is "strictly
+        // weaker" and "a writer satisfying only the HTML form still fails this
+        // section". Two spellings that render alike are still two spellings.
+        //
+        // It is asserted LAST because it is the strongest of the three, and
+        // over the same 1370 documents with no allowlist - carve-php's
+        // `CarveFmtCorpusTest::testTheFormattedDocumentParsesToTheSameTree`
+        // manages without one, and an entry here would silence the comparison
+        // whether or not this engine passed it.
+        //
+        // COMPARING THE PARSE, NOT THE RENDER. An HTML comparison in this spot
+        // would be a check that cannot fail: it is the assertion three lines
+        // up. Every one of the eight documents this caught rendered
+        // byte-identical HTML, which is why every gate this crate ran was green
+        // on all eight (markup-carve/carve-rs#1277).
+        assert_eq!(
+            canonical_tree(&source),
+            canonical_tree(&formatted),
+            "parse(fmt(x)) != parse(x) for {slug}"
+        );
     }
 }
 

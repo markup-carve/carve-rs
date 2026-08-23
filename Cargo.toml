@@ -27,7 +27,10 @@ markup5ever_rcdom = "0.3"
 pulldown-cmark = { version = "0.13", default-features = false }
 
 [dev-dependencies]
-serde_json = "1"
+# `unbounded_depth` for the corpus formatter sweep: the corpus holds a
+# document nested to the parser's cap (200 containers), and reading this
+# crate's own AST JSON back is past serde_json's default 128-level limit.
+serde_json = { version = "1", features = ["unbounded_depth"] }
 
 [lib]
 name = "carve"
