@@ -3899,11 +3899,35 @@ fn fill_offsets(blocks: &mut [BlockNode], line_starts: &[usize]) {
             BlockNode::Heading(h) => apply_inline_offsets(&mut h.children, line_starts),
             BlockNode::Paragraph(p) => {
                 apply_inline_offsets(&mut p.children, line_starts);
-                let first = p.children.iter().find_map(|node| {
-                    (!matches!(node, InlineNode::SoftBreak(_) | InlineNode::HardBreak(_)))
-                        .then(|| owned_inline_pos(node))
-                        .flatten()
-                });
+                // THE FIRST CHILD, NOT THE FIRST PLACED ONE
+                // (markup-carve/carve-rs#1247). A container starts at the
+                // MARKUP THAT OPENS IT, whether or not its first child carries
+                // a position, and the start and end rules are not symmetric
+                // because they answer different questions: markup-carve/carve#1526's
+                // end rule asks where a container's CONTENT stops, so the last
+                // placed child is the right boundary there, while the start
+                // rule asks where the CONSTRUCT begins - and an unplaced child
+                // says nothing about where the construct was written.
+                //
+                // This used to skip PAST an unplaced child to the first placed
+                // one, which is how a line block stanza whose first line holds
+                // a TAB - unplaceable, because the verse text is rebuilt with
+                // expanded tabs and a tab's display width is not a source
+                // length - published a paragraph starting at the line BELOW
+                // it. The break ending the tab-bearing line then sat OUTSIDE
+                // the paragraph that holds it, which PART 12 §4 containment
+                // refuses and `checkContainment` in the spec's
+                // scripts/spec/ast-positions.mjs reported against this engine
+                // alone. Reading the first child rather than the first placed
+                // one keeps the stanza's own first line in the extent, and the
+                // break inside it.
+                let first = p
+                    .children
+                    .iter()
+                    .find(|node| {
+                        !matches!(node, InlineNode::SoftBreak(_) | InlineNode::HardBreak(_))
+                    })
+                    .and_then(owned_inline_pos);
                 let last = p.children.iter().rev().find_map(owned_inline_pos);
                 if let (Some(pos), Some(first), Some(last)) = (&mut p.pos, first, last) {
                     pos.start_line = first.start_line;
