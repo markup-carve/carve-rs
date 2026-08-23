@@ -306,6 +306,12 @@ claim a gigabyte and widen its own expansion budget. `Document::source_len`
 still reports the claim as written; `untrusted_input_len()` and
 `expansion_budget_len()` report what may be trusted to size a cap.
 
+`from_json` replaces every U+0000 a string value carries with U+FFFD, before it
+reads that value for anything else - the same replacement `normalize_source`
+performs on Carve source, so an ingested document renders like the same document
+written as source (PART 12 section 21). A raw control byte in JSON text stays a
+syntax error, which is RFC 8259 rather than a Carve rule.
+
 Runnable version of all of the above, including what a rejection looks like:
 `cargo run --example untrusted_input`. Full recipe, defaults and threat model:
 [Security](https://markup-carve.github.io/carve/security).
