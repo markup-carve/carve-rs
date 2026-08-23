@@ -12,6 +12,7 @@ use crate::escape::{
 };
 use crate::extension::{HeadingIdOptions, Options, RenderContext};
 use crate::parse::unwrap_nested_anchors;
+use std::cell::Cell;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fmt::Write as _;
 
@@ -104,82 +105,271 @@ fn render_html_inner(
     needs_document_ids: bool,
     needs_footnotes: bool,
 ) -> String {
-    let _abbr_guard = AbbrBudgetGuard::for_document(&doc);
+    let crossref_index = crossref_index.unwrap_or_else(|| {
+        crate::parse::crossref_index_for_document(&doc, options.heading_id_options())
+    });
+    // Numbering and reference ids are assigned ONCE, ahead of the pass below,
+    // because that pass can run a second time: collecting again per pass would
+    // be a second chance for the two runs to disagree about a number that is
+    // already written into the body they both render.
+    let footnotes = if needs_footnotes {
+        collect_footnotes(&mut doc, true)
+    } else {
+        Vec::new()
+    };
+
+    let (first, crossref_index) = render_html_pass(
+        &doc,
+        &footnotes,
+        options,
+        crossref_index,
+        needs_document_ids,
+        FOOTNOTES_PLACEMENT_DEFAULT,
+    );
+    if first.seen == first.emitted {
+        return first.html;
+    }
+    // The count is a LOWER BOUND on the markers this pass put in the document
+    // (see `without_placement_accounting`), so `seen` can only differ upward,
+    // and it differs when the DOCUMENT carries a marker of its own - the case a
+    // fixed marker answers by rewriting the author's text into a footnotes
+    // section. Re-pick against every private-use code point the assembled
+    // document holds (the author's and this pass's own, a superset, so the new
+    // marker is free of both) and render again.
+    //
+    // A THIRD PASS CANNOT BE NEEDED: the retry runs the same code over the same
+    // tree, and the only thing that differs is a code point the assembled
+    // document does not contain. Same shape, and the same reasoning, as the
+    // Markdown target's carrier retry in `render_markdown_inner`.
+    let picked = crate::sentinel_run::pick_sentinel_run::<1>(
+        first
+            .occupied
+            .as_ref()
+            .expect("collected when seen differs from emitted"),
+        u32::from(FOOTNOTES_PLACEMENT_DEFAULT),
+    )[0];
+    let (second, _) = render_html_pass(
+        &doc,
+        &footnotes,
+        options,
+        crossref_index,
+        needs_document_ids,
+        picked,
+    );
+    second.html
+}
+
+/// One whole-document render, with ONE placement marker installed for it.
+struct HtmlPass {
+    html: String,
+    /// Markers this pass wrote ON A PATH THAT REACHES THE DOCUMENT - a lower
+    /// bound, not a total (see `without_placement_accounting`).
+    emitted: usize,
+    /// Markers that STOOD in the rendered body and endnotes section, counted
+    /// before any of them was consumed. More than were written means the
+    /// document carries one of its own, or an extension embedded a fragment
+    /// whose markers `emitted` deliberately leaves out.
+    seen: usize,
+    /// Which private-use code points the rendered body and endnotes section
+    /// held, collected only when `seen` differed from `emitted` and only from
+    /// the text as it stood BEFORE the splice consumed a marker.
+    occupied: Option<std::collections::BTreeSet<u32>>,
+}
+
+/// Render `doc` with `marker` standing for a `::: footnotes` placement block,
+/// handing the cross-reference index back for a possible second pass.
+fn render_html_pass(
+    doc: &Document,
+    footnotes: &[FootnoteEntry],
+    options: &Options<'_>,
+    crossref_index: crate::parse::CrossrefIndex,
+    needs_document_ids: bool,
+    marker: char,
+) -> (HtmlPass, crate::parse::CrossrefIndex) {
+    let _abbr_guard = AbbrBudgetGuard::for_document(doc);
     let _index_guard = crate::index_budget::IndexBudgetGuard::new(doc.expansion_budget_len());
     // Document id namespace (extensions contract §2.6): seeded with every
     // explicit `{#id}` attribute and every heading id this render will assign,
     // so extension-generated ids (citation anchors / reference entries) take
     // the next free suffix instead of emitting a duplicate DOM id.
     let _document_ids_guard = needs_document_ids
-        .then(|| crate::document_ids::DocumentIdsGuard::new(&doc, options.heading_id_options()));
+        .then(|| crate::document_ids::DocumentIdsGuard::new(doc, options.heading_id_options()));
+    // EVERY guard here is installed PER PASS, and that is what makes a retry
+    // free of consequences: a second pass rendering into a half-consumed id
+    // namespace would take the next free suffix and move ids the first pass had
+    // already placed, and one rendering into a half-spent expansion budget would
+    // clip abbreviations the first pass emitted whole.
+    let _placement_guard = FootnotesPlacementGuard::install(marker);
+
     let mut state = RenderState {
         heading_id_options: options.heading_id_options(),
-        crossref_index: crossref_index.unwrap_or_else(|| {
-            crate::parse::crossref_index_for_document(&doc, options.heading_id_options())
-        }),
+        crossref_index,
         ..RenderState::default()
-    };
-    let footnotes = if needs_footnotes {
-        collect_footnotes(&mut doc, true)
-    } else {
-        Vec::new()
     };
     let mut html =
         render_document_blocks(doc.children.as_slice(), options, &mut state, doc.source_len);
-    if !footnotes.is_empty() {
-        let section = render_footnotes_section(&doc, &footnotes, options, &mut state);
+    let mut seen = html.matches(marker).count();
+    let section = (!footnotes.is_empty())
+        .then(|| render_footnotes_section(doc, footnotes, options, &mut state));
+    if let Some(section) = &section {
+        seen += section.matches(marker).count();
+    }
+    let emitted = PLACEMENTS_EMITTED.with(Cell::get);
+    // OCCUPANCY IS READ BEFORE THE SPLICE, and that is the whole reason this
+    // pass carries a set rather than the caller scanning the finished document.
+    // The splice CONSUMES a marker - including the author's own, which is the
+    // collision being answered - so a set collected from the finished document
+    // reports the very code point that collided as free, and the retry picks it
+    // again.
+    let occupied = (seen != emitted).then(|| {
+        let mut set = crate::sentinel_run::occupied_private_use(&html);
+        if let Some(section) = &section {
+            crate::sentinel_run::collect_private_use(section, &mut set);
+        }
+        set
+    });
+    if let Some(section) = section {
         // `::: footnotes` placement: every footnote is numbered by now, so flush
-        // the endnotes at the sentinel instead of appending at the end. A
+        // the endnotes at the marker instead of appending at the end. A
         // document without the marker is byte-identical to before.
-        if html.contains(FOOTNOTES_PLACEMENT_SENTINEL) {
-            html = place_footnotes_section(html, &section);
+        if html.contains(marker) {
+            html = place_footnotes_section(html, &section, marker);
         } else {
             html.push('\n');
             html.push_str(&section);
         }
     }
-    // Sweep any sentinel that still remains and degrade it to an empty
+    // Sweep any marker that still remains and degrade it to an empty
     // placeholder: a `::: footnotes` nested INSIDE a footnote definition emits a
-    // sentinel while the endnotes section renders (after the body check above),
+    // marker while the endnotes section renders (after the body check above),
     // and a marker in a document with no footnotes never hit the branch above.
-    // The raw sentinel must never leak into output.
-    if html.contains(FOOTNOTES_PLACEMENT_SENTINEL) {
-        html = html.replace(
-            FOOTNOTES_PLACEMENT_SENTINEL,
-            "<div class=\"footnotes\"></div>",
-        );
+    // The raw marker must never leak into output.
+    if html.contains(marker) {
+        html = html.replace(marker, "<div class=\"footnotes\"></div>");
     }
-    html
+    let pass = HtmlPass {
+        html,
+        emitted,
+        seen,
+        occupied,
+    };
+    (pass, state.crossref_index)
 }
 
-/// Private sentinel emitted for a `::: footnotes` placement block; the top-level
-/// render swaps it for the endnotes section (relocated from the document end).
+/// The preferred marker for a `::: footnotes` placement block: what a document
+/// that writes no private-use character of its own gets.
 ///
-/// Uses NUL bytes, which cannot appear in rendered HTML output. That holds at
-/// BOTH doors into a renderer, which it did not always: `normalize_source`
-/// replaces an authored NUL, so no document could spell this, but the AST-JSON
-/// ingest had no equivalent and a text node carrying the marker pulled the
-/// endnotes section into itself - `<p><section role="doc-endnotes">...</section></p>`,
-/// and no longer at the document end (carve-rs#1217). PART 12 §21 now performs
-/// the same replacement on every string value the ingest reads, so the sentinel
-/// is unforgeable by construction rather than by luck.
-const FOOTNOTES_PLACEMENT_SENTINEL: &str = "\u{0}carve:footnotes-placement\u{0}";
+/// PICKED PER DOCUMENT, not fixed. The marker used to be the fixed string NUL +
+/// `carve:footnotes-placement` + NUL, on the claim that NUL "cannot appear in
+/// rendered HTML output". Source cannot supply it - `normalize_source` replaces
+/// an authored NUL - and neither can the AST-JSON ingest, since PART 12 §21
+/// replaces it there too (carve-rs#1217). But that is a property of the two
+/// DOORS rather than of the marker, and a tree built through the node API passes
+/// through neither: carve-php recorded that exact string rendering a footnotes
+/// `div` in the middle of an author's paragraph
+/// (markup-carve/carve-php#1087).
+///
+/// A PICKED marker has the property the fixed string was borrowing from its
+/// surroundings - the finished document does not contain it, so no text of the
+/// author's can be mistaken for it. carve-php picks its marker with the break
+/// guards; this renderer has no break guards, so it picks its own, which is what
+/// the parser's definition placeholder (carve-rs#1218) and the Markdown target's
+/// escape carriers (carve-rs#1216) already do here. The allocator is
+/// [`crate::sentinel_run`], shared with both.
+///
+/// U+E008 rather than the pool's first code point: the parser's placeholders
+/// (U+E005-U+E006) and the Markdown carriers (U+E004-U+E007) have preferred runs
+/// of their own, and a distinct one per site keeps a marker seen in a debugger
+/// attributable to the site that wrote it. Nothing depends on the value - each
+/// site allocates independently, and each is re-picked against its own document.
+const FOOTNOTES_PLACEMENT_DEFAULT: char = '\u{e008}';
 
-/// Relocate the endnotes section to the first `::: footnotes` sentinel; any
-/// additional sentinels degrade to an empty placeholder so a second block never
+thread_local! {
+    /// The placement marker installed for the render running on this thread.
+    ///
+    /// A thread-local rather than a [`RenderState`] field for the reason the
+    /// parser's `PLACEHOLDERS` is one: a nested render - a block extension
+    /// rendering sub-blocks, an extension calling back into the renderer -
+    /// starts a FRESH `RenderState`, and a marker carried on that struct would
+    /// be the default again inside it while the outer render looked for the
+    /// picked one.
+    #[allow(clippy::missing_const_for_thread_local)]
+    static FOOTNOTES_PLACEMENT: Cell<char> = const { Cell::new(FOOTNOTES_PLACEMENT_DEFAULT) };
+
+    /// How many placement markers the render running on this thread has WRITTEN,
+    /// which is what a count of markers standing in the output is compared
+    /// against. Nested renders share it for the same reason as above: their
+    /// markers reach the same assembled document.
+    static PLACEMENTS_EMITTED: Cell<usize> = const { Cell::new(0) };
+}
+
+/// Install `marker` for the duration of one pass, restoring the previous marker
+/// and emission count on drop (panic unwind included), so a nested render leaves
+/// the outer one exactly as it found it.
+struct FootnotesPlacementGuard(char, usize);
+
+impl FootnotesPlacementGuard {
+    fn install(marker: char) -> FootnotesPlacementGuard {
+        FootnotesPlacementGuard(
+            FOOTNOTES_PLACEMENT.with(|slot| slot.replace(marker)),
+            PLACEMENTS_EMITTED.with(|slot| slot.replace(0)),
+        )
+    }
+}
+
+impl Drop for FootnotesPlacementGuard {
+    fn drop(&mut self) {
+        FOOTNOTES_PLACEMENT.with(|slot| slot.set(self.0));
+        PLACEMENTS_EMITTED.with(|slot| slot.set(self.1));
+    }
+}
+
+/// The placement marker the render currently running writes.
+fn footnotes_placement_marker() -> char {
+    FOOTNOTES_PLACEMENT.with(Cell::get)
+}
+
+/// Render a fragment that is HANDED TO AN EXTENSION, and do not count the
+/// placement markers it writes.
+///
+/// The count is compared against the markers standing in the assembled
+/// document, and that comparison is only sound while every counted marker is
+/// certain to BE in it. A core render writes into its caller's buffer, which
+/// always flows up; a fragment handed to an extension does not - the extension
+/// may embed it, embed part of it, or drop it. Counting those markers lets a
+/// dropped one pay for an authored one, and the two cancel into a comparison
+/// that reports no collision.
+///
+/// Not counting them keeps the count a LOWER BOUND on the markers this render
+/// put in the document, so `seen == emitted` still means the document
+/// contributed none. An embedded fragment marker instead makes `seen` exceed
+/// `emitted` and costs a second pass, which renders the same document to the
+/// same bytes - the rare price for a check that cannot be cancelled out.
+pub(crate) fn without_placement_accounting<R>(render: impl FnOnce() -> R) -> R {
+    let before = PLACEMENTS_EMITTED.with(Cell::get);
+    let rendered = render();
+    PLACEMENTS_EMITTED.with(|slot| slot.set(before));
+    rendered
+}
+
+/// Write one placement marker, and record that this render wrote it.
+fn push_footnotes_placement_marker(out: &mut String) {
+    out.push(footnotes_placement_marker());
+    PLACEMENTS_EMITTED.with(|slot| slot.set(slot.get() + 1));
+}
+
+/// Relocate the endnotes section to the first `::: footnotes` marker; any
+/// additional markers degrade to an empty placeholder so a second block never
 /// duplicates the section.
-fn place_footnotes_section(html: String, section: &str) -> String {
-    let Some(pos) = html.find(FOOTNOTES_PLACEMENT_SENTINEL) else {
+fn place_footnotes_section(html: String, section: &str, marker: char) -> String {
+    let Some(pos) = html.find(marker) else {
         return html;
     };
     let mut out = String::with_capacity(html.len() + section.len());
     out.push_str(&html[..pos]);
     out.push_str(section);
-    out.push_str(&html[pos + FOOTNOTES_PLACEMENT_SENTINEL.len()..]);
-    out.replace(
-        FOOTNOTES_PLACEMENT_SENTINEL,
-        "<div class=\"footnotes\"></div>",
-    )
+    out.push_str(&html[pos + marker.len_utf8()..]);
+    out.replace(marker, "<div class=\"footnotes\"></div>")
 }
 
 // Entry point for `RenderContext::render_blocks` (the extension render helper).
@@ -202,11 +392,13 @@ pub(crate) fn render_blocks_at_with_options(
     options: &Options<'_>,
     level: usize,
 ) -> String {
-    let mut state = RenderState {
-        heading_id_options: options.heading_id_options(),
-        ..RenderState::default()
-    };
-    render_blocks(nodes, level, options, &mut state)
+    without_placement_accounting(|| {
+        let mut state = RenderState {
+            heading_id_options: options.heading_id_options(),
+            ..RenderState::default()
+        };
+        render_blocks(nodes, level, options, &mut state)
+    })
 }
 
 // Render block nodes at `level`, continuing an existing `RenderState` so the
@@ -217,7 +409,7 @@ pub(crate) fn render_blocks_at_with_state(
     level: usize,
     state: &mut RenderState,
 ) -> String {
-    render_blocks(nodes, level, options, state)
+    without_placement_accounting(|| render_blocks(nodes, level, options, state))
 }
 
 pub(crate) fn render_blocks_with_state_from_depth(
@@ -226,11 +418,13 @@ pub(crate) fn render_blocks_with_state_from_depth(
     depth: usize,
     state: &mut RenderState,
 ) -> String {
-    let previous = state.block_depth_bias;
-    state.block_depth_bias = depth;
-    let output = render_blocks(nodes, 0, options, state);
-    state.block_depth_bias = previous;
-    output
+    without_placement_accounting(|| {
+        let previous = state.block_depth_bias;
+        state.block_depth_bias = depth;
+        let output = render_blocks(nodes, 0, options, state);
+        state.block_depth_bias = previous;
+        output
+    })
 }
 
 fn render_blocks(
@@ -306,7 +500,7 @@ pub(crate) struct RenderState {
     heading_id_options: HeadingIdOptions,
     /// True while rendering the endnotes section's footnote bodies. A
     /// `::: footnotes` nested inside a footnote definition must NOT emit a
-    /// placement sentinel (it renders as an ordinary div, matching carve-js).
+    /// placement marker (it renders as an ordinary div, matching carve-js).
     rendering_footnotes: bool,
     admonition_count: usize,
     suppress_automatic_abbreviation: bool,
@@ -893,7 +1087,7 @@ fn render_footnotes_section(
     state: &mut RenderState,
 ) -> String {
     // Suppress `::: footnotes` placement while rendering footnote bodies, so a
-    // nested marker renders as an ordinary div instead of emitting a sentinel.
+    // nested block renders as an ordinary div instead of writing a marker.
     let was_rendering_footnotes = state.rendering_footnotes;
     state.rendering_footnotes = true;
     let mut out = String::new();
@@ -2300,19 +2494,19 @@ fn render_admonition(
     options: &Options<'_>,
     state: &mut RenderState,
 ) {
-    // `::: footnotes` placement directive: emit a sentinel that the top-level
+    // `::: footnotes` placement directive: emit the marker that the top-level
     // render replaces with the endnotes section, relocating it from the
     // document end. A document without this block is byte-identical to before.
     if a.kind == "footnotes" && !state.rendering_footnotes {
         // Preserve any blocks authored inside the placeholder before the
-        // relocated endnotes (matching carve-js), then the sentinel.
+        // relocated endnotes (matching carve-js), then the marker.
         let body = render_blocks(&a.children, level, options, state);
         let body = body.trim_end_matches('\n');
         if !body.is_empty() {
             out.push_str(body);
             out.push('\n');
         }
-        out.push_str(FOOTNOTES_PLACEMENT_SENTINEL);
+        push_footnotes_placement_marker(out);
         return;
     }
     let canonical = crate::profile::ADMONITION_TIER1_KINDS.contains(&a.kind.as_str());

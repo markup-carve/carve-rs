@@ -1323,10 +1323,19 @@ fn footnotes_placement_second_marker_no_duplicate() {
 #[test]
 fn footnotes_placement_nested_in_definition_never_leaks_sentinel() {
     // A `::: footnotes` inside a footnote definition renders as an ordinary div,
-    // never the internal placement sentinel.
+    // never the internal placement marker. The marker is PICKED from the
+    // private-use area now (markup-carve/carve-rs#1245), so a leak would be a
+    // private-use character rather than the retired NUL-wrapped string - both
+    // are checked, since the retired spelling must not come back either.
     let html = carve::to_html("X[^a].\n\n[^a]: ::: footnotes\n    :::\n");
     assert!(!html.contains('\u{0}'));
     assert!(!html.contains("footnotes-placement"));
+    assert!(
+        !html
+            .chars()
+            .any(|ch| ('\u{e000}'..='\u{f8ff}').contains(&ch)),
+        "a private-use marker leaked into output: {html:?}"
+    );
     assert!(html.contains("<div class=\"footnotes\">"));
 }
 
