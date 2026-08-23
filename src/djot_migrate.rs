@@ -498,7 +498,7 @@ fn find_backtick_close(bytes: &[u8], from: usize, run: usize) -> Option<usize> {
 /// Collapse a blank-line run that Carve alone would read as a list boundary.
 ///
 /// Djot reads ANY run of blank lines between two compatible sibling markers as
-/// one list. Carve reads a run of THREE OR MORE as a hard boundary (PART 9 §17
+/// one list. Carve reads a run of THREE OR MORE as a hard boundary (PART 9 §11
 /// N1a) and opens a second list after it. So passing the author's run through
 /// splits a list the source never split, and it does it silently: the halves
 /// render as `</ul><ul>`, which shows nothing at all for a bullet list, and on
@@ -521,17 +521,20 @@ fn collapse_false_list_boundaries(source: &str) -> String {
     let mut i = 0;
     while i < lines.len() {
         let run_start = i;
-        while i < lines.len() && !fenced[i] && lines[i].trim().is_empty() {
+        let depth = quoted(lines[i]).0;
+        while i < lines.len() && !fenced[i] && is_blank(lines[i]) && quoted(lines[i]).0 == depth {
             i += 1;
         }
         let run = i - run_start;
-        let above = out.iter().rev().find(|line| !line.trim().is_empty());
+        let above = out.iter().rev().find(|line| !is_blank(line));
         if run >= 3
             && i < lines.len()
-            && opens_a_list_item(lines[i])
-            && above.is_some_and(|line| continues_a_list(line))
+            && at_the_same_depth(lines[i], depth, opens_a_list_item)
+            && above.is_some_and(|line| at_the_same_depth(line, depth, continues_a_list))
         {
-            out.push("");
+            // The run's own first line, so a quoted run keeps its `>` prefix
+            // and an unquoted one stays the empty line it already was.
+            out.push(lines[run_start]);
             continue;
         }
         if run > 0 {
@@ -545,12 +548,49 @@ fn collapse_false_list_boundaries(source: &str) -> String {
     out.join("\n")
 }
 
+/// A line's block-quote depth and what it holds inside the quote markers. The
+/// boundary applies inside a quote as much as outside it, and there a "blank"
+/// line is written `>` -- so both the run and the markers around it are read
+/// through the prefix rather than off the raw line.
+fn quoted(line: &str) -> (usize, &str) {
+    let mut rest = line;
+    let mut depth = 0;
+    loop {
+        let trimmed = rest.trim_start_matches([' ', '\t']);
+        match trimmed.strip_prefix('>') {
+            Some(after) => {
+                depth += 1;
+                rest = after.strip_prefix(' ').unwrap_or(after);
+            }
+            // The remainder is NOT trimmed: an item's own indentation is what
+            // says the line continues the item, and inside a quote it sits
+            // right after the marker.
+            None => return (depth, rest),
+        }
+    }
+}
+
+/// Whether a line carries no content, inside whatever quote holds it.
+fn is_blank(line: &str) -> bool {
+    quoted(line).1.trim().is_empty()
+}
+
+/// Whether a line sits at `depth` and its content answers `test`. A marker one
+/// quote level away from the run separates nothing the run could join.
+fn at_the_same_depth(line: &str, depth: usize, test: fn(&str) -> bool) -> bool {
+    let (line_depth, content) = quoted(line);
+
+    line_depth == depth && test(content)
+}
+
 /// Which lines sit inside a fenced block, whose blank lines are content.
 fn fenced_lines(lines: &[&str]) -> Vec<bool> {
     let mut inside: Vec<bool> = Vec::with_capacity(lines.len());
     let mut open: Option<(char, usize)> = None;
     for line in lines {
-        let trimmed = line.trim_start();
+        // Through the quote prefix: a fence opened inside a quote holds its
+        // blank lines as content exactly like an unquoted one.
+        let trimmed = quoted(line).1.trim_start();
         let first = trimmed.chars().next();
         let run = match first {
             Some(c @ ('`' | '~')) => trimmed.chars().take_while(|x| *x == c).count(),
@@ -601,8 +641,8 @@ fn opens_a_list_item(line: &str) -> bool {
     }
 }
 
-/// Whether a list is open above the run: the nearest non-blank line is either a
-/// marker line or an item's indented content. Djot has no indented code blocks,
+/// Whether a list is open above the run: the nearest line with content is
+/// either a marker line or an item's indented content. Djot has no indented code blocks,
 /// so an indented line under a list is that list's content and nothing else.
 fn continues_a_list(line: &str) -> bool {
     opens_a_list_item(line) || line.starts_with(' ') || line.starts_with('\t')
@@ -1056,6 +1096,42 @@ mod tests {
             djot_to_carve("- apples\n\n\n\n\n  still apples\n"),
             "- apples\n\n\n\n\n  still apples\n"
         );
+    }
+
+    /// N1a applies inside a container too, and there a blank line is written
+    /// `>`, so the run and the markers around it are read through the prefix.
+    #[test]
+    fn a_quoted_run_collapses_and_keeps_its_prefix() {
+        assert_eq!(
+            djot_to_carve("> 1. one\n>\n>\n>\n> 2. two\n"),
+            "> 1. one\n>\n> 2. two\n"
+        );
+    }
+
+    /// An item's own indentation is what says the line continues the item, and
+    /// inside a quote it sits right after the marker -- so the quote prefix is
+    /// stripped and the indentation is not.
+    #[test]
+    fn a_quoted_run_after_an_items_indented_content_still_collapses() {
+        assert_eq!(
+            djot_to_carve("> - apples\n>   more apples\n>\n>\n>\n> - oranges\n"),
+            "> - apples\n>   more apples\n>\n> - oranges\n"
+        );
+    }
+
+    /// A fence opened inside a quote holds its blank lines as content exactly
+    /// like an unquoted one.
+    #[test]
+    fn a_run_inside_a_quoted_fence_is_content() {
+        let source = "> ```\n> - one\n>\n>\n>\n> - two\n> ```\n";
+        assert_eq!(djot_to_carve(source), source);
+    }
+
+    /// A marker one quote level away separates nothing the run could join.
+    #[test]
+    fn a_run_and_a_marker_at_different_depths_are_left_alone() {
+        let source = "> - apples\n>\n>\n>\n- oranges\n";
+        assert_eq!(djot_to_carve(source), source);
     }
 
     /// Blank lines inside a fenced block are that block's content.
