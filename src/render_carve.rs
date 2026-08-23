@@ -4280,6 +4280,22 @@ pub(crate) fn is_attr_identifier(text: &str) -> bool {
         && chars.all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-')
 }
 
+/// Whether a container KIND can be spelled as a colon-fence type word.
+///
+/// `render_admonition` writes the kind verbatim after the fence, so a kind this
+/// rejects would be emitted as source that does not read back as the container
+/// it came from: `::: 2col` is an ordinary paragraph, because the opener
+/// grammar (PART 9, `admonition_open`) reads the word as `[a-zA-Z_][\w-]*` and
+/// a digit cannot open it.
+///
+/// Used by `html_import` to decide whether an element's class can become the
+/// fence word of a rebuilt container, for the same reason it asks
+/// [`is_attr_identifier`] about a name: the answer has to be the writer's,
+/// rather than a second copy that drifts from it (carve-rs#1240).
+pub(crate) fn is_container_kind(text: &str) -> bool {
+    is_attr_identifier(text)
+}
+
 fn escape_autolink_href(text: &str) -> String {
     text.replace('\\', "\\\\")
         .replace('<', "\\<")

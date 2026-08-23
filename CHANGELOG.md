@@ -265,6 +265,23 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **An HTML import rebuilds the container the renderer wrote** (#1240,
+  markup-carve/carve#1502). A callout was unwrapped to its own body and a tab
+  set, a code group and every other named container came back as a generic `div`
+  node carrying a class. The import now inverts `render_admonition`, so any kind
+  survives rather than a list of the ones thought of so far. A titled callout's
+  `<p class="admonition-title">` is lifted into the container it names, the
+  `aria-labelledby` pointing at it goes with it rather than dangling, and the
+  callout's own derived `aria-label` is dropped under PART 9 §16a - a rule that
+  could not reach it while the element was being unwrapped. `<aside>` is also
+  treated as the block element it is, so its children are no longer flattened
+  into an inline run. Imported source and the `html_to_ast` tree both change; a
+  class no fence opener can spell still keeps the generic node.
+
+- **A derived `id` is dropped** (#1240). `drop_derived` only ever searched the
+  key/value attributes, so a derived value in the `id` slot could not be found
+  and any rule for one was a check that could not fire.
+
 - **A diagnostic on a bare inline run is numbered among the body children**
   (markup-carve/carve#1554, PART 12 §16). The importer wraps such a run in a
   paragraph, correctly prints no step for the wrapper, and then numbered the run
