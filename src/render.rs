@@ -1679,7 +1679,15 @@ fn render_list(
             };
             write!(out, " type=\"{value}\"").unwrap();
         }
-        if let Some(start) = l.start {
+        // 1 IS THE DEFAULT, SO IT IS NOT AN ATTRIBUTE. The parser never sets
+        // `start` to 1 -- `resources/ast-schema.json` documents the field as
+        // "the first number of an ordered list, WHEN IT IS NOT 1" -- so the
+        // only way to get here with 1 is an ingested AST that spells the
+        // default out. Writing `start="1"` then made one JSON payload two
+        // different documents depending on the output asked for: the HTML
+        // carried the attribute while `--carve` wrote a plain `1.` marker,
+        // which reads back without it.
+        if let Some(start) = l.start.filter(|start| *start != 1) {
             write!(out, " start=\"{start}\"").unwrap();
         }
     }
