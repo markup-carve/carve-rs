@@ -3507,6 +3507,44 @@ impl<'a> Parser<'a> {
                     );
                 } else if (0xdc00..=0xdfff).contains(&code) {
                     return Err(self.err("unpaired JSON unicode surrogate"));
+                } else if code == 0 {
+                    // PART 12 §21: a reader replaces every U+0000 with U+FFFD in
+                    // every string VALUE it ingests, before reading that value
+                    // for anything else - before a sentinel is looked for in it,
+                    // before it is used as a key, before it reaches a renderer.
+                    //
+                    // THIS MIRRORS THE PARSE BOUNDARY. `normalize_source` does
+                    // the same to Carve source before the first line is read,
+                    // which is why PART 9 §29 carves the character out of the
+                    // content class. The AST is a second door into the same
+                    // renderers and it had no equivalent, so an authored NUL and
+                    // an ingested one stood on different footings - one
+                    // replaced, one content.
+                    //
+                    // HERE, because this is where the character can be spelled.
+                    // `parse_string` refuses a raw control byte, which is RFC
+                    // 8259 and not a Carve rule and stays a syntax error; the
+                    // six-character escape is the only route in, and a surrogate
+                    // pair cannot produce U+0000 because its scalar starts at
+                    // U+10000.
+                    //
+                    // NOT A REFUSAL, unlike §11's unknown property and §12's
+                    // deviant root. Those are structure a producer got wrong;
+                    // this is the replacement the parse boundary already
+                    // performs on the identical string, so doing it is the
+                    // documented reading rather than a repair, and refusing
+                    // would make an ingested document stricter than the same
+                    // document written as source.
+                    //
+                    // WHAT IT MAKES SAFE: `FOOTNOTES_PLACEMENT_SENTINEL` wraps
+                    // its marker in NUL and its comment claims the character
+                    // "cannot appear in rendered HTML output". That was a claim
+                    // about ONE of the two doors, and through this one a text
+                    // node carrying the marker pulled the endnotes section into
+                    // itself. With the clause held here the sentinel is
+                    // unforgeable by construction and the comment is true as
+                    // written, so it keeps its NUL (carve-rs#1217).
+                    out.push('\u{fffd}');
                 } else {
                     out.push(
                         char::from_u32(code)

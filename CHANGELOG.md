@@ -253,6 +253,16 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **The AST-JSON ingest replaces U+0000, as the parse boundary already does**
+  (markup-carve/carve-rs#1237, markup-carve/carve-rs#1217,
+  markup-carve/carve#1528, PART 12 §21). `from_json` replaces every NUL a
+  `\u0000` escape carries with U+FFFD, so an ingested document renders like the
+  same document written as source. It closes two holes together: a text node
+  spelling `FOOTNOTES_PLACEMENT_SENTINEL` pulled the endnotes section into
+  itself, and any NUL reached html, markdown and plain verbatim while the
+  canonical writer deleted it, so `fmt` was lossy. A raw control byte in JSON
+  text is still refused, which is RFC 8259 rather than this clause.
+
 - **The canonical writer spells two sibling sub-lists inside a list item**
   (markup-carve/carve-rs#1228, markup-carve/carve#1501, PART 9 §11 N1a and
   §10i). A tight item wrote its sub-lists behind the `+` marker at column 0,

@@ -154,7 +154,15 @@ fn render_html_inner(
 
 /// Private sentinel emitted for a `::: footnotes` placement block; the top-level
 /// render swaps it for the endnotes section (relocated from the document end).
-/// Uses NUL bytes, which cannot appear in rendered HTML output.
+///
+/// Uses NUL bytes, which cannot appear in rendered HTML output. That holds at
+/// BOTH doors into a renderer, which it did not always: `normalize_source`
+/// replaces an authored NUL, so no document could spell this, but the AST-JSON
+/// ingest had no equivalent and a text node carrying the marker pulled the
+/// endnotes section into itself - `<p><section role="doc-endnotes">...</section></p>`,
+/// and no longer at the document end (carve-rs#1217). PART 12 §21 now performs
+/// the same replacement on every string value the ingest reads, so the sentinel
+/// is unforgeable by construction rather than by luck.
 const FOOTNOTES_PLACEMENT_SENTINEL: &str = "\u{0}carve:footnotes-placement\u{0}";
 
 /// Relocate the endnotes section to the first `::: footnotes` sentinel; any
