@@ -173,14 +173,40 @@ pub enum HtmlImportError {
 
 struct Importer<'a> {
     opts: &'a HtmlImportOptions,
-    diagnostics: Vec<HtmlImportDiagnostic>,
+    /// Every diagnostic, paired with the document position of the LOSING
+    /// ELEMENT. The vector is built in construction order and sorted by that
+    /// position on the way out, so a tie keeps the order the rows were built
+    /// in - which for one element's attributes is the order it spells them.
+    diagnostics: Vec<(usize, HtmlImportDiagnostic)>,
+    /// Every node of the parsed tree, numbered in DOCUMENT ORDER
+    /// (markup-carve/carve#1586).
+    ///
+    /// A REPORT IS ORDERED BY WHERE THE LOSS IS, NOT BY WHEN IT WAS NOTICED.
+    /// docs/html-import.md always said the diagnostic list is ordered and,
+    /// until that ticket, never said ordered by what - so each engine's list
+    /// came out in whatever order its own walk happened to construct the rows
+    /// in. This importer reads a table's cells before its `<caption>`, because
+    /// the caption fills a slot on the finished table, so a `<table>` losing
+    /// something on both reported the cell first and the caption second for a
+    /// document that spells them the other way round.
+    ///
+    /// Numbering the tree once and sorting at the end fixes the whole class
+    /// rather than that one shape: no handler has to be rewritten to visit its
+    /// parent's children in source order, and none can reintroduce the defect
+    /// by choosing a convenient traversal.
+    ///
+    /// Keyed by node ADDRESS, and the entry holds the handle it was keyed by -
+    /// the same rule `footnote_refs` follows below, and for the same reason.
+    /// The footnote pass DETACHES nodes, so a key whose node had been dropped
+    /// would be an address the allocator may hand to a live node next.
+    document_order: HashMap<usize, (Handle, usize)>,
     nodes: usize,
     /// How many `<q>` elements are open around the node being read. HTML5
     /// leaves the marks to the user agent and every one of them alternates, so
     /// the depth is what chooses between the double and the single pair.
     quote_depth: usize,
     /// The losses a WRITER takes, held back until one writes (PART 12 §16).
-    unspellable: Vec<(String, String)>,
+    unspellable: Vec<(Handle, String, String)>,
     /// The reference sites the adapter footnote pass recognized: the node
     /// `inline` must read as a footnote reference, and the label it carries.
     ///
@@ -288,24 +314,83 @@ impl<'a> Importer<'a> {
         message: String,
         severity: HtmlImportSeverity,
         path: &str,
+        node: &Handle,
     ) {
         if self.diagnostics.len() >= self.opts.max_diagnostics {
             if let Some(last) = self.diagnostics.last_mut() {
-                *last = HtmlImportDiagnostic {
-                    code: HtmlImportDiagnosticCode::DiagnosticsTruncated,
-                    message: "HTML import diagnostics limit reached".into(),
-                    severity: HtmlImportSeverity::Error,
-                    path: None,
-                };
+                // `usize::MAX`, so the marker stays where a reader needs it -
+                // at the END of the report - rather than sorting to wherever
+                // the row it replaced happened to sit.
+                *last = (
+                    usize::MAX,
+                    HtmlImportDiagnostic {
+                        code: HtmlImportDiagnosticCode::DiagnosticsTruncated,
+                        message: "HTML import diagnostics limit reached".into(),
+                        severity: HtmlImportSeverity::Error,
+                        path: None,
+                    },
+                );
             }
             return;
         }
-        self.diagnostics.push(HtmlImportDiagnostic {
-            code,
-            message,
-            severity,
-            path: Some(path.into()),
-        });
+        let at = self.position_of(node);
+        self.diagnostics.push((
+            at,
+            HtmlImportDiagnostic {
+                code,
+                message,
+                severity,
+                path: Some(path.into()),
+            },
+        ));
+    }
+
+    /// Where a losing element sits in the document, as the number the
+    /// pre-order walk gave it.
+    ///
+    /// An element the HTML parser IMPLIED - a `<tbody>` around rows nobody
+    /// wrote one for - is not in the source at all and has no position of its
+    /// own, so it answers with its nearest ancestor's and ties with it. That is
+    /// the honest reading: the loss is at the place in the source where the
+    /// implied element's content begins.
+    fn position_of(&self, node: &Handle) -> usize {
+        let mut current = Some(node.clone());
+        while let Some(handle) = current {
+            if let Some((_, at)) = self.document_order.get(&node_key(&handle)) {
+                return *at;
+            }
+            current = parent_handle(&handle);
+        }
+        usize::MAX
+    }
+
+    /// Number every node of the parsed tree in document order.
+    ///
+    /// Iterative, not recursive: the walk runs before `enter` has capped
+    /// anything, so it meets whatever depth the input actually parsed to, and a
+    /// recursive version would answer a deeply nested document with a stack
+    /// overflow instead of the depth-limit error the page promises.
+    fn number_document_order(&mut self, root: &Handle) {
+        let mut stack = vec![root.clone()];
+        let mut next = 0usize;
+        while let Some(handle) = stack.pop() {
+            self.document_order
+                .insert(node_key(&handle), (handle.clone(), next));
+            next += 1;
+            for child in handle.children.borrow().iter().rev() {
+                stack.push(child.clone());
+            }
+        }
+    }
+
+    /// The report, in the order docs/html-import.md states.
+    fn report(&mut self) -> Vec<HtmlImportDiagnostic> {
+        let mut entries = std::mem::take(&mut self.diagnostics);
+        entries.sort_by_key(|(at, _)| *at);
+        entries
+            .into_iter()
+            .map(|(_, diagnostic)| diagnostic)
+            .collect()
     }
     fn is_block_tag(tag: &str) -> bool {
         matches!(
@@ -665,6 +750,7 @@ impl<'a> Importer<'a> {
                         format!("Dropped {what} attribute {name} on <{tag}>"),
                         HtmlImportSeverity::Warning,
                         path,
+                        handle,
                     );
                 } else if name == "id" {
                     out.id = Some(value);
@@ -687,6 +773,7 @@ impl<'a> Importer<'a> {
                         "CSS declarations were not mapped".into(),
                         HtmlImportSeverity::Info,
                         path,
+                        handle,
                     );
                 } else if matches!(
                     (tag.as_str(), name.as_str()),
@@ -722,6 +809,7 @@ impl<'a> Importer<'a> {
                         format!("Dropped round-trip marker attribute {name} on <{tag}>"),
                         HtmlImportSeverity::Info,
                         path,
+                        handle,
                     );
                 } else if is_semantic_span_tag(&tag) && name == tag {
                     // THE MARKER OWNS THIS KEY. A compact semantic span is
@@ -738,6 +826,7 @@ impl<'a> Importer<'a> {
                         format!("Dropped attribute {name} on <{tag}>: the semantic span's marker owns that key"),
                         HtmlImportSeverity::Info,
                         path,
+                        handle,
                     );
                 } else if name == "srcset" {
                     // REFUSED ON THE WAY IN, and the one refusal here that is
@@ -759,6 +848,7 @@ impl<'a> Importer<'a> {
                         format!("Dropped list-valued URL attribute {name} on <{tag}>"),
                         HtmlImportSeverity::Warning,
                         path,
+                        handle,
                     );
                 } else if !is_attr_identifier(&name) {
                     // No BARE spelling in Carve attribute syntax. The writer's
@@ -771,6 +861,7 @@ impl<'a> Importer<'a> {
                         format!("Dropped attribute {name} on <{tag}>: not a Carve attribute name"),
                         HtmlImportSeverity::Info,
                         path,
+                        handle,
                     );
                 } else {
                     // EVERYTHING ELSE IS KEPT. Carve's attribute syntax can
@@ -1306,6 +1397,7 @@ impl<'a> Importer<'a> {
                             ),
                             HtmlImportSeverity::Warning,
                             &p,
+                            child,
                         );
                     }
                 } else if !matches!(&child.data, NodeData::Comment { .. })
@@ -1318,6 +1410,7 @@ impl<'a> Importer<'a> {
                         ),
                         HtmlImportSeverity::Warning,
                         &p,
+                        child,
                     );
                 }
                 stray.push(child.clone());
@@ -1577,7 +1670,8 @@ impl<'a> Importer<'a> {
                         _ => None,
                     };
                     if let Some(message) = lost {
-                        self.unspellable.push((path.to_owned(), message.into()));
+                        self.unspellable
+                            .push((h.clone(), path.to_owned(), message.into()));
                     }
                 }
                 _ => {
@@ -1586,8 +1680,10 @@ impl<'a> Importer<'a> {
                         format!("Unwrapped unsupported <{tag}> element"),
                         HtmlImportSeverity::Info,
                         path,
+                        h,
                     );
                     self.report_unplaceable_attrs(
+                        h,
                         carried,
                         tag.as_str(),
                         "the figure did not survive as a figure",
@@ -1621,6 +1717,7 @@ impl<'a> Importer<'a> {
                 format!("Preserved unsupported <{tag}> element as raw HTML"),
                 HtmlImportSeverity::Warning,
                 path,
+                h,
             );
             return Ok(vec![BlockNode::RawBlock(RawBlock {
                 format: "html".into(),
@@ -1633,6 +1730,7 @@ impl<'a> Importer<'a> {
             format!("Unwrapped unsupported <{tag}> element"),
             HtmlImportSeverity::Info,
             path,
+            h,
         );
         // AN UNWRAPPED ELEMENT TAKES ITS ATTRIBUTES WITH IT. `<section
         // role="region">`, `<article>`, `<aside>`, `<main>`, `<nav>` and
@@ -1641,6 +1739,7 @@ impl<'a> Importer<'a> {
         // so widening retention without this would have converted a reported
         // loss into a silent one - the opposite of what carve-rs#1060 asks for.
         self.report_unplaceable_attrs(
+            h,
             attrs,
             tag.as_str(),
             "the element was unwrapped and has no node to carry it",
@@ -1711,6 +1810,7 @@ impl<'a> Importer<'a> {
                     format!("Dropped {names} on <p>: an admonition title has no attribute slot"),
                     HtmlImportSeverity::Warning,
                     &title_path,
+                    &children[i],
                 );
             }
             title = Some(self.inlines(&children[i].children.borrow(), &title_path, depth + 2)?);
@@ -1866,6 +1966,7 @@ impl<'a> Importer<'a> {
             ),
             HtmlImportSeverity::Info,
             path,
+            h,
         );
         None
     }
@@ -1932,6 +2033,7 @@ impl<'a> Importer<'a> {
                             "Dropped the attributes of a <div> group wrapper in <dl>; a definition-list group has no slot for them".into(),
                             HtmlImportSeverity::Info,
                             &p,
+                            child,
                         );
                     }
                     for (j, wrapped) in child.children.borrow().iter().enumerate() {
@@ -1948,11 +2050,11 @@ impl<'a> Importer<'a> {
                             // group. It is still reported: a doubly-wrapped
                             // list otherwise imports to nothing at all, which
                             // is the silent shape this row exists to remove.
-                            self.dropped_in_dl(&inner, &format!("{p}/{inner}[{}]", j + 1));
+                            self.dropped_in_dl(wrapped, &inner, &format!("{p}/{inner}[{}]", j + 1));
                         }
                     }
                 }
-                other => self.dropped_in_dl(other, &format!("{path}/{other}[{}]", i + 1)),
+                other => self.dropped_in_dl(child, other, &format!("{path}/{other}[{}]", i + 1)),
             }
         }
 
@@ -1990,6 +2092,7 @@ impl<'a> Importer<'a> {
                     "A <dd> with no <dt> before it kept its content but not its role: it is emitted as blocks ahead of the definition list".into(),
                     HtmlImportSeverity::Warning,
                     &p,
+                    node,
                 );
                 // AND IT LOSES ITS ATTRIBUTES WITH ITS ROLE (carve-rs#1257).
                 // Every other `<dd>` puts them on the `DefinitionDef` below;
@@ -1999,6 +2102,7 @@ impl<'a> Importer<'a> {
                 // and nothing naming the attribute. Same category, second site.
                 let carried = self.attrs(node, &p);
                 self.report_unplaceable_attrs(
+                    node,
                     carried,
                     "dd",
                     "a <dd> with no <dt> keeps its content as blocks, and blocks ahead of the list have no slot for it",
@@ -2030,12 +2134,13 @@ impl<'a> Importer<'a> {
         }));
         Ok(before)
     }
-    fn dropped_in_dl(&mut self, tag: &str, path: &str) {
+    fn dropped_in_dl(&mut self, node: &Handle, tag: &str, path: &str) {
         self.diag(
             HtmlImportDiagnosticCode::ElementDropped,
             format!("Dropped <{tag}> inside <dl>: only <dt>, <dd> and a single <div> group wrapper are definition-list content"),
             HtmlImportSeverity::Warning,
             path,
+            node,
         );
     }
     /// The element's FIRST class, the slot this engine's structural classes
@@ -2138,7 +2243,13 @@ impl<'a> Importer<'a> {
     ) -> Result<Vec<InlineNode>, HtmlImportError> {
         self.enter(depth)?;
         let carried = self.attrs(h, path);
-        self.report_unplaceable_attrs(carried, tag, "a caption line carries no attributes", path);
+        self.report_unplaceable_attrs(
+            h,
+            carried,
+            tag,
+            "a caption line carries no attributes",
+            path,
+        );
         self.inlines(&h.children.borrow(), path, depth + 1)
     }
 
@@ -2167,6 +2278,7 @@ impl<'a> Importer<'a> {
     /// `onclick` and not about the `id` that also went missing (carve#1286).
     fn report_unplaceable_attrs(
         &mut self,
+        node: &Handle,
         attrs: Option<Attrs>,
         tag: &str,
         because: &str,
@@ -2187,6 +2299,7 @@ impl<'a> Importer<'a> {
                 format!("Dropped {name} on <{tag}>: {because}"),
                 HtmlImportSeverity::Info,
                 path,
+                node,
             );
         }
     }
@@ -2452,6 +2565,7 @@ impl<'a> Importer<'a> {
     /// aligned.
     fn span_grid(
         &mut self,
+        trs: &[(Handle, Option<usize>)],
         built: Vec<Vec<BuiltCell>>,
         row_attrs: &[Option<Attrs>],
         path: &str,
@@ -2541,6 +2655,7 @@ impl<'a> Importer<'a> {
                     "Filled a row that is shorter than the spans reaching into it, with a cell the source did not have".into(),
                     HtmlImportSeverity::Warning,
                     &format!("{path}/tr[{}]", r + 1),
+                    &trs[r].0,
                 );
             }
             rows.push(TableRow {
@@ -2569,13 +2684,13 @@ impl<'a> Importer<'a> {
     /// wrapper covers its children the way one report covers a dropped subtree
     /// everywhere else. A `| "col"` arm here matched nothing on any input, which
     /// is the check that cannot fail (carve#755).
-    fn column_groups(h: &Handle, path: &str) -> Vec<String> {
+    fn column_groups(h: &Handle, path: &str) -> Vec<(Handle, String)> {
         h.children
             .borrow()
             .iter()
             .enumerate()
             .filter(|(_, c)| Self::tag(c).as_deref() == Some("colgroup"))
-            .map(|(i, _)| format!("{path}/colgroup[{}]", i + 1))
+            .map(|(i, c)| (c.clone(), format!("{path}/colgroup[{}]", i + 1)))
             .collect()
     }
 
@@ -2646,13 +2761,14 @@ impl<'a> Importer<'a> {
         // way. Reported rather than dropped in silence, and by the same rule the
         // parser uses, so the import and a re-read of its own output agree on
         // which one survives.
-        for (i, _) in captions.iter().skip(1) {
+        for (i, c) in captions.iter().skip(1) {
             self.diag(
                 HtmlImportDiagnosticCode::TableDegraded,
                 "Dropped a second <caption>: a table has one caption, and the first one wins"
                     .into(),
                 HtmlImportSeverity::Warning,
                 &format!("{path}/caption[{}]", i + 1),
+                c,
             );
         }
         // THE ELEMENT, not its children (carve-rs#1257). Reading `children` off
@@ -2694,12 +2810,13 @@ impl<'a> Importer<'a> {
         // Carve has no column model to put it in - not a narrower slot, none at
         // all. Dropped as it always was, said out loud now, because a loss the
         // reader is never told about is the one they cannot work around.
-        for p in Self::column_groups(h, path) {
+        for (cg, p) in Self::column_groups(h, path) {
             self.diag(
                 HtmlImportDiagnosticCode::ElementDropped,
                 "Dropped <colgroup>: Carve has no column model, and a table's columns are only the cells its rows carry".into(),
                 HtmlImportSeverity::Warning,
                 &p,
+                &cg,
             );
         }
         let source_cells = |tr: &Handle| -> Vec<Handle> {
@@ -2775,6 +2892,7 @@ impl<'a> Importer<'a> {
                         "Clipped a rowspan at the header rows: Carve derives the head from the leading header rows, and a span leaving them crosses a boundary browsers clip anyway".into(),
                         HtmlImportSeverity::Warning,
                         &p,
+                        cell,
                     );
                     rowspan = leading_header_rows - r;
                 }
@@ -2805,7 +2923,7 @@ impl<'a> Importer<'a> {
                 self.attrs(&trs[r].0, &p)
             })
             .collect();
-        let mut result = self.span_grid(built, &row_attrs, path, depth)?;
+        let mut result = self.span_grid(&trs, built, &row_attrs, path, depth)?;
 
         // A `scope` equal to the positional default carries no information the
         // renderer cannot reproduce, and importing it would write this engine's
@@ -2838,6 +2956,7 @@ impl<'a> Importer<'a> {
             })
             .collect();
         let row_groups = self.row_groups(
+            h,
             &trs,
             &header_rows,
             &result,
@@ -2875,6 +2994,7 @@ impl<'a> Importer<'a> {
                 ),
                 HtmlImportSeverity::Warning,
                 own_path,
+                &section_nodes[id].0,
             );
         }
         // `depth` rather than `depth + 1`: the caption's INLINES stay at the
@@ -2945,8 +3065,13 @@ impl<'a> Importer<'a> {
     /// the same row list the rows are built from, so a check at this point
     /// cannot fail; PART 12 §15's MUST is enforced where a payload arrives from
     /// elsewhere, in `from_json`.
+    // The table element joins the six it already took, so that the one
+    // diagnostic in here can report at the element it is about rather than at
+    // whatever the walk was holding.
+    #[allow(clippy::too_many_arguments)]
     fn row_groups(
         &mut self,
+        node: &Handle,
         trs: &[(Handle, Option<usize>)],
         header_rows: &[bool],
         rows: &[TableRow],
@@ -2985,6 +3110,7 @@ impl<'a> Importer<'a> {
                 "Dropped the row grouping of a table whose <thead> or <tfoot> is not at the edge of its rows: the head is a prefix of the rows and the foot a suffix".into(),
                 HtmlImportSeverity::Warning,
                 path,
+                node,
             );
             return None;
         }
@@ -3067,6 +3193,7 @@ impl<'a> Importer<'a> {
         // AST keeps it and `html_to_carve` reports it, which is the split PART
         // 12 §16 draws.
         self.unspellable.push((
+            node.clone(),
             path.to_owned(),
             "A table with an explicit head/body/foot grouping has no Carve spelling; the written table keeps only the structure a reader derives from its rows".into(),
         ));
@@ -3254,6 +3381,7 @@ impl<'a> Importer<'a> {
                 format!("Dropped active <{tag}> element"),
                 HtmlImportSeverity::Warning,
                 path,
+                h,
             );
             return Ok(Vec::new());
         }
@@ -3343,6 +3471,7 @@ impl<'a> Importer<'a> {
                         "Read <math> through its alttext: MathML does not declare the encoding of alttext, so TeX is assumed".into(),
                         HtmlImportSeverity::Info,
                         path,
+                        h,
                     );
                 }
                 return Ok(vec![InlineNode::Math(Math {
@@ -3361,6 +3490,7 @@ impl<'a> Importer<'a> {
                     "Dropped <math>: no TeX annotation and no alttext, and its children are a token stream, not an equation".into(),
                     HtmlImportSeverity::Warning,
                     path,
+                    h,
                 );
                 return Ok(Vec::new());
             }
@@ -3449,6 +3579,7 @@ impl<'a> Importer<'a> {
                 // the drop is all this can do; staying quiet would be the
                 // silent loss carve-rs#1060 is about.
                 self.report_unplaceable_attrs(
+                    h,
                     attrs,
                     "br",
                     "a hard break carries no attributes",
@@ -3488,6 +3619,7 @@ impl<'a> Importer<'a> {
                     format!("Preserved unsupported <{tag}> element as raw HTML"),
                     HtmlImportSeverity::Warning,
                     path,
+                    h,
                 );
                 InlineNode::RawInline(RawInline {
                     format: "html".into(),
@@ -3502,11 +3634,13 @@ impl<'a> Importer<'a> {
                     format!("Unwrapped unsupported <{tag}> element"),
                     HtmlImportSeverity::Info,
                     path,
+                    h,
                 );
                 // The inline twin of the block unwrap above: `<small>`,
                 // `<bdi dir="rtl">`, `<bdo>`, `<ruby>`, `<button>`, `<label>`
                 // keep their children and nothing else.
                 self.report_unplaceable_attrs(
+                    h,
                     attrs,
                     tag.as_str(),
                     "the element was unwrapped and has no node to carry it",
@@ -4471,11 +4605,17 @@ fn import(
     let mut importer = Importer {
         opts: options,
         diagnostics: Vec::new(),
+        document_order: HashMap::new(),
         nodes: 0,
         quote_depth: 0,
         unspellable: Vec::new(),
         footnote_refs: HashMap::new(),
     };
+    // BEFORE the adapter pass, which rewrites footnote-shaped HTML and detaches
+    // what it consumes: the numbers have to be on the tree as the AUTHOR wrote
+    // it, or a definition's diagnostics would sort by where the rewrite left it
+    // rather than by where it stands in the document.
+    importer.number_document_order(&dom.document);
     // Rewrite an editor's footnote-shaped HTML before the core policy reads
     // the tree, exactly as the adapter contract allows ("Adapters may
     // normalize editor-specific markup before the core policy"). `generic`
@@ -4490,12 +4630,13 @@ fn import(
     };
     let children = importer.blocks(&fragment_top_level(&dom.document), "", 0)?;
     if writing {
-        for (path, message) in std::mem::take(&mut importer.unspellable) {
+        for (node, path, message) in std::mem::take(&mut importer.unspellable) {
             importer.diag(
                 HtmlImportDiagnosticCode::StructureUnspellable,
                 message,
                 HtmlImportSeverity::Warning,
                 &path,
+                &node,
             );
         }
     }
@@ -4512,7 +4653,7 @@ fn import(
         report: HtmlImportReport {
             mode: options.mode,
             adapter: options.adapter,
-            diagnostics: importer.diagnostics,
+            diagnostics: importer.report(),
         },
     })
 }

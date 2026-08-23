@@ -304,6 +304,14 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **An import report is ordered by the losing element's document position**
+  (markup-carve/carve#1586). The list came out in the order this importer's walk
+  constructed the rows in, so a table losing something on both its `<caption>`
+  and a cell reported the cell first, a list reported a stray child before the
+  items above it, and a footnote definition the adapter pass imports reported
+  before the body it is referenced from. carve-php already answered in document
+  order.
+
 - **A table `<caption>` is numbered among the table's child nodes**
   (markup-carve/carve#1560, PART 12 §16). The step was a literal `caption[1]`
   that never consulted a position, which is the rank among the captions - a
