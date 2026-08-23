@@ -304,6 +304,16 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **The `::: footnotes` placement marker is picked per document, not fixed**
+  (#1245). The HTML renderer located the placement block by the fixed in-band
+  string NUL + `carve:footnotes-placement` + NUL. No source and no AST-JSON
+  could spell it, but a tree built through the node API passes through neither
+  normalization door, and a text node carrying that string rendered the endnotes
+  section inside the author's own paragraph. The marker is now allocated from
+  the private-use area against the document, as the parser's definition
+  placeholder (#1214) and the Markdown target's escape carriers (#1216) already
+  are. Ordering, nesting and every rendered id are unchanged.
+
 - **A non-`li` child of a list keeps its content and is reported** (#1261). The
   HTML importer filtered a `<ul>` or `<ol>` down to its `<li>` children and
   walked only those, so `<ul><div id="stray">z</div><li>a</li></ul>` imported as

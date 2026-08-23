@@ -11,13 +11,17 @@
 //! six-character escape is the only route in, and it is the one this normalizes;
 //! a surrogate pair cannot produce U+0000, since its scalar starts at U+10000.
 //!
-//! WHAT IT MAKES SAFE. `FOOTNOTES_PLACEMENT_SENTINEL` wraps its marker in NUL
-//! and its comment claims the character "cannot appear in rendered HTML output".
-//! That was a claim about ONE of the two doors: through this one, a text node
-//! carrying the marker pulled the endnotes section into itself -
-//! `<p><section role="doc-endnotes">...</section></p>`, and no longer at the
-//! document end (carve-rs#1217). The sentinel keeps its NUL; the clause is what
-//! makes its comment true as written rather than true by luck.
+//! HOW IT WAS FOUND. The HTML renderer's footnote-placement marker wrapped a
+//! fixed string in NUL, on the claim that the character "cannot appear in
+//! rendered HTML output". That was a claim about ONE of the two doors: through
+//! this one, a text node carrying the marker pulled the endnotes section into
+//! itself - `<p><section role="doc-endnotes">...</section></p>`, and no longer
+//! at the document end (carve-rs#1217).
+//!
+//! THE CLAUSE DOES NOT DEPEND ON THAT MARKER, and the marker no longer spells a
+//! NUL: it is picked per document now (carve-rs#1245). What is normative here
+//! is that the two doors agree about U+0000, which is why the rows below are
+//! about every target rather than about one renderer's internals.
 
 use carve::{
     from_json, parse, render_ansi, render_carve, render_html, render_markdown, render_plain_text,

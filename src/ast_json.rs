@@ -3536,14 +3536,17 @@ impl<'a> Parser<'a> {
                     // would make an ingested document stricter than the same
                     // document written as source.
                     //
-                    // WHAT IT MAKES SAFE: `FOOTNOTES_PLACEMENT_SENTINEL` wraps
-                    // its marker in NUL and its comment claims the character
-                    // "cannot appear in rendered HTML output". That was a claim
-                    // about ONE of the two doors, and through this one a text
-                    // node carrying the marker pulled the endnotes section into
-                    // itself. With the clause held here the sentinel is
-                    // unforgeable by construction and the comment is true as
-                    // written, so it keeps its NUL (carve-rs#1217).
+                    // WHY IT IS A CLAUSE AND NOT ONE RENDERER'S DEFENSE. It
+                    // was found through the HTML renderer's footnote-placement
+                    // marker, which wrapped a fixed string in NUL on the claim
+                    // that the character "cannot appear in rendered HTML
+                    // output" - a claim about ONE of the two doors, and through
+                    // this one a text node carrying the marker pulled the
+                    // endnotes section into itself (carve-rs#1217). That marker
+                    // is now picked per document and no longer spells a NUL at
+                    // all (carve-rs#1245), which changes nothing here: the rule
+                    // is that the two doors agree about the character, and PART
+                    // 12 §21 is what makes them.
                     out.push('\u{fffd}');
                 } else {
                     out.push(
