@@ -1468,10 +1468,37 @@ impl<'a> Importer<'a> {
                     pos: None,
                 })]);
             }
+            let blocks = self.blocks(&children, path, depth + 1)?;
+            // AN ATTRIBUTE-LESS DIV IS NOT A CONTAINER WORTH SPELLING, so it
+            // unwraps to its content and the `:::` fence is not written
+            // (markup-carve/carve#1578). A bare `<div>` carries no meaning of
+            // its own: the fence buys the reader nothing and costs them two
+            // lines of markup nobody asked for. The element not surviving the
+            // round trip is the honest outcome, because there is nothing in it
+            // to survive.
+            //
+            // The BOUNDARY is the whole rule, and it is the attribute rather
+            // than the tag: the moment a div carries any attribute the language
+            // can hold, the fence comes back, because then there IS something
+            // only the container can hold. So the test is `attrs`, not the
+            // markup - `<div style="color:red">` keeps nothing after the style
+            // map refuses the declaration, and unwraps like any other bare div.
+            //
+            // Not conditioned on the import MODE either. Roundtrip mode
+            // promises the original bytes back for what this engine cannot
+            // spell, and an attribute-less div is not such a shape: nothing
+            // about it is unspellable, there is simply nothing to spell.
+            //
+            // Silent, and deliberately: `report_unplaceable_attrs` exists for
+            // attributes that lose their carrier, and here there are none by
+            // construction. Nothing left the document, so nothing is announced.
+            let Some(attrs) = attrs else {
+                return Ok(blocks);
+            };
             return Ok(vec![BlockNode::Div(Div {
-                attrs,
+                attrs: Some(attrs),
                 label: None,
-                children: self.blocks(&children, path, depth + 1)?,
+                children: blocks,
                 pos: None,
             })]);
         }
