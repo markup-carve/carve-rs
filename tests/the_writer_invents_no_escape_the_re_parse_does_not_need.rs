@@ -81,11 +81,12 @@ const IDLE_ESCAPE_CAUSES: &[&str] = &["unit scope: ", "opener run: ", "minimal c
 /// per-OPENER-OCCURRENCE test, which is a different mechanism rather than a
 /// narrower scope.
 ///
-/// OPENER RUN, two documents: SECTION 2's THE UNIT IS THE OPENER requires the
+/// OPENER RUN, three documents since the pin moved past markup-carve/carve#1516:
+/// SECTION 2's THE UNIT IS THE OPENER requires the
 /// WHOLE opener run escaped, and PART 11 SECTION 2b names the indented heading
 /// as its own worked example. The sweep below removes ONE backslash at a time,
 /// so it reads the second one as idle: with the first still there no heading
-/// forms either way. These two entries are a floor this measurement cannot go
+/// forms either way. These entries are a floor this measurement cannot go
 /// below while SECTION 2 says what it says, and they are here to be seen rather
 /// than to be fixed.
 ///
@@ -226,11 +227,25 @@ const IDLE_ESCAPE_RATCHET: &[(&str, usize, &str)] = &[
         1,
         "minimal class: an authored `\\=` is kept after the writer's own cell padding retired it - padded, the `=` no longer starts the cell",
     ),
+    (
+        "396-an-idle-escape-does-not-spread-from-the-block-that-needed-one",
+        2,
+        "opener run: the heading opener `##` is escaped in full, and removing either backslash alone still leaves a paragraph",
+    ),
 ];
 
 /// The reading this commit measured, pinned where a reader can find it.
-const MEASURED_ESCAPES: usize = 57;
-const MEASURED_DOCUMENTS: usize = 24;
+///
+/// IT MOVED WITH THE CORPUS, NOT WITH THE WRITER (markup-carve/carve#1516). The
+/// document that ruling ADDED - `396-an-idle-escape-does-not-spread-from-the-
+/// block-that-needed-one`, `  ## H` plus a second paragraph - is a THIRD
+/// opener-run case, so this engine reads 25 / 59 where PART 11 SECTION 2b's
+/// prose still says 2 opener-run documents and 24 / 57 overall. Nothing
+/// regressed: the writer emits the spec's own `.fmt` golden for 396 byte for
+/// byte, and carve-js and carve-php measure the same 2 on it. The SECTION 2b
+/// count was taken on a pin that predated its own corpus case.
+const MEASURED_ESCAPES: usize = 59;
+const MEASURED_DOCUMENTS: usize = 25;
 
 fn corpus_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/spec/tests/corpus")

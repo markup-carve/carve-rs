@@ -141,6 +141,20 @@ fn anchor(nodes: &[InlineNode]) -> Option<String> {
     None
 }
 
+/// The source slice AS THE PARSER READ IT.
+///
+/// PART 3 replaces a NUL with U+FFFD BEFORE the document is read
+/// (markup-carve/carve#1525), so a span over a null byte covers the character
+/// the author wrote while the node holds what the parser put in its place. It
+/// is ONE CODEPOINT FOR ONE, so every offset after it is unchanged and the span
+/// is exactly right - which is why this rewrites the slice for the comparison
+/// rather than widening it. The corpus first reached this rewrite at
+/// `397-a-null-byte-is-replaced-before-the-document-is-read`; before that the
+/// sweep had no document to see it on.
+fn as_read(slice: &str) -> String {
+    slice.replace('\u{0}', "\u{FFFD}")
+}
+
 fn check(
     block: &BlockNode,
     source: &[char],
@@ -159,7 +173,7 @@ fn check(
             ));
         } else if let BlockNode::Paragraph(paragraph) = block {
             if let Some(want) = anchor(&paragraph.children) {
-                let slice: String = source[start..end].iter().collect();
+                let slice = as_read(&source[start..end].iter().collect::<String>());
                 if !slice.contains(&want) {
                     wrong.push(format!(
                         "{file}: span {start}..{end} is {slice:?}, which does not contain {want:?}"
@@ -292,7 +306,7 @@ fn check_inline_nodes(
                         source.len()
                     ));
                 } else {
-                    let slice: String = source[start..end].iter().collect();
+                    let slice = as_read(&source[start..end].iter().collect::<String>());
                     if !text.value.contains(LINE_BLOCK_INDENT) && !slice.contains('\\') {
                         *checked_inline_text += 1;
                         if slice != text.value {

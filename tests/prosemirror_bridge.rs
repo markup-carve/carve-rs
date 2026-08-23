@@ -655,8 +655,20 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // count does not move. The clause those documents pin is about accessible
     // NAMES - an `aria-label` on a rendered element - which is a render-side
     // attribute the bridge never had to carry, so nothing new is dropped.
-    const STRICT: usize = 1044;
-    const LOSSY: usize = 297;
+    // The bump to carve e88d6e3 adds seventeen documents and changes none:
+    // the seven `05-lists-2x` pairs the hard list boundary pins (carve#1513),
+    // 394-396 from the escape narrowing (carve#1516), 397's three null-byte
+    // documents (carve#1525) and the four container/definition-list extent
+    // documents (carve#1526, carve#1542). Sixteen round trip STRICTLY.
+    //
+    // The one that reports is `394-a-leading-escaped-caret-keeps-its-escape`,
+    // and it reports two causes ALREADY DECLARED above: `escaped_text`, because
+    // escaping is a source-level concern the editor holds as text - the same
+    // cause `390-...-5` carries - and `soft_break`, whitespace in the
+    // ProseMirror model, the cause `364-...-2` carries. Nothing DROPS and no
+    // new loss cause appears; the counts move because the corpus grew.
+    const STRICT: usize = 1060;
+    const LOSSY: usize = 298;
     assert!(
         covered >= STRICT,
         "strict round trips fell from {STRICT} to {covered}"
