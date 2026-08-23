@@ -2,7 +2,11 @@
 //! accessible NAME too. Each shape below had a role, or a visible label on its
 //! parts, and nothing a reader could use to tell the whole from the next one.
 
-use carve::extensions::{CodeGroup, FencedRender, FencedRenderOptions, Index, Tabs, TabsMode};
+use carve::extensions::{
+    CodeGroup, FencedRender, FencedRenderOptions, HeadingPermalinks, HeadingPermalinksOptions,
+    Index, TableOfContents, Tabs, TabsMode,
+};
+use carve::label_default;
 use carve::Options;
 
 fn html(src: &str, ext: &dyn carve::CarveExtension) -> String {
@@ -178,4 +182,107 @@ fn an_extension_option_overrides_the_map_for_that_instance() {
     );
     assert!(out.contains("aria-label=\"Explicit widget\""), "{out}");
     assert!(!out.contains("Zurück zu"), "{out}");
+}
+
+// THE OTHER HALF OF THE ADMISSION RULE (markup-carve/carve#1510, ruled in
+// markup-carve/carve#1520).
+//
+// Everything above checks that a DOCUMENTED key reaches the output. The rest of
+// this file checks the opposite direction. Extensions §1.5 used to say every
+// extension-written string with a fixed English default has a key in the
+// render's `labels` map, and two strings satisfied that sentence with no key:
+// the heading-permalink label, default `Permalink`, and the table-of-contents
+// summary, default `Table of Contents`, visible whenever a collapsible
+// disclosure is on. §1.5 was narrowed rather than the map grown - a string the
+// extension already exposes as an OPTION is configured there, and it does not
+// get both spellings - and PART 9 §16a's note recording the question as open
+// became that rule.
+//
+// ASSERTING THE ABSENCE ALONE CANNOT FAIL FOR THE RIGHT REASON. A key nothing
+// implements is inert whether the rule is honored or the string was simply
+// forgotten. So the permalink is measured three ways: the documented default
+// renders, the map key changes NOTHING, and the extension option DOES reach the
+// output. Only the third separates "configured elsewhere" from "not
+// configurable at all", which is the state §1.5 says a string must not be in.
+
+const HEADING: &str = "# One\n\nbody\n";
+
+/// The `aria-label` this engine writes on a permalink anchor, whatever it says.
+fn permalink_label(html: &str) -> Option<&str> {
+    let rest = html.split_once("class=\"permalink\" aria-label=\"")?.1;
+    rest.split_once('"').map(|(value, _)| value)
+}
+
+/// Assertion one. Without it the two below could both hold on a probe that
+/// finds nothing at all in either render.
+#[test]
+fn the_permalink_label_renders_its_documented_english_default() {
+    let out = html(HEADING, &HeadingPermalinks::new());
+    assert_eq!(permalink_label(&out), Some("Permalink"), "{out}");
+}
+
+/// Assertion two: the map key is inert, which is what "no key" means
+/// observationally.
+#[test]
+fn the_permalink_label_is_not_read_from_the_labels_map() {
+    let out = html_with_labels(
+        HEADING,
+        &HeadingPermalinks::new(),
+        "headingPermalink",
+        "Sentinel-headingPermalink",
+    );
+    assert_eq!(permalink_label(&out), Some("Permalink"), "{out}");
+}
+
+/// Assertion three, the one that makes assertion two answerable: the string IS
+/// configurable, on the extension that writes it.
+#[test]
+fn the_permalink_label_is_read_from_the_extension_option() {
+    let opts = HeadingPermalinksOptions {
+        aria_label: "Option-headingPermalink".into(),
+        ..Default::default()
+    };
+    let out = html(HEADING, &HeadingPermalinks::with_options(opts));
+    assert_eq!(
+        permalink_label(&out),
+        Some("Option-headingPermalink"),
+        "{out}"
+    );
+}
+
+/// The negative half, and the assertion that goes red if someone later adds the
+/// key the rule refuses. `label_default` is this engine's whole `labels`
+/// vocabulary; a name it does not answer for has no key at all.
+#[test]
+fn neither_option_only_name_is_in_the_labels_vocabulary() {
+    for key in ["headingPermalink", "tocSummary"] {
+        assert_eq!(
+            label_default(key),
+            "",
+            "{key} has a labels default, and Extensions §1.5 says a string its extension \
+             exposes as an option does not get a key as well"
+        );
+    }
+
+    // The control: a name the rule DOES admit answers, so the loop above is
+    // measuring the vocabulary rather than a function that answers nothing.
+    assert_eq!(label_default("indexBackref"), "Back to");
+}
+
+/// THE SUMMARY DOES NOT EXIST IN THIS ENGINE YET, so it is pinned as a tripwire
+/// rather than as a row.
+///
+/// carve-js and carve-php wrap the table of contents in a `<details>` whose
+/// `<summary>` carries the string; this engine has no `collapsible` option and
+/// writes a bare `<nav class="toc">`, so there is no string here to configure
+/// either way. That satisfies the rule vacuously, which is a weaker thing than
+/// the permalink above satisfies it. When the disclosure is ported, this
+/// assertion goes red - and whoever ports it has to come back here and give
+/// `tocSummary` the three-assertion treatment, on the extension option, never
+/// as a `labels` key.
+#[test]
+fn the_table_of_contents_writes_no_summary_to_configure() {
+    let out = html("::: toc\n:::\n\n# One\n\nbody\n", &TableOfContents::new());
+    assert!(out.contains("<nav class=\"toc\">"), "{out}");
+    assert!(!out.contains("<summary>"), "{out}");
 }
