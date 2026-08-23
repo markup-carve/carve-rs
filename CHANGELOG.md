@@ -9,6 +9,17 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`carve lint` on the command line.** The linter existed only as a library
+  API (`carve::lint_carve`), so nothing outside Rust could reach it - including
+  carve-go, which drives this binary over WASI and therefore could expose every
+  output format but not this. `carve lint [files]` reads stdin with no path,
+  accepts `--extensions`, and exits **0** clean, **1** on findings, **2** when a
+  file cannot be read. The line format and those exit codes match carve-js's
+  `carve lint`, so a script that parses one parses the other; the `rule` id is
+  shared across engines by contract while the message prose is per-engine.
+  `--extensions` is the only option accepted - every other flag is refused with
+  exit 2 rather than accepted and ignored.
+
 - **The table-of-contents nav carries an accessible name**
   (markup-carve/carve#1547, ruling markup-carve/carve#1509, carve-rs#1249).
   `TableOfContents` and `TocPlacement` write `aria-label` on the `<nav>` from a
