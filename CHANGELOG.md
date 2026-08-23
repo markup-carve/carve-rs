@@ -9,6 +9,18 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`TableOfContents` grows the collapsible disclosure the other two engines
+  have** (#1243). `TableOfContentsOptions` gains `collapsible`, `summary`
+  (default `Table of Contents`) and `open`, and with `collapsible` set the
+  injector writes `<details class="toc"><summary>...</summary>` instead of
+  `<nav class="toc">`, byte-identical to carve-js's `tableOfContents` and
+  carve-php's `TableOfContentsExtension`. The disclosure emits no `<nav>`, so it
+  takes no `tocNav` accessible name, and `summary` stays an extension option
+  rather than a `labels` key (Extensions §1.5). The `::: toc` directive is
+  unchanged and keeps its bare nav in every engine. The three new fields are an
+  API change for any caller constructing the struct without
+  `..Default::default()`.
+
 - **An HTML import can take the `labels` map the HTML was rendered with**
   (markup-carve/carve#1500). The derived-name drop matches the English defaults,
   which catches a document rendered in English and nothing else: one rendered

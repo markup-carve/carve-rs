@@ -1063,6 +1063,120 @@ fn toc_bottom_ol_golden() {
     );
 }
 
+// THE COLLAPSIBLE DISCLOSURE (carve-rs#1243). carve-js's `tableOfContents` and
+// carve-php's `TableOfContentsExtension` have carried this shape since before
+// this engine had the option; the goldens below are the byte-for-byte shape
+// both write, not a shape invented here.
+//
+// The disclosure emits NO `<nav>`, so it carries no `aria-label`: there is no
+// landmark left to name, and the `<summary>` is the visible text a reader hears
+// instead. `accessible_names_tier3.rs` owns that half.
+
+#[test]
+fn toc_collapsible_golden() {
+    let ext = TableOfContents::with_options(TableOfContentsOptions {
+        lowercase_ids: true,
+        collapsible: true,
+        ..Default::default()
+    });
+    let opts = Options::new()
+        .with_extension(&ext)
+        .with_lowercase_heading_ids(true);
+    assert_eq!(
+        carve::to_html_with_options("# Intro\n\nText.\n\n## Details\n\nMore.\n", &opts),
+        "<details class=\"toc\">\n<summary>Table of Contents</summary>\n<ul>\n<li><a href=\"#intro\">Intro</a>\n<ul>\n<li><a href=\"#details\">Details</a></li>\n</ul>\n</li>\n</ul>\n</details>\n<section id=\"intro\">\n  <h1>Intro</h1>\n  <p>Text.</p>\n  <section id=\"details\">\n    <h2>Details</h2>\n    <p>More.</p>\n  </section>\n</section>"
+    );
+}
+
+/// `open` is a BARE attribute, matching both other engines and the HTML5
+/// spelling. Closed is the default, so a host that asks for nothing gets a
+/// disclosure the reader has to open.
+#[test]
+fn toc_collapsible_open_is_a_bare_attribute() {
+    let closed = TableOfContents::with_options(TableOfContentsOptions {
+        lowercase_ids: true,
+        collapsible: true,
+        ..Default::default()
+    });
+    let open = TableOfContents::with_options(TableOfContentsOptions {
+        lowercase_ids: true,
+        collapsible: true,
+        open: true,
+        ..Default::default()
+    });
+    let src = "# Intro\n";
+    let closed_html = carve::to_html_with_options(src, &Options::new().with_extension(&closed));
+    let open_html = carve::to_html_with_options(src, &Options::new().with_extension(&open));
+    assert!(
+        closed_html.starts_with("<details class=\"toc\">"),
+        "{closed_html}"
+    );
+    assert!(
+        open_html.starts_with("<details class=\"toc\" open>"),
+        "{open_html}"
+    );
+}
+
+/// The class reaches the disclosure the same way it reaches the nav, so a host
+/// that renamed it does not silently get `toc` back when it collapses.
+#[test]
+fn toc_collapsible_carries_the_configured_css_class() {
+    let ext = TableOfContents::with_options(TableOfContentsOptions {
+        collapsible: true,
+        css_class: "contents".into(),
+        ..Default::default()
+    });
+    let html = carve::to_html_with_options("# Intro\n", &Options::new().with_extension(&ext));
+    assert!(html.contains("<details class=\"contents\">"), "{html}");
+}
+
+/// BOTH host-supplied strings are escaped where they land. The summary is
+/// interpolated into raw HTML the extension builds itself, so a host passing
+/// markup through a config file must not be able to inject it.
+#[test]
+fn toc_collapsible_escapes_the_summary_and_the_class() {
+    let ext = TableOfContents::with_options(TableOfContentsOptions {
+        collapsible: true,
+        summary: "<script>x()</script>".into(),
+        css_class: "a\"b".into(),
+        ..Default::default()
+    });
+    let html = carve::to_html_with_options("# Intro\n", &Options::new().with_extension(&ext));
+    assert!(!html.contains("<script>x()</script>"), "{html}");
+    assert!(html.contains("&lt;script&gt;x()&lt;/script&gt;"), "{html}");
+    assert!(!html.contains("class=\"a\"b\""), "{html}");
+}
+
+/// An empty summary stays empty rather than falling back to the default: a host
+/// that asked for no label asked for no label. The disclosure still renders, so
+/// the entries are not lost with the string.
+#[test]
+fn toc_collapsible_keeps_an_empty_summary_empty() {
+    let ext = TableOfContents::with_options(TableOfContentsOptions {
+        collapsible: true,
+        summary: String::new(),
+        ..Default::default()
+    });
+    let html = carve::to_html_with_options("# Intro\n", &Options::new().with_extension(&ext));
+    assert!(html.contains("<summary></summary>"), "{html}");
+    assert!(
+        html.contains("<li><a href=\"#Intro\">Intro</a></li>"),
+        "{html}"
+    );
+}
+
+/// A document with no headings inserts NOTHING, collapsed or not - an empty
+/// disclosure would be a widget a reader can open onto nothing.
+#[test]
+fn toc_collapsible_inserts_nothing_without_headings() {
+    let ext = TableOfContents::with_options(TableOfContentsOptions {
+        collapsible: true,
+        ..Default::default()
+    });
+    let html = carve::to_html_with_options("body\n", &Options::new().with_extension(&ext));
+    assert!(!html.contains("<details"), "{html}");
+}
+
 // ---------------------------------------------------------------------------
 // tab-normalize
 // ---------------------------------------------------------------------------
