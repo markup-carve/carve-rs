@@ -292,6 +292,14 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A container ends at the markup that closes it even where its last child is
+  unplaced** (markup-carve/carve#1551, PART 12 §4). A `paragraph` ended at the
+  last child that carried a position, so a line block stanza whose LAST line
+  holds a tab - unplaceable, because the verse text is rebuilt with expanded
+  tabs - ended one past the terminator above that line, leaving the stanza's own
+  last line outside the paragraph holding it. Published `pos` values move on
+  those documents.
+
 - **A consumed caption reports the attributes it drops** (#1257). A table
   `<caption>` was read for its children with its own attributes never looked at,
   so an `onclick` on it was stripped in silence where carve-php reported it. It
