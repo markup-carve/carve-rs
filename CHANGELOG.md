@@ -258,6 +258,15 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A container starts at its opening markup even where its first child is
+  unplaced** (markup-carve/carve-rs#1247, PART 12 §4). A `paragraph` used to
+  start at the first child that carried a position, so a line block stanza whose
+  first line holds a tab - unplaceable, because the verse text is rebuilt with
+  expanded tabs - began one line below its own first line, and the break ending
+  that line sat outside the paragraph holding it. The start rule does not mirror
+  the end rule: it names where the construct begins, which an unplaced child
+  says nothing about. Published spans move.
+
 - **The AST-JSON ingest replaces U+0000, as the parse boundary already does**
   (markup-carve/carve-rs#1237, markup-carve/carve-rs#1217,
   markup-carve/carve#1528, PART 12 §21). `from_json` replaces every NUL a
