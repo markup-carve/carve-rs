@@ -15975,13 +15975,62 @@ fn stamp_source_line_attr(attrs: &mut Attrs, line: usize) {
     }
 }
 
+/// PART 9 §17 L7: the consumed `loose` boolean, taken off the attribute line.
+///
+/// Returns whether the key was SPELLED, and removes it, so it never reaches the
+/// output as an HTML attribute. The precedent is PART 12 §15's `header-rows`:
+/// a structural fact riding the block-attribute line, consumed rather than
+/// emitted.
+///
+/// A BOOLEAN AND AN EMPTY VALUE ARE ONE KEY. PART 4 makes `{loose}` and
+/// `{loose=""}` the same attribute, and both arrive here with an empty value,
+/// so both are consumed. `loose=x` names a value this key does not take, so it
+/// is NOT this key: it is left alone and renders `loose="x"` like any other
+/// attribute. There is no error state and no spelling that half-applies.
+fn consume_loose(attrs: &mut Attrs) -> bool {
+    if attrs.key_values.get("loose").map(String::as_str) != Some("") {
+        return false;
+    }
+    attrs.key_values.remove("loose");
+    attrs
+        .order
+        .retain(|slot| !matches!(slot, AttrSlot::Key(key) if key == "loose"));
+    true
+}
+
+fn attrs_are_empty(attrs: &Attrs) -> bool {
+    attrs.id.is_none()
+        && attrs.classes.is_empty()
+        && attrs.key_values.is_empty()
+        && attrs.order.is_empty()
+}
+
 fn apply_attrs_to_block(node: &mut BlockNode, attrs: Attrs) {
+    let mut attrs = attrs;
     match node {
         BlockNode::Heading(n) => n.attrs = Some(attrs),
         BlockNode::Paragraph(n) => n.attrs = Some(attrs),
         BlockNode::ThematicBreak(n) => n.attrs = Some(attrs),
         BlockNode::CodeBlock(n) => n.attrs = Some(attrs),
-        BlockNode::List(n) => n.attrs = Some(attrs),
+        BlockNode::List(n) => {
+            // §17 L7. The axis is TOTAL for a list, so the spelled fact lands in
+            // the field that already states it and nothing else is published.
+            // Redundant use is a legal no-op: a list the blank lines already
+            // loosened is already `tight: false`.
+            if consume_loose(&mut attrs) {
+                n.tight = false;
+                // A LINE THAT CARRIED ONLY THE KEY LEAVES NO ATTRIBUTES BEHIND.
+                // Attaching the emptied set published `attrs: {}` on a node the
+                // author gave no attributes, which is a tree the same document
+                // written without the key does not produce - so `fmt` of a
+                // one-item loose list stopped round-tripping to its own parse.
+                if attrs_are_empty(&attrs) {
+                    n.attrs = None;
+                    return;
+                }
+            }
+            n.attrs = Some(attrs);
+        }
         BlockNode::BlockQuote(n) => n.attrs = Some(attrs),
         BlockNode::Table(n) => {
             n.columns = table_columns_from_attrs(&attrs);
