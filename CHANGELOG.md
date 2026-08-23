@@ -304,6 +304,22 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **The writer freezes the symbol sigil and a cell's rowspan marker**
+  (markup-carve/carve#1609, PART 11 §2 and §6f). `a :rocket: b` came back with a
+  bare `:` and re-parsed as a `symbol` node, rendering a glyph under a configured
+  symbol map; a table cell holding `^` came back bare, re-read as a rowspan
+  marker, and the cell was deleted. `carve migrate` spends the symbol escape too,
+  under all three escaper profiles.
+
+- **An anchor or image with no destination comes back as its content**
+  (markup-carve/carve#1601). `<a>` with no `href`, `<a href="">` and an `<img>`
+  whose `src` is either now import as the span where an attribute survives and
+  the bare content where none does, each with an `element-unwrapped` diagnostic,
+  instead of the literal `[t]()`. The destination PART 9 §25's denylist blanked
+  is never rebuilt. The paragraph an import synthesizes around a bare inline run
+  also drops the whitespace at its two ends, which is inter-element formatting
+  whitespace no target renders and which Carve reads as indentation.
+
 - **`fmt` keeps a heading's leading tab** (markup-carve/carve#1587, PART 11 §1).
   A heading's marker separator is a run of SPACES and none of it is content, so
   `## \tx` is an h2 whose title opens with the tab. The writer trimmed it along

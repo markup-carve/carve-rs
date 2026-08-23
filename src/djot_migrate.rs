@@ -942,6 +942,66 @@ pub(crate) fn escape_plain_carve_syntax(source: &str, handled: HandledDelimiters
         i += 1;
     }
 
+    // A SYMBOL SHORTCODE is the third opener with nothing downstream to
+    // neutralize it. `:rocket:` is ONE token rather than a pair: the closing
+    // colon belongs to the same production, so - unlike a bare or braced run -
+    // there is no separate delimiter a later line could supply or withhold, and
+    // the whole construct is decided inside the run itself.
+    //
+    // Djot has no symbol shortcode: pandoc's Djot reader renders `a :rocket: b`
+    // as `<p>a :rocket: b</p>`. So every `:name:` in Djot prose became a Carve
+    // `symbol` node that existed nowhere in the source, and under a configured
+    // symbol map it rendered a GLYPH where the source held text. `:` is already
+    // in PART 11 §5's candidate set, and §2's test - escaped if and only if
+    // omitting the escape would change the re-parsed AST - therefore already
+    // asked for this (markup-carve/carve#1609).
+    //
+    // Mirrors `parse_symbol` rather than approximating it: a symbol opens on a
+    // `:` NOT preceded by an alphanumeric or `_`, whose next byte is an
+    // alphanumeric, `+` or `-` - never `_`, which would steal from underline -
+    // followed by a run of name characters and a CLOSING `:`. A name character
+    // is never a newline, so the run cannot leave the line it opened on.
+    //
+    // ONLY THE OPENING COLON IS ESCAPED. The closing one opens nothing by
+    // itself, and neutralizing the opener is what makes the whole run text; a
+    // rule over every colon would also escape `a : b : c`, where the space
+    // against each colon means no symbol opens at either of them (corpus cases
+    // `a-symbol-shortcode` and `a-colon-that-closes-no-shortcode` are that
+    // pair).
+    let mut i = 0;
+    while i < mask.len() {
+        if mask[i] != b':' || is_escaped(mask, i) {
+            i += 1;
+            continue;
+        }
+        if i > 0 && (mask[i - 1].is_ascii_alphanumeric() || mask[i - 1] == b'_') {
+            i += 1;
+            continue;
+        }
+        let Some(&first) = mask.get(i + 1) else {
+            break;
+        };
+        if !first.is_ascii_alphanumeric() && first != b'+' && first != b'-' {
+            i += 1;
+            continue;
+        }
+        let mut len = 1;
+        while let Some(&b) = mask.get(i + 1 + len) {
+            if b.is_ascii_alphanumeric() || b == b'_' || b == b'+' || b == b'-' {
+                len += 1;
+            } else {
+                break;
+            }
+        }
+        if mask.get(i + 1 + len) == Some(&b':') {
+            at.push(i);
+            // The whole shortcode is consumed, the way the parser consumes it.
+            i += len + 2;
+        } else {
+            i += 1;
+        }
+    }
+
     if at.is_empty() {
         return source.to_string();
     }
@@ -1558,6 +1618,87 @@ mod escape_corpus {
         assert_eq!(
             escape_plain_carve_syntax("hi \\@user ok", HandledDelimiters::DJOT),
             "hi \\@user ok"
+        );
+    }
+
+    /// ONLY THE OPENING COLON. Escaping the opener is what makes the whole
+    /// shortcode text - the closing colon then has a letter against it and
+    /// opens nothing - so a second escape would be bytes PART 11 §4 asks the
+    /// writer not to spend. The corpus case `a-symbol-shortcode` pins the
+    /// one-escape form; this names WHICH colon under every profile.
+    #[test]
+    fn a_symbol_shortcode_is_frozen_at_its_opener_only() {
+        for (input, expected) in [
+            ("a :rocket: b", "a \\:rocket: b"),
+            (":rocket:", "\\:rocket:"),
+            // The reaction shortcodes: `+` and `-` open a name, `_` does not.
+            ("a :+1: b", "a \\:+1: b"),
+            ("a :-1: b", "a \\:-1: b"),
+            // Two shortcodes against each other are two openers.
+            (":a::b:", "\\:a:\\:b:"),
+        ] {
+            for (profile, handled) in profiles() {
+                assert_eq!(
+                    escape_plain_carve_syntax(input, handled),
+                    expected,
+                    "{input:?} under {profile}"
+                );
+            }
+        }
+    }
+
+    /// BOUND: THE NEAR NEIGHBOUR THAT MUST NOT MOVE. `a : b : c` is the shape a
+    /// rule over every colon would break, and the corpus pins it unchanged
+    /// (`a-colon-that-closes-no-shortcode`). The parser opens no symbol at
+    /// either colon - a space is not a name character - so neither is offered
+    /// an escape here.
+    #[test]
+    fn a_colon_that_opens_no_shortcode_is_left_bare() {
+        for input in [
+            // The corpus's own bound.
+            "a : b : c",
+            // A colon with a letter against it is not an opener.
+            "https://example.com",
+            "note: see below",
+            "12:30:45",
+            // A name that never closes.
+            "a :rocket b",
+            // The fence and the definition marker, which are line-initial
+            // constructs the converters already own.
+            ":::",
+            ": definition",
+            // Nothing after the colon at all.
+            "ends with :",
+        ] {
+            for (profile, handled) in profiles() {
+                assert_eq!(
+                    escape_plain_carve_syntax(input, handled),
+                    input,
+                    "{input:?} under {profile}"
+                );
+            }
+        }
+    }
+
+    /// BOUND: `_` CANNOT OPEN A NAME, because `:_x_:` would steal from
+    /// underline - `parse_symbol` excludes it from the first name character's
+    /// class and this mirrors that. Asserted on the colon alone: the `_x_` in
+    /// it is a bare underline run, which the profiles that do not spell `_`
+    /// freeze for their own unrelated reason.
+    #[test]
+    fn an_underscore_does_not_open_a_symbol_name() {
+        for (profile, handled) in profiles() {
+            let got = escape_plain_carve_syntax("a :_x_: b", handled);
+            assert!(!got.contains("\\:"), "{profile} escaped a colon in {got:?}");
+        }
+    }
+
+    /// BOUND: a colon the source already escaped is not escaped twice.
+    #[test]
+    fn an_already_escaped_symbol_opener_is_left_alone() {
+        assert_eq!(
+            escape_plain_carve_syntax("a \\:rocket: b", HandledDelimiters::DJOT),
+            "a \\:rocket: b"
         );
     }
 }

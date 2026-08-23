@@ -1270,7 +1270,7 @@ impl<'a> Importer<'a> {
                     if visible(&children) {
                         out.push(BlockNode::Paragraph(Paragraph {
                             attrs: None,
-                            children,
+                            children: trim_edge_whitespace(children),
                             at_content_column: true,
                             pos: None,
                         }));
@@ -1289,7 +1289,7 @@ impl<'a> Importer<'a> {
             if visible(&children) {
                 out.push(BlockNode::Paragraph(Paragraph {
                     attrs: None,
-                    children,
+                    children: trim_edge_whitespace(children),
                     at_content_column: true,
                     pos: None,
                 }));
@@ -3600,6 +3600,57 @@ impl<'a> Importer<'a> {
             "sub" => emphasis(EmphasisKind::Sub),
             "sup" => emphasis(EmphasisKind::Super),
             "code" => InlineNode::code(Self::text(h), attrs),
+            // A DESTINATION CARVE CANNOT CARRY IS NOT A DESTINATION
+            // (docs/html-import.md, markup-carve/carve#1601). Carve spells a
+            // link's destination and an image's source in the same slot and has
+            // NO spelling for an empty one: `[t]()` and `![t]()` are literal
+            // text. So writing the empty slot does not write a link, it writes
+            // four punctuation characters the HTML never held into the middle
+            // of the prose.
+            //
+            // The rule is over the DESTINATION, not over the reason it is
+            // missing: no attribute at all and a present-but-empty one are one
+            // shape. What is written instead is what the element's content and
+            // its SURVIVING attributes would produce without it - the span
+            // where an attribute survives, the bare content where none does,
+            // which is the attribute-less `<div>` boundary one layer down.
+            //
+            // THE DESTINATION IS NEVER REBUILT. `href=""` is what PART 9 §25's
+            // URL sink denylist EMITS when it blanks a dangerous scheme while
+            // keeping the visible text, so this is the importer reading Carve's
+            // own hardened output. There is nothing in that HTML to rebuild the
+            // destination from, and reconstructing one from a `title` or from
+            // the anchor's text would undo the hardening.
+            "a" if names_no_destination(Self::attr(h, "href").as_deref()) => {
+                self.diag(
+                    HtmlImportDiagnosticCode::ElementUnwrapped,
+                    "Unwrapped <a> with no destination".into(),
+                    HtmlImportSeverity::Info,
+                    path,
+                    h,
+                );
+                return Ok(unwrapped_content(attrs, children));
+            }
+            // AN IMAGE'S CONTENT IS ITS ALTERNATIVE TEXT: that is what every
+            // target with no image shows for it, and what a browser shows for
+            // one it cannot load, so it is the text this document's reader was
+            // going to see either way.
+            "img" if names_no_destination(Self::attr(h, "src").as_deref()) => {
+                self.diag(
+                    HtmlImportDiagnosticCode::ElementUnwrapped,
+                    "Unwrapped <img> with no source".into(),
+                    HtmlImportSeverity::Info,
+                    path,
+                    h,
+                );
+                let alt = Self::attr(h, "alt").unwrap_or_default();
+                let content = if alt.is_empty() {
+                    Vec::new()
+                } else {
+                    vec![InlineNode::text(alt)]
+                };
+                return Ok(unwrapped_content(attrs, content));
+            }
             "a" => InlineNode::Link(Link {
                 attrs,
                 href: Self::attr(h, "href").unwrap_or_default(),
@@ -4586,6 +4637,39 @@ fn prune_empty_footnote_container(node: &Handle) {
 /// Whether an HTML element name is one of the seven PART 9 §10 spells as a
 /// compact span attribute.
 ///
+/// Whether an `href` or a `src` names no destination the source can carry.
+///
+/// EMPTY IS A PROPERTY OF THE STRING, read the way an HTML URL attribute is
+/// read: zero length, or zero length once leading and trailing ASCII whitespace
+/// is stripped, because that is what a URL parser strips before resolving one.
+/// A value that is merely unusual is not empty and is kept. `None` - the
+/// attribute absent altogether - is the same shape as the empty one, since the
+/// rule is over the destination rather than over the reason it is missing.
+fn names_no_destination(value: Option<&str>) -> bool {
+    match value {
+        None => true,
+        Some(v) => v.trim_matches(|c: char| c.is_ascii_whitespace()).is_empty(),
+    }
+}
+
+/// What an unwrapped element leaves behind: the span where an attribute
+/// survives, the bare content where none does.
+///
+/// The same boundary `<div>` takes one layer down, and the same question - what
+/// is the element still needed to hold? An empty `Attrs` never reaches here:
+/// `attrs` returns `None` for an element with nothing left to carry.
+fn unwrapped_content(attrs: Option<Attrs>, children: Vec<InlineNode>) -> Vec<InlineNode> {
+    match attrs {
+        Some(attrs) => vec![InlineNode::Span(Span {
+            attrs: Some(attrs),
+            children,
+            injected: false,
+            pos: None,
+        })],
+        None => children,
+    }
+}
+
 /// The list and the value mapping are the renderer's, read rather than
 /// repeated: a name that joins or leaves the set, or starts carrying its value
 /// somewhere else, cannot be right in the renderer and stale in the importer.
@@ -4617,6 +4701,38 @@ fn collapse(s: &str) -> String {
         }
     )
 }
+
+/// The edge whitespace of a SYNTHESIZED paragraph, removed.
+///
+/// The paragraph `blocks_at` wraps a bare inline run in is not an element the
+/// document contains - it is invented to give the run somewhere to live - so
+/// the whitespace at its two ends is not content, it is the inter-element
+/// formatting whitespace that separated the run from the block markup beside
+/// it. No target renders that whitespace, and Carve cannot hold it: a leading
+/// space on a paragraph line is INDENTATION, which is syntax.
+///
+/// Only the two ends are touched, and only whitespace. Whitespace INSIDE the
+/// run separates words and stays exactly as it is.
+fn trim_edge_whitespace(mut nodes: Vec<InlineNode>) -> Vec<InlineNode> {
+    while let Some(InlineNode::Text(first)) = nodes.first_mut() {
+        first.value = first.value.trim_start().to_string();
+        if first.value.is_empty() {
+            nodes.remove(0);
+        } else {
+            break;
+        }
+    }
+    while let Some(InlineNode::Text(last)) = nodes.last_mut() {
+        last.value = last.value.trim_end().to_string();
+        if last.value.is_empty() {
+            nodes.pop();
+        } else {
+            break;
+        }
+    }
+    nodes
+}
+
 fn visible(nodes: &[InlineNode]) -> bool {
     nodes
         .iter()
