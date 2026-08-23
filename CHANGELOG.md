@@ -292,6 +292,16 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A non-`li` child of a list keeps its content and is reported** (#1261). The
+  HTML importer filtered a `<ul>` or `<ol>` down to its `<li>` children and
+  walked only those, so `<ul><div id="stray">z</div><li>a</li></ul>` imported as
+  one item with the text `z` gone and an EMPTY report. Every non-item child now
+  goes through the ordinary block walk and is emitted ahead of the list, keeping
+  its own element and attributes, with an `element-unwrapped` warning naming
+  where it sat. A `<script>` in the same position is still dropped and now says
+  so. carve-js and carve-php filter the same way and stay silent
+  (markup-carve/carve-js#1340), so imported reports diverge until that lands.
+
 - **A derived admonition title id is recognized when the id namespace collides**
   (#1258, PART 9 §16a). The importer predicted the renderer's counter, `adm-N`,
   where the renderer writes what its id registry ALLOCATES for that name - so a
