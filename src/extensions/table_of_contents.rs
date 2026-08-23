@@ -70,6 +70,30 @@ pub struct TableOfContentsOptions {
     /// match the renderer's [`crate::Options::lowercase_heading_ids`]. Default
     /// false (case-preserving), matching the carve-rs default.
     pub lowercase_ids: bool,
+    /// Wrap the entries in a `<details>` / `<summary>` disclosure so the reader
+    /// can collapse them. Default false.
+    ///
+    /// THE DISCLOSURE SHAPE HAS NO `<nav>` AT ALL, so it takes no accessible
+    /// name from the `tocNav` label: there is no landmark left to name. The
+    /// `<summary>` is visible text in a widget instead, and that is why
+    /// [`Self::summary`] is this extension's own option rather than a second
+    /// `labels` key beside `tocNav` (Extensions §1.5,
+    /// markup-carve/carve#1510). The two strings sit on mutually exclusive
+    /// shapes, which is what keeps their near-identical defaults from being one
+    /// string wearing two hats.
+    pub collapsible: bool,
+    /// The disclosure's label. Default `"Table of Contents"`. Only read when
+    /// [`Self::collapsible`] is set.
+    ///
+    /// An OPTION, never a `labels` key. Extensions §1.5 gives a string with a
+    /// fixed English default a `labels` key *unless* the extension already
+    /// exposes it as an option, and never both - so `tocSummary` stays outside
+    /// this engine's `labels` vocabulary, and `carve::label_default` answers
+    /// nothing for it.
+    pub summary: String,
+    /// Render the disclosure expanded. Default false (closed). Only read when
+    /// [`Self::collapsible`] is set.
+    pub open: bool,
 }
 
 impl Default for TableOfContentsOptions {
@@ -81,6 +105,9 @@ impl Default for TableOfContentsOptions {
             css_class: "toc".into(),
             position: Position::Top,
             lowercase_ids: false,
+            collapsible: false,
+            summary: "Table of Contents".into(),
+            open: false,
         }
     }
 }
@@ -110,6 +137,23 @@ struct TocEntry {
 ///     .with_lowercase_heading_ids(true);
 /// let html = carve::to_html_with_options("# Intro\n\n## Details", &options);
 /// assert!(html.starts_with("<nav class=\"toc\" aria-label=\"Table of contents\">"));
+/// ```
+///
+/// Set `collapsible` to wrap the entries in a `<details>` the reader can fold
+/// away. The disclosure emits no `<nav>`, so it carries no `aria-label`; the
+/// `<summary>` is the visible text instead, and `summary` sets it.
+///
+/// ```
+/// use carve::{TableOfContents, TableOfContentsOptions, Options};
+/// let opts = TableOfContentsOptions {
+///     collapsible: true,
+///     summary: "Contents".into(),
+///     open: true,
+///     ..Default::default()
+/// };
+/// let ext = TableOfContents::with_options(opts);
+/// let html = carve::to_html_with_options("# Intro", &Options::new().with_extension(&ext));
+/// assert!(html.starts_with("<details class=\"toc\" open>\n<summary>Contents</summary>"));
 /// ```
 pub struct TableOfContents {
     opts: TableOfContentsOptions,
@@ -166,14 +210,39 @@ impl CarveExtension for TableOfContents {
         // (Extensions §8b.1, markup-carve/carve#1509). Named from the SAME
         // `labels` key `TocPlacement` reads, so the nav fragment §8b.3 makes the
         // cross-impl contract stays byte-identical between the two.
-        let html = format!(
-            "<nav class=\"{}\"{}>\n{}</nav>",
-            escape_html(&self.opts.css_class),
-            nav_label_attr(ctx.options().label(LABEL_TOC_NAV)),
-            build_list(&entries, self.opts.list_type, &|nodes| {
-                crate::render::render_inlines_inside_anchor(nodes, ctx.options())
-            }),
-        );
+        let list = build_list(&entries, self.opts.list_type, &|nodes| {
+            crate::render::render_inlines_inside_anchor(nodes, ctx.options())
+        });
+        // COLLAPSIBLE: the heading list sits directly inside a `<details>`
+        // disclosure, closed unless `open`. Byte-identical to carve-js's
+        // `tableOfContents` and carve-php's `TableOfContentsExtension`, which
+        // have carried this shape since before this engine had the option at
+        // all (carve-rs#1243).
+        //
+        // NOTHING NAMES IT, and that is the shape rather than an omission: the
+        // disclosure emits no `<nav>`, so there is no landmark for `tocNav` to
+        // name, and the `<summary>` a reader hears is the visible text of the
+        // widget. `nav_label_attr` is therefore NOT called on this branch.
+        //
+        // The DIRECTIVE keeps the bare nav in every engine: `TocPlacement` has
+        // no disclosure here, in carve-js, or in carve-php. The option belongs
+        // to the injector, which owns the element it inserts.
+        let html = if self.opts.collapsible {
+            format!(
+                "<details class=\"{}\"{}>\n<summary>{}</summary>\n{}</details>",
+                escape_html(&self.opts.css_class),
+                if self.opts.open { " open" } else { "" },
+                escape_html(&self.opts.summary),
+                list,
+            )
+        } else {
+            format!(
+                "<nav class=\"{}\"{}>\n{}</nav>",
+                escape_html(&self.opts.css_class),
+                nav_label_attr(ctx.options().label(LABEL_TOC_NAV)),
+                list,
+            )
+        };
         let toc = BlockNode::RawBlock(RawBlock {
             format: "html".into(),
             content: html,

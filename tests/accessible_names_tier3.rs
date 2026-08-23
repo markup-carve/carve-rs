@@ -269,28 +269,120 @@ fn neither_option_only_name_is_in_the_labels_vocabulary() {
     assert_eq!(label_default("indexBackref"), "Back to");
 }
 
-/// THE SUMMARY DOES NOT EXIST IN THIS ENGINE YET, so it is pinned as a tripwire
-/// rather than as a row.
+// THE DISCLOSURE SUMMARY, which used to be pinned here as a TRIPWIRE because no
+// such string existed in this engine (carve-rs#1241). It exists now
+// (carve-rs#1243), so the tripwire is replaced by the three assertions it said
+// its porter owed - the same three the permalink label gets above, because
+// `tocSummary` is an OPTION-ONLY name and the rule that makes it one is the
+// same rule.
+//
+// The tripwire's own negative half did NOT move: `tocSummary` still must not be
+// in the `labels` vocabulary, and `neither_option_only_name_is_in_the_labels_vocabulary`
+// above still asserts it. What changed is that the rule is now satisfied by a
+// string that exists rather than vacuously by one that does not.
+
+/// The `<summary>` text of the disclosure the collapsible TOC emits.
 ///
-/// carve-js and carve-php wrap the table of contents in a `<details>` whose
-/// `<summary>` carries the string; this engine has no `collapsible` option and
-/// writes the nav unwrapped, so there is no string here to configure
-/// either way. That satisfies the rule vacuously, which is a weaker thing than
-/// the permalink above satisfies it. When the disclosure is ported, this
-/// assertion goes red - and whoever ports it has to come back here and give
-/// `tocSummary` the three-assertion treatment, on the extension option, never
-/// as a `labels` key.
+/// Reads the element rather than searching for the whole rendered string: the
+/// point of every assertion below is WHICH source the text came from, and a
+/// substring probe for the expected text passes for the wrong reason when the
+/// same words appear somewhere else in the document.
+fn summary_text(html: &str) -> Option<String> {
+    let start = html.find("<summary>")? + "<summary>".len();
+    let end = html[start..].find("</summary>")?;
+    Some(html[start..start + end].to_string())
+}
+
+fn collapsible_toc(opts: TableOfContentsOptions) -> TableOfContents {
+    TableOfContents::with_options(TableOfContentsOptions {
+        collapsible: true,
+        ..opts
+    })
+}
+
+/// Assertion one: the documented English default is what renders.
 #[test]
-fn the_table_of_contents_writes_no_summary_to_configure() {
-    let out = html("::: toc\n:::\n\n# One\n\nbody\n", &TableOfContents::new());
-    // A nav WAS rendered - the control on the two assertions below, which a
-    // render producing nothing at all would satisfy vacuously. On the open TAG
-    // rather than `<nav class="toc">`, because `css_class` is an option and the
-    // nav now carries a name after it.
+fn the_toc_summary_renders_its_documented_english_default() {
+    let out = html(
+        HEADINGS,
+        &collapsible_toc(TableOfContentsOptions::default()),
+    );
+    assert_eq!(
+        summary_text(&out).as_deref(),
+        Some("Table of Contents"),
+        "{out}"
+    );
+}
+
+/// Assertion two: the map key is inert, which is what "no key" means
+/// observationally.
+#[test]
+fn the_toc_summary_is_not_read_from_the_labels_map() {
+    let out = html_with_labels(
+        HEADINGS,
+        &collapsible_toc(TableOfContentsOptions::default()),
+        "tocSummary",
+        "Sentinel-tocSummary",
+    );
+    assert_eq!(
+        summary_text(&out).as_deref(),
+        Some("Table of Contents"),
+        "{out}"
+    );
+}
+
+/// Assertion three, the one that makes assertion two answerable: the string IS
+/// configurable, on the extension that writes it.
+#[test]
+fn the_toc_summary_is_read_from_the_extension_option() {
+    let out = html(
+        HEADINGS,
+        &collapsible_toc(TableOfContentsOptions {
+            summary: "Option-tocSummary".into(),
+            ..Default::default()
+        }),
+    );
+    assert_eq!(
+        summary_text(&out).as_deref(),
+        Some("Option-tocSummary"),
+        "{out}"
+    );
+}
+
+/// The disclosure emits NO `<nav>`, so there is no landmark for `tocNav` to
+/// name and the label must not appear on it. That is the whole reason the
+/// summary is an option and not a second `labels` key beside `tocNav`
+/// (markup-carve/carve#1510): the two strings sit on mutually exclusive shapes.
+///
+/// Asserted on the OPEN TAG, not on the string `aria-label`: the entries carry
+/// heading text, and a document whose heading happened to spell the attribute
+/// would satisfy a whole-document search.
+#[test]
+fn the_disclosure_takes_no_landmark_name_because_it_has_no_landmark() {
+    let out = html(
+        HEADINGS,
+        &collapsible_toc(TableOfContentsOptions::default()),
+    );
+    assert!(out.contains("<details class=\"toc\">"), "{out}");
+    assert!(!out.contains("<nav"), "{out}");
+    assert!(name_on("<details", &out).is_none(), "{out}");
+    // The control: the SAME document with the disclosure off does name its nav,
+    // so the assertions above measure the shape rather than a broken probe.
+    let bare = html(HEADINGS, &TableOfContents::new());
+    assert_eq!(
+        name_on("<nav", &bare).as_deref(),
+        Some("Table of contents"),
+        "{bare}"
+    );
+}
+
+/// The `::: toc` DIRECTIVE keeps the bare nav. No engine gives it a disclosure:
+/// the option belongs to the injector, which owns the element it inserts, and
+/// `TocPlacement` renders where the author already chose to put it.
+#[test]
+fn the_toc_directive_has_no_disclosure() {
+    let out = html(PLACED, &TocPlacement::new());
     assert!(out.contains("<nav "), "{out}");
-    // The open TAG, not the exact `<summary>` string: a ported disclosure that
-    // put a class on the element would slip past the closed form and leave the
-    // tripwire green while the string it guards had arrived.
     assert!(!out.contains("<details"), "{out}");
     assert!(!out.contains("<summary"), "{out}");
 }
