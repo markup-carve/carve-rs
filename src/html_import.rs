@@ -1865,6 +1865,19 @@ impl<'a> Importer<'a> {
                     HtmlImportSeverity::Warning,
                     &p,
                 );
+                // AND IT LOSES ITS ATTRIBUTES WITH ITS ROLE (carve-rs#1257).
+                // Every other `<dd>` puts them on the `DefinitionDef` below;
+                // this one has no node to carry them, and reading only its
+                // CHILDREN meant an `onclick` here went the way the table
+                // caption's did - stripped, with the row above naming the role
+                // and nothing naming the attribute. Same category, second site.
+                let carried = self.attrs(node, &p);
+                self.report_unplaceable_attrs(
+                    carried,
+                    "dd",
+                    "a <dd> with no <dt> keeps its content as blocks, and blocks ahead of the list have no slot for it",
+                    &p,
+                );
                 before.extend(self.blocks(&node.children.borrow(), &p, node_depth + 1)?);
                 continue;
             }
@@ -1969,9 +1982,10 @@ impl<'a> Importer<'a> {
         Some(attrs)
     }
 
-    /// A `<figcaption>`'s inlines, charged and diagnosed like any other element.
+    /// A CAPTION ELEMENT's inlines, charged and diagnosed like any other
+    /// element - `<figcaption>` on a figure, `<caption>` on a table.
     ///
-    /// A caption line has NO attribute slot, so whatever the figcaption carried
+    /// A caption line has NO attribute slot, so whatever the element carried
     /// cannot come with it. Routing through `attrs` anyway is what keeps the
     /// importer honest: the event-handler and `style` diagnostics fire from
     /// there, and anything still standing afterwards is reported as dropped
@@ -1979,20 +1993,26 @@ impl<'a> Importer<'a> {
     /// silently discarded an `onclick` - the one attribute whose loss a reader
     /// most needs told - and skipped the element's own charge against
     /// `max_nodes` and one level of `max_depth` (carve#1286).
+    ///
+    /// THE CATEGORY IS "READ FOR ITS CHILDREN", NOT THE TAG NAME
+    /// (carve-rs#1257). The table `<caption>` is the same shape reached by a
+    /// different route - the row walk looks only for `tr`, so the caption was
+    /// lifted out by hand and its children read straight off it - and it was
+    /// the one caption site in this importer still dropping an `onclick` in
+    /// silence while carve-php and carve-js both reported it. Widening this
+    /// helper by one parameter is what makes the next caption slot inherit the
+    /// report instead of having to remember it; a branch for `<caption>` would
+    /// have fixed the reported input and left the category open.
     fn caption_inlines(
         &mut self,
         h: &Handle,
         path: &str,
         depth: usize,
+        tag: &str,
     ) -> Result<Vec<InlineNode>, HtmlImportError> {
         self.enter(depth)?;
         let carried = self.attrs(h, path);
-        self.report_unplaceable_attrs(
-            carried,
-            "figcaption",
-            "a caption line carries no attributes",
-            path,
-        );
+        self.report_unplaceable_attrs(carried, tag, "a caption line carries no attributes", path);
         self.inlines(&h.children.borrow(), path, depth + 1)
     }
 
@@ -2066,7 +2086,7 @@ impl<'a> Importer<'a> {
         let mut caption = None;
         if let Some(i) = caption_at {
             let p = format!("{path}/figcaption[{}]", i + 1);
-            caption = Some(self.caption_inlines(&nodes[i], &p, depth + 1)?);
+            caption = Some(self.caption_inlines(&nodes[i], &p, depth + 1, "figcaption")?);
         }
         let mut body: Vec<Handle> = Vec::new();
         let mut body_paths: Vec<String> = Vec::new();
@@ -2142,7 +2162,7 @@ impl<'a> Importer<'a> {
                     // at all said nothing about which `<figcaption>` this was,
                     // and no other step in a path is spelled that way.
                     let p = format!("{path}/figcaption[{}]", index + 1);
-                    let inlines = self.caption_inlines(child, &p, depth + 1)?;
+                    let inlines = self.caption_inlines(child, &p, depth + 1, "figcaption")?;
                     // An EMPTY caption is not a caption. Kept as one it wrote a
                     // bare `^` line, which re-parses as a literal caret in a
                     // paragraph: the figure destroyed AND a character in the
@@ -2509,9 +2529,13 @@ impl<'a> Importer<'a> {
                 &format!("{path}/caption[{}]", i + 1),
             );
         }
-        let caption_children: Option<Vec<Handle>> = captions
-            .first()
-            .map(|(_, c)| c.children.borrow().iter().cloned().collect());
+        // THE ELEMENT, not its children (carve-rs#1257). Reading `children` off
+        // it here meant the `<caption>` was the only caption slot in this
+        // importer whose own attributes were never looked at, so an `onclick`
+        // on it was stripped with nothing said - the failure mode the report
+        // exists to prevent, and the one both other engines already reported.
+        // `caption_inlines` is where the answer already lived.
+        let caption_node: Option<Handle> = captions.first().map(|(_, c)| c.clone());
         let mut trs = Vec::new();
         let mut section_tags: Vec<String> = Vec::new();
         let mut section_nodes: Vec<(Handle, String)> = Vec::new();
@@ -2727,8 +2751,16 @@ impl<'a> Importer<'a> {
                 own_path,
             );
         }
-        let caption = match caption_children {
-            Some(kids) => Some(self.inlines(&kids, &format!("{path}/caption[1]"), depth + 1)?),
+        // `depth` rather than `depth + 1`: the caption's INLINES stay at the
+        // depth the cells are read at, and the element itself takes the level
+        // and the node charge it always should have had.
+        let caption = match caption_node {
+            Some(node) => Some(self.caption_inlines(
+                &node,
+                &format!("{path}/caption[1]"),
+                depth,
+                "caption",
+            )?),
             None => None,
         };
         Ok(Table {

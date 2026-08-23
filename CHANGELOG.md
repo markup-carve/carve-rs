@@ -282,6 +282,14 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A consumed caption reports the attributes it drops** (#1257). A table
+  `<caption>` was read for its children with its own attributes never looked at,
+  so an `onclick` on it was stripped in silence where carve-php reported it. It
+  routes through the caption helper the `<figcaption>` sites already used; the
+  same sweep found a `<dd>` with no `<dt>` before it dropping its attributes with
+  its role, and that reports now too. The conversion is unchanged; the report
+  gains the rows.
+
 - **An HTML import rebuilds the container the renderer wrote** (#1240,
   markup-carve/carve#1502). A callout was unwrapped to its own body and a tab
   set, a code group and every other named container came back as a generic `div`
