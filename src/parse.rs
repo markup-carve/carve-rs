@@ -585,18 +585,6 @@ fn parse_with_options_mode_and_index(
             pos.start_offset = start + pos.start_column - 1;
             pos.end_offset = end + pos.end_column - 1;
         }
-        for (label, pos) in &mut footnote_def_pos {
-            if let Some(last) = footnote_defs
-                .get(label)
-                .and_then(|blocks| blocks.iter().rev().find_map(crate::ast_json::block_pos))
-            {
-                if last.end_offset > pos.end_offset {
-                    pos.end_line = last.end_line;
-                    pos.end_column = last.end_column;
-                    pos.end_offset = last.end_offset;
-                }
-            }
-        }
         // A CONTAINER ENDS AT ITS LAST PLACED CHILD, which is the rule that
         // replaced `widen_over_hosted_definitions` (carve#1522, carve#1524).
         let source_lines: Vec<&str> = original.lines().collect();
@@ -609,6 +597,25 @@ fn parse_with_options_mode_and_index(
         // forget to apply.
         for blocks in footnote_defs.values_mut() {
             narrow_to_last_placed_child(blocks, &source_lines);
+        }
+        // THE DEFINITION ITSELF ENDS AT ITS LAST PLACED CHILD TOO, and this is
+        // the same rule the two calls above apply - so it runs AFTER them,
+        // bottom-up, or it would copy an end its own body had not settled yet.
+        //
+        // This was a WIDEN, and only a widen: it moved the end out to the body
+        // when the body reached further and left it alone otherwise. So a
+        // definition whose extent came from the LINES it consumed kept the line
+        // terminator that ended it, one codepoint past its body, on 27 corpus
+        // documents (markup-carve/carve-rs#1303). Widening is not a separate
+        // rule from narrowing - "ends at its last placed child" is one bound,
+        // reached from either side - and spelling only half of it is what let
+        // the two directions disagree.
+        for (label, pos) in &mut footnote_def_pos {
+            let last = footnote_defs
+                .get(label)
+                .and_then(|blocks| blocks.iter().rev().find_map(crate::ast_json::block_pos))
+                .copied();
+            end_at_last_placed_child(pos, last);
         }
     }
     let mut doc = Document {
@@ -4252,6 +4259,21 @@ fn narrow_to_last_placed_child(blocks: &mut [BlockNode], lines: &[&str]) {
             }
             BlockNode::DefinitionList(n) => {
                 for item in &mut n.items {
+                    // A TERM ENDS AT ITS LAST PLACED CHILD like every other
+                    // container without a closer. Its span covers the `:: `
+                    // marker and every line the term folded, so it was derived
+                    // from those LINES - and a folded line ending in a space
+                    // put that space inside the term and inside no child of it,
+                    // because PART 2 drops a trailing run before the inline
+                    // content is parsed. Its sibling `definition_description`
+                    // already narrowed to its last block at parse time; the
+                    // term was the odd one out in its own function.
+                    for term in &mut item.terms {
+                        let last = term.children.iter().rev().find_map(owned_inline_pos);
+                        if let Some(pos) = term.pos.as_mut() {
+                            end_at_last_placed_child(pos, last);
+                        }
+                    }
                     for def in &mut item.definitions {
                         narrow_to_last_placed_child(&mut def.children, lines);
                     }
@@ -4289,6 +4311,22 @@ fn narrow_to_last_placed_child(blocks: &mut [BlockNode], lines: &[&str]) {
                 let last = n.items.iter().rev().find_map(|item| item.pos);
                 if let Some(pos) = n.pos.as_mut() {
                     narrow_container_end(pos, last, lines, false);
+                }
+            }
+            // A HEADING ENDS AT ITS LAST PLACED CHILD. Its span came from the
+            // line it consumed, at that line's full width, while its children
+            // were parsed from the same line passed through `trim_ascii_end` -
+            // so a heading written with a trailing space claimed a codepoint
+            // that PART 2 had already dropped and no child could hold.
+            //
+            // With NO placed child the heading keeps the line it was written
+            // on: `#` alone still names a construct the author typed, and §4's
+            // "omit rather than invent" is about a node that cannot be placed
+            // at all, not one whose content is empty.
+            BlockNode::Heading(n) => {
+                let last = n.children.iter().rev().find_map(owned_inline_pos);
+                if let Some(pos) = n.pos.as_mut() {
+                    end_at_last_placed_child(pos, last);
                 }
             }
             // A DEFINITION LIST ENDS AT ITS LAST PLACED CHILD TOO
@@ -4331,11 +4369,33 @@ fn narrow_to_last_placed_child(blocks: &mut [BlockNode], lines: &[&str]) {
 /// only content is collected out of it and leaves nothing behind. Zero width was
 /// rejected - it discards the marker the author typed, and is a shape every
 /// consumer has to special-case.
+/// THE rule, in one place: a container ENDS IMMEDIATELY AFTER ITS LAST PLACED
+/// CHILD (PART 12 section 4, markup-carve/carve#913).
+///
+/// Every type that has no closer reaches its end through this function - a
+/// block quote, a list and its items, a definition list and its terms, a
+/// heading, a footnote definition. Writing the rule once is the point: it had
+/// been spelled per type, and the three types nobody had spelled it for ended
+/// one codepoint late, taking in either the trailing whitespace run the content
+/// line drops or the line terminator that ended it (markup-carve/carve-rs#1303).
+///
+/// Answers `false` when there is no placed child to end at. That is not the
+/// same as ending at the start: a container with nothing placed inside it has
+/// no bound to take from a child, and what it should say instead differs by
+/// type - `narrow_container_end` falls back to the markup that opened it, while
+/// a footnote definition and a heading keep the line they were written on.
+pub(crate) fn end_at_last_placed_child(pos: &mut Pos, last: Option<Pos>) -> bool {
+    let Some(last) = last else {
+        return false;
+    };
+    pos.end_line = last.end_line;
+    pos.end_column = last.end_column;
+    pos.end_offset = last.end_offset;
+    true
+}
+
 fn narrow_container_end(pos: &mut Pos, last: Option<Pos>, lines: &[&str], quote: bool) {
-    if let Some(last) = last {
-        pos.end_line = last.end_line;
-        pos.end_column = last.end_column;
-        pos.end_offset = last.end_offset;
+    if end_at_last_placed_child(pos, last) {
         return;
     }
     let Some(line) = lines.get(pos.start_line.saturating_sub(1)) else {
