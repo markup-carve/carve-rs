@@ -9159,25 +9159,18 @@ fn parse_list(
         // (`- `/`* ` = 2) -- a child indented to 2 nests, matching the spec's
         // task attribute/continuation convention (`- [x] x` / `  {.c}`).
         //
-        // An ABUTTING ATTRIBUTE BLOCK is the one part of that head that DOES
-        // move the column. PART 9 §15 A8 says what it binds to: "a `-{…} text`
-        // with no space after the marker attributes the LIST ITEM", and
-        // docs/divergence-from-djot.md §17 states it in as many words - "the
-        // attribute block binds to the MARKER". Part of the marker counts
-        // toward the marker's width, so `-{#k} [x] a` is the marker `-{#k} `
-        // and then the checkbox, and its content column is 6
-        // (markup-carve/carve#1692).
-        //
-        // The bare constant read 2, which treats the block as though it were
-        // not there and puts the column INSIDE it - where no content can begin,
-        // since A8 also notes the marker still needs content of its own. A
-        // heading written at the real column came back as paragraph text.
+        // An abutting attribute block is item metadata and contributes zero,
+        // so changing its spelling or Unicode value cannot move the body
+        // (markup-carve/carve#1701, #1698).
         content_col = if marker.checked.is_some() {
-            base_indent + 2 + marker_attrs_width(cur.peek().unwrap(), &marker)
+            base_indent + 2
         } else {
             let l = cur.peek().unwrap();
             let byte_off = (marker.content.as_ptr() as usize).saturating_sub(l.as_ptr() as usize);
-            indent_columns(l) + byte_off.saturating_sub(leading_ws(l))
+            indent_columns(l)
+                + byte_off
+                    .saturating_sub(leading_ws(l))
+                    .saturating_sub(marker_attrs_width(l, &marker))
         };
         // A new item carries none of the previous item's fence state.
         item_open_fence = None;
@@ -10138,18 +10131,15 @@ fn is_ambiguous_roman_letter(m: &str) -> bool {
 /// The column width of the `{...}` attribute block abutting `marker` on
 /// `line`, or 0 when it carries none.
 ///
-/// A task item's content column is its BULLET's plus this block: the checkbox
-/// is content (markup-carve/carve#1690) so it does not move the column, but the
-/// attribute block binds to the MARKER (PART 9 §15 A8,
-/// docs/divergence-from-djot.md §17), so it does (markup-carve/carve#1692).
-/// Measured from the block's own bytes rather than
-/// from the marker's content pointer, because the content pointer has already
-/// passed the checkbox and any extra spaces in front of it, and neither of
-/// those moves the column.
+/// This is measured only so callers can remove metadata from the physical
+/// prefix width: item attributes do not move the content column
+/// (markup-carve/carve#1701). `marker` excludes an ordered delimiter, so skip
+/// that delimiter before looking for the abutting block.
 fn marker_attrs_width(line: &str, marker: &ListMarker<'_>) -> usize {
     let bytes = line.as_bytes();
     let marker_end = (marker.marker.as_ptr() as usize).saturating_sub(line.as_ptr() as usize)
-        + marker.marker.len();
+        + marker.marker.len()
+        + usize::from(marker.ordered);
     read_list_item_attrs(bytes, marker_end).map_or(0, |(_, end)| end - marker_end)
 }
 
@@ -10157,16 +10147,21 @@ fn marker_attrs_width(line: &str, marker: &ListMarker<'_>) -> usize {
 /// mirroring `parse_list` exactly: for ordered/unordered it is where the marker
 /// content begins (`- ` -> 2, `1. ` -> 3, `10. ` -> 4); for a TASK the checkbox
 /// counts as content, not marker, so the column is the bullet width (`- ` -> 2)
-/// PLUS any abutting attribute block, which binds to the marker rather than to
-/// the content (PART 9 §15 A8; `-{#k} [x] ` -> 6, markup-carve/carve#1692).
+/// An abutting attribute block is item metadata and contributes zero
+/// (`-{#k} [x] ` -> 2, markup-carve/carve#1701).
 /// Returns `None` when `line` is not a list marker.
 fn marker_content_col(line: &str) -> Option<usize> {
     let m = detect_list_marker_full(line)?;
     if m.checked.is_some() {
-        return Some(m.indent + 2 + marker_attrs_width(line, &m));
+        return Some(m.indent + 2);
     }
     let content_off = (m.content.as_ptr() as usize).saturating_sub(line.as_ptr() as usize);
-    Some(indent_columns(line) + content_off.saturating_sub(leading_ws(line)))
+    Some(
+        indent_columns(line)
+            + content_off
+                .saturating_sub(leading_ws(line))
+                .saturating_sub(marker_attrs_width(line, &m)),
+    )
 }
 
 /// The content column of the deepest marker in a marker-line list run,

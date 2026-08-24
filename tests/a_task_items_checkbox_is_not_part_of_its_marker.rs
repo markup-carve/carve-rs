@@ -63,20 +63,12 @@ fn writes_a_fence_after_a_first_paragraph_at_the_content_column() {
     holds("- [x] a\n  ```php\n  1;\n  ```\n");
 }
 
-/// Item attributes DO move the column, because they are marker. `-{#k} ` is six
-/// wide, so the content column is 6 - not the ten `-{#k} [x] ` occupies.
-///
-/// THE READER NOW AGREES, which it did not when this test was written. The
-/// three engines read `-{#k} [x] `'s content column three ways - carve-js 6,
-/// this engine and carve-php 2 - so the heading below was paragraph text here
-/// whichever column the writer chose. carve#1692 ruled for carve-js and
-/// carve-rs#1372 moved this reader, so the source below now reads as a heading
-/// inside the item and the round-trip means what it says. The reading itself is
-/// pinned in `an_items_attribute_block_moves_its_content_column.rs`; this test
-/// stays about the WRITER.
+/// Item attributes are metadata and the checkbox is content, so neither moves
+/// the bare bullet's column 2 (markup-carve/carve#1701). The writer must use
+/// that same column or turn the heading into paragraph text on re-read.
 #[test]
-fn counts_item_attributes_into_the_column_and_the_checkbox_out_of_it() {
-    holds("-{#k} [x] {#h}\n      # h\n");
+fn counts_neither_item_attributes_nor_the_checkbox_into_the_column() {
+    holds("-{#k} [x] {#h}\n  # h\n");
 }
 
 /// The control: a plain item and an ordered item never had the defect, because
