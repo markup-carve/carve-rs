@@ -128,6 +128,11 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   no footnote syntax, and appends ASCII prose in runs (#1146); the PART 11 §2b
   escape-escalation search offers a minimal form only where the writer asks
   (#1253).
+- The ANSI quote bar reports containment, not node kind
+  (markup-carve/carve#1689, #1363). A quoted heading, code block, table,
+  thematic break and lone image keep the bar, and a quoted list's bar sits
+  outside its marker. All three engines agreed on the old behavior, so this
+  moves agreed behavior rather than closing a divergence.
 
 ### Fixed
 
@@ -255,9 +260,12 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `aria-label` no default matches, is still reported.
 - An HTML import rebuilds the container the renderer wrote (#1240,
   markup-carve/carve#1502), and treats `<aside>` as the block element it is.
-- An authored HTML heading `id` survives the import (#1324), where an id equal
-  to the slug a fresh parse would generate was written by `html_to_ast` and
-  omitted by `html_to_carve`.
+- An authored HTML heading `id` survives the import (#1324, #1354, #1357),
+  where an id equal to the slug a fresh parse would generate was written by
+  `html_to_ast` and omitted by `html_to_carve`. `roundtrip` mode reads a
+  generated id back as generated, and the published tree records the id with no
+  source spelling for it: `attrs.order` carries no `#id` for an imported
+  heading (ruling markup-carve/carve#1647).
 - A lone image is a block rather than a paragraph this engine synthesized
   (#1334), so both import exits agree; `<ul><li><img></li></ul>` now writes a
   tight item. A paragraph's edge layout whitespace is trimmed on both arms too
@@ -299,6 +307,15 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (#1105). Older payloads using the overloaded `title` field stay readable.
 - The Carve writer does not turn a generated heading id into source inside a
   footnote definition (#1105).
+- A lone image at an item's content column keeps the item's looseness (#1358,
+  markup-carve/carve#1660). The looseness test asked whether the item's first
+  visible block is a paragraph, which PART 11 §1c's collapse makes false, so
+  the item published `tight: true` and dropped its own paragraph. §1c takes the
+  block's `<p>` wrapper, not the item's blank line.
+- A task item's checkbox is content, so it does not move the item's content
+  column (#1362, ports markup-carve/carve-js#1455). The writer indented every
+  block after an item's first to the full marker-line width, four columns past
+  the content column, where a block opener stopped opening anything.
 
 ## [0.1.3] - 2026-08-18
 
