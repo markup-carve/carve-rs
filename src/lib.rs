@@ -81,8 +81,9 @@ pub use ast_merge::{
     MergeResult,
 };
 pub use ast_patch::{
-    apply_ast_patch, ast_patch_from_json, ast_patch_to_json, create_ast_patch, AstPatchError,
-    AstPatchOperation,
+    apply_ast_patch, apply_reversible_ast_patch, ast_patch_from_json, ast_patch_to_json,
+    create_ast_patch, create_reversible_ast_patch, AstPatchError, AstPatchOperation,
+    ReversibleAstPatch,
 };
 pub use citations::{
     parse_locator, CitationMode, Citations, CslDate, CslEntry, CslName, ParsedLocator,

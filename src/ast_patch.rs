@@ -13,6 +13,61 @@ pub enum AstPatchOperation {
     Remove { path: String },
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReversibleAstPatch {
+    pub forward: Vec<AstPatchOperation>,
+    pub inverse: Vec<AstPatchOperation>,
+    pub before_fingerprint: String,
+    pub after_fingerprint: String,
+}
+
+fn fingerprint(document: &Document) -> Result<String, AstPatchError> {
+    let wire = value_to_json(&clean(&parse_value(&try_to_json(document)?)?, true));
+    let mut hash = 0xcbf29ce484222325_u64;
+    for byte in wire.bytes() {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    Ok(format!("fnv1a64:{hash:016x}"))
+}
+
+pub fn create_reversible_ast_patch(
+    before: &Document,
+    after: &Document,
+) -> Result<ReversibleAstPatch, AstPatchError> {
+    Ok(ReversibleAstPatch {
+        forward: create_ast_patch(before, after)?,
+        inverse: create_ast_patch(after, before)?,
+        before_fingerprint: fingerprint(before)?,
+        after_fingerprint: fingerprint(after)?,
+    })
+}
+
+pub fn apply_reversible_ast_patch(
+    document: &Document,
+    patch: &ReversibleAstPatch,
+    inverse: bool,
+) -> Result<Document, AstPatchError> {
+    let expected = if inverse {
+        &patch.after_fingerprint
+    } else {
+        &patch.before_fingerprint
+    };
+    if &fingerprint(document)? != expected {
+        return Err(AstPatchError(
+            "patch precondition does not match the document".into(),
+        ));
+    }
+    apply_ast_patch(
+        document,
+        if inverse {
+            &patch.inverse
+        } else {
+            &patch.forward
+        },
+    )
+}
+
 /// Encode operations using the shared `{op,path,value}` patch wire shape.
 pub fn ast_patch_to_json(operations: &[AstPatchOperation]) -> Result<String, AstPatchError> {
     let mut encoded = Vec::with_capacity(operations.len());
