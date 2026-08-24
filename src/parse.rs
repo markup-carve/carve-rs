@@ -8911,7 +8911,7 @@ fn parse_list(
                     let first_visible = nested_children
                         .iter()
                         .find(|block| !matches!(block, BlockNode::Comment(_)));
-                    if pending_blank && matches!(first_visible, Some(BlockNode::Paragraph(_))) {
+                    if pending_blank && first_visible.is_some_and(block_is_paragraph_shaped) {
                         tight = false;
                     }
                     // A blank ABSORBED inside the collected continuation (e.g. a
@@ -10792,6 +10792,56 @@ fn continuation_source_loosens(source: &str, source_is_the_item_body: bool) -> b
         i += 1;
     }
     false
+}
+
+/// Whether a list item's second block came from a PARAGRAPH-SHAPED line, and so
+/// loosens the item when a blank line sits above it (§17 L1).
+///
+/// §17 decides looseness from the BLANK LINE and from what the line below it
+/// spells: a blank followed by a plain paragraph loosens, a blank followed by a
+/// sub-block opener keeps the item tight (L2). The line-based half of that rule
+/// lives in `continuation_line_opens_sub_block`, which is what carve-js and the
+/// executable-spec oracle both ask. This is the same question asked of the
+/// PARSED chunk, for the one caller that has a parsed chunk rather than the
+/// lines it came from.
+///
+/// It used to be spelled `matches!(block, BlockNode::Paragraph(_))`, and that
+/// held only for as long as every paragraph-shaped line stayed a paragraph in
+/// the tree. PART 11 §1c does not leave it one: a lone image at the item's
+/// content column is a BLOCK image (markup-carve/carve#1660), and an image with
+/// a `^ ` caption is a `Figure`. Neither is a `Paragraph`, so
+///
+///     - t
+///
+///       ![A](a.jpg)
+///
+/// published `tight: true` and dropped the item's `<p>t</p>`, where carve-js,
+/// carve-php and the oracle all publish `tight: false`
+/// (markup-carve/carve-rs#1358). The same document with the image ONE column
+/// further in stayed loose, because an INDENTED lone image is still a paragraph
+/// in the tree - which is the tell that the collapse, not the blank line, was
+/// deciding looseness.
+///
+/// The blank line settles looseness before anything is known about what the
+/// second block RENDERS as, so §1c may take the `<p>` WRAPPER and may not take
+/// the item's looseness with it. That is the scope this predicate restores: the
+/// collapse still happens (the image is still bare, corpus 411), and it no
+/// longer reaches a decision that belongs to the line above it.
+///
+/// A figure is paragraph-shaped only when ITS TARGET is: an image or a
+/// paragraph came from one line of paragraph-shaped source, where a code block,
+/// a table or a block quote came from a sub-block opener and keeps the item
+/// tight in all three engines (measured: a captioned fence, a captioned table
+/// and a captioned quote are all `tight: true` everywhere).
+fn block_is_paragraph_shaped(block: &BlockNode) -> bool {
+    match block {
+        BlockNode::Paragraph(_) | BlockNode::BlockImage(_) => true,
+        BlockNode::Figure(f) => matches!(
+            *f.target,
+            FigureTarget::Image(_) | FigureTarget::Paragraph(_)
+        ),
+        _ => false,
+    }
 }
 
 /// Whether `line` (already dedented to column 0) begins a sub-block that, when
