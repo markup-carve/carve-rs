@@ -1767,13 +1767,28 @@ impl<'a> Importer<'a> {
                 // `getDirectCheckboxInput` both spell it. `checked` is a
                 // boolean attribute, so its PRESENCE is the value and
                 // `checked`, `checked=""` and `checked="checked"` are one item.
+                //
+                // THE KEYWORD MATCHES ASCII CASE-INSENSITIVELY. `type` is an
+                // ENUMERATED attribute, and HTML matches an enumerated keyword
+                // that way: `<input type="CHECKBOX">` is a checkbox to every
+                // browser, and so is `Checkbox`. Compared exactly, a real task
+                // list imported as an ordinary bullet list and the task state
+                // left the document with nothing said. All three engines
+                // compared exactly, so nothing diverged and no cross-engine
+                // gate could see it.
+                //
+                // ASCII rather than a Unicode fold, because that is what the
+                // rule says: a Unicode fold turns `CHEC` + U+212A KELVIN SIGN
+                // + `BOX` into the exact keyword, which no browser reads as a
+                // checkbox.
                 // An `<input>` a `<p>` wrapper holds is NOT reached: the
                 // wrapper is a paragraph the source spelled, so the item is
                 // loose and the input is ordinary content there - all three
                 // engines draw the line in the same place.
                 let checkbox = li_children.iter().enumerate().find(|(_, child)| {
                     Self::tag(child).as_deref() == Some("input")
-                        && Self::attr(child, "type").as_deref() == Some("checkbox")
+                        && Self::attr(child, "type")
+                            .is_some_and(|value| value.eq_ignore_ascii_case("checkbox"))
                 });
                 // WHAT THE MARKER CANNOT CARRY IS STILL REPORTED. A `[x]` holds
                 // one thing, whether the box is ticked, so every other
