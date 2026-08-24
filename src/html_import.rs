@@ -1664,36 +1664,70 @@ impl<'a> Importer<'a> {
                     pos: None,
                 })]);
             }
-            let blocks = self.blocks(&children, path, depth + 1)?;
-            // AN ATTRIBUTE-LESS DIV IS NOT A CONTAINER WORTH SPELLING, so it
-            // unwraps to its content and the `:::` fence is not written
-            // (markup-carve/carve#1578). A bare `<div>` carries no meaning of
-            // its own: the fence buys the reader nothing and costs them two
-            // lines of markup nobody asked for. The element not surviving the
-            // round trip is the honest outcome, because there is nothing in it
-            // to survive.
+            // THE LABEL IS LIFTED FIRST, because it is half of the test below.
+            // `container_label` takes back PART 9 §10's grouping `[label]` from
+            // the `<p class="div-label">` the renderer degraded it to, and the
+            // `container_from` arm above has had that lift since
+            // markup-carve/carve-rs#1310. This arm never got one, so a `<div>`
+            // that DID survive still came back with its label as a paragraph -
+            // `<div id="foo">` round-tripped to a fence wrapping
+            // `{.div-label}` + `g`. The two changes compose here rather than
+            // overlap: the widened test below is what lets the fence survive at
+            // all, and this is what puts the label back on its opener.
+            let body_paths: Vec<String> = children
+                .iter()
+                .enumerate()
+                .map(|(i, child)| Self::child_path(path, child, i))
+                .collect();
+            let (label, body, body_paths) =
+                self.container_label(children.to_vec(), body_paths, depth)?;
+            let blocks = self.blocks_at(&body, Some(&body_paths), path, depth + 1)?;
+            // A DIV CARRYING NOTHING ONLY A CONTAINER CAN HOLD IS NOT A
+            // CONTAINER WORTH SPELLING, so it unwraps to its content and the
+            // `:::` fence is not written (markup-carve/carve#1578). A bare
+            // `<div>` carries no meaning of its own: the fence buys the reader
+            // nothing and costs them two lines of markup nobody asked for. The
+            // element not surviving the round trip is the honest outcome,
+            // because there is nothing in it to survive.
             //
-            // The BOUNDARY is the whole rule, and it is the attribute rather
-            // than the tag: the moment a div carries any attribute the language
-            // can hold, the fence comes back, because then there IS something
-            // only the container can hold. So the test is `attrs`, not the
-            // markup - `<div style="color:red">` keeps nothing after the style
-            // map refuses the declaration, and unwraps like any other bare div.
+            // The BOUNDARY is the whole rule, and it is what only a container
+            // can hold rather than the tag: the moment a div carries any of it,
+            // the fence comes back. Today that means an attribute the language
+            // can hold OR a grouping label - the label has no spelling anywhere
+            // but on an opener, so it is exactly as much "only a container can
+            // hold it" as an attribute is. carve#1578 wrote the test as `attrs`
+            // as a proxy for that principle and the proxy turned out narrower
+            // than the principle it stood in for; when a proxy and its own
+            // stated rationale disagree, the rationale governs
+            // (markup-carve/carve-rs#1315).
+            //
+            // Testing `attrs` alone was not a declarable loss either, which is
+            // what settles it. `::: [g]` came back as a `{.div-label}`
+            // PARAGRAPH: the container was gone and the label had become body
+            // content, so the document said something it never said. A loss can
+            // be declared and an ADDITION cannot, so "keep the attribute test
+            // and declare the loss" collapsed into dropping the label outright,
+            // and dropping it throws away content the author wrote on every
+            // round trip.
+            //
+            // The test stays on what SURVIVED, not on the markup -
+            // `<div style="color:red">` keeps nothing after the style map
+            // refuses the declaration, and unwraps like any other bare div.
             //
             // Not conditioned on the import MODE either. Roundtrip mode
             // promises the original bytes back for what this engine cannot
-            // spell, and an attribute-less div is not such a shape: nothing
+            // spell, and a div with nothing on it is not such a shape: nothing
             // about it is unspellable, there is simply nothing to spell.
             //
             // Silent, and deliberately: `report_unplaceable_attrs` exists for
             // attributes that lose their carrier, and here there are none by
             // construction. Nothing left the document, so nothing is announced.
-            let Some(attrs) = attrs else {
+            if attrs.is_none() && label.is_none() {
                 return Ok(blocks);
-            };
+            }
             return Ok(vec![BlockNode::Div(Div {
-                attrs: Some(attrs),
-                label: None,
+                attrs,
+                label,
                 children: blocks,
                 pos: None,
             })]);
@@ -1989,6 +2023,22 @@ impl<'a> Importer<'a> {
         if !is_div_label(&body[at]) {
             return Ok((None, body, body_paths));
         }
+        // TEXT BEFORE IT IS ALSO "FURTHER DOWN". The search above finds the
+        // first ELEMENT, which is not the same as the first thing in the
+        // container: `<div>prefix<p class="div-label">g</p></div>` has visible
+        // text ahead of the paragraph, and lifting it onto the opener MOVES it
+        // in front of `prefix` - the reorder this lift exists to avoid, arriving
+        // by the one route the element search cannot see. The renderer never
+        // writes bare text before the label, so a container shaped like this is
+        // foreign HTML rather than this engine's own output, and it keeps the
+        // paragraph it has. Whitespace between the tags is not text an author
+        // wrote, so it does not count.
+        if body[..at]
+            .iter()
+            .any(|child| !Self::text(child).trim().is_empty())
+        {
+            return Ok((None, body, body_paths));
+        }
         // TEXT ONLY. The field is a raw `String` and the writer emits it raw, so
         // lifting a paragraph holding markup would flatten the markup and lose
         // it without a word.
@@ -2011,6 +2061,13 @@ impl<'a> Importer<'a> {
         // own: it is a DOM node `max_nodes` is counting, and a lift that reads
         // past it without charging lets a document process more than the limit.
         self.enter(depth + 1)?;
+        // AND EVERYTHING UNDER IT, for the same reason. The lift removes the
+        // paragraph before `blocks_at` can reach it, so its text child is a DOM
+        // node nothing else will ever charge - and a labelled container would
+        // then cost one node and one level LESS than the same DOM without a
+        // label, which is a way to process more than `max_nodes` allows by
+        // adding markup rather than removing it.
+        self.charge_subtree(&body[at], depth + 1)?;
         let mut own = self.attrs(&body[at], &label_path);
         if let Some(attrs) = own.as_mut() {
             attrs.classes.retain(|class| class != "div-label");
