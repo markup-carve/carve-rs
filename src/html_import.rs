@@ -2023,6 +2023,22 @@ impl<'a> Importer<'a> {
         if !is_div_label(&body[at]) {
             return Ok((None, body, body_paths));
         }
+        // TEXT BEFORE IT IS ALSO "FURTHER DOWN". The search above finds the
+        // first ELEMENT, which is not the same as the first thing in the
+        // container: `<div>prefix<p class="div-label">g</p></div>` has visible
+        // text ahead of the paragraph, and lifting it onto the opener MOVES it
+        // in front of `prefix` - the reorder this lift exists to avoid, arriving
+        // by the one route the element search cannot see. The renderer never
+        // writes bare text before the label, so a container shaped like this is
+        // foreign HTML rather than this engine's own output, and it keeps the
+        // paragraph it has. Whitespace between the tags is not text an author
+        // wrote, so it does not count.
+        if body[..at]
+            .iter()
+            .any(|child| !Self::text(child).trim().is_empty())
+        {
+            return Ok((None, body, body_paths));
+        }
         // TEXT ONLY. The field is a raw `String` and the writer emits it raw, so
         // lifting a paragraph holding markup would flatten the markup and lose
         // it without a word.
@@ -2045,6 +2061,13 @@ impl<'a> Importer<'a> {
         // own: it is a DOM node `max_nodes` is counting, and a lift that reads
         // past it without charging lets a document process more than the limit.
         self.enter(depth + 1)?;
+        // AND EVERYTHING UNDER IT, for the same reason. The lift removes the
+        // paragraph before `blocks_at` can reach it, so its text child is a DOM
+        // node nothing else will ever charge - and a labelled container would
+        // then cost one node and one level LESS than the same DOM without a
+        // label, which is a way to process more than `max_nodes` allows by
+        // adding markup rather than removing it.
+        self.charge_subtree(&body[at], depth + 1)?;
         let mut own = self.attrs(&body[at], &label_path);
         if let Some(attrs) = own.as_mut() {
             attrs.classes.retain(|class| class != "div-label");

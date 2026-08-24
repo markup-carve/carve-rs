@@ -194,3 +194,85 @@ fn a_plain_div_with_a_label_and_no_attribute_keeps_both_the_fence_and_the_label(
     // and the lift is what puts the label back on the opener it saved.
     assert_eq!(roundtrip("::: [g]\nBody.\n:::\n"), "::: [g]\nBody.\n:::\n");
 }
+
+#[test]
+fn a_label_after_visible_text_is_not_lifted() {
+    // THE OTHER "FURTHER DOWN". The search finds the first ELEMENT, which is
+    // not the first thing in the container: bare text ahead of the paragraph is
+    // still text the author wrote, and lifting the label onto the opener would
+    // MOVE it in front of that text. The renderer never writes bare text before
+    // the label, so this is foreign HTML rather than this engine's own output.
+    let html = "<div class=\"figure\">prefix<p class=\"div-label\">g</p><p>Body.</p></div>";
+    let options = HtmlImportOptions {
+        mode: HtmlImportMode::Roundtrip,
+        ..Default::default()
+    };
+    let written = html_to_carve(html, &options).expect("import").value;
+
+    assert!(!written.contains("::: figure ["), "{written}");
+    assert!(
+        written.find("prefix").unwrap() < written.find("{.div-label}").unwrap(),
+        "the label moved ahead of the text it followed: {written}"
+    );
+}
+
+#[test]
+fn whitespace_before_the_label_still_lifts_it() {
+    // The control for the test above, and it is the shape the renderer actually
+    // writes: indentation between the tags is not text an author wrote, so a
+    // pretty-printed container is still recognized.
+    let html = "<div id=\"x\">\n  <p class=\"div-label\">g</p>\n  <p>Body.</p>\n</div>";
+    let options = HtmlImportOptions {
+        mode: HtmlImportMode::Roundtrip,
+        ..Default::default()
+    };
+
+    assert_eq!(
+        html_to_carve(html, &options).expect("import").value,
+        "{#x}\n::: [g]\nBody.\n:::\n"
+    );
+}
+
+/// The floor of `max_nodes` at which a document imports, found by bisection so
+/// the assertion is a RELATIONSHIP between two documents rather than a constant
+/// measured on one machine.
+fn node_floor(html: &str) -> usize {
+    let mut low = 0;
+    let mut high = 4096;
+    assert!(imports_within(html, high), "4096 nodes was not enough");
+    while low + 1 < high {
+        let mid = (low + high) / 2;
+        if imports_within(html, mid) {
+            high = mid;
+        } else {
+            low = mid;
+        }
+    }
+    high
+}
+
+fn imports_within(html: &str, max_nodes: usize) -> bool {
+    let options = HtmlImportOptions {
+        mode: HtmlImportMode::Roundtrip,
+        max_nodes,
+        ..Default::default()
+    };
+    html_to_carve(html, &options).is_ok()
+}
+
+#[test]
+fn a_lifted_label_costs_the_same_budget_as_the_paragraph_it_replaces() {
+    // The lift removes the paragraph before the block walk can reach it, so its
+    // text child is a DOM node nothing else charges. Left uncharged, a labelled
+    // container cost LESS than the same DOM without a label - a way to process
+    // more than `max_nodes` allows by ADDING markup, which is the wrong
+    // direction for a limit to move in.
+    //
+    // Asserted against the same DOM with the class changed, so the two
+    // documents differ only in whether the paragraph is lifted. A constant here
+    // would describe this machine's node count rather than the rule.
+    let lifted = "<div id=\"x\"><p class=\"div-label\">g</p><p>Body.</p></div>";
+    let kept = "<div id=\"x\"><p class=\"other\">g</p><p>Body.</p></div>";
+
+    assert_eq!(node_floor(lifted), node_floor(kept));
+}
