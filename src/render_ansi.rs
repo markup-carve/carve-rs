@@ -169,11 +169,10 @@ fn render_block(node: &BlockNode, ctx: &mut AnsiContext, depth: usize) -> String
             render_heading(heading.level, &render_block_inlines(&heading.children, ctx))
         }
         BlockNode::Paragraph(paragraph) => {
-            let mut content = render_block_inlines(&paragraph.children, ctx);
-            let prefix = block_quote_prefix(ctx);
-            if !prefix.is_empty() {
-                content = prefix_lines(&content, &prefix);
-            }
+            // No blockquote prefixing here: the bar reports CONTAINMENT rather
+            // than node kind (markup-carve/carve#1689), so BlockQuote carries it
+            // for everything it contains and a paragraph is not a special case.
+            let content = render_block_inlines(&paragraph.children, ctx);
             format!("{content}\n\n")
         }
         BlockNode::CodeBlock(code) => {
@@ -188,10 +187,16 @@ fn render_block(node: &BlockNode, ctx: &mut AnsiContext, depth: usize) -> String
             )
         }
         BlockNode::BlockQuote(quote) => {
+            // The bar reports CONTAINMENT, not node kind
+            // (markup-carve/carve#1689): everything the quote contains carries
+            // it, so the ANSI reader is never told a block was unquoted where
+            // the HTML says it was. Prefixing here, once, rather than in each
+            // child's own arm is what makes that true for every block kind -
+            // including the ones no arm ever opted in for.
             ctx.block_quote_depth += 1;
             let out = render_blocks(&quote.children, ctx, depth + 1);
             ctx.block_quote_depth -= 1;
-            out
+            prefix_lines(&out, &block_quote_bar())
         }
         BlockNode::List(list) => render_list(list, ctx, depth + 1),
         BlockNode::ThematicBreak(_) => format!("{}\n\n", style(&"─".repeat(40), DIM)),
@@ -201,21 +206,16 @@ fn render_block(node: &BlockNode, ctx: &mut AnsiContext, depth: usize) -> String
             // The LABEL goes on first so the TITLE ends up above it, which is the
             // order the source writes them (`::: tip "Pro Tip" [Build]`) and the
             // order the HTML renderer emits (carve#352, corpus 42-admonitions-4).
-            let body = prepend_label(body, admonition.label.as_deref(), ctx);
+            let body = prepend_label(body, admonition.label.as_deref());
             match &admonition.title {
                 Some(title) => {
                     let t = render_title_inlines(title, ctx);
                     if t.is_empty() {
                         body
                     } else {
-                        // Carry the blockquote `│` prefix onto the title line
-                        // too, matching how the body content is prefixed.
-                        let prefix = block_quote_prefix(ctx);
-                        let title_line = if prefix.is_empty() {
-                            style(&t, BOLD)
-                        } else {
-                            prefix_lines(&style(&t, BOLD), &prefix)
-                        };
+                        // The blockquote bar, when there is one, is added by
+                        // the BlockQuote arm (markup-carve/carve#1689).
+                        let title_line = style(&t, BOLD);
                         format!("{title_line}\n\n{body}")
                     }
                 }
@@ -225,7 +225,7 @@ fn render_block(node: &BlockNode, ctx: &mut AnsiContext, depth: usize) -> String
         BlockNode::LineBlock(lb) => render_blocks(&lb.children, ctx, depth + 1),
         BlockNode::Div(div) => {
             let body = render_blocks(&div.children, ctx, depth + 1);
-            prepend_label(body, div.label.as_deref(), ctx)
+            prepend_label(body, div.label.as_deref())
         }
         BlockNode::DefinitionList(list) => {
             render_definition_list(&list.items, ctx, true, depth + 1)
@@ -327,18 +327,14 @@ fn render_code_block(
 
 /// Graceful degradation: when no extension consumed the grouping `[label]`,
 /// surface it as a leading bold line (mirroring how an admonition title
-/// renders, including the blockquote prefix) so the authored label is never
-/// silently dropped in ANSI output.
-fn prepend_label(body: String, label: Option<&str>, ctx: &AnsiContext) -> String {
+/// renders) so the authored label is never silently dropped in ANSI output.
+/// The blockquote bar, when there is one, is added by the BlockQuote arm
+/// (markup-carve/carve#1689).
+fn prepend_label(body: String, label: Option<&str>) -> String {
     match label {
         Some(label) if !label.is_empty() => {
             let l = strip_terminal_controls(label);
-            let prefix = block_quote_prefix(ctx);
-            let label_line = if prefix.is_empty() {
-                style(&l, BOLD)
-            } else {
-                prefix_lines(&style(&l, BOLD), &prefix)
-            };
+            let label_line = style(&l, BOLD);
             if body.is_empty() {
                 format!("{label_line}\n\n")
             } else {
@@ -349,18 +345,28 @@ fn prepend_label(body: String, label: Option<&str>, ctx: &AnsiContext) -> String
     }
 }
 
-fn block_quote_prefix(ctx: &AnsiContext) -> String {
-    if ctx.block_quote_depth == 0 {
-        String::new()
-    } else {
-        format!("{} ", style("│", &(FG_CYAN.to_string() + DIM))).repeat(ctx.block_quote_depth)
-    }
+fn block_quote_bar() -> String {
+    format!("{} ", style("│", &(FG_CYAN.to_string() + DIM)))
 }
 
+/// Prefix every NON-EMPTY line. A quote's rendered body carries the block
+/// separator (`\n\n`) between its children and after the last one, and those
+/// blank lines stay bare - a bar on a blank line would draw a gutter through
+/// the space BETWEEN blocks and past the end of the quote. Skipping them
+/// reproduces exactly what prefixing inside the Paragraph arm got by running
+/// before the separator was appended, and it composes for nesting: an inner
+/// quote has already prefixed its own lines, so the outer pass adds a second
+/// bar to the same lines and leaves the same blanks alone.
 fn prefix_lines(content: &str, prefix: &str) -> String {
     content
         .split('\n')
-        .map(|line| format!("{prefix}{line}"))
+        .map(|line| {
+            if line.is_empty() {
+                line.to_string()
+            } else {
+                format!("{prefix}{line}")
+            }
+        })
         .collect::<Vec<_>>()
         .join("\n")
 }
