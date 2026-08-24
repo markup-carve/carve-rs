@@ -156,6 +156,10 @@ fn an_unresolved_reference_image_is_not_promoted_at_any_column() {
     // The pre-existing carve-out, asserted so the new gate cannot be read as the
     // only reason a paragraph survives here.
     for source in ["![a][missing]\n", " ![a][missing]\n"] {
-        assert_eq!(types(&parse(source).children), vec!["paragraph"], "{source:?}");
+        assert_eq!(
+            types(&parse(source).children),
+            vec!["paragraph"],
+            "{source:?}"
+        );
     }
 }
