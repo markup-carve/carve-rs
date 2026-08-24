@@ -162,3 +162,35 @@ fn an_attribute_on_the_label_paragraph_is_reported() {
         result.report.diagnostics
     );
 }
+
+#[test]
+fn a_plain_divs_label_comes_back_on_the_opener_too() {
+    // THE LIFT'S OWN GAP, found while widening the unwrap boundary
+    // (markup-carve/carve-rs#1315). The lift lived on the arm that recognizes a
+    // CONTAINER CLASS, so `::: figure` and `::: note` got it and a plain `<div>`
+    // did not - a div that survived on an attribute still came back with its
+    // label as a `{.div-label}` paragraph inside the fence. The two are
+    // separate: this one is about a div that never lost its fence.
+    assert_eq!(
+        roundtrip("{#foo}\n::: [g]\nBody.\n:::\n"),
+        "{#foo}\n::: [g]\nBody.\n:::\n"
+    );
+}
+
+#[test]
+fn a_plain_divs_label_comes_back_raw_too() {
+    // The raw-run half, on the arm that never had the lift. A paragraph escapes
+    // what a label holds verbatim, so this said something new on each pass.
+    assert_eq!(
+        roundtrip("{#foo}\n::: [a *b*]\nBody.\n:::\n"),
+        "{#foo}\n::: [a *b*]\nBody.\n:::\n"
+    );
+}
+
+#[test]
+fn a_plain_div_with_a_label_and_no_attribute_keeps_both_the_fence_and_the_label() {
+    // Where the widened boundary and this lift COMPOSE, which is the only place
+    // both are needed at once: the boundary is what stops the div unwrapping,
+    // and the lift is what puts the label back on the opener it saved.
+    assert_eq!(roundtrip("::: [g]\nBody.\n:::\n"), "::: [g]\nBody.\n:::\n");
+}

@@ -10,9 +10,19 @@
 //! honest outcome, because there is nothing in it to survive.
 //!
 //! The BOUNDARY is the whole rule, so both sides of it are pinned here rather
-//! than left to fall out of the code. An attribute-less div unwraps; the moment
-//! a div carries an attribute the language can hold, the fence comes back,
-//! because then there IS something only the container can hold.
+//! than left to fall out of the code. A div carrying nothing unwraps; the
+//! moment a div carries something only a container can hold, the fence comes
+//! back.
+//!
+//! WHAT ONLY A CONTAINER CAN HOLD is the test, and today that means an
+//! attribute the language can hold OR a grouping label. carve#1578 wrote the
+//! test as `attrs`, which was a proxy for that principle and turned out
+//! narrower than it: a grouping label has no spelling anywhere but on an
+//! opener, so `::: [g]` unwrapped and the label landed in the body as a
+//! `{.div-label}` paragraph. That is not a LOSS but an ADDITION - the document
+//! came back saying something it never said - and an addition cannot be
+//! declared the way a loss can, so the boundary widened to match its own
+//! rationale (markup-carve/carve-rs#1315).
 //!
 //! Both halves matter and neither is enough alone. Pinning only the unwrap
 //! would let the fence quietly stop being written for a div that needs it, and
@@ -189,4 +199,86 @@ fn a_container_class_still_takes_the_container_arm() {
         imported("<div class=\"note\">z</div>"),
         "::: note\nz\n:::\n"
     );
+}
+
+// -- a grouping label brings the fence back too ------------------------------
+
+/// THE DISCRIMINATING CASE, and it is discriminating only because the label is
+/// the div's ONLY reason to survive. A div carrying an attribute as well as a
+/// label already survived on the attribute, so it cannot see this boundary at
+/// all; `::: [g]` has nothing but the label.
+#[test]
+fn a_grouping_label_alone_brings_the_fence_back() {
+    let html = render_html(&parse("::: [g]\nBody.\n:::\n")).unwrap();
+
+    assert_eq!(
+        html,
+        "<div>\n  <p class=\"div-label\">g</p>\n  <p>Body.</p>\n</div>"
+    );
+    assert_eq!(imported(&html), "::: [g]\nBody.\n:::\n");
+}
+
+/// The round trip the ticket measured, asserted end to end. Before the widening
+/// this wrote `{.div-label}\ng\n\nBody.\n` - the container gone and the label
+/// promoted into the body as content the author never wrote there.
+#[test]
+fn a_labelled_bare_div_survives_a_render_and_an_import() {
+    let source = "::: [g]\nBody.\n:::\n";
+
+    assert_eq!(imported(&render_html(&parse(source)).unwrap()), source);
+}
+
+/// Not conditioned on the import mode, for the same reason the unwrap is not.
+#[test]
+fn the_label_brings_the_fence_back_in_every_mode() {
+    let html = render_html(&parse("::: [g]\nBody.\n:::\n")).unwrap();
+    for mode in [
+        HtmlImportMode::Safe,
+        HtmlImportMode::Semantic,
+        HtmlImportMode::Roundtrip,
+    ] {
+        let opts = HtmlImportOptions {
+            mode,
+            ..HtmlImportOptions::default()
+        };
+        assert_eq!(
+            html_to_carve(&html, &opts).unwrap().value,
+            "::: [g]\nBody.\n:::\n",
+            "mode {mode:?} dropped the label with the div",
+        );
+    }
+}
+
+// -- the near misses, which must still unwrap --------------------------------
+
+/// THE OVER-WIDENING CONTROL. The test is what the div actually KEPT, not what
+/// its markup looked like - the same distinction `style="color:red"` draws on
+/// the attribute side. A label paragraph holding markup is refused by the lift
+/// (the field is raw and flattening it would lose the markup), so nothing was
+/// kept and the div unwraps exactly as it did before.
+#[test]
+fn a_label_paragraph_the_lift_refuses_does_not_bring_the_fence_back() {
+    let html = "<div><p class=\"div-label\">a <em>b</em></p><p>Body.</p></div>";
+
+    assert_eq!(imported(html), "{.div-label}\na /b/\n\nBody.\n");
+}
+
+/// The same control for the other refusal: a label holding `]` has no spelling,
+/// so it is not lifted and the div is still carrying nothing.
+#[test]
+fn a_label_holding_a_bracket_does_not_bring_the_fence_back() {
+    let html = "<div><p class=\"div-label\">a]b</p><p>Body.</p></div>";
+
+    assert_eq!(imported(html), "{.div-label}\na]b\n\nBody.\n");
+}
+
+/// And the positional one. The lift takes the FIRST element only, so a
+/// label-shaped paragraph further down is not a label and does not put the
+/// fence back - a fence here would MOVE it to the opener and change the
+/// document.
+#[test]
+fn a_label_shaped_paragraph_further_down_does_not_bring_the_fence_back() {
+    let html = "<div><p>Body.</p><p class=\"div-label\">g</p></div>";
+
+    assert_eq!(imported(html), "Body.\n\n{.div-label}\ng\n");
 }
