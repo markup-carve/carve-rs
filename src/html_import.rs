@@ -2639,11 +2639,29 @@ impl<'a> Importer<'a> {
     /// the one in the renderer has none for `Span`, so a caption reading
     /// `<span class="label">Caption</span>` flattened to the empty string and
     /// this call would have thrown the caption away. Emptiness must not depend
-    /// on another function's coverage, so only a whitespace-only text node
-    /// counts as blank and every other node counts as content.
+    /// on another function's coverage, so only a LAYOUT-ONLY text node counts as
+    /// blank and every other node counts as content.
+    ///
+    /// `is_layout_space` AND NOT `str::trim`, WHICH IS THE THIRD SPELLING OF
+    /// THIS ONE PREDICATE ON THIS PATH. `trim` is `char::is_whitespace`, so it
+    /// is Unicode `White_Space` and holds NO-BREAK SPACE (U+00A0), NARROW
+    /// NO-BREAK SPACE (U+202F) and IDEOGRAPHIC SPACE (U+3000) - which
+    /// markup-carve/carve#1628 puts on the CONTENT side of the line, verified
+    /// empirically rather than reasoned. Reading them as blank destroyed the
+    /// figure over a caption that HELD a character, and the row left behind said
+    /// `element-unwrapped` - the wrapper, not the content that went missing
+    /// (markup-carve/carve-rs#1339). `trim_edge_whitespace` and `visible` were
+    /// the other two spellings and were corrected in carve-rs#1336.
+    ///
+    /// THE CALL SITE'S CARVE-OUT IS UNTOUCHED, because it is about a caption
+    /// that WRITES NOTHING: an empty one writes a bare `^` line that re-parses
+    /// as a literal caret, so treating it as absent avoids destroying the figure
+    /// AND inventing a character. A content space writes a real caption line, so
+    /// it was never that shape - the table caption path already kept it, which
+    /// is what made the divergence a defect rather than a judgement call.
     fn inlines_are_blank(nodes: &[InlineNode]) -> bool {
         nodes.iter().all(|n| match n {
-            InlineNode::Text(t) => t.value.trim().is_empty(),
+            InlineNode::Text(t) => t.value.chars().all(is_layout_space),
             _ => false,
         })
     }
