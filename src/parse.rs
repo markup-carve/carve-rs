@@ -10811,9 +10811,11 @@ fn continuation_source_loosens(source: &str, source_is_the_item_body: bool) -> b
 /// content column is a BLOCK image (markup-carve/carve#1660), and an image with
 /// a `^ ` caption is a `Figure`. Neither is a `Paragraph`, so
 ///
-///     - t
+/// ```text
+/// - t
 ///
-///       ![A](a.jpg)
+///   ![A](a.jpg)
+/// ```
 ///
 /// published `tight: true` and dropped the item's `<p>t</p>`, where carve-js,
 /// carve-php and the oracle all publish `tight: false`
