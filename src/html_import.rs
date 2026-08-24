@@ -1563,8 +1563,15 @@ impl<'a> Importer<'a> {
                             child,
                         );
                     }
+                // `is_layout_space` AND NOT `str::trim`: `trim` is
+                // `char::is_whitespace`, so a stray U+00A0 read as blank and the
+                // move went UNDECLARED while the same move for an ordinary word
+                // was reported (markup-carve/carve-rs#1342). The character was
+                // kept either way - what was missing is the row saying it left
+                // its place among the items, which is the part a reader cannot
+                // see from the output.
                 } else if !matches!(&child.data, NodeData::Comment { .. })
-                    && !Self::text(child).trim().is_empty()
+                    && !Self::text(child).chars().all(is_layout_space)
                 {
                     self.diag(
                         HtmlImportDiagnosticCode::ElementUnwrapped,
@@ -2092,11 +2099,13 @@ impl<'a> Importer<'a> {
         // by the one route the element search cannot see. The renderer never
         // writes bare text before the label, so a container shaped like this is
         // foreign HTML rather than this engine's own output, and it keeps the
-        // paragraph it has. Whitespace between the tags is not text an author
-        // wrote, so it does not count.
+        // paragraph it has. LAYOUT whitespace between the tags is not text an
+        // author wrote, so it does not count - but U+00A0, U+202F and U+3000
+        // are, which is why this asks `is_layout_space` and not `str::trim`
+        // (markup-carve/carve-rs#1342, following markup-carve/carve#1628).
         if body[..at]
             .iter()
-            .any(|child| !Self::text(child).trim().is_empty())
+            .any(|child| !Self::text(child).chars().all(is_layout_space))
         {
             return Ok((None, body, body_paths));
         }
@@ -2825,8 +2834,16 @@ impl<'a> Importer<'a> {
         // HTML collapses either to one space - so dropping it joined a foreign
         // `<span>a</span> <span>b</span>` into `ab` (carve#1286). Own output
         // puts nothing but margins here, so it keeps the blunter rule.
+        //
+        // A MARGIN IS LAYOUT, AND ONLY LAYOUT. Read through `str::trim` this
+        // retained nothing for a text node holding one U+00A0, U+202F or
+        // U+3000, so a figure carrying one lost it from BOTH exits with no
+        // diagnostic - while the same slot holding an ordinary word kept it
+        // (markup-carve/carve-rs#1342). Those three are content
+        // (markup-carve/carve#1628), so they are not a margin and this is not
+        // theirs to drop.
         let is_blank_text = |n: &Handle| match &n.data {
-            NodeData::Text { contents } => contents.borrow().trim().is_empty(),
+            NodeData::Text { contents } => contents.borrow().chars().all(is_layout_space),
             _ => false,
         };
         if own_output {
