@@ -691,9 +691,9 @@ fn parse_with_options_mode_and_index(
         // syntactic block-image check ran before resolution); promote it to a
         // block image like a standalone direct image, matching carve-php.
         if source.contains("![") {
-            promote_block_images(&mut doc.children, false);
+            promote_block_images(&mut doc.children, false, true);
             for blocks in doc.footnote_defs.values_mut() {
-                promote_block_images(blocks, false);
+                promote_block_images(blocks, false, true);
             }
         }
     } else {
@@ -705,9 +705,9 @@ fn parse_with_options_mode_and_index(
         // a caption (carve-rs / carve-php read it as literal text, losing the
         // figure). Reference-link resolution already ran above.
         if source.contains("![") {
-            promote_block_images(&mut doc.children, true);
+            promote_block_images(&mut doc.children, true, true);
             for blocks in doc.footnote_defs.values_mut() {
-                promote_block_images(blocks, true);
+                promote_block_images(blocks, true, true);
             }
         }
     }
@@ -20512,7 +20512,51 @@ fn caption_first_line_has_content(children: &[InlineNode]) -> bool {
 /// Sibling order within a level is unchanged; levels are visited in a different
 /// order than the recursion used, which is sound because each block's promotion
 /// reads and writes only that block.
-fn promote_block_images(blocks: &mut [BlockNode], figures_only: bool) {
+///
+/// `lone_image_needs_content_column` is TRUE at parse time and FALSE at render
+/// time, and the two answers are not a contradiction - they are the two halves
+/// of markup-carve/carve#1660. A block image is a top-level block construct, so
+/// an INDENTED lone image is a paragraph holding an inline image and the parse
+/// tree must say so. The HTML says something else on purpose: a paragraph whose
+/// whole content is one image renders as a bare `<img>` with no `<p>` wrapper,
+/// at every column, which is what carve-js and carve-php both do and what the
+/// executable spec renders. So the renderer runs this pass again with the gate
+/// lifted, and every layout decision downstream sees the same `BlockImage` it
+/// has always seen.
+///
+/// The FIGURE half is gated at both, and deliberately: an indented image with a
+/// `^ ` caption is literal paragraph text in the HTML as well as in the tree
+/// (corpus `158-indented-image-and-caption-stay-literal`), so lifting the gate
+/// there would build a figure the author did not write.
+/// Render-time half of markup-carve/carve#1660.
+///
+/// The parse tree keeps an INDENTED lone image as `paragraph > image`, because a
+/// block image is a top-level block construct and section 15's strict column-0
+/// rule reaches it. The HTML does not distinguish: a paragraph whose whole
+/// content is one resolved image renders as a bare `<img>` at every column, the
+/// way carve-js, carve-php and the executable spec all render it. Running the
+/// promotion once more here, with the column gate lifted, is what keeps those
+/// two facts from having to be reconciled at every layout decision downstream -
+/// the blockquote and `<dd>` compact forms, the footnote backlink placement and
+/// the paragraph renderer itself all keep seeing the `BlockImage` they saw
+/// before, so none of them had to learn a second shape.
+///
+/// It also closes a divergence that predates the ruling: a `paragraph > image`
+/// arriving through `--from-json` rendered `<p><img></p>` here and `<img>` on
+/// the other two engines, because this engine's collapse lived in the parser
+/// and theirs live in the renderer.
+pub(crate) fn collapse_lone_image_paragraphs(doc: &mut Document) {
+    promote_block_images(&mut doc.children, false, false);
+    for blocks in doc.footnote_defs.values_mut() {
+        promote_block_images(blocks, false, false);
+    }
+}
+
+fn promote_block_images(
+    blocks: &mut [BlockNode],
+    figures_only: bool,
+    lone_image_needs_content_column: bool,
+) {
     let mut worklist: Vec<&mut [BlockNode]> = vec![blocks];
     while let Some(level) = worklist.pop() {
         for block in level {
@@ -20527,11 +20571,29 @@ fn promote_block_images(blocks: &mut [BlockNode], figures_only: bool) {
             // unresolved reference image keeps its `ref_label` and renders as
             // literal source inside the paragraph; promoting it would drop that
             // required `<p>` wrapper.
+            //
+            // STRICT COLUMN-0, same gate as the figure promotion below: a block
+            // image is a top-level block construct, so it opens only at its
+            // container's content column (docs/divergence-from-djot.md
+            // section 15, whose worked example renders ` # H` as `<p># H</p>`).
+            // An INDENTED lone image is a paragraph holding an inline image.
+            // The syntactic path never reached here for it -- `detect_block_image`
+            // requires the line to start with `![` -- but this pass runs over the
+            // built tree, so without `at_content_column` it could not tell the two
+            // columns apart and promoted both (markup-carve/carve#1660).
+            //
+            // NOTHING PINNED THIS BEFORE because every corpus document that
+            // indents an image carries a SECOND line, and the promotion only
+            // fires on a paragraph whose whole content is one image. The HTML
+            // cannot see it either: a sole-image paragraph renders as a bare
+            // `<img>`, so both readings emit the same bytes and only the tree
+            // differs.
             let single_image = !figures_only
                 && matches!(
                     block,
                     BlockNode::Paragraph(p)
-                        if p.children.len() == 1
+                        if (p.at_content_column || !lone_image_needs_content_column)
+                            && p.children.len() == 1
                             && matches!(&p.children[0], InlineNode::Image(img) if !is_unresolved_image(img))
                 );
             if single_image {
@@ -22466,8 +22528,8 @@ mod promote_block_images_is_iterative {
             .stack_size(256 * 1024)
             .spawn(|| {
                 let mut blocks = nested_divs(4000);
-                promote_block_images(&mut blocks, false);
-                promote_block_images(&mut blocks, true);
+                promote_block_images(&mut blocks, false, true);
+                promote_block_images(&mut blocks, true, false);
                 std::mem::forget(blocks);
             })
             .expect("spawn");
