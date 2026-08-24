@@ -535,6 +535,14 @@ const IMPLEMENTED: &[&str] = &[
     // blank line cannot.
     "one-consumed-boolean-spells-the-looseness-no-blank-line-can",
     "the-writer-spells-looseness-only-where-a-blank-line-cannot",
+    // Corpus 411-412. markup-carve/carve#1662 and markup-carve/carve#1666: a
+    // block image opens only at its container's content column, so one column
+    // further the same bytes are a paragraph holding an inline image - and the
+    // reference spellings of a lone image at column 0 are the same block.
+    // 411 ships `.fmt` sidecars (markup-carve/carve#1673) because its canonical
+    // form differs from its source: the writer declines the indented spelling.
+    "a-lone-indented-image-is-a-paragraph-and-its-html-cannot-say-so",
+    "a-lone-reference-image-at-column-0-in-every-spelling",
 ];
 
 // Spec-main categories tracked by separate implementation work. Keep them
