@@ -689,7 +689,18 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // not move at all: `lossy` measured 301 at both pins, `dropped` is EMPTY,
     // no document left the lossy set and no new loss cause appears. The count
     // moves because the corpus grew.
-    const STRICT: usize = 1070;
+    // The bump to carve aac95ba adds THIRTEEN documents (corpus 405-408 and the
+    // extra variants carve#1610, #1623, #1633 and #1639 brought with them).
+    // Every one of them round trips STRICTLY, so the lossy side does not move at
+    // all: `lossy` measured 301 at BOTH pins, `dropped` is empty, no document
+    // left the lossy set, and no new loss cause appears. The strict count moves
+    // because the corpus grew, and only because of that.
+    //
+    // `407-...-2` needed engine work to reach that state rather than
+    // bookkeeping: a `{loose}` definition list lost its wrapper on the way back
+    // until PART 9 §17 L7's field was carried across the bridge, which is what
+    // the `loose` attribute in `to_pm`/`from_pm` does.
+    const STRICT: usize = 1083;
     const LOSSY: usize = 301;
     assert!(
         covered >= STRICT,
