@@ -2294,6 +2294,21 @@ impl<'a> Importer<'a> {
                 h,
             );
         }
+        // THE BODY IS BUILT BEFORE THE ATTRIBUTE ROWS so the wrapper's id has a
+        // heading to land on. Whether that id is the renderer's or the author's
+        // is a question about the HEADING's own text, and only the imported
+        // node carries the inline projection that answers it.
+        //
+        // This does not reorder the report. Rows sort by the position of the
+        // LOSING ELEMENT on the way out, and a wrapper stands before everything
+        // it wraps, so moving one call across another only changes the order
+        // rows were CONSTRUCTED in - which the sort keeps only as a tie-break
+        // between rows at the same position, and these are not.
+        let mut blocks = self.blocks(&children, path, depth + 1)?;
+        let mut attrs = attrs;
+        if self.opts.mode == HtmlImportMode::Roundtrip {
+            Self::restore_hoisted_section_id(&tag, &mut attrs, &mut blocks);
+        }
         // AN UNWRAPPED ELEMENT TAKES ITS ATTRIBUTES WITH IT. `<section
         // role="region">`, `<article>`, `<aside>`, `<main>`, `<nav>` and
         // `<form>` all land here and keep only their children. The keep list
@@ -2307,7 +2322,77 @@ impl<'a> Importer<'a> {
             "the element was unwrapped and has no node to carry it",
             path,
         );
-        self.blocks(&children, path, depth + 1)
+        Ok(blocks)
+    }
+
+    /// Put a `<section id>` back on the heading the renderer hoisted it off
+    /// (markup-carve/carve-rs#1380).
+    ///
+    /// THE INVERSE OF ONE KNOWN TRANSFORMATION, not a general rescue. With
+    /// `sections` on, `render_section` writes the heading's id on the WRAPPER
+    /// and `render_heading_without_section_id` leaves the heading without one.
+    /// So once carve-rs#1376 made `roundtrip` unwrap the wrapper - which is
+    /// right, a `<section>` is not a shape Carve cannot express - the single
+    /// attribute the wrapper carried was the single thing the import needed,
+    /// and `{#install .featured}` over `## Setup` came back as `{.featured}`.
+    ///
+    /// `roundtrip` ONLY, on the same ground carve-rs#1355 stands on: that mode's
+    /// input is Carve-produced HTML by definition, so a `<section id>` there IS
+    /// the hoist. In arbitrary HTML it is a landmark's own id, which names the
+    /// region rather than the heading, and moving it onto the heading would
+    /// invent a fact. Elsewhere the id keeps being reported as dropped.
+    ///
+    /// `<section>` ONLY, for the same reason. `render_section` is the only
+    /// thing in this engine that hoists, and it hoists onto that tag alone -
+    /// the other six names in `ROUNDTRIP_UNWRAPPED_SECTIONING` never carry a
+    /// heading's id. And the ID ONLY: `<section id="x">` is the whole of what
+    /// the renderer writes there, so a class or a data attribute on a wrapper
+    /// is somebody else's markup, and putting it on the heading would render an
+    /// attribute the input never had on an element that never had it. Those
+    /// keep the `attribute-dropped` row they have always had.
+    ///
+    /// A DERIVED ID IS STILL DROPPED, and silently, exactly as `drop_derived`
+    /// documents for every other derived value: the renderer computes the same
+    /// slug again from the same heading, so nothing is lost. This is what keeps
+    /// carve-rs#1355's ruling intact through the wrapper - `{.k}` over `# H`
+    /// renders `<section id="H">` and must not come back as `{#H .k}`, which is
+    /// a different document. The one signal carve-rs#1355 reads off the ELEMENT,
+    /// its attribute position, does not exist here: the heading carries no id
+    /// at all, so slug equality is the whole test.
+    ///
+    /// And where the projection MOVED the slug - a crossref that comes back as
+    /// an explicit link, an index marker that comes back as its text - the
+    /// wrapper's id no longer equals the slug of what survived, so it is kept
+    /// and written. That is the right answer rather than a lucky one: the
+    /// section id is a fact of the rendered document, not something to
+    /// recompute from what the import left behind.
+    fn restore_hoisted_section_id(tag: &str, attrs: &mut Option<Attrs>, blocks: &mut [BlockNode]) {
+        if tag != "section" {
+            return;
+        }
+        let Some(held) = attrs.as_mut() else {
+            return;
+        };
+        let Some(id) = held.id.clone() else {
+            return;
+        };
+        // The heading the wrapper was built around is its FIRST block. Anything
+        // else and the `<section>` is not this renderer's, so its id is not a
+        // hoist and stays reported.
+        let Some(BlockNode::Heading(heading)) = blocks.first_mut() else {
+            return;
+        };
+        // A heading that already carries an id was never hoisted off - two ids
+        // in the rendered document mean two different facts, and overwriting
+        // the heading's own with the wrapper's would lose one of them.
+        if heading.attrs.as_ref().is_some_and(|held| held.id.is_some()) {
+            return;
+        }
+        held.id = None;
+        if Self::is_generated_heading_id(&id, &crate::render::plain_inlines(&heading.children)) {
+            return;
+        }
+        heading.attrs.get_or_insert_with(Attrs::default).id = Some(id);
     }
     /// `<details>/<summary>` to a `details` admonition.
     ///
