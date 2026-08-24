@@ -29,6 +29,7 @@ pub mod html_import;
 mod index_budget;
 pub mod lint;
 pub mod markdown_import;
+pub mod migration;
 mod parse;
 pub mod profile;
 pub mod profile_filter;
@@ -110,6 +111,10 @@ pub use html_import::{
 };
 pub use lint::{lint_carve, lint_carve_with_options, LintWarning};
 pub use markdown_import::{markdown_to_ast, markdown_to_carve};
+pub use migration::{
+    migrate_djot, migrate_html, migrate_markdown, MigrationConfidence, MigrationDiagnostic,
+    MigrationFidelity, MigrationReport, MigrationResult, SourceFormat,
+};
 pub use parse::{parse, parse_with_options};
 pub use profile::{DisallowedAction, LinkPolicy, Profile, ProfileViolation, ProfileViolationError};
 pub use profile_filter::{apply_profile, apply_profile_with_typography, ProfileFilterResult};
