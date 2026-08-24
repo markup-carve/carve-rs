@@ -113,9 +113,15 @@ fn it_says_nothing_on_the_exit_that_keeps_the_tree() {
     assert!(report.diagnostics.is_empty(), "{:?}", report.diagnostics);
 }
 
-/// LAYOUT IS NOT CONTENT (PART 11 section 7). The writer trims the run's edges,
-/// so the padded spelling writes the same bare block image and loses the same
-/// paragraph.
+/// LAYOUT IS NOT CONTENT (PART 11 section 7), so the padded spelling is the same
+/// paragraph and takes the same row.
+///
+/// WHAT MAKES IT THE SAME PARAGRAPH IS THE IMPORT-SIDE TRIM, not a tolerance in
+/// the predicate. `trim_edge_whitespace` runs on the authored arm since
+/// carve-rs#1336, so the run reaches `lone_image` already trimmed and the plain
+/// question answers it. Before that this test passed through a whitespace
+/// tolerance inside the predicate, which is now removed - reachable by no input
+/// once the trim was in front of it.
 #[test]
 fn it_reports_the_whitespace_padded_spelling_of_the_same_paragraph() {
     let html = "<p>\n  <img src=\"g.jpg\" alt=\"G\">\n</p>";

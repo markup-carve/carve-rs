@@ -1434,6 +1434,15 @@ impl<'a> Importer<'a> {
              * this engine reads it as a block image at every indent, so there
              * is not even a near miss to reach for.
              */
+            // THE AUTHOR'S PARAGRAPH IS TRIMMED TOO (carve-rs#1336). The
+            // synthesized wrapper beside it already was, and the reason given -
+            // that the wrapper is not an element the document contains - is real
+            // but is not the deciding one. PART 11 section 7's principle is:
+            // whitespace that is layout is not content, wherever it sits. Left
+            // untrimmed, `<p>` newline `  <img>` newline `</p>` kept two spaces
+            // in the tree that the writer drops, so the two exits disagreed
+            // about characters no reader can act on.
+            let inlines = trim_edge_whitespace(inlines);
             let candidate = lone_image(&inlines).map(|image| {
                 (
                     attrs.is_some(),
@@ -5221,7 +5230,26 @@ fn is_layout_only(nodes: &[InlineNode]) -> bool {
         })
 }
 
-/// The edge whitespace of a SYNTHESIZED paragraph, removed.
+/// The edge LAYOUT whitespace of a paragraph's run, removed.
+///
+/// PART 11 section 7's principle decides this, and it is wider than the case
+/// section 7 spells out: whitespace that is LAYOUT is not content. Section 7
+/// rules a block whose every character is layout; the edges of a run that also
+/// holds content are the same characters doing the same job, so the run is
+/// trimmed whether the paragraph was synthesized here or written by the author
+/// (markup-carve/carve-rs#1336). "Whole block" versus "edge of a run" was a
+/// proxy for the principle rather than the principle itself.
+///
+/// SCOPED TO THE `whitespace` TERMINAL AND LINE TERMINATORS, NOTHING ELSE, which
+/// `is_layout_space` is what spells. U+00A0, U+202F and U+3000 are CONTENT
+/// (markup-carve/carve#1628, measured rather than reasoned: a lone one of them
+/// on a line parses to a paragraph where a lone space or tab line is a blank
+/// line). This used Rust's `str::trim_start` / `trim_end`, whose
+/// `char::is_whitespace` includes all three, so the synthesized arm had been
+/// removing them - a fixture padded with ordinary spaces cannot see the
+/// difference, which is why the boundary is pinned with a no-break space that
+/// SURVIVES.
+///
 ///
 /// The paragraph `blocks_at` wraps a bare inline run in is not an element the
 /// document contains - it is invented to give the run somewhere to live - so
@@ -5234,7 +5262,7 @@ fn is_layout_only(nodes: &[InlineNode]) -> bool {
 /// run separates words and stays exactly as it is.
 fn trim_edge_whitespace(mut nodes: Vec<InlineNode>) -> Vec<InlineNode> {
     while let Some(InlineNode::Text(first)) = nodes.first_mut() {
-        first.value = first.value.trim_start().to_string();
+        first.value = first.value.trim_start_matches(is_layout_space).to_string();
         if first.value.is_empty() {
             nodes.remove(0);
         } else {
@@ -5242,7 +5270,7 @@ fn trim_edge_whitespace(mut nodes: Vec<InlineNode>) -> Vec<InlineNode> {
         }
     }
     while let Some(InlineNode::Text(last)) = nodes.last_mut() {
-        last.value = last.value.trim_end().to_string();
+        last.value = last.value.trim_end_matches(is_layout_space).to_string();
         if last.value.is_empty() {
             nodes.pop();
         } else {
@@ -5252,10 +5280,18 @@ fn trim_edge_whitespace(mut nodes: Vec<InlineNode>) -> Vec<InlineNode> {
     nodes
 }
 
+/// Does this run hold anything a document would keep?
+///
+/// The synthesized arm's twin of `is_layout_only`, and it has to draw the line
+/// in the same place: LAYOUT whitespace builds nothing, and U+00A0, U+202F and
+/// U+3000 are CONTENT (markup-carve/carve#1628). This read `str::trim`, whose
+/// `char::is_whitespace` covers all three, so `<div>` plus a no-break space
+/// built no paragraph at all - the document came back EMPTY, with no diagnostic,
+/// for content the ruling had just pinned as content (carve-rs#1336).
 fn visible(nodes: &[InlineNode]) -> bool {
     nodes
         .iter()
-        .any(|n| !matches!(n, InlineNode::Text(t) if t.value.trim().is_empty()))
+        .any(|n| !matches!(n, InlineNode::Text(t) if t.value.chars().all(is_layout_space)))
 }
 fn coalesce(nodes: Vec<InlineNode>) -> Vec<InlineNode> {
     let mut out = Vec::new();
@@ -5321,22 +5357,22 @@ fn synthesized_wrapper(children: Vec<InlineNode>) -> BlockNode {
 
 /// The one image a paragraph's run holds, when it holds nothing else.
 ///
-/// LAYOUT IS NOT CONTENT (PART 11 section 7), and the writer already agrees: it
-/// trims the edges of the run, so `<p>` and a newline and `  <img>` writes the
-/// same bare block image as `<p><img></p>` and loses the same paragraph. This
-/// engine keeps those edge spaces in the TREE where carve-js trims them on the
-/// way in, which is a separate divergence and a separate loss - the row here is
-/// about the paragraph, and it is owed for both spellings.
+/// THE RUN ARRIVES TRIMMED, so this asks the plain question and nothing more.
+/// It used to carry a tolerance for whitespace-only text nodes, which is what
+/// made `<p>` and a newline and `  <img>` reach the row - and carve-rs#1336
+/// moved that job to `trim_edge_whitespace`, which now runs on the authored arm
+/// as well. After that the tolerance could not be reached: a whitespace-only
+/// text node surviving the trim would have to be INTERIOR, and an interior node
+/// needs a non-text node on each side, which is a second one this returns `None`
+/// for. Removing the arm left all sixty import, image and whitespace test
+/// binaries green, so it was a branch no input could take - and worse than
+/// merely dead, it told a reader the padded spelling was handled HERE when the
+/// trim above is what handles it.
 fn lone_image(inlines: &[InlineNode]) -> Option<&Image> {
-    let mut image = None;
-    for node in inlines {
-        match node {
-            InlineNode::Image(candidate) if image.is_none() => image = Some(candidate),
-            InlineNode::Text(text) if text.value.chars().all(is_layout_space) => {}
-            _ => return None,
-        }
+    match inlines {
+        [InlineNode::Image(image)] => Some(image),
+        _ => None,
     }
-    image
 }
 
 /// A `<p>` the AUTHOR wrote holding nothing but an image.
