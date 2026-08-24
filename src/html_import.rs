@@ -1724,10 +1724,103 @@ impl<'a> Importer<'a> {
             let mut items = Vec::new();
             for (i, li) in list_items.iter().enumerate() {
                 let p = format!("{path}/li[{}]", i + 1);
+                let li_children = li.children.borrow();
+                // A TASK ITEM'S CHECKBOX IS READ, not skipped past. GFM writes
+                // a task item as an `<input type="checkbox">` at the head of
+                // the `<li>`, and this engine's OWN renderer writes exactly
+                // that, so an importer that never looks at it turns every task
+                // item into an ordinary bullet - the state gone from the
+                // written source and from the render of that source, which is
+                // a loss on the round trip rather than a spelling difference
+                // (markup-carve/carve-rs#1365). The field was hardwired
+                // `checked: None` and no site in this file mentioned an
+                // `input`, so the state was never READ rather than read and
+                // then dropped.
+                //
+                // A DIRECT child `<input>` whose `type` is `checkbox`, which is
+                // how carve-js's `htmlToCarve` and carve-php's
+                // `getDirectCheckboxInput` both spell it. `checked` is a
+                // boolean attribute, so its PRESENCE is the value and
+                // `checked`, `checked=""` and `checked="checked"` are one item.
+                // An `<input>` a `<p>` wrapper holds is NOT reached: the
+                // wrapper is a paragraph the source spelled, so the item is
+                // loose and the input is ordinary content there - all three
+                // engines draw the line in the same place.
+                let checkbox = li_children.iter().enumerate().find(|(_, child)| {
+                    Self::tag(child).as_deref() == Some("input")
+                        && Self::attr(child, "type").as_deref() == Some("checkbox")
+                });
+                // WHAT THE MARKER CANNOT CARRY IS STILL REPORTED. A `[x]` holds
+                // one thing, whether the box is ticked, so every other
+                // attribute the element had is lost - and the walk that used to
+                // report it no longer reaches the node, because the node is
+                // consumed below. Reporting here is what keeps the report true:
+                // a `{#x}` or an `onclick` on the checkbox would otherwise
+                // vanish in silence, which is a worse answer than the one this
+                // ticket started from.
+                //
+                // FOUR NAMES ARE SILENT, and they are exactly the ones the
+                // marker accounts for. `type` and `checked` ARE the state;
+                // `disabled` is what this engine's renderer writes on every
+                // task checkbox; `aria-label` is a name it DERIVED from the
+                // item's own text, which markup-carve/carve-rs#1209 rules is
+                // not baked back into source. So importing this engine's own
+                // rendered task list reports nothing at all, which is the round
+                // trip this ticket is about.
+                //
+                // `attrs` is called for its REPORT as much as for its return:
+                // it is the site that refuses a dangerous name and says why, so
+                // routing the element through it keeps ONE filter rather than a
+                // second spelling of it (carve-rs#1060).
+                if let Some((j, input)) = checkbox {
+                    let input_path = Self::child_path(&p, input, j);
+                    if let Some(kept) = self.attrs(input, &input_path) {
+                        let names: Vec<String> = Self::attr_names(&kept)
+                            .into_iter()
+                            .filter(|name| {
+                                !matches!(
+                                    name.as_str(),
+                                    "type" | "checked" | "disabled" | "aria-label"
+                                )
+                            })
+                            .collect();
+                        if !names.is_empty() {
+                            self.diag(
+                                HtmlImportDiagnosticCode::AttributeDropped,
+                                format!(
+                                    "Dropped {} on <input>: a task item's checkbox has no attribute slot",
+                                    names.join(", ")
+                                ),
+                                HtmlImportSeverity::Warning,
+                                &input_path,
+                                input,
+                            );
+                        }
+                    }
+                }
+                // CONSUMED INTO THE MARKER, so it is not walked as content and
+                // leaves no `element-unwrapped` or `attribute-dropped` behind
+                // it - reporting the `type` and `checked` lost would name a
+                // loss that no longer happens.
+                //
+                // The siblings after it keep the index they have in the
+                // DOCUMENT rather than the one they take in the filtered array,
+                // which is why the paths are computed here and handed to
+                // `blocks_at`: rebuilding an index from a list something was
+                // lifted out of renumbers every sibling after the hole
+                // (PART 12 §16, markup-carve/carve#1554).
+                let (content, content_paths): (Vec<Handle>, Vec<String>) = li_children
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, child)| {
+                        checkbox.map_or(true, |(_, input)| !Rc::ptr_eq(input, child))
+                    })
+                    .map(|(j, child)| (child.clone(), Self::child_path(&p, child, j)))
+                    .unzip();
                 items.push(ListItem {
                     attrs: self.attrs(li, &p),
-                    checked: None,
-                    children: self.blocks(&li.children.borrow(), &p, depth + 1)?,
+                    checked: checkbox.map(|(_, input)| Self::attr(input, "checked").is_some()),
+                    children: self.blocks_at(&content, Some(&content_paths), &p, depth + 1)?,
                     pos: None,
                 });
             }
@@ -1752,7 +1845,9 @@ impl<'a> Importer<'a> {
             // come back with a `<p>` its source never wrote; a nested `<ul>`
             // beside bare text is structure, not a paragraph wrapper, so
             // `<li>one<ul>…</ul></li>` is the HTML of a tight item with a
-            // sublist. Asking instead whether every item is BARE TEXT loosens
+            // sublist; a task item's checkbox is consumed into the `[x]` marker
+            // rather than imported, so it does not vote either. Asking instead
+            // whether every item is BARE TEXT loosens
             // all four of those shapes, which is the over-application
             // markup-carve/carve-js#1106 shipped and markup-carve/carve-js#1110
             // corrected.
