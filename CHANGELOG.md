@@ -171,6 +171,13 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `<abbr title="y">^1</abbr>` was written `[^1]{abbr=y}`, which re-reads as a
   note reference and loses the span; an anchor lost its destination the same
   way. `[^]` is not a reference and is still written bare.
+- A definition-list description that writes nothing is dropped instead of
+  written as a bare `:` line, which the parser read as more of the term above it
+  - the description was lost and the term damaged (#1319,
+  markup-carve/carve#1627). Dropping an entry now also breaks the list there
+  (markup-carve/carve#1636, PART 12 §16), so the surviving term does not acquire
+  the next entry's description; an HTML import reports the two as
+  `structure-unspellable` on the `<dd>` and `structure-split` on the `<dl>`.
 - `fmt` keeps a heading's leading tab (markup-carve/carve#1587, PART 11 §1). The
   marker separator is a run of spaces, so the tab in `## \tx` is title content
   and the writer no longer trims it.
