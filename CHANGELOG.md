@@ -50,6 +50,20 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   longer needs a Rust toolchain.
 - `RenderCarveError`, carrying `Depth` and the new `SourceUnspellable` (#1112).
   Breaking for a caller that matches on `render_carve`'s error.
+- `migrate_html`, `migrate_markdown` and `migrate_djot` return one
+  `MigrationResult` shape (#1326), with `MigrationReport`, `MigrationFidelity`
+  and `MigrationConfidence`, so one import workflow covers all three formats.
+- `parse_snapshot` and `reparse` (#1327) apply an ordered set of UTF-8 byte
+  edits to a source-authoritative `ParserSnapshot` atomically, returning the
+  document, the source layout and the changed ranges.
+- `lint_accessibility` reports structural accessibility problems straight from
+  Carve source (#1328), with the first two rules `a11y/image-alt` and
+  `a11y/heading-jump`.
+- `create_reversible_ast_patch` and `apply_reversible_ast_patch` (#1329) carry
+  the forward and inverse operations together with the document preconditions.
+- `try_render_html_streaming` exposes the borrowed layout renderer's fallback
+  boundary (#1330): the sink is left untouched on `StreamOutcome::NeedsAst`, so
+  a caller can run the AST renderer after it rather than falling back blindly.
 
 ### Changed
 
@@ -64,6 +78,11 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   attribute block must be followed by a space.
 - **Breaking:** a continuation marker attaches only a flush-left block
   (markup-carve/carve#1436, #1163, PART 9 §17 L3).
+- **Breaking:** a `const`-valued wire field is checked at decode rather than
+  silently normalized (#1332, PART 12 §12(d)). `strong.boldItalic`,
+  `list.bareMarker`, `citation_group.mode` and `definition_list.loose` admit one
+  value each, so a payload writing another (`loose: false`) is now refused where
+  it used to be repaired in silence. Absent stays legal on all four.
 - **Breaking:** `Figure::target` is now `Box<FigureTarget>` (#1119, #1127), for
   a caller that constructs or matches a figure through the public AST.
 - Three blank lines are a hard list boundary (markup-carve/carve#1430, PART 9
@@ -194,6 +213,10 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - A hyphen run that opens a word after whitespace is a flag, not a dash
   (markup-carve/carve#1443, PART 9 §8), so `git log --oneline` keeps its
   hyphens.
+- An indented lone image is a paragraph holding an inline image (#1341,
+  markup-carve/carve#1660, divergence §15). The rendered HTML does not move: a
+  paragraph whose whole content is one image still renders as a bare `<img>` at
+  every column.
 - The first code group in a document is named `codegroup-1` (#1178), matching
   carve-js and carve-php.
 - The footnote backlink has an accessible name (markup-carve/carve#1455, PART 9
@@ -225,6 +248,25 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `aria-label` no default matches, is still reported.
 - An HTML import rebuilds the container the renderer wrote (#1240,
   markup-carve/carve#1502), and treats `<aside>` as the block element it is.
+- An authored HTML heading `id` survives the import (#1324), where an id equal
+  to the slug a fresh parse would generate was written by `html_to_ast` and
+  omitted by `html_to_carve`.
+- A lone image is a block rather than a paragraph this engine synthesized
+  (#1334), so both import exits agree; `<ul><li><img></li></ul>` now writes a
+  tight item. A paragraph's edge layout whitespace is trimmed on both arms too
+  (#1336, PART 11 §7).
+- An authored paragraph around a lone image declares the loss with
+  `structure-unspellable` (#1331, markup-carve/carve#1658), naming each
+  attribute the image's own block overwrites. Nothing the importer writes moves.
+- A figure caption holding one no-break, narrow-no-break or ideographic space
+  keeps its figure and its caption (#1339, markup-carve/carve#1628) instead of
+  collapsing to a bare image. An empty caption is still dropped.
+- Those three characters survive in the raw DOM as well (#1342): one directly
+  inside a `<figure>` is kept as an ordinary word already was, and one directly
+  inside a list earns the `element-unwrapped` row declaring it was moved.
+- They survive around a footnote too (#1345), in all three chrome slots: beside
+  the footnote separator, and in the `<sup>` holding either the backlink or the
+  reference. A margin in the same slot is still dropped.
 - A container's grouping label keeps a div's fence, and comes back on the
   opener rather than as a paragraph (#1316, #1315).
 - An anchor or image with no destination comes back as its content with an
