@@ -78,26 +78,15 @@ fn roundtrip_mode_preserves_unknown_markup_as_raw_html() {
 /// An entry is therefore a statement about the ENGINE with a date on it. It is
 /// not a skip: a skip would go green whether or not the output moved, which is
 /// how a gate stops being able to fail.
-const BEHIND_THE_RULING: &[(&str, &str, &str)] = &[
-    // markup-carve/carve#1627: an empty description has no source spelling, so
-    // it is DROPPED with a `structure-unspellable` diagnostic rather than
-    // written as a bare `:` line that re-reads as the term's continuation.
-    // markup-carve/carve-rs#1312.
-    (
-        "empty-definition-description",
-        "an empty <dd> is still written as a bare `:` line",
-        ":: term\n:\n",
-    ),
-    // markup-carve/carve#1638: dropping one BREAKS the list rather than lending
-    // the description to the entry below, which needs the `structure-split`
-    // diagnostic this engine's vocabulary does not carry yet.
-    // markup-carve/carve-rs#1312.
-    (
-        "empty-definition-description-not-last",
-        "a dropped empty description does not break the list, and `structure-split` is unspelled",
-        ":: t1\n:  \n:: t2\n:  d2\n",
-    ),
-];
+/// EMPTY, and that is a state worth having a word about rather than a hole.
+///
+/// Every fixture this list held has been implemented - the caret escape
+/// (carve-rs#1311), the endnotes placement (carve-rs#1313), and both halves of
+/// the empty description (carve-rs#1312). The list stays because it is the
+/// mechanism a NEW fixture arrives through when the pin moves ahead of this
+/// engine, and because emptying it is what the two-directional check above is
+/// for: an entry that has caught up FAILS rather than going quiet.
+const BEHIND_THE_RULING: &[(&str, &str, &str)] = &[];
 
 #[test]
 fn shared_contract_fixtures_match() {
