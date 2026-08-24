@@ -328,9 +328,96 @@ fn refuse_unknown_fields(node: &Json, path: &str) -> Result<(), AstJsonError> {
     Ok(())
 }
 
+/// A short, non-leaking rendering of a value, for a section 12(d) error.
+///
+/// Primitives are shown as the JSON they are, so a caller reading the message
+/// can tell `true` from `"true"` - which is the whole distinction a `const`
+/// turns on. A container is named rather than dumped: the offending value is a
+/// scalar in every case the schema pins, and a tree in the message would bury
+/// it.
+fn describe_json(value: &Json) -> String {
+    match value {
+        Json::Null => "null".to_string(),
+        Json::Bool(flag) => flag.to_string(),
+        Json::Number(number) => number.to_string(),
+        Json::Float(number) => number.to_string(),
+        Json::String(text) => format!("{text:?}"),
+        Json::Array(_) => "an array".to_string(),
+        Json::Object(_) => "an object".to_string(),
+    }
+}
+
+/// PART 12 section 12(d), for a property the schema pins with `const`.
+///
+/// A `const` admits ONE value, and the schema writes it exactly where the
+/// field's PRESENCE is the fact. `definition_list.loose` is `const: true`
+/// because absent means each description derives its own wrapper from its block
+/// count, so there is no `false` to write and `loose: false` states the OPPOSITE
+/// of what the field means.
+///
+/// This engine decodes field by field, so a wrong TYPE was already refused
+/// (`bareMarker must be a boolean`) but a wrong VALUE of the right type was
+/// read for the value the decoder wanted and anything else discarded:
+/// `optional_bool(obj, "bareMarker")?.unwrap_or(false)` turned `false` into
+/// "not a bare marker" and reported nothing. That is a silent REPAIR rather
+/// than carve-js's silent republish, and section 12(d) names both halves as the
+/// same objection (carve-rs#1332, markup-carve/carve-js#1418).
+///
+/// A SEPARATE walk from `refuse_unknown_fields` deliberately: section 11 rules
+/// on a property's NAME and section 12(d) on its VALUE, they carry different
+/// errors, and folding them together would make one function answer to two
+/// clauses.
+fn refuse_const_violations(node: &Json, path: &str) -> Result<(), AstJsonError> {
+    match node {
+        Json::Array(items) => {
+            for (index, item) in items.iter().enumerate() {
+                refuse_const_violations(item, &format!("{path}[{index}]"))?;
+            }
+        }
+        Json::Object(obj) => {
+            if let Some(Json::String(ty)) = obj.get("type") {
+                if let Some((_, pinned)) = crate::wire_fields::WIRE_CONST_FIELDS
+                    .iter()
+                    .find(|(name, _)| *name == ty.as_str())
+                {
+                    for (field, expected) in *pinned {
+                        let Some(found) = obj.get(*field) else {
+                            // ABSENT IS LEGAL, and that is the point of a
+                            // `const`: the field is optional with one admitted
+                            // value, so requiring it would refuse nearly every
+                            // tree this engine's own encoder writes - which
+                            // section 9(a) forbids.
+                            continue;
+                        };
+                        let wanted = parse_value(expected)?;
+                        if *found != wanted {
+                            return Err(AstJsonError::new(format!(
+                                "{ty} at {path} gives {field:?} {}, where the schema requires {} (PART 12 §12(d))",
+                                describe_json(found),
+                                describe_json(&wanted),
+                            )));
+                        }
+                    }
+                }
+            }
+            for (key, value) in obj {
+                let child = if path.is_empty() {
+                    key.clone()
+                } else {
+                    format!("{path}.{key}")
+                };
+                refuse_const_violations(value, &child)?;
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
 pub fn from_json(input: &str) -> Result<Document, AstJsonError> {
     let json = Parser::new(input).parse()?;
     refuse_unknown_fields(&json, "")?;
+    refuse_const_violations(&json, "")?;
     let root = json.as_object("document root")?;
     let root_type = required_string(root, "document", "type")?;
     if root_type != "document" {

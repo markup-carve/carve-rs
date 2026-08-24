@@ -85,3 +85,13 @@ pub(crate) const WIRE_UNTYPED_ARRAY_FIELDS: &[(&str, &[&str])] = &[
     ("citation_group.items", &["key", "locator", "locatorLabel", "locatorValue", "number", "prefix", "suffix", "suppressAuthor", "useIndex"]),
     ("table.rowGroups.bodies", &["attrs", "bodyRows", "headRows", "rowHeadColumns"]),
 ];
+
+/// The one value the schema admits for each `const`-pinned property,
+/// as JSON, keyed by node type (PART 12 section 12(d)).
+#[rustfmt::skip]
+pub(crate) const WIRE_CONST_FIELDS: &[(&str, &[(&str, &str)])] = &[
+    ("citation_group", &[("mode", "\"integral\"")]),
+    ("definition_list", &[("loose", "true")]),
+    ("list", &[("bareMarker", "true")]),
+    ("strong", &[("boldItalic", "true")]),
+];
