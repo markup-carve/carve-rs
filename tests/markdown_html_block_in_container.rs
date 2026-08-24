@@ -137,11 +137,22 @@ fn a_quote_holding_only_the_element_still_holds_it() {
     );
 }
 
+/// THE `{loose}` ON THESE IS PART 9 §17 L7 DOING ITS JOB, not churn.
+///
+/// Each is a ONE-ITEM list whose blank line is followed by a block that is not
+/// a paragraph, and markup-carve/carve#1633 (landed here as
+/// markup-carve/carve-rs#1309) says a blank line loosens an item only where a
+/// paragraph follows it. So the blank line spells nothing on re-parse, the item
+/// count offers no second spelling either, and the source read back TIGHT.
+///
+/// That was a PART 11 §1 violation and it was measured on all seven of these:
+/// `render_html(x)` gives `<li><p>item</p>…`, and `to_html(fmt(x))` gave
+/// `<li>item…` with the `<p>` gone. With the key both agree.
 #[test]
 fn a_list_item_keeps_the_element_after_a_blank() {
     assert_eq!(
         carve("- item\n\n  <footer>x</footer>\n\nafter\n"),
-        "- item\n\n  ```=html\n  <footer>x</footer>\n  ```\n\nafter\n",
+        "{loose}\n- item\n\n  ```=html\n  <footer>x</footer>\n  ```\n\nafter\n",
     );
 }
 
@@ -160,7 +171,7 @@ fn a_list_item_keeps_the_element_on_a_continuation_line() {
 fn an_ordered_item_keeps_the_element() {
     assert_eq!(
         carve("1. item\n\n   <footer>x</footer>\n\nafter\n"),
-        "1. item\n\n   ```=html\n   <footer>x</footer>\n   ```\n\nafter\n",
+        "{loose}\n1. item\n\n   ```=html\n   <footer>x</footer>\n   ```\n\nafter\n",
     );
 }
 
@@ -168,7 +179,7 @@ fn an_ordered_item_keeps_the_element() {
 fn a_nested_item_keeps_the_element_at_its_content_column() {
     assert_eq!(
         carve("- outer\n\n  - inner\n\n    <footer>x</footer>\n\nafter\n"),
-        "- outer\n\n  - inner\n\n    ```=html\n    <footer>x</footer>\n    ```\n\nafter\n",
+        "{loose}\n- outer\n\n  {loose}\n  - inner\n\n    ```=html\n    <footer>x</footer>\n    ```\n\nafter\n",
     );
 }
 
@@ -176,7 +187,7 @@ fn a_nested_item_keeps_the_element_at_its_content_column() {
 fn an_item_inside_a_quote_keeps_the_element() {
     assert_eq!(
         carve("> - item\n>\n>   <footer>x</footer>\n\nafter\n"),
-        "> - item\n>\n>   ```=html\n>   <footer>x</footer>\n>   ```\n\nafter\n",
+        "> {loose}\n> - item\n>\n>   ```=html\n>   <footer>x</footer>\n>   ```\n\nafter\n",
     );
 }
 
@@ -184,7 +195,7 @@ fn an_item_inside_a_quote_keeps_the_element() {
 fn a_quote_inside_an_item_keeps_the_element() {
     assert_eq!(
         carve("- item\n\n  > quoted\n  >\n  > <footer>x</footer>\n\nafter\n"),
-        "- item\n\n  > quoted\n  >\n  > ```=html\n  > <footer>x</footer>\n  > ```\n\nafter\n",
+        "{loose}\n- item\n\n  > quoted\n  >\n  > ```=html\n  > <footer>x</footer>\n  > ```\n\nafter\n",
     );
 }
 
@@ -192,7 +203,7 @@ fn a_quote_inside_an_item_keeps_the_element() {
 fn a_list_item_keeps_an_html_comment() {
     assert_eq!(
         carve("- item\n\n  <!-- note -->\n\nafter\n"),
-        "- item\n\n  ```=html\n  <!-- note -->\n  ```\n\nafter\n",
+        "{loose}\n- item\n\n  ```=html\n  <!-- note -->\n  ```\n\nafter\n",
     );
 }
 

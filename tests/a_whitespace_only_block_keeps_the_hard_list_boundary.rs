@@ -115,7 +115,12 @@ fn the_boundary_inside_a_tight_item_survives_a_whitespace_only_child() {
     let written = carve::html_to_carve(html, &carve::HtmlImportOptions::default())
         .unwrap()
         .value;
-    assert_eq!(written, "- x\n\n  - a\n\n\n\n  - b\n");
+    // The leading `{loose}` is PART 9 §17 L7: the outer list has ONE item whose
+    // blank line is followed by a SUB-LIST, and a blank line loosens an item
+    // only where a paragraph follows it (markup-carve/carve#1633), so nothing
+    // else in the source can say it. Measured: without the key `to_html(fmt(x))`
+    // dropped the `<p>` `render_html(x)` has.
+    assert_eq!(written, "{loose}\n- x\n\n  - a\n\n\n\n  - b\n");
     let carve::BlockNode::List(list) = &carve::parse(&written).children[0] else {
         panic!("expected a list");
     };
