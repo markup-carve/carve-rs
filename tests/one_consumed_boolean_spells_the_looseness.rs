@@ -213,6 +213,20 @@ fn the_writer_spells_a_definition_lists_looseness_unconditionally() {
 }
 
 #[test]
+fn a_multi_entry_definition_list_still_takes_the_key() {
+    // WHERE AN ITEM COUNT OMITS IT. Two entries would already spell a LIST's
+    // looseness, and they spell nothing here: a blank line between two ENTRIES
+    // does not loosen a `<dl>` at any count, so the field still has no other
+    // spelling. Without this the corpus says nothing about the difference -
+    // both `<dl>` documents in it hold ONE entry, so the count rule agrees with
+    // the re-parse on every pinned document and only this pins it.
+    let source = "{loose}\n:: T1\n:  d1\n:: T2\n:  d2\n";
+    let written = carve::render_carve(&carve::parse(source)).expect("write");
+
+    assert_eq!(written, source);
+}
+
+#[test]
 fn a_definition_list_keeps_the_key_even_where_every_description_holds_two_blocks() {
     // Reading the redundancy off the RENDER drops the key here, because both
     // spellings wrap the `<dd>`. The key is redundant in the render and NOT in
