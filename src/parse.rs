@@ -8708,6 +8708,13 @@ fn parse_list(
     // The current item's content column (where its content begins after the
     // marker). Nested content and sub-blocks of the last item dedent by this, so
     // it persists across iterations and is updated as each item is opened.
+    //
+    // A PLACEHOLDER, NOT A RULE. `parse_list` is only entered on a marker, and
+    // the marker branch below assigns before anything reads this, so the value
+    // here is dead - measured, by setting it to 999 and finding the corpus and
+    // every list test green. It is deliberately not spelled as the real
+    // computation: a third copy of the column rule that nothing can exercise is
+    // exactly what let the constant here drift from the two live ones.
     let mut content_col = base_indent + 2;
     // The current item's own fenced code block, still OPEN. A FENCED BODY IS
     // NOT A PARAGRAPH, so nothing below the content column folds into the item
@@ -9151,8 +9158,16 @@ fn parse_list(
         // checkbox is content, not marker, so the column is the bullet width
         // (`- `/`* ` = 2) -- a child indented to 2 nests, matching the spec's
         // task attribute/continuation convention (`- [x] x` / `  {.c}`).
+        //
+        // An ABUTTING ATTRIBUTE BLOCK is the one part of that head that DOES
+        // move the column, because it belongs to the marker rather than to the
+        // content: `-{#k} [x] a` is the marker `-{#k} ` and then the checkbox,
+        // so its content column is 6 (markup-carve/carve#1692). The bare
+        // constant put the column INSIDE the attribute block, where no content
+        // can begin, and a heading written at the real column came back as
+        // paragraph text.
         content_col = if marker.checked.is_some() {
-            base_indent + 2
+            base_indent + 2 + marker_attrs_width(cur.peek().unwrap(), &marker)
         } else {
             let l = cur.peek().unwrap();
             let byte_off = (marker.content.as_ptr() as usize).saturating_sub(l.as_ptr() as usize);
@@ -10114,15 +10129,34 @@ fn is_ambiguous_roman_letter(m: &str) -> bool {
         )
 }
 
+/// The column width of the `{...}` attribute block abutting `marker` on
+/// `line`, or 0 when it carries none.
+///
+/// A task item's content column is its BULLET's plus this block: the checkbox
+/// is content (markup-carve/carve#1690) so it does not move the column, but the
+/// attribute block is part of the MARKER that introduces the item, so it does
+/// (markup-carve/carve#1692). Measured from the block's own bytes rather than
+/// from the marker's content pointer, because the content pointer has already
+/// passed the checkbox and any extra spaces in front of it, and neither of
+/// those moves the column.
+fn marker_attrs_width(line: &str, marker: &ListMarker<'_>) -> usize {
+    let bytes = line.as_bytes();
+    let marker_end = (marker.marker.as_ptr() as usize).saturating_sub(line.as_ptr() as usize)
+        + marker.marker.len();
+    read_list_item_attrs(bytes, marker_end).map_or(0, |(_, end)| end - marker_end)
+}
+
 /// Visual column (tab-aware) at which a list ITEM's continuation content begins,
 /// mirroring `parse_list` exactly: for ordered/unordered it is where the marker
 /// content begins (`- ` -> 2, `1. ` -> 3, `10. ` -> 4); for a TASK the checkbox
-/// counts as content, not marker, so the column is the bullet width (`- ` -> 2).
+/// counts as content, not marker, so the column is the bullet width (`- ` -> 2)
+/// PLUS any abutting attribute block, which is marker rather than content
+/// (`-{#k} [x] ` -> 6, markup-carve/carve#1692).
 /// Returns `None` when `line` is not a list marker.
 fn marker_content_col(line: &str) -> Option<usize> {
     let m = detect_list_marker_full(line)?;
     if m.checked.is_some() {
-        return Some(m.indent + 2);
+        return Some(m.indent + 2 + marker_attrs_width(line, &m));
     }
     let content_off = (m.content.as_ptr() as usize).saturating_sub(line.as_ptr() as usize);
     Some(indent_columns(line) + content_off.saturating_sub(leading_ws(line)))
