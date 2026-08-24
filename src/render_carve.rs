@@ -2215,7 +2215,33 @@ fn render_list(node: &List, ctx: &mut CarveContext) -> String {
         };
         let first = lines.remove(0);
         out.push_str(&format!("{prefix}{first}\n"));
-        let continuation = " ".repeat(prefix.len());
+        // A TASK ITEM'S `[x] ` IS CONTENT, NOT MARKER, so it does not move the
+        // item's content column and the continuation must not be indented past
+        // it. `- [x] ` is six characters wide and its content column is 2, the
+        // width of `- ` alone; `-{#k} [x] ` is ten and its content column is 6.
+        // Every non-task marker's content column IS its width, which is why the
+        // two only diverge once a checkbox widens the marker - and why this
+        // stayed unseen. The READER already knew - see the content-column
+        // computation in `parse.rs`: "for a TASK the checkbox is content, not
+        // marker, so the column is the bullet width".
+        //
+        // Writing the continuation at the marker's full width put every block
+        // after the item's first, four columns too far in, where an INDENTED
+        // block opener opens nothing: a heading, a fence or a quote came back as
+        // text of the marker line's paragraph. The three corpus documents that
+        // reported it - `05-lists-12`, `75-list-nesting-and-looseness-9` and
+        // `144-nested-item-looseness-does-not-propagate-to-the-outer-item-3` -
+        // are all task items, and carve-js fixed the same site in carve-js#1455.
+        //
+        // The prefix ENDS with the task marker in every branch that writes one,
+        // so subtracting its width is the item's content column in both shapes,
+        // with and without item attributes.
+        let task_marker_width = if !node.ordered && item.checked.is_some() {
+            "[x] ".len()
+        } else {
+            0
+        };
+        let continuation = " ".repeat(prefix.len() - task_marker_width);
         for line in lines {
             if line.is_empty() || line.chars().eq([verbatim_blank()]) {
                 // A blank continuation line is emitted EMPTY, never indented to
