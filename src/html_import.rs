@@ -2126,7 +2126,7 @@ impl<'a> Importer<'a> {
             // the importer does not give.
             let reported = self.diagnostics.len();
             let unspellable = self.unspellable.len();
-            let rebuilt = self.figure_panel(h, path, depth, attrs, false);
+            let rebuilt = self.figure_panel_captioned(h, path, depth, attrs, false);
             // A LIMIT REACHED INSIDE THE REBUILD IS NOT THE DOCUMENT'S ERROR
             // in this mode. Before the per-target rule, `roundtrip` preserved a
             // figure WITHOUT walking it, so a body 200 levels deep imported
@@ -2141,8 +2141,18 @@ impl<'a> Importer<'a> {
             // counted stay counted: the subtree was walked, and refunding them
             // would sell one budget once per figure.
             let blocks = match rebuilt {
-                Ok(blocks) if self.opts.mode != HtmlImportMode::Roundtrip => blocks,
-                Ok(blocks) if Self::roundtrip_keeps_rebuilt_figure(h, &blocks) => blocks,
+                Ok((blocks, _)) if self.opts.mode != HtmlImportMode::Roundtrip => blocks,
+                // A FIGURE IS THE CAPTIONED WRAPPER (PART 9 §4b). An element
+                // carrying no `<figcaption>`, or one whose caption spells
+                // nothing, never reaches the rebuild-or-preserve decision at
+                // all: it is not a figure to rebuild and not one to preserve,
+                // so it unwraps to its content with `element-unwrapped` in
+                // EVERY mode. `docs/html-import.md` states that as the behavior
+                // this rule leaves untouched, and carve-js pins it; without the
+                // arm, `roundtrip` preserved every uncaptioned `<figure>` and
+                // the two engines disagreed on exactly that shape.
+                Ok((blocks, false)) => blocks,
+                Ok((blocks, true)) if Self::roundtrip_keeps_rebuilt_figure(h, &blocks) => blocks,
                 Err(error) if self.opts.mode != HtmlImportMode::Roundtrip => return Err(error),
                 _ => {
                     self.diagnostics.truncate(reported);
@@ -3251,6 +3261,30 @@ impl<'a> Importer<'a> {
         attrs: Option<Attrs>,
         own_output: bool,
     ) -> Result<Vec<BlockNode>, HtmlImportError> {
+        self.figure_panel_captioned(h, path, depth, attrs, own_output)
+            .map(|(blocks, _)| blocks)
+    }
+
+    /// [`Self::figure_panel`], and WHETHER THE ELEMENT WAS CAPTIONED AT ALL.
+    ///
+    /// A figure is the CAPTIONED wrapper (PART 9 §4b), so an element carrying
+    /// no `<figcaption>` - or one whose caption spells nothing - is not a
+    /// figure to rebuild or to preserve: it unwraps to its content with
+    /// `element-unwrapped`, in every mode, which is the behavior the
+    /// per-target rule leaves untouched (`docs/html-import.md`,
+    /// markup-carve/carve#1704). `roundtrip` has to know that BEFORE it decides
+    /// whether to preserve, and only this function knows it: "spells nothing"
+    /// is a question about the PARSED inlines, not about the element's text, so
+    /// answering it a second time on the DOM would be the same rule written
+    /// twice and free to drift.
+    fn figure_panel_captioned(
+        &mut self,
+        h: &Handle,
+        path: &str,
+        depth: usize,
+        attrs: Option<Attrs>,
+        own_output: bool,
+    ) -> Result<(Vec<BlockNode>, bool), HtmlImportError> {
         let attrs = if own_output {
             Self::without_structural_class(attrs, "carve-figure-panel")
         } else {
@@ -3356,7 +3390,7 @@ impl<'a> Importer<'a> {
         let host: Vec<Handle> = host.into_iter().map(|(_, child)| child).collect();
         let mut blocks = self.blocks_at(&host, Some(&host_paths), path, depth + 1)?;
         let Some(caption) = caption else {
-            return Ok(blocks);
+            return Ok((blocks, false));
         };
         if blocks.len() == 1 {
             let target = match blocks.remove(0) {
@@ -3384,17 +3418,20 @@ impl<'a> Importer<'a> {
                         at_content_column: true,
                         pos: None,
                     }));
-                    return Ok(blocks);
+                    return Ok((blocks, true));
                 }
             };
-            return Ok(vec![BlockNode::Figure(Figure {
-                attrs,
-                target: Box::new(target),
-                rendered_target: None,
-                caption,
-                short_caption: None,
-                pos: None,
-            })]);
+            return Ok((
+                vec![BlockNode::Figure(Figure {
+                    attrs,
+                    target: Box::new(target),
+                    rendered_target: None,
+                    caption,
+                    short_caption: None,
+                    pos: None,
+                })],
+                true,
+            ));
         }
         blocks.push(BlockNode::Paragraph(Paragraph {
             attrs: None,
@@ -3402,7 +3439,7 @@ impl<'a> Importer<'a> {
             at_content_column: true,
             pos: None,
         }));
-        Ok(blocks)
+        Ok((blocks, true))
     }
 
     /// A `colspan` / `rowspan` value, by HTML's rules: a non-negative integer,

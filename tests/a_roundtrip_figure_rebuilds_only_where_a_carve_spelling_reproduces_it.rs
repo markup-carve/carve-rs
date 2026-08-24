@@ -195,6 +195,80 @@ fn a_figure_too_deep_to_rebuild_is_preserved_rather_than_failing_the_import() {
     );
 }
 
+/// THE PRESERVE SIDE IS NOT ENUMERATED. What the rule names is the small set a
+/// Carve spelling reproduces; everything else inherits the other answer without
+/// being listed, which is the whole point of pinning a property rather than a
+/// table of tag names. A figure around a HEADING or a `<div>` appears in no
+/// ruling table and still preserves, and so does one around an element this
+/// engine has never heard of.
+#[test]
+fn a_target_nobody_listed_preserves_without_being_named() {
+    let mut wrong = Vec::new();
+    for html in [
+        "<figure id=\"h\"><h2>H</h2><figcaption>Cap</figcaption></figure>",
+        "<figure id=\"d\"><div>x</div><figcaption>Cap</figcaption></figure>",
+        "<figure id=\"v\"><video src=\"a.mp4\"></video><figcaption>Cap</figcaption></figure>",
+    ] {
+        let imported = import(html, HtmlImportMode::Roundtrip);
+        if !imported.carve.contains("```=html") || !imported.carve.contains(html) {
+            wrong.push(format!("{html}\n  not preserved: {:?}", imported.carve));
+        }
+        if imported.codes != vec![HtmlImportDiagnosticCode::RawPreserved] {
+            wrong.push(format!("{html}\n  reported: {:?}", imported.codes));
+        }
+    }
+    assert!(
+        wrong.is_empty(),
+        "a target the rebuild set does not name must preserve:\n{}",
+        wrong.join("\n")
+    );
+}
+
+/// A FIGURE IS THE CAPTIONED WRAPPER (PART 9 §4b), so an element carrying no
+/// `<figcaption>` - or one whose caption spells nothing - never reaches the
+/// rebuild-or-preserve decision at all. It is not a figure to rebuild and not
+/// one to preserve: it unwraps to its content with `element-unwrapped`, in
+/// EVERY mode, and the id it carried is reported the way any unwrap reports it.
+///
+/// The boundary is what stops the two engines disagreeing on a shape neither
+/// ruling table lists. Without it `roundtrip` preserved every uncaptioned
+/// `<figure>` while carve-js unwrapped it.
+#[test]
+fn an_uncaptioned_figure_unwraps_in_every_mode() {
+    let mut wrong = Vec::new();
+    for html in [
+        "<figure id=\"n\"><img src=\"a.png\" alt=\"A\"></figure>",
+        // "Spells nothing" is a question about the PARSED caption, not about
+        // the element's text: a blank one writes a bare `^` line, which
+        // re-parses as a literal caret, so it is treated as absent.
+        "<figure id=\"e\"><img src=\"a.png\" alt=\"A\"><figcaption>  </figcaption></figure>",
+    ] {
+        for mode in [
+            HtmlImportMode::Safe,
+            HtmlImportMode::Semantic,
+            HtmlImportMode::Roundtrip,
+        ] {
+            let imported = import(html, mode);
+            if imported.carve != "![A](a.png)\n" {
+                wrong.push(format!("{html} in {mode:?}: wrote {:?}", imported.carve));
+            }
+            if imported.codes
+                != vec![
+                    HtmlImportDiagnosticCode::ElementUnwrapped,
+                    HtmlImportDiagnosticCode::AttributeDropped,
+                ]
+            {
+                wrong.push(format!("{html} in {mode:?}: reported {:?}", imported.codes));
+            }
+        }
+    }
+    assert!(
+        wrong.is_empty(),
+        "an uncaptioned figure is not a figure to rebuild or to preserve:\n{}",
+        wrong.join("\n")
+    );
+}
+
 /// A REJECTED REBUILD LEAVES NO TRACE. The raw-preserve arm runs only after
 /// `figure_panel` has walked the subtree, so every row that walk pushed
 /// describes a tree this mode then throws away. A figure around a LIST loses
