@@ -712,7 +712,19 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // that merely adds up cannot distinguish from six arriving and some number
     // leaving. The declared source-lossy set is unchanged at 3 entries, so no
     // new loss cause appears either.
-    const STRICT: usize = 1089;
+    // The bump to carve 2b7920a2 adds FOUR documents: corpus 411's container-
+    // level lone images (markup-carve/carve#1682), two of which also gained the
+    // `.fmt` canonical form their top-level siblings already had
+    // (markup-carve/carve#1693). Every one of them round trips STRICTLY, so the
+    // lossy side does not move at all.
+    //
+    // MEASURED THE SAME WAY as every bump above - `covered` and `lossy` printed
+    // from the running test, reading 1093 / 301 against 1089 / 301 at the old
+    // pin. `lossy` holding at 301 is the half that matters: it says no document
+    // LEFT the strict set, which a total that merely adds up cannot distinguish
+    // from four arriving and some number leaving. The declared source-lossy set
+    // is unchanged, so no new loss cause appears either.
+    const STRICT: usize = 1093;
     const LOSSY: usize = 301;
     assert!(
         covered >= STRICT,
