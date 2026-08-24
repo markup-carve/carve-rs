@@ -226,7 +226,11 @@ struct Importer<'a> {
     /// the depth is what chooses between the double and the single pair.
     quote_depth: usize,
     /// The losses a WRITER takes, held back until one writes (PART 12 §16).
-    unspellable: Vec<(Handle, String, String)>,
+    /// The rows that belong to the WRITING exit only, each with the code it is
+    /// reported under. `html_to_ast` keeps every structure these describe and is
+    /// told nothing; `html_to_carve` flushes them once the walk is done, so they
+    /// sort into document order with the rest of the report.
+    unspellable: Vec<(Handle, String, String, HtmlImportDiagnosticCode)>,
     /// The reference sites the adapter footnote pass recognized: the node
     /// `inline` must read as a footnote reference, and the label it carries.
     ///
@@ -1769,8 +1773,12 @@ impl<'a> Importer<'a> {
                         _ => None,
                     };
                     if let Some(message) = lost {
-                        self.unspellable
-                            .push((h.clone(), path.to_owned(), message.into()));
+                        self.unspellable.push((
+                            h.clone(),
+                            path.to_owned(),
+                            message.into(),
+                            HtmlImportDiagnosticCode::StructureUnspellable,
+                        ));
                     }
                 }
                 _ => {
@@ -2268,9 +2276,17 @@ impl<'a> Importer<'a> {
         let mut items: Vec<DefinitionItem> = Vec::new();
         let mut terms: Vec<DefinitionTerm> = Vec::new();
         let mut definitions: Vec<DefinitionDef> = Vec::new();
+        // Whether the description just read WRITES NOTHING, and whether a `<dt>`
+        // has since arrived to spend that on a break. See `render_definition_list`
+        // for why only a TERM spends it.
+        let mut dropped = false;
+        let mut splits_here = false;
         for (tag, node, node_depth, entry_path) in entries.iter() {
             let p = entry_path.clone();
             if tag == "dt" {
+                if dropped {
+                    splits_here = true;
+                }
                 if !definitions.is_empty() {
                     items.push(DefinitionItem {
                         terms: std::mem::take(&mut terms),
@@ -2317,11 +2333,46 @@ impl<'a> Importer<'a> {
                 before.extend(self.blocks(&node.children.borrow(), &p, node_depth + 1)?);
                 continue;
             }
+            let children = self.blocks(&node.children.borrow(), &p, node_depth + 1)?;
+            // THE CONDITION IS "THIS ENTRY WRITES NOTHING", not "the description
+            // is empty", and it is the same question the writer asks. A `<dd>`
+            // holding an invisible paragraph or a list with no items writes
+            // nothing either, and the writer drops all three alike - so a
+            // DOM-shaped predicate here would let `<dd><p> </p></dd>` split the
+            // list while declaring nothing, which is the ceiling breaking in the
+            // direction no row can cover.
+            dropped = writes_nothing(&children);
+            if dropped {
+                self.unspellable.push((
+                    node.clone(),
+                    p.clone(),
+                    "A <dd> that writes nothing has no Carve spelling; the empty description is dropped, because the only line that could carry it is read as more of the term above it".into(),
+                    HtmlImportDiagnosticCode::StructureUnspellable,
+                ));
+            }
             definitions.push(DefinitionDef {
                 attrs: self.attrs(node, &p),
-                children: self.blocks(&node.children.borrow(), &p, node_depth + 1)?,
+                children,
                 pos: None,
             });
+        }
+        if splits_here {
+            // THE GROUPING IS A REAL LOSS AND TAKES ITS OWN ROW. `structure-split`
+            // says one source structure was written as MORE THAN ONE, because
+            // writing it as one would have changed what its parts mean. It is not
+            // `structure-unspellable`: that code is for a shape the syntax cannot
+            // spell at all, and here every part is spellable, present and exact -
+            // what the source cannot say is that they were ONE list.
+            //
+            // Both rows are reported, and `report` sorts them into document
+            // order, which puts the `<dl>` ahead of the `<dd>` that is gone -
+            // the order the shared fixture states (markup-carve/carve#1638).
+            self.unspellable.push((
+                h.clone(),
+                path.to_owned(),
+                "A <dd> that writes nothing ends the list it is in; the entries after it are written as a second <dl>, because one list would give the term above it the next entry's description".into(),
+                HtmlImportDiagnosticCode::StructureSplit,
+            ));
         }
         if !terms.is_empty() || !definitions.is_empty() {
             items.push(DefinitionItem {
@@ -3406,6 +3457,7 @@ impl<'a> Importer<'a> {
             node.clone(),
             path.to_owned(),
             "A table with an explicit head/body/foot grouping has no Carve spelling; the written table keeps only the structure a reader derives from its rows".into(),
+            HtmlImportDiagnosticCode::StructureUnspellable,
         ));
         Some(TableRowGroups {
             head_rows,
@@ -5030,6 +5082,28 @@ fn collapse(s: &str) -> String {
 /// nothing was dropped, and PART 11 §10j names the empty paragraph as the
 /// sibling shape whose treatment already keeps §1 - so it is left exactly as it
 /// was.
+/// Whether these blocks WRITE NOTHING, which is the question both the empty-`<dd>`
+/// diagnostic and the writer's own drop are asked over.
+///
+/// Deliberately not "is the description empty". An empty `<dd>`, one holding a
+/// paragraph of layout whitespace, and one holding a list with no items all
+/// reach the writer as different trees and all write nothing, so a predicate
+/// over the tree SHAPE declares one of the three and stays silent on the other
+/// two while the list splits underneath it just the same.
+///
+/// An empty slice writes nothing, which is the plain reading and the common
+/// case: `blocks` already drops a layout-only paragraph on the way in, so most
+/// of these arrive with no children at all.
+fn writes_nothing(blocks: &[BlockNode]) -> bool {
+    blocks.iter().all(|block| match block {
+        BlockNode::Paragraph(paragraph) => {
+            paragraph.children.is_empty() || is_layout_only(&paragraph.children)
+        }
+        BlockNode::List(list) => list.items.is_empty(),
+        _ => false,
+    })
+}
+
 fn is_layout_only(nodes: &[InlineNode]) -> bool {
     !nodes.is_empty()
         && nodes.iter().all(|n| match n {
@@ -5130,14 +5204,8 @@ fn import(
     )?;
     let children = importer.blocks(&fragment_top_level(&dom.document), "", 0)?;
     if writing {
-        for (node, path, message) in std::mem::take(&mut importer.unspellable) {
-            importer.diag(
-                HtmlImportDiagnosticCode::StructureUnspellable,
-                message,
-                HtmlImportSeverity::Warning,
-                &path,
-                &node,
-            );
+        for (node, path, message, code) in std::mem::take(&mut importer.unspellable) {
+            importer.diag(code, message, HtmlImportSeverity::Warning, &path, &node);
         }
     }
     Ok(HtmlImportResult {
