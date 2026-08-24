@@ -525,6 +525,16 @@ const IMPLEMENTED: &[&str] = &[
     "a-continuation-marker-attaches-only-a-flush-left-block",
     "a-raw-block-keeps-the-blank-line-at-the-end-of-its-payload-too",
     "an-unterminated-fence-at-a-content-column-opens-no-block-so-the-paragraph-stays-open",
+    // Corpus 405-408, which this pin bump brings with it.
+    // markup-carve/carve#1633: a blank line loosens an item only where a
+    // paragraph follows it, and a footnote continuation survives a blank run.
+    "a-blank-line-loosens-an-item-only-when-a-paragraph-follows-it",
+    "a-footnote-continuation-survives-a-blank-run",
+    // markup-carve/carve#1623 and markup-carve/carve#1639: PART 9 SS17 L7's
+    // consumed `loose` boolean, and the writer rule that spells it only where a
+    // blank line cannot.
+    "one-consumed-boolean-spells-the-looseness-no-blank-line-can",
+    "the-writer-spells-looseness-only-where-a-blank-line-cannot",
 ];
 
 // Spec-main categories tracked by separate implementation work. Keep them

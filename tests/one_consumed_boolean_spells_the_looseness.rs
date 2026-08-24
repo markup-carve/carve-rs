@@ -11,14 +11,16 @@
 //! spelling for it. `<li><p>x</p></li>` is what ordinary HTML exports emit
 //! (markup-carve/carve#1607), so the shape arrives on routine input.
 //!
-//! THE DEFINITION-LIST HALF IS NOT HERE. §17 L7 applies to a `<dl>` too, and
-//! PART 12 §8 gives `definition_list` a `loose` field for it - but that field
-//! landed in the spec at `cfb8d7bf` and this engine's `tests/spec` pin is
-//! `3fdfd6e`, so `src/wire_fields.rs`, which is GENERATED from the pinned
-//! schema and gated on matching it, cannot name the field yet. An engine
-//! publishing it would emit a tree its own ingest refuses under PART 12 §11.
-//! `a_definition_list_does_not_take_the_key_yet` below is that state, asserted
-//! rather than left silent (markup-carve/carve-rs#1301).
+//! BOTH CONTAINERS THAT HAVE THE AXIS. §17 L7 applies to a `<dl>` too, and PART
+//! 12 §8 gives `definition_list` a `loose` field for it. Unlike `list.tight`
+//! that field is not total: it is published only when the key was SPELLED,
+//! because a `<dl>` derives each `<dd>`'s wrapper from the description's block
+//! count and a blank line between two ENTRIES does not loosen one at any count.
+//!
+//! THE WRITER SPELLS THE KEY ONLY WHERE A BLANK LINE CANNOT, decided by a
+//! RE-PARSE over the document rather than by an item count
+//! (markup-carve/carve#1639). The key is a render no-op, so the corpus pins it
+//! with `.fmt` sidecars and the tests below pin it against `render_carve`.
 
 use carve::to_html;
 
@@ -126,55 +128,202 @@ fn redundant_use_is_a_legal_no_op() {
     assert_eq!(to_html("{loose}\n- a\n\n- b\n"), to_html("- a\n\n- b\n"));
 }
 
-/// THE WRITER HALF OF §17 L7 IS NOT IMPLEMENTED HERE, and this is that state
-/// asserted rather than left silent.
+/// THE WRITER HALF OF §17 L7: the key is spelled ONLY where a blank line
+/// cannot say it, and the test for that is a RE-PARSE OVER THE DOCUMENT
+/// (markup-carve/carve#1639): write the body without the key, read it back, and
+/// emit the key exactly where the container's looseness field did not survive.
 ///
-/// L7 says the canonical writer emits the key only where the blank-line
-/// spelling cannot say it - a ONE-ITEM loose list. Implementing it changes the
-/// output of a SHARED cross-engine fixture that currently pins the loss:
-/// `tests/spec/tests/html-import/derived-endnotes-section` imports
-/// `<ol><li><p>Note text.</p></li></ol>` and expects `---\n\n1. Note text.\n`,
-/// which reads back tight. That expectation is the shape L7 exists for
-/// (markup-carve/carve#1607), so moving it is a spec-repo change to be made
-/// once for all three engines rather than unilaterally here, and the sibling
-/// engine work (carve-js#1401, carve-php#1634) is scoped to the parser and the
-/// renderer for the same reason.
-///
-/// Measured while writing it: a re-parse test decides the rule correctly - it
-/// declines corpus `05-lists-11`, a one-item ordered list whose ITEM holds two
-/// paragraphs and is therefore already loose on the page - and the only
-/// documents it does decorate are the ones that were losing the looseness.
+/// PART 11 §1's equality is taken over the DOCUMENT, not over the render. The
+/// key is a render no-op, so no HTML fixture can see any of this - the corpus
+/// pins it with `.fmt` sidecars, and so does the round trip below.
 #[test]
-fn the_writer_does_not_spell_the_looseness_yet() {
+fn the_writer_spells_a_one_item_loose_list() {
+    let one_item = carve::from_json(
+        r#"{"type":"document","srcByteLength":0,"children":[{"type":"list","ordered":false,"tight":false,"bulletChar":"-","items":[{"type":"list_item","children":[{"type":"paragraph","children":[{"type":"text","value":"x"}]}]}]}]}"#,
+    )
+    .expect("ingest");
+
+    assert_eq!(
+        carve::render_carve(&one_item).expect("write"),
+        "{loose}\n- x\n"
+    );
+}
+
+#[test]
+fn a_one_item_loose_list_round_trips_through_the_writer() {
+    // The loss this clause exists to end: without the key the source read back
+    // TIGHT, so `to_html(fmt(x))` dropped the `<p>` that `render_html(x)` had.
     let one_item = carve::from_json(
         r#"{"type":"document","srcByteLength":0,"children":[{"type":"list","ordered":false,"tight":false,"bulletChar":"-","items":[{"type":"list_item","children":[{"type":"paragraph","children":[{"type":"text","value":"x"}]}]}]}]}"#,
     )
     .expect("ingest");
     let written = carve::render_carve(&one_item).expect("write");
 
-    assert_eq!(written, "- x\n");
-    assert_ne!(
+    assert_eq!(
         to_html(&written),
-        carve::render_html(&one_item).expect("render"),
-        "the writer half landed - delete this test and pin the round trip instead"
+        carve::render_html(&one_item).expect("render")
     );
+}
 
-    // The control that will still hold when the writer half lands: a two-item
-    // loose list already says it with the blank line between the items, so the
-    // key would be an idle mark there under PART 11 §2.
+#[test]
+fn a_two_item_loose_list_already_says_it_with_the_blank_line() {
+    // PART 11 §2: a mark is spent only where omitting it would change the
+    // re-parsed document. Deriving the key onto every loose container would
+    // rewrite a large share of every document anyone has written.
     assert!(!carve::render_carve(&carve::parse("- a\n\n- b\n"))
         .expect("write")
         .contains("loose"));
 }
 
 #[test]
-fn a_definition_list_does_not_take_the_key_yet() {
-    // NOT the clause's answer, and asserted so the gap is visible rather than
-    // silent: §17 L7 applies to a `<dl>` too. It is blocked on the `tests/spec`
-    // pin reaching PART 12 §8's `definition_list.loose` field - see this file's
-    // header. When the pin advances this test is what goes red.
+fn a_one_item_list_whose_item_holds_the_blank_line_is_not_decorated() {
+    // THE NEAR MISS AN ITEM COUNT GETS WRONG, and corpus `05-lists-11` is this
+    // shape: one item, two paragraphs, already loose on the page because the
+    // blank line sits INSIDE the item. A count-based rule decorates it and
+    // `parse(fmt(x)) != parse(x)`.
+    let source = "1. alpha\n\n   beta\n";
+
+    assert!(!carve::render_carve(&carve::parse(source))
+        .expect("write")
+        .contains("loose"));
+}
+
+#[test]
+fn a_one_item_list_whose_lead_container_holds_the_blank_line_is_not_decorated() {
+    // The second near miss, and the one a STRUCTURAL predicate over the tree
+    // gets wrong where a count does not: the item's lead container holds the
+    // blank line, so the body re-reads loose on its own.
+    let source = "- ::: d\n  b\n\n  tail\n  :::\n";
+    let written = carve::render_carve(&carve::parse(source)).expect("write");
+
+    assert!(!written.contains("loose"), "{written}");
+}
+
+#[test]
+fn the_writer_spells_a_definition_lists_looseness_unconditionally() {
+    // ON A `<dl>` THE RE-PARSE ANSWERS "EMIT" EVERY TIME. The field is set only
+    // where the key was spelled - a `<dl>`'s own derivation gets it from nowhere
+    // else, because a blank line between two ENTRIES does not loosen one at any
+    // count - so a body written without the key can never read back with the
+    // field set.
+    assert_eq!(
+        carve::render_carve(&carve::parse("{loose}\n:: T\n:  d\n")).expect("write"),
+        "{loose}\n:: T\n:  d\n"
+    );
+}
+
+#[test]
+fn a_multi_entry_definition_list_still_takes_the_key() {
+    // WHERE AN ITEM COUNT OMITS IT. Two entries would already spell a LIST's
+    // looseness, and they spell nothing here: a blank line between two ENTRIES
+    // does not loosen a `<dl>` at any count, so the field still has no other
+    // spelling. Without this the corpus says nothing about the difference -
+    // both `<dl>` documents in it hold ONE entry, so the count rule agrees with
+    // the re-parse on every pinned document and only this pins it.
+    let source = "{loose}\n:: T1\n:  d1\n:: T2\n:  d2\n";
+    let written = carve::render_carve(&carve::parse(source)).expect("write");
+
+    assert_eq!(written, source);
+}
+
+#[test]
+fn a_definition_list_keeps_the_key_even_where_every_description_holds_two_blocks() {
+    // Reading the redundancy off the RENDER drops the key here, because both
+    // spellings wrap the `<dd>`. The key is redundant in the render and NOT in
+    // the tree, and the tree is what PART 11 §1's equality is taken over - so
+    // dropping it deletes a fact the document stated, and no HTML fixture can
+    // see it.
+    let source = "{loose}\n:: T\n:  a\n\n   b\n";
+    let written = carve::render_carve(&carve::parse(source)).expect("write");
+
+    assert!(written.contains("{loose}"), "{written}");
+    assert_eq!(
+        carve::to_json(&carve::parse(&written)),
+        carve::to_json(&carve::parse(source))
+    );
+}
+
+#[test]
+fn the_key_leads_the_attributes_it_shares_a_line_with() {
+    let source = "{loose #n .c}\n- x\n";
+    let written = carve::render_carve(&carve::parse(source)).expect("write");
+
+    assert_eq!(written, "{loose #n .c}\n- x\n");
+}
+
+#[test]
+fn the_key_loosens_a_definition_list_and_does_not_reach_the_html() {
+    // §17 L7 on the OTHER container that has the axis. The wrapper is what
+    // moves; the key is consumed and never becomes an attribute.
     let html = to_html("{loose}\n:: Term\n:  Definition.\n");
 
-    assert!(html.contains("<dl loose=\"\">"), "{html}");
-    assert!(html.contains("<dd>Definition.</dd>"), "{html}");
+    assert_eq!(
+        html,
+        "<dl>\n  <dt>Term</dt>\n  <dd><p>Definition.</p></dd>\n</dl>"
+    );
+}
+
+#[test]
+fn the_definition_list_key_does_not_reach_the_html() {
+    assert!(!to_html("{loose}\n:: Term\n:  Definition.\n").contains("loose"));
+}
+
+#[test]
+fn a_definition_lists_looseness_is_published_only_when_spelled() {
+    // PART 12 §8 types the field `const: true`, so it is written only when the
+    // key said so. A `<dl>` that derives its own wrappers publishes nothing,
+    // because that fact is re-derivable from the description's block count.
+    assert!(carve::to_json(&carve::parse("{loose}\n:: T\n:  d\n")).contains("\"loose\":true"));
+    assert!(!carve::to_json(&carve::parse(":: T\n:  d\n")).contains("loose"));
+    assert!(!carve::to_json(&carve::parse(":: T\n:  d\n\n   second\n")).contains("loose"));
+}
+
+#[test]
+fn the_definition_lists_looseness_survives_an_ast_round_trip() {
+    // The half the LIST arm gets for free from `tight`: without a field of its
+    // own the wrapper was underivable, so an ingested tree rendered a shape the
+    // document it came from did not have.
+    let doc = carve::parse("{loose}\n:: T\n:  d\n");
+    let back = carve::from_json(&carve::to_json(&doc)).expect("ingest");
+
+    assert_eq!(
+        carve::render_html(&back).expect("render"),
+        carve::render_html(&doc).expect("render")
+    );
+}
+
+#[test]
+fn a_definition_list_key_line_carrying_only_the_key_leaves_no_attributes_behind() {
+    assert!(!carve::to_json(&carve::parse("{loose}\n:: T\n:  d\n")).contains("\"attrs\""));
+}
+
+#[test]
+fn only_the_definition_list_key_is_consumed() {
+    let html = to_html("{loose .note}\n:: T\n:  d\n");
+
+    assert!(html.starts_with("<dl class=\"note\">"), "{html}");
+    assert!(!html.contains("loose"), "{html}");
+    assert!(html.contains("<dd><p>d</p></dd>"), "{html}");
+}
+
+#[test]
+fn a_valued_loose_is_not_the_definition_list_key_either() {
+    let html = to_html("{loose=x}\n:: T\n:  d\n");
+
+    assert!(html.contains("<dl loose=\"x\">"), "{html}");
+    assert!(
+        html.contains("<dd>d</dd>"),
+        "the list was loosened anyway: {html}"
+    );
+}
+
+#[test]
+fn a_redundant_definition_list_key_is_a_legal_no_op_in_the_render() {
+    // A description that already holds two blocks takes the wrapper either way,
+    // so the key changes nothing an HTML reader can see. It still changes the
+    // TREE, which is what the writer arm below is about.
+    assert_eq!(
+        to_html("{loose}\n:: T\n:  a\n\n   b\n"),
+        to_html(":: T\n:  a\n\n   b\n")
+    );
 }

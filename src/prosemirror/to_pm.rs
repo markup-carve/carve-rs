@@ -265,11 +265,19 @@ impl Renderer {
                         ));
                     }
                 }
-                (
-                    self.name("definition_list")?,
-                    attrs(n.attrs.as_ref()),
-                    children,
-                )
+                let mut a = attrs(n.attrs.as_ref());
+                if n.loose {
+                    // PART 9 §17 L7's SPELLED looseness rides the bridge the way
+                    // `list.tight` does. Without it the editor's `<dd>` wrappers
+                    // are derived from block counts on the way back, and a
+                    // one-block description loses the fact that its wrapper was
+                    // asked for - the same loss the field exists to end.
+                    //
+                    // Only when true, matching PART 12 §8, so a document that
+                    // never spelled it carries no attribute here either.
+                    a.insert("loose".into(), Json::Bool(true));
+                }
+                (self.name("definition_list")?, a, children)
             }
             BlockNode::Figure(n) => {
                 let mut children = vec![

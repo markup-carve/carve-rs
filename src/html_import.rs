@@ -96,6 +96,22 @@ report_vocabulary!(HtmlImportDiagnosticCode {
     /// only a WRITER loses it (PART 12 §16). Reported by `html_to_carve`;
     /// `html_to_ast` keeps the structure and says nothing.
     StructureUnspellable => "structure-unspellable",
+    /// One element became SEVERAL Carve blocks because writing it as one would
+    /// have changed what it says (PART 12 §16). The ruled case is a `<dl>` whose
+    /// empty `<dd>` is not last: dropping the unspellable description would let
+    /// the entry below lend the term above its own, so the list breaks instead
+    /// (markup-carve/carve#1638).
+    ///
+    /// NOT PRODUCED BY THIS ENGINE YET, and named here because the published
+    /// vocabulary is the schema's and this enum is only its spelling -
+    /// `every_report_vocabulary_is_exactly_the_one_the_schema_admits` compares
+    /// the two as sets, in both directions. The behavior is
+    /// markup-carve/carve-rs#1312, and it belongs in the WRITER rather than
+    /// here: like `structure-unspellable`, an empty description survives into
+    /// the AST intact and only a writer loses it. The gap is pinned by
+    /// `BEHIND_THE_RULING` in `tests/html_import.rs`, which fails in both
+    /// directions, so it cannot go quiet.
+    StructureSplit => "structure-split",
     /// The source did not declare how to read a value and this importer picked
     /// an encoding anyway, so the node it produced is only correct if that
     /// guess holds.
@@ -2198,6 +2214,10 @@ impl<'a> Importer<'a> {
         before.push(BlockNode::DefinitionList(DefinitionList {
             attrs,
             items,
+            // The importer reads the `<dd>` wrappers it was given, and a
+            // description that already holds a block says its own looseness -
+            // so nothing here is the SPELLED fact §17 L7's field records.
+            loose: false,
             pos: None,
         }));
         Ok(before)

@@ -2700,7 +2700,22 @@ fn render_definition_list(
             let mut published = def.iter().filter(|child| !publishes_nothing(child));
             if let (Some(BlockNode::Paragraph(p)), None) = (published.next(), published.next()) {
                 out.push_str(&format!("<dd{}>", render_attrs(&def.attrs)));
-                render_inlines(out, &p.children, options, state);
+                // §17 L7: a SPELLED looseness WRAPS the one paragraph, which is
+                // the whole point of the key - `<dd><p>x</p></dd>` has no
+                // blank-line spelling at any entry count, because a blank line
+                // between two ENTRIES does not loosen a `<dl>` at all.
+                //
+                // It stays on the ONE LINE the derived form uses, the way a
+                // loose list item's single paragraph does (`<li><p>x</p></li>`).
+                // The multi-block path below is what indents, and a description
+                // holding one block is not that shape however it was spelled.
+                if d.loose {
+                    out.push_str(&format!("<p{}>", render_attrs(&p.attrs)));
+                    render_inlines(out, &p.children, options, state);
+                    out.push_str("</p>");
+                } else {
+                    render_inlines(out, &p.children, options, state);
+                }
                 out.push_str("</dd>");
                 continue;
             }

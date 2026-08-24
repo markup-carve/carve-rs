@@ -485,10 +485,12 @@ impl Reader {
             // it under `children`.
             items.push(self.container(co, &ty, "children", ty == "definition_term")?);
         }
-        Ok(with_attrs(
-            node("definition_list", [("items", Json::Array(items))]),
-            attrs_obj(obj),
-        ))
+        let mut n = node("definition_list", [("items", Json::Array(items))]);
+        // §17 L7, `const: true` in PART 12 §8: written back only when the
+        // outbound side stamped it, so an absent attribute stays absent rather
+        // than becoming an explicit `false` the schema does not name.
+        insert(&mut n, "loose", optional_bool(attrs_obj(obj), "loose"));
+        Ok(with_attrs(n, attrs_obj(obj)))
     }
 
     fn figure(&mut self, obj: &Object) -> Result<Json, ProseMirrorError> {
@@ -1054,6 +1056,7 @@ fn is_structural_attr(k: &str) -> bool {
             | "rowspan"
             | "short"
             | "src"
+            | "loose"
             | "start"
             | "suppressAuthor"
             | "target"

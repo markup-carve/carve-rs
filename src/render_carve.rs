@@ -1773,10 +1773,10 @@ fn render_block_body(node: &BlockNode, ctx: &mut CarveContext) -> String {
                 .join("\n");
             with_block_attrs(&quote.attrs, &body)
         }
-        BlockNode::List(list) => with_block_attrs(
-            &list.attrs,
-            &with_reset_colon_fence_depth(ctx, |ctx| render_list(list, ctx)),
-        ),
+        BlockNode::List(list) => {
+            let body = with_reset_colon_fence_depth(ctx, |ctx| render_list(list, ctx));
+            with_loose_key(list_needs_loose_key(list, &body), &list.attrs, &body)
+        }
         // PART 11 §6 writes the marker the author used, now that the AST
         // records it (carve#976, carve-rs#843). Only the HYPHEN spelling can be
         // read back as a frontmatter fence, so it is the only one the fallback
@@ -1880,10 +1880,11 @@ fn render_block_body(node: &BlockNode, ctx: &mut CarveContext) -> String {
             let body = render_inside_colon_container(&div.children, ctx);
             with_block_attrs(&div.attrs, &format!("{fence}{label}\n{body}\n{fence}"))
         }
-        BlockNode::DefinitionList(list) => with_block_attrs(
-            &list.attrs,
-            &with_reset_colon_fence_depth(ctx, |ctx| render_definition_list(&list.items, ctx)),
-        ),
+        BlockNode::DefinitionList(list) => {
+            let body =
+                with_reset_colon_fence_depth(ctx, |ctx| render_definition_list(&list.items, ctx));
+            with_loose_key(list.loose, &list.attrs, &body)
+        }
         BlockNode::Figure(figure) => with_block_attrs(&figure.attrs, &render_figure(figure, ctx)),
         BlockNode::FigureGroup(group) => {
             // §10g: the authored form - the attribute line where attributes
@@ -1958,6 +1959,110 @@ fn without_key(attrs: &Attrs, key: &str) -> Option<Attrs> {
         return None;
     }
     Some(next)
+}
+
+/// PART 9 §17 L7: the writer spells the looseness with `{loose}` ONLY where the
+/// blank-line spelling cannot say it.
+///
+/// The decision procedure is markup-carve/carve#1639's, and it is a RE-PARSE
+/// OVER THE DOCUMENT: write the body without the key, read it back, and emit
+/// the key exactly where the container's own looseness field did not survive.
+/// PART 11 §1's equality is taken over the document, not over the render, which
+/// is why an HTML fixture cannot see this - the key is a render no-op, so the
+/// `.fmt` sidecars are the expectation.
+///
+/// AN ITEM COUNT IS WRONG IN BOTH DIRECTIONS, and both were measured. It ADDS a
+/// key to a one-item list whose blank line sits inside the item (corpus
+/// `05-lists-11`, an ordered list whose single item holds two paragraphs), and
+/// it OMITS the key from a definition list, whose entries count two or more
+/// while a blank line between entries does not loosen a `<dl>` at any count.
+///
+/// `attrs` is the node's own set, which never contains `loose`: the parser
+/// CONSUMED it, so the writer re-derives it from the tree rather than echoing
+/// what the author wrote. That is what makes a redundant `{loose}` a no-op
+/// through a format pass as well as through a render.
+fn with_loose_key(needs_key: bool, attrs: &Option<Attrs>, body: &str) -> String {
+    if !needs_key {
+        return with_block_attrs(attrs, body);
+    }
+    let mut attrs = attrs.clone().unwrap_or_default();
+    attrs.key_values.insert("loose".to_string(), String::new());
+    attrs
+        .order
+        .retain(|slot| !matches!(slot, AttrSlot::Key(key) if key == "loose"));
+    if attrs.order.is_empty() {
+        // An EMPTY order means `render_attrs` falls back to id, classes, then
+        // keys - and naming one slot switches it to the ordered branch, which
+        // would then drop the id and the classes it no longer lists. Spell the
+        // fallback out so the key can lead without moving anything else.
+        attrs.order = vec![
+            AttrSlot::Key("loose".to_string()),
+            AttrSlot::Id,
+            AttrSlot::Class,
+        ];
+    } else {
+        attrs.order.insert(0, AttrSlot::Key("loose".to_string()));
+    }
+    // The key LEADS, which is where an author writes it and where the corpus
+    // shows it. Its position among the other slots is not observable in the
+    // output - it is consumed before any renderer sees it - so leading is a
+    // spelling choice rather than a fact being moved.
+    format!("{}\n{body}", render_attrs(&Some(attrs)))
+}
+
+/// Whether a LIST needs the key: §17 L7's re-parse, with the one shortcut that
+/// is sound in a single direction.
+fn list_needs_loose_key(list: &List, body: &str) -> bool {
+    if list.tight || list.items.is_empty() {
+        return false;
+    }
+    // TWO OR MORE ITEMS ALWAYS RE-PARSE LOOSE. §17 L2 loosens on a blank line
+    // between items, and this writer emits one between every pair of a loose
+    // list's items, so the re-parse below can only ever answer "already spelled"
+    // here. A shortcut in ONE direction: it never suppresses a key the re-parse
+    // would have emitted.
+    if list.items.len() > 1 {
+        return false;
+    }
+    // ONE ITEM has no "between items" for a blank line to stand in, so the only
+    // spelling left is one the item's own CONTENT produces - and whether it does
+    // is the parser's question. §17 L1, L2 and L6 decide it together, so a
+    // second copy of them here would answer differently the day any of them
+    // moves: a lead container holding a blank line re-reads LOOSE, while the
+    // same blank line before a fence does not.
+    //
+    // A body with NO blank line in it cannot re-read loose either way, so the
+    // shape the clause exists for - a one-item list holding one paragraph - is
+    // answered without a parse.
+    if !body_has_blank_line(body) {
+        return true;
+    }
+    match comparable_tree(body).as_ref().and_then(|doc| {
+        doc.children
+            .iter()
+            .find(|child| !matches!(child, BlockNode::Comment(_)))
+    }) {
+        Some(BlockNode::List(reparsed)) => reparsed.tight,
+        // Anything else means the body did not read back as a list at all, so
+        // the looseness certainly did not survive.
+        _ => true,
+    }
+}
+
+/// A blank line INSIDE `body`, which is the only place one can loosen it.
+///
+/// Interior, so a body's own leading or trailing newline does not count: those
+/// are the writer's joins rather than content, and reading one as a blank line
+/// would send every single-item list through the re-parse for nothing.
+fn body_has_blank_line(body: &str) -> bool {
+    body.match_indices('\n').any(|(at, _)| {
+        body[at + 1..].split('\n').next().is_some_and(|line| {
+            line.len() < body.len() - at - 1
+                && line
+                    .trim_matches(|ch: char| ch == ' ' || ch == '\t')
+                    .is_empty()
+        })
+    })
 }
 
 fn with_block_attrs(attrs: &Option<Attrs>, body: &str) -> String {

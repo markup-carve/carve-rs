@@ -65,21 +65,106 @@ fn roundtrip_mode_preserves_unknown_markup_as_raw_html() {
     );
 }
 
+/// Shared html-import fixtures this engine does NOT satisfy yet, each naming
+/// the ruling that added it and the ticket that tracks it.
+///
+/// EVERY ENTRY FAILS IN BOTH DIRECTIONS, the same arrangement `AHEAD_OF_PIN`
+/// keeps in `tests/corpus.rs` and `tests/optional_corpus.rs`, pointed the other
+/// way. The third column is what this engine writes TODAY, so a change to that
+/// output is caught exactly as the fixture would have caught it; and the value
+/// must still DIFFER from the fixture, so an entry the engine has caught up on
+/// FAILS and is deleted in the commit that implements the ruling.
+///
+/// An entry is therefore a statement about the ENGINE with a date on it. It is
+/// not a skip: a skip would go green whether or not the output moved, which is
+/// how a gate stops being able to fail.
+const BEHIND_THE_RULING: &[(&str, &str, &str)] = &[
+    // markup-carve/carve#1618: the escape test reads the source the writer will
+    // emit rather than the tree, so a `^` opening a span's content is escaped.
+    // markup-carve/carve-rs#1311.
+    (
+        "note-reference-in-a-span",
+        "the writer does not escape a `^` that opens a span's content",
+        "[^1]{abbr=y} and [^]{abbr=y}\n",
+    ),
+    // markup-carve/carve#1627: an empty description has no source spelling, so
+    // it is DROPPED with a `structure-unspellable` diagnostic rather than
+    // written as a bare `:` line that re-reads as the term's continuation.
+    // markup-carve/carve-rs#1312.
+    (
+        "empty-definition-description",
+        "an empty <dd> is still written as a bare `:` line",
+        ":: term\n:\n",
+    ),
+    // markup-carve/carve#1638: dropping one BREAKS the list rather than lending
+    // the description to the entry below, which needs the `structure-split`
+    // diagnostic this engine's vocabulary does not carry yet.
+    // markup-carve/carve-rs#1312.
+    (
+        "empty-definition-description-not-last",
+        "a dropped empty description does not break the list, and `structure-split` is unspelled",
+        ":: t1\n:  \n:: t2\n:  d2\n",
+    ),
+    // markup-carve/carve#1627: an endnotes section that is not the last block
+    // keeps its POSITION, as a `::: footnotes` placement directive, while its
+    // definitions hoist to the end. markup-carve/carve-rs#1313.
+    (
+        "endnotes-section-not-last",
+        "an endnotes section away from the end is not derived at all",
+        // The `{loose}` is §17 L7's writer arm working as intended on the
+        // one-item list this import leaves behind - not part of the gap.
+        "a[{^1^}](#fn1){#fnref1 role=doc-noteref}\n\n{loose}\n1.{#fn1} n\n\nafter\n",
+    ),
+];
+
 #[test]
 fn shared_contract_fixtures_match() {
     let root = Path::new("tests/spec/tests/html-import");
-    for entry in fs::read_dir(root).unwrap() {
-        let dir = entry.unwrap().path();
-        if !dir.is_dir() {
-            continue;
-        }
+    // COLLECTED, NOT ASSERTED IN THE LOOP. An `assert_eq!` inside the walk stops
+    // at the FIRST mismatching fixture, so every later one is not passing - it
+    // never ran. Moving the pin surfaced five mismatches at once and the loop
+    // could only ever name one of them, which is the same shape as driving each
+    // assertion on its own.
+    let mut mismatches: Vec<String> = Vec::new();
+    let mut dirs: Vec<_> = fs::read_dir(root)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| path.is_dir())
+        .collect();
+    dirs.sort();
+    for dir in dirs {
+        let name = dir.file_name().unwrap().to_str().unwrap().to_string();
         let html = fs::read_to_string(dir.join("input.html")).unwrap();
         let expected = fs::read_to_string(dir.join("expected.crv")).unwrap();
         let expected_report: serde_json::Value =
             serde_json::from_str(&fs::read_to_string(dir.join("expected.report.json")).unwrap())
                 .unwrap();
         let result = html_to_carve(&html, &HtmlImportOptions::default()).unwrap();
-        assert_eq!(result.value, expected, "{}", dir.display());
+        if let Some((_, reason, current)) = BEHIND_THE_RULING
+            .iter()
+            .find(|(fixture, _, _)| *fixture == name)
+        {
+            if result.value != *current {
+                mismatches.push(format!(
+                    "{name}: BEHIND_THE_RULING says this engine writes {current:?} ({reason}), \
+                     and it writes {:?} - update the entry or delete it",
+                    result.value
+                ));
+            }
+            if result.value == expected {
+                mismatches.push(format!(
+                    "{name}: matches the fixture now - delete its BEHIND_THE_RULING entry"
+                ));
+            }
+            continue;
+        }
+        if result.value != expected {
+            mismatches.push(format!(
+                "{name}\n  expected: {expected:?}\n  actual:   {:?}",
+                result.value
+            ));
+            continue;
+        }
         let expected_codes = expected_report["diagnostics"]
             .as_array()
             .unwrap()
@@ -96,7 +181,12 @@ fn shared_contract_fixtures_match() {
             // unpinned.
             .map(|d| d.code.as_str())
             .collect::<Vec<_>>();
-        assert_eq!(actual_codes, expected_codes, "{}", dir.display());
+        if actual_codes != expected_codes {
+            mismatches.push(format!(
+                "{name} diagnostics\n  expected: {expected_codes:?}\n  actual:   {actual_codes:?}"
+            ));
+            continue;
+        }
         // Every OTHER field the fixture states, compared too. A fixture
         // diagnostic is a MINIMUM match - it may leave `path` out, and most do -
         // but a field it does state is the shared contract's answer for that
@@ -112,18 +202,54 @@ fn shared_contract_fixtures_match() {
             .enumerate()
         {
             let actual = &result.report.diagnostics[index];
-            let at = format!("{} diagnostic {index}", dir.display());
+            let at = format!("{name} diagnostic {index}");
             if let Some(path) = expected_diagnostic["path"].as_str() {
-                assert_eq!(actual.path.as_deref(), Some(path), "{at} path");
+                if actual.path.as_deref() != Some(path) {
+                    mismatches.push(format!("{at} path: {path:?} != {:?}", actual.path));
+                }
             }
             if let Some(message) = expected_diagnostic["message"].as_str() {
-                assert_eq!(actual.message, message, "{at} message");
+                if actual.message != message {
+                    mismatches.push(format!("{at} message: {message:?} != {:?}", actual.message));
+                }
             }
             if let Some(severity) = expected_diagnostic["severity"].as_str() {
-                assert_eq!(actual.severity.as_str(), severity, "{at} severity");
+                if actual.severity.as_str() != severity {
+                    mismatches.push(format!(
+                        "{at} severity: {severity:?} != {:?}",
+                        actual.severity.as_str()
+                    ));
+                }
             }
         }
     }
+    assert!(
+        mismatches.is_empty(),
+        "shared html-import contract mismatch(es):\n{}",
+        mismatches.join("\n")
+    );
+}
+
+/// A `BEHIND_THE_RULING` entry naming a fixture the shared tree does not have
+/// is an entry nothing walks, so it can never fail and never be deleted.
+#[test]
+fn behind_the_ruling_names_only_fixtures_that_exist() {
+    let root = Path::new("tests/spec/tests/html-import");
+    let present: Vec<String> = fs::read_dir(root)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| path.is_dir())
+        .map(|path| path.file_name().unwrap().to_str().unwrap().to_string())
+        .collect();
+    let orphaned: Vec<&str> = BEHIND_THE_RULING
+        .iter()
+        .map(|(fixture, _, _)| *fixture)
+        .filter(|fixture| !present.iter().any(|name| name == fixture))
+        .collect();
+    assert!(
+        orphaned.is_empty(),
+        "BEHIND_THE_RULING names fixture(s) the shared tree does not have: {orphaned:?}"
+    );
 }
 
 /// PART 12 §16, the three rules a diagnostic `path` follows, asserted one at a
