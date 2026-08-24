@@ -9,13 +9,13 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
-- `TableOfContents` grows the collapsible disclosure the other two engines have
-  (#1243): `TableOfContentsOptions` gains `collapsible`, `summary` and `open`.
-  An API change for a caller constructing the struct without
+- **Breaking:** `TableOfContents` grows the collapsible disclosure the other two
+  engines have (#1243): `TableOfContentsOptions` gains `collapsible`, `summary`
+  and `open`. An API change for a caller constructing the struct without
   `..Default::default()`.
-- `HtmlImportOptions::labels` takes the `labels` map the HTML was rendered with
-  (markup-carve/carve#1500), so a translated document's derived names are
-  recognized. Same API caveat as above.
+- **Breaking:** `HtmlImportOptions::labels` takes the `labels` map the HTML was
+  rendered with (markup-carve/carve#1500), so a translated document's derived
+  names are recognized. Same API caveat as above.
 - `carve lint` on the command line, with the line format and exit codes carve-js
   already uses.
 - A `labels` render option carries the strings the engine writes itself
@@ -25,7 +25,7 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   An authored `aria-label` still wins.
 - The table-of-contents `<nav>` carries an `aria-label` from the new `tocNav`
   label (markup-carve/carve#1547, #1249).
-- `CodeGroupOptions::mode` takes `TabsMode::Css` (the default) or
+- **Breaking:** `CodeGroupOptions::mode` takes `TabsMode::Css` (the default) or
   `TabsMode::Aria`, the option `Tabs` already had (#1199, extensions §13.1).
 - Opt-in ASCII-folding for auto-generated heading ids (#1159, PART 9 §12):
   `Options::with_ascii_heading_ids`, off by default and byte-identical to
@@ -86,6 +86,11 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   it used to be repaired in silence. Absent stays legal on all four.
 - **Breaking:** `Figure::target` is now `Box<FigureTarget>` (#1119, #1127), for
   a caller that constructs or matches a figure through the public AST.
+- **Breaking:** published `pos` values move on this release. A consumer reading
+  positions off the published AST gets different numbers, with no compile error
+  to warn them. The container, `list` / `list_item` / `block_quote` /
+  `definition_list`, no-closer and line-block entries in this section and under
+  Fixed each name a shape that moved.
 - **Breaking:** three blank lines are a hard list boundary
   (markup-carve/carve#1430, PART 9 §11 N1a): a run of three or more before a
   compatible sibling marker opens a new list, at every level.
