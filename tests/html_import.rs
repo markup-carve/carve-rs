@@ -86,7 +86,37 @@ fn roundtrip_mode_preserves_unknown_markup_as_raw_html() {
 /// mechanism a NEW fixture arrives through when the pin moves ahead of this
 /// engine, and because emptying it is what the two-directional check above is
 /// for: an entry that has caught up FAILS rather than going quiet.
+///
+/// AN ENTRY SKIPS THE TREE COMPARISON TOO, and the third column pins only the
+/// source exit. That is the honest reading of what the column is: an engine
+/// behind on a clause is normally behind on both exits, and a second recorded
+/// value for the tree would be a second thing to keep current for a list that
+/// is empty and is meant to stay that way. When an entry is next needed and its
+/// tree also differs, the column grows then - with the fixture that forced it,
+/// rather than speculatively now.
 const BEHIND_THE_RULING: &[(&str, &str, &str)] = &[];
+
+/// The two fields that record WHERE a node was written rather than what it is.
+///
+/// Every fixture is absent both by construction - they are a property of the
+/// INPUT, not of the import - so the published tree is compared without them,
+/// exactly as the spec's own reading over these same fixtures does
+/// (`tests/html-import-contract.check.mjs`) and as carve-js does in
+/// `test/html-import-conformance.test.ts`.
+fn without_locations(value: &serde_json::Value) -> serde_json::Value {
+    match value {
+        serde_json::Value::Array(items) => {
+            serde_json::Value::Array(items.iter().map(without_locations).collect())
+        }
+        serde_json::Value::Object(map) => serde_json::Value::Object(
+            map.iter()
+                .filter(|(key, _)| key.as_str() != "pos" && key.as_str() != "srcByteLength")
+                .map(|(key, inner)| (key.clone(), without_locations(inner)))
+                .collect(),
+        ),
+        other => other.clone(),
+    }
+}
 
 #[test]
 fn shared_contract_fixtures_match() {
@@ -109,6 +139,9 @@ fn shared_contract_fixtures_match() {
         let expected = fs::read_to_string(dir.join("expected.crv")).unwrap();
         let expected_report: serde_json::Value =
             serde_json::from_str(&fs::read_to_string(dir.join("expected.report.json")).unwrap())
+                .unwrap();
+        let expected_ast: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(dir.join("expected.ast.json")).unwrap())
                 .unwrap();
         let result = html_to_carve(&html, &HtmlImportOptions::default()).unwrap();
         if let Some((_, reason, current)) = BEHIND_THE_RULING
@@ -133,6 +166,29 @@ fn shared_contract_fixtures_match() {
             mismatches.push(format!(
                 "{name}\n  expected: {expected:?}\n  actual:   {:?}",
                 result.value
+            ));
+            continue;
+        }
+        // AND THE TREE THE OTHER EXIT PUBLISHES. This loop read `expected.crv`
+        // and the report and never `expected.ast.json`, so the tree half of
+        // every shared fixture was unchecked in this repository - which is how
+        // an `#id` slot rode the published tree from `303354d` with nothing
+        // able to see it (carve-rs#1357).
+        //
+        // `html_to_ast` RATHER THAN `result`: the two exits are different
+        // objects, and it is the published one the fixture is a statement about
+        // (markup-carve/carve#1616). Reading the tree off the writing exit
+        // would compare a fixture against an intermediate nobody publishes -
+        // and would have gone green on exactly the defect this comparison was
+        // added to catch, since the slot is correct on that side.
+        let published = html_to_ast(&html, &HtmlImportOptions::default()).unwrap();
+        let actual_ast: serde_json::Value =
+            serde_json::from_str(&carve::ast_json::to_json(&published.value)).unwrap();
+        if without_locations(&actual_ast) != without_locations(&expected_ast) {
+            mismatches.push(format!(
+                "{name} tree\n  expected: {}\n  actual:   {}",
+                serde_json::to_string(&without_locations(&expected_ast)).unwrap(),
+                serde_json::to_string(&without_locations(&actual_ast)).unwrap()
             ));
             continue;
         }

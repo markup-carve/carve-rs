@@ -194,6 +194,21 @@ pub enum HtmlImportError {
 
 struct Importer<'a> {
     opts: &'a HtmlImportOptions,
+    /// Whether this import is the one that WRITES SOURCE (`html_to_carve`),
+    /// which is the only exit allowed to record a source-layout field.
+    ///
+    /// PART 12 fixes `attrs.order` as a record of how a SOURCE spelled a block,
+    /// and an import read HTML: there was no source to read a spelling off, so
+    /// the PUBLISHED tree records none (markup-carve/carve#1647). The writer
+    /// still has to be told that an imported heading id is AUTHORED - without
+    /// that signal `render_carve` reads an id equal to its own generated slug
+    /// as generated and omits it, which is the loss carve-rs#1324 closed by
+    /// spelling the slot on both exits.
+    ///
+    /// So the slot is a WRITER-ONLY channel: the tree `html_to_carve` renders
+    /// is an intermediate nobody publishes, and the tree `html_to_ast` returns
+    /// carries no source-layout field at all.
+    writing: bool,
     /// Every diagnostic, paired with the document position of the LOSING
     /// ELEMENT. The vector is built in construction order and sorted by that
     /// position on the way out, so a tie keeps the order the rows were built
@@ -1487,11 +1502,16 @@ impl<'a> Importer<'a> {
                     // every other derived attribute. Carrying it would spell an
                     // authored slot the source never had.
                     held.id = None;
-                } else {
+                } else if self.writing {
                     // Authored. A non-empty order is exhaustive, so every
                     // imported slot has to be carried - and carried in the
                     // element's OWN attribute order, which is the order the
                     // writer has to spell to render these bytes back.
+                    //
+                    // ON THE WRITING EXIT ONLY. `order` is a source-layout
+                    // field and an import read no source, so the published tree
+                    // records none of them (markup-carve/carve#1647); see
+                    // `Importer::writing` for why the writer still needs it.
                     held.order = Self::slot_order_from_element(h, held);
                 }
             }
@@ -5704,6 +5724,7 @@ fn import(
     let dom = html5ever::parse_document(RcDom::default(), Default::default()).one(html);
     let mut importer = Importer {
         opts: options,
+        writing,
         diagnostics: Vec::new(),
         document_order: HashMap::new(),
         nodes: 0,
