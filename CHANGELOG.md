@@ -316,6 +316,9 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   column (#1362, ports markup-carve/carve-js#1455). The writer indented every
   block after an item's first to the full marker-line width, four columns past
   the content column, where a block opener stopped opening anything.
+- An imported task item comes back a task item (#1365). The HTML importer
+  built every list item with no task state and read no `<input>` at all, so
+  `carve migrate --from html` turned a checklist into a plain list.
 
 ## [0.1.3] - 2026-08-18
 
