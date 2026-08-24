@@ -724,8 +724,11 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // LEFT the strict set, which a total that merely adds up cannot distinguish
     // from four arriving and some number leaving. The declared source-lossy set
     // is unchanged, so no new loss cause appears either.
-    const STRICT: usize = 1093;
-    const LOSSY: usize = 301;
+    // The four #1701 category-413 additions split two/two: the structural
+    // cases remain strict, while the two intentional legacy-demotion cases are
+    // reported lossy by the bridge. Measured at this spec pin: 1101 / 303.
+    const STRICT: usize = 1101;
+    const LOSSY: usize = 303;
     assert!(
         covered >= STRICT,
         "strict round trips fell from {STRICT} to {covered}"
