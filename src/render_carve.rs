@@ -2720,7 +2720,7 @@ fn render_inline_body(
             let attrs = render_attrs(&span.attrs);
             format!(
                 "[{}]{}",
-                render_inlines(&span.children, ctx),
+                escape_note_reference_label(&render_inlines(&span.children, ctx), ctx),
                 if attrs.is_empty() { "{}" } else { &attrs }
             )
         }
@@ -2882,7 +2882,7 @@ fn render_link(node: &Link, ctx: &mut CarveContext) -> String {
             return format!("</#{}>", escape_crossref_target(target));
         }
     }
-    let text = render_inlines(&node.children, ctx);
+    let text = escape_note_reference_label(&render_inlines(&node.children, ctx), ctx);
     let title = node
         .title
         .as_ref()
@@ -2893,6 +2893,46 @@ fn render_link(node: &Link, ctx: &mut CarveContext) -> String {
         escape_destination(&node.href),
         render_attrs(&node.attrs)
     )
+}
+
+/// A LABEL SLOT OPENS WITH `[`, AND `[^x]` IS A NOTE REFERENCE (PART 11 §2).
+///
+/// A span and an inline link both write their content between brackets, so
+/// content that BEGINS with a caret re-parses as a reference to a note instead
+/// of as the thing that was written. `<abbr title="y">^1</abbr>` came back as
+/// `[^1]{abbr=y}`: the span is gone, the attribute block is read as literal
+/// text, and the paragraph renders `[^1]`. An anchor loses its destination the
+/// same way - `[^1](u)` renders the characters `[^1](u)`.
+///
+/// THE TEST READS THE SOURCE THE WRITER WILL EMIT, not the tree it emits from.
+/// That is §2's own wording and it is why this sits here rather than in the
+/// importer: the caret only collides once the span has been spelled in its
+/// compact bracket form, and the tree says nothing about which form that is.
+///
+/// ONLY THE LABELED HALF COLLIDES, and this is the half that is wrong in
+/// silence: the reference rule needs at least one character after the caret and
+/// cannot cross `]` or a line break, so `[^]` is NOT a reference and must not be
+/// escaped. A caret anywhere but the first position is ordinary punctuation.
+/// `note-reference-in-a-span` carries both halves precisely so a fix cannot
+/// over-escape its way to green.
+///
+/// An IMAGE label is not a slot this reaches: `![^1](u)` is an image whose
+/// alternative text is `^1`, because the `!` takes the `[` first.
+fn escape_note_reference_label(label: &str, ctx: &CarveContext) -> String {
+    // A NOTE'S CONTENT RECOGNIZES NO NOTE (PART 9 §16), so inside one the
+    // bracket run is already read as what it is and the escape would be idle -
+    // which §2 forbids exactly as squarely as a missing one.
+    if ctx.note_content_depth > 0 {
+        return label.to_string();
+    }
+    let mut chars = label.chars();
+    let opens_reference = chars.next() == Some('^')
+        && matches!(chars.next(), Some(next) if next != ']' && next != '\r' && next != '\n');
+    if opens_reference {
+        format!("\\{label}")
+    } else {
+        label.to_string()
+    }
 }
 
 fn render_image(node: &Image) -> String {

@@ -79,14 +79,6 @@ fn roundtrip_mode_preserves_unknown_markup_as_raw_html() {
 /// not a skip: a skip would go green whether or not the output moved, which is
 /// how a gate stops being able to fail.
 const BEHIND_THE_RULING: &[(&str, &str, &str)] = &[
-    // markup-carve/carve#1618: the escape test reads the source the writer will
-    // emit rather than the tree, so a `^` opening a span's content is escaped.
-    // markup-carve/carve-rs#1311.
-    (
-        "note-reference-in-a-span",
-        "the writer does not escape a `^` that opens a span's content",
-        "[^1]{abbr=y} and [^]{abbr=y}\n",
-    ),
     // markup-carve/carve#1627: an empty description has no source spelling, so
     // it is DROPPED with a `structure-unspellable` diagnostic rather than
     // written as a bare `:` line that re-reads as the term's continuation.
