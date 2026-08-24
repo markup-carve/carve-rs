@@ -1873,7 +1873,7 @@ impl<'a> Importer<'a> {
         children: &[Handle],
         path: &str,
         depth: usize,
-    ) -> Result<(Option<Vec<InlineNode>>, Vec<Handle>, Vec<String>), HtmlImportError> {
+    ) -> Lifted<Vec<InlineNode>> {
         let at = children.iter().position(is_admonition_title);
         let mut title = None;
         if let Some(i) = at {
@@ -1941,7 +1941,7 @@ impl<'a> Importer<'a> {
         body: Vec<Handle>,
         body_paths: Vec<String>,
         depth: usize,
-    ) -> Result<(Option<String>, Vec<Handle>, Vec<String>), HtmlImportError> {
+    ) -> Lifted<String> {
         let Some(at) = body.iter().position(|child| Self::tag(child).is_some()) else {
             return Ok((None, body, body_paths));
         };
@@ -4442,6 +4442,14 @@ fn has_class(node: &Handle, wanted: &str) -> bool {
 /// [`is_counted_admonition_title`] is the NARROWER question and stays narrow: it
 /// asks whether the renderer's counter produced this id, which is a question
 /// about dropping a derived value, not about what the paragraph IS.
+/// A value lifted off the front of a container's body onto its OPENER, plus
+/// what is left of the body and that body's own paths.
+///
+/// Two lifts have this shape - the quoted title and the grouping `[label]` -
+/// and naming it keeps their signatures readable and stops `type_complexity`
+/// firing on each of them separately.
+type Lifted<T> = Result<(Option<T>, Vec<Handle>, Vec<String>), HtmlImportError>;
+
 fn is_div_label(node: &Handle) -> bool {
     Importer::tag(node).as_deref() == Some("p") && has_class(node, "div-label")
 }
