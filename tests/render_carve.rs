@@ -70,6 +70,103 @@ fn corpus_formatter_semantic_idempotent_and_reparseable() {
 /// `pos` or `srcByteLength`, so walking it would rename or delete an ATTRIBUTE.
 /// Attributes are content and compare verbatim. carve-php's
 /// `CarveFmtCorpusTest::canonical()` states the same rule for the same reason.
+/// The node a block's own content spells its wrapper away for under PART 11
+/// SS1c, or `None` where the block keeps its wrapper.
+///
+/// STATED OVER WHAT THE SHAPE SPELLS, never over the node type - SS1c says so
+/// in as many words, and the two shapes it names share no vocabulary: an
+/// `image` is INLINE and a `comment` is BLOCK, so a rule written over types
+/// would have had to name them one at a time and would not reach the next
+/// one. A block whose content spells anything else - a second node beside
+/// it, a text run, a no-break space - keeps its wrapper, and a writer that
+/// dropped one of those still fails the assertion below.
+///
+/// THIS IS A NARROWING TO THE CONTRACT, NOT A SKIP. No document can satisfy
+/// the unqualified form: corpus 411 ships `.fmt` sidecars recording the
+/// bytes the writer produces for the indented spelling, because the writer
+/// is right to decline it (SS1c: "the ceiling is uniform and not
+/// positional"). Do not restore the unqualified comparison, and do not
+/// reach for an allowlist instead - an entry would silence the comparison
+/// for a whole document, where this states the one difference SS1c licenses
+/// and keeps every other difference failing.
+fn section_1c_content(
+    block: &serde_json::Map<String, serde_json::Value>,
+) -> Option<serde_json::Value> {
+    if block.get("type")?.as_str()? != "paragraph" {
+        return None;
+    }
+    // ATTRIBUTES ARE NOT CONTENT, and a wrapper carrying them cannot be
+    // lost without losing them too - so a paragraph with an attribute block
+    // keeps its wrapper here, and a writer that dropped one still fails.
+    if block.get("attrs").is_some_and(|attrs| !attrs.is_null()) {
+        return None;
+    }
+    let [only] = block.get("children")?.as_array()?.as_slice() else {
+        return None;
+    };
+    matches!(only.get("type")?.as_str()?, "image" | "comment").then(|| only.clone())
+}
+
+/// THE NARROWING IS NARROW, pinned shape by shape rather than inferred from a
+/// green sweep.
+///
+/// The sweep above cannot show this. Collapsing a wrapper in `canonical_tree`
+/// is applied to BOTH sides, so widening it can only ever HIDE a difference,
+/// never create one - a mutation that adds a node type to the match leaves the
+/// sweep green whatever it adds, because both trees collapse the same way. So
+/// the sweep passing says nothing about how wide the rule is, and the near
+/// misses have to be asserted directly (markup-carve/carve-rs#1353).
+///
+/// Each `None` below is a shape PART 11 section 1c does not reach: "a block
+/// whose content spells anything ELSE -- a second node beside it, a text run, a
+/// NO-BREAK SPACE (section 7) -- keeps its wrapper and no ceiling is reached."
+#[test]
+fn the_section_1c_ceiling_reaches_two_spellings_and_no_others() {
+    let block = |json: &str| -> Option<serde_json::Value> {
+        let value: serde_json::Value = serde_json::from_str(json).expect("the fixture is JSON");
+        section_1c_content(value.as_object().expect("the fixture is an object"))
+    };
+    let image = r#"{"type":"image","src":"u","alt":"a"}"#;
+
+    // The two shapes the clause names, and they share no vocabulary: `image` is
+    // INLINE and `comment` is BLOCK.
+    assert_eq!(
+        block(&format!(r#"{{"type":"paragraph","children":[{image}]}}"#)),
+        Some(serde_json::from_str(image).unwrap())
+    );
+    assert!(block(r#"{"type":"paragraph","children":[{"type":"comment","value":"c"}]}"#).is_some());
+
+    // A SECOND NODE BESIDE IT.
+    assert_eq!(
+        block(&format!(
+            r#"{{"type":"paragraph","children":[{image},{{"type":"text","value":"x"}}]}}"#
+        )),
+        None
+    );
+    // A TEXT RUN, which is the widening that leaves the sweep green.
+    assert_eq!(
+        block(r#"{"type":"paragraph","children":[{"type":"text","value":"x"}]}"#),
+        None
+    );
+    // NO CHILDREN AT ALL.
+    assert_eq!(block(r#"{"type":"paragraph","children":[]}"#), None);
+    // ATTRIBUTES ARE NOT CONTENT, so the wrapper carrying them is not lost -
+    // dropping it would drop them, and that has to keep failing.
+    assert_eq!(
+        block(&format!(
+            r#"{{"type":"paragraph","attrs":{{"classes":["k"]}},"children":[{image}]}}"#
+        )),
+        None
+    );
+    // NOT A PARAGRAPH. A quote holding one image keeps its wrapper: the clause
+    // is about a spelling read back as a block opener of the CONTENT's kind,
+    // and `> ![a](u)` reads back as the quote.
+    assert_eq!(
+        block(&format!(r#"{{"type":"block_quote","children":[{image}]}}"#)),
+        None
+    );
+}
+
 fn canonical_tree(source: &str) -> String {
     fn canonical(value: &serde_json::Value) -> serde_json::Value {
         match value {
@@ -103,6 +200,18 @@ fn canonical_tree(source: &str) -> String {
                         continue;
                     }
                     out.insert(key.clone(), canonical(child));
+                }
+                // PART 11 SS1c, applied to BOTH sides rather than allowlisted
+                // on one. The clause is NORMATIVE and says the wrapper is LOST:
+                // where a block's whole content is a single node whose own
+                // spelling at the block's own column reads back as a block
+                // opener of that node's kind, the writer emits that spelling
+                // and `parse(fmt(x)) == parse(x)` is UNATTAINABLE. So the two
+                // trees have one spelling between them, and comparing them
+                // as though they had two asks for a fixed point no conforming
+                // writer has (markup-carve/carve#1658, markup-carve/carve#1672).
+                if let Some(content) = section_1c_content(&out) {
+                    return content;
                 }
                 serde_json::Value::Object(out)
             }
@@ -188,6 +297,13 @@ fn corpus_formatter_semantic_idempotent_and_reparseable_inner() {
         // `CarveFmtCorpusTest::testTheFormattedDocumentParsesToTheSameTree`
         // manages without one, and an entry here would silence the comparison
         // whether or not this engine passed it.
+        //
+        // NARROWED TO PART 11 SS1c, which is normative and names the one place
+        // this equality cannot hold: a wrapper its own content spells away is
+        // LOST, and `parse(fmt(x)) == parse(x)` is unattainable for such a
+        // document. `canonical_tree` states that ceiling on both sides rather
+        // than exempting a document from the sweep - see `section_1c_content`
+        // above for why it is a narrowing and not a skip.
         //
         // COMPARING THE PARSE, NOT THE RENDER. An HTML comparison in this spot
         // would be a check that cannot fail: it is the assertion three lines

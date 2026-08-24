@@ -700,7 +700,19 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // bookkeeping: a `{loose}` definition list lost its wrapper on the way back
     // until PART 9 §17 L7's field was carried across the bridge, which is what
     // the `loose` attribute in `to_pm`/`from_pm` does.
-    const STRICT: usize = 1083;
+    // The bump to carve 6d08658f adds SIX documents: corpus 411's two indented
+    // lone images (markup-carve/carve#1662) and corpus 412's four column-0
+    // reference spellings (markup-carve/carve#1666). Every one of them round
+    // trips STRICTLY, so the lossy side does not move at all.
+    //
+    // MEASURED BY INSTRUMENTING THE COUNTS, not by solving the equation: the
+    // test was run with `covered` and `lossy` printed, and read 1089 / 301
+    // against 1083 / 301 at the old pin. `lossy` holding at 301 is the half
+    // that matters - it says no document LEFT the strict set, which a total
+    // that merely adds up cannot distinguish from six arriving and some number
+    // leaving. The declared source-lossy set is unchanged at 3 entries, so no
+    // new loss cause appears either.
+    const STRICT: usize = 1089;
     const LOSSY: usize = 301;
     assert!(
         covered >= STRICT,
