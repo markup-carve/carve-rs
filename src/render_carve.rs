@@ -71,10 +71,60 @@ enum EscapeMode {
 
 /// Render a tree as canonical Carve source.
 ///
+/// # The contract, and what it does NOT cover
+///
+/// What this returns re-reads as what it was given - EXCEPT for the shapes named
+/// below, which it writes as the nearest source Carve has and which therefore
+/// re-read as something else.
+///
+/// The list is the point. A contract stated as an absolute while carrying an
+/// exception nothing declares is worse than a narrower one that is true as
+/// written, because every reader of the first is entitled to rely on it
+/// (markup-carve/carve#1658). So the invariant holds AS WRITTEN and these are
+/// outside it rather than places it quietly fails:
+///
+/// - **A paragraph whose whole content is one image.** It is written as a bare
+///   block image at column 0, which re-reads as a block image and not as the
+///   paragraph it was. `resources/examples/edge-cases.md` rules the shape - "a
+///   paragraph whose whole content is one image is still the standalone image
+///   shape, not a wrapped one" - so there is no source to write instead. An
+///   indented spelling is not one either: this engine reads an indented image as
+///   a block image at every indent, and inside a list item or a definition
+///   description a marker absorbs the padding at every width, so
+///   `list_item > paragraph > image` has no spelling at all.
+///
+///   MEASURED, AND IT IS THE ONLY ONE. Twenty-eight single-child paragraph
+///   shapes were imported and re-read; every other kind - a link, a code span,
+///   an emphasis of each sort, a span, a hard break, a raw inline, a quote, a
+///   critic mark, plain text - comes back as the paragraph it was. A paragraph
+///   holding one image is the whole carve-out.
+///
+///   NOT SILENT WHERE IT MATTERS. This function has no diagnostic channel and
+///   can only return an error, and refusing would break every import of a
+///   `<p><img></p>`, so the caller that WRITES source declares the loss instead:
+///   [`crate::html_to_carve`] reports a `structure-unspellable` row for it
+///   (`docs/html-import.md`, markup-carve/carve-rs#1331).
+///
+/// - **A paragraph with no content at all.** It writes nothing, so it is simply
+///   not in the source and the re-read document is one block shorter. No source
+///   spells an empty paragraph - a blank line is a separator, not a block - so
+///   there is nothing to write instead.
+///
+///   The parser cannot build one, so this shape reaches the writer only from a
+///   HAND-BUILT or INGESTED tree. It is named here anyway: the point of the
+///   ruling is that the carve-outs a caller may rely on are listed rather than
+///   discovered.
+///
+/// Where it CAN see that emitting source would change the tree and no carve-out
+/// above covers the shape, it returns
+/// [`crate::RenderCarveError::SourceUnspellable`] rather than emitting the
+/// nearest form - an empty raw inline is the standing example. That is a
+/// statement about the shapes it detects, not a second absolute: the list above
+/// is what a caller may rely on.
+///
 /// Returns [`crate::RenderCarveError::Depth`] when a hand-built or ingested tree
-/// reaches the render ceiling, or [`crate::RenderCarveError::SourceUnspellable`]
-/// when emitting source would change the tree. Parser-produced trees cannot
-/// contain either condition.
+/// reaches the render ceiling. Parser-produced trees cannot contain either
+/// condition.
 pub fn render_carve(doc: &Document) -> Result<String, crate::RenderCarveError> {
     let source_watch = crate::render_carve_error::SourceSpellWatch::new();
     let watch = crate::render_depth::RenderDepthWatch::new();

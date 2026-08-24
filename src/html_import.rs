@@ -231,6 +231,19 @@ struct Importer<'a> {
     /// told nothing; `html_to_carve` flushes them once the walk is done, so they
     /// sort into document order with the rest of the report.
     unspellable: Vec<(Handle, String, String, HtmlImportDiagnosticCode)>,
+    /// Where the author wrote a `<p>` holding nothing but an image (PART 12
+    /// section 16, markup-carve/carve-rs#1331).
+    ///
+    /// A CANDIDATE, not yet a loss. `block` is the only place the shape can be
+    /// seen with a source path to report it against, and it runs BEFORE the
+    /// unwrappers do: `caption_host` takes the paragraph back off a `<figure>`
+    /// body, so the figure's target is the image on both exits and there is
+    /// nothing left to lose. The row is emitted only for a candidate whose
+    /// paragraph the FINISHED document still holds, which is why each one is
+    /// marked in the tree rather than merely described here - two paragraphs
+    /// around the same image are equal as values, and only a mark tells them
+    /// apart.
+    lone_image_paragraphs: Vec<LoneImageParagraph>,
     /// The reference sites the adapter footnote pass recognized: the node
     /// `inline` must read as a footnote reference, and the label it carries.
     ///
@@ -1412,12 +1425,47 @@ impl<'a> Importer<'a> {
                 );
                 return Ok(Vec::new());
             }
-            return Ok(vec![BlockNode::Paragraph(Paragraph {
+            /*
+             * CARVE SOURCE CANNOT SPELL A PARAGRAPH HOLDING ONLY AN IMAGE, so
+             * the writer loses it and PART 12 section 16 says the writing exit
+             * reports that (carve-rs#1331).
+             *
+             * `resources/examples/edge-cases.md` rules the shape: "a paragraph
+             * whose whole content is one image is still the standalone image
+             * shape, not a wrapped one". So `![G](g.jpg)` re-reads as a BLOCK
+             * image, the `<p>` the author wrote is gone from the source, and
+             * `html_to_ast` keeps a paragraph the re-parsed source does not -
+             * the one carve-out `docs/html-import.md` allows to
+             * `parse(html_to_carve(h)) == html_to_ast(h)`.
+             *
+             * NOT A CHANGE OF OUTPUT, because there is no other output to
+             * write. carve-js measured an indented ` ![G](g.jpg)` as a
+             * paragraph holding one image and rejected it as a spelling anyway;
+             * this engine reads it as a block image at every indent, so there
+             * is not even a near miss to reach for.
+             */
+            let candidate = lone_image(&inlines).map(|image| {
+                (
+                    attrs.is_some(),
+                    overwritten_attr_names(attrs.as_ref(), image.attrs.as_ref()),
+                )
+            });
+            let mut paragraph = Paragraph {
                 attrs,
                 children: inlines,
                 at_content_column: true,
                 pos: None,
-            })]);
+            };
+            if let Some((attributed, overwritten)) = candidate {
+                paragraph.pos = Some(candidate_mark(self.lone_image_paragraphs.len()));
+                self.lone_image_paragraphs.push(LoneImageParagraph {
+                    node: h.clone(),
+                    path: path.to_string(),
+                    attributed,
+                    overwritten,
+                });
+            }
+            return Ok(vec![BlockNode::Paragraph(paragraph)]);
         }
         if tag == "blockquote" {
             return Ok(vec![BlockNode::BlockQuote(BlockQuote {
@@ -5231,6 +5279,158 @@ fn coalesce(nodes: Vec<InlineNode>) -> Vec<InlineNode> {
     out
 }
 
+/// The one image a paragraph's run holds, when it holds nothing else.
+///
+/// LAYOUT IS NOT CONTENT (PART 11 section 7), and the writer already agrees: it
+/// trims the edges of the run, so `<p>` and a newline and `  <img>` writes the
+/// same bare block image as `<p><img></p>` and loses the same paragraph. This
+/// engine keeps those edge spaces in the TREE where carve-js trims them on the
+/// way in, which is a separate divergence and a separate loss - the row here is
+/// about the paragraph, and it is owed for both spellings.
+fn lone_image(inlines: &[InlineNode]) -> Option<&Image> {
+    let mut image = None;
+    for node in inlines {
+        match node {
+            InlineNode::Image(candidate) if image.is_none() => image = Some(candidate),
+            InlineNode::Text(text) if text.value.chars().all(is_layout_space) => {}
+            _ => return None,
+        }
+    }
+    image
+}
+
+/// A `<p>` the AUTHOR wrote holding nothing but an image.
+///
+/// Only what the ROW needs: where it was, whether it had attributes of its own
+/// to re-attach, and which of those the image overwrites outright.
+struct LoneImageParagraph {
+    node: Handle,
+    path: String,
+    /// Whether the paragraph carried attributes at all.
+    attributed: bool,
+    /// The names the image's own attribute block wins outright, so they are lost.
+    overwritten: Vec<String>,
+}
+
+/// The mark a candidate paragraph carries until the survivor scan takes it off.
+///
+/// WHY A MARK AND NOT A COMPARISON. Two `<p><img src="a" alt="a"></p>` in one
+/// document build paragraphs that are EQUAL as values, so matching a candidate
+/// against the finished tree by equality cannot say which of them survived - and
+/// a bare `<img>` builds a lone-image paragraph of its own here, so the tree
+/// holds shapes no `<p>` ever produced. A mark carries identity through the move
+/// into the tree, which is what carve-js gets from object identity.
+///
+/// `pos` IS FREE TO CARRY IT: every construction site in this importer sets
+/// `pos: None`, so a `Some` here is this scan's and nothing else's. It is taken
+/// back off by the same walk that reads it, on BOTH exits, before either returns
+/// - the tree an `html_to_ast` caller receives never carries one.
+fn candidate_mark(index: usize) -> Pos {
+    Pos {
+        start_offset: index + 1,
+        ..Pos::default()
+    }
+}
+
+/// Take every candidate mark off the tree, recording which ones were still on it.
+///
+/// EVERY VARIANT, WITH NO WILDCARD ARM. A variant added to `BlockNode` breaks
+/// this build instead of silently becoming a place a surviving paragraph is
+/// never found - and a paragraph the walk misses reads as "an unwrapper took it
+/// off", which drops a row that was owed and leaves a mark on a tree that is
+/// about to be handed to a caller. Both failures are silent, which is why the
+/// compiler is made to catch them.
+fn take_candidate_marks(blocks: &mut [BlockNode], kept: &mut [bool]) {
+    for block in blocks {
+        match block {
+            BlockNode::Paragraph(paragraph) => take_candidate_mark(paragraph, kept),
+            BlockNode::List(list) => {
+                for item in &mut list.items {
+                    take_candidate_marks(&mut item.children, kept);
+                }
+            }
+            BlockNode::BlockQuote(quote) => take_candidate_marks(&mut quote.children, kept),
+            BlockNode::Admonition(admonition) => {
+                take_candidate_marks(&mut admonition.children, kept)
+            }
+            BlockNode::Div(div) => take_candidate_marks(&mut div.children, kept),
+            BlockNode::LineBlock(line_block) => {
+                take_candidate_marks(&mut line_block.children, kept)
+            }
+            BlockNode::DefinitionList(list) => {
+                for item in &mut list.items {
+                    for definition in &mut item.definitions {
+                        take_candidate_marks(&mut definition.children, kept);
+                    }
+                }
+            }
+            BlockNode::Figure(figure) => match figure.target.as_mut() {
+                FigureTarget::Paragraph(paragraph) => take_candidate_mark(paragraph, kept),
+                FigureTarget::BlockQuote(quote) => take_candidate_marks(&mut quote.children, kept),
+                // Hold no blocks: a table cell keeps inlines, and the other two
+                // are leaves.
+                FigureTarget::Table(_) | FigureTarget::CodeBlock(_) | FigureTarget::Image(_) => {}
+            },
+            BlockNode::FigureGroup(group) => take_candidate_marks(&mut group.children, kept),
+            BlockNode::Extension(extension) => take_candidate_marks(&mut extension.children, kept),
+            // A table cell holds INLINES, so no paragraph is ever built inside
+            // one - which is also why a `<td><p><img></p></td>` owes no row.
+            BlockNode::Table(_)
+            | BlockNode::Heading(_)
+            | BlockNode::CodeBlock(_)
+            | BlockNode::AbbreviationDef(_)
+            | BlockNode::LinkReferenceDefinition(_)
+            | BlockNode::CitationDefinition(_)
+            | BlockNode::RawBlock(_)
+            | BlockNode::Comment(_)
+            | BlockNode::BlockImage(_)
+            | BlockNode::ThematicBreak(_) => {}
+        }
+    }
+}
+
+fn take_candidate_mark(paragraph: &mut Paragraph, kept: &mut [bool]) {
+    let Some(pos) = paragraph.pos else {
+        return;
+    };
+    let Some(index) = pos.start_offset.checked_sub(1) else {
+        return;
+    };
+    if index < kept.len() {
+        kept[index] = true;
+        paragraph.pos = None;
+    }
+}
+
+/// The paragraph attribute names an image's OWN attribute block overwrites.
+///
+/// The writer emits the paragraph's attributes as a block above the image and
+/// the image's inline `{...}` after it, and the two are then read onto one node:
+/// a name the image also sets is the one that survives. CLASSES ARE NOT IN THIS
+/// SET - the class slot merges rather than replacing, so both groups reach the
+/// rendered element and nothing is lost.
+///
+/// An image's `title` is not here either, and for a different reason: it is a
+/// field of its own that the writer puts in the DESTINATION's title slot rather
+/// than in the attribute block, so it never collides with a `title=` the
+/// paragraph carried.
+fn overwritten_attr_names(paragraph: Option<&Attrs>, image: Option<&Attrs>) -> Vec<String> {
+    let (Some(paragraph), Some(image)) = (paragraph, image) else {
+        return Vec::new();
+    };
+    let mut lost = Vec::new();
+    if paragraph.id.is_some() && image.id.is_some() {
+        lost.push("id".to_string());
+    }
+    for key in paragraph.key_values.keys() {
+        if image.key_values.contains_key(key) {
+            lost.push(key.clone());
+        }
+    }
+    lost.sort();
+    lost
+}
+
 pub fn html_to_ast(
     html: &str,
     options: &HtmlImportOptions,
@@ -5253,6 +5453,7 @@ fn import(
         nodes: 0,
         quote_depth: 0,
         unspellable: Vec::new(),
+        lone_image_paragraphs: Vec::new(),
         footnote_refs: HashMap::new(),
     };
     // BEFORE the adapter pass, which rewrites footnote-shaped HTML and detaches
@@ -5266,17 +5467,66 @@ fn import(
     // stays out: it takes arbitrary HTML, where a mutually linked anchor pair
     // is not proof of a footnote, and the caller naming an adapter is the
     // declaration of provenance that makes the recognition safe.
-    let footnote_defs = importer.adapter_footnotes(
+    let mut footnote_defs = importer.adapter_footnotes(
         &dom.document,
         matches!(
             options.adapter,
             HtmlImportAdapter::Word | HtmlImportAdapter::GoogleDocs
         ),
     )?;
-    let children = importer.blocks(&fragment_top_level(&dom.document), "", 0)?;
+    let mut children = importer.blocks(&fragment_top_level(&dom.document), "", 0)?;
+    // SURVIVORS ONLY, and the marks come off on BOTH exits. A candidate whose
+    // paragraph an unwrapper took back off is not a loss: `caption_host` gives
+    // the figure the IMAGE as its target, so both exits keep the same node and a
+    // row there would declare a difference that is not there. The scan runs
+    // whether or not this exit writes source, because a mark left on the tree
+    // would be a position the parser never produced.
+    let mut kept = vec![false; importer.lone_image_paragraphs.len()];
+    for blocks in footnote_defs.values_mut() {
+        take_candidate_marks(blocks, &mut kept);
+    }
+    take_candidate_marks(&mut children, &mut kept);
     if writing {
         for (node, path, message, code) in std::mem::take(&mut importer.unspellable) {
             importer.diag(code, message, HtmlImportSeverity::Warning, &path, &node);
+        }
+        for (candidate, kept) in std::mem::take(&mut importer.lone_image_paragraphs)
+            .into_iter()
+            .zip(kept)
+        {
+            if !kept {
+                continue;
+            }
+            let head = "A paragraph holding nothing but an image has no Carve spelling; \
+the image is written as a block";
+            // THREE OUTCOMES, AND THE MESSAGE SAYS WHICH ONE HAPPENED. The plain
+            // one loses the `<p>` and nothing else. An attributed one re-attaches
+            // what the paragraph carried to the image, which is a different
+            // element to carry it. And where the image sets the SAME name, the
+            // image's own value wins and the paragraph's is gone -
+            // `<p id="p"><img id="i">` writes `{#p}` above `![a](a){#i}` and
+            // reads back with `id="i"` alone, so a message claiming the
+            // attributes were written on the image would leave that loss
+            // undeclared, which is the defect this row exists for.
+            let message = if !candidate.attributed {
+                format!("{head}, which renders without the <p> around it")
+            } else if candidate.overwritten.is_empty() {
+                format!(
+                    "{head}, so the <p> is lost and the attributes it carried are written on the image instead"
+                )
+            } else {
+                format!(
+                    "{head}, so the <p> is lost and the attributes it carried are written on the image - except {}, which the image's own value overwrites",
+                    candidate.overwritten.join(", ")
+                )
+            };
+            importer.diag(
+                HtmlImportDiagnosticCode::StructureUnspellable,
+                message,
+                HtmlImportSeverity::Warning,
+                &candidate.path,
+                &candidate.node,
+            );
         }
     }
     Ok(HtmlImportResult {
