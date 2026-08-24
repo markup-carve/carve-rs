@@ -15,6 +15,7 @@
 //! inline extensions, attributes, and frontmatter.
 
 mod abbr_budget;
+pub mod accessibility;
 pub mod ast;
 pub mod ast_json;
 pub mod ast_merge;
@@ -75,6 +76,7 @@ pub(crate) const NBSP_PLACEHOLDER: char = '\u{e000}';
 /// manifest, never written out a second time here.
 pub const SPEC_VERSION: &str = "0.1";
 
+pub use accessibility::{lint_accessibility, AccessibilityDiagnostic, AccessibilitySeverity};
 pub use ast::*;
 pub use ast_json::{from_json, to_json, try_to_json, AstJsonError};
 pub use ast_merge::{
