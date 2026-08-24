@@ -1310,12 +1310,7 @@ impl<'a> Importer<'a> {
                     let children =
                         self.inlines_at(&inline, Some(&inline_paths), parent, depth + 1)?;
                     if visible(&children) {
-                        out.push(BlockNode::Paragraph(Paragraph {
-                            attrs: None,
-                            children: trim_edge_whitespace(children),
-                            at_content_column: true,
-                            pos: None,
-                        }));
+                        out.push(synthesized_wrapper(trim_edge_whitespace(children)));
                     }
                     inline.clear();
                     inline_paths.clear();
@@ -1329,12 +1324,7 @@ impl<'a> Importer<'a> {
         if !inline.is_empty() {
             let children = self.inlines_at(&inline, Some(&inline_paths), parent, depth + 1)?;
             if visible(&children) {
-                out.push(BlockNode::Paragraph(Paragraph {
-                    attrs: None,
-                    children: trim_edge_whitespace(children),
-                    at_content_column: true,
-                    pos: None,
-                }));
+                out.push(synthesized_wrapper(trim_edge_whitespace(children)));
             }
         }
         Ok(out)
@@ -5277,6 +5267,56 @@ fn coalesce(nodes: Vec<InlineNode>) -> Vec<InlineNode> {
         }
     }
     out
+}
+
+/// The block a SYNTHESIZED wrapper becomes: the image itself when that is all
+/// the run holds, and a paragraph otherwise (PART 9 section 4b,
+/// markup-carve/carve-rs#1334).
+///
+/// `caption_host` already takes this wrapper off a `<figure>` body and says why:
+/// HTML has no block/inline slot distinction, so `blocks_at` puts a stray inline
+/// into a paragraph to have somewhere to put it, and the wrapper is OURS rather
+/// than the author's. None of that depended on a `<figure>` being present -
+/// `caption_host` was simply the only place it was reached from. Everywhere else
+/// a bare `<img>` built `paragraph[image]` while the SOURCE exit wrote
+/// `![G](g.jpg)`, which re-parses to a bare block image, so this importer's two
+/// exits disagreed about a document it built itself.
+///
+/// AN ADDITION IS NOT A LOSS, WHICH IS WHY THE WRAPPER GOES RATHER THAN THE
+/// DIFFERENCE BEING DECLARED. A declared loss is a ceiling an import may sit
+/// inside; a synthesized paragraph is the document coming back saying something
+/// it never said. Only the second changes what the document MEANS, so it takes
+/// no diagnostic row - it gets removed.
+///
+/// THIS IS THE EXACT OPPOSITE CALL FROM carve-rs#1331, ON THE SAME TWO NODES.
+/// There the `<p>` is the AUTHOR's: the tree is faithful, the writer is the exit
+/// that changes the document, and the answer is a declared
+/// `structure-unspellable` row (markup-carve/carve#1658). Here nothing authored
+/// a paragraph. The deciding question is only ever whether the document
+/// contained a `<p>`, which is why an authored one arrives through `block` and
+/// never through this buffer.
+///
+/// ONLY A RUN THAT HOLDS NOTHING ELSE - one image and nothing beside it. A run
+/// carrying text, or a second image, is a paragraph the document really has: it
+/// is what `![a](i.png) folding content` parses to as well. The run is already
+/// edge-trimmed by the caller, so a whitespace tolerance here would be a branch
+/// no input reaches.
+fn synthesized_wrapper(children: Vec<InlineNode>) -> BlockNode {
+    match <[InlineNode; 1]>::try_from(children) {
+        Ok([InlineNode::Image(image)]) => BlockNode::BlockImage(image),
+        Ok([only]) => BlockNode::Paragraph(Paragraph {
+            attrs: None,
+            children: vec![only],
+            at_content_column: true,
+            pos: None,
+        }),
+        Err(children) => BlockNode::Paragraph(Paragraph {
+            attrs: None,
+            children,
+            at_content_column: true,
+            pos: None,
+        }),
+    }
 }
 
 /// The one image a paragraph's run holds, when it holds nothing else.
