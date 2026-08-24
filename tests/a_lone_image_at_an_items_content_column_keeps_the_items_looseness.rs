@@ -171,13 +171,24 @@ fn a_plain_paragraph_under_the_blank_still_loosens() {
 
 #[test]
 fn an_invisible_block_under_the_blank_does_not_cancel_it() {
-    // markup-carve/carve#630: a comment in front of the second paragraph is
-    // skipped, not counted. The predicate is asked of the first VISIBLE block,
-    // and that has to survive this change.
-    let src = "- t\n\n  %% n\n  x\n";
-    let html = to_html(src);
-    assert!(
-        !only_list_tight(src),
-        "a comment before the second paragraph must not re-tighten:\n{html}"
-    );
+    // markup-carve/carve#630: a comment in front of the second block is skipped,
+    // not counted. The predicate is asked of the first VISIBLE block, and that
+    // has to survive this change.
+    //
+    // The IMAGE row is the two rules meeting, and it was broken too: the comment
+    // was skipped correctly and the block behind it was a `BlockImage`, so the
+    // item went tight for the same reason the bare shape did. carve-js and
+    // carve-php publish `tight: false` for both.
+    for (label, src) in [
+        ("paragraph", "- t\n\n  %% n\n  x\n"),
+        ("lone image", "- t\n\n  %% n\n  ![A](a.jpg)\n"),
+    ] {
+        let html = to_html(src);
+        assert!(
+            !only_list_tight(src),
+            "{label}: a comment in front of the second block must not \
+             re-tighten:\n{html}"
+        );
+        assert!(html_wraps_the_lead(&html), "{label}: no lead <p>:\n{html}");
+    }
 }
