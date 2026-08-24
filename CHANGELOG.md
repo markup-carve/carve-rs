@@ -48,8 +48,9 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Prebuilt `carve` binaries on every release (markup-carve/carve#528) for macOS,
   Linux (glibc and musl) and Windows, plus a Homebrew tap; installing the CLI no
   longer needs a Rust toolchain.
-- `RenderCarveError`, carrying `Depth` and the new `SourceUnspellable` (#1112).
-  Breaking for a caller that matches on `render_carve`'s error.
+- **Breaking:** `RenderCarveError`, carrying `Depth` and the new
+  `SourceUnspellable` (#1112). Breaking for a caller that matches on
+  `render_carve`'s error.
 - `migrate_html`, `migrate_markdown` and `migrate_djot` return one
   `MigrationResult` shape (#1326), with `MigrationReport`, `MigrationFidelity`
   and `MigrationConfidence`, so one import workflow covers all three formats.
@@ -85,9 +86,9 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   it used to be repaired in silence. Absent stays legal on all four.
 - **Breaking:** `Figure::target` is now `Box<FigureTarget>` (#1119, #1127), for
   a caller that constructs or matches a figure through the public AST.
-- Three blank lines are a hard list boundary (markup-carve/carve#1430, PART 9
-  §11 N1a): a run of three or more before a compatible sibling marker opens a
-  new list, at every level.
+- **Breaking:** three blank lines are a hard list boundary
+  (markup-carve/carve#1430, PART 9 §11 N1a): a run of three or more before a
+  compatible sibling marker opens a new list, at every level.
 - The writer escapes per opener occurrence, not per unit
   (markup-carve/carve#1533, PART 11 §2): `\{.note}` where the unit-scoped form
   wrote `\{\.note\}`.
@@ -95,8 +96,8 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (markup-carve/carve#1522, markup-carve/carve#1524, PART 12 §4), and a
   `definition_list`'s does too (markup-carve/carve#1530). Published `pos` values
   move.
-- A column's alignment defaults come from the header section, not from row 0
-  (markup-carve/carve#1259, PART 9 §5 T9).
+- **Breaking:** a column's alignment defaults come from the header section, not
+  from row 0 (markup-carve/carve#1259, PART 9 §5 T9).
 - A row is a row in every table section (markup-carve/carve#1459, PART 10 §7):
   `<thead>` and `<tfoot>` write one row per line. Nothing renders differently.
 - A `css`-mode tab and code-group panel carries `role="group"` plus an
@@ -129,8 +130,8 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   §1, markup-carve/carve#1602).
 - A whitespace-only block no longer costs two lists their hard boundary (#1292,
   PART 11 §1). A lone U+00A0 line still separates them.
-- `carve migrate` exits 2 for a usage error, leaving exit 1 to mean
-  `--check-loss` found dropped content (#1276).
+- **Breaking:** `carve migrate` exits 2 for a usage error, leaving exit 1 to
+  mean `--check-loss` found dropped content (#1276).
 - The writer freezes the symbol sigil and a cell's rowspan marker
   (markup-carve/carve#1609, PART 11 §2 and §6f), so neither re-parses as markup.
 - The writer escapes a caret that opens a bracketed label (#1317, PART 11 §2).
@@ -169,8 +170,9 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   ends (#1246, PART 12 §4). Published break positions change.
 - Depth limits guard every recursive input and output path (#1119, #1120, #1121,
   #1124), and AST JSON encoding gains a fallible `try_to_json`.
-- The CLI refuses an over-cap document instead of writing nothing at exit 0
-  (#1190). The library's infallible `to_*_with_options` wrappers are unchanged.
+- **Breaking:** the CLI refuses an over-cap document instead of writing nothing
+  at exit 0 (#1190). The library's infallible `to_*_with_options` wrappers are
+  unchanged.
 - `--profile` reaches the `--carve` output target through the new
   `try_to_carve_with_options` (#1191); `to_carve` is unchanged.
 - The borrowed layout no longer splits a blank-separated ordered list or drops
