@@ -10,8 +10,10 @@ use crate::render::{semantic_value_target, EXTENDED_SEMANTIC_SPAN_ORDER};
 use crate::render_carve::is_attr_identifier;
 use crate::{render_carve, RenderCarveError};
 use html5ever::tendril::TendrilSink;
+use html5ever::{namespace_url, ns, QualName};
 use html5ever::{serialize, serialize::SerializeOpts};
-use markup5ever_rcdom::{Handle, NodeData, RcDom, SerializableHandle};
+use markup5ever_rcdom::{Handle, Node, NodeData, RcDom, SerializableHandle};
+use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::rc::Rc;
 
@@ -446,6 +448,13 @@ impl<'a> Importer<'a> {
                 | "header"
                 | "footer"
                 | "figure"
+                // Synthetic, never present in real HTML input: the marker
+                // `mark_footnote_placement` leaves where a non-final endnotes
+                // section sat. It belongs here because it STANDS WHERE A
+                // `<section>` STOOD, and a name this list does not recognize is
+                // buffered as INLINE - which put the placement inside the
+                // paragraph after it rather than between the two.
+                | FOOTNOTE_PLACEMENT_TAG
         )
     }
 
@@ -1323,6 +1332,30 @@ impl<'a> Importer<'a> {
         let tag = Self::tag(h).unwrap();
         let attrs = self.attrs(h, path);
         let children = h.children.borrow();
+        if tag == FOOTNOTE_PLACEMENT_TAG {
+            // AN ENDNOTES SECTION THAT IS NOT LAST KEEPS ITS POSITION.
+            //
+            // The notes are consumed into `footnote_defs` and the renderer
+            // appends the section it rebuilds at DOCUMENT END. That reproduces
+            // the input exactly where the section was already last, and
+            // silently MOVES it where it was not: the same characters in a
+            // different order, with nothing said.
+            //
+            // This is not `structure-unspellable` and there is nothing to
+            // report. Carve HAS a spelling for the position - the
+            // `::: footnotes` placement directive - and that is the whole
+            // argument: treating placement as a rendering artifact would be
+            // defensible only if the language could not say otherwise
+            // (markup-carve/carve#1627, docs/html-import.md).
+            return Ok(vec![BlockNode::Admonition(Admonition {
+                attrs: None,
+                kind: "footnotes".to_string(),
+                title: None,
+                label: None,
+                children: Vec::new(),
+                pos: None,
+            })]);
+        }
         if tag == "html" || tag == "head" || tag == "body" {
             // No attribute report here, and deliberately none: `fragment_top_level`
             // strips the scaffold before the walk begins, so an attribute on
@@ -3907,9 +3940,18 @@ impl<'a> Importer<'a> {
     /// parsed out of the ids: an id is generated navigation an engine
     /// regenerates, and `_ftn1` or `sdfootnote1sym` is not a label any Carve
     /// source could carry anyway.
+    ///
+    /// `heuristic` is the word-processor adapters' licence: with it a mutual
+    /// anchor pair alone binds. Without it - `generic` and the editor adapters -
+    /// only an anchor the producer MARKED with `role="doc-noteref"` opens a
+    /// pair, which is authored DPUB-ARIA semantics rather than a guess, so a
+    /// role-less document imports exactly as it did before. That is what lets
+    /// Pandoc 2.11+ output import its footnotes without naming an adapter, and
+    /// it is what the shared fixtures are written over (carve-rs#1313).
     fn adapter_footnotes(
         &mut self,
         root: &Handle,
+        heuristic: bool,
     ) -> Result<BTreeMap<String, Vec<BlockNode>>, HtmlImportError> {
         let elements = footnote_document_elements(root);
         let mut order: HashMap<usize, usize> = HashMap::with_capacity(elements.len());
@@ -3918,8 +3960,10 @@ impl<'a> Importer<'a> {
         }
 
         let targets = footnote_fragment_targets(&elements);
-        let candidates =
-            resolve_footnote_pair_direction(footnote_pair_candidates(&elements, &targets), &order);
+        let candidates = resolve_footnote_pair_direction(
+            footnote_pair_candidates(&elements, &targets, heuristic),
+            &order,
+        );
         if candidates.is_empty() {
             return Ok(BTreeMap::new());
         }
@@ -3927,6 +3971,7 @@ impl<'a> Importer<'a> {
         let definitions = attach_remaining_footnote_references(
             &elements,
             group_footnote_definitions(candidates, &order),
+            heuristic,
         );
 
         let mut defs = BTreeMap::new();
@@ -3969,8 +4014,17 @@ impl<'a> Importer<'a> {
         // container: pruning it once per note walked that list's children
         // once per note, which is quadratic on a document that is mostly
         // notes.
+        // ONE MARKER FOR THE DOCUMENT, at the FIRST section that leaves a slot
+        // with content after it. Every note in one list names the same
+        // container, and a document with two endnotes sections has one place the
+        // renderer will rebuild them, so a second directive would spell a
+        // position no render can honour.
+        let mut marked = false;
         for container in &containers {
-            prune_empty_footnote_container(container);
+            let removed_from = prune_empty_footnote_container(container);
+            if !marked {
+                marked = mark_footnote_placement(removed_from);
+            }
         }
 
         Ok(defs)
@@ -4059,6 +4113,7 @@ fn footnote_fragment_targets(elements: &[Handle]) -> HashMap<String, Handle> {
 fn footnote_pair_candidates(
     elements: &[Handle],
     targets: &HashMap<String, Handle>,
+    heuristic: bool,
 ) -> Vec<FootnoteCandidate> {
     let mut anchors: Vec<(Handle, String)> = Vec::new();
     let mut used: HashSet<String> = HashSet::new();
@@ -4079,6 +4134,12 @@ fn footnote_pair_candidates(
 
     let mut candidates = Vec::new();
     for (anchor, fragment) in anchors {
+        // OUTSIDE THE HEURISTIC ONLY THE AUTHORED ROLE OPENS A PAIR. The vendor
+        // classes belong to the heuristic: a class is a styling hook, where the
+        // role is a statement about what the element IS.
+        if !heuristic && Importer::attr(&anchor, "role").as_deref() != Some("doc-noteref") {
+            continue;
+        }
         let Some(block) = resolve_footnote_definition_block(&targets[&fragment], &used) else {
             continue;
         };
@@ -4317,6 +4378,7 @@ fn group_footnote_definitions(
 fn attach_remaining_footnote_references(
     elements: &[Handle],
     mut definitions: Vec<FootnoteGroup>,
+    heuristic: bool,
 ) -> Vec<FootnoteGroup> {
     let mut by_fragment: HashMap<String, usize> = HashMap::new();
     for (index, definition) in definitions.iter().enumerate() {
@@ -4338,6 +4400,14 @@ fn attach_remaining_footnote_references(
 
     for element in elements {
         if Importer::tag(element).as_deref() != Some("a") {
+            continue;
+        }
+        // Outside the heuristic an unmarked anchor addressing a note is a LINK,
+        // not a reference: the role is the whole signal, so a content link to
+        // `#fn1` in a role-marked document keeps the author's shape. The marked
+        // candidates already sit in their groups; this loop exists for the
+        // unmarked SECOND reference the heuristic binds.
+        if !heuristic && Importer::attr(element, "role").as_deref() != Some("doc-noteref") {
             continue;
         }
         let href = Importer::attr(element, "href").unwrap_or_default();
@@ -4754,11 +4824,15 @@ fn footnote_reference_site(reference: &Handle) -> Handle {
 ///
 /// A separator written AFTER the notes survives the explicit search and is
 /// swept up here instead.
-fn prune_empty_footnote_container(node: &Handle) {
+fn prune_empty_footnote_container(node: &Handle) -> Option<(Handle, usize)> {
     let mut current = Some(node.clone());
+    // The slot the OUTERMOST removed node sat in, which is the one the section
+    // itself occupied. An inner one names a position inside a container that is
+    // about to be detached too, so a marker put there would be detached with it.
+    let mut removed_from = None;
     while let Some(handle) = current {
         match Importer::tag(&handle).as_deref() {
-            None | Some("body") | Some("html") => return,
+            None | Some("body") | Some("html") => return removed_from,
             Some(_) => {}
         }
         let holds_content = handle.children.borrow().iter().any(|child| {
@@ -4768,12 +4842,85 @@ fn prune_empty_footnote_container(node: &Handle) {
             !matches!(Importer::tag(child).as_deref(), Some("hr") | Some("br"))
         });
         if holds_content {
-            return;
+            return removed_from;
         }
         let parent = parent_handle(&handle);
+        let index = parent.as_ref().and_then(|parent| {
+            parent
+                .children
+                .borrow()
+                .iter()
+                .position(|child| Rc::ptr_eq(child, &handle))
+        });
         footnote_detach(&handle);
+        if let (Some(parent), Some(index)) = (parent.clone(), index) {
+            removed_from = Some((parent, index));
+        }
         current = parent;
     }
+    removed_from
+}
+
+/// The synthetic element `mark_footnote_placement` leaves where a non-final
+/// endnotes section sat. It exists only between the footnote pass and the block
+/// walk, and no real HTML input can carry the name.
+const FOOTNOTE_PLACEMENT_TAG: &str = "carve-footnote-placement";
+
+/// Put a `::: footnotes` directive back where the endnotes section stood.
+///
+/// ONLY WHEN SOMETHING ACTUALLY FOLLOWS IT, checked OUTWARD through the
+/// ancestors rather than among the immediate siblings alone: a section last in a
+/// `<div>` that is itself followed by a paragraph is still not last in the
+/// document. A section that IS last needs no directive and gets none - the
+/// definitions already render there, and writing one would put a construct in
+/// the source the input never distinguished - so every document that was already
+/// right stays byte-identical.
+fn mark_footnote_placement(removed_from: Option<(Handle, usize)>) -> bool {
+    let Some((parent, index)) = removed_from else {
+        return false;
+    };
+    if !footnote_content_follows(&parent, index) {
+        return false;
+    }
+    let marker = Node::new(NodeData::Element {
+        name: QualName::new(None, ns!(html), FOOTNOTE_PLACEMENT_TAG.into()),
+        attrs: RefCell::new(Vec::new()),
+        template_contents: RefCell::new(None),
+        mathml_annotation_xml_integration_point: false,
+    });
+    marker.parent.set(Some(Rc::downgrade(&parent)));
+    let mut children = parent.children.borrow_mut();
+    let at = index.min(children.len());
+    children.insert(at, marker);
+    true
+}
+
+/// Is there content after INDEX in PARENT, or after PARENT in any ancestor?
+fn footnote_content_follows(parent: &Handle, index: usize) -> bool {
+    let mut node = Some(parent.clone());
+    let mut from = index;
+    while let Some(handle) = node {
+        if handle.children.borrow()[from.min(handle.children.borrow().len())..]
+            .iter()
+            .any(|child| !is_footnote_chrome_node(child))
+        {
+            return true;
+        }
+        let Some(up) = parent_handle(&handle) else {
+            return false;
+        };
+        let Some(at) = up
+            .children
+            .borrow()
+            .iter()
+            .position(|child| Rc::ptr_eq(child, &handle))
+        else {
+            return false;
+        };
+        from = at + 1;
+        node = Some(up);
+    }
+    false
 }
 
 /// Whether an HTML element name is one of the seven PART 9 §10 spells as a
@@ -4974,12 +5121,13 @@ fn import(
     // stays out: it takes arbitrary HTML, where a mutually linked anchor pair
     // is not proof of a footnote, and the caller naming an adapter is the
     // declaration of provenance that makes the recognition safe.
-    let footnote_defs = match options.adapter {
-        HtmlImportAdapter::Word | HtmlImportAdapter::GoogleDocs => {
-            importer.adapter_footnotes(&dom.document)?
-        }
-        _ => BTreeMap::new(),
-    };
+    let footnote_defs = importer.adapter_footnotes(
+        &dom.document,
+        matches!(
+            options.adapter,
+            HtmlImportAdapter::Word | HtmlImportAdapter::GoogleDocs
+        ),
+    )?;
     let children = importer.blocks(&fragment_top_level(&dom.document), "", 0)?;
     if writing {
         for (node, path, message) in std::mem::take(&mut importer.unspellable) {
