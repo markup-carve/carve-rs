@@ -3,7 +3,8 @@
 use crate::ast::*;
 use crate::escape::is_dangerous_attr_name;
 use crate::extension::{
-    label_default, LABEL_CODE_GROUP, LABEL_ENDNOTES, LABEL_INDEX_BACKREF, LABEL_TABS_GROUP,
+    label_default, HeadingIdOptions, LABEL_CODE_GROUP, LABEL_ENDNOTES, LABEL_INDEX_BACKREF,
+    LABEL_TABS_GROUP,
 };
 use crate::profile::ADMONITION_TIER1_KINDS;
 use crate::render::{semantic_value_target, EXTENDED_SEMANTIC_SPAN_ORDER};
@@ -764,6 +765,89 @@ impl<'a> Importer<'a> {
         }
         Ok(())
     }
+    /// The element's attribute names, in the source order html5ever kept them.
+    fn element_attr_names(handle: &Handle) -> Vec<String> {
+        match &handle.data {
+            NodeData::Element { attrs, .. } => attrs
+                .borrow()
+                .iter()
+                .map(|a| a.name.local.to_string())
+                .collect(),
+            _ => Vec::new(),
+        }
+    }
+
+    /// Whether `id` sits where `render_heading` writes a GENERATED one: after
+    /// every authored attribute. `data-source-line` is the one thing that
+    /// follows it, because that is a render annotation rather than an authored
+    /// attribute and `render_heading` emits it last on purpose.
+    fn id_in_generated_position(handle: &Handle) -> bool {
+        let mut names = Self::element_attr_names(handle);
+        while names.last().is_some_and(|name| name == "data-source-line") {
+            names.pop();
+        }
+        names.last().is_some_and(|name| name == "id")
+    }
+
+    /// Whether `id` is a value the renderer would derive for a heading whose
+    /// plain-text projection is `text`.
+    ///
+    /// THE DEFAULT SLUG ONLY, which is the same accepted limit `drop_derived`
+    /// states for every other derived attribute: an importer cannot know which
+    /// `HeadingIdOptions` the render used, and a value no default equals is
+    /// indistinguishable from an authored one, so failing SAFE - keep - is the
+    /// side to err on. The `-N` tail is `next_heading_id`'s own dedup shape,
+    /// which starts at 2 because the first occurrence takes the bare base.
+    fn is_generated_heading_id(id: &str, text: &str) -> bool {
+        let base = crate::parse::slugify_parse(text, HeadingIdOptions::PLAIN);
+        if id == base {
+            return true;
+        }
+        id.strip_prefix(&base)
+            .and_then(|rest| rest.strip_prefix('-'))
+            .is_some_and(|count| {
+                !count.is_empty()
+                    && !count.starts_with('0')
+                    && count != "1"
+                    && count.bytes().all(|b| b.is_ascii_digit())
+            })
+    }
+
+    /// The writer's slot order for `held`, read off the element's own attribute
+    /// order. The importer used to spell a fixed id-then-class-then-keys order,
+    /// which renders `{.k #x}` back as `<h1 id="x" class="k">` - attributes the
+    /// input did not have in that order (carve-rs#1354).
+    fn slot_order_from_element(handle: &Handle, held: &Attrs) -> Vec<AttrSlot> {
+        let mut order: Vec<AttrSlot> = Vec::new();
+        for name in Self::element_attr_names(handle) {
+            let slot = match name.as_str() {
+                "id" if held.id.is_some() => AttrSlot::Id,
+                "class" if !held.classes.is_empty() => AttrSlot::Class,
+                other if held.key_values.contains_key(other) => AttrSlot::Key(other.to_string()),
+                _ => continue,
+            };
+            if !order.contains(&slot) {
+                order.push(slot);
+            }
+        }
+        // A non-empty order is EXHAUSTIVE, so anything the element did not
+        // spell under its own name - an attribute renamed or folded on the way
+        // in - still has to appear, or the writer drops it silently.
+        if held.id.is_some() && !order.contains(&AttrSlot::Id) {
+            order.push(AttrSlot::Id);
+        }
+        if !held.classes.is_empty() && !order.contains(&AttrSlot::Class) {
+            order.push(AttrSlot::Class);
+        }
+        for key in held.key_values.keys() {
+            let slot = AttrSlot::Key(key.clone());
+            if !order.contains(&slot) {
+                order.push(slot);
+            }
+        }
+        order
+    }
+
     fn attrs(&mut self, handle: &Handle, path: &str) -> Option<Attrs> {
         let tag = Self::tag(handle).unwrap_or_default();
         let mut out = Attrs::default();
@@ -1373,23 +1457,49 @@ impl<'a> Importer<'a> {
         }
         if matches!(tag.as_str(), "h1" | "h2" | "h3" | "h4" | "h5" | "h6") {
             let mut attrs = attrs;
+            let inlines = self.inlines(&children, path, depth + 1)?;
             if let Some(held) = attrs.as_mut().filter(|held| held.id.is_some()) {
                 // An HTML heading id is authored input, even when its value
-                // equals the slug a fresh Carve parse would generate. Without
-                // the writer-only slot marker html_to_carve omits it while
-                // html_to_ast retains it. A non-empty order is exhaustive, so
-                // carry every other imported slot too.
-                held.order.push(AttrSlot::Id);
-                if !held.classes.is_empty() {
-                    held.order.push(AttrSlot::Class);
+                // equals the slug a fresh Carve parse would generate
+                // (carve-rs#1324) - EXCEPT where the element itself says the
+                // renderer wrote it. `roundtrip` mode's input is Carve-produced
+                // HTML by definition, so there the id can be read back as the
+                // generated one rather than assumed authored, and re-emitting
+                // it changes the render: `render_heading` puts a GENERATED id
+                // after every authored attribute and an AUTHORED one in the
+                // slot it was written in, so `{.k}` and `{#H .k}` are two
+                // different documents (carve-rs#1354).
+                //
+                // Both halves of the test are needed, and neither alone is
+                // enough. Position alone would eat the id an author wrote LAST
+                // (`{.k #Other}`); slug equality alone cannot tell `{.k}` from
+                // an id an author wrote FIRST whose value happens to be the
+                // slug (`{#H .k}`), which is the shape that made this the
+                // combination bug rather than a defect in either half.
+                if self.opts.mode == HtmlImportMode::Roundtrip
+                    && Self::id_in_generated_position(h)
+                    && held.id.as_deref().is_some_and(|id| {
+                        Self::is_generated_heading_id(id, &crate::render::plain_inlines(&inlines))
+                    })
+                {
+                    // The renderer derives it again from the same text, so
+                    // dropping it is the no-op `drop_derived` documents for
+                    // every other derived attribute. Carrying it would spell an
+                    // authored slot the source never had.
+                    held.id = None;
+                } else {
+                    // Authored. A non-empty order is exhaustive, so every
+                    // imported slot has to be carried - and carried in the
+                    // element's OWN attribute order, which is the order the
+                    // writer has to spell to render these bytes back.
+                    held.order = Self::slot_order_from_element(h, held);
                 }
-                held.order
-                    .extend(held.key_values.keys().cloned().map(AttrSlot::Key));
             }
+            let attrs = attrs.filter(|held| *held != Attrs::default());
             return Ok(vec![BlockNode::Heading(Heading {
                 attrs,
                 level: tag[1..].parse().unwrap(),
-                children: self.inlines(&children, path, depth + 1)?,
+                children: inlines,
                 pos: None,
             })]);
         }
