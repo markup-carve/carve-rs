@@ -1,16 +1,27 @@
 //! AN ITEM'S ATTRIBUTE BLOCK MOVES ITS CONTENT COLUMN; ITS CHECKBOX DOES NOT.
 //!
-//! One ruling applied twice, not two rules. markup-carve/carve#1690 settled
-//! that a task item's `[x] ` is CONTENT, so it does not move the item's content
-//! column. An attribute block is the other half: it is part of the MARKER that
-//! introduces the item, so it does move the column. `-{#k} [x] a` is therefore
-//! the marker `-{#k} `, six wide, and then the checkbox - the item's content
-//! column is 6.
+//! THE GRAMMAR SAYS WHAT THE BLOCK BINDS TO, so this is not an inference from a
+//! neighbouring ruling. PART 9 §15 A8: "a `-{…} text` with no space after the
+//! marker attributes the LIST ITEM", and `docs/divergence-from-djot.md` §17
+//! states it outright - "the attribute block binds to the MARKER". Part of the
+//! marker counts toward the marker's width, so `-{#k} [x] a` is the marker
+//! `-{#k} `, six wide, and then the checkbox: the item's content column is 6.
 //!
-//! This engine read 2, the bare bullet width, which lands INSIDE the attribute
-//! block. A content column pointing into the marker is not a content column, so
-//! the two readings were never symmetric alternatives - one of them puts the
-//! boundary where no content can begin (markup-carve/carve#1692, carve-rs#1372).
+//! Djot has no such construct to appeal to. There `-{#k} [x] item` is a
+//! PARAGRAPH - the `{#k}` is an inline attribute on a literal `-`, because a
+//! bullet needs its separator first - and djot attributes a list through a
+//! preceding attribute line that attaches to the LIST rather than the item.
+//! §17 records the divergence as a deliberate extension.
+//!
+//! markup-carve/carve#1690 is the other half and still holds: a task item's
+//! `[x] ` is CONTENT, so it does not move the column. The two together are why
+//! the column is the bullet plus the block and nothing else.
+//!
+//! This engine read 2, the bare bullet width, which treats the block as though
+//! it were not there and lands INSIDE it. A content column pointing into the
+//! marker is not a content column - A8 notes the marker still needs content of
+//! its own - so the two readings were never symmetric alternatives
+//! (markup-carve/carve#1692, carve-rs#1372).
 //!
 //! BOTH SPELLINGS ARE PINNED HERE, not one. Before this fix each engine read
 //! exactly one of the two as a continuation and they disagreed about which, so
