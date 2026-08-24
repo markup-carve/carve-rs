@@ -225,8 +225,8 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `aria-label` no default matches, is still reported.
 - An HTML import rebuilds the container the renderer wrote (#1240,
   markup-carve/carve#1502), and treats `<aside>` as the block element it is.
-- A container's grouping label comes back on the opener, not as a paragraph
-  (#1316).
+- A container's grouping label keeps a div's fence, and comes back on the
+  opener rather than as a paragraph (#1316, #1315).
 - An anchor or image with no destination comes back as its content with an
   `element-unwrapped` diagnostic (markup-carve/carve#1601). A destination PART 9
   §25's denylist blanked is never rebuilt.
