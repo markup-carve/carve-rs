@@ -15,8 +15,9 @@
 use carve::{html_to_carve, to_html, HtmlImportMode, HtmlImportOptions};
 
 /// The seven the generic block arm reaches. `<div>` is not among them - it maps
-/// to a Carve div - and `<figure>` is not either: its own roundtrip guard is
-/// about a loss this list does not carry, and the control below holds it there.
+/// to a Carve div - and `<figure>` is not either: it has its own per-target
+/// roundtrip rule (markup-carve/carve#1704), and the control below holds it
+/// there.
 const SECTIONING: [&str; 7] = [
     "article", "aside", "footer", "header", "main", "nav", "section",
 ];
@@ -43,9 +44,16 @@ fn a_sectioning_wrapper_unwraps_in_every_mode() {
             HtmlImportMode::Semantic,
             HtmlImportMode::Roundtrip,
         ] {
+            // `roundtrip` hands a `<section id>` back to the heading the
+            // renderer hoisted it off (markup-carve/carve-rs#1380), so the
+            // heading it comes back as carries the id. That is still the
+            // heading Carve spells, which is what this test is about; the id
+            // itself is ruled by `an_unwrapped_wrapper_hands_its_id_back_to_the_heading`.
+            let hoisted = tag == "section" && mode == HtmlImportMode::Roundtrip;
+            let want = if hoisted { "{#x}\n# H\n" } else { "# H\n" };
             let back = import(&html, mode);
-            if back != "# H\n" {
-                wrong.push(format!("<{tag}> in {mode:?} -> {back:?}"));
+            if back != want {
+                wrong.push(format!("<{tag}> in {mode:?} -> {back:?}, want {want:?}"));
             }
         }
     }
@@ -80,11 +88,13 @@ fn the_section_this_family_writes_for_a_heading_reads_back_as_that_heading() {
 fn a_wrapper_carve_cannot_spell_is_still_preserved_in_roundtrip() {
     // THE NEAR MISS, and the reason the fix is a list rather than "stop
     // raw-preserving block elements". `<figure>` reaches the same arm and must
-    // keep reaching it: a figure around a paragraph writes a caption line that
-    // reads back as literal prose, so unwrapping it trades a reported loss for
-    // a silent one (carve#1286).
+    // keep reaching it for the targets no Carve spelling reproduces: a figure
+    // around a PARAGRAPH writes a caption line that reads back as literal
+    // prose, so unwrapping it trades a reported loss for a silent one
+    // (carve#1286, narrowed to the target by markup-carve/carve#1704 - an
+    // IMAGE figure does re-parse and rebuilds).
     let back = import(
-        "<figure id=\"f\"><img src=\"a.png\" alt=\"A\"><figcaption>Cap</figcaption></figure>",
+        "<figure id=\"g\"><p>x</p><figcaption>Cap</figcaption></figure>",
         HtmlImportMode::Roundtrip,
     );
     assert!(
@@ -103,23 +113,51 @@ fn a_wrapper_carve_cannot_spell_is_still_preserved_in_roundtrip() {
 
 #[test]
 fn an_unwrapped_wrapper_still_reports_what_it_carried() {
-    // Unwrapping is not a silent drop: the id the `<section>` carried has
-    // nowhere to go, and that is reported exactly as it is in the other two
-    // modes. A fix that unwrapped quietly would turn a raw-preserve warning
-    // into a silent loss, which is the opposite trade.
+    // Unwrapping is not a silent drop: what the `<section>` carried and has
+    // nowhere to go is reported exactly as it is in the other two modes. A fix
+    // that unwrapped quietly would turn a raw-preserve warning into a silent
+    // loss, which is the opposite trade.
+    //
+    // The ID is no longer such a thing. `roundtrip` puts it back on the heading
+    // the renderer hoisted it off (markup-carve/carve-rs#1380), so the fixture
+    // asks about a CLASS, which has no slot to return to. The id case is the
+    // control below.
     let options = HtmlImportOptions {
         mode: HtmlImportMode::Roundtrip,
         ..HtmlImportOptions::default()
     };
-    let report = html_to_carve("<section id=\"kept\"><h1>H</h1></section>", &options).unwrap();
+    let report = html_to_carve("<section class=\"kept\"><h1>H</h1></section>", &options).unwrap();
     assert_eq!(report.value, "# H\n");
     assert!(
         report
             .report
             .diagnostics
             .iter()
-            .any(|d| d.message.contains("kept") || d.message.contains("id")),
-        "the dropped id was not reported: {:?}",
+            .any(|d| d.message.contains("kept")),
+        "the dropped class was not reported: {:?}",
+        report.report.diagnostics
+    );
+}
+
+/// The id the wrapper carries is the one thing the unwrap must NOT drop: with
+/// `sections` on, the renderer hoisted the heading's id onto it, so unwrapping
+/// and reporting it lost the author's `{#install}` from a mode whose job is
+/// fidelity (markup-carve/carve-rs#1380).
+#[test]
+fn an_unwrapped_wrapper_hands_its_id_back_to_the_heading() {
+    let options = HtmlImportOptions {
+        mode: HtmlImportMode::Roundtrip,
+        ..HtmlImportOptions::default()
+    };
+    let report = html_to_carve("<section id=\"install\"><h1>H</h1></section>", &options).unwrap();
+    assert_eq!(report.value, "{#install}\n# H\n");
+    assert!(
+        !report
+            .report
+            .diagnostics
+            .iter()
+            .any(|d| d.message.contains("install")),
+        "the id was restored but still reported dropped: {:?}",
         report.report.diagnostics
     );
 }
