@@ -26,6 +26,7 @@ mod escape;
 mod extension;
 pub mod extensions;
 pub mod html_import;
+pub mod incremental;
 mod index_budget;
 pub mod lint;
 pub mod markdown_import;
@@ -107,6 +108,9 @@ pub use html_import::{
     html_to_ast, html_to_carve, HtmlImportAdapter, HtmlImportDiagnostic, HtmlImportDiagnosticCode,
     HtmlImportError, HtmlImportMode, HtmlImportOptions, HtmlImportReport, HtmlImportResult,
     HtmlImportSeverity,
+};
+pub use incremental::{
+    parse_snapshot, reparse, IncrementalParse, IncrementalParseError, ParserSnapshot, TextChange,
 };
 pub use lint::{lint_carve, lint_carve_with_options, LintWarning};
 pub use markdown_import::{markdown_to_ast, markdown_to_carve};
