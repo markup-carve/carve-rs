@@ -363,20 +363,44 @@ fn no_candidate_mark_survives_on_either_exit() {
     }
 }
 
-/// THE NEAR MISS, and on this engine it is not even near. A reading that called
-/// the shape spellable would point at an indented image: carve-js parses one
-/// leading space as a paragraph holding one image. This engine reads it as a
-/// block image, exactly as it reads the column-0 spelling, so there is no indent
-/// at which the source says "paragraph" here.
+/// THE NEAR MISS, and it is now genuinely near - this test used to assert the
+/// opposite and the premise was wrong.
+///
+/// It read: "carve-js parses one leading space as a paragraph holding one image.
+/// This engine reads it as a block image, so there is no indent at which the
+/// source says paragraph here." markup-carve/carve#1660 ruled carve-js right and
+/// moved this engine and carve-php: a block image is a top-level block
+/// construct, so section 15's strict column-0 rule reaches it and an INDENTED
+/// lone image is a paragraph holding an inline image.
+///
+/// So an indented spelling DOES exist, and the ceiling stands anyway - which is
+/// the stronger form of the same point. The writer declines to reach for it
+/// (`the_writer_normalizes_the_shape_rather_than_indenting_or_refusing`, and the
+/// rejected-options note above), because indenting would emit meaning-bearing
+/// leading whitespace to preserve a wrapper. The loss is therefore DECLARED
+/// rather than routed around, which is what PART 11 section 1c asks for.
 #[test]
-fn no_indent_spells_a_paragraph_holding_one_image() {
-    for source in ["![G](g.jpg)", " ![G](g.jpg)", "   ![G](g.jpg)"] {
+fn an_indent_now_spells_a_paragraph_holding_one_image_and_the_writer_still_declines_it() {
+    assert_eq!(
+        kinds(&parse("![G](g.jpg)")),
+        vec!["BlockImage".to_string()],
+        "the flush-left spelling is the block image, and it is the control"
+    );
+    for source in [" ![G](g.jpg)", "   ![G](g.jpg)"] {
         assert_eq!(
             kinds(&parse(source)),
-            vec!["BlockImage".to_string()],
-            "{source:?}"
+            vec!["Paragraph".to_string()],
+            "{source:?}: an indented lone image is a paragraph (carve#1660)"
         );
     }
+    // The spelling exists in the SOURCE and not in what the writer produces.
+    // Asserting only the parse would leave the ceiling unstated; asserting only
+    // the writer would not show that it had a choice.
+    let written = carve::render_carve(&tree(r#"<p><img src="g.jpg" alt="G"></p>"#))
+        .expect("the writer must not refuse this shape");
+    assert_eq!(written, "![G](g.jpg)\n");
+    assert_eq!(kinds(&parse(&written)), vec!["BlockImage".to_string()]);
+
     assert_eq!(
         kinds(&parse("![G](g.jpg) t")),
         vec!["Paragraph".to_string()],

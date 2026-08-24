@@ -105,6 +105,11 @@ fn render_html_inner(
     needs_document_ids: bool,
     needs_footnotes: bool,
 ) -> String {
+    // A lone image paragraph renders as a bare block image at EVERY column, and
+    // the parse tree deliberately does not (markup-carve/carve#1660). This is
+    // the one place that difference is resolved, ahead of every layout decision
+    // below, so nothing downstream has to know about the second shape.
+    crate::parse::collapse_lone_image_paragraphs(&mut doc);
     let crossref_index = crossref_index.unwrap_or_else(|| {
         crate::parse::crossref_index_for_document(&doc, options.heading_id_options())
     });
