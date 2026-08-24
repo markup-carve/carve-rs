@@ -343,9 +343,11 @@ const FOOTNOTE_WRAPPER_BLOCKS: [&str; 4] = ["div", "li", "section", "aside"];
 ///
 /// `<aside>` reaches this list only when it is NOT a rendered callout;
 /// `container_from` claims that shape several arms earlier. `<figure>` is
-/// deliberately absent: its own roundtrip guard is about a loss this list does
-/// not carry, since a figure around a paragraph or a list has no caption line
-/// that reads back (carve#1286).
+/// deliberately absent because the choice it faces is not this one: it is
+/// decided PER TARGET, since a figure around an image or a quote has a caption
+/// line that reads back and one around a paragraph or a list does not
+/// (carve#1286, ruled per target at markup-carve/carve#1704). The figure arm
+/// makes that call itself and never reaches here.
 const ROUNDTRIP_UNWRAPPED_SECTIONING: [&str; 7] = [
     "article", "aside", "footer", "header", "main", "nav", "section",
 ];
@@ -2083,18 +2085,82 @@ impl<'a> Importer<'a> {
         // already carries the every-target mapping and the multi-block
         // fallback, so a foreign figure gets the ruled shape for free.
         //
-        // NOT in roundtrip mode, which promises the original bytes back for
-        // anything this engine cannot guarantee, and says so with a
-        // `raw-preserved` warning. The rebuild is only lossless for the targets
-        // the caption-line syntax re-parses: a figure around a bare PARAGRAPH
-        // writes `x` then `^ cap`, which reads back as one paragraph of prose
-        // with the caption as literal text, and one around a LIST detaches the
-        // caption into a paragraph of its own. Taking this path in roundtrip
-        // mode would trade a documented warning for a silent structural loss, so
-        // the raw fallback below keeps that mode's contract intact.
-        if tag == "figure" && self.opts.mode != HtmlImportMode::Roundtrip {
+        // In ROUNDTRIP mode the rebuild is PER TARGET, and the earlier blanket
+        // exclusion is what narrowed (markup-carve/carve#1704).
+        //
+        // The reason for that exclusion still reproduces exactly as written:
+        // the caption line is only lossless for the targets it re-parses onto.
+        // A figure around a bare PARAGRAPH writes `x` then `^ Cap`, which reads
+        // back as one paragraph of prose with the caption as literal text, and
+        // one around a LIST detaches the caption into a paragraph of its own.
+        // In a mode whose whole job is fidelity, taking the rebuild there would
+        // trade a documented `raw-preserved` warning for a silent structural
+        // loss, so those keep the raw fallback.
+        //
+        // What was wrong was applying that to EVERY target. An image, a code
+        // block and a quote each write a caption line the parser reads back as
+        // the same figure, so raw-preserving them bought no fidelity at all -
+        // it turned the most common input of the whole family, a captioned
+        // image, into an opaque `=html` block for a loss that was not there.
+        // So the rule `roundtrip` follows now is the PROPERTY, not a list of
+        // blessed names: rebuild when a Carve spelling reproduces the element,
+        // raw-preserve when none does, and never lose anything silently. A
+        // caption target added later inherits it.
+        //
+        // ONE CARVE-OUT, DELIBERATE. A figure around a TABLE has no spelling
+        // that reproduces it - the rebuild reads back as `<table id="t">` with
+        // a `<caption>` rather than as a figure - so strictly it would
+        // raw-preserve. It rebuilds anyway, keeping the `structure-unspellable`
+        // warning it already carried, because `<table><caption>` is the
+        // idiomatic HTML for a captioned table and raw-preserving would throw
+        // the `| a |` spelling away for a common shape. The bend is on purpose;
+        // read as a bug it would be "fixed" straight back into a raw block.
+        if tag == "figure" {
             let carried = attrs.clone();
-            let blocks = self.figure_panel(h, path, depth, attrs, false)?;
+            // Where the report stood before the rebuild ran. A rebuild
+            // `roundtrip` then REJECTS has to leave no trace: every row
+            // `figure_panel` and the walk under it pushed describes a tree this
+            // mode is about to throw away, and the element it preserves instead
+            // loses nothing to report. The node BUDGET stays spent - the
+            // subtree was walked, and a figure buys no free walk the rest of
+            // the importer does not give.
+            let reported = self.diagnostics.len();
+            let unspellable = self.unspellable.len();
+            let rebuilt = self.figure_panel(h, path, depth, attrs, false);
+            // A LIMIT REACHED INSIDE THE REBUILD IS NOT THE DOCUMENT'S ERROR
+            // in this mode. Before the per-target rule, `roundtrip` preserved a
+            // figure WITHOUT walking it, so a body 200 levels deep imported
+            // fine as an opaque block; failing the whole document for it now
+            // would be a regression bought with the fix. The element that
+            // cannot be walked is exactly the element no rebuild can reproduce,
+            // so it takes the same exit as one whose target has no spelling.
+            //
+            // Only `DepthLimit` and `NodeLimit` reach here - the other two
+            // variants are raised by the WRITER, after this walk is over - so
+            // nothing but a budget is being swallowed. The nodes already
+            // counted stay counted: the subtree was walked, and refunding them
+            // would sell one budget once per figure.
+            let blocks = match rebuilt {
+                Ok(blocks) if self.opts.mode != HtmlImportMode::Roundtrip => blocks,
+                Ok(blocks) if Self::roundtrip_keeps_rebuilt_figure(h, &blocks) => blocks,
+                Err(error) if self.opts.mode != HtmlImportMode::Roundtrip => return Err(error),
+                _ => {
+                    self.diagnostics.truncate(reported);
+                    self.unspellable.truncate(unspellable);
+                    self.diag(
+                        HtmlImportDiagnosticCode::RawPreserved,
+                        format!("Preserved unsupported <{tag}> element as raw HTML"),
+                        HtmlImportSeverity::Warning,
+                        path,
+                        h,
+                    );
+                    return Ok(vec![BlockNode::RawBlock(RawBlock {
+                        format: "html".into(),
+                        content: Self::html(h),
+                        pos: None,
+                    })]);
+                }
+            };
             // A rebuild that produced a FIGURE lost nothing: the wrapper became
             // the node and its attributes came with it, so there is nothing to
             // report. Anything else is `figure_panel`'s fallback - no caption to
@@ -3021,6 +3087,63 @@ impl<'a> Importer<'a> {
             caption,
             pos: None,
         })])
+    }
+
+    /// Whether `roundtrip` keeps what the foreign-`<figure>` rebuild produced,
+    /// or throws it away and preserves the element instead
+    /// (markup-carve/carve#1704).
+    ///
+    /// The question the rule asks is whether a Carve spelling REPRODUCES the
+    /// element, so the answer is read off the rebuilt tree rather than off the
+    /// tag: `figure_panel` hands back a `Figure` only where a caption line
+    /// binds, and its fallback shape - a list target, several body blocks, no
+    /// caption to bind at all - is by construction a figure that did not
+    /// survive as one.
+    ///
+    /// The target table is an IMPLEMENTATION of the property, not the property
+    /// itself. Image, code block and quote each write a caption line the parser
+    /// reads back as the same figure. `Table` is the deliberate carve-out named
+    /// above. `Paragraph` is the one target that rebuilds into a figure node
+    /// and still cannot be written back as one, which is exactly the silent
+    /// loss `roundtrip` must not take.
+    ///
+    /// AND THE CAPTION HAS TO STAND WHERE CARVE PUTS IT. A caption line follows
+    /// its target, so `render_figure` writes `<figcaption>` last and nothing
+    /// spells a figure whose caption comes FIRST:
+    /// `<figure><figcaption>Cap</figcaption><img>` rebuilt into a figure whose
+    /// re-render moved the caption to the end. The bytes are well formed and
+    /// the element is still a figure, which is exactly why this had to be
+    /// checked rather than assumed - the reorder is silent, and silent is the
+    /// one thing this rule forbids. `figure_panel` captions from the first
+    /// non-blank `<figcaption>` wherever it sits, which is right for a mode
+    /// allowed to normalize and wrong for this one, so the test is made here
+    /// instead of moved into it.
+    ///
+    /// Read off ELEMENTS only. Text and comments between the two are margins as
+    /// far as ORDER goes, and a non-blank text node after the caption makes the
+    /// rebuild several blocks rather than a figure, which the shape test above
+    /// already refuses.
+    fn roundtrip_keeps_rebuilt_figure(h: &Handle, blocks: &[BlockNode]) -> bool {
+        let [BlockNode::Figure(figure)] = blocks else {
+            return false;
+        };
+        let captions_last = h
+            .children
+            .borrow()
+            .iter()
+            .filter_map(Self::tag)
+            .next_back()
+            .is_some_and(|tag| tag == "figcaption");
+        if !captions_last {
+            return false;
+        }
+        match *figure.target {
+            FigureTarget::Image(_)
+            | FigureTarget::CodeBlock(_)
+            | FigureTarget::BlockQuote(_)
+            | FigureTarget::Table(_) => true,
+            FigureTarget::Paragraph(_) => false,
+        }
     }
 
     /// `<figure class="carve-figure-panel">` back to the node it wrapped: the

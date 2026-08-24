@@ -15,8 +15,9 @@
 use carve::{html_to_carve, to_html, HtmlImportMode, HtmlImportOptions};
 
 /// The seven the generic block arm reaches. `<div>` is not among them - it maps
-/// to a Carve div - and `<figure>` is not either: its own roundtrip guard is
-/// about a loss this list does not carry, and the control below holds it there.
+/// to a Carve div - and `<figure>` is not either: it has its own per-target
+/// roundtrip rule (markup-carve/carve#1704), and the control below holds it
+/// there.
 const SECTIONING: [&str; 7] = [
     "article", "aside", "footer", "header", "main", "nav", "section",
 ];
@@ -80,11 +81,13 @@ fn the_section_this_family_writes_for_a_heading_reads_back_as_that_heading() {
 fn a_wrapper_carve_cannot_spell_is_still_preserved_in_roundtrip() {
     // THE NEAR MISS, and the reason the fix is a list rather than "stop
     // raw-preserving block elements". `<figure>` reaches the same arm and must
-    // keep reaching it: a figure around a paragraph writes a caption line that
-    // reads back as literal prose, so unwrapping it trades a reported loss for
-    // a silent one (carve#1286).
+    // keep reaching it for the targets no Carve spelling reproduces: a figure
+    // around a PARAGRAPH writes a caption line that reads back as literal
+    // prose, so unwrapping it trades a reported loss for a silent one
+    // (carve#1286, narrowed to the target by markup-carve/carve#1704 - an
+    // IMAGE figure does re-parse and rebuilds).
     let back = import(
-        "<figure id=\"f\"><img src=\"a.png\" alt=\"A\"><figcaption>Cap</figcaption></figure>",
+        "<figure id=\"g\"><p>x</p><figcaption>Cap</figcaption></figure>",
         HtmlImportMode::Roundtrip,
     );
     assert!(

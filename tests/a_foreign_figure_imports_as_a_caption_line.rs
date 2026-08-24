@@ -213,18 +213,18 @@ fn control_the_own_output_figure_group_still_round_trips() {
     assert_eq!(carve::to_html(&import(&html)), html);
 }
 
-/// ROUNDTRIP MODE keeps the original bytes for a foreign figure, with the
-/// `raw-preserved` warning it has always carried. The default mode's rebuild
-/// must not reach into it.
+/// ROUNDTRIP MODE keeps the original bytes for a foreign figure NO CARVE
+/// SPELLING REPRODUCES, with the `raw-preserved` warning it has always carried
+/// (markup-carve/carve#1704 narrowed this from every figure to those).
 #[test]
-fn roundtrip_mode_still_preserves_a_foreign_figure_as_raw_html() {
+fn roundtrip_mode_still_preserves_a_figure_no_spelling_reproduces() {
     let options = HtmlImportOptions {
         mode: HtmlImportMode::Roundtrip,
         ..HtmlImportOptions::default()
     };
     for html in [
-        "<figure><img src=\"i.png\" alt=\"a\"><figcaption>cap</figcaption></figure>",
         "<figure><p>x</p><figcaption>cap</figcaption></figure>",
+        "<figure><ul><li>a</li></ul><figcaption>cap</figcaption></figure>",
     ] {
         let result = html_to_carve(html, &options).expect("imports");
         assert!(
