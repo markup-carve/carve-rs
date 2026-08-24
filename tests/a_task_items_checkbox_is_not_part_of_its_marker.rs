@@ -66,13 +66,14 @@ fn writes_a_fence_after_a_first_paragraph_at_the_content_column() {
 /// Item attributes DO move the column, because they are marker. `-{#k} ` is six
 /// wide, so the content column is 6 - not the ten `-{#k} [x] ` occupies.
 ///
-/// ONLY THE WRITTEN COLUMN IS ASSERTED, deliberately. The engines' READERS do
-/// not agree what `-{#k} [x] `'s content column is - carve-js reads 6, this
-/// engine and carve-php read 2 - so the heading below is paragraph text here
-/// whichever column is written, and it was before this fix too (it was written
-/// at 10 and read the same way). That divergence is a parser question, filed
-/// separately; asserting a round-trip here would pin a reading this engine does
-/// not have.
+/// THE READER NOW AGREES, which it did not when this test was written. The
+/// three engines read `-{#k} [x] `'s content column three ways - carve-js 6,
+/// this engine and carve-php 2 - so the heading below was paragraph text here
+/// whichever column the writer chose. carve#1692 ruled for carve-js and
+/// carve-rs#1372 moved this reader, so the source below now reads as a heading
+/// inside the item and the round-trip means what it says. The reading itself is
+/// pinned in `an_items_attribute_block_moves_its_content_column.rs`; this test
+/// stays about the WRITER.
 #[test]
 fn counts_item_attributes_into_the_column_and_the_checkbox_out_of_it() {
     holds("-{#k} [x] {#h}\n      # h\n");
