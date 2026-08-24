@@ -535,6 +535,9 @@ const IMPLEMENTED: &[&str] = &[
     // blank line cannot.
     "one-consumed-boolean-spells-the-looseness-no-blank-line-can",
     "the-writer-spells-looseness-only-where-a-blank-line-cannot",
+    // markup-carve/carve#1662: an indented lone image is a paragraph, and the
+    // rendered HTML cannot say so. Implemented by markup-carve/carve-rs#1347.
+    "a-lone-indented-image-is-a-paragraph-and-its-html-cannot-say-so",
 ];
 
 // Spec-main categories tracked by separate implementation work. Keep them
