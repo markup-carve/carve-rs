@@ -1,7 +1,7 @@
 //! HTML5-to-Carve migration boundary.
 
 use crate::ast::*;
-use crate::escape::is_dangerous_attr_name;
+use crate::escape::{is_dangerous_attr_name, sanitize_attr_value};
 use crate::extension::{
     label_default, HeadingIdOptions, LABEL_CODE_GROUP, LABEL_ENDNOTES, LABEL_INDEX_BACKREF,
     LABEL_TABS_GROUP,
@@ -92,6 +92,16 @@ report_vocabulary!(HtmlImportDiagnosticCode {
     ElementDropped => "element-dropped",
     ElementUnwrapped => "element-unwrapped",
     AttributeDropped => "attribute-dropped",
+    /// An attribute the policy refused to represent as a Carve attribute, and
+    /// that reached the output ANYWAY, inside the bytes of an element
+    /// `roundtrip` keeps whole (markup-carve/carve-js#1468).
+    ///
+    /// NOT `AttributeDropped` carrying a different message. The two are
+    /// opposite facts about the same attribute, and a consumer that filters on
+    /// the code rather than reading the prose would be told a drop happened
+    /// that did not - which is the row somebody acts on, because `roundtrip` is
+    /// the mode `docs/html-import.md` calls unsafe for untrusted input.
+    AttributePreserved => "attribute-preserved",
     StyleUnmapped => "style-unmapped",
     TableDegraded => "table-degraded",
     RawPreserved => "raw-preserved",
@@ -192,6 +202,35 @@ pub enum HtmlImportError {
     SourceUnspellable,
 }
 
+/// One row of the report, with what it takes to put it in the order the page
+/// promises and what it takes to restate it if the element it is about turns
+/// out to be preserved whole (markup-carve/carve-js#1468).
+///
+/// `owner` and `preserved` are filled in by `attrs` alone, and only for an
+/// attribute it REFUSED. A refusal is a claim about what the output lost, and
+/// the walk cannot know yet whether the output keeps the element verbatim;
+/// recording both readings where the attribute is known, and swapping at the
+/// arm that knows the outcome, is what keeps the pair from drifting into two
+/// hand-maintained wordings.
+struct DiagnosticEntry {
+    at: usize,
+    diagnostic: HtmlImportDiagnostic,
+    owner: Option<Handle>,
+    preserved: Option<(HtmlImportDiagnosticCode, String, HtmlImportSeverity)>,
+}
+
+/// One attribute the policy refused, as the parts both of its readings are
+/// built from: what it IS (`subject`), why it was refused (`reason`, empty
+/// where the subject says it), how loud the DROP is, and whether the thing
+/// riding into preserved bytes is live.
+struct RefusedAttribute<'a> {
+    tag: &'a str,
+    subject: &'a str,
+    reason: &'a str,
+    severity: HtmlImportSeverity,
+    live: bool,
+}
+
 struct Importer<'a> {
     opts: &'a HtmlImportOptions,
     /// Whether this import is the one that WRITES SOURCE (`html_to_carve`),
@@ -213,7 +252,7 @@ struct Importer<'a> {
     /// ELEMENT. The vector is built in construction order and sorted by that
     /// position on the way out, so a tie keeps the order the rows were built
     /// in - which for one element's attributes is the order it spells them.
-    diagnostics: Vec<(usize, HtmlImportDiagnostic)>,
+    diagnostics: Vec<DiagnosticEntry>,
     /// Every node of the parsed tree, numbered in DOCUMENT ORDER
     /// (markup-carve/carve#1586).
     ///
@@ -401,28 +440,116 @@ impl<'a> Importer<'a> {
                 // `usize::MAX`, so the marker stays where a reader needs it -
                 // at the END of the report - rather than sorting to wherever
                 // the row it replaced happened to sit.
-                *last = (
-                    usize::MAX,
-                    HtmlImportDiagnostic {
+                *last = DiagnosticEntry {
+                    at: usize::MAX,
+                    diagnostic: HtmlImportDiagnostic {
                         code: HtmlImportDiagnosticCode::DiagnosticsTruncated,
                         message: "HTML import diagnostics limit reached".into(),
                         severity: HtmlImportSeverity::Error,
                         path: None,
                     },
-                );
+                    owner: None,
+                    preserved: None,
+                };
             }
             return;
         }
         let at = self.position_of(node);
-        self.diagnostics.push((
+        self.diagnostics.push(DiagnosticEntry {
             at,
-            HtmlImportDiagnostic {
+            diagnostic: HtmlImportDiagnostic {
                 code,
                 message,
                 severity,
                 path: Some(path.into()),
             },
-        ));
+            owner: None,
+            preserved: None,
+        });
+    }
+
+    /// An attribute this importer will not write as a Carve attribute,
+    /// reported in BOTH of the readings the walk cannot yet choose between
+    /// (markup-carve/carve-js#1468).
+    ///
+    /// The row goes out as `attribute-dropped`, byte for byte the message it
+    /// has always carried - the spec's `html-import` report fixtures pin that
+    /// wording. `preserve_own_attributes` turns it into `attribute-preserved`
+    /// where the element turned out to be kept whole, and the two messages are
+    /// built here from the same subject and the same reason, so the pair
+    /// cannot say two different things about one attribute.
+    ///
+    /// `live` is the half that decides severity, and it is the SAFETY test
+    /// rather than the old severity: an event handler, an active-content sink
+    /// or a value the renderer's sanitizer would blank is in the output and
+    /// executable, in a mode `docs/html-import.md` calls unsafe for untrusted
+    /// input. A dropped handler already spends `Warning`, so a preserved one
+    /// spending `Warning` too would tell a filter nothing about which of the
+    /// two it is looking at. `Error` is not a failed import here; it is the
+    /// only level left that separates them.
+    fn refuse_attribute(&mut self, node: &Handle, path: &str, refusal: RefusedAttribute<'_>) {
+        let RefusedAttribute {
+            tag,
+            subject,
+            reason,
+            severity,
+            live,
+        } = refusal;
+        self.diag(
+            HtmlImportDiagnosticCode::AttributeDropped,
+            format!("Dropped {subject} on <{tag}>{reason}"),
+            severity,
+            path,
+            node,
+        );
+        if let Some(entry) = self.diagnostics.last_mut() {
+            // NOT when the cap swallowed the row: `diag` replaces the last
+            // entry with the truncation marker there, and hanging a preserved
+            // reading on that would restate the marker instead of an attribute.
+            if entry.diagnostic.code != HtmlImportDiagnosticCode::AttributeDropped {
+                return;
+            }
+            entry.owner = Some(node.clone());
+            entry.preserved = Some((
+                HtmlImportDiagnosticCode::AttributePreserved,
+                format!(
+                    "Preserved {subject} on <{tag}> in the raw HTML this element is kept as{reason}"
+                ),
+                if live {
+                    HtmlImportSeverity::Error
+                } else {
+                    HtmlImportSeverity::Info
+                },
+            ));
+        }
+    }
+
+    /// The element's OWN refused-attribute rows, restated as what the
+    /// preserved bytes make them (markup-carve/carve-js#1468).
+    ///
+    /// Every raw-preserve arm calls this on the element it is about to hand
+    /// back verbatim. Matching on the NODE rather than on the path is what
+    /// keeps it to the element's own rows: a descendant's row names a deeper
+    /// path but a different node, and rewriting one would claim something this
+    /// arm did not decide.
+    ///
+    /// Rewriting in place keeps each row's position in the vector, so the
+    /// attribute rows still stand ahead of the `raw-preserved` row for the same
+    /// element - `report` sorts by document position and the sort is stable.
+    fn preserve_own_attributes(&mut self, node: &Handle) {
+        for entry in &mut self.diagnostics {
+            let Some(owner) = entry.owner.as_ref() else {
+                continue;
+            };
+            if !Rc::ptr_eq(owner, node) {
+                continue;
+            }
+            if let Some((code, message, severity)) = entry.preserved.take() {
+                entry.diagnostic.code = code;
+                entry.diagnostic.message = message;
+                entry.diagnostic.severity = severity;
+            }
+        }
     }
 
     /// Where a losing element sits in the document, as the number the
@@ -466,11 +593,8 @@ impl<'a> Importer<'a> {
     /// The report, in the order docs/html-import.md states.
     fn report(&mut self) -> Vec<HtmlImportDiagnostic> {
         let mut entries = std::mem::take(&mut self.diagnostics);
-        entries.sort_by_key(|(at, _)| *at);
-        entries
-            .into_iter()
-            .map(|(_, diagnostic)| diagnostic)
-            .collect()
+        entries.sort_by_key(|entry| entry.at);
+        entries.into_iter().map(|entry| entry.diagnostic).collect()
     }
     fn is_block_tag(tag: &str) -> bool {
         matches!(
@@ -915,12 +1039,16 @@ impl<'a> Importer<'a> {
                     } else {
                         "active-content"
                     };
-                    self.diag(
-                        HtmlImportDiagnosticCode::AttributeDropped,
-                        format!("Dropped {what} attribute {name} on <{tag}>"),
-                        HtmlImportSeverity::Warning,
-                        path,
+                    self.refuse_attribute(
                         handle,
+                        path,
+                        RefusedAttribute {
+                            tag: &tag,
+                            subject: &format!("{what} attribute {name}"),
+                            reason: "",
+                            severity: HtmlImportSeverity::Warning,
+                            live: true,
+                        },
                     );
                 } else if name == "id" {
                     out.id = Some(value);
@@ -974,12 +1102,16 @@ impl<'a> Importer<'a> {
                     // The round-trip provenance markers this engine WRITES.
                     // Reading one back as an ordinary attribute would let an
                     // import restate a source the document no longer has.
-                    self.diag(
-                        HtmlImportDiagnosticCode::AttributeDropped,
-                        format!("Dropped round-trip marker attribute {name} on <{tag}>"),
-                        HtmlImportSeverity::Info,
-                        path,
+                    self.refuse_attribute(
                         handle,
+                        path,
+                        RefusedAttribute {
+                            tag: &tag,
+                            subject: &format!("round-trip marker attribute {name}"),
+                            reason: "",
+                            severity: HtmlImportSeverity::Info,
+                            live: false,
+                        },
                     );
                 } else if is_semantic_span_tag(&tag) && name == tag {
                     // THE MARKER OWNS THIS KEY. A compact semantic span is
@@ -991,12 +1123,16 @@ impl<'a> Importer<'a> {
                     // hid this by refusing `cite` on everything but a
                     // `<blockquote>`; naming the drop is the honest form
                     // (carve-rs#1060).
-                    self.diag(
-                        HtmlImportDiagnosticCode::AttributeDropped,
-                        format!("Dropped attribute {name} on <{tag}>: the semantic span's marker owns that key"),
-                        HtmlImportSeverity::Info,
-                        path,
+                    self.refuse_attribute(
                         handle,
+                        path,
+                        RefusedAttribute {
+                            tag: &tag,
+                            subject: &format!("attribute {name}"),
+                            reason: ": the semantic span's marker owns that key",
+                            severity: HtmlImportSeverity::Info,
+                            live: false,
+                        },
                     );
                 } else if name == "srcset" {
                     // REFUSED ON THE WAY IN, and the one refusal here that is
@@ -1013,12 +1149,24 @@ impl<'a> Importer<'a> {
                     // refusal here neither waits on that nor duplicates it:
                     // admitting the attribute would be widening retention, and
                     // that is its own call.
-                    self.diag(
-                        HtmlImportDiagnosticCode::AttributeDropped,
-                        format!("Dropped list-valued URL attribute {name} on <{tag}>"),
-                        HtmlImportSeverity::Warning,
-                        path,
+                    // The `live` half is measured on the VALUE here rather
+                    // than asserted: this refusal is a retention decision and
+                    // not a safety one, so a plain `srcset="a.png 1x"` in
+                    // preserved bytes is harmless. One carrying a denied scheme
+                    // past the head - the shape this refusal exists for - is
+                    // exactly what `sanitize_attr_value` blanks, and in raw
+                    // bytes the sanitizer never sees it.
+                    let live = sanitize_attr_value(&name, &value).is_empty() && !value.is_empty();
+                    self.refuse_attribute(
                         handle,
+                        path,
+                        RefusedAttribute {
+                            tag: &tag,
+                            subject: &format!("list-valued URL attribute {name}"),
+                            reason: "",
+                            severity: HtmlImportSeverity::Warning,
+                            live,
+                        },
                     );
                 } else if !is_attr_identifier(&name) {
                     // No BARE spelling in Carve attribute syntax. The writer's
@@ -1026,12 +1174,19 @@ impl<'a> Importer<'a> {
                     // rejects, so keeping `xlink:href` would emit `xlinkhref`
                     // and the document would claim an attribute nobody wrote.
                     // Losing it loudly beats renaming it quietly.
-                    self.diag(
-                        HtmlImportDiagnosticCode::AttributeDropped,
-                        format!("Dropped attribute {name} on <{tag}>: not a Carve attribute name"),
-                        HtmlImportSeverity::Info,
-                        path,
+                    // Refused for the shape of its NAME, so the value is what
+                    // decides whether the preserved bytes carry something live.
+                    let live = sanitize_attr_value(&name, &value).is_empty() && !value.is_empty();
+                    self.refuse_attribute(
                         handle,
+                        path,
+                        RefusedAttribute {
+                            tag: &tag,
+                            subject: &format!("attribute {name}"),
+                            reason: ": not a Carve attribute name",
+                            severity: HtmlImportSeverity::Info,
+                            live,
+                        },
                     );
                 } else {
                     // EVERYTHING ELSE IS KEPT. Carve's attribute syntax can
@@ -2157,6 +2312,7 @@ impl<'a> Importer<'a> {
                 _ => {
                     self.diagnostics.truncate(reported);
                     self.unspellable.truncate(unspellable);
+                    self.preserve_own_attributes(h);
                     self.diag(
                         HtmlImportDiagnosticCode::RawPreserved,
                         format!("Preserved unsupported <{tag}> element as raw HTML"),
@@ -2265,6 +2421,7 @@ impl<'a> Importer<'a> {
         if self.opts.mode == HtmlImportMode::Roundtrip
             && !ROUNDTRIP_UNWRAPPED_SECTIONING.contains(&tag.as_str())
         {
+            self.preserve_own_attributes(h);
             self.diag(
                 HtmlImportDiagnosticCode::RawPreserved,
                 format!("Preserved unsupported <{tag}> element as raw HTML"),
@@ -4589,6 +4746,7 @@ impl<'a> Importer<'a> {
                 })
             }
             _ if self.opts.mode == HtmlImportMode::Roundtrip => {
+                self.preserve_own_attributes(h);
                 self.diag(
                     HtmlImportDiagnosticCode::RawPreserved,
                     format!("Preserved unsupported <{tag}> element as raw HTML"),

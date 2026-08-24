@@ -66,7 +66,12 @@ fn fidelity(code: HtmlImportDiagnosticCode) -> MigrationFidelity {
         | HtmlImportDiagnosticCode::TableDegraded
         | HtmlImportDiagnosticCode::EncodingAssumed
         | HtmlImportDiagnosticCode::DiagnosticsTruncated => MigrationFidelity::Degraded,
+        // `AttributePreserved` is CARRIED and not DROPPED: it is the row that
+        // says an attribute reached the output inside preserved raw bytes, so
+        // filing it under `Dropped` beside `AttributeDropped` would reintroduce
+        // the same false claim one layer up (markup-carve/carve-js#1468).
         HtmlImportDiagnosticCode::ElementUnwrapped
+        | HtmlImportDiagnosticCode::AttributePreserved
         | HtmlImportDiagnosticCode::RawPreserved
         | HtmlImportDiagnosticCode::StructureSplit => MigrationFidelity::Carried,
     }
