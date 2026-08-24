@@ -131,6 +131,56 @@ def render(schema: dict) -> str:
                     continue  # a typed node; WIRE_FIELDS already closes it
                 untyped_arrays[f"{type_const}.{property_name}.{sub_name}"] = sorted(item_properties)
 
+    # THE PROPERTIES THE SCHEMA PINS WITH `const` (PART 12 section 12(d)).
+    #
+    # A `const` admits exactly ONE value, and the schema writes it precisely
+    # where the field's PRESENCE is the fact - `definition_list.loose` is
+    # `const: true` because absent means each description derives its own
+    # wrapper, so there is no `false` to write. Nothing checked the value, so
+    # this engine's hand-written decoders read each field for the value they
+    # wanted and discarded anything else: `loose: false` decoded, said the
+    # opposite of what the field means, and the caller was told nothing
+    # (carve-rs#1332, markup-carve/carve-js#1418).
+    #
+    # DERIVED, like every other table here. Four properties carry a `const`
+    # today - `strong.boldItalic`, `list.bareMarker`, `citation_group.mode` and
+    # `definition_list.loose` - and they are one rule with four spellings, so
+    # naming them would be the schema written a second time.
+    #
+    # The value is carried as JSON so the runtime check can compare against it
+    # without a second table, and so `true` stays apart from the string `"true"`.
+    #
+    # `type` is EXCLUDED. Every node's `type` is a `const`, so including it would
+    # claim all of them - and section 12(c) already rules on a node's type with
+    # its own error. Two producers of one rule is the hazard, not the gap.
+    const_fields: dict[str, list[tuple[str, str]]] = {}
+    for definition in defs.values():
+        properties = definition.get("properties")
+        if not properties:
+            continue
+        type_const = properties.get("type", {}).get("const")
+        if not isinstance(type_const, str):
+            continue
+        pinned = [
+            (property_name, json.dumps(property_schema["const"]))
+            for property_name, property_schema in sorted(properties.items())
+            if property_name != "type" and isinstance(property_schema, dict) and "const" in property_schema
+        ]
+        if pinned:
+            const_fields[type_const] = pinned
+
+    def pair_table(entries: dict[str, list[tuple[str, str]]], name: str, doc: str) -> str:
+        rows = "".join(
+            '    ("%s", &[%s]),\n'
+            % (key, ", ".join('("%s", %s)' % (f, json.dumps(v)) for f, v in pairs))
+            for key, pairs in sorted(entries.items())
+        )
+        return (
+            "/// %s\n"
+            "#[rustfmt::skip]\n"
+            "pub(crate) const %s: &[(&str, &[(&str, &str)])] = &[\n%s];\n" % (doc, name, rows)
+        )
+
     def table(entries: dict[str, list[str]], name: str, doc: str) -> str:
         rows = "".join(
             '    ("%s", &[%s]),\n' % (key, ", ".join('"%s"' % f for f in fields))
@@ -166,6 +216,13 @@ def render(schema: dict) -> str:
             "WIRE_UNTYPED_ARRAY_FIELDS",
             "Properties the schema names for an untyped record in an array,\n"
             "/// keyed by the `type.property` that holds it.",
+        )
+        + "\n"
+        + pair_table(
+            const_fields,
+            "WIRE_CONST_FIELDS",
+            "The one value the schema admits for each `const`-pinned property,\n"
+            "/// as JSON, keyed by node type (PART 12 section 12(d)).",
         )
     )
 
