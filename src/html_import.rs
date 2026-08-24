@@ -325,6 +325,31 @@ const FOOTNOTE_DEFINITION_BLOCKS: [&str; 7] =
 /// is one level above the paragraph the back-anchor sits in.
 const FOOTNOTE_WRAPPER_BLOCKS: [&str; 4] = ["div", "li", "section", "aside"];
 
+/// The generic sectioning wrappers `roundtrip` UNWRAPS instead of preserving.
+///
+/// `roundtrip` raw-preserves only what Carve CANNOT express, and none of these
+/// seven is such a shape: what they carry is blocks, which Carve spells exactly,
+/// and the wrapper itself stands for no Carve construct at all. Preserving one
+/// therefore keeps no meaning the language is missing - it replaces headings,
+/// lists and paragraphs the language spells with an opaque `=html` block.
+///
+/// It is not a corner. This engine family renders EVERY top-level heading inside
+/// a `<section id>`, so `roundtrip` over this engine's own output came back as a
+/// document in which every heading was an HTML blob and nothing was editable
+/// Carve any more. Both answers are fixed points - the raw block re-renders to
+/// the same bytes - which is precisely why "it round-trips" cannot settle it:
+/// the raw one loses no data, it loses the language
+/// (ruled at markup-carve/carve#1696, and what carve-js already did).
+///
+/// `<aside>` reaches this list only when it is NOT a rendered callout;
+/// `container_from` claims that shape several arms earlier. `<figure>` is
+/// deliberately absent: its own roundtrip guard is about a loss this list does
+/// not carry, since a figure around a paragraph or a list has no caption line
+/// that reads back (carve#1286).
+const ROUNDTRIP_UNWRAPPED_SECTIONING: [&str; 7] = [
+    "article", "aside", "footer", "header", "main", "nav", "section",
+];
+
 /// A footnote-reference candidate: the anchor, the definition block its
 /// fragment resolves to, and the fragment itself.
 struct FootnoteCandidate {
@@ -2146,7 +2171,9 @@ impl<'a> Importer<'a> {
                 pos: None,
             })]);
         }
-        if self.opts.mode == HtmlImportMode::Roundtrip {
+        if self.opts.mode == HtmlImportMode::Roundtrip
+            && !ROUNDTRIP_UNWRAPPED_SECTIONING.contains(&tag.as_str())
+        {
             self.diag(
                 HtmlImportDiagnosticCode::RawPreserved,
                 format!("Preserved unsupported <{tag}> element as raw HTML"),
