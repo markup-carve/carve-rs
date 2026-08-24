@@ -2842,10 +2842,7 @@ impl<'a> Importer<'a> {
         // (markup-carve/carve-rs#1342). Those three are content
         // (markup-carve/carve#1628), so they are not a margin and this is not
         // theirs to drop.
-        let is_blank_text = |n: &Handle| match &n.data {
-            NodeData::Text { contents } => contents.borrow().chars().all(is_layout_space),
-            _ => false,
-        };
+        let is_blank_text = dom_text_is_layout_only;
         if own_output {
             host.retain(|(_, c)| !is_blank_text(c));
         } else {
@@ -4946,7 +4943,11 @@ fn remove_footnote_separator(first: &Handle) {
 fn is_footnote_chrome_node(node: &Handle) -> bool {
     match &node.data {
         NodeData::Comment { .. } => true,
-        NodeData::Text { contents } => contents.borrow().trim().is_empty(),
+        // MEASURED (markup-carve/carve-rs#1345): read through `str::trim`, a text
+        // node holding one U+00A0 immediately before the separator was chrome, so
+        // the walk stepped over it and the content space was gone from both
+        // exits. The same slot holding an ordinary word kept it.
+        NodeData::Text { .. } => dom_text_is_layout_only(node),
         _ => false,
     }
 }
@@ -4981,13 +4982,16 @@ fn strip_footnote_backlinks(block: &Handle, identities: &[String], fragments: &[
         ) {
             continue;
         }
+        // MEASURED (markup-carve/carve-rs#1345): a `<sup>` holding the backlink
+        // and one U+00A0 was read as emptied and detached, taking the content
+        // space with it; the same `<sup>` holding a word survived as `{^Z^}`.
         let emptied = parent
             .children
             .borrow()
             .iter()
             .all(|child| match &child.data {
                 NodeData::Element { .. } => false,
-                NodeData::Text { contents } => contents.borrow().trim().is_empty(),
+                NodeData::Text { .. } => dom_text_is_layout_only(child),
                 _ => true,
             });
         if emptied {
@@ -5015,7 +5019,12 @@ fn footnote_reference_site(reference: &Handle) -> Handle {
             NodeData::Element { .. } if !Rc::ptr_eq(child, reference) => {
                 return reference.clone();
             }
-            NodeData::Text { contents } if !contents.borrow().trim().is_empty() => {
+            // MEASURED (markup-carve/carve-rs#1345): read through `str::trim`, a
+            // `<sup>` holding one U+00A0 beside the anchor counted as holding
+            // nothing else, so the whole `<sup>` became the reference site and the
+            // content space went with it. A word there kept the `<sup>` as
+            // `{^Z[^1]^}`.
+            NodeData::Text { .. } if !dom_text_is_layout_only(child) => {
                 return reference.clone();
             }
             _ => {}
@@ -5193,6 +5202,32 @@ fn is_semantic_span_tag(tag: &str) -> bool {
 /// same run: `<p>a\nb</p>` is one space between two words, not a break.
 fn is_layout_space(ch: char) -> bool {
     matches!(ch, ' ' | '\t' | '\n' | '\r' | '\u{000c}')
+}
+
+/// Whether a RAW-DOM node is a text node carrying no CONTENT - every character
+/// it holds is a layout space, so dropping it drops nothing the author wrote.
+///
+/// ONE PLACE, because this file kept re-deciding the question at each site, and
+/// every site that reached for `str::trim` decided it wrong. `str::trim` and
+/// `char::is_whitespace` both read U+00A0, U+202F and U+3000 as whitespace, and
+/// markup-carve/carve#1628 rules those three CONTENT - measured, not assumed: a
+/// lone U+00A0 line parses to a paragraph where a lone space line is a blank
+/// line. So a site that trims is not asking "is this a margin", it is asking
+/// "is this whitespace", and for these three characters the two answers differ
+/// and the difference is a DELETION.
+///
+/// Four defects came out of that, each found only by fixing the previous one:
+/// markup-carve/carve-rs#1336 (a `<div>` holding one U+00A0 built no paragraph
+/// and the document came back empty), markup-carve/carve-rs#1339 (a
+/// `<figcaption>` holding one was destroyed), markup-carve/carve-rs#1342 (one
+/// inside a `<figure>` deleted from both exits) and markup-carve/carve-rs#1345
+/// (the three footnote-detach chrome tests below). A named predicate is what
+/// stops the next spelling being written.
+fn dom_text_is_layout_only(node: &Handle) -> bool {
+    match &node.data {
+        NodeData::Text { contents } => contents.borrow().chars().all(is_layout_space),
+        _ => false,
+    }
 }
 
 fn collapse(s: &str) -> String {
