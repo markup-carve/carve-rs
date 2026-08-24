@@ -167,13 +167,16 @@ fn the_section_1c_ceiling_reaches_two_spellings_and_no_others() {
     );
 }
 
-fn canonical_tree(source: &str) -> String {
-    fn canonical(value: &serde_json::Value) -> serde_json::Value {
+fn canonical_tree(source: &str, dissolve_section_1c_wrappers: bool) -> String {
+    fn canonical(
+        value: &serde_json::Value,
+        dissolve_section_1c_wrappers: bool,
+    ) -> serde_json::Value {
         match value {
             serde_json::Value::Array(items) => {
                 let mut out: Vec<serde_json::Value> = Vec::with_capacity(items.len());
                 for item in items {
-                    let item = canonical(item);
+                    let item = canonical(item, dissolve_section_1c_wrappers);
                     if let Some(merged) = out.last_mut().and_then(|last| merge_text(last, &item)) {
                         *out.last_mut().expect("checked above") = merged;
                         continue;
@@ -199,7 +202,7 @@ fn canonical_tree(source: &str) -> String {
                         out.insert(key.clone(), child.clone());
                         continue;
                     }
-                    out.insert(key.clone(), canonical(child));
+                    out.insert(key.clone(), canonical(child, dissolve_section_1c_wrappers));
                 }
                 // PART 11 SS1c, applied to BOTH sides rather than allowlisted
                 // on one. The clause is NORMATIVE and says the wrapper is LOST:
@@ -210,8 +213,10 @@ fn canonical_tree(source: &str) -> String {
                 // trees have one spelling between them, and comparing them
                 // as though they had two asks for a fixed point no conforming
                 // writer has (markup-carve/carve#1658, markup-carve/carve#1672).
-                if let Some(content) = section_1c_content(&out) {
-                    return content;
+                if dissolve_section_1c_wrappers {
+                    if let Some(content) = section_1c_content(&out) {
+                        return content;
+                    }
                 }
                 serde_json::Value::Object(out)
             }
@@ -262,7 +267,7 @@ fn canonical_tree(source: &str) -> String {
         .next()
         .expect("the encoder emits one document")
         .expect("this crate's own AST encoder emits JSON");
-    canonical(&encoded).to_string()
+    canonical(&encoded, dissolve_section_1c_wrappers).to_string()
 }
 
 fn corpus_formatter_semantic_idempotent_and_reparseable_inner() {
@@ -295,26 +300,53 @@ fn corpus_formatter_semantic_idempotent_and_reparseable_inner() {
         // It is asserted LAST because it is the strongest of the three, and
         // over the same 1370 documents with no allowlist - carve-php's
         // `CarveFmtCorpusTest::testTheFormattedDocumentParsesToTheSameTree`
-        // manages without one, and an entry here would silence the comparison
-        // whether or not this engine passed it.
+        // manages without one. A tree-changing document must publish a `.fmt`
+        // sidecar below, so the corpus itself declares the exemption without
+        // an engine-local allowlist that could silently outlive the fixture.
         //
         // NARROWED TO PART 11 SS1c, which is normative and names the one place
         // this equality cannot hold: a wrapper its own content spells away is
         // LOST, and `parse(fmt(x)) == parse(x)` is unattainable for such a
-        // document. `canonical_tree` states that ceiling on both sides rather
-        // than exempting a document from the sweep - see `section_1c_content`
-        // above for why it is a narrowing and not a skip.
+        // document. The strict comparison discovers those documents first;
+        // `canonical_tree(..., true)` then states that ceiling on both sides
+        // rather than exempting a document from the sweep. See
+        // `section_1c_content` above for why it is a narrowing and not a skip.
         //
         // COMPARING THE PARSE, NOT THE RENDER. An HTML comparison in this spot
         // would be a check that cannot fail: it is the assertion three lines
         // up. Every one of the eight documents this caught rendered
         // byte-identical HTML, which is why every gate this crate ran was green
         // on all eight (markup-carve/carve-rs#1277).
-        assert_eq!(
-            canonical_tree(&source),
-            canonical_tree(&formatted),
-            "parse(fmt(x)) != parse(x) for {slug}"
-        );
+        let source_tree = canonical_tree(&source, false);
+        let formatted_tree = canonical_tree(&formatted, false);
+        if source_tree != formatted_tree {
+            // A tree-changing canonical form is never inferred locally. The
+            // corpus must publish it, or this sweep is what reports the missing
+            // fixture that the byte-only `.fmt` sweep cannot discover.
+            let sidecar = corpus_dir().join(format!("{slug}.fmt"));
+            let expected = fs::read_to_string(&sidecar).unwrap_or_else(|error| {
+                panic!(
+                    "parse(fmt(x)) != parse(x) for {slug}, but the corpus has no readable {}: {error}",
+                    sidecar.display()
+                )
+            });
+
+            // The fixture is an assertion, not an allowlist. Reusing the
+            // shape-bounded §1c predicate above permits only the one wrapper
+            // dissolution the contract names; every other difference remains
+            // visible. `canonical_tree` recursively walks every object and
+            // array-valued slot, including list items and table rows/cells.
+            assert_eq!(
+                canonical_tree(&source, true),
+                canonical_tree(&formatted, true),
+                "the tree difference for {slug} is more than a PART 11 §1c wrapper loss"
+            );
+            assert_eq!(
+                formatted_tree,
+                canonical_tree(&expected, false),
+                "fmt(source) does not parse to the pinned canonical tree for {slug}"
+            );
+        }
     }
 }
 
