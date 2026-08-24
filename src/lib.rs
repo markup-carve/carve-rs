@@ -47,6 +47,7 @@ mod render_text;
 mod sentinel_run;
 mod source_layout;
 mod stamp;
+pub mod stream;
 mod translit_map;
 mod unicode_nfc;
 mod wire_fields;
@@ -135,6 +136,7 @@ pub use render_markdown::{render_markdown, render_markdown_with_options};
 pub use render_plain::{render_plain_text, render_plain_text_with_options};
 pub use source_layout::{parse_with_source_layout, to_source_layout_json};
 pub use stamp::{needs_review, read_stamp, stamp_carve, Stamp, StampForm};
+pub use stream::{try_render_html_streaming, StreamOutcome};
 
 /// Parse a Carve source string and render it as HTML in one call.
 ///
