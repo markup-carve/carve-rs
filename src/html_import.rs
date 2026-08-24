@@ -1617,11 +1617,12 @@ impl<'a> Importer<'a> {
                 // does, and renders it with no generated id - so the lift has to
                 // reach this arm as well, not only the `<aside>` one below.
                 let (title, body, body_paths) = self.admonition_title(&children, path, depth)?;
+                let (label, body, body_paths) = self.container_label(body, body_paths, depth)?;
                 return Ok(vec![BlockNode::Admonition(Admonition {
                     attrs,
                     kind,
                     title,
-                    label: None,
+                    label,
                     children: self.blocks_at(&body, Some(&body_paths), path, depth + 1)?,
                     pos: None,
                 })]);
@@ -1767,11 +1768,12 @@ impl<'a> Importer<'a> {
                 &kind,
             );
             let (title, body, body_paths) = self.admonition_title(&children, path, depth)?;
+            let (label, body, body_paths) = self.container_label(body, body_paths, depth)?;
             return Ok(vec![BlockNode::Admonition(Admonition {
                 attrs,
                 kind,
                 title,
-                label: None,
+                label,
                 children: self.blocks_at(&body, Some(&body_paths), path, depth + 1)?,
                 pos: None,
             })]);
@@ -1909,6 +1911,93 @@ impl<'a> Importer<'a> {
             body.push(child.clone());
         }
         Ok((title, body, body_paths))
+    }
+
+    /// PART 9 §10's grouping `[label]`, taken back off the paragraph the
+    /// renderer degraded it to.
+    ///
+    /// The renderer surfaces an unconsumed label as `<p class="div-label">`, so
+    /// that an extension nobody loaded does not swallow what the author wrote.
+    /// Importing it as an ordinary paragraph is render-neutral on every
+    /// container but ONE - and that one is the reason this exists. `::: figure`
+    /// with NO title and NO label is a composite figure (§4c), so moving the
+    /// label off the opener changed the ELEMENT: `::: figure [g]` rendered
+    /// `<div class="figure">` and came back as `<figure
+    /// class="carve-figure-group">` (markup-carve/carve-rs#1310).
+    ///
+    /// The title has had this lift since it was written; the label never got
+    /// one, and the asymmetry is the whole defect. It also ends a second loss
+    /// on every container: a label is RAW, and a paragraph is not, so
+    /// `::: figure [a *b*]` came back with the asterisk escaped and said
+    /// something new on each format pass.
+    ///
+    /// THE FIRST ELEMENT ONLY, unlike the title, which is lifted from wherever
+    /// it stands. The renderer writes the label immediately after the title and
+    /// before the body, so first is where its own output puts it - and a
+    /// paragraph found further down would be MOVED to the opener rather than
+    /// recognized, which changes a document instead of restoring one.
+    fn container_label(
+        &mut self,
+        body: Vec<Handle>,
+        body_paths: Vec<String>,
+        depth: usize,
+    ) -> Result<(Option<String>, Vec<Handle>, Vec<String>), HtmlImportError> {
+        let Some(at) = body.iter().position(|child| Self::tag(child).is_some()) else {
+            return Ok((None, body, body_paths));
+        };
+        if !is_div_label(&body[at]) {
+            return Ok((None, body, body_paths));
+        }
+        // TEXT ONLY. The field is a raw `String` and the writer emits it raw, so
+        // lifting a paragraph holding markup would flatten the markup and lose
+        // it without a word.
+        let element_children = body[at].children.borrow();
+        if element_children.iter().any(|c| Self::tag(c).is_some()) {
+            return Ok((None, body.clone(), body_paths));
+        }
+        let text = Self::text(&body[at]);
+        drop(element_children);
+        // A LABEL HOLDING `]` OR A LINE BREAK HAS NO SPELLING. Every reader of
+        // this run takes it up to the first `]`, with no balance and no escape
+        // (see `write_flat_bracket_run`), so writing one back would not read as
+        // a label at all - it would take the container's own opener line with
+        // it. Left as a paragraph, which is what it already is.
+        if text.contains(']') || text.contains('\n') {
+            return Ok((None, body, body_paths));
+        }
+        let label_path = body_paths[at].clone();
+        // The element itself, for the same reason the title charges for its
+        // own: it is a DOM node `max_nodes` is counting, and a lift that reads
+        // past it without charging lets a document process more than the limit.
+        self.enter(depth + 1)?;
+        let mut own = self.attrs(&body[at], &label_path);
+        if let Some(attrs) = own.as_mut() {
+            attrs.classes.retain(|class| class != "div-label");
+            attrs.order.retain(|slot| *slot != AttrSlot::Class);
+        }
+        if let Some(attrs) =
+            own.filter(|a| a.id.is_some() || !a.classes.is_empty() || !a.key_values.is_empty())
+        {
+            let names = Self::attr_names(&attrs).join(", ");
+            let node = body[at].clone();
+            self.diag(
+                HtmlImportDiagnosticCode::AttributeDropped,
+                format!("Dropped {names} on <p>: a container label has no attribute slot"),
+                HtmlImportSeverity::Warning,
+                &label_path,
+                &node,
+            );
+        }
+        let mut rest = Vec::with_capacity(body.len() - 1);
+        let mut rest_paths = Vec::with_capacity(body_paths.len() - 1);
+        for (i, (child, child_path)) in body.into_iter().zip(body_paths).enumerate() {
+            if i == at {
+                continue;
+            }
+            rest.push(child);
+            rest_paths.push(child_path);
+        }
+        Ok((Some(text), rest, rest_paths))
     }
 
     fn details(
@@ -4353,6 +4442,10 @@ fn has_class(node: &Handle, wanted: &str) -> bool {
 /// [`is_counted_admonition_title`] is the NARROWER question and stays narrow: it
 /// asks whether the renderer's counter produced this id, which is a question
 /// about dropping a derived value, not about what the paragraph IS.
+fn is_div_label(node: &Handle) -> bool {
+    Importer::tag(node).as_deref() == Some("p") && has_class(node, "div-label")
+}
+
 fn is_admonition_title(node: &Handle) -> bool {
     Importer::tag(node).as_deref() == Some("p") && has_class(node, "admonition-title")
 }
