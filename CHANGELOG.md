@@ -9,721 +9,379 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
-- **`TableOfContents` grows the collapsible disclosure the other two engines
-  have** (#1243). `TableOfContentsOptions` gains `collapsible`, `summary`
-  (default `Table of Contents`) and `open`, and with `collapsible` set the
-  injector writes `<details class="toc"><summary>...</summary>` instead of
-  `<nav class="toc">`, byte-identical to carve-js's `tableOfContents` and
-  carve-php's `TableOfContentsExtension`. The disclosure emits no `<nav>`, so it
-  takes no `tocNav` accessible name, and `summary` stays an extension option
-  rather than a `labels` key (Extensions §1.5). The `::: toc` directive is
-  unchanged and keeps its bare nav in every engine. The three new fields are an
-  API change for any caller constructing the struct without
-  `..Default::default()`.
-
-- **An HTML import can take the `labels` map the HTML was rendered with**
-  (markup-carve/carve#1500). The derived-name drop matches the English defaults,
-  which catches a document rendered in English and nothing else: one rendered
-  with `tabsGroup = "Registerkarten"` carried a value no default equals, so its
-  generated name was kept and baked into the imported source - and a translated
-  document is exactly the one §16a's map exists to serve.
-  `HtmlImportOptions::labels` closes that; the map layers over the defaults, and
-  leaving it empty changes nothing. The new field is an API change for any caller
-  constructing the struct without `..Default::default()`.
-
-- **`carve lint` on the command line.** The linter existed only as a library
-  API (`carve::lint_carve`), so nothing outside Rust could reach it - including
-  carve-go, which drives this binary over WASI and therefore could expose every
-  output format but not this. `carve lint [files]` reads stdin with no path,
-  accepts `--extensions`, and exits **0** clean, **1** on findings, **2** when a
-  file cannot be read. The line format and those exit codes match carve-js's
-  `carve lint`, so a script that parses one parses the other; the `rule` id is
-  shared across engines by contract while the message prose is per-engine.
-  `--extensions` is the only option accepted - every other flag is refused with
-  exit 2 rather than accepted and ignored.
-
-- **The table-of-contents nav carries an accessible name**
-  (markup-carve/carve#1547, ruling markup-carve/carve#1509, carve-rs#1249).
-  `TableOfContents` and `TocPlacement` write `aria-label` on the `<nav>` from a
-  new `labels` key `tocNav`, default `Table of contents`; an authored
-  `aria-label` still wins, and an empty entry emits no name.
-
-- **`CodeGroup` grows the `mode` option Tabs already had** (carve-rs#1199).
-  `CodeGroupOptions::mode` takes `TabsMode::Css` (the default) or
-  `TabsMode::Aria`; the `Aria` renderer mirrors the Tabs one with
-  `role="tablist"`, `role="tabpanel"` panels bound by `aria-labelledby`, and
-  `hidden` on every unselected panel. `Css` stays the default because `Aria`
-  needs a client script - extensions §13.1.
-
-- **Prebuilt `carve` binaries on every release** (carve#528). macOS on Apple
-  silicon and Intel, Linux on glibc and musl, and Windows, each with a
-  `.sha256` sidecar, plus a Homebrew tap at `markup-carve/carve`. Installing
-  the CLI no longer requires a Rust toolchain.
-
-- **ASCII-folding for auto-generated heading ids**, opt-in
-  (markup-carve/carve-rs#1159, spec PART 9 §12).
-  `Options::with_ascii_heading_ids` takes `AsciiHeadingIds::Fold` - transliterate
-  what the table covers and keep the rest, so `Grüße` is `Grusse` and a CJK
-  heading keeps a usable anchor - or `AsciiHeadingIds::Strict`, which also drops
-  the residue for an id guaranteed to match `[0-9A-Za-z-]`. Orthogonal to
-  `with_lowercase_heading_ids`, and off by default. The transliteration table is
-  the one carve-js and carve-php already carry, ported rather than authored, so
-  the ids are byte-identical across the three engines; `Strict` is what
-  carve-php's extension does and `Fold` is carve-js's default. Zero dependencies:
-  the table is baked, bounded and auditable.
-
-- **Rendered elements say what they are called** (markup-carve/carve#1471, PART
-  9 §16a). An admonition carries an accessible name - `aria-label` from its
-  kind, or `aria-labelledby` pointing at its own title when it has one - the
-  endnotes section is labeled, a task checkbox is named by its item text, and
-  rendered math carries `role="math"`. Authored `aria-label` / `aria-labelledby`
-  wins, so a document that already named an element is unchanged. Nine new
-  `labels` keys (`endnotes` and one per admonition kind) localize the defaults,
-  matching carve-js key for key.
-
-- **A `labels` render option carries the strings the engine writes itself**
-  (markup-carve/carve#1456, PART 9 §16a). One key today, `footnoteBacklink`,
-  defaulting to `Back to reference`, set with `Options::with_label`. Values are
-  text and are escaped where they land, unlike the raw `symbols` map.
-
-- **Table column metadata: `Table::columns` and `TableCell::valign`**
-  (markup-carve/carve#1391, carve-rs#1107). Positional `aligns` / `valigns` /
-  `widths` on the table's attribute run, two-axis cell marker runs, `<colgroup>`
-  widths, and four table-column lint diagnostics. ListTable grows footer groups,
-  column styles and row-group span boundaries; the ProseMirror bridge carries
-  vertical alignment both ways.
-
-- **Explicit head and foot ranges on a pipe table:
-  `{header-rows=N footer-rows=N}`** (carve-rs#1135). Head rows promote their
-  cells to column headers and native `|=` cells still work; a ListTable cell's
-  `{align=… valign=…}` overrides the positional column default per field.
-  A consumed semantic attribute does not reach the HTML.
-
-- **ListTable reads a row-local `header-row` and a cell-local `header`**
-  (markup-carve/carve#1248, carve-rs#1130). Each header group renders its own
-  `<tbody>` and a rowspan is clamped at the group boundary.
-
-- **The `?` marker takes a cell's horizontal alignment from its column**
-  (markup-carve/carve#1408, carve-rs#1126, carve-rs#1129). `?^`, `?~` and `?v`
-  leave the horizontal axis to resolve from the column and supply only the
-  vertical one, and the marker run's axis order is explicit, so a two-axis run
-  reads the same way wherever it is written.
-
-- **`RenderCarveError`, carrying `Depth` and the new `SourceUnspellable`**
-  (carve-rs#1112). Breaking for a caller that matches on `render_carve`'s error,
-  which used to be a depth refusal only. An empty `RawInline` has no Carve
-  source spelling, so it is refused rather than written as `` `{=html}` `` -
-  which reads back as a different node. The parser cannot produce one; parsed
-  documents and every other render target are unchanged.
+- `TableOfContents` grows the collapsible disclosure the other two engines have
+  (#1243): `TableOfContentsOptions` gains `collapsible`, `summary` and `open`,
+  and writes `<details class="toc">` instead of `<nav class="toc">`. The
+  `::: toc` directive is unchanged. The new fields are an API change for a
+  caller constructing the struct without `..Default::default()`.
+- `HtmlImportOptions::labels` takes the `labels` map the HTML was rendered with
+  (markup-carve/carve#1500), so a translated document's derived names are
+  recognized instead of baked into the imported source. Same API caveat as
+  above.
+- `carve lint` on the command line. Reads stdin with no path, accepts
+  `--extensions`, and exits 0 clean, 1 on findings, 2 when a file cannot be
+  read - the line format and exit codes carve-js already uses. Every other flag
+  is refused rather than ignored.
+- A `labels` render option carries the strings the engine writes itself
+  (markup-carve/carve#1456, PART 9 §16a), set with `Options::with_label`.
+  Values are escaped where they land, unlike the raw `symbols` map.
+- Rendered elements say what they are called (markup-carve/carve#1471, PART 9
+  §16a): an admonition, the endnotes section, a task checkbox and rendered math
+  carry an accessible name, localized by nine new `labels` keys. An authored
+  `aria-label` or `aria-labelledby` still wins.
+- The table-of-contents `<nav>` carries an `aria-label` from the new `tocNav`
+  label, default `Table of contents` (markup-carve/carve#1547, #1249).
+- `CodeGroupOptions::mode` takes `TabsMode::Css` (the default) or
+  `TabsMode::Aria`, the option `Tabs` already had (#1199, extensions §13.1).
+- Opt-in ASCII-folding for auto-generated heading ids (#1159, PART 9 §12):
+  `Options::with_ascii_heading_ids` with `AsciiHeadingIds::Fold` or `Strict`.
+  Off by default, no new dependencies, and the ids are byte-identical to
+  carve-js and carve-php.
+- Table column metadata (markup-carve/carve#1391, #1107): `Table::columns` and
+  `TableCell::valign`, positional `aligns` / `valigns` / `widths`, two-axis cell
+  marker runs, `<colgroup>` widths, and four table-column lint diagnostics.
+- Explicit head and foot ranges on a pipe table, `{header-rows=N
+  footer-rows=N}` (#1135). A consumed semantic attribute does not reach the
+  HTML.
+- ListTable reads a row-local `header-row` and a cell-local `header`, rendering
+  one `<tbody>` per header group with a rowspan clamped at the boundary
+  (markup-carve/carve#1248, #1130), and grows footer groups, column styles and
+  row-group span boundaries.
+- The `?` cell marker takes the horizontal axis from its column and supplies
+  only the vertical one - `?^`, `?~`, `?v` (markup-carve/carve#1408, #1126,
+  #1129).
+- A list takes PART 9 §17 L7's consumed `loose` boolean (#1304,
+  markup-carve/carve#1612), which makes `<li><p>x</p></li>` spellable on a
+  one-item list. The attribute never reaches the HTML.
+- A definition list takes the same spelled looseness, published as PART 12 §8's
+  optional `definition_list.loose` field (#1314).
+- Prebuilt `carve` binaries on every release (markup-carve/carve#528): macOS on
+  Apple silicon and Intel, Linux on glibc and musl, and Windows, each with a
+  `.sha256` sidecar, plus a Homebrew tap at `markup-carve/carve`. Installing the
+  CLI no longer requires a Rust toolchain.
+- `RenderCarveError`, carrying `Depth` and the new `SourceUnspellable` (#1112).
+  Breaking for a caller that matches on `render_carve`'s error. An empty
+  `RawInline` has no Carve spelling, so it is refused rather than written as
+  something that reads back as a different node.
 
 ### Changed
 
-- **The writer escapes per opener occurrence, not per unit**
-  (markup-carve/carve#1533, PART 11 §2). A unit that needs the conservative form
-  no longer escapes every candidate in it beside the one that needed it:
-  `\{.note}` where the unit-scoped form wrote `\{\.note\}`. An opener RUN is
-  still escaped whole (`\#\# H`). Canonical writer output changes on 20 corpus
-  documents; the idle-escape ratchet drops from 25 entries to 5.
-
-- **A container's span ends at its last placed child**
-  (markup-carve/carve#1522, markup-carve/carve#1524, PART 12 §4). A `list`,
-  `list_item` or `block_quote` no longer reaches over a definition hoisted out
-  of it, an unattached attribute block, or the blank run that follows it. A
-  container a collected definition emptied spans the markup that opened it.
-  Published `pos` values move on those documents.
-
-- **A `definition_list`'s span ends at its last placed child too**
-  (markup-carve/carve#1530, PART 12 §4). It no longer reaches an attribute line
-  no child covers, a definition hoisted out of a description, or trailing
-  whitespace. Published `pos` values move on those documents.
-
-- **Three blank lines are a hard list boundary** (markup-carve/carve#1430, PART
-  9 §11 N1a). A run of three or more before a compatible sibling marker opens a
+- **Breaking:** the doubled run is the canonical arrow, and `=>` is no longer
+  one (markup-carve/carve#1442, #1155). `<--` `-->` `<-->` `<==` `==>` `<=>`
+  are canonical; `<-` `->` `<->` still render and are deprecated. `key => value`
+  is ordinary prose about code again, and `<=` keeps its glyph.
+- **Breaking:** an empty brace pair is text and a braced hyphen pair is an en
+  dash (markup-carve/carve#1447, markup-carve/carve#1450, #1156). `{//}` `{**}`
+  `{__}` `{~~}` `{^^}` `{,,}` `{==}` `{++}` `{##}` render literally.
+- **Breaking:** a table cell's marker run ends at a space
+  (markup-carve/carve#1259, PART 9 §5 T11). A cell carrying a kind marker,
+  alignment run or attribute block must follow it with a space, so `|=hot= |` is
+  the highlight its author wrote and `|{#x}=R|` is literal text. The run is
+  atomic: a rejected alignment run takes the `=` with it.
+- **Breaking:** a continuation marker attaches only a flush-left block
+  (markup-carve/carve#1436, #1163, PART 9 §17 L3). A line at any other column
+  falls through to the ordinary column rules.
+- **Breaking:** `Figure::target` is now `Box<FigureTarget>` (#1119, #1127), for
+  a caller that constructs or matches a figure through the public AST.
+  `BlockNode` drops from 472 to 272 bytes, so every recursive walk moves less
+  per level.
+- Three blank lines are a hard list boundary (markup-carve/carve#1430, PART 9
+  §11 N1a): a run of three or more before a compatible sibling marker opens a
   new list instead of loosening the current one, at every level. One and two
-  blank lines are unchanged.
-
-- **The canonical writer separates two adjacent sibling lists with that
-  boundary** instead of indenting the later one by a space. The old offset was
-  what existed before a separator was spelled: it returned a list at a column
-  the author never wrote, and it could not survive a third list.
-
-- **A `css`-mode tab and code-group panel carries its own name**
-  (carve-rs#1199, extensions §13.2). Under `css` every radio and label is
-  emitted before every panel, so nothing bound a panel to the control revealing
-  it and the panel was anonymous. Each one now writes `role="group"` plus an
-  `aria-label` holding its tab's label - attribute-escaped, and with no `labels`
-  key because the string comes from the document. An `aria`-mode panel takes
-  neither: it is bound already (§13.3).
-
-- **A deeply nested document costs half the host stack to parse**
-  (carve-rs#1186). The two post-parse walks that run on every parse -
-  `collect_explicit_ids` and `collect_heading_titles` - descend a container's
-  children whether or not the document has a heading, so nesting depth cost
-  stack for a walk that visited nothing. Both are worklists now, in document
-  order. A 200-level container ladder parses in 64KiB where it needed 128KiB.
-
-- **A tab set, a code group and a rendered diagram carry an accessible name**
-  (markup-carve/carve#1468). Each tab was already named by its own `<label>` and
-  the GROUP was anonymous; a diagram fence emitted its source with no role, so a
-  reader heard the markup as prose. `Tabs` and `CodeGroup` write `role="group"`
-  plus a name (`Aria` mode keeps `role="tablist"`), and `FencedRender` writes
-  `role="img"` plus a `label` defaulting to the fence word. An `aria-label`,
-  `aria-labelledby` or `role` the author wrote always wins, matched
-  ASCII-case-insensitively, and the engine's attributes are recorded at the END
-  of the author's attribute order - without that they rendered in map order,
-  which is alphabetical, and the three engines disagreed byte-for-byte on a
-  shape the optional corpus pins.
-
-- **One `labels` map localizes every engine-written string.** `label_default`
-  grows `indexBackref`, `tabsGroup` and `codeGroup`, and the extensions that
-  write those strings read them through the new `RenderContext::label`, so a
-  German document sets `labels` once instead of finding several call sites and
-  silently missing one. An option set on the extension still wins for that
-  instance. PART 9 §16a already required this - "an extension MUST NOT require
-  the host to configure the same text twice".
-
-- **A list item's content is parsed from a worklist, not down the stack**
-  (markup-carve/carve-rs#1165). Lists were the tallest nesting shape by a
-  factor of six and the last recursive descent in the parser; at the 200-level
-  cap `parse`, `parse+drop` and `parseJson` on a list ladder now fit 64KiB
-  where they needed 768KiB (release; 8192KiB to 256KiB in debug), and through
-  wasm `parseJson` needs 64KB of host stack where it needed 200KB. No output
-  changes.
-
-- **A colon container's body is parsed from a worklist, not down the stack**
-  (markup-carve/carve-rs#1165). Nesting costs heap instead of host stack, so a
-  document at the 200-level cap parses in 128KiB where it needed 384KiB
-  (release; 1024KiB to 256KiB in debug) and `to_html` needs 256KiB where it
-  needed 384KiB. This matters on wasm, where the host owns the stack and an
-  overflow takes the module rather than the call
-  (markup-carve/carve-wasm#48). No output changes.
-
-- **A row is a row, in every table section** (markup-carve/carve#1459, PART 10
-  §7). `<thead>` and `<tfoot>` now write one row per line, as `<tbody>` always
-  did. Nothing renders differently - whitespace between rows in table context is
-  not rendered - but the emitted HTML is consistent and diffs read cleanly. All
-  three table paths move: the block renderer, the layout fast path and the
-  list-table extension.
-
-- **A table cell's marker run ends at a space** (markup-carve/carve#1259, PART 9
-  §5 T11). The kind marker `=`, the alignment run and the attribute block are
-  one run, and a cell carrying any of them must follow it with a space; without
-  one there is no run and every character of it is content. `|=hot= |` is the
-  highlight its author wrote rather than a header cell holding `hot=`, `|=a |`
-  is a data cell, and `|{#x}=R|` is literal text. The run is atomic, so a
-  rejected alignment run takes the `=` with it. A cell with no run is unchanged,
-  and the canonical writer already pads every cell, so a formatted document
-  needs no migration.
-
-- **A column's alignment defaults come from the header section**, not from row
-  0 (markup-carve/carve#1259, PART 9 §5 T9). A `|=` cell below the header run is
-  a row header - it heads its row, not its column - so it declares no column
-  default. The two readings agreed until the clause above let a rejected marker
-  run demote a row that used to be all-header, at which point a body cell
-  inherited alignment from a row header, where carve-js and the spec's oracle
-  inherit nothing.
-
-- **Core parsing avoids per-line copies in definition prepasses.** The link
-  definition scan borrows unchanged lines, documents without footnote syntax
-  skip the footnote-definition scan, and ordinary documents reject the
-  colon-ladder specialization before building its line index. Inline parsing
-  appends ordinary ASCII prose in runs and sizes its reusable buffers from the
-  input. On the shared 49 KiB Tier-1 benchmark the prepass changes alone remove
-  about 3,800 allocations per parse.
-
-- **`Figure::target` is now `Box<FigureTarget>`** (#1119). Breaking, for callers
-  that construct or match a figure through the public AST. `Figure` embedded a
-  whole `Table` or `CodeBlock`, which set `BlockNode` at 472 bytes against 264
-  for the next largest variant; it is 272 bytes now. Every recursive walk moves
-  those by value, so a nesting level costs less in stack across parse, clone,
-  drop, render and serialize (markup-carve/carve-wasm#44).
-
-- **The doubled run is the canonical arrow, and `=>` is no longer one**
-  (markup-carve/carve#1442, carve-rs#1155). `<--` `-->` `<-->` and `<==` `==>`
-  `<=>` are canonical; `<-` `->` `<->` still render and are deprecated rather
-  than removed. Breaking: `=>` converts to nothing now, because `key => value`
-  and `Some(x) => x` are ordinary prose about code and silently became an arrow
-  in the rendered output only. `<=` keeps its glyph, which is what forces the
-  left double arrow to grow a character. The hyphen-run pass defers to an arrow
-  at its position, so `-->` is no longer an en dash followed by `>`.
-
-- **An empty brace pair is text, and a braced hyphen pair is an en dash**
-  (markup-carve/carve#1447, markup-carve/carve#1450, carve-rs#1156). `{//}`
-  `{**}` `{__}` `{~~}` `{^^}` `{,,}` `{==}` `{++}` `{##}` render literally; the
-  insertion and comment families take a one-or-more content slot the way the
-  deletion always did. A fully empty substitution is untouched.
-
-- **A continuation marker attaches only a flush-left block**
-  (markup-carve/carve#1436, carve-rs#1163, PART 9 §17 L3). The marker reaches a
-  block beginning at document column 0 and nothing else; a line at any other
-  column falls through to the ordinary column rules. This engine attached a line
-  at any indentation and dropped the column-0 line the marker reaches for.
-
-- **A generated heading id stays out of ProseMirror's authored `id` slot**
-  (carve-rs#1110). `to_prosemirror` omits an id a fresh parse would regenerate,
+  blank lines are unchanged, and the canonical writer separates two adjacent
+  sibling lists with that boundary instead of indenting the later one by a
+  space.
+- The writer escapes per opener occurrence, not per unit
+  (markup-carve/carve#1533, PART 11 §2): `\{.note}` where the unit-scoped form
+  wrote `\{\.note\}`. An opener run is still escaped whole. Canonical writer
+  output changes on 20 corpus documents.
+- A `list`, `list_item` or `block_quote` span ends at its last placed child
+  (markup-carve/carve#1522, markup-carve/carve#1524, PART 12 §4), and a
+  `definition_list`'s does too (markup-carve/carve#1530). Published `pos` values
+  move on those documents.
+- A column's alignment defaults come from the header section, not from row 0
+  (markup-carve/carve#1259, PART 9 §5 T9). A `|=` cell below the header run
+  heads its row, not its column, so it declares no column default.
+- A row is a row in every table section (markup-carve/carve#1459, PART 10 §7):
+  `<thead>` and `<tfoot>` write one row per line, as `<tbody>` always did.
+  Nothing renders differently.
+- A `css`-mode tab and code-group panel carries `role="group"` plus an
+  `aria-label` holding its tab's label (#1199, extensions §13.2). An `aria`-mode
+  panel takes neither, being bound already.
+- A tab set, a code group and a rendered diagram carry an accessible name
+  (markup-carve/carve#1468); `FencedRender` also writes `role="img"`. An
+  authored `aria-label`, `aria-labelledby` or `role` always wins, and the
+  engine's attributes are recorded at the end of the author's attribute order so
+  the three engines agree byte for byte.
+- One `labels` map localizes every engine-written string (PART 9 §16a):
+  `label_default` grows `indexBackref`, `tabsGroup` and `codeGroup`, and the
+  extensions read them through the new `RenderContext::label`. An option set on
+  the extension still wins for that instance.
+- A generated heading id stays out of ProseMirror's authored `id` slot (#1110),
   so the round trip no longer writes it back as an attribute line the author
   never typed. An explicit id, and an ingested id that cannot be regenerated,
   are preserved.
-
-- **A typed layout fast path renders a common document without building the
-  block AST** (carve-rs#1175). An accepted document renders from borrowed
-  source slices without constructing the AST at all. The path scans a proven
-  stateless core subset and falls back for the whole document, before any
-  output is published, wherever a boundary is ambiguous; every accepted corpus
-  document is rendered again through the authoritative pipeline and must come
-  back byte-identical. No output changes.
-
-- **A nesting level costs half the parser's stack** (carve-rs#1165,
-  carve-rs#1177). The cost was frame size, not recursion count: large match arms
-  and node construction move out of the shared `parse_blocks` / `parse_block` /
-  `parse_container` frame, so a level pays only for the arm it takes. A document
-  at the 200-level cap parses in 384KiB where it needed 768KiB. This is what
-  makes a small-stack host - a wasm module's 1 MiB - stop flipping between runs
-  (markup-carve/carve-wasm#48).
-
-- **The AST JSON encoder walks a worklist, not the host stack**
-  (carve-rs#1160, carve-rs#1164). Blocks, inlines and values each become an
-  explicit heap worklist, so `to_json` no longer performs the deepest recursion
-  in the crate on the deepest document the parser accepts. Byte-identical across
-  all 1283 pinned corpus documents, and the depth budget is unchanged:
-  `try_to_json` still refuses past it and `to_json` still panics.
-
-- **The default `to_html` pipeline skips what only the AST needs**
-  (carve-rs#1161). Explicit reference links and images resolve while the inline
-  nodes are built, references and adjacent text coalesce in place, and the HTML
-  facade omits invisible link-definition nodes, duplicate footnote numbering and
-  AST-only cross-reference stamping. No syntax is bypassed; the public parse,
-  JSON, Markdown, plain, ANSI and `fmt` paths keep their AST invariants.
-
-- **`to_html` no longer clones the document it just parsed** (carve-rs#1150),
-  and it carries the cross-reference index the parser already built into
-  rendering instead of rebuilding it from the tree (carve-rs#1152). That takes
-  one whole-document clone and one whole-document index walk out of the
-  source-to-HTML path. The public borrowed-AST renderers keep their defensive
-  clone and their rebuild, because a caller can hand them any tree.
+- A typed layout fast path renders an accepted document from borrowed source
+  slices without building the block AST (#1175). It falls back for the whole
+  document before any output is published wherever a boundary is ambiguous, and
+  every accepted corpus document is rendered again through the authoritative
+  pipeline and must come back byte-identical. No output changes.
+- The default `to_html` pipeline skips what only the AST needs (#1161), no
+  longer clones the document it just parsed, and carries the parser's
+  cross-reference index into rendering instead of rebuilding it (#1150, #1152).
+  The public borrowed-AST renderers keep their defensive clone and rebuild. No
+  output changes.
+- Nesting costs the host stack far less. A list item's content and a colon
+  container's body are parsed from a worklist rather than down the stack
+  (#1165, #1185), the two always-on post-parse walks and `promote_block_images`
+  are worklists (#1186, markup-carve/carve-wasm#44), the AST JSON encoder walks
+  a worklist (#1160, #1164), the block parser returns its large node through a
+  box (#1119), and a nesting level pays only for the match arm it takes (#1177,
+  #1118). Roughly half the previous stack per level, which is what stops a
+  small-stack host such as a wasm module flipping between runs
+  (markup-carve/carve-wasm#48). Output is byte-identical across all 1283 pinned
+  corpus documents.
+- Core parsing avoids per-line copies in the definition prepasses, skips the
+  footnote scan on documents with no footnote syntax, and appends ordinary ASCII
+  prose in runs (#1146); the PART 11 §2b escape-escalation search now offers a
+  minimal form only to the units the writer actually asks about (#1253).
 
 ### Fixed
 
-- **The canonical writer's own output parses back to the same tree** (#1277,
-  PART 11 §1). §1a makes `parse(fmt(x)) == parse(x)` the requirement and calls
-  the HTML form "strictly weaker", and this engine asserted only the weaker one:
-  8 of the 1370 corpus documents parsed differently before and after `fmt` while
-  rendering byte-identical HTML, so every gate was green on all eight. Two
-  readings moved. `- +`, the writer's own spelling for an item emptied by a
-  collected definition, built an item holding an EMPTY PARAGRAPH where carve-js
-  and carve-php build no child at all - the standalone `+` line already filtered
-  it and the marker-line spelling did not (seven documents). And an item whose
-  whole body is a colon container read LOOSE unterminated and TIGHT once the
-  writer supplied the closer; per markup-carve/carve#1602 an explicit closer is
-  a spelling change, so both now read loose, matching carve-php. No corpus
-  document's own HTML, AST or formatted output changes.
-
-- **`carve migrate` exits 2 for a usage error instead of 1** (#1276). Exit 1 on
-  this subcommand already means something else: `--check-loss` uses it for a run
-  that converted the document and found content dropped. With usage errors on 1
-  as well, a gate written as
-  `carve migrate --check-loss in.html > out.crv || echo dropped` reported
-  dropped content when the real problem was a typo in a flag name, and nothing
-  said the conversion had never run. A bad flag, a missing or unknown `--from`,
-  an unknown `--mode`/`--adapter`, too many inputs, an unreadable file and an
-  unwritable report are now 2; exit 1 is left to `--check-loss` alone. carve-js
-  and carve-php already exit 2 for every one of these, and `carve lint` and
-  `carve merge` in this same binary already drew the line in the same place. The
-  render path's `carve --bogusflag` is a separate three-way divergence and is
-  unchanged.
-
-- **The writer freezes the symbol sigil and a cell's rowspan marker**
-  (markup-carve/carve#1609, PART 11 §2 and §6f). `a :rocket: b` came back with a
-  bare `:` and re-parsed as a `symbol` node, rendering a glyph under a configured
-  symbol map; a table cell holding `^` came back bare, re-read as a rowspan
-  marker, and the cell was deleted. `carve migrate` spends the symbol escape too,
-  under all three escaper profiles.
-
-- **An anchor or image with no destination comes back as its content**
-  (markup-carve/carve#1601). `<a>` with no `href`, `<a href="">` and an `<img>`
-  whose `src` is either now import as the span where an attribute survives and
-  the bare content where none does, each with an `element-unwrapped` diagnostic,
-  instead of the literal `[t]()`. The destination PART 9 §25's denylist blanked
-  is never rebuilt. The paragraph an import synthesizes around a bare inline run
-  also drops the whitespace at its two ends, which is inter-element formatting
-  whitespace no target renders and which Carve reads as indentation.
-
-- **`fmt` keeps a heading's leading tab** (markup-carve/carve#1587, PART 11 §1).
-  A heading's marker separator is a run of SPACES and none of it is content, so
-  `## \tx` is an h2 whose title opens with the tab. The writer trimmed it along
-  with the separator's spaces and emitted `## x`, which re-parses to a different
-  title and breaks `to_html(fmt(x)) == to_html(x)`. Leading spaces are still
-  dropped, because the separator run absorbs them. carve-js fixed the same
-  defect as markup-carve/carve-js#1359 and carve-php in its own bump, so this
-  was one rule spelled wrong in three engines.
-
-- **An HTML import reports nothing for a derived endnotes section**
-  (markup-carve/carve#1580, PART 9 §16a). PART 9 §16 writes
-  `<section role="doc-endnotes">` around the notes and no Carve construct spells
-  a `<section>`, so unwrapping one removes nothing an author wrote. The importer
-  reported it as `element-unwrapped` plus an `attribute-dropped` for each of the
-  role and the derived accessible name. Only the derived values go quiet: an
-  authored `class`, or an `aria-label` no default matches, is still reported.
-
-- **An import report is ordered by the losing element's document position**
-  (markup-carve/carve#1586). The list came out in the order this importer's walk
-  constructed the rows in, so a table losing something on both its `<caption>`
-  and a cell reported the cell first, a list reported a stray child before the
-  items above it, and a footnote definition the adapter pass imports reported
-  before the body it is referenced from. carve-php already answered in document
-  order.
-
-- **A table `<caption>` is numbered among the table's child nodes**
-  (markup-carve/carve#1560, PART 12 §16). The step was a literal `caption[1]`
-  that never consulted a position, which is the rank among the captions - a
-  basis the clause's MUST NOT forbids for every kind outside its three
-  exemptions. It agreed with the child index only for a table written on one
-  line, so `<table>` on its own line reported `caption[1]` for a caption that is
-  the second child. carve-php already printed the child index.
-
-- **The `::: footnotes` placement marker is picked per document, not fixed**
-  (#1245). The HTML renderer located the placement block by the fixed in-band
-  string NUL + `carve:footnotes-placement` + NUL. No source and no AST-JSON
-  could spell it, but a tree built through the node API passes through neither
-  normalization door, and a text node carrying that string rendered the endnotes
-  section inside the author's own paragraph. The marker is now allocated from
-  the private-use area against the document, as the parser's definition
-  placeholder (#1214) and the Markdown target's escape carriers (#1216) already
-  are. Ordering, nesting and every rendered id are unchanged.
-
-- **An attribute-less `<div>` unwraps to its content on an HTML import**
-  (markup-carve/carve#1578). The importer wrote a `:::` fence for every `<div>`
-  it met, so `<div>z</div>` came back as three lines where one says the same
-  thing, while carve-js and carve-php both unwrapped it. A bare `<div>` carries
-  no meaning of its own, so the fence is no longer written. The boundary is the
-  attribute rather than the tag: a `<div>` carrying anything the language can
-  hold still writes the container, so `<div id="x">z</div>` is unchanged.
-
-- **A non-`li` child of a list keeps its content and is reported** (#1261). The
-  HTML importer filtered a `<ul>` or `<ol>` down to its `<li>` children and
-  walked only those, so `<ul><div id="stray">z</div><li>a</li></ul>` imported as
-  one item with the text `z` gone and an EMPTY report. Every non-item child now
-  goes through the ordinary block walk and is emitted ahead of the list, keeping
-  its own element and attributes, with an `element-unwrapped` warning naming
-  where it sat. A `<script>` in the same position is still dropped and now says
-  so. carve-js and carve-php filter the same way and stay silent
-  (markup-carve/carve-js#1340), so imported reports diverge until that lands.
-
-- **A derived admonition title id is recognized when the id namespace collides**
-  (#1258, PART 9 §16a). The importer predicted the renderer's counter, `adm-N`,
-  where the renderer writes what its id registry ALLOCATES for that name - so a
-  document whose author took `adm-1` renders `adm-1-2` and the drop was missed,
-  reporting a loss that does not happen. The allocation is modelled now, so the
-  match stays an equality match on the value the renderer would write.
-- **A line block's hard break ends at the boundary, not over the comment line it
-  ends** (#1246, PART 12 §4). Where the line a break ends is a comment-only line
-  the block layer removes, and the break sits inside an inline container, its
-  span covered the whole comment line and overlapped the `comment` node holding
-  those bytes. Published break positions change on that shape, to what carve-js
-  and carve-php already publish.
-
-- **A container ends at the markup that closes it even where its last child is
-  unplaced** (markup-carve/carve#1551, PART 12 §4). A `paragraph` ended at the
-  last child that carried a position, so a line block stanza whose LAST line
-  holds a tab - unplaceable, because the verse text is rebuilt with expanded
-  tabs - ended one past the terminator above that line, leaving the stanza's own
-  last line outside the paragraph holding it. Published `pos` values move on
-  those documents.
-
-- **A consumed caption reports the attributes it drops** (#1257). A table
-  `<caption>` was read for its children with its own attributes never looked at,
-  so an `onclick` on it was stripped in silence where carve-php reported it. It
-  routes through the caption helper the `<figcaption>` sites already used; the
-  same sweep found a `<dd>` with no `<dt>` before it dropping its attributes with
-  its role, and that reports now too. The conversion is unchanged; the report
-  gains the rows.
-
-- **An HTML import rebuilds the container the renderer wrote** (#1240,
-  markup-carve/carve#1502). A callout was unwrapped to its own body and a tab
-  set, a code group and every other named container came back as a generic `div`
-  node carrying a class. The import now inverts `render_admonition`, so any kind
-  survives rather than a list of the ones thought of so far. A titled callout's
-  `<p class="admonition-title">` is lifted into the container it names, the
-  `aria-labelledby` pointing at it goes with it rather than dangling, and the
-  callout's own derived `aria-label` is dropped under PART 9 §16a - a rule that
-  could not reach it while the element was being unwrapped. `<aside>` is also
-  treated as the block element it is, so its children are no longer flattened
-  into an inline run. Imported source and the `html_to_ast` tree both change; a
-  class no fence opener can spell still keeps the generic node.
-
-- **A derived `id` is dropped** (#1240). `drop_derived` only ever searched the
-  key/value attributes, so a derived value in the `id` slot could not be found
-  and any rule for one was a check that could not fire.
-
-- **A diagnostic on a bare inline run is numbered among the body children**
-  (markup-carve/carve#1554, PART 12 §16). The importer wraps such a run in a
-  paragraph, correctly prints no step for the wrapper, and then numbered the run
-  inside it - so `<p>z</p><kbd onclick="x()">K</kbd>` reported `/kbd[1]` where
-  the `<kbd>` is the second body child. Four more sites lift a child out of the
-  list they walk and renumbered what was left: a `<figure>` caption (whose own
-  step had no index at all), a `<details>` summary, a `<dl>` entry, and a
-  composite figure group.
-
-- **A marker at an item's content column opens a sublist, first in the item or
-  not** (markup-carve/carve#1517, PART 9 §24 C3). Only the item's first marker
-  did; a later one folded into the paragraph above it, so the answer depended on
-  a sub-list the document had already closed. A marker on a block quote's lazy
-  continuation is still text.
-
-- **A container starts at its opening markup even where its first child is
-  unplaced** (markup-carve/carve-rs#1247, PART 12 §4). A `paragraph` used to
-  start at the first child that carried a position, so a line block stanza whose
-  first line holds a tab - unplaceable, because the verse text is rebuilt with
-  expanded tabs - began one line below its own first line, and the break ending
-  that line sat outside the paragraph holding it. The start rule does not mirror
-  the end rule: it names where the construct begins, which an unplaced child
-  says nothing about. Published spans move.
-
-- **The AST-JSON ingest replaces U+0000, as the parse boundary already does**
-  (markup-carve/carve-rs#1237, markup-carve/carve-rs#1217,
-  markup-carve/carve#1528, PART 12 §21). `from_json` replaces every NUL a
-  `\u0000` escape carries with U+FFFD, so an ingested document renders like the
-  same document written as source. It closes two holes together: a text node
-  spelling `FOOTNOTES_PLACEMENT_SENTINEL` pulled the endnotes section into
-  itself, and any NUL reached html, markdown and plain verbatim while the
-  canonical writer deleted it, so `fmt` was lossy. A raw control byte in JSON
-  text is still refused, which is RFC 8259 rather than this clause.
-
-- **The canonical writer spells two sibling sub-lists inside a list item**
-  (markup-carve/carve-rs#1228, markup-carve/carve#1501, PART 9 §11 N1a and
-  §10i). A tight item wrote its sub-lists behind the `+` marker at column 0,
-  where a compatible marker dissolves them into the list around the item; they
-  are written at the item's content column now, separated by the boundary. The
-  same repair covers a sub-list below a blockquote in a tight item, and the
-  boundary inside a nested quote no longer carries a trailing space.
-- **An HTML import reads `<div class="math display">` as block math**
-  (markup-carve/carve-rs#1229, markup-carve/carve#1518,
-  markup-carve/carve#1514, PART 9 §18). It came back as a Carve div holding the
-  delimiters as text; it is now the core `$$` display form - a paragraph
-  holding one math node - and never the ``` math ``` extension fence, which
-  without that extension loaded renders as a `language-math` code block.
-
-- **An escape escalation reaches the block that failed, not the document**
-  (#1227, markup-carve/carve#1516, PART 11 §2b). The writer took the
-  conservative form for the whole document as soon as its minimal form did not
-  re-parse, so one needed escape dragged every other candidate along; the
-  fallback now reaches the smallest unit that fails - the inline run, or the
-  block containing it - and every other candidate is written bare.
-
-- **The list writer's marker-column tag is picked per document, not fixed**
-  (markup-carve/carve-rs#1226, markup-carve/carve-js#1289). It was the fixed
-  `U+E005`, so a continuation line the author opened with that character was
-  read as the writer's own tag: the character was eaten and the line written at
-  the item's marker column, moving the block out of the item.
-
-- **A deletion survives an HTML import** (markup-carve/carve-rs#1223). `<del>`
-  shared the strike arm with `<s>` and `<strike>`, so it imported as a strike
-  emphasis and re-rendered as `<s>`; it now maps to `CriticDelete`, the node
-  `{- -}` already renders back to `<del>`. `<s>` and `<strike>` still import as
-  strike. carve-js and carve-php already read `<del>` this way.
-
-- **An HTML import no longer bakes a derived accessible name into source**
-  (markup-carve/carve-rs#1209, markup-carve/carve#1500, markup-carve/carve#1511,
-  PART 9 §16a and Extensions §1.5). An attribute whose value equals what the
-  renderer derives for that element is dropped and every other one is kept, so a
-  diagram fence's own class word, a tab set's or code group's default name, a
-  `css`-mode panel's tab label, an index back-link's composite name, and the
-  `role` beside each stop coming back as authored source. A name that DIFFERS -
-  an author's own, or one rendered from a non-default `labels` map - is kept, and
-  nothing is diagnosed. Ported from markup-carve/carve-js#1296.
-
-- **A math span survives an HTML import** (markup-carve/carve-rs#1208, PART 9
-  §18). `<span class="math inline">\(x\)</span>` - this engine's own output,
-  and what djot.js and pandoc write - and its `math display` twin now read back
-  as `math` nodes instead of generic attributed spans, so the non-HTML writers
-  see math again. Recognition needs the class pair and a matching payload to
-  agree. The block `<div class="math display">` form is left alone pending the
-  ruling in markup-carve/carve#1514.
-
-- **A tab control is `type="button"`, and two marked items select one tab**
-  (markup-carve/carve-rs#1212, markup-carve/carve#1504, extensions §13.3 and
-  §13.5). An `Aria`-mode control carried no `type`, so a tab set or code group
-  inside a `<form>` submitted the form instead of switching panels. And several
-  `selected` items each got their own selection - the first mark now wins and
-  later ones are ignored, in both modes and both extensions, with no diagnostic
-  for a document that over-specifies. `Css` mode is unaffected by the first
-  half: its control is an `<input type="radio">`. Ported from
-  markup-carve/carve-php#1550 and markup-carve/carve-js#1287.
-
-- **The Markdown target's escape carriers are picked per document, not fixed**
-  (markup-carve/carve-rs#1216, markup-carve/carve-js#1289,
-  markup-carve/carve-rs#1218). The target reserved U+E004..U+E007 for the
-  escapes PART 11 §8a and §8b decide on the emitted line, and deleted that range
-  from author content to keep it clear - so an authored one of the four was lost
-  in every context measured, a fenced code block included. The carriers are now
-  chosen from code points the document does not contain, and nothing is deleted;
-  DEL and the C1 controls stay stripped.
-
-- **A comment an author wrote can no longer impersonate a collected
-  definition's placeholder** (carve-rs#1214). The marker a hoisted definition
-  leaves behind was fixed at `%%` plus U+E005 / U+E006 and matched positionally,
-  so an authored comment carrying either code point lost its node, emptied the
-  list item holding it, and dedented an item's continuation line out of the
-  item. The suffix is picked per document now, the way the canonical writer
-  picks its own; the preferred pair is unchanged, so a document with no
+- The canonical writer's own output parses back to the same tree (#1277, PART 11
+  §1). Eight corpus documents parsed differently before and after `fmt` while
+  rendering identical HTML: `- +`, the writer's spelling for an item a collected
+  definition emptied, built an item holding an empty paragraph where the other
+  engines build no child, and an item whose whole body is a colon container read
+  loose unterminated and tight once the writer supplied the closer - both read
+  loose now, per markup-carve/carve#1602.
+- A whitespace-only block no longer costs two lists their hard boundary (#1292,
+  PART 11 §1). The writer trims such a paragraph away, so the three loops that
+  write the PART 9 §11 N1a boundary treated it as content, omitted the boundary,
+  and left the lists to merge on re-parse. A lone U+00A0 line still separates
+  them.
+- `carve migrate` exits 2 for a usage error instead of 1 (#1276), leaving exit 1
+  to mean `--check-loss` found dropped content. carve-js and carve-php already
+  drew the line there.
+- The writer freezes the symbol sigil and a cell's rowspan marker
+  (markup-carve/carve#1609, PART 11 §2 and §6f): `a :rocket: b` came back
+  re-parsing as a symbol node, and a cell holding `^` came back as a rowspan
+  marker that deleted the cell.
+- The writer escapes a caret that opens a bracketed label (#1317, PART 11 §2).
+  `<abbr title="y">^1</abbr>` was written `[^1]{abbr=y}`, which re-reads as a
+  note reference and loses the span; an anchor lost its destination the same
+  way. `[^]` is not a reference and is still written bare.
+- `fmt` keeps a heading's leading tab (markup-carve/carve#1587, PART 11 §1). The
+  marker separator is a run of spaces, so the tab in `## \tx` is title content
+  and the writer no longer trims it.
+- `fmt` preserves a braced en dash (markup-carve/carve#1450, #1158). `{--}`
+  produces the node the bare run produces, not a glyph baked into text, so the
+  spelling survives a format pass.
+- An empty braced pair keeps its carets bare (#1193). `{^^}` opens no
+  superscript, so PART 11 §2 has nothing to escape and the writer no longer
+  emits `{\^\^}`.
+- A run that ate a verse line leaves no comment node (#1193, PART 9 §23), where
+  the comment is a stanza's last body line and the run is still open.
+- An empty comment writes its marker and nothing else (markup-carve/carve#1472,
+  #1184), with no trailing space the clause never asked for.
+- The escape escalation reaches the block that failed, not the document (#1227,
+  markup-carve/carve#1516, PART 11 §2b), so one needed escape no longer drags
+  every other candidate in the document along.
+- The Markdown target's escape carriers are picked per document, not fixed
+  (#1216, #1218). The fixed U+E004..U+E007 range was deleted from author
+  content, losing an authored character in every context measured, a fenced code
+  block included.
+- The list writer's marker-column tag is picked per document, not fixed (#1226).
+  A continuation line the author opened with U+E005 was eaten and the block
+  moved out of its item.
+- The `::: footnotes` placement marker is picked per document, not fixed
+  (#1245). A text node carrying the old in-band string rendered the endnotes
+  section inside the author's own paragraph.
+- A comment an author wrote can no longer impersonate a collected definition's
+  placeholder (#1214). The suffix is picked per document; a document with no
   private-use character behaves byte for byte as before.
-
-- **A run that ate a verse line leaves no comment node** (carve-rs#1193). At the
-  boundary where the comment is the stanza's last body line AND the run is still
-  open, the node was appended after the run that contains it - PART 9 §23's
-  "BUT IT DOES NOT SURVIVE A RUN THAT ATE ITS LINE" - and `fmt` wrote it out as
-  `` ` %%``. The render never moved.
-
-- **An empty braced pair keeps its carets bare** (carve-rs#1193). `{^^}` opens
-  no superscript, so PART 11 §2 has nothing to escape and the writer no longer
-  emits `{\^\^}`. `{^x^}` holds something and is untouched.
-
-- **`--profile` reaches the `--carve` output target** (carve-rs#1191). `to_carve`
-  carried no `Options`, so neither the `max_length` cap nor the feature filter
-  was ever consulted there: an over-cap document was re-serialized in full at
-  exit 0, and a raw HTML block a `minimal` profile removes from every other
-  output came straight back out. The CLI now calls the new
-  `try_to_carve_with_options`, which refuses over the cap with the same
-  `max_length_exceeded` line the other targets print and filters the tree the
-  way `--from-json --carve` already did. `to_carve` is unchanged.
-
-- **The index back-link says where it goes** (markup-carve/carve#1469). A `↩`
-  with no accessible name is announced as "leftwards arrow with hook", or
-  skipped - and an index entry has one per occurrence, so a reader met a row of
-  identical unnamed arrows. The k-th back-link is now named `Back to {term} {k}`
-  and shows `↩<sup>k</sup>`, mirroring PART 9 §16's footnote rule.
-
-- **A tab set writes its children flush, like everything around them**
-  (markup-carve/carve-rs#1188). The `css` and `aria` tab renderers indented the
-  `<input>`, `<label>`, `<button>` and panel openers by one level while writing
-  their closers, and the panel body, flush - so the block's own halves
-  disagreed. They now match the pinned corpus pair `28-tabs-panel-title` and
-  carve-js byte for byte. Whitespace only; nothing renders differently. Found
-  by giving that corpus case a runner for the first time.
-
-- **The CLI refuses an over-cap document instead of writing nothing and exiting
-  0** (markup-carve/carve-rs#1190). `carve --html --profile comment` on an input
-  over the profile's `max_length` produced empty stdout with exit status 0, so a
-  caller could not tell a refusal from a document that rendered to nothing. It
-  now prints the violation to stderr and exits non-zero, the same as the
-  `--from-json` path already did. Affects `--html`, `--markdown`, `--plain`,
-  `--ansi` and `--json`. The library's infallible `to_*_with_options` wrappers
-  are unchanged.
-
-- **The footnote backlink has an accessible name** (markup-carve/carve#1455,
-  PART 9 §16). `role="doc-backlink"` was right and the name was the `↩` glyph,
-  so a screen reader announced its Unicode name or skipped the link. The name is
-  now the label plus what the link visibly says: `Back to reference` for a lone
-  backlink, `Back to reference 2` for the second of several.
-
-- **A hyphen run that opens a word after whitespace is a flag, not a dash**
+- The AST-JSON ingest replaces U+0000 as the parse boundary already does (#1237,
+  #1217, markup-carve/carve#1528, PART 12 §21), so an ingested document renders
+  like the same document written as source. A raw control byte in JSON text is
+  still refused.
+- An ingested list `start` of 1 is treated as the default: the renderer no
+  longer writes `start="1"` (#1287) and the AST-JSON encoder normalizes it away
+  rather than republishing it (#1296, markup-carve/carve#1615, PART 12 §22).
+  A `start` of 0, 2 or 7 rides through unchanged.
+- A container starts at its opening markup and ends at the markup that closes
+  it, even where its first or last child is unplaced (#1247,
+  markup-carve/carve#1551, PART 12 §4). A line block stanza whose first or last
+  line holds a tab no longer leaves that line outside the paragraph holding it.
+  Published spans move.
+- A container with no closer ends at its last placed child everywhere (#1308,
+  PART 12 §4). A heading, a definition term and a footnote definition each
+  ended one codepoint past their last child; all three now reach their end
+  through the one bound the other containers already used.
+- A line block's hard break ends at the boundary, not over the comment line it
+  ends (#1246, PART 12 §4). Published break positions change on that shape, to
+  what carve-js and carve-php already publish.
+- Depth limits guard every recursive input and output path (#1119, #1120, #1121,
+  #1124). HTML inline rendering and extension re-entry share the live render
+  budget, AST JSON encoding gains a fallible `try_to_json`, and the render
+  ceiling is reachable by a valid wire document while staying above every
+  parser-produced tree.
+- The CLI refuses an over-cap document instead of writing nothing at exit 0
+  (#1190), on `--html`, `--markdown`, `--plain`, `--ansi` and `--json`. The
+  library's infallible `to_*_with_options` wrappers are unchanged.
+- `--profile` reaches the `--carve` output target (#1191). Neither the
+  `max_length` cap nor the feature filter was ever consulted there; the CLI now
+  calls the new `try_to_carve_with_options`, and `to_carve` is unchanged.
+- The borrowed layout no longer splits a blank-separated ordered list or drops
+  an empty fence's line (#1207). Both were reachable through the library's
+  `to_html`, which tries the scanner first, and not through the CLI, so the same
+  document rendered differently from the two.
+- A definition written on a list marker line is the item's first invisible block
+  (markup-carve/carve#1422, markup-carve/carve#1425, #1139, #1141). It leaves no
+  paragraph open, and the link-definition prepass asks the block parser instead
+  of testing whether the previous line was blank.
+- A quoted marker line keeps its definition's text (#1142, #1143). Both
+  definition prepasses ran their lazy guard's marker test over the raw line, so
+  `> - [d]: u` was collected out of the quote's open paragraph: the author's text
+  was deleted and the label still defined a reference.
+- A definition hoisted off an item's only line is written back into that item
+  (#1144, #1145), and a definition-emptied marker line keeps its own container
+  level (#1148).
+- Definitions collected at a list item's content column close its paragraph
+  (markup-carve/carve#1376), so a following line below that column no longer
+  uses the comment-only continuation path.
+- A comment-preserved lazy run folds through the list's own base column (#1139,
+  #1140), resuming against the innermost marker-line item's content column
+  instead of hard-coded document column 0.
+- A heading at a list item's content column leaves no paragraph open
+  (markup-carve/carve#1377, markup-carve/carve#1392, #1113), while an enclosing
+  item still collects the line after an inner item closes.
+- A marker at an item's content column opens a sublist, first in the item or not
+  (markup-carve/carve#1517, PART 9 §24 C3). A marker on a block quote's lazy
+  continuation is still text.
+- A blank line above an attached container loosens the item (#1294,
+  markup-carve/carve#1622), and only when a paragraph follows it (#1309,
+  markup-carve/carve#1633). An attached container consumes the blank the gap
+  held, so the dividing line is paragraph versus every other block kind.
+- A footnote continuation survives a blank run (#1295). The body test read only
+  the line after the blank, so at two blank lines the indented continuation was
+  ejected to a top-level paragraph ahead of the endnotes section. A flush-left
+  line still ends the definition.
+- The canonical writer spells two sibling sub-lists inside a list item (#1228,
+  markup-carve/carve#1501, PART 9 §11 N1a and §10i). A tight item wrote them
+  behind the `+` marker at column 0, where a compatible marker dissolves them
+  into the list around the item.
+- A fence with no closer stays in the open paragraph (#1134), in containers,
+  list items and definition bodies alike.
+- An unclosed inline literal parses through the end of its block
+  (markup-carve/carve#1418, #1138), rendering as bare escaped literal content
+  rather than a visible bang beside a code element.
+- A caption no longer disables a diagram fence's preset (#1151, #1157). A
+  caption on a `chart`, `mermaid` or `img` fence turned the drawing back into a
+  highlighted code block; the rendered result now rides the new
+  `Figure::rendered_target`.
+- An all-blank raw payload stays distinct from an absent payload
+  (markup-carve/carve#1414). One blank line between raw fences produces one
+  newline.
+- A duplicate-axis cell marker run is one invalid run (#1117): `<<` falls back
+  visibly instead of consuming the first `<`.
+- A hyphen run that opens a word after whitespace is a flag, not a dash
   (markup-carve/carve#1443, PART 9 §8). `git log --oneline` and
   `--force-with-lease` keep their hyphens; every other position converts as
-  before, including `pages 1--10` and a trailing `text --`.
+  before.
+- The first code group in a document is named `codegroup-1` (#1178), matching
+  carve-js and carve-php. It took the bare id prefix, so an unrelated
+  `{#codegroup}` anywhere in the document renamed every group.
+- The footnote backlink has an accessible name (markup-carve/carve#1455, PART 9
+  §16): the label plus what the link visibly says, rather than the bare `↩`
+  glyph a screen reader announces by its Unicode name or skips.
+- The index back-link says where it goes (markup-carve/carve#1469). The k-th
+  back-link is named `Back to {term} {k}` and shows `↩` with a superscript,
+  mirroring the footnote rule.
+- A tab control is `type="button"`, and two marked items select one tab (#1212,
+  markup-carve/carve#1504, extensions §13.3 and §13.5). An `Aria`-mode control
+  inside a `<form>` submitted the form instead of switching panels, and several
+  `selected` items each got their own selection; the first mark wins now.
+- A tab set writes its children flush, like everything around them (#1188).
+  Whitespace only; nothing renders differently.
+- A table `<caption>` is numbered among the table's child nodes
+  (markup-carve/carve#1560, PART 12 §16). The step was a literal `caption[1]`,
+  which agreed with the child index only for a table written on one line.
+- A diagnostic on a bare inline run is numbered among the body children
+  (markup-carve/carve#1554, PART 12 §16). Four more sites lift a child out of
+  the list they walk and renumbered what was left: a `<figure>` caption, a
+  `<details>` summary, a `<dl>` entry and a composite figure group.
+- An import report is ordered by the losing element's document position
+  (markup-carve/carve#1586), the order carve-php already answered in, rather
+  than by the order this importer's walk built the rows in.
+- A consumed caption reports the attributes it drops (#1257). A table
+  `<caption>`'s own attributes were never looked at, so an `onclick` on it was
+  stripped in silence; the same sweep found a `<dd>` with no `<dt>` before it
+  dropping its attributes too.
+- A derived `id` is dropped (#1240). `drop_derived` only searched key/value
+  attributes, so any rule for a derived value in the `id` slot was a check that
+  could not fire.
+- A derived admonition title id is recognized when the id namespace collides
+  (#1258, PART 9 §16a). The importer predicted `adm-N` where the renderer writes
+  what its id registry allocates, so a document whose author took `adm-1`
+  reported a loss that does not happen.
+- An HTML import no longer bakes a derived accessible name into source (#1209,
+  markup-carve/carve#1500, markup-carve/carve#1511, PART 9 §16a). An attribute
+  whose value equals what the renderer derives is dropped; a name that differs
+  is kept, and nothing is diagnosed.
+- An HTML import reports nothing for a derived endnotes section
+  (markup-carve/carve#1580, PART 9 §16a). No Carve construct spells a
+  `<section>`, so unwrapping one removes nothing an author wrote. An authored
+  `class`, or an `aria-label` no default matches, is still reported.
+- An HTML import rebuilds the container the renderer wrote (#1240,
+  markup-carve/carve#1502). A callout was unwrapped to its own body and every
+  named container came back as a generic `div` node carrying a class; the import
+  now inverts `render_admonition`, lifts a titled callout's own title into the
+  container it names, and treats `<aside>` as the block element it is.
+- A container's grouping label comes back on the opener, not as a paragraph
+  (#1316). `::: figure [g]` imported as `::: figure` plus a `{.div-label}`
+  paragraph and re-rendered as a composite figure group. A label is a raw run,
+  so the old path also escaped its markup afresh on every format pass.
+- An anchor or image with no destination comes back as its content
+  (markup-carve/carve#1601), with an `element-unwrapped` diagnostic rather than
+  the literal `[t]()`. The destination PART 9 §25's denylist blanked is never
+  rebuilt.
+- An attribute-less `<div>` unwraps to its content on an HTML import
+  (markup-carve/carve#1578), as carve-js and carve-php already did. A `<div>`
+  carrying anything the language can hold still writes the container.
+- A non-`li` child of a list keeps its content and is reported (#1261). Such a
+  child was walked past entirely, losing its text with an empty report; it now
+  goes through the ordinary block walk with an `element-unwrapped` warning.
+- A math span survives an HTML import (#1208, PART 9 §18), and the block
+  `<div class="math display">` form imports as the core `$$` spelling rather
+  than a Carve div holding the delimiters as text (#1229,
+  markup-carve/carve#1518, markup-carve/carve#1514).
+- A deletion survives an HTML import (#1223). `<del>` shared the strike arm with
+  `<s>` and `<strike>`; it now maps to `CriticDelete`, the node `{- -}` already
+  renders back to `<del>`.
+- An import keeps a content space and builds no node where every character is
+  layout (#1302, markup-carve/carve#1628, markup-carve/carve#1631, PART 11 §7).
+  `<p>&nbsp;</p>` used to come back as a paragraph holding a plain space, which
+  the writer then deleted, so `html_to_ast` published a paragraph
+  `html_to_carve` did not.
+- An endnotes section away from the end keeps the position it was written at
+  (#1318). The renderer appends the section it rebuilds at document end, so an
+  import silently moved one that sat elsewhere; the import now writes the
+  `::: footnotes` directive where the section sat, and writes none where it was
+  already last. Footnote derivation also runs under the `generic` adapter, with
+  only the anchor-pair heuristic still gated to the word-processor adapters.
+- A Djot blank-line run does not split a list on import (#1273), inside a block
+  quote as well (#1274). Djot reads any run of blanks between two compatible
+  markers as one list, so the run is collapsed rather than passed through to
+  Carve's hard boundary.
+- A structural link title and an authored `title` attribute both survive the
+  ProseMirror bridge (#1115) and no longer swap places across the round trip
+  (#1105). The quoted structural title moves to `carveLinkTitle`; older payloads
+  using the overloaded `title` field stay readable.
+- The Carve writer does not turn a generated heading id into source inside a
+  footnote definition (#1105). The redundancy test walked the document body
+  only, so `[^a]: # h` was written back with an attribute line the author never
+  wrote.
 
-- **An all-blank raw payload remains distinct from an absent payload.** One
-  blank line between raw fences produces one newline, matching the general
-  payload-preservation rule (markup-carve/carve#1414, corpus 372).
-
-- **Depth limits now guard every recursive input and output path** (#1119,
-  #1120, #1121, #1124). HTML inline rendering and extension re-entry share the
-  live render budget, AST JSON encoding has a fallible `try_to_json` entry
-  point used by merge and patch, and the render ceiling is reachable by a
-  valid wire document while remaining above every parser-produced tree.
-
-- **The block parser returns its large node through a box** (#1119), removing a
-  `BlockNode`-sized return slot from each recursive parser frame.
-
-- **Definitions collected at a list item's content column close its paragraph**
-  (markup-carve/carve#1376). A following line below that column no longer uses
-  the comment-only continuation path; bare-dot items use the bullet column.
-
-- **Parsing a document at the nesting cap costs far less native stack**
-  (markup-carve/carve-wasm#44). `promote_block_images` is a worklist instead of
-  a recursion, and the over-cap degrade moved out of `parse_blocks`' frame.
-  Measured on corpus document 182, parsing dropped from 347 KiB of stack to
-  103 KiB, which is what a host with a small stack - a wasm module's 1 MiB, for
-  instance - had been running out of. No output changed.
-
-- **A structural link title and an authored `title` attribute both survive the
-  ProseMirror bridge** (#1115). Links, images and reference definitions now put
-  the quoted structural title in `carveLinkTitle`, leaving `title` and
-  `carveAttrOrder` to carry `{title=...}` without either value winning the same
-  field. Older payloads using the overloaded `title` field remain readable.
-
-- **A structural title and an authored `title` attribute no longer swap places
-  across the ProseMirror round trip** (#1105, follows #1110). The two spellings
-  share one wire field, and `carveAttrOrder` - the record of which one the
-  author typed - was written untruthfully and never read, so `[a]: /u "T"` came
-  back as `[a]: /u "T" {title=T}` and `[z](safe.html){title="T"}` as
-  `[z](safe.html "T")`. Links, images and reference definitions all.
-
-- **The Carve writer does not turn a generated heading id into source inside a
-  footnote definition** (#1105). The redundancy test walked the document body
-  only, so `[^a]: # h` was written back as `[^a]: {#h}` over an indented `# h`,
-  an attribute line the author never wrote.
-
-- **A heading at a list item's content column leaves no paragraph open**
-  (markup-carve/carve#1377, markup-carve/carve#1392, carve-rs#1113). A direct
-  content-column heading no longer holds the lazy fold open, while an enclosing
-  item still collects the line after an inner item closes.
-
-- **A duplicate-axis cell marker run is one invalid run** (carve-rs#1117).
-  `<<` falls back visibly instead of consuming the first `<`.
-
-- **A fence with no closer stays in the open paragraph** (carve-rs#1134). A
-  closer-less fence run no longer latches the layout fence tracker, in
-  containers, list items and definition bodies alike. A compatible closer
-  occurring later behaves as before.
-
-- **An unclosed inline literal parses through the end of its block**
-  (markup-carve/carve#1418, carve-rs#1138). `!` plus a code span is one node
-  whether or not the backtick run closes, so an unclosed literal renders as bare
-  escaped literal content rather than a visible bang beside a code element.
-
-- **A definition written on a list marker line is the item's first invisible
-  block** (markup-carve/carve#1422, markup-carve/carve#1425, carve-rs#1139,
-  carve-rs#1141). It leaves no paragraph open, so a following line below the
-  content column ends the item. The link-definition prepass asks the block
-  parser rather than testing whether the previous line was blank - a heading, a
-  comment, a table row, a term and a marker line are all non-blank and all leave
-  no paragraph open.
-
-- **A comment-preserved lazy run folds through the list's own base column**
-  (carve-rs#1139, carve-rs#1140). A flush comment after visible prose keeps an
-  indented item's paragraph open, and lazy continuation resumes against the
-  innermost marker-line item's content column instead of hard-coded document
-  column 0.
-
-- **A quoted marker line keeps its definition's text** (carve-rs#1142,
-  carve-rs#1143). Both definition prepasses ran their lazy guard's marker test
-  over the raw line, so `> - [d]: u` matched no marker and was collected out of
-  the quote's open paragraph: the author's text was deleted and the label still
-  defined a reference. The prefixes come off before the test now, in both
-  passes.
-
-- **A definition hoisted off an item's only line is written back into that
-  item** (carve-rs#1144, carve-rs#1145). The writer spelled the emptied item
-  with the continuation marker, and re-reading that moved the outer item's line
-  into the empty inner one, so neither `fmt` property held and the HTML changed.
-
-- **A caption no longer disables a diagram fence's preset** (carve-rs#1151,
-  carve-rs#1157). A caption on a `chart`, `mermaid` or `img` fence silently
-  turned the drawing back into a highlighted code block - the shape most likely
-  to carry a caption was the one that lost its renderer. A captioned fence is a
-  figure's target, and PART 12 pins five target types with no raw-HTML spelling
-  among them, so the rendered result now rides the new `Figure::rendered_target`.
-
-- **The first code group in a document is named `codegroup-1`**
-  (carve-rs#1178), matching carve-js and carve-php. It took the bare id prefix
-  and the second group's `-2` was a collision suffix rather than a count, so an
-  unrelated `{#codegroup}` anywhere in the document renamed every group.
-
-- **An empty comment writes its marker and nothing else**
-  (markup-carve/carve#1472, carve-rs#1184). The block arm of the writer appended
-  its content unconditionally, so a comment with no content came back as `%%`
-  plus a trailing space that no clause asks for. The inline arm always guarded
-  it.
 ## [0.1.3] - 2026-08-18
 
 ### Security
