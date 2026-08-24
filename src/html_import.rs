@@ -1369,6 +1369,20 @@ impl<'a> Importer<'a> {
             return self.blocks(&children, path, depth + 1);
         }
         if matches!(tag.as_str(), "h1" | "h2" | "h3" | "h4" | "h5" | "h6") {
+            let mut attrs = attrs;
+            if let Some(held) = attrs.as_mut().filter(|held| held.id.is_some()) {
+                // An HTML heading id is authored input, even when its value
+                // equals the slug a fresh Carve parse would generate. Without
+                // the writer-only slot marker html_to_carve omits it while
+                // html_to_ast retains it. A non-empty order is exhaustive, so
+                // carry every other imported slot too.
+                held.order.push(AttrSlot::Id);
+                if !held.classes.is_empty() {
+                    held.order.push(AttrSlot::Class);
+                }
+                held.order
+                    .extend(held.key_values.keys().cloned().map(AttrSlot::Key));
+            }
             return Ok(vec![BlockNode::Heading(Heading {
                 attrs,
                 level: tag[1..].parse().unwrap(),
