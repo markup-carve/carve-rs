@@ -113,9 +113,15 @@ fn it_says_nothing_on_the_exit_that_keeps_the_tree() {
     assert!(report.diagnostics.is_empty(), "{:?}", report.diagnostics);
 }
 
-/// LAYOUT IS NOT CONTENT (PART 11 section 7). The writer trims the run's edges,
-/// so the padded spelling writes the same bare block image and loses the same
-/// paragraph.
+/// LAYOUT IS NOT CONTENT (PART 11 section 7), so the padded spelling is the same
+/// paragraph and takes the same row.
+///
+/// WHAT MAKES IT THE SAME PARAGRAPH IS THE IMPORT-SIDE TRIM, not a tolerance in
+/// the predicate. `trim_edge_whitespace` runs on the authored arm since
+/// carve-rs#1336, so the run reaches `lone_image` already trimmed and the plain
+/// question answers it. Before that this test passed through a whitespace
+/// tolerance inside the predicate, which is now removed - reachable by no input
+/// once the trim was in front of it.
 #[test]
 fn it_reports_the_whitespace_padded_spelling_of_the_same_paragraph() {
     let html = "<p>\n  <img src=\"g.jpg\" alt=\"G\">\n</p>";
@@ -512,4 +518,61 @@ fn an_empty_paragraph_is_the_other_carve_out() {
         1,
         "the empty paragraph is gone from the source, and the writer said nothing"
     );
+}
+
+/// THE THIRD CARVE-OUT, and it is the one that shows why the clause is written
+/// over the PROPERTY rather than over the image.
+///
+/// A block whose whole content is one COMMENT writes `%%  c`, which reads back
+/// as the block comment - the wrapper is lost exactly as it is for the image,
+/// and the writer neither indents nor refuses. This shape has no top-level
+/// escape at all: `%%` opens a block comment at every column, where an indented
+/// image at least parses as a paragraph on carve-js. A rule phrased as "use the
+/// indented form where one exists" would leave it unstated, which is why PART 11
+/// section 1c is phrased over what the content SPELLS.
+///
+/// NOT IN THE IMPORT SWEEP, and that is the point of listing it. No HTML builds
+/// `paragraph[comment]`, so a carve-out list derived from what an import happens
+/// to produce would have missed it - the same way this test file's own sweep
+/// did until PART 11 section 1c named it.
+#[test]
+fn a_block_holding_one_comment_is_the_third_carve_out() {
+    let document = carve::Document {
+        frontmatter: Default::default(),
+        frontmatter_raw: None,
+        footnote_defs: Default::default(),
+        footnote_def_pos: Default::default(),
+        children: vec![carve::BlockNode::Paragraph(carve::Paragraph {
+            attrs: None,
+            children: vec![carve::InlineNode::Comment(carve::Comment {
+                block: false,
+                delimited: false,
+                content: " c".into(),
+                pos: None,
+            })],
+            at_content_column: true,
+            pos: None,
+        })],
+        source_len: 0,
+        ingest_payload_len: 0,
+    };
+
+    let written = carve::render_carve(&document).expect("the writer must not refuse this shape");
+    assert!(
+        !written.starts_with(' '),
+        "the writer must not reach for an indented spelling: {written:?}"
+    );
+    assert_eq!(
+        kinds(&parse(&written)),
+        vec!["Comment".to_string()],
+        "the wrapper is lost and the content spells the block"
+    );
+    // AND NO INDENT SAVES IT, which is what separates this shape from the image.
+    for indent in ["", " ", "  ", "   ", "\t"] {
+        assert_eq!(
+            kinds(&parse(&format!("{indent}%% c\n"))),
+            vec!["Comment".to_string()],
+            "indent {indent:?} spelled a paragraph"
+        );
+    }
 }
