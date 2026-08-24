@@ -97,16 +97,6 @@ const BEHIND_THE_RULING: &[(&str, &str, &str)] = &[
         "a dropped empty description does not break the list, and `structure-split` is unspelled",
         ":: t1\n:  \n:: t2\n:  d2\n",
     ),
-    // markup-carve/carve#1627: an endnotes section that is not the last block
-    // keeps its POSITION, as a `::: footnotes` placement directive, while its
-    // definitions hoist to the end. markup-carve/carve-rs#1313.
-    (
-        "endnotes-section-not-last",
-        "an endnotes section away from the end is not derived at all",
-        // The `{loose}` is §17 L7's writer arm working as intended on the
-        // one-item list this import leaves behind - not part of the gap.
-        "a[{^1^}](#fn1){#fnref1 role=doc-noteref}\n\n{loose}\n1.{#fn1} n\n\nafter\n",
-    ),
 ];
 
 #[test]

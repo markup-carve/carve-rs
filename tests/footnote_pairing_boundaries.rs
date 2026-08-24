@@ -278,11 +278,46 @@ fn a_separator_after_the_notes_does_not_survive() {
 
 /// Notes written before the body still pair, and the separator search stops at
 /// the top of the document rather than walking off it.
+///
+/// THE NOTES ARE NOT LAST HERE, so they keep the position they were written at:
+/// the `::: footnotes` directive stands where the section stood, and the
+/// definition hoists to the end like every other footnote definition
+/// (markup-carve/carve#1627, carve-rs#1313). This assertion held the pre-ruling
+/// output, where the section's position was discarded in silence - which is
+/// what that ruling forbids. The subject of the test is unchanged: the pair
+/// still binds, and the separator search still stops at the top of the document
+/// instead of walking off it.
+///
+/// The placement is not gated on the `role="doc-endnotes"` spelling. The clause
+/// is written over that spelling, but its argument - Carve HAS a way to say
+/// where the section stood, so discarding it is a loss with nothing behind it -
+/// does not depend on how the wrapper was marked, and a Word export's
+/// `<section class="footnotes">` before the body renders in a different place
+/// than one after it just the same. Measured against carve-js at `main`, which
+/// writes this document byte for byte as it is written here and writes NO
+/// directive for the same notes placed after the body.
 #[test]
 fn notes_written_before_the_body_still_pair() {
     let out = import_as_word(&format!(
         "<html><body>{}<p>Body<a href=\"#fn1\" class=\"footnote-ref\" id=\"fnref1\">\
          <sup>1</sup></a> tail.</p></body></html>",
+        NOTE
+    ));
+
+    assert_eq!(
+        out,
+        "::: footnotes\n\n:::\n\nBody[^1] tail.\n\n[^1]: The note.\n"
+    );
+}
+
+/// The same notes placed AFTER the body get no directive, which is what makes
+/// the assertion above a statement about POSITION rather than a directive the
+/// importer now always writes.
+#[test]
+fn notes_written_after_the_body_get_no_placement_directive() {
+    let out = import_as_word(&format!(
+        "<p>Body<a href=\"#fn1\" class=\"footnote-ref\" id=\"fnref1\">\
+         <sup>1</sup></a> tail.</p>{}",
         NOTE
     ));
 
