@@ -18,6 +18,11 @@
 //!   before  "![a](i.png)\n^ c\n"            the character gone, diagnostics []
 //!   after   "\u{a0}![a](i.png)\n^ c\n"      kept, exactly as an ordinary word is
 //!
+//! The caption line in that measurement is what the import wrote at the time.
+//! markup-carve/carve-php#1731 later ruled that a paragraph target unwraps
+//! instead, so the shape is now "\u{a0}![a](i.png)\n\nc\n". The character is
+//! still the subject and still kept; only what surrounds it moved.
+//!
 //! <ul>&#160;<li>a</li></ul>
 //!   before  "\u{a0}\n\n- a\n"   diagnostics []
 //!   after   "\u{a0}\n\n- a\n"   diagnostics [ElementUnwrapped]
@@ -74,18 +79,19 @@ fn diagnostics(html: &str) -> Vec<String> {
 /// against - including the row it earns.
 ///
 /// ASSERTED AGAINST THE WORD RATHER THAN AGAINST AN EMPTY LIST, because the
-/// resulting shape is a `<figure>` around a PARAGRAPH, which has no Carve
-/// spelling and takes a real `structure-unspellable` row on the writing exit.
-/// That row was there for `x` all along and is not this ticket's to remove; what
-/// this ticket fixes is that the content space was not reaching the shape at
-/// all. Asserting no diagnostics here would have been asserting the wrong thing
-/// and would have hidden the fix behind a false expectation.
+/// resulting shape is a `<figure>` around a PARAGRAPH, which no caption line
+/// binds to: the figure unwraps and takes an `element-unwrapped` row on both
+/// exits (ruling markup-carve/carve-php#1731). A row was there for `x` all
+/// along and is not this ticket's to remove; what this ticket fixes is that the
+/// content space was not reaching the shape at all. Asserting no diagnostics
+/// here would have been asserting the wrong thing and would have hidden the fix
+/// behind a false expectation.
 #[test]
 fn a_content_space_in_a_figure_survives() {
     let word_before = "<figure>x<img src=\"i.png\" alt=\"a\"><figcaption>c</figcaption></figure>";
     let word_after = "<figure><img src=\"i.png\" alt=\"a\">x<figcaption>c</figcaption></figure>";
-    assert_eq!(carve(word_before), "x![a](i.png)\n^ c\n");
-    assert_eq!(carve(word_after), "![a](i.png)x\n^ c\n");
+    assert_eq!(carve(word_before), "x![a](i.png)\n\nc\n");
+    assert_eq!(carve(word_after), "![a](i.png)x\n\nc\n");
 
     for space in [NBSP, NNBSP, IDEOGRAPHIC] {
         let before = format!(
@@ -93,7 +99,7 @@ fn a_content_space_in_a_figure_survives() {
         );
         assert_eq!(
             carve(&before),
-            format!("{space}![a](i.png)\n^ c\n"),
+            format!("{space}![a](i.png)\n\nc\n"),
             "{space:?} ahead of the image"
         );
         assert_eq!(
@@ -107,7 +113,7 @@ fn a_content_space_in_a_figure_survives() {
         );
         assert_eq!(
             carve(&after),
-            format!("![a](i.png){space}\n^ c\n"),
+            format!("![a](i.png){space}\n\nc\n"),
             "{space:?} after the image"
         );
         assert_eq!(
@@ -123,11 +129,14 @@ fn a_content_space_in_a_figure_survives() {
 #[test]
 fn an_ordinary_word_in_the_same_slot_was_always_kept() {
     let html = "<figure>x<img src=\"i.png\" alt=\"a\"><figcaption>c</figcaption></figure>";
-    assert_eq!(carve(html), "x![a](i.png)\n^ c\n");
+    assert_eq!(carve(html), "x![a](i.png)\n\nc\n");
     assert_eq!(
         diagnostics(html),
-        vec!["StructureUnspellable".to_string()],
-        "a figure around a paragraph is a declared loss on the writing exit"
+        vec![
+            "ElementUnwrapped".to_string(),
+            "ElementUnwrapped".to_string()
+        ],
+        "a caption line binds to no paragraph, so the figure unwraps and both exits say so"
     );
 }
 
