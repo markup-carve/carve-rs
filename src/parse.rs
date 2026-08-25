@@ -16527,7 +16527,7 @@ fn merge_attrs(target: &mut Option<Attrs>, incoming: Attrs) {
 /// Merge a leading block-attribute line onto a node that may already carry
 /// its own opener attributes. Leading attrs are earlier in source, so their
 /// classes precede the opener's and the opener wins on id/key conflict (§15).
-fn merge_leading_attrs(target: &mut Option<Attrs>, leading: Attrs) {
+pub(crate) fn merge_leading_attrs(target: &mut Option<Attrs>, leading: Attrs) {
     match target.take() {
         None => *target = Some(leading),
         Some(own) => {

@@ -2803,6 +2803,7 @@ impl<'a> Importer<'a> {
             // nothing but a budget is being swallowed. The nodes already
             // counted stay counted: the subtree was walked, and refunding them
             // would sell one budget once per figure.
+            let mut detached = false;
             let blocks = match rebuilt {
                 // A CAPTION LINE THE TARGET WOULD ABSORB IS NOT WRITTEN IN ANY
                 // MODE (ruling markup-carve/carve-php#1731). `roundtrip` keeps
@@ -2811,7 +2812,13 @@ impl<'a> Importer<'a> {
                 // here and the arm at the foot of this block declares what the
                 // unwrap cost.
                 Ok((blocks, _)) if self.opts.mode != HtmlImportMode::Roundtrip => {
-                    Self::unwrap_absorbed_caption(blocks)
+                    let (blocks, declared) = self.unwrap_absorbed_caption(h, path, blocks);
+                    // The detach names the `<figcaption>` and what it cost. The
+                    // generic row below names the WRAPPER, and both would be
+                    // about the same event - so the arm that already spoke says
+                    // so rather than letting one shape report twice.
+                    detached = declared;
+                    blocks
                 }
                 // A FIGURE IS THE CAPTIONED WRAPPER (PART 9 §4b). An element
                 // carrying no `<figcaption>`, or one whose caption spells
@@ -2906,6 +2913,11 @@ impl<'a> Importer<'a> {
                     }
                     self.record_displaced_figure_attrs(h, path, f);
                 }
+                // ALREADY DECLARED, and by the row that can say where the
+                // text went. The wrapper is gone either way, but its
+                // attributes were not lost - they rode onto the table - so the
+                // generic pair would report a drop that did not happen.
+                _ if detached => {}
                 _ => {
                     self.diag(
                         HtmlImportDiagnosticCode::ElementUnwrapped,
@@ -4068,10 +4080,29 @@ impl<'a> Importer<'a> {
     /// never wrote - and an addition cannot be declared away the way a loss can.
     fn caption_line_binds(target: &FigureTarget) -> bool {
         match target {
-            FigureTarget::Image(_)
-            | FigureTarget::CodeBlock(_)
-            | FigureTarget::BlockQuote(_)
-            | FigureTarget::Table(_) => true,
+            FigureTarget::Image(_) | FigureTarget::CodeBlock(_) | FigureTarget::BlockQuote(_) => {
+                true
+            }
+            // A TABLE BRINGS ITS OWN CAPTION SLOT, and Carve has ONE per block.
+            // A figure-wrapped table can arrive carrying two captions - the
+            // table's `<caption>` and the figure's `<figcaption>` - and the
+            // figure's line then lands UNDER a table that already wrote one, so
+            // it is not a caption line at all: it re-reads as a literal caret in
+            // a paragraph, exactly the way prose absorbs one
+            // (markup-carve/carve-rs#1402, ruling markup-carve/carve-js#1488).
+            //
+            // A table that wrote NOTHING leaves the slot free and the figure's
+            // caption takes it, which is the ordinary rebuild and is what an
+            // EMPTY `<caption>` gets. The test is on what the table WROTE rather
+            // than on whether the element was there, because
+            // `<caption><span></span></caption>` is structurally non-empty and
+            // still writes no line - and `caption_row` in the writer asks the
+            // same question, so the two cannot disagree about whether a slot is
+            // taken.
+            FigureTarget::Table(table) => match table.caption.as_deref() {
+                None => true,
+                Some(caption) => Self::inlines_are_blank(caption),
+            },
             FigureTarget::Paragraph(_) => false,
         }
     }
@@ -4094,28 +4125,100 @@ impl<'a> Importer<'a> {
     /// Anything else is handed straight back. [`Self::caption_line_binds`] is
     /// the whole test, so a caption target added later inherits this without a
     /// second list to keep in step.
-    fn unwrap_absorbed_caption(blocks: Vec<BlockNode>) -> Vec<BlockNode> {
+    fn unwrap_absorbed_caption(
+        &mut self,
+        h: &Handle,
+        path: &str,
+        blocks: Vec<BlockNode>,
+    ) -> (Vec<BlockNode>, bool) {
         let [BlockNode::Figure(figure)] = blocks.as_slice() else {
-            return blocks;
+            return (blocks, false);
         };
         if Self::caption_line_binds(&figure.target) {
-            return blocks;
+            return (blocks, false);
+        }
+        // Read BEFORE the figure is taken apart, because the merge below is what
+        // displaces them and the row has to name the names it displaced.
+        let table_collision = matches!(&*figure.target, FigureTarget::Table(_));
+        if table_collision {
+            self.record_displaced_figure_attrs(h, path, figure);
         }
         let Some(BlockNode::Figure(figure)) = blocks.into_iter().next() else {
             unreachable!("the slice pattern above matched a lone figure")
         };
-        let FigureTarget::Paragraph(target) = *figure.target else {
-            unreachable!("a paragraph is the only target a caption line does not bind to")
-        };
-        vec![
-            BlockNode::Paragraph(target),
-            BlockNode::Paragraph(Paragraph {
-                attrs: None,
-                children: figure.caption,
-                at_content_column: true,
-                pos: None,
-            }),
-        ]
+        let caption = BlockNode::Paragraph(Paragraph {
+            attrs: None,
+            children: figure.caption,
+            at_content_column: true,
+            pos: None,
+        });
+        match *figure.target {
+            FigureTarget::Paragraph(target) => (vec![BlockNode::Paragraph(target), caption], false),
+            // THE DOUBLE-CAPTION DETACH (ruling markup-carve/carve-js#1488),
+            // reached only by the modes that cannot preserve - `roundtrip` keeps
+            // the element's bytes instead, because no Carve spelling reproduces
+            // it, and `roundtrip_keeps_rebuilt_figure` sends it there through
+            // the same `caption_line_binds` this arm answers.
+            //
+            // NEITHER CAPTION MAY BE THROWN AWAY, and neither may be invented.
+            // Writing both `^ ` lines was the invention: the second re-read as a
+            // literal paragraph, so the document came back holding a caret its
+            // author never typed. Dropping the `<figcaption>` would be the loss,
+            // and it is authored TEXT, which is the one thing an import may not
+            // spend to reach a simpler shape. The table keeps its own caption
+            // and the figure's becomes the PARAGRAPH after it: both texts
+            // survive, and what is spent is the caption ROLE.
+            FigureTarget::Table(mut table) => {
+                // THE FIGURE'S ATTRIBUTES RIDE ONTO THE TABLE
+                // (markup-carve/carve#1721). The figure's line is the LEADING
+                // one and the table's own wins the names both set, which is the
+                // order the two lines already stacked in. Dropping them instead
+                // would take an `id` an anchor points at with nothing said.
+                if let Some(own) = figure.attrs {
+                    crate::parse::merge_leading_attrs(&mut table.attrs, own);
+                }
+                // ATTACHED TO THE `<figcaption>`, not to the figure. The row's
+                // path already names it, and the report sorts by NODE - so
+                // hanging it on the figure tied it with the figure's own
+                // attribute row and left the two in emission order, which puts
+                // the deferred one last. On the caption it sorts after the
+                // figure, which is where the reader looks for it.
+                let (caption_node, caption_path) = Self::figcaption_site(h, path);
+                self.diag(
+                    HtmlImportDiagnosticCode::ElementUnwrapped,
+                    "Detached a <figcaption> into a paragraph after the table: the table's own \
+                     <caption> fills Carve's one caption slot, so the figure's caption keeps its \
+                     text and loses its role"
+                        .into(),
+                    HtmlImportSeverity::Warning,
+                    &caption_path,
+                    &caption_node,
+                );
+                (vec![BlockNode::Table(table), caption], true)
+            }
+            _ => unreachable!("only a paragraph and a self-captioning table refuse the line"),
+        }
+    }
+
+    /// The `<figcaption>` the detach is about, and its path: the FIRST direct
+    /// child of that name, which is the one `figure_panel_captioned` captions
+    /// with.
+    ///
+    /// Falls back to the figure itself, which cannot happen on this arm - a
+    /// detach needs a caption to detach - and is spelled rather than
+    /// `unwrap`ped so a future caller cannot turn a missing child into a panic.
+    fn figcaption_site(h: &Handle, path: &str) -> (Handle, String) {
+        let found = h
+            .children
+            .borrow()
+            .iter()
+            .enumerate()
+            .find(|(_, c)| Self::tag(c).as_deref() == Some("figcaption"))
+            .map(|(index, c)| (c.clone(), index));
+        match found {
+            Some((node, index)) => (node, format!("{path}/figcaption[{}]", index + 1)),
+            None => (h.clone(), path.to_owned()),
+        }
     }
 
     /// `<figure class="carve-figure-panel">` back to the node it wrapped: the
