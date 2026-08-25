@@ -1106,7 +1106,9 @@ impl ContentColumns {
     /// every prefix up to and including this level's quote markers removed, so
     /// its columns are measured inside that container.
     fn observe_segment(&mut self, level: usize, line: &str, was_prev_blank: bool) {
-        let indent = leading_ws(line);
+        // Ownership is measured in visual columns. A leading tab reaches
+        // column four and must not close a definition body at column three.
+        let indent = indent_columns(line);
         let raw_trimmed = trim_ascii(line);
         let starts_block = is_heading_marker_line(raw_trimmed)
             || raw_trimmed.starts_with('>')
@@ -1440,7 +1442,7 @@ fn extract_footnote_defs(
             i += 1;
             continue;
         }
-        let def_indent = leading_ws(stripped.bare);
+        let def_indent = indent_columns(stripped.bare);
         let def_line = at_content_column(
             stripped.bare,
             stripped.structural,
@@ -2497,7 +2499,7 @@ fn extract_link_defs_with_guard(
         // implementations agree it defines nothing there. Zero columns is the
         // top-level case, where `text` / `  [r]: /u` is likewise text
         // everywhere - so this only ever fires inside a list item.
-        let def_indent = leading_ws(stripped.bare);
+        let def_indent = indent_columns(stripped.bare);
         let def_line = at_content_column(
             stripped.bare,
             stripped.structural,

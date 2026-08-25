@@ -9,6 +9,9 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Definition-body metadata prepasses now measure leading tabs in visual
+  columns, so tab-indented footnotes are collected like their space spelling.
+
 - Nested footnote definitions now retain document-level ownership when an
   authored block base carries them inside another footnote body.
 - Fenced block-quote spelling now survives AST JSON and ProseMirror round trips.

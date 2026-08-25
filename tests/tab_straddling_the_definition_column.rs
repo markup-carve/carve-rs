@@ -148,3 +148,25 @@ fn the_round_trip_holds_for_every_spelling() {
         assert_eq!(carve::to_carve(&formatted), formatted, "fmt not idempotent");
     }
 }
+
+#[test]
+fn tab_indented_footnote_metadata_is_collected_like_the_same_visual_column() {
+    for (spaces, tabs) in [
+        (
+            ":: term\n:  intro\n\n    [^x]: n\n\n    see[^x]\n",
+            ":: term\n:  intro\n\n\t[^x]: n\n\n\tsee[^x]\n",
+        ),
+        (
+            ":: term\n:  intro\n\n     [^x]: n\n\n     see[^x]\n",
+            ":: term\n:  intro\n\n\t [^x]: n\n\n\t see[^x]\n",
+        ),
+        (
+            ":: term\n:  intro\n\n        [^x]: n\n\n        see[^x]\n",
+            ":: term\n:  intro\n\n\t\t[^x]: n\n\n\t\tsee[^x]\n",
+        ),
+    ] {
+        assert_eq!(carve::to_carve(tabs), carve::to_carve(spaces));
+        let formatted = carve::to_carve(tabs);
+        assert_eq!(carve::to_carve(&formatted), formatted);
+    }
+}
