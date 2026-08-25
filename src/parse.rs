@@ -9014,6 +9014,10 @@ fn parse_list(
     // Such an item leaves no open paragraph, so a line below its content column
     // has nothing here to continue and belongs to whatever its own column names.
     let mut last_item_bare_continuation = false;
+    // The same S4 state for an item whose marker-line content is only a
+    // floating attribute block: it has no paragraph for a below-column line to
+    // continue, and the pending attribute cannot pull that line into its scope.
+    let mut last_item_marker_attr_only = false;
     while let Some(line) = cur.peek() {
         if is_blank_line(line) {
             // A blank alone does not loosen the list; it loosens only when the
@@ -9094,7 +9098,9 @@ fn parse_list(
                 // taken at collection time if it was written at column 0; a line
                 // BELOW the item's content column was never the marker's and has
                 // no paragraph of this item to fold into, so the list ends here.
-                if last_item_bare_continuation && indent < content_col {
+                if (last_item_bare_continuation || last_item_marker_attr_only)
+                    && indent < content_col
+                {
                     break;
                 }
                 if !items.is_empty() {
@@ -9327,7 +9333,11 @@ fn parse_list(
             // decided in the surviving context, AFTER the containers close - so
             // reading the marker first nested it inside the very item the open
             // fence closes (markup-carve/carve#950).
-            if item_open_fence.is_some() && marker.indent < content_col {
+            if (item_open_fence.is_some()
+                || last_item_bare_continuation
+                || last_item_marker_attr_only)
+                && marker.indent < content_col
+            {
                 break;
             }
             if !items.is_empty() {
@@ -9479,6 +9489,7 @@ fn parse_list(
         cur.consume();
         // Every item answers this for itself; only a bare-`+` lead sets it.
         last_item_bare_continuation = false;
+        last_item_marker_attr_only = false;
         let item_attrs = source_line_attrs(marker.attrs.clone(), item_source_line, options);
         // First-block form `- +` (grammar §17): a lone `+` as the marker
         // content means the item's first block is the following flush-left
@@ -9594,8 +9605,19 @@ fn parse_list(
         // a standalone attribute line. Routed through the block stream so the
         // pending-attribute machinery, not this lead-paragraph path, sees it.
         if parse_standalone_attrs(marker.content).is_some() {
+            last_item_marker_attr_only = true;
             let mut stream = item_marker_source(cur, marker.content, item_at);
-            stream.append(collect_indented_block_mapped(cur, base_indent, content_col));
+            // The marker-line attribute opens no paragraph. Only a following
+            // line that reaches the item's content column can be its target;
+            // a genuinely below-column line closes the item under PART 1 S4
+            // and is reclassified by the surrounding document. Marker-attached
+            // item metadata and task checkboxes do not widen that column
+            // (markup-carve/carve#1705, carve-rs#1373).
+            stream.append(collect_indented_block_mapped(
+                cur,
+                content_col.saturating_sub(1),
+                content_col,
+            ));
             // A FLUSH-LEFT line is not the block this attribute floats onto.
             //
             // This used to pull that line INTO the item so the attributes could

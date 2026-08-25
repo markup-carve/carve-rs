@@ -727,8 +727,14 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // The four #1701 category-413 additions split two/two: the structural
     // cases remain strict, while the two intentional legacy-demotion cases are
     // reported lossy by the bridge. Measured at this spec pin: 1101 / 303.
-    const STRICT: usize = 1101;
-    const LOSSY: usize = 303;
+    // Categories 414 and 415 add eight documents, all strict. The corrected
+    // floating-list ownership also lets six existing documents round-trip
+    // strictly instead of taking their previously reported source-loss path.
+    // Measured over all 1412 documents: 1115 / 297. The exact total below and
+    // the independent source-lossy assertion above keep this an evidence-based
+    // ratchet rather than allowing either side to drift unnoticed.
+    const STRICT: usize = 1115;
+    const LOSSY: usize = 297;
     assert!(
         covered >= STRICT,
         "strict round trips fell from {STRICT} to {covered}"

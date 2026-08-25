@@ -13,6 +13,8 @@ use std::fs;
 use std::path::PathBuf;
 
 const IMPLEMENTED: &[&str] = &[
+    "a-floating-attribute-does-not-widen-a-list-item-s-content-column",
+    "an-unclosed-bare-colon-fence-opens-a-div",
     "an-item-s-attribute-block-moves-its-content-column-its-checkbox-does-not",
     "a-boolean-attribute-does-not-start-with-an-underscore",
     "a-braced-hyphen-pair-is-an-en-dash",
