@@ -286,6 +286,30 @@ struct Importer<'a> {
     /// told nothing; `html_to_carve` flushes them once the walk is done, so they
     /// sort into document order with the rest of the report.
     unspellable: Vec<(Handle, String, String, HtmlImportDiagnosticCode)>,
+    /// Where a figure's own attribute is DISPLACED by its target's (PART 12
+    /// section 16, ruling markup-carve/carve#1721).
+    ///
+    /// A rebuilt figure whose target is not an image writes two block attribute
+    /// lines - the figure's, then the target's - and the parse MERGES them. The
+    /// merge is not symmetric: `id` is a single slot the last line wins, a
+    /// key-value pair is the same slot rule under a name, and `classes` is a SET
+    /// the two lines union. So the TARGET'S VALUE wins the collision, which is
+    /// the ruling, and whatever the figure set under a name the target also sets
+    /// is gone from the source.
+    ///
+    /// WHERE THE MERGED SET LANDS DIFFERS BY ARM and is not what this row is
+    /// about. A table re-reads as `<table id="g"><caption>`, so the pair sits on
+    /// the table itself; a quote or a fence re-reads as a figure around them, so
+    /// it sits on that figure. The surviving value is the target's either way,
+    /// and the figure's is the one gone.
+    ///
+    /// A LOSS THE AST DOES NOT TAKE, which is why it buffers here rather than
+    /// reporting where it is found. `html_to_ast` keeps the figure's attributes
+    /// and the target's apart and loses nothing; only the writer has to put them
+    /// on two lines that meet. Kept apart from `unspellable` because that buffer
+    /// flushes at `Warning` and this row is an `Info` - an attribute the output
+    /// does not carry, which is what `attribute-dropped` means everywhere else.
+    displaced_figure_attrs: Vec<(Handle, String, String)>,
     /// Where the author wrote a `<p>` holding nothing but an image (PART 12
     /// section 16, markup-carve/carve-rs#1331).
     ///
@@ -536,6 +560,60 @@ impl<'a> Importer<'a> {
     /// Rewriting in place keeps each row's position in the vector, so the
     /// attribute rows still stand ahead of the `raw-preserved` row for the same
     /// element - `report` sorts by document position and the sort is stable.
+    /// The figure attributes its TARGET's own attribute line displaces (PART 12
+    /// section 16, ruling markup-carve/carve#1721).
+    ///
+    /// A rebuilt figure is written as the figure's block attribute line, then
+    /// the target's, then the target, then the `^ ` caption line. Two adjacent
+    /// attribute lines are ONE attribute set to the parse, so the pair that
+    /// comes back is a merge rather than either line - and the ruling is that
+    /// the merge has to keep the TARGET'S value, because the target is the
+    /// element that survives the rebuild and the wrapper is the one that does
+    /// not. Where the merged set LANDS differs by arm: on the table for a table
+    /// target, on the rebuilt figure for a quote or a fence.
+    ///
+    /// THE MERGE DECIDES WHICH NAMES ARE LOST, and it treats them differently:
+    ///
+    /// - `id` is a single slot, so the later line's value replaces the earlier
+    ///   one and the figure's id is gone.
+    /// - a key-value pair is the same slot rule under a name.
+    /// - `classes` is a SET: the two lines union, so nothing is displaced and
+    ///   no row is owed. Reporting one here would name a class the output still
+    ///   carries, which is the mirror of the silence this ruling removes.
+    ///
+    /// AN IMAGE TARGET IS NOT IN THE COLLISION AT ALL. Its attributes are
+    /// written inline after the destination rather than on a line of their own,
+    /// so the figure's line and the image's braces never meet and both survive
+    /// intact.
+    fn record_displaced_figure_attrs(&mut self, node: &Handle, path: &str, figure: &Figure) {
+        let Some(own) = figure.attrs.as_ref() else {
+            return;
+        };
+        let theirs = match &*figure.target {
+            FigureTarget::Image(_) => return,
+            FigureTarget::BlockQuote(quote) => quote.attrs.as_ref(),
+            FigureTarget::Table(table) => table.attrs.as_ref(),
+            FigureTarget::CodeBlock(code) => code.attrs.as_ref(),
+            FigureTarget::Paragraph(paragraph) => paragraph.attrs.as_ref(),
+        };
+        let Some(theirs) = theirs else {
+            return;
+        };
+        let mut displaced: Vec<String> = Vec::new();
+        if own.id.is_some() && theirs.id.is_some() {
+            displaced.push("id".into());
+        }
+        for key in own.key_values.keys() {
+            if theirs.key_values.contains_key(key) {
+                displaced.push(key.clone());
+            }
+        }
+        for name in displaced {
+            self.displaced_figure_attrs
+                .push((node.clone(), path.to_owned(), name));
+        }
+    }
+
     fn preserve_own_attributes(&mut self, node: &Handle) {
         for entry in &mut self.diagnostics {
             let Some(owner) = entry.owner.as_ref() else {
@@ -2386,6 +2464,7 @@ impl<'a> Importer<'a> {
             // the importer does not give.
             let reported = self.diagnostics.len();
             let unspellable = self.unspellable.len();
+            let displaced = self.displaced_figure_attrs.len();
             let rebuilt = self.figure_panel_captioned(h, path, depth, attrs, false);
             // A LIMIT REACHED INSIDE THE REBUILD IS NOT THE DOCUMENT'S ERROR
             // in this mode. Before the per-target rule, `roundtrip` preserved a
@@ -2425,6 +2504,7 @@ impl<'a> Importer<'a> {
                 _ => {
                     self.diagnostics.truncate(reported);
                     self.unspellable.truncate(unspellable);
+                    self.displaced_figure_attrs.truncate(displaced);
                     self.preserve_own_attributes(h);
                     self.diag(
                         HtmlImportDiagnosticCode::RawPreserved,
@@ -2480,16 +2560,27 @@ impl<'a> Importer<'a> {
             match blocks.as_slice() {
                 [BlockNode::Figure(f)] => {
                     if matches!(*f.target, FigureTarget::Table(_)) {
+                        // THE SENTENCE NO LONGER CLAIMS THE FIGURE'S ATTRIBUTES
+                        // SURVIVE, because after the ruling below they may not:
+                        // the table writes its OWN attribute line, and where the
+                        // two set the same name the table's wins. It said "the
+                        // written table carries the caption and the figure's
+                        // attributes", which was a false report on exactly the
+                        // shape this row is attached to. carve-php recorded that
+                        // it could not adopt this wording for that reason
+                        // (markup-carve/carve-php#1729); the text is now the one
+                        // carve-js and carve-php already share, so one shape
+                        // reads the same from all three.
                         self.unspellable.push((
                             h.clone(),
                             path.to_owned(),
-                            "A <figure> around a table has no Carve spelling: the written table \
-                             carries the caption and the figure's attributes, and reads back as a \
-                             captioned table rather than a figure"
+                            "A figure wrapping a table has no Carve spelling; the caption is \
+                             written on the table, which renders <caption> inside it"
                                 .into(),
                             HtmlImportDiagnosticCode::StructureUnspellable,
                         ));
                     }
+                    self.record_displaced_figure_attrs(h, path, f);
                 }
                 _ => {
                     self.diag(
@@ -6550,6 +6641,7 @@ fn import(
         nodes: 0,
         quote_depth: 0,
         unspellable: Vec::new(),
+        displaced_figure_attrs: Vec::new(),
         lone_image_paragraphs: Vec::new(),
         footnote_refs: HashMap::new(),
     };
@@ -6586,6 +6678,23 @@ fn import(
     if writing {
         for (node, path, message, code) in std::mem::take(&mut importer.unspellable) {
             importer.diag(code, message, HtmlImportSeverity::Warning, &path, &node);
+        }
+        // ONE ROW PER DISPLACED NAME, at `Info`, which is what this code means
+        // everywhere else: an attribute the output does not carry. The figure's
+        // target now gets its own attribute line written (`render_figure`), and
+        // this is the other half of that ruling - the side that loses is
+        // DECLARED rather than resolved in silence (markup-carve/carve#1721).
+        for (node, path, name) in std::mem::take(&mut importer.displaced_figure_attrs) {
+            importer.diag(
+                HtmlImportDiagnosticCode::AttributeDropped,
+                format!(
+                    "Dropped {name} on <figure>: its target sets {name} as well, and the two \
+                     attribute lines merge into one that keeps the target's value"
+                ),
+                HtmlImportSeverity::Info,
+                &path,
+                &node,
+            );
         }
         for (candidate, kept) in std::mem::take(&mut importer.lone_image_paragraphs)
             .into_iter()
