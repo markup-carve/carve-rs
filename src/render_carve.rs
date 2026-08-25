@@ -1823,6 +1823,17 @@ fn render_block_body(node: &BlockNode, ctx: &mut CarveContext) -> String {
             )
         }
         BlockNode::BlockQuote(quote) => {
+            // Written back in the spelling it was read in
+            // (markup-carve/carve#1718). Choosing structurally instead - the
+            // fence whenever the quote holds a non-paragraph block -
+            // re-canonicalizes 50 corpus documents and every user document
+            // with a multi-block quote, so the node carries the author's
+            // choice rather than the writer inferring one.
+            if quote.fenced {
+                let fence = colon_fence_for(ctx);
+                let body = render_inside_colon_container(&quote.children, ctx);
+                return with_block_attrs(&quote.attrs, &format!("{fence} >\n{body}\n{fence}"));
+            }
             let inner =
                 with_reset_colon_fence_depth(ctx, |ctx| render_blocks(&quote.children, ctx));
             let body = inner

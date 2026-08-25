@@ -1724,6 +1724,12 @@ fn write_code_block(out: &mut String, n: &CodeBlock) {
 fn write_block_quote(out: &mut String, n: &BlockQuote) {
     let mut w = typed(out, "block_quote");
     w.field("children", |out| write_blocks(out, &n.children));
+    // Only ever written when true, and the schema pins it to `true`, so a
+    // prefixed quote's payload is byte for byte what it was before the fenced
+    // spelling existed (markup-carve/carve#1718).
+    if n.fenced {
+        w.field("fenced", |out| write_bool(out, true));
+    }
     // The ordinary attribute slot, like every other node's (PART 12 §3). This
     // cited a "PART 9 §4a" for the source of the quotation: PART 9 has 4b and 4c
     // and no 4a, and what this line writes is the attrs slot rather than an
@@ -2501,6 +2507,7 @@ fn decode_block(value: &Json) -> Result<BlockNode, AstJsonError> {
         "block_quote" => Ok(BlockNode::BlockQuote(BlockQuote {
             attrs: optional_attrs(obj)?,
             children: decode_blocks(required_array(obj, "block_quote", "children")?)?,
+            fenced: optional_bool(obj, "fenced")?.unwrap_or(false),
             pos: optional_pos(obj, "block_quote")?,
         })),
         "list" => Ok(BlockNode::List(List {

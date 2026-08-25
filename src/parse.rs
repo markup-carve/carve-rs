@@ -6335,6 +6335,9 @@ fn parse_block(
         if detect_hardbreaks_block_open(line).is_some() {
             return Some(boxed_block(cur, options, parse_hardbreaks_block));
         }
+        if detect_quote_block_open(line).is_some() {
+            return Some(boxed_block(cur, options, parse_quote_block));
+        }
     }
     // FLUSH-LEFT only: `detect_container_open` trims leading whitespace, so an
     // indented `::: note` below/above a list item's content column must fold as
@@ -7356,6 +7359,7 @@ fn is_invalid_colon_fence_opener_text(line: &str) -> bool {
     detect_container_open(trimmed).is_none()
         && detect_line_block_open(trimmed).is_none()
         && detect_hardbreaks_block_open(trimmed).is_none()
+        && detect_quote_block_open(trimmed).is_none()
 }
 
 fn code_fence_has_closer(cur: &mut LineCursor<'_>, open: FenceOpen) -> bool {
@@ -7465,6 +7469,7 @@ fn collect_colon_container_body(cur: &mut LineCursor<'_>, opener_len: usize) -> 
                     .map(|open| open.fence_len)
                     .or_else(|| detect_line_block_open(line))
                     .or_else(|| detect_hardbreaks_block_open(line))
+                    .or_else(|| detect_quote_block_open(line))
                 {
                     stack.push(len);
                     push_current_line(&mut inner, cur);
@@ -7474,6 +7479,7 @@ fn collect_colon_container_body(cur: &mut LineCursor<'_>, opener_len: usize) -> 
             } else if detect_container_open(line).is_some()
                 || detect_line_block_open(line).is_some()
                 || detect_hardbreaks_block_open(line).is_some()
+                || detect_quote_block_open(line).is_some()
             {
                 // Past the cap an opener DEGRADES to literal paragraph text
                 // (§25) - it does not vanish. Consuming the line without
@@ -7581,6 +7587,7 @@ fn find_colon_container_end(lines: &[&str], start: usize, fence_len: usize) -> u
                 .map(|open| open.fence_len)
                 .or_else(|| detect_line_block_open(line))
                 .or_else(|| detect_hardbreaks_block_open(line))
+                .or_else(|| detect_quote_block_open(line))
             {
                 stack.push(len);
                 idx += 1;
@@ -8159,6 +8166,7 @@ fn boxed_blockquote_node(
         pos: quote_pos,
         attrs: None,
         children,
+        fenced: false,
     };
     if let Some(caption) = caption {
         Box::new(BlockNode::Figure(Figure {
@@ -8642,6 +8650,9 @@ fn self_delimiting_block_end(
     if let Some(fence_len) = detect_hardbreaks_block_open(line) {
         return Some(find_colon_container_end(slice, start, fence_len));
     }
+    if let Some(fence_len) = detect_quote_block_open(line) {
+        return Some(find_colon_container_end(slice, start, fence_len));
+    }
     if let Some(open) = detect_container_open(line) {
         return Some(find_colon_container_end(slice, start, open.fence_len));
     }
@@ -8724,6 +8735,10 @@ fn attached_block_end(
             continue;
         }
         if let Some(fence_len) = detect_hardbreaks_block_open(line) {
+            end = find_colon_container_end(lines, end, fence_len);
+            continue;
+        }
+        if let Some(fence_len) = detect_quote_block_open(line) {
             end = find_colon_container_end(lines, end, fence_len);
             continue;
         }
@@ -10065,7 +10080,8 @@ fn parse_list(
         let literal_colon_opener = detect_container_open(marker.content)
             .map(|open| open.fence_len)
             .or_else(|| detect_line_block_open(marker.content))
-            .or_else(|| detect_hardbreaks_block_open(marker.content));
+            .or_else(|| detect_hardbreaks_block_open(marker.content))
+            .or_else(|| detect_quote_block_open(marker.content));
         while let Some(next) = cur.peek() {
             // A `+` ends the lead paragraph only where it can ACT as a
             // continuation marker - at or below the item's base column. An
@@ -10370,7 +10386,8 @@ fn marker_content_starts_block(content: &str, cur: &LineCursor<'_>, content_col:
     let colon_fence_len = detect_container_open(content)
         .map(|open| open.fence_len)
         .or_else(|| detect_line_block_open(content))
-        .or_else(|| detect_hardbreaks_block_open(content));
+        .or_else(|| detect_hardbreaks_block_open(content))
+        .or_else(|| detect_quote_block_open(content));
     if colon_fence_len.is_some() {
         // An opener OPENS, closer or no closer (carve#514), and an empty body
         // is a container with nothing in it (carve#570). What can stop it is
@@ -10581,6 +10598,7 @@ pub(crate) fn line_starts_paragraph(line: &str) -> bool {
         && detect_container_open(line).is_none()
         && detect_line_block_open(line).is_none()
         && detect_hardbreaks_block_open(line).is_none()
+        && detect_quote_block_open(line).is_none()
         && detect_comment_fence_line(line).is_none()
         && !is_table_start(line)
         && !is_definition_list_start(line)
@@ -11164,6 +11182,13 @@ fn continuation_source_loosens(source: &str, source_is_the_item_body: bool) -> b
             }
         }
         if let Some(fence_len) = detect_hardbreaks_block_open(lines[i]) {
+            let end = closed_colon_span_end(&lines, i, fence_len, false).unwrap_or(lines.len());
+            if !is_the_whole_item_body(i, end) {
+                i = end;
+                continue;
+            }
+        }
+        if let Some(fence_len) = detect_quote_block_open(lines[i]) {
             let end = closed_colon_span_end(&lines, i, fence_len, false).unwrap_or(lines.len());
             if !is_the_whole_item_body(i, end) {
                 i = end;
@@ -11841,6 +11866,10 @@ fn track_collected_colon_fence(open: &mut Vec<usize>, line: &str, at_content_col
         open.push(len);
         return;
     }
+    if let Some(len) = detect_quote_block_open(line) {
+        open.push(len);
+        return;
+    }
     if let Some(container) = detect_container_open(line) {
         open.push(container.fence_len);
     }
@@ -12341,6 +12370,7 @@ fn is_colon_fence_opener_shape(line: &str) -> bool {
     detect_container_open(line).is_some()
         || detect_line_block_open(line).is_some()
         || detect_hardbreaks_block_open(line).is_some()
+        || detect_quote_block_open(line).is_some()
 }
 
 /// Whether a glued colon fence earlier in the paragraph (`:::note`, `:::]`)
@@ -12409,7 +12439,8 @@ fn interrupts_paragraph_with_rest(line: &str, rest: &[&str]) -> bool {
     if !line.starts_with([' ', '\t'])
         && (detect_container_open(line).is_some()
             || detect_line_block_open(line).is_some()
-            || detect_hardbreaks_block_open(line).is_some())
+            || detect_hardbreaks_block_open(line).is_some()
+            || detect_quote_block_open(line).is_some())
     {
         return true;
     }
@@ -15463,6 +15494,28 @@ fn parse_line_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
 /// paragraph children to hard breaks, but does NOT preserve leading whitespace,
 /// keeps the stanza/block structure of its body, and does not affect nested
 /// blocks. Mirrors carve-js `RE_HARDBREAKS_BLOCK_OPEN` / `parseHardBreaksBlock`.
+/// `quote_block_open = colon_fence, space, ">"` -- a colon fence whose type
+/// token is a bare `>`. A SPACE before the token is REQUIRED, exactly as the
+/// line block and the hard-break block require one, so `:::>` is not an opener
+/// (markup-carve/carve#1718).
+fn detect_quote_block_open(line: &str) -> Option<usize> {
+    let trimmed = trim_ascii(line);
+    let fence_len = trimmed.bytes().take_while(|b| *b == b':').count();
+    if fence_len < 3 {
+        return None;
+    }
+    let after = &trimmed[fence_len..];
+    let trimmed_after = after.trim_start_matches(' ');
+    if trimmed_after.len() == after.len() {
+        return None; // no space before the token
+    }
+    if trimmed_after == ">" {
+        Some(fence_len)
+    } else {
+        None
+    }
+}
+
 fn detect_hardbreaks_block_open(line: &str) -> Option<usize> {
     let trimmed = trim_ascii(line);
     let fence_len = trimmed.bytes().take_while(|b| *b == b':').count();
@@ -15495,6 +15548,25 @@ fn detect_hardbreaks_block_open(line: &str) -> Option<usize> {
 /// the body is parsed as ordinary blocks, then every soft break in a DIRECT
 /// paragraph child becomes a hard break. Unlike a line block, leading
 /// whitespace is not preserved and nested blocks keep ordinary soft breaks.
+/// Parse a `::: >` fenced block quote. The body is ordinary block content and
+/// the node is the one the `>`-prefixed form produces; `fenced` records which
+/// spelling was authored so the writer can write it back
+/// (markup-carve/carve#1718).
+fn parse_quote_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
+    let opener = cur.peek().unwrap();
+    let fence_len = detect_quote_block_open(opener).unwrap();
+    let span_start = cur.pos;
+    cur.consume();
+    let (inner, _closed) = collect_colon_container_body(cur, fence_len);
+    let pos = span_of(cur, span_start, cur.pos, options);
+    BlockNode::BlockQuote(BlockQuote {
+        attrs: None,
+        children: parse_capped_colon_body(inner, options),
+        fenced: true,
+        pos,
+    })
+}
+
 fn parse_hardbreaks_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     let opener = cur.peek().unwrap();
     let fence_len = detect_hardbreaks_block_open(opener).unwrap();
