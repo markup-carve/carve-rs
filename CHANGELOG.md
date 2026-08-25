@@ -9,6 +9,7 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Checked `to_*_with_report` render APIs (markup-carve/carve#1728). They report bounded, positioned `raw-format-dropped` losses and strict mode returns `RenderLossError` with the complete count.
 - **Breaking:** `TableOfContents` grows the collapsible disclosure the other two
   engines have (#1243): `TableOfContentsOptions` gains `collapsible`, `summary`
   and `open`. An API change for a caller constructing the struct without

@@ -1347,6 +1347,8 @@ fn render_block(
                 } else {
                     out.push_str(&escape_text(&r.content));
                 }
+            } else {
+                crate::render_loss::record_raw_drop(&r.format, crate::RawNodeType::Block, r.pos);
             }
         }
         BlockNode::Comment(_) => {}
@@ -3272,6 +3274,8 @@ fn render_inline_after(
                 } else {
                     out.push_str(&escape_text(&r.content));
                 }
+            } else {
+                crate::render_loss::record_raw_drop(&r.format, crate::RawNodeType::Inline, r.pos);
             }
         }
         InlineNode::LiteralInline(lit) => {

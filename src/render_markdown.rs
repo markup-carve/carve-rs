@@ -372,6 +372,11 @@ fn render_block(node: &BlockNode, ctx: &mut MarkdownContext, depth: usize) -> St
                 // when the Markdown is rendered to HTML downstream.
                 format!("{}\n\n", escape_md_html(&strip_controls(&raw.content)))
             } else {
+                crate::render_loss::record_raw_drop(
+                    &raw.format,
+                    crate::RawNodeType::Block,
+                    raw.pos,
+                );
                 String::new()
             }
         }
@@ -911,6 +916,11 @@ fn render_inline(node: &InlineNode, ctx: &mut MarkdownContext, depth: usize) -> 
             if raw.format == "html" {
                 escape_md_html(&strip_controls(&raw.content))
             } else {
+                crate::render_loss::record_raw_drop(
+                    &raw.format,
+                    crate::RawNodeType::Inline,
+                    raw.pos,
+                );
                 String::new()
             }
         }

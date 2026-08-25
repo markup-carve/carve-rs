@@ -113,6 +113,21 @@ ANSI-styled text via `carve::to_markdown`, `carve::to_plain_text`, and
 `carve::to_ansi` (each with a matching `render_*` function for a parsed
 `Document`).
 
+Raw nodes are routed to their named target. Use a checked sibling when omitted
+content must be observable:
+
+```rust
+let result = carve::to_html_with_report(
+    "`x`{=latex}",
+    carve::CheckedRenderOptions::default(),
+)?;
+assert_eq!(result.losses[0].code, "raw-format-dropped");
+```
+
+Set `strict: true` to return `RenderLossError` before a value is published.
+Reports keep the complete count and retain 100 positioned entries by default;
+the existing string-returning functions remain available.
+
 ### Linting
 
 `carve::lint_carve` reports silent degradations - places where a document parses
