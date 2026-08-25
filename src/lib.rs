@@ -134,8 +134,8 @@ pub use render_carve::render_carve;
 pub use render_carve_error::{RenderCarveError, SourceUnspellable};
 pub use render_depth::RenderDepthError;
 pub use render_loss::{
-    CheckedRenderOptions, RawNodeType, RenderLoss, RenderLossError, RenderResult, RenderTarget,
-    DEFAULT_MAX_RENDER_LOSSES,
+    with_render_loss_report, CheckedRenderOptions, RawNodeType, RenderLoss, RenderLossError,
+    RenderResult, RenderTarget, DEFAULT_MAX_RENDER_LOSSES,
 };
 pub use render_markdown::{render_markdown, render_markdown_with_options};
 pub use render_plain::{render_plain_text, render_plain_text_with_options};

@@ -122,7 +122,9 @@ pub(crate) fn record_raw_drop(format: &str, node_type: RawNodeType, pos: Option<
     });
 }
 
-pub(crate) fn checked<T>(
+/// Collect actual losses produced while `render` runs. This is the checked
+/// entry point for custom renderers and options-taking render pipelines.
+pub fn with_render_loss_report<T>(
     target: RenderTarget,
     options: CheckedRenderOptions,
     render: impl FnOnce() -> T,
@@ -157,3 +159,5 @@ pub(crate) fn checked<T>(
         })
     }
 }
+
+pub(crate) use with_render_loss_report as checked;
