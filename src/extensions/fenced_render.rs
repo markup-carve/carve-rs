@@ -419,7 +419,16 @@ fn interactive_html(code: &crate::ast::CodeBlock, opts: &FencedRenderOptions) ->
             guard_script_close(&code.content)
         ),
     };
-    let element = format!("<{0}{1}>{2}</{0}>", opts.tag, render_attrs(&attrs), body);
+    // The configured tag decides whether a text-alignment `align` becomes its
+    // CSS declaration: HTML maps `align` to `text-align` on a `div` and to
+    // nothing at all on a `pre` (markup-carve/carve#1755).
+    let aligned = crate::render::rewrite_text_align(&attrs, &opts.tag);
+    let element = format!(
+        "<{0}{1}>{2}</{0}>",
+        opts.tag,
+        render_attrs(aligned.as_ref().unwrap_or(&attrs)),
+        body
+    );
     wrap_figure(element, opts)
 }
 
@@ -439,9 +448,10 @@ fn static_html(
         // survive and the wrapper is identical across engines (carve#302).
         let mut attrs = merged_attrs(code, opts);
         apply_naming(&mut attrs, opts);
+        let aligned = crate::render::rewrite_text_align(&attrs, "div");
         let element = format!(
             "<div{}>{}</div>",
-            render_attrs(&attrs),
+            render_attrs(aligned.as_ref().unwrap_or(&attrs)),
             build(&code.content)
         );
         return wrap_figure(element, opts);

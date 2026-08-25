@@ -1439,7 +1439,7 @@ fn render_heading(
         if let Some(attrs) = &mut attrs {
             attrs.id = Some(id.clone());
         }
-        write_attrs(out, &attrs);
+        write_attrs_for(out, &attrs, &heading_tag(h.level));
     } else {
         // `data-source-line` is a RENDER annotation, not something the author
         // wrote, and it is emitted last - so the generated id goes before it,
@@ -1448,7 +1448,10 @@ fn render_heading(
         // id behind it (`tests/source_lines.rs` catches exactly that).
         let mut authored = h.attrs.clone();
         let stamp = authored.as_mut().and_then(take_source_line_attr);
-        out.push_str(&render_attrs_without_id(&authored));
+        out.push_str(&render_attrs_without_id_for(
+            &authored,
+            &heading_tag(h.level),
+        ));
         out.push_str(" id=\"");
         write_escaped_attr(out, &id);
         out.push('"');
@@ -1476,7 +1479,7 @@ fn render_heading_without_section_id(
     }
     indent(out, level);
     write!(out, "<h{}", h.level).unwrap();
-    write_attrs(out, &attrs);
+    write_attrs_for(out, &attrs, &heading_tag(h.level));
     out.push('>');
     render_inlines(out, &h.children, options, state);
     write!(out, "</h{}>", h.level).unwrap();
@@ -1629,7 +1632,7 @@ fn render_paragraph(
 ) {
     indent(out, level);
     out.push_str("<p");
-    write_attrs(out, &p.attrs);
+    write_attrs_for(out, &p.attrs, "p");
     out.push('>');
     render_inlines(out, &p.children, options, state);
     out.push_str("</p>");
@@ -1782,7 +1785,7 @@ fn render_list_item(
                 if tight && !has_authored_attrs(&p.attrs) {
                     Part::Inline(html)
                 } else {
-                    Part::Inline(format!("<p{}>{html}</p>", render_attrs(&p.attrs)))
+                    Part::Inline(format!("<p{}>{html}</p>", render_attrs_for(&p.attrs, "p")))
                 }
             } else {
                 let mut block = String::new();
@@ -2545,15 +2548,15 @@ fn render_admonition(
     } else {
         a.kind.clone()
     };
+    let tag = if canonical { "aside" } else { "div" };
     let (class, rest) = match &a.attrs {
         Some(at) if !at.classes.is_empty() => (
             dedup_class_str(&format!("{} {}", base, at.classes.join(" "))),
-            render_attrs_after_class(at),
+            render_attrs_after_class_for(at, tag),
         ),
-        Some(at) => (base, render_attrs_after_class(at)),
+        Some(at) => (base, render_attrs_after_class_for(at, tag)),
         None => (base, String::new()),
     };
-    let tag = if canonical { "aside" } else { "div" };
     let authored_name = a.attrs.as_ref().is_some_and(|attrs| {
         attrs.key_values.keys().any(|key| {
             key.eq_ignore_ascii_case("aria-label") || key.eq_ignore_ascii_case("aria-labelledby")
@@ -2650,7 +2653,7 @@ fn render_line_block(
     }
 
     indent(out, level);
-    out.push_str(&format!("<div{}>", render_attrs(&Some(attrs))));
+    out.push_str(&format!("<div{}>", render_attrs_for(&Some(attrs), "div")));
     for child in rendered_children(&lb.children, level + 1, options, state) {
         out.push('\n');
         out.push_str(&child);
@@ -2668,7 +2671,7 @@ fn render_div(
     state: &mut RenderState,
 ) {
     indent(out, level);
-    out.push_str(&format!("<div{}>", render_attrs(&d.attrs)));
+    out.push_str(&format!("<div{}>", render_attrs_for(&d.attrs, "div")));
     // Graceful degradation: surface an unconsumed grouping `[label]` as a
     // visible caption (see render_admonition for rationale).
     if let Some(label) = &d.label {
@@ -2727,7 +2730,7 @@ fn render_definition_list(
                 // The multi-block path below is what indents, and a description
                 // holding one block is not that shape however it was spelled.
                 if d.loose {
-                    out.push_str(&format!("<p{}>", render_attrs(&p.attrs)));
+                    out.push_str(&format!("<p{}>", render_attrs_for(&p.attrs, "p")));
                     render_inlines(out, &p.children, options, state);
                     out.push_str("</p>");
                 } else {
@@ -3869,6 +3872,127 @@ fn write_attrs(out: &mut String, attrs: &Option<Attrs>) {
     }
 }
 
+/// The elements on which HTML's legacy `align` attribute means TEXT ALIGNMENT,
+/// so `{align=...}` on them renders the CSS declaration instead of the
+/// deprecated attribute (PART 10, markup-carve/carve#1755).
+///
+/// `table` IS DELIBERATELY ABSENT AND MUST NOT BE ADDED. On a table `align` is
+/// PLACEMENT - the table floats left or right, or centres as a block - which is
+/// a different property that does not map to `text-align` at all. Rewriting it
+/// would silently turn a floated table into one whose CELL TEXT is
+/// right-aligned, in every existing document that spells it, which is a worse
+/// defect than the deprecated attribute. `{align=...}` on a table keeps
+/// rendering `align=` until somebody rules what a floated table should spell.
+///
+/// The same reasoning keeps `img`, `hr`, `iframe`, `object`, `embed`, `input`
+/// and `caption` out: HTML maps their `align` to a float, a margin, a
+/// `vertical-align` or a caption side, never to `text-align`.
+const TEXT_ALIGN_ELEMENTS: &[&str] = &["p", "div", "h1", "h2", "h3", "h4", "h5", "h6"];
+
+/// The `align` values HTML gives a `text-align` meaning on those elements.
+const TEXT_ALIGN_VALUES: &[&str] = &["left", "right", "center"];
+
+/// Rewrite a text-alignment `align` key-value into a `text-align` declaration,
+/// or `None` when there is nothing to rewrite (the common path allocates
+/// nothing).
+///
+/// `align` is one of the KNOWN keys the attribute mechanism acts on, alongside
+/// `loose` (consumed, emits nothing), `#id` and `.class`. Every other key stays
+/// a raw pass-through: `{banana=yellow}` still renders `banana="yellow"`, and
+/// `{valign=...}` is untouched here (markup-carve/carve#1756 ruled it working
+/// as designed).
+///
+/// The declaration takes the `align` slot so source order is preserved. When
+/// the author also wrote `style`, it is appended to that value instead - two
+/// `style` attributes would be invalid HTML and the second one ignored.
+pub(crate) fn rewrite_text_align(attrs: &Attrs, tag: &str) -> Option<Attrs> {
+    if !TEXT_ALIGN_ELEMENTS.contains(&tag) {
+        return None;
+    }
+    // HTML attribute names are case-insensitive, so `{ALIGN=right}` is the same
+    // key and must take the same path.
+    let align_key = attrs
+        .key_values
+        .keys()
+        .find(|key| key.eq_ignore_ascii_case("align"))?
+        .clone();
+    let value = attrs.key_values[&align_key].trim().to_ascii_lowercase();
+    if !TEXT_ALIGN_VALUES.contains(&value.as_str()) {
+        return None;
+    }
+    let declaration = format!("text-align: {value};");
+    let style_key = attrs
+        .key_values
+        .keys()
+        .find(|key| key.eq_ignore_ascii_case("style"))
+        .cloned();
+
+    let mut rewritten = attrs.clone();
+    rewritten.key_values.remove(&align_key);
+    match &style_key {
+        Some(key) => {
+            let merged = append_declaration(&attrs.key_values[key], &declaration);
+            rewritten.key_values.insert(key.clone(), merged);
+            rewritten
+                .order
+                .retain(|slot| !matches!(slot, AttrSlot::Key(k) if *k == align_key));
+        }
+        None => {
+            rewritten
+                .key_values
+                .insert("style".to_string(), declaration);
+            for slot in &mut rewritten.order {
+                if matches!(slot, AttrSlot::Key(k) if *k == align_key) {
+                    *slot = AttrSlot::Key("style".to_string());
+                }
+            }
+        }
+    }
+    Some(rewritten)
+}
+
+/// Append a declaration to an author `style` value, keeping one `style` attribute.
+fn append_declaration(style: &str, declaration: &str) -> String {
+    let trimmed = style.trim();
+    if trimmed.is_empty() {
+        return declaration.to_string();
+    }
+    if trimmed.ends_with(';') {
+        format!("{trimmed} {declaration}")
+    } else {
+        format!("{trimmed}; {declaration}")
+    }
+}
+
+/// `rewrite_text_align` for an optional attribute block.
+fn rewrite_text_align_opt(attrs: &Option<Attrs>, tag: &str) -> Option<Attrs> {
+    rewrite_text_align(attrs.as_ref()?, tag)
+}
+
+/// `write_attrs` for an element whose `align` may be a text alignment.
+pub(crate) fn write_attrs_for(out: &mut String, attrs: &Option<Attrs>, tag: &str) {
+    match rewrite_text_align_opt(attrs, tag) {
+        Some(rewritten) => write_attrs(out, &Some(rewritten)),
+        None => write_attrs(out, attrs),
+    }
+}
+
+/// `render_attrs` for an element whose `align` may be a text alignment.
+pub(crate) fn render_attrs_for(attrs: &Option<Attrs>, tag: &str) -> String {
+    match rewrite_text_align_opt(attrs, tag) {
+        Some(rewritten) => render_attrs(&Some(rewritten)),
+        None => render_attrs(attrs),
+    }
+}
+
+/// `render_attrs_after_class` for an element whose `align` may be a text alignment.
+pub(crate) fn render_attrs_after_class_for(attrs: &Attrs, tag: &str) -> String {
+    match rewrite_text_align(attrs, tag) {
+        Some(rewritten) => render_attrs_after_class(&rewritten),
+        None => render_attrs_after_class(attrs),
+    }
+}
+
 pub(crate) fn render_attrs(attrs: &Option<Attrs>) -> String {
     let mut out = String::new();
     write_attrs(&mut out, attrs);
@@ -4042,6 +4166,21 @@ fn render_attrs_without_id(attrs: &Option<Attrs>) -> String {
         attrs.order.retain(|slot| !matches!(slot, AttrSlot::Id));
     }
     render_attrs(&attrs)
+}
+
+/// `render_attrs_without_id` for an element whose `align` may be a text alignment.
+fn render_attrs_without_id_for(attrs: &Option<Attrs>, tag: &str) -> String {
+    let mut attrs = attrs.clone();
+    if let Some(attrs) = &mut attrs {
+        attrs.id = None;
+        attrs.order.retain(|slot| !matches!(slot, AttrSlot::Id));
+    }
+    render_attrs_for(&attrs, tag)
+}
+
+/// The HTML tag a heading of this level writes, for the text-alignment set.
+fn heading_tag(level: u8) -> String {
+    format!("h{level}")
 }
 
 /// Allocate a run of `n` hyphens (`n >= 2`) into em/en dashes, matching the

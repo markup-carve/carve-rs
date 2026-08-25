@@ -19,7 +19,7 @@ use std::cell::Cell;
 
 use crate::ast::{Attrs, BlockExtension, BlockNode, Document, InlineNode};
 use crate::extension::{BeforeRenderContext, CarveExtension, RenderContext};
-use crate::render::render_attrs;
+use crate::render::render_attrs_for;
 
 /// Sentinel name for the rewritten carrier node.
 pub(crate) const CARRIER: &str = "carve-tabs";
@@ -217,7 +217,7 @@ impl CarveExtension for Tabs {
         if ctx.is_static() {
             let mut html = format!(
                 "{pad}<div{}>\n",
-                render_attrs(&self.wrapper_attrs(node, None, ctx))
+                render_attrs_for(&self.wrapper_attrs(node, None, ctx), "div")
             );
             for item in &items {
                 html.push_str(&format!(
@@ -272,7 +272,7 @@ impl Tabs {
         // carve-rs#1188 gave the case a runner.
         let mut html = format!(
             "{pad}<div{}>\n",
-            render_attrs(&self.wrapper_attrs(node, None, ctx))
+            render_attrs_for(&self.wrapper_attrs(node, None, ctx), "div")
         );
 
         for (index, item) in items.iter().enumerate() {
@@ -355,7 +355,7 @@ impl Tabs {
 
         let mut html = format!(
             "{pad}<div{}>\n",
-            render_attrs(&self.wrapper_attrs(node, Some("tablist"), ctx)),
+            render_attrs_for(&self.wrapper_attrs(node, Some("tablist"), ctx), "div"),
         );
 
         for (item, (tab_id, panel_id)) in items.iter().zip(&pairs) {
