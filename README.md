@@ -66,6 +66,12 @@ Djot migration is `djot_to_carve`, or `carve migrate --from djot input.dj`. It
 rewrites the delimiters that differ between the two languages, and like
 Markdown it has no mode or report.
 
+BBCode migration is `bbcode_to_carve`, or
+`carve migrate --from bbcode input.bbcode`. It converts forum formatting,
+links, images, quotes, lists, code, spoilers and tables while keeping ordinary
+Carve-looking source text literal. Inputs above 256 KiB are rejected because
+the compatibility rewrite pipeline makes several bounded passes over a post.
+
 ## Status
 
 The crate passes every `.crv` / `.html` pair currently checked into its

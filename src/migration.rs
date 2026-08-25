@@ -1,6 +1,6 @@
 use crate::{
-    djot_to_carve, html_to_carve, markdown_to_carve, HtmlImportDiagnosticCode, HtmlImportError,
-    HtmlImportOptions, HtmlImportSeverity,
+    bbcode_to_carve, djot_to_carve, html_to_carve, markdown_to_carve, BbcodeImportError,
+    HtmlImportDiagnosticCode, HtmlImportError, HtmlImportOptions, HtmlImportSeverity,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -8,6 +8,7 @@ pub enum SourceFormat {
     Html,
     Markdown,
     Djot,
+    Bbcode,
 }
 
 impl SourceFormat {
@@ -16,6 +17,7 @@ impl SourceFormat {
             Self::Html => "html",
             Self::Markdown => "markdown",
             Self::Djot => "djot",
+            Self::Bbcode => "bbcode",
         }
     }
 }
@@ -126,4 +128,8 @@ pub fn migrate_markdown(source: &str) -> MigrationResult {
 
 pub fn migrate_djot(source: &str) -> MigrationResult {
     exact(djot_to_carve(source), SourceFormat::Djot)
+}
+
+pub fn migrate_bbcode(source: &str) -> Result<MigrationResult, BbcodeImportError> {
+    Ok(exact(bbcode_to_carve(source)?, SourceFormat::Bbcode))
 }

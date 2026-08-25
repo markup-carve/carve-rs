@@ -736,9 +736,9 @@ fn normalize_plus_bullets(source: &str) -> String {
 /// and the only one measurable end to end through a converter and no other way
 /// (markup-carve/carve-rs#995). The profiles below are the ones the shared
 /// escaper corpus defines (`tests/spec/tests/corpus-escape`), NOT a table of
-/// this engine's live policy for three source languages: only `DJOT` has a
-/// production caller, and the other two are `#[cfg(test)]` so the compiler says
-/// that rather than a comment (markup-carve/carve-rs#1289).
+/// this engine's live policy for three source languages: `DJOT` and `PLAIN`
+/// have production callers, while Markdown stays `#[cfg(test)]` because that
+/// importer is AST-first (markup-carve/carve-rs#1289, #1275).
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct HandledDelimiters<'a> {
     /// Braced runs (`{X…X}`) the caller's language spells too.
@@ -748,9 +748,7 @@ pub(crate) struct HandledDelimiters<'a> {
 }
 
 impl HandledDelimiters<'_> {
-    /// Djot: the language of `djot_to_carve`, this crate's only text-level
-    /// converter. Every other importer builds an AST and lets the canonical
-    /// writer emit source, so no text-level escaping happens on those paths.
+    /// Djot: the language of `djot_to_carve`.
     pub(crate) const DJOT: HandledDelimiters<'static> = HandledDelimiters {
         braced: "=+-*_^~",
         bare: "~*_",
@@ -758,10 +756,8 @@ impl HandledDelimiters<'_> {
 
     /// A language that owns none of these delimiters: HTML and BBCode text.
     ///
-    /// NO PRODUCTION PATH PASSES THIS, and `#[cfg(test)]` is what says so - the
-    /// compiler refuses a caller outside the test build rather than a comment
-    /// asking a reader to believe it. See `MARKDOWN` for the whole reasoning.
-    #[cfg(test)]
+    /// The BBCode importer passes this after protecting its tag and literal
+    /// spans, because BBCode owns none of Carve's inline delimiters.
     pub(crate) const PLAIN: HandledDelimiters<'static> = HandledDelimiters {
         braced: "",
         bare: "",
@@ -769,13 +765,11 @@ impl HandledDelimiters<'_> {
 
     /// Markdown: the `markdown` profile of the shared escaper corpus.
     ///
-    /// NO PRODUCTION PATH PASSES THIS EITHER. `escape_plain_carve_syntax` has
-    /// exactly one non-test caller, `djot_to_carve`, and it passes `DJOT`.
+    /// NO PRODUCTION PATH PASSES THIS. Djot and BBCode pass `DJOT` and `PLAIN`;
     /// `markdown_to_carve` never reaches the escaper at all: it builds a
     /// `Document` and hands it to the canonical writer, which escapes by
     /// construction, so PART 11 §2 is already satisfied on that path without a
-    /// delimiter table. The HTML and BBCode importers are AST-first the same
-    /// way.
+    /// delimiter table. The HTML importer is AST-first the same way.
     ///
     /// SO WHY IS IT HERE. It is this engine's declaration of a profile the
     /// SHARED escaper corpus defines (`tests/spec/tests/corpus-escape`), and it
@@ -1578,12 +1572,10 @@ mod escape_corpus {
     }
 
     #[test]
-    fn a_profile_with_no_caller_is_named() {
-        // `djot_to_carve` is this crate's only text-level converter. The
-        // Markdown and HTML importers build an AST and let the canonical writer
-        // emit source, so they escape no text and pass no handled set. When one
-        // of them grows a text-level path, it passes MARKDOWN or PLAIN here and
-        // this test is what says the profile was already proven.
+    fn the_profiles_remain_distinct() {
+        // Djot and BBCode are text-level converters. Markdown and HTML build an
+        // AST and let the canonical writer emit source, so they escape no text
+        // and Markdown passes no handled set.
         // The handled set is what separates the profiles: `*` is Djot markup and
         // is left for the converter, and is literal text under PLAIN. Asserting
         // the two differ is what keeps the parameter load-bearing - a hardwired

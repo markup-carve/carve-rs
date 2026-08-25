@@ -9,6 +9,9 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `bbcode_to_carve` and `carve migrate --from bbcode`, bringing Rust importer
+  parity for forum migrations (#1275). Code and `[noparse]` content stays
+  literal, ordinary Carve syntax is escaped, and input is bounded at 256 KiB.
 - Checked `to_*_with_report` render APIs (markup-carve/carve#1728). They report bounded, positioned `raw-format-dropped` losses and strict mode returns `RenderLossError` with the complete count.
 - **Breaking:** `TableOfContents` grows the collapsible disclosure the other two
   engines have (#1243): `TableOfContentsOptions` gains `collapsible`, `summary`
