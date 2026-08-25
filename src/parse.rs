@@ -1536,7 +1536,8 @@ fn extract_footnote_defs(
                             }
                         } else if let Some(open) = detect_fence_open(trimmed) {
                             note_fence = Some(open);
-                        } else if let Some((label_part, target_part)) = parse_link_def_line(trimmed)
+                        } else if let Some((label_part, target_part)) =
+                            parse_link_def_line(trim_ascii_start(trimmed))
                         {
                             // A LINK DEFINITION inside the body is
                             // document-level metadata like any other, so it is
@@ -1596,15 +1597,14 @@ fn extract_footnote_defs(
             // First definition for a label wins (later duplicates are ignored).
             if first_for_label {
                 definition_keys.insert(normalized_label, label.to_string());
-                defs.insert(
-                    label.to_string(),
-                    MappedSource {
-                        col_map: def_col_map,
-                        source: def_lines.join("\n"),
-                        line_map: def_line_map,
-                        authored_base_at_start: false,
-                    },
-                );
+                let mut definition_source = MappedSource {
+                    col_map: def_col_map,
+                    source: def_lines.join("\n"),
+                    line_map: def_line_map,
+                    authored_base_at_start: false,
+                };
+                rebase_overindented_blocks(&mut definition_source, true);
+                defs.insert(label.to_string(), definition_source);
             }
             // Leave the container's structural prefix (or a blank line at top
             // level) where the invisible definition was, so the container still
@@ -5621,7 +5621,7 @@ fn item_body(
     attrs: Option<Attrs>,
     drop_empty_paragraphs: bool,
 ) -> Vec<BlockNode> {
-    rebase_overindented_item_blocks(&mut source);
+    rebase_overindented_blocks(&mut source, false);
     deferred.push(ItemBody {
         item,
         chunk: Chunk::Source(source),
@@ -5653,15 +5653,15 @@ fn parse_item_chunk(
     carried: &mut Vec<PendingBody>,
 ) -> Vec<BlockNode> {
     let mut rebased = source.clone();
-    rebase_overindented_item_blocks(&mut rebased);
+    rebase_overindented_blocks(&mut rebased, false);
     parse_mapped_source_at_level_into(&rebased, options, false, true, carried)
 }
 
-/// Apply carve#1705's authored block base to a list-item body whose canonical
-/// content column has already been stripped. Sublists are deliberately left
-/// alone: they already accept every deeper column, and their residual indent
-/// expresses another list level.
-fn rebase_overindented_item_blocks(source: &mut MappedSource) {
+/// Apply an authored block base after a container's minimum content column has
+/// been stripped. List-item calls leave sublists alone because their residual
+/// indentation expresses another list level; definition and footnote bodies
+/// include them under carve#1729's shared rule.
+fn rebase_overindented_blocks(source: &mut MappedSource, include_sublists: bool) {
     let trailing_newline = source.source.ends_with('\n');
     let mut lines: Vec<String> = source.source.lines().map(str::to_string).collect();
     if trailing_newline {
@@ -5691,7 +5691,7 @@ fn rebase_overindented_item_blocks(source: &mut MappedSource) {
             i += 1;
             continue;
         }
-        if paragraph_open && base > 0 && item_block_opener(&local_at_base) {
+        if !include_sublists && paragraph_open && base > 0 && item_block_opener(&local_at_base) {
             i += 1;
             continue;
         }
@@ -5709,10 +5709,12 @@ fn rebase_overindented_item_blocks(source: &mut MappedSource) {
             nested_columns.pop();
         }
         if let Some(column) = marker_content_col(&lines[i]) {
-            nested_columns.push(column);
-            after_blank = false;
-            i += 1;
-            continue;
+            if !include_sublists || base == 0 || !nested_columns.is_empty() {
+                nested_columns.push(column);
+                after_blank = false;
+                i += 1;
+                continue;
+            }
         }
         if nested_columns.last().is_some_and(|column| base >= *column) {
             i += 1;
@@ -5725,7 +5727,9 @@ fn rebase_overindented_item_blocks(source: &mut MappedSource) {
             continue;
         }
         let opener = strip_leading_columns(&lines[i], base);
-        if is_list_marker(&opener) || !item_block_opener(&opener) {
+        if (is_list_marker(&opener) && !include_sublists)
+            || (!is_list_marker(&opener) && !item_block_opener(&opener))
+        {
             after_blank = false;
             i += 1;
             continue;
@@ -5803,6 +5807,13 @@ fn rebase_overindented_item_blocks(source: &mut MappedSource) {
                     }
                 }
             }
+        } else if is_list_marker(&opener) {
+            for (j, candidate) in lines.iter().enumerate().skip(i + 1) {
+                if is_blank_line(candidate) || indent_columns(candidate) < base {
+                    break;
+                }
+                end = j;
+            }
         } else if strip_blockquote_prefix(&opener).is_some() {
             // Quote prefixes and their lazy paragraph continuations share the
             // opener's authored base until a blank or a dedent ends the run.
@@ -5839,9 +5850,10 @@ fn rebase_overindented_item_blocks(source: &mut MappedSource) {
             // their own column logic, so carry this one marker with its
             // attribute rather than leaving a residual indent between them.
             if let Some(candidate) = lines.get(i + 1) {
+                let target = strip_leading_columns(candidate, base);
                 if !is_blank_line(candidate)
                     && indent_columns(candidate) >= base
-                    && is_list_marker(&strip_leading_columns(candidate, base))
+                    && (is_list_marker(&target) || (include_sublists && item_block_opener(&target)))
                 {
                     end = i + 1;
                 }
@@ -9222,7 +9234,7 @@ fn parse_list(
                     // live in the following chunk (notably a sub-list), so
                     // waiting for `parse_item_chunk` would drop the attributes
                     // before they can be carried across that boundary.
-                    rebase_overindented_item_blocks(&mut nested);
+                    rebase_overindented_blocks(&mut nested, false);
                     // A `{…}` block that ENDS this chunk was written in front of
                     // whatever comes next, and what comes next is in the next
                     // chunk - the collector broke on the sub-list marker. Hold
@@ -12674,6 +12686,7 @@ fn parse_definition_list(cur: &mut LineCursor, options: &Options<'_>) -> BlockNo
             // consumed, so a multi-line definition is one region rather than
             // just its opening line. `collect_definition_body` has already
             // advanced the cursor past those lines.
+            rebase_overindented_blocks(&mut body, true);
             let children = parse_mapped_source(&body, options);
             let mut pos = span_of(cur, def_start, cur.pos, options);
             if let (Some(pos), Some(last)) = (

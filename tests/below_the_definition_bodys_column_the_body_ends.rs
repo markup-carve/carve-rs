@@ -5,7 +5,8 @@
 //!     classified in the surviving context.
 //!   - AT the column, the line is the body's own block content, so a block
 //!     opener opens inside the `dd`.
-//!   - PAST the column, the line is lazy text (markup-carve/carve#918).
+//!   - PAST the column, a recognized opener establishes an authored local base
+//!     (markup-carve/carve#1729), while ordinary text remains lazy continuation.
 //!
 //! `definition_indent` states the floor as column arithmetic; this states what
 //! happens on the other side of it. Every case below is a `:: t` / `:  body`
@@ -120,15 +121,14 @@ fn at_the_column_the_block_opener_opens_inside_the_description() {
     );
 }
 
-/// PAST the column the line is lazy text: `definition_indent` REACHES the body's
-/// column and does not measure how far past it a line went, so the `>` is a
-/// greater-than sign (markup-carve/carve#918). This is the other boundary, and
-/// it is what BELOW must not collapse into.
+/// PAST the minimum column a recognized opener establishes an authored block
+/// base (markup-carve/carve#1729). This is the other boundary, and it is what
+/// BELOW must not collapse into.
 #[test]
-fn past_the_column_the_line_is_lazy_text() {
+fn past_the_column_the_line_opens_at_its_authored_base() {
     assert_eq!(
         html(&entry(4, "> q")),
-        "<dl>\n  <dt>t</dt>\n  <dd>body\n&gt; q</dd>\n</dl>"
+        "<dl>\n  <dt>t</dt>\n  <dd>\n    <p>body</p>\n    <blockquote><p>q</p></blockquote>\n  </dd>\n</dl>"
     );
 }
 

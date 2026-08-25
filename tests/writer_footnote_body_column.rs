@@ -1,26 +1,14 @@
 //! `fmt` writes a footnote body at TWO spaces, the body's own column.
 //!
-//! The writer used THREE. Three is legal continuation - §16 is `space, space,
-//! {whitespace}` - but the body's blocks are read relative to the body's own
-//! column, and an indented block opener does not open a block. So the structure
-//! the indent carried was flattened on the way back in, breaking PART 11 §1: a
-//! table in a note body came back as a paragraph (carve-rs#617).
-//!
-//! NOT only tables. Seven body shapes broke at three and hold at two: table, code
-//! fence, block quote, heading, div, nested list, definition list.
-//!
-//! A BULLET LIST is the exception, and it is why this survived: a bullet opens a
-//! list at any indent, so the block body shape authors write most often
-//! round-tripped fine and nothing complained.
+//! The writer used THREE. That is legal input and now establishes an authored
+//! local base (carve#1729), but generated source still uses the minimum column
+//! so canonical output is stable and portable to older readers.
 //!
 //! The corpus pins how an AUTHORED body parses (`203-a-footnote-body-holds-blocks`
 //! is exactly the right shape, at two spaces). Nothing pinned that the writer's
 //! own output parses back the same way, which is how all three engines agreed on a
 //! form their own readers could not read. So these assertions go per body SHAPE.
 //!
-//! carve-js writes three too and its round trip passes anyway, because its PARSER
-//! accepts a table at three where this engine, carve-php and the executable spec
-//! all read a paragraph (markup-carve/carve-js#677). It is not the oracle here.
 
 use carve::{parse, render_carve, to_html};
 
@@ -33,8 +21,7 @@ fn document(body: &str) -> String {
     format!("[^a]: intro\n\n{body}\nsee[^a]\n")
 }
 
-/// Every block shape a note body can hold. The last two round-tripped at three
-/// spaces as well, and are kept so a narrowed fix still has to keep them working.
+/// Every block shape a note body can hold.
 fn shapes() -> Vec<(&'static str, &'static str)> {
     vec![
         ("table", "  | a |\n  | - |\n  | b |\n"),
@@ -82,12 +69,9 @@ fn the_body_is_written_at_two_spaces() {
 }
 
 #[test]
-fn a_three_space_body_is_still_read_as_a_paragraph() {
-    // WHY two rather than three, stated as a fact about the READER: at three the
-    // table opener is indented and does not open. If this starts failing, the
-    // parse rule moved and the writer's column can be revisited.
+fn a_three_space_body_uses_its_authored_base() {
     let html = to_html("[^a]: intro\n\n   | a |\n   | - |\n   | b |\n\nsee[^a]\n");
-    assert!(!html.contains("<table>"), "{html}");
+    assert!(html.contains("<table>"), "{html}");
 }
 
 #[test]

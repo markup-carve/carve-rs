@@ -1,11 +1,9 @@
 //! A tab and four spaces reach the same column past a definition body, and are
 //! therefore read the same way (carve-rs#793).
 //!
-//! `definition_indent` REACHES the body's column and does not measure how far
-//! past it a line went, so PAST the column the line is lazy text and its `>` is
-//! a greater-than sign (markup-carve/carve#918). PART 9 §24 C1 gives a tab a
-//! COLUMN VALUE, so a bare tab reaches column 4 and is past the column exactly
-//! as four spaces are.
+//! A recognized opener past the minimum establishes an authored block base
+//! (markup-carve/carve#1729). PART 9 §24 C1 gives a tab a COLUMN VALUE, so a
+//! bare tab reaches column 4 exactly as four spaces do.
 //!
 //! The form-A dedent asked `slice_columns` for three columns and did not keep
 //! the residual, so the tab - one codepoint spanning four columns - was
@@ -20,12 +18,7 @@ fn html(src: &str) -> String {
     carve::to_html(src)
 }
 
-/// What the four-space spelling produces: the line is PAST the body's column,
-/// so it is lazy text and the `>` is a greater-than sign.
-const LAZY: &str = "<dl>\n  <dt>t</dt>\n  <dd>body\n&gt; q</dd>\n</dl>";
-
-/// What the three-space spelling produces: the line is AT the body's column, so
-/// it opens a block inside the description.
+/// What every spelling at or past the minimum produces for a block opener.
 const OPENS: &str =
     "<dl>\n  <dt>t</dt>\n  <dd>\n    <p>body</p>\n    <blockquote><p>q</p></blockquote>\n  </dd>\n</dl>";
 
@@ -41,10 +34,10 @@ fn the_tab_literals_really_are_tabs() {
 }
 
 #[test]
-fn a_bare_tab_past_the_column_is_lazy_text_like_four_spaces() {
+fn a_bare_tab_opens_at_the_same_authored_base_as_four_spaces() {
     // The reported document. A tab reaches column 4; so do four spaces.
-    assert_eq!(html(":: t\n:  body\n\t> q\n"), LAZY);
-    assert_eq!(html(":: t\n:  body\n    > q\n"), LAZY);
+    assert_eq!(html(":: t\n:  body\n\t> q\n"), OPENS);
+    assert_eq!(html(":: t\n:  body\n    > q\n"), OPENS);
 }
 
 #[test]
@@ -52,7 +45,7 @@ fn a_space_then_a_tab_reaches_the_same_column_and_answers_the_same_way() {
     // One space then a tab is columns 1 -> 4, the same stop. This spelling
     // answered like the bare tab before the fix and like four spaces after it,
     // so it moves with the case above rather than being a separate rule.
-    assert_eq!(html(":: t\n:  body\n \t> q\n"), LAZY);
+    assert_eq!(html(":: t\n:  body\n \t> q\n"), OPENS);
 }
 
 #[test]
@@ -64,11 +57,9 @@ fn at_the_column_a_block_still_opens() {
 }
 
 #[test]
-fn further_past_the_column_is_still_lazy_text() {
-    // CONTROL. Five spaces and a tab-then-space are both past the column, and
-    // the rule does not measure how far past.
-    assert_eq!(html(":: t\n:  body\n     > q\n"), LAZY);
-    assert_eq!(html(":: t\n:  body\n\t > q\n"), LAZY);
+fn further_past_the_column_still_opens_at_the_authored_base() {
+    assert_eq!(html(":: t\n:  body\n     > q\n"), OPENS);
+    assert_eq!(html(":: t\n:  body\n\t > q\n"), OPENS);
 }
 
 #[test]
