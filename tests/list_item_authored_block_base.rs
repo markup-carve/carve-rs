@@ -54,3 +54,26 @@ fn a_block_below_the_descendant_returns_to_the_parent() {
         "{output}"
     );
 }
+
+#[test]
+fn captions_and_wrapped_definition_terms_keep_the_authored_base() {
+    for (body, expected) in [
+        ("| A |\n   | 1 |\n   ^ Cap", "<caption>Cap</caption>"),
+        ("![a](u)\n   ^ Cap", "<figcaption>Cap</figcaption>"),
+        (
+            "```\n   code\n   ```\n   ^ Cap",
+            "<figcaption>Cap</figcaption>",
+        ),
+        (":: term\n   more\n   :  def", "<dd>def</dd>"),
+    ] {
+        let output = html(&format!("- x\n\n   {body}\n"));
+        assert!(output.contains(expected), "{body:?}: {output}");
+    }
+}
+
+#[test]
+fn an_over_indented_child_marker_keeps_its_exact_column_block() {
+    let exact = html("- x\n\n  - child\n\n    # h\n");
+    let over = html("- x\n\n   - child\n\n     # h\n");
+    assert_eq!(over, exact);
+}

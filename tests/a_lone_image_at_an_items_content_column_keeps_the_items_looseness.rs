@@ -30,17 +30,17 @@ fn image_is_bare(html: &str) -> bool {
 }
 
 #[test]
-fn a_lone_image_at_the_content_column_keeps_the_item_tight() {
+fn a_lone_image_at_the_content_column_keeps_the_item_loose() {
     let src = "- t\n\n  ![A](a.jpg)\n";
     let html = to_html(src);
 
     assert!(
-        only_list_tight(src),
-        "a block image is an L2 sub-block opener:\n{html}"
+        !only_list_tight(src),
+        "an exact-column image keeps the blank-line looseness:\n{html}"
     );
     assert!(
-        !html_wraps_the_lead(&html),
-        "a tight item does not wrap its lead paragraph:\n{html}"
+        html_wraps_the_lead(&html),
+        "a loose item wraps its lead paragraph:\n{html}"
     );
     // The collapse control. Restoring looseness by re-wrapping the image would
     // satisfy the two assertions above and regress corpus 411.
@@ -51,7 +51,7 @@ fn a_lone_image_at_the_content_column_keeps_the_item_tight() {
 }
 
 #[test]
-fn the_same_shape_is_tight_for_every_list_kind() {
+fn the_same_shape_is_loose_for_every_list_kind() {
     for src in [
         "- t\n\n  ![A](a.jpg)\n",     // unordered
         "1. t\n\n   ![A](a.jpg)\n",   // ordered
@@ -59,8 +59,11 @@ fn the_same_shape_is_tight_for_every_list_kind() {
         "* t\n\n  ![A](a.jpg)\n",     // the other bullet
     ] {
         let html = to_html(src);
-        assert!(only_list_tight(src), "loose for {src:?}:\n{html}");
-        assert!(!html_wraps_the_lead(&html), "lead <p> for {src:?}:\n{html}");
+        assert!(!only_list_tight(src), "tight for {src:?}:\n{html}");
+        assert!(
+            html_wraps_the_lead(&html),
+            "missing lead <p> for {src:?}:\n{html}"
+        );
         assert!(
             image_is_bare(&html),
             "image re-wrapped for {src:?}:\n{html}"
@@ -69,7 +72,7 @@ fn the_same_shape_is_tight_for_every_list_kind() {
 }
 
 #[test]
-fn a_captioned_image_at_the_content_column_is_tight_too() {
+fn a_captioned_image_at_the_content_column_is_loose_too() {
     // The neighbour the reported shape does not name. An image with a `^ `
     // caption is a `Figure`, which is no more a `Paragraph` than a `BlockImage`
     // is - so it carried the identical defect, and a fix aimed only at the
@@ -77,8 +80,8 @@ fn a_captioned_image_at_the_content_column_is_tight_too() {
     let src = "- t\n\n  ![A](a.jpg)\n  ^ cap\n";
     let html = to_html(src);
 
-    assert!(only_list_tight(src), "captioned image loosened:\n{html}");
-    assert!(!html_wraps_the_lead(&html), "lead <p>:\n{html}");
+    assert!(!only_list_tight(src), "captioned image tightened:\n{html}");
+    assert!(html_wraps_the_lead(&html), "missing lead <p>:\n{html}");
     assert!(
         html.contains("<figcaption>cap</figcaption>") && image_is_bare(&html),
         "the figure is still built, and its image is still bare:\n{html}"
@@ -86,14 +89,14 @@ fn a_captioned_image_at_the_content_column_is_tight_too() {
 }
 
 #[test]
-fn an_over_indented_lone_image_uses_its_authored_base_and_stays_tight() {
+fn an_over_indented_lone_image_matches_the_exact_column_looseness() {
     // The same recognized opener one column further in establishes that column
     // as its authored base and keeps the same L2 classification.
     let src = "- t\n\n   ![A](a.jpg)\n";
     let html = to_html(src);
 
-    assert!(only_list_tight(src), "indented image went loose:\n{html}");
-    assert!(!html_wraps_the_lead(&html), "lead <p>:\n{html}");
+    assert!(!only_list_tight(src), "indented image went tight:\n{html}");
+    assert!(html_wraps_the_lead(&html), "missing lead <p>:\n{html}");
     assert!(image_is_bare(&html), "image re-wrapped:\n{html}");
 }
 
@@ -151,7 +154,7 @@ fn an_invisible_block_does_not_change_the_visible_blocks_looseness_class() {
     // the block image behind it remains an L2 sub-block opener.
     for (label, src, tight) in [
         ("paragraph", "- t\n\n  %% n\n  x\n", false),
-        ("lone image", "- t\n\n  %% n\n  ![A](a.jpg)\n", true),
+        ("lone image", "- t\n\n  %% n\n  ![A](a.jpg)\n", false),
     ] {
         let html = to_html(src);
         assert!(

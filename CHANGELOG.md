@@ -68,6 +68,7 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Recognized block groups authored past a list item's canonical content column now use that column as a temporary local base and format back canonically (#1387, markup-carve/carve#1705). Exact-column and below-minimum behavior stay unchanged; this is a source-compatibility change for older readers that treated the over-indented marker literally.
 - **Breaking:** the doubled run is the canonical arrow, and `=>` is no longer
   one (markup-carve/carve#1442, #1155). `<--` `-->` `<-->` `<==` `==>` `<=>` are
   canonical; `<-` `->` `<->` still render and are deprecated.

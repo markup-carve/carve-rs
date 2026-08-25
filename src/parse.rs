@@ -5643,6 +5643,12 @@ fn rebase_overindented_item_blocks(source: &mut MappedSource) {
         let base = indent_columns(&lines[i]);
         let local_at_base = strip_leading_columns(&lines[i], base);
         if i == 0 && base > 0 && !source.authored_base_at_start {
+            // A residual first-line marker still opens a descendant. Register
+            // its content column before preserving the residual line so a
+            // post-blank block at or past that column remains the child's.
+            if let Some(column) = marker_content_col(&lines[i]) {
+                nested_columns.push(column);
+            }
             paragraph_open = true;
             i += 1;
             continue;
@@ -5784,10 +5790,9 @@ fn rebase_overindented_item_blocks(source: &mut MappedSource) {
                 if is_blank_line(candidate) || indent_columns(candidate) < base {
                     break;
                 }
-                let local = strip_leading_columns(candidate, base);
-                if !is_definition_list_start(&local) && !local.starts_with(":  ") {
-                    break;
-                }
+                // Wrapped term text and description markers are one definition
+                // run. Rebasing only the marker-shaped lines strands the
+                // wrapped term and makes the following `:  ` literal text.
                 end = j;
             }
         } else if parse_standalone_attrs(&opener).is_some() {
@@ -5804,15 +5809,27 @@ fn rebase_overindented_item_blocks(source: &mut MappedSource) {
                 }
             }
         }
+        // A caption is a structural continuation of the captionable block
+        // immediately above it, and therefore shares that opener's authored
+        // base. Leaving it at the authored column detaches it as literal text.
+        if let Some(candidate) = lines.get(end + 1) {
+            if !is_blank_line(candidate) && indent_columns(candidate) >= base {
+                let local = strip_leading_columns(candidate, base);
+                if local.starts_with("^ ") && local[2..].chars().any(|ch| !ch.is_whitespace()) {
+                    end += 1;
+                }
+            }
+        }
         for (j, line) in lines.iter_mut().enumerate().take(end + 1).skip(i) {
             if is_blank_line(line) {
                 continue;
             }
-            let before = line.len() as isize;
             *line = strip_leading_columns(line, base);
-            let removed = before - line.len() as isize;
             if let Some(Some(col)) = source.col_map.get_mut(j) {
-                *col += removed;
+                // Source columns are visual columns, not byte offsets. A tab
+                // crossing the authored base can remove one byte while moving
+                // four columns; advancing by the byte delta corrupts `pos`.
+                *col += base as isize;
             }
         }
         i = end + 1;
@@ -11165,7 +11182,8 @@ fn continuation_source_loosens(source: &str, source_is_the_item_body: bool) -> b
 fn block_is_paragraph_shaped(block: &BlockNode) -> bool {
     match block {
         BlockNode::Paragraph(_) => true,
-        BlockNode::Figure(f) => matches!(*f.target, FigureTarget::Paragraph(_)),
+        BlockNode::BlockImage(_) => true,
+        BlockNode::Figure(f) => matches!(*f.target, FigureTarget::Image(_)),
         _ => false,
     }
 }
