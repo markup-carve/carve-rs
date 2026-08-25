@@ -32,6 +32,13 @@
 //! pinned below, because a message claiming the target ELEMENT keeps its id
 //! would be false on two of the three arms.
 //!
+//! EQUAL VALUES STILL LOSE ONE OF THE TWO, which is why the row names the
+//! COLLISION rather than a side. `<figure id="x"><blockquote id="x">` comes back
+//! as `<figure id="x"><blockquote>`: the value survives and the target's own
+//! attribute does not. Suppressing the row when the values match reads like the
+//! obvious simplification and would turn that case into the silent drop this
+//! ruling exists to remove, so a case below pins it firing.
+//!
 //! THE IMAGE ARM IS THE CONTROL. An image writes its attributes inline, after
 //! the destination, so the figure's line and the image's braces never meet.
 //! Nothing about that arm changes, and the case that says so fails if a later
@@ -50,7 +57,7 @@ const MODES: [HtmlImportMode; 3] = [
     HtmlImportMode::Roundtrip,
 ];
 
-const DISPLACED_ID: &str = "Info :: attribute-dropped :: Dropped id on <figure>: its target sets id as well, and the two attribute lines merge into one that keeps the target's value";
+const DISPLACED_ID: &str = "Info :: attribute-dropped :: Dropped one id on <figure>: the figure and its target both set id, and their two attribute lines merge into a single value";
 const UNSPELLABLE: &str = "Warning :: structure-unspellable :: A figure wrapping a table has no Carve spelling; the caption is written on the table, which renders <caption> inside it";
 
 const TABLE: &str = "<figure id=\"f\" class=\"c\"><table id=\"g\" class=\"d\"><tr><td>a</td></tr></table><figcaption>Cap</figcaption></figure>";
@@ -173,7 +180,7 @@ fn a_displaced_key_value_pair_is_declared_by_its_own_name() {
         );
         assert_eq!(
             rows,
-            vec!["Info :: attribute-dropped :: Dropped data-k on <figure>: its target sets data-k as well, and the two attribute lines merge into one that keeps the target's value"],
+            vec!["Info :: attribute-dropped :: Dropped one data-k on <figure>: the figure and its target both set data-k, and their two attribute lines merge into a single value"],
             "mode {mode:?}"
         );
         assert!(html_of(&carve).contains("data-k=\"2\""), "mode {mode:?}");
@@ -193,6 +200,25 @@ fn a_key_the_target_does_not_set_is_not_displaced() {
             "mode {mode:?}"
         );
         assert!(rows.is_empty(), "mode {mode:?}: {rows:?}");
+    }
+}
+
+/// Two attributes of the same name with the SAME value still merge into one, so
+/// one of the two elements comes out without it and a row is owed. Measured:
+/// `<figure id="x"><blockquote id="x">` re-renders as
+/// `<figure id="x"><blockquote>`, so it is the TARGET's that is gone.
+#[test]
+fn equal_values_still_lose_one_of_the_two_and_the_row_fires() {
+    for mode in MODES {
+        let (carve, rows) = imported(
+            "<figure id=\"x\"><blockquote id=\"x\"><p>a</p></blockquote><figcaption>Cap</figcaption></figure>",
+            mode,
+        );
+        assert_eq!(carve, "{#x}\n{#x}\n> a\n^ Cap\n", "mode {mode:?}");
+        assert_eq!(rows, vec![DISPLACED_ID], "mode {mode:?}");
+        let html = html_of(&carve);
+        assert!(html.contains("<figure id=\"x\">"), "mode {mode:?}: {html}");
+        assert!(html.contains("<blockquote>"), "mode {mode:?}: {html}");
     }
 }
 
