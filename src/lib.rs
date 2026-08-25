@@ -41,6 +41,7 @@ mod render_ansi;
 mod render_carve;
 mod render_carve_error;
 mod render_depth;
+mod render_loss;
 mod render_markdown;
 mod render_plain;
 mod render_text;
@@ -132,6 +133,10 @@ pub use render_ansi::{render_ansi, render_ansi_with_options};
 pub use render_carve::render_carve;
 pub use render_carve_error::{RenderCarveError, SourceUnspellable};
 pub use render_depth::RenderDepthError;
+pub use render_loss::{
+    with_render_loss_report, CheckedRenderOptions, RawNodeType, RenderLoss, RenderLossError,
+    RenderResult, RenderTarget, DEFAULT_MAX_RENDER_LOSSES,
+};
 pub use render_markdown::{render_markdown, render_markdown_with_options};
 pub use render_plain::{render_plain_text, render_plain_text_with_options};
 pub use source_layout::{parse_with_source_layout, to_source_layout_json};
@@ -222,6 +227,71 @@ pub fn to_ansi(source: &str) -> String {
 pub fn to_carve(source: &str) -> String {
     try_to_carve_with_options(source, &Options::default())
         .expect("a default `Options` carries no profile, so no violation can be raised")
+}
+
+/// Render HTML and report target-routed raw nodes that were omitted.
+pub fn to_html_with_report(
+    source: &str,
+    checked_options: CheckedRenderOptions,
+) -> Result<RenderResult<String>, RenderLossError> {
+    render_loss::checked(RenderTarget::Html, checked_options, || {
+        render_html(&parse_with_options(
+            source,
+            &Options::default().with_positions(true),
+        ))
+        .expect("the parse cap sits below the render ceiling")
+    })
+}
+
+/// Render Markdown and report target-routed raw nodes that were omitted.
+pub fn to_markdown_with_report(
+    source: &str,
+    checked_options: CheckedRenderOptions,
+) -> Result<RenderResult<String>, RenderLossError> {
+    render_loss::checked(RenderTarget::Markdown, checked_options, || {
+        render_markdown(&parse_with_options(
+            source,
+            &Options::default().with_positions(true),
+        ))
+        .expect("the parse cap sits below the render ceiling")
+    })
+}
+
+/// Render plain text and report every raw node omitted by that target.
+pub fn to_plain_text_with_report(
+    source: &str,
+    checked_options: CheckedRenderOptions,
+) -> Result<RenderResult<String>, RenderLossError> {
+    render_loss::checked(RenderTarget::Plain, checked_options, || {
+        render_plain_text(&parse_with_options(
+            source,
+            &Options::default().with_positions(true),
+        ))
+        .expect("the parse cap sits below the render ceiling")
+    })
+}
+
+/// Render ANSI text and report raw inline nodes. Raw blocks have a visible
+/// `[raw:format]` fallback and therefore are not losses on this target.
+pub fn to_ansi_with_report(
+    source: &str,
+    checked_options: CheckedRenderOptions,
+) -> Result<RenderResult<String>, RenderLossError> {
+    render_loss::checked(RenderTarget::Ansi, checked_options, || {
+        render_ansi(&parse_with_options(
+            source,
+            &Options::default().with_positions(true),
+        ))
+        .expect("the parse cap sits below the render ceiling")
+    })
+}
+
+/// Canonical Carve preserves raw nodes, so this checked result is lossless.
+pub fn to_carve_with_report(
+    source: &str,
+    checked_options: CheckedRenderOptions,
+) -> Result<RenderResult<String>, RenderLossError> {
+    render_loss::checked(RenderTarget::Carve, checked_options, || to_carve(source))
 }
 
 /// Parse, apply the feature-restriction profile, and render canonical Carve

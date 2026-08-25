@@ -68,6 +68,10 @@ fn main() -> ExitCode {
     let mut stamp_mode: Option<StampMode> = None;
     let mut enable_extensions = false;
     let mut from_json = false;
+    let mut strict_losses = false;
+    let mut report_losses: Option<String> = None;
+    let mut allow_render_loss = false;
+    let mut max_render_losses = carve::DEFAULT_MAX_RENDER_LOSSES;
     let mut input_paths: Vec<String> = Vec::new();
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
@@ -174,6 +178,28 @@ fn main() -> ExitCode {
             "--carve" => format = OutputFormat::Carve,
             "--json" | "--ast" => format = OutputFormat::Json,
             "--from-json" => from_json = true,
+            "--strict-losses" => strict_losses = true,
+            "--report-losses" => {
+                let Some(value) = args.next() else {
+                    eprintln!("carve: --report-losses requires a file or -");
+                    return ExitCode::from(2);
+                };
+                report_losses = Some(value);
+            }
+            "--allow-loss" => match args.next().as_deref() {
+                Some("raw-format-dropped") => allow_render_loss = true,
+                _ => {
+                    eprintln!("carve: --allow-loss expects raw-format-dropped");
+                    return ExitCode::from(2);
+                }
+            },
+            "--max-render-losses" => {
+                let Some(value) = args.next().and_then(|value| value.parse::<usize>().ok()) else {
+                    eprintln!("carve: --max-render-losses requires a non-negative integer");
+                    return ExitCode::from(2);
+                };
+                max_render_losses = value;
+            }
             "--static" => options = options.with_mode(carve::Mode::Static),
             "--interactive" => options = options.with_mode(carve::Mode::Interactive),
             "--extensions" => enable_extensions = true,
@@ -256,7 +282,21 @@ fn main() -> ExitCode {
         return ExitCode::SUCCESS;
     }
 
-    let output = if from_json {
+    let target = match format {
+        OutputFormat::Html => carve::RenderTarget::Html,
+        OutputFormat::Markdown => carve::RenderTarget::Markdown,
+        OutputFormat::Plain => carve::RenderTarget::Plain,
+        OutputFormat::Ansi => carve::RenderTarget::Ansi,
+        OutputFormat::Carve | OutputFormat::Json => carve::RenderTarget::Carve,
+    };
+    let checked_options = carve::CheckedRenderOptions {
+        strict: false,
+        max_losses: max_render_losses,
+    };
+    // Loss diagnostics promise source positions. Position tracking does not
+    // alter rendered output, and the CLI is itself a reporting surface.
+    options = options.with_positions(true);
+    let (output, (mut losses, mut total_losses, mut truncated)) = if from_json {
         // A profile's max_length bounds UNTRUSTED INPUT, and here the untrusted
         // input is the JSON payload: it is what gets parsed, held and walked.
         // The document's own `srcByteLength` cannot stand in for it - that number
@@ -280,13 +320,21 @@ fn main() -> ExitCode {
                 return ExitCode::FAILURE;
             }
         };
-        match render_document(doc, format, &options) {
+        let checked = carve::with_render_loss_report(target, checked_options, || {
+            render_document(doc, format, &options)
+        })
+        .expect("non-strict collection cannot fail");
+        let output = match checked.value {
             Ok(output) => output,
             Err(err) => {
                 eprintln!("carve: {err}");
                 return ExitCode::FAILURE;
             }
-        }
+        };
+        (
+            output,
+            (checked.losses, checked.total_losses, checked.truncated),
+        )
     } else {
         // Mention/tag URL templates are an HTML-link concern, so they only affect
         // HTML output. All formats share the same parse + profile pipeline.
@@ -300,7 +348,7 @@ fn main() -> ExitCode {
         // nothing (carve-rs#1190). The ingest branch above already answers this
         // input with `eprintln!` + FAILURE; both branches reach it through the
         // same `RenderError`, so they print the same line.
-        let rendered = match format {
+        let checked = carve::with_render_loss_report(target, checked_options, || match format {
             OutputFormat::Html => carve::try_to_html_with_options(&source, &options),
             // Positions ON for the three targets that PRINT the footnote
             // definitions: §7 orders them by source position, and the map they
@@ -328,16 +376,52 @@ fn main() -> ExitCode {
                 options = options.with_positions(true);
                 carve::try_to_json_with_options(&source, &options)
             }
-        };
-        match rendered {
+        })
+        .expect("non-strict collection cannot fail");
+        let output = match checked.value {
             Ok(output) => output,
             Err(err) => {
                 let err = RenderError::from(err);
                 eprintln!("carve: {err}");
                 return ExitCode::FAILURE;
             }
-        }
+        };
+        (
+            output,
+            (checked.losses, checked.total_losses, checked.truncated),
+        )
     };
+    if allow_render_loss {
+        losses.clear();
+        total_losses = 0;
+        truncated = false;
+    }
+    let file = input_paths.first().map(String::as_str).unwrap_or("<stdin>");
+    if total_losses > 0 {
+        for loss in &losses {
+            let at = loss
+                .pos
+                .map(|pos| format!(":{}:{}", pos.start_line, pos.start_column))
+                .unwrap_or_default();
+            eprintln!("{file}{at} {} - {}", loss.code, loss.message);
+        }
+        eprintln!(
+            "{file}: {total_losses} render loss{}",
+            if total_losses == 1 { "" } else { "es" }
+        );
+    }
+    if let Some(path) = report_losses {
+        let json = render_loss_json(&losses, total_losses, truncated);
+        if path == "-" {
+            eprintln!("{json}");
+        } else if let Err(error) = std::fs::write(&path, format!("{json}\n")) {
+            eprintln!("carve: cannot write render-loss report {path}: {error}");
+            return ExitCode::from(2);
+        }
+    }
+    if strict_losses && total_losses > 0 {
+        return ExitCode::FAILURE;
+    }
     let mut stdout = io::stdout().lock();
     if let Err(err) = stdout.write_all(output.as_bytes()) {
         eprintln!("carve: cannot write stdout: {err}");
@@ -678,6 +762,21 @@ fn json_string(value: &str) -> String {
     output
 }
 
+fn render_loss_json(losses: &[carve::RenderLoss], total: usize, truncated: bool) -> String {
+    let rows = losses.iter().map(|loss| {
+        let pos = loss.pos.map(|pos| format!(
+            ",\"pos\":{{\"startLine\":{},\"endLine\":{},\"startColumn\":{},\"endColumn\":{},\"startOffset\":{},\"endOffset\":{}}}",
+            pos.start_line, pos.end_line, pos.start_column, pos.end_column, pos.start_offset, pos.end_offset,
+        )).unwrap_or_default();
+        format!(
+            "{{\"code\":{},\"format\":{},\"target\":{},\"nodeType\":{},\"message\":{}{pos}}}",
+            json_string(loss.code), json_string(&loss.format), json_string(loss.target.as_str()),
+            json_string(loss.node_type.as_str()), json_string(&loss.message),
+        )
+    }).collect::<Vec<_>>().join(",");
+    format!("{{\"losses\":[{rows}],\"totalLosses\":{total},\"truncated\":{truncated}}}")
+}
+
 /// What can stop `--from-json` from producing output.
 ///
 /// This path is the one where a renderer's §25 ceiling is reachable: the JSON
@@ -1006,6 +1105,11 @@ fn print_usage() {
          --smart-typography MODE     glyph (default) or source: emit the runs\n                              \
          the author typed instead of the resolved glyphs\n  \
          --quote-locale LOCALE       use locale-specific opening/closing quotes\n\n\
+         --strict-losses             refuse output when raw formats are dropped\n  \
+         --report-losses FILE        write JSON loss report (`-` for stderr)\n  \
+         --allow-loss raw-format-dropped\n                              \
+                                     accept intentional target filtering\n  \
+         --max-render-losses N       bound detailed losses (default 100)\n\n\
          Spec: https://markup-carve.github.io/carve/"
     );
 }
