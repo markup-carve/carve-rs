@@ -6030,13 +6030,23 @@ fn rebase_overindented_blocks(source: &mut MappedSource, include_sublists: bool)
                 end = j;
             }
         } else if is_definition_list_start(&opener) {
+            // Wrapped term text and description markers are one definition
+            // run. Rebasing only the marker-shaped lines strands the wrapped
+            // term and makes the following `:  ` literal text.
+            //
+            // A BLANK LINE DOES NOT END THE RUN. A definition body continues
+            // like a list item (PART 9 §17 FORM A): a blank line followed by
+            // an indented block folds in. Stopping the extent at the blank
+            // left that block at its authored column while the definition
+            // above it had already moved to the base, so every column read
+            // the same - the block landed beside the list instead of in the
+            // description at the body's column and beside it below that.
+            // Only a non-blank line BELOW the base leaves the run, which is
+            // the test the footnote branch above already uses (carve-rs#1419).
             for (j, candidate) in lines.iter().enumerate().skip(i + 1) {
-                if is_blank_line(candidate) || indent_columns(candidate) < base {
+                if !is_blank_line(candidate) && indent_columns(candidate) < base {
                     break;
                 }
-                // Wrapped term text and description markers are one definition
-                // run. Rebasing only the marker-shaped lines strands the
-                // wrapped term and makes the following `:  ` literal text.
                 end = j;
             }
         } else if parse_standalone_attrs(&opener).is_some() {
