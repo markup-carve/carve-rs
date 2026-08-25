@@ -410,7 +410,7 @@ fn opens_with(ty: &str, ahead: &str) -> Option<bool> {
             first == ':'
         }
         "autolink" | "heading_ref" => first == '<',
-        "block_quote" => first == '>',
+        "block_quote" => first == '>' || ahead.starts_with("::: >"),
         "caption_number" | "heading" | "tag" => first == '#',
         "code" | "raw_inline" | "raw_block" => first == '`',
         "code_block" => first == '`' || first == '~',

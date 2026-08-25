@@ -997,6 +997,9 @@ fn encode_block_quote_task<'a>(
     depth: usize,
 ) {
     let mut w = typed(out, "block_quote");
+    if n.fenced {
+        w.field("fenced", |out| write_bool(out, true));
+    }
     w.field("children", |out| out.push('['));
     finish_attrs_pos(tasks, &n.attrs, &n.pos);
     push_array(tasks, &n.children, |node| {

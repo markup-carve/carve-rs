@@ -160,11 +160,13 @@ impl Renderer {
                     .collect();
                 (name, a, items)
             }
-            BlockNode::BlockQuote(n) => (
-                self.name("block_quote")?,
-                attrs(n.attrs.as_ref()),
-                self.blocks(&n.children),
-            ),
+            BlockNode::BlockQuote(n) => {
+                let mut a = attrs(n.attrs.as_ref());
+                if n.fenced {
+                    a.insert("carveFenced".into(), Json::Bool(true));
+                }
+                (self.name("block_quote")?, a, self.blocks(&n.children))
+            }
             BlockNode::Table(n) => return self.table(n),
             BlockNode::Admonition(n) => {
                 if n.title
