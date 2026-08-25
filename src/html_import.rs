@@ -2663,15 +2663,14 @@ impl<'a> Importer<'a> {
         // built from and gets no section written back; a referenced one is
         // consumed into footnote definitions instead. Derivation is a property
         // of the element being READ, so both answer the same.
-        if !self.is_derived_wrapper(h, &tag) {
-            self.diag(
-                HtmlImportDiagnosticCode::ElementUnwrapped,
-                format!("Unwrapped unsupported <{tag}> element"),
-                HtmlImportSeverity::Info,
-                path,
-                h,
-            );
-        }
+        //
+        // WHICH ROW IT EARNS FOLLOWS THE CONTENT, like every other unsupported
+        // element (markup-carve/carve#1738): an empty `<section>` had nothing
+        // an unwrap could preserve. A derived wrapper writes no element row at
+        // all and reads as unwrapped, so the attribute rows below it keep the
+        // sentence they already had.
+        let unwrapped = self.is_derived_wrapper(h, &tag)
+            || self.report_unsupported_element(h, tag.as_str(), path);
         // THE BODY IS BUILT BEFORE THE ATTRIBUTE ROWS so the wrapper's id has a
         // heading to land on. Whether that id is the renderer's or the author's
         // is a question about the HEADING's own text, and only the imported
@@ -2697,7 +2696,11 @@ impl<'a> Importer<'a> {
             h,
             attrs,
             tag.as_str(),
-            "the element was unwrapped and has no node to carry it",
+            if unwrapped {
+                "the element was unwrapped and has no node to carry it"
+            } else {
+                "the empty element was dropped and has no node to carry it"
+            },
             path,
         );
         Ok(blocks)
@@ -3493,6 +3496,117 @@ impl<'a> Importer<'a> {
     /// severity and the `Dropped {subject} on <{tag}>: {because}` shape are
     /// settled by markup-carve/carve#1710 and unchanged here; only the number of
     /// rows moved.
+    /// Whether an element brought anything for an unwrap to leave behind.
+    ///
+    /// `element-unwrapped` makes a claim about CONTENT: the wrapper went and
+    /// what it held stayed. An element that held nothing cannot have been
+    /// unwrapped - there was nothing to put in its place - and calling it
+    /// unwrapped states something about content that did not happen.
+    /// `element-dropped` says the element and its content both went, which for
+    /// an empty one is exactly true, and the severity follows: an unwrap
+    /// preserves text and is `info`, a drop does not and is `warning`
+    /// (markup-carve/carve#1738).
+    ///
+    /// ASKED OF THE INPUT, NOT OF THE OUTPUT. Whether an element had children
+    /// is a property of the document handed in, the same framing
+    /// markup-carve/carve#1723 used, and it is decidable without correlating
+    /// the emitted source back to the node it came from. Reading it off the
+    /// built children instead would answer differently for an
+    /// `<audio><span></span></audio>`, whose child element is right there in
+    /// the input and contributes nothing to the output - and that is a loss
+    /// belonging to the `<span>`, which reports its own row.
+    ///
+    /// NOT A LIST OF TAG NAMES. The elements markup-carve/carve#1738 names
+    /// agree with carve-php whenever they have children and diverge only when
+    /// they do not, so the condition is content and a name list would be back
+    /// next sweep (markup-carve/carve#1704).
+    ///
+    /// LAYOUT IS NOT CONTENT and an ACTIVE element is not either: neither
+    /// survives an unwrap, so neither can be what an unwrap preserved. This is
+    /// carve-php's `hasImportContentToUnwrap()` predicate, deliberately,
+    /// because the point of the ruling is that the engines answer alike.
+    ///
+    /// LAYOUT IS THE HTML WHITESPACE SET AND NOTHING ELSE (PART 11 §7, and the
+    /// rule markup-carve/carve#1628 states for a whitespace-only block): SPACE
+    /// and TAB are layout, the line terminators an HTML parser folds in with
+    /// them go with the pair, and EVERY OTHER character is content. Rust's
+    /// `trim()` strips by `char::is_whitespace`, which takes NO-BREAK SPACE,
+    /// NARROW NO-BREAK SPACE, EN SPACE and IDEOGRAPHIC SPACE with it - and this
+    /// importer writes every one of those to the output as itself, so trimming
+    /// them here reported `element-dropped` for an element whose content is
+    /// right there in the emitted source.
+    ///
+    /// VERTICAL TAB IS CONTENT, for the same reason and against the same test:
+    /// it is not one of the five characters the HTML grammar calls whitespace,
+    /// this importer writes it out, and an element holding one is not empty.
+    fn has_content_to_unwrap(h: &Handle) -> bool {
+        for child in h.children.borrow().iter() {
+            match &child.data {
+                NodeData::Element { name, .. } => {
+                    if !matches!(
+                        name.local.as_ref(),
+                        "script" | "style" | "template" | "noscript"
+                    ) {
+                        return true;
+                    }
+                }
+                NodeData::Text { contents } => {
+                    if Self::holds_more_than_layout(&contents.borrow()) {
+                        return true;
+                    }
+                }
+                NodeData::Comment { contents } if Self::holds_more_than_layout(contents) => {
+                    return true;
+                }
+                _ => {}
+            }
+        }
+        false
+    }
+
+    /// Whether a run of text is anything other than ASCII layout whitespace.
+    fn holds_more_than_layout(text: &str) -> bool {
+        text.chars()
+            .any(|c| !matches!(c, ' ' | '\t' | '\n' | '\r' | '\u{0c}'))
+    }
+
+    /// The row for an element this importer has no mapping for, unwrapped or
+    /// dropped by what it carried (markup-carve/carve#1738). Returns whether it
+    /// was unwrapped, which is what the attribute rows below it say next.
+    ///
+    /// EVERY ARM THAT WRITES THE GENERAL ROW, which is what keeps the three
+    /// engines answering alike. The row is written from a sectioning wrapper
+    /// and from the arm that catches everything with no mapping at all, and the
+    /// same tag reaches a different one of them in each engine - a `<form>`
+    /// takes this engine's inline arm and carve-js's block arm - so a rule
+    /// applied to one arm would have fixed thirty-two shapes and broken seven.
+    ///
+    /// A `<figure>` is NOT one of them. It has its own rows and its own rulings
+    /// (markup-carve/carve#1716, markup-carve/carve#1723), and reaches neither
+    /// arm.
+    fn report_unsupported_element(&mut self, h: &Handle, tag: &str, path: &str) -> bool {
+        if Self::has_content_to_unwrap(h) {
+            self.diag(
+                HtmlImportDiagnosticCode::ElementUnwrapped,
+                format!("Unwrapped unsupported <{tag}> element"),
+                HtmlImportSeverity::Info,
+                path,
+                h,
+            );
+
+            return true;
+        }
+        self.diag(
+            HtmlImportDiagnosticCode::ElementDropped,
+            format!("Dropped empty <{tag}> element"),
+            HtmlImportSeverity::Warning,
+            path,
+            h,
+        );
+
+        false
+    }
+
     fn report_unplaceable_attrs(
         &mut self,
         node: &Handle,
@@ -5159,21 +5273,21 @@ impl<'a> Importer<'a> {
                 })
             }
             _ => {
-                self.diag(
-                    HtmlImportDiagnosticCode::ElementUnwrapped,
-                    format!("Unwrapped unsupported <{tag}> element"),
-                    HtmlImportSeverity::Info,
-                    path,
-                    h,
-                );
+                let unwrapped = self.report_unsupported_element(h, tag.as_str(), path);
                 // The inline twin of the block unwrap above: `<small>`,
                 // `<bdi dir="rtl">`, `<bdo>`, `<ruby>`, `<button>`, `<label>`
-                // keep their children and nothing else.
+                // keep their children and nothing else. An element that had no
+                // children says so instead, or the report would call the same
+                // element dropped in one row and unwrapped in the next.
                 self.report_unplaceable_attrs(
                     h,
                     attrs,
                     tag.as_str(),
-                    "the element was unwrapped and has no node to carry it",
+                    if unwrapped {
+                        "the element was unwrapped and has no node to carry it"
+                    } else {
+                        "the empty element was dropped and has no node to carry it"
+                    },
                     path,
                 );
                 return Ok(children);
