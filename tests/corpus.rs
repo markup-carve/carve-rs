@@ -627,23 +627,7 @@ fn expected_corpus_size() -> usize {
 /// regression is caught exactly as the corpus would have caught it, and it must
 /// still DIFFER from the pinned golden, so an entry that went stale when the
 /// submodule bumped fails and has to be deleted in the same commit.
-const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[
-    (
-        "24-generic-divs-4",
-        "carve#1725 permits an ASCII digit to start an explicit class",
-        "<div class=\"123\">\n  <p>not a div</p>\n</div>",
-    ),
-    (
-        "71-attribute-edge-cases-15",
-        "carve#1725 permits ASCII digits to start explicit IDs and classes",
-        "<p><span class=\"123\">x</span> and [y]{12=v}</p>",
-    ),
-    (
-        "71-attribute-edge-cases-17",
-        "carve#1725 permits an ASCII digit to start an explicit class",
-        "<p><span class=\"ok 1\">x</span></p>",
-    ),
-];
+const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[];
 
 fn check_pair(slug: &str) {
     let slug = &resolve_slug(slug);
