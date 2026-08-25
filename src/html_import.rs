@@ -1541,7 +1541,13 @@ impl<'a> Importer<'a> {
     /// because the index a diagnostic prints belongs to the DOCUMENT and not to
     /// whatever vector the importer happened to build (markup-carve/carve#1554).
     fn child_path(parent: &str, child: &Handle, index: usize) -> String {
-        let tag = Self::tag(child).unwrap_or_else(|| "text()".into());
+        let tag = Self::tag(child).unwrap_or_else(|| {
+            if matches!(&child.data, NodeData::Comment { .. }) {
+                "comment()".into()
+            } else {
+                "text()".into()
+            }
+        });
         format!("{parent}/{tag}[{}]", index + 1)
     }
 
@@ -1588,13 +1594,7 @@ impl<'a> Importer<'a> {
             };
             if is_block {
                 if !inline.is_empty() {
-                    let children =
-                        self.inlines_at(&inline, Some(&inline_paths), parent, depth + 1)?;
-                    if visible(&children) {
-                        out.push(synthesized_wrapper(trim_edge_whitespace(children)));
-                    }
-                    inline.clear();
-                    inline_paths.clear();
+                    self.flush_inline_run(&mut out, &mut inline, &mut inline_paths, parent, depth)?;
                 }
                 out.extend(self.block(handle, &path, depth + 1)?);
             } else {
@@ -1603,12 +1603,66 @@ impl<'a> Importer<'a> {
             }
         }
         if !inline.is_empty() {
-            let children = self.inlines_at(&inline, Some(&inline_paths), parent, depth + 1)?;
-            if visible(&children) {
-                out.push(synthesized_wrapper(trim_edge_whitespace(children)));
-            }
+            self.flush_inline_run(&mut out, &mut inline, &mut inline_paths, parent, depth)?;
         }
         Ok(out)
+    }
+
+    /// The buffered inline run, emitted as whatever it turns out to be.
+    ///
+    /// A RUN THAT HOLDS NOTHING BUT COMMENTS IS A BLOCK COMMENT RUN, not a
+    /// paragraph carrying inline ones (markup-carve/carve#1709).
+    ///
+    /// The POSITION decides a comment's spelling and the comment is not
+    /// relocated, and this is where the two positions are told apart.
+    /// `blocks_at` buffers every non-block node into an inline run, so
+    /// `<p>a</p><!--n--><p>b</p>` arrives here as a run holding one comment and
+    /// nothing else - which is a comment sitting AMONG BLOCKS, however the
+    /// buffer got it here. A run that also carries content is a real inline run
+    /// and its comment is inline: `<div>text <!--n--> more</div>` is ONE
+    /// paragraph, and splitting it at the comment would move the words either
+    /// side of it into two.
+    ///
+    /// Whitespace-only text is not "something else". It is the layout between
+    /// the blocks, which is exactly what a comment between two of them sits in,
+    /// and counting it as content would make the answer depend on whether the
+    /// author indented their HTML.
+    fn flush_inline_run(
+        &mut self,
+        out: &mut Vec<BlockNode>,
+        inline: &mut Vec<Handle>,
+        inline_paths: &mut Vec<String>,
+        parent: &str,
+        depth: usize,
+    ) -> Result<(), HtmlImportError> {
+        let comments_only = inline
+            .iter()
+            .any(|h| matches!(&h.data, NodeData::Comment { .. }))
+            && inline
+                .iter()
+                .all(|h| matches!(&h.data, NodeData::Comment { .. }) || dom_text_is_layout_only(h));
+        if comments_only {
+            for handle in inline.iter() {
+                if let NodeData::Comment { contents } = &handle.data {
+                    out.push(BlockNode::Comment(Comment {
+                        block: true,
+                        delimited: false,
+                        content: contents.to_string(),
+                        pos: None,
+                    }));
+                }
+            }
+            inline.clear();
+            inline_paths.clear();
+            return Ok(());
+        }
+        let children = self.inlines_at(inline, Some(inline_paths), parent, depth + 1)?;
+        if visible(&children) {
+            out.push(synthesized_wrapper(trim_edge_whitespace(children)));
+        }
+        inline.clear();
+        inline_paths.clear();
+        Ok(())
     }
     fn block(
         &mut self,
@@ -1912,9 +1966,30 @@ impl<'a> Importer<'a> {
                 // kept either way - what was missing is the row saying it left
                 // its place among the items, which is the part a reader cannot
                 // see from the output.
-                } else if !matches!(&child.data, NodeData::Comment { .. })
-                    && !Self::text(child).chars().all(is_layout_space)
-                {
+                } else if matches!(&child.data, NodeData::Comment { .. }) {
+                    // A COMMENT BETWEEN TWO ITEMS MOVES, and now that it is
+                    // KEPT the move has to be said (markup-carve/carve#1709).
+                    // It used to be dropped, so there was nothing to declare
+                    // and the row was suppressed here.
+                    //
+                    // `Info`, where the text row below is `Warning`, and the
+                    // split is principled rather than a dial: moved TEXT
+                    // changes the rendered document, and a comment renders
+                    // nothing in either language, so the move costs a reader of
+                    // the OUTPUT nothing and a reader of the SOURCE one
+                    // position. It is emitted ahead of the list rather than
+                    // refused because that is what every other stray child of a
+                    // list does here.
+                    self.diag(
+                        HtmlImportDiagnosticCode::ElementUnwrapped,
+                        format!(
+                            "An HTML comment directly inside <{tag}> kept its text but not its place among the items: it is emitted as a comment ahead of the list"
+                        ),
+                        HtmlImportSeverity::Info,
+                        &p,
+                        child,
+                    );
+                } else if !Self::text(child).chars().all(is_layout_space) {
                     self.diag(
                         HtmlImportDiagnosticCode::ElementUnwrapped,
                         format!(
@@ -4431,7 +4506,16 @@ impl<'a> Importer<'a> {
         let mut published = false;
         let mut boundary_pending = false;
         for (i, h) in handles.iter().enumerate() {
-            let tag = Self::tag(h).unwrap_or_else(|| "text()".into());
+            let tag = Self::tag(h).unwrap_or_else(|| {
+                // A comment names itself, the same way `child_path` spells it:
+                // a row about one has to be findable as a comment rather than
+                // read as a text node the document does not have.
+                if matches!(&h.data, NodeData::Comment { .. }) {
+                    "comment()".into()
+                } else {
+                    "text()".into()
+                }
+            });
             let path = match paths {
                 Some(given) => given[i].clone(),
                 None => format!("{parent}/{tag}[{}]", i + 1),
@@ -4459,6 +4543,59 @@ impl<'a> Importer<'a> {
         }
         Ok(coalesce(out))
     }
+    /// An HTML comment in an INLINE position, as the delimited Carve comment
+    /// (markup-carve/carve#1709).
+    ///
+    /// TWO PAYLOADS HAVE NO INLINE SPELLING, and both close the comment EARLY
+    /// rather than being escapable:
+    ///
+    /// - text holding the closer, which ends the comment where it appears, so
+    ///   the rest of the payload comes back as prose;
+    /// - text holding a BLANK line, which ends the paragraph the run is in, so
+    ///   both halves come back as prose and the comment is gone.
+    ///
+    /// Those are DROPPED, with one row saying so. Not truncated and not escaped
+    /// into the form: a comment that came back shorter, or carrying characters
+    /// the author did not write, is a silent content change, and the row is the
+    /// point.
+    ///
+    /// NOT RELOCATED to the block form either. Moving it would put text
+    /// somewhere the author did not write it, and `roundtrip` reading its own
+    /// output would then find the document had moved.
+    ///
+    /// A single newline is NOT one of the two: it is a soft wrap inside the run
+    /// rather than its end, so such a comment re-reads intact.
+    fn comment(&mut self, content: &str, path: &str, node: &Handle) -> Vec<InlineNode> {
+        let closes_early = content.contains("%}");
+        let ends_the_run = content
+            .split('\n')
+            .skip(1)
+            .any(|line| line.chars().all(|c| c == ' ' || c == '\t'));
+        if closes_early || ends_the_run {
+            let why = if closes_early {
+                "holds the comment closer"
+            } else {
+                "holds a blank line"
+            };
+            self.diag(
+                HtmlImportDiagnosticCode::ElementDropped,
+                format!(
+                    "Dropped an HTML comment: its text {why}, which ends a Carve inline comment early, and the comment is not moved out of the run to make it spellable"
+                ),
+                HtmlImportSeverity::Warning,
+                path,
+                node,
+            );
+            return Vec::new();
+        }
+        vec![InlineNode::Comment(Comment {
+            block: false,
+            delimited: true,
+            content: content.to_string(),
+            pos: None,
+        })]
+    }
+
     fn inline(
         &mut self,
         h: &Handle,
@@ -4468,6 +4605,18 @@ impl<'a> Importer<'a> {
         self.enter(depth)?;
         if let NodeData::Text { contents } = &h.data {
             return Ok(vec![InlineNode::text(collapse(&contents.borrow()))]);
+        }
+        // AN HTML COMMENT IS A CARVE COMMENT, and this is the INLINE position of
+        // it (markup-carve/carve#1709). The block position is `flush_inline_run`.
+        //
+        // The usual reason this importer drops something is that Carve cannot
+        // express the shape. That reason never applied here: Carve HAS comments,
+        // so dropping one was a choice to lose bytes the format can hold, in a
+        // mode whose whole job is fidelity, made by nobody. A comment renders
+        // nothing in either language, so keeping it is invisible in the output
+        // and lossless in the source.
+        if let NodeData::Comment { contents } = &h.data {
+            return Ok(self.comment(contents.as_ref(), path, h));
         }
         // A site the adapter footnote pass recognized. The pass runs before
         // this walk and records the node rather than rewriting the tree into
