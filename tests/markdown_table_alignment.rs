@@ -54,3 +54,19 @@ fn alignment_survives_a_colspan_in_the_table() {
 fn nothing_aligned_gives_plain_separators() {
     assert_eq!(separator_row("|= A |= B |\n| 1 | 2 |\n"), "| --- | --- |");
 }
+
+#[test]
+fn multiple_header_rows_keep_every_row_and_the_later_alignment() {
+    assert_eq!(
+        carve::to_markdown("|=> H1 |\n|=< H2 |\n| D |\n"),
+        "| H1 |\n| :--- |\n| H2 |\n| D |\n"
+    );
+}
+
+#[test]
+fn a_body_cell_override_before_the_header_does_not_align_the_column() {
+    assert_eq!(
+        carve::to_markdown("|> R1 |\n|= H2 |\n| D |\n"),
+        "| H2 |\n| --- |\n| R1 |\n| D |\n"
+    );
+}

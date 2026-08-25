@@ -618,9 +618,28 @@ fn render_table(node: &Table, ctx: &mut MarkdownContext) -> String {
             .collect::<Vec<_>>();
         let rendered = format!("| {} |", cells.join(" | "));
         if row.cells.iter().all(|cell| cell.header) {
-            header = Some(rendered);
-            header_columns = cells.len();
-            take_aligns(&mut aligns, row);
+            if header.is_none() {
+                aligns.clear();
+            }
+            // Multiple header rows collapse to Markdown's one header row. The
+            // last header that specifies a column alignment wins in Carve, so
+            // the delimiter must use the same effective value.
+            for (i, cell) in row.cells.iter().enumerate() {
+                if aligns.len() <= i {
+                    aligns.resize(i + 1, None);
+                }
+                if cell.align.is_some() {
+                    aligns[i] = cell.align;
+                }
+            }
+            if header.is_none() {
+                header_columns = cells.len();
+                header = Some(rendered);
+            } else {
+                // Markdown cannot retain another header row, but a
+                // presentation target must retain its authored content.
+                rows.push(rendered);
+            }
         } else {
             rows.push(rendered);
             // A headerless table still declares its columns somewhere, so fall
