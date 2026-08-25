@@ -353,6 +353,119 @@ struct BuiltCell {
     rowspan: usize,
 }
 
+/// A cell's two alignment axes, as a `style` attribute states them.
+///
+/// Carried together rather than decided one at a time, because the MARKER RUN
+/// that spells them is composed in one place and only reads correctly in one
+/// order (PART 9 §5): the horizontal sigil first, the vertical second, with `?`
+/// standing in for an inherited horizontal. A bare `|^` is not the vertical
+/// spelling at all - it comes back as the literal text `^ a` - and `|~` ALONE
+/// is the CENTER horizontal marker rather than a vertical one, so a run
+/// assembled from two independent decisions has two ways to mean something
+/// nobody wrote (markup-carve/carve#1746).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct CellAlignment {
+    align: Option<TableAlign>,
+    valign: Option<TableVerticalAlign>,
+}
+
+/// The Carve slot a CSS declaration reaches, or `None` where nothing in the
+/// language spells it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StyleSlot {
+    Align(TableAlign),
+    Valign(TableVerticalAlign),
+}
+
+/// A `style` attribute split into lowercased property/value pairs.
+///
+/// A declaration with no colon is not one, and an empty property name is not
+/// one either, so `style=""`, `style=";;"` and `style="text-align"` all yield
+/// nothing - which is what stops an attribute carrying no declaration at all
+/// from reporting a loss it did not take.
+fn style_declarations(style: &str) -> Vec<(String, String)> {
+    style
+        .split(';')
+        .filter_map(|declaration| {
+            let (property, value) = declaration.split_once(':')?;
+            let property = property.trim().to_ascii_lowercase();
+            if property.is_empty() {
+                return None;
+            }
+            Some((property, value.trim().to_ascii_lowercase()))
+        })
+        .collect()
+}
+
+fn is_table_cell(tag: &str) -> bool {
+    tag == "td" || tag == "th"
+}
+
+/// The slot a declaration reaches on an element of this tag, DISREGARDING the
+/// import mode - [`Importer::style_slot`] is the one that answers for a mode.
+///
+/// THE TEST IS THIS ENGINE'S OWN RENDERER (ruling markup-carve/carve#1741).
+/// `text-align: right` maps because a Carve cell alignment is written back as
+/// `style="text-align: right;"` - the very declaration the import was handed -
+/// and `vertical-align: top` maps for the same reason through the cell's
+/// `valign`. Refusing either declared a loss the engine did not have to take,
+/// and `docs/html-import.md` makes a declared loss a ceiling rather than a
+/// license.
+///
+/// `vertical-align` IS A CELL SLOT AND NOTHING ELSE. Off a cell there is no
+/// marker run, and `valign` is an attribute HTML defines for table cells alone,
+/// so writing one onto a paragraph would emit something no reader honors - a
+/// spelling that looks like a mapping and is not one (markup-carve/carve#1746).
+/// `text-align` has no such problem off a cell: `align` is a legacy
+/// presentational attribute HTML defines for exactly those elements.
+///
+/// WHAT STAYS UNMAPPED, and why the list is short:
+///
+/// - `text-align: justify` / `start` / `end` / `inherit` and
+///   `vertical-align: baseline` / `sub` / `super` / a length are outside
+///   Carve's enums (`left`, `right`, `center`; `top`, `middle`, `bottom`), so
+///   there is no value to write and rounding one to a neighbor would say
+///   something the source did not.
+/// - `width` and `height` reach no per-cell slot. A [`TableColumn`] carries a
+///   width, but nothing writes one from a cell and the column model is its own
+///   question (markup-carve/carve#1092).
+/// - `color`, `background`, `border`, `padding`, `margin`, `font-*`,
+///   `white-space` and the rest of CSS have no Carve construct at all. Their
+///   loss is a real ceiling and stays reported.
+fn mapped_style_slot(tag: &str, property: &str, value: &str) -> Option<StyleSlot> {
+    match property {
+        "text-align" => match value {
+            "left" => Some(StyleSlot::Align(TableAlign::Left)),
+            "right" => Some(StyleSlot::Align(TableAlign::Right)),
+            "center" => Some(StyleSlot::Align(TableAlign::Center)),
+            _ => None,
+        },
+        "vertical-align" if is_table_cell(tag) => match value {
+            "top" => Some(StyleSlot::Valign(TableVerticalAlign::Top)),
+            "middle" => Some(StyleSlot::Valign(TableVerticalAlign::Middle)),
+            "bottom" => Some(StyleSlot::Valign(TableVerticalAlign::Bottom)),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+/// The presentational attribute a slot supersedes.
+fn style_slot_attribute_name(slot: StyleSlot) -> &'static str {
+    match slot {
+        StyleSlot::Align(_) => "align",
+        StyleSlot::Valign(_) => "valign",
+    }
+}
+
+fn align_keyword(align: TableAlign) -> &'static str {
+    match align {
+        TableAlign::Left => "left",
+        TableAlign::Right => "right",
+        TableAlign::Center => "center",
+    }
+}
+
 /// A table's `<thead>` / `<tbody>` / `<tfoot>`, collected on the way THROUGH it
 /// rather than read back off its rows.
 ///
@@ -1127,9 +1240,69 @@ impl<'a> Importer<'a> {
         order
     }
 
+    /// The slot a declaration reaches IN THIS MODE.
+    ///
+    /// `safe` MAPS NOTHING. It is the conservative mode: a declaration it
+    /// declines is dropped and reported, which is where every mode stood before
+    /// markup-carve/carve#1741 and where `safe` stays after it.
+    fn style_slot(&self, tag: &str, property: &str, value: &str) -> Option<StyleSlot> {
+        if self.opts.mode == HtmlImportMode::Safe {
+            return None;
+        }
+        mapped_style_slot(tag, property, value)
+    }
+
+    /// The axes a CELL's `style` puts on the cell itself.
+    ///
+    /// Read off the element a second time rather than handed over from
+    /// [`Self::attrs`], because the two answers go to different places: an
+    /// alignment is a FIELD of the cell, spelled by the marker run, while
+    /// everything `attrs` collects is an attribute block. Both walk the same
+    /// [`Self::style_slot`], so the report and the cell cannot disagree about
+    /// what mapped.
+    ///
+    /// LAST DECLARATION WINS, which is the CSS cascade: `text-align: right;
+    /// text-align: left` is left-aligned in a browser and has to be here.
+    fn cell_style_alignment(&self, handle: &Handle) -> CellAlignment {
+        let tag = Self::tag(handle).unwrap_or_default();
+        let mut out = CellAlignment::default();
+        if !is_table_cell(&tag) {
+            return out;
+        }
+        let style = Self::attr(handle, "style").unwrap_or_default();
+        for (property, value) in style_declarations(&style) {
+            match self.style_slot(&tag, &property, &value) {
+                Some(StyleSlot::Align(align)) => out.align = Some(align),
+                Some(StyleSlot::Valign(valign)) => out.valign = Some(valign),
+                None => {}
+            }
+        }
+        out
+    }
+
+    /// The presentational attribute names a mapped declaration on this element
+    /// already fills.
+    ///
+    /// Read BEFORE the attribute walk, and that is the whole point. CSS beats
+    /// the presentational attribute in HTML, and it has to beat it in BOTH
+    /// source orders: answering this as the walk reached `style` would let
+    /// `<td align="right" style="text-align:left">` keep both, because the
+    /// attribute had already been written by then.
+    fn style_filled_attribute_names(&self, handle: &Handle, tag: &str) -> BTreeSet<&'static str> {
+        let style = Self::attr(handle, "style").unwrap_or_default();
+        style_declarations(&style)
+            .into_iter()
+            .filter_map(|(property, value)| self.style_slot(tag, &property, &value))
+            .map(style_slot_attribute_name)
+            .collect()
+    }
+
     fn attrs(&mut self, handle: &Handle, path: &str) -> Option<Attrs> {
         let tag = Self::tag(handle).unwrap_or_default();
         let mut out = Attrs::default();
+        // The keys a mapped declaration fills, so a presentational `align` /
+        // `valign` beside one can be refused wherever the source put it.
+        let style_filled = self.style_filled_attribute_names(handle, &tag);
         if let NodeData::Element { attrs, .. } = &handle.data {
             for attr in attrs.borrow().iter() {
                 let name = attr.name.local.to_string();
@@ -1179,12 +1352,66 @@ impl<'a> Importer<'a> {
                     // dropped, which is where `datetime` used to land, would
                     // report a loss that no longer happens (carve#1140).
                 } else if name == "style" {
-                    self.diag(
-                        HtmlImportDiagnosticCode::StyleUnmapped,
-                        "CSS declarations were not mapped".into(),
-                        HtmlImportSeverity::Info,
-                        path,
+                    // ONLY THE DECLARATIONS THAT WENT NOWHERE. `style` used to
+                    // be refused wholesale, so a cell carrying
+                    // `text-align:right` came back unaligned AND carrying a row
+                    // naming a loss this engine does not have to take - the
+                    // alignment has somewhere faithful to go, and
+                    // `docs/html-import.md` makes a declared loss a ceiling
+                    // rather than a license (markup-carve/carve#1741).
+                    let cell = is_table_cell(&tag);
+                    let mut unmapped = false;
+                    for (property, val) in style_declarations(&value) {
+                        match self.style_slot(&tag, &property, &val) {
+                            // A CELL TAKES THE MARKER RUN, NOT AN ATTRIBUTE.
+                            // `|>` renders back as `style="text-align: right;"`
+                            // and `{align=right}` as `align="right"`, so only
+                            // the marker returns the declaration the import was
+                            // handed - and only the marker keeps
+                            // `carve -> html -> carve -> html` a fixed point,
+                            // which the key-value was not
+                            // (markup-carve/carve#1745). The cell's own fields
+                            // carry it; `cell_style_alignment` reads them off
+                            // the same element.
+                            Some(_) if cell => {}
+                            // OFF A CELL there is no marker run, and `align` is
+                            // a legacy presentational attribute HTML defines
+                            // for exactly these elements, so the key-value is
+                            // the faithful spelling rather than a second-best
+                            // one. `vertical-align` reaches no slot here at all
+                            // and so never takes this arm.
+                            Some(StyleSlot::Align(align)) => {
+                                out.key_values
+                                    .insert("align".to_string(), align_keyword(align).to_string());
+                            }
+                            _ => unmapped = true,
+                        }
+                    }
+                    if unmapped {
+                        self.diag(
+                            HtmlImportDiagnosticCode::StyleUnmapped,
+                            "CSS declarations were not mapped".into(),
+                            HtmlImportSeverity::Info,
+                            path,
+                            handle,
+                        );
+                    }
+                } else if style_filled.contains(name.as_str()) {
+                    // SUPERSEDED BY THE CSS BESIDE IT. A browser does not read
+                    // `<td style="text-align:left" align="right">` as
+                    // right-aligned just because `align` was written second, so
+                    // keeping both would spell one axis twice, in two
+                    // spellings, from one source - and the two would disagree.
+                    self.refuse_attribute(
                         handle,
+                        path,
+                        RefusedAttribute {
+                            tag: &tag,
+                            subject: &format!("attribute {name}"),
+                            reason: ": a mapped CSS declaration already sets it",
+                            severity: HtmlImportSeverity::Info,
+                            live: false,
+                        },
                     );
                 } else if matches!(
                     (tag.as_str(), name.as_str()),
@@ -4151,6 +4378,94 @@ impl<'a> Importer<'a> {
         }
     }
 
+    /// Drop a body cell's alignment where the HEAD already says it.
+    ///
+    /// A header cell's marker run is the COLUMN's default: the renderer reads
+    /// it off the leading header rows and every cell below inherits what it
+    /// does not state. So a body cell repeating its column's value spells a
+    /// thing the document already says, and the shortest source that renders
+    /// the same table is the one without it - which is also the source a round
+    /// trip has to come back to, or `|= h |` over `| a |` grows a marker on
+    /// every body row on its first pass through HTML.
+    ///
+    /// ONLY WHERE THE VALUE AGREES, and only per axis. A body cell that differs
+    /// from its column keeps its own run, because that is the only thing that
+    /// overrides the default - and a cell agreeing on the horizontal while
+    /// stating its own vertical keeps the vertical alone, which is what `?`
+    /// exists to spell.
+    ///
+    /// THE COLUMN WALK IS [`Self::span_grid`]'s, because the renderer resolves
+    /// a column by POSITION IN THE ROW'S CELL ARRAY and that array is what
+    /// `span_grid` lays out: a carried rowspan mark occupies an index, so the
+    /// cells after it shift right by one, and a walk that ignored the marks
+    /// would compare a body cell against a column it does not sit in. The mark
+    /// bookkeeping is therefore copied rather than re-derived - the marks a row
+    /// OPENS do not age at the end of that same row, which is the off-by-one
+    /// that would let the row under a rowspan read the wrong column.
+    ///
+    /// A HEADER CELL SEEDS ITS OWN INDEX ONLY, not the columns a colspan
+    /// carries it across, because that is what THIS engine's renderer reads:
+    /// the continuation cell at the next index states no alignment and
+    /// `table_column_defaults` finds none there. Seeding the span would drop a
+    /// body alignment the re-render could not put back, which is the loss this
+    /// whole ruling is against.
+    fn drop_inherited_cell_alignment(built: &mut [Vec<BuiltCell>], leading_header_rows: usize) {
+        if leading_header_rows == 0 {
+            return;
+        }
+        let mut columns: Vec<CellAlignment> = Vec::new();
+        let mut carried: BTreeMap<usize, usize> = BTreeMap::new();
+        for (r, row) in built.iter_mut().enumerate() {
+            let mut opened: Vec<(usize, usize)> = Vec::new();
+            let mut column = 0usize;
+            for entry in row.iter_mut() {
+                // Every index this cell occupies, skipping the ones a rowspan
+                // above already holds - the same walk `span_grid` does when it
+                // places the continuation marks.
+                let mut covered: Vec<usize> = Vec::new();
+                for _ in 0..entry.colspan.max(1) {
+                    while carried.contains_key(&column) {
+                        column += 1;
+                    }
+                    covered.push(column);
+                    column += 1;
+                }
+                let Some(&own) = covered.first() else {
+                    continue;
+                };
+                if r < leading_header_rows {
+                    if columns.len() <= own {
+                        columns.resize(own + 1, CellAlignment::default());
+                    }
+                    // The LAST header row to state an axis wins, which is how
+                    // `table_column_defaults` folds several of them.
+                    if entry.cell.align.is_some() {
+                        columns[own].align = entry.cell.align;
+                    }
+                    if entry.cell.valign.is_some() {
+                        columns[own].valign = entry.cell.valign;
+                    }
+                } else {
+                    let slot = columns.get(own).copied().unwrap_or_default();
+                    if entry.cell.align.is_some() && slot.align == entry.cell.align {
+                        entry.cell.align = None;
+                    }
+                    if entry.cell.valign.is_some() && slot.valign == entry.cell.valign {
+                        entry.cell.valign = None;
+                    }
+                }
+                if entry.rowspan > 1 {
+                    opened.extend(covered.into_iter().map(|index| (index, entry.rowspan - 1)));
+                }
+            }
+            carried = carried
+                .into_iter()
+                .filter_map(|(index, left)| (left > 1).then_some((index, left - 1)))
+                .chain(opened)
+                .collect();
+        }
+    }
+
     /// The imported cells, laid out with the continuation cells Carve spells `^`
     /// (this cell continues the one above) and `<` (it continues the one to its
     /// left).
@@ -4501,12 +4816,17 @@ impl<'a> Importer<'a> {
                     );
                     rowspan = leading_header_rows - r;
                 }
+                // THE MARKER RUN IS THE CELL'S OWN FIELD, so a mapped
+                // `text-align` / `vertical-align` lands here rather than in the
+                // attribute block `attrs` builds (markup-carve/carve#1745,
+                // markup-carve/carve#1746).
+                let alignment = self.cell_style_alignment(cell);
                 row.push(BuiltCell {
                     cell: TableCell {
                         header: Self::tag(cell).as_deref() == Some("th"),
                         span: None,
-                        align: None,
-                        valign: None,
+                        align: alignment.align,
+                        valign: alignment.valign,
                         attrs: self.attrs(cell, &p),
                         children: self.inlines(&cell.children.borrow(), &p, depth + 1)?,
                         pos: None,
@@ -4517,6 +4837,7 @@ impl<'a> Importer<'a> {
             }
             built.push(row);
         }
+        Self::drop_inherited_cell_alignment(&mut built, leading_header_rows);
         // A `<tr>`'s own attributes have a slot - `TableRow::attrs`, which the
         // writer spells on the closing pipe and every renderer emits on the
         // `<tr>` - and went in silence before this. Reading them at all also
