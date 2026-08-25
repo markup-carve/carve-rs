@@ -1794,12 +1794,42 @@ impl<'a> Importer<'a> {
             let lang = class
                 .split_whitespace()
                 .find_map(|c| c.strip_prefix("language-").map(str::to_owned));
+            // EXACTLY ONE TRAILING NEWLINE IS THE LAST LINE'S TERMINATOR, and
+            // everything past it is content (markup-carve/carve#1708).
+            //
+            // The renderer settles it rather than taste: `render_html` writes
+            // `<pre><code>x\n</code></pre>` for a code block whose content is
+            // `x`, so reading that byte string back as content `x\n` does not
+            // invert this crate's own renderer - and `roundtrip` on the
+            // engine's OWN output is what that mode is defined by. A document
+            // gained a blank line in its code block every time it went round,
+            // in every mode, with nothing reported.
+            //
+            // EXACTLY ONE, never a trim. `<pre><code>x\n\n</code></pre>` is
+            // the renderer's spelling for a block whose content really does end
+            // in a blank line, so stripping every trailing newline would make
+            // the two documents indistinguishable and lose the line the author
+            // wrote. Trailing spaces and tabs are content for the same reason
+            // and are not touched either.
+            //
+            // Nothing is reported: the newline removed was the terminator, so
+            // no content was lost and there is nothing to declare. The
+            // correction applies in all three modes; the round trip is only
+            // checkable in `roundtrip`, but the content question is the same.
+            //
+            // It mirrors HTML's own asymmetry at the other end, where a newline
+            // immediately after `<pre>` is stripped and one before `</pre>` is
+            // not.
+            let mut content = Self::text(code);
+            if content.ends_with('\n') {
+                content.pop();
+            }
             return Ok(vec![BlockNode::CodeBlock(CodeBlock {
                 attrs,
                 lang,
                 title: None,
                 label: None,
-                content: Self::text(code),
+                content,
                 pos: None,
             })]);
         }
