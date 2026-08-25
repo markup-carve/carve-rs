@@ -625,18 +625,7 @@ fn expected_corpus_size() -> usize {
 /// regression is caught exactly as the corpus would have caught it, and it must
 /// still DIFFER from the pinned golden, so an entry that went stale when the
 /// submodule bumped fails and has to be deleted in the same commit.
-const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[
-    (
-        "411-a-lone-indented-image-is-a-paragraph-and-its-html-cannot-say-so-5",
-        "carve#1705 makes the authored-base and exact-column image spellings equally loose",
-        "<ul>\n  <li><p>t</p>\n    <img src=\"a.jpg\" alt=\"Apollo\">\n  </li>\n</ul>",
-    ),
-    (
-        "411-a-lone-indented-image-is-a-paragraph-and-its-html-cannot-say-so-6",
-        "carve#1705 makes the authored-base and exact-column image spellings equally loose",
-        "<ul>\n  <li><p>t</p>\n    <img src=\"a.jpg\" alt=\"Apollo\">\n  </li>\n</ul>",
-    ),
-];
+const AHEAD_OF_PIN: &[(&str, &str, &str)] = &[];
 
 fn check_pair(slug: &str) {
     let slug = &resolve_slug(slug);
