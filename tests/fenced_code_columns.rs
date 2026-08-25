@@ -51,8 +51,10 @@ fn opener_at_list_item_content_column_opens_fence() {
 }
 
 #[test]
-fn opener_one_column_past_list_item_content_column_is_text() {
-    assert!(code_blocks("- x\n   ```\n   y\n   ```").is_empty());
+fn opener_one_column_past_list_item_content_column_uses_its_authored_base() {
+    let blocks = code_blocks("- x\n   ```\n   y\n   ```");
+    assert_eq!(blocks.len(), 1);
+    assert_eq!(blocks[0].content, "y");
 }
 
 #[test]

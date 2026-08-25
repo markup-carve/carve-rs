@@ -44,13 +44,13 @@ fn blank_line_after_sublist_ends_the_list() {
 // nested looseness does not propagate (corpus 142). Matches carve-js.
 
 #[test]
-fn blank_then_outer_paragraph_after_sublist_loosens_outer_only() {
-    // `> q` at column 3 is above the outer content column (2) but below the
-    // inner content column (4): the `>` does not open a block quote, it attaches
-    // to the OUTER item as a paragraph, and the internal blank loosens the outer.
+fn blank_then_authored_quote_returns_to_the_outer_item() {
+    // The blank permits a return from the descendant, and the recognized quote
+    // establishes column 3 as its authored base. As an L2 sub-block it keeps
+    // the outer item tight.
     assert_eq!(
         carve::to_html("- a\n  - b\n\n   > q\n"),
-        "<ul>\n  <li><p>a</p>\n    <ul>\n      <li>b</li>\n    </ul>\n    <p>&gt; q</p>\n  </li>\n</ul>"
+        "<ul>\n  <li>a\n    <ul>\n      <li>b</li>\n    </ul>\n    <blockquote><p>q</p></blockquote>\n  </li>\n</ul>"
     );
 }
 

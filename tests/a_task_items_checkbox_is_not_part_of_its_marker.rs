@@ -92,10 +92,9 @@ fn writes_the_corpus_nested_list_at_the_content_column() {
 
 #[test]
 fn writes_the_corpus_wide_marker_heading_at_the_content_column() {
-    // 75-list-nesting-and-looseness-9. `# H` is paragraph text here, not a
-    // heading, so the writer escapes it - at column 6 it was text of the marker
-    // line's paragraph by ACCIDENT of the indent.
-    writes("- [ ] item\n  \\# H\n", "-   [ ] item\n    # H\n");
+    // The authored column of the recognized heading is accepted, then the
+    // writer canonicalizes it to the task item's content column.
+    writes("- [ ] item\n  # H\n", "-   [ ] item\n    # H\n");
 }
 
 #[test]

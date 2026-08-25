@@ -181,16 +181,10 @@ fn a_later_sublist_does_not_inherit_them() {
 }
 
 #[test]
-fn a_line_past_the_content_column_is_text_even_with_a_list_under_it() {
-    // The braces must sit AT the item's content column. One space further in and
-    // they are a paragraph reading `{.c}`, which is what corpus
-    // 87-compact-list-blocks-10 pins for the same line with nothing after it -
-    // and that paragraph also loosens the item. Reaching across the chunk
-    // boundary without this guard deleted the paragraph and re-tightened the
-    // item, which is how the corpus caught the first version of this fix.
+fn a_line_past_the_content_column_attributes_the_list_under_it() {
     assert_eq!(
         carve::to_html("- a\n\n   {.c}\n   - b\n"),
-        "<ul>\n  <li><p>a</p>\n    <p>{.c}</p>\n    <ul>\n      <li>b</li>\n    </ul>\n  </li>\n</ul>"
+        "<ul>\n  <li>a\n    <ul class=\"c\">\n      <li>b</li>\n    </ul>\n  </li>\n</ul>"
     );
 }
 

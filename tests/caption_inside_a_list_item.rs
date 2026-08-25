@@ -84,13 +84,9 @@ fn an_orphan_caption_line_in_an_item_stays_text() {
 }
 
 #[test]
-fn an_image_indented_past_the_content_column_stays_literal() {
-    // The strict column-0 rule, and the reason the gate exists at all: an image
-    // ABOVE the item's content column is literal paragraph text, caption and all.
-    // All four implementations agree, so the flag must not be set for this path.
+fn an_image_indented_past_the_content_column_uses_its_authored_base() {
     let html = to_html(&format!("- text\n\n    {IMAGE}\n    ^ cap here\n"));
-    assert!(!html.contains("<figcaption>"), "{html}");
-    assert!(html.contains("^ cap here"), "{html}");
+    assert!(html.contains("<figcaption>cap here</figcaption>"), "{html}");
 }
 
 #[test]
