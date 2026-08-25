@@ -37,7 +37,7 @@
 //!
 //! - image, `<pre>` and `<blockquote>` come back as a `<figure>`.
 //! - a `<table>` comes back as a `<table><caption>`, the Carve spelling for it.
-//! - a bare PARAGRAPH writes `x` then `^ cap` and reads back as
+//! - a bare PARAGRAPH would write `x` then `^ cap` and read back as
 //!   `<p>x ^ cap</p>` - one paragraph of prose with the caption as literal text.
 //! - a LIST detaches the caption into a paragraph of its own.
 //!
@@ -49,10 +49,11 @@
 //! too and reports nothing, so this is carve-rs keeping a contract carve-js does
 //! not make rather than a divergence introduced here.
 //!
-//! In the DEFAULT mode the conversion is the ruled behavior and the loss is
-//! accepted - but it is still ANNOUNCED. A paragraph-target figure is a `Figure`
-//! in the AST that the writer cannot spell, so it is reported exactly like the
-//! fallback rather than passing as a clean rebuild.
+//! THE PARAGRAPH ROW LATER LEFT THE REBUILD ENTIRELY. Writing a caption line
+//! prose absorbs is an ADDITION rather than a loss, and no mode is licensed to
+//! make one, so ruling markup-carve/carve-php#1731 has the lossy modes unwrap
+//! and declare where `roundtrip` preserves. The absorption measurement above is
+//! the reason for both halves; only the alternatives differ by mode.
 
 use carve::{html_to_ast, html_to_carve, HtmlImportError, HtmlImportMode, HtmlImportOptions};
 
@@ -245,17 +246,28 @@ fn roundtrip_mode_still_preserves_a_figure_no_spelling_reproduces() {
 }
 
 /// The shape that made the gate necessary: a figure around a bare PARAGRAPH is
-/// NOT losslessly representable, so converting it in roundtrip mode would be a
-/// silent structural loss. In the default mode the conversion is the ruled
-/// behavior and the loss is accepted; in roundtrip mode it is not.
+/// NOT losslessly representable, so `roundtrip` preserves the element rather
+/// than converting it.
+///
+/// THE DEFAULT MODE USED TO CONVERT IT ANYWAY, and that was the defect ruling
+/// markup-carve/carve-php#1731 settled. `x` then `^ cap` re-read as ONE
+/// paragraph holding a literal caret, so the document gained a character its
+/// author never wrote - and a lossy mode is licensed to LOSE the figure, never
+/// to add to the text. It unwraps and declares instead, which is the shape
+/// carve-php has always written.
 #[test]
-fn a_paragraph_figure_converts_by_default_and_is_preserved_in_roundtrip() {
+fn a_paragraph_figure_unwraps_by_default_and_is_preserved_in_roundtrip() {
     let html = "<figure><p>x</p><figcaption>cap</figcaption></figure>";
-    assert_eq!(import(html), "x\n^ cap\n");
+    assert_eq!(import(html), "x\n\ncap\n");
+    assert!(
+        !carve::to_html(&import(html)).contains('^'),
+        "a caret reached the rendered text: {}",
+        carve::to_html(&import(html))
+    );
     assert_eq!(
         carve::to_html(&import(html)),
-        "<p>x\n^ cap</p>",
-        "measured: a caption line does not attach to prose"
+        "<p>x</p>\n<p>cap</p>",
+        "the association is lost and every byte the author wrote is still theirs"
     );
 
     let options = HtmlImportOptions {
@@ -408,27 +420,37 @@ fn control_the_own_output_panel_class_is_still_stripped() {
     );
 }
 
-/// A PARAGRAPH-target figure is a `Figure` in the AST that the WRITER cannot
-/// spell: `x` then `^ cap` reads back as one paragraph of prose. Treating "a
-/// Figure came back" as "nothing was lost" made it the one lossy shape that said
-/// nothing - but the loss belongs to the WRITER, not to the import. The AST
-/// keeps a proper figure with its attributes, so an `html_to_ast` caller must be
-/// told nothing, which is the split `unspellable` exists to draw.
+/// A PARAGRAPH-target figure USED TO BE A `Figure` IN THE AST that the writer
+/// could not spell, and the loss was declared on the writing exit alone: the
+/// tree kept a proper figure with its attributes, so an `html_to_ast` caller was
+/// told nothing. That split is what `unspellable` exists to draw, and it is
+/// gone from this shape - not because the split moved, but because there is no
+/// such figure any more (ruling markup-carve/carve-php#1731). No caption line
+/// binds to prose, so no figure is built from that target in any mode.
+///
+/// BOTH EXITS NOW SAY THE SAME THING, which is the property worth pinning: the
+/// element unwrapped and the attributes it carried had nowhere to go. carve-php
+/// and carve-js report the same pair from the same input.
 #[test]
-fn a_paragraph_target_figure_reports_the_structure_only_when_written() {
+fn a_paragraph_target_figure_reports_the_same_loss_from_both_exits() {
     let html = "<figure id=\"x\"><p>x</p><figcaption>cap</figcaption></figure>";
     let d = diagnostics(html);
     assert!(
-        d.iter().any(|m| m.contains("no Carve spelling")),
-        "a figure that cannot survive serialization said nothing: {d:?}"
+        d.iter()
+            .any(|m| m.contains("Unwrapped unsupported <figure>")),
+        "the figure left without a word: {d:?}"
     );
     assert!(
-        ast_diagnostics(html).is_empty(),
-        "the AST kept the figure, so an AST caller must not be told it was lost: {:?}",
-        ast_diagnostics(html)
+        d.iter().any(|m| m.contains("id=\"x\"")),
+        "the id had nowhere to go and nothing said so: {d:?}"
     );
-    // The text is all still there; only the written structure is gone.
-    assert_eq!(import(html), "{#x}\nx\n^ cap\n");
+    assert_eq!(
+        ast_diagnostics(html),
+        d,
+        "the AST no longer keeps a figure here, so both exits owe the same rows"
+    );
+    // The text is all still there; only the structure is gone.
+    assert_eq!(import(html), "x\n\ncap\n");
 }
 
 /// A second `<figcaption>` must not cost the first one's TEXT. HTML allows at
@@ -451,8 +473,12 @@ fn a_second_caption_does_not_cost_the_first_ones_text() {
         "the second caption's text vanished: {out}"
     );
     // Byte-identical to carve-js, measured: the FIRST one captions and the extra
-    // stays as content.
-    assert_eq!(out, "![a](i.png)two\n^ one\n");
+    // stays as content. That content makes the body a PARAGRAPH rather than a
+    // lone image, and a caption line binds to no paragraph, so the figure
+    // unwraps and the caption is written as its own block
+    // (ruling markup-carve/carve-php#1731). What this test is about is that
+    // neither caption's text is lost, and neither is.
+    assert_eq!(out, "![a](i.png)two\n\none\n");
     assert!(
         diagnostics(html)
             .iter()
@@ -479,7 +505,10 @@ fn a_foreign_figure_keeps_the_space_between_inline_siblings() {
         "<figure><span>a</span> <span>b</span><figcaption>cap</figcaption></figure>",
         "<figure><span>a</span>\n<span>b</span><figcaption>cap</figcaption></figure>",
     ] {
-        assert_eq!(import(html), "a b\n^ cap\n", "{html:?}");
+        // The body is prose, so the figure unwraps and the caption follows as
+        // its own paragraph (ruling markup-carve/carve-php#1731). The subject
+        // here is the SPACE between `a` and `b`, which survives either way.
+        assert_eq!(import(html), "a b\n\ncap\n", "{html:?}");
     }
 }
 

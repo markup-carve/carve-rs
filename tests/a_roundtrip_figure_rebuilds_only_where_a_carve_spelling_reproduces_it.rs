@@ -14,8 +14,15 @@
 //!
 //! What the rule pins is therefore the PROPERTY, not a list of blessed tag
 //! names, so a caption target added later inherits it instead of needing
-//! another sweep to discover it. `semantic` is unaffected: being lossy is what
-//! distinguishes the two modes, and every `semantic` control here says so.
+//! another sweep to discover it.
+//!
+//! WHICH TARGETS BIND WAS NEVER THIS MODE'S QUESTION, and ruling
+//! markup-carve/carve-php#1731 moved it out: the property answers for every
+//! mode, and the modes differ only in what they do with a target the caption
+//! line does not bind to. `roundtrip` keeps the bytes; `safe` and `semantic`,
+//! which cannot preserve, unwrap and declare. So the `semantic` control below
+//! is still a control - five of its six rows are untouched - and its paragraph
+//! row now pins the unwrap rather than the caption line.
 //!
 //! ONE CARVE-OUT, DELIBERATE. `<figure><table>…<figcaption>` has no spelling
 //! that reproduces it - the rebuild reads back as `<table id="t">` with a
@@ -294,11 +301,12 @@ fn the_rows_a_rejected_rebuild_pushed_do_not_reach_the_report() {
     );
 }
 
-/// CONTROL: `semantic` is untouched by all of this. It rebuilds every target,
-/// including the two `roundtrip` now preserves, and keeps exactly the
-/// diagnostics it had.
+/// CONTROL: `semantic` differs from `roundtrip` in what it does with a target
+/// no caption line binds to, not in which targets those are. It still rebuilds
+/// every target that binds, and unwraps the two that do not - where `roundtrip`
+/// preserves them instead.
 #[test]
-fn semantic_still_rebuilds_every_target() {
+fn semantic_rebuilds_what_binds_and_unwraps_what_does_not() {
     let cases: [(&str, &str, Vec<HtmlImportDiagnosticCode>); 6] = [
         (
             "<figure id=\"f\"><img src=\"a.png\" alt=\"A\"><figcaption>Cap</figcaption></figure>",
@@ -330,8 +338,11 @@ fn semantic_still_rebuilds_every_target() {
         ),
         (
             "<figure id=\"g\"><p>x</p><figcaption>Cap</figcaption></figure>",
-            "{#g}\nx\n^ Cap\n",
-            vec![HtmlImportDiagnosticCode::StructureUnspellable],
+            "x\n\nCap\n",
+            vec![
+                HtmlImportDiagnosticCode::ElementUnwrapped,
+                HtmlImportDiagnosticCode::AttributeDropped,
+            ],
         ),
     ];
     let mut wrong = Vec::new();
@@ -352,7 +363,7 @@ fn semantic_still_rebuilds_every_target() {
     }
     assert!(
         wrong.is_empty(),
-        "semantic must be unchanged by the roundtrip ruling:\n{}",
+        "semantic rebuilds exactly the targets a caption line binds to:\n{}",
         wrong.join("\n")
     );
 }

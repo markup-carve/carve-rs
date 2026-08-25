@@ -2401,7 +2401,15 @@ impl<'a> Importer<'a> {
             // counted stay counted: the subtree was walked, and refunding them
             // would sell one budget once per figure.
             let blocks = match rebuilt {
-                Ok((blocks, _)) if self.opts.mode != HtmlImportMode::Roundtrip => blocks,
+                // A CAPTION LINE THE TARGET WOULD ABSORB IS NOT WRITTEN IN ANY
+                // MODE (ruling markup-carve/carve-php#1731). `roundtrip` keeps
+                // the bytes for such a target, below; `safe` and `semantic`
+                // cannot preserve, so the rebuilt figure is taken back apart
+                // here and the arm at the foot of this block declares what the
+                // unwrap cost.
+                Ok((blocks, _)) if self.opts.mode != HtmlImportMode::Roundtrip => {
+                    Self::unwrap_absorbed_caption(blocks)
+                }
                 // A FIGURE IS THE CAPTIONED WRAPPER (PART 9 §4b). An element
                 // carrying no `<figcaption>`, or one whose caption spells
                 // nothing, never reaches the rebuild-or-preserve decision at
@@ -2454,33 +2462,31 @@ impl<'a> Importer<'a> {
             //   reads back as a figure. Nothing is lost anywhere.
             // - a TABLE writes `^ cap` onto the table, which reads back as a
             //   `<table><caption>`. The caption survives and so do the
-            //   attributes, but on the TABLE, so only the wrapper is gone.
-            // - a PARAGRAPH writes `x` then `^ cap`, which reads back as one
-            //   paragraph of prose: the caption line does not attach to prose,
-            //   so the wrapper and its attributes both go.
+            //   attributes, but on the TABLE, so only the wrapper is gone. It
+            //   is the ONE target the writer cannot spell as a figure and that
+            //   a figure is still built for, which is why this arm is a single
+            //   case rather than a table of them.
+            //
+            // A PARAGRAPH USED TO BE THE SECOND CASE, and it never should have
+            // been one: the caption line it wrote does not attach to prose, so
+            // the re-read paragraph swallowed the caret and the document gained
+            // a character nobody typed. A declared loss is a ceiling an import
+            // may sit inside, never a licence to change what the document says,
+            // so no figure is built from that target in any mode now
+            // (markup-carve/carve-php#1731) and no message describes one.
             //
             // Anything that is NOT a single figure is a real IMPORT loss - the
             // AST has no figure either - so it stays a plain diagnostic.
             match blocks.as_slice() {
                 [BlockNode::Figure(f)] => {
-                    let lost = match *f.target {
-                        FigureTarget::Table(_) => Some(
-                            "A <figure> around a table has no Carve spelling: the written table \
-                             carries the caption and the figure's attributes, and reads back as a \
-                             captioned table rather than a figure",
-                        ),
-                        FigureTarget::Paragraph(_) => Some(
-                            "A <figure> around a paragraph has no Carve spelling: the written \
-                             caption line does not attach to prose, so it reads back as one \
-                             paragraph and the figure and its attributes are gone",
-                        ),
-                        _ => None,
-                    };
-                    if let Some(message) = lost {
+                    if matches!(*f.target, FigureTarget::Table(_)) {
                         self.unspellable.push((
                             h.clone(),
                             path.to_owned(),
-                            message.into(),
+                            "A <figure> around a table has no Carve spelling: the written table \
+                             carries the caption and the figure's attributes, and reads back as a \
+                             captioned table rather than a figure"
+                                .into(),
                             HtmlImportDiagnosticCode::StructureUnspellable,
                         ));
                     }
@@ -3457,12 +3463,10 @@ impl<'a> Importer<'a> {
     /// caption to bind at all - is by construction a figure that did not
     /// survive as one.
     ///
-    /// The target table is an IMPLEMENTATION of the property, not the property
-    /// itself. Image, code block and quote each write a caption line the parser
-    /// reads back as the same figure. `Table` is the deliberate carve-out named
-    /// above. `Paragraph` is the one target that rebuilds into a figure node
-    /// and still cannot be written back as one, which is exactly the silent
-    /// loss `roundtrip` must not take.
+    /// WHICH TARGETS BIND IS NOT THIS FUNCTION'S QUESTION and never was one of
+    /// `roundtrip`'s alone; it is [`Self::caption_line_binds`], which answers
+    /// for every mode. What this function owns is the rest: whether the element
+    /// this mode is allowed to PRESERVE should be preserved.
     ///
     /// AND THE CAPTION HAS TO STAND WHERE CARVE PUTS IT. A caption line follows
     /// its target, so `render_figure` writes `<figcaption>` last and nothing
@@ -3494,13 +3498,78 @@ impl<'a> Importer<'a> {
         if !captions_last {
             return false;
         }
-        match *figure.target {
+        Self::caption_line_binds(&figure.target)
+    }
+
+    /// Does the caption line the rebuild writes BIND to this target, so that it
+    /// re-reads as the figure it was written from?
+    ///
+    /// THE PROPERTY, AND ONE ANSWER FOR EVERY MODE
+    /// (markup-carve/carve#1704, ruling markup-carve/carve-php#1731). The modes
+    /// differ in what they do with a target the line does not bind to, never in
+    /// which targets those are: `roundtrip` keeps the element's bytes, and
+    /// `safe` and `semantic`, which cannot preserve, unwrap and declare. Neither
+    /// writes the line.
+    ///
+    /// Image, code block and quote each write a caption line the parser reads
+    /// back as the same figure. `Table` is the deliberate carve-out named above:
+    /// the line binds to the TABLE, which is why a figure is built for it and
+    /// why the writer still has something to declare.
+    ///
+    /// PROSE ABSORBS THE LINE INSTEAD OF CARRYING IT, which is a different
+    /// failure from losing it. `x` then `^ Cap` re-reads as ONE paragraph
+    /// holding a literal caret, so the document gains a character its author
+    /// never wrote - and an addition cannot be declared away the way a loss can.
+    fn caption_line_binds(target: &FigureTarget) -> bool {
+        match target {
             FigureTarget::Image(_)
             | FigureTarget::CodeBlock(_)
             | FigureTarget::BlockQuote(_)
             | FigureTarget::Table(_) => true,
             FigureTarget::Paragraph(_) => false,
         }
+    }
+
+    /// A rebuilt figure whose target would ABSORB its caption line, taken back
+    /// apart into the blocks the unwrap writes: the body, then the caption as a
+    /// paragraph of its own (ruling markup-carve/carve-php#1731).
+    ///
+    /// The figure is gone either way; what this buys over writing the line
+    /// anyway is that no character is invented. `x`, a blank line, then `Cap`
+    /// re-reads as two paragraphs - the association is lost, and every byte the
+    /// author wrote is still their own. It is the shape carve-php has always
+    /// written and the shape the caller declares with `element-unwrapped`.
+    ///
+    /// THE WRAPPER'S ATTRIBUTES ARE LEFT FOR THE CALLER TO DROP AND REPORT,
+    /// rather than landed on the body. An `id` that identified a FIGURE, moved
+    /// onto a bare paragraph, identifies something the author never marked; a
+    /// declared loss beats a silent substitution.
+    ///
+    /// Anything else is handed straight back. [`Self::caption_line_binds`] is
+    /// the whole test, so a caption target added later inherits this without a
+    /// second list to keep in step.
+    fn unwrap_absorbed_caption(blocks: Vec<BlockNode>) -> Vec<BlockNode> {
+        let [BlockNode::Figure(figure)] = blocks.as_slice() else {
+            return blocks;
+        };
+        if Self::caption_line_binds(&figure.target) {
+            return blocks;
+        }
+        let Some(BlockNode::Figure(figure)) = blocks.into_iter().next() else {
+            unreachable!("the slice pattern above matched a lone figure")
+        };
+        let FigureTarget::Paragraph(target) = *figure.target else {
+            unreachable!("a paragraph is the only target a caption line does not bind to")
+        };
+        vec![
+            BlockNode::Paragraph(target),
+            BlockNode::Paragraph(Paragraph {
+                attrs: None,
+                children: figure.caption,
+                at_content_column: true,
+                pos: None,
+            }),
+        ]
     }
 
     /// `<figure class="carve-figure-panel">` back to the node it wrapped: the
