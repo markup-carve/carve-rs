@@ -4,6 +4,8 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;
 
+mod common;
+
 const SCHEMA_MAP: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/resources/prosemirror-schema-map.json"
@@ -747,7 +749,26 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
         lossy <= LOSSY,
         "reported-lossy documents rose from {LOSSY} to {lossy}"
     );
-    assert_eq!(covered + lossy, STRICT + LOSSY, "the corpus size moved");
+    // THE RELATIONSHIP, NOT THE MAGNITUDE. Every corpus document lands in
+    // exactly one of the two buckets, which is what this assertion is for -
+    // a strict count that merely adds up cannot distinguish documents arriving
+    // from documents LEAVING the strict set, so the two sides must still cover
+    // the corpus exactly. Written as `STRICT + LOSSY` it also froze the corpus
+    // SIZE, so it failed by construction the moment the spec grew: the pin at
+    // carve 70e46b55 carries 1422 documents against the 1420 that total was
+    // written at, and the assertion broke on a pull request that touches none
+    // of this (carve-rs#1416).
+    //
+    // `common::expected_corpus_size()` counts the `::: compare` blocks in the
+    // spec's own examples - a route to the number that does not read the
+    // corpus directory this sweep reads - so a truncated checkout still fails
+    // here rather than passing by not existing. The other corpus sweeps in
+    // this suite already derive it that way; this was the last hardcoded total.
+    assert_eq!(
+        covered + lossy,
+        common::expected_corpus_size(),
+        "the sweep bucketed a different number of documents than the spec examples define"
+    );
 }
 
 #[test]
