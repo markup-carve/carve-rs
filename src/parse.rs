@@ -520,6 +520,7 @@ fn parse_with_options_mode_and_index(
                 } else {
                     Vec::new()
                 },
+                authored_base_at_start: false,
             },
             BTreeMap::new(),
             BTreeMap::new(),
@@ -836,6 +837,7 @@ fn remap_source(source: String, original: &MappedSource) -> MappedSource {
             source,
             line_map: original.line_map[..source_line_count].to_vec(),
             col_map: original.col_map[..source_line_count.min(original.col_map.len())].to_vec(),
+            authored_base_at_start: original.authored_base_at_start,
         };
     }
     MappedSource {
@@ -843,6 +845,7 @@ fn remap_source(source: String, original: &MappedSource) -> MappedSource {
         // Top-level source: nothing has been stripped, so every column in this
         // text is a column in the document.
         col_map: vec![Some(0); source_line_count],
+        authored_base_at_start: false,
         source,
     }
 }
@@ -873,6 +876,7 @@ struct ContentColumns {
     /// measured in whichever coordinate the caller happened to strip to.
     frames: Vec<ColumnFrame>,
     prev_blank: bool,
+    after_blank: bool,
 }
 
 /// One container's live content columns, plus the definition list open inside
@@ -896,6 +900,7 @@ impl ContentColumns {
         Self {
             frames: vec![ColumnFrame::default()],
             prev_blank: true,
+            after_blank: true,
         }
     }
 
@@ -915,6 +920,7 @@ impl ContentColumns {
     fn observe(&mut self, raw_line: &str, opaque: bool) -> usize {
         let bare = without_blockquote_prefixes(raw_line);
         let was_prev_blank = self.prev_blank;
+        self.after_blank = was_prev_blank;
         self.prev_blank = trim_ascii(bare).is_empty();
         if opaque {
             return self.current().cols.last().copied().unwrap_or(0);
@@ -1072,6 +1078,10 @@ impl ContentColumns {
         self.reached_by_at(self.frames.len() - 1, indent)
     }
 
+    fn descendant_still_owns(&self, indent: usize) -> bool {
+        !self.after_blank && self.current().cols.iter().any(|col| *col > indent)
+    }
+
     /// `reached_by`, asked of a NAMED container level rather than the innermost
     /// one. The composed walk needs it: a `>` written at an outer item's content
     /// column is measured against THAT item's columns, and the innermost frame's
@@ -1091,10 +1101,16 @@ impl ContentColumns {
     }
 }
 
-/// A definition line with the enclosing item's content column removed, so a
-/// continuation line reads as the definition it is. Exactly a column, never
-/// between two: past one the line is item paragraph text and defines nothing.
-fn at_content_column<'a>(bare: &'a str, structural: &str, content_col: usize) -> &'a str {
+/// A definition line with the enclosing item's content column removed. Under
+/// carve#1705, residual indentation is removed when the definition may establish
+/// an authored base. It is retained while a deeper descendant still owns the
+/// uninterrupted line.
+fn at_content_column<'a>(
+    bare: &'a str,
+    structural: &str,
+    content_col: usize,
+    allow_authored_base: bool,
+) -> &'a str {
     // A BLOCKQUOTE prefix does not disqualify the strip: columns are measured
     // inside the quote, so `> - a` / `>   [r]: /u` is the same shape as its
     // unquoted twin and the definition is the item's block either way
@@ -1106,7 +1122,13 @@ fn at_content_column<'a>(bare: &'a str, structural: &str, content_col: usize) ->
             .chars()
             .all(|c| c == '>' || c == ' ' || c == '\t');
     if content_col > 0 && (structural.is_empty() || quoted_only) {
-        bare.strip_prefix(&" ".repeat(content_col)).unwrap_or(bare)
+        let at = bare.strip_prefix(&" ".repeat(content_col)).unwrap_or(bare);
+        let authored = at.trim_start_matches([' ', '\t']);
+        if allow_authored_base && authored.starts_with('[') && authored.contains("]: ") {
+            authored
+        } else {
+            at
+        }
     } else {
         bare
     }
@@ -1308,10 +1330,12 @@ fn extract_footnote_defs(
             i += 1;
             continue;
         }
+        let def_indent = leading_ws(stripped.bare);
         let def_line = at_content_column(
             stripped.bare,
             stripped.structural,
-            columns.reached_by(leading_ws(stripped.bare)),
+            columns.reached_by(def_indent),
+            !columns.descendant_still_owns(def_indent),
         );
         if let Some((label, first)) = parse_footnote_def_line(def_line).filter(|_| {
             // A LIST MARKER on a line the block parser folds into an open
@@ -1572,6 +1596,7 @@ fn extract_footnote_defs(
                     col_map: def_col_map,
                     source: def_lines.join("\n"),
                     line_map: def_line_map,
+                    authored_base_at_start: false,
                 });
             // Leave the container's structural prefix (or a blank line at top
             // level) where the invisible definition was, so the container still
@@ -1639,6 +1664,7 @@ fn extract_footnote_defs(
                 Vec::new()
             },
             source: joined_source(&body),
+            authored_base_at_start: false,
             line_map: body_line_map,
         },
         defs,
@@ -2207,13 +2233,21 @@ fn extract_link_defs_with_guard(
         // re-base to the current list-item content column. This recognizes a
         // fence on the marker line (`- ````) and on continuation lines.
         let opener_kept;
+        let mut authored_fence_col = content_col;
         let fence_line = if content_col == 0 {
             stripped.bare
         } else {
             opener_kept = strip_container_prefixes_keep_indent(line);
             let kept_indent = leading_ws(&opener_kept);
             if kept_indent >= content_col {
-                &opener_kept[content_col..]
+                let canonical = &opener_kept[content_col..];
+                let authored = canonical.trim_start_matches([' ', '\t']);
+                if detect_fence_open(authored).is_some() {
+                    authored_fence_col = kept_indent;
+                    authored
+                } else {
+                    canonical
+                }
             } else {
                 opener_kept.as_str()
             }
@@ -2270,7 +2304,7 @@ fn extract_link_defs_with_guard(
             }
         }
         if let Some(mut open) = detect_fence_open(fence_line) {
-            open.content_col = content_col;
+            open.content_col = authored_fence_col;
             open.quoted = raw_is_quoted;
             let follows_open_paragraph =
                 line_index > 0 && !is_blank_line(all_lines[line_index - 1]);
@@ -2317,10 +2351,12 @@ fn extract_link_defs_with_guard(
         // implementations agree it defines nothing there. Zero columns is the
         // top-level case, where `text` / `  [r]: /u` is likewise text
         // everywhere - so this only ever fires inside a list item.
+        let def_indent = leading_ws(stripped.bare);
         let def_line = at_content_column(
             stripped.bare,
             stripped.structural,
-            columns.reached_by(leading_ws(stripped.bare)),
+            columns.reached_by(def_indent),
+            !columns.descendant_still_owns(def_indent),
         );
         if let Some((label_part, target_part)) = parse_link_def_line(def_line).filter(|_| {
             // A LIST MARKER on a line the block parser folds into an open
@@ -3621,10 +3657,12 @@ impl LineBuffer {
             col_map: self.col_map,
             source,
             line_map: self.line_map,
+            authored_base_at_start: false,
         }
     }
 }
 
+#[derive(Clone)]
 struct MappedSource {
     source: String,
     line_map: Vec<Option<usize>>,
@@ -3633,6 +3671,9 @@ struct MappedSource {
     /// mapped back to a column in the document, which is why nested blocks
     /// could not carry a position (spec PART 12 section 4).
     col_map: Vec<Option<isize>>,
+    /// The collector consumed an authored blank immediately before this
+    /// chunk's first line, making an over-indented opener a block boundary.
+    authored_base_at_start: bool,
 }
 
 impl MappedSource {
@@ -3642,6 +3683,7 @@ impl MappedSource {
             source: line,
             line_map: source_line.into_iter().map(Some).collect(),
             col_map: vec![stripped],
+            authored_base_at_start: false,
         }
     }
 
@@ -5537,10 +5579,11 @@ fn apply_held_item_attrs(children: &mut [BlockNode], attrs: Option<Attrs>) {
 fn item_body(
     deferred: &mut Vec<ItemBody>,
     item: usize,
-    source: MappedSource,
+    mut source: MappedSource,
     attrs: Option<Attrs>,
     drop_empty_paragraphs: bool,
 ) -> Vec<BlockNode> {
+    rebase_overindented_item_blocks(&mut source);
     deferred.push(ItemBody {
         item,
         chunk: Chunk::Source(source),
@@ -5571,7 +5614,230 @@ fn parse_item_chunk(
     options: &Options<'_>,
     carried: &mut Vec<PendingBody>,
 ) -> Vec<BlockNode> {
-    parse_mapped_source_at_level_into(source, options, false, true, carried)
+    let mut rebased = source.clone();
+    rebase_overindented_item_blocks(&mut rebased);
+    parse_mapped_source_at_level_into(&rebased, options, false, true, carried)
+}
+
+/// Apply carve#1705's authored block base to a list-item body whose canonical
+/// content column has already been stripped. Sublists are deliberately left
+/// alone: they already accept every deeper column, and their residual indent
+/// expresses another list level.
+fn rebase_overindented_item_blocks(source: &mut MappedSource) {
+    let trailing_newline = source.source.ends_with('\n');
+    let mut lines: Vec<String> = source.source.lines().map(str::to_string).collect();
+    if trailing_newline {
+        lines.push(String::new());
+    }
+    let mut i = 0usize;
+    let mut nested_columns: Vec<usize> = Vec::new();
+    let mut after_blank = false;
+    let mut paragraph_open = false;
+    while i < lines.len() {
+        if is_blank_line(&lines[i]) {
+            after_blank = true;
+            paragraph_open = false;
+            i += 1;
+            continue;
+        }
+        let base = indent_columns(&lines[i]);
+        let local_at_base = strip_leading_columns(&lines[i], base);
+        if i == 0 && base > 0 && !source.authored_base_at_start {
+            paragraph_open = true;
+            i += 1;
+            continue;
+        }
+        if paragraph_open && base > 0 && item_block_opener(&local_at_base) {
+            i += 1;
+            continue;
+        }
+        // A residual indent below a live descendant's content column is that
+        // descendant's below-minimum lazy line, not an authored base of the
+        // parent. Keep the descendant live until a flush parent line returns.
+        if !after_blank && nested_columns.last().is_some_and(|column| base < *column) {
+            let local = strip_leading_columns(&lines[i], base);
+            if base > 0 || !item_block_opener(&local) {
+                i += 1;
+                continue;
+            }
+        }
+        while nested_columns.last().is_some_and(|column| base < *column) {
+            nested_columns.pop();
+        }
+        if let Some(column) = marker_content_col(&lines[i]) {
+            nested_columns.push(column);
+            after_blank = false;
+            i += 1;
+            continue;
+        }
+        if nested_columns.last().is_some_and(|column| base >= *column) {
+            i += 1;
+            continue;
+        }
+        if base == 0 {
+            paragraph_open = line_starts_paragraph(&lines[i]);
+            after_blank = false;
+            i += 1;
+            continue;
+        }
+        let opener = strip_leading_columns(&lines[i], base);
+        if is_list_marker(&opener) || !item_block_opener(&opener) {
+            after_blank = false;
+            i += 1;
+            continue;
+        }
+        // A later residual indent can have been preserved precisely because
+        // the physical line fell short of the item's content column (for
+        // example after a closed comment fence). It is not an authored base.
+        // A separating blank, an interrupted paragraph, or a chunk explicitly
+        // identified from its over-indented first opener provides the missing
+        // ownership evidence.
+        if i > 0 && !after_blank && !paragraph_open && !source.authored_base_at_start {
+            i += 1;
+            continue;
+        }
+
+        paragraph_open = false;
+
+        let mut end = i;
+        let code = detect_fence_open(&opener);
+        let comment = code
+            .is_none()
+            .then(|| detect_comment_fence_line(&opener))
+            .flatten();
+        let colon = if code.is_none() && comment.is_none() {
+            detect_container_open(&opener).map(|open| open.fence_len)
+        } else {
+            None
+        };
+        if let Some(open) = code {
+            for (j, candidate) in lines.iter().enumerate().skip(i + 1) {
+                if !is_blank_line(candidate) && indent_columns(candidate) < base {
+                    break;
+                }
+                end = j;
+                if !is_blank_line(candidate)
+                    && is_fence_close(&strip_leading_columns(candidate, base), open)
+                {
+                    break;
+                }
+            }
+        } else if let Some(open) = comment {
+            for (j, candidate) in lines.iter().enumerate().skip(i + 1) {
+                if !is_blank_line(candidate) && indent_columns(candidate) < base {
+                    break;
+                }
+                end = j;
+                if !is_blank_line(candidate)
+                    && is_comment_fence_close(
+                        &strip_leading_columns(candidate, base),
+                        open.fence_len,
+                    )
+                {
+                    break;
+                }
+            }
+        } else if let Some(width) = colon {
+            let mut stack = vec![width];
+            for (j, candidate) in lines.iter().enumerate().skip(i + 1) {
+                if !is_blank_line(candidate) && indent_columns(candidate) < base {
+                    break;
+                }
+                end = j;
+                if !is_blank_line(candidate) {
+                    let local = strip_leading_columns(candidate, base);
+                    let trimmed = trim_ascii(&local);
+                    if trimmed.len() >= 3 && trimmed.bytes().all(|byte| byte == b':') {
+                        if stack.last() == Some(&trimmed.len()) {
+                            stack.pop();
+                            if stack.is_empty() {
+                                break;
+                            }
+                        } else {
+                            stack.push(trimmed.len());
+                        }
+                    }
+                }
+            }
+        } else if strip_blockquote_prefix(&opener).is_some() {
+            // Quote prefixes and their lazy paragraph continuations share the
+            // opener's authored base until a blank or a dedent ends the run.
+            for (j, candidate) in lines.iter().enumerate().skip(i + 1) {
+                if is_blank_line(candidate) || indent_columns(candidate) < base {
+                    break;
+                }
+                end = j;
+            }
+        } else if is_table_start(&opener) {
+            for (j, candidate) in lines.iter().enumerate().skip(i + 1) {
+                if is_blank_line(candidate) || indent_columns(candidate) < base {
+                    break;
+                }
+                let local = strip_leading_columns(candidate, base);
+                if !is_table_start(&local) && !is_table_continuation(&local) {
+                    break;
+                }
+                end = j;
+            }
+        } else if is_definition_list_start(&opener) {
+            for (j, candidate) in lines.iter().enumerate().skip(i + 1) {
+                if is_blank_line(candidate) || indent_columns(candidate) < base {
+                    break;
+                }
+                let local = strip_leading_columns(candidate, base);
+                if !is_definition_list_start(&local) && !local.starts_with(":  ") {
+                    break;
+                }
+                end = j;
+            }
+        } else if parse_standalone_attrs(&opener).is_some() {
+            // A floating attribute line and the list marker it targets share
+            // the authored base. Sublists are otherwise intentionally left to
+            // their own column logic, so carry this one marker with its
+            // attribute rather than leaving a residual indent between them.
+            if let Some(candidate) = lines.get(i + 1) {
+                if !is_blank_line(candidate)
+                    && indent_columns(candidate) >= base
+                    && is_list_marker(&strip_leading_columns(candidate, base))
+                {
+                    end = i + 1;
+                }
+            }
+        }
+        for (j, line) in lines.iter_mut().enumerate().take(end + 1).skip(i) {
+            if is_blank_line(line) {
+                continue;
+            }
+            let before = line.len() as isize;
+            *line = strip_leading_columns(line, base);
+            let removed = before - line.len() as isize;
+            if let Some(Some(col)) = source.col_map.get_mut(j) {
+                *col += removed;
+            }
+        }
+        i = end + 1;
+        after_blank = false;
+    }
+    if trailing_newline && lines.last().is_some_and(String::is_empty) {
+        lines.pop();
+    }
+    source.source = lines.join("\n");
+    if trailing_newline {
+        source.source.push('\n');
+    }
+}
+
+fn item_block_opener(line: &str) -> bool {
+    detect_fence_open(line).is_some()
+        || detect_comment_fence_line(line).is_some()
+        || thematic_break_marker(line).is_some()
+        || detect_heading(line).is_some()
+        || strip_blockquote_prefix(line).is_some()
+        || is_table_start(line)
+        || is_definition_list_start(line)
+        || detect_container_open(line).is_some()
+        || parse_standalone_attrs(line).is_some()
+        || detect_block_image(line).is_some()
 }
 
 /// Put the blocks [`parse_item_chunk`] handed back into the item.
@@ -8788,6 +9054,8 @@ fn parse_list(
         let Some(marker) = detect_list_marker_full(line) else {
             let indent = indent_columns(line);
             if indent > base_indent {
+                let authored_overindented_opener =
+                    indent > content_col && item_block_opener(trim_ascii_start(line));
                 // After a blank line, lazy continuation no longer applies: a line
                 // must reach the item's content column to keep belonging to it
                 // (PART 9 §24 C3). A line BELOW content_column ends the list and
@@ -8820,6 +9088,7 @@ fn parse_list(
                         content_col,
                         &mut item_open_fence,
                     );
+                    nested.authored_base_at_start |= authored_overindented_opener;
                     // A heading keeps the item open for flush-left lazy text.
                     // The heading itself ends at its newline and absorbs
                     // nothing (PART 2 SINGLE-LINE HEADINGS), but when the
@@ -8860,10 +9129,24 @@ fn parse_list(
                             )
                         },
                     );
+                    // The outer list loop consumes the separating blank before
+                    // collecting this chunk. Preserve that boundary so an
+                    // over-indented opener at the chunk's first visible line
+                    // can establish its authored block base (#1705). Without
+                    // this, it is indistinguishable from a first-line residual
+                    // indent produced by a tab straddling the content column.
+                    nested.authored_base_at_start |= pending_blank;
                     let definition_ended_paragraph = nested
                         .source
                         .lines()
                         .any(is_collected_definition_placeholder);
+                    // Normalize the authored base before peeling trailing
+                    // attribute lines: the peel is intentionally syntactic and
+                    // only recognizes a flush attribute block. The target may
+                    // live in the following chunk (notably a sub-list), so
+                    // waiting for `parse_item_chunk` would drop the attributes
+                    // before they can be carried across that boundary.
+                    rebase_overindented_item_blocks(&mut nested);
                     // A `{…}` block that ENDS this chunk was written in front of
                     // whatever comes next, and what comes next is in the next
                     // chunk - the collector broke on the sub-list marker. Hold
@@ -9272,6 +9555,7 @@ fn parse_list(
             if continuation_source_loosens(&stream.source, true) {
                 tight = false;
             }
+            stream.authored_base_at_start |= after_blank;
             let children = item_body(deferred, items.len(), stream, None, false);
             items.push(ListItem {
                 attrs: item_attrs,
@@ -9778,10 +10062,16 @@ fn parse_list(
                 continue;
             }
             if indent > content_col {
-                // ABOVE content_column (§24 C3): the line is lazy paragraph text,
-                // never a block opener. Fully strip its indent and fold it into
-                // the lead paragraph (inline-parsed, so a would-be opener like
-                // `> q` renders as literal text, and no residual indent leaks).
+                // A recognized block opener may be authored past the canonical
+                // content column: that visual column becomes its temporary
+                // base, and the continuation collector below rebases the whole
+                // block relative to it (#1705). Ordinary over-indented prose is
+                // still lazy paragraph text.
+                if item_block_opener(trim_ascii_start(next)) {
+                    break;
+                }
+                // Fully strip ordinary prose's indent and fold it into the lead
+                // paragraph (inline-parsed, so residual indent never leaks).
                 // A sibling/nesting marker above the content column was already
                 // handled above; only a genuine lazy interrupt ends the fold.
                 let next_owned = next.to_string();
@@ -10252,12 +10542,15 @@ fn sublist_source_loosens_outer_item(source: &str) -> bool {
         return false;
     };
     let mut prev_blank = false;
-    for line in &lines {
+    for (i, line) in lines.iter().enumerate() {
         if is_blank_line(line) {
             prev_blank = true;
             continue;
         }
-        if prev_blank && indent_columns(line) < inner_content_col && line_starts_paragraph(line) {
+        if prev_blank
+            && indent_columns(line) < inner_content_col
+            && !continuation_line_opens_sub_block(line, &lines[i + 1..])
+        {
             return true;
         }
         prev_blank = false;
@@ -10866,18 +11159,13 @@ fn continuation_source_loosens(source: &str, source_is_the_item_body: bool) -> b
 /// collapse still happens (the image is still bare, corpus 411), and it no
 /// longer reaches a decision that belongs to the line above it.
 ///
-/// A figure is paragraph-shaped only when ITS TARGET is: an image or a
-/// paragraph came from one line of paragraph-shaped source, where a code block,
-/// a table or a block quote came from a sub-block opener and keeps the item
-/// tight in all three engines (measured: a captioned fence, a captioned table
-/// and a captioned quote are all `tight: true` everywhere).
+/// A figure is paragraph-shaped only when its target remains a paragraph. A
+/// block image (captioned or not) is now a recognized #1705 sub-block opener
+/// and therefore takes §17 L2 instead.
 fn block_is_paragraph_shaped(block: &BlockNode) -> bool {
     match block {
-        BlockNode::Paragraph(_) | BlockNode::BlockImage(_) => true,
-        BlockNode::Figure(f) => matches!(
-            *f.target,
-            FigureTarget::Image(_) | FigureTarget::Paragraph(_)
-        ),
+        BlockNode::Paragraph(_) => true,
+        BlockNode::Figure(f) => matches!(*f.target, FigureTarget::Paragraph(_)),
         _ => false,
     }
 }
@@ -10888,10 +11176,23 @@ fn block_is_paragraph_shaped(block: &BlockNode) -> bool {
 /// plain paragraph does not (it loosens, §17 L1). Mirrors the oracle's
 /// `opensSubBlock` plus its marker handling.
 fn continuation_line_opens_sub_block(line: &str, rest: &[&str]) -> bool {
-    if is_list_marker(line) {
+    let base = indent_columns(line);
+    let local = strip_leading_columns(line, base);
+    let rebased_rest: Vec<String> = rest
+        .iter()
+        .map(|candidate| {
+            if is_blank_line(candidate) || indent_columns(candidate) >= base {
+                strip_leading_columns(candidate, base)
+            } else {
+                (*candidate).to_string()
+            }
+        })
+        .collect();
+    let rebased_rest: Vec<&str> = rebased_rest.iter().map(String::as_str).collect();
+    if is_list_marker(&local) || item_block_opener(&local) {
         return true;
     }
-    if interrupts_paragraph_with_rest(line, rest) {
+    if interrupts_paragraph_with_rest(&local, &rebased_rest) {
         return true;
     }
     false
@@ -11100,6 +11401,7 @@ fn collect_indented_block_mapped_with(
     fence: &mut Option<FenceOpen>,
     lead_is_continuation: bool,
 ) -> MappedSource {
+    let authored_base_at_start = cur.peek().is_some_and(is_blank_line);
     if cur.line_map.is_none() {
         return MappedSource {
             source: collect_indented_block_plain_with(
@@ -11112,6 +11414,7 @@ fn collect_indented_block_mapped_with(
             ),
             line_map: Vec::new(),
             col_map: Vec::new(),
+            authored_base_at_start,
         };
     }
     let mut lines = Vec::new();
@@ -11420,6 +11723,7 @@ fn collect_indented_block_mapped_with(
         col_map,
         source,
         line_map,
+        authored_base_at_start,
     }
 }
 
@@ -12765,6 +13069,7 @@ fn collect_definition_body(
         col_map,
         source: lines.join("\n"),
         line_map,
+        authored_base_at_start: false,
     }
 }
 

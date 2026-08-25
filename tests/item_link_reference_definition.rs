@@ -28,13 +28,10 @@ fn a_blank_line_before_it_changes_nothing() {
 }
 
 #[test]
-fn past_the_content_column_it_is_item_text() {
-    // Indented PAST the column, the line is the item's paragraph text: it
-    // renders, and it defines nothing. All four implementations agree here,
-    // which is why the fix strips exactly the content column and never more.
+fn past_the_content_column_it_uses_its_authored_base() {
     let out = html("- a\n      [r]: /u\n\nsee [t][r]\n");
-    assert!(out.contains("[r]: /u"), "{out}");
-    assert!(out.contains("see [t][r]"), "{out}");
+    assert!(!out.contains("[r]: /u"), "{out}");
+    assert!(out.contains(r#"<a href="/u">t</a>"#), "{out}");
 }
 
 #[test]

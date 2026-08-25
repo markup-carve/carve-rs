@@ -189,21 +189,16 @@ fn an_indented_quote_that_reaches_no_item_is_still_text() {
 }
 
 #[test]
-fn a_definition_between_two_content_columns_is_still_text() {
-    // INTENDED SURVIVOR. Under `- > - - x` the live columns are 2, 6 and 8 and
-    // nothing between them; a definition written at 7 reaches none of them
-    // exactly and folds as the item's paragraph text (PART 9 §24 C3). Composing
-    // the strips must FIND the columns, never relax which ones exist. The
-    // executable spec answers this document the same way.
+fn a_definition_between_canonical_columns_stays_with_the_descendant() {
     let src = "- > - - x\n  >    [r]: /url\n\nSee [r][].\n";
     let html = to_html(src);
     assert!(
         html.contains("[r]: /url"),
-        "the line stopped being text: {html}"
+        "below-minimum descendant text disappeared: {html}"
     );
     assert!(
         !html.contains("href=\"/url\""),
-        "registered from a column nothing reaches: {html}"
+        "below-minimum descendant text registered: {html}"
     );
 }
 

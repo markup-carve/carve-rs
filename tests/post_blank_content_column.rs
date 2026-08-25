@@ -48,15 +48,13 @@ fn ordered_block_opener_at_content_column_nests() {
     );
 }
 
-// --- B4: above content_column -> lazy paragraph text (inside the item) ---
+// --- B4: above content_column -> structural at an authored block base ---
 
 #[test]
-fn block_opener_above_content_column_folds_as_lazy_text() {
-    // `# h` at column 3 is above the bullet's content_column 2: no longer a
-    // heading, folds in as lazy paragraph text.
+fn block_opener_above_content_column_uses_its_authored_base() {
     assert_eq!(
         carve::to_html("- one\n\n   # h"),
-        "<ul>\n  <li><p>one</p>\n    <p># h</p>\n  </li>\n</ul>"
+        "<ul>\n  <li>one\n    <h1 id=\"h\">h</h1>\n  </li>\n</ul>"
     );
 }
 
@@ -83,10 +81,10 @@ fn cc_final_para_above_content_strips_residual_indent() {
 }
 
 #[test]
-fn cc_final_quote_above_content_is_lazy_text() {
+fn cc_final_quote_above_content_uses_its_authored_base() {
     assert_eq!(
         carve::to_html("- one\n   > q\n"),
-        "<ul>\n  <li>one\n&gt; q</li>\n</ul>"
+        "<ul>\n  <li>one\n    <blockquote><p>q</p></blockquote>\n  </li>\n</ul>"
     );
 }
 

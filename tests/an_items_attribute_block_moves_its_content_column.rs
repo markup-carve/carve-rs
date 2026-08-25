@@ -8,11 +8,11 @@ fn html(source: &str) -> String {
 }
 
 #[test]
-fn the_old_full_prefix_column_is_lazy_text() {
+fn the_old_full_prefix_column_is_an_authored_heading_base() {
     assert_eq!(
         html("-{#k} [x] a\n      # h\n").trim(),
-        "<ul>\n  <li id=\"k\"><input type=\"checkbox\" checked disabled aria-label=\"a # h\"> a\n\
-         # h</li>\n</ul>"
+        "<ul>\n  <li id=\"k\"><input type=\"checkbox\" checked disabled aria-label=\"a\"> a\n    \
+         <h1 id=\"h\">h</h1>\n  </li>\n</ul>"
     );
 }
 
@@ -55,10 +55,7 @@ fn padding_before_the_checkbox_still_moves_nothing() {
     let expected = "<ul>\n  <li><input type=\"checkbox\" disabled aria-label=\"item\"> item\n    \
                     <h1 id=\"H\">H</h1>\n  </li>\n</ul>";
     assert_eq!(html("-   [ ] item\n  # H\n").trim(), expected);
-    assert_eq!(
-        html("-   [ ] item\n    # H\n").trim(),
-        "<ul>\n  <li><input type=\"checkbox\" disabled aria-label=\"item # H\"> item\n# H</li>\n</ul>"
-    );
+    assert_eq!(html("-   [ ] item\n    # H\n").trim(), expected);
 }
 
 #[test]

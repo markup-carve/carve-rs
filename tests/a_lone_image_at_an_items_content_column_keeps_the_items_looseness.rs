@@ -1,31 +1,12 @@
-//! markup-carve/carve-rs#1358: a lone image at a list item's content column
-//! must not make the list tight.
+//! markup-carve/carve#1705: a lone block image is a recognized sub-block
+//! opener at any authored base at or beyond a list item's content column.
 //!
 //! PART 9 §17 decides an item's looseness from the BLANK LINE and from what the
 //! line under it spells: a blank followed by a plain paragraph loosens (L1), a
-//! blank followed by a sub-block opener keeps the item tight (L2). That
-//! decision is settled before anything is known about what the second block
-//! renders as.
-//!
-//! PART 11 §1c takes the `<p>` WRAPPER off a block whose whole content is one
-//! node that spells it away, and this engine implements the image half of that
-//! in the TREE: a lone image at its container's content column is a
-//! `BlockImage`, and one carrying a `^ ` caption is a `Figure`
-//! (markup-carve/carve#1660, markup-carve/carve#1677). The looseness test asked
-//! `is the first block a Paragraph`, so the collapse silently answered a
-//! question that belongs to the blank line above it - the clause takes the
-//! wrapper, never the item's looseness.
-//!
-//! WHAT MAKES THESE FIXTURES ABLE TO FAIL. Each shape is asserted on BOTH faces
-//! of the one defect, because either alone passes while the other stays wrong:
-//! `list.tight` on the tree, and the `<p>` on the rendered HTML. Every shape
-//! also carries the COLLAPSE CONTROL - the image must still render bare, with
-//! no `<p>` around it - so a "fix" that restored looseness by undoing the §1c
-//! collapse fails here rather than passing and regressing corpus 411.
-//!
-//! Measured against carve-js 99b28ab and carve-php 38de559, which publish
-//! `tight: false` and `<p>t</p>` for every LOOSE shape below and `tight: true`
-//! for every TIGHT one.
+//! blank followed by a sub-block opener keeps the item tight (L2). A block
+//! image therefore takes L2 and keeps the item tight, including when it is
+//! captioned or written past the canonical content column. PART 11 §1c still
+//! removes the image paragraph wrapper independently.
 
 use carve::ast::BlockNode;
 use carve::{parse, to_html};
@@ -49,18 +30,17 @@ fn image_is_bare(html: &str) -> bool {
 }
 
 #[test]
-fn a_lone_image_at_the_content_column_leaves_the_item_loose() {
+fn a_lone_image_at_the_content_column_keeps_the_item_tight() {
     let src = "- t\n\n  ![A](a.jpg)\n";
     let html = to_html(src);
 
     assert!(
-        !only_list_tight(src),
-        "the blank line loosened the item; the image below it cannot re-tighten \
-         the list. tree said tight, HTML was:\n{html}"
+        only_list_tight(src),
+        "a block image is an L2 sub-block opener:\n{html}"
     );
     assert!(
-        html_wraps_the_lead(&html),
-        "a loose item wraps its lead paragraph:\n{html}"
+        !html_wraps_the_lead(&html),
+        "a tight item does not wrap its lead paragraph:\n{html}"
     );
     // The collapse control. Restoring looseness by re-wrapping the image would
     // satisfy the two assertions above and regress corpus 411.
@@ -71,7 +51,7 @@ fn a_lone_image_at_the_content_column_leaves_the_item_loose() {
 }
 
 #[test]
-fn the_same_shape_is_loose_for_every_list_kind() {
+fn the_same_shape_is_tight_for_every_list_kind() {
     for src in [
         "- t\n\n  ![A](a.jpg)\n",     // unordered
         "1. t\n\n   ![A](a.jpg)\n",   // ordered
@@ -79,11 +59,8 @@ fn the_same_shape_is_loose_for_every_list_kind() {
         "* t\n\n  ![A](a.jpg)\n",     // the other bullet
     ] {
         let html = to_html(src);
-        assert!(!only_list_tight(src), "still tight for {src:?}:\n{html}");
-        assert!(
-            html_wraps_the_lead(&html),
-            "no lead <p> for {src:?}:\n{html}"
-        );
+        assert!(only_list_tight(src), "loose for {src:?}:\n{html}");
+        assert!(!html_wraps_the_lead(&html), "lead <p> for {src:?}:\n{html}");
         assert!(
             image_is_bare(&html),
             "image re-wrapped for {src:?}:\n{html}"
@@ -92,7 +69,7 @@ fn the_same_shape_is_loose_for_every_list_kind() {
 }
 
 #[test]
-fn a_captioned_image_at_the_content_column_is_loose_too() {
+fn a_captioned_image_at_the_content_column_is_tight_too() {
     // The neighbour the reported shape does not name. An image with a `^ `
     // caption is a `Figure`, which is no more a `Paragraph` than a `BlockImage`
     // is - so it carried the identical defect, and a fix aimed only at the
@@ -100,11 +77,8 @@ fn a_captioned_image_at_the_content_column_is_loose_too() {
     let src = "- t\n\n  ![A](a.jpg)\n  ^ cap\n";
     let html = to_html(src);
 
-    assert!(
-        !only_list_tight(src),
-        "captioned image still tight:\n{html}"
-    );
-    assert!(html_wraps_the_lead(&html), "no lead <p>:\n{html}");
+    assert!(only_list_tight(src), "captioned image loosened:\n{html}");
+    assert!(!html_wraps_the_lead(&html), "lead <p>:\n{html}");
     assert!(
         html.contains("<figcaption>cap</figcaption>") && image_is_bare(&html),
         "the figure is still built, and its image is still bare:\n{html}"
@@ -112,16 +86,14 @@ fn a_captioned_image_at_the_content_column_is_loose_too() {
 }
 
 #[test]
-fn an_indented_lone_image_was_already_loose_and_stays_loose() {
-    // The tell that found the defect: the SAME image one column further in kept
-    // the item loose all along, because an indented lone image stays a
-    // paragraph in the tree (markup-carve/carve#1660). Two columns of the same
-    // document cannot disagree about a blank line.
+fn an_over_indented_lone_image_uses_its_authored_base_and_stays_tight() {
+    // The same recognized opener one column further in establishes that column
+    // as its authored base and keeps the same L2 classification.
     let src = "- t\n\n   ![A](a.jpg)\n";
     let html = to_html(src);
 
-    assert!(!only_list_tight(src), "indented image went tight:\n{html}");
-    assert!(html_wraps_the_lead(&html), "no lead <p>:\n{html}");
+    assert!(only_list_tight(src), "indented image went loose:\n{html}");
+    assert!(!html_wraps_the_lead(&html), "lead <p>:\n{html}");
     assert!(image_is_bare(&html), "image re-wrapped:\n{html}");
 }
 
@@ -170,25 +142,22 @@ fn a_plain_paragraph_under_the_blank_still_loosens() {
 }
 
 #[test]
-fn an_invisible_block_under_the_blank_does_not_cancel_it() {
+fn an_invisible_block_does_not_change_the_visible_blocks_looseness_class() {
     // markup-carve/carve#630: a comment in front of the second block is skipped,
     // not counted. The predicate is asked of the first VISIBLE block, and that
     // has to survive this change.
     //
-    // The IMAGE row is the two rules meeting, and it was broken too: the comment
-    // was skipped correctly and the block behind it was a `BlockImage`, so the
-    // item went tight for the same reason the bare shape did. carve-js and
-    // carve-php publish `tight: false` for both.
-    for (label, src) in [
-        ("paragraph", "- t\n\n  %% n\n  x\n"),
-        ("lone image", "- t\n\n  %% n\n  ![A](a.jpg)\n"),
+    // The image row is the two rules meeting: the comment remains invisible and
+    // the block image behind it remains an L2 sub-block opener.
+    for (label, src, tight) in [
+        ("paragraph", "- t\n\n  %% n\n  x\n", false),
+        ("lone image", "- t\n\n  %% n\n  ![A](a.jpg)\n", true),
     ] {
         let html = to_html(src);
         assert!(
-            !only_list_tight(src),
-            "{label}: a comment in front of the second block must not \
-             re-tighten:\n{html}"
+            only_list_tight(src) == tight,
+            "{label}: the comment changed the visible block's class:\n{html}"
         );
-        assert!(html_wraps_the_lead(&html), "{label}: no lead <p>:\n{html}");
+        assert_eq!(html_wraps_the_lead(&html), !tight, "{label}: {html}");
     }
 }

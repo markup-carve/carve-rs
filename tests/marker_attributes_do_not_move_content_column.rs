@@ -19,10 +19,9 @@ fn attribute_spelling_and_unicode_move_no_column() {
 }
 
 #[test]
-fn the_former_full_prefix_column_is_text_inside_the_item() {
+fn the_former_full_prefix_column_is_an_authored_heading_base() {
     let rendered = html("-{.x1} a\n       # h\n");
-    assert!(!rendered.contains("<h1"));
-    assert!(rendered.contains("# h</li>"));
+    assert!(rendered.contains("<h1 id=\"h\">h</h1>"));
 }
 
 #[test]

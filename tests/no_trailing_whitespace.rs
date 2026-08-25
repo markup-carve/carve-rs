@@ -109,7 +109,9 @@ fn the_writer_never_emits_trailing_whitespace_inner() {
 
 #[test]
 fn a_blank_line_inside_a_list_item_is_empty() {
-    let src = "1. one\n\n    > q\n";
+    // Plain paragraph content keeps the item loose. A recognized block quote
+    // now takes #1705's authored base and is canonically tight.
+    let src = "1. one\n\n    two\n";
     let out = carve::to_carve(src);
     assert!(
         out.contains("\n\n"),
