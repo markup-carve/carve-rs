@@ -39,6 +39,24 @@ env:
   CARGO_PROFILE_TEST_OPT_LEVEL: "2"
 
 jobs:
+  # THE PIN RESOLVES BY SHA, SO NOTHING ELSE HERE CAN SEE A DANGLING ONE. Every
+  # other job checks the spec submodule out and runs against whatever tree the
+  # pin names, which works just as well for a commit that is not on spec `main`
+  # as for one that is - right up until the commit is collected and the checkout
+  # itself starts failing (markup-carve/carve#1740). Seconds, and it needs no
+  # toolchain, so it does not wait behind the build.
+  spec-pin:
+    name: Spec pin is on spec main
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+      # The checkout above is shallow (no fetch-depth), so the script deepens
+      # the submodule before asking - see the comment in it for why a depth-1
+      # clone cannot answer the ancestry question either way.
+      - run: ./scripts/check-spec-pin-ancestry.sh tests/spec
+
   test:
     name: Build and test (Rust ${{ matrix.toolchain }})
     runs-on: ubuntu-latest

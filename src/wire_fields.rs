@@ -12,7 +12,7 @@ pub(crate) const WIRE_FIELDS: &[(&str, &[&str])] = &[
     ("abbreviation_def", &["abbr", "attrs", "expansion", "pos", "type"]),
     ("admonition", &["attrs", "children", "kind", "label", "pos", "title", "type"]),
     ("autolink", &["attrs", "href", "pos", "text", "type"]),
-    ("block_quote", &["attrs", "children", "pos", "type"]),
+    ("block_quote", &["attrs", "children", "fenced", "pos", "type"]),
     ("caption_number", &["attrs", "n", "pos", "type"]),
     ("citation_definition", &["attrs", "children", "key", "pos", "type"]),
     ("citation_group", &["attrs", "items", "mode", "pos", "raw", "type"]),
@@ -90,6 +90,7 @@ pub(crate) const WIRE_UNTYPED_ARRAY_FIELDS: &[(&str, &[&str])] = &[
 /// as JSON, keyed by node type (PART 12 section 12(d)).
 #[rustfmt::skip]
 pub(crate) const WIRE_CONST_FIELDS: &[(&str, &[(&str, &str)])] = &[
+    ("block_quote", &[("fenced", "true")]),
     ("citation_group", &[("mode", "\"integral\"")]),
     ("definition_list", &[("loose", "true")]),
     ("list", &[("bareMarker", "true")]),
