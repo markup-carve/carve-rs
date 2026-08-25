@@ -7926,6 +7926,7 @@ fn parse_blockquote(cur: &mut LineCursor, options: &Options<'_>) -> Box<BlockNod
         span_of(cur, span_start, cur.pos, options),
         consume_caption(cur, options),
         span_of(cur, span_start, cur.pos, options),
+        false,
     )
 }
 
@@ -8205,12 +8206,13 @@ fn boxed_blockquote_node(
     quote_pos: Option<Pos>,
     caption: Option<Vec<InlineNode>>,
     figure_pos: Option<Pos>,
+    fenced: bool,
 ) -> Box<BlockNode> {
     let quote = BlockQuote {
         pos: quote_pos,
         attrs: None,
         children,
-        fenced: false,
+        fenced,
     };
     if let Some(caption) = caption {
         Box::new(BlockNode::Figure(Figure {
@@ -15603,13 +15605,22 @@ fn parse_quote_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
     let span_start = cur.pos;
     cur.consume();
     let (inner, _closed) = collect_colon_container_body(cur, fence_len);
-    let pos = span_of(cur, span_start, cur.pos, options);
-    BlockNode::BlockQuote(BlockQuote {
-        attrs: None,
-        children: parse_capped_colon_body(inner, options),
-        fenced: true,
-        pos,
-    })
+    let children = parse_capped_colon_body(inner, options);
+    // The quote's own span ends at its CLOSING fence, before the caption slot
+    // that hangs on it, so it is taken before `consume_caption` moves the
+    // cursor past a caption line.
+    let quote_pos = span_of(cur, span_start, cur.pos, options);
+    let caption = consume_caption(cur, options);
+    // Section 4's seventh host. What it produces is what the PREFIXED spelling
+    // produces: a captioned quote is a figure either way, because the two
+    // spellings are one node and the caption rule reads the node (carve#1742).
+    *boxed_blockquote_node(
+        children,
+        quote_pos,
+        caption,
+        span_of(cur, span_start, cur.pos, options),
+        true,
+    )
 }
 
 fn parse_hardbreaks_block(cur: &mut LineCursor, options: &Options<'_>) -> BlockNode {
