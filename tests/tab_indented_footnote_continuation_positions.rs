@@ -11,9 +11,9 @@
 //! published no `pos` at all (markup-carve/carve-rs#736).
 //!
 //! The map is signed now. The residual itself is UNTOUCHED, which is the point:
-//! a whole-character dedent would also restore the positions, and it would move
-//! a tab-indented fence and a tab-indented quote away from the oracle - so
-//! those two shapes are pinned below as controls.
+//! a whole-character dedent would also restore the positions. Authored body
+//! bases intentionally make tab-indented block openers structural now, so the
+//! final two tests pin that newer rule without weakening the position checks.
 
 use carve::{BlockNode, InlineNode, Options, Pos};
 
@@ -125,28 +125,21 @@ fn every_text_span_slices_back_to_its_own_value() {
 }
 
 #[test]
-fn a_tab_indented_fence_in_a_note_body_stays_literal() {
-    // THE FIRST SHAPE THE WHOLE-CHARACTER DEDENT BROKE. The tab's overshoot is
-    // relative indentation, so the fence is INDENTED, the strict column-0 rule
-    // makes it literal, and it renders as an inline code span. Treating the tab
-    // as atomic lands the fence flush left and opens a real code block.
+fn a_tab_indented_fence_uses_its_authored_body_base() {
+    // A recognized opener at or beyond the body's minimum column establishes
+    // its own block base. The tab spelling therefore opens a real code block.
     let html = carve::to_html("[^a]: note\n\n\t```\n\t  x\n\t```\n\nsee[^a]\n");
     assert!(
-        html.contains("<code>") && !html.contains("<pre>"),
-        "a tab-indented fence opened a real block:\n{html}"
+        html.contains("<pre><code>  x\n</code></pre>"),
+        "a tab-indented fence did not open at its authored base:\n{html}"
     );
 }
 
 #[test]
-fn a_tab_indented_quote_in_a_note_body_stays_literal() {
-    // The second one, for the same reason.
+fn a_tab_indented_quote_uses_its_authored_body_base() {
     let html = carve::to_html("[^a]: note\n\n\t> q\n\nsee[^a]\n");
     assert!(
-        !html.contains("<blockquote>"),
-        "a tab-indented quote opened a real block:\n{html}"
-    );
-    assert!(
-        html.contains("&gt; q"),
-        "the quote marker is not literal text:\n{html}"
+        html.contains("<blockquote><p>q</p></blockquote>"),
+        "a tab-indented quote did not open at its authored base:\n{html}"
     );
 }
