@@ -1741,6 +1741,7 @@ fn render_list_item(
         Some(true) => format!("<input type=\"checkbox\" checked disabled{name_attr}> "),
     };
     if item.children.is_empty() {
+        out.push_str(&checkbox);
         out.push_str("</li>");
         return;
     }
