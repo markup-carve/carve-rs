@@ -245,6 +245,85 @@ fn it_reports_it_at_every_level_the_tree_keeps_it() {
     }
 }
 
+/// THE FIGURE WAS THE ONE PLACE THIS ENGINE DID NOT KEEP THE PARAGRAPH.
+///
+/// A figure's image target IS the image, so the rebuild takes a lone-image
+/// paragraph off the body - and it took the AUTHOR'S one off too, class and
+/// all. `<figure id="f"><p class="x"><img></p><figcaption>Cap</figcaption>` came
+/// back as a figure around the bare image: the class gone from the tree, from
+/// the written source and from the report, in every mode, with nothing saying
+/// so. That is the silent drop the whole file exists to rule out, reached
+/// through the one handler that was not asking the question.
+///
+/// carve-js and carve-php both keep it (markup-carve/carve-js#1422,
+/// carve-js#1606). Kept, the target is a PARAGRAPH, and no caption line binds
+/// to one - so the figure unwraps and declares, which is ruling
+/// markup-carve/carve-php#1731 answering the shape it already covers.
+#[test]
+fn a_figure_keeps_an_authored_paragraph_around_its_image() {
+    let html = r#"<figure id="f"><p class="x"><img src="g.jpg" alt="G"></p><figcaption>Cap</figcaption></figure>"#;
+    assert_eq!(carve(html), "{.x}\n![G](g.jpg)\n\nCap\n");
+    assert_eq!(
+        rows(html).len(),
+        1,
+        "the unspellable paragraph still says so"
+    );
+    assert!(rows(html)[0].starts_with(HEAD), "{:?}", rows(html));
+    let codes: Vec<HtmlImportDiagnosticCode> = html_to_carve(html, &HtmlImportOptions::default())
+        .expect("import")
+        .report
+        .diagnostics
+        .into_iter()
+        .map(|d| d.code)
+        .collect();
+    assert_eq!(
+        codes,
+        vec![
+            HtmlImportDiagnosticCode::ElementUnwrapped,
+            HtmlImportDiagnosticCode::AttributeDropped,
+            HtmlImportDiagnosticCode::StructureUnspellable,
+        ]
+    );
+
+    // CONTROL: with no attribute on it the wrapper is OURS - `blocks_at` made it
+    // to have somewhere to put a stray inline - so it comes off and the figure
+    // rebuilds losing nothing. A fix that stopped unwrapping altogether would
+    // turn the most common captioned image into an unwrapped paragraph and fail
+    // here.
+    let ours =
+        r#"<figure id="f"><p><img src="g.jpg" alt="G"></p><figcaption>Cap</figcaption></figure>"#;
+    assert_eq!(carve(ours), "{#f}\n![G](g.jpg)\n^ Cap\n");
+    assert!(rows(ours).is_empty(), "{:?}", rows(ours));
+}
+
+/// AND `roundtrip` KEEPS THE BYTES for the authored wrapper, because the target
+/// it leaves is a paragraph and no Carve spelling reproduces a figure around one
+/// (markup-carve/carve#1704). Before the wrapper was kept, this shape rebuilt
+/// silently in the mode whose whole job is fidelity.
+#[test]
+fn roundtrip_preserves_a_figure_whose_paragraph_the_author_wrote() {
+    let html = r#"<figure id="f"><p class="x"><img src="g.jpg" alt="G"></p><figcaption>Cap</figcaption></figure>"#;
+    let options = HtmlImportOptions {
+        mode: carve::HtmlImportMode::Roundtrip,
+        ..HtmlImportOptions::default()
+    };
+    let result = html_to_carve(html, &options).expect("import");
+    assert!(
+        result.value.contains("```=html") && result.value.contains(html),
+        "{:?}",
+        result.value
+    );
+    assert_eq!(
+        result
+            .report
+            .diagnostics
+            .into_iter()
+            .map(|d| d.code)
+            .collect::<Vec<_>>(),
+        vec![HtmlImportDiagnosticCode::RawPreserved]
+    );
+}
+
 #[test]
 fn it_reports_each_of_two_such_paragraphs_once() {
     assert_eq!(
