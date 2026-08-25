@@ -683,6 +683,32 @@ impl<'a> Importer<'a> {
         entries.sort_by_key(|entry| entry.at);
         entries.into_iter().map(|entry| entry.diagnostic).collect()
     }
+    /// The media wrappers whose children are FALLBACK CONTENT (ruling
+    /// markup-carve/carve#1749).
+    ///
+    /// A `<video>`'s children are the flow content the author wrote for the case
+    /// where the media cannot be shown, and Carve can spell all of it.
+    /// Flattening it to one inline run is a CONTENT change rather than a
+    /// spelling difference: a document that said two things came back saying
+    /// one, and no paragraph boundary the author wrote can be recovered from the
+    /// run afterwards.
+    ///
+    /// NOT ADDED TO `is_block_tag`, deliberately, and that is what this second
+    /// predicate is for. `is_block_tag` decides which arm `block()` takes, and
+    /// the unmapped arm there raw-preserves as a raw BLOCK in `roundtrip` -
+    /// where all three engines write a raw INLINE span for these elements,
+    /// because a media wrapper is inline content in HTML. So the ruling is
+    /// applied where it was ruled, to the FALLBACK conversion, and `roundtrip`
+    /// is untouched.
+    ///
+    /// `iframe` and `embed` are NOT members and their absence is measured, not
+    /// an oversight: an `<iframe>`'s content is raw text, so it has no child
+    /// elements to convert, and `<embed>` is void in one parser and childless in
+    /// practice in the other. `map` and `svg` hold their own content models
+    /// rather than a fallback.
+    fn is_media_fallback_tag(tag: &str) -> bool {
+        matches!(tag, "video" | "audio" | "object" | "canvas" | "picture")
+    }
     fn is_block_tag(tag: &str) -> bool {
         matches!(
             tag,
@@ -1679,11 +1705,26 @@ impl<'a> Importer<'a> {
                 Some(given) => given[i].clone(),
                 None => Self::child_path(parent, handle, i),
             };
-            if is_block {
+            // A MEDIA WRAPPER'S FALLBACK IS CONVERTED AS BLOCKS (ruling
+            // markup-carve/carve#1749). It is not a block tag and must not
+            // become one - see `is_media_fallback_tag` for why `roundtrip` keeps
+            // the inline raw span - so the ruling is applied here, at the one
+            // position where the children have somewhere block-shaped to go.
+            let is_media_fallback = self.opts.mode != HtmlImportMode::Roundtrip
+                && tag
+                    .as_deref()
+                    .map(Self::is_media_fallback_tag)
+                    .unwrap_or(false);
+            if is_block || is_media_fallback {
                 if !inline.is_empty() {
                     self.flush_inline_run(&mut out, &mut inline, &mut inline_paths, parent, depth)?;
                 }
-                out.extend(self.block(handle, &path, depth + 1)?);
+                if is_media_fallback {
+                    let tag = tag.expect("a media fallback tag is an element name");
+                    out.extend(self.media_fallback(handle, &tag, &path, depth + 1)?);
+                } else {
+                    out.extend(self.block(handle, &path, depth + 1)?);
+                }
             } else {
                 inline.push(handle.clone());
                 inline_paths.push(path);
@@ -1693,6 +1734,50 @@ impl<'a> Importer<'a> {
             self.flush_inline_run(&mut out, &mut inline, &mut inline_paths, parent, depth)?;
         }
         Ok(out)
+    }
+
+    /// A media wrapper standing among blocks, unwrapped to its fallback
+    /// (ruling markup-carve/carve#1749).
+    ///
+    /// THE SAME TWO ROWS THE UNMAPPED ARM WRITES, deliberately: the row for the
+    /// element, the rows for the attributes it could not carry, then the
+    /// children as BLOCKS. What changes is only that the children go through
+    /// `blocks_at` rather than the inline flatten, so a `<p>` inside stays a
+    /// paragraph, a `<ul>` stays a list and an `<h2>` stays a heading, as
+    /// carve-php has always written them.
+    ///
+    /// THE INNER ROWS FALL OUT RATHER THAN BEING PORTED. Flattening reported an
+    /// `element-unwrapped` for every block it dissolved, and those rows were
+    /// truthful about that output; a `<p>` that survives as a paragraph is not
+    /// unwrapped and owes none. A fix that kept them while changing the
+    /// conversion would start making false statements.
+    ///
+    /// `roundtrip` NEVER REACHES HERE. Its answer for these elements is the raw
+    /// inline span the inline arm writes, which is what all three engines
+    /// produce and what this ruling does not touch.
+    fn media_fallback(
+        &mut self,
+        h: &Handle,
+        tag: &str,
+        path: &str,
+        depth: usize,
+    ) -> Result<Vec<BlockNode>, HtmlImportError> {
+        let attrs = self.attrs(h, path);
+        let unwrapped = self.report_unsupported_element(h, tag, path);
+        self.report_unplaceable_attrs(
+            h,
+            attrs,
+            tag,
+            if unwrapped {
+                "the element was unwrapped and has no node to carry it"
+            } else {
+                "the empty element was dropped and has no node to carry it"
+            },
+            path,
+        );
+        let children: Vec<Handle> = h.children.borrow().iter().cloned().collect();
+
+        self.blocks_at(&children, None, path, depth)
     }
 
     /// The buffered inline run, emitted as whatever it turns out to be.
