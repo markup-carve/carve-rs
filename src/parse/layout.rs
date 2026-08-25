@@ -154,11 +154,12 @@ fn layout_link_defs(lines: &[&str]) -> Option<(BTreeMap<String, LinkDef>, Vec<us
         if index + 1 < lines.len() && !is_blank_line(lines[index + 1]) {
             return None;
         }
-        let def = parse_link_def_target_with_attrs(target.trim());
+        let mut def = parse_link_def_target_with_attrs(target.trim());
         if def.attrs.is_some() {
             return None;
         }
-        defs.insert(label.to_string(), def);
+        def.raw_label = Some(label.to_string());
+        defs.insert(label_key(label), def);
         definition_lines.push(index);
     }
     Some((defs, definition_lines))
@@ -485,11 +486,14 @@ fn render_layout_inline(out: &mut String, text: &str, options: &Options<'_>) -> 
                     if reference.is_empty() {
                         return None;
                     }
+                    if reference.contains(['\r', '\n']) {
+                        return None;
+                    }
                     let def = ACTIVE_LINK_DEFS.with(|active| {
                         active
                             .borrow()
                             .last()
-                            .and_then(|context| context.defs.get(reference).cloned())
+                            .and_then(|context| context.defs.get(&label_key(reference)).cloned())
                     })?;
                     if def.attrs.is_some() {
                         return None;

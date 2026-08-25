@@ -11,9 +11,9 @@ use crate::escape::{
     sanitize_url, write_escaped_attr, write_escaped_text,
 };
 use crate::extension::{HeadingIdOptions, Options, RenderContext};
-use crate::parse::unwrap_nested_anchors;
+use crate::parse::{label_key, unwrap_nested_anchors};
 use std::cell::Cell;
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt::Write as _;
 
 /// The recursion bound every renderer shares, and it MUST sit ABOVE the
@@ -566,7 +566,12 @@ pub(crate) struct FootnoteEntry {
 pub(crate) fn collect_footnotes(doc: &mut Document, assign_ref_ids: bool) -> Vec<FootnoteEntry> {
     let mut order = Vec::new();
     let mut seen: BTreeMap<String, usize> = BTreeMap::new();
-    let def_labels: HashSet<String> = doc.footnote_defs.keys().cloned().collect();
+    let mut def_labels: HashMap<String, String> = HashMap::new();
+    for label in doc.footnote_defs.keys() {
+        def_labels
+            .entry(label_key(label))
+            .or_insert_with(|| label.clone());
+    }
     let mut label_indices: HashMap<String, usize> = HashMap::new();
 
     for block in &mut doc.children {
@@ -607,7 +612,7 @@ pub(crate) fn collect_footnotes(doc: &mut Document, assign_ref_ids: bool) -> Vec
 fn collect_footnotes_block(
     assign_ref_ids: bool,
     block: &mut BlockNode,
-    def_labels: &HashSet<String>,
+    def_labels: &HashMap<String, String>,
     label_indices: &mut HashMap<String, usize>,
     seen: &mut BTreeMap<String, usize>,
     order: &mut Vec<FootnoteEntry>,
@@ -861,7 +866,7 @@ fn collect_footnotes_block(
 fn collect_footnotes_inline(
     assign_ref_ids: bool,
     nodes: &mut [InlineNode],
-    def_labels: &HashSet<String>,
+    def_labels: &HashMap<String, String>,
     label_indices: &mut HashMap<String, usize>,
     seen: &mut BTreeMap<String, usize>,
     order: &mut Vec<FootnoteEntry>,
@@ -889,7 +894,7 @@ fn collect_footnotes_inline(
 fn collect_footnotes_inline_scoped(
     assign_ref_ids: bool,
     nodes: &mut [InlineNode],
-    def_labels: &HashSet<String>,
+    def_labels: &HashMap<String, String>,
     label_indices: &mut HashMap<String, usize>,
     seen: &mut BTreeMap<String, usize>,
     order: &mut Vec<FootnoteEntry>,
@@ -937,21 +942,25 @@ fn collect_footnotes_inline_scoped(
                 let Some(id) = &f.id else {
                     continue;
                 };
-                if !def_labels.contains(id) {
+                if id.contains(['\r', '\n']) {
                     continue;
                 }
-                let idx = label_indices.get(id).copied().unwrap_or_else(|| {
+                let key = label_key(id);
+                let Some(definition_label) = def_labels.get(&key) else {
+                    continue;
+                };
+                let idx = label_indices.get(&key).copied().unwrap_or_else(|| {
                     order.push(FootnoteEntry {
-                        label: Some(id.clone()),
+                        label: Some(definition_label.clone()),
                         inline: None,
                         backrefs: Vec::new(),
                     });
                     let idx = order.len() - 1;
-                    label_indices.insert(id.clone(), idx);
+                    label_indices.insert(key.clone(), idx);
                     idx
                 });
                 let number = idx + 1;
-                let occurrence = seen.entry(id.clone()).or_insert(0);
+                let occurrence = seen.entry(key).or_insert(0);
                 *occurrence += 1;
                 let ref_id = if *occurrence == 1 {
                     format!("fnref{number}")
