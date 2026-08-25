@@ -5721,6 +5721,35 @@ fn rebase_overindented_blocks(source: &mut MappedSource, include_sublists: bool)
             continue;
         }
         if base == 0 {
+            // An opaque group already at the container's minimum column owns
+            // its payload. Do not reconsider a fence-shaped payload line as a
+            // separate authored-base opener.
+            if let Some(open) = detect_fence_open(&lines[i]) {
+                i += 1;
+                while i < lines.len() {
+                    let closes = is_fence_close(&lines[i], open);
+                    i += 1;
+                    if closes {
+                        break;
+                    }
+                }
+                after_blank = false;
+                paragraph_open = false;
+                continue;
+            }
+            if let Some(open) = detect_comment_fence_line(&lines[i]) {
+                i += 1;
+                while i < lines.len() {
+                    let closes = is_comment_fence_close(&lines[i], open.fence_len);
+                    i += 1;
+                    if closes {
+                        break;
+                    }
+                }
+                after_blank = false;
+                paragraph_open = false;
+                continue;
+            }
             paragraph_open = line_starts_paragraph(&lines[i]);
             after_blank = false;
             i += 1;
@@ -5754,7 +5783,9 @@ fn rebase_overindented_blocks(source: &mut MappedSource, include_sublists: bool)
             .then(|| detect_comment_fence_line(&opener))
             .flatten();
         let colon = if code.is_none() && comment.is_none() {
-            detect_container_open(&opener).map(|open| open.fence_len)
+            detect_container_open(&opener)
+                .map(|open| open.fence_len)
+                .or_else(|| detect_quote_block_open(&opener))
         } else {
             None
         };
@@ -5903,6 +5934,7 @@ fn item_block_opener(line: &str) -> bool {
         || is_table_start(line)
         || is_definition_list_start(line)
         || detect_container_open(line).is_some()
+        || detect_quote_block_open(line).is_some()
         || parse_standalone_attrs(line).is_some()
         || detect_block_image(line).is_some()
 }
