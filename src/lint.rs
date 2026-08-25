@@ -160,6 +160,17 @@ pub fn lint_carve_with_options(source: &str, options: &Options<'_>) -> Vec<LintW
     for body in doc.footnote_defs.values() {
         collect_figure_group_warnings(body, false, &to_byte, &mut out);
     }
+    collect_quote_fence_warnings(&doc.children, &to_byte, &mut out);
+    // A footnote definition hoists to the document (PART 9 §7), so its body is
+    // not reachable from `children`. The walk reports nothing there yet, for a
+    // reason outside this rule: a block opener below a quote line in a footnote
+    // body is folded into the quote's paragraph as lazy text
+    // (markup-carve/carve-rs#1415), so the construct is never parsed. Walking
+    // it anyway is what makes the rule fire on the day the parse agrees, rather
+    // than leaving a second defect behind the first.
+    for body in doc.footnote_defs.values() {
+        collect_quote_fence_warnings(body, &to_byte, &mut out);
+    }
     collect_template_source_warning(source, &doc, &mut out);
     collect_unattached_block_attribute_warnings(source, &unattached, &to_byte, &mut out);
     collect_table_column_warnings(source, &mut out);
@@ -487,6 +498,96 @@ fn collect_figure_group_warnings(
             }
             BlockNode::Extension(e) => {
                 collect_figure_group_warnings(&e.children, in_group, to_byte, out)
+            }
+            _ => {}
+        }
+    }
+}
+
+/// The one authoring hazard around the fenced block quote that no other rule
+/// here reaches (markup-carve/carve#1718).
+///
+/// A `::: >` opener written at the column of the quote above it is a block
+/// opener, so it ends that quote and starts a SIBLING one:
+///
+/// ```text
+/// > a
+/// ::: >
+/// b
+/// :::
+/// ```
+///
+/// renders two adjacent `<blockquote>` elements. That is ordinary container
+/// behavior and correct - nesting needs the marker, `> ::: >`.
+///
+/// It is reported because the failure is INVISIBLE for this container kind
+/// alone. With any other type token the mistake produces a visibly different
+/// element and the author notices; with `::: >` it produces the two quotes
+/// above, which read exactly like the nesting that was intended. Nothing is
+/// malformed, so no other rule fires and `carve lint` exits 0. The hazards
+/// beside it are covered already: a closer on the wrong side of the marker
+/// leaves the fence unclosed to end of input.
+///
+/// Reported only for a fenced quote directly below a PREFIXED one. A blank
+/// line makes two quotes deliberate, and after a closing fence a sibling is
+/// where it looks, so a fenced quote below a fenced quote is left alone.
+fn collect_quote_fence_warnings(
+    blocks: &[BlockNode],
+    to_byte: &dyn Fn(usize) -> usize,
+    out: &mut Vec<LintWarning>,
+) {
+    for pair in blocks.windows(2) {
+        let (BlockNode::BlockQuote(above), BlockNode::BlockQuote(fence)) = (&pair[0], &pair[1])
+        else {
+            continue;
+        };
+        if above.fenced || !fence.fenced {
+            continue;
+        }
+        let (Some(above_pos), Some(opener)) = (above.pos, fence.pos) else {
+            continue;
+        };
+        if opener.start_line != above_pos.end_line + 1 {
+            continue;
+        }
+        out.push(warning(
+            fence.pos,
+            to_byte,
+            "quote-fence-ends-the-quote-above",
+            "A \"::: >\" opener at the column of the quote above it ENDS that quote and opens a \
+             sibling one; the two render as adjacent blockquotes, not one nested in the other. \
+             Write \"> ::: >\" to nest it, or leave a blank line to make two quotes deliberate."
+                .to_string(),
+        ));
+    }
+
+    // The same mistake sits at a different column under a list item, inside a
+    // container body and in a definition, so every block list is walked rather
+    // than the document's own children alone.
+    for block in blocks {
+        match block {
+            BlockNode::BlockQuote(b) => collect_quote_fence_warnings(&b.children, to_byte, out),
+            BlockNode::Admonition(a) => collect_quote_fence_warnings(&a.children, to_byte, out),
+            BlockNode::Div(d) => collect_quote_fence_warnings(&d.children, to_byte, out),
+            BlockNode::LineBlock(lb) => collect_quote_fence_warnings(&lb.children, to_byte, out),
+            BlockNode::FigureGroup(g) => collect_quote_fence_warnings(&g.children, to_byte, out),
+            BlockNode::Extension(e) => collect_quote_fence_warnings(&e.children, to_byte, out),
+            BlockNode::List(l) => {
+                for item in &l.items {
+                    collect_quote_fence_warnings(&item.children, to_byte, out);
+                }
+            }
+            BlockNode::DefinitionList(dl) => {
+                for item in &dl.items {
+                    for def in &item.definitions {
+                        collect_quote_fence_warnings(&def.children, to_byte, out);
+                    }
+                }
+            }
+            BlockNode::Figure(f) => {
+                if let FigureTarget::BlockQuote(b) = &*f.target {
+                    collect_quote_fence_warnings(&b.children, to_byte, out);
+                }
             }
             _ => {}
         }
