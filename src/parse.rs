@@ -1170,6 +1170,7 @@ fn extract_footnote_defs(
     let mut body = Vec::new();
     let mut body_line_map = Vec::new();
     let mut defs = BTreeMap::new();
+    let mut definition_keys: BTreeMap<String, String> = BTreeMap::new();
     // Where each definition was written. Lines and columns are final here; the
     // OFFSETS are filled by the caller, which is the only place that holds the
     // original text the offsets are measured in - the same split `fill_offsets`
@@ -1358,6 +1359,8 @@ fn extract_footnote_defs(
             !(marker_line_may_be_lazy(lines[i])
                 && line_folds_into_an_open_paragraph(&body, lines[i], options, &mut probe_budget))
         }) {
+            let normalized_label = label_key(label);
+            let first_for_label = !definition_keys.contains_key(&normalized_label);
             let def_start_line = first_source_line + i;
             // The definition's OWN extent, before the body is collected.
             //
@@ -1369,7 +1372,7 @@ fn extract_footnote_defs(
             // a column, so a tab or a quote marker cannot be counted differently
             // here than it was when the line was stripped.
             let raw_def_line = lines[i];
-            if positions {
+            if positions && first_for_label {
                 if let Some(prefix) = raw_def_line.strip_suffix(def_line) {
                     // First definition for a label wins, matching `defs` below.
                     def_positions
@@ -1555,7 +1558,8 @@ fn extract_footnote_defs(
                                 // records, so the conversion is explicit here
                                 // rather than off by one (carve-rs#636).
                                 def.line = Some(first_source_line + i - 1);
-                                note_link_defs.insert(label_part.to_string(), def);
+                                def.raw_label = Some(label_part.to_string());
+                                note_link_defs.insert(label_key(label_part), def);
                                 i += 1;
                                 continue;
                             }
@@ -1578,7 +1582,6 @@ fn extract_footnote_defs(
             // and the container that hosted the first one was then reported as
             // running to it (carve-rs#1106). `defs` holds the label exactly
             // when an earlier definition was accepted, which is the test.
-            let first_for_label = !defs.contains_key(label);
             if positions
                 && !in_container
                 && first_for_label
@@ -1591,13 +1594,18 @@ fn extract_footnote_defs(
                 }
             }
             // First definition for a label wins (later duplicates are ignored).
-            defs.entry(label.to_string())
-                .or_insert_with(|| MappedSource {
-                    col_map: def_col_map,
-                    source: def_lines.join("\n"),
-                    line_map: def_line_map,
-                    authored_base_at_start: false,
-                });
+            if first_for_label {
+                definition_keys.insert(normalized_label, label.to_string());
+                defs.insert(
+                    label.to_string(),
+                    MappedSource {
+                        col_map: def_col_map,
+                        source: def_lines.join("\n"),
+                        line_map: def_line_map,
+                        authored_base_at_start: false,
+                    },
+                );
+            }
             // Leave the container's structural prefix (or a blank line at top
             // level) where the invisible definition was, so the container still
             // renders and the line still acts as a block boundary -- a following
@@ -1704,6 +1712,7 @@ fn parse_footnote_def_line(line: &str) -> Option<(&str, &str)> {
 
 #[derive(Clone)]
 struct LinkDef {
+    raw_label: Option<String>,
     href: String,
     title: Option<String>,
     /// Zero-based index of the line the definition was written on. Kept so PART
@@ -1715,6 +1724,27 @@ struct LinkDef {
     /// table is `label -> (url, title?, attrs?)`, and R1 transfers these to
     /// every link that resolves the label (carve#604).
     attrs: Option<Attrs>,
+}
+
+pub(crate) fn label_key(label: &str) -> String {
+    let mut out = String::with_capacity(label.len());
+    let mut pending_space = false;
+    for ch in label.chars() {
+        if matches!(ch, ' ' | '\t' | '\n' | '\u{000c}' | '\r') {
+            pending_space = !out.is_empty();
+        } else {
+            if pending_space {
+                out.push(' ');
+                pending_space = false;
+            }
+            out.push(ch);
+        }
+    }
+    out
+}
+
+fn is_single_line_label(label: &str) -> bool {
+    !label.contains(['\r', '\n'])
 }
 
 struct ActiveLinkDefs {
@@ -1775,7 +1805,10 @@ fn resolve_active_link(link: &mut Link) {
         let Some(context) = active.last_mut() else {
             return;
         };
-        let Some(def) = context.defs.get(&label) else {
+        let Some(def) = is_single_line_label(&label)
+            .then(|| context.defs.get(&label_key(&label)))
+            .flatten()
+        else {
             // Only a collapsed reference can still resolve through the heading
             // index, which does not exist until all headings have been parsed.
             // An unresolved explicit reference is already in its final shape.
@@ -1796,7 +1829,10 @@ fn resolve_active_image(image: &mut Image) {
         let Some(context) = active.last_mut() else {
             return;
         };
-        let Some(def) = context.defs.get(&label) else {
+        let Some(def) = is_single_line_label(&label)
+            .then(|| context.defs.get(&label_key(&label)))
+            .flatten()
+        else {
             // Images have no heading-reference fallback. Leaving `src` empty is
             // their final unresolved representation, so no late tree walk is
             // required.
@@ -2395,7 +2431,8 @@ fn extract_link_defs_with_guard(
             // The line the author wrote it on, for PART 12 §10's node: its `pos`
             // and the SOURCE order of the hoisted definitions both come from here.
             def.line = Some(line_index);
-            defs.insert(label_part.to_string(), def);
+            def.raw_label = Some(label_part.to_string());
+            defs.insert(label_key(label_part), def);
             // Leave a blank line in place of the (invisible) definition so it
             // still acts as a block boundary (matches carve-js, where a
             // definition interrupts a paragraph / ends a lazy blockquote).
@@ -3038,6 +3075,7 @@ fn parse_link_def_target(target: &str) -> LinkDef {
         None
     };
     LinkDef {
+        raw_label: None,
         href,
         title,
         attrs: None,
@@ -3100,7 +3138,7 @@ fn append_link_reference_definitions(
         authored.push((
             def.line,
             LinkReferenceDefinition {
-                label: label.clone(),
+                label: def.raw_label.clone().unwrap_or_else(|| label.clone()),
                 href: def.href.clone(),
                 title: def.title.clone(),
                 attrs: def.attrs.clone(),
@@ -20680,7 +20718,10 @@ fn resolve_reference_links_inline(
                         // built. A late walk may still be needed for a different
                         // collapsed heading reference in the same document; do
                         // not merge this definition's attributes twice there.
-                    } else if let Some(def) = defs.get(label) {
+                    } else if let Some(def) = defs
+                        .get(&label_key(label))
+                        .filter(|_| is_single_line_label(label))
+                    {
                         // PART 12 §3a, A RESOLVED REFERENCE KEEPS ITS
                         // DESTINATION: `ref` and `raw_ref` stay BESIDE `href`,
                         // the same way §5 has footnote numbering added
@@ -20837,7 +20878,10 @@ fn resolve_reference_links_inline(
                     if !img.src.is_empty() {
                         // Already resolved from the active definition context;
                         // see the equivalent link branch above.
-                    } else if let Some(def) = defs.get(label) {
+                    } else if let Some(def) = defs
+                        .get(&label_key(label))
+                        .filter(|_| is_single_line_label(label))
+                    {
                         // PART 12 §3a - see the note on the link branch above.
                         // AN IMAGE REFERENCE RESOLVES THE SAME ENTRY -
                         // NORMATIVE. It looks the label up in the same table and
