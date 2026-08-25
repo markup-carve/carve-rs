@@ -116,9 +116,12 @@ fn transform_blocks(
                 let (class, rest) = match &code.attrs {
                     Some(a) if !a.classes.is_empty() => (
                         format!("{} {}", base, a.classes.join(" ")),
-                        crate::render::render_attrs_after_class(a),
+                        crate::render::render_attrs_after_class_for(a, "div"),
                     ),
-                    Some(a) => (base.to_string(), crate::render::render_attrs_after_class(a)),
+                    Some(a) => (
+                        base.to_string(),
+                        crate::render::render_attrs_after_class_for(a, "div"),
+                    ),
                     None => (base.to_string(), String::new()),
                 };
                 // Static-with-renderer: the build renderer's verbatim SSR output

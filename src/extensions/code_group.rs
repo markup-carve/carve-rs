@@ -23,7 +23,7 @@ use std::cell::Cell;
 use crate::ast::{AttrSlot, Attrs, BlockExtension, BlockNode, CodeBlock, Document};
 use crate::extension::{BeforeRenderContext, CarveExtension, RenderContext};
 use crate::extensions::tabs::{apply_single_selection, SingleSelect, TabsMode};
-use crate::render::render_attrs;
+use crate::render::{render_attrs, render_attrs_for};
 
 /// Sentinel name for the rewritten carrier node. The profile filter still
 /// gates it as a `div` (its origin), so a restrictive profile strips the group
@@ -199,7 +199,7 @@ impl CarveExtension for CodeGroup {
             // option. `group` regardless, which is also what this renderer
             // emitted before the option existed.
             let attrs = self.wrapper_attrs(node.attrs.as_ref(), "group", ctx);
-            let mut html = format!("{pad}<div{}>\n", render_attrs(&attrs));
+            let mut html = format!("{pad}<div{}>\n", render_attrs_for(&attrs, "div"));
             for item in &items {
                 html.push_str(&format!(
                     "{inner_pad}<section class=\"{}\">\n",
@@ -308,7 +308,7 @@ impl CodeGroup {
         let level = ctx.level();
         let pad = ctx.indent(level);
         let inner_pad = ctx.indent(level + 1);
-        let mut html = format!("{pad}<div{}>\n", render_attrs(attrs));
+        let mut html = format!("{pad}<div{}>\n", render_attrs_for(attrs, "div"));
 
         for (index, item) in items.iter().enumerate() {
             let input_id = ctx.unique_id(&format!("{group_id}-tab-{}", index + 1));
@@ -379,7 +379,7 @@ impl CodeGroup {
             })
             .collect();
 
-        let mut html = format!("{pad}<div{}>\n", render_attrs(attrs));
+        let mut html = format!("{pad}<div{}>\n", render_attrs_for(attrs, "div"));
 
         for (item, (tab_id, panel_id)) in items.iter().zip(&pairs) {
             html.push_str(&format!(
