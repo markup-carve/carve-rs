@@ -9,6 +9,9 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- The Markdown target keeps every row from a multi-header table and derives
+  its single delimiter row from the final effective column alignment.
+
 - Definition-body metadata prepasses now measure leading tabs in visual
   columns, so tab-indented footnotes are collected like their space spelling.
 
