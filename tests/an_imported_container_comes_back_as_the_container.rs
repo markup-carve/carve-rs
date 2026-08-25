@@ -112,14 +112,14 @@ fn a_container_no_extension_claims_survives_too() {
 }
 
 /// THE GUARD, and it is the writer's own rule rather than a copy of it. A fence
-/// opener reads its type word as `[a-zA-Z_][\w-]*`, so a class outside that
+/// opener reads its type word as `[a-zA-Z0-9_][\w-]*`, so a class outside that
 /// shape cannot be the fence word: written there it would read back as a
 /// paragraph, and the element would lose both its class and its structure.
 #[test]
 fn a_class_no_fence_opener_can_spell_stays_a_class() {
-    let html = "<div class=\"2col\"><p>x</p></div>";
+    let html = "<div class=\"-2col\"><p>x</p></div>";
     assert_eq!(block_kinds(&imported_ast(html)), vec!["div", "paragraph"]);
-    assert_eq!(imported(html), "{.2col}\n:::\nx\n:::\n");
+    assert_eq!(imported(html), "{.-2col}\n:::\nx\n:::\n");
 }
 
 /// The class PAIR is what marks a rendered callout. A bare `<aside>` is somebody

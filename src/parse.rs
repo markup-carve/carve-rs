@@ -14252,8 +14252,9 @@ fn detect_container_open(line: &str) -> Option<ContainerOpen> {
     // A type word is a grammar identifier: `(letter | '_'), {letter | digit
     // | '_' | '-'}`. It must START with a letter or underscore, so a
     // digit-first token (`123`) or a non-identifier opener (`::: {.x}`,
-    // `:::{k=v}`) is not a fence -- the line is an ordinary paragraph.
-    if !rest.starts_with(|c: char| c.is_ascii_alphabetic() || c == '_') {
+    // `:::{k=v}`) is not a fence -- the line is an ordinary paragraph. A
+    // leading ASCII digit is accepted because the bare kind is a class value.
+    if !rest.starts_with(|c: char| c.is_ascii_alphanumeric() || c == '_') {
         return None;
     }
     let id_end = rest
@@ -15538,6 +15539,11 @@ fn is_attr_ident_start(b: u8) -> bool {
     b.is_ascii_alphabetic() || b == b'_'
 }
 
+#[inline]
+fn is_css_ident_start(b: u8) -> bool {
+    is_attr_ident_start(b) || b.is_ascii_digit()
+}
+
 /// Continuation byte of an attribute identifier: a letter, digit, `_`, or `-`
 /// (matches `is_identifier`'s tail rule). Non-ASCII → false, ending the run.
 #[inline]
@@ -15589,7 +15595,7 @@ fn attr_payload_provably_invalid(bytes: &[u8], brace: usize) -> bool {
             // the whole payload) is invalid (§14).
             b'#' | b'.' => {
                 match bytes.get(i + 1) {
-                    Some(&d) if is_attr_ident_start(d) => {}
+                    Some(&d) if is_css_ident_start(d) => {}
                     _ => return true,
                 }
                 i += 2;
@@ -15732,14 +15738,17 @@ fn read_attrs_at_with(
     Some((parse_attrs_with(inner, space_only)?, i + 1))
 }
 
-/// An attribute name (id, class, key) is a grammar identifier: it must start
-/// with a letter or underscore (not a digit -- a `class="123"` / `id="1"` is
-/// also invalid CSS). A name that fails this (including an empty one) makes
-/// the whole block invalid, so it stays literal (§14). A digit after the
-/// first character is fine. Stricter than djot (jgm/djot#399).
+/// A generic attribute name starts with a letter or underscore. Explicit id
+/// and class shorthands use the wider `is_css_identifier` preservation rule.
 fn is_identifier(name: &str) -> bool {
     let mut chars = name.chars();
     matches!(chars.next(), Some(c) if c.is_ascii_alphabetic() || c == '_')
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+}
+
+fn is_css_identifier(name: &str) -> bool {
+    let mut chars = name.chars();
+    matches!(chars.next(), Some(c) if c.is_ascii_alphanumeric() || c == '_')
         && chars.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
 }
 
@@ -15810,7 +15819,7 @@ fn parse_attrs_with(src: &str, space_only: bool) -> Option<Attrs> {
             }
             attrs.key_values.insert("lang".to_string(), tag.to_string());
         } else if let Some(id) = token.strip_prefix('#') {
-            if !is_identifier(id) {
+            if !is_css_identifier(id) {
                 return None;
             }
             if attrs.id.is_none() {
@@ -15818,7 +15827,7 @@ fn parse_attrs_with(src: &str, space_only: bool) -> Option<Attrs> {
             }
             attrs.id = Some(id.to_string());
         } else if let Some(class) = token.strip_prefix('.') {
-            if !is_identifier(class) {
+            if !is_css_identifier(class) {
                 return None;
             }
             if attrs.classes.is_empty() {

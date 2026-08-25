@@ -69,20 +69,14 @@ fn attributes_attach_via_a_preceding_block_attribute_line() {
 }
 
 #[test]
-fn digit_first_type_word_is_paragraph_text() {
-    // A type word is a grammar identifier (letter | underscore first), so a
-    // digit-first token is not a valid type and the line is a paragraph
-    // (matches carve-js / carve-php; a `class="123"` would be invalid CSS).
+fn digit_first_type_word_is_a_generic_div() {
     for src in ["::: 123\nb\n:::", "::: 1a\nb"] {
         let html = carve::to_html(src);
         assert!(
-            html.starts_with("<p>"),
-            "{src:?} should be a paragraph: {html}"
+            html.starts_with("<div class=\""),
+            "{src:?} should be a div: {html}"
         );
-        assert!(
-            !html.contains("<div"),
-            "{src:?} should not be a div: {html}"
-        );
+        assert!(html.contains("<div"), "{src:?} should be a div: {html}");
     }
 }
 
