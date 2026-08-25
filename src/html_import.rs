@@ -3280,7 +3280,7 @@ impl<'a> Importer<'a> {
             _ => return None,
         };
         // The writer's own rule, not a copy of it: a class a fence opener cannot
-        // spell (`2col`, `my.class`) would be written after the colons and read
+        // spell (`-2col`, `my.class`) would be written after the colons and read
         // back as a paragraph, so such an element keeps the generic `Div` node
         // where the class survives as a class.
         crate::render_carve::is_container_kind(&kind).then_some(kind)
