@@ -3728,8 +3728,40 @@ impl<'a> Importer<'a> {
                 // A sole image renders bare inside the panel, so it comes back
                 // as a one-image paragraph; the figure the parser builds holds
                 // the IMAGE as its target.
+                //
+                // THE WRAPPER TAKEN OFF HERE IS OURS, NOT THE AUTHOR'S. HTML
+                // has no block/inline slot distinction, so `blocks_at` puts a
+                // stray inline into a paragraph to have somewhere to put it,
+                // and taking that paragraph back off drops nothing the document
+                // held.
+                //
+                // AN ATTRIBUTE-CARRYING `<p>` IS THE AUTHOR'S AND STAYS
+                // (markup-carve/carve-js#1422, carve-js#1606). Without the
+                // test, `<figure id="f"><p class="x"><img></p><figcaption>`
+                // rebuilt a figure whose target was the bare image and the
+                // class was gone - from the tree, from the written source and
+                // from the report, in EVERY mode, with nothing saying so. A
+                // silent drop is the one thing this importer may not do, and it
+                // was this engine alone: carve-js and carve-php both keep the
+                // paragraph, which then takes the paragraph's answer.
+                //
+                // AND THE TEST IS THE ATTRIBUTE, NOT THE PROVENANCE. A review
+                // pass asked for the wrapper to be kept whenever the AUTHOR
+                // wrote it, attributes or not, reading the bare one as an
+                // authored paragraph the unwrap loses. Measured, both sibling
+                // engines take the bare one off and report nothing:
+                // `<figure><p><img></p><figcaption>Cap` gives `![G](g.jpg)` and
+                // a caption line in carve-js and carve-php alike. It has to,
+                // because a figure's image host IS the image (PART 9 §4b), so
+                // the caption line this importer writes re-reads as an image
+                // target whatever the tree said - keeping the paragraph would
+                // make the two exits disagree rather than keep anything. What
+                // an attribute adds is a thing the wrapper CARRIES that the
+                // image cannot, and that is the whole difference.
                 BlockNode::Paragraph(p)
-                    if p.children.len() == 1 && matches!(p.children[0], InlineNode::Image(_)) =>
+                    if p.attrs.is_none()
+                        && p.children.len() == 1
+                        && matches!(p.children[0], InlineNode::Image(_)) =>
                 {
                     match p.children.into_iter().next() {
                         Some(InlineNode::Image(img)) => FigureTarget::Image(img),
