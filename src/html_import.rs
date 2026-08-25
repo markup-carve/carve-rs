@@ -1923,6 +1923,9 @@ impl<'a> Importer<'a> {
             return Ok(vec![BlockNode::BlockQuote(BlockQuote {
                 attrs,
                 children: self.blocks(&children, path, depth + 1)?,
+                // An imported quote has no authored spelling: HTML records the
+                // element, never how someone typed it.
+                fenced: false,
                 pos: None,
             })]);
         }

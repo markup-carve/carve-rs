@@ -324,6 +324,8 @@ impl Builder {
             Frame::BlockQuote(children) => self.block(BlockNode::BlockQuote(BlockQuote {
                 attrs: None,
                 children,
+                // Markdown has one spelling, so an import carries none.
+                fenced: false,
                 pos: None,
             })),
             Frame::List {

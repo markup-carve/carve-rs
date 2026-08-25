@@ -112,6 +112,7 @@ fn non_html_renderers_bound_programmatic_block_depth() {
         });
         for _ in 0..carve::MAX_RENDER_DEPTH + 16 {
             block = carve::BlockNode::BlockQuote(carve::BlockQuote {
+                fenced: false,
                 attrs: None,
                 children: vec![block],
                 pos: None,
