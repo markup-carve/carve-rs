@@ -521,7 +521,7 @@ fn run_migrate(args: &[String]) -> ExitCode {
         i += 1;
     }
     let from = match from.as_deref() {
-        Some("html") | Some("markdown") | Some("md") | Some("djot") => {
+        Some("html") | Some("markdown") | Some("md") | Some("djot") | Some("bbcode") => {
             from.clone().unwrap_or_default()
         }
         Some(other) => {
@@ -529,7 +529,7 @@ fn run_migrate(args: &[String]) -> ExitCode {
             return ExitCode::from(2);
         }
         None => {
-            eprintln!("carve migrate: --from html, markdown or djot is required");
+            eprintln!("carve migrate: --from html, markdown, djot or bbcode is required");
             return ExitCode::from(2);
         }
     };
@@ -556,6 +556,14 @@ fn run_migrate(args: &[String]) -> ExitCode {
     if from != "html" {
         let carve = if from == "djot" {
             carve::djot_to_carve(&source)
+        } else if from == "bbcode" {
+            match carve::bbcode_to_carve(&source) {
+                Ok(value) => value,
+                Err(error) => {
+                    eprintln!("carve migrate: {error}");
+                    return ExitCode::from(2);
+                }
+            }
         } else {
             carve::markdown_to_carve(&source)
         };

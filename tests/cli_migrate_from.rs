@@ -91,6 +91,13 @@ fn migrates_html() {
 }
 
 #[test]
+fn migrates_bbcode() {
+    let (out, err, ok) = run(&["migrate", "--from", "bbcode"], "[b]bold[/b]\n");
+    assert!(ok, "bbcode migration should succeed: {err}");
+    assert_eq!(out, "*bold*\n");
+}
+
+#[test]
 fn rejects_an_unknown_source_format() {
     let (_, err, ok) = run(&["migrate", "--from", "rst"], "x");
     assert!(!ok, "an unknown format should fail");
@@ -105,7 +112,7 @@ fn names_every_source_format_when_from_is_missing() {
     let (_, err, ok) = run(&["migrate"], "x");
     assert!(!ok, "a missing --from should fail");
     assert!(
-        err.contains("html, markdown or djot"),
+        err.contains("html, markdown, djot or bbcode"),
         "unexpected stderr: {err}"
     );
 }

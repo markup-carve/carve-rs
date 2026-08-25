@@ -20,6 +20,7 @@ pub mod ast;
 pub mod ast_json;
 pub mod ast_merge;
 pub mod ast_patch;
+pub mod bbcode_migrate;
 mod citations;
 pub mod djot_migrate;
 mod document_ids;
@@ -90,6 +91,7 @@ pub use ast_patch::{
     create_ast_patch, create_reversible_ast_patch, AstPatchError, AstPatchOperation,
     ReversibleAstPatch,
 };
+pub use bbcode_migrate::{bbcode_to_carve, BbcodeImportError, BBCODE_MAX_INPUT_LENGTH};
 pub use citations::{
     parse_locator, CitationMode, Citations, CslDate, CslEntry, CslName, ParsedLocator,
 };
@@ -121,8 +123,8 @@ pub use incremental::{
 pub use lint::{lint_carve, lint_carve_with_options, LintWarning};
 pub use markdown_import::{markdown_to_ast, markdown_to_carve};
 pub use migration::{
-    migrate_djot, migrate_html, migrate_markdown, MigrationConfidence, MigrationDiagnostic,
-    MigrationFidelity, MigrationReport, MigrationResult, SourceFormat,
+    migrate_bbcode, migrate_djot, migrate_html, migrate_markdown, MigrationConfidence,
+    MigrationDiagnostic, MigrationFidelity, MigrationReport, MigrationResult, SourceFormat,
 };
 pub use parse::{parse, parse_with_options};
 pub use profile::{DisallowedAction, LinkPolicy, Profile, ProfileViolation, ProfileViolationError};
