@@ -3378,6 +3378,21 @@ impl<'a> Importer<'a> {
     /// result, staying quiet would report the refused attributes and swallow the
     /// accepted ones, which is the wrong way round: the reader is told about the
     /// `onclick` and not about the `id` that also went missing (carve#1286).
+    ///
+    /// ONE ROW PER ATTRIBUTE, carrying that attribute's whole value. `class`
+    /// used to get a row per NAME in it, so `class="a b c d e"` reported five
+    /// losses and `class="a"` reported one - for the same event on the same
+    /// single attribute (markup-carve/carve#1735). The row count belongs to the
+    /// document's structure, not to one attribute's contents, and the split
+    /// implied a granularity the loss does not have: the attribute went, so
+    /// every name in it went with it, together. `class` is also the only
+    /// attribute whose value is a list, so the split was never a general
+    /// principle - it was one attribute reported unlike every other.
+    ///
+    /// carve-php and carve-js already report it this way. The code, the
+    /// severity and the `Dropped {subject} on <{tag}>: {because}` shape are
+    /// settled by markup-carve/carve#1710 and unchanged here; only the number of
+    /// rows moved.
     fn report_unplaceable_attrs(
         &mut self,
         node: &Handle,
@@ -3393,7 +3408,9 @@ impl<'a> Importer<'a> {
         if let Some(id) = attrs.id {
             dropped.push(format!("id=\"{id}\""));
         }
-        dropped.extend(attrs.classes.iter().map(|c| format!("class=\"{c}\"")));
+        if !attrs.classes.is_empty() {
+            dropped.push(format!("class=\"{}\"", attrs.classes.join(" ")));
+        }
         dropped.extend(attrs.key_values.keys().map(|k| k.to_string()));
         for name in dropped {
             self.diag(
