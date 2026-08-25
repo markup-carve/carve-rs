@@ -102,12 +102,26 @@ fn the_whitespace_of_a_pretty_printed_list_reports_nothing() {
     assert_eq!(diags, vec![]);
 }
 
-/// A COMMENT IS INVISIBLE, so it is not a loss either.
+/// A COMMENT IS KEPT NOW, and it moves, so the move is said
+/// (markup-carve/carve#1709). It used to be dropped outright, which is what
+/// made "nothing to report" true here; the text of the comment is the
+/// document's, Carve can hold it, and losing it was a choice nobody made.
+///
+/// `info` rather than the `warning` its text neighbour takes: a comment renders
+/// nothing in either language, so the move costs a reader of the OUTPUT nothing
+/// and a reader of the SOURCE one position.
 #[test]
-fn a_comment_between_items_reports_nothing() {
+fn a_comment_between_items_is_kept_and_says_that_it_moved() {
     let (src, diags) = imported("<ul><li>a</li><!--note--><li>b</li></ul>");
-    assert_eq!(src, "- a\n- b\n");
-    assert_eq!(diags, vec![]);
+    assert_eq!(src, "%%%\nnote\n%%%\n\n- a\n- b\n");
+    assert_eq!(
+        diags,
+        vec![(
+            "element-unwrapped".to_string(),
+            "An HTML comment directly inside <ul> kept its text but not its place among the items: it is emitted as a comment ahead of the list".to_string(),
+            "/ul[1]/comment()[2]".to_string(),
+        )]
+    );
 }
 
 /// An ACTIVE element is dropped, not kept, and says exactly that. Reporting it
