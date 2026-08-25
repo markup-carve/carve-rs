@@ -210,6 +210,9 @@ impl Reader {
                     }
                 }
                 let mut n = self.container(obj, container_ty, "children", false)?;
+                if container_ty == "block_quote" {
+                    insert(&mut n, "fenced", optional_bool(a, "carveFenced"));
+                }
                 if container_ty == "div" {
                     add_flavor_class(&mut n, flavor);
                     // The div's visible heading. `container` only carries

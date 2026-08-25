@@ -10,7 +10,7 @@ use crate::extension::{
 };
 use crate::sentinel_run::{occupied_private_use, pick_sentinel_run};
 use std::cell::{Cell, RefCell};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 /// The line a collected definition leaves behind, and the marker that says it
 /// is ours rather than something the author wrote.
@@ -505,28 +505,35 @@ fn parse_with_options_mode_and_index(
         .filter(|b| *b == b'\n')
         .count()
         + 1;
-    let (body, footnote_defs_src, mut footnote_def_pos, note_link_defs) = if body.contains("[^") {
-        extract_footnote_defs(body, body_start_line, options.positions, options)
-    } else {
-        let body_line_count = body.lines().count();
-        (
-            MappedSource {
-                source: body.to_owned(),
-                line_map: (body_start_line..body_start_line + body_line_count)
-                    .map(Some)
-                    .collect(),
-                col_map: if options.positions {
-                    vec![Some(0); body_line_count]
-                } else {
-                    Vec::new()
+    let (body, mut footnote_defs_src, mut footnote_def_pos, mut note_link_defs) =
+        if body.contains("[^") {
+            extract_footnote_defs(body, body_start_line, options.positions, options)
+        } else {
+            let body_line_count = body.lines().count();
+            (
+                MappedSource {
+                    source: body.to_owned(),
+                    line_map: (body_start_line..body_start_line + body_line_count)
+                        .map(Some)
+                        .collect(),
+                    col_map: if options.positions {
+                        vec![Some(0); body_line_count]
+                    } else {
+                        Vec::new()
+                    },
+                    authored_base_at_start: false,
                 },
-                authored_base_at_start: false,
-            },
-            BTreeMap::new(),
-            BTreeMap::new(),
-            BTreeMap::new(),
-        )
-    };
+                BTreeMap::new(),
+                BTreeMap::new(),
+                BTreeMap::new(),
+            )
+        };
+    extract_nested_footnote_defs(
+        &mut footnote_defs_src,
+        &mut footnote_def_pos,
+        &mut note_link_defs,
+        options,
+    );
     let mut link_def_probe_budget = probe_budget_for(body.source.len());
     let (body_source, mut link_defs) =
         extract_link_defs_guarded(&body.source, options, &mut link_def_probe_budget);
@@ -736,6 +743,108 @@ fn parse_with_options_mode_and_index(
         fill_crossref_hrefs(&mut doc, options.heading_id_options())
     };
     (doc, crossref_index)
+}
+
+/// Lift definitions written inside an already-lifted footnote body.
+///
+/// The first extraction pass cannot see these lines as independent definitions:
+/// it consumes the complete outer body in one step. Repeating the same guarded
+/// extraction over each newly found body gives nested notes the same
+/// document-level ownership as notes written in any other container. Mapping is
+/// composed back through the parent so positions continue to name the authored
+/// document rather than the temporary body string.
+fn extract_nested_footnote_defs(
+    defs: &mut BTreeMap<String, MappedSource>,
+    positions: &mut BTreeMap<String, Pos>,
+    link_defs: &mut BTreeMap<String, LinkDef>,
+    options: &Options<'_>,
+) {
+    let mut pending: Vec<String> = defs.keys().cloned().collect();
+    let mut seen = BTreeSet::new();
+
+    while let Some(label) = pending.pop() {
+        if !seen.insert(label.clone()) {
+            continue;
+        }
+        let Some(parent) = defs.remove(&label) else {
+            continue;
+        };
+        if !parent.source.contains("[^") {
+            defs.insert(label, parent);
+            continue;
+        }
+
+        let (body, nested, nested_positions, nested_links) =
+            extract_footnote_defs(&parent.source, 1, options.positions, options);
+        defs.insert(label, compose_mapped_source(body, &parent));
+
+        for (nested_label, nested_source) in nested {
+            let nested_source = compose_mapped_source(nested_source, &parent);
+            let nested_line = first_mapped_line(&nested_source);
+            let existing_line = defs.get(&nested_label).and_then(first_mapped_line);
+            if existing_line.is_some() && existing_line <= nested_line {
+                continue;
+            }
+            defs.insert(nested_label.clone(), nested_source);
+            seen.remove(&nested_label);
+            pending.push(nested_label);
+        }
+        for (nested_label, mut pos) in nested_positions {
+            map_pos_through_source(&mut pos, &parent);
+            positions.entry(nested_label).or_insert(pos);
+        }
+        for (nested_label, mut def) in nested_links {
+            if let Some(line) = def.line {
+                def.line = parent
+                    .line_map
+                    .get(line)
+                    .and_then(|mapped| *mapped)
+                    .map(|mapped| mapped - 1);
+            }
+            link_defs.entry(nested_label).or_insert(def);
+        }
+    }
+}
+
+fn compose_mapped_source(mut child: MappedSource, parent: &MappedSource) -> MappedSource {
+    for child_index in 0..child.line_map.len() {
+        let Some(local_line) = child.line_map[child_index] else {
+            continue;
+        };
+        let parent_index = local_line.saturating_sub(1);
+        child.line_map[child_index] = parent.line_map.get(parent_index).copied().flatten();
+        if let Some(column) = child.col_map.get_mut(child_index) {
+            *column = match (*column, parent.col_map.get(parent_index).copied().flatten()) {
+                (Some(child_column), Some(parent_column)) => Some(child_column + parent_column),
+                _ => None,
+            };
+        }
+    }
+    child
+}
+
+fn first_mapped_line(source: &MappedSource) -> Option<usize> {
+    source.line_map.iter().flatten().copied().min()
+}
+
+fn map_pos_through_source(pos: &mut Pos, parent: &MappedSource) {
+    let map_boundary = |line: usize, column: usize| {
+        let index = line.saturating_sub(1);
+        let mapped_line = parent.line_map.get(index).copied().flatten()?;
+        let mapped_column = parent.col_map.get(index).copied().flatten()?;
+        Some((
+            mapped_line,
+            (column as isize + mapped_column).max(1) as usize,
+        ))
+    };
+    if let Some((line, column)) = map_boundary(pos.start_line, pos.start_column) {
+        pos.start_line = line;
+        pos.start_column = column;
+    }
+    if let Some((line, column)) = map_boundary(pos.end_line, pos.end_column) {
+        pos.end_line = line;
+        pos.end_column = column;
+    }
 }
 
 /// Publish each crossref's resolution BESIDE its authored target
@@ -1549,7 +1658,8 @@ fn extract_footnote_defs(
                             // `extract_link_defs` does for the document; a
                             // top-level definition still beats both, and that
                             // precedence is applied by the caller.
-                            if !label_part.starts_with('@') && !target_part.trim().is_empty() {
+                            if !label_part.starts_with(['@', '^']) && !target_part.trim().is_empty()
+                            {
                                 let mut def = parse_link_def_target_with_attrs(target_part.trim());
                                 // The DOCUMENT line, so the hoisted node gets a
                                 // `pos` like every other definition (§4, §10).
@@ -5789,6 +5899,10 @@ fn rebase_overindented_blocks(source: &mut MappedSource, include_sublists: bool)
         } else {
             None
         };
+        let footnote = code.is_none()
+            && comment.is_none()
+            && colon.is_none()
+            && parse_footnote_def_line(&opener).is_some();
         if let Some(open) = code {
             for (j, candidate) in lines.iter().enumerate().skip(i + 1) {
                 if !is_blank_line(candidate) && indent_columns(candidate) < base {
@@ -5837,6 +5951,18 @@ fn rebase_overindented_blocks(source: &mut MappedSource, include_sublists: bool)
                         }
                     }
                 }
+            }
+        } else if footnote {
+            // The authored base belongs to the remainder of this metadata
+            // group, not only to the definition opener. A later paragraph at
+            // the same authored column is a sibling in the enclosing footnote
+            // body; leaving its residual indent made it a continuation of the
+            // nested definition after the opener itself had been rebased.
+            for (j, candidate) in lines.iter().enumerate().skip(i + 1) {
+                if !is_blank_line(candidate) && indent_columns(candidate) < base {
+                    break;
+                }
+                end = j;
             }
         } else if is_list_marker(&opener) {
             for (j, candidate) in lines.iter().enumerate().skip(i + 1) {
@@ -5935,6 +6061,7 @@ fn item_block_opener(line: &str) -> bool {
         || is_definition_list_start(line)
         || detect_container_open(line).is_some()
         || detect_quote_block_open(line).is_some()
+        || parse_footnote_def_line(line).is_some()
         || parse_standalone_attrs(line).is_some()
         || detect_block_image(line).is_some()
 }

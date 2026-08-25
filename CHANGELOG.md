@@ -7,6 +7,12 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- Nested footnote definitions now retain document-level ownership when an
+  authored block base carries them inside another footnote body.
+- Fenced block-quote spelling now survives AST JSON and ProseMirror round trips.
+
 ### Added
 
 - `bbcode_to_carve` and `carve migrate --from bbcode`, bringing Rust importer

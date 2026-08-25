@@ -733,8 +733,12 @@ fn fully_covered_corpus_documents_round_trip_through_prosemirror() {
     // Measured over all 1412 documents: 1115 / 297. The exact total below and
     // the independent source-lossy assertion above keep this an evidence-based
     // ratchet rather than allowing either side to drift unnoticed.
-    const STRICT: usize = 1115;
-    const LOSSY: usize = 297;
+    // Categories 416-418 add eight documents. Carrying the fenced block-quote
+    // spelling makes all new covered cases strict and also promotes three
+    // existing fenced-quote documents out of the reported-loss path. Measured
+    // over all 1420 documents: 1126 / 294.
+    const STRICT: usize = 1126;
+    const LOSSY: usize = 294;
     assert!(
         covered >= STRICT,
         "strict round trips fell from {STRICT} to {covered}"
