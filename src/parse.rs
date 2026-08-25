@@ -5783,6 +5783,13 @@ fn rebase_overindented_blocks(source: &mut MappedSource, include_sublists: bool)
     let mut nested_columns: Vec<usize> = Vec::new();
     let mut after_blank = false;
     let mut paragraph_open = false;
+    // Has a line AT the container's minimum column been read since the scan
+    // last stood inside a descendant? It is ownership evidence exactly as an
+    // open paragraph is: the scan is back in the parent's coordinate system,
+    // so the next over-indented opener was authored there rather than left
+    // behind by a child whose own column it fell short of. See the guard
+    // below for what only counting the paragraph cost (carve-rs#1415).
+    let mut block_at_minimum = false;
     while i < lines.len() {
         if is_blank_line(&lines[i]) {
             after_blank = true;
@@ -5813,6 +5820,7 @@ fn rebase_overindented_blocks(source: &mut MappedSource, include_sublists: bool)
         if !after_blank && nested_columns.last().is_some_and(|column| base < *column) {
             let local = strip_leading_columns(&lines[i], base);
             if base > 0 || !item_block_opener(&local) {
+                block_at_minimum = false;
                 i += 1;
                 continue;
             }
@@ -5824,11 +5832,13 @@ fn rebase_overindented_blocks(source: &mut MappedSource, include_sublists: bool)
             if !include_sublists || base == 0 || !nested_columns.is_empty() {
                 nested_columns.push(column);
                 after_blank = false;
+                block_at_minimum = false;
                 i += 1;
                 continue;
             }
         }
         if nested_columns.last().is_some_and(|column| base >= *column) {
+            block_at_minimum = false;
             i += 1;
             continue;
         }
@@ -5847,6 +5857,7 @@ fn rebase_overindented_blocks(source: &mut MappedSource, include_sublists: bool)
                 }
                 after_blank = false;
                 paragraph_open = false;
+                block_at_minimum = false;
                 continue;
             }
             if let Some(open) = detect_comment_fence_line(&lines[i]) {
@@ -5860,10 +5871,12 @@ fn rebase_overindented_blocks(source: &mut MappedSource, include_sublists: bool)
                 }
                 after_blank = false;
                 paragraph_open = false;
+                block_at_minimum = false;
                 continue;
             }
             paragraph_open = line_starts_paragraph(&lines[i]);
             after_blank = false;
+            block_at_minimum = true;
             i += 1;
             continue;
         }
@@ -5878,10 +5891,33 @@ fn rebase_overindented_blocks(source: &mut MappedSource, include_sublists: bool)
         // A later residual indent can have been preserved precisely because
         // the physical line fell short of the item's content column (for
         // example after a closed comment fence). It is not an authored base.
-        // A separating blank, an interrupted paragraph, or a chunk explicitly
-        // identified from its over-indented first opener provides the missing
-        // ownership evidence.
-        if i > 0 && !after_blank && !paragraph_open && !source.authored_base_at_start {
+        // A separating blank, an interrupted paragraph, a BLOCK AT THE
+        // MINIMUM COLUMN, or a chunk explicitly identified from its
+        // over-indented first opener provides the missing ownership evidence.
+        //
+        // THE BLOCK AT THE MINIMUM COLUMN IS THE ONE THAT WAS MISSING. Only a
+        // paragraph counted, and `line_starts_paragraph` is false for every
+        // block opener - so a quote, a heading or a table written at the
+        // body's own column left the following opener unrebased, and it then
+        // folded into whatever the block above had left open. In a footnote
+        // body `[^a]: > q` / `<six spaces># h` came back as one blockquote
+        // paragraph holding a literal `# h`, where carve-js and carve-php both
+        // end the quote and open the heading; the definition-list body and the
+        // list item spell the same defect (carve-rs#1415).
+        //
+        // PART 9 §24 C3's authored-base clause (carve#1729) does not ask for a
+        // paragraph: "A recognized block opener AT OR PAST a definition body's
+        // column 3 or a footnote body's column 2 belongs to that body. Its
+        // authored visual column is the local `block_base` for that one
+        // block." What the guard is really for is the residual indent a
+        // DESCENDANT left behind, which is why the flag is cleared on every
+        // path that hands a line to one.
+        if i > 0
+            && !after_blank
+            && !paragraph_open
+            && !block_at_minimum
+            && !source.authored_base_at_start
+        {
             i += 1;
             continue;
         }
@@ -6043,6 +6079,10 @@ fn rebase_overindented_blocks(source: &mut MappedSource, include_sublists: bool)
         }
         i = end + 1;
         after_blank = false;
+        // The block just moved to the minimum column, so it is evidence for
+        // the next one exactly as an authored block written there is. Without
+        // this a RUN of authored openers rebased only its first member.
+        block_at_minimum = true;
     }
     if trailing_newline && lines.last().is_some_and(String::is_empty) {
         lines.pop();
