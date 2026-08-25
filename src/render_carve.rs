@@ -1345,6 +1345,34 @@ fn writes_nothing(text: &str) -> bool {
     trim_non_nbsp(text).is_empty()
 }
 
+/// A caption line's written form, or `None` where the run reaches the page as
+/// nothing.
+///
+/// `^` WITH NOTHING AFTER IT IS NOT A CAPTION LINE. It re-parses as a paragraph
+/// holding a literal caret, so a block carrying an empty caption came back
+/// saying something the tree never said - an ADDITION rather than a loss, which
+/// is why it is fixed here rather than declared in a report
+/// (markup-carve/carve-rs#1405, ruling markup-carve/carve-js#1423).
+///
+/// ONE PREDICATE FOR EVERY SLOT, which is the whole point of extracting it.
+/// Carve has three places a caption is written - the `^ ` line under a figure,
+/// the one after a figure group's closer, and a table's own caption, which is
+/// the last ROW of the table rather than a line under it - and the third going
+/// through different code is exactly how it kept the bare caret. A second
+/// mechanism would agree today and drift on the next clause.
+///
+/// U+00A0 SPELLS SOMETHING and keeps its line (PART 11 §7), because
+/// [`writes_nothing`] defers to `trim_non_nbsp`, the writer's own trimming.
+/// Sharing that is what keeps this answer equal to the one the rest of the
+/// writer gives.
+fn caption_row(caption: &[InlineNode], ctx: &mut CarveContext) -> Option<String> {
+    let written = render_inlines(caption, ctx);
+    if writes_nothing(&written) {
+        return None;
+    }
+    Some(format!("^ {written}"))
+}
+
 fn render_blocks(blocks: &[BlockNode], ctx: &mut CarveContext) -> String {
     if ctx.block_depth >= MAX_RENDER_DEPTH {
         crate::render_depth::record("carve");
@@ -1971,7 +1999,8 @@ fn render_block_body(node: &BlockNode, ctx: &mut CarveContext) -> String {
             let caption = group
                 .caption
                 .as_ref()
-                .map(|caption| format!("\n^ {}", render_inlines(caption, ctx)))
+                .and_then(|caption| caption_row(caption, ctx))
+                .map(|row| format!("\n{row}"))
                 .unwrap_or_default();
             with_block_attrs(
                 &group.attrs,
@@ -2497,8 +2526,12 @@ fn render_table(node: &Table, ctx: &mut CarveContext) -> String {
         let sep = vec!["---"; node.rows[0].cells.len()].join("|");
         rows.insert(1, format!("|{sep}|"));
     }
-    if let Some(caption) = &node.caption {
-        rows.push(format!("^ {}", render_inlines(caption, ctx)));
+    if let Some(row) = node
+        .caption
+        .as_ref()
+        .and_then(|caption| caption_row(caption, ctx))
+    {
+        rows.push(row);
     }
     rows.join("\n")
 }
@@ -2624,7 +2657,13 @@ fn render_figure(node: &Figure, ctx: &mut CarveContext) -> String {
             render_block(&BlockNode::Paragraph(paragraph.clone()), ctx)
         }
     };
-    format!("{target}\n^ {}", render_inlines(&node.caption, ctx))
+    match caption_row(&node.caption, ctx) {
+        Some(row) => format!("{target}\n{row}"),
+        // A caption that writes nothing leaves the target on its own. What is
+        // lost is the figure ROLE; what writing the bare `^` cost was worse -
+        // the caret came back as literal text INSIDE the target's paragraph.
+        None => target,
+    }
 }
 
 fn render_footnote_def_source(label: &str, blocks: &[BlockNode], ctx: &mut CarveContext) -> String {
