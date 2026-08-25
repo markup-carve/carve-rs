@@ -77,3 +77,14 @@ fn an_over_indented_child_marker_keeps_its_exact_column_block() {
     let over = html("- x\n\n   - child\n\n     # h\n");
     assert_eq!(over, exact);
 }
+
+#[test]
+fn the_definition_prepass_and_block_parser_agree_on_a_mid_paragraph_fence() {
+    let output = html("- x\n  para\n   ```\n   [r]: /u\n   ```\n\n[r][]\n");
+    assert!(
+        output.contains("<pre><code>[r]: /u\n</code></pre>"),
+        "{output}"
+    );
+    assert!(output.contains("<p>[r][]</p>"), "{output}");
+    assert!(!output.contains("href=\"/u\""), "{output}");
+}

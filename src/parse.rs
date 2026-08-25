@@ -2232,6 +2232,16 @@ fn extract_link_defs_with_guard(
         // OPENER: strip container prefixes (blockquote AND list marker), then
         // re-base to the current list-item content column. This recognizes a
         // fence on the marker line (`- ````) and on continuation lines.
+        // An authored base is still a BLOCK decision: a fence-shaped line
+        // lazily folded into the paragraph above it remains text. Ask the same
+        // guarded block probe used by definition extraction before making this
+        // pre-pass opaque, so it cannot suppress definitions inside a fence the
+        // real block parser never opens.
+        let authored_base_allowed = line_index == 0
+            || is_blank_line(all_lines[line_index - 1])
+            || guard.as_mut().is_some_and(|(options, budget)| {
+                !line_folds_into_an_open_paragraph(&body, line, options, budget)
+            });
         let opener_kept;
         let mut authored_fence_col = content_col;
         let fence_line = if content_col == 0 {
@@ -2242,7 +2252,7 @@ fn extract_link_defs_with_guard(
             if kept_indent >= content_col {
                 let canonical = &opener_kept[content_col..];
                 let authored = canonical.trim_start_matches([' ', '\t']);
-                if detect_fence_open(authored).is_some() {
+                if authored_base_allowed && detect_fence_open(authored).is_some() {
                     authored_fence_col = kept_indent;
                     authored
                 } else {
