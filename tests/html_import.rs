@@ -146,9 +146,8 @@ fn shared_contract_fixtures_match() {
             serde_json::from_str(&fs::read_to_string(dir.join("expected.ast.json")).unwrap())
                 .unwrap();
         let result = html_to_carve(&html, &HtmlImportOptions::default()).unwrap();
-        if let Some((_, reason, current)) = AHEAD_OF_PIN
-            .iter()
-            .find(|(fixture, _, _)| *fixture == name)
+        if let Some((_, reason, current)) =
+            AHEAD_OF_PIN.iter().find(|(fixture, _, _)| *fixture == name)
         {
             if result.value != *current {
                 mismatches.push(format!(

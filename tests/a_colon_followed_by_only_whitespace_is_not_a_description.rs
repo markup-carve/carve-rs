@@ -49,9 +49,15 @@ fn it_reads_exactly_as_the_tab_and_bare_spellings_do() {
 /// that decides and not the colon.
 #[test]
 fn a_marker_that_has_content_still_opens_a_description() {
-    assert_eq!(flat(":: t\n: {}\nx\n"), "<dl> <dt>t</dt> <dd>{} x</dd> </dl>");
+    assert_eq!(
+        flat(":: t\n: {}\nx\n"),
+        "<dl> <dt>t</dt> <dd>{} x</dd> </dl>"
+    );
     assert_eq!(flat(":: t\n: y\nx\n"), "<dl> <dt>t</dt> <dd>y x</dd> </dl>");
-    assert_eq!(flat(":: t\n:  y\nx\n"), "<dl> <dt>t</dt> <dd>y x</dd> </dl>");
+    assert_eq!(
+        flat(":: t\n:  y\nx\n"),
+        "<dl> <dt>t</dt> <dd>y x</dd> </dl>"
+    );
 }
 
 /// CONTENT IS NOT THE SAME QUESTION AS VISIBLE TEXT. PART 7's one whitespace
@@ -59,7 +65,10 @@ fn a_marker_that_has_content_still_opens_a_description() {
 /// everywhere else in the language, so both open a description.
 #[test]
 fn a_body_of_one_content_space_is_content() {
-    assert_eq!(flat(":: t\n: \u{0b}\nx\n"), "<dl> <dt>t</dt> <dd> x</dd> </dl>");
+    assert_eq!(
+        flat(":: t\n: \u{0b}\nx\n"),
+        "<dl> <dt>t</dt> <dd> x</dd> </dl>"
+    );
     assert_eq!(
         flat(":: t\n: \u{a0}\nx\n"),
         "<dl> <dt>t</dt> <dd>&nbsp; x</dd> </dl>"
@@ -71,7 +80,13 @@ fn a_body_of_one_content_space_is_content() {
 /// HTML-only assertion here would pass on a term that kept it.
 #[test]
 fn the_folded_line_keeps_no_trailing_run() {
-    for source in [":: t\n: \n", ":: t\n:  \n", ":: t\n:   \n", ":: t\n:\t\n", ":: t\n:\n"] {
+    for source in [
+        ":: t\n: \n",
+        ":: t\n:  \n",
+        ":: t\n:   \n",
+        ":: t\n:\t\n",
+        ":: t\n:\n",
+    ] {
         let json = carve::ast_json::to_json(&carve::parse(source));
         assert!(
             json.contains("\"definition_list\""),
@@ -81,7 +96,11 @@ fn the_folded_line_keeps_no_trailing_run() {
             json.contains("\\\"value\\\":\\\":\\\"") || json.contains("\"value\":\":\""),
             "the folded text is exactly the colon - source: {source:?}, json: {json}"
         );
-        for kept in ["\"value\":\": \"", "\"value\":\":  \"", "\"value\":\":\\t\""] {
+        for kept in [
+            "\"value\":\": \"",
+            "\"value\":\":  \"",
+            "\"value\":\":\\t\"",
+        ] {
             assert!(
                 !json.contains(kept),
                 "trailing run survived {kept} - source: {source:?}"
@@ -94,7 +113,10 @@ fn the_folded_line_keeps_no_trailing_run() {
 /// under the term, so an already-open description takes it too.
 #[test]
 fn it_folds_into_an_open_description() {
-    assert_eq!(flat(":: t\n: d\n: \nx\n"), "<dl> <dt>t</dt> <dd>d : x</dd> </dl>");
+    assert_eq!(
+        flat(":: t\n: d\n: \nx\n"),
+        "<dl> <dt>t</dt> <dd>d : x</dd> </dl>"
+    );
 }
 
 #[test]
@@ -109,7 +131,10 @@ fn it_is_a_paragraph_with_no_term_open_above_it() {
 #[test]
 fn the_term_marker_keeps_its_own_readings() {
     assert_eq!(flat(":: t\n:: \nx\n"), "<dl> <dt>t</dt> </dl> <p>:: x</p>");
-    assert_eq!(flat(":: t\n:: \t\nx\n"), "<dl> <dt>t</dt> </dl> <p>:: x</p>");
+    assert_eq!(
+        flat(":: t\n:: \t\nx\n"),
+        "<dl> <dt>t</dt> </dl> <p>:: x</p>"
+    );
     assert_eq!(flat(":: t\n::\t\nx\n"), "<dl> <dt>t :: x</dt> </dl>");
     assert_eq!(flat(":: t\n::\nx\n"), "<dl> <dt>t :: x</dt> </dl>");
 }
