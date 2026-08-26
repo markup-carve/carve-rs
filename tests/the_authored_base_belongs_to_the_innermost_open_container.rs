@@ -110,3 +110,32 @@ fn a_quote_at_a_nested_items_content_column_stays_in_the_item() {
         "<p>see<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>intro</p>\n      <ul>\n        <li>item\n          <blockquote><p>quote</p></blockquote>\n        </li>\n      </ul>\n      <p><a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Only an OPENER leaves the description's run
+// ---------------------------------------------------------------------------
+
+#[test]
+fn prose_in_the_same_band_is_not_an_opener() {
+    // The bound is "a recognized block opener", and this is the half of it that
+    // no assertion reached. The description opens column 5 and the text is
+    // written at 4, which is exactly the band the openers above move in - past
+    // the run's base, short of the description's content column. Prose written
+    // there is not the body's own block: the description ends and the line is
+    // classified in the surviving context, as a paragraph of the note.
+    //
+    // Dropping the opener test from the bound is otherwise nearly invisible.
+    // Measured on this tree over 1207 generated definition-in-body shapes, it
+    // moves 14, and every one is prose separated from the description by a
+    // blank line - so the term was pinned by nothing at all. Without it the
+    // line stays in the run and comes back inside the `<dd>` as a second
+    // paragraph.
+    assert_eq!(html("[^n]: intro\n\n   :: term\n   : definition\n\n    text\n\nsee[^n]\n"), "<p>see<a id=\"fnref1\" href=\"#fn1\" role=\"doc-noteref\"><sup>1</sup></a></p>\n<section role=\"doc-endnotes\" aria-label=\"Footnotes\">\n  <hr>\n  <ol>\n    <li id=\"fn1\">\n      <p>intro</p>\n      <dl>\n        <dt>term</dt>\n        <dd>definition</dd>\n      </dl>\n      <p>text<a href=\"#fnref1\" role=\"doc-backlink\" aria-label=\"Back to reference\">↩</a></p>\n    </li>\n  </ol>\n</section>");
+}
+
+#[test]
+fn prose_in_a_list_item_is_not_an_opener_either() {
+    // The same claim with the outer container swapped, because the bound runs
+    // in the list-item call as well.
+    assert_eq!(html("- item\n\n   :: term\n   : definition\n\n    text\n"), "<ul>\n  <li><p>item</p>\n    <dl>\n      <dt>term</dt>\n      <dd>definition</dd>\n    </dl>\n    <p>text</p>\n  </li>\n</ul>");
+}
