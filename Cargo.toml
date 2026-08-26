@@ -2,7 +2,7 @@
 # Published crate name (`carve` is taken on crates.io). The library is still
 # imported as `carve` (see [lib].name) and the CLI binary is still `carve`.
 name = "carve-lang"
-version = "0.1.3"
+version = "0.1.4"
 edition = "2021"
 rust-version = "1.75"
 description = "Rust parser and HTML renderer for the Carve markup language."
