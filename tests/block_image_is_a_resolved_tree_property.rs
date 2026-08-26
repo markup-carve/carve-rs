@@ -149,9 +149,20 @@ fn omits_the_field_when_the_reference_did_not_resolve() {
 
 const LEGACY: &str = r#"{"type":"document","srcByteLength":0,"children":[{"type":"paragraph","children":[{"type":"image","src":"/u","alt":"a"}]}]}"#;
 
+/// RE-ENCODED BEFORE RENDERING, deliberately. `render_html` runs
+/// `collapse_lone_image_paragraphs`, which promotes where the field is absent
+/// too, so asserting on rendered HTML would pass whether or not the DECODER did
+/// its half - the renderer would cover for it, and removing the ingest pass
+/// entirely left every rendered byte unchanged. Reading the tree straight back
+/// is what pins the ingest rule itself.
 #[test]
 fn promotes_a_legacy_tree_that_omits_the_field() {
     let doc = carve::from_json(LEGACY).expect("a tree without the field is accepted");
+    let json = carve::to_json(&doc);
+    assert!(
+        json.contains(r#""type":"paragraph","blockImage":true"#),
+        "{json}"
+    );
     assert_eq!(
         carve::render_html(&doc).unwrap().trim(),
         r#"<img src="/u" alt="a">"#
@@ -162,6 +173,11 @@ fn promotes_a_legacy_tree_that_omits_the_field() {
 fn trusts_the_field_where_the_producer_set_it() {
     let with_field = r#"{"type":"document","srcByteLength":0,"children":[{"type":"paragraph","blockImage":true,"children":[{"type":"image","src":"/u","alt":"a"}]}]}"#;
     let doc = carve::from_json(with_field).expect("decodes");
+    let json = carve::to_json(&doc);
+    assert!(
+        json.contains(r#""type":"paragraph","blockImage":true"#),
+        "{json}"
+    );
     assert_eq!(
         carve::render_html(&doc).unwrap().trim(),
         r#"<img src="/u" alt="a">"#
