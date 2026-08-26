@@ -5844,6 +5844,23 @@ fn rebase_overindented_blocks(source: &mut MappedSource, include_sublists: bool)
                 continue;
             }
         }
+        // A DESCRIPTION IS A CONTAINER TOO (PART 9 §24 C3, ruled in
+        // markup-carve/carve#1781). The base question is asked of the innermost
+        // container open where the line is written, and only LIST markers
+        // registered one here - so a block written at a nested description's own
+        // content column was measured against the OUTER body instead, rebased to
+        // its column and lifted out of the description it was written into
+        // (markup-carve/carve-rs#1430). Registering is all this needs: the test
+        // below already keeps a line at or past a live descendant's column out
+        // of the parent's coordinate system.
+        //
+        // The marker line itself falls through rather than returning, because a
+        // description marker at the container's own minimum column is a block
+        // written there, which is the ownership evidence `block_at_minimum`
+        // carries to the opener below it (carve-rs#1415).
+        if let Some(column) = definition_body_content_col(&lines[i]) {
+            nested_columns.push(column);
+        }
         if nested_columns.last().is_some_and(|column| base >= *column) {
             block_at_minimum = false;
             i += 1;
@@ -6099,8 +6116,46 @@ fn rebase_overindented_blocks(source: &mut MappedSource, include_sublists: bool)
             // description at the body's column and beside it below that.
             // Only a non-blank line BELOW the base leaves the run, which is
             // the test the footnote branch above already uses (carve-rs#1419).
+            //
+            // THE SECOND BOUND, which the list-marker branch above already has
+            // and this one did not. BELOW THE DESCRIPTION'S CONTENT COLUMN THE
+            // DESCRIPTION ENDS, and the surviving container is the body this
+            // run was written in - where a recognized opener is still an opener
+            // (PART 9 §24 C3, markup-carve/carve-rs#1430). Carrying such a line
+            // into the run dedents it by the run's base alone, which lands it
+            // between the two columns: too shallow to be the description's
+            // content and no longer at the body's minimum, where the strict
+            // column-0 rule reads it as literal text. `[^n]: intro` / `:: term`
+            // / `:  definition` / a quote one column short came back as a
+            // paragraph holding a literal `> quote`.
+            //
+            // Only an OPENER leaves the run. A wrapped term line and a lazy
+            // continuation are also written past the base and short of the
+            // column, and they belong to the definition above them - stranding
+            // them is what the run exists to prevent.
+            let mut content = definition_body_content_col(&lines[i]);
             for (j, candidate) in lines.iter().enumerate().skip(i + 1) {
-                if !is_blank_line(candidate) && indent_columns(candidate) < base {
+                if is_blank_line(candidate) {
+                    end = j;
+                    continue;
+                }
+                let indent = indent_columns(candidate);
+                if indent < base {
+                    break;
+                }
+                if indent == base {
+                    // A sibling term or description marker re-opens the run's
+                    // innermost body, so the column to measure against moves
+                    // with it.
+                    if let Some(column) = definition_body_content_col(candidate) {
+                        content = Some(column);
+                    }
+                    end = j;
+                    continue;
+                }
+                if content.is_some_and(|column| indent < column)
+                    && item_block_opener(&strip_leading_columns(candidate, indent))
+                {
                     break;
                 }
                 end = j;
@@ -10850,6 +10905,22 @@ fn marker_content_col(line: &str) -> Option<usize> {
                 .saturating_sub(leading_ws(line))
                 .saturating_sub(marker_attrs_width(line, &m)),
     )
+}
+
+/// The content column a definition body marker opens, or `None` when the line
+/// carries no `:` body marker.
+///
+/// The list twin is [`marker_content_col`]. A definition description is a
+/// container in exactly the same sense - PART 9 §24 C3 asks the base question
+/// of the INNERMOST container open where a line is written - and this is the
+/// column that decides which one that is. The separator is a RUN of spaces and
+/// its width sets the column (markup-carve/carve#1757), so the answer is read
+/// from the marker rather than assumed.
+fn definition_body_content_col(line: &str) -> Option<usize> {
+    let indent = indent_columns(line);
+    let local = strip_leading_columns(line, indent);
+    let (_, width) = strip_definition_marker(&local)?;
+    Some(indent + width)
 }
 
 /// The content column of the deepest marker in a marker-line list run,
