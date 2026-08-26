@@ -7,18 +7,6 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-### Fixed
-
-- The Markdown target keeps every row from a multi-header table and derives
-  its single delimiter row from the final effective column alignment.
-
-- Definition-body metadata prepasses now measure leading tabs in visual
-  columns, so tab-indented footnotes are collected like their space spelling.
-
-- Nested footnote definitions now retain document-level ownership when an
-  authored block base carries them inside another footnote body.
-- Fenced block-quote spelling now survives AST JSON and ProseMirror round trips.
-
 ### Added
 
 - `bbcode_to_carve` and `carve migrate --from bbcode`, bringing Rust importer
@@ -81,6 +69,14 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `try_render_html_streaming` exposes the borrowed layout renderer's fallback
   boundary (#1330): the sink is left untouched on `StreamOutcome::NeedsAst`, so
   a caller can run the AST renderer after it rather than falling back blindly.
+- A fenced block quote, `::: >`, spelling a quoted block with no marker column
+  (markup-carve/carve#1718, #1399). The node records which spelling was
+  authored, and the closing fence takes a caption as the prefixed form does
+  (markup-carve/carve#1742, #1411).
+- An explicit id or class may begin with an ASCII digit
+  (markup-carve/carve#1725, #1393), through HTML import and canonical output.
+- A `quote-fence-ends-the-quote-above` lint rule (#1416), for the one `::: >`
+  authoring hazard no existing diagnostic reached.
 
 ### Changed
 
@@ -152,6 +148,21 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   thematic break and lone image keep the bar, and a quoted list's bar sits
   outside its marker. All three engines agreed on the old behavior, so this
   moves agreed behavior rather than closing a divergence.
+- A list item's content column is measured from the bare marker, so a
+  marker-attached attribute block contributes nothing to it, as the task
+  checkbox already did (markup-carve/carve#1698, markup-carve/carve#1701,
+  #1374, #1379). A source-compatibility change for documents indented to the
+  wider column.
+- Reference and footnote label keys normalize ASCII whitespace
+  (markup-carve/carve#1726, #1397), so labels differing only in spacing resolve
+  to one definition. The winning link definition keeps its authored spelling for
+  canonical output.
+- A definition body's separator is any run of spaces and one space is canonical
+  (markup-carve/carve#1757, #1426). Continuation columns follow the authored
+  separator width and `fmt` writes the one space back.
+- `{align=left|right|center}` on an element whose `align` means text alignment
+  renders a CSS declaration rather than the deprecated presentational attribute
+  (markup-carve/carve#1755, #1412).
 
 ### Fixed
 
@@ -338,6 +349,56 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - An imported task item comes back a task item (#1365). The HTML importer
   built every list item with no task state and read no `<input>` at all, so
   `carve migrate --from html` turned a checklist into a plain list.
+- The Markdown target keeps every row from a multi-header table and derives
+  its single delimiter row from the final effective column alignment.
+- Definition-body metadata prepasses now measure leading tabs in visual
+  columns, so tab-indented footnotes are collected like their space spelling.
+- Nested footnote definitions now retain document-level ownership when an
+  authored block base carries them inside another footnote body.
+- Fenced block-quote spelling now survives AST JSON and ProseMirror round trips.
+- A definition body's and a list item's authored base survives the blank line
+  below it (#1422, #1425, PART 9 §24 C3), so a blank-separated indented
+  continuation is measured against that base rather than against column 0.
+- An attribute-only marker line below a list item's content column no longer
+  strands the attributes that follow it (markup-carve/carve#1732, #1390).
+- A multi-row list-table footer writes one row per line, as its body does
+  (markup-carve/carve#1411, #1131).
+- An empty `^` is not a caption line (#1407). It re-parsed as a paragraph
+  holding a literal caret, so the round trip added content the tree never said.
+- A figure around a table carrying its own `<caption>` writes one caption, not
+  two (#1408).
+- `roundtrip` unwraps a generic sectioning wrapper instead of preserving it
+  (markup-carve/carve#1696, #1376), and this engine renders every top-level
+  heading inside one.
+- `roundtrip` rebuilds a figure a Carve spelling reproduces, and hands a hoisted
+  section id back (markup-carve/carve#1704, #1381). A `<figure>` with no caption
+  is neither rebuilt nor preserved (#1382).
+- A figure whose target cannot carry a caption line unwraps and declares the
+  loss in `safe` and `semantic` (markup-carve/carve-php#1731, #1389), rather
+  than writing a caption line the target absorbs.
+- A figure's target keeps its own attributes and the displaced ones are declared
+  (markup-carve/carve#1721, #1394); the collision row names the collision rather
+  than one side of it (#1396).
+- An authored paragraph around a figure's image stays the author's (#1392).
+- One `attribute-dropped` row is reported per attribute, not per class name
+  (markup-carve/carve#1735, #1395).
+- An attribute the preserved bytes carry through is no longer reported dropped
+  (markup-carve/carve#1710, markup-carve/carve-js#1468, #1383).
+- An empty unsupported element is dropped rather than reported
+  `element-unwrapped` (markup-carve/carve#1738, #1398); the code claims content
+  was preserved, and there was none.
+- An HTML comment imports as a Carve comment (markup-carve/carve#1709, #1386)
+  instead of being dropped with nothing reported.
+- The last newline of an imported code block is its terminator, not a line
+  (markup-carve/carve#1708, #1384), so no mode adds a trailing blank line to
+  bytes the author wrote.
+- An `<input>` `type` matches the checkbox keyword ASCII case-insensitively
+  (#1378), so `type="CHECKBOX"` imports as a task item.
+- A cell's `text-align` and `vertical-align` import as the cell's native marker
+  run in `semantic` and `roundtrip` (markup-carve/carve#1741, #1406). `safe`
+  still drops and reports them.
+- A media wrapper's fallback content converts as blocks
+  (markup-carve/carve#1749, #1404) rather than flattening to inline.
 
 ## [0.1.3] - 2026-08-18
 
