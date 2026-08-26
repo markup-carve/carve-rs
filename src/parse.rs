@@ -9729,6 +9729,43 @@ fn parse_list(
                 {
                     break;
                 }
+                // AN EMPTY ITEM CLAIMS NOTHING BELOW ITS CONTENT COLUMN (§17 L3,
+                // markup-carve/carve#1821). The two flags above name two ways an
+                // item can reach here holding nothing; this asks the question
+                // they are each a special case of, which is the one the clause
+                // actually states - has this item collected a body at all? An
+                // item with no blocks has no open paragraph, so a line below its
+                // content column has nothing here to continue and belongs to
+                // whatever its own column names.
+                //
+                // The comment spelling is what the flags missed: `- %% c` over a
+                // column-1 line folded the payload into the `<li>` while the
+                // marker spelling beside it did the same through the PULL path,
+                // so guarding either one alone left the other claiming the same
+                // line into the same empty item. The clause makes the two
+                // spellings one answer, so the guard is asked once, of the item.
+                //
+                // Column 0 never reaches here (this branch is `indent >
+                // base_indent`), and the content column itself is excluded - a
+                // line AT `content_col` is the item's own first block, which is
+                // why `- +` and `- %% c` over a column-2 line both keep it.
+                // AN ITEM HOLDING ONLY INVISIBLE BLOCKS IS EMPTY. The question
+                // is "did this item collect a BODY", and a comment contributes
+                // no body line - `- %% c` builds an item whose one child is a
+                // `Comment` node that renders nothing. Asking
+                // `children.is_empty()` therefore answered "not empty" for the
+                // very spelling the clause uses as its control, and the fold
+                // went on claiming the line. Measured on the TREE, not the
+                // HTML: the comment renders to nothing either way, so the
+                // rendered output could not show which of the two the parser
+                // had built.
+                if items
+                    .last()
+                    .is_some_and(|item| item.children.iter().all(crate::ast::publishes_nothing))
+                    && indent < content_col
+                {
+                    break;
+                }
                 if !items.is_empty() {
                     let last_item = items.len() - 1;
                     let mut nested = collect_item_continuation_block_mapped(
@@ -10129,7 +10166,22 @@ fn parse_list(
 
                 pos: None,
             };
-            if let Some(block) = parse_continuation_block(cur, options, base_indent) {
+            // THE FIRST-BLOCK MARKER REACHES COLUMN 0 AND NOTHING ELSE (§17 L3,
+            // markup-carve/carve#1821). `attached_block_lines` asks this for
+            // every OTHER container, but this pull path calls
+            // `attached_block_end` directly and so never asked it: `- +` over a
+            // column-1 line took the line as the marked block, where the clause
+            // refuses the marker and leaves the line to its own column.
+            //
+            // Refusing here is only half the answer - see the empty-item guard
+            // in the fold below, which stops the OTHER path from claiming the
+            // very same line into the very same empty item.
+            let first_block_attaches =
+                attaches_flush_left(cur.source_col(cur.pos), cur.lines.get(cur.pos));
+            if let Some(block) = first_block_attaches
+                .then(|| parse_continuation_block(cur, options, base_indent))
+                .flatten()
+            {
                 // AN EMPTY PARAGRAPH IS NOT ONE OF THE ITEM'S BLOCKS, the same
                 // reading the standalone `+` line above already applies. It
                 // arises when the attached block's whole content was a
@@ -10513,7 +10565,24 @@ fn parse_list(
             // Raising the floor to `content_col - 1` says that directly, and it
             // is the same expression the sub-list and lazy-resume collectors use
             // for "at or past this column only".
-            let body_floor = if detect_comment_fence_line(marker.content).is_some() {
+            // A MARKER-LINE BLOCK THAT PUBLISHES NOTHING LEAVES NO BODY FOR A
+            // BELOW-COLUMN LINE TO JOIN (§17 L3, markup-carve/carve#1821).
+            //
+            // The comment FENCE already raised the floor here, for exactly this
+            // reason. The plain comment LINE beside it did not, so `- %% c` over
+            // a column-1 line collected the line as the item's own content and
+            // rendered `<li>flush</li>`, where its marker twin `- +` ends the
+            // item and leaves a top-level paragraph. The clause makes those two
+            // spellings ONE answer, so they need one floor.
+            //
+            // `content_col - 1` is the floor that says "at the content column or
+            // not at all": the collector stops at `indent <= parent_indent`, so
+            // a column-1 line ends the item and a column-2 line - the item's own
+            // first block - is still collected. Column 0 is unaffected, having
+            // ended the item at that same test all along.
+            let body_floor = if detect_comment_fence_line(marker.content).is_some()
+                || is_flush_line_comment(marker.content)
+            {
                 content_col.saturating_sub(1)
             } else {
                 base_indent
