@@ -169,6 +169,7 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **The continuation marker reaches column 0 and nothing else in a list item** (#1460, #1452, markup-carve/carve#1821, PART 9 §17 L3). The lead-paragraph collector ended its run at a `+` on the marker's own column, which only makes it eligible; over a line at any other column the marker attaches nothing and the line folds into the paragraph above it.
 - **A colon followed by only spaces is not a description** (#1455, #1452, markup-carve/carve#1832, markup-carve/carve#1830, PART 2 MARKER REQUIRES CONTENT). The space spellings fold under whatever is open instead of ending the list and emitting the colon as its own paragraph, which is what the tab spelling already did. `:` plus a space plus a tab is not ruled yet and does not move (markup-carve/carve#1836).
 - **An empty body claims no line below column 0** (#1450, #1449, markup-carve/carve#1817, PART 9 §17 L3). In the first-block form `- +` a payload at column 1 is not flush-left, so the marker is refused and the item stays empty.
 - **The continuation marker's column gate reaches every container** (#1447, #1446, markup-carve/carve#1817, PART 9 §17 L3). The gate was column arithmetic spread through the list-item collectors, so a footnote body, a definition description and a block quote each reached out for a line the clause leaves where the author wrote it.
